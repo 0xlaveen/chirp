@@ -1,0 +1,100 @@
+import AppKit
+import ApplicationServices
+import Carbon.HIToolbox
+
+/// The real implementations behind `InsertionEnvironment`.
+@MainActor
+public enum SystemInsertion {
+    public static func environment() -> InsertionEnvironment {
+        InsertionEnvironment(
+            secureInputEnabled: { IsSecureEventInputEnabled() },
+            axTrusted: { AXIsProcessTrusted() },
+            frontmostBundleID: { NSWorkspace.shared.frontmostApplication?.bundleIdentifier },
+            axInsert: { await axInsert($0) },
+            axReplace: { await axReplace(range: $0, expected: $1, replacement: $2) },
+            postPaste: { postCommandKey(CGKeyCode(kVK_ANSI_V)) },
+            postUndo: { postCommandKey(CGKeyCode(kVK_ANSI_Z)) }
+        )
+    }
+
+    // MARK: AX
+
+    private static func copy(_ element: AXUIElement, _ attribute: String) -> CFTypeRef? {
+        var ref: CFTypeRef?
+        return AXUIElementCopyAttributeValue(element, attribute as CFString, &ref) == .success ? ref : nil
+    }
+
+    private static func range(_ element: AXUIElement) -> CFRange? {
+        guard let v = copy(element, "AXSelectedTextRange"), CFGetTypeID(v) == AXValueGetTypeID() else { return nil }
+        var r = CFRange()
+        return AXValueGetValue(v as! AXValue, .cfRange, &r) ? r : nil
+    }
+
+    private static func focusedElement() -> AXUIElement? {
+        let system = AXUIElementCreateSystemWide()
+        AXUIElementSetMessagingTimeout(system, 0.5)
+        guard let focused = copy(system, "AXFocusedUIElement"), CFGetTypeID(focused) == AXUIElementGetTypeID() else { return nil }
+        return (focused as! AXUIElement)
+    }
+
+    private static func selectedTextSettable(_ element: AXUIElement) -> Bool {
+        var settable: DarwinBoolean = false
+        return AXUIElementIsAttributeSettable(element, "AXSelectedText" as CFString, &settable) == .success && settable.boolValue
+    }
+
+    /// Sets `AXSelectedText` on the focused element and checks that the value or caret actually moved.
+    /// Some apps apply the write late, so the readback is polled for up to ~150 ms before reporting `.unverified`.
+    static func axInsert(_ text: String) async -> AXInsertAttempt {
+        guard let element = focusedElement() else { return .notAttempted }
+        if let role = copy(element, "AXRole") as? String, role == "AXSecureTextField" { return .notAttempted }
+        guard selectedTextSettable(element) else { return .notAttempted }
+
+        let beforeValue = copy(element, "AXValue") as? String
+        let beforeRange = range(element)
+        // If we can't read the field back we can't verify the write, so let paste handle it.
+        guard beforeValue != nil || beforeRange != nil else { return .notAttempted }
+
+        guard AXUIElementSetAttributeValue(element, "AXSelectedText" as CFString, text as CFString) == .success else { return .notAttempted }
+        let length = text.utf16.count
+        for _ in 0..<6 {
+            try? await Task.sleep(for: .milliseconds(25))
+            let afterValue = copy(element, "AXValue") as? String
+            let afterRange = range(element)
+            let changed = (beforeValue != nil && afterValue != nil && beforeValue != afterValue)
+                || (beforeRange != nil && afterRange != nil && (beforeRange!.location != afterRange!.location || beforeRange!.length != afterRange!.length))
+            guard changed else { continue }
+            if let b = beforeRange { return .verified(NSRange(location: b.location, length: length)) }
+            if let a = afterRange, a.length == 0, a.location >= length { return .verified(NSRange(location: a.location - length, length: length)) }
+            return .verified(nil)
+        }
+        // The set call succeeded but we never saw the change. The app may still apply it, so do not paste.
+        return .unverified
+    }
+
+    /// Reselects `range` when it still holds exactly `expected`, then overwrites it with `replacement`.
+    static func axReplace(range: NSRange, expected: String, replacement: String) async -> Bool {
+        guard let element = focusedElement(), selectedTextSettable(element),
+              let value = copy(element, "AXValue") as? String,
+              let r = Range(range, in: value), value[r] == expected else { return false }
+        var cf = CFRange(location: range.location, length: range.length)
+        guard let axRange = AXValueCreate(.cfRange, &cf),
+              AXUIElementSetAttributeValue(element, "AXSelectedTextRange" as CFString, axRange) == .success,
+              AXUIElementSetAttributeValue(element, "AXSelectedText" as CFString, replacement as CFString) == .success else { return false }
+        try? await Task.sleep(for: .milliseconds(60))
+        return (copy(element, "AXValue") as? String).map { $0 != value } ?? false
+    }
+
+    // MARK: Keystroke
+
+    /// Posts ⌘+key using a private event source so a still-held hotkey modifier (⌥) is not merged in.
+    static func postCommandKey(_ key: CGKeyCode) -> Bool {
+        guard let source = CGEventSource(stateID: .privateState),
+              let down = CGEvent(keyboardEventSource: source, virtualKey: key, keyDown: true),
+              let up = CGEvent(keyboardEventSource: source, virtualKey: key, keyDown: false) else { return false }
+        down.flags = .maskCommand
+        up.flags = .maskCommand
+        down.post(tap: .cghidEventTap)
+        up.post(tap: .cghidEventTap)
+        return true
+    }
+}
