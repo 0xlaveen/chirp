@@ -59,7 +59,7 @@ Each step needs the operator's hands or approval. Do them in order.
 9. **Set up on the phone:** open **Chirp Voice**, grant the microphone, and enable the keyboard (Settings → General management → Keyboard list and default). Keep Samsung Keyboard on.
 10. **Pair:**
     - On the Mac, run `cd server && uv run chirp-server pair --url https://mainframe.tail676ff2.ts.net/chirp`. It prints a secret link and a terminal QR code.
-    - Scan the QR code with the phone camera; it opens `chirp://pair?…` in Chirp. Or paste the link into Chirp's masked pairing field.
+    - Scan the QR code with the phone camera. If Samsung's camera offers to open the `chirp://pair?…` link, Chirp's pairing field fills in; this is untested on the device. Otherwise paste the link into Chirp's masked pairing field.
     - Never put the link in chat, shell history or screenshots.
     - Tap **Test connection & save pairing**.
 11. **Dictate:**
