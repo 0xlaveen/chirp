@@ -18,7 +18,7 @@ on the same dedicated thread used for every decode and streaming-context operati
 uv run chirp-server --root-path /chirp
 uv run chirp-server pair --url https://mainframe.tail676ff2.ts.net/chirp
 uv sync --locked --extra onnx
-uv run chirp-server --engine onnx
+uv run --extra onnx chirp-server --engine onnx
 uv run chirp-server model fetch --engine onnx
 ```
 
@@ -30,14 +30,26 @@ Unauthenticated health deliberately reports only `{"ok":true}`; authenticated he
 readiness, retention and correction information. See [the protocol](../docs/architecture.md#3-wire-protocol-v1-frozen-for-parallel-work).
 
 One model processes one utterance at a time. Requests wait up to 10 seconds before `busy`.
-A socket supports sequential utterances and closes after 60 seconds without client traffic.
+First-frame authentication has a separate five-second deadline; at most eight sockets may
+await credentials concurrently. A socket supports sequential utterances and closes after 60 seconds without client traffic.
 PCM must be mono, little-endian signed 16-bit at 16 kHz. Frames of 1 MB or more are rejected;
 utterances are capped at 120 seconds. POST accepts a WAV body with the same format and limit.
-Incremental partials consume roughly 200 ms of new audio at a time, coalescing work if inference
-lags behind capture. The final restores full attention and decodes the complete utterance;
-over 30 seconds it merges overlapping, timestamped chunks. `stable` is conservatively empty
-because the authoritative final may revise any word. Silence produces no hallucinated final.
-`--streaming rolling` benchmarks the fallback and `--precision float16|bfloat16` enables experiments.
+Rolling partials consume roughly 200 ms of new audio at a time, coalescing up to two seconds
+per inference when the engine lags. MLX previews decode an eight-second window and reuse the
+library's timestamped token merger to retain the whole live transcript. The default final
+performs a full-utterance decode, using overlapping 30-second chunks for
+long utterances. At stop, queued partial inference is skipped and its audio is buffered directly
+for the final. `stable` is deliberately empty in this mode because the full final can revise any
+word. Silence produces no hallucinated final. `--finalization segments` explicitly enables pause
+precommit: after at least 400 ms of low signal, full-decode and freeze the preceding segment,
+then decode only the remaining tail at stop. Its `stable` contains frozen segments (suppressed
+when final correction can revise them). Both modes matched full-decode WER on the measured
+continuous and controlled-pause fixtures, but segment mode regressed the short continuous
+fixture's paired median final latency, so it remains opt-in. `--streaming incremental` uses
+upstream's documented cached
+context and one-second chunks, with full re-decoding for final quality; the measured rolling path
+is the default. `--precision float16|bfloat16` enables experiments; spectral preprocessing stays
+fp32 because upstream 0.5.3's reduced-precision FFT view has an invalid shape.
 
 ## Config and correction
 
@@ -117,3 +129,34 @@ LaunchAgent. Keep this checkout and virtual environment in place while installed
 to `/dev/null`; run in a terminal for metadata diagnostics or visible debug warnings. Debug
 retention is also always visible in the health/ready flags. Installation has **not** been run.
 Tailnet publication is managed by integration; this package does not change Tailscale settings.
+
+## Explicit optional downloads and cleanup
+
+Starting `chirp-server`, running the ordinary test suite, and running `scripts/bench.py` never
+fetch a missing recognition model. Missing models produce a `chirp-server model fetch` hint.
+Real-model tests use existing cached weights and generate only synthetic `say` fixtures.
+The optional Swift runners never request Microphone or Speech Recognition authorization.
+Apple probing checks installed assets and skips if they are missing; grant-dependent paths
+are not invoked. No launch agent or Tailscale setting is installed by benchmarks.
+
+| Explicit command | Download or generated files | Removal |
+|---|---|---|
+| `chirp-server model fetch` | Pinned MLX v2 weights in `~/Library/Application Support/Chirp/models/parakeet-mlx/` | Delete that directory; Koi's existing model is untouched |
+| `chirp-server model fetch --engine onnx` | Pinned ONNX v2 int8 weights in `~/Library/Application Support/Chirp/models/parakeet-onnx/` | Delete that directory |
+| `scripts/generate_fixtures.py` | Synthetic WAVs + reference manifest in `~/Library/Caches/Chirp/fixtures/` | Delete that directory |
+| `uv run --extra onnx python scripts/bench.py --engine onnx` | No download; requires explicit ONNX extra install and already local weights | Remove explicitly fetched Chirp weights if no longer needed |
+| `scripts/bench.py --with-fluidaudio` | Stable FluidAudio 0.17.7 source/build in `~/Library/Caches/Chirp/FluidAudio-0.17.7/`, CoreML v2 models in `~/Library/Caches/Chirp/FluidModels/`; compiler/SwiftPM may populate their normal caches | Delete these two Chirp cache subdirectories; optional Swift build caches are shared system tooling caches |
+| `scripts/bench.py --with-apple` | Builds a small CLI in `~/Library/Caches/Chirp/apple-bench`; **does not download assets** | Delete the CLI; speech models are owned/managed by macOS |
+
+For candidate-only runs, `uv run python scripts/run_swift_benches.py --with-fluidaudio --with-apple`
+uses the same explicit gates. Without either flag it skips everything. `scripts/prepare_fluid.sh`
+is an explicit source-download/build command, and never acquires recognition weights by itself.
+Both candidates print metrics only; recognized output stays in process memory.
+
+The initial M1 Apple probe explicitly downloaded the en-US `SpeechTranscriber` model through
+`AssetInventory` (system-managed asset storage, outside the Chirp cache). It did not call any
+permission-request API, open a microphone, install software/services or change Tailscale.
+The benchmark no longer contains an asset-install path. Removing OS-managed speech assets is
+an operator action through macOS asset/storage controls; do not delete system asset files by hand.
+`~/Library/Caches/Chirp/` can be removed entirely to clear generated fixtures, candidate source/builds,
+FluidAudio models and metrics. It contains no user recordings or user transcripts.

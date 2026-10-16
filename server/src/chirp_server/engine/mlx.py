@@ -31,6 +31,14 @@ class ParakeetMLX:
             self.model.set_dtype(self.dtype)
         mx.eval(self.model.parameters())
 
+    def warm(self):
+        from parakeet_mlx.audio import get_logmel
+
+        # Bypass the input silence guard to actually compile/run the model at startup.
+        audio = self.mx.zeros(8000, dtype=self.mx.float32)
+        mel = get_logmel(audio, self.model.preprocessor_config).astype(self.dtype)
+        self.model.generate(mel)
+
     def decode(self, pcm):
         from parakeet_mlx.audio import get_logmel
 
@@ -94,6 +102,10 @@ class RollingStream:
         self.committed = ""
         self.preview = ""
         self.segments = 0
+
+    def buffer(self, pcm):
+        """Append stop-time audio without spending inference on a discarded partial."""
+        self.parts.append(pcm)
 
     @staticmethod
     def pause_cut(audio):

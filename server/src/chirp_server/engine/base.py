@@ -41,7 +41,11 @@ class EngineWorker:
 
     async def start(self):
         await self.call(self.engine.load)
-        await self.call(self.engine.transcribe, np.zeros(8000, dtype=np.float32))
+        warm = getattr(self.engine, "warm", None)
+        if warm:
+            await self.call(warm)
+        else:
+            await self.call(self.engine.transcribe, np.zeros(8000, dtype=np.float32))
         self.ready = True
 
     async def close(self):

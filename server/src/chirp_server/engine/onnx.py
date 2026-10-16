@@ -34,6 +34,11 @@ class ParakeetONNX:
             providers=["CPUExecutionProvider"],
         )
 
+    def warm(self):
+        import numpy as np
+
+        self.model.recognize(np.zeros(8000, dtype=np.float32), sample_rate=16000)
+
     def transcribe(self, pcm):
         from chirp_server.audio import silent
 

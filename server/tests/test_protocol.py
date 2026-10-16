@@ -210,6 +210,7 @@ def test_slow_engine_coalesces_frames(settings):
     from chirp_server.engine.fake import FakeStream
 
     entered, release = threading.Event(), threading.Event()
+    coalesced = threading.Event()
     sizes = []
 
     class SlowStream(FakeStream):
@@ -218,6 +219,8 @@ def test_slow_engine_coalesces_frames(settings):
             if len(sizes) == 1:
                 entered.set()
                 assert release.wait(timeout=5)
+            else:
+                coalesced.set()
             return super().feed(pcm)
 
     class SlowEngine(FakeEngine):
@@ -236,9 +239,100 @@ def test_slow_engine_coalesces_frames(settings):
                 ws.send_bytes(PCM[:640])
             # HTTP health traverses the same event loop and confirms it remains responsive.
             assert client.get("/v1/health", headers=HEADERS).json()["ready"]
-            ws.send_json({"type": "stop"})
             release.set()
+            assert coalesced.wait(timeout=5)
+            ws.send_json({"type": "stop"})
             assert final(ws)["type"] == "final"
     assert sum(sizes) == 3200 + 50 * 320
     assert len(sizes) < 10
     assert max(sizes) > 3200
+
+
+def test_root_path_proxy(settings):
+    with TestClient(create_app(settings, FakeEngine(), TOKEN), root_path="/chirp") as client:
+        assert client.get("/v1/health", headers=HEADERS).json()["ready"]
+
+
+def test_transcribe_limits(client):
+    from chirp_server.audio import wav_bytes
+
+    response = client.post(
+        "/v1/transcribe", headers=HEADERS, content=wav_bytes(b"\0" * (MAX_PCM + 2))
+    )
+    assert response.status_code == 413
+    assert response.json()["code"] == "too_long"
+
+
+def test_missing_model_fails_with_explicit_fetch_hint(tmp_path):
+    from chirp_server.engine.models import discover
+
+    with pytest.raises(ValueError, match="chirp-server model fetch"):
+        discover(tmp_path / "missing")
+
+
+def test_stop_discards_pending_partial_inference(settings):
+    import threading
+
+    from chirp_server.engine.fake import FakeStream
+
+    entered, release = threading.Event(), threading.Event()
+    feeds, buffered = [], []
+
+    class BlockedStream(FakeStream):
+        def feed(self, pcm):
+            feeds.append(len(pcm))
+            entered.set()
+            assert release.wait(5)
+            return super().feed(pcm)
+
+        def buffer(self, pcm):
+            buffered.append(len(pcm))
+            return super().buffer(pcm)
+
+    class BlockedEngine(FakeEngine):
+        def open_stream(self):
+            return BlockedStream(self)
+
+    settings.idle_seconds = 10
+    with TestClient(create_app(settings, BlockedEngine(), TOKEN)) as client:
+        with client.websocket_connect("/v1/stream", headers=HEADERS) as ws:
+            ws.send_json(START)
+            ws.receive_json()
+            ws.send_bytes(PCM[:6400])
+            assert entered.wait(5)
+            ws.send_bytes(PCM)
+            ws.send_json({"type": "stop"})
+            # Barrier: the event loop has received stop while engine inference remains blocked.
+            assert client.get("/v1/health", headers=HEADERS).json()["ready"]
+            release.set()
+            assert final(ws)["type"] == "final"
+    assert feeds == [3200]
+    assert buffered == [8000]
+
+
+def test_stable_prefix_update_emits_during_pause(settings):
+    from chirp_server.engine.base import Partial
+    from chirp_server.engine.fake import FakeStream
+
+    class StableStream(FakeStream):
+        count = 0
+
+        def feed(self, pcm):
+            self.count += 1
+            return Partial(self.engine.text, self.engine.text if self.count > 1 else "")
+
+    class StableEngine(FakeEngine):
+        def open_stream(self):
+            return StableStream(self)
+
+    with TestClient(create_app(settings, StableEngine(), TOKEN)) as client:
+        with client.websocket_connect("/v1/stream", headers=HEADERS) as ws:
+            ws.send_json(START)
+            ws.receive_json()
+            ws.send_bytes(PCM)
+            assert ws.receive_json()["stable"] == ""
+            ws.send_bytes(b"\0" * 6400)
+            frozen = ws.receive_json()
+            assert frozen["stable"] == frozen["text"]
+            ws.send_json({"type": "stop"})
+            assert final(ws)["raw"].startswith(frozen["stable"])

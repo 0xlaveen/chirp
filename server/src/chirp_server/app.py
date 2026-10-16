@@ -99,12 +99,12 @@ class Utterance:
             self.changed.set()
 
     async def partials(self):
-        previous = ""
+        previous = previous_stable = ""
         try:
             while True:
                 await self.changed.wait()
                 self.changed.clear()
-                if self.aborted:
+                if self.aborted or self.stopping:
                     return
                 end = min(len(self.pcm), self.offset + 64000)
                 chunk = samples(bytes(self.pcm[self.offset : end]))
@@ -114,14 +114,18 @@ class Utterance:
                     self.peak, self.rms = max(self.peak, peak), max(self.rms, rms)
                     # Still feed silence to preserve the model's time/context alignment.
                     partial = await self.worker.call(self.stream.feed, chunk)
+                    stable = partial.stable if partial else ""
+                    if self.correction and self.settings.correction.enabled:
+                        stable = ""
                     if (
                         not self.aborted
+                        and not self.stopping
                         and partial
                         and partial.text
-                        and partial.text != previous
-                        and not silent(chunk)
+                        and (partial.text != previous or stable != previous_stable)
+                        and (not silent(chunk) or stable)
                     ):
-                        previous = partial.text
+                        previous, previous_stable = partial.text, stable
                         self.seq += 1
                         elapsed = (time.perf_counter() - self.started) * 1000
                         if self.first_partial is None:
@@ -131,9 +135,7 @@ class Utterance:
                                 "type": "partial",
                                 "seq": self.seq,
                                 "text": partial.text,
-                                "stable": partial.stable
-                                if not (self.correction and self.settings.correction.enabled)
-                                else "",
+                                "stable": stable,
                             }
                         )
                 if self.stopping and self.offset == len(self.pcm):
@@ -158,6 +160,11 @@ class Utterance:
             raise RuntimeError("engine")
         if not self.pcm:
             raise AudioError()
+        if self.offset < len(self.pcm):
+            pending = samples(bytes(self.pcm[self.offset :]))
+            buffer = getattr(self.stream, "buffer", self.stream.feed)
+            await self.worker.call(buffer, pending)
+            self.offset = len(self.pcm)
         raw = await self.worker.call(self.stream.finish)
         self.stream = None
         self.release()

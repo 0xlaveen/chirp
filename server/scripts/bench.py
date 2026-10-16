@@ -39,6 +39,10 @@ async def measure_stream(worker, session, audio, fast, normalize, reference):
         while True:
             await changed.wait()
             changed.clear()
+            if produced:
+                if cursor < len(audio):
+                    await worker.call(getattr(session, "buffer", session.feed), audio[cursor:])
+                return
             end = min(available, cursor + 32000)
             if end > cursor:
                 before = time.perf_counter()

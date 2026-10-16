@@ -32,6 +32,9 @@ class FakeStream:
         self.engine.threads.append(threading.get_ident())
         return Partial(self.engine.text)
 
+    def buffer(self, pcm):
+        self.engine.threads.append(threading.get_ident())
+
     def finish(self):
         return self.engine.transcribe(None)
 

@@ -1,0 +1,44 @@
+[
+  {
+    "audio_seconds": 5.8499375,
+    "characters": 104,
+    "decode_ms": 142.9539918899536,
+    "engine": "Apple SpeechAnalyzer",
+    "first_result_ms": 31.312942504882812,
+    "mode": "file (not real-time streaming)",
+    "peak_rss_mib": 18.421875,
+    "prepare_ms": 107.36608505249023,
+    "result_count": 27,
+    "rtfx": 40.92181982930073,
+    "status": "ok",
+    "wer": 0.058823529411764705
+  },
+  {
+    "audio_seconds": 15.4585625,
+    "characters": 270,
+    "decode_ms": 247.53105640411377,
+    "engine": "Apple SpeechAnalyzer",
+    "first_result_ms": 14.870047569274902,
+    "mode": "file (not real-time streaming)",
+    "peak_rss_mib": 18.921875,
+    "prepare_ms": 56.73694610595703,
+    "result_count": 72,
+    "rtfx": 62.451002005835946,
+    "status": "ok",
+    "wer": 0.022222222222222223
+  },
+  {
+    "audio_seconds": 60.4536875,
+    "characters": 1066,
+    "decode_ms": 801.3460636138916,
+    "engine": "Apple SpeechAnalyzer",
+    "first_result_ms": 14.947056770324707,
+    "mode": "file (not real-time streaming)",
+    "peak_rss_mib": 20.59375,
+    "prepare_ms": 33.28597545623779,
+    "result_count": 271,
+    "rtfx": 75.44017528128532,
+    "status": "ok",
+    "wer": 0.023529411764705882
+  }
+]

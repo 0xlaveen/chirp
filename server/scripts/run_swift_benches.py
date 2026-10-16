@@ -26,7 +26,8 @@ if args.with_fluidaudio:
     if 'name: "chirp-fluid-bench"' not in manifest:
         manifest = manifest.replace(
             ".library(",
-            '.executable(name: "chirp-fluid-bench", targets: ["ChirpFluidBench"]),\n        .library(',
+            '.executable(name: "chirp-fluid-bench", targets: ["ChirpFluidBench"]),\n'
+            "        .library(",
             1,
         )
         manifest = manifest.replace(
