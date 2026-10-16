@@ -1,0 +1,152 @@
+# Chirp architecture (v1)
+
+Status: agreed direction for the v1 build. Every performance number below is either a measured result or marked **TBM** (to be measured by the milestone that owns it). We do not claim budgets we have not measured.
+
+## 1. Shape
+
+```
+ ┌──────────── Mac mini (mainframe, M5 Pro, 64 GB) ─────────────┐
+ │                                                              │
+ │  ChirpMac.app (Swift, menu bar)   chirp-server (Python, uv)  │
+ │  hotkey → mic → WS ───────────►  127.0.0.1:7821             │
+ │  HUD shows partials  ◄───────────  partial / final           │
+ │  insert: AX → ⌘V paste → copy      ├─ engine thread (MLX)    │
+ │                                    ├─ optional correction ───┼──► OpenAI-compatible LLM
+ │                                    └─ debug retention (opt-in)│    (local LM Studio or remote,
+ │                                                              │     off by default, final only)
+ │  tailscale serve  https://mainframe.<tailnet>.ts.net/chirp ──┤
+ └──────────────────────────────▲───────────────────────────────┘
+                                │ wss over the tailnet (WireGuard)
+ ┌─────────────── Galaxy Z Fold 8 ──────┴────────────────────────┐
+ │  Chirp IME (Kotlin InputMethodService)                        │
+ │  mic key → AudioRecord 16 kHz → WS → partial = composing text │
+ │  final → commitText; then back to the previous keyboard       │
+ └───────────────────────────────────────────────────────────────┘
+```
+
+There is one speech server, the Mac, and two thin clients. All recognition and correction run on the Mac. The phone only captures audio, streams it and inserts text.
+
+## 2. Reuse decisions (and why)
+
+Koi already ships a proven, privacy-reviewed local dictation stack on this exact machine. Its source is the installed `koi` package (`site-packages/koi/voice/*`, `ui/routes_voice.py`, `tailscale*.py`) and the docs at `nansen-ai/koi:docs/voice.md`. Chirp adapts its patterns and code rather than importing Koi as a dependency, because Koi is a large orchestration app.
+
+| Concern | Options considered | Decision | Evidence / rationale |
+|---|---|---|---|
+| ASR engine | parakeet-mlx (MLX/GPU), onnx-asr Parakeet int8 (CPU), FluidAudio (Swift CoreML/ANE Parakeet), WhisperKit / whisper.cpp, Apple SpeechAnalyzer | **parakeet-mlx 0.5.x, Parakeet TDT 0.6B v2 (English) as the default**, behind an `Engine` interface. onnx-asr is the fallback. FluidAudio and SpeechAnalyzer are bench candidates in M1. | Koi runs parakeet-mlx 0.5.2 / mlx 0.32.3 on this machine today, and its weights are cached at `~/.koi/voice-models/parakeet-mlx` (2.3 GB). Parakeet TDT v2 has a leading English WER on the Open ASR leaderboard, and v3 trades English accuracy for multilingual support. M1 must publish `docs/bench.md` with RTFx, first-partial latency, final latency after stop and memory for each engine on this Mac, using the same WAV set. The default flips only if a candidate wins by measurement. |
+| Streaming | Re-decode the growing buffer (Koi's interim uploads), parakeet-mlx `transcribe_stream` (incremental, cached context), a VAD-chunk + stitch approach (Koi `voice/stitch.py`) | **WebSocket PCM streaming. The server emits partials from the parakeet-mlx streaming context, falling back to re-decoding a rolling window.** The final is always a full-utterance decode (≤ 30 s) or stitched chunks. | This gives the Koi experience (live text while speaking) without re-uploading audio. M1 measures both strategies and records the decision in `bench.md`. |
+| Server language/framework | Python + Starlette/uvicorn, Swift (Vapor/Hummingbird + FluidAudio), Rust | **Python 3.13 + Starlette + uvicorn**, managed by uv | The engine is Python/MLX. Inference is GPU-bound, so the web layer is not the bottleneck. This matches Koi's proven code, which keeps the least code to own. |
+| MLX threading | — | **Load the model and run every decode on one dedicated thread.** The asyncio loop hands work over a queue. | Koi PR #3595: MLX streams are thread-local, and decoding on another thread raises "There is no Stream(cpu, 1) in current thread". |
+| Mac client | Fork Handy (Tauri/Rust), VoiceInk (Swift, GPL-3), or a minimal Swift menu-bar app | **A minimal native Swift app (SwiftPM, AppKit, AVAudioEngine)**, with KeyboardShortcuts (sindresorhus, MIT) for the hotkey | System APIs do the heavy lifting: AX insertion, the pasteboard and CGEvent. A fork would carry its own engine, UI and settings, all of which we would replace. GPL code is avoided. It builds with Command Line Tools only (no Xcode). |
+| Android client | Fork FUTO Keyboard / HeliBoard, Whisper To Input or Dictate, or a minimal IME | **A minimal Kotlin voice-only IME** with OkHttp WebSocket, AudioRecord and Android Keystore. It is used alongside Samsung Keyboard. | A voice-only IME is small: one view and one service. Switching back to the previous IME keeps Samsung Keyboard for typing. Full-keyboard forks are large and outside v1. |
+| Network | Bind to the 100.x address, or `tailscale serve` (tailnet-only HTTPS, identity headers) | **Bind to 127.0.0.1 only, published with `tailscale serve --set-path /chirp`** (never Funnel). Plus a bearer token. | Koi already uses `tailscale serve` on this host (`/koi`, `/proxy`). That gives TLS from the tailnet cert, WebSocket support and `Tailscale-User-Login` headers for free. |
+| Correction | — | Koi's `voice/cleanup.py` contract: an OpenAI-compatible `base_url`/`model`/`prompt`, a timeout (default 8 s), final transcript only, falling back to raw text on timeout, error or answer-shaped output | This is proven in Koi. The client receives both `raw` and `text`, so it can undo the correction. |
+
+## 3. Wire protocol (v1, frozen for parallel work)
+
+All endpoints sit under a base URL: either `http://127.0.0.1:7821` (Mac local) or `https://mainframe.tail676ff2.ts.net/chirp` (tailnet). The server honours `X-Forwarded-Prefix` or is started with `--root-path /chirp`.
+
+Every request carries `Authorization: Bearer <token>`. WebSocket clients that cannot set headers may send the token as the first text frame `{"type":"auth","token":"…"}` instead. The token is never put in a URL.
+
+- `GET /v1/health` → `{"ok":true,"engine":"parakeet-mlx:tdt-0.6b-v2","ready":true,"debug_retention":false,"correction":"off|available"}`. The unauthenticated variant returns only `{"ok":true}`.
+- `POST /v1/transcribe`: the body is 16 kHz mono PCM16 WAV, capped at 120 s. It returns the same object as a `final` message. Used for tests and as a fallback.
+- `WS /v1/stream`:
+  - client → `{"type":"start","sample_rate":16000,"encoding":"pcm_s16le","client":"mac|android","correction":false}`
+  - client → binary frames: raw PCM16LE mono at 16 kHz, 20–100 ms per frame
+  - client → `{"type":"stop"}` (finalize) or `{"type":"cancel"}` (discard, no final)
+  - server → `{"type":"ready","session":"<random id>","engine":"…","debug_retention":bool}`
+  - server → `{"type":"partial","seq":n,"text":"…","stable":"…"}`. `stable` is the prefix that will not change, which clients may commit early.
+  - server → `{"type":"final","text":"…","raw":"…","corrected":bool,"correction_error":null|"timeout|http|rejected","timings_ms":{"audio":…,"first_partial":…,"finalize":…,"correction":…}}`
+  - server → `{"type":"error","code":"auth|busy|too_long|bad_audio|engine","message":"safe text"}`
+  - One utterance per `start`/`final` pair. A socket may carry several utterances in turn, so clients keep it open while active. The server closes idle sockets after 60 s.
+- Limits: 120 s per utterance, and frames ≥ 1 MB are rejected. Requests queue for one engine.
+
+Version bumps add fields only. A breaking change becomes `/v2`.
+
+## 4. Privacy and retention
+
+- **Default: nothing is retained.** Audio and transcripts live only in memory for the length of the utterance.
+  - They are never written to disk, logs, crash reports or temp files.
+  - Logs contain only session ids, durations, byte counts, peak/RMS levels, timings and error codes.
+  - A test asserts that a full session writes no files, and that the log contains no transcript text.
+- **Debug retention is opt-in, local only and loudly visible.**
+  - Enable it with `chirp-server --debug-retain` or `[debug] retain = true` in `~/.config/chirp/server.toml`.
+  - It writes `<session>.wav` plus a `<session>.json` transcript/timings file to `~/Library/Application Support/Chirp/debug/` (mode 0700/0600).
+  - Files are purged after `retain_days` (default 3), on start and hourly. `chirp-server debug purge` deletes them all now.
+  - `ready` and `health` report `debug_retention: true`. Both clients then show a persistent red "DEBUG: recording kept" indicator, and the server logs a warning banner at start.
+- **Correction is off by default.** When it is enabled with a non-loopback `base_url`, health reports `correction_leaves_machine: true`, and clients label the toggle "sends text to <host>". Audio never leaves the Mac. Only the final text does, and only when correction is on.
+- **Secrets:**
+  - Server token: `~/.config/chirp/token`, 0600, generated on first run. `chirp-server pair` prints it as a `chirp://pair?url=…&token=…` QR code and string, shown locally in the terminal only.
+  - LLM API key: Keychain or an env var, never in the repo.
+  - Android: the token is encrypted with an Android Keystore AES key.
+  - Mac client: it reads the token file.
+
+## 5. Permissions and platform constraints
+
+**Mac:**
+- Hardware: the Mac mini has **no built-in mic**. The USB BOYA CM40 is the default input. The client follows the system default input and shows the device name in the menu.
+- TCC permissions:
+  - Microphone (`NSMicrophoneUsageDescription`)
+  - Accessibility, for AX insertion and posting ⌘V
+  - The hotkey uses a Carbon hot key through KeyboardShortcuts, so it needs no Input Monitoring.
+- Signing: Command Line Tools only, so no Xcode. `mac/scripts/bundle.sh` builds with SwiftPM, assembles `Chirp.app` (`LSUIElement`) and signs it with a **stable local self-signed identity** ("Chirp Local Dev", created by `mac/scripts/make-cert.sh`). TCC grants then survive rebuilds; an ad-hoc signature would lose them each time. If the certificate is missing, it falls back to ad-hoc signing.
+- Insertion order:
+  1. AX: set `kAXSelectedTextAttribute` on the focused element and verify that the value changed.
+  2. Paste: save the pasteboard, write the text plus the `org.nspasteboard.TransientType` marker, post ⌘V, restore the pasteboard after about 250 ms.
+  3. Copy only, with a HUD toast "Copied — press ⌘V".
+- Secure input fields: when `IsSecureEventInputEnabled()` is true, dictation refuses to insert anything.
+
+**Android (Galaxy Z Fold 8, One UI / Android 16+):**
+- Permissions: `RECORD_AUDIO` and `INTERNET`. An IME cannot show a permission dialog, so the companion `SetupActivity` requests the mic and walks the user through *Settings → General management → Keyboard list → Chirp* and enabling the IME.
+- The mic is only opened while the IME window is visible and the user has started dictation. It is released on stop, `onFinishInputView` and `onWindowHidden`. There is no foreground service and no wake lock.
+- The user switches to Chirp from the keyboard picker (the navigation-bar keyboard icon) or through the `voice` subtype. The Chirp view offers "⌨ back" (`switchToPreviousInputMethod`).
+- Fold specifics: the cover and inner screens differ in width, and configuration changes must not drop an active utterance. The layout is a single large mic button with a partial-text strip, so it works at both widths.
+- The phone needs the Tailscale Android app connected. Chirp uses `https://mainframe.tail676ff2.ts.net/chirp`, which resolves through MagicDNS on the tailnet.
+
+## 6. Interaction model (Koi parity)
+
+- **Tap to toggle, hold to talk.** A press shorter than 300 ms starts and stops; a longer press is push-to-talk until release. Esc on Mac, or ✕ on Android, cancels and inserts nothing.
+- **Live text while speaking:**
+  - Mac: a non-activating floating HUD near the cursor or top-centre shows the partial text and a level meter.
+  - Android: partials are shown as **composing text** (underlined) in the target field, via `setComposingText`. The final replaces them with `commitText`.
+- Short start and stop cues, off by default.
+- Silence guard: if peak/RMS stays at zero for 1.5 s, the client shows "No microphone signal" and sends nothing, the same as Koi.
+- Undo: after a corrected final, the Mac HUD offers a 5 s "Use raw". Android shows a chip on the strip.
+
+## 7. Measurement plan
+
+The numbers live in `docs/bench.md` and are regenerated by scripts. Nothing is claimed without them.
+
+- **Server engine bench (`server/scripts/bench.py`):**
+  - Input: a fixed set of `say`-generated and recorded English WAVs (5 s, 15 s, 60 s), plus LibriSpeech test-clean samples if they are downloaded locally.
+  - Per engine: load time, warm RTFx, WER vs reference, peak RSS.
+  - Streaming: time from audio-in to first partial, partial cadence, and time from stop to final.
+- **End-to-end latency:**
+  - Mac: `chirp-mac --selftest` plays a WAV through the protocol and logs the time from stop to inserted text.
+  - Android: the IME logs the time from stop to `commitText`, plus round-trip time. Both are shown in debug overlay only, never with the text.
+- **Battery (Fold 8):**
+  1. `adb shell dumpsys batterystats --reset`.
+  2. A scripted session of 10 utterances of 10 s each, over Wi-Fi and then over LTE.
+  3. `adb shell dumpsys batterystats --charged <pkg>` and a Perfetto trace with power rails where Samsung exposes them.
+  4. Report mAh per minute of dictation, and the idle drain with the keyboard shown but not recording, which should be ~0 because the mic and socket are closed.
+  - If radio time dominates, add Opus framing (`encoding:"opus"`, MediaCodec) as v1.1. PCM at 16 kHz is 256 kbps, which is acceptable on the tailnet for v1.
+
+## 8. Model acquisition and tests
+
+- The default model is reused from `~/.koi/voice-models/parakeet-mlx`, with `config.json` checked for Parakeet TDT v2. Otherwise `chirp-server model fetch` downloads `mlx-community/parakeet-tdt-0.6b-v2` into `~/Library/Application Support/Chirp/models/` with a pinned revision.
+- Unit tests use a fake engine. Integration tests (marked `@pytest.mark.model`) run the real model on `say`-generated WAVs and assert on keywords, not exact text.
+
+## 9. Repo layout
+
+```
+server/   Python package chirp_server (uv project), tests, scripts/bench.py
+mac/      SwiftPM package ChirpMac + scripts/bundle.sh, make-cert.sh
+android/  Gradle project (app = IME + SetupActivity), Gradle wrapper
+docs/     architecture.md, protocol (section 3), bench.md, milestones/, TESTING.md
+```
+
+## 10. Branching
+
+- `main` holds only operator-approved merges.
+- `chirp/integration` is the orchestrator's integration branch.
+- Each worker works on `chirp/<track>` stacked on `chirp/integration`.
+- There is no remote, so no pushes and no PRs. The orchestrator reviews `git diff chirp/integration...chirp/<track>` and merges into integration. Merging into `main` waits for the operator's approval.

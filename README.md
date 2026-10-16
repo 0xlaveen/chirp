@@ -13,3 +13,8 @@ Local-first, English voice dictation for macOS and Android.
 ## Development
 
 The orchestrator coordinates feature branches/workers and integration. Keep the local repository as the integration point; use focused branches and tests. Never merge changes into `main` without the operator's explicit approval.
+
+## Docs
+
+- [Architecture](docs/architecture.md) — components, protocol, privacy, permissions, measurement plan, reuse decisions.
+- [Milestones](docs/milestones/README.md) — M1 server, M2 macOS client, M3 Android IME, M4 integration.
