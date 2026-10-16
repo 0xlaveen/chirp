@@ -10,3 +10,6 @@ local.properties
 *.jks
 /debug-retained/
 .koi/
+.pytest_cache/
+.ruff_cache/
+server/fixtures/

@@ -1,0 +1,185 @@
+import asyncio
+import json
+
+import pytest
+from conftest import HEADERS, PCM, START, TOKEN
+from starlette.testclient import TestClient
+from starlette.websockets import WebSocketDisconnect
+
+from chirp_server.app import authorized, create_app
+from chirp_server.audio import MAX_FRAME, MAX_PCM
+from chirp_server.engine import FakeEngine
+
+
+def final(ws):
+    while True:
+        message = ws.receive_json()
+        if message["type"] != "partial":
+            return message
+
+
+def test_health_redaction(client):
+    for headers in ({}, {"Authorization": "Bearer wrong"}, {"Authorization": "Basic bad"}):
+        assert client.get("/v1/health", headers=headers).json() == {"ok": True}
+    health = client.get("/v1/health", headers=HEADERS).json()
+    assert health == {
+        "ok": True,
+        "engine": "fake",
+        "ready": True,
+        "debug_retention": False,
+        "correction": "off",
+        "correction_leaves_machine": False,
+        "correction_host": None,
+    }
+
+
+@pytest.mark.parametrize("headers", [{}, {"Authorization": "Bearer wrong"}])
+def test_post_auth_before_body(client, headers):
+    response = client.post("/v1/transcribe", headers=headers, content=b"not audio")
+    assert response.status_code == 401
+    assert response.json()["code"] == "auth"
+
+
+def test_post(client, wav, engine):
+    response = client.post("/v1/transcribe", headers=HEADERS, content=wav)
+    assert response.status_code == 200
+    assert response.json()["raw"] == engine.text
+    assert response.json()["timings_ms"]["audio"] == 500
+    assert len(set(engine.threads)) == 1
+
+
+@pytest.mark.parametrize(
+    "headers,first",
+    [
+        ({"Authorization": "Bearer wrong"}, None),
+        ({}, {"type": "auth", "token": "wrong"}),
+        ({}, START),
+        ({}, None),
+        ({}, b"audio-before-auth"),
+        ({}, {"type": "auth", "token": 123}),
+    ],
+)
+def test_ws_auth(client, headers, first):
+    with client.websocket_connect("/v1/stream", headers=headers) as ws:
+        if isinstance(first, bytes):
+            ws.send_bytes(first)
+        elif first:
+            ws.send_json(first)
+        assert ws.receive_json()["code"] == "auth"
+        with pytest.raises(WebSocketDisconnect) as exc:
+            ws.receive_json()
+        assert exc.value.code == 4401
+
+
+@pytest.mark.parametrize("header", [True, False])
+def test_stream_partials_final_reuse(client, engine, header):
+    with client.websocket_connect("/v1/stream", headers=HEADERS if header else {}) as ws:
+        if not header:
+            ws.send_json({"type": "auth", "token": TOKEN})
+        for _ in range(2):
+            ws.send_json(START)
+            assert ws.receive_json()["type"] == "ready"
+            ws.send_bytes(PCM)
+            partial = ws.receive_json()
+            assert partial == {"type": "partial", "seq": 1, "text": engine.text, "stable": ""}
+            ws.send_json({"type": "stop"})
+            result = final(ws)
+            assert result["raw"] == engine.text
+            assert result["corrected"] is False
+            assert result["correction_error"] is None
+            assert result["timings_ms"]["first_partial"] is not None
+    assert len(set(engine.threads)) == 1
+
+
+def test_cancel_discard_and_reuse(client):
+    with client.websocket_connect("/v1/stream", headers=HEADERS) as ws:
+        ws.send_json(START)
+        ws.receive_json()
+        ws.send_bytes(PCM[:1600])
+        ws.send_json({"type": "cancel"})
+        ws.send_json(START)
+        while ws.receive_json()["type"] == "partial":
+            pass
+        ws.send_bytes(PCM)
+        ws.send_json({"type": "stop"})
+        assert final(ws)["type"] == "final"
+
+
+@pytest.mark.parametrize("frame", [b"x", b"x" * MAX_FRAME])
+def test_frame_limits(client, frame):
+    with client.websocket_connect("/v1/stream", headers=HEADERS) as ws:
+        ws.send_json(START)
+        ws.receive_json()
+        ws.send_bytes(frame)
+        assert final(ws)["code"] == "bad_audio"
+
+
+def test_total_limit(client):
+    with client.websocket_connect("/v1/stream", headers=HEADERS) as ws:
+        ws.send_json(START)
+        ws.receive_json()
+        for _ in range(MAX_PCM // 64000 + 1):
+            ws.send_bytes(b"\0" * 64000)
+        assert final(ws)["code"] == "too_long"
+
+
+@pytest.mark.parametrize("value", ["[]", "{", json.dumps({"type": "stop"})])
+def test_bad_controls(client, value):
+    with client.websocket_connect("/v1/stream", headers=HEADERS) as ws:
+        ws.send_text(value)
+        assert final(ws)["code"] == "bad_audio"
+
+
+def test_audio_before_start(client):
+    with client.websocket_connect("/v1/stream", headers=HEADERS) as ws:
+        ws.send_bytes(PCM)
+        assert ws.receive_json()["code"] == "bad_audio"
+
+
+def test_idle_close(client):
+    with client.websocket_connect("/v1/stream", headers=HEADERS) as ws:
+        with pytest.raises(WebSocketDisconnect):
+            ws.receive_json()
+
+
+def test_busy_and_disconnect_release(client):
+    with client.websocket_connect("/v1/stream", headers=HEADERS) as first:
+        first.send_json(START)
+        first.receive_json()
+        with client.websocket_connect("/v1/stream", headers=HEADERS) as second:
+            second.send_json(START)
+            assert second.receive_json()["code"] == "busy"
+    with client.websocket_connect("/v1/stream", headers=HEADERS) as third:
+        third.send_json(START)
+        assert third.receive_json()["type"] == "ready"
+
+
+def test_engine_failure_sanitized(settings):
+    class Failed(FakeEngine):
+        def open_stream(self):
+            raise ValueError("sensitive internal text")
+
+    with TestClient(create_app(settings, Failed(), TOKEN)) as client:
+        with client.websocket_connect("/v1/stream", headers=HEADERS) as ws:
+            ws.send_json(START)
+            result = ws.receive_json()
+            assert result["code"] == "engine"
+            assert "sensitive" not in str(result)
+
+
+def test_unicode_auth():
+    assert not authorized(TOKEN, "😀")
+    assert not authorized(TOKEN, None)
+
+
+async def test_worker_single_thread_and_queue():
+    from chirp_server.engine import EngineWorker
+
+    engine = FakeEngine()
+    worker = EngineWorker(engine)
+    await worker.start()
+    try:
+        await asyncio.gather(*(worker.call(engine.transcribe, None) for _ in range(10)))
+        assert len(set(engine.threads)) == 1
+    finally:
+        await worker.close()

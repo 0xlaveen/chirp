@@ -1,0 +1,38 @@
+[project]
+name = "chirp-server"
+version = "0.1.0"
+description = "Private local streaming dictation server"
+requires-python = ">=3.13,<3.14"
+dependencies = [
+  "starlette>=1.8.0", "uvicorn[standard]>=0.54.0", "parakeet-mlx>=0.5.3",
+  "mlx>=0.32.4", "numpy>=2.5.4", "httpx>=0.28.1", "segno>=1.6.6",
+]
+
+[project.optional-dependencies]
+onnx = ["onnx-asr>=0.12.0", "onnxruntime>=1.31.0"]
+
+[dependency-groups]
+dev = ["pytest>=9.1.1", "pytest-asyncio>=1.4.0", "ruff>=0.17.1", "websockets>=17.2", "jiwer>=4.0.0"]
+
+[project.scripts]
+chirp-server = "chirp_server.cli:main"
+
+[build-system]
+requires = ["hatchling>=1.32.4"]
+build-backend = "hatchling.build"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+addopts = "-m 'not model'"
+markers = ["model: real cached model integration tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "ASYNC"]
+
+[tool.uv]
+# This milestone explicitly measures the latest stable stack as of its implementation date.
+exclude-newer = "2026-10-17T23:59:59Z"

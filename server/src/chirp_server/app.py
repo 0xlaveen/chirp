@@ -1,0 +1,395 @@
+"""Frozen v1 HTTP/WS protocol. Logs contain metadata and safe error codes only."""
+
+import asyncio
+import contextlib
+import json
+import logging
+import secrets
+import time
+from contextlib import asynccontextmanager
+from urllib.parse import urlsplit
+from uuid import uuid4
+
+from starlette.applications import Starlette
+from starlette.requests import Request
+from starlette.responses import JSONResponse
+from starlette.routing import Route, WebSocketRoute
+from starlette.websockets import WebSocket, WebSocketDisconnect
+
+from .audio import MAX_FRAME, MAX_PCM, AudioError, decode_wav, levels, samples, silent
+from .config import Settings, load_token
+from .correction import CorrectionResult, Corrector
+from .engine import EngineWorker
+from .retention import Retention
+
+log = logging.getLogger("chirp")
+MESSAGES = {
+    "auth": "Authentication required",
+    "busy": "Speech engine busy; retry shortly",
+    "too_long": "Maximum utterance is 120 seconds",
+    "bad_audio": "Invalid audio or control frame",
+    "engine": "Speech engine unavailable",
+}
+
+
+def error(code):
+    return {"type": "error", "code": code, "message": MESSAGES[code]}
+
+
+def authorized(token, value):
+    # Comparing UTF-8 bytes also handles malicious non-ASCII credentials safely.
+    return isinstance(value, str) and secrets.compare_digest(token.encode(), value.encode())
+
+
+def bearer(headers):
+    value = headers.get("authorization", "")
+    scheme, _, token = value.partition(" ")
+    return token if scheme.lower() == "bearer" else ""
+
+
+class Utterance:
+    def __init__(self, ws, worker, settings, corrector, retention):
+        self.ws, self.worker, self.settings = ws, worker, settings
+        self.corrector, self.retention = corrector, retention
+        self.session = uuid4().hex
+        self.pcm = bytearray()
+        self.started = time.perf_counter()
+        self.first_partial = None
+        self.stream = None
+        self.task = None
+        self.changed = asyncio.Event()
+        self.stopping = False
+        self.offset = 0
+        self.seq = 0
+        self.correction = False
+        self.leased = False
+        self.failure = False
+        self.aborted = False
+        self.peak = self.rms = 0.0
+
+    async def start(self, control):
+        if (
+            control.get("sample_rate") != 16000
+            or control.get("encoding") != "pcm_s16le"
+            or control.get("client") not in {"mac", "android"}
+            or not isinstance(control.get("correction", False), bool)
+        ):
+            raise AudioError()
+        await asyncio.wait_for(self.worker.lease.acquire(), self.settings.queue_timeout)
+        self.leased = True
+        self.correction = control.get("correction", False)
+        self.stream = await self.worker.call(self.worker.engine.open_stream)
+        await self.ws.send_json(
+            {
+                "type": "ready",
+                "session": self.session,
+                "engine": self.worker.engine.name,
+                "debug_retention": self.settings.debug_retain,
+            }
+        )
+        self.task = asyncio.create_task(self.partials())
+
+    def add(self, chunk):
+        if len(chunk) >= MAX_FRAME or not chunk or len(chunk) % 2:
+            raise AudioError()
+        if len(self.pcm) + len(chunk) > MAX_PCM:
+            raise AudioError("too_long")
+        self.pcm.extend(chunk)
+        if len(self.pcm) - self.offset >= 6400:  # 200 ms of new PCM16
+            self.changed.set()
+
+    async def partials(self):
+        previous = ""
+        try:
+            while True:
+                await self.changed.wait()
+                self.changed.clear()
+                if self.aborted:
+                    return
+                end = len(self.pcm)
+                chunk = samples(bytes(self.pcm[self.offset : end]))
+                self.offset = end
+                if chunk.size:
+                    peak, rms = levels(chunk)
+                    self.peak, self.rms = max(self.peak, peak), max(self.rms, rms)
+                    # Still feed silence to preserve the model's time/context alignment.
+                    partial = await self.worker.call(self.stream.feed, chunk)
+                    if (
+                        not self.aborted
+                        and partial
+                        and partial.text
+                        and partial.text != previous
+                        and not silent(chunk)
+                    ):
+                        previous = partial.text
+                        self.seq += 1
+                        elapsed = (time.perf_counter() - self.started) * 1000
+                        if self.first_partial is None:
+                            self.first_partial = elapsed
+                        await self.ws.send_json(
+                            {
+                                "type": "partial",
+                                "seq": self.seq,
+                                "text": partial.text,
+                                "stable": partial.stable,
+                            }
+                        )
+                if self.stopping and self.offset == len(self.pcm):
+                    return
+        except (WebSocketDisconnect, RuntimeError):
+            self.failure = True
+        except Exception:
+            # Never include library exception strings: they may contain user data.
+            self.failure = True
+            log.warning("code=engine session=%s", self.session)
+
+    async def finish(self):
+        started = time.perf_counter()
+        self.stopping = True
+        self.changed.set()
+        await self.task
+        if self.failure:
+            raise RuntimeError("engine")
+        if not self.pcm:
+            raise AudioError()
+        raw = await self.worker.call(self.stream.finish)
+        self.stream = None
+        self.release()
+        final = await make_final(
+            raw,
+            bytes(self.pcm),
+            self.first_partial,
+            started,
+            self.corrector,
+            self.correction,
+        )
+        self.retention.save(self.session, bytes(self.pcm), final)
+        log.info(
+            "session=%s bytes=%d peak=%.5f rms=%.5f finalize_ms=%.1f identity_present=%s",
+            self.session,
+            len(self.pcm),
+            self.peak,
+            self.rms,
+            final["timings_ms"]["finalize"],
+            "tailscale-user-login" in self.ws.headers,
+        )
+        return final
+
+    def release(self):
+        if self.leased:
+            self.worker.lease.release()
+            self.leased = False
+
+    async def close(self):
+        # Let an in-flight feed finish before disposing its thread-owned context.
+        self.aborted = True
+        self.stopping = True
+        self.changed.set()
+        if self.task:
+            with contextlib.suppress(Exception):
+                await self.task
+        try:
+            if self.stream:
+                await self.worker.call(self.stream.cancel)
+        finally:
+            self.stream = None
+            self.pcm.clear()
+            self.release()
+
+
+async def make_final(raw, pcm, first_partial, started, corrector, enabled):
+    finalized = (time.perf_counter() - started) * 1000
+    correction_started = time.perf_counter()
+    result = await corrector.process(raw) if enabled else CorrectionResult(raw)
+    return {
+        "type": "final",
+        "text": result.text,
+        "raw": raw,
+        "corrected": result.corrected,
+        "correction_error": result.error,
+        "timings_ms": {
+            "audio": len(pcm) / 32,
+            "first_partial": first_partial,
+            "finalize": finalized,
+            "correction": (time.perf_counter() - correction_started) * 1000 if enabled else 0.0,
+        },
+    }
+
+
+def create_app(settings=None, engine=None, token=None, corrector=None):
+    settings = settings or Settings.read()
+    if engine is None:
+        if settings.engine == "onnx":
+            from .engine.onnx import ParakeetONNX
+
+            engine = ParakeetONNX(settings.model_dir)
+        else:
+            from .engine.mlx import ParakeetMLX
+
+            engine = ParakeetMLX(settings.model_dir, settings.precision, settings.streaming)
+    worker = EngineWorker(engine)
+    retention = Retention(settings)
+    corrector = corrector or Corrector(settings.correction)
+    credential = token
+
+    async def housekeeping():
+        while True:
+            await asyncio.sleep(3600)
+            retention.purge()
+
+    @asynccontextmanager
+    async def lifespan(app):
+        nonlocal credential
+        credential = credential or load_token(settings.config_dir)
+        cleanup = None
+        try:
+            if settings.debug_retain:
+                log.warning("DEBUG: recording kept — debug retention is ENABLED")
+                retention.purge()
+                cleanup = asyncio.create_task(housekeeping())
+            await worker.start()
+            yield
+        finally:
+            if cleanup:
+                cleanup.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await cleanup
+            await worker.close()
+
+    async def health(request: Request):
+        if not authorized(credential, bearer(request.headers)):
+            # Frozen protocol intentionally exposes only liveness without credentials.
+            return JSONResponse({"ok": True})
+        correction = settings.correction
+        return JSONResponse(
+            {
+                "ok": True,
+                "engine": engine.name,
+                "ready": worker.ready,
+                "debug_retention": settings.debug_retain,
+                "correction": "available" if correction.enabled else "off",
+                "correction_leaves_machine": correction.enabled and correction.leaves_machine,
+                "correction_host": urlsplit(correction.base_url).hostname
+                if correction.enabled
+                else None,
+            }
+        )
+
+    async def transcribe(request: Request):
+        if not authorized(credential, bearer(request.headers)):
+            return JSONResponse(
+                error("auth"), status_code=401, headers={"WWW-Authenticate": "Bearer"}
+            )
+        try:
+            body = bytearray()
+            async for chunk in request.stream():
+                if len(body) + len(chunk) > MAX_PCM + 65536:
+                    raise AudioError("too_long")
+                body.extend(chunk)
+            pcm = decode_wav(bytes(body))
+            await asyncio.wait_for(worker.lease.acquire(), settings.queue_timeout)
+            try:
+                started = time.perf_counter()
+                raw = await worker.call(engine.transcribe, samples(pcm))
+            finally:
+                worker.lease.release()
+            final = await make_final(raw, pcm, None, started, corrector, False)
+            retention.save(uuid4().hex, pcm, final)
+            log.info(
+                "bytes=%d identity_present=%s", len(pcm), "tailscale-user-login" in request.headers
+            )
+            return JSONResponse(final)
+        except AudioError as exc:
+            return JSONResponse(error(exc.code), status_code=413 if exc.code == "too_long" else 400)
+        except TimeoutError:
+            return JSONResponse(error("busy"), status_code=503)
+        except Exception:
+            log.warning("code=engine")
+            return JSONResponse(error("engine"), status_code=503)
+
+    async def receive(ws):
+        message = await asyncio.wait_for(ws.receive(), settings.idle_seconds)
+        if message["type"] == "websocket.disconnect":
+            raise WebSocketDisconnect(message.get("code", 1000))
+        value = message.get("text")
+        if value is not None:
+            if len(value.encode()) >= MAX_FRAME:
+                raise AudioError()
+            try:
+                control = json.loads(value)
+            except (ValueError, TypeError) as exc:
+                raise AudioError() from exc
+            if not isinstance(control, dict):
+                raise AudioError()
+            return control
+        return message.get("bytes", b"")
+
+    async def stream(ws: WebSocket):
+        utterance = None
+        await ws.accept()
+        try:
+            valid = authorized(credential, bearer(ws.headers))
+            # An explicitly supplied wrong header cannot switch authentication paths.
+            if not valid and "authorization" not in ws.headers:
+                try:
+                    auth = await receive(ws)
+                    valid = (
+                        isinstance(auth, dict)
+                        and auth.get("type") == "auth"
+                        and authorized(credential, auth.get("token"))
+                    )
+                except (AudioError, TimeoutError):
+                    valid = False
+            if not valid:
+                await ws.send_json(error("auth"))
+                await ws.close(code=4401)
+                return
+            while True:
+                message = await receive(ws)
+                if isinstance(message, bytes):
+                    if utterance is None:
+                        raise AudioError()
+                    utterance.add(message)
+                    continue
+                kind = message.get("type")
+                if kind == "start" and utterance is None:
+                    utterance = Utterance(ws, worker, settings, corrector, retention)
+                    await utterance.start(message)
+                elif kind == "cancel" and utterance:
+                    await utterance.close()
+                    utterance = None
+                elif kind == "stop" and utterance:
+                    final = await utterance.finish()
+                    await ws.send_json(final)
+                    await utterance.close()
+                    utterance = None
+                else:
+                    raise AudioError()
+        except WebSocketDisconnect:
+            pass
+        except TimeoutError:
+            if utterance is not None:
+                await ws.send_json(error("busy"))
+            await ws.close(code=1000)
+        except AudioError as exc:
+            await ws.send_json(error(exc.code))
+            await ws.close(code=1009 if exc.code == "too_long" else 1003)
+        except Exception:
+            log.warning("code=engine")
+            with contextlib.suppress(Exception):
+                await ws.send_json(error("engine"))
+                await ws.close(code=1011)
+        finally:
+            if utterance:
+                await utterance.close()
+
+    app = Starlette(
+        routes=[
+            Route("/v1/health", health),
+            Route("/v1/transcribe", transcribe, methods=["POST"]),
+            WebSocketRoute("/v1/stream", stream),
+        ],
+        lifespan=lifespan,
+    )
+    app.state.worker = worker
+    return app
