@@ -1,6 +1,5 @@
 import AppKit
 import ChirpCore
-import KeyboardShortcuts
 
 /// Glue between the pure state machine and the system: capture, socket, HUD, insertion.
 @MainActor
@@ -20,6 +19,17 @@ final class DictationController {
     private var epoch = 0
     private var pendingFinal: FinalResult?
     private var lastInsertion: (final: FinalResult, outcome: InsertionOutcome)?
+
+    static let dictateID: UInt32 = 1
+    private static let escapeID: UInt32 = 2
+
+    /// (Re)registers the dictation hotkey from settings.
+    @discardableResult
+    func registerHotkey() -> Bool {
+        HotKeyCenter.shared.register(id: Self.dictateID, combo: Settings.hotkey,
+                                     onDown: { [weak self] in self?.hotkeyDown() },
+                                     onUp: { [weak self] in self?.hotkeyUp() })
+    }
 
     var state: DictationState { machine.state }
     var debugRetention: Bool { hud.model.debugRetention || (health?.debugRetention ?? false) }
@@ -50,8 +60,12 @@ final class DictationController {
         let before = machine.state
         let effects = machine.handle(event)
         if machine.state != before {
-            let active = [.connecting, .listening, .finalizing].contains(machine.state)
-            if active { KeyboardShortcuts.enable(.cancelDictation) } else { KeyboardShortcuts.disable(.cancelDictation) }
+            // Esc is only claimed while a dictation is active, so it is untouched the rest of the time.
+            if [.connecting, .listening, .finalizing].contains(machine.state) {
+                HotKeyCenter.shared.register(id: Self.escapeID, combo: .escape) { [weak self] in self?.escape() }
+            } else {
+                HotKeyCenter.shared.unregister(id: Self.escapeID)
+            }
             renderStatus()
             onChange?()
         }
@@ -62,7 +76,7 @@ final class DictationController {
         switch machine.state {
         case .idle, .inserting: break
         case .connecting: hud.model.status = "Connecting…"
-        case .listening: hud.model.status = "Listening"
+        case .listening: hud.model.status = "Listening"; hud.announce("Listening")
         case .finalizing: hud.model.status = "Finalizing"
         case .error(let m): hud.model.status = m; hud.model.isError = true
         }
@@ -79,6 +93,7 @@ final class DictationController {
             hud.model.isError = true
             hud.model.level = 0
             hud.show()
+            hud.announce(message)
             hud.hide(after: 3.5)
         case .insert: insert()
         }
@@ -152,7 +167,7 @@ final class DictationController {
             send(.finalReceived)
         case .message(.error(let code, let message)):
             send(.failed(Self.friendly(code: code, message: message)))
-        case .message(.ready), .message(.unknown): break
+        case .message(.unknown): break
         case .closed(let reason):
             if [.connecting, .listening, .finalizing].contains(machine.state) {
                 send(.failed(reason ?? "Connection closed"))
@@ -208,6 +223,7 @@ final class DictationController {
         Task { await s?.close() }
         guard !text.isEmpty else {
             hud.model.status = "No speech detected"
+            hud.announce("No speech detected")
             hud.model.level = 0
             hud.hide(after: 1.5)
             send(.insertionFinished)
@@ -236,6 +252,9 @@ final class DictationController {
         case .copied:
             hud.model.status = "Copied — press ⌘V"
             linger = 3
+        case .insertedUnverified:
+            hud.model.status = "Inserted? If nothing appeared, press ⌘V"
+            linger = 4
         case .refusedSecure:
             hud.model.status = "Secure field — nothing inserted"
             hud.model.isError = true
@@ -243,20 +262,18 @@ final class DictationController {
         }
         hud.show()
         hud.hide(after: linger)
+        hud.announce(hud.model.status)
     }
 
-    /// Best effort: undo the inserted correction (⌘Z) and insert the raw transcript instead.
+    /// Replace the inserted correction with the raw transcript: in place for AX insertions, via ⌘Z for pasted ones.
     private func useRaw() {
         guard let last = lastInsertion, last.final.canUseRaw, !machine.state.isActive else { return }
         lastInsertion = nil
         hud.model.showUseRaw = false
         Task {
-            if case .inserted = last.outcome {
-                _ = SystemInsertion.postUndo()
-                try? await Task.sleep(for: .milliseconds(150))
-            }
-            let outcome = await inserter.insert(last.final.raw)
+            let outcome = await inserter.replaceLast(with: last.final.raw)
             hud.model.status = outcome == .copied ? "Copied raw — press ⌘V" : "Inserted raw"
+            hud.announce(hud.model.status)
             hud.hide(after: 1.5)
         }
     }

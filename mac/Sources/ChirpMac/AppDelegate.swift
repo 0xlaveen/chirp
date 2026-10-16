@@ -1,6 +1,5 @@
 import AppKit
 import ChirpCore
-import KeyboardShortcuts
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
@@ -11,12 +10,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         menu = MenuBarController(controller: controller, openSettings: { [settingsWindow] in settingsWindow.show() })
+        settingsWindow.onHotkeyChange = { [controller] in controller.registerHotkey() }
         controller.onChange = { [weak self] in self?.menu?.refreshIcon() }
 
-        KeyboardShortcuts.onKeyDown(for: .dictate) { [controller] in MainActor.assumeIsolated { controller.hotkeyDown() } }
-        KeyboardShortcuts.onKeyUp(for: .dictate) { [controller] in MainActor.assumeIsolated { controller.hotkeyUp() } }
-        KeyboardShortcuts.onKeyDown(for: .cancelDictation) { [controller] in MainActor.assumeIsolated { controller.escape() } }
-        KeyboardShortcuts.disable(.cancelDictation)
+        if !controller.registerHotkey() {
+            NSLog("Chirp: could not register the hotkey \(Settings.hotkey.title); it may be in use by another app")
+        }
 
         Task { await controller.refreshHealth() }
         healthTimer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [controller] _ in

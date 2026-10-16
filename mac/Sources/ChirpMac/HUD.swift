@@ -12,6 +12,7 @@ final class HUDModel {
     var debugRetention = false
     var isError = false
     var showUseRaw = false
+    var reduceMotion = false
     var onUseRaw: (() -> Void)?
 
     func reset() {
@@ -27,7 +28,8 @@ struct HUDView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 10) {
-                LevelMeter(level: model.level)
+                LevelMeter(level: model.level, animated: !model.reduceMotion)
+                    .accessibilityHidden(true)
                 Text(model.status)
                     .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(model.isError ? Color.red : Color.secondary)
@@ -49,8 +51,10 @@ struct HUDView: View {
                     .lineLimit(4)
                     .truncationMode(.head)
                     .frame(maxWidth: .infinity, alignment: .leading)
+                    .accessibilityAddTraits(.updatesFrequently)
             }
         }
+        .accessibilityElement(children: .contain)
         .padding(14)
         .frame(width: 460, alignment: .leading)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
@@ -62,6 +66,7 @@ struct HUDView: View {
 
 private struct LevelMeter: View {
     let level: Float
+    let animated: Bool
     var body: some View {
         HStack(spacing: 2) {
             ForEach(0..<8, id: \.self) { i in
@@ -69,7 +74,7 @@ private struct LevelMeter: View {
                 Capsule().fill(on ? Color.green : Color.primary.opacity(0.15)).frame(width: 3, height: 12)
             }
         }
-        .animation(.linear(duration: 0.05), value: level)
+        .animation(animated ? .linear(duration: 0.05) : nil, value: level)
     }
 }
 
@@ -104,6 +109,7 @@ final class HUDController {
 
     func show() {
         hideTask?.cancel()
+        model.reduceMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
         let p = panel ?? makePanel()
         panel = p
         position(p)
@@ -124,6 +130,13 @@ final class HUDController {
             guard !Task.isCancelled else { return }
             self?.hide()
         }
+    }
+
+    /// Has VoiceOver speak a status change; the HUD never takes focus, so it would otherwise stay silent.
+    func announce(_ text: String) {
+        guard !text.isEmpty else { return }
+        NSAccessibility.post(element: NSApp as Any, notification: .announcementRequested,
+                             userInfo: [.announcement: text, .priority: NSAccessibilityPriorityLevel.high.rawValue])
     }
 
     private func resize(to s: CGSize) {

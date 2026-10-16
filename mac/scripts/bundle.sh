@@ -13,10 +13,10 @@ BIN=$(swift build -c release --show-bin-path)
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN/ChirpMac" "$APP/Contents/MacOS/ChirpMac"
-# SwiftPM resource bundles (KeyboardShortcuts localizations) are looked up in Contents/Resources.
+# Copy any SwiftPM resource bundles; they are looked up in Contents/Resources.
 for b in "$BIN"/*.bundle; do
     [ -e "$b" ] && cp -R "$b" "$APP/Contents/Resources/"
-done
+done || true
 
 cat > "$APP/Contents/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>

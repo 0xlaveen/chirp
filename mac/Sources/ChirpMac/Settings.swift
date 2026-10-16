@@ -1,13 +1,5 @@
 import ChirpCore
 import Foundation
-import KeyboardShortcuts
-
-extension KeyboardShortcuts.Name {
-    /// Default ⌥Space; key-down/up via a Carbon hot key (no Input Monitoring permission needed).
-    @MainActor static let dictate = KeyboardShortcuts.Name("dictate", default: .init(.space, modifiers: [.option]))
-    /// Only enabled while a dictation is active, so Esc is untouched the rest of the time.
-    @MainActor static let cancelDictation = KeyboardShortcuts.Name("cancelDictation", default: .init(.escape))
-}
 
 /// The only persistent client state besides the token file: plain UserDefaults preferences.
 enum Settings {
@@ -16,6 +8,11 @@ enum Settings {
     static var serverURL: String {
         get { defaults.string(forKey: "serverURL") ?? ServerConfig.defaultURL.absoluteString }
         set { defaults.set(newValue, forKey: "serverURL") }
+    }
+    /// One of `KeyCombo.presets` (⌥Space by default).
+    static var hotkey: KeyCombo {
+        get { KeyCombo.preset(id: defaults.string(forKey: "hotkey")) }
+        set { defaults.set(newValue.id, forKey: "hotkey") }
     }
     static var correction: Bool {
         get { defaults.bool(forKey: "correction") }

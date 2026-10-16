@@ -11,7 +11,9 @@ public enum SystemInsertion {
             axTrusted: { AXIsProcessTrusted() },
             frontmostBundleID: { NSWorkspace.shared.frontmostApplication?.bundleIdentifier },
             axInsert: { await axInsert($0) },
-            postPaste: { postCommandKey(CGKeyCode(kVK_ANSI_V)) }
+            axReplace: { await axReplace(range: $0, expected: $1, replacement: $2) },
+            postPaste: { postCommandKey(CGKeyCode(kVK_ANSI_V)) },
+            postUndo: { postCommandKey(CGKeyCode(kVK_ANSI_Z)) }
         )
     }
 
@@ -28,33 +30,58 @@ public enum SystemInsertion {
         return AXValueGetValue(v as! AXValue, .cfRange, &r) ? r : nil
     }
 
-    /// Sets `AXSelectedText` on the focused element and checks that the value or caret actually moved.
-    static func axInsert(_ text: String) async -> Bool {
+    private static func focusedElement() -> AXUIElement? {
         let system = AXUIElementCreateSystemWide()
         AXUIElementSetMessagingTimeout(system, 0.5)
-        guard let focused = copy(system, "AXFocusedUIElement"), CFGetTypeID(focused) == AXUIElementGetTypeID() else {
-            return false
-        }
-        let element = focused as! AXUIElement
-        if let role = copy(element, "AXRole") as? String, role == "AXSecureTextField" { return false }
+        guard let focused = copy(system, "AXFocusedUIElement"), CFGetTypeID(focused) == AXUIElementGetTypeID() else { return nil }
+        return (focused as! AXUIElement)
+    }
+
+    private static func selectedTextSettable(_ element: AXUIElement) -> Bool {
         var settable: DarwinBoolean = false
-        guard AXUIElementIsAttributeSettable(element, "AXSelectedText" as CFString, &settable) == .success,
-              settable.boolValue else { return false }
+        return AXUIElementIsAttributeSettable(element, "AXSelectedText" as CFString, &settable) == .success && settable.boolValue
+    }
+
+    /// Sets `AXSelectedText` on the focused element and checks that the value or caret actually moved.
+    /// Some apps apply the write late, so the readback is polled for up to ~150 ms before reporting `.unverified`.
+    static func axInsert(_ text: String) async -> AXInsertAttempt {
+        guard let element = focusedElement() else { return .notAttempted }
+        if let role = copy(element, "AXRole") as? String, role == "AXSecureTextField" { return .notAttempted }
+        guard selectedTextSettable(element) else { return .notAttempted }
 
         let beforeValue = copy(element, "AXValue") as? String
         let beforeRange = range(element)
         // If we can't read the field back we can't verify the write, so let paste handle it.
-        guard beforeValue != nil || beforeRange != nil else { return false }
+        guard beforeValue != nil || beforeRange != nil else { return .notAttempted }
 
-        guard AXUIElementSetAttributeValue(element, "AXSelectedText" as CFString, text as CFString) == .success else {
-            return false
+        guard AXUIElementSetAttributeValue(element, "AXSelectedText" as CFString, text as CFString) == .success else { return .notAttempted }
+        let length = text.utf16.count
+        for _ in 0..<6 {
+            try? await Task.sleep(for: .milliseconds(25))
+            let afterValue = copy(element, "AXValue") as? String
+            let afterRange = range(element)
+            let changed = (beforeValue != nil && afterValue != nil && beforeValue != afterValue)
+                || (beforeRange != nil && afterRange != nil && (beforeRange!.location != afterRange!.location || beforeRange!.length != afterRange!.length))
+            guard changed else { continue }
+            if let b = beforeRange { return .verified(NSRange(location: b.location, length: length)) }
+            if let a = afterRange, a.length == 0, a.location >= length { return .verified(NSRange(location: a.location - length, length: length)) }
+            return .verified(nil)
         }
-        try? await Task.sleep(for: .milliseconds(40))
-        let afterValue = copy(element, "AXValue") as? String
-        let afterRange = range(element)
-        if let beforeValue, let afterValue, beforeValue != afterValue { return true }
-        if let b = beforeRange, let a = afterRange, b.location != a.location || b.length != a.length { return true }
-        return false
+        // The set call succeeded but we never saw the change. The app may still apply it, so do not paste.
+        return .unverified
+    }
+
+    /// Reselects `range` when it still holds exactly `expected`, then overwrites it with `replacement`.
+    static func axReplace(range: NSRange, expected: String, replacement: String) async -> Bool {
+        guard let element = focusedElement(), selectedTextSettable(element),
+              let value = copy(element, "AXValue") as? String,
+              let r = Range(range, in: value), value[r] == expected else { return false }
+        var cf = CFRange(location: range.location, length: range.length)
+        guard let axRange = AXValueCreate(.cfRange, &cf),
+              AXUIElementSetAttributeValue(element, "AXSelectedTextRange" as CFString, axRange) == .success,
+              AXUIElementSetAttributeValue(element, "AXSelectedText" as CFString, replacement as CFString) == .success else { return false }
+        try? await Task.sleep(for: .milliseconds(60))
+        return (copy(element, "AXValue") as? String).map { $0 != value } ?? false
     }
 
     // MARK: Keystroke
@@ -70,7 +97,4 @@ public enum SystemInsertion {
         up.post(tap: .cghidEventTap)
         return true
     }
-
-    /// ⌘Z, used by "Use raw" to take back an inserted correction.
-    public static func postUndo() -> Bool { postCommandKey(CGKeyCode(kVK_ANSI_Z)) }
 }

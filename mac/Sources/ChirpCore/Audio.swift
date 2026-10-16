@@ -25,8 +25,16 @@ public final class PCMConverter {
         append(convert(buffer))
     }
 
-    /// Whatever is left (shorter than a frame), e.g. at stop. Empty if nothing is pending.
+    /// Drains the converter's resampling delay (~60 ms that would otherwise clip the end of the utterance)
+    /// and returns everything still pending, which may be shorter or a bit longer than one frame. Call once, at stop.
     public func flush() -> Data? {
+        if let out = AVAudioPCMBuffer(pcmFormat: outFormat, frameCapacity: 4096) {
+            var error: NSError?
+            converter.convert(to: out, error: &error) { _, status in status.pointee = .endOfStream; return nil }
+            if error == nil, out.frameLength > 0, let ptr = out.int16ChannelData?[0] {
+                pending.append(Data(bytes: ptr, count: Int(out.frameLength) * 2))
+            }
+        }
         defer { pending.removeAll() }
         return pending.isEmpty ? nil : pending
     }

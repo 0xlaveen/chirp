@@ -1,11 +1,11 @@
 import AppKit
 import ChirpCore
-import KeyboardShortcuts
-import LaunchAtLogin
 
 /// Plain AppKit on purpose: the Command Line Tools toolchain has no SwiftUI macro plugins (@State etc.).
 @MainActor
 final class SettingsWindowController: NSObject, NSTextFieldDelegate {
+    /// Called after the hotkey preset changes so the app can re-register it.
+    var onHotkeyChange: (() -> Void)?
     private var window: NSWindow?
     private var micStatus: NSTextField?
     private var axStatus: NSTextField?
@@ -39,15 +39,24 @@ final class SettingsWindowController: NSObject, NSTextFieldDelegate {
     }
 
     private func makeWindow() -> NSWindow {
-        let recorder = KeyboardShortcuts.RecorderCocoa(for: .dictate)
+        let hotkey = NSPopUpButton(frame: .zero, pullsDown: false)
+        for combo in KeyCombo.presets {
+            hotkey.addItem(withTitle: combo.title)
+            hotkey.lastItem?.representedObject = combo.id
+        }
+        hotkey.selectItem(withTitle: Settings.hotkey.title)
+        hotkey.target = self
+        hotkey.action = #selector(hotkeyChanged(_:))
 
         let url = NSTextField(string: Settings.serverURL)
         url.placeholderString = ServerConfig.defaultURL.absoluteString
         url.delegate = self
         url.widthAnchor.constraint(equalToConstant: 280).isActive = true
 
-        let launch = NSButton(checkboxWithTitle: "Launch at login", target: self, action: #selector(toggleLaunch(_:)))
-        launch.state = LaunchAtLogin.isEnabled ? .on : .off
+        let launch = NSButton(checkboxWithTitle: LaunchAtLogin.menuTitle, target: self, action: #selector(toggleLaunch(_:)))
+        launch.allowsMixedState = true
+        launch.state = switch LaunchAtLogin.state { case .on: .on; case .needsApproval: .mixed; default: .off }
+        launch.isEnabled = LaunchAtLogin.state != .unavailable
 
         let token = label(ServerConfig.readToken() == nil
             ? "No token at ~/.config/chirp/token — start chirp-server once to create it."
@@ -59,7 +68,7 @@ final class SettingsWindowController: NSObject, NSTextFieldDelegate {
         micStatus = mic; axStatus = ax; micButton = micB; axButton = axB
 
         let stack = NSStackView(views: [
-            row("Hotkey", recorder),
+            row("Hotkey", hotkey),
             label("Tap to start/stop. Hold to talk, release to finish. Esc cancels.", small: true),
             launch,
             row("Server URL", url),
@@ -94,7 +103,17 @@ final class SettingsWindowController: NSObject, NSTextFieldDelegate {
         if let f = obj.object as? NSTextField { Settings.serverURL = f.stringValue }
     }
 
-    @objc private func toggleLaunch(_ sender: NSButton) { LaunchAtLogin.isEnabled = sender.state == .on }
+    @objc private func hotkeyChanged(_ sender: NSPopUpButton) {
+        Settings.hotkey = KeyCombo.preset(id: sender.selectedItem?.representedObject as? String)
+        onHotkeyChange?()
+    }
+
+    @objc private func toggleLaunch(_ sender: NSButton) {
+        if LaunchAtLogin.state == .needsApproval { LaunchAtLogin.openSystemSettings(); sender.state = .mixed; return }
+        let error = LaunchAtLogin.setEnabled(LaunchAtLogin.state != .on)
+        sender.state = LaunchAtLogin.state == .on ? .on : .off
+        if let error { sender.title = "Launch at login failed: \(error)" }
+    }
     @objc private func grantMic() {
         Task {
             if Permissions.microphone == .notDetermined { _ = await Permissions.requestMicrophone() }

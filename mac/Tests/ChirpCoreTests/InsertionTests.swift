@@ -18,90 +18,144 @@ final class FakePasteboard: PasteboardClient {
     var text: String? { items.first?["public.utf8-plain-text"].flatMap { String(data: $0, encoding: .utf8) } }
 }
 
+/// Scriptable stand-in for the system calls; records what was invoked.
 @MainActor
-struct Probe {
+final class FakeSystem {
     var secure = false, trusted = true, bundle: String? = "com.apple.TextEdit"
-    var axResult = true, pasteResult = true
+    var ax: AXInsertAttempt = .verified(NSRange(location: 3, length: 5))
+    var axReplaceResult = true
+    var pasteResult = true
     var calls: [String] = []
+
+    func inserter(board: FakePasteboard) -> TextInserter {
+        TextInserter(env: InsertionEnvironment(
+            secureInputEnabled: { self.secure }, axTrusted: { self.trusted }, frontmostBundleID: { self.bundle },
+            axInsert: { _ in self.calls.append("ax"); return self.ax },
+            axReplace: { range, expected, new in self.calls.append("axReplace:\(range.location),\(range.length):\(expected)→\(new)"); return self.axReplaceResult },
+            postPaste: { self.calls.append("paste"); return self.pasteResult },
+            postUndo: { self.calls.append("undo"); return true },
+            sleep: { _ in }), pasteboard: board)
+    }
 }
 
 @MainActor
 @Suite struct InsertionTests {
-    static func make(_ probe: Probe, board: FakePasteboard, calls: CallLog) -> TextInserter {
-        let env = InsertionEnvironment(
-            secureInputEnabled: { probe.secure }, axTrusted: { probe.trusted },
-            frontmostBundleID: { probe.bundle },
-            axInsert: { _ in calls.items.append("ax"); return probe.axResult },
-            postPaste: { calls.items.append("paste"); return probe.pasteResult },
-            sleep: { _ in })
-        return TextInserter(env: env, pasteboard: board)
-    }
-
-    @MainActor final class CallLog { var items: [String] = [] }
-
     // MARK: policy
 
     @Test func policyOrder() {
         #expect(InsertionPolicy.plan(secureInput: true, axTrusted: true, bundleID: nil) == .refuseSecure)
         #expect(InsertionPolicy.plan(secureInput: false, axTrusted: false, bundleID: "com.apple.TextEdit") == .try_([.copy]))
         #expect(InsertionPolicy.plan(secureInput: false, axTrusted: true, bundleID: "com.apple.TextEdit") == .try_([.ax, .paste, .copy]))
-        #expect(InsertionPolicy.plan(secureInput: false, axTrusted: true, bundleID: "com.apple.Terminal") == .try_([.paste, .copy]))
         #expect(InsertionPolicy.plan(secureInput: false, axTrusted: true, bundleID: nil) == .try_([.ax, .paste, .copy]))
+        for id in ["com.apple.Terminal", "com.google.Chrome", "com.tinyspeck.slackmacgap", "com.microsoft.VSCode", "com.hnc.Discord", "notion.id"] {
+            #expect(InsertionPolicy.plan(secureInput: false, axTrusted: true, bundleID: id) == .try_([.paste, .copy]), "\(id)")
+        }
     }
 
-    // MARK: inserter
+    // MARK: AX
 
-    @Test func axSuccessLeavesPasteboardAlone() async {
-        let board = FakePasteboard(), log = CallLog()
-        let outcome = await Self.make(Probe(), board: board, calls: log).insert("hello")
-        #expect(outcome == .inserted(.ax))
-        #expect(log.items == ["ax"])
+    @Test func verifiedAXLeavesPasteboardAlone() async {
+        let sys = FakeSystem(), board = FakePasteboard()
+        #expect(await sys.inserter(board: board).insert("hello") == .inserted(.ax))
+        #expect(sys.calls == ["ax"])
         #expect(board.text == "user clipboard")
     }
 
-    @Test func fallsBackToPasteThenRestoresClipboard() async {
-        let board = FakePasteboard(), log = CallLog()
-        var p = Probe(); p.axResult = false
-        let inserter = Self.make(p, board: board, calls: log)
+    /// An app that applies the AX write late: the set succeeded but the readback never changed in time.
+    @Test func lateAXWriteIsNeverFollowedByPaste() async {
+        let sys = FakeSystem(), board = FakePasteboard()
+        sys.ax = .unverified
+        let inserter = sys.inserter(board: board)
+        #expect(await inserter.insert("hello") == .insertedUnverified)
+        #expect(sys.calls == ["ax"])                    // no ⌘V, so no duplicate when the write lands late
+        #expect(board.text == "hello")                  // left on the pasteboard for a manual ⌘V
+        #expect(board.lastWriteTransient == true)
+        await inserter.settle()
+        #expect(board.text == "hello")                  // and not restored away
+    }
+
+    @Test func fallsBackToPasteOnlyWhenAXWasNotAttempted() async {
+        let sys = FakeSystem(), board = FakePasteboard()
+        sys.ax = .notAttempted
+        let inserter = sys.inserter(board: board)
         #expect(await inserter.insert("hello") == .inserted(.paste))
-        #expect(log.items == ["ax", "paste"])
+        #expect(sys.calls == ["ax", "paste"])
         #expect(board.lastWriteTransient == true)
         await inserter.settle()
         #expect(board.text == "user clipboard")
     }
 
+    // MARK: paste and clipboard restore
+
     @Test func doesNotRestoreIfClipboardChangedMeanwhile() async {
-        let board = FakePasteboard(), log = CallLog()
-        var p = Probe(); p.bundle = "com.apple.Terminal"
-        let inserter = Self.make(p, board: board, calls: log)
+        let sys = FakeSystem(), board = FakePasteboard()
+        sys.bundle = "com.apple.Terminal"
+        let inserter = sys.inserter(board: board)
         _ = await inserter.insert("hello")
-        #expect(log.items == ["paste"])                // terminals skip AX
+        #expect(sys.calls == ["paste"])                 // terminals skip AX
         board.items = [["public.utf8-plain-text": Data("user copied something new".utf8)]]
-        board.changeCount += 1                          // someone else wrote before the restore delay
+        board.changeCount += 1                          // the user copied during the restore window
         await inserter.settle()
         #expect(board.text == "user copied something new")
     }
 
     @Test func pasteFailureRestoresAndCopies() async {
-        let board = FakePasteboard(), log = CallLog()
-        var p = Probe(); p.axResult = false; p.pasteResult = false
-        #expect(await Self.make(p, board: board, calls: log).insert("hello") == .copied)
+        let sys = FakeSystem(), board = FakePasteboard()
+        sys.ax = .notAttempted; sys.pasteResult = false
+        #expect(await sys.inserter(board: board).insert("hello") == .copied)
         #expect(board.text == "hello")
-        #expect(board.lastWriteTransient == false)     // copy-only stays on the clipboard for ⌘V
+        #expect(board.lastWriteTransient == false)      // copy-only stays on the clipboard for ⌘V
     }
 
     @Test func untrustedCopiesOnly() async {
-        let board = FakePasteboard(), log = CallLog()
-        var p = Probe(); p.trusted = false
-        #expect(await Self.make(p, board: board, calls: log).insert("hello") == .copied)
-        #expect(log.items.isEmpty)
+        let sys = FakeSystem(), board = FakePasteboard()
+        sys.trusted = false
+        #expect(await sys.inserter(board: board).insert("hello") == .copied)
+        #expect(sys.calls.isEmpty)
     }
 
     @Test func secureInputRefusesAndTouchesNothing() async {
-        let board = FakePasteboard(), log = CallLog()
-        var p = Probe(); p.secure = true
-        #expect(await Self.make(p, board: board, calls: log).insert("hello") == .refusedSecure)
-        #expect(log.items.isEmpty)
+        let sys = FakeSystem(), board = FakePasteboard()
+        sys.secure = true
+        #expect(await sys.inserter(board: board).insert("hello") == .refusedSecure)
+        #expect(sys.calls.isEmpty)
         #expect(board.text == "user clipboard")
+    }
+
+    // MARK: Use raw
+
+    @Test func useRawReplacesTheExactAXRangeWithoutUndo() async {
+        let sys = FakeSystem(), board = FakePasteboard()
+        let inserter = sys.inserter(board: board)
+        _ = await inserter.insert("Hello, world.")
+        #expect(await inserter.replaceLast(with: "hello world") == .inserted(.ax))
+        #expect(sys.calls == ["ax", "axReplace:3,5:Hello, world.→hello world"])
+        #expect(!sys.calls.contains("undo"))
+    }
+
+    @Test func useRawCopiesWhenTheFieldChanged() async {
+        let sys = FakeSystem(), board = FakePasteboard()
+        sys.axReplaceResult = false
+        let inserter = sys.inserter(board: board)
+        _ = await inserter.insert("Hello, world.")
+        #expect(await inserter.replaceLast(with: "hello world") == .copied)
+        #expect(board.text == "hello world")
+    }
+
+    @Test func useRawAfterPasteUsesUndoThenPastesRaw() async {
+        let sys = FakeSystem(), board = FakePasteboard()
+        sys.bundle = "com.apple.Terminal"
+        let inserter = sys.inserter(board: board)
+        _ = await inserter.insert("Hello, world.")
+        #expect(await inserter.replaceLast(with: "hello world") == .inserted(.paste))
+        #expect(sys.calls == ["paste", "undo", "paste"])
+    }
+
+    @Test func useRawWithNothingInsertedJustCopies() async {
+        let sys = FakeSystem(), board = FakePasteboard()
+        let inserter = sys.inserter(board: board)
+        #expect(await inserter.replaceLast(with: "raw") == .copied)
+        #expect(board.text == "raw")
+        #expect(sys.calls.isEmpty)
     }
 }

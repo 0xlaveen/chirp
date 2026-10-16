@@ -20,8 +20,8 @@ import Testing
         let frames = conv.frames(from: buf)
         #expect(frames.allSatisfy { $0.count == PCMConverter.frameBytes })
         let total = frames.count * PCMConverter.frameBytes + (conv.flush()?.count ?? 0)
-        // 1 s at 16 kHz mono PCM16 = 32000 bytes, within converter priming slack.
-        #expect(abs(total - 32_000) < 1_000)
+        // 1 s at 16 kHz mono PCM16 = 32000 bytes; flush() must drain the resampler so the tail is not lost.
+        #expect(abs(total - 32_000) < 200, "total=\(total) frames=\(frames.count)")
         let level = Level(pcm16: frames[5])
         #expect(level.peak > 0.3 && level.peak < 0.7)
     }

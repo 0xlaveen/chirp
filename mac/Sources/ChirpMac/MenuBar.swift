@@ -1,7 +1,5 @@
 import AppKit
 import ChirpCore
-import KeyboardShortcuts
-import LaunchAtLogin
 
 @MainActor
 final class MenuBarController: NSObject, NSMenuDelegate {
@@ -9,6 +7,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     private let controller: DictationController
     private let openSettings: () -> Void
     private var inputName = InputDevice.defaultName()
+    private var launchError: String?
 
     init(controller: DictationController, openSettings: @escaping () -> Void) {
         self.controller = controller
@@ -85,15 +84,27 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         } else {
             menu.addItem(action("Correction (not configured on server)", #selector(toggleCorrection), enabled: false))
         }
-        let shortcut = KeyboardShortcuts.getShortcut(for: .dictate)?.description ?? "not set"
-        menu.addItem(line("Hotkey: \(shortcut) — tap to toggle, hold to talk"))
-        menu.addItem(action("Change Hotkey…", #selector(showSettings)))
+        let hotkeyItem = NSMenuItem(title: "Hotkey: \(Settings.hotkey.title) — tap to toggle, hold to talk", action: nil, keyEquivalent: "")
+        let hotkeyMenu = NSMenu()
+        for combo in KeyCombo.presets {
+            let i = NSMenuItem(title: combo.title, action: #selector(pickHotkey(_:)), keyEquivalent: "")
+            i.target = self
+            i.representedObject = combo.id
+            i.state = combo == Settings.hotkey ? .on : .off
+            hotkeyMenu.addItem(i)
+        }
+        hotkeyItem.submenu = hotkeyMenu
+        menu.addItem(hotkeyItem)
         menu.addItem(.separator())
 
         menu.addItem(permissionItem("Microphone", granted: Permissions.microphoneGranted, #selector(grantMic)))
         menu.addItem(permissionItem("Accessibility", granted: Permissions.accessibilityGranted, #selector(grantAX)))
         menu.addItem(.separator())
-        menu.addItem(action("Launch at Login", #selector(toggleLaunch), on: LaunchAtLogin.isEnabled))
+        let launchItem = action(LaunchAtLogin.menuTitle, #selector(toggleLaunch), on: LaunchAtLogin.state == .on,
+                                enabled: LaunchAtLogin.state != .unavailable)
+        if LaunchAtLogin.state == .needsApproval { launchItem.state = .mixed }
+        menu.addItem(launchItem)
+        if let launchError { menu.addItem(line("Launch at Login: \(launchError)", color: .systemRed)) }
         menu.addItem(action("Settings…", #selector(showSettings)))
         menu.addItem(action("Quit Chirp", #selector(quit)))
     }
@@ -102,9 +113,20 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         granted ? line("\(name): granted ✓") : action("\(name): not granted — Grant…", selector)
     }
 
+    @objc private func pickHotkey(_ sender: NSMenuItem) {
+        Settings.hotkey = KeyCombo.preset(id: sender.representedObject as? String)
+        controller.registerHotkey()
+    }
     @objc private func toggleCorrection() { Settings.correction.toggle() }
     @objc private func showSettings() { openSettings() }
-    @objc private func toggleLaunch() { LaunchAtLogin.isEnabled.toggle() }
+    @objc private func toggleLaunch() {
+        switch LaunchAtLogin.state {
+        case .needsApproval: LaunchAtLogin.openSystemSettings()
+        case .on: launchError = LaunchAtLogin.setEnabled(false)
+        case .off: launchError = LaunchAtLogin.setEnabled(true)
+        case .unavailable: break
+        }
+    }
     @objc private func quit() { NSApp.terminate(nil) }
     @objc private func grantMic() {
         Task {
