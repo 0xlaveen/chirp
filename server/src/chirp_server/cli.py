@@ -97,7 +97,7 @@ def main():
     else:
         import uvicorn
 
-        from .app import create_app
+        from .app import accept_prefix, create_app
 
         settings.model_dir = args.model_dir
         settings.engine = args.engine
@@ -111,7 +111,7 @@ def main():
         logging.getLogger("httpcore").setLevel(logging.WARNING)
         try:
             uvicorn.run(
-                create_app(settings),
+                accept_prefix(create_app(settings), args.root_path),
                 host="127.0.0.1",
                 port=args.port,
                 root_path=args.root_path,

@@ -419,3 +419,25 @@ def create_app(settings=None, engine=None, token=None, corrector=None):
     )
     app.state.worker = worker
     return app
+
+
+def accept_prefix(app, prefix):
+    """Serve the same routes with or without `prefix`, whichever form the proxy forwards.
+
+    `tailscale serve --set-path /chirp` may or may not strip its mount point; both work.
+    """
+    prefix = "/" + prefix.strip("/") if prefix and prefix.strip("/") else ""
+    if not prefix:
+        return app
+
+    async def wrapped(scope, receive, send):
+        path = scope.get("path", "")
+        if scope["type"] in ("http", "websocket") and (
+            path == prefix or path.startswith(prefix + "/")
+        ):
+            scope = dict(scope, path=path[len(prefix) :] or "/")
+            if "raw_path" in scope and scope["raw_path"] is not None:
+                scope["raw_path"] = scope["raw_path"][len(prefix) :] or b"/"
+        await app(scope, receive, send)
+
+    return wrapped

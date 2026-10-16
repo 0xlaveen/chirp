@@ -15,7 +15,7 @@ Otherwise explicitly run `uv run chirp-server model fetch` (pinned Hugging Face 
 on the same dedicated thread used for every decode and streaming-context operation.
 
 ```sh
-uv run chirp-server --root-path /chirp
+uv run chirp-server --root-path /chirp   # serves /chirp/v1/... and /v1/..., so Tailscale Serve may strip the mount point or not
 uv run chirp-server pair --url https://mainframe.tail676ff2.ts.net/chirp
 uv sync --locked --extra onnx
 uv run --extra onnx chirp-server --engine onnx

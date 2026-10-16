@@ -253,6 +253,21 @@ def test_root_path_proxy(settings):
         assert client.get("/v1/health", headers=HEADERS).json()["ready"]
 
 
+def test_prefix_accepted_stripped_or_not(settings):
+    from chirp_server.app import accept_prefix
+
+    app = accept_prefix(create_app(settings, FakeEngine(), TOKEN), "/chirp")
+    with TestClient(app) as client:
+        for path in ("/v1/health", "/chirp/v1/health"):
+            assert client.get(path, headers=HEADERS).json()["ready"]
+        assert client.get("/chirp/v1/health").json() == {"ok": True}
+        assert client.get("/chirpx/v1/health").status_code == 404
+        for path in ("/v1/stream", "/chirp/v1/stream"):
+            with client.websocket_connect(path, headers=HEADERS) as ws:
+                ws.send_json(START)
+                assert ws.receive_json()["type"] == "ready"
+
+
 def test_transcribe_limits(client):
     from chirp_server.audio import wav_bytes
 
