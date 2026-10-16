@@ -48,9 +48,12 @@ enum SelfTest {
         }
 
         await session.open()
-        for frame in frames {
+        // Pace against absolute deadlines so per-frame sleep overshoot on a loaded host does not
+        // stretch the stream beyond real time.
+        let paceStart = ContinuousClock.now
+        for (i, frame) in frames.enumerated() {
             session.sendAudio(frame)
-            if !fast { try? await Task.sleep(for: .milliseconds(50)) }
+            if !fast { try? await Task.sleep(until: paceStart + .milliseconds(50 * (i + 1)), clock: .continuous) }
         }
         let stopAt = ContinuousClock.now
         await session.stop()
