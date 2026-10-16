@@ -211,3 +211,13 @@ sink, 16 kHz PCM, RMS diagnostic and explicit stop/cancel cleanup patterns. Nati
 AudioRecord supplies the sample format without browser resampling/fallback code.
 OkHttp handles TLS, WebSocket framing and queues; system InputMethodService and
 Keystore own editor integration and secrets. No Koi runtime dependency is added.
+
+## JVM live check (no phone)
+
+`LiveServerTest` drives the IME's real transport (`ChirpNetwork`, `StreamTransport`, `Protocol`) against a running `chirp-server`. A WAV file stands in for `AudioRecord`, so no device, microphone or permission is involved. It checks authenticated health, a pre-warmed socket, two utterances on one socket, and that a wrong token is refused before any audio is sent. It is skipped unless `-Pchirp.live.url` is given:
+
+```sh
+./gradlew testDebugUnitTest --tests '*LiveServerTest*' -i \
+  -Pchirp.live.url=http://127.0.0.1:7821/ -Pchirp.live.tokenFile=$HOME/.config/chirp/token \
+  -Pchirp.live.wav=/path/to/16k-mono.wav -Pchirp.live.expect=someword
+```

@@ -35,3 +35,11 @@ dependencies {
     testImplementation(libs.mockwebserver)
     testImplementation(libs.okhttp.tls)
 }
+
+// Opt-in live transport check against a running chirp-server (see README "JVM live check").
+// Without -Pchirp.live.url the LiveServerTest is skipped.
+tasks.withType<Test>().configureEach {
+    listOf("chirp.live.url", "chirp.live.tokenFile", "chirp.live.wav", "chirp.live.expect").forEach { key ->
+        providers.gradleProperty(key).orNull?.let { systemProperty(key, it) }
+    }
+}
