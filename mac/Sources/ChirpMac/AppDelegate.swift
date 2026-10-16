@@ -24,12 +24,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         if !Settings.didOnboard {
             settingsWindow.show()
-            Task {
-                _ = await Permissions.requestMicrophone()
-                if !Permissions.accessibilityGranted { Permissions.promptAccessibility() }
-                // Only after both prompts, so an interrupted first launch onboards again.
-                Settings.didOnboard = true
-            }
+            let onboarding = Onboarding(
+                isDone: { Settings.didOnboard }, markDone: { Settings.didOnboard = true },
+                requestMicrophone: { await Permissions.requestMicrophone() },
+                accessibilityGranted: { Permissions.accessibilityGranted },
+                promptAccessibility: { Permissions.promptAccessibility() })
+            Task { await onboarding.runIfNeeded() }
         }
     }
 }
