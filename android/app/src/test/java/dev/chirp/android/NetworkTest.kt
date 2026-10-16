@@ -63,7 +63,7 @@ class NetworkTest {
                 assertEquals(1280, bytes.size); audio.countDown()
             }
         }))
-        val stream = StreamTransport(client, pairing, false, { it() }, { event ->
+        val stream = StreamTransport(client, pairing, { it() }, { event ->
             when (event) {
                 is ServerEvent.Ready -> ready.countDown()
                 is ServerEvent.Partial -> received.add("partial")
@@ -72,7 +72,7 @@ class NetworkTest {
             }
         }, { fail("Unexpected stream failure") })
         try {
-            stream.connect(); assertTrue(ready.await(5, TimeUnit.SECONDS))
+            stream.connect(); assertTrue(stream.start(false)); assertTrue(ready.await(5, TimeUnit.SECONDS))
             assertTrue(stream.audio(ByteArray(1280))); assertTrue(audio.await(5, TimeUnit.SECONDS))
             assertTrue(stream.stop()); assertTrue(stopped.await(5, TimeUnit.SECONDS))
             assertTrue(final.await(5, TimeUnit.SECONDS)); assertEquals(listOf("partial", "final"), received)
@@ -82,10 +82,47 @@ class NetworkTest {
         } finally { stream.close() }
         assertFalse(stream.audio(ByteArray(1280))); assertFalse(stream.stop())
     }
+    @Test fun `prewarm sends no start and two utterances reuse the authenticated socket`() = withServer { server, client, pairing ->
+        val opened = CountDownLatch(1)
+        val events = java.util.concurrent.LinkedBlockingQueue<ServerEvent>()
+        val starts = java.util.concurrent.atomic.AtomicInteger()
+        server.enqueue(MockResponse().withWebSocketUpgrade(object : WebSocketListener() {
+            override fun onClosing(webSocket: WebSocket, code: Int, reason: String) { webSocket.close(code, null) }
+            override fun onMessage(webSocket: WebSocket, text: String) {
+                val control = JSONObject(text)
+                when (control.getString("type")) {
+                    "start" -> {
+                        val index = starts.getAndIncrement()
+                        assertEquals(index == 1, control.getBoolean("correction"))
+                        webSocket.send("""{"type":"ready","debug_retention":false}""")
+                    }
+                    "stop" -> webSocket.send("""{"type":"final","text":"Synthetic.","raw":"synthetic","corrected":true}""")
+                }
+            }
+        }))
+        val stream = StreamTransport(client, pairing, { it() }, { events.add(it) },
+            { fail("Unexpected stream failure") }, { opened.countDown() })
+        try {
+            stream.connect(); assertTrue(opened.await(5, TimeUnit.SECONDS))
+            assertEquals(0, starts.get())
+            assertTrue(events.isEmpty())
+            repeat(2) { index ->
+                assertTrue(stream.start(index == 1))
+                assertFalse(stream.start(false)) // Never overlap utterances.
+                assertTrue(events.poll(5, TimeUnit.SECONDS) is ServerEvent.Ready)
+                assertTrue(stream.audio(ByteArray(1280))); assertTrue(stream.stop())
+                assertTrue(events.poll(5, TimeUnit.SECONDS) is ServerEvent.Final)
+            }
+            assertEquals(2, starts.get())
+            assertEquals(1, server.requestCount)
+            val request = server.takeRequest(5, TimeUnit.SECONDS)!!
+            assertEquals("Bearer synthetic-credential", request.getHeader("Authorization"))
+        } finally { stream.close() }
+    }
     @Test fun `failed upgrade retries exactly once and returns actionable failure`() = withServer { server, client, pairing ->
         server.enqueue(MockResponse().setResponseCode(503)); server.enqueue(MockResponse().setResponseCode(503))
         val failure = CountDownLatch(1)
-        val stream = StreamTransport(client, pairing, false, { it() }, {}, { failure.countDown() })
+        val stream = StreamTransport(client, pairing, { it() }, {}, { failure.countDown() })
         stream.connect()
         assertTrue(failure.await(5, TimeUnit.SECONDS))
         assertEquals(2, server.requestCount)
@@ -102,10 +139,10 @@ class NetworkTest {
                 }
             }
         }))
-        val stream = StreamTransport(client, pairing, false, { it() }, {
+        val stream = StreamTransport(client, pairing, { it() }, {
             if (it is ServerEvent.Ready) ready.countDown() else fail("Event after cancellation")
         }, { fail("Failure after cancellation") })
-        stream.connect(); assertTrue(ready.await(5, TimeUnit.SECONDS)); stream.close(true)
+        stream.connect(); assertTrue(stream.start(false)); assertTrue(ready.await(5, TimeUnit.SECONDS)); stream.close(true)
         assertTrue(cancelled.await(5, TimeUnit.SECONDS))
     }
 }

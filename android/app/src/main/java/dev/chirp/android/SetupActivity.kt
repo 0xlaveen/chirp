@@ -67,6 +67,10 @@ class SetupActivity : ComponentActivity() {
         }
         content.addView(correction)
         content.addView(CheckBox(this).apply {
+            text = "Return to previous keyboard after dictation"; isChecked = store.returnToPrevious
+            setOnCheckedChangeListener { _, value -> store.returnToPrevious = value }
+        })
+        content.addView(CheckBox(this).apply {
             text = "Haptic cues"; isChecked = store.haptics
             setOnCheckedChangeListener { _, value -> store.haptics = value }
         })

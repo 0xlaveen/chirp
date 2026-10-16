@@ -9,12 +9,12 @@ import okhttp3.WebSocket
 import okhttp3.WebSocketListener
 import okio.ByteString.Companion.toByteString
 
-/** No logging interceptors, disk cache, redirects (bearer credential), pings or idle socket. */
+/** No logging interceptors, disk cache, redirects (bearer credential), pings or disk persistence. Idle resources are scoped to IME visibility. */
 object ChirpNetwork {
     fun client(): OkHttpClient = OkHttpClient.Builder()
         .connectTimeout(6, TimeUnit.SECONDS).readTimeout(12, TimeUnit.SECONDS)
         .callTimeout(12, TimeUnit.SECONDS).webSocketCloseTimeout(1, TimeUnit.SECONDS).followRedirects(false).followSslRedirects(false)
-        .retryOnConnectionFailure(false).connectionPool(okhttp3.ConnectionPool(0, 1, TimeUnit.SECONDS)).build()
+        .retryOnConnectionFailure(false).connectionPool(okhttp3.ConnectionPool(2, 30, TimeUnit.SECONDS)).build()
     fun healthCall(client: OkHttpClient, pairing: Pairing): okhttp3.Call {
         val request = Request.Builder().url(pairing.endpoint("v1/health"))
             .header("Authorization", "Bearer ${pairing.token}").build()
@@ -39,65 +39,104 @@ object ChirpNetwork {
     }
 }
 
+/** Main-thread control; audio() is also called by the capture thread. */
 class StreamTransport(
     private val client: OkHttpClient,
     private val pairing: Pairing,
-    private val correction: Boolean,
     private val dispatch: (() -> Unit) -> Unit,
     private val event: (ServerEvent) -> Unit,
     private val failure: () -> Unit,
+    private val opened: () -> Unit = {},
 ) {
     @Volatile private var socket: WebSocket? = null
-    @Volatile private var closed = false
-    @Volatile private var receivedReady = false
+    @Volatile private var ready = false
+    @Volatile private var active = false
+    private var closed = false
+    private var connected = false
+    private var startSent = false
+    private var correction = false
     private var retried = false
+    private var attempt = 0
 
+    /** Upgrade with bearer authentication only. Do not allocate an engine utterance. */
     fun connect() {
-        if (closed) return
+        if (closed || socket != null) return
+        val id = ++attempt
         val request = Request.Builder().url(pairing.endpoint("v1/stream"))
             .header("Authorization", "Bearer ${pairing.token}").build()
         socket = client.newWebSocket(request, object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
-                if (closed) { webSocket.cancel(); return }
-                webSocket.send(Protocol.start(correction))
+                dispatch {
+                    if (closed || attempt != id) { webSocket.cancel(); return@dispatch }
+                    connected = true
+                    if (active) sendStart()
+                    opened()
+                }
             }
             override fun onMessage(webSocket: WebSocket, text: String) {
-                if (closed) return
-                val decoded = try { Protocol.decode(text) } catch (_: Exception) {
-                    dispatch { if (!closed) { close(true); failure() } }; return
+                dispatch {
+                    if (closed || attempt != id) return@dispatch
+                    val decoded = try { Protocol.decode(text) } catch (_: Exception) {
+                        close(true); failure(); return@dispatch
+                    }
+                    when (decoded) {
+                        is ServerEvent.Ready -> {
+                            if (!active || !startSent || ready) return@dispatch
+                            ready = true
+                        }
+                        is ServerEvent.Partial, is ServerEvent.Final -> if (!active || !ready) return@dispatch
+                        is ServerEvent.Failure -> if (!active) { close(); failure(); return@dispatch }
+                        ServerEvent.Unknown -> return@dispatch
+                    }
+                    if (decoded is ServerEvent.Final || decoded is ServerEvent.Failure) {
+                        active = false; ready = false; startSent = false
+                    }
+                    event(decoded)
                 }
-                if (decoded is ServerEvent.Ready) receivedReady = true
-                dispatch { if (!closed) event(decoded) }
             }
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
-                dispatch { failed() }
+                dispatch { if (!closed && attempt == id) failed() }
             }
             override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
                 webSocket.close(code, null)
-                dispatch { failed() }
+                dispatch { if (!closed && attempt == id) failed() }
             }
         })
     }
+    fun start(correction: Boolean): Boolean {
+        if (closed || active) return false
+        active = true; ready = false; startSent = false; retried = false
+        this.correction = correction
+        if (connected) sendStart() else connect()
+        return !closed
+    }
+    private fun sendStart() {
+        startSent = socket?.send(Protocol.start(correction)) == true
+        if (!startSent) failed()
+    }
     private fun failed() {
         if (closed) return
-        // Before ready nothing has been recorded; retry once without replay or retaining audio.
-        if (!retried && !receivedReady) { retried = true; socket?.cancel(); connect() }
-        else { close(true); failure() }
+        val wasReady = ready
+        socket?.cancel(); socket = null; connected = false; startSent = false; ready = false
+        // No audio has left the pre-ready buffer: one reconnect can safely retry start.
+        if (!retried && !wasReady) { retried = true; connect() }
+        else { close(); failure() }
     }
     fun audio(bytes: ByteArray): Boolean {
-        if (closed) return false
+        if (!active || !ready) return false
         val ws = socket ?: return false
-        // At most ~2 seconds queued: a broken link must not accumulate an utterance in RAM.
-        if (ws.queueSize() > 64000) return false
+        if (ws.queueSize() + bytes.size > 160000) return false // Bound network backpressure as well.
         return ws.send(bytes.toByteString())
     }
-    fun stop(): Boolean = !closed && socket?.send(Protocol.STOP) == true
-    fun close(cancel: Boolean = false) {
+    fun stop(): Boolean = active && ready && socket?.send(Protocol.STOP) == true
+
+    /** Cancel retires the socket: v1 has no cancel acknowledgement or session IDs on finals. */
+    fun close(cancel: Boolean = false, immediate: Boolean = false) {
         if (closed) return
-        closed = true
-        if (cancel) socket?.send(Protocol.CANCEL)
-        socket?.close(1000, null)
+        closed = true; ++attempt; active = false; ready = false; connected = false
+        val ws = socket
         socket = null
-        client.connectionPool.evictAll()
+        if (cancel) ws?.send(Protocol.CANCEL)
+        if (immediate) ws?.cancel() else ws?.close(1000, null)
     }
 }

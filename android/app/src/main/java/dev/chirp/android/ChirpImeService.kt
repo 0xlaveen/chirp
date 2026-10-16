@@ -41,6 +41,17 @@ class ChirpImeService : InputMethodService() {
     private var reconfiguring = false
     @Volatile private var generation = 0
     @Volatile private var transport: StreamTransport? = null
+    private var pairing: Pairing? = null
+    private var preReady: PreReadyBuffer? = null
+    private var audioFinished = false
+    private var streamReady = false
+    private var stopSent = false
+    private var viewGeneration = 0
+    private var readyVersion = 0
+    private var idleExpiry: Runnable? = null
+    private var pressAt: Long? = null
+    private var firstPartialLatency: Long? = null
+    private var stopToFinal: Long? = null
     private var pendingHealth: okhttp3.Call? = null
     private var capture: PcmCapture? = null
     private var composing: ComposingSession? = null
@@ -101,7 +112,11 @@ class ChirpImeService : InputMethodService() {
         key("↵", "Enter or editor action") { edit { enter() } }
         key("⌨ back", "Previous keyboard") { cancelSession(); previousKeyboard() }
         column.addView(row)
-        raw = column.button("Use raw") { if (composing?.useRaw() == true) previousKeyboard(); forgetUndo(); render() }
+        raw = column.button("Use raw") {
+            val inserted = composing?.useRaw() == true
+            forgetUndo(); render()
+            if (inserted && store.returnToPrevious) previousKeyboard()
+        }
         column.button("Chirp setup") {
             cancelSession()
             startActivity(Intent(this, SetupActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
@@ -131,86 +146,84 @@ class ChirpImeService : InputMethodService() {
             status = "Dictation unavailable in password fields"; render(); return
         }
         val connection = currentInputConnection ?: run { status = "Select a text field first"; render(); return }
-        val pairing = store.pairing() ?: run { status = "Pair with your Mac in Chirp setup"; render(); return }
-        forgetUndo()
+        if (pairing == null) { status = "Pair with your Mac in Chirp setup"; render(); return }
+        forgetUndo(); clearIdleExpiry()
         val id = ++generation
+        pressAt = SystemClock.elapsedRealtime()
         composing = ComposingSession(connection)
         expectedCursor = minOf(selectionStart, selectionEnd).takeIf { it >= 0 } ?: minOf(info.initialSelStart, info.initialSelEnd)
-        composingStart = -1
-        lastSequence = -1
+        composingStart = -1; lastSequence = -1
         phase = Phase.CONNECTING
-        status = "Connecting to Mac…"; partial = ""; stopAt = null; finalLatency = null
-        render()
+        audioFinished = false; streamReady = false; stopSent = false
+        status = "Listening · connecting to Mac…"; partial = ""
+        stopAt = null; finalLatency = null; stopToFinal = null; firstPartialLatency = null
+        val buffer = PreReadyBuffer(send = { bytes -> transport?.audio(bytes) == true })
+        preReady = buffer
+        val overlay = store.debugOverlay
+        // Start capture before any network work. The buffer owns and zeroes every PCM frame.
+        capture = PcmCapture(
+            frame = { bytes -> buffer.offer(bytes) },
+            level = { value -> if (overlay) handler.post {
+                if (generation == id && phase != Phase.FINALIZING) {
+                    status = "Listening · level ${(value * 100).toInt()}%"; render()
+                }
+            } },
+            done = { error -> handler.post {
+                if (generation == id) {
+                    capture = null
+                    if (error != null) cancelSession(error) else finishAudio(id)
+                }
+            } })
+        capture?.start(); haptic(); render()
         setDeadline(id, 18000, "Mac unreachable — is Tailscale on?")
-        val healthCall = ChirpNetwork.healthCall(client, pairing)
-        pendingHealth = healthCall
-        scope.launch {
-            try {
-                val started = SystemClock.elapsedRealtime()
-                val health = withContext(Dispatchers.IO) { ChirpNetwork.health(healthCall) }
-                if (generation != id || !visible) return@launch
-                pendingHealth = null
-                rtt = SystemClock.elapsedRealtime() - started
-                store.health = health; retained = health.debugRetention
-                if (!health.ready) { cancelSession("Mac speech model is loading — try again shortly"); return@launch }
-                // Do not enable an external destination until its host has been shown to the user.
-                val oldLabel = correction.text.toString()
-                if (!health.correctionAvailable || oldLabel != correctionLabel(health) ||
-                    (health.correctionLeavesMachine && health.correctionHost == null)) store.correction = false
-                render()
-                transport = StreamTransport(client, pairing, store.correction,
-                    dispatch = { callback -> handler.post { callback() } },
-                    event = { event -> if (generation == id) onServerEvent(id, event) },
-                    failure = { if (generation == id) cancelSession("Mac unreachable — is Tailscale on?") })
-                    .also { it.connect() }
-            } catch (_: Exception) {
-                if (generation == id) cancelSession("Mac unreachable or pairing refused — check Tailscale and Chirp setup")
-            }
-        }
+        if (ensureTransport()?.start(store.correction) != true) cancelSession("Mac unreachable — is Tailscale on?")
     }
     private fun onServerEvent(id: Int, event: ServerEvent) {
         when (event) {
             is ServerEvent.Ready -> {
-                if (phase != Phase.CONNECTING) { cancelSession("Unexpected server response"); return }
+                if (streamReady || phase !in setOf(Phase.CONNECTING, Phase.FINALIZING)) {
+                    cancelSession("Unexpected server response"); return
+                }
+                ++readyVersion
                 retained = event.debugRetention
                 store.health = store.health?.copy(debugRetention = retained)
+                streamReady = true
                 clearDeadline()
-                phase = Phase.RECORDING; status = "Listening…"; haptic()
-                capture = PcmCapture(
-                    frame = { bytes -> generation == id && transport?.audio(bytes) == true },
-                    level = { value -> if (store.debugOverlay) handler.post {
-                        if (generation == id) { status = "Listening · level ${(value * 100).toInt()}%"; render() }
-                    } },
-                    done = { error -> handler.post {
-                        if (generation == id) {
-                            capture = null
-                            if (error != null) cancelSession(error) else finishAudio(id)
-                        }
-                    } })
-                capture?.start()
+                if (preReady?.ready() != true) { cancelSession("Mac connection is too slow — try again"); return }
+                if (phase == Phase.CONNECTING) { phase = Phase.RECORDING; status = "Listening…" }
+                if (audioFinished) sendStop(id)
             }
             is ServerEvent.Partial -> {
-                if (phase !in setOf(Phase.RECORDING, Phase.FINALIZING) || event.seq <= lastSequence) return
+                if (!streamReady || phase !in setOf(Phase.RECORDING, Phase.FINALIZING) || event.seq <= lastSequence) return
                 lastSequence = event.seq
+                if (firstPartialLatency == null && event.text.isNotEmpty())
+                    firstPartialLatency = pressAt?.let { SystemClock.elapsedRealtime() - it }
                 partial = event.text
                 if (composing?.partial(event) != true) cancelSession("Text field unavailable — try again")
             }
             is ServerEvent.Final -> {
-                if (phase != Phase.FINALIZING) { cancelSession("Unexpected server response"); return }
+                if (phase != Phase.FINALIZING || !stopSent) { cancelSession("Unexpected server response"); return }
+                stopToFinal = stopAt?.let { SystemClock.elapsedRealtime() - it }
                 clearDeadline()
                 capture?.stop(); capture = null
-                transport?.close(); transport = null
-                phase = Phase.IDLE
-                // Track expected cursor before commit triggers the editor's selection update.
+                preReady?.cancel(); preReady = null
+                phase = Phase.IDLE; streamReady = false
+                // Keep the authenticated socket for the next start/final pair.
                 expectedCursor = (if (composingStart >= 0) composingStart else expectedCursor) + event.text.length
                 if (composing?.final(event) != true) { cancelSession("Text field unavailable — try again"); return }
                 finalLatency = stopAt?.let { SystemClock.elapsedRealtime() - it }
-                status = "Inserted"; partial = ""
+                status = "Tap to dictate again"; partial = ""
+                scheduleIdleExpiry()
                 undo = event.corrected && event.raw != event.text
                 if (undo) {
-                    expiry = Runnable { forgetUndo(); render(); if (visible) previousKeyboard() }
-                        .also { handler.postDelayed(it, 5000) }
-                } else { composing = null; previousKeyboard() }
+                    expiry = Runnable {
+                        forgetUndo(); render()
+                        if (visible && store.returnToPrevious) previousKeyboard()
+                    }.also { handler.postDelayed(it, 5000) }
+                } else {
+                    composing = null
+                    if (store.returnToPrevious) previousKeyboard()
+                }
             }
             is ServerEvent.Failure -> cancelSession(when (event.code) {
                 "auth" -> "Pairing refused — pair again in Chirp setup"
@@ -224,29 +237,99 @@ class ChirpImeService : InputMethodService() {
         render()
     }
     private fun stopSession() {
-        if (phase == Phase.CONNECTING) { cancelSession("Cancelled before microphone opened"); return }
-        if (phase != Phase.RECORDING) return
+        if (phase !in setOf(Phase.CONNECTING, Phase.RECORDING)) return
         phase = Phase.FINALIZING; status = "Finishing…"; stopAt = SystemClock.elapsedRealtime()
         haptic(); capture?.stop(); render()
-        // stop is sent by capture's completion callback, after its last frame and recorder.release().
+        // Completion waits for recorder.release, and Ready if the press ended before connection.
     }
     private fun finishAudio(id: Int) {
-        if (phase == Phase.RECORDING) {
+        audioFinished = true
+        if (phase != Phase.FINALIZING) {
             phase = Phase.FINALIZING; stopAt = SystemClock.elapsedRealtime(); status = "Finishing…"
         }
-        if (transport?.stop() != true) { cancelSession("Mac unreachable — is Tailscale on?"); return }
-        setDeadline(id, 60000, "Mac took too long to finish — try again")
+        if (streamReady) sendStop(id)
         render()
     }
+    private fun sendStop(id: Int) {
+        if (stopSent) return
+        if (transport?.stop() != true) { cancelSession("Mac unreachable — is Tailscale on?"); return }
+        stopSent = true
+        setDeadline(id, 60000, "Mac took too long to finish — try again")
+    }
     private fun cancelSession(message: String = "Tap to dictate · hold to talk") {
+        val active = phase != Phase.IDLE
         ++generation
         clearDeadline(); forgetUndo()
-        pendingHealth?.cancel(); pendingHealth = null
+        preReady?.cancel(); preReady = null
         capture?.stop(); capture = null
-        transport?.close(true); transport = null
+        if (active) { transport?.close(true); transport = null }
         composing?.cancel(); composing = null
         partial = ""; phase = Phase.IDLE; status = message
+        audioFinished = false; streamReady = false; stopSent = false
+        if (visible) scheduleIdleExpiry()
         render()
+    }
+    private fun ensureTransport(): StreamTransport? {
+        transport?.let { return it }
+        val paired = pairing ?: return null
+        if (!visible) return null
+        lateinit var stream: StreamTransport
+        stream = StreamTransport(client, paired,
+            dispatch = { callback -> handler.post { callback() } },
+            event = { event -> if (transport === stream && phase != Phase.IDLE) onServerEvent(generation, event) },
+            failure = {
+                if (transport === stream) {
+                    transport = null
+                    if (phase != Phase.IDLE) cancelSession("Mac unreachable — is Tailscale on?")
+                }
+            })
+        transport = stream
+        stream.connect()
+        return stream
+    }
+    private fun refreshHealth() {
+        val paired = pairing ?: return
+        val id = viewGeneration
+        val readyAtStart = readyVersion
+        pendingHealth?.cancel()
+        val call = ChirpNetwork.healthCall(client, paired)
+        pendingHealth = call
+        scope.launch {
+            try {
+                val started = SystemClock.elapsedRealtime()
+                val response = withContext(Dispatchers.IO) { ChirpNetwork.health(call) }
+                val health = if (readyVersion == readyAtStart) response else response.copy(debugRetention = retained)
+                if (!visible || id != viewGeneration) return@launch
+                pendingHealth = null
+                rtt = SystemClock.elapsedRealtime() - started
+                val old = store.health
+                if (!health.correctionAvailable || correctionLabel(old) != correctionLabel(health) ||
+                    (health.correctionLeavesMachine && health.correctionHost == null)) store.correction = false
+                store.health = health; retained = health.debugRetention
+                render()
+            } catch (_: Exception) {
+                if (id == viewGeneration) pendingHealth = null
+                // Cached metadata remains visible; this request never gates recording.
+            }
+        }
+    }
+    private fun clearIdleExpiry() { idleExpiry?.let(handler::removeCallbacks); idleExpiry = null }
+    private fun scheduleIdleExpiry() {
+        clearIdleExpiry()
+        if (!visible || phase != Phase.IDLE) return
+        idleExpiry = Runnable {
+            idleExpiry = null
+            transport?.close(immediate = true); transport = null
+            client.connectionPool.evictAll()
+        }.also { handler.postDelayed(it, 30000) }
+    }
+    private fun hideResources() {
+        visible = false; ++viewGeneration
+        cancelSession(); clearIdleExpiry()
+        pendingHealth?.cancel(); pendingHealth = null
+        transport?.close(immediate = true); transport = null
+        client.dispatcher.cancelAll(); client.connectionPool.evictAll()
+        pairing = null
     }
     private fun setDeadline(id: Int, ms: Long, message: String) {
         clearDeadline()
@@ -275,7 +358,7 @@ class ChirpImeService : InputMethodService() {
         if (!::strip.isInitialized) return
         strip.text = partial.ifEmpty { status }
         banner.retention(retained || store.health?.debugRetention == true)
-        mic.text = when (phase) { Phase.IDLE -> "● Tap to dictate"; Phase.CONNECTING -> "Connecting…"; Phase.RECORDING -> "■ Stop"; Phase.FINALIZING -> "Finishing…" }
+        mic.text = when (phase) { Phase.IDLE -> "● Tap to dictate"; Phase.CONNECTING -> "■ Stop · connecting…"; Phase.RECORDING -> "■ Stop"; Phase.FINALIZING -> "Finishing…" }
         correction.text = correctionLabel(store.health)
         correction.isEnabled = phase == Phase.IDLE && store.health?.let {
             it.correctionAvailable && (!it.correctionLeavesMachine || it.correctionHost != null)
@@ -283,7 +366,8 @@ class ChirpImeService : InputMethodService() {
         correction.isChecked = store.correction
         raw.visibility = if (undo) View.VISIBLE else View.GONE
         debug.visibility = if (store.debugOverlay) View.VISIBLE else View.GONE
-        debug.text = "Health RTT: ${rtt ?: "—"} ms · stop→commit: ${finalLatency ?: "—"} ms"
+        debug.text = "Press→first partial: ${firstPartialLatency ?: "—"} ms · stop→final: ${stopToFinal ?: "—"} ms\n" +
+            "Stop→commit: ${finalLatency ?: "—"} ms · health RTT: ${rtt ?: "—"} ms"
     }
     override fun onStartInput(attribute: EditorInfo?, restarting: Boolean) {
         super.onStartInput(attribute, restarting)
@@ -294,18 +378,28 @@ class ChirpImeService : InputMethodService() {
         }
     }
     override fun onStartInputView(info: EditorInfo?, restarting: Boolean) {
-        super.onStartInputView(info, restarting); visible = true; render()
+        super.onStartInputView(info, restarting)
+        val wasVisible = visible
+        visible = true
+        if (!wasVisible) {
+            ++viewGeneration
+            pairing = store.pairing()
+            ensureTransport() // TLS + bearer only; the mic press sends start.
+            refreshHealth()
+            scheduleIdleExpiry()
+        }
+        render()
     }
     override fun onFinishInputView(finishingInput: Boolean) {
-        if (!reconfiguring) { visible = false; cancelSession() }
+        if (!reconfiguring) hideResources()
         if (!reconfiguring) super.onFinishInputView(finishingInput)
     }
     override fun onWindowHidden() {
-        if (!reconfiguring) { visible = false; cancelSession() }
+        if (!reconfiguring) hideResources()
         super.onWindowHidden()
     }
     override fun onFinishInput() { if (!reconfiguring) { cancelSession(); super.onFinishInput() } }
-    override fun onUnbindInput() { cancelSession(); super.onUnbindInput() }
+    override fun onUnbindInput() { hideResources(); super.onUnbindInput() }
     override fun onConfigurationChanged(newConfig: Configuration) {
         // The service and capture survive resizing/folding; framework recreates only the view.
         reconfiguring = true
@@ -325,7 +419,7 @@ class ChirpImeService : InputMethodService() {
         }
     }
     override fun onDestroy() {
-        cancelSession(); scope.cancel(); handler.removeCallbacksAndMessages(null)
+        hideResources(); scope.cancel(); handler.removeCallbacksAndMessages(null)
         ChirpNetwork.dispose(client); super.onDestroy()
     }
 }

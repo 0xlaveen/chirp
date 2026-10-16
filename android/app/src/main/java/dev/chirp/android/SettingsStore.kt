@@ -21,6 +21,9 @@ class SettingsStore(context: Context) {
     var haptics: Boolean
         get() = prefs.getBoolean("haptics", false)
         set(value) { prefs.edit { putBoolean("haptics", value) } }
+    var returnToPrevious: Boolean
+        get() = prefs.getBoolean("return_to_previous", true)
+        set(value) { prefs.edit { putBoolean("return_to_previous", value) } }
     var debugOverlay: Boolean
         get() = prefs.getBoolean("overlay", false)
         set(value) { prefs.edit { putBoolean("overlay", value) } }
