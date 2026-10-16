@@ -1,0 +1,26 @@
+{
+  "acquire_and_load_seconds": 59.38736605644226,
+  "clips": [
+    {
+      "audio_seconds": 5.8499375,
+      "decode_ms": 98.25193881988525,
+      "rtfx": 59.5401736623647,
+      "wer": 0
+    },
+    {
+      "audio_seconds": 15.4585625,
+      "decode_ms": 1091.4180278778076,
+      "rtfx": 14.163741211108803,
+      "wer": 0
+    },
+    {
+      "audio_seconds": 60.4536875,
+      "decode_ms": 956.0309648513794,
+      "rtfx": 63.23402663991943,
+      "wer": 0
+    }
+  ],
+  "engine": "FluidAudio 0.17.7 v2 int8 ANE",
+  "mode": "batch file; streaming not measured",
+  "peak_rss_mib": 536.421875
+}

@@ -1,0 +1,47 @@
+{
+  "engine": "parakeet-mlx:tdt-0.6b-v2",
+  "precision": "float32",
+  "streaming": "incremental",
+  "realtime": true,
+  "load_and_warm_seconds": 2.7904412919888273,
+  "peak_rss_mib": 794.90625,
+  "platform": "macOS-27.0.1-arm64-arm-64bit-Mach-O",
+  "clips": [
+    {
+      "target_seconds": 5,
+      "audio_seconds": 5.8499375,
+      "warm_decode_ms": 973.6592920380645,
+      "rtfx": 6.008197680479078,
+      "wer": 0.0,
+      "first_partial_ms": 413.67758298292756,
+      "partial_count": 10,
+      "partial_cadence_ms": 604.1976669803262,
+      "feed_ms_median": 359.5637499820441,
+      "stop_to_final_ms": 589.4745419500396
+    },
+    {
+      "target_seconds": 15,
+      "audio_seconds": 15.4585625,
+      "warm_decode_ms": 1397.974334016908,
+      "rtfx": 11.05782997859604,
+      "wer": 0.0,
+      "first_partial_ms": 330.89912502327934,
+      "partial_count": 56,
+      "partial_cadence_ms": 393.9926250022836,
+      "feed_ms_median": 360.0767705065664,
+      "stop_to_final_ms": 1572.416290990077
+    },
+    {
+      "target_seconds": 60,
+      "audio_seconds": 60.4536875,
+      "warm_decode_ms": 4920.124958036467,
+      "rtfx": 12.287022792227207,
+      "wer": 0.0,
+      "first_partial_ms": 297.109916980844,
+      "partial_count": 264,
+      "partial_cadence_ms": 188.8076250324957,
+      "feed_ms_median": 187.31020798441023,
+      "stop_to_final_ms": 4791.690292011481
+    }
+  ]
+}
