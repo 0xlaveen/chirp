@@ -42,9 +42,12 @@ class Settings:
     model_dir: Path | None = None
     engine: str = "mlx"
     precision: str = "float32"
-    streaming: str = "incremental"
+    streaming: str = "rolling"
+    finalization: str = "full"
     correction: CorrectionConfig = field(default_factory=CorrectionConfig)
     idle_seconds: float = 60.0
+    auth_seconds: float = 5.0
+    max_pending_auth: int = 8
     queue_timeout: float = 10.0
 
     @classmethod

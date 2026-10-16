@@ -14,7 +14,7 @@ TEXT = (
 )
 
 
-def generate(directory: Path):
+def generate(directory: Path, pause_ms: int = 0):
     directory.mkdir(parents=True, exist_ok=True)
     manifest = []
     # say's exact duration varies with OS/voice. Trim at the requested duration and use
@@ -67,6 +67,8 @@ def generate(directory: Path):
         index = 0
         while len(audio) < duration * 32000:
             sentence, pcm = pieces[index % len(pieces)]
+            if audio and pause_ms:
+                audio.extend(b"\0" * (pause_ms * 32))
             audio.extend(pcm)
             reference.append(sentence)
             index += 1
@@ -91,4 +93,6 @@ if __name__ == "__main__":
     parser.add_argument(
         "--output", type=Path, default=Path.home() / "Library/Caches/Chirp/fixtures"
     )
-    generate(parser.parse_args().output)
+    parser.add_argument("--pause-ms", type=int, default=0)
+    args = parser.parse_args()
+    generate(args.output, args.pause_ms)

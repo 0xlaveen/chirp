@@ -183,3 +183,62 @@ async def test_worker_single_thread_and_queue():
         assert len(set(engine.threads)) == 1
     finally:
         await worker.close()
+
+
+def test_auth_deadline_independent_of_idle(settings):
+    settings.idle_seconds = 60
+    settings.auth_seconds = 0.02
+    with TestClient(create_app(settings, FakeEngine(), TOKEN)) as client:
+        with client.websocket_connect("/v1/stream") as ws:
+            assert ws.receive_json()["code"] == "auth"
+
+
+def test_bounded_pending_auth(settings):
+    settings.auth_seconds = 5
+    settings.max_pending_auth = 1
+    with TestClient(create_app(settings, FakeEngine(), TOKEN)) as client:
+        with client.websocket_connect("/v1/stream"):
+            with client.websocket_connect("/v1/stream") as excess:
+                assert excess.receive_json()["code"] == "auth"
+            # Authenticated clients do not wait behind unauthenticated sockets.
+            assert client.get("/v1/health", headers=HEADERS).json()["ready"]
+
+
+def test_slow_engine_coalesces_frames(settings):
+    import threading
+
+    from chirp_server.engine.fake import FakeStream
+
+    entered, release = threading.Event(), threading.Event()
+    sizes = []
+
+    class SlowStream(FakeStream):
+        def feed(self, pcm):
+            sizes.append(len(pcm))
+            if len(sizes) == 1:
+                entered.set()
+                assert release.wait(timeout=5)
+            return super().feed(pcm)
+
+    class SlowEngine(FakeEngine):
+        def open_stream(self):
+            return SlowStream(self)
+
+    settings.idle_seconds = 10
+    with TestClient(create_app(settings, SlowEngine(), TOKEN)) as client:
+        with client.websocket_connect("/v1/stream", headers=HEADERS) as ws:
+            ws.send_json(START)
+            ws.receive_json()
+            ws.send_bytes(PCM[:6400])
+            assert entered.wait(timeout=5)
+            # 50 x 20 ms frames arrive while inference is blocked.
+            for _ in range(50):
+                ws.send_bytes(PCM[:640])
+            # HTTP health traverses the same event loop and confirms it remains responsive.
+            assert client.get("/v1/health", headers=HEADERS).json()["ready"]
+            ws.send_json({"type": "stop"})
+            release.set()
+            assert final(ws)["type"] == "final"
+    assert sum(sizes) == 3200 + 50 * 320
+    assert len(sizes) < 10
+    assert max(sizes) > 3200

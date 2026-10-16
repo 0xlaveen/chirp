@@ -10,8 +10,9 @@ from .stitch import stitch_transcript
 class ParakeetONNX:
     name = "parakeet-onnx:tdt-0.6b-v2-int8"
 
-    def __init__(self, model_dir=None):
+    def __init__(self, model_dir=None, finalization="full"):
         self.model_dir = model_dir
+        self.finalization = finalization
 
     def load(self):
         import onnx_asr

@@ -54,7 +54,8 @@ def parser():
     result.add_argument(
         "--precision", choices=["float32", "float16", "bfloat16"], default="float32"
     )
-    result.add_argument("--streaming", choices=["incremental", "rolling"], default="incremental")
+    result.add_argument("--streaming", choices=["incremental", "rolling"], default="rolling")
+    result.add_argument("--finalization", choices=["full", "segments"], default="full")
     result.add_argument("--debug-retain", action="store_true")
     result.add_argument("--port", type=int, default=7821)
     result.add_argument("--root-path", default="")
@@ -102,6 +103,7 @@ def main():
         settings.engine = args.engine
         settings.precision = args.precision
         settings.streaming = args.streaming
+        settings.finalization = args.finalization
         settings.debug_retain |= args.debug_retain
         logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s %(message)s")
         # httpx logs can contain endpoint queries/credentials; library logs are not diagnostics.

@@ -106,7 +106,7 @@ class Utterance:
                 self.changed.clear()
                 if self.aborted:
                     return
-                end = len(self.pcm)
+                end = min(len(self.pcm), self.offset + 64000)
                 chunk = samples(bytes(self.pcm[self.offset : end]))
                 self.offset = end
                 if chunk.size:
@@ -131,11 +131,17 @@ class Utterance:
                                 "type": "partial",
                                 "seq": self.seq,
                                 "text": partial.text,
-                                "stable": partial.stable,
+                                "stable": partial.stable
+                                if not (self.correction and self.settings.correction.enabled)
+                                else "",
                             }
                         )
                 if self.stopping and self.offset == len(self.pcm):
                     return
+                if len(self.pcm) - self.offset >= 6400 or (
+                    self.stopping and self.offset < len(self.pcm)
+                ):
+                    self.changed.set()
         except (WebSocketDisconnect, RuntimeError):
             self.failure = True
         except Exception:
@@ -222,15 +228,18 @@ def create_app(settings=None, engine=None, token=None, corrector=None):
         if settings.engine == "onnx":
             from .engine.onnx import ParakeetONNX
 
-            engine = ParakeetONNX(settings.model_dir)
+            engine = ParakeetONNX(settings.model_dir, settings.finalization)
         else:
             from .engine.mlx import ParakeetMLX
 
-            engine = ParakeetMLX(settings.model_dir, settings.precision, settings.streaming)
+            engine = ParakeetMLX(
+                settings.model_dir, settings.precision, settings.streaming, settings.finalization
+            )
     worker = EngineWorker(engine)
     retention = Retention(settings)
     corrector = corrector or Corrector(settings.correction)
     credential = token
+    pending_auth = 0
 
     async def housekeeping():
         while True:
@@ -307,8 +316,10 @@ def create_app(settings=None, engine=None, token=None, corrector=None):
             log.warning("code=engine")
             return JSONResponse(error("engine"), status_code=503)
 
-    async def receive(ws):
-        message = await asyncio.wait_for(ws.receive(), settings.idle_seconds)
+    async def receive(ws, deadline=None):
+        message = await asyncio.wait_for(
+            ws.receive(), settings.idle_seconds if deadline is None else deadline
+        )
         if message["type"] == "websocket.disconnect":
             raise WebSocketDisconnect(message.get("code", 1000))
         value = message.get("text")
@@ -325,14 +336,20 @@ def create_app(settings=None, engine=None, token=None, corrector=None):
         return message.get("bytes", b"")
 
     async def stream(ws: WebSocket):
+        nonlocal pending_auth
         utterance = None
         await ws.accept()
         try:
             valid = authorized(credential, bearer(ws.headers))
             # An explicitly supplied wrong header cannot switch authentication paths.
             if not valid and "authorization" not in ws.headers:
+                if pending_auth >= settings.max_pending_auth:
+                    await ws.send_json(error("auth"))
+                    await ws.close(code=4401)
+                    return
+                pending_auth += 1
                 try:
-                    auth = await receive(ws)
+                    auth = await receive(ws, settings.auth_seconds)
                     valid = (
                         isinstance(auth, dict)
                         and auth.get("type") == "auth"
@@ -340,6 +357,8 @@ def create_app(settings=None, engine=None, token=None, corrector=None):
                     )
                 except (AudioError, TimeoutError):
                     valid = False
+                finally:
+                    pending_auth -= 1
             if not valid:
                 await ws.send_json(error("auth"))
                 await ws.close(code=4401)

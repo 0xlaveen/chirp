@@ -38,7 +38,8 @@ async def test_real_model_decode():
     try:
         text = await worker.call(engine.transcribe, samples(decode_wav(path.read_bytes())))
         # Do not put transcript text into failure messages or recorded logs.
-        assert {"quick", "brown", "fox"}.issubset(set(text.lower().split()))
+        keywords_match = {"quick", "brown", "fox"}.issubset(set(text.lower().split()))
+        assert keywords_match
     finally:
         await worker.close()
 
@@ -61,5 +62,6 @@ def test_real_model_stream(settings):
             ws.send_json({"type": "stop"})
             result = final(ws)
             assert result["type"] == "final"
-            assert "fox" in result["raw"].lower()
+            keyword_match = "fox" in result["raw"].lower()
+            assert keyword_match
             assert result["timings_ms"]["first_partial"] is not None
