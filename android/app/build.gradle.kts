@@ -18,7 +18,10 @@ android {
             keyPassword = "android"
         }
     }
-    buildTypes { release { signingConfig = signingConfigs.getByName("local") } }
+    // The dev-only key is per checkout (scripts/make-keystore.sh, gitignored); without it the release APK is unsigned.
+    val localKeystore = rootProject.file("keystore/local-debug.keystore")
+    if (localKeystore.exists()) buildTypes { release { signingConfig = signingConfigs.getByName("local") } }
+    else logger.warn("keystore/local-debug.keystore missing: release APK will be unsigned (run scripts/make-keystore.sh)")
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
