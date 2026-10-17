@@ -1,12 +1,15 @@
 import Foundation
 
 public enum DictationState: Sendable, Equatable {
-    case idle, connecting, listening, finalizing, inserting
+    case idle, connecting, listening, finalizing
+    /// The server is cleaning up the transcript (it sent `correcting`); the raw text is on screen as "Polishing…".
+    case correcting
+    case inserting
     case error(String)
 
     public var isActive: Bool {
         switch self {
-        case .connecting, .listening, .finalizing, .inserting: true
+        case .connecting, .listening, .finalizing, .correcting, .inserting: true
         case .idle, .error: false
         }
     }
@@ -17,7 +20,12 @@ public enum DictationEvent: Sendable, Equatable {
     case hotkeyUp(at: TimeInterval)
     case escape
     case serverReady
+    /// The server started clean-up on the final transcript (`correcting`).
+    case correctingReceived
     case finalReceived
+    /// Clean-up did not deliver: the client timeout elapsed, or the server errored or the socket closed while it
+    /// ran. The raw transcript is inserted instead.
+    case correctionFailed
     case insertionFinished
     /// Server error, lost connection, mic failure, finalize timeout, no signal.
     case failed(String)
@@ -35,7 +43,7 @@ public enum DictationEffect: Sendable, Equatable {
     case insert
 }
 
-/// Pure state machine: idle → connecting → listening → finalizing → inserting → idle (+ error).
+/// Pure state machine: idle → connecting → listening → finalizing → [correcting →] inserting → idle (+ error).
 /// A press shorter than `tapThreshold` toggles; a longer press is push-to-talk until release.
 public struct DictationMachine: Sendable {
     public static let tapThreshold: TimeInterval = 0.3
@@ -71,12 +79,16 @@ public struct DictationMachine: Sendable {
             state = .listening
             return []
 
-        case (.connecting, .escape), (.listening, .escape), (.finalizing, .escape):
+        case (.connecting, .escape), (.listening, .escape), (.finalizing, .escape), (.correcting, .escape):
             pressStart = nil
             state = .idle
             return [.cancel]
 
-        case (.finalizing, .finalReceived):
+        case (.finalizing, .correctingReceived):
+            state = .correcting
+            return []
+
+        case (.finalizing, .finalReceived), (.correcting, .finalReceived), (.correcting, .correctionFailed):
             state = .inserting
             return [.insert]
 
@@ -84,7 +96,8 @@ public struct DictationMachine: Sendable {
             state = .idle
             return []
 
-        case (.connecting, .failed(let m)), (.listening, .failed(let m)), (.finalizing, .failed(let m)):
+        case (.connecting, .failed(let m)), (.listening, .failed(let m)), (.finalizing, .failed(let m)),
+             (.correcting, .failed(let m)):
             pressStart = nil
             state = .error(m)
             return [.abort(m)]

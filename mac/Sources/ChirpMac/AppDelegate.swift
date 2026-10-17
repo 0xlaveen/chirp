@@ -18,6 +18,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                            openSetup: { [onboardingWindow] in onboardingWindow.show() },
                            openAbout: { [aboutWindow] in aboutWindow.show() }))
         settingsWindow.serverStatus = { [controller] in MenuContent.serverStatus(health: controller.health, healthError: controller.healthError) }
+        settingsWindow.health = { [controller] in controller.health }
         settingsWindow.onHotkeyChange = { [controller] in controller.registerHotkey() }
         settingsWindow.onRecordingChanged = { [controller] recording in
             // The live hotkey would start a dictation while the user is typing the new one.

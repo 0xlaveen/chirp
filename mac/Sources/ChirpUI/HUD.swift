@@ -6,10 +6,12 @@ import SwiftUI
 /// What the leading symbol of the HUD shows: the live waveform while listening, otherwise the outcome.
 public enum HUDIndicator: Equatable, Sendable {
     case waveform, success, clipboard, warning, none
+    /// Clean-up is running or just finished: a sparkle, which moves unless Reduce Motion is on.
+    case sparkle
 
     var symbol: (name: String, label: String)? {
         switch self {
-        case .waveform, .none: nil
+        case .waveform, .none, .sparkle: nil
         case .success: ("checkmark.circle.fill", "Done")
         case .clipboard: ("doc.on.clipboard.fill", "Copied")
         case .warning: ("exclamationmark.triangle.fill", "Problem")
@@ -22,6 +24,8 @@ public enum HUDStatus {
     public static let connecting = "Connecting…"
     public static let listening = "Listening"
     public static let finishing = "Finishing…"
+    public static let polishing = "Polishing…"
+    public static let polished = "Polished"
     public static let inserting = "Inserting…"
     public static let noSpeech = "No speech detected"
 }
@@ -39,6 +43,18 @@ public final class HUDModel {
     public var showUseRaw = false
     /// The inserted text was rewritten by the server's clean-up.
     public var cleaned = false
+    /// The clean-up style in use ("Email"), shown as a small chip.
+    public var styleName: String?
+    /// The raw transcript is on screen as solid text while clean-up runs: a shimmer sweeps across it.
+    public var polishing = false
+    /// A fixed shimmer position (0...1) for the snapshots; nil lets the shimmer run on the clock.
+    public var shimmerPhase: Double?
+    /// The brief highlight of what clean-up changed, in reading order; nil outside that moment.
+    public var diff: [WordDiff.Segment]?
+    /// How far the removed words have faded, 0 (struck through, fully visible) to 1 (gone).
+    public var diffFade = 0.0
+    /// Clean-up did not deliver, so the raw transcript was kept: a small "kept original" note.
+    public var keptOriginal = false
     /// System display options, read each time the HUD is shown.
     public var reduceMotion = false
     public var increaseContrast = false
@@ -50,11 +66,63 @@ public final class HUDModel {
     public init() {}
 
     public func pushLevel(_ rms: Float) { levels.push(rms: rms) }
+
+    /// Clean-up started: the raw transcript stays on screen as solid text with a shimmer and the "Polishing…" status.
+    public func beginPolishing(raw: String, style: String?) {
+        if let style { styleName = style }
+        status = HUDStatus.polishing
+        indicator = .sparkle
+        isError = false
+        stable = raw
+        unstable = ""
+        withAnimation(.easeInOut(duration: 0.2)) { polishing = true }
+    }
+
+    /// The cleaned text arrived: crossfade to it with the changes highlighted (removed words struck through and fading,
+    /// changed words tinted) for `OutcomePresentation.highlightDuration`, then settle on the plain cleaned text.
+    /// Without a usable diff (or nothing changed) it is a plain crossfade. Reduce Motion shows the highlight without the fade.
+    public func playChangeHighlight(raw: String, cleaned: String) async {
+        let segments = WordDiff.segments(raw: raw, cleaned: cleaned)
+        status = HUDStatus.polished
+        indicator = .sparkle
+        if let segments {
+            diffFade = 0
+            withAnimation(.easeInOut(duration: 0.22)) { polishing = false; diff = segments }
+            let total = OutcomePresentation.highlightDuration
+            if reduceMotion {
+                try? await Task.sleep(for: .seconds(total))
+            } else {
+                // Hold the strike-through for a beat, then fade the removed words out; the model is stepped by hand
+                // because a concatenated Text cannot animate individual runs.
+                let hold = 0.3, steps = 12, fadeTime = total - hold
+                try? await Task.sleep(for: .seconds(hold))
+                for step in 1...steps {
+                    diffFade = Double(step) / Double(steps)
+                    try? await Task.sleep(for: .seconds(fadeTime / Double(steps)))
+                }
+            }
+        } else {
+            try? await Task.sleep(for: .seconds(reduceMotion ? 0.2 : 0.3))
+        }
+        settle(on: cleaned)
+    }
+
+    /// Shows `text` as plain solid text: no shimmer, no highlight.
+    public func settle(on text: String) {
+        withAnimation(.easeInOut(duration: 0.2)) {
+            polishing = false
+            diff = nil
+            diffFade = 0
+            stable = text
+            unstable = ""
+        }
+    }
     public func silence() { levels.clear() }
 
     public func reset() {
         status = ""; stable = ""; unstable = ""; levels.clear(); indicator = .waveform
         isError = false; showUseRaw = false; cleaned = false; onUseRaw = nil
+        styleName = nil; polishing = false; diff = nil; diffFade = 0; keptOriginal = false
     }
 }
 
@@ -139,6 +207,25 @@ public struct HUDView: View {
                            alignment: .leading)
                     .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 0)
+                if let name = model.styleName {
+                    Text(name)
+                        .font(.system(size: 10, weight: .semibold))
+                        .padding(.horizontal, 7).padding(.vertical, 2)
+                        .background(Color.primary.opacity(model.increaseContrast ? 0.16 : 0.1), in: Capsule())
+                        .foregroundStyle(Color.primary.opacity(model.increaseContrast ? 0.9 : 0.7))
+                        .lineLimit(1)
+                        .fixedSize()
+                        .accessibilityLabel("Style: \(name)")
+                }
+                if model.keptOriginal {
+                    Text("kept original")
+                        .font(.system(size: 10, weight: .semibold))
+                        .padding(.horizontal, 7).padding(.vertical, 2)
+                        .background(Color.primary.opacity(0.1), in: Capsule())
+                        .foregroundStyle(Color.primary.opacity(model.increaseContrast ? 0.9 : 0.7))
+                        .lineLimit(1)
+                        .fixedSize()
+                }
                 if model.cleaned {
                     Label("cleaned", systemImage: "sparkles")
                         .font(.system(size: 10, weight: .semibold))
@@ -165,7 +252,19 @@ public struct HUDView: View {
                 }
             }
             let shown = HUDText.tail(stable: model.stable, unstable: model.unstable)
-            if !shown.stable.isEmpty || !shown.unstable.isEmpty {
+            if let diff = model.diff {
+                DiffText(segments: diff, fade: model.diffFade, contrast: model.increaseContrast)
+                    .frame(width: HUDText.fittedWidth(DiffText.plain(diff), font: .systemFont(ofSize: 15), max: Self.maxTextWidth),
+                           alignment: .leading)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .transition(.opacity)
+            } else if model.polishing, !shown.stable.isEmpty || !shown.unstable.isEmpty {
+                ShimmerText(text: shown.stable + shown.unstable, animated: !model.reduceMotion, phase: model.shimmerPhase)
+                    .frame(width: HUDText.fittedWidth(shown.stable + shown.unstable, font: .systemFont(ofSize: 15), max: Self.maxTextWidth),
+                           alignment: .leading)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .transition(.opacity)
+            } else if !shown.stable.isEmpty || !shown.unstable.isEmpty {
                 (Text(shown.stable) + Text(shown.unstable).foregroundStyle(Color.primary.opacity(model.increaseContrast ? 0.72 : 0.5)))
                     .font(.system(size: 15))
                     .lineLimit(4)
@@ -186,7 +285,86 @@ public struct HUDView: View {
                 .frame(width: 20, height: 20)
         } else if model.indicator == .waveform {
             WaveformView(levels: model.levels, animated: !model.reduceMotion)
+        } else if model.indicator == .sparkle {
+            Image(systemName: "sparkles")
+                .font(.system(size: 15))
+                .foregroundStyle(HUDColors.action)
+                .symbolEffect(.pulse, options: .repeating, isActive: !model.reduceMotion)
+                .frame(width: 20, height: 20)
         }
+    }
+}
+
+/// The raw transcript as solid text while clean-up runs. A soft highlight sweeps across it (a still sparkle in the
+/// header and no sweep when Reduce Motion is on), so the HUD never looks stuck.
+struct ShimmerText: View {
+    let text: String
+    let animated: Bool
+    /// Pins the sweep for the snapshots.
+    var phase: Double?
+
+    private static let period = 1.5
+
+    var body: some View {
+        if animated, phase == nil {
+            TimelineView(.animation) { context in
+                sweep(at: context.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: Self.period) / Self.period)
+            }
+        } else {
+            sweep(at: animated ? (phase ?? 0) : nil)
+        }
+    }
+
+    private var label: some View { Text(text).font(.system(size: 15)).lineLimit(4) }
+
+    @ViewBuilder private func sweep(at position: Double?) -> some View {
+        if let position {
+            label
+                .overlay {
+                    // A narrow band travelling from beyond the left edge to beyond the right one.
+                    GeometryReader { geo in
+                        let band = max(40, geo.size.width * 0.28)
+                        let x = -band + (geo.size.width + 2 * band) * position
+                        LinearGradient(colors: [.clear, HUDColors.shimmer, .clear], startPoint: .leading, endPoint: .trailing)
+                            .frame(width: band)
+                            .offset(x: x)
+                    }
+                    .mask(label)
+                    .allowsHitTesting(false)
+                }
+        } else {
+            label
+        }
+    }
+}
+
+/// The brief highlight of what clean-up changed: the cleaned text with removed raw words struck through and fading out,
+/// and changed or added words gently tinted.
+struct DiffText: View {
+    let segments: [WordDiff.Segment]
+    let fade: Double
+    let contrast: Bool
+
+    /// The text without the removed words (the width the HUD settles at); removed words add width while visible.
+    static func plain(_ segments: [WordDiff.Segment]) -> String { segments.map(\.text).joined(separator: " ") }
+
+    var body: some View {
+        segments.enumerated().reduce(Text("")) { acc, item in
+            let (i, seg) = item
+            let space = i == 0 ? "" : " "
+            switch seg.kind {
+            case .same:
+                return acc + Text(space + seg.text)
+            case .changed, .added:
+                return acc + Text(space) + Text(seg.text).foregroundStyle(HUDColors.change)
+            case .removed:
+                // Removed words fade out and, once gone, take no room.
+                guard fade < 0.97 else { return acc }
+                return acc + Text(space) + Text(seg.text).strikethrough().foregroundStyle(Color.primary.opacity((contrast ? 0.75 : 0.55) * (1 - fade)))
+            }
+        }
+        .font(.system(size: 15))
+        .lineLimit(4)
     }
 }
 
@@ -219,20 +397,26 @@ public struct OutcomePresentation: Equatable, Sendable {
     public var showUseRaw = false
     /// The text was rewritten by clean-up: the HUD shows a small "cleaned" badge.
     public var cleaned = false
+    /// Clean-up was asked for but did not deliver (timeout, error, rejected answer): the raw text was kept.
+    public var keptOriginal = false
     /// Seconds the HUD stays up.
     public var linger: Double
+
+    /// How long the diff highlight shows before the cleaned text is inserted.
+    public static let highlightDuration = 0.8
 
     /// `offerRaw` is the "Show raw after clean-up" preference: off keeps the badge but drops the Use raw button.
     public static func of(_ outcome: InsertionOutcome, final: FinalResult, offerRaw: Bool = true) -> OutcomePresentation {
         let useRaw = final.canUseRaw && offerRaw
+        let kept = !final.corrected && final.correctionError != nil
         return switch outcome {
         case .inserted:
-            OutcomePresentation(status: "Inserted", showUseRaw: useRaw,
-                                cleaned: final.canUseRaw, linger: useRaw ? 5 : final.canUseRaw ? 1.8 : 1.2)
+            OutcomePresentation(status: "Inserted", showUseRaw: useRaw, cleaned: final.canUseRaw, keptOriginal: kept,
+                                linger: useRaw ? 5 : final.canUseRaw ? 1.8 : kept ? 2.4 : 1.2)
         case .copied:
-            OutcomePresentation(status: "Copied — ⌘V", indicator: .clipboard, cleaned: final.canUseRaw, linger: 3)
+            OutcomePresentation(status: "Copied — ⌘V", indicator: .clipboard, cleaned: final.canUseRaw, keptOriginal: kept, linger: 3)
         case .insertedUnverified:
-            OutcomePresentation(status: "Inserted? ⌘V if empty", indicator: .clipboard, cleaned: final.canUseRaw, linger: 4)
+            OutcomePresentation(status: "Inserted? ⌘V if empty", indicator: .clipboard, cleaned: final.canUseRaw, keptOriginal: kept, linger: 4)
         case .refusedSecure:
             OutcomePresentation(status: "Secure field — not inserted", indicator: .warning, isError: true, linger: 3)
         }
@@ -299,4 +483,8 @@ public enum HUDColors {
     public static let error = dynamic(light: errorLight, dark: errorDark)
     public static let action = dynamic(light: actionLight, dark: actionDark)
     public static let badge = Color(red: badgeRGB.r, green: badgeRGB.g, blue: badgeRGB.b)
+    /// Changed words in the clean-up highlight: the action blue, a little lighter than the "Use raw" button.
+    public static let change = action
+    /// The shimmer's highlight band: the accent blue, so the sweep reads against the solid text.
+    public static let shimmer = action.opacity(0.9)
 }

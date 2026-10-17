@@ -2,7 +2,7 @@ import AVFoundation
 import ChirpCore
 import Foundation
 
-/// `ChirpMac --selftest <wav> [--url URL] [--token-file PATH] [--correction] [--fast] [--expect word]…`
+/// `ChirpMac --selftest <wav> [--url URL] [--token-file PATH] [--correction] [--profile ID] [--fast] [--expect word]…`
 /// Streams a WAV through the real protocol without the mic and prints partials, the final and timings.
 /// The transcript goes to stdout because the operator asked for it; nothing is written to disk.
 enum SelfTest {
@@ -24,7 +24,8 @@ enum SelfTest {
         let audioMs = frames.count * 50
         print("selftest: \(path) → \(config.streamURL.absoluteString) (\(audioMs) ms audio, \(fast ? "fast" : "real-time"))")
 
-        let session = StreamSession(config: config, options: StartOptions(client: "mac", correction: args.contains("--correction")))
+        let session = StreamSession(config: config, options: StartOptions(client: "mac", correction: args.contains("--correction"),
+                                                                  correctionProfile: value("--profile") ?? CorrectionProfile.defaultID))
         let t0 = ContinuousClock.now
         func ms(_ since: ContinuousClock.Instant = t0) -> Int {
             let d = ContinuousClock.now - since
@@ -38,6 +39,8 @@ enum SelfTest {
                     print("  +\(ms())ms ready session=\(id) engine=\(engine ?? "?")\(debug ? "  ** DEBUG RETENTION ON **" : "")")
                 case .message(.partial(let seq, let text, let stable)):
                     print("  +\(ms())ms partial #\(seq) stable=\(stable.count)ch: \(text)")
+                case .message(.correcting(let seq, _, let profile)):
+                    print("  +\(ms())ms correcting #\(seq) profile=\(profile)")
                 case .message(.final(let f)): return (f, nil)
                 case .message(.error(let code, let message)): return (nil, "\(code): \(message)")
                 case .message(.unknown): break
@@ -88,7 +91,7 @@ enum SelfTest {
     private static func fmt(_ v: Double?) -> String { v.map { String(Int($0)) + "ms" } ?? "n/a" }
 
     private static func usage() -> Int32 {
-        print("usage: ChirpMac --selftest <file.wav> [--url URL] [--token-file PATH] [--correction] [--fast] [--expect WORD]…")
+        print("usage: ChirpMac --selftest <file.wav> [--url URL] [--token-file PATH] [--correction] [--profile ID] [--fast] [--expect WORD]…")
         return 64
     }
 

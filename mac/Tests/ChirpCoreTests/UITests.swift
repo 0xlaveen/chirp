@@ -158,12 +158,13 @@ import Testing
             view.subviews.flatMap { ($0 as? NSTextField).map { [$0] } ?? labels(in: $0) }
         }
         let rowLabels = labels(in: form.view).filter { $0.stringValue.hasSuffix(":") && $0.alignment == .right }
-        #expect(rowLabels.count == 8)
+        #expect(rowLabels.count == 12)   // General 3, Clean-up 4, Server 3, Permissions 2
         let edges = rowLabels.map { form.view.convert($0.bounds, from: $0).maxX }
         #expect(edges.allSatisfy { abs($0 - edges[0]) < 0.5 })
-        let controlEdges = [form.hotkey, form.launch, form.serverURL, form.micButton].map { form.view.convert($0.bounds, from: $0).minX }
+        let controlEdges = [form.hotkey, form.launch, form.serverURL, form.micButton, form.style, form.insertRawFirst, form.appStyles.scroll].map { form.view.convert($0.bounds, from: $0).minX }
         // The permission button sits after its status text, so compare only the controls that start a cell.
         #expect(abs(controlEdges[0] - controlEdges[1]) < 0.5 && abs(controlEdges[0] - controlEdges[2]) < 0.5)
+        #expect(controlEdges[4...].allSatisfy { abs($0 - controlEdges[0]) < 0.5 })
         #expect(controlEdges[0] > edges[0])
     }
 
