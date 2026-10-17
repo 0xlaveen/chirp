@@ -228,7 +228,7 @@ made to address them.
 
 | ID | Owner | Status | Evidence |
 |---|---|---|---|
-| R2-01 | server | open | strict xfail in `server/tests/test_review_round2.py` (server suite currently 63 passed + 1 xfailed) |
+| R2-01 | server | **fixed** in `chirp/server-r2` 198c097 + 83cf419, merged f918a9d | finalization keeps reading frames; cancel/disconnect suppresses correction (in-flight request cancelled), retention and final; nothing is sent after cancel and the socket stays usable. Strict xfail is now a passing test, plus a mid-correction cancel test; server suite 96 passed + 2 model tests |
 | R2-02 | mac | **fixed** in `chirp/mac-r2` 8fc5507, merged 52813fa | Use raw checks secure input first, replaces only a verified AX range in the same frontmost app, otherwise copies raw (no ⌘Z); ReviewRound2Tests now ordinary passing tests; Mac suite 100 tests, no known issues |
 | R2-03 | mac | **fixed** in `chirp/mac-r2` 8fc5507, merged 52813fa | one clipboard-restore transaction across overlapping pastes; ReviewRound2Tests now ordinary passing tests; Mac suite 100 tests, no known issues |
 | R2-04 | mac | **fixed** in `chirp/mac-r2` 8fc5507, merged 52813fa | CaptureEngine adapter; failed start/device-change rebuild unwinds; idempotent stop; ReviewRound2Tests now ordinary passing tests; Mac suite 100 tests, no known issues |
