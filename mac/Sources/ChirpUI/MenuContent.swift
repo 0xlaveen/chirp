@@ -44,7 +44,7 @@ public struct MenuInputs: Sendable {
     public var debugRetention = false
     public var inputName: String?
     public var correctionOn = false
-    public var hotkey: KeyCombo = .optionSpace
+    public var hotkey: KeyCombo = .controlOptionSpace
     public var micGranted = true
     public var accessibilityGranted = true
     public var launch: LaunchState = .off

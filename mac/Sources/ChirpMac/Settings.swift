@@ -9,7 +9,7 @@ enum Settings {
         get { defaults.string(forKey: "serverURL") ?? ServerConfig.defaultURL.absoluteString }
         set { defaults.set(newValue, forKey: "serverURL") }
     }
-    /// One of `KeyCombo.presets` (⌥Space by default).
+    /// One of `KeyCombo.presets` (⌃⌥Space by default).
     static var hotkey: KeyCombo {
         get { KeyCombo.preset(id: defaults.string(forKey: "hotkey")) }
         set { defaults.set(newValue.id, forKey: "hotkey") }

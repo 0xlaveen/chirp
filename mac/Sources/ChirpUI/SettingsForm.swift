@@ -3,7 +3,7 @@ import ChirpCore
 
 /// What the Settings window shows. The window controller reads it from the system; the snapshots pass fixed values.
 public struct SettingsState: Sendable {
-    public var hotkey: KeyCombo = .optionSpace
+    public var hotkey: KeyCombo = .controlOptionSpace
     public var serverURL = ServerConfig.defaultURL.absoluteString
     public var tokenPresent = true
     public var launch: LaunchState = .off

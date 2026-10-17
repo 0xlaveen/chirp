@@ -4,14 +4,23 @@ import Testing
 
 @MainActor
 @Suite struct HotKeyTests {
-    @Test func presetsAreUniqueAndDefaultIsOptionSpace() {
+    @Test func presetsAreUniqueAndDefaultIsControlOptionSpace() {
         let ids = KeyCombo.presets.map(\.id)
         #expect(Set(ids).count == ids.count)
-        #expect(KeyCombo.presets.first == .optionSpace)
-        #expect(KeyCombo.preset(id: "control-option-space") == .controlOptionSpace)
-        #expect(KeyCombo.preset(id: "nonsense") == .optionSpace)
-        #expect(KeyCombo.preset(id: nil) == .optionSpace)
-        #expect(KeyCombo.optionSpace.modifiers == UInt32(optionKey))
+        #expect(KeyCombo.presets.first == .controlOptionSpace)
+        #expect(KeyCombo.preset(id: "control-shift-space") == .controlShiftSpace)
+        #expect(KeyCombo.preset(id: "nonsense") == .controlOptionSpace)
+        #expect(KeyCombo.preset(id: nil) == .controlOptionSpace)
+    }
+
+    /// macOS 15+ silently ignores Carbon hot keys with only ⌥/⇧ modifiers, and ⌃Space alone belongs to Raycast/input sources.
+    @Test func everyPresetCanFireOnCurrentMacOS() {
+        for combo in KeyCombo.presets {
+            #expect(combo.modifiers & UInt32(controlKey | cmdKey) != 0, "\(combo.title) needs ⌃ or ⌘")
+            #expect(combo.modifiers != UInt32(controlKey), "\(combo.title) is ⌃Space alone")
+        }
+        #expect(KeyCombo.preset(id: "option-space") == .controlOptionSpace)
+        #expect(KeyCombo.preset(id: "option-shift-space") == .controlOptionSpace)
     }
 
     @Test func dispatchRoutesPressAndRelease() {

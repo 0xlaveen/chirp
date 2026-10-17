@@ -8,15 +8,18 @@ public struct KeyCombo: Sendable, Equatable, Identifiable {
     public let keyCode: UInt32
     public let modifiers: UInt32
 
-    public static let optionSpace = KeyCombo(id: "option-space", title: "⌥Space", keyCode: UInt32(kVK_Space), modifiers: UInt32(optionKey))
     public static let controlOptionSpace = KeyCombo(id: "control-option-space", title: "⌃⌥Space", keyCode: UInt32(kVK_Space), modifiers: UInt32(controlKey | optionKey))
-    public static let optionShiftSpace = KeyCombo(id: "option-shift-space", title: "⌥⇧Space", keyCode: UInt32(kVK_Space), modifiers: UInt32(optionKey | shiftKey))
+    public static let controlShiftSpace = KeyCombo(id: "control-shift-space", title: "⌃⇧Space", keyCode: UInt32(kVK_Space), modifiers: UInt32(controlKey | shiftKey))
+    public static let controlOptionCommandSpace = KeyCombo(id: "control-option-command-space", title: "⌃⌥⌘Space", keyCode: UInt32(kVK_Space), modifiers: UInt32(controlKey | optionKey | cmdKey))
     public static let escape = KeyCombo(id: "escape", title: "Esc", keyCode: UInt32(kVK_Escape), modifiers: 0)
 
-    /// Selectable dictation hotkeys; the first is the default.
-    public static let presets: [KeyCombo] = [.optionSpace, .controlOptionSpace, .optionShiftSpace]
+    /// Selectable dictation hotkeys; the first is the default. Each includes ⌃ or ⌘: since macOS 15, Carbon hot keys
+    /// whose only modifiers are ⌥ (or ⌥⇧) register without error but never fire. ⌃Space alone is Raycast's default
+    /// and the system input-source switcher, so it is not offered.
+    public static let presets: [KeyCombo] = [.controlOptionSpace, .controlShiftSpace, .controlOptionCommandSpace]
 
-    public static func preset(id: String?) -> KeyCombo { presets.first { $0.id == id } ?? .optionSpace }
+    /// Unknown ids, including the retired "option-space" and "option-shift-space", fall back to the default.
+    public static func preset(id: String?) -> KeyCombo { presets.first { $0.id == id } ?? .controlOptionSpace }
 }
 
 /// Registers Carbon hot keys, which deliver press *and* release without Input Monitoring permission.
