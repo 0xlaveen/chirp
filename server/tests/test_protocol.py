@@ -28,6 +28,7 @@ def test_health_redaction(client):
         "ready": True,
         "debug_retention": False,
         "correction": "off",
+        "correction_mode": "off",
         "correction_leaves_machine": False,
         "correction_host": None,
     }

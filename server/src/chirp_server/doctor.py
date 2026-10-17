@@ -229,6 +229,14 @@ def check_correction(settings: Settings) -> Check:
     config = settings.correction
     if not config.enabled:
         return Check("correction", OK, "off; finals keep raw text on this machine")
+    if config.mode == "managed":
+        from .cleanup_models import discover
+
+        try:
+            discover(config.model)
+        except ValueError:
+            return Check("correction", WARN, "managed model missing", "run model fetch --cleanup")
+        return Check("correction", OK, "managed; final text stays on this machine")
     host = urlsplit(config.base_url).hostname or "unknown host"
     if config.leaves_machine:
         return Check(

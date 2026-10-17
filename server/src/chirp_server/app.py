@@ -8,7 +8,6 @@ import secrets
 import time
 from collections import deque
 from contextlib import asynccontextmanager
-from urllib.parse import urlsplit
 from uuid import uuid4
 
 from starlette.applications import Starlette
@@ -302,6 +301,8 @@ def create_app(settings=None, engine=None, token=None, corrector=None):
                 with contextlib.suppress(asyncio.CancelledError):
                     await cleanup
             await worker.close()
+            if isinstance(corrector, Corrector):
+                await corrector.close()
 
     async def health(request: Request):
         if not authorized(credential, bearer(request.headers)):
@@ -315,10 +316,9 @@ def create_app(settings=None, engine=None, token=None, corrector=None):
                 "ready": worker.ready,
                 "debug_retention": settings.debug_retain,
                 "correction": "available" if correction.enabled else "off",
+                "correction_mode": correction.mode,
                 "correction_leaves_machine": correction.enabled and correction.leaves_machine,
-                "correction_host": urlsplit(correction.base_url).hostname
-                if correction.enabled
-                else None,
+                "correction_host": correction.host,
             }
         )
 

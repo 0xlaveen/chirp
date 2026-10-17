@@ -1,6 +1,7 @@
 """Configuration and local credentials; never log configuration objects."""
 
 import ipaddress
+import math
 import os
 import secrets
 import stat
@@ -12,16 +13,44 @@ from urllib.parse import urlsplit
 
 @dataclass
 class CorrectionConfig:
+    # Legacy enabled=true maps to endpoint only when mode is omitted.
     enabled: bool = False
+    mode: str | None = None
     base_url: str = "http://127.0.0.1:1234/v1"
     model: str = ""
     prompt: str = ""
     timeout: float = 8.0
     api_key_env: str = "CHIRP_LLM_API_KEY"
     keychain_service: str = ""
+    idle_seconds: float = 60.0
+
+    def __post_init__(self):
+        self.mode = self.mode if self.mode is not None else ("endpoint" if self.enabled else "off")
+        if self.mode not in {"off", "managed", "endpoint"}:
+            raise ValueError("Invalid correction mode")
+        self.enabled = self.mode != "off"
+        if any(not math.isfinite(v) or v <= 0 for v in (self.timeout, self.idle_seconds)):
+            raise ValueError("Invalid correction limits")
+        if self.mode == "endpoint":
+            url = urlsplit(self.base_url)
+            if (
+                url.scheme not in {"http", "https"}
+                or not url.hostname
+                or url.username
+                or url.password
+                or url.query
+                or url.fragment
+            ):
+                raise ValueError("Correction requires an HTTP(S) base URL without credentials")
+
+    @property
+    def host(self) -> str | None:
+        return urlsplit(self.base_url).hostname if self.mode == "endpoint" else None
 
     @property
     def leaves_machine(self) -> bool:
+        if self.mode != "endpoint":
+            return False
         host = urlsplit(self.base_url).hostname or ""
         if host.lower() == "localhost":
             return False

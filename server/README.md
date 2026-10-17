@@ -60,7 +60,7 @@ Optional `~/.config/chirp/server.toml` (or `--config /path/to/server.toml`):
 
 ```toml
 [correction]
-enabled = false
+mode = "off" # off (default), managed, endpoint
 base_url = "http://127.0.0.1:1234/v1"
 model = "your-loaded-model"
 timeout = 8.0
@@ -73,12 +73,56 @@ retain = false
 retain_days = 3
 ```
 
-Correction requires both server `enabled=true` and the client's `start.correction=true`.
+Correction requires a server mode of `managed` or `endpoint` and the client's
+`start.correction=true`. Legacy `enabled=true` still selects `endpoint` when `mode` is
+omitted; an explicit `mode` takes precedence. Restart the server after editing the config.
 Only the final transcript is submitted. The raw transcript is always returned for undo;
 timeouts, HTTP failures, empty/truncated/answer-shaped output return the raw text safely.
 API keys come from the named environment variable or Keychain, never the TOML file.
 Enabled external correction reports `correction_leaves_machine=true` and `correction_host`
 so clients can label the destination. POST uses raw decoding (no client correction request).
+
+### Private managed cleanup
+
+```sh
+uv run chirp-server model fetch --cleanup
+# Or select a pinned catalog entry explicitly:
+uv run chirp-server model fetch --cleanup qwen3.5-2b-4bit
+uv run chirp-server model fetch --cleanup qwen3.5-0.8b-4bit
+```
+
+```toml
+[correction]
+mode = "managed"
+# model = "qwen3-4b-instruct-2507-4bit"
+timeout = 8.0
+idle_seconds = 60.0
+```
+
+Managed cleanup uses MLX on Apple Silicon in a supervised child process. Model loading and
+all generation use the same thread. The first final loads the model; later finals reuse it.
+After 60 idle seconds the helper exits and releases its weights. The whole-call timeout
+includes queueing and cold load. Timeout, cancellation, crash, missing weights, or rejected
+output safely returns raw text; cancellation suppresses the final entirely. No download is
+triggered by startup, dictation, tests, or benchmarks. Managed inference forces Hugging Face
+and Transformers offline and sends no text to a service. The runtime is locked with the server.
+
+Weights use the shared Hugging Face cache (`~/.cache/huggingface/hub`, or `HF_HOME` /
+`HF_HUB_CACHE` when explicitly set). Fetch reuses existing pinned snapshots and blobs without
+copying them into Chirp's model store. To remove a cleanup model, stop the server and remove
+its `models--mlx-community--<model-name>` directory from that cache, or use Hugging Face's
+cache tools. Other applications may share those weights. No Koi model files are changed.
+Catalog revisions are recorded in `src/chirp_server/cleanup_models.py`. The 4B default
+passed the measured self-correction cases; the newer smaller models were faster but retained
+superseded details on the longer repair case. See [bench.md](../docs/bench.md).
+
+Set `mode = "off"` to disable cleanup. Managed mode and loopback endpoint mode keep text on
+this Mac; a remote endpoint receives final text when the client opts in. Endpoint redirects
+and environment proxy settings are disabled. API keys are used only by endpoint mode.
+Authenticated health retains `correction = "off|available"` for existing clients and adds
+`correction_mode = "off|managed|endpoint"`; managed mode reports a null host and
+`correction_leaves_machine = false`. Partials always stay raw. Every final includes both
+`text` and `raw`, plus `corrected`, `correction_error`, and cleanup timing.
 
 ### Pointing correction at LM Studio (operator steps)
 
@@ -94,7 +138,7 @@ in it, and sends nothing until correction is enabled below. The operator does, o
 
    ```toml
    [correction]
-   enabled = true
+   mode = "endpoint"
    base_url = "http://127.0.0.1:1234/v1"
    model = "<the identifier copied above>"
    ```
