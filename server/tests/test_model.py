@@ -2,6 +2,7 @@
 
 import asyncio
 import importlib.util
+import time
 from pathlib import Path
 
 import pytest
@@ -11,8 +12,11 @@ from test_protocol import final
 
 from chirp_server.app import create_app
 from chirp_server.audio import decode_wav, samples
+from chirp_server.cleanup_models import discover
+from chirp_server.config import CorrectionConfig
 from chirp_server.engine import EngineWorker
 from chirp_server.engine.mlx import ParakeetMLX
+from chirp_server.managed_cleanup import ManagedCleanup
 
 pytestmark = pytest.mark.model
 
@@ -42,6 +46,35 @@ async def test_real_model_decode():
         assert keywords_match
     finally:
         await worker.close()
+
+
+async def test_prewarm_first_final_faster_than_cold():
+    """A start-triggered prewarm overlaps the cold load, so the first final that
+    uses the warm helper lands far faster than an un-prewarmed cold first final."""
+    try:
+        discover()
+    except ValueError:
+        pytest.skip("cleanup weights missing; explicitly run model fetch --cleanup")
+    config = CorrectionConfig(mode="managed", timeout=120, idle_seconds=60)
+    raw = "um, so, please send the project schedule tomorrow"
+    prompt = "Fix punctuation and casing only. Change nothing else."
+    cold = ManagedCleanup(config)
+    try:
+        started = time.perf_counter()
+        await cold.generate(raw, prompt)
+        cold_ms = (time.perf_counter() - started) * 1000
+    finally:
+        await cold.close()
+    warm = ManagedCleanup(config)
+    try:
+        warm.prewarm()
+        await warm.wait_warm()
+        started = time.perf_counter()
+        await warm.generate(raw, prompt)
+        warm_ms = (time.perf_counter() - started) * 1000
+        assert warm_ms < cold_ms
+    finally:
+        await warm.close()
 
 
 def test_real_model_stream(settings):

@@ -97,6 +97,7 @@ mode = "managed"
 # model = "qwen3-4b-instruct-2507-4bit"
 timeout = 8.0
 idle_seconds = 60.0
+keep_loaded = false  # true: never idle-unload; also prewarm at server startup
 ```
 
 Managed cleanup uses MLX on Apple Silicon in a supervised child process. Model loading and
@@ -106,6 +107,34 @@ includes queueing and cold load. Timeout, cancellation, crash, missing weights, 
 output safely returns raw text; cancellation suppresses the final entirely. No download is
 triggered by startup, dictation, tests, or benchmarks. Managed inference forces Hugging Face
 and Transformers offline and sends no text to a service. The runtime is locked with the server.
+
+A WebSocket `start` with `correction: true` begins the helper load in the background, so the
+~2.5 s cold load (up to ~10 s on a busy host) overlaps with the user speaking instead of
+delaying the final. The prewarm never delays the start ack, partials or ASR, never counts
+against an utterance's correction timeout (a final's whole-call timeout may still wait for an
+in-flight load), survives a cancelled utterance on the normal idle timer, and a failed load
+falls back to raw text exactly as a cold start does. Concurrent starts share one load.
+
+### keep_loaded
+
+`keep_loaded = true` keeps the helper resident: no idle unload, and the server prewarms the
+helper at startup. The effective value is a client-persisted runtime override in
+`~/Library/Application Support/Chirp/server-state.json` (mode 0600, atomic write, only
+`{"correction_keep_loaded": bool}`), which wins over the toml value; `server.toml` is never
+rewritten. Authenticated `GET /v1/correction/settings` (same bearer auth as the profiles
+endpoint) reports `{"keep_loaded", "loaded", "loading", "model", "memory_mb",
+"memory_estimated", "mode"}`. `PUT` with `{"keep_loaded": bool}` persists the override and
+applies it immediately: true loads in the background and never idle-unloads; false re-arms the
+idle timer. Invalid bodies return 400 `bad_request`; outside managed mode PUT returns 409
+`unsupported`. `memory_mb` is the loaded helper's measured memory (peak process RSS plus peak
+MLX Metal wired memory, an upper bound; see
+[bench.md](../docs/bench.md#cleanup-prewarm-and-keep_loaded-2026-10-17)), or the last
+measured value when unloaded, or a per-model catalog estimate with `memory_estimated: true`;
+null outside managed mode. It is binary MiB (bytes / 1048576, rounded to int); clients
+format gigabytes as `memory_mb / 1024`. Authenticated `/v1/health` adds `correction_keep_loaded` and
+`correction_loaded` (additive; unauthenticated health stays `{"ok": true}`), and
+`chirp-server doctor` reports the effective keep_loaded state and the loaded-helper memory
+estimate.
 
 Weights use the shared Hugging Face cache (`~/.cache/huggingface/hub`, or `HF_HOME` /
 `HF_HUB_CACHE` when explicitly set). Fetch reuses existing pinned snapshots and blobs without
@@ -220,7 +249,8 @@ decode of the synthetic 5 s fixture (`--quick` skips it; the transcript is match
 keyword in memory and never printed), config file parse, token presence and mode (the value is
 never printed or created), port 7821 free vs held by chirp-server, debug retention state plus
 the count and size of retained files, the correction host and whether final text leaves the
-machine, `tailscale serve status --json` parsed read-only to report whether `/chirp` is
+machine, the effective cleanup keep_loaded state (persisted override or server.toml) with the
+loaded-helper memory estimate, `tailscale serve status --json` parsed read-only to report whether `/chirp` is
 published and tailnet-only (doctor never changes Tailscale), and whether the optional
 LaunchAgent is installed. The exit code is 1 only when a check FAILs. Doctor creates no files
 and starts no services.
@@ -254,6 +284,9 @@ uv run python scripts/generate_fixtures.py
 uv run python tests/client_sim.py "$HOME/Library/Caches/Chirp/fixtures/synthetic-5s.wav"
 uv run python scripts/bench.py --output "$HOME/Library/Caches/Chirp/bench.json"
 ```
+
+The managed-cleanup prewarm/keep_loaded benchmark is
+`HF_HUB_OFFLINE=1 uv run python scripts/bench_prewarm.py` (cached weights only).
 
 The simulator streams 50 ms frames at real-time pace and prints partial arrival counts and final
 timings; `--show-text` is for synthetic/public fixtures in an unrecorded local terminal only.

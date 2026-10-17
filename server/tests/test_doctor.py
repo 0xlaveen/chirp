@@ -89,6 +89,27 @@ def test_correction_states():
     assert "leaves this machine" in check.detail
 
 
+def test_correction_managed_reports_keep_loaded_and_memory(monkeypatch, tmp_path):
+    monkeypatch.setattr("chirp_server.cleanup_models.discover", lambda model_id="": tmp_path)
+    state = tmp_path / "state/server-state.json"
+    settings = Settings(
+        config_dir=tmp_path,
+        debug_dir=tmp_path / "debug",
+        state_path=state,
+        correction=CorrectionConfig(mode="managed", keep_loaded=True),
+    )
+    check = doctor.check_correction(settings)
+    assert check.status == OK
+    assert "keep_loaded on (server.toml)" in check.detail
+    assert "MiB" in check.detail
+    from chirp_server.config import persist_keep_loaded
+
+    persist_keep_loaded(state, False)
+    overridden = doctor.check_correction(settings)
+    assert overridden.status == OK
+    assert "keep_loaded off (state override)" in overridden.detail
+
+
 def test_config_defaults_when_file_missing(tmp_path):
     settings, check = doctor.load_settings(tmp_path / "server.toml")
     assert check.status == OK and settings.retain_days == 3

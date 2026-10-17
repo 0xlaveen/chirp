@@ -33,6 +33,8 @@ def test_health_redaction(client):
         "correction_leaves_machine": False,
         "correction_host": None,
         "correction_profiles": [profile.metadata() for profile in BUILTINS.values()],
+        "correction_keep_loaded": False,
+        "correction_loaded": False,
     }
 
 

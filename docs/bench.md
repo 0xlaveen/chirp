@@ -333,3 +333,71 @@ HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 uv run python scripts/bench_cleanup.py \
   --model qwen3-4b-instruct-2507-4bit --label profiles
 uv run pytest -q -m model
 ```
+
+## Cleanup prewarm and keep_loaded (2026-10-17)
+
+Managed cleanup now prewarms. A WebSocket `start` with `correction: true` in managed
+mode begins the helper cold load in the background, overlapping the ~2.5 s load
+(up to ~10 s on a busy host) with the user still speaking. The prewarm never delays
+the start ack, partials or ASR, never counts against an utterance's correction
+timeout (a final's whole-call timeout may still wait for an in-flight load), a
+cancelled or aborted utterance leaves the warm helper on the normal idle timer,
+concurrent starts share one load, and a failed background load falls back to raw
+text exactly as a cold start does. The server also prewarms at startup when
+`keep_loaded` is on. The prewarm load itself is bounded at 30 seconds.
+
+`keep_loaded` (default `false`) keeps the helper resident instead of idle-unloading
+it. `[correction] keep_loaded` in `server.toml` is overridden by a client-persisted
+runtime flag in `~/Library/Application Support/Chirp/server-state.json` (mode 0600,
+atomic write, only `{"correction_keep_loaded": bool}`); the toml file is never
+rewritten. `GET/PUT /v1/correction/settings` (same bearer auth as the profiles
+endpoint; 400 `bad_request` on invalid bodies; 409 `unsupported` outside managed
+mode) reports `{"keep_loaded", "loaded", "loading", "model", "memory_mb",
+"memory_estimated", "mode"}`. PUT true loads immediately in the background and never
+idle-unloads; PUT false persists and re-arms the idle timer. Authenticated
+`/v1/health` adds `correction_keep_loaded` and `correction_loaded`; `chirp-server
+doctor` reports the effective keep_loaded state and the loaded-helper memory.
+
+### Measured helper memory
+
+`memory_mb` is the helper process's peak RSS (`ru_maxrss`) plus peak MLX Metal wired
+memory, rounded to MiB, measured once after the model loads. File-mapped weights can
+appear in both terms, so the sum is an upper bound on the real unified-memory
+footprint. When the helper is not loaded, the settings endpoint reports the last
+measured value for the model, else this catalog estimate with
+`memory_estimated: true`.
+
+| Cleanup model | Memory (MiB) | Cold load (s) | 1-min load |
+|---|---:|---:|---:|
+| Qwen3 4B Instruct 2507 4-bit (default) | 4670 | 4.66 | 19.9 |
+| Qwen3.5 2B 4-bit | 2616 | 2.87 | 21.1 |
+| Qwen3.5 0.8B 4-bit | 1006 | 5.47 | 22.2 |
+
+### First-final latency after an idle unload
+
+Real WebSocket path with the real cached 4B helper and a fake ASR engine, so the
+numbers isolate managed cleanup. Every measured utterance follows an idle unload,
+so the helper starts cold: prewarm overlaps the load with ~3 s of speech, no-prewarm
+pays it inside the final. Shared-host observations, not latency budgets.
+
+| Variant | Stop→final median (ms) | Stop→final min–max (ms) | Correction median (ms) | Corrected | 1-min load |
+|---|---:|---:|---:|---:|---:|
+| No prewarm (before) | 4930.5 | 3745.7–5020.5 | 4927.8 | 3/3 | 19.9–24.7 |
+| Prewarm (after) | **1709.8** | 740.1–5961.3 | 1707.9 | 3/3 | 20.9–24.5 |
+
+The prewarm median is ~2.9× faster under this host load; its worst run (5961 ms)
+happened when the contended cold load (~5–6 s) outlasted the 3 s of speech, so the
+final still waited for the tail of the in-flight load. On a quieter host the
+~2.5 s load fits inside the speech window and the final pays only the ~400 ms warm
+generation. Quality is unchanged by construction: no prompt, model or guard changed
+in this task, and all six measured finals were corrected with zero raw fallbacks.
+
+To reproduce (cached-only; never downloads weights):
+
+```sh
+cd server
+HF_HUB_OFFLINE=1 uv run python scripts/bench_prewarm.py --runs 3
+HF_HUB_OFFLINE=1 uv run pytest -q -m model
+```
+
+Metrics are in [cleanup-prewarm.json](bench-data/cleanup-prewarm.json).

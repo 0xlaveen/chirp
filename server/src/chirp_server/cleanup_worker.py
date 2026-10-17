@@ -9,6 +9,25 @@ MAX_CONTEXT = 4096
 MAX_OUTPUT = 512
 
 
+def measured_memory_mb() -> int:
+    """Peak process RSS plus peak Metal wired memory, rounded to MiB.
+
+    ru_maxrss is reported in bytes on macOS; Metal (unified-memory) allocations do
+    not necessarily appear in RSS, so the sum, not the max, approximates the real
+    resident footprint of the loaded weights and working set.
+    """
+    import resource
+
+    total = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+    try:
+        import mlx.core as mx
+
+        total += mx.metal.get_peak_memory()
+    except Exception:
+        pass
+    return round(total / 1048576)
+
+
 def reply(payload):
     sys.__stdout__.write(json.dumps(payload) + "\n")
     sys.__stdout__.flush()
@@ -70,7 +89,7 @@ def main():
         except Exception:
             reply({"ready": False})
             return
-        reply({"ready": True})
+        reply({"ready": True, "memory_mb": measured_memory_mb()})
         while select.select([sys.stdin], [], [], float(sys.argv[2]) + 5)[0]:
             line = sys.stdin.readline()
             if not line:
