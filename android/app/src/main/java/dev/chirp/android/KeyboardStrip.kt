@@ -18,6 +18,7 @@ internal class KeyboardStrip(context: Context) : LinearLayout(context) {
         maxLines = 1; ellipsize = TextUtils.TruncateAt.END
         accessibilityLiveRegion = View.ACCESSIBILITY_LIVE_REGION_POLITE
     }
+    val history = control("Dictation history").apply { setIconResource(R.drawable.ic_history) }
     val mic = control("Microphone: tap to dictate, long press for options").apply { setIconResource(R.drawable.ic_mic) }
     val cancel = control("Cancel dictation").apply { text = "✕" }
     val raw = control("Use raw dictation").apply { text = "Use raw"; visibility = GONE
@@ -44,8 +45,10 @@ internal class KeyboardStrip(context: Context) : LinearLayout(context) {
         addView(status, LayoutParams(0, LayoutParams.MATCH_PARENT, 1f).apply { status.gravity = Gravity.CENTER_VERTICAL })
         addView(style, LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT))
         addView(raw, LayoutParams(context.dp(88), LayoutParams.MATCH_PARENT))
+        addView(history, LayoutParams(context.dp(48), LayoutParams.MATCH_PARENT))
         addView(mic, LayoutParams(context.dp(48), LayoutParams.MATCH_PARENT))
         show("Tap mic", "", false, false, false, false)
+        historyOpen(false)
     }
     private fun control(description: String) = MaterialButton(context).apply {
         text = ""; iconPadding = 0; iconGravity = MaterialButton.ICON_GRAVITY_TEXT_START
@@ -55,8 +58,8 @@ internal class KeyboardStrip(context: Context) : LinearLayout(context) {
     }
     fun mount(parent: RelativeLayout) {
         suggestions = parent.findViewById(helium314.keyboard.latin.R.id.suggestions_strip_wrapper)
-        (suggestions?.layoutParams as? RelativeLayout.LayoutParams)?.apply { marginEnd = context.dp(48) }
-        parent.addView(this, RelativeLayout.LayoutParams(context.dp(48), LayoutParams.MATCH_PARENT).apply { addRule(RelativeLayout.ALIGN_PARENT_END) })
+        (suggestions?.layoutParams as? RelativeLayout.LayoutParams)?.apply { marginEnd = context.dp(IDLE_WIDTH) }
+        parent.addView(this, RelativeLayout.LayoutParams(context.dp(IDLE_WIDTH), LayoutParams.MATCH_PARENT).apply { addRule(RelativeLayout.ALIGN_PARENT_END) })
     }
     fun show(message: String, @Suppress("UNUSED_PARAMETER") text: String, active: Boolean, finishing: Boolean, undo: Boolean, retention: Boolean,
              polishing: Boolean = false, style: String = "", notice: Boolean = false) {
@@ -64,7 +67,7 @@ internal class KeyboardStrip(context: Context) : LinearLayout(context) {
         val full = active || undo || error || retention || notice
         if (expanded != full) {
             expanded = full
-            (layoutParams as? RelativeLayout.LayoutParams)?.let { it.width = if (full) LayoutParams.MATCH_PARENT else context.dp(48); layoutParams = it }
+            (layoutParams as? RelativeLayout.LayoutParams)?.let { it.width = if (full) LayoutParams.MATCH_PARENT else context.dp(IDLE_WIDTH); layoutParams = it }
             suggestions?.visibility = if (full) INVISIBLE else VISIBLE
             if (motionAllowed()) { alpha = .6f; animate().alpha(1f).setDuration(160).start() }
         }
@@ -84,6 +87,7 @@ internal class KeyboardStrip(context: Context) : LinearLayout(context) {
         status.setBackgroundColor(if (retention) android.graphics.Color.rgb(164, 24, 24) else android.graphics.Color.TRANSPARENT)
         status.contentDescription = status.text
         cancel.visibility = if (full) VISIBLE else GONE
+        history.visibility = if (full) GONE else VISIBLE
         cancel.isEnabled = active || undo || error
         meter.visibility = if (active && !finishing) VISIBLE else GONE
         raw.visibility = if (undo) VISIBLE else GONE
@@ -134,6 +138,14 @@ internal class KeyboardStrip(context: Context) : LinearLayout(context) {
         super.onDetachedFromWindow()
     }
     fun level(value: Double) { meter.level = value.coerceIn(0.0, 1.0); meter.invalidate() }
+    fun historyOpen(open: Boolean) {
+        val palette = VoicePalette.of(context)
+        history.isActivated = open
+        history.backgroundTintList = android.content.res.ColorStateList.valueOf(if (open) palette.accent and 0x00ffffff or 0x33000000 else palette.background)
+        history.iconTint = android.content.res.ColorStateList.valueOf(palette.accent)
+        history.contentDescription = if (open) "Close dictation history" else "Dictation history"
+    }
+    private companion object { const val IDLE_WIDTH = 96 }
 }
 
 private class Waveform(context: Context) : View(context) {

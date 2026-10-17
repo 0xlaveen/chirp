@@ -103,7 +103,7 @@ internal fun SetupWizard(
                     }
                     1 -> {
                         Text("Allow the microphone", style = MaterialTheme.typography.titleLarge)
-                        Text("The mic opens only when you start dictation and is released as soon as you stop. No recordings or transcripts are saved on this phone.")
+                        Text("The mic opens only when you start dictation and is released as soon as you stop. No recordings are saved on this phone; transcripts are kept only if you turn on dictation history.")
                         Button(grantMic, Modifier.fillMaxWidth()) { Text(if (state.mic) "Microphone allowed ✓" else "Allow microphone") }
                         TextButton(appSettings) { Text("Open app permissions") }
                     }
@@ -163,6 +163,7 @@ internal fun SetupWizard(
                         }
                         Preference("Haptic cues", state.haptics) { state.haptics = it; preferences() }
                         Preference("Debug overlay (timings only)", state.debug) { state.debug = it; preferences() }
+                        HistorySettings()
                         TextButton(keyboardPreferences) { Text("Keyboard layouts & settings") }
                         BuildSetupOptions()
                         HorizontalDivider()

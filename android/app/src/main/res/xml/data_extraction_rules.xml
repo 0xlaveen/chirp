@@ -1,4 +1,5 @@
 <data-extraction-rules>
-    <cloud-backup><exclude domain="root" path="." /><exclude domain="sharedpref" path="." /></cloud-backup>
-    <device-transfer><exclude domain="root" path="." /><exclude domain="sharedpref" path="." /></device-transfer>
+    <!-- Nothing leaves the phone, including the opt-in dictation history (files/dictation_history.bin). -->
+    <cloud-backup><exclude domain="root" path="." /><exclude domain="file" path="." /><exclude domain="sharedpref" path="." /></cloud-backup>
+    <device-transfer><exclude domain="root" path="." /><exclude domain="file" path="." /><exclude domain="sharedpref" path="." /></device-transfer>
 </data-extraction-rules>

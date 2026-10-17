@@ -86,6 +86,14 @@ class KeyboardDictationTest {
         start(); finish(true); advance(5000)
         assertEquals(android.view.View.GONE, strip.raw.visibility)
     }
+    @Test fun `moving the cursor after a cleaned final still expires the notice`() {
+        start(); finish(true)
+        voice.selection(10, 10, 0, 0, -1, -1)
+        assertEquals(android.view.View.GONE, strip.raw.visibility)
+        advance(5000)
+        assertEquals(android.view.View.GONE, strip.status.visibility)
+        assertEquals(android.view.View.VISIBLE, strip.history.visibility)
+    }
     @Test fun `hide destroy and late capture callbacks cannot restart recording or commit`() {
         start(); stream.partial(); advance(16); val old = stream
         voice.hidden(); capture.finish(); old.final(); advance(0)

@@ -14,8 +14,12 @@ import helium314.keyboard.latin.LatinIME
 open class ChirpImeService : LatinIME() {
     private val handler = Handler(Looper.getMainLooper())
     private var reconfiguring = false
-    private val dictation by lazy {
-        KeyboardDictation(this, ::createCapture, ::createTransport, ::prepareChirpDictation, ::finishChirpDictation)
+    private var closingHistory = false
+    private val history: KeyboardHistory by lazy { createHistory { dictation.insertText(it) } }
+    internal open fun createHistory(insert: (String) -> Boolean) = KeyboardHistory(this, insert)
+    private val dictation: KeyboardDictation by lazy {
+        KeyboardDictation(this, ::createCapture, ::createTransport, ::prepareChirpDictation, ::finishChirpDictation,
+            history = history, started = { history.close() })
     }
     protected open fun createCapture(frame: (ByteArray) -> Boolean, level: (Double) -> Unit, done: (String?) -> Unit): Capture =
         captureForBuild(this, frame, level, done)
@@ -32,22 +36,32 @@ open class ChirpImeService : LatinIME() {
         val strip = KeyboardStrip(ContextThemeWrapper(this, R.style.Theme_Chirp)).apply { tag = "chirp_strip" }
         strip.mount(suggestions)
         dictation.attach(strip)
+        history.mount(keys, strip)
         super.setInputView(keys)
     }
     override fun onChirpVoiceClick(): Boolean { dictation.toggle(); return true }
     override fun onChirpVoiceTouch(action: Int): Boolean { dictation.touch(action); return true }
     override fun onEvent(event: Event) {
-        if (event.keyCode != KeyCode.VOICE_INPUT) dictation.beforeEdit()
+        if (event.keyCode != KeyCode.VOICE_INPUT) { dictation.beforeEdit(); history.close() }
         super.onEvent(event)
     }
     override fun onTextInput(rawText: String?) { dictation.beforeEdit(); super.onTextInput(rawText) }
     override fun onStartInput(attribute: EditorInfo?, restarting: Boolean) {
-        if (!reconfiguring) dictation.input(attribute, restarting)
+        if (!reconfiguring) { history.close(); dictation.input(attribute, restarting) }
         super.onStartInput(attribute, restarting)
     }
     override fun onStartInputView(info: EditorInfo?, restarting: Boolean) {
         super.onStartInputView(info, restarting)
-        dictation.shown()
+        dictation.shown(); history.shown()
+    }
+    // Back closes the history panel and returns to the keys instead of hiding the keyboard.
+    override fun onKeyDown(keyCode: Int, event: android.view.KeyEvent): Boolean {
+        if (keyCode == android.view.KeyEvent.KEYCODE_BACK && history.open) { closingHistory = true; history.close(); return true }
+        return super.onKeyDown(keyCode, event)
+    }
+    override fun onKeyUp(keyCode: Int, event: android.view.KeyEvent): Boolean {
+        if (keyCode == android.view.KeyEvent.KEYCODE_BACK && closingHistory) { closingHistory = false; return true }
+        return super.onKeyUp(keyCode, event)
     }
     override fun onUpdateSelection(oldSelStart: Int, oldSelEnd: Int, newSelStart: Int, newSelEnd: Int, candidatesStart: Int, candidatesEnd: Int) {
         val owned = dictation.ownsComposition
@@ -55,15 +69,15 @@ open class ChirpImeService : LatinIME() {
         if (!owned) super.onUpdateSelection(oldSelStart, oldSelEnd, newSelStart, newSelEnd, candidatesStart, candidatesEnd)
     }
     override fun onFinishInputView(finishingInput: Boolean) {
-        if (!reconfiguring) dictation.hidden()
+        if (!reconfiguring) { dictation.hidden(); history.close() }
         super.onFinishInputView(finishingInput)
     }
-    override fun onWindowHidden() { if (!reconfiguring) dictation.hidden(); super.onWindowHidden() }
-    override fun onFinishInput() { if (!reconfiguring) dictation.hidden(); super.onFinishInput() }
-    override fun onUnbindInput() { dictation.hidden(); super.onUnbindInput() }
+    override fun onWindowHidden() { if (!reconfiguring) { dictation.hidden(); history.close() }; super.onWindowHidden() }
+    override fun onFinishInput() { if (!reconfiguring) { dictation.hidden(); history.close() }; super.onFinishInput() }
+    override fun onUnbindInput() { dictation.hidden(); history.close(); super.onUnbindInput() }
     override fun onConfigurationChanged(newConfig: Configuration) {
         reconfiguring = true
         try { super.onConfigurationChanged(newConfig) } finally { reconfiguring = false }
     }
-    override fun onDestroy() { dictation.destroy(); handler.removeCallbacksAndMessages(null); super.onDestroy() }
+    override fun onDestroy() { dictation.destroy(); history.destroy(); handler.removeCallbacksAndMessages(null); super.onDestroy() }
 }

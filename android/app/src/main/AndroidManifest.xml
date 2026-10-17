@@ -24,6 +24,8 @@
                 <data android:scheme="chirp" android:host="pair" />
             </intent-filter>
         </activity>
+        <activity android:name=".HistoryActivity" android:exported="false" android:label="@string/history_title"
+            android:windowSoftInputMode="adjustResize" />
         <service android:name=".ChirpAccessibilityService" android:label="@string/bubble_name"
             android:exported="true" android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"
             android:foregroundServiceType="microphone">
