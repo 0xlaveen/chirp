@@ -32,6 +32,7 @@ final class SettingsWindowController: NSObject, NSTextFieldDelegate {
         s.serverURL = settings.serverURL
         s.tokenPresent = ServerConfig.readToken() != nil
         s.launch = LaunchAtLogin.state
+        s.wordWaveform = settings.wordWaveform
         s.soundsEnabled = settings.soundsEnabled
         s.soundPack = settings.soundPack
         s.soundVolume = settings.soundVolume
@@ -192,6 +193,8 @@ final class SettingsWindowController: NSObject, NSTextFieldDelegate {
         form.serverURL.delegate = self
         form.launch.target = self
         form.launch.action = #selector(toggleLaunch(_:))
+        form.wordWaveform.target = self
+        form.wordWaveform.action = #selector(toggleWordWaveform(_:))
         form.micButton.target = self
         form.micButton.action = #selector(grantMic)
         form.accessibilityButton.target = self
@@ -221,6 +224,7 @@ final class SettingsWindowController: NSObject, NSTextFieldDelegate {
     }
 
     @objc private func toggleCleanup(_ sender: NSButton) { settings.correction = sender.state == .on }
+    @objc private func toggleWordWaveform(_ sender: NSButton) { settings.wordWaveform = sender.state == .on }
     @objc private func toggleOfferRaw(_ sender: NSButton) { settings.showRawAfterCleanup = sender.state == .on }
 
     @objc private func hotkeyChanged(_ sender: NSPopUpButton) {

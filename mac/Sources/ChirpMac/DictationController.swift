@@ -177,6 +177,7 @@ final class DictationController {
         startOptions = settings.startOptions(frontmostBundleID: NSWorkspace.shared.frontmostApplication?.bundleIdentifier,
                                              available: health?.correctionProfiles)
         hud.model.styleName = startOptions.correction ? CorrectionProfile.name(for: startOptions.correctionProfile, in: health) : nil
+        hud.model.wordWaveform = startOptions.wordTimings
         hud.show()
         // The start cue plays right after this (see `send`); the microphone must not open before it is over.
         let micMayOpen = ContinuousClock.now + .seconds(Sounds.startDelay())
@@ -237,14 +238,15 @@ final class DictationController {
         case .message(.ready(_, _, let debug)):
             hud.model.debugRetention = debug
             send(.serverReady)
-        case .message(.partial(_, let text, let stable)):
+        case .message(.partial(_, let text, let stable, let words)):
             guard [.connecting, .listening, .finalizing].contains(machine.state) else { return }
             let (s, u) = splitPartial(text: text, stable: stable)
             hud.model.stable = s
             hud.model.unstable = u
-        case .message(.correcting(_, let raw, let profile)):
+            hud.model.showWords(text: text, words: words)
+        case .message(.correcting(_, let raw, let profile, let words)):
             guard machine.state == .finalizing else { return }
-            beginPolishing(raw: raw, profile: profile)
+            beginPolishing(raw: raw, profile: profile, words: words)
         case .message(.final(let f)):
             pendingFinal = f
             send(.finalReceived)
@@ -261,9 +263,9 @@ final class DictationController {
     }
 
     /// `correcting` arrived: show the raw transcript at once, solid, with the polishing state and the style chip.
-    private func beginPolishing(raw: String, profile: String) {
+    private func beginPolishing(raw: String, profile: String, words: [WordTiming]?) {
         polishingRaw = raw
-        hud.model.beginPolishing(raw: raw, style: CorrectionProfile.name(for: profile, in: health))
+        hud.model.beginPolishing(raw: raw, style: CorrectionProfile.name(for: profile, in: health), words: words)
         send(.correctingReceived)
         hud.announce(HUDStatus.polishing)
         let myEpoch = epoch
@@ -366,6 +368,7 @@ final class DictationController {
             } else {
                 // The cleaned text is shown with its changes highlighted before it is inserted, once.
                 if final.canUseRaw, settings.showChangesAfterCleanup { await hud.model.playChangeHighlight(raw: final.raw, cleaned: text) }
+                else if !final.corrected, let words = final.words { hud.model.finishWords(text: text, words: words) }
                 else { hud.model.settle(on: text) }
                 hud.model.status = HUDStatus.inserting
                 hud.model.indicator = .waveform

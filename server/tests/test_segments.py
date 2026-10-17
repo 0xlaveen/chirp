@@ -29,7 +29,8 @@ def test_pause_commit_and_tail_only_final():
     assert live.stable == "First sentence."
     assert live.text.startswith(live.stable)
     result = stream.finish()
-    assert result == "First sentence. Second sentence."
+    assert result.text == "First sentence. Second sentence."
+    assert result.words is None  # the engine has no timings
     assert engine.sizes[-1] == 8000
 
 

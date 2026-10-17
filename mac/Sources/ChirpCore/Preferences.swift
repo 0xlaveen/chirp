@@ -41,6 +41,12 @@ public final class Preferences: @unchecked Sendable {
         get { defaults.bool(forKey: "showChangesAfterCleanup") }
         set { defaults.set(newValue, forKey: "showChangesAfterCleanup") }
     }
+    /// The HUD's word waveform: each word's audio drawn above it while dictating. Off by default; on asks the server
+    /// for word timings.
+    public var wordWaveform: Bool {
+        get { defaults.bool(forKey: "wordWaveform") }
+        set { defaults.set(newValue, forKey: "wordWaveform") }
+    }
     /// The default clean-up style (a `correction_profiles` id).
     public var correctionProfile: String {
         get { defaults.string(forKey: "correctionProfile") ?? CorrectionProfile.defaultID }
@@ -166,6 +172,7 @@ public final class Preferences: @unchecked Sendable {
     public func startOptions(frontmostBundleID bundleID: String? = nil, available: [CorrectionProfile]? = nil) -> StartOptions {
         let style = cleanupStyle(frontmostBundleID: bundleID, available: available)
         return StartOptions(client: "mac", correction: correction, correctionProfile: style.profile,
-                            correctionInstructions: style.instructions, correctionPrompt: style.prompt)
+                            correctionInstructions: style.instructions, correctionPrompt: style.prompt,
+                            wordTimings: wordWaveform)
     }
 }

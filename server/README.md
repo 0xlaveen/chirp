@@ -121,6 +121,23 @@ Cancel or disconnect during finalization discards the utterance: no correction r
 - `--streaming incremental` uses upstream's documented cached context and one-second chunks, with full re-decoding for final quality. The measured rolling path stays the default.
 - `--precision float16|bfloat16` enables experiments. Spectral preprocessing stays fp32 because upstream 0.5.3's reduced-precision FFT view has an invalid shape.
 
+### Word timings (opt-in)
+
+A client that sends `"word_timings": true` in `start` gets `words` on every partial, on
+`correcting` and on the final: `[{"text": "hello,", "start": 0.48, "end": 0.71, "stable": false}, …]`,
+aligned with the raw text (joining the entries with spaces gives `text`, or `raw` for correcting
+and finals), in seconds from the utterance's first sample. Parakeet TDT times its SentencePiece
+pieces; `engine/words.py` folds them into words at the `▁` boundaries, so attached punctuation
+stays with its word and the result matches the rendered transcript. The rolling preview carries
+its merged timestamped tokens, so words keep their positions across the eight-second windows
+and pause segments are shifted by the audio cut off the front. `stable` marks words later
+partials leave alone (committed segments, or older than the preview's merge reach); the final's
+words are all stable, and `words` always describe the raw decode (cleaned text cannot be mapped
+word for word). The ONNX fallback has no token timings and omits the field. Without the flag
+every message is byte-identical to before, so old Mac and Android clients are unaffected. The
+grouping is a linear pass over at most a few hundred pieces: measured per-partial latency on the
+15 s fixture is unchanged within run-to-run noise (see the branch report in `docs/review/word-waveform.md`).
+
 ## Configure
 
 Optional `~/.config/chirp/server.toml` (or `--config /path/to/server.toml`). Restart the server after editing it.

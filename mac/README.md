@@ -62,6 +62,19 @@ The HUD is a floating capsule at the bottom centre of the screen under the mouse
 
 A live waveform from the input level sits at the left, then a short status: Connecting…, Listening, Finishing…, Inserting…, Inserted, Copied — ⌘V. A symbol replaces the waveform once there is an outcome. Stable text is shown normally with the still-changing tail dimmed; the capsule grows with the text up to a maximum width, then wraps (four lines at most) and animates its size. It fades and scales in and out. **Reduce Motion** drops the scale and the animation (steady bars instead of a moving waveform); **Increase Contrast** switches to an opaque surface with a stronger border and a less dimmed tail.
 
+### Word waveform overlay (optional)
+
+Settings → General → "Word waveform overlay" (off by default) asks the server for word timings (`start.word_timings`) and draws the
+live transcript word by word with the bars of each word's own audio directly above it: the mapping from sound to text is
+spatial. The HUD keeps every 50 ms input level of the utterance (`UtteranceLevels`; frame `i` is the server's `i * 50 ms`,
+so a word's `start…end` is a slice of them) and lays the words out in a wrapping flow (`WordWaveformView`): a pause widens the
+gap and draws a dotted rest, a word being recognised is tinted and pulses, it settles to the solid colour once later partials
+leave it alone, a revised word crossfades in place, and a long dictation keeps the newest words behind an ellipsis. While
+clean-up runs the raw words stay with their audio under the shimmer; the cleaned text cannot be mapped word for word, so the
+ribbon fades out when it lands (and on "Use raw"). Reduce Motion drops the pulse, springs and sweep; VoiceOver reads the
+transcript as one element as before. Without timings (an old server, the ONNX engine) the HUD shows plain text, and with the
+option off nothing changes. Design notes and the rejected variants are in [docs/review/word-waveform.md](../docs/review/word-waveform.md).
+
 ### Sounds
 
 Menu submenu and Settings → Sounds, off by default: a quiet cue when dictation starts and another when capture ends. Packs: **Chirp** (default; a soft songbird), **Soft** (marimba, a fifth up/down), **Glass**, **Click**, **System** (stock Tink/Pop) and **Custom…** (your own aiff/wav/caf/m4a/mp3 for start and stop, copied into `~/Library/Application Support/Chirp/Sounds/`). The Sounds tab has the on/off switch, the pack picker with ▶ previews and a volume slider (default 60 %). The start cue finishes before the microphone opens (it waits min(cue + 20 ms, 300 ms); a longer start sound is trimmed to 0.3 s), so it is never recorded. The packs are synthesised by `scripts/make-sounds.swift`; see [docs/sounds.md](docs/sounds.md).
@@ -230,7 +243,7 @@ It prints partials, the final text and timings (client-measured stop→final plu
 
 `ChirpMac --render-snapshots <dir>` draws the HUD in every state (plus Reduce Motion and Increase Contrast variants, and the clean-up flow listening → polishing → changes → inserted), the menu in each state and its submenus, every Settings tab, the Set Up and About windows to PNGs in light and dark appearance (about 150 files, 8 MB), then exits. It is handled before any `NSApplication`, onboarding or permission code and touches no microphone, Accessibility, pasteboard or TCC API; all inputs are synthetic. The tests render the same set into a temporary directory, with a 250 KB cap per PNG.
 
-Only a curated set is committed in [docs/screenshots/mac](../docs/screenshots/mac): the key HUD states, the menu and its Clean-up submenu, one image per Settings tab and the Set Up welcome, each in light and dark (24 PNGs, about 1.3 MB). The list is `Snapshots.committedNames`; `ChirpMac --render-snapshots <dir> --curated` writes just those. `scripts/snapshots.sh` refreshes the committed folder (and deletes any other PNG there); `scripts/snapshots.sh all` renders everything into a new temporary directory and prints its path. A test fails when the folder drifts from the list or grows past 3 MB.
+Only a curated set is committed in [docs/screenshots/mac](../docs/screenshots/mac): the key HUD states, the menu and its Clean-up submenu, one image per Settings tab and the Set Up welcome, each in light and dark (30 PNGs, about 1.8 MB). The list is `Snapshots.committedNames`; `ChirpMac --render-snapshots <dir> --curated` writes just those. `scripts/snapshots.sh` refreshes the committed folder (and deletes any other PNG there); `scripts/snapshots.sh all` renders everything into a new temporary directory and prints its path. A test fails when the folder drifts from the list or grows past 3 MB.
 
 The menu snapshots are built from the same `MenuHeaderView` and `MenuRowView` the live menu uses, in a rounded panel that approximates the menu chrome (an `NSMenu` cannot be drawn offscreen); submenus are drawn like native items (checkmark column). A bird symbol stands in for the app icon in Set Up and About unless run from a checkout (`Assets/AppIcon.png`). The HUD PNGs draw a flat stand-in for the blur, since there is no window to blur through offscreen. Each Settings tab is an `NSGridView` (right-aligned labels, left-aligned controls, help text under each control, 20 pt margins) shown without the window's toolbar. The menu-bar icon animation, the red badge dot, the switch moving and the highlight of a hovered row need a real session, so they are covered by the pure rules in the tests, not by snapshots (the hover snapshot forces a row selected to show the colours).
 

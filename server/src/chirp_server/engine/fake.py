@@ -2,15 +2,30 @@
 
 import threading
 
-from .base import Partial
+from .base import Partial, Transcript
+from .words import Word
+
+
+def fake_words(text: str, stable: bool = False) -> tuple[Word, ...]:
+    """Evenly spaced word timings for `text`: 300 ms per word, 250 ms spoken."""
+    return tuple(
+        Word(word, round(index * 0.3, 3), round(index * 0.3 + 0.25, 3), stable)
+        for index, word in enumerate(text.split())
+    )
 
 
 class FakeEngine:
     name = "fake"
 
-    def __init__(self, text="Synthetic dictation test."):
+    def __init__(self, text="Synthetic dictation test.", timed=True):
         self.text = text
+        # False mimics an engine without token timings (the ONNX fallback): no `words`.
+        self.timed = timed
         self.threads = []
+
+    @property
+    def words(self):
+        return fake_words(self.text) if self.timed else None
 
     def load(self):
         self.threads.append(threading.get_ident())
@@ -30,13 +45,15 @@ class FakeStream:
 
     def feed(self, pcm):
         self.engine.threads.append(threading.get_ident())
-        return Partial(self.engine.text)
+        return Partial(self.engine.text, words=self.engine.words)
 
     def buffer(self, pcm):
         self.engine.threads.append(threading.get_ident())
 
     def finish(self):
-        return self.engine.transcribe(None)
+        text = self.engine.transcribe(None)
+        words = fake_words(text, stable=True) if self.engine.timed else None
+        return Transcript(text, words)
 
     def cancel(self):
         self.engine.threads.append(threading.get_ident())

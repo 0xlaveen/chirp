@@ -9,20 +9,49 @@ public struct Timings: Codable, Sendable, Equatable {
     public var correction: Double?
 }
 
+/// One word of the raw transcript with its audio span, seconds from the utterance's first sample. Only sent when
+/// `start.word_timings` was asked for; `stable` means later partials leave the word alone (the final may still revise it).
+public struct WordTiming: Codable, Sendable, Equatable {
+    public var text: String
+    public var start: Double
+    public var end: Double
+    public var stable: Bool
+
+    public init(text: String, start: Double, end: Double, stable: Bool = false) {
+        self.text = text
+        self.start = start
+        self.end = end
+        self.stable = stable
+    }
+
+    private enum CodingKeys: String, CodingKey { case text, start, end, stable }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        text = try c.decodeIfPresent(String.self, forKey: .text) ?? ""
+        start = try c.decodeIfPresent(Double.self, forKey: .start) ?? 0
+        end = try c.decodeIfPresent(Double.self, forKey: .end) ?? start
+        stable = try c.decodeIfPresent(Bool.self, forKey: .stable) ?? false
+    }
+}
+
 public struct FinalResult: Sendable, Equatable {
     public var text: String
     public var raw: String
     public var corrected: Bool
     public var correctionError: String?
     public var timings: Timings?
+    /// The raw transcript's word timings, when asked for and the engine has them.
+    public var words: [WordTiming]?
 
     public init(text: String, raw: String? = nil, corrected: Bool = false,
-                correctionError: String? = nil, timings: Timings? = nil) {
+                correctionError: String? = nil, timings: Timings? = nil, words: [WordTiming]? = nil) {
         self.text = text
         self.raw = raw ?? text
         self.corrected = corrected
         self.correctionError = correctionError
         self.timings = timings
+        self.words = words
     }
 
     /// True when the server rewrote the transcript and the raw text differs (offers "Use raw").
@@ -31,9 +60,10 @@ public struct FinalResult: Sendable, Equatable {
 
 public enum ServerMessage: Sendable, Equatable {
     case ready(session: String, engine: String?, debugRetention: Bool)
-    case partial(seq: Int, text: String, stable: String)
+    /// `words` is nil unless word timings were asked for and the server's engine has them.
+    case partial(seq: Int, text: String, stable: String, words: [WordTiming]? = nil)
     /// Clean-up is about to run on `raw` with style `profile`; the `final` follows. Old servers never send it.
-    case correcting(seq: Int, raw: String, profile: String)
+    case correcting(seq: Int, raw: String, profile: String, words: [WordTiming]? = nil)
     case final(FinalResult)
     case error(code: String, message: String)
     case unknown(type: String)
@@ -51,6 +81,7 @@ public enum ServerMessage: Sendable, Equatable {
         var corrected: Bool?
         var correctionError: String?
         var timingsMs: Timings?
+        var words: [WordTiming]?
         var code: String?
         var message: String?
     }
@@ -64,13 +95,13 @@ public enum ServerMessage: Sendable, Equatable {
             return .ready(session: d.session ?? "", engine: d.engine, debugRetention: d.debugRetention ?? false)
         case "partial":
             let text = d.text ?? ""
-            return .partial(seq: d.seq ?? 0, text: text, stable: d.stable ?? "")
+            return .partial(seq: d.seq ?? 0, text: text, stable: d.stable ?? "", words: d.words)
         case "correcting":
-            return .correcting(seq: d.seq ?? 0, raw: d.raw ?? "", profile: d.profile ?? CorrectionProfile.defaultID)
+            return .correcting(seq: d.seq ?? 0, raw: d.raw ?? "", profile: d.profile ?? CorrectionProfile.defaultID, words: d.words)
         case "final":
             let text = d.text ?? ""
             return .final(FinalResult(text: text, raw: d.raw, corrected: d.corrected ?? false,
-                                      correctionError: d.correctionError, timings: d.timingsMs))
+                                      correctionError: d.correctionError, timings: d.timingsMs, words: d.words))
         case "error":
             return .error(code: d.code ?? "engine", message: d.message ?? "Server error")
         default:
@@ -89,13 +120,16 @@ public struct StartOptions: Sendable, Equatable {
     /// The user's edited prompt for the style, clamped to `CorrectionProfile.maxPromptLength`; nil when the style was
     /// not edited, so the server's default (and its updates) apply. Never logged.
     public var correctionPrompt: String?
+    /// Ask for per-word timings on partials and finals (the HUD's word waveform). Off leaves the start message as it was.
+    public var wordTimings: Bool
     public init(client: String = "mac", correction: Bool = false, correctionProfile: String = CorrectionProfile.defaultID,
-                correctionInstructions: String? = nil, correctionPrompt: String? = nil) {
+                correctionInstructions: String? = nil, correctionPrompt: String? = nil, wordTimings: Bool = false) {
         self.client = client
         self.correction = correction
         self.correctionProfile = correctionProfile
         self.correctionInstructions = correctionInstructions
         self.correctionPrompt = correctionPrompt
+        self.wordTimings = wordTimings
     }
 }
 
@@ -112,6 +146,7 @@ public enum ClientMessage {
             let text = CorrectionProfile.clampPrompt(prompt).trimmingCharacters(in: .whitespacesAndNewlines)
             if !text.isEmpty { message["correction_prompt"] = text }
         }
+        if o.wordTimings { message["word_timings"] = true }
         return json(message)
     }
     public static let stop = json(["type": "stop"])
