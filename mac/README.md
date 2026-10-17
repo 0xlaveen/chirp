@@ -36,7 +36,7 @@ On first launch Settings opens and asks for both permissions. Grant them in **Sy
 
 The hotkey is a Carbon hot key (`RegisterEventHotKey`, delivering press and release), so **Input Monitoring is not needed**. The menu shows the status of both permissions. After granting Accessibility you may need to relaunch the app.
 
-The Mac mini has no built-in microphone. Chirp follows the system default input (shown in the menu), including when you plug in or unplug a USB mic.
+The Mac mini has no built-in microphone. Chirp follows the system default input (shown in the menu), including when you plug in or unplug a USB mic, unless you pick a device in the menu's Input Device submenu.
 
 ## Using it
 
@@ -44,8 +44,25 @@ The Mac mini has no built-in microphone. Chirp follows the system default input 
 - **Esc** cancels: the server discards the audio and nothing is inserted. Esc is only captured while a dictation is active.
 - The **HUD** appears at the bottom centre of the screen under the mouse, just above the Dock, and never takes focus. Stable text is shown normally and the still-changing tail dimmed. Status: Connecting, Listening, Finalizing, Inserted, Copied — press ⌘V.
 - **Silence guard:** if the input is digitally silent for 1.5 s you get "No microphone signal" and the session is cancelled.
-- **Correction** (menu toggle, off by default) asks the server to clean up the final text. When it changed the text, the HUD offers **Use raw** for 5 s. If the server reports that correction sends text off the machine, the toggle says so ("sends text to <host>"). Audio never leaves the Mac.
-- A red **DEBUG: recordings kept** badge (HUD, menu and a red dot in the menu bar) shows whenever the server is running with debug retention.
+- **Clean-up** (menu toggle, off by default) asks the server to clean up the final text; it is the protocol's `correction` flag. When the server rewrote the text, the HUD says Inserted with a small **cleaned** badge and offers **Use raw** for 5 s. "Show raw after clean-up" (on by default) hides the Use raw button when you turn it off; the badge stays. The toggle's subtitle comes from `/v1/health`: "Runs on this Mac", "Sends text to <host>" when health says it leaves the machine, or "Not set up on the server" (the toggle is then disabled). Audio never leaves the Mac.
+- A red **DEBUG: recordings kept** badge (HUD, menu and a red dot on the menu-bar icon) shows whenever the server is running with debug retention.
+
+## The menu-bar menu
+
+Click the bird in the menu bar:
+
+| Section | What it does |
+|---|---|
+| Header | Chirp, the hotkey hint and a status line with a coloured dot: Ready, Loading model…, Listening, Server unreachable, or the current error. A red "DEBUG retention ON" line appears while the server keeps recordings. |
+| Start / Stop dictation | The same toggle as tapping the hotkey (the combo is shown at the right). |
+| Input Device | Every input device, check-marked. "System Default" (the default) follows the system input, including USB plug and unplug. Pick one to pin it; if it is unplugged Chirp falls back to the default and the menu says so. The choice applies from the next dictation. |
+| Hotkey | The presets. |
+| Clean-up | Clean up text, and Show raw after clean-up (see above). |
+| Server | The server URL with a green, orange or red dot and the engine name (click to open Settings). "Open doctor output" copies the `chirp-server doctor` commands to the clipboard; run them in your checkout's `server/` directory. |
+| Permissions needed | Only shown while Microphone or Accessibility is missing, with an "Allow…" action each. |
+| Footer | Launch at Login, Settings…, About Chirp (version and icon) and Quit. |
+
+The icon is the bird glyph. While you dictate its sound waves pulse (they stay steady when Reduce Motion is on), it is dimmed while the server is unreachable, it turns into a warning triangle on errors, and a small red dot sits at its corner while debug retention is on.
 
 ## How text is inserted
 
@@ -67,7 +84,7 @@ If secure input is on (a password field, `IsSecureEventInputEnabled()`), Chirp r
 ## Configuration
 
 - Server URL: Settings (default `http://127.0.0.1:7821`; over the tailnet, `https://<host>.ts.net/chirp`).
-- Token: read from `~/.config/chirp/token` (created by `chirp-server`). The client stores nothing else on disk besides `UserDefaults` preferences, and never logs audio or transcripts.
+- Token: read from `~/.config/chirp/token` (created by `chirp-server`). The client stores nothing else on disk besides `UserDefaults` preferences (server URL, hotkey, clean-up, show raw, picked input device UID), and never logs audio or transcripts.
 
 ## Launch at login
 
@@ -91,17 +108,17 @@ It prints partials, the final text and timings (client-measured stop→final plu
 
 ## Tests
 
-`./scripts/test.sh` runs the `ChirpCore` tests (Swift Testing). Under the Command Line Tools SwiftPM doesn't find the Swift Testing macro plugin on its own, so the script passes `-Xswiftc -plugin-path` for it; with Xcode installed it is plain `swift test`. The tests cover: the protocol codec, the dictation state machine, hotkey dispatch and tap/hold timing, insertion strategy including a fake AX that applies late, pasteboard restore and Use raw (fakes), PCM conversion and framing, the silence guard, `StreamSession` against an in-process mock WebSocket server on loopback and against an injected transport that stalls (queue overflow, 120 s cap, ready deadline, prompt cancel), `AudioCapture` against a fake engine (failed start unwinds, retry, idempotent stop, device change), the HUD/menu/settings content, and the offscreen snapshot renderer.
+`./scripts/test.sh` runs the `ChirpCore` tests (Swift Testing). Under the Command Line Tools SwiftPM doesn't find the Swift Testing macro plugin on its own, so the script passes `-Xswiftc -plugin-path` for it; with Xcode installed it is plain `swift test`. The tests cover: the protocol codec, the dictation state machine, hotkey dispatch and tap/hold timing, insertion strategy including a fake AX that applies late, pasteboard restore and Use raw (fakes), PCM conversion and framing, the silence guard, `StreamSession` against an in-process mock WebSocket server on loopback and against an injected transport that stalls (queue overflow, 120 s cap, ready deadline, prompt cancel), `AudioCapture` against a fake engine (failed start unwinds, retry, idempotent stop, device change), the preferences (the picked input device persists, clean-up maps to the wire flag), input-device resolution, the menu model for every state (status line, dictation toggle, device picker, clean-up, server, permissions), the status-icon rules, the HUD/settings content, and the offscreen snapshot renderer.
 
 ## UI snapshots (no app launch)
 
-`ChirpMac --render-snapshots <dir>` draws the HUD in every state, the Settings window and the menu-bar menu content to PNGs in light and dark appearance, then exits. It is handled before any `NSApplication`, onboarding or permission code and touches no microphone, Accessibility, pasteboard or TCC API; all inputs are synthetic. `swift build && .build/debug/ChirpMac --render-snapshots /tmp/chirp-ui`. The tests render the same set. A selection is committed in [docs/screenshots/mac](../docs/screenshots/mac). The menu PNGs show the menu's content laid out like a menu, not the native `NSMenu` chrome.
+`ChirpMac --render-snapshots <dir>` draws the HUD in every state, the Settings window and the menu-bar menu content to PNGs in light and dark appearance, then exits. It is handled before any `NSApplication`, onboarding or permission code and touches no microphone, Accessibility, pasteboard or TCC API; all inputs are synthetic. `swift build && .build/debug/ChirpMac --render-snapshots /tmp/chirp-ui`. The tests render the same set. A selection is committed in [docs/screenshots/mac](../docs/screenshots/mac). The menu PNGs show the menu's content laid out like a menu (SF Symbols, subtitles, section headers, key hints), not the native `NSMenu` chrome, and a bird symbol stands in for the app icon. The menu-bar icon animation, the red badge dot and the input-device switch need a real session, so they are covered by the pure rules in the tests, not by snapshots.
 
 ## Layout
 
 ```
-Sources/ChirpCore/    protocol, StreamSession (URLSessionWebSocketTask), DictationMachine, HotKey (Carbon), audio helpers, Insertion/
-Sources/ChirpUI/      HUD view, menu content, settings form, snapshot renderer (no system access)
+Sources/ChirpCore/    protocol, Preferences, StreamSession (URLSessionWebSocketTask), DictationMachine, HotKey (Carbon), audio helpers, input selection, Insertion/
+Sources/ChirpUI/      HUD view, menu content and status-icon rules, settings form, snapshot renderer (no system access)
 Sources/ChirpMac/     app: menu bar, HUD panel, settings window, capture, controller, --selftest
 Tests/ChirpCoreTests/
 scripts/              bundle.sh, make-cert.sh, install.sh, test.sh, Chirp.entitlements
@@ -119,4 +136,4 @@ scripts/              bundle.sh, make-cert.sh, install.sh, test.sh, Chirp.entitl
 
 `Assets/AppIcon.png` is the 1024 px app-icon master: a songbird mid-chirp with golden sound waves on an indigo-to-violet tile. It was generated with GPT Image 2.5 through the `ez-image-gen` skill, then scaled onto Apple's icon grid. `bundle.sh` turns it into `AppIcon.icns` with `sips` and `iconutil`.
 
-`Assets/MenuBarListening*.png` and `Assets/MenuBarIdle*.png` are 18 pt template glyphs (1x and 2x) of the same bird. Idle is the listening glyph with the waves erased, so the icon never shifts when its state changes. The menu bar dims the idle glyph while the server is unreachable and shows a warning triangle on errors.
+`Assets/MenuBarListening*.png` and `Assets/MenuBarIdle*.png` are 18 pt template glyphs (1x and 2x) of the same bird. Idle is the listening glyph with the waves erased, so the icon never shifts when its state changes. The menu bar dims the idle glyph while the server is unreachable and shows a warning triangle on errors. The pulse while listening fades the waves, which the app derives at run time as the listening glyph minus the idle bird.

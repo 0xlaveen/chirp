@@ -11,7 +11,7 @@ final class DictationController {
     var onChange: (() -> Void)?
 
     let hud = HUDController()
-    private let capture = AudioCapture(engine: SystemCaptureEngine())
+    private let capture = AudioCapture(engine: SystemCaptureEngine(pickedDevice: { InputDevice.pickedID(uid: settings.inputDeviceUID) }))
     private let inserter = TextInserter(env: SystemInsertion.environment(), pasteboard: SystemPasteboard())
 
     private var session: StreamSession?
@@ -26,7 +26,7 @@ final class DictationController {
     /// (Re)registers the dictation hotkey from settings.
     @discardableResult
     func registerHotkey() -> Bool {
-        HotKeyCenter.shared.register(id: Self.dictateID, combo: Settings.hotkey,
+        HotKeyCenter.shared.register(id: Self.dictateID, combo: settings.hotkey,
                                      onDown: { [weak self] in self?.hotkeyDown() },
                                      onUp: { [weak self] in self?.hotkeyUp() })
     }
@@ -40,10 +40,17 @@ final class DictationController {
     func hotkeyUp() { send(.hotkeyUp(at: ProcessInfo.processInfo.systemUptime)) }
     func escape() { send(.escape) }
 
+    /// "Start/Stop dictation" in the menu: a tap of the hotkey, so it starts a toggle-mode dictation or ends one.
+    func toggleDictation() {
+        let now = ProcessInfo.processInfo.systemUptime
+        send(.hotkeyDown(at: now))
+        send(.hotkeyUp(at: now))
+    }
+
     // MARK: health
 
     func refreshHealth() async {
-        let config = Settings.serverConfig()
+        let config = settings.serverConfig()
         do {
             health = try await config.fetchHealth()
             healthError = nil
@@ -127,8 +134,8 @@ final class DictationController {
     }
 
     private func startStreaming(epoch myEpoch: Int) {
-        let session = StreamSession(config: Settings.serverConfig(),
-                                    options: StartOptions(client: "mac", correction: Settings.correction))
+        let session = StreamSession(config: settings.serverConfig(),
+                                    options: settings.startOptions())
         self.session = session
         let sink = CaptureSink(session: session) { [weak self] level in
             Task { @MainActor in
@@ -243,15 +250,16 @@ final class DictationController {
         }
         hud.model.status = "Inserting"
         Task {
-            let outcome = await inserter.insert(text, undoRaw: final.canUseRaw ? final.raw : nil)
+            let outcome = await inserter.insert(text, undoRaw: final.canUseRaw && settings.showRawAfterCleanup ? final.raw : nil)
             show(outcome, final: final)
             send(.insertionFinished)
         }
     }
 
     private func show(_ outcome: InsertionOutcome, final: FinalResult) {
-        let p = OutcomePresentation.of(outcome, final: final)
+        let p = OutcomePresentation.of(outcome, final: final, offerRaw: settings.showRawAfterCleanup)
         hud.model.status = p.status
+        hud.model.cleaned = p.cleaned
         hud.model.isError = p.isError
         hud.model.showUseRaw = p.showUseRaw
         hud.model.onUseRaw = p.showUseRaw ? { [weak self] in self?.useRaw() } : nil
@@ -265,6 +273,7 @@ final class DictationController {
     private func useRaw() {
         guard !machine.state.isActive else { return }
         hud.model.showUseRaw = false
+        hud.model.cleaned = false
         Task {
             guard let outcome = await inserter.useRaw() else { return }
             hud.model.isError = outcome == .refusedSecure

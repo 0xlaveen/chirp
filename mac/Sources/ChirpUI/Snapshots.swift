@@ -34,9 +34,9 @@ public enum Snapshots {
                   : FinalResult(text: "Move the standup to 3:30.")
     }
 
-    private static func applyOutcome(_ outcome: InsertionOutcome, final: FinalResult, to m: HUDModel) {
-        let p = OutcomePresentation.of(outcome, final: final)
-        m.status = p.status; m.isError = p.isError; m.showUseRaw = p.showUseRaw
+    private static func applyOutcome(_ outcome: InsertionOutcome, final: FinalResult, offerRaw: Bool = true, to m: HUDModel) {
+        let p = OutcomePresentation.of(outcome, final: final, offerRaw: offerRaw)
+        m.status = p.status; m.isError = p.isError; m.showUseRaw = p.showUseRaw; m.cleaned = p.cleaned
     }
 
     public static var hudScenarios: [Scenario] {
@@ -55,6 +55,7 @@ public enum Snapshots {
                 applyOutcome(.inserted(.ax), final: final(corrected: true), to: $0)
                 $0.onUseRaw = {}
             },
+            hud("cleaned-no-raw-button") { applyOutcome(.inserted(.ax), final: final(corrected: true), offerRaw: false, to: $0) },
             hud("copied") { applyOutcome(.copied, final: final(), to: $0) },
             hud("unverified-ax") { applyOutcome(.insertedUnverified, final: final(), to: $0) },
             hud("secure-field") { applyOutcome(.refusedSecure, final: final(), to: $0) },
@@ -92,30 +93,42 @@ public enum Snapshots {
         ]
     }
 
+    private static let boya = AudioInput(uid: "boya", name: "BOYA CM40")
+    private static let studio = AudioInput(uid: "studio", name: "Studio Display Microphone")
+
     public static var menuScenarios: [Scenario] {
-        func menu(_ name: String, _ configure: (inout MenuInputs) -> Void) -> Scenario {
+        func menu(_ name: String, _ configure: (inout MenuInputs) -> Void, submenu: String? = nil) -> Scenario {
             var inputs = MenuInputs()
+            inputs.inputs = [boya, studio]
+            inputs.defaultInput = boya
             configure(&inputs)
-            let entries = MenuContent.entries(inputs)
+            var entries = MenuContent.entries(inputs)
+            if let submenu { entries = entries.first { $0.title == submenu }?.submenu ?? [] }
             return Scenario(name: "menu-\(name)") { NSHostingView(rootView: SnapshotBackdrop { MenuPreview(entries: entries) }) }
         }
+        let local = Health(engine: "parakeet-mlx:tdt-0.6b-v2", ready: true, correction: "available", correctionLeavesMachine: false)
+        let remote = Health(engine: "parakeet-mlx:tdt-0.6b-v2", ready: true, debugRetention: true, correction: "available",
+                            correctionLeavesMachine: true, correctionHost: "llm.example.com")
         return [
-            menu("idle") {
-                $0.health = Health(engine: "parakeet-mlx:tdt-0.6b-v2", ready: true, correction: "available")
-                $0.inputName = "BOYA CM40"
+            menu("idle") { $0.health = local },
+            menu("listening-cleanup") { $0.state = .listening; $0.health = local; $0.cleanupOn = true },
+            menu("debug-remote-cleanup") {
+                $0.health = remote; $0.debugRetention = true; $0.cleanupOn = true; $0.showRawAfterCleanup = false
+                $0.chosenInputUID = "studio"
             },
-            menu("listening-debug-correction") {
-                $0.state = .listening
-                $0.health = Health(engine: "parakeet-mlx:tdt-0.6b-v2", ready: true, debugRetention: true, correction: "available",
-                                   correctionLeavesMachine: true, correctionHost: "llm.example.com")
-                $0.debugRetention = true; $0.correctionOn = true; $0.inputName = "BOYA CM40"
+            menu("server-unreachable") {
+                $0.healthError = "Server unreachable at 127.0.0.1"; $0.serverURL = "https://mainframe.example.ts.net/chirp"
             },
-            menu("setup-needed") {
-                $0.state = .error("Microphone access denied — enable it in System Settings")
-                $0.healthError = "Server unreachable at 127.0.0.1"
+            menu("permissions-needed") {
+                $0.health = Health(engine: "parakeet-mlx:tdt-0.6b-v2", ready: true)
                 $0.micGranted = false; $0.accessibilityGranted = false
                 $0.launch = .needsApproval; $0.launchError = "Operation not permitted"
             },
+            menu("error") {
+                $0.state = .error("Microphone access denied — enable it in System Settings")
+                $0.health = local; $0.micGranted = false; $0.inputs = []; $0.defaultInput = nil
+            },
+            menu("input-picker", { $0.health = local; $0.chosenInputUID = "studio" }, submenu: "Input Device"),
         ]
     }
 
@@ -182,31 +195,64 @@ private struct SnapshotBackdrop<Content: View>: View {
 private struct MenuPreview: View {
     let entries: [MenuEntry]
     var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            ForEach(Array(entries.enumerated()), id: \.offset) { _, e in
-                if e.isSeparator {
-                    Divider().padding(.vertical, 3)
-                } else {
-                    HStack(spacing: 6) {
-                        Text(e.mark == .on ? "✓" : e.mark == .mixed ? "–" : "").frame(width: 12)
-                        Text(e.title).foregroundStyle(color(e))
-                        Spacer(minLength: 12)
-                        if e.submenu != nil { Text("›") }
-                    }
-                    .font(.system(size: 13))
-                }
-            }
+        VStack(alignment: .leading, spacing: 1) {
+            ForEach(Array(entries.enumerated()), id: \.offset) { _, e in row(e) }
         }
-        .padding(.vertical, 6).padding(.horizontal, 10)
+        .padding(.vertical, 6).padding(.horizontal, 6)
+        .frame(minWidth: 300, alignment: .leading)
         .fixedSize()
+        // Solid, like the backdrop: a material over it would be noisy and bloat the PNGs.
         .background(Color(nsColor: .windowBackgroundColor), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(.primary.opacity(0.12)))
+    }
+
+    @ViewBuilder private func row(_ e: MenuEntry) -> some View {
+        if e.isSeparator {
+            Divider().padding(.vertical, 4).padding(.horizontal, 6)
+        } else if e.isHeader {
+            Text(e.title).font(.system(size: 11, weight: .semibold)).foregroundStyle(.secondary)
+                .padding(.horizontal, 8).padding(.top, 4).padding(.bottom, 1)
+        } else {
+            HStack(spacing: 7) {
+                Text(e.mark == .on ? "✓" : e.mark == .mixed ? "–" : "").frame(width: 12)
+                icon(e).frame(width: 18)
+                VStack(alignment: .leading, spacing: 0) {
+                    Text(e.title).font(.system(size: 13, weight: e.showsAppIcon ? .semibold : .regular)).foregroundStyle(color(e))
+                    if let sub = e.subtitle { Text(sub).font(.system(size: 11)).foregroundStyle(.secondary) }
+                }
+                Spacer(minLength: 16)
+                if let h = e.hotkey { Text(h.title).font(.system(size: 13)).foregroundStyle(.secondary) }
+                if let k = e.keyEquivalent { Text("⌘" + k.uppercased()).font(.system(size: 13)).foregroundStyle(.secondary) }
+                if e.submenu != nil { Image(systemName: "chevron.right").font(.system(size: 10, weight: .semibold)).foregroundStyle(.secondary) }
+            }
+            .padding(.horizontal, 8).padding(.vertical, 2)
+            .opacity(e.action == nil && e.submenu == nil && e.tone == .normal && !e.showsAppIcon ? 0.55 : 1)
+        }
+    }
+
+    @ViewBuilder private func icon(_ e: MenuEntry) -> some View {
+        if e.showsAppIcon {
+            Image(systemName: "bird.fill").font(.system(size: 16)).foregroundStyle(.indigo)
+        } else if let name = e.symbol {
+            Image(systemName: name).font(.system(size: 12)).foregroundStyle(tint(e.symbolTone ?? e.tone))
+        }
+    }
+
+    private func tint(_ tone: MenuEntry.Tone) -> Color {
+        switch tone {
+        case .normal: .primary
+        case .ok: .green
+        case .active: .accentColor
+        case .warning: .orange
+        case .error: .red
+        }
     }
 
     private func color(_ e: MenuEntry) -> Color {
         switch e.tone {
         case .error: .red
         case .warning: .orange
-        case .normal: e.action == nil && e.submenu == nil ? Color.secondary : Color.primary
+        default: .primary
         }
     }
 }
