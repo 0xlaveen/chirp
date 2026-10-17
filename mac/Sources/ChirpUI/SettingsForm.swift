@@ -8,6 +8,12 @@ public struct SettingsState: Sendable {
     public var tokenPresent = true
     public var launch: LaunchState = .off
     public var soundsEnabled = false
+    public var soundPack: SoundPack = .default
+    /// 0…1.
+    public var soundVolume = SoundTiming.defaultVolume
+    /// The user's own files for the Custom pack, as imported.
+    public var customStart: CustomSound?
+    public var customStop: CustomSound?
     public var micGranted = true
     public var accessibilityGranted = true
     /// The server's state in words ("Connected", "Unreachable", …) and its tone.
@@ -47,6 +53,26 @@ public final class SettingsForm {
     /// Under the hotkey: how it works, or why the last recording was refused.
     public let hotkeyHelp = SettingsForm.help("")
     public let sounds = NSButton(checkboxWithTitle: "Play start and stop sounds", target: nil, action: nil)
+    /// Sounds: the pack, ▶ previews, the volume, and (for the Custom pack) the user's files.
+    public let soundPack = NSPopUpButton(frame: .zero, pullsDown: false)
+    public let previewStart = NSButton(title: "▶ Start", target: nil, action: nil)
+    public let previewStop = NSButton(title: "▶ Stop", target: nil, action: nil)
+    public let volume = NSSlider(value: SoundTiming.defaultVolume * 100, minValue: 0, maxValue: 100, target: nil, action: nil)
+    public let chooseStart = NSButton(title: "Choose…", target: nil, action: nil)
+    public let removeStart = NSButton(title: "Remove", target: nil, action: nil)
+    public let chooseStop = NSButton(title: "Choose…", target: nil, action: nil)
+    public let removeStop = NSButton(title: "Remove", target: nil, action: nil)
+    /// Under the start file: the 0.3 s rule, or why the last import failed.
+    public let customStartHelp = SettingsForm.help("")
+    private let packHelp = SettingsForm.help("")
+    private let volumeLabel = NSTextField(labelWithString: "")
+    private let startFile = NSTextField(labelWithString: "")
+    private let stopFile = NSTextField(labelWithString: "")
+    private var customStartSound: CustomSound?
+    private var customStopSound: CustomSound?
+    private var soundError: String?
+    private var customRows: [Int] = []
+    private var grid = NSGridView()
     public let serverURL = NSTextField(string: "")
     public let launch = NSButton(checkboxWithTitle: "Launch Chirp at login", target: nil, action: nil)
     public let micButton = NSButton(title: "Fix…", target: nil, action: nil)
@@ -102,8 +128,22 @@ public final class SettingsForm {
         hotkeyRow.orientation = .horizontal
         hotkeyRow.spacing = 10
         row("Hotkey:", hotkeyRow, help: hotkeyHelp)
-        row("Sounds:", sounds, help: Self.help("Two quiet system sounds when dictation starts and stops."))
         row("Startup:", launch, help: launchHelp)
+        section("Sounds")
+        row("Cues:", sounds, help: Self.help("Quiet sounds when dictation starts and stops. Off keeps Chirp silent."))
+        let packRow = NSStackView(views: [soundPack, previewStart, previewStop])
+        packRow.orientation = .horizontal
+        packRow.spacing = 8
+        row("Pack:", packRow, help: packHelp)
+        let volumeRow = NSStackView(views: [volume, volumeLabel])
+        volumeRow.orientation = .horizontal
+        volumeRow.spacing = 8
+        row("Volume:", volumeRow)
+        customRows.append(rows.count)
+        row("Start sound:", Self.fileRow(startFile, choose: chooseStart, remove: removeStart), help: customStartHelp)
+        customRows.append(rows.count)
+        row("Stop sound:", Self.fileRow(stopFile, choose: chooseStop, remove: removeStop),
+            help: Self.help("Plays after you stop talking, up to \(SoundTiming.stopLimit) s."))
         section("Clean-up")
         row("Style:", style, help: styleHelp)
         row("Custom:", instructions.view, help: Self.help("Used by the Custom style (up to \(CorrectionProfile.maxInstructionLength) characters). They only shape how text is tidied: no tools, no network."))
@@ -117,7 +157,7 @@ public final class SettingsForm {
         row("Microphone:", micStatus, help: Self.help("Lets Chirp hear you."))
         row("Accessibility:", accessibilityStatus, help: Self.help("Lets Chirp insert text into other apps and send ⌘V."))
 
-        let grid = NSGridView(views: rows)
+        grid = NSGridView(views: rows)
         grid.rowSpacing = 10
         grid.columnSpacing = 10
         grid.rowAlignment = .firstBaseline
@@ -139,7 +179,73 @@ public final class SettingsForm {
             view.trailingAnchor.constraint(equalTo: grid.trailingAnchor, constant: Self.margin),
         ])
         refreshHotkeyHelp()
+        configureSoundControls()
         apply(state, full: true)
+    }
+
+    private func configureSoundControls() {
+        for pack in SoundPack.allCases {
+            soundPack.addItem(withTitle: pack.title)
+            soundPack.lastItem?.representedObject = pack.rawValue
+        }
+        for b in [previewStart, previewStop, chooseStart, removeStart, chooseStop, removeStop] {
+            b.bezelStyle = .rounded
+            b.controlSize = .small
+        }
+        previewStart.setAccessibilityLabel("Preview the start sound")
+        previewStop.setAccessibilityLabel("Preview the stop sound")
+        chooseStart.setAccessibilityLabel("Choose a start sound file")
+        chooseStop.setAccessibilityLabel("Choose a stop sound file")
+        removeStart.setAccessibilityLabel("Remove the custom start sound")
+        removeStop.setAccessibilityLabel("Remove the custom stop sound")
+        soundPack.setAccessibilityLabel("Sound pack")
+        volume.isContinuous = true
+        volume.setAccessibilityLabel("Volume")
+        volume.widthAnchor.constraint(equalToConstant: 200).isActive = true
+        volumeLabel.font = MenuStyle.font
+        volumeLabel.alignment = .right
+        volumeLabel.widthAnchor.constraint(equalToConstant: 40).isActive = true
+        for f in [startFile, stopFile] {
+            f.font = MenuStyle.font
+            f.lineBreakMode = .byTruncatingMiddle
+            f.widthAnchor.constraint(equalToConstant: 170).isActive = true
+        }
+    }
+
+    /// The label under the slider follows it live.
+    public func setVolume(_ fraction: Double) {
+        volume.doubleValue = fraction * 100
+        volumeLabel.stringValue = "\(SoundTiming.percent(volume: fraction))%"
+    }
+
+    /// The Custom rows show only for the Custom pack.
+    public func showPack(_ pack: SoundPack) {
+        if let i = soundPack.itemArray.firstIndex(where: { $0.representedObject as? String == pack.rawValue }) { soundPack.selectItem(at: i) }
+        packHelp.stringValue = pack.detail
+        for index in customRows { grid.row(at: index).isHidden = pack != .custom }
+    }
+
+    /// Shows the imported files (name and length) and the trimming warning; `error` replaces the warning once.
+    public func setCustomSounds(start: CustomSound?, stop: CustomSound?, error: String? = nil) {
+        customStartSound = start
+        customStopSound = stop
+        soundError = error
+        startFile.stringValue = start.map { "\($0.displayName) · \(SoundTiming.durationText($0.duration))" } ?? "None (uses Chirp)"
+        stopFile.stringValue = stop.map { "\($0.displayName) · \(SoundTiming.durationText($0.duration))" } ?? "None (uses Chirp)"
+        startFile.textColor = start == nil ? .secondaryLabelColor : .labelColor
+        stopFile.textColor = stop == nil ? .secondaryLabelColor : .labelColor
+        removeStart.isEnabled = start != nil
+        removeStop.isEnabled = stop != nil
+        if let error {
+            customStartHelp.stringValue = error
+            customStartHelp.textColor = .systemRed
+        } else if let start, SoundTiming.isTrimmed(.start, duration: start.duration) {
+            customStartHelp.stringValue = "\(SoundTiming.longStartWarning) Yours is \(SoundTiming.durationText(start.duration))."
+            customStartHelp.textColor = MenuStyle.textColor(.warning)
+        } else {
+            customStartHelp.stringValue = SoundTiming.longStartWarning
+            customStartHelp.textColor = .secondaryLabelColor
+        }
     }
 
     /// Puts the form in `window`, sized to fit, with focus parked on the content view so no field opens selected.
@@ -170,6 +276,9 @@ public final class SettingsForm {
         if full {
             fillHotkeyMenu(selecting: s.hotkey)
             sounds.state = s.soundsEnabled ? .on : .off
+            showPack(s.soundPack)
+            setVolume(s.soundVolume)
+            setCustomSounds(start: s.customStart, stop: s.customStop)
             serverURL.stringValue = s.serverURL
             launch.state = s.launch == .on ? .on : .off
             launch.isEnabled = s.launch != .unavailable
@@ -257,6 +366,15 @@ public final class SettingsForm {
     }
 
     // MARK: pieces
+
+    /// A file's name and length, then Choose… and Remove.
+    private static func fileRow(_ name: NSTextField, choose: NSButton, remove: NSButton) -> NSView {
+        let stack = NSStackView(views: [name, choose, remove])
+        stack.orientation = .horizontal
+        stack.alignment = .centerY
+        stack.spacing = 8
+        return stack
+    }
 
     private static func label(_ text: String) -> NSTextField {
         let f = NSTextField(labelWithString: text)

@@ -61,10 +61,40 @@ public final class Preferences: @unchecked Sendable {
         get { defaults.string(forKey: "inputDeviceUID") }
         set { defaults.set(newValue, forKey: "inputDeviceUID") }
     }
-    /// Subtle system sounds when dictation starts and stops. Off by default.
+    /// Quiet cues when dictation starts and stops. Off by default.
     public var soundsEnabled: Bool {
         get { defaults.bool(forKey: "soundsEnabled") }
         set { defaults.set(newValue, forKey: "soundsEnabled") }
+    }
+    /// Which pack plays (Chirp by default; an unknown stored value falls back to it).
+    public var soundPack: SoundPack {
+        get { SoundPack.resolve(id: defaults.string(forKey: "soundPack")) }
+        set { defaults.set(newValue.rawValue, forKey: "soundPack") }
+    }
+    /// The cue volume, 0…1 (60 % by default). `SoundTiming.gain(volume:)` maps it to a gain.
+    public var soundVolume: Double {
+        get {
+            guard let v = defaults.object(forKey: "soundVolume") as? Double, v.isFinite else { return SoundTiming.defaultVolume }
+            return min(max(v, 0), 1)
+        }
+        set { defaults.set(newValue.isFinite ? min(max(newValue, 0), 1) : SoundTiming.defaultVolume, forKey: "soundVolume") }
+    }
+    /// The user's own start and stop files (copies in Application Support), used by the Custom pack.
+    public var customStartSound: CustomSound? {
+        get { customSound(forKey: "customStartSound") }
+        set { setCustomSound(newValue, forKey: "customStartSound") }
+    }
+    public var customStopSound: CustomSound? {
+        get { customSound(forKey: "customStopSound") }
+        set { setCustomSound(newValue, forKey: "customStopSound") }
+    }
+    public func customSound(for cue: SoundCue) -> CustomSound? { cue == .start ? customStartSound : customStopSound }
+
+    private func customSound(forKey key: String) -> CustomSound? {
+        defaults.data(forKey: key).flatMap { try? JSONDecoder().decode(CustomSound.self, from: $0) }
+    }
+    private func setCustomSound(_ sound: CustomSound?, forKey key: String) {
+        if let sound, let data = try? JSONEncoder().encode(sound) { defaults.set(data, forKey: key) } else { defaults.removeObject(forKey: key) }
     }
     /// Set only when the first-run window is finished (never on close), so an interrupted setup shows again.
     public var didOnboard: Bool {

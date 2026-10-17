@@ -110,6 +110,8 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         inputs.styleID = settings.correctionProfile
         inputs.hotkey = settings.hotkey
         inputs.soundsEnabled = settings.soundsEnabled
+        inputs.soundPack = settings.soundPack
+        inputs.hasCustomSound = settings.customStartSound != nil || settings.customStopSound != nil
         inputs.serverURL = settings.serverURL
         inputs.micGranted = Permissions.microphoneGranted
         inputs.accessibilityGranted = Permissions.accessibilityGranted
@@ -171,7 +173,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         case .copyDoctor: #selector(copyDoctor)
         case .grantMic: #selector(grantMic)
         case .grantAX: #selector(grantAX)
-        case .toggleSounds: #selector(toggleSounds)
+        case .pickSound: #selector(pickSound(_:))
         case .toggleLaunch: #selector(toggleLaunch)
         case .showSettings: #selector(showSettings)
         case .showSetup: #selector(showSetup)
@@ -201,7 +203,14 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     @objc private func showSettings() { actions.openSettings() }
     @objc private func showSetup() { actions.openSetup() }
     @objc private func showAbout() { actions.openAbout() }
-    @objc private func toggleSounds() { settings.soundsEnabled.toggle() }
+    @objc private func pickSound(_ sender: NSMenuItem) {
+        guard let choice = SoundChoice(id: sender.representedObject as? String) else { return }
+        // Custom needs files: until there are some, Settings is where they are chosen.
+        if choice == .pack(.custom), settings.customStartSound == nil, settings.customStopSound == nil { actions.openSettings() }
+        choice.apply(to: settings)
+        Sounds.prepare()
+        if choice != .off { Sounds.play(.start) }   // hear what was picked
+    }
     @objc private func toggleLaunch() { launchError = LaunchAtLogin.toggle() }
     @objc private func quit() { NSApp.terminate(nil) }
     @objc private func grantMic() {

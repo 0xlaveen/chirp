@@ -154,6 +154,16 @@ public enum Snapshots {
             form("cleanup-notes-no-styles") {
                 $0.cleanupStyle = "notes"; $0.serverOffersStyles = false; $0.launch = .on; $0.serverStatus = "parakeet-mlx:tdt-0.6b-v2"
             },
+            form("sounds-pack") {
+                $0.soundsEnabled = true; $0.soundPack = .chirp; $0.soundVolume = 0.6
+                $0.launch = .on; $0.serverStatus = "parakeet-mlx:tdt-0.6b-v2"
+            },
+            form("sounds-custom") {
+                $0.soundsEnabled = true; $0.soundPack = .custom; $0.soundVolume = 0.4
+                $0.customStart = CustomSound(fileName: "custom-start-1a2b3c4d.m4a", displayName: "Doorbell chime.m4a", duration: 1.2)
+                $0.customStop = CustomSound(fileName: "custom-stop-5e6f7a8b.wav", displayName: "soft-tap.wav", duration: 0.18)
+                $0.launch = .on; $0.serverStatus = "parakeet-mlx:tdt-0.6b-v2"
+            },
             form("custom-hotkey-sounds") {
                 $0.hotkey = .custom(keyCode: 0x0F, modifiers: UInt32(controlKey | optionKey | cmdKey))   // ⌃⌥⌘R
                 $0.soundsEnabled = true; $0.launch = .on; $0.serverStatus = "parakeet-mlx:tdt-0.6b-v2"
@@ -245,6 +255,7 @@ public enum Snapshots {
             },
             menu("style", { $0.health = local; $0.cleanupOn = true; $0.styleID = "email" }, submenu: "Style"),
             menu("style-custom", { $0.health = local; $0.cleanupOn = true; $0.styleID = "custom" }, submenu: "Style"),
+            menu("sounds", { $0.health = local; $0.soundsEnabled = true; $0.soundPack = .chirp }, submenu: "Sounds"),
             menu("input-picker", { $0.health = local; $0.chosenInputUID = "studio" }, submenu: "Input Device"),
         ]
     }
