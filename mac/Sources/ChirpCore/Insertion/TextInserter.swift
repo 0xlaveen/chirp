@@ -47,6 +47,8 @@ public final class TextInserter {
     public static let restoreDelay: Duration = .milliseconds(600)
     /// How long "Use raw" stays possible; matches the HUD's linger for it.
     public static let undoWindow: Duration = .seconds(5)
+    /// How long a raw insertion waits for its cleaned replacement (longer than the client's clean-up timeout).
+    public static let swapWindow: Duration = .seconds(20)
 
     /// What "Use raw" needs, and nothing more: kept only while the affordance is on screen.
     private struct Undo {
@@ -132,6 +134,30 @@ public final class TextInserter {
         }
         _ = pasteboard.write(text: undo.raw, transient: false)
         return .copied
+    }
+
+    /// True when the next insertion would try an AX write first, the only kind that can later be replaced in place.
+    /// Paste-first apps (terminals, Chromium and Electron) are not, so "insert raw first" waits for the cleaned text there.
+    public func canReplaceInPlace() -> Bool {
+        let plan = InsertionPolicy.plan(secureInput: env.secureInputEnabled(), axTrusted: env.axTrusted(),
+                                        bundleID: env.frontmostBundleID())
+        if case .try_(let methods) = plan { return methods.first == .ax }
+        return false
+    }
+
+    /// Swaps the text the previous `insert(_:undoRaw:undoWindow:)` put in the field for `text`, in place. Only for a
+    /// verified AX insertion whose app is still frontmost and whose range still holds exactly what was inserted;
+    /// otherwise false and nothing changes (the pasteboard is never touched: the original stays in the field).
+    /// On success the replacement becomes the insertion, so "Use raw" can put the original back for `undoWindow`.
+    public func replaceInserted(with text: String, undoWindow: Duration = TextInserter.undoWindow) async -> Bool {
+        guard let undo, case .ax(let range?, let inserted) = undo.kind else { forgetUndo(); return false }
+        forgetUndo()
+        guard !env.secureInputEnabled(), env.frontmostBundleID() == undo.bundleID,
+              await env.axReplace(range, inserted, text) else { return false }
+        self.undo = Undo(kind: .ax(NSRange(location: range.location, length: text.utf16.count), text),
+                         bundleID: undo.bundleID, raw: undo.raw)
+        armExpiry(after: undoWindow)
+        return true
     }
 
     /// Drops the raw-replacement state (expiry, cancel, new dictation).

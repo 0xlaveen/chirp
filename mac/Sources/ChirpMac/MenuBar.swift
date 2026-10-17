@@ -107,6 +107,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         inputs.chosenInputUID = settings.inputDeviceUID
         inputs.cleanupOn = settings.correction
         inputs.showRawAfterCleanup = settings.showRawAfterCleanup
+        inputs.styleID = settings.correctionProfile
         inputs.hotkey = settings.hotkey
         inputs.soundsEnabled = settings.soundsEnabled
         inputs.serverURL = settings.serverURL
@@ -166,6 +167,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         case .toggleCleanup: #selector(toggleCleanup)
         case .toggleShowRaw: #selector(toggleShowRaw)
         case .pickHotkey: #selector(pickHotkey(_:))
+        case .pickStyle: #selector(pickStyle(_:))
         case .copyDoctor: #selector(copyDoctor)
         case .grantMic: #selector(grantMic)
         case .grantAX: #selector(grantAX)
@@ -182,6 +184,12 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     @objc private func pickInput(_ sender: NSMenuItem) { settings.inputDeviceUID = sender.representedObject as? String }
     @objc private func toggleCleanup() { settings.correction.toggle() }
     @objc private func toggleShowRaw() { settings.showRawAfterCleanup.toggle() }
+    @objc private func pickStyle(_ sender: NSMenuItem) {
+        guard let id = sender.representedObject as? String else { return }
+        settings.correctionProfile = id
+        // Custom needs instructions: open Settings, where they are written.
+        if id == CorrectionProfile.customID { actions.openSettings() }
+    }
     @objc private func pickHotkey(_ sender: NSMenuItem) {
         settings.hotkey = KeyCombo.resolve(id: sender.representedObject as? String)
         controller.registerHotkey()

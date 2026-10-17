@@ -41,6 +41,9 @@ public enum Snapshots {
         }
     }
 
+    private static let rawSentence = "move the standup to three thirty and uh let everyone know"
+    private static let cleanedSentence = "Move the standup to 3:30 and let everyone know."
+
     private static func final(corrected: Bool = false) -> FinalResult {
         corrected ? FinalResult(text: "Move the standup to 3:30.", raw: "move the standup to three thirty", corrected: true)
                   : FinalResult(text: "Move the standup to 3:30.")
@@ -49,6 +52,7 @@ public enum Snapshots {
     private static func applyOutcome(_ outcome: InsertionOutcome, final: FinalResult, offerRaw: Bool = true, to m: HUDModel) {
         let p = OutcomePresentation.of(outcome, final: final, offerRaw: offerRaw)
         m.status = p.status; m.indicator = p.indicator; m.isError = p.isError; m.showUseRaw = p.showUseRaw; m.cleaned = p.cleaned
+        m.keptOriginal = p.keptOriginal
     }
 
     public static var hudScenarios: [Scenario] {
@@ -64,6 +68,43 @@ public enum Snapshots {
             hud("listening-contrast") {
                 $0.status = HUDStatus.listening; $0.levels = .demo(peak: 0.8); $0.increaseContrast = true
                 $0.stable = stable; $0.unstable = tail
+            },
+            // The clean-up transition, in order: listening → finishing → polishing → changes → inserted.
+            hud("flow-1-listening") {
+                $0.status = HUDStatus.listening; $0.levels = .demo(peak: 0.8); $0.styleName = "Email"
+                $0.stable = rawSentence; $0.unstable = ""
+            },
+            hud("flow-2-polishing") {
+                $0.beginPolishing(raw: rawSentence, style: "Email"); $0.shimmerPhase = 0.45
+            },
+            hud("flow-3-diff") {
+                $0.status = HUDStatus.polished; $0.indicator = .sparkle; $0.styleName = "Email"
+                $0.diff = WordDiff.segments(raw: rawSentence, cleaned: cleanedSentence)
+            },
+            hud("flow-4-diff-fading") {
+                $0.status = HUDStatus.polished; $0.indicator = .sparkle; $0.styleName = "Email"
+                $0.diff = WordDiff.segments(raw: rawSentence, cleaned: cleanedSentence); $0.diffFade = 0.6
+            },
+            hud("flow-5-inserted") {
+                applyOutcome(.inserted(.ax), final: FinalResult(text: cleanedSentence, raw: rawSentence, corrected: true), to: $0)
+                $0.styleName = "Email"; $0.stable = cleanedSentence; $0.onUseRaw = {}
+            },
+            hud("polishing-reduce-motion") {
+                $0.reduceMotion = true; $0.beginPolishing(raw: rawSentence, style: "Chat")
+            },
+            hud("polishing-multiline") {
+                $0.beginPolishing(raw: long, style: "Notes"); $0.shimmerPhase = 0.6
+            },
+            hud("polishing-contrast") {
+                $0.increaseContrast = true; $0.beginPolishing(raw: rawSentence, style: "Code"); $0.shimmerPhase = 0.3
+            },
+            hud("diff-reduce-motion") {
+                $0.reduceMotion = true; $0.status = HUDStatus.polished; $0.indicator = .sparkle; $0.styleName = "Chat"
+                $0.diff = WordDiff.segments(raw: rawSentence, cleaned: cleanedSentence)
+            },
+            hud("kept-original") {
+                applyOutcome(.inserted(.ax), final: FinalResult(text: rawSentence, corrected: false, correctionError: "timeout"), to: $0)
+                $0.styleName = "Email"; $0.stable = rawSentence
             },
             hud("finalizing") { $0.status = HUDStatus.finishing; $0.stable = sentence; $0.unstable = " about the release" },
             hud("inserted") { applyOutcome(.inserted(.ax), final: final(), to: $0) },
@@ -103,6 +144,16 @@ public enum Snapshots {
         }
         return [
             form("ready") { $0.launch = .on; $0.serverStatus = "parakeet-mlx:tdt-0.6b-v2" },
+            form("cleanup-custom") {
+                $0.cleanupStyle = "custom"; $0.insertRawFirst = true; $0.launch = .on; $0.serverStatus = "parakeet-mlx:tdt-0.6b-v2"
+                $0.customInstructions = "Write like a short, friendly note to a teammate. Keep product names exactly as spoken and never add facts I did not say."
+                $0.appStyles = [AppStyleRule(bundleID: "com.tinyspeck.slackmacgap", profile: "chat"),
+                                AppStyleRule(bundleID: "com.apple.mail", profile: "custom"),
+                                AppStyleRule(bundleID: "com.apple.dt.Xcode", profile: "code")]
+            },
+            form("cleanup-notes-no-styles") {
+                $0.cleanupStyle = "notes"; $0.serverOffersStyles = false; $0.launch = .on; $0.serverStatus = "parakeet-mlx:tdt-0.6b-v2"
+            },
             form("custom-hotkey-sounds") {
                 $0.hotkey = .custom(keyCode: 0x0F, modifiers: UInt32(controlKey | optionKey | cmdKey))   // ⌃⌥⌘R
                 $0.soundsEnabled = true; $0.launch = .on; $0.serverStatus = "parakeet-mlx:tdt-0.6b-v2"
@@ -166,12 +217,15 @@ public enum Snapshots {
             if let submenu { entries = entries.first { $0.title == submenu }?.submenu ?? [] }
             return Scenario(name: "menu-\(name)") { NSHostingView(rootView: SnapshotBackdrop { MenuPreview(entries: entries) }) }
         }
-        let local = Health(engine: "parakeet-mlx:tdt-0.6b-v2", ready: true, correction: "available", correctionLeavesMachine: false)
+        let local = Health(engine: "parakeet-mlx:tdt-0.6b-v2", ready: true, correction: "available", correctionLeavesMachine: false,
+                           correctionProfiles: CorrectionProfile.builtIn)
         let remote = Health(engine: "parakeet-mlx:tdt-0.6b-v2", ready: true, debugRetention: true, correction: "available",
-                            correctionLeavesMachine: true, correctionHost: "llm.example.com")
+                            correctionLeavesMachine: true, correctionHost: "llm.example.com",
+                            correctionProfiles: CorrectionProfile.builtIn)
         return [
             menu("idle") { $0.health = local },
-            menu("listening-cleanup") { $0.state = .listening; $0.health = local; $0.cleanupOn = true },
+            menu("listening-cleanup") { $0.state = .listening; $0.health = local; $0.cleanupOn = true; $0.styleID = "email" },
+            menu("polishing") { $0.state = .correcting; $0.health = local; $0.cleanupOn = true },
             menu("debug-remote-cleanup") {
                 $0.health = remote; $0.debugRetention = true; $0.cleanupOn = true; $0.showRawAfterCleanup = false
                 $0.chosenInputUID = "studio"
@@ -189,6 +243,8 @@ public enum Snapshots {
                 $0.state = .error("Microphone access denied — enable it in System Settings")
                 $0.health = local; $0.micGranted = false; $0.inputs = []; $0.defaultInput = nil
             },
+            menu("style", { $0.health = local; $0.cleanupOn = true; $0.styleID = "email" }, submenu: "Style"),
+            menu("style-custom", { $0.health = local; $0.cleanupOn = true; $0.styleID = "custom" }, submenu: "Style"),
             menu("input-picker", { $0.health = local; $0.chosenInputUID = "studio" }, submenu: "Input Device"),
         ]
     }

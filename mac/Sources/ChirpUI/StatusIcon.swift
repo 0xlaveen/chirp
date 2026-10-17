@@ -16,7 +16,7 @@ public struct StatusIcon: Equatable, Sendable {
                           reduceMotion: Bool = false) -> StatusIcon {
         let glyph: Glyph = switch state {
         case .idle: .idle
-        case .connecting, .listening, .finalizing, .inserting: .listening
+        case .connecting, .listening, .finalizing, .correcting, .inserting: .listening
         case .error: .error
         }
         return StatusIcon(glyph: glyph, dimmed: state == .idle && !serverReachable, debugBadge: debugRetention,

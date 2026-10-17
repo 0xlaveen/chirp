@@ -10,7 +10,7 @@ public enum LaunchState: Equatable, Sendable {
 }
 
 public enum MenuAction: Equatable, Sendable {
-    case toggleDictation, pickInput(String?), toggleCleanup, toggleShowRaw, pickHotkey(String), toggleSounds
+    case toggleDictation, pickInput(String?), toggleCleanup, toggleShowRaw, pickHotkey(String), pickStyle(String), toggleSounds
     case copyDoctor, grantMic, grantAX, toggleLaunch, showSettings, showSetup, showAbout, quit
 
     /// What the AppKit item carries to its action method.
@@ -18,6 +18,7 @@ public enum MenuAction: Equatable, Sendable {
         switch self {
         case .pickInput(let uid): uid
         case .pickHotkey(let id): id
+        case .pickStyle(let id): id
         default: nil
         }
     }
@@ -66,6 +67,8 @@ public struct MenuInputs: Sendable {
     public var chosenInputUID: String?
     public var cleanupOn = false
     public var showRawAfterCleanup = true
+    /// The default clean-up style (a profile id); a per-app rule can override it for one dictation.
+    public var styleID = CorrectionProfile.defaultID
     public var hotkey: KeyCombo = .controlOptionSpace
     public var soundsEnabled = false
     public var serverURL = ServerConfig.defaultURL.absoluteString
@@ -84,6 +87,7 @@ public enum MenuContent {
         case .connecting: return .line("Connecting…", symbol: "circle.fill", .active)
         case .listening: return .line("Listening", symbol: "circle.fill", .active)
         case .finalizing: return .line("Finalizing", symbol: "circle.fill", .active)
+        case .correcting: return .line("Polishing", symbol: "circle.fill", .active)
         case .inserting: return .line("Inserting", symbol: "circle.fill", .active)
         case .error(let message): return .line(message, symbol: "exclamationmark.triangle.fill", .error)
         case .idle: break
@@ -114,7 +118,7 @@ public enum MenuContent {
             out.append(MenuEntry(title: "Start dictation", symbol: "mic.fill", action: .toggleDictation))
         case .connecting, .listening:
             out.append(MenuEntry(title: "Stop dictation", symbol: "stop.fill", action: .toggleDictation))
-        case .finalizing, .inserting:
+        case .finalizing, .correcting, .inserting:
             out.append(MenuEntry(title: "Start dictation", symbol: "mic.fill"))
         }
         out.append(inputPicker(m))
@@ -196,10 +200,27 @@ public enum MenuContent {
         }
         var out: [MenuEntry] = [.header("Clean-up"), toggle]
         if m.cleanupOn {
+            if let style = styleMenu(m) { out.append(style) }
             out.append(MenuEntry(title: "Show raw after clean-up", subtitle: "Offer “Use raw” for 5 seconds",
                                  symbol: "arrow.uturn.backward", action: .toggleShowRaw, mark: m.showRawAfterCleanup ? .on : .off))
         }
         return out
+    }
+
+    /// "Style": the server's clean-up profiles, then Custom… (which opens Settings to edit the instructions). Only for
+    /// a server that lists profiles; an older one ignores them, so there is nothing to pick.
+    static func styleMenu(_ m: MenuInputs) -> MenuEntry? {
+        guard let h = m.health, h.correctionProfiles != nil else { return nil }
+        let profiles = CorrectionProfile.offered(by: h)
+        var sub: [MenuEntry] = profiles.filter { $0.id != CorrectionProfile.customID }.map { p in
+            MenuEntry(title: p.name, subtitle: p.rewrites ? "\(p.description) May restructure text." : p.description,
+                      action: .pickStyle(p.id), mark: p.id == m.styleID ? .on : .off)
+        }
+        sub.append(.separator)
+        sub.append(MenuEntry(title: "Custom…", subtitle: "Your own instructions, in Settings",
+                             action: .pickStyle(CorrectionProfile.customID), mark: m.styleID == CorrectionProfile.customID ? .on : .off))
+        let name = CorrectionProfile.name(for: m.styleID, in: h)
+        return MenuEntry(title: "Style", subtitle: name, symbol: "textformat", submenu: sub)
     }
 
     /// The server's state in words and tone, for the menu and the Settings window.

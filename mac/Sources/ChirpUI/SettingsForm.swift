@@ -13,6 +13,14 @@ public struct SettingsState: Sendable {
     /// The server's state in words ("Connected", "Unreachable", …) and its tone.
     public var serverStatus = "Connected"
     public var serverStatusTone: MenuEntry.Tone = .ok
+    /// Clean-up: the default style, the custom instructions, the raw-first option and the per-app styles.
+    public var cleanupStyle = CorrectionProfile.defaultID
+    public var customInstructions = ""
+    public var insertRawFirst = false
+    public var appStyles = AppStyleRule.defaults
+    /// The styles the server offers (the built-ins until it says otherwise) and whether it offers any at all.
+    public var profiles = CorrectionProfile.builtIn
+    public var serverOffersStyles = true
 
     public init() {}
 }
@@ -45,6 +53,13 @@ public final class SettingsForm {
     public let accessibilityButton = NSButton(title: "Fix…", target: nil, action: nil)
     /// Under the checkbox: what it does, or why the last change failed.
     public let launchHelp = SettingsForm.help("")
+    /// Clean-up: default style, custom instructions, raw-first and the per-app table.
+    public let style = NSPopUpButton(frame: .zero, pullsDown: false)
+    public let instructions = InstructionsEditor()
+    public let insertRawFirst = NSButton(checkboxWithTitle: "Insert raw immediately, then replace with cleaned", target: nil, action: nil)
+    public let appStyles = AppStylesTable()
+    private let styleHelp = SettingsForm.help("")
+    private var shownProfileIDs: [String] = []
     private let tokenStatus = StatusLine()
     private let tokenHelp = SettingsForm.help("")
     private let serverStatus = StatusLine()
@@ -89,6 +104,11 @@ public final class SettingsForm {
         row("Hotkey:", hotkeyRow, help: hotkeyHelp)
         row("Sounds:", sounds, help: Self.help("Two quiet system sounds when dictation starts and stops."))
         row("Startup:", launch, help: launchHelp)
+        section("Clean-up")
+        row("Style:", style, help: styleHelp)
+        row("Custom:", instructions.view, help: Self.help("Used by the Custom style (up to \(CorrectionProfile.maxInstructionLength) characters). They only shape how text is tidied: no tools, no network."))
+        row("Per-app:", appStyles.view, help: Self.help("The frontmost app when you start dictating picks the style. Other apps use the default style."))
+        row("Insertion:", insertRawFirst, help: Self.help("Swaps in the cleaned text in place where Chirp can verify the insert; elsewhere it inserts once."))
         section("Server")
         row("URL:", serverURL)
         row("Token:", tokenStatus, help: tokenHelp)
@@ -124,8 +144,22 @@ public final class SettingsForm {
 
     /// Puts the form in `window`, sized to fit, with focus parked on the content view so no field opens selected.
     public func install(in window: NSWindow) {
-        window.contentView = view
-        window.setContentSize(view.fittingSize)
+        let size = view.fittingSize
+        // The form is tall now: on a small screen it scrolls instead of running off it.
+        let limit = (window.screen ?? NSScreen.main)?.visibleFrame.height ?? 900
+        let cap = max(480, limit - 90)
+        if size.height > cap {
+            let scroll = NSScrollView()
+            scroll.hasVerticalScroller = true
+            scroll.autohidesScrollers = true
+            scroll.drawsBackground = false
+            scroll.documentView = view
+            window.contentView = scroll
+            window.setContentSize(NSSize(width: size.width + 16, height: cap))
+        } else {
+            window.contentView = view
+            window.setContentSize(size)
+        }
         window.initialFirstResponder = view
         window.makeFirstResponder(view)
     }
@@ -141,6 +175,17 @@ public final class SettingsForm {
             launch.isEnabled = s.launch != .unavailable
             launchUnavailable = s.launch == .unavailable
             setLaunchError(nil)
+            style.controlSize = .regular
+            fillStyleMenu(s.profiles, selecting: s.cleanupStyle, offered: s.serverOffersStyles)
+            instructions.text = s.customInstructions
+            insertRawFirst.state = s.insertRawFirst ? .on : .off
+            appStyles.setProfiles(s.profiles)
+            appStyles.setRules(s.appStyles)
+        } else if s.profiles.map(\.id) != shownProfileIDs {
+            // The server's style list arrived after the window opened: follow it without touching what is being edited.
+            let current = style.selectedItem?.representedObject as? String ?? s.cleanupStyle
+            fillStyleMenu(s.profiles, selecting: current, offered: s.serverOffersStyles)
+            appStyles.setProfiles(s.profiles)
         }
         tokenStatus.set(symbol: s.tokenPresent ? "checkmark.circle.fill" : "exclamationmark.triangle.fill",
                         tone: s.tokenPresent ? .ok : .warning, text: "~/.config/chirp/token")
@@ -165,6 +210,27 @@ public final class SettingsForm {
         if let index = hotkey.itemArray.firstIndex(where: { $0.representedObject as? String == current.id }) {
             hotkey.selectItem(at: index)
         }
+    }
+
+    /// The styles, with `current` selected (an id the server no longer lists stays selectable, so it is not silently changed).
+    public func fillStyleMenu(_ profiles: [CorrectionProfile], selecting current: String, offered: Bool = true) {
+        var list = profiles
+        if !list.contains(where: { $0.id == current }) {
+            list.append(CorrectionProfile(id: current, name: CorrectionProfile.displayName(for: current)))
+        }
+        shownProfileIDs = profiles.map(\.id)
+        style.removeAllItems()
+        for p in list {
+            style.addItem(withTitle: p.name)
+            style.lastItem?.representedObject = p.id
+            style.lastItem?.toolTip = p.description
+        }
+        if let i = list.firstIndex(where: { $0.id == current }) { style.selectItem(at: i) }
+        let chosen = list.first { $0.id == current }
+        var text = chosen?.description ?? ""
+        if chosen?.rewrites == true { text += (text.isEmpty ? "" : " ") + "May restructure your text." }
+        if !offered { text = "This server does not offer styles yet; update chirp-server to use them." }
+        styleHelp.stringValue = text
     }
 
     private func refreshHotkeyHelp() {
