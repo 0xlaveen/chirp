@@ -17,7 +17,10 @@ files = [
     "bench-onnx-int8.json",
     "bench-mlx-final-production.json",
     "bench-mlx-paused-segments.json",
-    "bench-paired-finalization.json",
+    "bench-paired-finalization-contended.json",
+    "bench-paired-finalization-quiet.json",
+    "bench-mlx-fp32-rolling-quiet.json",
+    "bench-onnx-int8-quiet.json",
     "bench-fluid.json",
     "bench-apple.json",
 ]
@@ -33,7 +36,9 @@ lines = [
     "were approximately 25–57. These are observed contended results, not isolated performance "
     "budgets. Different rows were measured at different times; cross-engine speed rankings "
     "are provisional. CPU process peak RSS excludes some GPU allocations and out-of-process "
-    "system speech services, so Apple’s low RSS is not its total system memory footprint.",
+    "system speech services, so Apple’s low RSS is not its total system memory footprint. "
+    "A quieter-host rerun the same day is recorded in the 'Quiet-host rerun' section below; "
+    "every other section is the original contended measurement.",
     "",
     "## Selected behavior",
     "",
@@ -55,19 +60,92 @@ lines = [
     "pinned revision `8ae155301e23d820d82aa60d24817c900e69e487`. No model repository "
     "or floating revision is resolved at server startup.",
     "",
-    "## Same-clip finalization comparison",
+]
+quiet_paired = json.loads((cache / "bench-paired-finalization-quiet.json").read_text())["paired"]
+quiet_loads = [row["load_average"][0] for row in quiet_paired]
+lines += [
+    "## Quiet-host rerun (2026-10-17)",
+    "",
+    "Same day, same synthetic fixtures and paired method, rerun while the host was quiet: "
+    f"recorded 1-minute load averages were approximately {min(quiet_loads):.1f}–"
+    f"{max(quiet_loads):.1f} across the paired rows (the contended sections below ran at "
+    "25–57). The real uvicorn/root-path/WebSocket simulator check measured 244 ms first "
+    "partial, **107 ms stop-to-final** and 0.52 s model load plus actual decode warmup "
+    "(the contended run measured 196/96 ms and 0.54 s). Every streamed final kept 0% "
+    "normalized WER.",
+    "",
+    "| Fixture | Actual audio (s) | Full final (ms) | Segments final (ms) | 1-min load range |",
+    "|---|---:|---:|---:|---:|",
+]
+for dataset in ("fixtures", "fixtures-paused"):
+    manifest = json.loads((cache / dataset / "manifest.json").read_text())
+    for target in (5, 15):
+        rows = [
+            r for r in quiet_paired if r["dataset"] == dataset and r["target_seconds"] == target
+        ]
+        medians = [
+            statistics.median(r["stop_to_final_ms"] for r in rows if r["mode"] == mode)
+            for mode in ("full", "segments")
+        ]
+        loads = [r["load_average"][0] for r in rows]
+        duration = next(r["seconds"] for r in manifest if r["target_seconds"] == target)
+        lines.append(
+            f"| {'Continuous' if dataset == 'fixtures' else '600 ms pauses'} {target} s "
+            f"| {duration:.2f} | {medians[0]:.0f} | {medians[1]:.0f} "
+            f"| {min(loads):.1f}–{max(loads):.1f} |"
+        )
+lines += [
+    "",
+    "Quiet-host segments verdict: `--finalization segments` now wins the continuous 5 s "
+    "median (135 vs 155 ms) but still loses the continuous 15 s median (270 vs 222 ms), "
+    "while the pause fixtures improve further (114 vs 153 ms; 91 vs 240 ms). There is no "
+    "clear margin for ≤20 s continuous utterances across lengths, so the default stays "
+    "`full`; segments remain recommended when the speaker pauses. The same engine rows "
+    "rerun under these conditions:",
+    "",
+    "| Variant | Audio (s) | Warm RTFx | WER (%) | Peak process RSS (MiB) | 1-min load range |",
+    "|---|---:|---:|---:|---:|---:|",
+]
+for name, label in [
+    ("bench-mlx-fp32-rolling-quiet.json", "MLX fp32 rolling"),
+    ("bench-onnx-int8-quiet.json", "ONNX v2 int8 CPU"),
+]:
+    data = json.loads((cache / name).read_text())
+    loads = [data["load_average_begin"][0], data["load_average_end"][0]]
+    for clip in data["clips"]:
+        lines.append(
+            f"| {label} | {clip['audio_seconds']:.2f} | {clip['rtfx']:.1f} "
+            f"| {clip['wer'] * 100:.2f} | {data['peak_rss_mib']:.0f} "
+            f"| {min(loads):.1f}–{max(loads):.1f} |"
+        )
+lines += [
+    "",
+    "Two observations on the quiet ONNX rows: its 60 s clip reproduces the contended run's "
+    "12.94% WER exactly, suggesting a deterministic int8 long-audio degradation rather than "
+    "a load artifact, and its 1-minute loadavg climbs during the run itself because ONNX "
+    "inference saturates CPU cores (unlike the GPU-side MLX rows).",
+    "",
+    "Reproduce the quiet rerun with `uv run python scripts/smoke.py`; "
+    "`uv run python scripts/compare_finalization.py` (kept as "
+    "`bench-paired-finalization-quiet.json`; the M1 contended raw was preserved as "
+    "`bench-paired-finalization-contended.json`); `uv run python scripts/bench.py "
+    '--output "$HOME/Library/Caches/Chirp/bench-mlx-fp32-rolling-quiet.json"`; ',
+    "`uv run --extra onnx python scripts/bench.py --engine onnx "
+    '--output "$HOME/Library/Caches/Chirp/bench-onnx-int8-quiet.json"`.',
+    "",
+    "## Same-clip finalization comparison (contended)",
     "",
     "One loaded, actually warmed model; full vs segment modes run back-to-back on each exact "
     "WAV, two repetitions with order reversed. Medians below include any in-flight partial "
     "work at stop. Every streamed final had 0% normalized WER. Short continuous 5 s regression "
     "means pause precommit remains **opt-in** (`--finalization segments`). This deliberately "
     "leaves default `stable` empty; segment mode exposes only its frozen prefixes, and final "
-    "correction suppresses them.",
+    "correction suppresses them. These are the original contended-host measurements.",
     "",
     "| Fixture | Actual audio (s) | Full final (ms) | Segments final (ms) | 1-min load range |",
     "|---|---:|---:|---:|---:|",
 ]
-paired = json.loads((cache / "bench-paired-finalization.json").read_text())["paired"]
+paired = json.loads((cache / "bench-paired-finalization-contended.json").read_text())["paired"]
 for dataset in ("fixtures", "fixtures-paused"):
     manifest = json.loads((cache / dataset / "manifest.json").read_text())
     for target in (5, 15):
