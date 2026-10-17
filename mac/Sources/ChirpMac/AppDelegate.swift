@@ -1,5 +1,6 @@
 import AppKit
 import ChirpCore
+import ChirpUI
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
@@ -10,6 +11,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         menu = MenuBarController(controller: controller, openSettings: { [settingsWindow] in settingsWindow.show() })
+        settingsWindow.serverStatus = { [controller] in MenuContent.serverStatus(health: controller.health, healthError: controller.healthError) }
         settingsWindow.onHotkeyChange = { [controller] in controller.registerHotkey() }
         controller.onChange = { [weak self] in self?.menu?.refreshIcon() }
 

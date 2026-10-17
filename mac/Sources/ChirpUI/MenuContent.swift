@@ -1,19 +1,12 @@
 import ChirpCore
 
-/// Launch at login as the system reports it.
+/// Whether Chirp starts at login: the presence of its LaunchAgent.
 public enum LaunchState: Equatable, Sendable {
     case on, off
-    /// Registered, but macOS wants the user to allow it in System Settings → General → Login Items.
-    case needsApproval
+    /// Not running from an app bundle (e.g. `swift run`), so there is no app to launch.
     case unavailable
 
-    public var menuTitle: String {
-        switch self {
-        case .on, .off: "Launch at Login"
-        case .needsApproval: "Launch at Login — approve in System Settings…"
-        case .unavailable: "Launch at Login (unavailable for this build)"
-        }
-    }
+    public static let menuTitle = "Launch at Login"
 }
 
 public enum MenuAction: Equatable, Sendable {
@@ -50,9 +43,8 @@ public struct MenuEntry: Equatable, Sendable {
     public var isHeader = false
     /// ⌘-key equivalent shown at the right ("," and "q").
     public var keyEquivalent: String?
-    /// The dictation hotkey, shown at the right of "Start dictation".
-    public var hotkey: KeyCombo?
-    /// The header row shows the app icon.
+    /// The first row of the header block: app icon, name and hotkey hint. The rows after it, up to the next separator
+    /// (status, debug warning), belong to the same block.
     public var showsAppIcon = false
 
     public static let separator = MenuEntry(title: "", isSeparator: true)
@@ -114,14 +106,15 @@ public enum MenuContent {
         }
         out.append(.separator)
 
-        // Dictation: the same toggle as the hotkey, for discoverability.
+        // Dictation: the same toggle as the hotkey, for discoverability. The header already shows the hotkey, so the
+        // row carries no key equivalent (AppKit would draw ⌃⌥Space in separate columns and it only works with the menu open).
         switch m.state {
         case .idle, .error:
-            out.append(MenuEntry(title: "Start dictation", symbol: "mic.fill", action: .toggleDictation, hotkey: m.hotkey))
+            out.append(MenuEntry(title: "Start dictation", symbol: "mic.fill", action: .toggleDictation))
         case .connecting, .listening:
-            out.append(MenuEntry(title: "Stop dictation", symbol: "stop.fill", action: .toggleDictation, hotkey: m.hotkey))
+            out.append(MenuEntry(title: "Stop dictation", symbol: "stop.fill", action: .toggleDictation))
         case .finalizing, .inserting:
-            out.append(MenuEntry(title: "Start dictation", symbol: "mic.fill", hotkey: m.hotkey))
+            out.append(MenuEntry(title: "Start dictation", symbol: "mic.fill"))
         }
         out.append(inputPicker(m))
         out.append(MenuEntry(
@@ -150,9 +143,9 @@ public enum MenuContent {
         }
         out.append(.separator)
 
-        out.append(MenuEntry(title: m.launch.menuTitle, symbol: "power", action: m.launch == .unavailable ? nil : .toggleLaunch,
-                             mark: m.launch == .on ? .on : m.launch == .needsApproval ? .mixed : .off))
-        if let e = m.launchError { out.append(.line("Launch at Login: \(e)", symbol: "exclamationmark.triangle.fill", .error)) }
+        out.append(MenuEntry(title: LaunchState.menuTitle, subtitle: m.launchError.map { "Couldn’t change it: \($0)" },
+                             symbol: "power", symbolTone: m.launchError == nil ? nil : .error,
+                             action: m.launch == .unavailable ? nil : .toggleLaunch, mark: m.launch == .on ? .on : .off))
         out.append(MenuEntry(title: "Settings…", symbol: "gearshape", action: .showSettings, keyEquivalent: ","))
         out.append(MenuEntry(title: "About Chirp", symbol: "info.circle", action: .showAbout))
         out.append(MenuEntry(title: "Quit Chirp", symbol: "power.circle", action: .quit, keyEquivalent: "q"))
@@ -175,31 +168,38 @@ public enum MenuContent {
     }
 
     /// Clean-up maps to the wire `correction` flag; the server says whether it is configured and where text goes.
+    /// A server without clean-up gets one explanatory row and nothing to toggle, and "Show raw" only appears while
+    /// clean-up is on, so no row is ever greyed out yet checked.
     static func cleanup(_ m: MenuInputs) -> [MenuEntry] {
+        if let h = m.health, !h.correctionAvailable {
+            return [.header("Clean-up"), .line("Clean-up: off on server — see README", symbol: "sparkles")]
+        }
         var toggle = MenuEntry(title: "Clean up text", symbol: "sparkles", action: .toggleCleanup, mark: m.cleanupOn ? .on : .off)
-        switch m.health {
-        case nil:
-            toggle.subtitle = "Server unreachable"
-        case let h? where !h.correctionAvailable:
-            toggle.subtitle = "Not set up on the server"
-            toggle.action = nil
-        case let h?:
+        if let h = m.health {
             toggle.subtitle = h.correctionLeavesMachine == true ? "Sends text to \(h.correctionHost ?? "a remote LLM")"
                                                                 : "Runs on this Mac"
+        } else {
+            toggle.subtitle = "Server unreachable"
         }
-        let raw = MenuEntry(title: "Show raw after clean-up", subtitle: "Offer “Use raw” for 5 seconds",
-                            symbol: "arrow.uturn.backward",
-                            action: m.cleanupOn && toggle.action != nil ? .toggleShowRaw : nil,
-                            mark: m.showRawAfterCleanup ? .on : .off)
-        return [.header("Clean-up"), toggle, raw]
+        var out: [MenuEntry] = [.header("Clean-up"), toggle]
+        if m.cleanupOn {
+            out.append(MenuEntry(title: "Show raw after clean-up", subtitle: "Offer “Use raw” for 5 seconds",
+                                 symbol: "arrow.uturn.backward", action: .toggleShowRaw, mark: m.showRawAfterCleanup ? .on : .off))
+        }
+        return out
     }
 
-    static func server(_ m: MenuInputs) -> [MenuEntry] {
-        let (subtitle, tone): (String, MenuEntry.Tone) = switch m.health {
-        case nil: m.healthError == nil ? ("Checking…", .warning) : ("Unreachable", .error)
+    /// The server's state in words and tone, for the menu and the Settings window.
+    public static func serverStatus(health: Health?, healthError: String?) -> (text: String, tone: MenuEntry.Tone) {
+        switch health {
+        case nil: healthError == nil ? ("Checking…", .warning) : ("Unreachable", .error)
         case let h? where h.ready == false: ("Loading model…", .warning)
         case let h?: (h.engine ?? "Connected", .ok)
         }
+    }
+
+    static func server(_ m: MenuInputs) -> [MenuEntry] {
+        let (subtitle, tone) = serverStatus(health: m.health, healthError: m.healthError)
         return [
             .header("Server"),
             MenuEntry(title: m.serverURL, subtitle: subtitle, symbol: "circle.fill", symbolTone: tone, action: .showSettings),

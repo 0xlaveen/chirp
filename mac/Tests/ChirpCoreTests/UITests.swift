@@ -103,33 +103,78 @@ import Testing
         s.micGranted = false; s.tokenPresent = false; s.launch = .unavailable
         let form = SettingsForm(s)
         #expect(!form.micButton.isHidden && form.accessibilityButton.isHidden)
-        #expect(!form.launch.isEnabled)
+        #expect(!form.launch.isEnabled && form.launch.state == .off)
         #expect(form.serverURL.stringValue == ServerConfig.defaultURL.absoluteString)
+    }
+
+    @Test func launchCheckboxShowsTheRealState() {
+        var s = SettingsState()
+        s.launch = .on
+        let form = SettingsForm(s)
+        #expect(form.launch.state == .on && form.launch.isEnabled && !form.launch.allowsMixedState)
+        s.launch = .off
+        form.apply(s, full: true)
+        #expect(form.launch.state == .off)
     }
 
     @Test func periodicRefreshNeverOverwritesTypingOrTheLoginItemError() {
         let form = SettingsForm(SettingsState())
         form.serverURL.stringValue = "http://typing"
-        form.launch.title = "Launch at login failed: x"
+        form.setLaunchError("Operation not permitted")
         var s = SettingsState()
         s.micGranted = false; s.serverURL = "http://other"
         form.apply(s)
         #expect(form.serverURL.stringValue == "http://typing")
-        #expect(form.launch.title == "Launch at login failed: x")
+        #expect(form.launchHelp.stringValue == "Couldn’t change it: Operation not permitted")
         #expect(!form.micButton.isHidden)
         form.apply(s, full: true)
         #expect(form.serverURL.stringValue == "http://other")
+        #expect(form.launchHelp.textColor == .secondaryLabelColor)
     }
 
     @Test func contentKeepsItsMarginOnEverySide() {
         let form = SettingsForm(SettingsState())
         form.view.layoutSubtreeIfNeeded()
         let size = form.view.fittingSize
-        let stack = form.view.subviews[0]
+        let grid = form.view.subviews[0]
         form.view.setFrameSize(size)
         form.view.layoutSubtreeIfNeeded()
-        #expect(abs(stack.frame.minX - 20) < 0.5)
-        #expect(abs(size.width - stack.frame.maxX - 20) < 0.5)
+        #expect(abs(grid.frame.minX - 20) < 0.5 && abs(grid.frame.minY - 20) < 0.5)
+        #expect(abs(size.width - grid.frame.maxX - 20) < 0.5 && abs(size.height - grid.frame.maxY - 20) < 0.5)
+    }
+
+    @Test func labelsShareARightEdgeAndControlsALeftEdge() throws {
+        let form = SettingsForm(SettingsState())
+        form.view.setFrameSize(form.view.fittingSize)
+        form.view.layoutSubtreeIfNeeded()
+        func labels(in view: NSView) -> [NSTextField] {
+            view.subviews.flatMap { ($0 as? NSTextField).map { [$0] } ?? labels(in: $0) }
+        }
+        let rowLabels = labels(in: form.view).filter { $0.stringValue.hasSuffix(":") && $0.alignment == .right }
+        #expect(rowLabels.count == 7)
+        let edges = rowLabels.map { form.view.convert($0.bounds, from: $0).maxX }
+        #expect(edges.allSatisfy { abs($0 - edges[0]) < 0.5 })
+        let controlEdges = [form.hotkey, form.launch, form.serverURL, form.micButton].map { form.view.convert($0.bounds, from: $0).minX }
+        // The permission button sits after its status text, so compare only the controls that start a cell.
+        #expect(abs(controlEdges[0] - controlEdges[1]) < 0.5 && abs(controlEdges[0] - controlEdges[2]) < 0.5)
+        #expect(controlEdges[0] > edges[0])
+    }
+
+    @Test func helpTextUsesTheSecondaryLabelColour() {
+        let form = SettingsForm(SettingsState())
+        #expect(form.launchHelp.textColor == .secondaryLabelColor)
+        #expect(form.launchHelp.font?.pointSize == NSFont.smallSystemFontSize)
+    }
+
+    @Test func opensWithoutAFocusedOrSelectedServerURL() {
+        let form = SettingsForm(SettingsState())
+        let window = NSWindow(contentRect: .zero, styleMask: [.titled, .closable], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        form.install(in: window)
+        #expect(window.initialFirstResponder === form.view)
+        #expect(window.firstResponder === form.view)
+        #expect(!(window.firstResponder is NSText))
+        #expect(window.contentView?.frame.width ?? 0 > 300)
     }
 }
 

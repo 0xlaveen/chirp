@@ -85,10 +85,11 @@ public enum Snapshots {
             }
         }
         return [
-            form("ready") { _ in },
+            form("ready") { $0.launch = .on; $0.serverStatus = "parakeet-mlx:tdt-0.6b-v2" },
             form("needs-setup") {
                 $0.tokenPresent = false; $0.micGranted = false; $0.accessibilityGranted = false
                 $0.launch = .unavailable; $0.serverURL = "https://mainframe.example.ts.net/chirp"
+                $0.serverStatus = "Unreachable"; $0.serverStatusTone = .error
             },
         ]
     }
@@ -116,13 +117,14 @@ public enum Snapshots {
                 $0.health = remote; $0.debugRetention = true; $0.cleanupOn = true; $0.showRawAfterCleanup = false
                 $0.chosenInputUID = "studio"
             },
+            menu("cleanup-off-on-server") { $0.health = Health(engine: "parakeet-mlx:tdt-0.6b-v2", ready: true, correction: "off") },
             menu("server-unreachable") {
                 $0.healthError = "Server unreachable at 127.0.0.1"; $0.serverURL = "https://mainframe.example.ts.net/chirp"
             },
             menu("permissions-needed") {
                 $0.health = Health(engine: "parakeet-mlx:tdt-0.6b-v2", ready: true)
                 $0.micGranted = false; $0.accessibilityGranted = false
-                $0.launch = .needsApproval; $0.launchError = "Operation not permitted"
+                $0.launch = .on; $0.launchError = "Operation not permitted"
             },
             menu("error") {
                 $0.state = .error("Microphone access denied — enable it in System Settings")
@@ -191,12 +193,19 @@ private struct SnapshotBackdrop<Content: View>: View {
     }
 }
 
-/// The menu-bar menu's content laid out like a menu. The real `NSMenu` chrome cannot be drawn offscreen.
+/// The menu-bar menu's content laid out like a menu. The real `NSMenu` chrome cannot be drawn offscreen, so rows are
+/// approximated; the header block is the real `MenuHeaderView`.
 private struct MenuPreview: View {
     let entries: [MenuEntry]
+
     var body: some View {
         VStack(alignment: .leading, spacing: 1) {
-            ForEach(Array(entries.enumerated()), id: \.offset) { _, e in row(e) }
+            ForEach(Array(blocks.enumerated()), id: \.offset) { _, block in
+                switch block {
+                case .header(let head, let lines): HeaderBlock(head: head, lines: lines)
+                case .entry(let e): row(e)
+                }
+            }
         }
         .padding(.vertical, 6).padding(.horizontal, 6)
         .frame(minWidth: 300, alignment: .leading)
@@ -206,6 +215,23 @@ private struct MenuPreview: View {
         .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(.primary.opacity(0.12)))
     }
 
+    private enum Block { case header(MenuEntry, [MenuEntry]), entry(MenuEntry) }
+
+    /// The header row and the status lines after it form one block, as in the real menu.
+    private var blocks: [Block] {
+        var out: [Block] = []
+        var i = 0
+        while i < entries.count {
+            let e = entries[i]
+            i += 1
+            guard e.showsAppIcon else { out.append(.entry(e)); continue }
+            let start = i
+            while i < entries.count, !entries[i].isSeparator { i += 1 }
+            out.append(.header(e, Array(entries[start..<i])))
+        }
+        return out
+    }
+
     @ViewBuilder private func row(_ e: MenuEntry) -> some View {
         if e.isSeparator {
             Divider().padding(.vertical, 4).padding(.horizontal, 6)
@@ -213,28 +239,27 @@ private struct MenuPreview: View {
             Text(e.title).font(.system(size: 11, weight: .semibold)).foregroundStyle(.secondary)
                 .padding(.horizontal, 8).padding(.top, 4).padding(.bottom, 1)
         } else {
+            let enabled = e.action != nil || e.submenu != nil
             HStack(spacing: 7) {
                 Text(e.mark == .on ? "✓" : e.mark == .mixed ? "–" : "").frame(width: 12)
                 icon(e).frame(width: 18)
                 VStack(alignment: .leading, spacing: 0) {
-                    Text(e.title).font(.system(size: 13, weight: e.showsAppIcon ? .semibold : .regular)).foregroundStyle(color(e))
+                    Text(e.title).font(.system(size: 13)).foregroundStyle(color(e))
                     if let sub = e.subtitle { Text(sub).font(.system(size: 11)).foregroundStyle(.secondary) }
                 }
                 Spacer(minLength: 16)
-                if let h = e.hotkey { Text(h.title).font(.system(size: 13)).foregroundStyle(.secondary) }
                 if let k = e.keyEquivalent { Text("⌘" + k.uppercased()).font(.system(size: 13)).foregroundStyle(.secondary) }
                 if e.submenu != nil { Image(systemName: "chevron.right").font(.system(size: 10, weight: .semibold)).foregroundStyle(.secondary) }
             }
             .padding(.horizontal, 8).padding(.vertical, 2)
-            .opacity(e.action == nil && e.submenu == nil && e.tone == .normal && !e.showsAppIcon ? 0.55 : 1)
+            // Like AppKit, a disabled row is dimmed.
+            .opacity(enabled ? 1 : 0.5)
         }
     }
 
     @ViewBuilder private func icon(_ e: MenuEntry) -> some View {
-        if e.showsAppIcon {
-            Image(systemName: "bird.fill").font(.system(size: 16)).foregroundStyle(.indigo)
-        } else if let name = e.symbol {
-            Image(systemName: name).font(.system(size: 12)).foregroundStyle(tint(e.symbolTone ?? e.tone))
+        if let name = e.symbol {
+            Image(systemName: name).font(.system(size: name == "circle.fill" ? 8 : 13)).foregroundStyle(tint(e.symbolTone ?? e.tone))
         }
     }
 
@@ -254,5 +279,23 @@ private struct MenuPreview: View {
         case .warning: .orange
         default: .primary
         }
+    }
+}
+
+private struct HeaderBlock: NSViewRepresentable {
+    let head: MenuEntry
+    let lines: [MenuEntry]
+
+    func makeNSView(context: Context) -> MenuHeaderView {
+        MenuHeaderView(title: head.title, hint: head.subtitle, lines: lines, icon: Self.standIn)
+    }
+    func updateNSView(_ view: MenuHeaderView, context: Context) {}
+    /// The app icon only exists in the bundled app; the snapshots draw the bird symbol in its place.
+    private static var standIn: NSImage? {
+        NSImage(systemSymbolName: "bird.fill", accessibilityDescription: nil)?
+            .withSymbolConfiguration(.init(pointSize: 26, weight: .regular).applying(.init(paletteColors: [.systemIndigo])))
+    }
+    func sizeThatFits(_ proposal: ProposedViewSize, nsView: MenuHeaderView, context: Context) -> CGSize? {
+        CGSize(width: max(nsView.fittingSize.width, proposal.width ?? 0), height: nsView.fittingSize.height)
     }
 }

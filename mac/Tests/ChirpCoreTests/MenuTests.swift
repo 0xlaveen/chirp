@@ -114,9 +114,10 @@ import Testing
 
     // MARK: dictation
 
-    @Test func startDictationMirrorsTheHotkeyAndTurnsIntoStop() {
+    @Test func startDictationTurnsIntoStopAndCarriesNoKeyEquivalent() {
         let idle = entry(inputs(), .toggleDictation)
-        #expect(idle?.title == "Start dictation" && idle?.hotkey == .controlOptionSpace)
+        // The header shows the hotkey once; a ⌃⌥Space equivalent would render in odd columns.
+        #expect(idle?.title == "Start dictation" && idle?.keyEquivalent == nil)
         #expect(entry(inputs { $0.state = .listening }, .toggleDictation)?.title == "Stop dictation")
         #expect(entry(inputs { $0.state = .error("x") }, .toggleDictation)?.title == "Start dictation")
         // Nothing to start or stop while the final is on its way.
@@ -169,11 +170,30 @@ import Testing
                       .toggleCleanup)?.subtitle == "Sends text to h")
     }
 
-    @Test func cleanupIsUnavailableWhenTheServerHasNone() throws {
-        let m = inputs { $0.health = Health(engine: "p", ready: true, correction: "off"); $0.cleanupOn = true }
-        #expect(entry(m, .toggleCleanup) == nil && entry(m, .toggleShowRaw) == nil)
-        let row = try #require(MenuContent.entries(m).first { $0.title == "Clean up text" })
-        #expect(row.subtitle == "Not set up on the server")
+    @Test func serverWithoutCleanupGetsOneExplanatoryRowAndNoGreyedCheckedItems() throws {
+        for on in [true, false] {
+            let m = inputs { $0.health = Health(engine: "p", ready: true, correction: "off"); $0.cleanupOn = on; $0.showRawAfterCleanup = true }
+            #expect(entry(m, .toggleCleanup) == nil && entry(m, .toggleShowRaw) == nil)
+            let all = MenuContent.entries(m)
+            let section = try #require(all.firstIndex { $0.isHeader && $0.title == "Clean-up" })
+            let row = all[section + 1]
+            #expect(row.title == "Clean-up: off on server — see README" && row.action == nil && row.mark == .off)
+            #expect(all[section + 2].isSeparator)
+            #expect(!all.contains { $0.title == "Clean up text" || $0.title == "Show raw after clean-up" })
+        }
+    }
+
+    @Test func noMenuItemIsCheckedWhileDisabled() {
+        let configs: [(inout MenuInputs) -> Void] = [
+            { _ in }, { $0.cleanupOn = true }, { $0.cleanupOn = true; $0.showRawAfterCleanup = false },
+            { $0.health = Health(correction: "off"); $0.cleanupOn = true }, { $0.health = nil; $0.cleanupOn = true },
+            { $0.launch = .unavailable }, { $0.launch = .on },
+        ]
+        for configure in configs {
+            for e in MenuContent.entries(inputs(configure)) where e.mark != .off {
+                #expect(e.action != nil, "\(e.title) is checked but has no action")
+            }
+        }
     }
 
     @Test func showRawOptionNeedsCleanupOn() {
@@ -223,21 +243,27 @@ import Testing
     @Test func footerHasLaunchSettingsAboutAndQuit() {
         let t = titles(inputs())
         #expect(t.suffix(4) == ["Launch at Login", "Settings…", "About Chirp", "Quit Chirp"])
-        #expect(entry(inputs(), .quit)?.keyEquivalent == "q")
+        #expect(entry(inputs(), .quit)?.keyEquivalent == "q" && MenuContent.entries(inputs()).first { $0.title == "Settings…" }?.keyEquivalent == ",")
         #expect(entry(inputs(), .showAbout) != nil)
     }
 
-    @Test func launchAtLoginStates() {
+    @Test func launchAtLoginIsAPlainCheckboxWithTheErrorUnderneath() {
         var m = inputs()
-        func item() -> MenuEntry { MenuContent.entries(m).first { $0.title.hasPrefix("Launch at Login") }! }
+        func item() -> MenuEntry { MenuContent.entries(m).first { $0.title == "Launch at Login" }! }
+        #expect(item().mark == .off && item().action == .toggleLaunch && item().subtitle == nil)
         m.launch = .on
         #expect(item().mark == .on && item().action == .toggleLaunch)
-        m.launch = .needsApproval
-        #expect(item().mark == .mixed)
-        m.launch = .unavailable
-        #expect(item().action == nil)
         m.launchError = "Operation not permitted"
-        #expect(MenuContent.entries(m).contains { $0.title == "Launch at Login: Operation not permitted" && $0.tone == .error })
+        #expect(item().subtitle == "Couldn’t change it: Operation not permitted" && item().symbolTone == .error)
+        m.launch = .unavailable
+        #expect(item().action == nil && item().mark == .off)
+    }
+
+    @Test func headerBlockIsTheFirstRowFollowedByTheStatusLines() {
+        let all = MenuContent.entries(inputs { $0.debugRetention = true })
+        let firstSeparator = all.firstIndex { $0.isSeparator }!
+        #expect(all[0].showsAppIcon && all[1].title == "Ready" && all[2].title.hasPrefix("DEBUG") && firstSeparator == 3)
+        #expect(all.dropFirst().allSatisfy { !$0.showsAppIcon })
     }
 
     @Test func itemPayloadsCarryTheirChoice() {
