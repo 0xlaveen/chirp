@@ -1,5 +1,6 @@
 import AppKit
 import ChirpCore
+import ChirpUI
 
 /// Glue between the pure state machine and the system: capture, socket, HUD, insertion.
 @MainActor
@@ -239,30 +240,14 @@ final class DictationController {
     }
 
     private func show(_ outcome: InsertionOutcome, final: FinalResult) {
-        hud.model.isError = false
-        var linger = 1.2
-        switch outcome {
-        case .inserted(let method):
-            hud.model.status = method == .ax ? "Inserted" : "Inserted (paste)"
-            if final.canUseRaw {
-                hud.model.showUseRaw = true
-                hud.model.onUseRaw = { [weak self] in self?.useRaw() }
-                linger = 5
-            }
-        case .copied:
-            hud.model.status = "Copied — press ⌘V"
-            linger = 3
-        case .insertedUnverified:
-            hud.model.status = "Inserted? If nothing appeared, press ⌘V"
-            linger = 4
-        case .refusedSecure:
-            hud.model.status = "Secure field — nothing inserted"
-            hud.model.isError = true
-            linger = 3
-        }
+        let p = OutcomePresentation.of(outcome, final: final)
+        hud.model.status = p.status
+        hud.model.isError = p.isError
+        hud.model.showUseRaw = p.showUseRaw
+        hud.model.onUseRaw = p.showUseRaw ? { [weak self] in self?.useRaw() } : nil
         hud.show()
-        hud.hide(after: linger)
-        hud.announce(hud.model.status)
+        hud.hide(after: p.linger)
+        hud.announce(p.status)
     }
 
     /// Replace the inserted correction with the raw transcript: in place for AX insertions, via ⌘Z for pasted ones.

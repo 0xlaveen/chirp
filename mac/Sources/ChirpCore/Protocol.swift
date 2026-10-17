@@ -107,6 +107,17 @@ public struct Health: Decodable, Sendable, Equatable {
     public var correctionLeavesMachine: Bool?
     public var correctionHost: String?
 
+    public init(ok: Bool = true, engine: String? = nil, ready: Bool? = nil, debugRetention: Bool? = nil,
+                correction: String? = nil, correctionLeavesMachine: Bool? = nil, correctionHost: String? = nil) {
+        self.ok = ok
+        self.engine = engine
+        self.ready = ready
+        self.debugRetention = debugRetention
+        self.correction = correction
+        self.correctionLeavesMachine = correctionLeavesMachine
+        self.correctionHost = correctionHost
+    }
+
     public var correctionAvailable: Bool { correction == "available" }
 }
 

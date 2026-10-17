@@ -93,11 +93,16 @@ It prints partials, the final text and timings (client-measured stop→final plu
 
 `./scripts/test.sh` runs the `ChirpCore` tests (Swift Testing). Under the Command Line Tools SwiftPM doesn't find the Swift Testing macro plugin on its own, so the script passes `-Xswiftc -plugin-path` for it; with Xcode installed it is plain `swift test`. The tests cover: the protocol codec, the dictation state machine, hotkey dispatch and tap/hold timing, insertion strategy including a fake AX that applies late, pasteboard restore and Use raw (fakes), PCM conversion and framing, the silence guard, and `StreamSession` against an in-process mock WebSocket server on loopback.
 
+## UI snapshots (no app launch)
+
+`ChirpMac --render-snapshots <dir>` draws the HUD in every state, the Settings window and the menu-bar menu content to PNGs in light and dark appearance, then exits. It is handled before any `NSApplication`, onboarding or permission code and touches no microphone, Accessibility, pasteboard or TCC API; all inputs are synthetic. `swift build && .build/debug/ChirpMac --render-snapshots /tmp/chirp-ui`. The tests render the same set. A selection is committed in [docs/screenshots/mac](../docs/screenshots/mac). The menu PNGs show the menu's content laid out like a menu, not the native `NSMenu` chrome.
+
 ## Layout
 
 ```
 Sources/ChirpCore/    protocol, StreamSession (URLSessionWebSocketTask), DictationMachine, HotKey (Carbon), audio helpers, Insertion/
-Sources/ChirpMac/     app: menu bar, HUD (SwiftUI in an NSPanel), settings (AppKit), capture, controller, --selftest
+Sources/ChirpUI/      HUD view, menu content, settings form, snapshot renderer (no system access)
+Sources/ChirpMac/     app: menu bar, HUD panel, settings window, capture, controller, --selftest
 Tests/ChirpCoreTests/
 scripts/              bundle.sh, make-cert.sh, install.sh, test.sh, Chirp.entitlements
 ```

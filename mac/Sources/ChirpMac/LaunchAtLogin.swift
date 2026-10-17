@@ -1,15 +1,11 @@
+import ChirpUI
 import Foundation
 import ServiceManagement
 
 /// Launch at login through `SMAppService`. It needs a bundled app: from `swift run`, or for a build the
 /// system doesn't know (status `.notFound`), it reports `.unavailable` instead of failing.
 enum LaunchAtLogin {
-    enum State: Equatable {
-        case on, off
-        /// Registered, but macOS wants the user to allow it in System Settings → General → Login Items.
-        case needsApproval
-        case unavailable
-    }
+    typealias State = LaunchState
 
     static var state: State {
         switch SMAppService.mainApp.status {
@@ -33,12 +29,4 @@ enum LaunchAtLogin {
     }
 
     static func openSystemSettings() { SMAppService.openSystemSettingsLoginItems() }
-
-    static var menuTitle: String {
-        switch state {
-        case .on, .off: "Launch at Login"
-        case .needsApproval: "Launch at Login — approve in System Settings…"
-        case .unavailable: "Launch at Login (unavailable for this build)"
-        }
-    }
 }

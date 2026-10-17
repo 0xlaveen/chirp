@@ -1,5 +1,6 @@
 import AppKit
 import ChirpCore
+import ChirpUI
 
 @MainActor
 final class MenuBarController: NSObject, NSMenuDelegate {
@@ -43,74 +44,51 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         build(menu)
     }
 
-    private func line(_ title: String, color: NSColor? = nil) -> NSMenuItem {
-        let i = NSMenuItem(title: title, action: nil, keyEquivalent: "")
-        i.isEnabled = false
-        if let color { i.attributedTitle = NSAttributedString(string: title, attributes: [.foregroundColor: color]) }
-        return i
-    }
-
-    private func action(_ title: String, _ selector: Selector, on: Bool = false, enabled: Bool = true) -> NSMenuItem {
-        let i = NSMenuItem(title: title, action: enabled ? selector : nil, keyEquivalent: "")
-        i.target = self
-        i.state = on ? .on : .off
-        return i
-    }
-
     private func build(_ menu: NSMenu) {
+        var inputs = MenuInputs()
+        inputs.state = controller.state
+        inputs.health = controller.health
+        inputs.healthError = controller.healthError
+        inputs.debugRetention = controller.debugRetention
+        inputs.inputName = inputName
+        inputs.correctionOn = Settings.correction
+        inputs.hotkey = Settings.hotkey
+        inputs.micGranted = Permissions.microphoneGranted
+        inputs.accessibilityGranted = Permissions.accessibilityGranted
+        inputs.launch = LaunchAtLogin.state
+        inputs.launchError = launchError
         menu.removeAllItems()
-        switch controller.state {
-        case .idle: menu.addItem(line("Chirp — ready"))
-        case .connecting: menu.addItem(line("Connecting…"))
-        case .listening: menu.addItem(line("Listening"))
-        case .finalizing: menu.addItem(line("Finalizing"))
-        case .inserting: menu.addItem(line("Inserting"))
-        case .error(let m): menu.addItem(line(m, color: .systemRed))
-        }
-        if let h = controller.health {
-            menu.addItem(line("Server: \(h.engine ?? "ok")\(h.ready == false ? " (loading…)" : "")"))
-        } else {
-            menu.addItem(line(controller.healthError ?? "Server: checking…", color: .systemOrange))
-        }
-        if controller.debugRetention { menu.addItem(line("DEBUG: recordings kept on the server", color: .systemRed)) }
-        menu.addItem(line("Input: \(inputName ?? "none — no input device")"))
-        menu.addItem(.separator())
-
-        let h = controller.health
-        if h?.correctionAvailable == true {
-            let host = h?.correctionHost ?? "a remote LLM"
-            let title = h?.correctionLeavesMachine == true ? "Correction — sends text to \(host)" : "Correction"
-            menu.addItem(action(title, #selector(toggleCorrection), on: Settings.correction))
-        } else {
-            menu.addItem(action("Correction (not configured on server)", #selector(toggleCorrection), enabled: false))
-        }
-        let hotkeyItem = NSMenuItem(title: "Hotkey: \(Settings.hotkey.title) — tap to toggle, hold to talk", action: nil, keyEquivalent: "")
-        let hotkeyMenu = NSMenu()
-        for combo in KeyCombo.presets {
-            let i = NSMenuItem(title: combo.title, action: #selector(pickHotkey(_:)), keyEquivalent: "")
-            i.target = self
-            i.representedObject = combo.id
-            i.state = combo == Settings.hotkey ? .on : .off
-            hotkeyMenu.addItem(i)
-        }
-        hotkeyItem.submenu = hotkeyMenu
-        menu.addItem(hotkeyItem)
-        menu.addItem(.separator())
-
-        menu.addItem(permissionItem("Microphone", granted: Permissions.microphoneGranted, #selector(grantMic)))
-        menu.addItem(permissionItem("Accessibility", granted: Permissions.accessibilityGranted, #selector(grantAX)))
-        menu.addItem(.separator())
-        let launchItem = action(LaunchAtLogin.menuTitle, #selector(toggleLaunch), on: LaunchAtLogin.state == .on,
-                                enabled: LaunchAtLogin.state != .unavailable)
-        if LaunchAtLogin.state == .needsApproval { launchItem.state = .mixed }
-        menu.addItem(launchItem)
-        if let launchError { menu.addItem(line("Launch at Login: \(launchError)", color: .systemRed)) }
-        menu.addItem(action("Settings…", #selector(showSettings)))
-        menu.addItem(action("Quit Chirp", #selector(quit)))
+        for entry in MenuContent.entries(inputs) { menu.addItem(item(for: entry)) }
     }
 
-    private func permissionItem(_ name: String, granted: Bool, _ selector: Selector) -> NSMenuItem {
-        granted ? line("\(name): granted ✓") : action("\(name): not granted — Grant…", selector)
+    private func item(for entry: MenuEntry) -> NSMenuItem {
+        if entry.isSeparator { return .separator() }
+        let i = NSMenuItem(title: entry.title, action: selector(for: entry.action), keyEquivalent: "")
+        if entry.action != nil { i.target = self }
+        i.isEnabled = entry.action != nil || entry.submenu != nil
+        i.state = switch entry.mark { case .off: .off; case .on: .on; case .mixed: .mixed }
+        i.representedObject = if case .pickHotkey(let id) = entry.action { id } else { nil }
+        let color: NSColor? = switch entry.tone { case .normal: nil; case .warning: .systemOrange; case .error: .systemRed }
+        if let color { i.attributedTitle = NSAttributedString(string: entry.title, attributes: [.foregroundColor: color]) }
+        if let sub = entry.submenu {
+            let m = NSMenu()
+            for e in sub { m.addItem(item(for: e)) }
+            i.submenu = m
+        }
+        return i
+    }
+
+    private func selector(for action: MenuAction?) -> Selector? {
+        switch action {
+        case nil: nil
+        case .toggleCorrection: #selector(toggleCorrection)
+        case .pickHotkey: #selector(pickHotkey(_:))
+        case .grantMic: #selector(grantMic)
+        case .grantAX: #selector(grantAX)
+        case .toggleLaunch: #selector(toggleLaunch)
+        case .showSettings: #selector(showSettings)
+        case .quit: #selector(quit)
+        }
     }
 
     @objc private func pickHotkey(_ sender: NSMenuItem) {

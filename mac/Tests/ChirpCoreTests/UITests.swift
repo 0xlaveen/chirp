@@ -1,0 +1,261 @@
+import AppKit
+import Foundation
+import Testing
+@testable import ChirpCore
+@testable import ChirpUI
+
+@Suite struct OutcomePresentationTests {
+    @Test func eachOutcomeHasItsWording() {
+        let plain = FinalResult(text: "hello")
+        #expect(OutcomePresentation.of(.inserted(.ax), final: plain) == .init(status: "Inserted", linger: 1.2))
+        #expect(OutcomePresentation.of(.inserted(.paste), final: plain).status == "Inserted (paste)")
+        #expect(OutcomePresentation.of(.copied, final: plain) == .init(status: "Copied — press ⌘V", linger: 3))
+        #expect(OutcomePresentation.of(.insertedUnverified, final: plain).status == "Inserted? If nothing appeared, press ⌘V")
+        let secure = OutcomePresentation.of(.refusedSecure, final: plain)
+        #expect(secure.isError && secure.status == "Secure field — nothing inserted")
+    }
+
+    @Test func useRawIsOfferedOnlyForInsertedCorrections() {
+        let corrected = FinalResult(text: "Hello.", raw: "hello", corrected: true)
+        let unchanged = FinalResult(text: "hello", raw: "hello", corrected: true)
+        let inserted = OutcomePresentation.of(.inserted(.ax), final: corrected)
+        #expect(inserted.showUseRaw && inserted.linger == 5)
+        #expect(!OutcomePresentation.of(.inserted(.ax), final: unchanged).showUseRaw)
+        #expect(!OutcomePresentation.of(.copied, final: corrected).showUseRaw)
+    }
+}
+
+@Suite struct HUDTextTests {
+    @Test func shortTextIsUntouched() {
+        let r = HUDText.tail(stable: "hello ", unstable: "world")
+        #expect(r.stable == "hello " && r.unstable == "world")
+    }
+
+    @Test func longTextKeepsTheNewestWordsAtAWordBoundary() {
+        let words = (1...80).map { "w\($0)" }.joined(separator: " ")
+        let r = HUDText.tail(stable: words + " ", unstable: "last")
+        let shown = r.stable + r.unstable
+        #expect(shown.hasPrefix("…w"))
+        #expect(shown.hasSuffix(" w80 last"))
+        #expect(shown.count <= 200 + 1)
+        #expect(!shown.dropFirst().hasPrefix("w") || shown.dropFirst().first == "w")
+        #expect(r.unstable == "last")
+    }
+
+    @Test func cutInsideTheUnstableTailKeepsOnlyUnstable() {
+        let unstable = (1...60).map { "word\($0)" }.joined(separator: " ")
+        let r = HUDText.tail(stable: "old ", unstable: unstable)
+        #expect(r.stable.isEmpty)
+        #expect(r.unstable.hasPrefix("…word"))
+        #expect(r.unstable.hasSuffix("word60"))
+    }
+
+    @Test func aSingleLongTokenIsStillCut() {
+        let r = HUDText.tail(stable: "", unstable: String(repeating: "x", count: 500))
+        #expect(r.unstable.count == 201 || r.unstable.count == 200)
+        #expect(r.unstable.hasPrefix("x") || r.unstable.hasPrefix("…"))
+    }
+}
+
+@Suite struct HUDColorsTests {
+    private func luminance(_ c: HUDColors.RGB) -> Double {
+        func lin(_ v: Double) -> Double { v <= 0.03928 ? v / 12.92 : pow((v + 0.055) / 1.055, 2.4) }
+        return 0.2126 * lin(c.r) + 0.7152 * lin(c.g) + 0.0722 * lin(c.b)
+    }
+    private func contrast(_ a: HUDColors.RGB, _ b: HUDColors.RGB) -> Double {
+        let (x, y) = (luminance(a), luminance(b))
+        return (max(x, y) + 0.05) / (min(x, y) + 0.05)
+    }
+
+    // The material composited over a mid-tone desktop, measured from the light and dark snapshots.
+    private let lightMaterial: HUDColors.RGB = (0.78, 0.80, 0.85)
+    private let darkMaterial: HUDColors.RGB = (0.27, 0.29, 0.35)
+
+    @Test func errorTextMeetsWCAGAANormalText() {
+        #expect(contrast(HUDColors.errorLight, lightMaterial) >= 4.5)
+        #expect(contrast(HUDColors.errorDark, darkMaterial) >= 4.5)
+    }
+
+    @Test func useRawButtonMeetsWCAGAA() {
+        #expect(contrast(HUDColors.actionLight, lightMaterial) >= 4.5)
+        #expect(contrast(HUDColors.actionDark, darkMaterial) >= 4.5)
+    }
+
+    @Test func debugBadgeKeepsWhiteTextReadable() {
+        #expect(contrast((1, 1, 1), HUDColors.badgeRGB) >= 4.5)
+    }
+}
+
+@Suite struct MenuContentTests {
+    private func titles(_ m: MenuInputs) -> [String] { MenuContent.entries(m).filter { !$0.isSeparator }.map(\.title) }
+
+    @Test func idleMenuListsServerInputAndStatus() {
+        var m = MenuInputs()
+        m.health = Health(engine: "parakeet", ready: true)
+        m.inputName = "BOYA CM40"
+        let t = titles(m)
+        #expect(t.prefix(3) == ["Chirp — ready", "Server: parakeet", "Input: BOYA CM40"])
+        #expect(t.contains("Correction (not configured on server)"))
+        #expect(t.suffix(2) == ["Settings…", "Quit Chirp"])
+    }
+
+    @Test func unreachableServerAndMissingInputAreSaid() {
+        var m = MenuInputs()
+        m.healthError = "Server unreachable at 127.0.0.1"
+        let e = MenuContent.entries(m)
+        #expect(e[1].title == "Server unreachable at 127.0.0.1" && e[1].tone == .warning)
+        #expect(e[2].title == "Input: none — no input device")
+        m.healthError = nil
+        #expect(MenuContent.entries(m)[1].title == "Server: checking…")
+    }
+
+    @Test func loadingServerAndErrorStateAreShown() {
+        var m = MenuInputs()
+        m.state = .error("boom")
+        m.health = Health(engine: nil, ready: false)
+        let e = MenuContent.entries(m)
+        #expect(e[0].title == "boom" && e[0].tone == .error)
+        #expect(e[1].title == "Server: ok (loading…)")
+    }
+
+    @Test func debugRetentionIsAlwaysVisibleInRed() {
+        var m = MenuInputs()
+        m.debugRetention = true
+        let line = MenuContent.entries(m).first { $0.title.hasPrefix("DEBUG") }
+        #expect(line?.tone == .error)
+    }
+
+    @Test func correctionLabelNamesTheHostWhenTextLeavesTheMachine() {
+        var m = MenuInputs()
+        m.correctionOn = true
+        m.health = Health(correction: "available", correctionLeavesMachine: true, correctionHost: "llm.example.com")
+        let item = MenuContent.entries(m).first { $0.action == .toggleCorrection }
+        #expect(item?.title == "Correction — sends text to llm.example.com" && item?.mark == .on)
+        m.health = Health(correction: "available", correctionLeavesMachine: true)
+        #expect(MenuContent.entries(m).first { $0.action == .toggleCorrection }?.title == "Correction — sends text to a remote LLM")
+        m.health = Health(correction: "available", correctionLeavesMachine: false)
+        #expect(MenuContent.entries(m).first { $0.action == .toggleCorrection }?.title == "Correction")
+    }
+
+    @Test func hotkeySubmenuMarksTheCurrentPreset() {
+        var m = MenuInputs()
+        m.hotkey = .controlOptionSpace
+        let sub = MenuContent.entries(m).compactMap(\.submenu).first
+        #expect(sub?.map(\.title) == KeyCombo.presets.map(\.title))
+        #expect(sub?.filter { $0.mark == .on }.map(\.action) == [.pickHotkey("control-option-space")])
+    }
+
+    @Test func ungrantedPermissionsOfferGrantActions() {
+        var m = MenuInputs()
+        m.micGranted = false
+        let e = MenuContent.entries(m)
+        #expect(e.first { $0.action == .grantMic }?.title == "Microphone: not granted — Grant…")
+        #expect(e.first { $0.action == .grantAX } == nil)
+        #expect(e.contains { $0.title == "Accessibility: granted ✓" && $0.action == nil })
+    }
+
+    @Test func launchAtLoginStates() {
+        var m = MenuInputs()
+        func item() -> MenuEntry { MenuContent.entries(m).first { $0.title.hasPrefix("Launch at Login") && $0.action != nil || $0.title.contains("unavailable") }! }
+        m.launch = .on
+        #expect(item().mark == .on && item().action == .toggleLaunch)
+        m.launch = .needsApproval
+        #expect(item().mark == .mixed)
+        m.launch = .unavailable
+        #expect(item().action == nil)
+        m.launchError = "Operation not permitted"
+        #expect(MenuContent.entries(m).contains { $0.title == "Launch at Login: Operation not permitted" && $0.tone == .error })
+    }
+}
+
+@MainActor
+@Suite struct SettingsFormTests {
+    @Test func appliesPermissionAndTokenState() {
+        var s = SettingsState()
+        s.micGranted = false; s.tokenPresent = false; s.launch = .unavailable
+        let form = SettingsForm(s)
+        #expect(!form.micButton.isHidden && form.accessibilityButton.isHidden)
+        #expect(!form.launch.isEnabled)
+        #expect(form.serverURL.stringValue == ServerConfig.defaultURL.absoluteString)
+    }
+
+    @Test func periodicRefreshNeverOverwritesTypingOrTheLoginItemError() {
+        let form = SettingsForm(SettingsState())
+        form.serverURL.stringValue = "http://typing"
+        form.launch.title = "Launch at login failed: x"
+        var s = SettingsState()
+        s.micGranted = false; s.serverURL = "http://other"
+        form.apply(s)
+        #expect(form.serverURL.stringValue == "http://typing")
+        #expect(form.launch.title == "Launch at login failed: x")
+        #expect(!form.micButton.isHidden)
+        form.apply(s, full: true)
+        #expect(form.serverURL.stringValue == "http://other")
+    }
+
+    @Test func contentKeepsItsMarginOnEverySide() {
+        let form = SettingsForm(SettingsState())
+        form.view.layoutSubtreeIfNeeded()
+        let size = form.view.fittingSize
+        let stack = form.view.subviews[0]
+        form.view.setFrameSize(size)
+        form.view.layoutSubtreeIfNeeded()
+        #expect(abs(stack.frame.minX - 20) < 0.5)
+        #expect(abs(size.width - stack.frame.maxX - 20) < 0.5)
+    }
+}
+
+@MainActor
+@Suite struct SnapshotTests {
+    private func render() throws -> (URL, [URL]) {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("chirp-snap-\(UUID().uuidString)")
+        return (dir, try Snapshots.render(to: dir))
+    }
+
+    @Test func rendersEveryStateInLightAndDarkAsNonBlankPNGs() throws {
+        let (dir, files) = try render()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        #expect(files.count == Snapshots.allScenarios.count * 2)
+        #expect(try FileManager.default.contentsOfDirectory(atPath: dir.path).count == files.count)
+        let names = Set(files.map(\.lastPathComponent))
+        for state in ["listening", "listening-multiline", "finalizing", "inserted", "copied", "unverified-ax", "secure-field",
+                      "no-mic-signal", "debug-badge", "correction-use-raw"] {
+            #expect(names.contains("hud-\(state)-light.png") && names.contains("hud-\(state)-dark.png"))
+        }
+        #expect(names.contains("settings-ready-dark.png") && names.contains("menu-idle-light.png"))
+        for url in files {
+            let data = try Data(contentsOf: url)
+            #expect(data.count < 150_000, "\(url.lastPathComponent) is too big to commit")
+            let rep = try #require(NSBitmapImageRep(data: data))
+            #expect(rep.pixelsWide > 100 && rep.pixelsHigh > 50)
+            // Not a flat fill: some pixel differs from the corner.
+            let corner = rep.colorAt(x: 0, y: 0)
+            var differs = false
+            for x in stride(from: 0, to: rep.pixelsWide, by: 7) where !differs {
+                for y in stride(from: 0, to: rep.pixelsHigh, by: 7) where rep.colorAt(x: x, y: y) != corner { differs = true; break }
+            }
+            #expect(differs, "\(url.lastPathComponent) is blank")
+        }
+    }
+
+    @Test func lightAndDarkAreDifferentImages() throws {
+        let (dir, _) = try render()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        for name in ["hud-listening", "settings-ready", "menu-idle"] {
+            let light = try Data(contentsOf: dir.appendingPathComponent("\(name)-light.png"))
+            let dark = try Data(contentsOf: dir.appendingPathComponent("\(name)-dark.png"))
+            #expect(light != dark)
+        }
+    }
+
+    @Test func multilineHUDIsTallerThanASingleLineOne() throws {
+        let (dir, _) = try render()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        func height(_ n: String) throws -> Int {
+            try #require(NSBitmapImageRep(data: Data(contentsOf: dir.appendingPathComponent(n)))).pixelsHigh
+        }
+        #expect(try height("hud-listening-multiline-light.png") > height("hud-listening-no-text-light.png"))
+        // The HUD never grows beyond its 4-line cap, however much is dictated.
+        #expect(try height("hud-listening-multiline-light.png") < 400)
+    }
+}
