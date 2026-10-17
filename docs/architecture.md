@@ -47,6 +47,8 @@ All endpoints sit under a base URL: either `http://127.0.0.1:7821` (Mac local) o
 
 Every request carries `Authorization: Bearer <token>`. WebSocket clients that cannot set headers may send the token as the first text frame `{"type":"auth","token":"…"}` instead. The token is never put in a URL.
 
+### Endpoints
+
 - `GET /v1/health` → `{"ok":true,"engine":"parakeet-mlx:tdt-0.6b-v2","ready":true,"debug_retention":false,"correction":"off|available","correction_mode":"off|managed|endpoint","correction_leaves_machine":false,"correction_host":null,"correction_profiles":[{"id":"default","name":"Default","description":"Conservative transcript cleanup.","rewrites":false},…]}`. The unauthenticated variant returns only `{"ok":true}`. For endpoint correction, `correction_host` is its hostname (no credentials, path or port); otherwise it is `null`. `correction_leaves_machine` is true only for enabled, non-loopback correction.
 - `GET /v1/correction/profiles` (authenticated) → `{"profiles":[{"id":"default","name":"Default","description":"Conservative transcript cleanup.","rewrites":false,"prompt":"<editable default style>","max_prompt_chars":4000},…]}`. Fixed safety rules are excluded; `custom` has an empty built-in prompt. Available even when correction is off. Invalid or missing bearer credentials return HTTP 401 with `WWW-Authenticate: Bearer`.
 - `POST /v1/transcribe`: the body is 16 kHz mono PCM16 WAV, capped at 120 s. It returns the same object as a `final` message. Used for tests and as a fallback.
@@ -62,6 +64,8 @@ Every request carries `Authorization: Bearer <token>`. WebSocket clients that ca
   - One utterance per `start`/`final` pair. A socket may carry several utterances in turn, so clients keep it open while active. The server closes idle sockets after 60 s.
 - Limits: 120 s per utterance, and frames ≥ 1 MB are rejected. Requests queue for one engine.
 
+### Optional correction fields (v1-compatible additions)
+
 The additions are optional and v1 compatible: omitted `correction_profile` selects `default`;
 `correction_instructions` is a string of at most 2000 characters, used only for `custom`.
 `start.correction_prompt` is an optional string of at most 4000 Unicode characters. When
@@ -74,6 +78,8 @@ Old clients ignore unknown message types, including `correcting`, and consume th
 Authenticated health lists every profile's `id`, `name`, `description` and boolean `rewrites`,
 even when correction is off; it never exposes prompts or client instructions.
 
+### Built-in profiles and overrides
+
 Built-in prompts live in `server/src/chirp_server/profiles.py`: `default` preserves conservative
 transcription; `chat` allows lowercase and omits short-message periods; `email` polishes sentence
 casing and punctuation without adding content; `code` keeps literal casing/identifiers/symbols
@@ -84,6 +90,8 @@ extra profiles come from `[correction.profiles.<id>]` in `~/.config/chirp/server
 Their prompt overrides become the defaults returned by `/v1/correction/profiles` after restart;
 the legacy `[correction] prompt` still supplies the default profile unless explicitly overridden.
 Configured prompts have the same 4000-character limit. Prompts are never logged.
+
+### Output guards
 
 Non-rewriting profiles use ordered word retention with bounded filler, stutter and repair
 exceptions. Code additionally permits recognized spoken-symbol conversions and preserves literal
