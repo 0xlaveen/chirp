@@ -6,6 +6,8 @@ import ChirpUI
 final class SettingsWindowController: NSObject, NSTextFieldDelegate {
     /// Called after the hotkey preset changes so the app can re-register it.
     var onHotkeyChange: (() -> Void)?
+    /// The server's state for the Status row, from the app's last health check.
+    var serverStatus: () -> (text: String, tone: MenuEntry.Tone) = { ("Checking…", .warning) }
     private var window: NSWindow?
     private var form: SettingsForm?
     private var refreshTimer: Timer?
@@ -18,6 +20,7 @@ final class SettingsWindowController: NSObject, NSTextFieldDelegate {
         s.launch = LaunchAtLogin.state
         s.micGranted = Permissions.microphoneGranted
         s.accessibilityGranted = Permissions.accessibilityGranted
+        (s.serverStatus, s.serverStatusTone) = serverStatus()
         return s
     }
 
@@ -30,6 +33,8 @@ final class SettingsWindowController: NSObject, NSTextFieldDelegate {
         }
         NSApp.activate()
         window?.makeKeyAndOrderFront(nil)
+        // Ordering the window front lets AppKit pick the first text field; park focus on the content instead.
+        if let window, let form { window.makeFirstResponder(form.view) }
     }
 
     private func makeWindow() -> NSWindow {
@@ -47,9 +52,8 @@ final class SettingsWindowController: NSObject, NSTextFieldDelegate {
 
         let w = NSWindow(contentRect: .zero, styleMask: [.titled, .closable], backing: .buffered, defer: false)
         w.title = "Chirp Settings"
-        w.contentView = form.view
         w.isReleasedWhenClosed = false
-        w.setContentSize(form.view.fittingSize)
+        form.install(in: w)
         w.center()
         return w
     }
@@ -64,10 +68,9 @@ final class SettingsWindowController: NSObject, NSTextFieldDelegate {
     }
 
     @objc private func toggleLaunch(_ sender: NSButton) {
-        if LaunchAtLogin.state == .needsApproval { LaunchAtLogin.openSystemSettings(); sender.state = .mixed; return }
-        let error = LaunchAtLogin.setEnabled(LaunchAtLogin.state != .on)
+        let error = LaunchAtLogin.toggle()
         sender.state = LaunchAtLogin.state == .on ? .on : .off
-        if let error { sender.title = "Launch at login failed: \(error)" }
+        form?.setLaunchError(error)
     }
     @objc private func grantMic() {
         Task {

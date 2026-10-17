@@ -1,5 +1,4 @@
 import AppKit
-import Carbon.HIToolbox
 import ChirpCore
 import ChirpUI
 
@@ -108,34 +107,40 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         inputs.launch = LaunchAtLogin.state
         inputs.launchError = launchError
         menu.removeAllItems()
-        for entry in MenuContent.entries(inputs) { menu.addItem(item(for: entry)) }
+        let entries = MenuContent.entries(inputs)
+        var index = 0
+        while index < entries.count {
+            let entry = entries[index]
+            index += 1
+            guard entry.showsAppIcon else { menu.addItem(item(for: entry)); continue }
+            // The header block: this row plus the status lines up to the next separator, as one custom view.
+            let start = index
+            while index < entries.count, !entries[index].isSeparator { index += 1 }
+            menu.addItem(headerItem(entry, lines: Array(entries[start..<index])))
+        }
+    }
+
+    private func headerItem(_ header: MenuEntry, lines: [MenuEntry]) -> NSMenuItem {
+        let i = NSMenuItem()
+        i.view = MenuHeaderView(title: header.title, hint: header.subtitle, lines: lines, icon: NSApp.applicationIconImage)
+        return i
     }
 
     private func item(for entry: MenuEntry) -> NSMenuItem {
         if entry.isSeparator { return .separator() }
         if entry.isHeader { return .sectionHeader(title: entry.title) }
         let i = NSMenuItem(title: entry.title, action: selector(for: entry.action), keyEquivalent: entry.keyEquivalent ?? "")
+        if entry.keyEquivalent != nil { i.keyEquivalentModifierMask = .command }
         if entry.action != nil { i.target = self }
         i.isEnabled = entry.action != nil || entry.submenu != nil
         i.state = switch entry.mark { case .off: .off; case .on: .on; case .mixed: .mixed }
         i.representedObject = entry.action?.payload
         i.subtitle = entry.subtitle
-        if let hotkey = entry.hotkey { Self.show(hotkey, on: i) }
-        if entry.showsAppIcon {
-            let icon = NSApp.applicationIconImage.copy() as? NSImage
-            icon?.size = NSSize(width: 22, height: 22)
-            i.image = icon
-        } else if let name = entry.symbol {
-            i.image = Self.symbolImage(name, tone: entry.symbolTone ?? entry.tone)
-        }
-        // Informational rows are disabled; explicit colours keep them at full strength instead of greyed out.
-        let font: NSFont = entry.showsAppIcon ? .systemFont(ofSize: 13, weight: .semibold) : .menuFont(ofSize: 0)
-        if entry.action == nil && entry.submenu == nil {
+        if let name = entry.symbol { i.image = MenuStyle.symbol(name, tone: entry.symbolTone ?? entry.tone) }
+        // Warnings and errors that can be acted on keep their colour; plain rows use the system's.
+        if entry.tone == .warning || entry.tone == .error, entry.action != nil || entry.submenu != nil {
             i.attributedTitle = NSAttributedString(string: entry.title, attributes: [
-                .foregroundColor: Self.textColor(entry.tone), .font: font])
-        } else if entry.tone == .warning || entry.tone == .error {
-            i.attributedTitle = NSAttributedString(string: entry.title, attributes: [
-                .foregroundColor: Self.textColor(entry.tone), .font: font])
+                .foregroundColor: MenuStyle.textColor(entry.tone), .font: NSFont.menuFont(ofSize: 0)])
         }
         if let sub = entry.submenu {
             let m = NSMenu()
@@ -143,38 +148,6 @@ final class MenuBarController: NSObject, NSMenuDelegate {
             i.submenu = m
         }
         return i
-    }
-
-    /// Shows the dictation hotkey as the item's key equivalent (it only fires while the menu is open).
-    private static func show(_ combo: KeyCombo, on item: NSMenuItem) {
-        item.keyEquivalent = " "
-        var mask: NSEvent.ModifierFlags = []
-        if combo.modifiers & UInt32(controlKey) != 0 { mask.insert(.control) }
-        if combo.modifiers & UInt32(optionKey) != 0 { mask.insert(.option) }
-        if combo.modifiers & UInt32(shiftKey) != 0 { mask.insert(.shift) }
-        if combo.modifiers & UInt32(cmdKey) != 0 { mask.insert(.command) }
-        item.keyEquivalentModifierMask = mask
-    }
-
-    private static func textColor(_ tone: MenuEntry.Tone) -> NSColor {
-        switch tone {
-        case .error: .systemRed
-        case .warning: .systemOrange
-        default: .labelColor
-        }
-    }
-
-    private static func symbolImage(_ name: String, tone: MenuEntry.Tone) -> NSImage? {
-        let color: NSColor? = switch tone {
-        case .normal: nil
-        case .ok: .systemGreen
-        case .active: .controlAccentColor
-        case .warning: .systemOrange
-        case .error: .systemRed
-        }
-        let image = NSImage(systemSymbolName: name, accessibilityDescription: nil)
-        guard let color else { return image }
-        return image?.withSymbolConfiguration(.init(paletteColors: [color]))
     }
 
     private func selector(for action: MenuAction?) -> Selector? {
@@ -220,14 +193,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
                 attributes: [.font: NSFont.systemFont(ofSize: 11), .foregroundColor: NSColor.secondaryLabelColor]),
         ])
     }
-    @objc private func toggleLaunch() {
-        switch LaunchAtLogin.state {
-        case .needsApproval: LaunchAtLogin.openSystemSettings()
-        case .on: launchError = LaunchAtLogin.setEnabled(false)
-        case .off: launchError = LaunchAtLogin.setEnabled(true)
-        case .unavailable: break
-        }
-    }
+    @objc private func toggleLaunch() { launchError = LaunchAtLogin.toggle() }
     @objc private func quit() { NSApp.terminate(nil) }
     @objc private func grantMic() {
         Task {

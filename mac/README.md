@@ -60,7 +60,7 @@ Click the bird in the menu bar:
 | Clean-up | Clean up text, and Show raw after clean-up (see above). |
 | Server | The server URL with a green, orange or red dot and the engine name (click to open Settings). "Open doctor output" copies the `chirp-server doctor` commands to the clipboard; run them in your checkout's `server/` directory. |
 | Permissions needed | Only shown while Microphone or Accessibility is missing, with an "Allow…" action each. |
-| Footer | Launch at Login, Settings…, About Chirp (version and icon) and Quit. |
+| Footer | Launch at Login (a checkbox), Settings… (⌘,), About Chirp (version and icon) and Quit (⌘Q). |
 
 The icon is the bird glyph. While you dictate its sound waves pulse (they stay steady when Reduce Motion is on), it is dimmed while the server is unreachable, it turns into a warning triangle on errors, and a small red dot sits at its corner while debug retention is on.
 
@@ -88,7 +88,7 @@ If secure input is on (a password field, `IsSecureEventInputEnabled()`), Chirp r
 
 ## Launch at login
 
-The menu and Settings toggle `SMAppService.mainApp`. It needs the bundled app: the item reads "unavailable for this build" when macOS doesn't know the app (status `.notFound`, e.g. a bare `swift run`), "approve in System Settings…" when status is `.requiresApproval` (the click opens Login Items), and a failed register/unregister (typical for an unsigned or ad-hoc build) shows the error in the menu instead of retrying. It never loops or crashes.
+The menu and Settings toggle a per-user LaunchAgent, `~/Library/LaunchAgents/dev.chirp.mac.plist`, that runs `/usr/bin/open -a <path to Chirp.app>` at login. (`SMAppService.mainApp` refuses a self-signed app in `~/Applications`, so it is not used to register.) The file is written when you tick the box and deleted when you untick it, and never otherwise; its presence is the state the checkbox shows. If the app moves, tick the box off and on again to rewrite the path. A failed write shows the error under the item. Run from a bare `swift run` (no `.app`) the item is disabled, since there is no app to launch.
 
 ## Accessibility
 
@@ -112,7 +112,7 @@ It prints partials, the final text and timings (client-measured stop→final plu
 
 ## UI snapshots (no app launch)
 
-`ChirpMac --render-snapshots <dir>` draws the HUD in every state, the Settings window and the menu-bar menu content to PNGs in light and dark appearance, then exits. It is handled before any `NSApplication`, onboarding or permission code and touches no microphone, Accessibility, pasteboard or TCC API; all inputs are synthetic. `swift build && .build/debug/ChirpMac --render-snapshots /tmp/chirp-ui`. The tests render the same set. A selection is committed in [docs/screenshots/mac](../docs/screenshots/mac). The menu PNGs show the menu's content laid out like a menu (SF Symbols, subtitles, section headers, key hints), not the native `NSMenu` chrome, and a bird symbol stands in for the app icon. The menu-bar icon animation, the red badge dot and the input-device switch need a real session, so they are covered by the pure rules in the tests, not by snapshots.
+`ChirpMac --render-snapshots <dir>` draws the HUD in every state, the Settings window and the menu-bar menu content to PNGs in light and dark appearance, then exits. It is handled before any `NSApplication`, onboarding or permission code and touches no microphone, Accessibility, pasteboard or TCC API; all inputs are synthetic. `swift build && .build/debug/ChirpMac --render-snapshots /tmp/chirp-ui`. The tests render the same set. A selection is committed in [docs/screenshots/mac](../docs/screenshots/mac). Settings is an `NSGridView`: right-aligned labels, left-aligned controls, General / Server / Permissions sections, help text under each control, 20 pt margins and a window fitted to its content. The menu PNGs show the menu's content laid out like a menu (SF Symbols, subtitles, section headers, key hints), not the native `NSMenu` chrome, and a bird symbol stands in for the app icon. The header block (icon, name, hotkey hint, status) is the real `MenuHeaderView`, a custom menu-item view, because AppKit greys out every disabled item whatever its attributed colours. The menu-bar icon animation, the red badge dot and the input-device switch need a real session, so they are covered by the pure rules in the tests, not by snapshots.
 
 ## Layout
 
