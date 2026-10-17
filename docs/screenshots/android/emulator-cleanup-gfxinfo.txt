@@ -1,0 +1,7 @@
+emulator-5580 · debug synthetic cleanup, screen recording enabled
+Total frames rendered: 199
+Janky frames: 194 (97.49%)
+50th percentile: 85ms
+90th percentile: 150ms
+95th percentile: 200ms
+99th percentile: 250ms

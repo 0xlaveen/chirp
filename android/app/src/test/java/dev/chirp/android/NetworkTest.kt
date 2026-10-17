@@ -49,12 +49,16 @@ class NetworkTest {
             override fun onMessage(webSocket: WebSocket, text: String) {
                 when (JSONObject(text).getString("type")) {
                     "start" -> {
-                        assertFalse(JSONObject(text).getBoolean("correction"))
+                        assertTrue(JSONObject(text).getBoolean("correction"))
+                        assertEquals("custom", JSONObject(text).getString("correction_profile"))
+                        assertEquals("", JSONObject(text).getString("correction_instructions"))
+                        assertEquals("fixture preference", JSONObject(text).getString("correction_prompt"))
                         webSocket.send("""{"type":"ready","debug_retention":false}""")
                     }
                     "stop" -> {
                         stopped.countDown()
                         webSocket.send("""{"type":"partial","seq":1,"text":"synthetic","stable":""}""")
+                        webSocket.send("""{"type":"correcting","seq":2,"raw":"synthetic","profile":"custom"}""")
                         webSocket.send("""{"type":"final","text":"Synthetic.","raw":"synthetic","corrected":true}""")
                     }
                 }
@@ -67,15 +71,16 @@ class NetworkTest {
             when (event) {
                 is ServerEvent.Ready -> ready.countDown()
                 is ServerEvent.Partial -> received.add("partial")
+                is ServerEvent.Correcting -> received.add("correcting")
                 is ServerEvent.Final -> { received.add("final"); final.countDown() }
                 else -> Unit
             }
         }, { fail("Unexpected stream failure") })
         try {
-            stream.connect(); assertTrue(stream.start(false)); assertTrue(ready.await(5, TimeUnit.SECONDS))
+            stream.connect(); assertTrue(stream.start(true, "custom", "", "fixture preference")); assertTrue(ready.await(5, TimeUnit.SECONDS))
             assertTrue(stream.audio(ByteArray(1280))); assertTrue(audio.await(5, TimeUnit.SECONDS))
             assertTrue(stream.stop()); assertTrue(stopped.await(5, TimeUnit.SECONDS))
-            assertTrue(final.await(5, TimeUnit.SECONDS)); assertEquals(listOf("partial", "final"), received)
+            assertTrue(final.await(5, TimeUnit.SECONDS)); assertEquals(listOf("partial", "correcting", "final"), received)
             val request = server.takeRequest(5, TimeUnit.SECONDS)!!
             assertEquals("/chirp/v1/stream", request.path)
             assertEquals("Bearer synthetic-credential", request.getHeader("Authorization"))
@@ -145,4 +150,14 @@ class NetworkTest {
         stream.connect(); assertTrue(stream.start(false)); assertTrue(ready.await(5, TimeUnit.SECONDS)); stream.close(true)
         assertTrue(cancelled.await(5, TimeUnit.SECONDS))
     }
+    @Test fun `style prompts use mounted bearer endpoint and never follow redirects`() = withServer { server, client, pairing ->
+        server.enqueue(MockResponse().setBody("""{"profiles":[{"id":"custom","name":"Custom","description":"Preferences","rewrites":true,"prompt":"","max_prompt_chars":4000}]}"""))
+        assertEquals("", ChirpNetwork.profiles(client, pairing).single().prompt)
+        val request = server.takeRequest(5, TimeUnit.SECONDS)!!
+        assertEquals("/chirp/v1/correction/profiles", request.path)
+        assertEquals("Bearer synthetic-credential", request.getHeader("Authorization"))
+        server.enqueue(MockResponse().setResponseCode(302).addHeader("Location", "https://example.test/"))
+        assertThrows(Exception::class.java) { ChirpNetwork.profiles(client, pairing) }
+    }
+
 }

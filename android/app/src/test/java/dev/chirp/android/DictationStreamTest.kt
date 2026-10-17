@@ -70,4 +70,35 @@ class DictationStreamTest {
         h.transport.final(); assertTrue(h.finals.isEmpty()); assertTrue(h.capture.released)
         assertEquals("Unexpected server response", h.statuses.last())
     }
+    @Test fun `polishing fences late partials and commits raw once on timeout or disconnect`() {
+        for (disconnect in listOf(false, true)) {
+            val h = Harness(); h.session.start(true); h.transport.ready(); h.session.stop(); h.advance()
+            h.transport.event(ServerEvent.Correcting(2, "synthetic raw", "chat"))
+            assertTrue(h.session.polishing); assertEquals("Polishing…", h.statuses.last())
+            h.transport.partial(3, "late partial"); assertTrue(h.partials.isEmpty())
+            if (disconnect) h.transport.failure() else h.advance(12000)
+            assertEquals(ServerEvent.Final("synthetic raw", "synthetic raw", false, "unavailable"), h.finals.single())
+            h.transport.final(); assertEquals(1, h.finals.size); assertEquals(1, h.ended)
+        }
+    }
+    @Test fun `cancel during polishing discards raw and final success wins over timeout`() {
+        val h = Harness(); h.session.start(true); h.transport.ready(); h.session.stop(); h.advance()
+        h.transport.event(ServerEvent.Correcting(2, "synthetic", "chat")); h.session.cancel(); h.advance(12000)
+        assertTrue(h.finals.isEmpty()); assertEquals(1, h.ended)
+        val success = Harness(); success.session.start(true); success.transport.ready(); success.session.stop(); success.advance()
+        success.transport.event(ServerEvent.Correcting(2, "synthetic", "chat")); success.transport.final(true); success.advance(12000)
+        assertTrue(success.finals.single().corrected); assertEquals(1, success.ended)
+    }
+
+    @Test fun `fast cleanup has a readable transition and cancellation fences pending commit`() {
+        val h = Harness(); h.session.start(true); h.transport.ready(); h.session.stop(); h.advance()
+        h.transport.event(ServerEvent.Correcting(2, "synthetic", "chat")); h.transport.final(true)
+        h.advance(449); assertTrue(h.finals.isEmpty())
+        h.advance(1); assertEquals(1, h.finals.size)
+        val cancelled = Harness(); cancelled.session.start(true); cancelled.transport.ready(); cancelled.session.stop(); cancelled.advance()
+        cancelled.transport.event(ServerEvent.Correcting(2, "synthetic", "chat")); cancelled.transport.final(true)
+        cancelled.session.cancel(); cancelled.advance(450)
+        assertTrue(cancelled.finals.isEmpty()); assertEquals(1, cancelled.ended)
+    }
+
 }

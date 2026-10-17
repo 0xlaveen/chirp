@@ -48,7 +48,72 @@ public final class UiHierarchy {
                 }
                 if (!found) throw new IllegalStateException("Accessible target missing");
             }
-            try { automation.waitForIdle(250, 4000); } catch (java.util.concurrent.TimeoutException ignored) { }
+            if (args.length == 3 && (args[0].equals("watch") || args[0].equals("watch-undo"))) {
+                long deadline = android.os.SystemClock.uptimeMillis() + 35000;
+                boolean matched = false;
+                java.util.List<AccessibilityNodeInfo> capturedRoots = new java.util.ArrayList<>();
+                boolean listening = false, polished = false, cleaned = false, raw = false;
+                AccessibilityNodeInfo trackedStatus = null;
+                while (android.os.SystemClock.uptimeMillis() < deadline && !matched) {
+                    if (trackedStatus != null && trackedStatus.refresh()) {
+                        String state = safe(trackedStatus.getText());
+                        listening |= state.equals("Listening…"); polished |= state.equals("Polishing…");
+                        cleaned |= state.equals("cleaned"); raw |= state.equals("kept original");
+                        if (state.equals(args[1])) {
+                            matched = true;
+                            capturedRoots.clear();
+                            for (AccessibilityWindowInfo window : automation.getWindows()) {
+                                AccessibilityNodeInfo root = window.getRoot();
+                                if (root != null) { root.refresh(); capturedRoots.add(root); }
+                            }
+                            break;
+                        }
+                    }
+                    if (trackedStatus != null && args[1].equals("Polishing…")) {
+                        android.os.SystemClock.sleep(16); continue;
+                    }
+                    capturedRoots.clear();
+                    for (AccessibilityWindowInfo window : automation.getWindows()) {
+                        AccessibilityNodeInfo root = window.getRoot();
+                        if (root != null) { root.refresh(); capturedRoots.add(root); }
+                        if (trackedStatus == null) {
+                            trackedStatus = find(root, "Listening…");
+                            if (trackedStatus == null) trackedStatus = find(root, "Finishing…");
+                            if (trackedStatus == null) trackedStatus = find(root, "Connecting to Mac…");
+                        }
+                        listening |= find(root, "Listening…") != null;
+                        polished |= find(root, "Polishing…") != null;
+                        cleaned |= find(root, "cleaned") != null;
+                        raw |= find(root, "kept original") != null;
+                        if (find(root, args[1]) != null) matched = true;
+                    }
+                    if (!matched) android.os.SystemClock.sleep(16);
+                }
+                if (!matched) {
+                    System.out.println("State trace: listening=" + listening + " polishing=" + polished + " cleaned=" + cleaned + " kept_original=" + raw);
+                    throw new IllegalStateException("Expected UI state did not arrive");
+                }
+                // Capture before hierarchy serialization can outlast a short transition.
+                android.graphics.Bitmap capture = automation.takeScreenshot();
+                if (capture == null) throw new IllegalStateException("State screenshot unavailable");
+                try (FileOutputStream output = new FileOutputStream(args[2])) {
+                    capture.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, output);
+                } finally { capture.recycle(); }
+                if (args[0].equals("watch-undo")) {
+                    boolean undone = false;
+                    for (AccessibilityWindowInfo window : automation.getWindows()) {
+                        AccessibilityNodeInfo button = find(window.getRoot(), "Use raw");
+                        if (button != null && button.isClickable()) {
+                            undone = button.performAction(AccessibilityNodeInfo.ACTION_CLICK); break;
+                        }
+                    }
+                    if (!undone) throw new IllegalStateException("Raw undo accessibility action unavailable");
+                }
+                return;
+            }
+            if (args.length == 0) {
+                try { automation.waitForIdle(250, 4000); } catch (java.util.concurrent.TimeoutException ignored) { }
+            }
             XmlSerializer xml = Xml.newSerializer();
             try (FileOutputStream output = new FileOutputStream("/sdcard/chirp-windows.xml")) {
                 xml.setOutput(output, "UTF-8");

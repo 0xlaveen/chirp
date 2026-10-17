@@ -1,9 +1,9 @@
 # Chirp Keyboard for Android
 
-Chirp 0.3.1 combines HeliBoard 4.2's full keyboard with in-keyboard dictation to your
+Chirp 0.5.0 combines HeliBoard 4.2's full keyboard with in-keyboard dictation to your
 Mac over Tailscale. The application ID and IME component remain
 `dev.chirp.android` / `dev.chirp.android/.ChirpImeService` so the signed APK installs
-as an update and preserves Android Keystore pairing. Version code is 4.
+as an update and preserves Android Keystore pairing. Version code is 6.
 
 ## Phone setup
 
@@ -13,8 +13,8 @@ as an update and preserves Android Keystore pairing. Version code is 4.
 3. Allow microphone permission. If already paired, pairing stays saved. Otherwise,
    turn on Tailscale on both devices, scan the existing Mac QR, and **Test connection & save pairing**.
 4. Tap the test field. Type normally, then tap the mic in the suggestion row to start.
-   **✓** finishes and **✕** discards dictation. Long press the toolbar mic for clean-up
-   (when offered by the Mac) and Chirp settings. A configured keyboard voice key still
+   The **stop icon** finishes and **✕** discards dictation. Long press the toolbar mic
+   to choose a style, toggle clean-up (when offered by the Mac), or open Chirp settings. A configured keyboard voice key still
    supports push-to-talk.
 5. Dictate twice. The full keyboard always stays selected after a final, including
    when an old installation had auto-return enabled. **Use raw** is available for
@@ -38,7 +38,7 @@ currently available; the source review is recorded in `keyboard/UPSTREAM.md`.
 Setup opens the first unfinished prerequisite and advances after returning from system
 settings. QR pairing is primary; paste is secondary. A saved pairing shows the Mac host
 and reported engine. HeliBoard settings start with a Chirp section: pairing, test
-field, clean-up (only when supported), and diagnostics. The mic shares the suggestion
+field, clean-up and styles (only when supported), per-app styles, sounds/haptics, and diagnostics. The mic shares the suggestion
 row, and active dictation replaces suggestions with waveform, status, cancel and done.
 Partials appear only in the text field. Recoverable errors offer Pair Mac, Open mic
 settings, or Check Tailscale. Debug retention stays visible in the row while reported.
@@ -194,3 +194,100 @@ phase adds 25,068 bytes relative to the pre-typing UX release build (26,659,580 
 Screenshots in `../docs/screenshots/android/release-*.png` are from the real release
 emulator, each below 2 MB. No phone, production server, Mac app or Tailscale setting was
 used or modified.
+
+
+## Clean-up, styles and streaming (0.5.0)
+
+The mic changes colour and icon while listening, with a waveform and subtle pulse.
+Start, manual stop and successful insertion use haptic cues when enabled. Showing the
+keyboard prewarms the bearer-authenticated socket without sending `start` or capturing
+sound. An unused warm socket closes after 30 seconds or when the keyboard hides.
+Capture still starts on press, before the server's `ready`, through the bounded buffer.
+
+Partials are coalesced to one editor update per 16 ms, retaining the latest sequence.
+Verified editors receive only the changed suffix; UTF-16 pairs remain intact. A server
+`stable` prefix becomes normal editor text while the remaining tail composes. A final or
+cancel re-marks the utterance so cleanup replaces it atomically and cancel restores the
+selection. Editors that cannot verify their composing text use full composition updates.
+Underlining and a slightly dimmed tail are supplied as spans when the editor supports them.
+
+On `correcting`, the full raw transcript remains underlined in the field. The suggestion
+row shows **Polishing…**, an animated shimmer and the selected style chip. State changes
+fade/slide over 180 ms; polishing stays readable for at least 450 ms for very fast finals.
+Reduced-motion settings disable the pulse, shimmer and transition animations. Final commits
+cleaned text and shows **cleaned · Use raw** for five seconds. The raw action is one tap,
+exposed to TalkBack, and invalidated by edits or cursor changes. Correction errors,
+disconnects and a 12-second polishing timeout commit the raw text with **kept original**.
+Recovery/error notices dismiss after five seconds to restore normal suggestions.
+
+Long press the mic to select any health-advertised style plus Custom for the current editor.
+Chirp settings provide a default style and editable package-based overrides. Initial defaults
+cover Slack/WhatsApp/Discord/Google and Samsung Messages (Chat), Gmail/Outlook/Samsung Email
+(Email), Termux and code editors (Code), and Samsung Notes/Keep/Obsidian/Notion (Notes).
+Matching uses `EditorInfo.packageName` exactly; removed rows inherit the default. Styles
+missing from current health fall back to the selected default or Default. Styles stay hidden
+when cleanup is unavailable, including an undisclosed external correction destination.
+
+**Clean-up styles** loads editable defaults from the authenticated
+`GET /v1/correction/profiles`. Every style shows its description; its prompt editor offers
+an Edited badge, a Unicode character count, the server's limit (at most 4000), and Reset to
+default. Fixed safety rules always apply. Existing Custom instructions migrate into Custom's
+prompt. Only edited styles send optional `start.correction_prompt`; resetting omits the field
+so future server defaults apply. The legacy `correction_instructions` protocol limit remains
+2000 characters. Health caches only profile metadata, not default prompts. User edits are
+private app preferences excluded from backup. Text and prompts are never logged.
+
+The new prompt endpoint/override protocol is covered with an isolated TLS fake server. A
+server that does not yet expose the endpoint still supports normal styles; the editor shows
+a retry action. Prompt loading requires the corresponding server addition.
+
+### 0.5.0 validation (2026-10-17)
+
+`./gradlew lint testDebugUnitTest assembleDebug assembleRelease` passed with **198 tests,
+zero failures/errors, two opt-in skips**. Tests cover protocol metadata and editable prompts,
+TLS bearer requests, omission/reset/migration, Unicode limits, exact package mapping,
+prewarming/expiry, coalescing, suffix edits with a real `BaseInputConnection`, stable-prefix
+rollback, cancellation, polishing fallback, readable transitions and reduced motion.
+
+Managed cleanup E2E passed against a real Parakeet/Qwen server on **7899** with a temporary
+HOME, `[correction] mode="managed"`, and the shared offline HF cache. The helper is warmed
+before UI captures to exclude first-use model/Metal setup; the app still has its normal
+12-second polishing deadline. The capture helper requires `ffmpeg` to keep the exported recording below ten seconds.
+The debug asset uses messy synthetic speech generated under
+`app/build/`. No audio is committed. Both themes captured underlined raw composition,
+Polishing + style, cleaned + Use raw, and native accessible raw replacement. The test removes
+its server, credentials and device probes and re-selects Chirp after force-stop.
+
+```sh
+source ~/.local/share/chirp-android/env.sh
+ANDROID_SERIAL=emulator-5580 python3 android/scripts/emulator-check.py --cleanup-only \
+  --python /path/to/server/.venv/bin/python \
+  --model-dir /path/to/cached/parakeet-mlx \
+  --apk android/app/build/outputs/apk/debug/app-debug.apk
+# Same setup without recording/accessibility polling during speech:
+# replace --cleanup-only with --frames-only
+```
+
+Release `scripts/emulator-smoke.sh` and actual `emulator-talkback.py` also passed on
+**emulator-5580 only**. Release smoke covers the signed minified APK, setup/scanner, typing,
+clipboard/emoji, mic recovery/options, inner/cover themes, landscape split, settings and no
+crash. Release remains AudioRecord-only and HTTPS-only; live managed speech was exercised
+through the debug synthetic/cleartext path. APK: **26,716,080 bytes (25.48 MiB)**, version
+**0.5.0 (6)**, arm64-v8a and x86_64, signed with the existing local key.
+
+Artifacts are under `../docs/screenshots/android/`:
+
+- `emulator-cleanup-{polishing,cleaned,styles}-{light,dark}.png` — actual emulator states.
+- `emulator-cleanup-streaming.mp4` — a silent 9.54-second screen recording (10-second capture cap).
+- `emulator-cleanup-gfxinfo.txt` — recorded run: 194/199 janky frames, p50 85 ms.
+- `emulator-cleanup-uninstrumented-gfxinfo.txt` — no capture/polling during speech:
+  161/170 janky frames, p50 133 ms.
+- `emulator-release-typing-gfxinfo.txt` — ordinary release typing baseline:
+  83/95 janky frames, p50 32 ms.
+
+These measurements do **not** establish smooth 60 fps. The authorized AVD has
+`hw.gpu.enabled=no`; ordinary typing is also substantially janky, and its host concurrently
+runs ASR/cleanup. The source recording averages about 14.9 fps. GPU-backed device validation remains
+necessary to assess animation smoothness. The emulator's GPU configuration was not changed.
+No phone, production Chirp configuration/server, Mac app, LaunchAgent or Tailscale setting was
+modified.

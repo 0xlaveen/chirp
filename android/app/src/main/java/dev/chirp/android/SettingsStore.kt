@@ -18,6 +18,40 @@ class SettingsStore(context: Context) {
     var correction: Boolean
         get() = prefs.getBoolean("correction", false)
         set(value) { prefs.edit { putBoolean("correction", value) } }
+    var defaultStyle: String
+        get() = prefs.getString("default_style", "default") ?: "default"
+        set(value) { require(CleanupStyles.validId(value)); prefs.edit { putString("default_style", value) } }
+    var customInstructions: String
+        get() = prefs.getString("custom_instructions", "").orEmpty()
+        set(value) { prefs.edit { putString("custom_instructions", CleanupStyles.limitInstructions(value)) } }
+    var appStyles: Map<String, String>
+        get() = try {
+            val saved = prefs.getString("app_styles", null)
+            if (saved == null) CleanupStyles.defaults else JSONObject(saved).let { json ->
+                json.keys().asSequence().associateWith { json.getString(it) }
+            }
+        } catch (_: Exception) { CleanupStyles.defaults }
+        set(value) {
+            require(value.all { (app, style) -> app.matches(Regex("[a-zA-Z0-9_]+(\\.[a-zA-Z0-9_]+)+")) && CleanupStyles.validId(style) })
+            prefs.edit { putString("app_styles", JSONObject(value).toString()) }
+        }
+    fun style(packageName: String?) = CleanupStyles.resolve(packageName, defaultStyle, appStyles, CleanupStyles.profiles(health))
+    var promptEdits: Map<String, String>
+        get() {
+            val saved = prefs.getString("prompt_edits", null)
+            if (saved == null) {
+                val migrated = customInstructions.takeIf { it.isNotEmpty() }?.let { mapOf("custom" to it) }.orEmpty()
+                promptEdits = migrated
+                prefs.edit { remove("custom_instructions") }
+                return migrated
+            }
+            return try { JSONObject(saved).let { json -> json.keys().asSequence().associateWith { json.getString(it) } } }
+                catch (_: Exception) { emptyMap() }
+        }
+        set(value) {
+            require(value.all { (id, prompt) -> CleanupStyles.validId(id) && CleanupStyles.characterCount(prompt) <= CleanupStyles.MAX_PROMPT })
+            prefs.edit { putString("prompt_edits", JSONObject(value).toString()) }
+        }
     var haptics: Boolean
         get() = prefs.getBoolean("haptics", true)
         set(value) { prefs.edit { putBoolean("haptics", value) } }
@@ -35,7 +69,11 @@ class SettingsStore(context: Context) {
                 .put("debug_retention", value.debugRetention).put("engine", value.engine.orEmpty())
                 .put("correction", if (value.correctionAvailable) "available" else "off")
                 .put("correction_leaves_machine", value.correctionLeavesMachine)
-                .put("correction_host", value.correctionHost.orEmpty()).toString()) }
+                .put("correction_host", value.correctionHost.orEmpty())
+                .put("correction_profiles", org.json.JSONArray().apply {
+                    value.correctionProfiles.forEach { profile -> put(JSONObject().put("id", profile.id)
+                        .put("name", profile.name).put("description", profile.description).put("rewrites", profile.rewrites)) }
+                }).toString()) }
         }
     fun pairing(): Pairing? = try {
         val encrypted = prefs.getString("token", null)

@@ -38,6 +38,17 @@ object ChirpNetwork {
             return Protocol.health(source.readUtf8())
         }
     }
+    fun profiles(client: OkHttpClient, pairing: Pairing): List<CorrectionProfile> {
+        val request = Request.Builder().url(pairing.endpoint("v1/correction/profiles"))
+            .header("Authorization", "Bearer ${pairing.token}").build()
+        client.newCall(request).execute().use { response ->
+            if (!response.isSuccessful) throw IOException("Style prompts unavailable")
+            val source = response.body.source()
+            source.request(512001)
+            if (source.buffer.size > 512000) throw IOException("Style prompts too large")
+            return Protocol.profiles(source.readUtf8())
+        }
+    }
     fun dispose(client: OkHttpClient) {
         client.dispatcher.cancelAll()
         client.connectionPool.evictAll()
@@ -47,6 +58,7 @@ object ChirpNetwork {
 
 interface ImeTransport {
     fun connect()
+    fun start(correction: Boolean, profile: String, instructions: String, prompt: String? = null): Boolean = start(correction)
     fun start(correction: Boolean): Boolean
     fun audio(bytes: ByteArray): Boolean
     fun stop(): Boolean
@@ -69,6 +81,9 @@ class StreamTransport(
     private var connected = false
     private var startSent = false
     private var correction = false
+    private var profile = "default"
+    private var instructions = ""
+    private var prompt: String? = null
     private var retried = false
     private var attempt = 0
 
@@ -98,7 +113,7 @@ class StreamTransport(
                             if (!active || !startSent || ready) return@dispatch
                             ready = true
                         }
-                        is ServerEvent.Partial, is ServerEvent.Final -> if (!active || !ready) return@dispatch
+                        is ServerEvent.Partial, is ServerEvent.Correcting, is ServerEvent.Final -> if (!active || !ready) return@dispatch
                         is ServerEvent.Failure -> if (!active) { close(); failure(); return@dispatch }
                         ServerEvent.Unknown -> return@dispatch
                     }
@@ -117,6 +132,10 @@ class StreamTransport(
             }
         })
     }
+    override fun start(correction: Boolean, profile: String, instructions: String, prompt: String?): Boolean {
+        this.profile = profile; this.instructions = instructions; this.prompt = prompt
+        return start(correction)
+    }
     override fun start(correction: Boolean): Boolean {
         if (closed || active) return false
         active = true; ready = false; startSent = false; retried = false
@@ -125,7 +144,7 @@ class StreamTransport(
         return !closed
     }
     private fun sendStart() {
-        startSent = socket?.send(Protocol.start(correction)) == true
+        startSent = socket?.send(Protocol.start(correction, profile, instructions, prompt)) == true
         if (!startSent) failed()
     }
     private fun failed() {
@@ -147,6 +166,7 @@ class StreamTransport(
     /** Cancel retires the socket: v1 has no cancel acknowledgement or session IDs on finals. */
     override fun close(cancel: Boolean, immediate: Boolean) {
         if (closed) return
+        instructions = ""; prompt = null
         closed = true; ++attempt; active = false; ready = false; connected = false
         val ws = socket
         socket = null

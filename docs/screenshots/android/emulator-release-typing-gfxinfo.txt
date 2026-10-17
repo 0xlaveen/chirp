@@ -1,0 +1,7 @@
+emulator-5580 · release typing, no screen recording
+Total frames rendered: 95
+Janky frames: 83 (87.37%)
+50th percentile: 32ms
+90th percentile: 57ms
+95th percentile: 69ms
+99th percentile: 101ms

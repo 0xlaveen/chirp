@@ -1,0 +1,7 @@
+emulator-5580 · debug synthetic cleanup, no recording or accessibility polling during speech
+Total frames rendered: 170
+Janky frames: 161 (94.71%)
+50th percentile: 133ms
+90th percentile: 200ms
+95th percentile: 250ms
+99th percentile: 300ms

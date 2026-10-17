@@ -236,7 +236,7 @@ open class LegacyVoiceImeService : InputMethodService() {
                 "bad_audio" -> "No audio received — try again"
                 else -> "Mac speech engine unavailable — try again"
             })
-            ServerEvent.Unknown -> Unit
+            is ServerEvent.Correcting, ServerEvent.Unknown -> Unit
         }
         render()
     }
