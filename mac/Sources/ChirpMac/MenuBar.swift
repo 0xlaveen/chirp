@@ -9,6 +9,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     private let actions: Actions
     private var launchError: String?
     private let badge = NSView()
+    private let cleanedBadge = NSView()
     private let glyphs = Glyphs()
     private var pulseTimer: Timer?
     private var pulsePhase = 0
@@ -28,6 +29,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         menu.delegate = self
         item.menu = menu
         installBadge()
+        installCleanedBadge()
         refreshIcon()
     }
 
@@ -37,7 +39,8 @@ final class MenuBarController: NSObject, NSMenuDelegate {
 
     func refreshIcon() {
         let icon = StatusIcon.of(state: controller.state, serverReachable: controller.health != nil,
-                                 debugRetention: controller.debugRetention, reduceMotion: reduceMotion)
+                                 debugRetention: controller.debugRetention, reduceMotion: reduceMotion,
+                                 rawOfferOpen: controller.rawOffer.isOpen)
         guard let button = item.button else { return }
         switch icon.glyph {
         case .idle: button.image = glyphs.idle ?? Self.symbol(controller.health == nil ? "mic.slash" : "mic")
@@ -49,6 +52,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         button.setAccessibilityLabel(icon.accessibilityLabel)
         button.toolTip = icon.accessibilityLabel
         badge.isHidden = !icon.debugBadge
+        cleanedBadge.isHidden = !icon.cleanedBadge
         setPulsing(icon.animatesWaves)
     }
 
@@ -85,6 +89,24 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         ])
     }
 
+    /// A tiny dot at the icon's bottom right while "Use raw" is on offer.
+    private func installCleanedBadge() {
+        guard let button = item.button else { return }
+        cleanedBadge.wantsLayer = true
+        cleanedBadge.layer?.backgroundColor = NSColor.systemGreen.cgColor
+        cleanedBadge.layer?.cornerRadius = 3
+        cleanedBadge.layer?.borderWidth = 1
+        cleanedBadge.layer?.borderColor = NSColor.black.withAlphaComponent(0.35).cgColor
+        cleanedBadge.isHidden = true
+        cleanedBadge.translatesAutoresizingMaskIntoConstraints = false
+        button.addSubview(cleanedBadge)
+        NSLayoutConstraint.activate([
+            cleanedBadge.widthAnchor.constraint(equalToConstant: 6), cleanedBadge.heightAnchor.constraint(equalToConstant: 6),
+            cleanedBadge.trailingAnchor.constraint(equalTo: button.trailingAnchor, constant: -3),
+            cleanedBadge.bottomAnchor.constraint(equalTo: button.bottomAnchor, constant: -3),
+        ])
+    }
+
     private static func symbol(_ name: String) -> NSImage? {
         NSImage(systemSymbolName: name, accessibilityDescription: "Chirp")
     }
@@ -108,6 +130,8 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         inputs.cleanupOn = settings.correction
         inputs.showRawAfterCleanup = settings.showRawAfterCleanup
         inputs.styleID = settings.correctionProfile
+        inputs.rawOfferOpen = controller.rawOffer.isOpen
+        inputs.rawOfferKey = controller.rawOffer.hotkeyActive ? RawOffer.combo.title : nil
         inputs.hotkey = settings.hotkey
         inputs.soundsEnabled = settings.soundsEnabled
         inputs.soundPack = settings.soundPack
@@ -165,6 +189,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         switch action {
         case nil: nil
         case .toggleDictation: #selector(toggleDictation)
+        case .useRaw: #selector(useRaw)
         case .pickInput: #selector(pickInput(_:))
         case .toggleCleanup: #selector(toggleCleanup)
         case .toggleShowRaw: #selector(toggleShowRaw)
@@ -183,6 +208,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     }
 
     @objc private func toggleDictation() { controller.toggleDictation() }
+    @objc private func useRaw() { controller.rawOffer.take() }
     @objc private func pickInput(_ sender: NSMenuItem) { settings.inputDeviceUID = sender.representedObject as? String }
     @objc private func toggleCleanup() { settings.correction.toggle() }
     @objc private func toggleShowRaw() { settings.showRawAfterCleanup.toggle() }

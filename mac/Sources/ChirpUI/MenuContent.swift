@@ -10,7 +10,7 @@ public enum LaunchState: Equatable, Sendable {
 }
 
 public enum MenuAction: Equatable, Sendable {
-    case toggleDictation, pickInput(String?), toggleCleanup, toggleShowRaw, pickHotkey(String), pickStyle(String), pickSound(String)
+    case toggleDictation, useRaw, pickInput(String?), toggleCleanup, toggleShowRaw, pickHotkey(String), pickStyle(String), pickSound(String)
     case copyDoctor, grantMic, grantAX, toggleLaunch, showSettings, showSetup, showAbout, quit
 
     /// What the AppKit item carries to its action method.
@@ -68,6 +68,9 @@ public struct MenuInputs: Sendable {
     public var chosenInputUID: String?
     public var cleanupOn = false
     public var showRawAfterCleanup = true
+    /// The 5-second "Use raw" window after a cleaned insertion is open; `rawOfferKey` is its hotkey when it has one.
+    public var rawOfferOpen = false
+    public var rawOfferKey: String?
     /// The default clean-up style (a profile id); a per-app rule can override it for one dictation.
     public var styleID = CorrectionProfile.defaultID
     public var hotkey: KeyCombo = .controlOptionSpace
@@ -124,6 +127,9 @@ public enum MenuContent {
             out.append(MenuEntry(title: "Stop dictation", symbol: "stop.fill", action: .toggleDictation))
         case .finalizing, .correcting, .inserting:
             out.append(MenuEntry(title: "Start dictation", symbol: "mic.fill"))
+        }
+        if m.rawOfferOpen {
+            out.append(MenuEntry(title: "Use raw for last dictation", subtitle: m.rawOfferKey, symbol: "arrow.uturn.backward", action: .useRaw))
         }
         out.append(inputPicker(m))
         out.append(hotkeyMenu(m))
@@ -229,7 +235,7 @@ public enum MenuContent {
         return out
     }
 
-    /// "Style": the server's clean-up profiles, then Custom… (which opens Settings to edit the instructions). Only for
+    /// "Style": the server's clean-up profiles, then Custom… (which opens Settings to edit its prompt). Only for
     /// a server that lists profiles; an older one ignores them, so there is nothing to pick.
     static func styleMenu(_ m: MenuInputs) -> MenuEntry? {
         guard let h = m.health, h.correctionProfiles != nil else { return nil }
@@ -239,7 +245,7 @@ public enum MenuContent {
                       action: .pickStyle(p.id), mark: p.id == m.styleID ? .on : .off)
         }
         sub.append(.separator)
-        sub.append(MenuEntry(title: "Custom…", subtitle: "Your own instructions, in Settings",
+        sub.append(MenuEntry(title: "Custom…", subtitle: "Your own prompt, in Settings",
                              action: .pickStyle(CorrectionProfile.customID), mark: m.styleID == CorrectionProfile.customID ? .on : .off))
         let name = CorrectionProfile.name(for: m.styleID, in: h)
         return MenuEntry(title: "Style", subtitle: name, symbol: "textformat", submenu: sub)

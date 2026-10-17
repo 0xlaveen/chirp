@@ -20,7 +20,7 @@ final class HUDController {
     private var generation = 0
 
     private static let appearDuration = 0.18
-    private static let disappearDuration = 0.16
+    private static let disappearDuration = 0.15
     private static let appearScale: CGFloat = 0.94
 
     private var reduceMotion: Bool { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }

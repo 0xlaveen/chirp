@@ -9,18 +9,20 @@ public struct StatusIcon: Equatable, Sendable {
     public var dimmed: Bool
     /// A small red dot while the server keeps recordings.
     public var debugBadge: Bool
+    /// A tiny "cleaned" mark while "Use raw" is on offer after a cleaned insertion.
+    public var cleanedBadge: Bool
     /// The sound waves pulse while listening (unless Reduce Motion is on).
     public var animatesWaves: Bool
 
     public static func of(state: DictationState, serverReachable: Bool, debugRetention: Bool,
-                          reduceMotion: Bool = false) -> StatusIcon {
+                          reduceMotion: Bool = false, rawOfferOpen: Bool = false) -> StatusIcon {
         let glyph: Glyph = switch state {
         case .idle: .idle
         case .connecting, .listening, .finalizing, .correcting, .inserting: .listening
         case .error: .error
         }
         return StatusIcon(glyph: glyph, dimmed: state == .idle && !serverReachable, debugBadge: debugRetention,
-                          animatesWaves: glyph == .listening && !reduceMotion)
+                          cleanedBadge: rawOfferOpen && state == .idle, animatesWaves: glyph == .listening && !reduceMotion)
     }
 
     /// Seconds per wave pulse step.
@@ -37,6 +39,7 @@ public struct StatusIcon: Equatable, Sendable {
         case .listening: "Chirp — dictating"
         case .error: "Chirp — error"
         }
+        if cleanedBadge { label += ", cleaned text inserted, Use raw available" }
         if debugBadge { label += ", debug recordings kept" }
         return label
     }

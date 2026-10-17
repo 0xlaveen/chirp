@@ -19,10 +19,17 @@ public struct SettingsState: Sendable {
     /// The server's state in words ("Connected", "Unreachable", …) and its tone.
     public var serverStatus = "Connected"
     public var serverStatusTone: MenuEntry.Tone = .ok
-    /// Clean-up: the default style, the custom instructions, the raw-first option and the per-app styles.
+    /// Clean-up: the default style, the edited style prompts, the raw-first option and the per-app styles.
     public var cleanupStyle = CorrectionProfile.defaultID
-    public var customInstructions = ""
+    /// The prompts the user edited, by style id (only styles that differ from the server's default).
+    public var stylePrompts: [String: String] = [:]
+    /// The styles with their default prompts, and whether they are live, the last-known copy, or not loaded.
+    public var catalog = StyleCatalog.unavailable
+    /// The style the prompt editor opens on.
+    public var editingStyle = CorrectionProfile.defaultID
     public var insertRawFirst = false
+    /// "Show changes after clean-up": the diff highlight and the HUD's Use raw button. Off by default.
+    public var showChanges = false
     public var appStyles = AppStyleRule.defaults
     /// The styles the server offers (the built-ins until it says otherwise) and whether it offers any at all.
     public var profiles = CorrectionProfile.builtIn
@@ -79,13 +86,15 @@ public final class SettingsForm {
     public let accessibilityButton = NSButton(title: "Fix…", target: nil, action: nil)
     /// Under the checkbox: what it does, or why the last change failed.
     public let launchHelp = SettingsForm.help("")
-    /// Clean-up: default style, custom instructions, raw-first and the per-app table.
+    /// Clean-up: default style, style prompts, raw-first and the per-app table.
     public let style = NSPopUpButton(frame: .zero, pullsDown: false)
-    public let instructions = InstructionsEditor()
+    public let prompts = StylePromptsEditor()
     public let insertRawFirst = NSButton(checkboxWithTitle: "Insert raw immediately, then replace with cleaned", target: nil, action: nil)
+    public let showChanges = NSButton(checkboxWithTitle: "Show changes after clean-up", target: nil, action: nil)
     public let appStyles = AppStylesTable()
     private let styleHelp = SettingsForm.help("")
     private var shownProfileIDs: [String] = []
+    private var shownCatalog: StyleCatalog?
     private let tokenStatus = StatusLine()
     private let tokenHelp = SettingsForm.help("")
     private let serverStatus = StatusLine()
@@ -146,9 +155,10 @@ public final class SettingsForm {
             help: Self.help("Plays after you stop talking, up to \(SoundTiming.stopLimit) s."))
         section("Clean-up")
         row("Style:", style, help: styleHelp)
-        row("Custom:", instructions.view, help: Self.help("Used by the Custom style (up to \(CorrectionProfile.maxInstructionLength) characters). They only shape how text is tidied: no tools, no network."))
+        row("Prompts:", prompts.view)
         row("Per-app:", appStyles.view, help: Self.help("The frontmost app when you start dictating picks the style. Other apps use the default style."))
         row("Insertion:", insertRawFirst, help: Self.help("Swaps in the cleaned text in place where Chirp can verify the insert; elsewhere it inserts once."))
+        row("Review:", showChanges, help: Self.help("Off: the cleaned text is inserted at once and the HUD fades away; “Use raw” stays on for 5 seconds with ⌃⌥Z or in the menu. On: the HUD highlights what changed and keeps a Use raw button."))
         section("Server")
         row("URL:", serverURL)
         row("Token:", tokenStatus, help: tokenHelp)
@@ -286,8 +296,10 @@ public final class SettingsForm {
             setLaunchError(nil)
             style.controlSize = .regular
             fillStyleMenu(s.profiles, selecting: s.cleanupStyle, offered: s.serverOffersStyles)
-            instructions.text = s.customInstructions
+            prompts.configure(catalog: s.catalog, overrides: s.stylePrompts, selecting: s.editingStyle)
+            shownCatalog = s.catalog
             insertRawFirst.state = s.insertRawFirst ? .on : .off
+            showChanges.state = s.showChanges ? .on : .off
             appStyles.setProfiles(s.profiles)
             appStyles.setRules(s.appStyles)
         } else if s.profiles.map(\.id) != shownProfileIDs {
@@ -295,6 +307,12 @@ public final class SettingsForm {
             let current = style.selectedItem?.representedObject as? String ?? s.cleanupStyle
             fillStyleMenu(s.profiles, selecting: current, offered: s.serverOffersStyles)
             appStyles.setProfiles(s.profiles)
+        }
+        if !full, s.catalog != shownCatalog {
+            // The server's prompts arrived (or it went away) after the window opened. Edits are saved as they are
+            // made, so reloading from the saved ones loses nothing.
+            prompts.configure(catalog: s.catalog, overrides: s.stylePrompts)
+            shownCatalog = s.catalog
         }
         tokenStatus.set(symbol: s.tokenPresent ? "checkmark.circle.fill" : "exclamationmark.triangle.fill",
                         tone: s.tokenPresent ? .ok : .warning, text: "~/.config/chirp/token")

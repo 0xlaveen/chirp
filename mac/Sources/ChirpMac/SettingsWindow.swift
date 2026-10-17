@@ -13,6 +13,9 @@ final class SettingsWindowController: NSObject, NSTextFieldDelegate {
     var serverStatus: () -> (text: String, tone: MenuEntry.Tone) = { ("Checking…", .warning) }
     /// The server's last health, for the styles it offers.
     var health: () -> Health? = { nil }
+    /// The styles with their default prompts (live, or the last-known copy).
+    var catalog: () -> StyleCatalog = { .unavailable }
+    private var testTask: Task<Void, Never>?
     private var window: NSWindow?
     private var form: SettingsForm?
     private var refreshTimer: Timer?
@@ -32,11 +35,14 @@ final class SettingsWindowController: NSObject, NSTextFieldDelegate {
         s.accessibilityGranted = Permissions.accessibilityGranted
         (s.serverStatus, s.serverStatusTone) = serverStatus()
         s.cleanupStyle = settings.correctionProfile
-        s.customInstructions = settings.correctionInstructions
+        s.stylePrompts = settings.correctionPrompts
         s.insertRawFirst = settings.insertRawFirst
+        s.showChanges = settings.showChangesAfterCleanup
         s.appStyles = settings.appStyles
         let health = health()
-        s.profiles = CorrectionProfile.offered(by: health)
+        let catalog = catalog()
+        s.catalog = catalog
+        s.profiles = catalog.source == .unavailable ? CorrectionProfile.offered(by: health) : catalog.profiles
         s.serverOffersStyles = health == nil || health?.correctionProfiles != nil
         return s
     }
@@ -78,7 +84,15 @@ final class SettingsWindowController: NSObject, NSTextFieldDelegate {
         }
         form.style.target = self
         form.style.action = #selector(styleChanged(_:))
-        form.instructions.onChange = { settings.correctionInstructions = $0 }
+        form.prompts.onEdit = { [weak self] id, text in
+            guard let self else { return }
+            settings.setPrompt(text, for: id, in: self.catalog())
+        }
+        form.prompts.onReset = { settings.resetPrompt(for: $0) }
+        form.appStyles.testButton.target = self
+        form.appStyles.testButton.action = #selector(testAppStyle)
+        form.showChanges.target = self
+        form.showChanges.action = #selector(toggleShowChanges(_:))
         form.insertRawFirst.target = self
         form.insertRawFirst.action = #selector(toggleRawFirst(_:))
         form.appStyles.onChange = { settings.appStyles = $0 }
@@ -112,7 +126,33 @@ final class SettingsWindowController: NSObject, NSTextFieldDelegate {
     @objc private func styleChanged(_ sender: NSPopUpButton) {
         guard let id = sender.selectedItem?.representedObject as? String else { return }
         settings.correctionProfile = id
-        form?.fillStyleMenu(CorrectionProfile.offered(by: health()), selecting: id, offered: health()?.correctionProfiles != nil || health() == nil)
+        form?.fillStyleMenu(state.profiles, selecting: id, offered: state.serverOffersStyles)
+    }
+
+    /// "Test": Settings itself is frontmost while the button is pressed, so wait a moment for the user to switch to the
+    /// app to check, then say which style applies to it.
+    @objc private func testAppStyle() {
+        testTask?.cancel()
+        form?.appStyles.showTestResult("Switch to the app you want to check. Reading it in 3 seconds…")
+        testTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(3))
+            guard !Task.isCancelled, let self else { return }
+            let app = NSWorkspace.shared.frontmostApplication
+            let id = app?.bundleIdentifier
+            guard id != Bundle.main.bundleIdentifier else {
+                self.form?.appStyles.showTestResult("Chirp itself was frontmost. Press Test, then switch to another app within 3 seconds.")
+                return
+            }
+            let state = self.state
+            let resolved = settings.cleanupStyle(frontmostBundleID: id, available: state.serverOffersStyles ? state.profiles : nil)
+            let name = state.profiles.first { $0.id == resolved.profile }?.name ?? CorrectionProfile.displayName(for: resolved.profile)
+            let appName = id.map { AppNames.name(for: $0) } ?? app?.localizedName
+            self.form?.appStyles.showTestResult(CleanupStyle.testSummary(appName: appName, resolved: resolved, styleName: name))
+        }
+    }
+
+    @objc private func toggleShowChanges(_ sender: NSButton) {
+        settings.showChangesAfterCleanup = sender.state == .on
     }
 
     @objc private func toggleRawFirst(_ sender: NSButton) {

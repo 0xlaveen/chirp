@@ -399,20 +399,31 @@ public struct OutcomePresentation: Equatable, Sendable {
     public var cleaned = false
     /// Clean-up was asked for but did not deliver (timeout, error, rejected answer): the raw text was kept.
     public var keptOriginal = false
-    /// Seconds the HUD stays up.
+    /// Use raw is offered outside the HUD for `RawOffer.duration` (⌃⌥Z and the menu).
+    public var offersRawOutsideHUD = false
+    /// Seconds the HUD stays up. 0 fades it out at once.
     public var linger: Double
 
     /// How long the diff highlight shows before the cleaned text is inserted.
     public static let highlightDuration = 0.8
 
-    /// `offerRaw` is the "Show raw after clean-up" preference: off keeps the badge but drops the Use raw button.
-    public static func of(_ outcome: InsertionOutcome, final: FinalResult, offerRaw: Bool = true) -> OutcomePresentation {
+    /// The note when clean-up did not deliver and the raw text was kept stays up this long at most.
+    public static let keptNoteLinger = 1.0
+
+    /// `offerRaw` is the "Show raw after clean-up" preference: off drops "Use raw" altogether. `showChanges` is "Show
+    /// changes after clean-up": on keeps the HUD up with the diff and the Use raw button; off (the default) fades the
+    /// HUD out at once after a cleaned insertion and offers Use raw outside it.
+    public static func of(_ outcome: InsertionOutcome, final: FinalResult, offerRaw: Bool = true,
+                          showChanges: Bool = false) -> OutcomePresentation {
         let useRaw = final.canUseRaw && offerRaw
         let kept = !final.corrected && final.correctionError != nil
         return switch outcome {
-        case .inserted:
+        case .inserted where showChanges:
             OutcomePresentation(status: "Inserted", showUseRaw: useRaw, cleaned: final.canUseRaw, keptOriginal: kept,
-                                linger: useRaw ? 5 : final.canUseRaw ? 1.8 : kept ? 2.4 : 1.2)
+                                linger: useRaw ? 5 : final.canUseRaw ? 1.8 : kept ? keptNoteLinger : 1.2)
+        case .inserted:
+            OutcomePresentation(status: "Inserted", cleaned: final.canUseRaw, keptOriginal: kept,
+                                offersRawOutsideHUD: useRaw, linger: final.canUseRaw ? 0 : kept ? keptNoteLinger : 1.2)
         case .copied:
             OutcomePresentation(status: "Copied — ⌘V", indicator: .clipboard, cleaned: final.canUseRaw, keptOriginal: kept, linger: 3)
         case .insertedUnverified:
