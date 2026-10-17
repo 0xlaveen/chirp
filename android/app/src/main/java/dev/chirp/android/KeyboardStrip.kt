@@ -20,7 +20,19 @@ internal class KeyboardStrip(context: Context) : LinearLayout(context) {
     }
     val mic = control("Microphone: tap to dictate, long press for options").apply { setIconResource(R.drawable.ic_mic) }
     val cancel = control("Cancel dictation").apply { text = "✕" }
-    val raw = control("Use raw dictation").apply { text = "Use raw"; visibility = GONE }
+    val raw = control("Use raw dictation").apply { text = "Use raw"; visibility = GONE
+        accessibilityLiveRegion = View.ACCESSIBILITY_LIVE_REGION_POLITE }
+    val style = context.label("", 12f).apply {
+        maxLines = 1; ellipsize = TextUtils.TruncateAt.END
+        setPadding(context.dp(8), 0, context.dp(8), 0)
+        background = android.graphics.drawable.GradientDrawable().apply {
+            setColor(VoicePalette.of(context).accent and 0x00ffffff or 0x22000000)
+            cornerRadius = context.dp(10).toFloat()
+        }
+    }
+    private var pulse: android.animation.ValueAnimator? = null
+    private var pulsingPolish = false
+    private var stage = ""
     private val meter = Waveform(context)
     private var suggestions: View? = null
     private var expanded = false
@@ -30,6 +42,7 @@ internal class KeyboardStrip(context: Context) : LinearLayout(context) {
         addView(cancel, LayoutParams(context.dp(48), LayoutParams.MATCH_PARENT))
         addView(meter, LayoutParams(context.dp(32), LayoutParams.MATCH_PARENT))
         addView(status, LayoutParams(0, LayoutParams.MATCH_PARENT, 1f).apply { status.gravity = Gravity.CENTER_VERTICAL })
+        addView(style, LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT))
         addView(raw, LayoutParams(context.dp(88), LayoutParams.MATCH_PARENT))
         addView(mic, LayoutParams(context.dp(48), LayoutParams.MATCH_PARENT))
         show("Tap mic", "", false, false, false, false)
@@ -45,14 +58,25 @@ internal class KeyboardStrip(context: Context) : LinearLayout(context) {
         (suggestions?.layoutParams as? RelativeLayout.LayoutParams)?.apply { marginEnd = context.dp(48) }
         parent.addView(this, RelativeLayout.LayoutParams(context.dp(48), LayoutParams.MATCH_PARENT).apply { addRule(RelativeLayout.ALIGN_PARENT_END) })
     }
-    fun show(message: String, @Suppress("UNUSED_PARAMETER") text: String, active: Boolean, finishing: Boolean, undo: Boolean, retention: Boolean) {
+    fun show(message: String, @Suppress("UNUSED_PARAMETER") text: String, active: Boolean, finishing: Boolean, undo: Boolean, retention: Boolean,
+             polishing: Boolean = false, style: String = "", notice: Boolean = false) {
         val error = DictationAction.forStatus(message) != null
-        val full = active || undo || error || retention
+        val full = active || undo || error || retention || notice
         if (expanded != full) {
             expanded = full
             (layoutParams as? RelativeLayout.LayoutParams)?.let { it.width = if (full) LayoutParams.MATCH_PARENT else context.dp(48); layoutParams = it }
             suggestions?.visibility = if (full) INVISIBLE else VISIBLE
-            alpha = .6f; animate().alpha(1f).setDuration(160).start()
+            if (motionAllowed()) { alpha = .6f; animate().alpha(1f).setDuration(160).start() }
+        }
+        val nextStage = when { polishing -> "polishing"; active && finishing -> "finishing"; active -> "listening"; undo -> "cleaned"; full -> "notice"; else -> "idle" }
+        if (nextStage != stage) {
+            status.animate().cancel()
+            if (motionAllowed() && full) {
+                status.alpha = .65f; status.translationY = context.dp(4).toFloat()
+                status.animate().alpha(1f).translationY(0f).setDuration(180)
+                    .setInterpolator(android.view.animation.PathInterpolator(.2f, 0f, 0f, 1f)).start()
+            } else { status.alpha = 1f; status.translationY = 0f }
+            stage = nextStage
         }
         status.text = if (retention) "Debug retention on · $message" else DictationAction.forStatus(message)?.label ?: message
         status.visibility = if (full) VISIBLE else GONE
@@ -63,11 +87,51 @@ internal class KeyboardStrip(context: Context) : LinearLayout(context) {
         cancel.isEnabled = active || undo || error
         meter.visibility = if (active && !finishing) VISIBLE else GONE
         raw.visibility = if (undo) VISIBLE else GONE
-        mic.text = if (active) "✓" else ""
-        if (active) mic.icon = null else mic.setIconResource(R.drawable.ic_mic)
+        this.style.text = style
+        this.style.contentDescription = "Clean-up style: $style"
+        this.style.visibility = if (polishing) VISIBLE else GONE
+        val animateState = active && (!finishing || polishing)
+        if (pulse != null && pulsingPolish != polishing) { pulse?.cancel(); pulse = null; status.alpha = 1f; mic.alpha = 1f }
+        if (animateState && motionAllowed() && pulse == null) {
+            pulsingPolish = polishing
+            pulse = android.animation.ValueAnimator.ofFloat(.55f, 1f).apply {
+                duration = 1000; repeatCount = android.animation.ValueAnimator.INFINITE
+                repeatMode = android.animation.ValueAnimator.REVERSE
+                addUpdateListener {
+                    val value = it.animatedValue as Float
+                    if (pulsingPolish) {
+                        val ink = VoicePalette.of(context).ink
+                        val highlight = VoicePalette.of(context).accent
+                        val width = status.width.coerceAtLeast(1).toFloat()
+                        status.paint.shader = android.graphics.LinearGradient(-width, 0f, width, 0f,
+                            intArrayOf(ink, highlight, ink), floatArrayOf(0f, .5f, 1f), android.graphics.Shader.TileMode.CLAMP).apply {
+                            setLocalMatrix(android.graphics.Matrix().apply { setTranslate((value - .55f) / .45f * width * 2, 0f) })
+                        }
+                        status.invalidate()
+                    } else mic.alpha = .75f + value * .25f
+                }; start()
+            }
+        } else if (!animateState || !motionAllowed()) { pulse?.cancel(); pulse = null; status.alpha = 1f; mic.alpha = 1f }
+        if (!polishing || !motionAllowed()) { status.paint.shader = null; status.invalidate() }
+        mic.text = if (polishing) "✦" else ""
+        when {
+            polishing -> mic.icon = null
+            active -> mic.setIconResource(R.drawable.ic_stop)
+            else -> mic.setIconResource(R.drawable.ic_mic)
+        }
+        mic.backgroundTintList = android.content.res.ColorStateList.valueOf(
+            if (active) VoicePalette.of(context).accent else VoicePalette.of(context).background)
+        mic.iconTint = android.content.res.ColorStateList.valueOf(if (active) android.graphics.Color.WHITE else VoicePalette.of(context).accent)
+        mic.setTextColor(if (active) android.graphics.Color.WHITE else VoicePalette.of(context).accent)
         mic.isEnabled = !finishing
-        mic.contentDescription = if (active) "Stop dictation" else "Microphone: tap to dictate, long press for options"
+        mic.contentDescription = if (polishing) "Polishing dictation" else if (active) "Stop dictation" else "Microphone: tap to dictate, long press for options"
         if (!active || finishing) level(0.0)
+    }
+    private fun motionAllowed() = android.animation.ValueAnimator.areAnimatorsEnabled() &&
+        android.provider.Settings.Global.getFloat(context.contentResolver, android.provider.Settings.Global.ANIMATOR_DURATION_SCALE, 1f) > 0f
+    override fun onDetachedFromWindow() {
+        pulse?.cancel(); pulse = null; status.alpha = 1f; mic.alpha = 1f; status.paint.shader = null
+        super.onDetachedFromWindow()
     }
     fun level(value: Double) { meter.level = value.coerceIn(0.0, 1.0); meter.invalidate() }
 }

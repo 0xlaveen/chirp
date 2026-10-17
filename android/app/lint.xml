@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<lint>
+    <!-- HeliBoard contributes v26 icons. Matching its qualifier is necessary for
+         Chirp's overlay to win on API 31/32; an unqualified overlay would lose. -->
+    <issue id="ObsoleteSdkInt">
+        <ignore regexp="mipmap-anydpi-v26$" />
+    </issue>
+    <!-- Operator chose opaque full-bleed art; launcher masks determine its shape.
+         Limit this style-only exception to these two legacy launcher resource names. -->
+    <issue id="IconLauncherShape">
+        <ignore regexp="res/mipmap-[^/]+/ic_launcher(_round)?\.png$" />
+    </issue>
+</lint>

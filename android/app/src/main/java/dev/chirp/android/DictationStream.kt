@@ -13,6 +13,7 @@ internal class DictationStream(
     private val final: (ServerEvent.Final) -> Unit,
     private val ended: () -> Unit,
     private val handler: Handler = Handler(Looper.getMainLooper()),
+    private val correcting: (ServerEvent.Correcting) -> Unit = {},
 ) {
     private var transport: ImeTransport? = null
     private var capture: Capture? = null
@@ -22,11 +23,16 @@ internal class DictationStream(
     private var released = false
     private var stopSent = false
     private var sequence = -1L
+    private var raw: String? = null
+    private var polishingAt = 0L
+    private var pendingFinal: Runnable? = null
+    var polishing = false
+        private set
     var stopping = false
         private set
     private val timeout = Runnable { fail(if (stopSent) "Mac took too long to finish — try again" else "Mac unreachable — is Tailscale on?") }
 
-    fun start(correction: Boolean) {
+    fun start(correction: Boolean, profile: String = "default", instructions: String = "", prompt: String? = null) {
         check(!live && transport == null)
         live = true
         changed("Connecting to Mac…", null)
@@ -45,7 +51,7 @@ internal class DictationStream(
         })
         deadline(18000)
         capture?.start()
-        if (transport?.start(correction) != true) fail("Mac unreachable — is Tailscale on?")
+        if (transport?.start(correction, profile, instructions, prompt) != true) fail("Mac unreachable — is Tailscale on?")
     }
     fun stop() {
         if (!live || stopping) return
@@ -68,13 +74,25 @@ internal class DictationStream(
                 if (!stopping) changed("Listening…", null)
                 if (released) sendStop() else deadline(125000)
             }
-            is ServerEvent.Partial -> if (ready && event.seq > sequence) {
+            is ServerEvent.Partial -> if (ready && !polishing && event.seq > sequence) {
                 sequence = event.seq; changed(if (stopping) "Finishing…" else "Listening…", event)
+            }
+            is ServerEvent.Correcting -> if (stopSent && !polishing && event.seq > sequence && event.raw.isNotEmpty()) {
+                sequence = event.seq; raw = event.raw; polishing = true; polishingAt = android.os.SystemClock.uptimeMillis()
+                correcting(event); changed("Polishing…", null); deadline(12000)
             }
             is ServerEvent.Final -> {
                 if (!stopSent) { fail("Unexpected server response"); return }
-                close(false)
-                try { final(event) } finally { ended() }
+                if (pendingFinal != null) return
+                handler.removeCallbacks(timeout)
+                val finish = Runnable {
+                    if (live) {
+                        close(false)
+                        try { final(event) } finally { ended() }
+                    }
+                }
+                val remaining = if (polishing) (450 - (android.os.SystemClock.uptimeMillis() - polishingAt)).coerceAtLeast(0) else 0
+                if (remaining > 0) { pendingFinal = finish; handler.postDelayed(finish, remaining) } else finish.run()
             }
             is ServerEvent.Failure -> fail(when (event.code) {
                 "auth" -> "Pairing refused — pair again in Chirp setup"
@@ -86,10 +104,19 @@ internal class DictationStream(
         }
     }
     private fun deadline(ms: Long) { handler.removeCallbacks(timeout); handler.postDelayed(timeout, ms) }
-    fun fail(message: String) { if (live) { close(true); changed(message, null); ended() } }
+    fun fail(message: String) {
+        if (!live || pendingFinal != null) return
+        val original = raw
+        close(true)
+        try {
+            if (original != null) final(ServerEvent.Final(original, original, false, "unavailable"))
+            else changed(message, null)
+        } finally { ended() }
+    }
     fun cancel() { if (live) { close(true); ended() } }
     private fun close(cancel: Boolean) {
-        live = false
+        live = false; raw = null
+        pendingFinal?.let(handler::removeCallbacks); pendingFinal = null
         handler.removeCallbacks(timeout)
         capture?.stop(); capture = null
         buffer?.cancel(); buffer = null

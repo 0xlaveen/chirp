@@ -52,7 +52,7 @@ AGP 9.4.1/Kotlin 2.4.21 lint crashes internally on upstream
 `AccessibilityLongPressTimer.kt` (`findFirCompiledSymbol only works on compiled declarations`).
 Only this vendored library's `lint*Analyze*` tasks are disabled. Library lint reports
 remain available with `abortOnError=false`; Chirp app lint still runs with
-`warningsAsErrors=true`. No app lint checks were relaxed. Upstream's standalone test
+`warningsAsErrors=true`. Host warnings remain errors; the icon-only overlay/full-bleed style exceptions are documented below. Upstream's standalone test
 suite is retained unchanged; Chirp's Robolectric tests exercise the integrated keyboard
 and its voice/editor lifecycle using the host toolchain.
 
@@ -129,3 +129,12 @@ state the limitation explicitly. The release smoke also rejects a proprietary gl
   identity. Upstream 4.2 otherwise leaves `isSplitLayoutEnabled` false even when the
   preference is enabled. A native-render regression and release landscape key geometry
   check cover the fix.
+
+## Chirp icon overlays (0.5.0)
+
+The host application supplies `ic_launcher` / `ic_launcher_round` in every legacy
+density plus adaptive v26 and monochrome v33 XML. These resources override the same
+HeliBoard IDs, including its About/settings icon, without changing vendored artwork.
+The host manifest's application and IME service use `@mipmap/ic_launcher`. Selected
+sources, adaptive layer derivation, glyph handling and regeneration are documented in
+[`../artwork/chirp-icons/README.md`](../artwork/chirp-icons/README.md).

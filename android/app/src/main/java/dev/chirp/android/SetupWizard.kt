@@ -157,6 +157,7 @@ internal fun SetupWizard(
                             state.health?.let { it.correctionAvailable && (!it.correctionLeavesMachine || it.correctionHost != null) } == true) {
                             state.correction = it; preferences()
                         }
+                        CleanupStyleSettings(state.health)
                         Preference("Debug overlay (timings only)", state.debug) { state.debug = it; preferences() }
                         TextButton(keyboardPreferences) { Text("Keyboard layouts & settings") }
                         BuildSetupOptions()

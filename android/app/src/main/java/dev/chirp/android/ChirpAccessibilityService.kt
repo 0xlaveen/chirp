@@ -197,7 +197,7 @@ open class ChirpAccessibilityService : AccessibilityService() {
             notifications.createNotificationChannel(NotificationChannel(CHANNEL, "Dictation microphone", NotificationManager.IMPORTANCE_LOW))
             val cancel = PendingIntent.getService(this, 0, Intent(this, ChirpAccessibilityService::class.java).setAction(CANCEL),
                 PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
-            val notification = Notification.Builder(this, CHANNEL).setSmallIcon(R.drawable.ic_chirp)
+            val notification = Notification.Builder(this, CHANNEL).setSmallIcon(R.drawable.ic_chirp_notification)
                 .setContentTitle("Chirp microphone active").setContentText("Tap Cancel to discard dictation")
                 .setOngoing(true).addAction(Notification.Action.Builder(null, "Cancel", cancel).build()).build()
             startForeground(12, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE)

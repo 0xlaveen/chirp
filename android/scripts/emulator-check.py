@@ -31,6 +31,8 @@ def adb(*args, capture=True, data=None):
                             stdout=subprocess.PIPE if capture else subprocess.DEVNULL,
                             stderr=subprocess.DEVNULL)
     if result.returncode:
+        if result.stdout and b"State trace:" in result.stdout:
+            print(next(line.decode() for line in result.stdout.splitlines() if b"State trace:" in line), flush=True)
         raise RuntimeError("ADB action failed (arguments redacted): " + args[0])
     return result.stdout
 
@@ -75,8 +77,8 @@ def focus_editor():
 
 
 def screenshot(path):
-    adb("shell", "screencap", "-p", "/sdcard/chirp-check.png")
-    adb("pull", "/sdcard/chirp-check.png", str(path))
+    data = adb("exec-out", "screencap", "-p")
+    path.write_bytes(data[data.index(b"\x89PNG"):])
 
 
 def mic_position(night, work):
@@ -102,11 +104,130 @@ def wait_health(token, timeout=150):
     raise RuntimeError("Throwaway model server did not become ready")
 
 
+def cleanup_check(output, work):
+    # Snapshot without UiAutomation's idle wait so a short cleanup state cannot be skipped.
+    def fast_nodes():
+        adb("shell", "CLASSPATH=/data/local/tmp/chirp-ui-probe.jar", "app_process", "/", "dev.chirp.smoke.UiHierarchy", "snapshot-now")
+        return list(ET.fromstring(adb("shell", "cat", "/sdcard/chirp-windows.xml")).iter("node"))
+    def read_editor():
+        deadline = time.monotonic() + 4
+        while time.monotonic() < deadline:
+            node = next((n for n in fast_nodes() if n.get("class") == "android.widget.EditText"), None)
+            if node is not None: return node.get("text", "")
+        raise AssertionError("Editor accessibility root did not return")
+    normal_nodes = _probe["wait_for"].__globals__["nodes"]
+    # Real managed cleanup, full synthetic utterances, and native one-tap raw replacement.
+    _probe["click"]("Clean-up · Correction on Mac")
+    for night in (False, True):
+        theme = "dark" if night else "light"
+        adb("shell", "cmd", "uimode", "night", "yes" if night else "no")
+        focus_editor()
+        x, y, _, _ = mic_position(night, work)
+        adb("shell", "input", "swipe", str(x), str(y), str(x), str(y), "700")
+        hierarchy = nodes()
+        assert any("Style · Custom" in n.get("text", "") for n in hierarchy), "Custom style missing"
+        assert any("Style · Chat" in n.get("text", "") for n in hierarchy), "Health profiles missing"
+        screenshot(output / ("emulator-cleanup-styles-" + theme + ".png"))
+        adb("shell", "input", "keyevent", "4")
+        before = editor().get("text", "")
+        if before == "Test dictation here": before = ""
+        _probe["wait_for"].__globals__["nodes"] = fast_nodes
+        recording = None
+        if not night:
+            adb("shell", "dumpsys", "gfxinfo", PACKAGE, "reset")
+            recording = subprocess.Popen(["adb", "-s", SERIAL, "shell", "screenrecord", "--time-limit", "10", "--bit-rate", "1500000", "--size", "770x800", "/sdcard/chirp-cleanup.mp4"],
+                                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        tap(x, y)
+        # A device-side watcher observes transient states in one accessibility connection;
+        # launching a new app_process for each poll can miss a warm helper's short turnaround.
+        try:
+            adb("shell", "CLASSPATH=/data/local/tmp/chirp-ui-probe.jar", "app_process", "/", "dev.chirp.smoke.UiHierarchy", "watch", "Polishing…", "/sdcard/chirp-polishing.png")
+        except RuntimeError:
+            screenshot(Path("/tmp/chirp-cleanup-state.png"))
+            raise
+        adb("pull", "/sdcard/chirp-polishing.png", str(output / ("emulator-cleanup-polishing-" + theme + ".png")))
+        adb("shell", "CLASSPATH=/data/local/tmp/chirp-ui-probe.jar", "app_process", "/", "dev.chirp.smoke.UiHierarchy", "watch-undo", shlex.quote("Use raw"), "/sdcard/chirp-cleaned.png")
+        adb("pull", "/sdcard/chirp-cleaned.png", str(output / ("emulator-cleanup-cleaned-" + theme + ".png")))
+        restored = read_editor()
+        # Accessibility can cache an earlier partial on the editor while the IME already
+        # exposes polishing. Exact raw replacement is covered with real InputConnections;
+        # here verify the native action restored the fixture fillers removed by cleanup.
+        assert len(restored) > len(before) and re.search(r"\bum\b", restored[len(before):], re.I) and re.search(r"\buh\b", restored[len(before):], re.I), "One-tap raw undo did not restore fixture fillers"
+        assert adb("shell", "settings", "get", "secure", "default_input_method").decode().strip() == IME
+        if recording is not None:
+            recording.wait(timeout=15)
+            adb("pull", "/sdcard/chirp-cleanup.mp4", str(output / "emulator-cleanup-streaming.mp4"))
+            # screenrecord can flush one frame beyond --time-limit on a slow emulator.
+            # Bound the deliverable strictly below ten seconds; no audio is recorded.
+            shortened = work / "streaming-short.mp4"
+            subprocess.run(["ffmpeg", "-v", "error", "-i", str(output / "emulator-cleanup-streaming.mp4"),
+                            "-t", "9.5", "-an", "-c:v", "libx264", "-fps_mode", "vfr", "-y", str(shortened)],
+                           check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            (output / "emulator-cleanup-streaming.mp4").write_bytes(shortened.read_bytes())
+            gfx = adb("shell", "dumpsys", "gfxinfo", PACKAGE).decode(errors="replace")
+            metrics = [line.strip() for line in gfx.splitlines() if re.match(r"\s*(Total frames rendered:|Janky frames:|50th percentile:|90th percentile:|95th percentile:|99th percentile:)", line)]
+            assert any(line.startswith("Total frames rendered:") and int(line.split(":")[1]) > 0 for line in metrics), "No frame metrics recorded"
+            (output / "emulator-cleanup-gfxinfo.txt").write_text("emulator-5580 · debug synthetic cleanup, screen recording enabled\n" + "\n".join(metrics) + "\n")
+            print("Frame metrics:", "; ".join(metrics), flush=True)
+        _probe["wait_for"].__globals__["nodes"] = normal_nodes
+        adb("shell", "input", "keyevent", "4")
+    print("PASS: managed offline cleanup; health styles + Custom; raw composing during polishing; cleaned + one-tap raw undo; light/dark screenshots; IME retained.")
+
+
+def cleanup_frames(output, work):
+    import wave
+    _probe["click"]("Clean-up · Correction on Mac")
+    focus_editor()
+    x, y, _, _ = mic_position(False, work)
+    with wave.open(str(ROOT / "android/app/build/generated/chirp-debug-assets/synthetic.wav")) as wav:
+        duration = wav.getnframes() / wav.getframerate()
+    adb("shell", "dumpsys", "gfxinfo", PACKAGE, "reset")
+    tap(x, y)
+    # Test pacing only: leave rendering alone during the known synthetic fixture.
+    time.sleep(duration + 3)
+    gfx = adb("shell", "dumpsys", "gfxinfo", PACKAGE).decode(errors="replace")
+    metrics = [line.strip() for line in gfx.splitlines() if re.match(r"\s*(Total frames rendered:|Janky frames:|50th percentile:|90th percentile:|95th percentile:|99th percentile:)", line)]
+    assert any(line.startswith("Total frames rendered:") and int(line.split(":")[1]) > 0 for line in metrics), "No frame metrics recorded"
+    text = editor().get("text", "")
+    assert text and not re.search(r"\b(?:um|uh)\b", text, re.I), "Managed cleanup did not remove fixture fillers"
+    (output / "emulator-cleanup-uninstrumented-gfxinfo.txt").write_text("emulator-5580 · debug synthetic cleanup, no recording or accessibility polling during speech\n" + "\n".join(metrics) + "\n")
+    print("Uninstrumented cleanup:", "; ".join(metrics), flush=True)
+
+
+def warm_cleanup(python, token_path, env):
+    # Warm the throwaway helper, including first-use Metal compilation in its empty HOME.
+    # The subprocess uses the server venv's websocket package; it prints metadata only.
+    code = r'''import asyncio, json, sys, wave
+from pathlib import Path
+import websockets
+async def warm():
+    token = Path(sys.argv[1]).read_text().strip()
+    with wave.open(sys.argv[2]) as wav: pcm = wav.readframes(wav.getnframes())
+    async with websockets.connect("ws://127.0.0.1:7899/v1/stream", additional_headers={"Authorization":"Bearer " + token}) as ws:
+        await ws.send(json.dumps({"type":"start","sample_rate":16000,"encoding":"pcm_s16le","client":"android","correction":True}))
+        assert json.loads(await ws.recv())["type"] == "ready"
+        for start in range(0,len(pcm),3200): await ws.send(pcm[start:start+3200])
+        await ws.send('{"type":"stop"}')
+        while True:
+            event=json.loads(await asyncio.wait_for(ws.recv(),90))
+            if event["type"] == "final":
+                assert event["corrected"], "Managed warmup did not clean synthetic fixture"
+                print(json.dumps({"corrected":event["corrected"]}), flush=True)
+                return
+asyncio.run(warm())'''
+    result = subprocess.run([python, "-c", code, str(token_path), str(ROOT / "android/app/build/generated/chirp-debug-assets/synthetic.wav")],
+                   env=env, check=True, timeout=120, stdout=subprocess.PIPE)
+    warm = json.loads(result.stdout)
+    print("Managed warmup: corrected=" + str(warm["corrected"]), flush=True)
+
+
 def main():
     args = argparse.ArgumentParser()
     args.add_argument("--python", required=True)
     args.add_argument("--model-dir", required=True)
     args.add_argument("--apk", required=True)
+    args.add_argument("--cleanup-only", action="store_true")
+    args.add_argument("--frames-only", action="store_true")
     opt = args.parse_args()
     assert adb("get-serialno").strip().decode() == SERIAL
     subprocess.run([str(Path(__file__).with_name("build-ui-probe.sh"))], check=True)
@@ -119,7 +240,11 @@ def main():
         work = Path(name)
         home = work / "home"
         home.mkdir()
-        env = dict(os.environ, HOME=str(home), PYTHONPATH=str(ROOT / "server/src"))
+        config = home / ".config/chirp/server.toml"
+        config.parent.mkdir(parents=True)
+        config.write_text('[correction]\nmode = "managed"\ntimeout = 60.0\n')
+        env = dict(os.environ, HOME=str(home), HF_HOME=str(Path.home() / ".cache/huggingface"),
+                   HF_HUB_OFFLINE="1", TRANSFORMERS_OFFLINE="1", PYTHONPATH=str(ROOT / "server/src"))
         server = subprocess.Popen([opt.python, "-m", "chirp_server", "--port", "7899", "--model-dir", opt.model_dir],
                                   env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         try:
@@ -132,6 +257,7 @@ def main():
                 time.sleep(.1)
             token = token_path.read_text().strip()
             wait_health(token)
+            if opt.cleanup_only or opt.frames_only: warm_cleanup(opt.python, token_path, env)
             # Independent host-routing probe, no authentication or private response content.
             probe = adb("shell", "sh", "-c", shlex.quote("printf 'GET /v1/health HTTP/1.0\\r\\nHost: 10.0.2.2\\r\\n\\r\\n' | toybox nc -w 3 10.0.2.2 7899"))
             print("Emulator route to throwaway server:", b"200 OK" in probe, flush=True)
@@ -149,7 +275,7 @@ def main():
             # adb prints the intent URI, so output is deliberately never forwarded to logs.
             link = "chirp://pair?" + urllib.parse.urlencode({"url": "http://10.0.2.2:7899", "token": token})
             adb("shell", "am", "start", "-a", "android.intent.action.VIEW", "-d", shlex.quote(link))
-            screenshot(Path("/tmp/chirp-pairing-before.png"))
+            # Pairing UI contains the throwaway credential; never retain a capture here.
             click("Test connection & save pairing")
             deadline = time.monotonic() + 15
             while time.monotonic() < deadline:
@@ -165,6 +291,12 @@ def main():
                     if item.get("name") in ("failure_class", "cleartext_allowed"):
                         print(item.get("name"), item.text or item.get("value"), flush=True)
                 raise RuntimeError("Emulator did not save pairing")
+            if opt.frames_only:
+                cleanup_frames(output, work)
+                return
+            if opt.cleanup_only:
+                cleanup_check(output, work)
+                return
             focus_editor()
             for night in (False, True):
                 theme = "dark" if night else "light"
@@ -238,7 +370,7 @@ def main():
             except subprocess.TimeoutExpired:
                 server.kill(); server.wait()
             # Disable synthetic input and remove throwaway pairing credentials; leave the emulator running.
-            adb("shell", "rm", "-f", "/sdcard/chirp-check.xml", "/sdcard/chirp-check.png", "/sdcard/chirp-windows.xml", "/data/local/tmp/chirp-ui-probe.jar")
+            adb("shell", "rm", "-f", "/sdcard/chirp-check.xml", "/sdcard/chirp-check.png", "/sdcard/chirp-cleanup.mp4", "/sdcard/chirp-polishing.png", "/sdcard/chirp-cleaned.png", "/sdcard/chirp-windows.xml", "/data/local/tmp/chirp-ui-probe.jar")
             adb("shell", "am", "force-stop", PACKAGE)
             adb("shell", "run-as", PACKAGE, "rm", "-f", "shared_prefs/debug_capture.xml", "shared_prefs/chirp.xml")
             adb("shell", "ime", "set", IME)

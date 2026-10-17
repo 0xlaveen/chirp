@@ -10,8 +10,8 @@ android {
         applicationId = "dev.chirp.android"
         minSdk = 31
         targetSdk = 37
-        versionCode = 5
-        versionName = "0.4.0"
+        versionCode = 6
+        versionName = "0.5.0"
     }
     signingConfigs {
         create("local") {
@@ -42,7 +42,7 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
-    lint { warningsAsErrors = true }
+    lint { warningsAsErrors = true; lintConfig = file("lint.xml") }
     testOptions { unitTests.isIncludeAndroidResources = true }
 }
 dependencies {

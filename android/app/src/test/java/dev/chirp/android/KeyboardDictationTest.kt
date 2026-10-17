@@ -54,10 +54,10 @@ class KeyboardDictationTest {
     @After fun teardown() { voice.destroy(); controller.destroy() }
     @Test fun `full keyboard stays after two finals even with legacy auto return enabled`() {
         SettingsStore(host).returnToPrevious = true
-        start(); stream.partial(); assertEquals("synthetic", host.editor.composing)
+        start(); stream.partial(); advance(16); assertEquals("synthetic", host.editor.composing)
         finish(); assertFalse(voice.active); assertTrue(capture.released); assertTrue(stream.closed)
         assertEquals("Synthetic.", host.editor.committed)
-        start(); stream.partial(); assertEquals(" synthetic", host.editor.composing)
+        start(); stream.partial(); advance(16); assertEquals(" synthetic", host.editor.composing)
         finish(); assertEquals("Synthetic. Synthetic.", host.editor.committed)
         assertEquals(2, host.editor.commits); assertEquals(2, resyncs)
     }
@@ -69,7 +69,7 @@ class KeyboardDictationTest {
         voice.cancel(); stream.final(); assertEquals("", host.editor.committed)
     }
     @Test fun `typing discards live composition and invalidates raw undo`() {
-        start(); stream.partial(); voice.beforeEdit()
+        start(); stream.partial(); advance(16); voice.beforeEdit()
         assertEquals("", host.editor.composing); assertTrue(capture.released)
         stream.final(); assertEquals("", host.editor.committed)
         start(); finish(true); assertEquals(android.view.View.VISIBLE, strip.raw.visibility)
@@ -80,14 +80,14 @@ class KeyboardDictationTest {
         assertEquals(android.view.View.VISIBLE, strip.raw.visibility)
         strip.raw.performClick(); assertEquals("synthetic", host.editor.committed)
         assertEquals(android.view.View.GONE, strip.raw.visibility)
-        start(); stream.partial(); finish(true)
+        start(); stream.partial(); advance(16); finish(true)
         assertEquals("synthetic Synthetic.", host.editor.committed)
         strip.raw.performClick(); assertEquals("synthetic synthetic", host.editor.committed)
         start(); finish(true); advance(5000)
         assertEquals(android.view.View.GONE, strip.raw.visibility)
     }
     @Test fun `hide destroy and late capture callbacks cannot restart recording or commit`() {
-        start(); stream.partial(); val old = stream
+        start(); stream.partial(); advance(16); val old = stream
         voice.hidden(); capture.finish(); old.final(); advance(0)
         assertFalse(voice.active); assertEquals("", host.editor.committed)
         voice.destroy(); voice.shown(); tap(); assertFalse(voice.active)
@@ -113,20 +113,54 @@ class KeyboardDictationTest {
         assertEquals("package:dev.chirp.android", intent.dataString)
     }
     @Test fun `connection failure offers Tailscale recovery without retaining partial text`() {
-        start(); stream.partial(); stream.failure()
+        start(); stream.partial(); advance(16); stream.failure()
         assertFalse(voice.active)
         assertEquals("", host.editor.composing)
         assertEquals("Check Tailscale", strip.status.text.toString())
         assertFalse(strip.status.text.contains("synthetic"))
     }
     @Test fun `dictated spelling bypasses keyboard autocorrection and learning`() {
-        start(); stream.event(ServerEvent.Partial(1, "teh im", ""))
+        start(); stream.event(ServerEvent.Partial(1, "teh im", "")); advance(16)
         tap(); advance(0)
         stream.event(ServerEvent.Final("teh im", "teh im", false))
         assertEquals("teh im", host.editor.committed)
         assertEquals("", host.editor.composing)
         assertFalse(voice.ownsComposition)
         assertEquals(1, resyncs)
+    }
+
+    @Test fun `polishing keeps raw composing shows style and cleans with bounded undo`() {
+        start(); stream.partial(); advance(16); tap(); advance(0)
+        stream.event(ServerEvent.Correcting(2, "synthetic raw", "default"))
+        assertEquals("synthetic raw", host.editor.composing); assertEquals("", host.editor.committed)
+        assertEquals("Polishing…", strip.status.text.toString())
+        assertEquals(android.view.View.VISIBLE, strip.style.visibility)
+        stream.event(ServerEvent.Final("Synthetic.", "synthetic raw", true)); advance(450)
+        assertEquals("Synthetic.", host.editor.committed); assertEquals("cleaned", strip.status.text.toString())
+        assertEquals(android.view.View.VISIBLE, strip.raw.visibility)
+        strip.raw.performClick(); assertEquals("synthetic raw", host.editor.committed)
+    }
+    @Test fun `polishing timeout commits original and reduced motion stays static`() {
+        android.provider.Settings.Global.putFloat(host.contentResolver, android.provider.Settings.Global.ANIMATOR_DURATION_SCALE, 0f)
+        start(); tap(); advance(0); stream.event(ServerEvent.Correcting(2, "synthetic raw", "default"))
+        advance(500); assertEquals(1f, strip.status.alpha)
+        advance(12000)
+        assertEquals("synthetic raw", host.editor.committed); assertFalse(voice.active)
+        assertEquals("kept original", strip.status.text.toString())
+        advance(5000); assertEquals(android.view.View.GONE, strip.status.visibility)
+    }
+
+    @Test fun `show prewarms without recording and closes unused socket after thirty seconds`() {
+        assertTrue(stream.connected); assertEquals(0, stream.starts)
+        assertFalse(order.contains("capture.start"))
+        val idle = stream; advance(30000); assertTrue(idle.closed)
+        start(); assertEquals(1, stream.starts); assertTrue(capture.started)
+        voice.hidden(); assertTrue(stream.closed)
+    }
+    @Test fun `error notice expires to restore suggestions`() {
+        shadowOf(RuntimeEnvironment.getApplication()).denyPermissions(Manifest.permission.RECORD_AUDIO)
+        strip.mic.performClick(); assertEquals(android.view.View.VISIBLE, strip.status.visibility)
+        advance(5000); assertEquals(android.view.View.GONE, strip.status.visibility)
     }
 
 }
