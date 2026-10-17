@@ -2,33 +2,68 @@ package dev.chirp.android
 
 import android.view.inputmethod.InputConnection
 import java.lang.reflect.Proxy
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
-import org.junit.Assert.assertTrue
-import org.junit.Assume.assumeTrue
+import org.junit.Assert.*
 import org.junit.Test
 
+/** R2-07: raw replacement must never delete a corrected final before a failed commit. */
 class ReviewRound2Test {
-    @Test fun `raw replacement failure preserves the corrected text`() {
-        // Skip in normal runs; enable explicitly to demonstrate R2-07.
-        assumeTrue("R2-07: destructive delete before a failed commit", System.getenv("CHIRP_REVIEW_REPRO") == "1")
+    private class Editor {
         var text = ""
         var acceptCommit = true
+        var acceptRegion = true
+        var disconnectAfterRegion = false
+        var region: IntRange? = null
+        var batches = 0
+        var commits = 0
         val connection = Proxy.newProxyInstance(InputConnection::class.java.classLoader,
             arrayOf(InputConnection::class.java)) { _, method, args ->
             when (method.name) {
                 "getSelectedText" -> ""
-                "commitText" -> { if (acceptCommit) text += args!![0].toString(); acceptCommit }
+                "commitText" -> {
+                    commits++
+                    if (acceptCommit) {
+                        text = region?.let { text.replaceRange(it, args!![0].toString()) } ?: (text + args!![0])
+                        region = null
+                    }
+                    acceptCommit
+                }
                 "getTextBeforeCursor" -> text.takeLast(args!![0] as Int)
-                "deleteSurroundingText" -> { text = text.dropLast(args!![0] as Int); true }
-                "finishComposingText", "beginBatchEdit", "endBatchEdit" -> true
+                "setComposingRegion" -> {
+                    if (acceptRegion) region = (args!![0] as Int) until (args[1] as Int)
+                    if (disconnectAfterRegion) acceptCommit = false
+                    acceptRegion
+                }
+                "finishComposingText" -> { region = null; true }
+                "beginBatchEdit" -> { batches++; true }
+                "endBatchEdit" -> { batches--; true }
                 else -> throw UnsupportedOperationException(method.name)
             }
         } as InputConnection
         val session = ComposingSession(connection)
-        assertTrue(session.final(ServerEvent.Final("Synthetic.", "synthetic", true)))
-        acceptCommit = false
-        assertFalse(session.useRaw())
-        assertEquals("Synthetic.", text)
+        init { assertTrue(session.final(ServerEvent.Final("Synthetic.", "synthetic", true))) }
+    }
+    @Test fun `raw replacement failure preserves the corrected text`() {
+        val editor = Editor()
+        editor.acceptCommit = false
+        assertFalse(editor.session.useRaw(editor.text.length))
+        assertEquals("Synthetic.", editor.text)
+        assertNull(editor.region); assertEquals(0, editor.batches)
+        editor.acceptCommit = true
+        assertTrue(editor.session.useRaw(editor.text.length))
+        assertEquals("synthetic", editor.text)
+    }
+    @Test fun `rejected composing region leaves final and does not attempt replacement`() {
+        val editor = Editor()
+        editor.acceptRegion = false
+        assertFalse(editor.session.useRaw(editor.text.length))
+        assertEquals("Synthetic.", editor.text); assertEquals(1, editor.commits)
+        assertNull(editor.region); assertEquals(0, editor.batches)
+    }
+    @Test fun `connection lost between region and commit preserves the corrected text`() {
+        val editor = Editor()
+        editor.disconnectAfterRegion = true
+        assertFalse(editor.session.useRaw(editor.text.length))
+        assertEquals("Synthetic.", editor.text)
+        assertNull(editor.region); assertEquals(0, editor.batches)
     }
 }

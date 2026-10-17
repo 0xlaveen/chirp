@@ -34,17 +34,21 @@ No sudo, Android Studio or emulator images are needed. `CHIRP_TOOLS` and
 `ANDROID_HOME` can override the install directories. Source the generated env
 file before invoking Gradle/adb. `local.properties` is generated and ignored.
 Pinned versions are in `gradle/libs.versions.toml`: AGP 9.4.1, Kotlin 2.4.21
-(using AGP built-in Kotlin), Gradle 9.8.1, OkHttp 5.5.0. The wrapper distribution
+(using AGP built-in Kotlin), Gradle 9.8.1, OkHttp 5.5.0, Robolectric 4.17 and
+Google Play services code scanner 16.1.0. The wrapper distribution
 is SHA-256 verified. Gradle filesystem watching is disabled because the worker
 filesystem did not reliably deliver change notifications during validation. API 37.2 and build tools 37.0.0 are stable SDK packages.
 Versions were checked against Google Maven, Maven Central and the Gradle/SDK
 release metadata on 2026-10-17. AGP compatibility: <https://developer.android.com/build/releases/agp-9-4-0-release-notes>.
 Built-in Kotlin: <https://developer.android.com/build/migrate-to-built-in-kotlin>.
+The scanner's transitive Fragment dependency is constrained to stable 1.9.1 so
+it remains compatible with Activity Result permission handling and passes lint.
 
 Outputs:
 
 - Debug: `app/build/outputs/apk/debug/app-debug.apk`
 - Release configuration, signed for local installation: `app/build/outputs/apk/release/app-release.apk`
+- Without the checkout's local keystore: `app/build/outputs/apk/release/app-release-unsigned.apk`
 
 `make-keystore.sh` generates an RSA 3072-bit development signing key at
 `keystore/local-debug.keystore` (mode restricted by umask 077), using `keytool
@@ -57,13 +61,14 @@ when switching (this removes pairing). Both use package `dev.chirp.android`.
 ## Validation on this Mac
 
 On 2026-10-17, `./gradlew lint testDebugUnitTest assembleDebug assembleRelease`
-passed: lint reported **No issues found** and all **24 JVM tests** passed
-(including the startup-latency revision).
-`apksigner verify --verbose app/build/outputs/apk/release/app-release.apk`
-verified the local release APK (v2 signature, one signer). The setup script was
-rerun successfully without reinstalling tools. `adb devices -l` listed no phone;
-its temporary adb daemon was stopped after the check. No persistent service or
-Tailscale configuration was installed or changed.
+passed on `chirp/android-r2`: lint reported **No issues found**, **81 JVM tests
+passed**, and the two opt-in live-server tests were skipped (83 total). The
+54 Robolectric cases cover the service and Setup at API 31 and 37, including
+framework-driven fold view recreation. All three R2-07 regressions run without
+an environment gate. Debug and unsigned release APKs built successfully; this
+checkout has no local release keystore. No phone, microphone, camera, real
+pairing credentials, TCC prompt, server process or Tailscale configuration was
+used for this validation.
 
 ## Operator: wireless debugging and installation
 
@@ -100,10 +105,17 @@ adb shell ime set dev.chirp.android/.ChirpImeService
 
 Connect Tailscale on both devices. Start the configured Mac server and its
 Tailscale Serve route as described in the integration docs, then run
-`chirp-server pair` locally on the Mac. Paste the resulting
-`chirp://pair?url=…&token=…` link in Chirp's masked pairing field and tap **Test
-connection & save pairing**. Opening the link on Android also fills this field.
-The primary path is paste; QR camera scanning is not included. Do not put a real
+`chirp-server pair` locally on the Mac. Tap **Scan pairing QR** in Setup and scan
+the displayed QR code, or paste the resulting `chirp://pair?url=…&token=…` link
+in Chirp's masked pairing field. Then tap **Test connection & save pairing**.
+Opening the link on Android also fills this field. Both scan and link opening
+validate through `Pairing.parse`; neither saves credentials before the connection
+test. The scanner UI and camera access are owned by Google Play services, so
+Chirp does **not** request the camera permission. Scanning requires Google Play
+services (present on the Fold 8), and its scanner module may need a download on
+first use. If unavailable or cancelled, paste remains available.
+See [Google code scanner](https://developers.google.com/ml-kit/vision/barcode-scanning/code-scanner).
+Do not put a real
 pairing link in shell history, issues, screenshots or logs. The usual server base
 is `https://mainframe.tail676ff2.ts.net/chirp`.
 
@@ -123,7 +135,10 @@ utterance. A corrected result leaves a **Use raw** button for five seconds;
 auto-return waits for that button or its expiry when the setting is ON. Moving
 the cursor or
 changing the field invalidates this replacement so it cannot overwrite later
-edits. Password fields refuse dictation.
+edits. Raw replacement marks the verified corrected range as composing and
+replaces it in one commit, so a rejected region or commit leaves the corrected
+text intact (R2-07). Failed replacement can be retried within the original
+five-second window. Password fields refuse dictation.
 
 Correction and haptics default off. An external correction service is labeled
 **sends text to HOST**, and its host must be available before it can be enabled.
@@ -163,7 +178,18 @@ pre-Ready buffer and network queue are bounded to five seconds of PCM each.
 adb shell ime list -s
 ```
 
-JVM tests cover v1 protocol/health, URI validation, tap/hold boundaries, composing
+Robolectric 4.17 service and Setup tests run at API 31 and 37 with fake capture,
+transport, scanner and `InputConnection`; no microphone, camera, device or
+live server is used. They cover tap/hold start and stop, recorder release before
+the stop frame, cancel and stale events, partial composition and final commit,
+hide/finish cleanup, fold/view recreation, field changes, password refusal,
+auto-return on/off and the five-second raw undo window. Setup tests cover QR
+parse/feed, malformed or missing payloads, cancellation/failure fallback, deep
+links, late callbacks and the absence of camera permission. Robolectric's
+[latest stable release](https://github.com/robolectric/robolectric/releases/tag/robolectric-4.17)
+was checked on 2026-10-17.
+
+Other JVM tests cover v1 protocol/health, URI validation, tap/hold boundaries, composing
 replacement, cancellation, out-of-order events, unavailable connections and
 bounded raw undo with a fake `InputConnection`, selected-text restoration on
 cancel, and HTTPS/WebSocket authentication, frame ordering, upgrade retry,

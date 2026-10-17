@@ -42,16 +42,19 @@ class ComposingSession(private val connection: InputConnection) {
         forgetUndo()
     }
     fun forgetUndo() { finalText = null; rawText = null }
-    fun useRaw(): Boolean {
+    fun useRaw(cursor: Int): Boolean {
         val text = finalText ?: return false
         val raw = rawText ?: return false
         // Refuse if cursor/text changed after commit. The service also invalidates on selection changes.
-        if (connection.getTextBeforeCursor(text.length, 0)?.toString() != text) {
+        if (cursor < text.length || connection.getTextBeforeCursor(text.length, 0)?.toString() != text) {
             forgetUndo(); return false
         }
         connection.beginBatchEdit()
         return try {
-            connection.deleteSurroundingText(text.length, 0) && connection.commitText(raw, 1)
-        } finally { connection.endBatchEdit(); forgetUndo() }
+            // Mark the verified final for a single replacement. Never delete it first:
+            // a rejected commit must leave the corrected text in the editor.
+            if (!connection.setComposingRegion(cursor - text.length, cursor)) return false
+            connection.commitText(raw, 1).also { if (it) forgetUndo() }
+        } finally { connection.finishComposingText(); connection.endBatchEdit() }
     }
 }
