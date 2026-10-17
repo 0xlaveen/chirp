@@ -76,6 +76,8 @@ class Utterance:
         self.cancelled = False
         self.correcting = None
         self.peak = self.rms = 0.0
+        # Opt-in `start.word_timings`: partials, correcting and the final carry `words`.
+        self.word_timings = False
 
     async def start(self, control):
         if "correction_prompt" in control:
@@ -97,8 +99,10 @@ class Utterance:
             or control.get("encoding") != "pcm_s16le"
             or control.get("client") not in {"mac", "android"}
             or not isinstance(control.get("correction", False), bool)
+            or not isinstance(control.get("word_timings", False), bool)
         ):
             raise AudioError()
+        self.word_timings = control.get("word_timings", False)
         helper = getattr(self.corrector, "managed", None)
         managed = helper if isinstance(helper, ManagedCleanup) else None
         if control.get("correction", False) and managed is not None:
@@ -163,14 +167,14 @@ class Utterance:
                         elapsed = (time.perf_counter() - self.started) * 1000
                         if self.first_partial is None:
                             self.first_partial = elapsed
-                        await self.ws.send_json(
-                            {
-                                "type": "partial",
-                                "seq": self.seq,
-                                "text": partial.text,
-                                "stable": stable,
-                            }
-                        )
+                        message = {
+                            "type": "partial",
+                            "seq": self.seq,
+                            "text": partial.text,
+                            "stable": stable,
+                        }
+                        self.add_words(message, partial.words)
+                        await self.ws.send_json(message)
                 if self.stopping and self.offset == len(self.pcm):
                     return
                 if len(self.pcm) - self.offset >= 6400 or (
@@ -183,6 +187,12 @@ class Utterance:
             # Never include library exception strings: they may contain user data.
             self.failure = True
             log.warning("code=engine session=%s", self.session)
+
+    def add_words(self, message, words):
+        """Attach `words` when the client asked for timings and the engine produced them.
+        Without the flag every message is byte-identical to the pre-timings protocol."""
+        if self.word_timings and words is not None:
+            message["words"] = [word.payload() for word in words]
 
     def cancel(self):
         """Mark cancelled from the receive loop; also cancels a pending correction request."""
@@ -219,6 +229,7 @@ class Utterance:
                 self.profile,
                 self.instructions,
                 self.correction_prompt,
+                words=() if self.word_timings else None,
             )
         if self.offset < len(self.pcm):
             pending = samples(bytes(self.pcm[self.offset :]))
@@ -227,7 +238,8 @@ class Utterance:
             if self.cancelled:
                 return self.discard()
             self.offset = len(self.pcm)
-        raw = await self.worker.call(self.stream.finish)
+        transcript = await self.worker.call(self.stream.finish)
+        raw, words = transcript.text, transcript.words if self.word_timings else None
         self.stream = None
         self.release()
         if self.cancelled:
@@ -235,9 +247,9 @@ class Utterance:
         enabled = self.correction and self.settings.correction.enabled and bool(raw)
         if enabled:
             self.seq += 1
-            await self.ws.send_json(
-                {"type": "correcting", "seq": self.seq, "raw": raw, "profile": self.profile}
-            )
+            message = {"type": "correcting", "seq": self.seq, "raw": raw, "profile": self.profile}
+            self.add_words(message, words)
+            await self.ws.send_json(message)
         if self.cancelled:
             return self.discard()
         # A cancel racing this task cancels the pending correction request with it.
@@ -252,6 +264,7 @@ class Utterance:
                 self.profile,
                 self.instructions,
                 self.correction_prompt,
+                words=words,
             )
         )
         try:
@@ -306,6 +319,7 @@ async def make_final(
     profile="default",
     instructions="",
     correction_prompt=None,
+    words=None,
 ):
     finalized = (time.perf_counter() - started) * 1000
     correction_started = time.perf_counter()
@@ -318,7 +332,7 @@ async def make_final(
         )
     else:
         result = CorrectionResult(raw)
-    return {
+    final = {
         "type": "final",
         "text": result.text,
         "raw": raw,
@@ -331,6 +345,10 @@ async def make_final(
             "correction": (time.perf_counter() - correction_started) * 1000 if enabled else 0.0,
         },
     }
+    if words is not None:
+        # Timings describe `raw`; cleaned text cannot map onto the audio word for word.
+        final["words"] = [word.payload() for word in words]
+    return final
 
 
 def create_app(settings=None, engine=None, token=None, corrector=None):

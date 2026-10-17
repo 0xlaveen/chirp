@@ -55,7 +55,7 @@ Every request carries `Authorization: Bearer <token>`. WebSocket clients that ca
   - client → binary frames: raw PCM16LE mono at 16 kHz, 20–100 ms per frame
   - client → `{"type":"stop"}` (finalize) or `{"type":"cancel"}` (discard, no final). The server keeps reading control/disconnect frames during finalization; cancel or disconnect discards the utterance (no correction request — an in-flight one is cancelled, no retained debug files). A cancelled utterance sends no final and no error, and the socket stays usable for the next start; a disconnect has nobody to tell.
   - server → `{"type":"ready","session":"<random id>","engine":"…","debug_retention":bool}`
-  - server → `{"type":"partial","seq":n,"text":"…","stable":"…"}`. `stable` is the prefix that will not change, which clients may commit early.
+  - server → `{"type":"partial","seq":n,"text":"…","stable":"…"}`. `stable` is the prefix that will not change, which clients may commit early. With `start.word_timings` the message also carries `"words":[{"text":"…","start":s,"end":s,"stable":bool},…]` (see below).
   - server → `{"type":"correcting","seq":n,"raw":"<full raw transcript>","profile":"<id>"}` immediately after full-utterance decode, before cleanup runs and before `final`. It shares the increasing partial sequence counter. Sent only when correction will run (both server and utterance enabled, nonempty raw). Cancel during correction cancels the helper and sends nothing further, including no final or error; the socket remains reusable.
   - server → `{"type":"final","text":"…","raw":"…","corrected":bool,"correction_error":null|"timeout|http|rejected","timings_ms":{"audio":…,"first_partial":…,"finalize":…,"correction":…}}`
   - server → `{"type":"error","code":"auth|busy|too_long|bad_audio|bad_request|engine","message":"safe text"}`
@@ -95,6 +95,20 @@ JSON-quoted untrusted preferences between immutable core rules: never answer, ex
 facts; output text only. No tools or network calls are available to the managed helper.
 Editable prompts cannot change the fixed wrapper or the selected profile's output guards.
 These heuristic guards cannot prove semantic equivalence for arbitrary text or punctuation.
+
+`start.word_timings` (optional boolean, default false; any other type is `bad_audio`) asks for
+per-word timings. When set, every `partial`, `correcting` and `final` adds `words`: one entry per
+whitespace-separated word of the raw text (`text` for partials, `raw` for correcting and finals), in
+order, so joining the entries' `text` with single spaces reproduces that text. `start`/`end` are seconds
+from the utterance's first audio sample (the first PCM byte after `start`), rounded to milliseconds,
+with `start <= end` and non-decreasing starts. A word's `stable` means later partials leave it alone:
+it is in the committed prefix (`--finalization segments`) or older than the rolling preview's reach;
+the full-utterance final may still revise any word, and in the final every word is stable. Timings
+describe the raw decode only: cleaned text cannot be mapped onto the audio word for word, so a
+corrected final's `words` still describe `raw`. The field is omitted when the engine has no token
+timings (the ONNX fallback, or a stream that fell back to windowed decoding), and an empty final has
+`"words":[]`. Without the flag every message is byte-identical to the protocol before it; `POST
+/v1/transcribe` never includes timings.
 
 Version additions preserve existing fields. A breaking change becomes `/v2`.
 

@@ -7,17 +7,30 @@ from typing import Protocol
 
 import numpy as np
 
+from .words import Word
+
 
 @dataclass(frozen=True)
 class Partial:
     text: str
     # Full-quality finals may revise any word. Never promise an unstable prefix.
     stable: str = ""
+    # Word timings aligned with `text`, or None when the engine has none (ONNX fallback).
+    # Only sent to clients that asked for `word_timings`.
+    words: tuple[Word, ...] | None = None
+
+
+@dataclass(frozen=True)
+class Transcript:
+    """A finished decode: the text and, when the engine times its tokens, its words."""
+
+    text: str
+    words: tuple[Word, ...] | None = None
 
 
 class StreamSession(Protocol):
     def feed(self, pcm: np.ndarray) -> Partial | None: ...
-    def finish(self) -> str: ...
+    def finish(self) -> Transcript: ...
     def cancel(self) -> None: ...
 
 

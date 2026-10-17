@@ -37,9 +37,9 @@ enum SelfTest {
                 switch event {
                 case .message(.ready(let id, let engine, let debug)):
                     print("  +\(ms())ms ready session=\(id) engine=\(engine ?? "?")\(debug ? "  ** DEBUG RETENTION ON **" : "")")
-                case .message(.partial(let seq, let text, let stable)):
+                case .message(.partial(let seq, let text, let stable, _)):
                     print("  +\(ms())ms partial #\(seq) stable=\(stable.count)ch: \(text)")
-                case .message(.correcting(let seq, _, let profile)):
+                case .message(.correcting(let seq, _, let profile, _)):
                     print("  +\(ms())ms correcting #\(seq) profile=\(profile)")
                 case .message(.final(let f)): return (f, nil)
                 case .message(.error(let code, let message)): return (nil, "\(code): \(message)")
