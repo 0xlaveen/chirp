@@ -13,6 +13,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         settingsWindow.onHotkeyChange = { [controller] in controller.registerHotkey() }
         controller.onChange = { [weak self] in self?.menu?.refreshIcon() }
 
+        chirpLog.info("launch microphone=\(Permissions.microphone.rawValue, privacy: .public) accessibility=\(Permissions.accessibilityGranted, privacy: .public) hotkey=\(Settings.hotkey.id, privacy: .public)")
         if !controller.registerHotkey() {
             NSLog("Chirp: could not register the hotkey \(Settings.hotkey.title); it may be in use by another app")
         }

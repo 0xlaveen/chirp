@@ -60,6 +60,7 @@ final class DictationController {
         let before = machine.state
         let effects = machine.handle(event)
         if machine.state != before {
+            chirpLog.info("state \(String(describing: before), privacy: .public) -> \(String(describing: self.machine.state), privacy: .public)")
             // Esc is only claimed while a dictation is active, so it is untouched the rest of the time.
             if [.connecting, .listening, .finalizing].contains(machine.state) {
                 HotKeyCenter.shared.register(id: Self.escapeID, combo: .escape) { [weak self] in self?.escape() }
@@ -112,6 +113,7 @@ final class DictationController {
         hud.show()
 
         Task {
+            chirpLog.info("microphone authorization=\(Permissions.microphone.rawValue, privacy: .public) accessibility=\(Permissions.accessibilityGranted, privacy: .public)")
             guard await Permissions.requestMicrophone() else {
                 if epoch == myEpoch, machine.state.isActive {
                     Permissions.openSettings(.microphone)

@@ -48,6 +48,7 @@ public final class HotKeyCenter {
         var ref: EventHotKeyRef?
         let status = RegisterEventHotKey(combo.keyCode, combo.modifiers, EventHotKeyID(signature: Self.signature, id: id),
                                          GetApplicationEventTarget(), 0, &ref)
+        chirpLog.info("hotkey register id=\(id, privacy: .public) combo=\(combo.id, privacy: .public) status=\(status, privacy: .public)")
         guard status == noErr else { return false }
         entries[id] = Entry(ref: ref, onDown: onDown, onUp: onUp)
         return true
@@ -83,6 +84,7 @@ public final class HotKeyCenter {
                                            nil, MemoryLayout<EventHotKeyID>.size, nil, &hotKeyID)
             guard status == noErr else { return status }
             let pressed = GetEventKind(event) == UInt32(kEventHotKeyPressed)
+            chirpLog.info("hotkey event id=\(hotKeyID.id, privacy: .public) pressed=\(pressed, privacy: .public)")
             MainActor.assumeIsolated { HotKeyCenter.shared.dispatch(id: hotKeyID.id, pressed: pressed) }
             return noErr
         }, types.count, &types, nil, nil)
