@@ -19,7 +19,7 @@ class SettingsStore(context: Context) {
         get() = prefs.getBoolean("correction", false)
         set(value) { prefs.edit { putBoolean("correction", value) } }
     var haptics: Boolean
-        get() = prefs.getBoolean("haptics", false)
+        get() = prefs.getBoolean("haptics", true)
         set(value) { prefs.edit { putBoolean("haptics", value) } }
     var returnToPrevious: Boolean
         get() = prefs.getBoolean("return_to_previous", true)

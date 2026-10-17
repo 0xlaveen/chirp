@@ -4,11 +4,6 @@ import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
-import android.view.View
-import android.view.ViewGroup
-import android.widget.Button
-import android.widget.EditText
-import android.widget.TextView
 import org.junit.After
 import org.junit.Assert.*
 import org.junit.Before
@@ -34,12 +29,8 @@ class SetupActivityTest {
     private lateinit var controller: ActivityController<TestSetup>
     private lateinit var activity: TestSetup
     private val syntheticLink = "chirp://pair?url=https%3A%2F%2Fmac.example.test%2Fchirp&token=synthetic%2Btoken%3D"
-    private fun descendants(root: View): List<View> = listOf(root) + if (root is ViewGroup)
-        (0 until root.childCount).flatMap { descendants(root.getChildAt(it)) } else emptyList()
-    private val views get() = descendants(activity.window.decorView)
-    private val link get() = views.filterIsInstance<EditText>().single { it.hint.toString().startsWith("chirp://") }
-    private val scan get() = views.filterIsInstance<Button>().single { it.text.toString() == "Scan pairing QR" }
-    private fun shows(text: String) = views.filterIsInstance<TextView>().any { it.text.toString().contains(text) }
+    private fun shows(text: String) = activity.state.status.contains(text)
+    private fun scan() = activity.scan()
     @Before fun setUp() {
         controller = Robolectric.buildActivity(TestSetup::class.java).setup()
         activity = controller.get()
@@ -47,46 +38,46 @@ class SetupActivityTest {
     @After fun tearDown() { if (!activity.isDestroyed) controller.pause().stop().destroy() }
 
     @Test fun `scan feeds validated pairing into masked field without saving credentials`() {
-        scan.performClick(); assertEquals(1, activity.scans); assertFalse(scan.isEnabled)
+        scan(); assertEquals(1, activity.scans); assertTrue(activity.state.scanning)
         activity.received(syntheticLink)
-        assertTrue(scan.isEnabled); assertEquals(syntheticLink, link.text.toString())
+        assertFalse(activity.state.scanning); assertEquals(syntheticLink, activity.state.link)
         assertTrue(shows("Pairing link received — test to save"))
-        val parsed = Pairing.parse(link.text.toString())
+        val parsed = Pairing.parse(activity.state.link)
         assertEquals("https://mac.example.test/chirp/v1/health", parsed.endpoint("v1/health").toString())
         assertEquals("synthetic+token=", parsed.token)
-        assertFalse(link.isSaveEnabled)
+        assertFalse(activity.state.checking)
         assertFalse(activity.getSharedPreferences("chirp", 0).contains("token"))
     }
     @Test fun `scanner rejects missing malformed non pairing and insecure payloads`() {
         listOf(null, "", "https://example.test", "chirp://pair?url=http://mac.example.test&token=synthetic",
             "chirp://pair?url=https://mac.example.test&token=a&token=b").forEach { value ->
-            scan.performClick(); activity.received(value)
-            assertEquals("", link.text.toString()); assertTrue(shows("Invalid Chirp pairing link"))
-            assertTrue(scan.isEnabled)
+            scan(); activity.received(value)
+            assertEquals("", activity.state.link); assertTrue(shows("Invalid Chirp pairing link"))
+            assertFalse(activity.state.scanning)
         }
     }
     @Test fun `cancel and scanner failure leave paste available and preserve field`() {
-        link.setText(syntheticLink)
-        scan.performClick(); activity.cancelled()
-        assertTrue(scan.isEnabled); assertTrue(shows("Scan cancelled")); assertEquals(syntheticLink, link.text.toString())
-        scan.performClick(); activity.failed()
-        assertTrue(scan.isEnabled); assertTrue(shows("check Google Play services")); assertEquals(syntheticLink, link.text.toString())
+        activity.state.link = syntheticLink
+        scan(); activity.cancelled()
+        assertFalse(activity.state.scanning); assertTrue(shows("Scan cancelled")); assertEquals(syntheticLink, activity.state.link)
+        scan(); activity.failed()
+        assertFalse(activity.state.scanning); assertTrue(shows("check Google Play services")); assertEquals(syntheticLink, activity.state.link)
     }
     @Test fun `deep links share parse feed path and clear credential intent`() {
         val intent = Intent(Intent.ACTION_VIEW, Uri.parse(syntheticLink))
         controller.newIntent(intent)
-        assertNull(intent.data); assertEquals(syntheticLink, link.text.toString())
+        assertNull(intent.data); assertEquals(syntheticLink, activity.state.link)
         assertTrue(shows("Pairing link received — test to save"))
         val invalid = Intent(Intent.ACTION_VIEW, Uri.parse("chirp://pair?url=http://mac.example.test&token=synthetic"))
         controller.newIntent(invalid)
         assertNull(invalid.data); assertTrue(shows("Invalid Chirp pairing link"))
-        assertEquals(syntheticLink, link.text.toString())
+        assertEquals(syntheticLink, activity.state.link)
     }
     @Test fun `late scan result cannot feed a destroyed activity`() {
-        scan.performClick()
+        scan()
         controller.pause().stop().destroy()
         activity.received(syntheticLink)
-        assertEquals("", link.text.toString())
+        assertEquals("", activity.state.link)
     }
     @Test fun `app does not request camera permission`() {
         val info = activity.packageManager.getPackageInfo(activity.packageName, PackageManager.GET_PERMISSIONS)

@@ -1,0 +1,6 @@
+<resources>
+    <color name="chirp_primary">#9FD3B9</color>
+    <color name="chirp_on_primary">#12382A</color>
+    <color name="chirp_surface">#121715</color>
+    <color name="chirp_on_surface">#E3EBE5</color>
+</resources>

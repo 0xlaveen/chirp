@@ -39,12 +39,13 @@ class ChirpImeServiceTest {
         var commits = 0
         var available = true
         var acceptCommit = true
+        var acceptComposition = true
         var region: IntRange? = null
         val connection = Proxy.newProxyInstance(InputConnection::class.java.classLoader,
             arrayOf(InputConnection::class.java)) { _, method, args ->
             when (method.name) {
                 "getSelectedText" -> ""
-                "setComposingText" -> { if (available) composing = args!![0].toString(); available }
+                "setComposingText" -> { if (available && acceptComposition) composing = args!![0].toString(); available && acceptComposition }
                 "setComposingRegion" -> { if (available) region = (args!![0] as Int) until (args[1] as Int); available }
                 "commitText" -> { if (available && acceptCommit) {
                     committed = region?.let { committed.replaceRange(it, args!![0].toString()) } ?: (committed + args!![0])
@@ -110,6 +111,9 @@ class ChirpImeServiceTest {
         override fun loadPairing() = if (paired) Pairing.from("https://mac.example.test/chirp", "synthetic") else null
         override fun refreshHealth() { /* No network, including background health checks. */ }
         override fun previousKeyboard() { returns++ }
+        public override fun onCurrentInputMethodSubtypeChanged(newSubtype: android.view.inputmethod.InputMethodSubtype?) {
+            super.onCurrentInputMethodSubtypeChanged(newSubtype)
+        }
         override fun createCapture(frame: (ByteArray) -> Boolean, level: (Double) -> Unit,
                                    done: (String?) -> Unit): Capture = FakeCapture(frame, done, order).also { captures += it }
         override fun createTransport(paired: Pairing, event: (ServerEvent) -> Unit,
@@ -147,7 +151,7 @@ class ChirpImeServiceTest {
     @After fun tearDown() { controller.destroy() }
 
     @Test fun `tap starts capture immediately and stop waits for recorder release before stop frame`() {
-        assertTrue(stream.connected); assertEquals(0, stream.starts); assertTrue(service.captures.isEmpty())
+        assertTrue(service.streams.isEmpty()); assertTrue(service.captures.isEmpty())
         touch(MotionEvent.ACTION_DOWN)
         assertTrue(capture.started)
         assertEquals(listOf("capture.start", "stream.start"), service.order)
@@ -164,7 +168,7 @@ class ChirpImeServiceTest {
         assertEquals(1, stream.stops)
         assertTrue(service.order.indexOf("capture.release") < service.order.indexOf("stream.stop"))
         stream.final(); assertEquals("Synthetic.", service.editor.committed)
-        assertFalse(stream.closed)
+        assertTrue(stream.closed)
     }
     @Test fun `hold release before Ready flushes buffered audio then stops`() {
         touch(MotionEvent.ACTION_DOWN)
@@ -182,7 +186,7 @@ class ChirpImeServiceTest {
         assertEquals("", service.editor.composing); assertEquals("Synthetic.", service.editor.committed)
         stream.final(); assertEquals(1, service.editor.commits)
         assertEquals(0, service.returns)
-        tap(); assertEquals(2, stream.starts); assertEquals(1, service.streams.size)
+        tap(); assertEquals(1, stream.starts); assertEquals(2, service.streams.size)
     }
     @Test fun `cancel releases resources erases composition and ignores late events`() {
         start(); stream.partial()
@@ -258,12 +262,12 @@ class ChirpImeServiceTest {
             InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_VARIATION_PASSWORD).forEach { type ->
             service.info.inputType = type
             service.onStartInput(service.info, false); tap()
-            assertTrue(shows("password fields")); assertTrue(service.captures.isEmpty()); assertEquals(0, stream.starts)
+            assertTrue(shows("password fields")); assertTrue(service.captures.isEmpty()); assertTrue(service.streams.isEmpty())
         }
     }
     @Test fun `missing microphone permission refuses capture`() {
         shadowOf(RuntimeEnvironment.getApplication()).denyPermissions(Manifest.permission.RECORD_AUDIO)
-        tap(); assertTrue(service.captures.isEmpty()); assertEquals(0, stream.starts)
+        tap(); assertTrue(service.captures.isEmpty()); assertTrue(service.streams.isEmpty())
         assertTrue(shows("Grant microphone permission"))
     }
     @Test fun `auto return enabled switches after uncorrected final`() {
@@ -325,9 +329,33 @@ class ChirpImeServiceTest {
         tap(); advance(18000)
         assertTrue(capture.released); assertTrue(stream.closed); assertTrue(shows("Mac unreachable"))
     }
-    @Test fun `idle socket expires after thirty seconds`() {
-        advance(29999); assertFalse(stream.closed)
-        advance(1); assertTrue(stream.closed); assertTrue(stream.immediate); assertTrue(service.captures.isEmpty())
+    @Test fun `idle panel has no socket or microphone`() {
+        advance(30000)
+        assertTrue(service.streams.isEmpty()); assertTrue(service.captures.isEmpty())
+        start(); finish()
+        assertTrue(stream.closed); assertTrue(stream.immediate)
+    }
+    @Test fun `voice subtype starts once on launch and cancels back to previous keyboard`() {
+        service.onWindowHidden()
+        SettingsStore(service).returnToPrevious = true
+        service.onCurrentInputMethodSubtypeChanged(android.view.inputmethod.InputMethodSubtype.InputMethodSubtypeBuilder().setSubtypeMode("voice").build())
+        service.onStartInputView(service.info, false)
+        assertEquals(1, service.captures.size); assertEquals(1, stream.starts)
+        service.onStartInputView(service.info, true)
+        assertEquals(1, service.captures.size)
+        button("✕").performClick(); advance(0)
+        assertTrue(capture.released); assertEquals(1, service.returns)
+    }
+    @Test fun `editor without composition shows partials in panel and commits final once`() {
+        service.editor.acceptComposition = false
+        start(); stream.partial()
+        assertTrue(shows("synthetic")); assertEquals("", service.editor.composing)
+        finish(); assertEquals("Synthetic.", service.editor.committed); assertEquals(1, service.editor.commits)
+    }
+    @Test fun `microphone is operable with accessibility click`() {
+        mic.performClick(); stream.ready()
+        mic.performClick(); advance(0); stream.final()
+        assertEquals("Synthetic.", service.editor.committed); assertTrue(capture.released)
     }
     @Test fun `transport failure during capture cancels composition`() {
         start(); stream.partial(); stream.failure(); advance(0)

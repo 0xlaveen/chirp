@@ -14,8 +14,9 @@ class ComposingSession(private val connection: InputConnection) {
     fun partial(event: ServerEvent.Partial): Boolean {
         if (!live || event.seq <= seq) return true
         seq = event.seq
-        composing = true
-        return connection.setComposingText(event.text, 1)
+        return connection.setComposingText(event.text, 1).also { accepted ->
+            if (accepted) composing = true
+        }
     }
     fun final(event: ServerEvent.Final): Boolean {
         if (!live) return false

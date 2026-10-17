@@ -1,5 +1,6 @@
-plugins { alias(libs.plugins.android.application) }
+plugins { alias(libs.plugins.android.application); alias(libs.plugins.compose) }
 android {
+    buildFeatures { compose = true }
     namespace = "dev.chirp.android"
     compileSdk { version = release(37) { minorApiLevel = 2 } }
     buildToolsVersion = "37.0.0"
@@ -30,6 +31,15 @@ android {
     testOptions { unitTests.isIncludeAndroidResources = true }
 }
 dependencies {
+    implementation(platform(libs.compose.bom))
+    implementation(libs.compose.material3)
+    implementation(libs.activity.compose)
+    implementation(libs.material)
+    testImplementation(platform(libs.compose.bom))
+    testImplementation(libs.compose.ui.test)
+    // Compose pulls Espresso 3.5; use stable 3.7 for modern InputManager APIs.
+    testImplementation(libs.espresso.core)
+    debugImplementation(libs.compose.ui.test.manifest)
     implementation(libs.okhttp)
     implementation(libs.core)
     implementation(libs.activity)
@@ -48,6 +58,7 @@ dependencies {
 // Opt-in live transport check against a running chirp-server (see README "JVM live check").
 // Without -Pchirp.live.url the LiveServerTest is skipped.
 tasks.withType<Test>().configureEach {
+    systemProperty("chirp.screenshots", rootProject.file("../docs/screenshots/android").absolutePath)
     // Robolectric on JDK 17+: https://robolectric.org/getting-started/#running-with-java-17-and-higher
     jvmArgs(
         "--add-opens=java.base/java.lang=ALL-UNNAMED",
