@@ -7,6 +7,8 @@ import ChirpUI
 final class DictationController {
     private(set) var machine = DictationMachine()
     private(set) var health: Health?
+    /// The styles with their default prompts: live from the server, else the last-known copy. Settings shows them.
+    private(set) var styleCatalog = StyleCatalog.cached(settings)
     private(set) var healthError: String?
     var onChange: (() -> Void)?
     /// Called on every press of the dictation hotkey (the setup window's "Try it" step listens for it).
@@ -33,6 +35,14 @@ final class DictationController {
 
     static let dictateID: UInt32 = 1
     private static let escapeID: UInt32 = 2
+    private static let rawID: UInt32 = 3
+
+    /// The 5 s window after a cleaned insertion in which ⌃⌥Z and the menu offer "Use raw" (the HUD is already gone).
+    private(set) lazy var rawOffer = RawOffer(
+        register: { combo, take in HotKeyCenter.shared.register(id: Self.rawID, combo: combo, onDown: take) },
+        unregister: { HotKeyCenter.shared.unregister(id: Self.rawID) },
+        use: { [weak self] in self?.useRaw() },
+        onChange: { [weak self] in self?.onChange?() })
 
     /// (Re)registers the dictation hotkey from settings.
     @discardableResult
@@ -71,9 +81,11 @@ final class DictationController {
         do {
             health = try await config.fetchHealth()
             healthError = nil
+            styleCatalog = await StyleCatalog.refresh(settings) { try await config.fetchProfiles() }
         } catch {
             health = nil
             healthError = "Server unreachable at \(config.host)"
+            styleCatalog = .cached(settings)
         }
         onChange?()
     }
@@ -137,6 +149,7 @@ final class DictationController {
         polishingRaw = nil
         rawInsertTask = nil
         inserter.forgetUndo()
+        rawOffer.close()
         hud.cancelHide()
         hud.model.reset()
         hud.model.status = HUDStatus.connecting
@@ -327,7 +340,7 @@ final class DictationController {
                 await replaceRaw(early, with: final, text: text)
             } else {
                 // The cleaned text is shown with its changes highlighted before it is inserted, once.
-                if final.canUseRaw { await hud.model.playChangeHighlight(raw: final.raw, cleaned: text) }
+                if final.canUseRaw, settings.showChangesAfterCleanup { await hud.model.playChangeHighlight(raw: final.raw, cleaned: text) }
                 else { hud.model.settle(on: text) }
                 hud.model.status = HUDStatus.inserting
                 hud.model.indicator = .waveform
@@ -343,7 +356,8 @@ final class DictationController {
     private func replaceRaw(_ early: InsertionOutcome, with final: FinalResult, text: String) async {
         var shown = final
         if early == .inserted(.ax), final.canUseRaw {
-            await hud.model.playChangeHighlight(raw: final.raw, cleaned: text)
+            if settings.showChangesAfterCleanup { await hud.model.playChangeHighlight(raw: final.raw, cleaned: text) }
+            else { hud.model.settle(on: text) }
             if await inserter.replaceInserted(with: text) {
                 show(early, final: final)
                 return
@@ -360,7 +374,8 @@ final class DictationController {
     }
 
     private func show(_ outcome: InsertionOutcome, final: FinalResult) {
-        let p = OutcomePresentation.of(outcome, final: final, offerRaw: settings.showRawAfterCleanup)
+        let p = OutcomePresentation.of(outcome, final: final, offerRaw: settings.showRawAfterCleanup,
+                                       showChanges: settings.showChangesAfterCleanup)
         hud.model.status = p.status
         hud.model.indicator = p.indicator
         hud.model.cleaned = p.cleaned
@@ -369,8 +384,9 @@ final class DictationController {
         hud.model.showUseRaw = p.showUseRaw
         hud.model.onUseRaw = p.showUseRaw ? { [weak self] in self?.useRaw() } : nil
         hud.show()
-        hud.hide(after: p.linger)
+        if p.linger > 0 { hud.hide(after: p.linger) } else { hud.hide() }
         hud.announce(p.status)
+        if p.offersRawOutsideHUD, inserter.canUseRaw { rawOffer.open(avoiding: settings.hotkey) }
     }
 
     /// Replace the inserted correction with the raw transcript, in place for a verified AX insertion and otherwise
@@ -383,6 +399,7 @@ final class DictationController {
         Task {
             guard let outcome = await inserter.useRaw() else { return }
             hud.model.isError = outcome == .refusedSecure
+            hud.show()
             switch outcome {
             case .inserted: hud.model.status = "Inserted raw"; hud.model.indicator = .success
             case .refusedSecure: hud.model.status = "Secure field — unchanged"; hud.model.indicator = .warning

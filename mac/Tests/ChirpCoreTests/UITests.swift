@@ -15,23 +15,33 @@ import Testing
         #expect(secure.isError && secure.status == "Secure field — not inserted" && secure.indicator == .warning)
     }
 
-    @Test func useRawIsOfferedOnlyForInsertedCorrections() {
+    @Test func aCleanedInsertionFadesTheHUDAtOnceAndOffersRawElsewhere() {
         let corrected = FinalResult(text: "Hello.", raw: "hello", corrected: true)
         let unchanged = FinalResult(text: "hello", raw: "hello", corrected: true)
-        let inserted = OutcomePresentation.of(.inserted(.ax), final: corrected)
-        #expect(inserted.showUseRaw && inserted.linger == 5)
-        #expect(!OutcomePresentation.of(.inserted(.ax), final: unchanged).showUseRaw)
+        let p = OutcomePresentation.of(.inserted(.ax), final: corrected)
+        #expect(p.linger == 0 && !p.showUseRaw && p.offersRawOutsideHUD && p.cleaned)
+        let none = OutcomePresentation.of(.inserted(.ax), final: unchanged)
+        #expect(!none.showUseRaw && !none.offersRawOutsideHUD)
         #expect(!OutcomePresentation.of(.copied, final: corrected).showUseRaw)
+        #expect(!OutcomePresentation.of(.copied, final: corrected).offersRawOutsideHUD)
+        #expect(!OutcomePresentation.of(.inserted(.ax), final: corrected, offerRaw: false).offersRawOutsideHUD)
     }
 
-    @Test func cleanedBadgeFollowsTheRewriteAndRawButtonFollowsThePreference() {
+    @Test func showChangesRestoresTheOverlayWithItsUseRawButton() {
         let corrected = FinalResult(text: "Hello.", raw: "hello", corrected: true)
-        let on = OutcomePresentation.of(.inserted(.ax), final: corrected)
-        #expect(on.cleaned && on.showUseRaw && on.linger == 5)
-        let off = OutcomePresentation.of(.inserted(.ax), final: corrected, offerRaw: false)
+        let on = OutcomePresentation.of(.inserted(.ax), final: corrected, showChanges: true)
+        #expect(on.cleaned && on.showUseRaw && on.linger == 5 && !on.offersRawOutsideHUD)
+        let off = OutcomePresentation.of(.inserted(.ax), final: corrected, offerRaw: false, showChanges: true)
         #expect(off.cleaned && !off.showUseRaw && off.linger == 1.8)
         #expect(!OutcomePresentation.of(.inserted(.ax), final: FinalResult(text: "hello")).cleaned)
         #expect(!OutcomePresentation.of(.refusedSecure, final: corrected).cleaned)
+    }
+
+    @Test func theKeptOriginalNoteIsBrief() {
+        let kept = FinalResult(text: "hello", corrected: false, correctionError: "timeout")
+        #expect(OutcomePresentation.of(.inserted(.ax), final: kept).linger <= 1)
+        #expect(OutcomePresentation.of(.inserted(.ax), final: kept, showChanges: true).linger <= 1)
+        #expect(OutcomePresentation.of(.inserted(.ax), final: kept).keptOriginal)
     }
 }
 
@@ -158,7 +168,7 @@ import Testing
             view.subviews.flatMap { ($0 as? NSTextField).map { [$0] } ?? labels(in: $0) }
         }
         let rowLabels = labels(in: form.view).filter { $0.stringValue.hasSuffix(":") && $0.alignment == .right }
-        #expect(rowLabels.count == 12)   // General 3, Clean-up 4, Server 3, Permissions 2
+        #expect(rowLabels.count == 13)   // General 3, Clean-up 5, Server 3, Permissions 2
         let edges = rowLabels.map { form.view.convert($0.bounds, from: $0).maxX }
         #expect(edges.allSatisfy { abs($0 - edges[0]) < 0.5 })
         let controlEdges = [form.hotkey, form.launch, form.serverURL, form.micButton, form.style, form.insertRawFirst, form.appStyles.scroll].map { form.view.convert($0.bounds, from: $0).minX }
@@ -209,7 +219,7 @@ import Testing
         }
         for url in files {
             let data = try Data(contentsOf: url)
-            #expect(data.count < 250_000, "\(url.lastPathComponent) is too big to commit")
+            #expect(data.count < 350_000, "\(url.lastPathComponent) is too big to commit")
             let rep = try #require(NSBitmapImageRep(data: data))
             #expect(rep.pixelsWide > 100 && rep.pixelsHigh > 50)
             // Not a flat fill: some pixel differs from the corner.

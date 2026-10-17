@@ -86,12 +86,16 @@ public struct StartOptions: Sendable, Equatable {
     public var correctionProfile: String
     /// Only sent for the `custom` profile, clamped to `CorrectionProfile.maxInstructionLength`. Never logged.
     public var correctionInstructions: String?
+    /// The user's edited prompt for the style, clamped to `CorrectionProfile.maxPromptLength`; nil when the style was
+    /// not edited, so the server's default (and its updates) apply. Never logged.
+    public var correctionPrompt: String?
     public init(client: String = "mac", correction: Bool = false, correctionProfile: String = CorrectionProfile.defaultID,
-                correctionInstructions: String? = nil) {
+                correctionInstructions: String? = nil, correctionPrompt: String? = nil) {
         self.client = client
         self.correction = correction
         self.correctionProfile = correctionProfile
         self.correctionInstructions = correctionInstructions
+        self.correctionPrompt = correctionPrompt
     }
 }
 
@@ -103,6 +107,10 @@ public enum ClientMessage {
         if o.correctionProfile == CorrectionProfile.customID, let text = CorrectionProfile.clamp(o.correctionInstructions ?? ""),
            !text.isEmpty {
             message["correction_instructions"] = text
+        }
+        if let prompt = o.correctionPrompt {
+            let text = CorrectionProfile.clampPrompt(prompt).trimmingCharacters(in: .whitespacesAndNewlines)
+            if !text.isEmpty { message["correction_prompt"] = text }
         }
         return json(message)
     }

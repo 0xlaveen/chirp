@@ -132,6 +132,20 @@ public enum Snapshots {
 
     // MARK: Settings and menu
 
+    /// The server's styles with prompt text, as `GET /v1/correction/profiles` would return them.
+    static let samplePrompts: [CorrectionProfile] = CorrectionProfile.builtIn.map { p in
+        var p = p
+        switch p.id {
+        case "default": p.prompt = "Fix punctuation, capitalisation and obvious slips. Keep the speaker’s words and order."
+        case "chat": p.prompt = "Casual messages: lowercase is fine and a short message needs no final period."
+        case "email": p.prompt = "Polished, complete sentences with proper punctuation. Add nothing the speaker did not say."
+        case "code": p.prompt = "Keep identifiers, symbols and casing exactly as spoken. Do not expand abbreviations."
+        case "notes": p.prompt = "Turn spoken lists into short lines or bullets. Keep every item."
+        default: break
+        }
+        return p
+    }
+
     public static var settingsScenarios: [Scenario] {
         func form(_ name: String, _ configure: (inout SettingsState) -> Void) -> Scenario {
             var state = SettingsState()
@@ -146,10 +160,28 @@ public enum Snapshots {
             form("ready") { $0.launch = .on; $0.serverStatus = "parakeet-mlx:tdt-0.6b-v2" },
             form("cleanup-custom") {
                 $0.cleanupStyle = "custom"; $0.insertRawFirst = true; $0.launch = .on; $0.serverStatus = "parakeet-mlx:tdt-0.6b-v2"
-                $0.customInstructions = "Write like a short, friendly note to a teammate. Keep product names exactly as spoken and never add facts I did not say."
+                $0.catalog = StyleCatalog(profiles: samplePrompts, source: .live)
+                $0.editingStyle = "custom"
+                $0.stylePrompts = ["custom": "Write like a short, friendly note to a teammate. Keep product names exactly as spoken and never add facts I did not say."]
                 $0.appStyles = [AppStyleRule(bundleID: "com.tinyspeck.slackmacgap", profile: "chat"),
                                 AppStyleRule(bundleID: "com.apple.mail", profile: "custom"),
                                 AppStyleRule(bundleID: "com.apple.dt.Xcode", profile: "code")]
+            },
+            form("cleanup-prompt-default") {
+                $0.launch = .on; $0.serverStatus = "parakeet-mlx:tdt-0.6b-v2"
+                $0.catalog = StyleCatalog(profiles: samplePrompts, source: .live)
+                $0.editingStyle = "email"
+            },
+            form("cleanup-prompt-edited") {
+                $0.launch = .on; $0.serverStatus = "parakeet-mlx:tdt-0.6b-v2"
+                $0.catalog = StyleCatalog(profiles: samplePrompts, source: .live)
+                $0.editingStyle = "chat"
+                $0.stylePrompts = ["chat": "Casual and brief. Lowercase is fine. Keep emoji names as spoken, like “thumbs up”."]
+            },
+            form("cleanup-prompt-offline") {
+                $0.launch = .on; $0.serverStatus = "Unreachable"; $0.serverStatusTone = .error
+                $0.catalog = StyleCatalog(profiles: samplePrompts, source: .cached)
+                $0.editingStyle = "code"
             },
             form("cleanup-notes-no-styles") {
                 $0.cleanupStyle = "notes"; $0.serverOffersStyles = false; $0.launch = .on; $0.serverStatus = "parakeet-mlx:tdt-0.6b-v2"
@@ -243,6 +275,7 @@ public enum Snapshots {
                 $0.state = .error("Microphone access denied — enable it in System Settings")
                 $0.health = local; $0.micGranted = false; $0.inputs = []; $0.defaultInput = nil
             },
+            menu("use-raw-offer") { $0.health = local; $0.cleanupOn = true; $0.rawOfferOpen = true; $0.rawOfferKey = "⌃⌥Z" },
             menu("style", { $0.health = local; $0.cleanupOn = true; $0.styleID = "email" }, submenu: "Style"),
             menu("style-custom", { $0.health = local; $0.cleanupOn = true; $0.styleID = "custom" }, submenu: "Style"),
             menu("input-picker", { $0.health = local; $0.chosenInputUID = "studio" }, submenu: "Input Device"),

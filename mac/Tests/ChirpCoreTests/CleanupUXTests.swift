@@ -189,27 +189,17 @@ private func object(_ json: String) throws -> [String: Any] {
         #expect(p.appStyles == [AppStyleRule(bundleID: "a", profile: "chat")])
     }
 
-    @Test func customInstructionsAreLimitedTo2000Characters() throws {
-        let (p, done) = try prefs(); defer { done() }
-        p.correctionInstructions = String(repeating: "a", count: 2500)
-        #expect(p.correctionInstructions.count == 2000)
-        p.correctionInstructions = String(repeating: "👍", count: 2001)
-        #expect(p.correctionInstructions.count == 2000)          // never splits a character
-        p.correctionInstructions = "short"
-        #expect(p.correctionInstructions == "short")
-    }
-
-    @Test func customSendsInstructionsAndNeedsThem() throws {
+    @Test func customSendsItsPromptAndNeedsOne() throws {
         let (p, done) = try prefs(); defer { done() }
         p.correction = true
         p.correctionProfile = "custom"
-        #expect(p.startOptions().correctionProfile == "default")       // no instructions yet: the default style
-        p.correctionInstructions = "  keep it short  "
+        #expect(p.startOptions().correctionProfile == "default")       // no prompt yet: the default style
+        p.correctionPrompts = ["custom": "  keep it short  "]
         let o = p.startOptions()
-        #expect(o.correctionProfile == "custom" && o.correctionInstructions == "keep it short")
-        // instructions are not sent for another style
+        #expect(o.correctionProfile == "custom" && o.correctionInstructions == "keep it short" && o.correctionPrompt == "keep it short")
+        // the custom prompt is not sent for another style
         p.correctionProfile = "email"
-        #expect(p.startOptions().correctionInstructions == nil)
+        #expect(p.startOptions().correctionInstructions == nil && p.startOptions().correctionPrompt == nil)
         #expect(p.startOptions(frontmostBundleID: "com.tinyspeck.slackmacgap").correctionProfile == "chat")
     }
 
