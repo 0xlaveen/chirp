@@ -19,7 +19,6 @@ final class DictationController {
     private var timeoutTask: Task<Void, Never>?
     private var epoch = 0
     private var pendingFinal: FinalResult?
-    private var lastInsertion: (final: FinalResult, outcome: InsertionOutcome)?
 
     static let dictateID: UInt32 = 1
     private static let escapeID: UInt32 = 2
@@ -87,9 +86,10 @@ final class DictationController {
         switch effect {
         case .start: begin()
         case .finalize: finalize()
-        case .cancel: teardown(cancelServer: true); hud.hide()
+        case .cancel: teardown(cancelServer: true); hud.hide(); inserter.forgetUndo()
         case .abort(let message):
             teardown(cancelServer: true)
+            inserter.forgetUndo()
             hud.model.status = message
             hud.model.isError = true
             hud.model.level = 0
@@ -104,6 +104,7 @@ final class DictationController {
         epoch += 1
         let myEpoch = epoch
         pendingFinal = nil
+        inserter.forgetUndo()
         hud.hide()
         hud.model.reset()
         hud.model.status = "Connecting…"
@@ -202,6 +203,7 @@ final class DictationController {
 
     private func teardown(cancelServer: Bool) {
         epoch += 1   // invalidates every in-flight callback of the old session
+        pendingFinal = nil
         timeoutTask?.cancel()
         stopCapture()
         eventTask?.cancel()
@@ -216,7 +218,9 @@ final class DictationController {
 
     private func insert() {
         timeoutTask?.cancel()
+        // Consume the final: nothing but the inserter's short-lived undo state may outlive this insertion.
         guard let final = pendingFinal else { send(.insertionFinished); return }
+        pendingFinal = nil
         let text = final.text.trimmingCharacters(in: .whitespacesAndNewlines)
         let s = session
         session = nil
@@ -232,8 +236,7 @@ final class DictationController {
         }
         hud.model.status = "Inserting"
         Task {
-            let outcome = await inserter.insert(text)
-            lastInsertion = (final, outcome)
+            let outcome = await inserter.insert(text, undoRaw: final.canUseRaw ? final.raw : nil)
             show(outcome, final: final)
             send(.insertionFinished)
         }
@@ -250,14 +253,19 @@ final class DictationController {
         hud.announce(p.status)
     }
 
-    /// Replace the inserted correction with the raw transcript: in place for AX insertions, via ⌘Z for pasted ones.
+    /// Replace the inserted correction with the raw transcript, in place for a verified AX insertion and otherwise
+    /// by copying it; the inserter refuses once the undo window has expired or the target changed.
     private func useRaw() {
-        guard let last = lastInsertion, last.final.canUseRaw, !machine.state.isActive else { return }
-        lastInsertion = nil
+        guard !machine.state.isActive else { return }
         hud.model.showUseRaw = false
         Task {
-            let outcome = await inserter.replaceLast(with: last.final.raw)
-            hud.model.status = outcome == .copied ? "Copied raw — press ⌘V" : "Inserted raw"
+            guard let outcome = await inserter.useRaw() else { return }
+            hud.model.isError = outcome == .refusedSecure
+            switch outcome {
+            case .inserted: hud.model.status = "Inserted raw"
+            case .refusedSecure: hud.model.status = "Secure field — nothing changed"
+            default: hud.model.status = "Copied raw — press ⌘V"
+            }
             hud.announce(hud.model.status)
             hud.hide(after: 1.5)
         }

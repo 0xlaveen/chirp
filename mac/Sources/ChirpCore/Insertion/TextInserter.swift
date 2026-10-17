@@ -22,14 +22,13 @@ public struct InsertionEnvironment {
     public var axReplace: (NSRange, String, String) async -> Bool
     /// Posts ⌘V. Returns false if the event could not be created.
     public var postPaste: () -> Bool
-    public var postUndo: () -> Bool
     public var sleep: (Duration) async -> Void
 
     public init(secureInputEnabled: @escaping () -> Bool, axTrusted: @escaping () -> Bool,
                 frontmostBundleID: @escaping () -> String?,
                 axInsert: @escaping (String) async -> AXInsertAttempt,
                 axReplace: @escaping (NSRange, String, String) async -> Bool,
-                postPaste: @escaping () -> Bool, postUndo: @escaping () -> Bool,
+                postPaste: @escaping () -> Bool,
                 sleep: @escaping (Duration) async -> Void = { try? await Task.sleep(for: $0) }) {
         self.secureInputEnabled = secureInputEnabled
         self.axTrusted = axTrusted
@@ -37,7 +36,6 @@ public struct InsertionEnvironment {
         self.axInsert = axInsert
         self.axReplace = axReplace
         self.postPaste = postPaste
-        self.postUndo = postUndo
         self.sleep = sleep
     }
 }
@@ -47,86 +45,145 @@ public struct InsertionEnvironment {
 public final class TextInserter {
     /// Slow apps can take a while to read the pasteboard after ⌘V. The change-count guard protects user copies.
     public static let restoreDelay: Duration = .milliseconds(600)
+    /// How long "Use raw" stays possible; matches the HUD's linger for it.
+    public static let undoWindow: Duration = .seconds(5)
 
-    private enum Last { case ax(NSRange?, String), unverified, paste, copy }
+    /// What "Use raw" needs, and nothing more: kept only while the affordance is on screen.
+    private struct Undo {
+        enum Kind { case ax(NSRange?, String), other }
+        var kind: Kind
+        /// The app that was frontmost at insertion; the replacement is bound to it.
+        var bundleID: String?
+        var raw: String
+    }
+
+    /// One clipboard-restore transaction: the user's original clipboard and the change count of the last
+    /// transient write of ours. Successive pastes share it, so the original is never lost to an overlap.
+    private struct Restore {
+        var saved: [PasteboardItem]
+        var owned: Int
+    }
 
     private let env: InsertionEnvironment
     private let pasteboard: PasteboardClient
     private var restoreTask: Task<Void, Never>?
-    private var last: Last?
+    private var restore: Restore?
+    private var restoreGeneration = 0
+    private var undo: Undo?
+    private var undoExpiry: Task<Void, Never>?
+    private var undoGeneration = 0
 
     public init(env: InsertionEnvironment, pasteboard: PasteboardClient) {
         self.env = env
         self.pasteboard = pasteboard
     }
 
-    public func insert(_ text: String) async -> InsertionOutcome {
-        let plan = InsertionPolicy.plan(secureInput: env.secureInputEnabled(), axTrusted: env.axTrusted(),
-                                        bundleID: env.frontmostBundleID())
+    /// Inserts `text`. When `undoRaw` is given, "Use raw" stays available for `undoWindow`, then everything about
+    /// this insertion (including the raw transcript) is forgotten.
+    public func insert(_ text: String, undoRaw: String? = nil, undoWindow: Duration = TextInserter.undoWindow) async -> InsertionOutcome {
+        forgetUndo()
+        let bundle = env.frontmostBundleID()
+        func remember(_ kind: Undo.Kind) {
+            guard let undoRaw else { return }
+            undo = Undo(kind: kind, bundleID: bundle, raw: undoRaw)
+            armExpiry(after: undoWindow)
+        }
+        let plan = InsertionPolicy.plan(secureInput: env.secureInputEnabled(), axTrusted: env.axTrusted(), bundleID: bundle)
         guard case .try_(let methods) = plan else { return .refusedSecure }
         for method in methods {
             switch method {
             case .ax:
                 switch await env.axInsert(text) {
                 case .verified(let range):
-                    last = .ax(range, text)
+                    remember(.ax(range, text))
                     return .inserted(.ax)
                 case .unverified:
                     // Never paste after an attempted AX write: if it lands late we would insert twice.
                     _ = pasteboard.write(text: text, transient: true)
-                    last = .unverified
+                    remember(.other)
                     return .insertedUnverified
                 case .notAttempted:
                     continue
                 }
             case .paste:
-                if pasteViaPasteboard(text) { last = .paste; return .inserted(.paste) }
+                if pasteViaPasteboard(text) { remember(.other); return .inserted(.paste) }
             case .copy:
                 _ = pasteboard.write(text: text, transient: false)
-                last = .copy
+                remember(.other)
                 return .copied
             }
         }
         return .copied
     }
 
-    /// Replaces what the previous `insert` put in the field with `raw` ("Use raw").
-    /// AX insertions are replaced in place by reselecting the exact inserted range. Pasted text can only be
-    /// taken back with ⌘Z, which is best effort. If the field changed or nothing was inserted, `raw` is copied.
-    public func replaceLast(with raw: String) async -> InsertionOutcome {
-        defer { last = nil }
-        switch last {
-        case .ax(let range?, let text):
-            if env.secureInputEnabled() == false, await env.axReplace(range, text, raw) { return .inserted(.ax) }
-            _ = pasteboard.write(text: raw, transient: false)
-            return .copied
-        case .ax(nil, _):
-            _ = pasteboard.write(text: raw, transient: false)
-            return .copied
-        case .paste:
-            if env.postUndo() { await env.sleep(.milliseconds(150)) }
-            return await insert(raw)
-        case .unverified, .copy, nil:
-            _ = pasteboard.write(text: raw, transient: false)
-            return .copied
+    /// Replaces what the previous `insert` put in the field with its raw transcript ("Use raw"); nil when there is
+    /// nothing to replace (never offered, expired, cancelled or already used).
+    ///
+    /// Secure input is checked before any side effect. An AX insertion is replaced in place only while the same app
+    /// is frontmost and the exact inserted range still holds the inserted text. A pasted insertion can't be verified,
+    /// so Chirp never posts a blind ⌘Z: the raw text is copied for a manual ⌘V instead, as it is whenever the target changed.
+    public func useRaw() async -> InsertionOutcome? {
+        guard let undo else { return nil }
+        forgetUndo()
+        if env.secureInputEnabled() { return .refusedSecure }
+        if case .ax(let range?, let text) = undo.kind, env.frontmostBundleID() == undo.bundleID,
+           await env.axReplace(range, text, undo.raw) {
+            return .inserted(.ax)
         }
+        _ = pasteboard.write(text: undo.raw, transient: false)
+        return .copied
+    }
+
+    /// Drops the raw-replacement state (expiry, cancel, new dictation).
+    public func forgetUndo() {
+        undo = nil
+        undoExpiry?.cancel()
+        undoExpiry = nil
+        undoGeneration += 1
+    }
+
+    public var canUseRaw: Bool { undo != nil }
+
+    private func armExpiry(after window: Duration) {
+        let generation = undoGeneration
+        undoExpiry = Task { [env] in
+            await env.sleep(window)
+            guard !Task.isCancelled else { return }
+            self.expireUndo(ifGeneration: generation)
+        }
+    }
+
+    private func expireUndo(ifGeneration generation: Int) {
+        if generation == undoGeneration { forgetUndo() }
     }
 
     private func pasteViaPasteboard(_ text: String) -> Bool {
         restoreTask?.cancel()
-        let saved = pasteboard.snapshot()
+        // Still inside a restore window and the clipboard still holds our transient text: keep the user's original.
+        let saved: [PasteboardItem]
+        if let r = restore, pasteboard.changeCount == r.owned { saved = r.saved } else { saved = pasteboard.snapshot() }
         let ours = pasteboard.write(text: text, transient: true)
+        restore = Restore(saved: saved, owned: ours)
         guard env.postPaste() else {
             pasteboard.restore(saved)
+            restore = nil
             return false
         }
         // Give the target app time to read the pasteboard, then put the user's clipboard back,
-        // but only if nobody else has written to it in the meantime.
+        // but only if nobody else has written to it in the meantime. A newer paste supersedes this task.
+        restoreGeneration += 1
+        let generation = restoreGeneration
         restoreTask = Task { [pasteboard, env] in
             await env.sleep(Self.restoreDelay)
-            if pasteboard.changeCount == ours { pasteboard.restore(saved) }
+            self.finishRestore(generation: generation, pasteboard: pasteboard)
         }
         return true
+    }
+
+    private func finishRestore(generation: Int, pasteboard: PasteboardClient) {
+        guard generation == restoreGeneration, let r = restore else { return }
+        restore = nil
+        if pasteboard.changeCount == r.owned { pasteboard.restore(r.saved) }
     }
 
     /// Wait for a pending pasteboard restore (tests and shutdown).
