@@ -29,13 +29,17 @@ class VoiceUiTest {
         val state = SetupState()
         compose.setContent { ChirpTheme { SetupWizard(state) } }
         compose.onNodeWithText("Step 1 of 4 · Chirp Keyboard").assertIsDisplayed()
-        compose.onNodeWithText("Next").performScrollTo().performClick()
+        compose.onNodeWithText("Next").performScrollTo().assertIsNotEnabled()
+        compose.runOnIdle { state.inputEnabled = true; state.inputSelected = true }
+        compose.onNodeWithText("Next").performClick()
         compose.onNodeWithText("Allow the microphone").assertExists()
+        compose.runOnIdle { state.mic = true }
         compose.onNodeWithText("Next").performScrollTo().performClick()
-        compose.onNodeWithContentDescription("Private Chirp pairing link").performTextInput("synthetic")
+        compose.onNodeWithText("Paste pairing link instead").performScrollTo().performClick()
+        compose.onNodeWithContentDescription("Private Chirp pairing link").performScrollTo().performTextInput("synthetic")
         compose.runOnIdle { assertEquals("synthetic", state.link) }
-        compose.onNodeWithText("Next").performScrollTo().performClick()
-        compose.onNodeWithText("Mac unreachable — is Tailscale on?").assertExists()
+        compose.onNodeWithText("Try keyboard").performScrollTo().performClick()
+        compose.onNodeWithText("Try a sentence").assertExists()
     }
     @Test fun `render setup wizard in light and dark`() {
         val output = File(System.getProperty("chirp.screenshots")).apply { mkdirs() }

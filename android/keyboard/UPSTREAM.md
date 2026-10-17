@@ -58,3 +58,74 @@ and its voice/editor lifecycle using the host toolchain.
 
 Git attributes preserve upstream line endings and whitespace; the archive's existing
 formatting is intentionally not normalized during vendoring.
+
+## English typing and emoji dictionaries (2026-10-17)
+
+Source: [Helium314/aosp-dictionaries](https://codeberg.org/Helium314/aosp-dictionaries),
+pinned commit **ff0cd52be8d9530200fefe8b296c53d4f662091e**.
+The repository declares GPL-3.0; its license is retained in
+`dictionaries/LICENSE-Codeberg`. Source attribution is retained below and in
+`dictionaries/SOURCES.md`.
+
+| Packaged asset | Pinned upstream file | Bytes | SHA-256 |
+| --- | --- | ---: | --- |
+| `keyboard/upstream/app/src/main/assets/dicts/main_en-US.dict` | `dictionaries/main_en_us.dict` | 2,956,881 | `bd950ef4b57655120eee65cee62a5d216a63f721d9a8bb759ce2022437840443` |
+| `app/src/main/assets/dicts/emoji_en.dict` | `dictionaries/emoji_en.dict` | 45,272 | `23f95de30c79f828169233367343edd91e3fb486bef596127cb200959c2dc212` |
+
+The main English US dictionary was already present in the HeliBoard archive and is
+byte-for-byte identical to this pinned Codeberg binary. It includes 160,715 words and
+bigrams, unlike several of the other legacy locale dictionaries. Its source record
+points to [OpenBoard v1.4.5's English wordlist](https://github.com/openboard-team/openboard/blob/v1.4.5/dictionaries/en_wordlist.combined.gz).
+No second copy or dictionary download is needed at runtime. The release smoke test
+checks both packaged hashes and verifies actual HeliBoard autocorrection/prediction.
+
+The added legacy English emoji dictionary has 2,304 entries. Codeberg records it as
+adapted from [GitHub gemoji](https://github.com/github/gemoji/blob/master/db/emoji.json),
+MIT, copyright 2019 GitHub, Inc. `dictionaries/LICENSE-gemoji` retains its complete
+notice (license-file revision `16c382b7447bb080c5950f9c1fee0785de1e655e`).
+We use this small dictionary rather than the newer CLDR/Signal combined dataset.
+
+### Typing defaults and dictation isolation
+
+The host's `TypingDefaults.kt` performs a one-time migration from voice-first defaults:
+autocorrect (confidence 0.24), suggestions, next-word prediction, auto-capitalisation,
+double-space period, press popups, symbol/accent hints, emoji suggestions and local
+personalisation are enabled. Personalisation is disclosed in setup and can be disabled
+in HeliBoard settings. Subsequent choices remain untouched. Typed-word learning stays
+on-device. The dictation controller writes partials/finals directly through
+`ComposingSession`, outside HeliBoard's correction/history pipeline, then resets the
+keyboard word composer and caches. It does not feed dictated finals into local learning.
+
+Additional CHIRP upstream changes in round 4:
+
+- `latin/settings/SettingsValues.java`: default number row on screens at least 600 dp
+  wide; explicit settings take precedence. Landscape split is seeded for unfolded
+  layouts; the folded landscape preference remains off. One-handed, split, clipboard
+  and emoji controls are enabled in the toolbar.
+- `latin/AudioAndHapticFeedbackManager.java`: both custom-duration and default typing
+  haptics obey Android's global haptic-feedback setting.
+- `accessibility/KeyboardAccessibilityNodeProvider.kt`: refresh the keyboard's screen
+  location for each virtual key, including after editor resize or folding.
+- `latin/suggestions/SuggestionStripView.kt`: preserve native Chirp control gestures
+  inside the suggestion row. `LatinIME` no longer adds an extra strip to its insets.
+- `settings/screens/MainSettingsScreen.kt`: host Compose hook renders the Chirp section
+  before HeliBoard preferences.
+
+### Swipe typing
+
+**Swipe typing: not available.** No proprietary `libjni_latinimegoogle.so` is bundled.
+[HeliBoard's current README](https://github.com/HeliBorg/HeliBoard) says there is no
+compatible open-source library; its [FAQ](https://github.com/HeliBorg/HeliBoard/wiki/FAQ)
+describes loading an external compatible library. The open-source
+[FlorisBoard](https://github.com/florisboard/florisboard) and
+[Unexpected Keyboard](https://github.com/Julow/Unexpected-Keyboard) are separate IMEs,
+not drop-in HeliBoard native decoders. Porting a different gesture engine and language
+model is a separate integration project, not a viable release-ready replacement for
+this pinned HeliBoard ABI. The funded [gesture-typing project](https://nlnet.nl/project/GestureTyping)
+is future work, not a bundled compatible implementation in v4.2. Setup and the README
+state the limitation explicitly. The release smoke also rejects a proprietary glide library.
+
+- `keyboard/KeyboardLayoutSet.kt`: copy `mIsSplitKeyboardEnabled` into the layout/cache
+  identity. Upstream 4.2 otherwise leaves `isSplitLayoutEnabled` false even when the
+  preference is enabled. A native-render regression and release landscape key geometry
+  check cover the fix.

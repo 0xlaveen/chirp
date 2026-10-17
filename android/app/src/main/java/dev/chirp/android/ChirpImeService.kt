@@ -4,10 +4,7 @@ import android.content.res.Configuration
 import android.os.Handler
 import android.os.Looper
 import android.view.ContextThemeWrapper
-import android.view.MotionEvent
 import android.view.View
-import android.widget.LinearLayout
-import android.view.ViewGroup
 import android.view.inputmethod.EditorInfo
 import helium314.keyboard.event.Event
 import helium314.keyboard.keyboard.internal.keyboard_parser.floris.KeyCode
@@ -30,11 +27,11 @@ open class ChirpImeService : LatinIME() {
     // HeliBoard's InputView positions its keyboard frame at the bottom and owns window insets.
     // Insert in that frame, including when HeliBoard replaces the view on a theme/layout change.
     override fun setInputView(keys: View) {
-        val frame = keys.findViewById<LinearLayout>(helium314.keyboard.latin.R.id.main_keyboard_frame)
-        frame.findViewWithTag<View>("chirp_strip")?.let(frame::removeView)
+        val suggestions = keys.findViewById<android.widget.RelativeLayout>(helium314.keyboard.latin.R.id.suggestion_strip_view)
+        suggestions.findViewWithTag<View>("chirp_strip")?.let(suggestions::removeView)
         val strip = KeyboardStrip(ContextThemeWrapper(this, R.style.Theme_Chirp)).apply { tag = "chirp_strip" }
+        strip.mount(suggestions)
         dictation.attach(strip)
-        frame.addView(strip, 0, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
         super.setInputView(keys)
     }
     override fun onChirpVoiceClick(): Boolean { dictation.toggle(); return true }

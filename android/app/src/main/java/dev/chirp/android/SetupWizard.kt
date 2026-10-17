@@ -61,6 +61,9 @@ internal fun SetupWizard(
     grantNetwork: () -> Unit = {}, keyboardPreferences: () -> Unit = {}, diagnostics: () -> Unit = {}, copyDiagnostics: () -> Unit = {},
 ) {
     var showDiagnostics by remember { mutableStateOf(false) }
+    var paste by remember { mutableStateOf(false) }
+    val pageScroll = rememberScrollState()
+    LaunchedEffect(state.step) { pageScroll.scrollTo(0) }
     if (showDiagnostics) AlertDialog(onDismissRequest = { showDiagnostics = false },
         title = { Text("Diagnostics") },
         text = { Column(Modifier.heightIn(max = 420.dp).verticalScroll(rememberScrollState())) {
@@ -71,10 +74,10 @@ internal fun SetupWizard(
         dismissButton = { TextButton({ showDiagnostics = false }) { Text("Close") } })
     Surface(Modifier.fillMaxSize()) {
         Box(Modifier.fillMaxSize().safeDrawingPadding(), contentAlignment = Alignment.TopCenter) {
-            Column(Modifier.widthIn(max = 600.dp).fillMaxWidth().verticalScroll(rememberScrollState()).padding(24.dp),
+            Column(Modifier.widthIn(max = 600.dp).fillMaxWidth().verticalScroll(pageScroll).padding(24.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                Text("CHIRP  /  SETUP", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
-                Text("Your voice.\nYour keyboard.", style = MaterialTheme.typography.headlineLarge)
+                Text(if (state.step == 3) "CHIRP  /  SETTINGS" else "CHIRP  /  SETUP", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+                Text(if (state.step == 3) "Ready to dictate" else "Your voice. Your keyboard.", style = MaterialTheme.typography.headlineMedium)
                 Text("Speak on your phone. Your Mac transcribes over Tailscale.", style = MaterialTheme.typography.bodyLarge)
                 LinearProgressIndicator(progress = { (state.step + 1) / 4f }, modifier = Modifier.fillMaxWidth().semantics { contentDescription = "Setup progress" })
                 Text("Step ${state.step + 1} of 4 · ${listOf("Chirp Keyboard", "Microphone", "Pair Mac", "Try it")[state.step]}", style = MaterialTheme.typography.labelLarge)
@@ -90,6 +93,8 @@ internal fun SetupWizard(
                     0 -> {
                         Text("Enable Chirp Keyboard", style = MaterialTheme.typography.titleLarge)
                         Text("A full keyboard with Chirp’s microphone built in. Type normally, or tap the mic above the keys to dictate.")
+                        Text("English autocorrect, next-word and emoji suggestions are ready to use. Personalised suggestions learn typed words on this device; turn them off in Keyboard layouts & settings → Text correction. Dictation finals bypass keyboard learning.")
+                        Text("Swipe typing: not available")
                         Text("Samsung: Settings → General management → Keyboard list and default.")
                         Button(keyboardSettings, Modifier.fillMaxWidth()) { Text(if (state.inputEnabled) "Chirp Keyboard enabled ✓" else "Enable Chirp Keyboard") }
                         OutlinedButton(picker, Modifier.fillMaxWidth()) { Text(if (state.inputSelected) "Chirp Keyboard selected ✓" else "Select it as default") }
@@ -109,15 +114,21 @@ internal fun SetupWizard(
                         }
                         Text("Turn on Tailscale on both devices. On the Mac, open Chirp’s pairing QR code. Scan it or paste the pairing link below.")
                         Button(scan, Modifier.fillMaxWidth(), enabled = !state.scanning) { Text(if (state.scanning) "Scanning…" else "Scan pairing QR") }
-                        OutlinedTextField(state.link, { state.link = it }, Modifier.fillMaxWidth().semantics { contentDescription = "Private Chirp pairing link" },
+                        TextButton({ paste = !paste }) { Text(if (paste) "Hide pairing link" else "Paste pairing link instead") }
+                        if (paste || state.link.isNotEmpty()) OutlinedTextField(state.link, { state.link = it }, Modifier.fillMaxWidth().semantics { contentDescription = "Private Chirp pairing link" },
                             label = { Text("Pairing link") }, singleLine = true,
                             visualTransformation = PasswordVisualTransformation(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password))
                         Text("QR scanning uses Google Play services. Paste works without the scanner. Pairing tokens are encrypted with Android Keystore.", style = MaterialTheme.typography.bodySmall)
                         Button(check, Modifier.fillMaxWidth(), enabled = !state.checking) { Text("Test connection & save pairing") }
                     }
                     3 -> {
+                        if (state.paired) {
+                            Text("Paired with ${state.host}", style = MaterialTheme.typography.titleMedium)
+                            Text("Engine: ${state.health?.engine ?: "Not reported by Mac"}")
+                        }
+                        TextButton({ state.step = 2 }) { Text(if (state.paired) "Change pairing" else "Pair Mac") }
                         Text("Try a sentence", style = MaterialTheme.typography.titleLarge)
-                        Text("Tap the field below. Type on Chirp Keyboard, then tap its mic to toggle dictation or hold to talk. ✕ cancels. The keyboard stays selected after every final.")
+                        Text("Tap the field below. Type on Chirp Keyboard, then tap its mic to start and ✓ to finish. Long press the mic for quick options. ✕ cancels. The keyboard stays selected after every final.")
                         // Deliberately a real native editor: exercises the same InputConnection/accessibility path as other apps.
                         val editorInk = MaterialTheme.colorScheme.onSurface.toArgb()
                         val editorHint = MaterialTheme.colorScheme.onSurfaceVariant.toArgb()
@@ -126,7 +137,7 @@ internal fun SetupWizard(
                         val editorScope = rememberCoroutineScope()
                         AndroidView(factory = { context -> EditText(context).apply {
                             hint = "Test dictation here"; minLines = 3
-                            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
+                            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE or InputType.TYPE_TEXT_FLAG_AUTO_CORRECT or InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
                             onFocusChangeListener = View.OnFocusChangeListener { _, focused ->
                                 if (focused) postDelayed({ editorScope.launch { bringEditor.bringIntoView() } }, 350)
                             }
@@ -135,12 +146,14 @@ internal fun SetupWizard(
                             editor.setTextColor(editorInk); editor.setHintTextColor(editorHint)
                             editor.backgroundTintList = ColorStateList.valueOf(editorAccent)
                         }, modifier = Modifier.fillMaxWidth().bringIntoViewRequester(bringEditor))
+                        Text("Typing suggestions learn on this device. Swipe typing: not available", style = MaterialTheme.typography.bodySmall)
                         TextButton(picker) { Text("Choose keyboard") }
                         OutlinedButton(check, Modifier.fillMaxWidth(), enabled = !state.checking) { Text("Check Mac connection") }
-                        Text("Mac unreachable — is Tailscale on?", style = MaterialTheme.typography.titleSmall)
-                        Text("Check Tailscale is connected on both devices, wake the Mac, and check Chirp’s server is running. If pairing was replaced, scan a new QR code.")
+                        if (state.status.startsWith("Mac unreachable") || state.status.startsWith("Check Tailscale")) {
+                            Text("Check Tailscale is connected on both devices. Wake the Mac and start Chirp, then check the connection again.")
+                        }
                         Preference("Haptic cues", state.haptics) { state.haptics = it; preferences() }
-                        Preference(correctionLabel(state.health), state.correction,
+                        if (state.health.cleanupAvailable()) Preference("Clean-up · ${correctionLabel(state.health)}", state.correction,
                             state.health?.let { it.correctionAvailable && (!it.correctionLeavesMachine || it.correctionHost != null) } == true) {
                             state.correction = it; preferences()
                         }
@@ -158,7 +171,11 @@ internal fun SetupWizard(
                 TextButton({ diagnostics(); showDiagnostics = true }) { Text("Diagnostics") }
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                     TextButton({ state.step-- }, enabled = state.step > 0) { Text("Back") }
-                    if (state.step < 3) Button({ state.step++ }) { Text("Next") }
+                    if (state.step < 3) Button({ state.step++ }, enabled = when (state.step) {
+                        0 -> state.inputEnabled && state.inputSelected
+                        1 -> state.mic
+                        else -> true
+                    }) { Text(if (state.step == 2) "Try keyboard" else "Next") }
                     else Text("Ready when you are", Modifier.padding(12.dp), style = MaterialTheme.typography.labelLarge)
                 }
             }

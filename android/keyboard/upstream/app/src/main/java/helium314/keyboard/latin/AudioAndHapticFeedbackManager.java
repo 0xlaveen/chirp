@@ -26,6 +26,7 @@ import helium314.keyboard.latin.settings.SettingsValues;
 public final class AudioAndHapticFeedbackManager {
     private AudioManager mAudioManager;
     private Vibrator mVibrator;
+    private Context mChirpContext; // CHIRP: follow the system haptic preference.
 
     private SettingsValues mSettingsValues;
     private boolean mSoundOn;
@@ -47,6 +48,7 @@ public final class AudioAndHapticFeedbackManager {
     }
 
     private void initInternal(final Context context) {
+        mChirpContext = context.getApplicationContext();
         mAudioManager = (AudioManager) context.getSystemService(Context.AUDIO_SERVICE);
         mVibrator = (Vibrator) context.getSystemService(Context.VIBRATOR_SERVICE);
     }
@@ -99,6 +101,9 @@ public final class AudioAndHapticFeedbackManager {
     }
 
     public void performHapticFeedback(final View viewToPerformHapticFeedbackOn, final HapticEvent hapticEvent) {
+        // CHIRP: custom-duration and default haptics both obey Android's global setting.
+        if (android.provider.Settings.System.getInt(mChirpContext.getContentResolver(),
+                android.provider.Settings.System.HAPTIC_FEEDBACK_ENABLED, 1) == 0) return;
         if (!mSettingsValues.mVibrateOn || (mDoNotDisturb && !mSettingsValues.mVibrateInDndMode)) {
             return;
         }
@@ -114,7 +119,7 @@ public final class AudioAndHapticFeedbackManager {
         if (viewToPerformHapticFeedbackOn != null) {
             viewToPerformHapticFeedbackOn.performHapticFeedback(
                     hapticEvent.feedbackConstant,
-                    HapticFeedbackConstants.FLAG_IGNORE_GLOBAL_SETTING);
+                    0 /* CHIRP: respect system settings */);
         }
     }
 

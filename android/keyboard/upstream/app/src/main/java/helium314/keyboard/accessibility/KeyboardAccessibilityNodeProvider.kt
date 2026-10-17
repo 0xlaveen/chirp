@@ -181,6 +181,9 @@ class KeyboardAccessibilityNodeProvider<KV : KeyboardView>(
         }
         val keyDescription = getKeyDescription(key)
         val boundsInParent = key.hitBox
+        // CHIRP: the IME can move after the provider root was cached (resize/folding).
+        // Refresh per key so TalkBack targets screen coordinates, not the old window origin.
+        updateParentLocation()
         // Calculate the key's in-screen bounds.
         mTempBoundsInScreen.set(boundsInParent)
         mTempBoundsInScreen.offset(CoordinateUtils.x(mParentLocation), CoordinateUtils.y(mParentLocation))

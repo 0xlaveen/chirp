@@ -318,6 +318,9 @@ class SuggestionStripView(context: Context, attrs: AttributeSet?, defStyle: Int)
     }
 
     override fun onInterceptTouchEvent(motionEvent: MotionEvent): Boolean {
+        // CHIRP: native dictation controls in this row own their complete gesture.
+        val chirp = findViewWithTag<View>("chirp_strip")
+        if (chirp != null && chirp.visibility == VISIBLE && motionEvent.x >= chirp.left && motionEvent.x < chirp.right) return false
         // Detecting sliding up finger to show MoreSuggestionsView.
         return moreSuggestionsView.shouldInterceptTouchEvent(motionEvent)
     }

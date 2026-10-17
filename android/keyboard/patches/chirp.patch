@@ -1,3 +1,15 @@
+--- a/app/src/main/java/helium314/keyboard/accessibility/KeyboardAccessibilityNodeProvider.kt
++++ b/app/src/main/java/helium314/keyboard/accessibility/KeyboardAccessibilityNodeProvider.kt
+@@ -181,6 +181,9 @@
+         }
+         val keyDescription = getKeyDescription(key)
+         val boundsInParent = key.hitBox
++        // CHIRP: the IME can move after the provider root was cached (resize/folding).
++        // Refresh per key so TalkBack targets screen coordinates, not the old window origin.
++        updateParentLocation()
+         // Calculate the key's in-screen bounds.
+         mTempBoundsInScreen.set(boundsInParent)
+         mTempBoundsInScreen.offset(CoordinateUtils.x(mParentLocation), CoordinateUtils.y(mParentLocation))
 --- a/app/src/main/java/helium314/keyboard/keyboard/KeyboardActionListenerImpl.kt
 +++ b/app/src/main/java/helium314/keyboard/keyboard/KeyboardActionListenerImpl.kt
 @@ -50,6 +50,8 @@
@@ -36,6 +48,17 @@
  
      override fun onFinishSlidingInput() =
          keyboardSwitcher.onFinishSlidingInput(latinIME.currentAutoCapsState, latinIME.currentRecapitalizeState)
+--- a/app/src/main/java/helium314/keyboard/keyboard/KeyboardLayoutSet.kt
++++ b/app/src/main/java/helium314/keyboard/keyboard/KeyboardLayoutSet.kt
+@@ -135,6 +135,8 @@
+             // TODO: Consolidate those with {@link InputAttributes}.
+             params.editorInfo = editorInfo
+             params.settingsValues = settingsValues
++            // CHIRP: propagate the split preference into the layout/cache identity.
++            params.isSplitLayoutEnabled = settingsValues?.mIsSplitKeyboardEnabled == true
+         }
+ 
+         fun setKeyboardGeometry(keyboardWidth: Int, keyboardHeight: Int): Builder {
 --- a/app/src/main/java/helium314/keyboard/latin/App.kt
 +++ b/app/src/main/java/helium314/keyboard/latin/App.kt
 @@ -17,7 +17,8 @@
@@ -48,6 +71,43 @@
      override fun onCreate() {
          super.onCreate()
          DebugFlags.init(this)
+--- a/app/src/main/java/helium314/keyboard/latin/AudioAndHapticFeedbackManager.java
++++ b/app/src/main/java/helium314/keyboard/latin/AudioAndHapticFeedbackManager.java
+@@ -26,6 +26,7 @@
+ public final class AudioAndHapticFeedbackManager {
+     private AudioManager mAudioManager;
+     private Vibrator mVibrator;
++    private Context mChirpContext; // CHIRP: follow the system haptic preference.
+ 
+     private SettingsValues mSettingsValues;
+     private boolean mSoundOn;
+@@ -47,6 +48,7 @@
+     }
+ 
+     private void initInternal(final Context context) {
++        mChirpContext = context.getApplicationContext();
+         mAudioManager = (AudioManager) context.getSystemService(Context.AUDIO_SERVICE);
+         mVibrator = (Vibrator) context.getSystemService(Context.VIBRATOR_SERVICE);
+     }
+@@ -99,6 +101,9 @@
+     }
+ 
+     public void performHapticFeedback(final View viewToPerformHapticFeedbackOn, final HapticEvent hapticEvent) {
++        // CHIRP: custom-duration and default haptics both obey Android's global setting.
++        if (android.provider.Settings.System.getInt(mChirpContext.getContentResolver(),
++                android.provider.Settings.System.HAPTIC_FEEDBACK_ENABLED, 1) == 0) return;
+         if (!mSettingsValues.mVibrateOn || (mDoNotDisturb && !mSettingsValues.mVibrateInDndMode)) {
+             return;
+         }
+@@ -114,7 +119,7 @@
+         if (viewToPerformHapticFeedbackOn != null) {
+             viewToPerformHapticFeedbackOn.performHapticFeedback(
+                     hapticEvent.feedbackConstant,
+-                    HapticFeedbackConstants.FLAG_IGNORE_GLOBAL_SETTING);
++                    0 /* CHIRP: respect system settings */);
+         }
+     }
+ 
 --- a/app/src/main/java/helium314/keyboard/latin/InputView.java
 +++ b/app/src/main/java/helium314/keyboard/latin/InputView.java
 @@ -72,6 +72,15 @@
@@ -68,18 +128,15 @@
          // {@link SuggestionStripView}.
 --- a/app/src/main/java/helium314/keyboard/latin/LatinIME.java
 +++ b/app/src/main/java/helium314/keyboard/latin/LatinIME.java
-@@ -1217,6 +1217,10 @@
+@@ -1217,6 +1217,7 @@
          }
          final int stripHeight = mKeyboardSwitcher.isShowingStripContainer() ? mKeyboardSwitcher.getStripContainer().getHeight() : 0;
          int visibleTopY = inputHeight - visibleKeyboardView.getHeight() - stripHeight;
 +        // CHIRP: reserve and accept touches on the host strip above HeliBoard's own strip.
-+        final View chirpStrip = mInputView.findViewWithTag("chirp_strip");
-+        if (chirpStrip != null && chirpStrip.getVisibility() == View.VISIBLE)
-+            visibleTopY -= chirpStrip.getHeight();
          if (Settings.getValues().mIsFloatingKeyboard)
              visibleTopY = getResources().getDisplayMetrics().heightPixels;
  
-@@ -1419,9 +1423,27 @@
+@@ -1419,9 +1420,27 @@
          mSubtypeState.switchSubtype(mRichImm);
      }
  
@@ -107,7 +164,7 @@
          mKeyboardActionListener.onCodeInput(codePoint, x, y, isKeyRepeat);
      }
  
-@@ -1429,6 +1451,8 @@
+@@ -1429,6 +1448,8 @@
      // completely replace #onCodeInput.
      public void onEvent(@NonNull final Event event) {
          if (KeyCode.VOICE_INPUT == event.getKeyCode()) {
@@ -208,6 +265,30 @@
 -        }
 -    }
 -}
+--- a/app/src/main/java/helium314/keyboard/latin/settings/SettingsValues.java
++++ b/app/src/main/java/helium314/keyboard/latin/settings/SettingsValues.java
+@@ -205,7 +205,8 @@
+         mLanguageSwitchKeyToOtherImes = languagePref.equals("input_method") || languagePref.equals("both");
+         mLanguageSwitchKeyToOtherSubtypes = mIsLocked || languagePref.equals("internal") || languagePref.equals("both");
+         mShowsLanguageSwitchKey = prefs.getBoolean(Settings.PREF_SHOW_LANGUAGE_SWITCH_KEY, Defaults.PREF_SHOW_LANGUAGE_SWITCH_KEY);
+-        mShowsNumberRow = prefs.getBoolean(Settings.PREF_SHOW_NUMBER_ROW, Defaults.PREF_SHOW_NUMBER_ROW);
++        // CHIRP: inner Fold screens get a number row; an explicit user choice wins.
++        mShowsNumberRow = prefs.getBoolean(Settings.PREF_SHOW_NUMBER_ROW, res.getConfiguration().screenWidthDp >= 600);
+         mShowsNumberRowInSymbols = prefs.getBoolean(Settings.PREF_SHOW_NUMBER_ROW_IN_SYMBOLS, Defaults.PREF_SHOW_NUMBER_ROW_IN_SYMBOLS);
+         mLocalizedNumberRow = SubtypeUtilsKt.getHasLocalizedNumberRow(selectedSubtype, prefs);
+         mShowNumberRowHints = prefs.getBoolean(Settings.PREF_SHOW_NUMBER_ROW_HINTS, Defaults.PREF_SHOW_NUMBER_ROW_HINTS);
+--- a/app/src/main/java/helium314/keyboard/latin/suggestions/SuggestionStripView.kt
++++ b/app/src/main/java/helium314/keyboard/latin/suggestions/SuggestionStripView.kt
+@@ -318,6 +318,9 @@
+     }
+ 
+     override fun onInterceptTouchEvent(motionEvent: MotionEvent): Boolean {
++        // CHIRP: native dictation controls in this row own their complete gesture.
++        val chirp = findViewWithTag<View>("chirp_strip")
++        if (chirp != null && chirp.visibility == VISIBLE && motionEvent.x >= chirp.left && motionEvent.x < chirp.right) return false
+         // Detecting sliding up finger to show MoreSuggestionsView.
+         return moreSuggestionsView.shouldInterceptTouchEvent(motionEvent)
+     }
 --- a/app/src/main/java/helium314/keyboard/latin/utils/Log.kt
 +++ b/app/src/main/java/helium314/keyboard/latin/utils/Log.kt
 @@ -9,79 +9,21 @@
@@ -306,15 +387,21 @@
  data class LogLine(val level: Char, val tag: String?, val message: String) {
 --- a/app/src/main/java/helium314/keyboard/settings/screens/MainSettingsScreen.kt
 +++ b/app/src/main/java/helium314/keyboard/settings/screens/MainSettingsScreen.kt
-@@ -54,6 +54,11 @@
+@@ -54,6 +54,8 @@
              Column(
                  Modifier.verticalScroll(rememberScrollState()).then(Modifier.padding(innerPadding))
              ) {
-+                // CHIRP: pairing and diagnostics stay reachable from keyboard settings.
-+                val chirpContext = LocalContext.current
-+                Preference(name = "Chirp setup & pairing", onClick = {
-+                    chirpContext.startActivity(android.content.Intent().setClassName(chirpContext.packageName, "dev.chirp.android.SetupActivity"))
-+                }) { NextScreenIcon() }
++                // CHIRP: the host supplies its settings section without a library dependency.
++                ChirpSettingsHook.content?.invoke()
                  Preference(
                      name = stringResource(R.string.language_and_layouts_title),
                      description = enabledSubtypes.joinToString(", ") { it.displayName() },
+@@ -128,3 +130,8 @@
+         }
+     }
+ }
++
++// CHIRP: installed by the host Application before settings composition.
++object ChirpSettingsHook {
++    var content: (@androidx.compose.runtime.Composable () -> Unit)? = null
++}

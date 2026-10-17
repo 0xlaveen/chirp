@@ -1,7 +1,6 @@
 package dev.chirp.android
 
 import android.Manifest
-import android.annotation.SuppressLint
 import android.content.pm.PackageManager
 import android.inputmethodservice.InputMethodService
 import android.os.Handler
@@ -58,11 +57,11 @@ internal class KeyboardDictation(
     val active get() = session != null
     val ownsComposition get() = active || applying
 
-    @SuppressLint("ClickableViewAccessibility")
     fun attach(view: KeyboardStrip) {
         strip = view
         view.mic.setOnClickListener { toggle() }
-        view.mic.setOnTouchListener { _, event -> touch(event.actionMasked); true }
+        view.mic.setOnLongClickListener { if (!active) { quickOptions(); true } else false }
+        view.status.setOnClickListener { action()?.let(::openAction) }
         view.cancel.setOnClickListener { cancel("Cancelled") }
         view.raw.setOnClickListener {
             val target = composing ?: return@setOnClickListener
@@ -77,6 +76,34 @@ internal class KeyboardDictation(
             render()
         }
         render()
+    }
+    private fun setup(section: String = "settings") {
+        host.requestHideSelf(0)
+        host.startActivity(android.content.Intent(host, SetupActivity::class.java)
+            .putExtra("section", section).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK or
+                android.content.Intent.FLAG_ACTIVITY_CLEAR_TOP or android.content.Intent.FLAG_ACTIVITY_SINGLE_TOP))
+    }
+    private fun action() = DictationAction.forStatus(message)
+    private fun openAction(action: DictationAction) {
+        when (action) {
+            DictationAction.PAIR -> setup("pair")
+            DictationAction.MICROPHONE -> host.startActivity(android.content.Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                android.net.Uri.fromParts("package", host.packageName, null)).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK))
+            DictationAction.NETWORK -> {
+                val tailscale = host.packageManager.getLaunchIntentForPackage("com.tailscale.ipn")
+                if (tailscale != null) host.startActivity(tailscale.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)) else setup("network")
+            }
+        }
+    }
+    private fun quickOptions() {
+        val anchor = strip?.mic ?: return
+        android.widget.PopupMenu(anchor.context, anchor).apply {
+            if (store.health.cleanupAvailable()) menu.add((if (store.correction) "Clean-up on ✓" else "Clean-up off") + " · " + correctionLabel(store.health)).setOnMenuItemClickListener {
+                store.correction = !store.correction; true
+            }
+            menu.add("Chirp settings").setOnMenuItemClickListener { setup(); true }
+            show()
+        }
     }
     fun touch(action: Int) {
         if (session?.stopping == true) return
@@ -211,6 +238,9 @@ internal class KeyboardDictation(
     private fun haptic() { if (store.haptics) strip?.mic?.performHapticFeedback(HapticFeedbackConstants.CONFIRM) }
     private fun render() {
         val status = if (store.debugOverlay) "$message · first ${firstPartial ?: "—"} ms · final ${finalLatency ?: "—"} ms" else message
-        strip?.show(status, text, active, session?.stopping == true, undo, retained || store.health?.debugRetention == true)
+        strip?.show(action()?.let { "$status · ${it.label}" } ?: status, "", active, session?.stopping == true, undo, retained || store.health?.debugRetention == true)
+        strip?.status?.isClickable = action() != null
+        val disclosure = if (retained || store.health?.debugRetention == true) "Debug retention on. " else ""
+        strip?.status?.contentDescription = disclosure + (action()?.let { "$message. ${it.label}" } ?: status)
     }
 }

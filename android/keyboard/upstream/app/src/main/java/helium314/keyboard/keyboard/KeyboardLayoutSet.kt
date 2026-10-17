@@ -135,6 +135,8 @@ class KeyboardLayoutSet internal constructor(private val mContext: Context, priv
             // TODO: Consolidate those with {@link InputAttributes}.
             params.editorInfo = editorInfo
             params.settingsValues = settingsValues
+            // CHIRP: propagate the split preference into the layout/cache identity.
+            params.isSplitLayoutEnabled = settingsValues?.mIsSplitKeyboardEnabled == true
         }
 
         fun setKeyboardGeometry(keyboardWidth: Int, keyboardHeight: Int): Builder {

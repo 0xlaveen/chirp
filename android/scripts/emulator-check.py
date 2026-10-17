@@ -5,6 +5,7 @@ existing server venv/model paths passed on the command line. All runtime secrets
 outside git; only screenshots and a content-free result are retained.
 """
 import argparse
+import runpy
 import json
 import os
 from pathlib import Path
@@ -34,16 +35,10 @@ def adb(*args, capture=True, data=None):
     return result.stdout
 
 
-def nodes():
-    for _ in range(4):
-        adb("shell", "uiautomator", "dump", "/sdcard/chirp-check.xml")
-        # shell cat uses the same Android shell identity/mount namespace as the dumper.
-        raw = adb("shell", "cat", "/sdcard/chirp-check.xml")
-        try:
-            return list(ET.fromstring(raw[raw.index(b"<?xml"):]).iter("node"))
-        except (ValueError, ET.ParseError):
-            time.sleep(.5)
-    raise RuntimeError("Emulator did not produce an XML hierarchy")
+# Stock uiautomator dump omits the IME window on API 37. Share the shell-only
+# all-window probe with release smoke; this never ships in either APK.
+_probe = runpy.run_path(str(Path(__file__).with_name("emulator-smoke.py")))
+nodes = _probe["nodes"]
 
 
 def center(node):
@@ -65,20 +60,18 @@ def click(label):
 
 
 def editor():
-    return next(n for n in nodes() if n.get("class") == "android.widget.EditText")
+    # A Compose/IME resize can briefly expose no editor accessibility root.
+    deadline = time.monotonic() + 8
+    while time.monotonic() < deadline:
+        node = next((n for n in nodes() if n.get("class") == "android.widget.EditText"), None)
+        if node is not None:
+            return node
+    screenshot(Path("/tmp/chirp-e2e-editor-missing.png"))
+    raise RuntimeError("Test editor did not return after IME transition")
 
 
 def focus_editor():
-    # Theme recreation deliberately does not save field text/focus. Reset the wizard's
-    # scroll position before tapping; coordinates from an offscreen semantics node are 0,0.
-    if b"mInputShown=true" in adb("shell", "dumpsys", "input_method"):
-        adb("shell", "input", "keyevent", "4")
-    for _ in range(3):
-        adb("shell", "input", "swipe", "1100", "400", "1100", "1800", "200")
-    node = editor()
-    assert center(node) != (0, 0), "Test field is offscreen"
-    tap(*center(node))
-    time.sleep(1)
+    _probe["focus_editor"]()
 
 
 def screenshot(path):
@@ -87,26 +80,12 @@ def screenshot(path):
 
 
 def mic_position(night, work):
-    from PIL import Image
-    path = work / "geometry.png"
-    screenshot(path)
-    im = Image.open(path).convert("RGB")
-    color = (159, 211, 185) if night else (56, 106, 88)
-    # First 32dp: the strip mic is the only large solid accent area on the left edge.
-    x = max(24, round(im.width * 32 / (im.width / 2.4375)))
-    rows = [y for y in range(70, im.height - 50) if sum(abs(im.getpixel((x, y))[c] - color[c]) for c in range(3)) < 15]
-    runs = []
-    for y in rows:
-        if runs and y == runs[-1][-1] + 1:
-            runs[-1].append(y)
-        else:
-            runs.append([y])
-    large = [r for r in runs if len(r) > 35]
-    if not large:
-        screenshot(Path("/tmp/chirp-mic-missing.png"))
-        raise RuntimeError("Chirp mic is not visible")
-    run = max(large, key=len)
-    return x, (run[0] + run[-1]) // 2, im.width, im.height
+    node = next((n for n in nodes() if "Microphone: tap to dictate" in n.get("content-desc", "") and center(n) != (0, 0)), None)
+    if node is None:
+        raise RuntimeError("Accessible Chirp mic is missing")
+    x, y = center(node)
+    width, height = _probe["size"]()
+    return x, y, width, height
 
 
 def wait_health(token, timeout=150):
@@ -130,6 +109,7 @@ def main():
     args.add_argument("--apk", required=True)
     opt = args.parse_args()
     assert adb("get-serialno").strip().decode() == SERIAL
+    subprocess.run([str(Path(__file__).with_name("build-ui-probe.sh"))], check=True)
     # Refuse to disturb any service already using this test port.
     with socket.socket() as probe:
         probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -185,7 +165,6 @@ def main():
                     if item.get("name") in ("failure_class", "cleartext_allowed"):
                         print(item.get("name"), item.text or item.get("value"), flush=True)
                 raise RuntimeError("Emulator did not save pairing")
-            click("Next")
             focus_editor()
             for night in (False, True):
                 theme = "dark" if night else "light"
@@ -234,9 +213,11 @@ def main():
                 tap(round(width * .10), round(height * .72))
                 typed = editor().get("text", "")
                 assert typed in (before_type + "a", before_type + "A"), "Typing after dictation failed"
-                # Hold is push-to-talk; then cancel a new utterance and hide the IME.
-                adb("shell", "input", "swipe", str(x), str(y), str(x), str(y), "600")
-                time.sleep(2)
+                # Toolbar long-press opens options without starting capture; voice-key
+                # push-to-talk remains covered by the real host touch regression tests.
+                adb("shell", "input", "swipe", str(x), str(y), str(x), str(y), "700")
+                _probe["wait_for"]("Chirp settings")
+                adb("shell", "input", "keyevent", "4")
                 before_cancel = editor().get("text", "")
                 tap(x, y); time.sleep(.5); tap(width - x, y); time.sleep(.5)
                 assert editor().get("text", "") == before_cancel, "Cancel changed committed text"
@@ -245,11 +226,11 @@ def main():
                 crash = adb("logcat", "-b", "crash", "-d").decode(errors="replace")
                 assert "Process: dev.chirp.android" not in crash and ">>> dev.chirp.android <<<" not in crash, "Chirp crash recorded"
             click("Keyboard layouts & settings")
-            click("Chirp setup & pairing")
+            click("Test dictation")
             click("Diagnostics")
             click("Copy diagnostics")
             click("Close")
-            print("PASS: real Parakeet server; Keystore pairing; composing partials/finals; two utterances with smart spacing; tap/hold/cancel/hide; typing after dictation; keyboard settings/setup/diagnostics; light/dark screenshots; IME retained; no Chirp crash.")
+            print("PASS: real Parakeet server; Keystore pairing; composing partials/finals; two utterances with smart spacing; tap/options/cancel/hide; typing after dictation; keyboard settings/setup/diagnostics; light/dark screenshots; IME retained; no Chirp crash.")
         finally:
             server.terminate()
             try:
@@ -257,7 +238,7 @@ def main():
             except subprocess.TimeoutExpired:
                 server.kill(); server.wait()
             # Disable synthetic input and remove throwaway pairing credentials; leave the emulator running.
-            adb("shell", "rm", "-f", "/sdcard/chirp-check.xml", "/sdcard/chirp-check.png")
+            adb("shell", "rm", "-f", "/sdcard/chirp-check.xml", "/sdcard/chirp-check.png", "/sdcard/chirp-windows.xml", "/data/local/tmp/chirp-ui-probe.jar")
             adb("shell", "am", "force-stop", PACKAGE)
             adb("shell", "run-as", PACKAGE, "rm", "-f", "shared_prefs/debug_capture.xml", "shared_prefs/chirp.xml")
             adb("shell", "ime", "set", IME)
