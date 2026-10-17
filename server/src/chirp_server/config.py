@@ -6,9 +6,11 @@ import os
 import secrets
 import stat
 import tomllib
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from urllib.parse import urlsplit
+
+from .profiles import Profile, resolve_profiles
 
 
 @dataclass
@@ -23,8 +25,15 @@ class CorrectionConfig:
     api_key_env: str = "CHIRP_LLM_API_KEY"
     keychain_service: str = ""
     idle_seconds: float = 60.0
+    profiles: dict = field(default_factory=dict)
+    resolved_profiles: dict[str, Profile] = field(init=False, repr=False)
 
     def __post_init__(self):
+        self.resolved_profiles = resolve_profiles(self.profiles)
+        if self.prompt and "prompt" not in self.profiles.get("default", {}):
+            self.resolved_profiles["default"] = replace(
+                self.resolved_profiles["default"], prompt=self.prompt
+            )
         self.mode = self.mode if self.mode is not None else ("endpoint" if self.enabled else "off")
         if self.mode not in {"off", "managed", "endpoint"}:
             raise ValueError("Invalid correction mode")

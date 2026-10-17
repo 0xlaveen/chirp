@@ -20,6 +20,7 @@ async def bench(model_id, repetitions, *, label="current"):
     cases = load_cases(FIXTURES)
     corrector = Corrector(CorrectionConfig(mode="managed", model=model_id, timeout=120))
     times = []
+    profiles = {}
     totals = dict.fromkeys(("passed", "exact", "near", "must_keep", "must_drop", "unchanged"), 0)
     rejected = 0
     failures = []
@@ -31,16 +32,30 @@ async def bench(model_id, repetitions, *, label="current"):
         for _ in range(repetitions):
             for case in cases:
                 started = time.perf_counter()
-                result = await corrector.process(case["raw"])
+                profile = case.get("profile", "default")
+                result = await corrector.process(case["raw"], profile, case.get("instructions", ""))
                 times.append((time.perf_counter() - started) * 1000)
                 loads.append(os.getloadavg()[0])
                 measured = score(case, result.text)
+                group = profiles.setdefault(
+                    profile, {"runs": 0, "passed": 0, "rejected": 0, "times": []}
+                )
+                group["runs"] += 1
+                group["passed"] += measured.passed
+                group["rejected"] += result.error is not None
+                group["times"].append(times[-1])
                 rejected += result.error is not None
                 for name in totals:
                     totals[name] += getattr(measured, name)
                 if not measured.passed:
                     failures.append({"id": case["id"], "error": result.error})
+        for group in profiles.values():
+            timings = group.pop("times")
+            group["median_ms"] = round(statistics.median(timings), 1)
+            group["min_ms"] = round(min(timings), 1)
+            group["max_ms"] = round(max(timings), 1)
         return {
+            "profiles": profiles,
             "label": label,
             "model": model_id,
             "cold_ms": round(cold_ms, 1),

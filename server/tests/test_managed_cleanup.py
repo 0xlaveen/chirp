@@ -195,6 +195,15 @@ def test_cancel_pending_managed_cleanup_keeps_socket_usable(settings, monkeypatc
             ws.receive_json()
             ws.send_bytes(PCM)
             ws.send_json({"type": "stop"})
+            response = ws.receive_json()
+            while response["type"] == "partial":
+                response = ws.receive_json()
+            assert response == {
+                "type": "correcting",
+                "seq": response["seq"],
+                "raw": "hang",
+                "profile": "default",
+            }
             assert reading.wait(3)
             process = corrector.managed.process
             ws.send_json({"type": "cancel"})

@@ -9,12 +9,13 @@ from starlette.websockets import WebSocketDisconnect
 from chirp_server.app import authorized, create_app
 from chirp_server.audio import MAX_FRAME, MAX_PCM
 from chirp_server.engine import FakeEngine
+from chirp_server.profiles import BUILTINS
 
 
 def final(ws):
     while True:
         message = ws.receive_json()
-        if message["type"] != "partial":
+        if message["type"] in {"final", "error"}:
             return message
 
 
@@ -31,6 +32,7 @@ def test_health_redaction(client):
         "correction_mode": "off",
         "correction_leaves_machine": False,
         "correction_host": None,
+        "correction_profiles": [profile.metadata() for profile in BUILTINS.values()],
     }
 
 
