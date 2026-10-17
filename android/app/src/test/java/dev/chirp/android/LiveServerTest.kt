@@ -31,7 +31,7 @@ class LiveServerTest {
 
     // Loopback only: Pairing.from enforces HTTPS for real pairings, so build the base URL directly.
     private fun pairing(token: String) = Pairing(url!!.toHttpUrl(), token)
-    private fun token() = File(System.getProperty("chirp.live.tokenFile")).readText().trim()
+    private fun token() = File(checkNotNull(System.getProperty("chirp.live.tokenFile"))).readText().trim()
 
     private fun transport(pairing: Pairing) = StreamTransport(client, pairing,
         dispatch = { if (!main.isShutdown) runCatching { main.execute(it) } }, event = { events.put(it) }, failure = { events.put("failure") },
@@ -43,7 +43,7 @@ class LiveServerTest {
 
     /** PCM16LE mono 16 kHz samples from the WAV's data chunk, in 40 ms (1280-byte) frames like PcmCapture. */
     private fun frames(): List<ByteArray> {
-        val bytes = File(System.getProperty("chirp.live.wav")).readBytes()
+        val bytes = File(checkNotNull(System.getProperty("chirp.live.wav"))).readBytes()
         val buf = ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN)
         var at = 12
         while (at + 8 <= bytes.size) {

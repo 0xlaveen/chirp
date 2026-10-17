@@ -10,19 +10,24 @@ import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.sqrt
 
+interface Capture {
+    fun start()
+    fun stop()
+}
+
 /** Koi's streaming sink pattern: only one frame in memory, with explicit stop/cancel teardown. */
 class PcmCapture(
     private val frame: (ByteArray) -> Boolean,
     private val level: (Double) -> Unit,
     private val done: (String?) -> Unit,
-) {
+) : Capture {
     private val running = AtomicBoolean(true)
     private val lock = Any()
     private var recorder: AudioRecord? = null
     private var thread: Thread? = null
 
     @SuppressLint("MissingPermission") // IME checks RECORD_AUDIO before constructing capture.
-    fun start() {
+    override fun start() {
         check(thread == null)
         thread = Thread({
             Process.setThreadPriority(Process.THREAD_PRIORITY_AUDIO)
@@ -86,7 +91,7 @@ class PcmCapture(
             }
         }, "ChirpCapture").also { it.start() }
     }
-    fun stop() {
+    override fun stop() {
         running.set(false)
         synchronized(lock) { try { recorder?.stop() } catch (_: IllegalStateException) { } }
     }

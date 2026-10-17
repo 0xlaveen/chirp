@@ -39,6 +39,14 @@ object ChirpNetwork {
     }
 }
 
+interface ImeTransport {
+    fun connect()
+    fun start(correction: Boolean): Boolean
+    fun audio(bytes: ByteArray): Boolean
+    fun stop(): Boolean
+    fun close(cancel: Boolean = false, immediate: Boolean = false)
+}
+
 /** Main-thread control; audio() is also called by the capture thread. */
 class StreamTransport(
     private val client: OkHttpClient,
@@ -47,7 +55,7 @@ class StreamTransport(
     private val event: (ServerEvent) -> Unit,
     private val failure: () -> Unit,
     private val opened: () -> Unit = {},
-) {
+) : ImeTransport {
     @Volatile private var socket: WebSocket? = null
     @Volatile private var ready = false
     @Volatile private var active = false
@@ -59,7 +67,7 @@ class StreamTransport(
     private var attempt = 0
 
     /** Upgrade with bearer authentication only. Do not allocate an engine utterance. */
-    fun connect() {
+    override fun connect() {
         if (closed || socket != null) return
         val id = ++attempt
         val request = Request.Builder().url(pairing.endpoint("v1/stream"))
@@ -103,7 +111,7 @@ class StreamTransport(
             }
         })
     }
-    fun start(correction: Boolean): Boolean {
+    override fun start(correction: Boolean): Boolean {
         if (closed || active) return false
         active = true; ready = false; startSent = false; retried = false
         this.correction = correction
@@ -122,16 +130,16 @@ class StreamTransport(
         if (!retried && !wasReady) { retried = true; connect() }
         else { close(); failure() }
     }
-    fun audio(bytes: ByteArray): Boolean {
+    override fun audio(bytes: ByteArray): Boolean {
         if (!active || !ready) return false
         val ws = socket ?: return false
         if (ws.queueSize() + bytes.size > 160000) return false // Bound network backpressure as well.
         return ws.send(bytes.toByteString())
     }
-    fun stop(): Boolean = active && ready && socket?.send(Protocol.STOP) == true
+    override fun stop(): Boolean = active && ready && socket?.send(Protocol.STOP) == true
 
     /** Cancel retires the socket: v1 has no cancel acknowledgement or session IDs on finals. */
-    fun close(cancel: Boolean = false, immediate: Boolean = false) {
+    override fun close(cancel: Boolean, immediate: Boolean) {
         if (closed) return
         closed = true; ++attempt; active = false; ready = false; connected = false
         val ws = socket

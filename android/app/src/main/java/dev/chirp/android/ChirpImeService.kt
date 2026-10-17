@@ -29,7 +29,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 @SuppressLint("SetTextI18n")
-class ChirpImeService : InputMethodService() {
+open class ChirpImeService : InputMethodService() {
     private enum class Phase { IDLE, CONNECTING, RECORDING, FINALIZING }
     private val handler = Handler(Looper.getMainLooper())
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
@@ -40,7 +40,7 @@ class ChirpImeService : InputMethodService() {
     private var visible = false
     private var reconfiguring = false
     @Volatile private var generation = 0
-    @Volatile private var transport: StreamTransport? = null
+    @Volatile private var transport: ImeTransport? = null
     private var pairing: Pairing? = null
     private var preReady: PreReadyBuffer? = null
     private var audioFinished = false
@@ -53,7 +53,7 @@ class ChirpImeService : InputMethodService() {
     private var firstPartialLatency: Long? = null
     private var stopToFinal: Long? = null
     private var pendingHealth: okhttp3.Call? = null
-    private var capture: PcmCapture? = null
+    private var capture: Capture? = null
     private var composing: ComposingSession? = null
     private var status = "Tap to dictate · hold to talk"
     private var partial = ""
@@ -113,8 +113,9 @@ class ChirpImeService : InputMethodService() {
         key("⌨ back", "Previous keyboard") { cancelSession(); previousKeyboard() }
         column.addView(row)
         raw = column.button("Use raw") {
-            val inserted = composing?.useRaw() == true
-            forgetUndo(); render()
+            val inserted = composing?.useRaw(expectedCursor) == true
+            if (inserted) forgetUndo()
+            render()
             if (inserted && store.returnToPrevious) previousKeyboard()
         }
         column.button("Chirp setup") {
@@ -161,7 +162,7 @@ class ChirpImeService : InputMethodService() {
         preReady = buffer
         val overlay = store.debugOverlay
         // Start capture before any network work. The buffer owns and zeroes every PCM frame.
-        capture = PcmCapture(
+        capture = createCapture(
             frame = { bytes -> buffer.offer(bytes) },
             level = { value -> if (overlay) handler.post {
                 if (generation == id && phase != Phase.FINALIZING) {
@@ -269,13 +270,21 @@ class ChirpImeService : InputMethodService() {
         if (visible) scheduleIdleExpiry()
         render()
     }
-    private fun ensureTransport(): StreamTransport? {
+    protected open fun createCapture(frame: (ByteArray) -> Boolean, level: (Double) -> Unit,
+                                     done: (String?) -> Unit): Capture = PcmCapture(frame, level, done)
+
+    protected open fun createTransport(paired: Pairing, event: (ServerEvent) -> Unit,
+                                      failure: () -> Unit): ImeTransport = StreamTransport(client, paired,
+        dispatch = { callback -> handler.post { callback() } }, event = event, failure = failure)
+
+    protected open fun loadPairing(): Pairing? = store.pairing()
+
+    private fun ensureTransport(): ImeTransport? {
         transport?.let { return it }
         val paired = pairing ?: return null
         if (!visible) return null
-        lateinit var stream: StreamTransport
-        stream = StreamTransport(client, paired,
-            dispatch = { callback -> handler.post { callback() } },
+        lateinit var stream: ImeTransport
+        stream = createTransport(paired,
             event = { event -> if (transport === stream && phase != Phase.IDLE) onServerEvent(generation, event) },
             failure = {
                 if (transport === stream) {
@@ -287,7 +296,7 @@ class ChirpImeService : InputMethodService() {
         stream.connect()
         return stream
     }
-    private fun refreshHealth() {
+    protected open fun refreshHealth() {
         val paired = pairing ?: return
         val id = viewGeneration
         val readyAtStart = readyVersion
@@ -351,7 +360,7 @@ class ChirpImeService : InputMethodService() {
             currentInputConnection?.sendKeyEvent(KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_ENTER))
         }
     }
-    private fun previousKeyboard() {
+    protected open fun previousKeyboard() {
         if (!switchToPreviousInputMethod()) getSystemService(InputMethodManager::class.java).showInputMethodPicker()
     }
     private fun render() {
@@ -383,7 +392,7 @@ class ChirpImeService : InputMethodService() {
         visible = true
         if (!wasVisible) {
             ++viewGeneration
-            pairing = store.pairing()
+            pairing = loadPairing()
             ensureTransport() // TLS + bearer only; the mic press sends start.
             refreshHealth()
             scheduleIdleExpiry()
