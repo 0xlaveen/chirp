@@ -2,7 +2,7 @@
 
 Measured 2026-10-17 on Apple M5 Pro, 64 GiB unified memory, 18 logical CPUs, macOS 27.0.1 (26A434), Swift 6.4 Command Line Tools; no Xcode.
 
-The host was shared with active build/test workers. Recorded 1-minute load averages were approximately 25–57. These are observed contended results, not isolated performance budgets. Different rows were measured at different times; cross-engine speed rankings are provisional. CPU process peak RSS excludes some GPU allocations and out-of-process system speech services, so Apple’s low RSS is not its total system memory footprint.
+The host was shared with active build/test workers. Recorded 1-minute load averages were approximately 25–57. These are observed contended results, not isolated performance budgets. Different rows were measured at different times; cross-engine speed rankings are provisional. CPU process peak RSS excludes some GPU allocations and out-of-process system speech services, so Apple’s low RSS is not its total system memory footprint. A quieter-host rerun the same day is recorded in the 'Quiet-host rerun' section below; every other section is the original contended measurement.
 
 ## Selected behavior
 
@@ -12,9 +12,36 @@ The final real uvicorn/root-path/WebSocket simulator check on the 5.85 s fixture
 
 Model metadata was checked on Hugging Face on 2026-10-17. The newer [MLX Community v3 conversion](https://huggingface.co/mlx-community/parakeet-tdt-0.6b-v3) is multilingual; the selected English-only [v2 conversion](https://huggingface.co/mlx-community/parakeet-tdt-0.6b-v2) still resolves to pinned revision `8ae155301e23d820d82aa60d24817c900e69e487`. No model repository or floating revision is resolved at server startup.
 
-## Same-clip finalization comparison
+## Quiet-host rerun (2026-10-17)
 
-One loaded, actually warmed model; full vs segment modes run back-to-back on each exact WAV, two repetitions with order reversed. Medians below include any in-flight partial work at stop. Every streamed final had 0% normalized WER. Short continuous 5 s regression means pause precommit remains **opt-in** (`--finalization segments`). This deliberately leaves default `stable` empty; segment mode exposes only its frozen prefixes, and final correction suppresses them.
+Same day, same synthetic fixtures and paired method, rerun while the host was quiet: recorded 1-minute load averages were approximately 5.0–6.2 across the paired rows (the contended sections below ran at 25–57). The real uvicorn/root-path/WebSocket simulator check measured 244 ms first partial, **107 ms stop-to-final** and 0.52 s model load plus actual decode warmup (the contended run measured 196/96 ms and 0.54 s). Every streamed final kept 0% normalized WER.
+
+| Fixture | Actual audio (s) | Full final (ms) | Segments final (ms) | 1-min load range |
+|---|---:|---:|---:|---:|
+| Continuous 5 s | 5.85 | 155 | 135 | 5.3–5.8 |
+| Continuous 15 s | 15.46 | 222 | 270 | 5.0–6.2 |
+| 600 ms pauses 5 s | 6.45 | 153 | 114 | 5.1–5.5 |
+| 600 ms pauses 15 s | 17.86 | 240 | 91 | 5.0–5.8 |
+
+Quiet-host segments verdict: `--finalization segments` now wins the continuous 5 s median (135 vs 155 ms) but still loses the continuous 15 s median (270 vs 222 ms), while the pause fixtures improve further (114 vs 153 ms; 91 vs 240 ms). There is no clear margin for ≤20 s continuous utterances across lengths, so the default stays `full`; segments remain recommended when the speaker pauses. The same engine rows rerun under these conditions:
+
+| Variant | Audio (s) | Warm RTFx | WER (%) | Peak process RSS (MiB) | 1-min load range |
+|---|---:|---:|---:|---:|---:|
+| MLX fp32 rolling | 5.85 | 87.7 | 0.00 | 1022 | 3.7–4.0 |
+| MLX fp32 rolling | 15.46 | 113.0 | 0.00 | 1022 | 3.7–4.0 |
+| MLX fp32 rolling | 60.45 | 104.3 | 0.00 | 1022 | 3.7–4.0 |
+| ONNX v2 int8 CPU | 5.85 | 76.9 | 0.00 | 1414 | 2.7–11.4 |
+| ONNX v2 int8 CPU | 15.46 | 36.1 | 0.00 | 1414 | 2.7–11.4 |
+| ONNX v2 int8 CPU | 60.45 | 26.0 | 12.94 | 1414 | 2.7–11.4 |
+
+Two observations on the quiet ONNX rows: its 60 s clip reproduces the contended run's 12.94% WER exactly, suggesting a deterministic int8 long-audio degradation rather than a load artifact, and its 1-minute loadavg climbs during the run itself because ONNX inference saturates CPU cores (unlike the GPU-side MLX rows).
+
+Reproduce the quiet rerun with `uv run python scripts/smoke.py`; `uv run python scripts/compare_finalization.py` (kept as `bench-paired-finalization-quiet.json`; the M1 contended raw was preserved as `bench-paired-finalization-contended.json`); `uv run python scripts/bench.py --output "$HOME/Library/Caches/Chirp/bench-mlx-fp32-rolling-quiet.json"`; 
+`uv run --extra onnx python scripts/bench.py --engine onnx --output "$HOME/Library/Caches/Chirp/bench-onnx-int8-quiet.json"`.
+
+## Same-clip finalization comparison (contended)
+
+One loaded, actually warmed model; full vs segment modes run back-to-back on each exact WAV, two repetitions with order reversed. Medians below include any in-flight partial work at stop. Every streamed final had 0% normalized WER. Short continuous 5 s regression means pause precommit remains **opt-in** (`--finalization segments`). This deliberately leaves default `stable` empty; segment mode exposes only its frozen prefixes, and final correction suppresses them. These are the original contended-host measurements.
 
 | Fixture | Actual audio (s) | Full final (ms) | Segments final (ms) | 1-min load range |
 |---|---:|---:|---:|---:|
