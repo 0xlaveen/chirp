@@ -7,7 +7,6 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     private let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
     private let controller: DictationController
     private let actions: Actions
-    private var launchError: String?
     private let badge = NSView()
     private let cleanedBadge = NSView()
     private let glyphs = Glyphs()
@@ -16,7 +15,8 @@ final class MenuBarController: NSObject, NSMenuDelegate {
 
     /// The windows the menu opens.
     struct Actions {
-        var openSettings: () -> Void
+        /// Opens Settings, on `tab` when given (else wherever it was).
+        var openSettings: (SettingsTab?) -> Void
         var openSetup: () -> Void
         var openAbout: () -> Void
     }
@@ -40,7 +40,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     func refreshIcon() {
         let icon = StatusIcon.of(state: controller.state, serverReachable: controller.health != nil,
                                  debugRetention: controller.debugRetention, reduceMotion: reduceMotion,
-                                 rawOfferOpen: controller.rawOffer.isOpen)
+                                 rawOfferOpen: controller.rawOffer.isOpen, paused: controller.isPaused)
         guard let button = item.button else { return }
         switch icon.glyph {
         case .idle: button.image = glyphs.idle ?? Self.symbol(controller.health == nil ? "mic.slash" : "mic")
@@ -124,56 +124,60 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         inputs.health = controller.health
         inputs.healthError = controller.healthError
         inputs.debugRetention = controller.debugRetention
+        inputs.paused = controller.isPaused
+        inputs.hotkeyRegistered = controller.gate.hotkeyRegistered
         inputs.inputs = InputDevice.all().map(\.input)
         inputs.defaultInput = InputDevice.systemDefault()?.input
         inputs.chosenInputUID = settings.inputDeviceUID
         inputs.cleanupOn = settings.correction
-        inputs.showRawAfterCleanup = settings.showRawAfterCleanup
+        inputs.showChanges = settings.showChangesAfterCleanup
         inputs.styleID = settings.correctionProfile
         inputs.rawOfferOpen = controller.rawOffer.isOpen
         inputs.rawOfferKey = controller.rawOffer.hotkeyActive ? RawOffer.combo.title : nil
         inputs.hotkey = settings.hotkey
         inputs.soundsEnabled = settings.soundsEnabled
         inputs.soundPack = settings.soundPack
-        inputs.hasCustomSound = settings.customStartSound != nil || settings.customStopSound != nil
         inputs.serverURL = settings.serverURL
         inputs.micGranted = Permissions.microphoneGranted
         inputs.accessibilityGranted = Permissions.accessibilityGranted
-        inputs.launch = LaunchAtLogin.state
-        inputs.launchError = launchError
         menu.removeAllItems()
-        let entries = MenuContent.entries(inputs)
-        var index = 0
-        while index < entries.count {
-            let entry = entries[index]
-            index += 1
-            guard entry.showsAppIcon else { menu.addItem(item(for: entry)); continue }
-            // The header block: this row plus the status lines up to the next separator, as one custom view.
-            let start = index
-            while index < entries.count, !entries[index].isSeparator { index += 1 }
-            menu.addItem(headerItem(entry, lines: Array(entries[start..<index])))
-        }
+        menu.addItem(headerItem(MenuContent.header(inputs), menu: menu))
+        for entry in MenuContent.entries(inputs) { menu.addItem(topLevelItem(for: entry)) }
     }
 
-    private func headerItem(_ header: MenuEntry, lines: [MenuEntry]) -> NSMenuItem {
+    /// The name, the status and the switch: a custom view, since a plain item cannot hold a control.
+    private func headerItem(_ header: MenuHeader, menu: NSMenu) -> NSMenuItem {
+        let view = MenuHeaderView(header: header)
+        view.onToggle = { [weak self, weak menu] running in
+            guard let self else { return }
+            self.controller.setRunning(running)
+            self.refreshIcon()
+            // Let the switch finish its slide, then close the menu on the new state.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { menu?.cancelTracking() }
+        }
         let i = NSMenuItem()
-        i.view = MenuHeaderView(title: header.title, hint: header.subtitle, lines: lines, icon: NSApp.applicationIconImage)
+        i.view = view
+        return i
+    }
+
+    /// Top-level rows are drawn by `MenuRowView` (grey value or shortcut at the right, chevron for submenus); the
+    /// submenus beneath them are plain native items.
+    private func topLevelItem(for entry: MenuEntry) -> NSMenuItem {
+        if entry.isSeparator { return .separator() }
+        let i = item(for: entry)
+        i.view = MenuRowView(entry: entry)
         return i
     }
 
     private func item(for entry: MenuEntry) -> NSMenuItem {
         if entry.isSeparator { return .separator() }
-        if entry.isHeader { return .sectionHeader(title: entry.title) }
         let i = NSMenuItem(title: entry.title, action: selector(for: entry.action), keyEquivalent: entry.keyEquivalent ?? "")
         if entry.keyEquivalent != nil { i.keyEquivalentModifierMask = .command }
         if entry.action != nil { i.target = self }
-        i.isEnabled = entry.action != nil || entry.submenu != nil
+        i.isEnabled = entry.isEnabled
         i.state = switch entry.mark { case .off: .off; case .on: .on; case .mixed: .mixed }
         i.representedObject = entry.action?.payload
-        i.subtitle = entry.subtitle
-        if let name = entry.symbol { i.image = MenuStyle.symbol(name, tone: entry.symbolTone ?? entry.tone) }
-        // Warnings and errors that can be acted on keep their colour; plain rows use the system's.
-        if entry.tone == .warning || entry.tone == .error, entry.action != nil || entry.submenu != nil {
+        if entry.tone == .warning || entry.tone == .error, entry.isEnabled {
             i.attributedTitle = NSAttributedString(string: entry.title, attributes: [
                 .foregroundColor: MenuStyle.textColor(entry.tone), .font: NSFont.menuFont(ofSize: 0)])
         }
@@ -192,15 +196,12 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         case .useRaw: #selector(useRaw)
         case .pickInput: #selector(pickInput(_:))
         case .toggleCleanup: #selector(toggleCleanup)
-        case .toggleShowRaw: #selector(toggleShowRaw)
-        case .pickHotkey: #selector(pickHotkey(_:))
+        case .toggleShowChanges: #selector(toggleShowChanges)
         case .pickStyle: #selector(pickStyle(_:))
         case .copyDoctor: #selector(copyDoctor)
-        case .grantMic: #selector(grantMic)
-        case .grantAX: #selector(grantAX)
         case .pickSound: #selector(pickSound(_:))
-        case .toggleLaunch: #selector(toggleLaunch)
         case .showSettings: #selector(showSettings)
+        case .editStyles: #selector(editStyles)
         case .showSetup: #selector(showSetup)
         case .showAbout: #selector(showAbout)
         case .quit: #selector(quit)
@@ -211,45 +212,30 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     @objc private func useRaw() { controller.rawOffer.take() }
     @objc private func pickInput(_ sender: NSMenuItem) { settings.inputDeviceUID = sender.representedObject as? String }
     @objc private func toggleCleanup() { settings.correction.toggle() }
-    @objc private func toggleShowRaw() { settings.showRawAfterCleanup.toggle() }
+    @objc private func toggleShowChanges() { settings.showChangesAfterCleanup.toggle() }
     @objc private func pickStyle(_ sender: NSMenuItem) {
         guard let id = sender.representedObject as? String else { return }
         settings.correctionProfile = id
-        // Custom needs instructions: open Settings, where they are written.
-        if id == CorrectionProfile.customID { actions.openSettings() }
-    }
-    @objc private func pickHotkey(_ sender: NSMenuItem) {
-        settings.hotkey = KeyCombo.resolve(id: sender.representedObject as? String)
-        controller.registerHotkey()
+        // Custom needs instructions: open the style editor, where they are written.
+        if id == CorrectionProfile.customID { actions.openSettings(.cleanup) }
     }
     @objc private func copyDoctor() {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(DoctorHelp.clipboardText(serverURL: settings.serverURL), forType: .string)
     }
-    @objc private func showSettings() { actions.openSettings() }
+    @objc private func showSettings() { actions.openSettings(nil) }
+    @objc private func editStyles() { actions.openSettings(.cleanup) }
     @objc private func showSetup() { actions.openSetup() }
     @objc private func showAbout() { actions.openAbout() }
     @objc private func pickSound(_ sender: NSMenuItem) {
         guard let choice = SoundChoice(id: sender.representedObject as? String) else { return }
         // Custom needs files: until there are some, Settings is where they are chosen.
-        if choice == .pack(.custom), settings.customStartSound == nil, settings.customStopSound == nil { actions.openSettings() }
+        if choice == .pack(.custom), settings.customStartSound == nil, settings.customStopSound == nil { actions.openSettings(.sounds) }
         choice.apply(to: settings)
         Sounds.prepare()
         if choice != .off { Sounds.play(.start) }   // hear what was picked
     }
-    @objc private func toggleLaunch() { launchError = LaunchAtLogin.toggle() }
     @objc private func quit() { NSApp.terminate(nil) }
-    @objc private func grantMic() {
-        Task {
-            if Permissions.microphone == .notDetermined { _ = await Permissions.requestMicrophone() } else {
-                Permissions.openSettings(.microphone)
-            }
-        }
-    }
-    @objc private func grantAX() {
-        Permissions.promptAccessibility()
-        Permissions.openSettings(.accessibility)
-    }
 }
 
 /// The bird glyphs (template images in Contents/Resources). The waves are the listening glyph minus the idle bird, so

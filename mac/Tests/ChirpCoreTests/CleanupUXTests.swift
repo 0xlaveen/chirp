@@ -137,7 +137,7 @@ private func object(_ json: String) throws -> [String: Any] {
         #expect(StatusIcon.of(state: .correcting, serverReachable: true, debugRetention: false).glyph == .listening)
         var inputs = MenuInputs()
         inputs.state = .correcting
-        #expect(MenuContent.status(inputs).title == "Polishing")
+        #expect(MenuContent.header(inputs).status == "Polishing…")
         #expect(SoundCue.cue(from: .finalizing, to: .correcting, enabled: true) == nil)
         #expect(SoundCue.cue(from: .correcting, to: .inserting, enabled: true) == nil)
     }
@@ -217,24 +217,25 @@ private func object(_ json: String) throws -> [String: Any] {
         #expect(p.insertRawFirst)
     }
 
-    @Test func styleMenuListsTheServersProfilesPlusCustom() {
+    @Test func cleanupSubmenuListsTheServersProfilesPlusCustom() {
         var m = MenuInputs()
         m.cleanupOn = true
         m.styleID = "email"
         m.health = Health(correction: "available", correctionLeavesMachine: false, correctionProfiles: CorrectionProfile.builtIn)
-        let style = MenuContent.entries(m).first { $0.title == "Style" }
-        #expect(style?.subtitle == "Email")
-        let titles = style?.submenu?.filter { !$0.isSeparator }.map(\.title)
-        #expect(titles == ["Default", "Chat", "Email", "Code", "Notes", "Custom…"])
-        #expect(style?.submenu?.first { $0.title == "Email" }?.mark == .on)
-        #expect(style?.submenu?.first { $0.title == "Notes" }?.subtitle?.contains("May restructure") == true)
-        #expect(style?.submenu?.first { $0.title == "Custom…" }?.action == .pickStyle("custom"))
-        // not for a server that lists none, nor while clean-up is off
+        let cleanup = MenuContent.entries(m).first { $0.title == "Clean-up" }
+        #expect(cleanup?.value == "Email")
+        let styles = cleanup?.submenu?.compactMap { e -> String? in if case .pickStyle = e.action { e.title } else { nil } }
+        #expect(styles == ["Default", "Chat", "Email", "Code", "Notes", "Custom"])
+        #expect(cleanup?.submenu?.first { $0.title == "Email" }?.mark == .on)
+        #expect(cleanup?.submenu?.first { $0.title == "Custom" }?.action == .pickStyle("custom"))
+        // a server that lists none has no style rows
         m.health = Health(correction: "available", correctionLeavesMachine: false)
-        #expect(MenuContent.entries(m).first { $0.title == "Style" } == nil)
+        #expect(MenuContent.entries(m).first { $0.title == "Clean-up" }?.submenu?.contains { $0.action == .pickStyle("email") } == false)
+        // clean-up off: the value says Off, the styles stay pickable
         m.health = Health(correction: "available", correctionProfiles: CorrectionProfile.builtIn)
         m.cleanupOn = false
-        #expect(MenuContent.entries(m).first { $0.title == "Style" } == nil)
+        let off = MenuContent.entries(m).first { $0.title == "Clean-up" }
+        #expect(off?.value == "Off" && off?.submenu?.contains { $0.action == .pickStyle("chat") } == true)
     }
 }
 

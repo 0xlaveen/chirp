@@ -19,7 +19,11 @@ public struct SettingsState: Sendable {
     /// The server's state in words ("Connected", "Unreachable", …) and its tone.
     public var serverStatus = "Connected"
     public var serverStatusTone: MenuEntry.Tone = .ok
-    /// Clean-up: the default style, the edited style prompts, the raw-first option and the per-app styles.
+    /// Clean-up: on or off, the default style, the edited style prompts, the raw-first option and the per-app styles.
+    public var cleanupEnabled = false
+    /// Where clean-up runs, or that the server has it off (under the checkbox), and whether it can be turned on.
+    public var cleanupDetail = "Tidies punctuation and wording before the text is inserted."
+    public var cleanupAvailable = true
     public var cleanupStyle = CorrectionProfile.defaultID
     /// The prompts the user edited, by style id (only styles that differ from the server's default).
     public var stylePrompts: [String: String] = [:]
@@ -28,6 +32,8 @@ public struct SettingsState: Sendable {
     /// The style the prompt editor opens on.
     public var editingStyle = CorrectionProfile.defaultID
     public var insertRawFirst = false
+    /// "Use raw" stays on offer for 5 seconds after a cleaned insertion (the hotkey and the menu row).
+    public var offerRaw = true
     /// "Show changes after clean-up": the diff highlight and the HUD's Use raw button. Off by default.
     public var showChanges = false
     public var appStyles = AppStyleRule.defaults
@@ -38,23 +44,49 @@ public struct SettingsState: Sendable {
     public init() {}
 }
 
-/// The window's content view. It accepts first responder so the window can park focus here instead of on the Server
-/// URL field, which would otherwise open selected.
+/// The preferences window's toolbar tabs, in order.
+public enum SettingsTab: String, CaseIterable, Sendable {
+    case general, sounds, cleanup, server, permissions
+
+    public var title: String {
+        switch self {
+        case .general: "General"
+        case .sounds: "Sounds"
+        case .cleanup: "Clean-up"
+        case .server: "Server"
+        case .permissions: "Permissions"
+        }
+    }
+
+    /// The toolbar icon (SF Symbol).
+    public var symbol: String {
+        switch self {
+        case .general: "gearshape"
+        case .sounds: "speaker.wave.2"
+        case .cleanup: "sparkles"
+        case .server: "server.rack"
+        case .permissions: "hand.raised"
+        }
+    }
+}
+
+/// A tab's content view. It accepts first responder so the window can park focus here instead of on a text field,
+/// which would otherwise open selected.
 public final class SettingsContentView: NSView {
     override public var acceptsFirstResponder: Bool { true }
 }
 
 /// The Settings window content, plain AppKit on purpose: the Command Line Tools toolchain has no SwiftUI macro
-/// plugins (@State etc.). Labels sit right-aligned in one column and controls left-aligned in a second, under
-/// General / Server / Permissions headings, with help text below its control. Controls are exposed so the owner can
-/// attach targets and actions.
+/// plugins (@State etc.). One view per toolbar tab (`SettingsTab`), each sized to its content: labels right-aligned in
+/// one column and controls left-aligned in a second, with help text below its control. All controls live here and are
+/// exposed so the owner can attach targets and actions.
 @MainActor
 public final class SettingsForm {
     static let margin: CGFloat = 20
     static let controlWidth: CGFloat = 340
 
-    /// The content view, with its 20 pt margin pinned by constraints so `fittingSize` includes it on every side.
-    public let view = SettingsContentView()
+    /// One content view per tab, each with its 20 pt margin pinned by constraints so `fittingSize` includes it on every side.
+    private var tabViews: [SettingsTab: SettingsContentView] = [:]
     public let hotkey = NSPopUpButton(frame: .zero, pullsDown: false)
     public let recorder = HotkeyRecorder()
     /// Under the hotkey: how it works, or why the last recording was refused.
@@ -78,21 +110,30 @@ public final class SettingsForm {
     private var customStartSound: CustomSound?
     private var customStopSound: CustomSound?
     private var soundError: String?
+    /// The Start sound and Stop sound rows of the Sounds grid, shown only for the Custom pack.
     private var customRows: [Int] = []
-    private var grid = NSGridView()
+    private var soundsGrid: NSGridView { grids[.sounds]! }
     public let serverURL = NSTextField(string: "")
     public let launch = NSButton(checkboxWithTitle: "Launch Chirp at login", target: nil, action: nil)
+    /// General: reopens the setup walk-through.
+    public let setupButton = NSButton(title: "Set Up Chirp…", target: nil, action: nil)
+    /// Server: puts the chirp-server doctor command on the pasteboard.
+    public let doctorButton = NSButton(title: "Copy Doctor Command", target: nil, action: nil)
     public let micButton = NSButton(title: "Fix…", target: nil, action: nil)
     public let accessibilityButton = NSButton(title: "Fix…", target: nil, action: nil)
     /// Under the checkbox: what it does, or why the last change failed.
     public let launchHelp = SettingsForm.help("")
     /// Clean-up: default style, style prompts, raw-first and the per-app table.
+    public let cleanupEnabled = NSButton(checkboxWithTitle: "Clean up dictated text", target: nil, action: nil)
     public let style = NSPopUpButton(frame: .zero, pullsDown: false)
     public let prompts = StylePromptsEditor()
     public let insertRawFirst = NSButton(checkboxWithTitle: "Insert raw immediately, then replace with cleaned", target: nil, action: nil)
     public let showChanges = NSButton(checkboxWithTitle: "Show changes after clean-up", target: nil, action: nil)
+    public let offerRaw = NSButton(checkboxWithTitle: "Offer “Use raw” for 5 seconds after clean-up", target: nil, action: nil)
     public let appStyles = AppStylesTable()
     private let styleHelp = SettingsForm.help("")
+    private let cleanupHelp = SettingsForm.help("")
+    private var grids: [SettingsTab: NSGridView] = [:]
     private var shownProfileIDs: [String] = []
     private var shownCatalog: StyleCatalog?
     private let tokenStatus = StatusLine()
@@ -114,13 +155,10 @@ public final class SettingsForm {
         micButton.setAccessibilityLabel("Fix Microphone access")
         accessibilityButton.setAccessibilityLabel("Fix Accessibility access")
 
-        var rows: [[NSView]] = []
-        var headings: [Int] = []
-        func section(_ title: String) {
-            headings.append(rows.count)
-            rows.append([Self.heading(title), NSGridCell.emptyContentView])
-        }
-        func row(_ title: String, _ control: NSView, help: NSTextField? = nil) {
+        for button in [setupButton, doctorButton] { button.bezelStyle = .rounded }
+        setupButton.setAccessibilityLabel("Set up Chirp")
+
+        func row(_ title: String, _ control: NSView, help: NSTextField? = nil) -> [NSView] {
             var content = control
             if let help {
                 let stack = NSStackView(views: [control, help])
@@ -129,64 +167,53 @@ public final class SettingsForm {
                 stack.spacing = 4
                 content = stack
             }
-            rows.append([Self.label(title), content])
+            return [Self.label(title), content]
         }
 
-        section("General")
         let hotkeyRow = NSStackView(views: [hotkey, recorder])
         hotkeyRow.orientation = .horizontal
         hotkeyRow.spacing = 10
-        row("Hotkey:", hotkeyRow, help: hotkeyHelp)
-        row("Startup:", launch, help: launchHelp)
-        section("Sounds")
-        row("Cues:", sounds, help: Self.help("Quiet sounds when dictation starts and stops. Off keeps Chirp silent."))
+        build(.general, [
+            row("Hotkey:", hotkeyRow, help: hotkeyHelp),
+            row("Startup:", launch, help: launchHelp),
+            row("Setup:", setupButton, help: Self.help("Check the permissions and the server, and try a dictation.")),
+        ])
+
         let packRow = NSStackView(views: [soundPack, previewStart, previewStop])
         packRow.orientation = .horizontal
         packRow.spacing = 8
-        row("Pack:", packRow, help: packHelp)
         let volumeRow = NSStackView(views: [volume, volumeLabel])
         volumeRow.orientation = .horizontal
         volumeRow.spacing = 8
-        row("Volume:", volumeRow)
-        customRows.append(rows.count)
-        row("Start sound:", Self.fileRow(startFile, choose: chooseStart, remove: removeStart), help: customStartHelp)
-        customRows.append(rows.count)
-        row("Stop sound:", Self.fileRow(stopFile, choose: chooseStop, remove: removeStop),
-            help: Self.help("Plays after you stop talking, up to \(SoundTiming.stopLimit) s."))
-        section("Clean-up")
-        row("Style:", style, help: styleHelp)
-        row("Prompts:", prompts.view)
-        row("Per-app:", appStyles.view, help: Self.help("The frontmost app when you start dictating picks the style. Other apps use the default style."))
-        row("Insertion:", insertRawFirst, help: Self.help("Swaps in the cleaned text in place where Chirp can verify the insert; elsewhere it inserts once."))
-        row("Review:", showChanges, help: Self.help("Off: the cleaned text is inserted at once and the HUD fades away; “Use raw” stays on for 5 seconds with ⌃⌥Z or in the menu. On: the HUD highlights what changed and keeps a Use raw button."))
-        section("Server")
-        row("URL:", serverURL)
-        row("Token:", tokenStatus, help: tokenHelp)
-        row("Status:", serverStatus)
-        section("Permissions")
-        row("Microphone:", micStatus, help: Self.help("Lets Chirp hear you."))
-        row("Accessibility:", accessibilityStatus, help: Self.help("Lets Chirp insert text into other apps and send ⌘V."))
+        build(.sounds, [
+            row("Cues:", sounds, help: Self.help("Quiet sounds when dictation starts and stops. Off keeps Chirp silent.")),
+            row("Pack:", packRow, help: packHelp),
+            row("Volume:", volumeRow),
+            row("Start sound:", Self.fileRow(startFile, choose: chooseStart, remove: removeStart), help: customStartHelp),
+            row("Stop sound:", Self.fileRow(stopFile, choose: chooseStop, remove: removeStop),
+                help: Self.help("Plays after you stop talking, up to \(SoundTiming.stopLimit) s.")),
+        ], customRows: [3, 4])
 
-        grid = NSGridView(views: rows)
-        grid.rowSpacing = 10
-        grid.columnSpacing = 10
-        grid.rowAlignment = .firstBaseline
-        grid.column(at: 0).xPlacement = .trailing
-        grid.column(at: 1).xPlacement = .leading
-        for (n, index) in headings.enumerated() {
-            let r = grid.row(at: index)
-            r.mergeCells(in: NSRange(location: 0, length: 2))
-            r.cell(at: 0).xPlacement = .leading
-            r.rowAlignment = .none
-            if n > 0 { r.topPadding = 14 }
-        }
-        grid.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(grid)
-        NSLayoutConstraint.activate([
-            grid.topAnchor.constraint(equalTo: view.topAnchor, constant: Self.margin),
-            grid.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: Self.margin),
-            view.bottomAnchor.constraint(equalTo: grid.bottomAnchor, constant: Self.margin),
-            view.trailingAnchor.constraint(equalTo: grid.trailingAnchor, constant: Self.margin),
+        build(.cleanup, [
+            row("Clean-up:", cleanupEnabled, help: cleanupHelp),
+            row("Style:", style, help: styleHelp),
+            row("Prompts:", prompts.view),
+            row("Per-app:", appStyles.view, help: Self.help("The frontmost app when you start dictating picks the style. Other apps use the default style.")),
+            row("Insertion:", insertRawFirst, help: Self.help("Swaps in the cleaned text in place where Chirp can verify the insert; elsewhere it inserts once.")),
+            row("Review:", showChanges, help: Self.help("Off: the cleaned text is inserted at once. On: the HUD highlights what changed and keeps a Use raw button.")),
+            row("Undo:", offerRaw, help: Self.help("Puts the original words back, with ⌃⌥Z or from the menu.")),
+        ])
+
+        build(.server, [
+            row("URL:", serverURL),
+            row("Token:", tokenStatus, help: tokenHelp),
+            row("Status:", serverStatus),
+            row("Doctor:", doctorButton, help: Self.help("Copies the command that checks the server, to run in Terminal.")),
+        ])
+
+        build(.permissions, [
+            row("Microphone:", micStatus, help: Self.help("Lets Chirp hear you.")),
+            row("Accessibility:", accessibilityStatus, help: Self.help("Lets Chirp insert text into other apps and send ⌘V.")),
         ])
         refreshHotkeyHelp()
         configureSoundControls()
@@ -232,7 +259,7 @@ public final class SettingsForm {
     public func showPack(_ pack: SoundPack) {
         if let i = soundPack.itemArray.firstIndex(where: { $0.representedObject as? String == pack.rawValue }) { soundPack.selectItem(at: i) }
         packHelp.stringValue = pack.detail
-        for index in customRows { grid.row(at: index).isHidden = pack != .custom }
+        for index in customRows { soundsGrid.row(at: index).isHidden = pack != .custom }
     }
 
     /// Shows the imported files (name and length) and the trimming warning; `error` replaces the warning once.
@@ -258,26 +285,37 @@ public final class SettingsForm {
         }
     }
 
-    /// Puts the form in `window`, sized to fit, with focus parked on the content view so no field opens selected.
-    public func install(in window: NSWindow) {
-        let size = view.fittingSize
-        // The form is tall now: on a small screen it scrolls instead of running off it.
-        let limit = (window.screen ?? NSScreen.main)?.visibleFrame.height ?? 900
-        let cap = max(480, limit - 90)
-        if size.height > cap {
-            let scroll = NSScrollView()
-            scroll.hasVerticalScroller = true
-            scroll.autohidesScrollers = true
-            scroll.drawsBackground = false
-            scroll.documentView = view
-            window.contentView = scroll
-            window.setContentSize(NSSize(width: size.width + 16, height: cap))
-        } else {
-            window.contentView = view
-            window.setContentSize(size)
-        }
-        window.initialFirstResponder = view
-        window.makeFirstResponder(view)
+    /// Lays `rows` out as `tab`'s content: a grid with a 20 pt margin on every side.
+    private func build(_ tab: SettingsTab, _ rows: [[NSView]], customRows custom: [Int] = []) {
+        let grid = NSGridView(views: rows)
+        grid.rowSpacing = 10
+        grid.columnSpacing = 10
+        grid.rowAlignment = .firstBaseline
+        grid.column(at: 0).xPlacement = .trailing
+        grid.column(at: 1).xPlacement = .leading
+        grid.translatesAutoresizingMaskIntoConstraints = false
+        let view = SettingsContentView()
+        view.addSubview(grid)
+        NSLayoutConstraint.activate([
+            grid.topAnchor.constraint(equalTo: view.topAnchor, constant: Self.margin),
+            grid.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: Self.margin),
+            view.bottomAnchor.constraint(equalTo: grid.bottomAnchor, constant: Self.margin),
+            view.trailingAnchor.constraint(equalTo: grid.trailingAnchor, constant: Self.margin),
+        ])
+        grids[tab] = grid
+        tabViews[tab] = view
+        customRows = custom.isEmpty ? customRows : custom
+    }
+
+    /// The content of `tab`.
+    public func view(for tab: SettingsTab) -> SettingsContentView { tabViews[tab]! }
+
+    /// The size `tab` needs: its grid at its natural size plus the margin. Measured on the grid, not the content view,
+    /// because the window sizes the content view (its fitting size would then just echo the size it was given).
+    public func fittingSize(for tab: SettingsTab) -> NSSize {
+        let grid = grids[tab]!
+        let size = grid.fittingSize
+        return NSSize(width: size.width + 2 * Self.margin, height: size.height + 2 * Self.margin)
     }
 
     /// Fills the window. The periodic refresh passes `full: false` so it only follows the server and permission
@@ -295,6 +333,8 @@ public final class SettingsForm {
             launchUnavailable = s.launch == .unavailable
             setLaunchError(nil)
             style.controlSize = .regular
+            cleanupEnabled.state = s.cleanupEnabled ? .on : .off
+            offerRaw.state = s.offerRaw ? .on : .off
             fillStyleMenu(s.profiles, selecting: s.cleanupStyle, offered: s.serverOffersStyles)
             prompts.configure(catalog: s.catalog, overrides: s.stylePrompts, selecting: s.editingStyle)
             shownCatalog = s.catalog
@@ -314,6 +354,8 @@ public final class SettingsForm {
             prompts.configure(catalog: s.catalog, overrides: s.stylePrompts)
             shownCatalog = s.catalog
         }
+        cleanupHelp.stringValue = s.cleanupDetail
+        cleanupEnabled.isEnabled = s.cleanupAvailable
         tokenStatus.set(symbol: s.tokenPresent ? "checkmark.circle.fill" : "exclamationmark.triangle.fill",
                         tone: s.tokenPresent ? .ok : .warning, text: "~/.config/chirp/token")
         tokenHelp.stringValue = s.tokenPresent ? "Chirp sends this token with every request."
@@ -405,6 +447,14 @@ public final class SettingsForm {
         let f = NSTextField(labelWithString: text)
         f.font = MenuStyle.semiboldFont
         return f
+    }
+
+    /// What the server says about clean-up: where it runs, or that it is off.
+    public static func cleanupDetail(health: Health?) -> (text: String, available: Bool) {
+        guard let h = health else { return ("Needs the server. Tidies punctuation and wording before the text is inserted.", true) }
+        if !h.correctionAvailable { return ("The server has clean-up turned off; see the README to enable it.", false) }
+        if h.correctionLeavesMachine == true { return ("Sends the text to \(h.correctionHost ?? "a remote LLM") to tidy it.", true) }
+        return ("Runs on this Mac: tidies punctuation and wording before the text is inserted.", true)
     }
 
     /// Secondary-colour help text under a control, wrapped to the control column's width.

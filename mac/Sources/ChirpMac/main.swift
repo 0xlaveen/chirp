@@ -7,10 +7,11 @@ let arguments = CommandLine.arguments
 switch LaunchMode.parse(Array(arguments.dropFirst())) {
 case .selftest:
     exit(await SelfTest.run(Array(arguments.dropFirst())))
-case .renderSnapshots(let directory):
+case .renderSnapshots(let directory, let curated):
     // Draws offscreen only: no delegate, no run loop, no onboarding, no permission or pasteboard access.
     do {
-        let files = try await MainActor.run { try Snapshots.render(to: URL(fileURLWithPath: directory, isDirectory: true)) }
+        let files = try await MainActor.run { try Snapshots.render(to: URL(fileURLWithPath: directory, isDirectory: true),
+                                                                      scenarios: curated ? Snapshots.committedScenarios : nil) }
         print("Wrote \(files.count) PNGs to \(directory)")
         exit(0)
     } catch {

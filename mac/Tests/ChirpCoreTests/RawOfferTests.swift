@@ -119,9 +119,9 @@ private final class Rig {
         m.rawOfferOpen = true
         m.rawOfferKey = "⌃⌥Z"
         let entry = MenuContent.entries(m).first { $0.action == .useRaw }
-        #expect(entry?.title == "Use raw for last dictation" && entry?.subtitle == "⌃⌥Z")
+        #expect(entry?.title == "Use Raw for Last Dictation" && entry?.shortcut == "⌃⌥Z")
         m.rawOfferKey = nil
-        #expect(MenuContent.entries(m).first { $0.action == .useRaw }?.subtitle == nil)
+        #expect(MenuContent.entries(m).first { $0.action == .useRaw }?.shortcut == nil)
     }
 
     @Test func theBirdShowsATinyCleanedMarkOnlyWhileIdleAndOffering() {

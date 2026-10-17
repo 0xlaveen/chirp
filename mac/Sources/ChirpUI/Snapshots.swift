@@ -147,71 +147,76 @@ public enum Snapshots {
     }
 
     public static var settingsScenarios: [Scenario] {
-        func form(_ name: String, _ configure: (inout SettingsState) -> Void) -> Scenario {
+        /// A tab's content, as the preferences window shows it under the toolbar.
+        func form(_ name: String, _ tab: SettingsTab, _ configure: (inout SettingsState) -> Void = { _ in }) -> Scenario {
             var state = SettingsState()
+            state.launch = .on; state.serverStatus = "parakeet-mlx:tdt-0.6b-v2"
             configure(&state)
-            return Scenario(name: "settings-\(name)") {
+            return Scenario(name: "settings-\(tab.rawValue)-\(name)") {
                 let form = SettingsForm(state)
-                form.view.setFrameSize(form.view.fittingSize)
-                return form.view
+                let view = form.view(for: tab)
+                view.setFrameSize(form.fittingSize(for: tab))
+                return view
             }
         }
+        let styled: (inout SettingsState) -> Void = {
+            $0.cleanupEnabled = true
+            $0.catalog = StyleCatalog(profiles: samplePrompts, source: .live)
+            $0.cleanupDetail = "Runs on this Mac: tidies punctuation and wording before the text is inserted."
+        }
         return [
-            form("ready") { $0.launch = .on; $0.serverStatus = "parakeet-mlx:tdt-0.6b-v2" },
-            form("cleanup-custom") {
-                $0.cleanupStyle = "custom"; $0.insertRawFirst = true; $0.launch = .on; $0.serverStatus = "parakeet-mlx:tdt-0.6b-v2"
-                $0.catalog = StyleCatalog(profiles: samplePrompts, source: .live)
-                $0.editingStyle = "custom"
+            form("ready", .general) { _ in },
+            form("custom-hotkey", .general) { $0.hotkey = .custom(keyCode: 0x0F, modifiers: UInt32(controlKey | optionKey | cmdKey)) },   // ⌃⌥⌘R
+            form("login-unavailable", .general) { $0.launch = .unavailable },
+            Scenario(name: "settings-general-hotkey-rejected") {
+                let form = SettingsForm(SettingsState())
+                // As if ⌥Space had just been pressed in the recorder (set directly: no event monitor offscreen).
+                form.recorder.apply(.rejected(.optionOnly))
+                let view = form.view(for: .general)
+                view.setFrameSize(form.fittingSize(for: .general))
+                return view
+            },
+            form("off", .sounds) { _ in },
+            form("pack", .sounds) { $0.soundsEnabled = true; $0.soundPack = .chirp; $0.soundVolume = 0.6 },
+            form("custom", .sounds) {
+                $0.soundsEnabled = true; $0.soundPack = .custom; $0.soundVolume = 0.4
+                $0.customStart = CustomSound(fileName: "custom-start-1a2b3c4d.m4a", displayName: "Doorbell chime.m4a", duration: 1.2)
+                $0.customStop = CustomSound(fileName: "custom-stop-5e6f7a8b.wav", displayName: "soft-tap.wav", duration: 0.18)
+            },
+            form("default", .cleanup) { styled(&$0); $0.editingStyle = "default" },
+            form("custom", .cleanup) {
+                styled(&$0)
+                $0.cleanupStyle = "custom"; $0.insertRawFirst = true; $0.editingStyle = "custom"
                 $0.stylePrompts = ["custom": "Write like a short, friendly note to a teammate. Keep product names exactly as spoken and never add facts I did not say."]
                 $0.appStyles = [AppStyleRule(bundleID: "com.tinyspeck.slackmacgap", profile: "chat"),
                                 AppStyleRule(bundleID: "com.apple.mail", profile: "custom"),
                                 AppStyleRule(bundleID: "com.apple.dt.Xcode", profile: "code")]
             },
-            form("cleanup-prompt-default") {
-                $0.launch = .on; $0.serverStatus = "parakeet-mlx:tdt-0.6b-v2"
-                $0.catalog = StyleCatalog(profiles: samplePrompts, source: .live)
-                $0.editingStyle = "email"
-            },
-            form("cleanup-prompt-edited") {
-                $0.launch = .on; $0.serverStatus = "parakeet-mlx:tdt-0.6b-v2"
-                $0.catalog = StyleCatalog(profiles: samplePrompts, source: .live)
-                $0.editingStyle = "chat"
+            form("prompt-default", .cleanup) { styled(&$0); $0.editingStyle = "email" },
+            form("prompt-edited", .cleanup) {
+                styled(&$0)
+                $0.editingStyle = "chat"; $0.showChanges = true
                 $0.stylePrompts = ["chat": "Casual and brief. Lowercase is fine. Keep emoji names as spoken, like “thumbs up”."]
             },
-            form("cleanup-prompt-offline") {
-                $0.launch = .on; $0.serverStatus = "Unreachable"; $0.serverStatusTone = .error
+            form("prompt-offline", .cleanup) {
+                styled(&$0)
+                $0.serverStatus = "Unreachable"; $0.serverStatusTone = .error
                 $0.catalog = StyleCatalog(profiles: samplePrompts, source: .cached)
                 $0.editingStyle = "code"
             },
-            form("cleanup-notes-no-styles") {
-                $0.cleanupStyle = "notes"; $0.serverOffersStyles = false; $0.launch = .on; $0.serverStatus = "parakeet-mlx:tdt-0.6b-v2"
+            form("no-styles", .cleanup) {
+                $0.cleanupEnabled = true; $0.cleanupStyle = "notes"; $0.serverOffersStyles = false
             },
-            form("sounds-pack") {
-                $0.soundsEnabled = true; $0.soundPack = .chirp; $0.soundVolume = 0.6
-                $0.launch = .on; $0.serverStatus = "parakeet-mlx:tdt-0.6b-v2"
+            form("unavailable", .cleanup) {
+                $0.cleanupDetail = "The server has clean-up turned off; see the README to enable it."; $0.cleanupAvailable = false
             },
-            form("sounds-custom") {
-                $0.soundsEnabled = true; $0.soundPack = .custom; $0.soundVolume = 0.4
-                $0.customStart = CustomSound(fileName: "custom-start-1a2b3c4d.m4a", displayName: "Doorbell chime.m4a", duration: 1.2)
-                $0.customStop = CustomSound(fileName: "custom-stop-5e6f7a8b.wav", displayName: "soft-tap.wav", duration: 0.18)
-                $0.launch = .on; $0.serverStatus = "parakeet-mlx:tdt-0.6b-v2"
-            },
-            form("custom-hotkey-sounds") {
-                $0.hotkey = .custom(keyCode: 0x0F, modifiers: UInt32(controlKey | optionKey | cmdKey))   // ⌃⌥⌘R
-                $0.soundsEnabled = true; $0.launch = .on; $0.serverStatus = "parakeet-mlx:tdt-0.6b-v2"
-            },
-            Scenario(name: "settings-hotkey-rejected") {
-                let form = SettingsForm(SettingsState())
-                // As if ⌥Space had just been pressed in the recorder (set directly: no event monitor offscreen).
-                form.recorder.apply(.rejected(.optionOnly))
-                form.view.setFrameSize(form.view.fittingSize)
-                return form.view
-            },
-            form("needs-setup") {
-                $0.tokenPresent = false; $0.micGranted = false; $0.accessibilityGranted = false
-                $0.launch = .unavailable; $0.serverURL = "https://mainframe.example.ts.net/chirp"
+            form("ready", .server) { _ in },
+            form("unreachable", .server) {
+                $0.tokenPresent = false; $0.serverURL = "https://mainframe.example.ts.net/chirp"
                 $0.serverStatus = "Unreachable"; $0.serverStatusTone = .error
             },
+            form("granted", .permissions) { _ in },
+            form("missing", .permissions) { $0.micGranted = false; $0.accessibilityGranted = false },
         ]
     }
 
@@ -250,14 +255,22 @@ public enum Snapshots {
     private static let studio = AudioInput(uid: "studio", name: "Studio Display Microphone")
 
     public static var menuScenarios: [Scenario] {
-        func menu(_ name: String, _ configure: (inout MenuInputs) -> Void, submenu: String? = nil) -> Scenario {
+        func menu(_ name: String, highlighting: String? = nil, _ configure: (inout MenuInputs) -> Void) -> Scenario {
             var inputs = MenuInputs()
             inputs.inputs = [boya, studio]
             inputs.defaultInput = boya
             configure(&inputs)
-            var entries = MenuContent.entries(inputs)
-            if let submenu { entries = entries.first { $0.title == submenu }?.submenu ?? [] }
-            return Scenario(name: "menu-\(name)") { NSHostingView(rootView: SnapshotBackdrop { MenuPreview(entries: entries) }) }
+            let header = MenuContent.header(inputs)
+            let entries = MenuContent.entries(inputs)
+            return Scenario(name: "menu-\(name)") { MenuPanelView(header: header, entries: entries, highlighting: highlighting) }
+        }
+        func submenu(_ name: String, of title: String, _ configure: (inout MenuInputs) -> Void) -> Scenario {
+            var inputs = MenuInputs()
+            inputs.inputs = [boya, studio]
+            inputs.defaultInput = boya
+            configure(&inputs)
+            let rows = MenuContent.entries(inputs).first { $0.title == title }?.submenu ?? []
+            return Scenario(name: "menu-\(name)") { MenuPanelView(header: nil, entries: rows, native: true) }
         }
         let local = Health(engine: "parakeet-mlx:tdt-0.6b-v2", ready: true, correction: "available", correctionLeavesMachine: false,
                            correctionProfiles: CorrectionProfile.builtIn)
@@ -265,32 +278,53 @@ public enum Snapshots {
                             correctionLeavesMachine: true, correctionHost: "llm.example.com",
                             correctionProfiles: CorrectionProfile.builtIn)
         return [
-            menu("idle") { $0.health = local },
-            menu("listening-cleanup") { $0.state = .listening; $0.health = local; $0.cleanupOn = true; $0.styleID = "email" },
+            menu("ready") { $0.health = local },
+            menu("hover", highlighting: "Clean-up") { $0.health = local; $0.cleanupOn = true; $0.styleID = "email" },
+            menu("paused") { $0.health = local; $0.paused = true; $0.hotkeyRegistered = false },
+            menu("listening") { $0.state = .listening; $0.health = local; $0.cleanupOn = true; $0.styleID = "email" },
             menu("polishing") { $0.state = .correcting; $0.health = local; $0.cleanupOn = true },
-            menu("debug-remote-cleanup") {
-                $0.health = remote; $0.debugRetention = true; $0.cleanupOn = true; $0.showRawAfterCleanup = false
+            menu("debug") {
+                $0.health = remote; $0.debugRetention = true; $0.cleanupOn = true
                 $0.chosenInputUID = "studio"
             },
             menu("cleanup-off-on-server") { $0.health = Health(engine: "parakeet-mlx:tdt-0.6b-v2", ready: true, correction: "off") },
-            menu("server-unreachable") {
+            menu("unreachable") {
                 $0.healthError = "Server unreachable at 127.0.0.1"; $0.serverURL = "https://mainframe.example.ts.net/chirp"
             },
-            menu("permissions-needed") {
+            menu("permissions-missing") {
                 $0.health = Health(engine: "parakeet-mlx:tdt-0.6b-v2", ready: true)
                 $0.micGranted = false; $0.accessibilityGranted = false
-                $0.launch = .on; $0.launchError = "Operation not permitted"
             },
             menu("error") {
                 $0.state = .error("Microphone access denied — enable it in System Settings")
                 $0.health = local; $0.micGranted = false; $0.inputs = []; $0.defaultInput = nil
             },
-            menu("use-raw-offer") { $0.health = local; $0.cleanupOn = true; $0.rawOfferOpen = true; $0.rawOfferKey = "⌃⌥Z" },
-            menu("style", { $0.health = local; $0.cleanupOn = true; $0.styleID = "email" }, submenu: "Style"),
-            menu("style-custom", { $0.health = local; $0.cleanupOn = true; $0.styleID = "custom" }, submenu: "Style"),
-            menu("sounds", { $0.health = local; $0.soundsEnabled = true; $0.soundPack = .chirp }, submenu: "Sounds"),
-            menu("input-picker", { $0.health = local; $0.chosenInputUID = "studio" }, submenu: "Input Device"),
+            menu("use-raw") { $0.health = local; $0.cleanupOn = true; $0.rawOfferOpen = true; $0.rawOfferKey = "⌃⌥Z" },
+            menu("long-names") {
+                $0.health = local; $0.chosenInputUID = "long"
+                $0.inputs = [boya, AudioInput(uid: "long", name: "Studio Display Microphone (Built-in, Aggregate)")]
+                $0.serverURL = "https://mainframe-with-a-very-long-name.example.ts.net/chirp"
+            },
+            submenu("cleanup-submenu", of: "Clean-up") { $0.health = local; $0.cleanupOn = true; $0.styleID = "email" },
+            submenu("cleanup-submenu-off", of: "Clean-up") { $0.health = local },
+            submenu("microphone-submenu", of: "Microphone") { $0.health = local; $0.chosenInputUID = "studio" },
+            submenu("sounds-submenu", of: "Sounds") { $0.health = local; $0.soundsEnabled = true; $0.soundPack = .chirp },
+            submenu("server-submenu", of: "Server") { $0.health = local },
         ]
+    }
+
+    /// The scenarios whose PNGs are committed under `docs/screenshots/mac`: the key HUD states, the menu in light and
+    /// dark, one per Settings tab, and the setup window. The rest only render to a temporary directory for review.
+    public static let committedNames: [String] = [
+        "hud-listening", "hud-flow-2-polishing", "hud-flow-3-diff", "hud-correction-use-raw",
+        "menu-ready", "menu-cleanup-submenu",
+        "settings-general-ready", "settings-sounds-pack", "settings-cleanup-custom", "settings-server-ready",
+        "settings-permissions-missing", "onboarding-welcome",
+    ]
+
+    public static var committedScenarios: [Scenario] {
+        let all = allScenarios
+        return committedNames.compactMap { name in all.first { $0.name == name } }
     }
 
     public static var allScenarios: [Scenario] { hudScenarios + settingsScenarios + onboardingScenarios + aboutScenarios + menuScenarios }
@@ -344,7 +378,7 @@ public enum Snapshots {
     }
 }
 
-/// A desktop-like backdrop so the translucent HUD and the menu read as they do on screen.
+/// A desktop-like backdrop colour so the translucent HUD and the menu read as they do on screen.
 private struct SnapshotBackdrop<Content: View>: View {
     @ViewBuilder var content: Content
     var body: some View {
@@ -353,109 +387,91 @@ private struct SnapshotBackdrop<Content: View>: View {
     }
 }
 
-/// The menu-bar menu's content laid out like a menu. The real `NSMenu` chrome cannot be drawn offscreen, so rows are
-/// approximated; the header block is the real `MenuHeaderView`.
-private struct MenuPreview: View {
-    let entries: [MenuEntry]
+/// The menu-bar menu drawn from its real views: the header (with its switch) and the rows are the same classes the
+/// live `NSMenu` uses; only the menu's own chrome (background, border, separators) is approximated, since an `NSMenu`
+/// cannot be drawn offscreen. `native` is a submenu, whose rows AppKit draws itself (checkmark column, no values).
+private final class MenuPanelView: NSView {
+    private static let outer: CGFloat = 14
+    private static let inner: CGFloat = 6
+    private static let backdrop = NSColor(red: 0.45, green: 0.52, blue: 0.66, alpha: 1)
 
-    var body: some View {
-        VStack(alignment: .leading, spacing: 1) {
-            ForEach(Array(blocks.enumerated()), id: \.offset) { _, block in
-                switch block {
-                case .header(let head, let lines): HeaderBlock(head: head, lines: lines)
-                case .entry(let e): row(e)
-                }
+    init(header: MenuHeader?, entries: [MenuEntry], highlighting: String? = nil, native: Bool = false) {
+        super.init(frame: .zero)
+        var views: [NSView] = []
+        var widest: CGFloat = header == nil ? 0 : MenuMetrics.minimumWidth
+        if let header { views.append(MenuHeaderView(header: header)) }
+        for entry in entries {
+            if entry.isSeparator { views.append(MenuSeparatorView()); continue }
+            if native {
+                let row = SubmenuRowView(entry: entry)
+                widest = max(widest, row.fittingWidth)
+                views.append(row)
+                continue
             }
+            let row = MenuRowView(entry: entry)
+            row.showsHighlight = entry.title == highlighting
+            widest = max(widest, row.fittingWidth)
+            views.append(row)
         }
-        .padding(.vertical, 6).padding(.horizontal, 6)
-        .frame(minWidth: 300, alignment: .leading)
-        .fixedSize()
-        // Solid, like the backdrop: a material over it would be noisy and bloat the PNGs.
-        .background(Color(nsColor: .windowBackgroundColor), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(.primary.opacity(0.12)))
+        let stack = NSStackView(views: views)
+        stack.orientation = .vertical
+        stack.alignment = .width
+        stack.spacing = 0
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(stack)
+        let pad = Self.outer + Self.inner
+        let minimum = widthAnchor.constraint(equalToConstant: widest + 2 * Self.outer)
+        NSLayoutConstraint.activate([
+            minimum,
+            stack.topAnchor.constraint(equalTo: topAnchor, constant: pad),
+            stack.leadingAnchor.constraint(equalTo: leadingAnchor, constant: Self.outer),
+            trailingAnchor.constraint(equalTo: stack.trailingAnchor, constant: Self.outer),
+            bottomAnchor.constraint(equalTo: stack.bottomAnchor, constant: pad),
+        ])
     }
 
-    private enum Block { case header(MenuEntry, [MenuEntry]), entry(MenuEntry) }
+    @available(*, unavailable) required init?(coder: NSCoder) { fatalError("not used") }
 
-    /// The header row and the status lines after it form one block, as in the real menu.
-    private var blocks: [Block] {
-        var out: [Block] = []
-        var i = 0
-        while i < entries.count {
-            let e = entries[i]
-            i += 1
-            guard e.showsAppIcon else { out.append(.entry(e)); continue }
-            let start = i
-            while i < entries.count, !entries[i].isSeparator { i += 1 }
-            out.append(.header(e, Array(entries[start..<i])))
-        }
-        return out
-    }
-
-    @ViewBuilder private func row(_ e: MenuEntry) -> some View {
-        if e.isSeparator {
-            Divider().padding(.vertical, 4).padding(.horizontal, 6)
-        } else if e.isHeader {
-            Text(e.title).font(.system(size: 11, weight: .semibold)).foregroundStyle(.secondary)
-                .padding(.horizontal, 8).padding(.top, 4).padding(.bottom, 1)
-        } else {
-            let enabled = e.action != nil || e.submenu != nil
-            HStack(spacing: 7) {
-                Text(e.mark == .on ? "✓" : e.mark == .mixed ? "–" : "").frame(width: 12)
-                icon(e).frame(width: 18)
-                VStack(alignment: .leading, spacing: 0) {
-                    Text(e.title).font(.system(size: 13)).foregroundStyle(color(e))
-                    if let sub = e.subtitle { Text(sub).font(.system(size: 11)).foregroundStyle(.secondary) }
-                }
-                Spacer(minLength: 16)
-                if let k = e.keyEquivalent { Text("⌘" + k.uppercased()).font(.system(size: 13)).foregroundStyle(.secondary) }
-                if e.submenu != nil { Image(systemName: "chevron.right").font(.system(size: 10, weight: .semibold)).foregroundStyle(.secondary) }
-            }
-            .padding(.horizontal, 8).padding(.vertical, 2)
-            // Like AppKit, a disabled row is dimmed.
-            .opacity(enabled ? 1 : 0.5)
-        }
-    }
-
-    @ViewBuilder private func icon(_ e: MenuEntry) -> some View {
-        if let name = e.symbol {
-            Image(systemName: name).font(.system(size: name == "circle.fill" ? 8 : 13)).foregroundStyle(tint(e.symbolTone ?? e.tone))
-        }
-    }
-
-    private func tint(_ tone: MenuEntry.Tone) -> Color {
-        switch tone {
-        case .normal: .primary
-        case .ok: .green
-        case .active: .accentColor
-        case .warning: .orange
-        case .error: .red
-        }
-    }
-
-    private func color(_ e: MenuEntry) -> Color {
-        switch e.tone {
-        case .error: .red
-        case .warning: .orange
-        default: .primary
-        }
+    override func draw(_ dirtyRect: NSRect) {
+        Self.backdrop.setFill()
+        bounds.fill()
+        let panel = bounds.insetBy(dx: Self.outer, dy: Self.outer)
+        let path = NSBezierPath(roundedRect: panel, xRadius: 12, yRadius: 12)
+        NSColor.windowBackgroundColor.setFill()
+        path.fill()
+        NSColor.labelColor.withAlphaComponent(0.12).setStroke()
+        path.lineWidth = 1
+        path.stroke()
     }
 }
 
-private struct HeaderBlock: NSViewRepresentable {
-    let head: MenuEntry
-    let lines: [MenuEntry]
+/// A submenu row as AppKit draws it: a checkmark column, the title, dimmed when it cannot be chosen.
+private final class SubmenuRowView: NSView {
+    private let entry: MenuEntry
 
-    func makeNSView(context: Context) -> MenuHeaderView {
-        MenuHeaderView(title: head.title, hint: head.subtitle, lines: lines, icon: Self.standIn)
+    init(entry: MenuEntry) {
+        self.entry = entry
+        super.init(frame: NSRect(x: 0, y: 0, width: 10, height: MenuMetrics.rowHeight))
+        autoresizingMask = [.width]
     }
-    func updateNSView(_ view: MenuHeaderView, context: Context) {}
-    /// The real icon would add ~100 KB to every menu PNG; the menu snapshots draw the bird symbol in its place.
-    private static var standIn: NSImage? {
-        NSImage(systemSymbolName: "bird.fill", accessibilityDescription: nil)?
-            .withSymbolConfiguration(.init(pointSize: 26, weight: .regular).applying(.init(paletteColors: [.systemIndigo])))
+
+    @available(*, unavailable) required init?(coder: NSCoder) { fatalError("not used") }
+
+    override var isFlipped: Bool { true }
+    override var intrinsicContentSize: NSSize { NSSize(width: NSView.noIntrinsicMetric, height: MenuMetrics.rowHeight) }
+
+    var fittingWidth: CGFloat {
+        let width = (entry.title as NSString).size(withAttributes: [.font: MenuStyle.font]).width
+        return max(MenuMetrics.minimumWidth - 60, ceil(width) + 34 + MenuMetrics.trailing + 12)
     }
-    func sizeThatFits(_ proposal: ProposedViewSize, nsView: MenuHeaderView, context: Context) -> CGSize? {
-        CGSize(width: max(nsView.fittingSize.width, proposal.width ?? 0), height: nsView.fittingSize.height)
+
+    override func draw(_ dirtyRect: NSRect) {
+        let color: NSColor = entry.isEnabled ? .labelColor : .disabledControlTextColor
+        let height = MenuStyle.font.boundingRectForFont.height
+        let y = (bounds.height - height) / 2
+        if entry.mark == .on {
+            ("✓" as NSString).draw(at: NSPoint(x: 14, y: y), withAttributes: [.font: MenuStyle.font, .foregroundColor: color])
+        }
+        (entry.title as NSString).draw(at: NSPoint(x: 34, y: y), withAttributes: [.font: MenuStyle.font, .foregroundColor: color])
     }
 }

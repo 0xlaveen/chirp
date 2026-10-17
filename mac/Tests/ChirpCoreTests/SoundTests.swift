@@ -574,13 +574,10 @@ struct GeneratedSounds {
 
     @Test func theCustomRowsOnlyShowForTheCustomPack() {
         let form = SettingsForm(SettingsState())
-        form.view.layoutSubtreeIfNeeded()
-        let before = form.view.fittingSize.height
+        let before = form.fittingSize(for: .sounds).height
         form.showPack(.custom)
-        form.view.layoutSubtreeIfNeeded()
-        #expect(form.view.fittingSize.height > before)
+        #expect(form.fittingSize(for: .sounds).height > before)
         form.showPack(.soft)
-        form.view.layoutSubtreeIfNeeded()
-        #expect(form.view.fittingSize.height == before)
+        #expect(form.fittingSize(for: .sounds).height == before)
     }
 }
