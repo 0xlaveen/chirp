@@ -42,7 +42,7 @@ The Mac mini has no built-in microphone. Chirp follows the system default input 
 
 - **Hotkey:** ⌃⌥Space by default; pick ⌃⇧Space or ⌃⌥⌘Space in the menu or Settings. ⌥-only shortcuts such as ⌥Space are not offered: since macOS 15 they register but never fire. ⌃Space alone is Raycast's default and the input-source switcher. A press shorter than 300 ms toggles (tap to start, tap to stop). A longer press is push-to-talk: hold, speak, release.
 - **Esc** cancels: the server discards the audio and nothing is inserted. Esc is only captured while a dictation is active.
-- The **HUD** appears at the top centre of the screen under the mouse and never takes focus. Stable text is shown normally and the still-changing tail dimmed. Status: Connecting, Listening, Finalizing, Inserted, Copied — press ⌘V.
+- The **HUD** appears at the bottom centre of the screen under the mouse, just above the Dock, and never takes focus. Stable text is shown normally and the still-changing tail dimmed. Status: Connecting, Listening, Finalizing, Inserted, Copied — press ⌘V.
 - **Silence guard:** if the input is digitally silent for 1.5 s you get "No microphone signal" and the session is cancelled.
 - **Correction** (menu toggle, off by default) asks the server to clean up the final text. When it changed the text, the HUD offers **Use raw** for 5 s. If the server reports that correction sends text off the machine, the toggle says so ("sends text to <host>"). Audio never leaves the Mac.
 - A red **DEBUG: recordings kept** badge (HUD, menu and a red dot in the menu bar) shows whenever the server is running with debug retention.

@@ -74,7 +74,8 @@ final class HUDController {
         let mouse = NSEvent.mouseLocation
         let screen = NSScreen.screens.first { NSMouseInRect(mouse, $0.frame, false) } ?? NSScreen.main
         guard let frame = screen?.visibleFrame else { return }
-        let origin = NSPoint(x: frame.midX - size.width / 2, y: frame.maxY - size.height - 4)
+        // Bottom centre, just above the Dock (visibleFrame excludes it); multi-line partials grow upward.
+        let origin = NSPoint(x: frame.midX - size.width / 2, y: frame.minY + 24)
         p.setFrameOrigin(origin)
     }
 }

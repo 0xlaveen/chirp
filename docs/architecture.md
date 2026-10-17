@@ -106,7 +106,7 @@ Version bumps add fields only. A breaking change becomes `/v2`.
 
 - **Tap to toggle, hold to talk.** A press shorter than 300 ms starts and stops; a longer press is push-to-talk until release. Esc on Mac, or ✕ on Android, cancels and inserts nothing.
 - **Live text while speaking:**
-  - Mac: a non-activating floating HUD near the cursor or top-centre shows the partial text and a level meter.
+  - Mac: a non-activating floating HUD at the bottom centre of the screen shows the partial text and a level meter.
   - Android: partials are shown as **composing text** (underlined) in the target field, via `setComposingText`. The final replaces them with `commitText`.
 - Short start and stop cues, off by default.
 - Silence guard: if peak/RMS stays at zero for 1.5 s, the client shows "No microphone signal" and sends nothing, the same as Koi.
