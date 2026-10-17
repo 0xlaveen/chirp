@@ -405,3 +405,28 @@
 +object ChirpSettingsHook {
 +    var content: (@androidx.compose.runtime.Composable () -> Unit)? = null
 +}
+diff --git a/app/src/main/java/helium314/keyboard/keyboard/internal/KeyboardParams.java b/app/src/main/java/helium314/keyboard/keyboard/internal/KeyboardParams.java
+index 4ca4c38..957c3a2 100644
+--- a/app/src/main/java/helium314/keyboard/keyboard/internal/KeyboardParams.java
++++ b/app/src/main/java/helium314/keyboard/keyboard/internal/KeyboardParams.java
+@@ -22,6 +22,8 @@ import helium314.keyboard.latin.R;
+ import helium314.keyboard.latin.settings.Settings;
+ import helium314.keyboard.latin.settings.SettingsValues;
+ import helium314.keyboard.latin.utils.ResourceUtils;
++import helium314.keyboard.latin.utils.DeviceProtectedUtils;
++import helium314.keyboard.latin.utils.LayoutType;
+ 
+ import java.util.ArrayList;
+ import java.util.Comparator;
+@@ -276,6 +278,10 @@ public class KeyboardParams {
+             keyAttr.recycle();
+             keyboardAttr.recycle();
+         }
+-        setTabletExtraKeys = Settings.getInstance().isTablet() && !mId.getSubtype().isCustom();
++        // CHIRP: the phone functional layout must keep phone row widths on tablet-sized Folds.
++        final String functionalLayout = mId.getSubtype().getLayouts().getOrDefault(LayoutType.FUNCTIONAL,
++                Settings.readDefaultLayoutName(LayoutType.FUNCTIONAL, DeviceProtectedUtils.getSharedPreferences(context)));
++        setTabletExtraKeys = Settings.getInstance().isTablet() && !mId.getSubtype().isCustom()
++                && !"functional_keys".equals(functionalLayout);
+     }
+ }

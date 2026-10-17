@@ -140,6 +140,36 @@ Chirp's Gboard-like (default) and Samsung-like looks are written by the host's
   preference is enabled. A native-render regression and release landscape key geometry
   check cover the fix.
 
+### Fold function-key arrangement (2026-10-18)
+
+HeliBoard's `Defaults.LayoutType.default` chooses `functional_keys_tablet` when
+`config_screen_metrics >= 3`. The `values-sw600dp` resource sets that metric to 3,
+but `values-sw768dp` sets it to 2. Thus the native chirp-fold AVD (2076×2152 at
+390 dpi, smallest width about 851 dp) hides the issue; representative Fold inner
+overrides (1968×2184 portrait / 2184×1968 landscape at 420 dpi, about 749 dp) expose
+it. With the default number row, tablet Backspace is beside the numbers, Enter is
+beside A–L, and row three adds punctuation and a second Shift.
+
+The host's `KeyboardLayoutDefaults.kt` seeds `layout_FUNCTIONAL=functional_keys`
+once before HeliBoard starts. Both looks keep Shift at row three's left, Backspace
+at its right, and Enter after the period on the bottom row. The cover already uses
+this layout. Existing explicit global functional layouts and per-language layouts
+are preserved; resetting the layout to automatic after migration is also respected.
+Number-row, width, landscape split and one-handed settings retain their existing behavior.
+
+Minimal additional CHIRP upstream change, recorded in `patches/chirp.patch`:
+
+- `keyboard/internal/KeyboardParams.java`: suppress tablet-only punctuation extras
+  when the effective functional layout is `functional_keys`. This is necessary because
+  upstream inserts those keys based only on screen metrics, even after choosing phone
+  function keys. Resolve per-language layout before the global preference, matching
+  `LayoutParser`; retain upstream behavior for other explicitly chosen layouts.
+
+`FoldLayoutTest` checks real key geometry across 599/600/749/767/768 dp and landscape
+split, including explicit global/per-language tablet layouts. `emulator-fold-layout.py`
+checks the release keyboard and captures both looks in both themes at native AVD,
+inner portrait/landscape and cover portrait/landscape sizes on emulator-5580 only.
+
 ## Chirp icon overlays (0.5.0)
 
 The host application supplies `ic_launcher` / `ic_launcher_round` in every legacy
