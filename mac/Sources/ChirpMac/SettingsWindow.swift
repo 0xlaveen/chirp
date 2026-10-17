@@ -15,8 +15,11 @@ final class SettingsWindowController: NSObject, NSTextFieldDelegate {
     var health: () -> Health? = { nil }
     /// The styles with their default prompts (live, or the last-known copy).
     var catalog: () -> StyleCatalog = { .unavailable }
+    /// "Set Up Chirp…" in General.
+    var onOpenSetup: (() -> Void)?
     private var testTask: Task<Void, Never>?
     private var window: NSWindow?
+    private var tabs: NSTabViewController?
     private var form: SettingsForm?
     private var refreshTimer: Timer?
 
@@ -36,10 +39,13 @@ final class SettingsWindowController: NSObject, NSTextFieldDelegate {
         (s.serverStatus, s.serverStatusTone) = serverStatus()
         s.cleanupStyle = settings.correctionProfile
         s.stylePrompts = settings.correctionPrompts
+        s.cleanupEnabled = settings.correction
+        s.offerRaw = settings.showRawAfterCleanup
         s.insertRawFirst = settings.insertRawFirst
         s.showChanges = settings.showChangesAfterCleanup
         s.appStyles = settings.appStyles
         let health = health()
+        (s.cleanupDetail, s.cleanupAvailable) = SettingsForm.cleanupDetail(health: health)
         let catalog = catalog()
         s.catalog = catalog
         s.profiles = catalog.source == .unavailable ? CorrectionProfile.offered(by: health) : catalog.profiles
@@ -47,9 +53,11 @@ final class SettingsWindowController: NSObject, NSTextFieldDelegate {
         return s
     }
 
-    func show() {
+    /// Opens Settings, on `tab` when given (else on the tab it was left on).
+    func show(tab: SettingsTab? = nil) {
         if window == nil { window = makeWindow() }
         form?.apply(state)
+        if let tab, let tabs { tabs.selectedTabViewItemIndex = SettingsTab.allCases.firstIndex(of: tab) ?? 0 }
         refreshTimer?.invalidate()
         refreshTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { if let self { self.form?.apply(self.state) } }
@@ -57,11 +65,37 @@ final class SettingsWindowController: NSObject, NSTextFieldDelegate {
         NSApp.activate()
         window?.makeKeyAndOrderFront(nil)
         // Ordering the window front lets AppKit pick the first text field; park focus on the content instead.
-        if let window, let form { window.makeFirstResponder(form.view) }
+        if let window, let tabs, let current = tabs.tabViewItems[tabs.selectedTabViewItemIndex].viewController?.view {
+            window.makeFirstResponder(current)
+        }
+    }
+
+    /// The Custom sound rows came or went: the tab is a different height now, and the window follows it, top edge fixed.
+    private func tabSizeChanged() {
+        guard let window, let tabs else { return }
+        let index = tabs.selectedTabViewItemIndex
+        guard let tabController = tabs.tabViewItems[index].viewController as? SettingsTabController else { return }
+        tabController.refreshSize()
+        let target = tabController.preferredContentSize
+        let current = window.contentRect(forFrameRect: window.frame).size
+        guard abs(target.height - current.height) > 0.5 else { return }
+        var frame = window.frame
+        let newFrame = window.frameRect(forContentRect: NSRect(origin: .zero, size: NSSize(width: current.width, height: target.height)))
+        frame.origin.y += frame.height - newFrame.height
+        frame.size.height = newFrame.height
+        window.setFrame(frame, display: true, animate: true)
     }
 
     private func makeWindow() -> NSWindow {
         let form = SettingsForm(state)
+        form.setupButton.target = self
+        form.setupButton.action = #selector(openSetup)
+        form.doctorButton.target = self
+        form.doctorButton.action = #selector(copyDoctor)
+        form.cleanupEnabled.target = self
+        form.cleanupEnabled.action = #selector(toggleCleanup(_:))
+        form.offerRaw.target = self
+        form.offerRaw.action = #selector(toggleOfferRaw(_:))
         form.hotkey.target = self
         form.hotkey.action = #selector(hotkeyChanged(_:))
         form.recorder.onCapture = { [weak self] combo in
@@ -106,10 +140,11 @@ final class SettingsWindowController: NSObject, NSTextFieldDelegate {
         form.accessibilityButton.action = #selector(grantAX)
         self.form = form
 
-        let w = NSWindow(contentRect: .zero, styleMask: [.titled, .closable], backing: .buffered, defer: false)
-        w.title = "Chirp Settings"
+        let tabs = SettingsTabs.makeController(form: form)
+        self.tabs = tabs
+        let w = NSWindow(contentViewController: tabs)
+        w.styleMask = [.titled, .closable]
         w.isReleasedWhenClosed = false
-        form.install(in: w)
         w.center()
         return w
     }
@@ -117,6 +152,16 @@ final class SettingsWindowController: NSObject, NSTextFieldDelegate {
     func controlTextDidChange(_ obj: Notification) {
         if let f = obj.object as? NSTextField { settings.serverURL = f.stringValue }
     }
+
+    @objc private func openSetup() { onOpenSetup?() }
+
+    @objc private func copyDoctor() {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(DoctorHelp.clipboardText(serverURL: settings.serverURL), forType: .string)
+    }
+
+    @objc private func toggleCleanup(_ sender: NSButton) { settings.correction = sender.state == .on }
+    @objc private func toggleOfferRaw(_ sender: NSButton) { settings.showRawAfterCleanup = sender.state == .on }
 
     @objc private func hotkeyChanged(_ sender: NSPopUpButton) {
         settings.hotkey = KeyCombo.resolve(id: sender.selectedItem?.representedObject as? String)
@@ -211,11 +256,13 @@ final class SettingsWindowController: NSObject, NSTextFieldDelegate {
         settings.soundPack = pack
         form?.showPack(pack)
         form?.setCustomSounds(start: settings.customStartSound, stop: settings.customStopSound)
+        tabSizeChanged()
         // "Custom…" with nothing chosen yet goes straight to the file chooser; giving up keeps the old pack.
         if pack == .custom, settings.customStartSound == nil, settings.customStopSound == nil {
             if !importSound(for: .start) {
                 settings.soundPack = previous
                 form?.showPack(previous)
+                tabSizeChanged()
             }
         }
         Sounds.prepare()

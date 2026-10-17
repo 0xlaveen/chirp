@@ -14,9 +14,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         menu = MenuBarController(
             controller: controller,
-            actions: .init(openSettings: { [settingsWindow] in settingsWindow.show() },
+            actions: .init(openSettings: { [settingsWindow] in settingsWindow.show(tab: $0) },
                            openSetup: { [onboardingWindow] in onboardingWindow.show() },
                            openAbout: { [aboutWindow] in aboutWindow.show() }))
+        settingsWindow.onOpenSetup = { [onboardingWindow] in onboardingWindow.show() }
         settingsWindow.serverStatus = { [controller] in MenuContent.serverStatus(health: controller.health, healthError: controller.healthError) }
         settingsWindow.health = { [controller] in controller.health }
         settingsWindow.catalog = { [controller] in controller.styleCatalog }

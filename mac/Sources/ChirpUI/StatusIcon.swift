@@ -5,8 +5,10 @@ public struct StatusIcon: Equatable, Sendable {
     public enum Glyph: Sendable { case idle, listening, error }
 
     public var glyph: Glyph
-    /// Dimmed while the server is unreachable.
+    /// Dimmed while the server is unreachable or Chirp is paused.
     public var dimmed: Bool
+    /// The menu's switch is off.
+    public var paused = false
     /// A small red dot while the server keeps recordings.
     public var debugBadge: Bool
     /// A tiny "cleaned" mark while "Use raw" is on offer after a cleaned insertion.
@@ -15,7 +17,11 @@ public struct StatusIcon: Equatable, Sendable {
     public var animatesWaves: Bool
 
     public static func of(state: DictationState, serverReachable: Bool, debugRetention: Bool,
-                          reduceMotion: Bool = false, rawOfferOpen: Bool = false) -> StatusIcon {
+                          reduceMotion: Bool = false, rawOfferOpen: Bool = false, paused: Bool = false) -> StatusIcon {
+        // Paused never has a dictation under way (pausing ends it), so the idle bird is dimmed.
+        if paused {
+            return StatusIcon(glyph: .idle, dimmed: true, paused: true, debugBadge: debugRetention, cleanedBadge: false, animatesWaves: false)
+        }
         let glyph: Glyph = switch state {
         case .idle: .idle
         case .connecting, .listening, .finalizing, .correcting, .inserting: .listening
@@ -35,7 +41,7 @@ public struct StatusIcon: Equatable, Sendable {
 
     public var accessibilityLabel: String {
         var label = switch glyph {
-        case .idle: dimmed ? "Chirp — server unreachable" : "Chirp"
+        case .idle: paused ? "Chirp — paused" : dimmed ? "Chirp — server unreachable" : "Chirp"
         case .listening: "Chirp — dictating"
         case .error: "Chirp — error"
         }

@@ -67,7 +67,8 @@ import Testing
 @Suite struct MenuContentTests {
     private let boya = AudioInput(uid: "boya", name: "BOYA CM40")
     private let studio = AudioInput(uid: "studio", name: "Studio Display Microphone")
-    private let local = Health(engine: "parakeet", ready: true, correction: "available", correctionLeavesMachine: false)
+    private let local = Health(engine: "parakeet", ready: true, correction: "available", correctionLeavesMachine: false,
+                               correctionProfiles: CorrectionProfile.builtIn)
 
     private func inputs(_ configure: (inout MenuInputs) -> Void = { _ in }) -> MenuInputs {
         var m = MenuInputs()
@@ -77,220 +78,311 @@ import Testing
         configure(&m)
         return m
     }
-    private func entry(_ m: MenuInputs, _ action: MenuAction) -> MenuEntry? {
-        MenuContent.entries(m).first { $0.action == action }
+    private func entry(_ m: MenuInputs, _ title: String) -> MenuEntry? { MenuContent.entries(m).first { $0.title == title } }
+    private func entry(_ m: MenuInputs, _ action: MenuAction) -> MenuEntry? { MenuContent.entries(m).first { $0.action == action } }
+    private func titles(_ m: MenuInputs) -> [String] { MenuContent.entries(m).filter { !$0.isSeparator }.map(\.title) }
+    /// The rows with their separators, as one string per group.
+    private func groups(_ m: MenuInputs) -> [[String]] {
+        var out: [[String]] = [[]]
+        for e in MenuContent.entries(m) {
+            if e.isSeparator { if !out[out.count - 1].isEmpty { out.append([]) } } else { out[out.count - 1].append(e.title) }
+        }
+        return out
     }
-    private func titles(_ m: MenuInputs) -> [String] { MenuContent.entries(m).filter { !$0.isSeparator && !$0.isHeader }.map(\.title) }
+
+    // MARK: the structure
+
+    @Test func readyMenuHasTheTargetStructure() {
+        #expect(groups(inputs()) == [["Start Dictation"], ["Clean-up", "Microphone", "Sounds", "Server"],
+                                     ["Settings…", "About Chirp"], ["Quit Chirp"]])
+        #expect(MenuContent.header(inputs()).title == "Chirp")
+    }
+
+    @Test func rowsAreSingleLineWithoutIconsOrSectionHeaders() {
+        // MenuEntry has no subtitle, symbol or header kind any more: a row is a title plus a value or shortcut.
+        for e in MenuContent.entries(inputs()) where !e.isSeparator {
+            #expect(!e.title.isEmpty && !e.title.contains("\n"))
+            #expect(e.value == nil || e.shortcut == nil)
+        }
+        // Under the header, around the dictation rows, around Settings/About and above Quit.
+        #expect(MenuContent.entries(inputs()).filter(\.isSeparator).count == 4)
+    }
+
+    @Test func hotkeyAndLaunchAtLoginLiveOnlyInSettings() {
+        let all = MenuContent.entries(inputs { $0.cleanupOn = true }).flatMap { [$0] + ($0.submenu ?? []) }
+        #expect(!all.contains { $0.title == "Hotkey" || $0.title == "Launch at Login" })
+    }
 
     // MARK: header and status
 
-    @Test func headerNamesTheAppWithTheHotkeyHint() {
-        let header = MenuContent.entries(inputs())[0]
-        #expect(header.title == "Chirp" && header.showsAppIcon)
-        #expect(header.subtitle == "⌃⌥Space — tap to toggle, hold to talk")
-        #expect(MenuContent.entries(inputs { $0.hotkey = .controlShiftSpace })[0].subtitle?.hasPrefix("⌃⇧Space") == true)
-    }
-
-    @Test func statusLineCoversEveryState() {
+    @Test func headerStatusCoversEveryState() {
         func status(_ configure: (inout MenuInputs) -> Void) -> (String, MenuEntry.Tone) {
-            let e = MenuContent.status(inputs(configure))
-            return (e.title, e.tone)
+            let h = MenuContent.header(inputs(configure))
+            return (h.status, h.tone)
         }
-        #expect(status { _ in } == ("Ready", .ok))
-        #expect(status { $0.health = Health(ready: false) } == ("Loading model…", .warning))
+        #expect(status { _ in } == ("Ready · ⌃⌥Space", .normal))
+        #expect(status { $0.hotkey = .controlShiftSpace } == ("Ready · ⌃⇧Space", .normal))
+        #expect(status { $0.paused = true } == ("Paused", .normal))
+        #expect(status { $0.state = .listening } == ("Listening…", .active))
+        #expect(status { $0.state = .connecting } == ("Connecting…", .active))
+        #expect(status { $0.state = .correcting } == ("Polishing…", .active))
+        #expect(status { $0.state = .error("boom") } == ("boom", .error))
         #expect(status { $0.health = nil; $0.healthError = "x" } == ("Server unreachable", .error))
         #expect(status { $0.health = nil } == ("Checking server…", .warning))
-        #expect(status { $0.state = .listening } == ("Listening", .active))
-        #expect(status { $0.state = .connecting } == ("Connecting…", .active))
-        #expect(status { $0.state = .error("boom") } == ("boom", .error))
-        // What Chirp is doing wins over the server's state.
-        #expect(status { $0.state = .listening; $0.health = nil; $0.healthError = "x" } == ("Listening", .active))
+        #expect(status { $0.health = Health(ready: false) } == ("Loading model…", .warning))
+        #expect(status { $0.debugRetention = true } == ("DEBUG recordings kept", .error))
+        #expect(status { $0.hotkeyRegistered = false }.1 == .warning)
+        // What Chirp is doing wins over the server's state; the pause wins over everything.
+        #expect(status { $0.state = .listening; $0.health = nil; $0.healthError = "x" } == ("Listening…", .active))
+        #expect(status { $0.paused = true; $0.debugRetention = true } == ("Paused", .normal))
     }
 
-    @Test func debugRetentionIsAlwaysVisibleInRed() {
-        #expect(MenuContent.entries(inputs()).allSatisfy { !$0.title.hasPrefix("DEBUG") })
-        let line = MenuContent.entries(inputs { $0.debugRetention = true }).first { $0.title.hasPrefix("DEBUG") }
-        #expect(line?.tone == .error && line?.title == "DEBUG retention ON — recordings kept")
+    @Test func theSwitchIsOnExactlyWhileRunning() {
+        #expect(MenuContent.header(inputs()).isOn)
+        #expect(!MenuContent.header(inputs { $0.paused = true }).isOn)
     }
 
-    // MARK: dictation
+    @Test func headerReadsAsOneLabelForVoiceOver() {
+        #expect(MenuContent.header(inputs()).accessibilityLabel == "Chirp, Ready · ⌃⌥Space")
+        #expect(MenuContent.header(inputs { $0.paused = true }).accessibilityLabel == "Chirp, Paused")
+    }
 
-    @Test func startDictationTurnsIntoStopAndCarriesNoKeyEquivalent() {
+    // MARK: dictation rows
+
+    @Test func startDictationShowsTheHotkeyAndTurnsIntoStop() {
         let idle = entry(inputs(), .toggleDictation)
-        // The header shows the hotkey once; a ⌃⌥Space equivalent would render in odd columns.
-        #expect(idle?.title == "Start dictation" && idle?.keyEquivalent == nil)
-        #expect(entry(inputs { $0.state = .listening }, .toggleDictation)?.title == "Stop dictation")
-        #expect(entry(inputs { $0.state = .error("x") }, .toggleDictation)?.title == "Start dictation")
+        #expect(idle?.title == "Start Dictation" && idle?.shortcut == "⌃⌥Space" && idle?.keyEquivalent == nil)
+        #expect(entry(inputs { $0.hotkey = .controlShiftSpace }, .toggleDictation)?.shortcut == "⌃⇧Space")
+        #expect(entry(inputs { $0.state = .listening }, .toggleDictation)?.title == "Stop Dictation")
+        #expect(entry(inputs { $0.state = .error("x") }, .toggleDictation)?.title == "Start Dictation")
         // Nothing to start or stop while the final is on its way.
         #expect(entry(inputs { $0.state = .finalizing }, .toggleDictation) == nil)
         #expect(entry(inputs { $0.state = .inserting }, .toggleDictation) == nil)
     }
 
-    // MARK: input device
-
-    @Test func inputPickerListsEveryDeviceAndMarksTheEffectiveOne() throws {
-        let following = try #require(MenuContent.entries(inputs()).first { $0.title == "Input Device" })
-        #expect(following.subtitle == "BOYA CM40")
-        let sub = try #require(following.submenu).filter { !$0.isSeparator }
-        #expect(sub.map(\.title) == ["System Default", "BOYA CM40", "Studio Display Microphone"])
-        #expect(sub.map(\.mark) == [.on, .off, .off])
-        #expect(sub.map(\.action) == [.pickInput(nil), .pickInput("boya"), .pickInput("studio")])
-        #expect(sub[0].subtitle == "BOYA CM40")
-
-        let picked = try #require(MenuContent.entries(inputs { $0.chosenInputUID = "studio" }).first { $0.title == "Input Device" })
-        #expect(picked.subtitle == "Studio Display Microphone")
-        #expect(try #require(picked.submenu).filter { $0.mark == .on }.map(\.title) == ["Studio Display Microphone"])
+    @Test func pausedMenuCannotStartADictationAndShowsNoShortcut() throws {
+        let row = try #require(entry(inputs { $0.paused = true }, "Start Dictation"))
+        #expect(row.action == nil && row.shortcut == nil && !row.isEnabled)
+        // A shortcut another app owns is not advertised either.
+        #expect(try #require(entry(inputs { $0.hotkeyRegistered = false }, "Start Dictation")).shortcut == nil)
     }
 
-    @Test func unpluggedPickedDeviceFallsBackToTheDefaultAndSaysSo() throws {
-        let e = try #require(MenuContent.entries(inputs { $0.inputs = [boya]; $0.chosenInputUID = "studio" }).first { $0.title == "Input Device" })
-        #expect(e.subtitle == "BOYA CM40 (picked device not connected)")
-        #expect(try #require(e.submenu).filter { $0.mark == .on }.map(\.title) == ["System Default"])
+    @Test func useRawAppearsOnlyDuringItsWindowWithItsShortcut() throws {
+        #expect(entry(inputs(), .useRaw) == nil)
+        let open = try #require(entry(inputs { $0.rawOfferOpen = true; $0.rawOfferKey = "⌃⌥Z" }, .useRaw))
+        #expect(open.title == "Use Raw for Last Dictation" && open.shortcut == "⌃⌥Z")
+        #expect(try #require(entry(inputs { $0.rawOfferOpen = true }, .useRaw)).shortcut == nil)
+        #expect(groups(inputs { $0.rawOfferOpen = true })[0] == ["Start Dictation", "Use Raw for Last Dictation"])
     }
 
-    @Test func noInputDeviceIsFlaggedAndHasNoPicker() throws {
-        let e = try #require(MenuContent.entries(inputs { $0.inputs = []; $0.defaultInput = nil }).first { $0.title == "Input Device" })
-        #expect(e.subtitle == "No input device" && e.tone == .warning && e.submenu == nil)
+    // MARK: Clean-up
+
+    @Test func cleanupValueIsTheDefaultStyleOrOff() throws {
+        #expect(try #require(entry(inputs(), "Clean-up")).value == "Off")
+        #expect(try #require(entry(inputs { $0.cleanupOn = true }, "Clean-up")).value == "Default")
+        #expect(try #require(entry(inputs { $0.cleanupOn = true; $0.styleID = "email" }, "Clean-up")).value == "Email")
+        // Unreachable: the style's built-in name, still shown.
+        #expect(try #require(entry(inputs { $0.health = nil; $0.healthError = "x"; $0.cleanupOn = true; $0.styleID = "chat" }, "Clean-up")).value == "Chat")
     }
 
-    // MARK: clean-up
-
-    @Test func cleanupToggleReflectsThePreference() {
-        #expect(entry(inputs(), .toggleCleanup)?.mark == .off)
-        #expect(entry(inputs { $0.cleanupOn = true }, .toggleCleanup)?.mark == .on)
+    @Test func cleanupSubmenuHasToggleStylesShowChangesAndEditStyles() throws {
+        let row = try #require(entry(inputs { $0.cleanupOn = true; $0.styleID = "email"; $0.showChanges = true }, "Clean-up"))
+        let sub = try #require(row.submenu)
+        #expect(sub.filter { !$0.isSeparator }.map(\.title) == ["Clean up Text", "Default", "Chat", "Email", "Code", "Notes", "Custom",
+                                                                "Show Changes after Clean-up", "Edit Styles…"])
+        #expect(sub.first?.action == .toggleCleanup && sub.first?.mark == .on)
+        #expect(sub.filter { $0.mark == .on }.map(\.title) == ["Clean up Text", "Email", "Show Changes after Clean-up"])
+        #expect(sub.first { $0.title == "Chat" }?.action == .pickStyle("chat"))
+        #expect(sub.first { $0.title == "Show Changes after Clean-up" }?.action == .toggleShowChanges)
+        #expect(sub.last?.action == .editStyles)
     }
 
-    @Test func cleanupSaysWhereTheTextGoes() {
-        func subtitle(_ h: Health?) -> String? { entry(inputs { $0.health = h }, .toggleCleanup)?.subtitle }
-        #expect(subtitle(local) == "Runs on this Mac")
-        #expect(subtitle(Health(correction: "available", correctionLeavesMachine: true, correctionHost: "llm.example.com"))
-                == "Sends text to llm.example.com")
-        #expect(subtitle(Health(correction: "available", correctionLeavesMachine: true)) == "Sends text to a remote LLM")
-        // Shown before turning it on, not only after.
-        #expect(entry(inputs { $0.cleanupOn = false; $0.health = Health(correction: "available", correctionLeavesMachine: true, correctionHost: "h") },
-                      .toggleCleanup)?.subtitle == "Sends text to h")
+    @Test func cleanupSubmenuMarksNothingWhenOff() throws {
+        let sub = try #require(entry(inputs(), "Clean-up")?.submenu)
+        #expect(sub.first?.mark == .off && sub.first { $0.title == "Show Changes after Clean-up" }?.mark == .off)
+        #expect(sub.first { $0.title == "Default" }?.mark == .on)   // the default style is still the one a later toggle uses
     }
 
-    @Test func serverWithoutCleanupGetsOneExplanatoryRowAndNoGreyedCheckedItems() throws {
+    @Test func serverWithoutCleanupExplainsInsteadOfOfferingAToggle() throws {
         for on in [true, false] {
-            let m = inputs { $0.health = Health(engine: "p", ready: true, correction: "off"); $0.cleanupOn = on; $0.showRawAfterCleanup = true }
-            #expect(entry(m, .toggleCleanup) == nil && entry(m, .toggleShowRaw) == nil)
-            let all = MenuContent.entries(m)
-            let section = try #require(all.firstIndex { $0.isHeader && $0.title == "Clean-up" })
-            let row = all[section + 1]
-            #expect(row.title == "Clean-up: off on server — see README" && row.action == nil && row.mark == .off)
-            #expect(all[section + 2].isSeparator)
-            #expect(!all.contains { $0.title == "Clean up text" || $0.title == "Show raw after clean-up" })
+            let m = inputs { $0.health = Health(engine: "p", ready: true, correction: "off"); $0.cleanupOn = on }
+            let row = try #require(entry(m, "Clean-up"))
+            #expect(row.value == "Unavailable")
+            let sub = try #require(row.submenu)
+            #expect(sub.first?.title == "Clean-up is off on the server" && sub.first?.action == nil)
+            #expect(!sub.contains { $0.action == .toggleCleanup })
+            #expect(sub.last?.action == .editStyles)
         }
+    }
+
+    @Test func aServerThatListsNoStylesGetsNoStyleRows() throws {
+        // An older server ignores styles, so there is nothing to pick; the toggle and Edit Styles… remain.
+        let sub = try #require(entry(inputs { $0.health = Health(engine: "p", ready: true, correction: "available") }, "Clean-up")?.submenu)
+        #expect(sub.filter { !$0.isSeparator }.map(\.title) == ["Clean up Text", "Show Changes after Clean-up", "Edit Styles…"])
+        // Before the first health check the built-in styles are offered, so the menu is not empty while it loads.
+        let loading = try #require(entry(inputs { $0.health = nil }, "Clean-up")?.submenu)
+        #expect(loading.contains { $0.action == .pickStyle("default") })
     }
 
     @Test func noMenuItemIsCheckedWhileDisabled() {
         let configs: [(inout MenuInputs) -> Void] = [
-            { _ in }, { $0.cleanupOn = true }, { $0.cleanupOn = true; $0.showRawAfterCleanup = false },
+            { _ in }, { $0.cleanupOn = true }, { $0.cleanupOn = true; $0.showChanges = true },
             { $0.health = Health(correction: "off"); $0.cleanupOn = true }, { $0.health = nil; $0.cleanupOn = true },
-            { $0.launch = .unavailable }, { $0.launch = .on },
+            { $0.soundsEnabled = true }, { $0.chosenInputUID = "studio" }, { $0.paused = true },
         ]
         for configure in configs {
-            for e in MenuContent.entries(inputs(configure)) where e.mark != .off {
-                #expect(e.action != nil, "\(e.title) is checked but has no action")
+            for top in MenuContent.entries(inputs(configure)) {
+                for e in [top] + (top.submenu ?? []) where e.mark != .off {
+                    #expect(e.action != nil, "\(e.title) is checked but has no action")
+                }
             }
         }
     }
 
-    @Test func showRawOptionNeedsCleanupOn() {
-        #expect(entry(inputs { $0.cleanupOn = false }, .toggleShowRaw) == nil)
-        #expect(entry(inputs { $0.cleanupOn = true }, .toggleShowRaw)?.mark == .on)
-        #expect(entry(inputs { $0.cleanupOn = true; $0.showRawAfterCleanup = false }, .toggleShowRaw)?.mark == .off)
+    // MARK: Microphone
+
+    @Test func microphoneSubmenuListsEveryDeviceAndMarksTheEffectiveOne() throws {
+        let following = try #require(entry(inputs(), "Microphone"))
+        #expect(following.value == "BOYA CM40")
+        let sub = try #require(following.submenu).filter { !$0.isSeparator }
+        #expect(sub.map(\.title) == ["Follow System Default", "BOYA CM40", "Studio Display Microphone"])
+        #expect(sub.map(\.mark) == [.on, .off, .off])
+        #expect(sub.map(\.action) == [.pickInput(nil), .pickInput("boya"), .pickInput("studio")])
+
+        let picked = try #require(entry(inputs { $0.chosenInputUID = "studio" }, "Microphone"))
+        #expect(picked.value?.hasPrefix("Studio Display") == true && picked.value?.hasSuffix("…") == true)
+        #expect(picked.fullValue == "Studio Display Microphone")
+        #expect(try #require(picked.submenu).filter { $0.mark == .on }.map(\.title) == ["Studio Display Microphone"])
     }
 
-    @Test func unreachableServerStillLetsYouSetTheCleanupPreference() {
-        let m = inputs { $0.health = nil; $0.healthError = "x" }
-        #expect(entry(m, .toggleCleanup)?.subtitle == "Server unreachable")
+    @Test func unpluggedPickedDeviceFallsBackToTheDefault() throws {
+        let e = try #require(entry(inputs { $0.inputs = [boya]; $0.chosenInputUID = "studio" }, "Microphone"))
+        #expect(e.value == "BOYA CM40")
+        #expect(try #require(e.submenu).filter { $0.mark == .on }.map(\.title) == ["Follow System Default"])
     }
 
-    // MARK: hotkey, server, permissions, footer
-
-    @Test func hotkeySubmenuMarksTheCurrentPreset() throws {
-        let hotkey = try #require(MenuContent.entries(inputs()).first { $0.title == "Hotkey" })
-        #expect(hotkey.subtitle == "⌃⌥Space")
-        let sub = try #require(hotkey.submenu)
-        #expect(sub.prefix(KeyCombo.presets.count).map(\.title) == KeyCombo.presets.map(\.title))
-        #expect(sub.filter { $0.mark == .on }.map(\.action) == [.pickHotkey("control-option-space")])
-        // Recording happens in Settings; the menu only points there.
-        #expect(sub.last?.action == .showSettings)
+    @Test func noInputDeviceIsFlaggedAndHasNoPicker() throws {
+        let e = try #require(entry(inputs { $0.inputs = []; $0.defaultInput = nil }, "Microphone"))
+        #expect(e.value == "None" && e.tone == .warning && e.submenu == nil && !e.isEnabled)
     }
 
-    @Test func aCustomHotkeyIsListedAndChecked() throws {
-        let custom = KeyCombo.custom(keyCode: 0x0F, modifiers: UInt32(controlKey | optionKey | cmdKey))
-        let hotkey = try #require(MenuContent.entries(inputs { $0.hotkey = custom }).first { $0.title == "Hotkey" })
-        #expect(hotkey.subtitle == "⌃⌥⌘R")
-        let sub = try #require(hotkey.submenu)
-        #expect(sub.filter { $0.mark == .on }.map(\.title) == ["⌃⌥⌘R (custom)"])
+    // MARK: values truncate gracefully
+
+    @Test func longValuesEndInAnEllipsisAndKeepTheirFullTextForVoiceOver() throws {
+        let long = AudioInput(uid: "long", name: "Studio Display Microphone (Built-in, Aggregate)")
+        let row = try #require(entry(inputs { $0.inputs = [long]; $0.chosenInputUID = "long" }, "Microphone"))
+        let value = try #require(row.value)
+        #expect(value.count <= MenuContent.valueLimit && value.hasSuffix("…") && value.hasPrefix("Studio Display"))
+        #expect(row.fullValue == "Studio Display Microphone (Built-in, Aggregate)")
+        #expect(row.accessibilityLabel == "Microphone, Studio Display Microphone (Built-in, Aggregate)")
+        // The submenu keeps the whole name.
+        #expect(row.submenu?.contains { $0.title == long.name } == true)
     }
 
-    @Test func soundsHasASubmenuAndSetupHasARow() throws {
-        let off = try #require(MenuContent.entries(inputs()).first { $0.title == "Sounds" })
-        #expect(off.subtitle == "Off" && off.action == nil)
+    @Test func shortValuesAreUntouchedAndTruncationNeverCutsAGrapheme() {
+        #expect(MenuContent.truncated("BOYA CM40") == "BOYA CM40")
+        #expect(MenuContent.truncated(String(repeating: "a", count: MenuContent.valueLimit)) == String(repeating: "a", count: MenuContent.valueLimit))
+        let emoji = MenuContent.truncated(String(repeating: "🎙️", count: 40))
+        #expect(emoji.count == MenuContent.valueLimit && emoji.hasSuffix("…"))
+        #expect(MenuContent.truncated("ab ", limit: 3) == "ab ")
+        #expect(MenuContent.truncated("ab cdefg", limit: 4) == "ab…")   // no dangling space before the ellipsis
+    }
+
+    @Test func rowsKeepOnlyTheirTitleWhenThereIsNoValue() {
+        let about = entry(inputs(), "About Chirp")
+        #expect(about?.accessibilityLabel == "About Chirp")
+        #expect(entry(inputs(), "Settings…")?.accessibilityLabel == "Settings…, ⌘,")
+        #expect(entry(inputs(), "Start Dictation")?.accessibilityLabel == "Start Dictation, ⌃⌥Space")
+    }
+
+    // MARK: Sounds
+
+    @Test func soundsValueIsTheChoiceAndTheSubmenuMarksIt() throws {
+        let off = try #require(entry(inputs(), "Sounds"))
+        #expect(off.value == "Off" && off.action == nil && off.isEnabled)
         #expect(off.submenu?.filter { $0.mark == .on }.map(\.title) == ["Off"])
-        let chirp = try #require(MenuContent.entries(inputs { $0.soundsEnabled = true }).first { $0.title == "Sounds" })
-        #expect(chirp.subtitle == "Chirp" && chirp.submenu?.filter { $0.mark == .on }.map(\.title) == ["Chirp"])
-        #expect(entry(inputs(), .showSetup)?.title == "Set Up Chirp…")
+        let chirp = try #require(entry(inputs { $0.soundsEnabled = true }, "Sounds"))
+        #expect(chirp.value == "Chirp" && chirp.submenu?.filter { $0.mark == .on }.map(\.title) == ["Chirp"])
+        #expect(try #require(entry(inputs { $0.soundsEnabled = true; $0.soundPack = .glass }, "Sounds")).value == "Glass")
+        #expect(try #require(entry(inputs { $0.soundsEnabled = true; $0.soundPack = .custom }, "Sounds")).value == "Custom")
+    }
+
+    // MARK: Server
+
+    @Test func serverValueSaysWhereItRuns() throws {
+        #expect(try #require(entry(inputs(), "Server")).value == "This Mac")
+        #expect(try #require(entry(inputs { $0.serverURL = "http://localhost:7821" }, "Server")).value == "This Mac")
+        #expect(try #require(entry(inputs { $0.serverURL = "https://mainframe.ts.net/chirp" }, "Server")).value == "mainframe.ts.net")
+        let far = try #require(entry(inputs { $0.serverURL = "https://mainframe-with-a-very-long-name.example.ts.net/chirp" }, "Server"))
+        #expect(far.value?.hasSuffix("…") == true && far.fullValue == "mainframe-with-a-very-long-name.example.ts.net")
+    }
+
+    @Test func serverSubmenuShowsUrlEngineStatusAndTheDoctorCommand() throws {
+        let sub = try #require(entry(inputs(), "Server")?.submenu)
+        #expect(sub.filter { !$0.isSeparator }.map(\.title) == ["http://127.0.0.1:7821", "Engine: parakeet", "Status: Ready", "Copy Doctor Command"])
+        #expect(sub.filter { !$0.isSeparator }.map(\.action) == [nil, nil, nil, .copyDoctor])
+        let down = try #require(entry(inputs { $0.health = nil; $0.healthError = "x" }, "Server"))
+        #expect(down.tone == .error && down.submenu?.map(\.title).contains("Status: Unreachable") == true)
+        #expect(entry(inputs { $0.health = Health(ready: false) }, "Server")?.submenu?.map(\.title).contains("Status: Loading model…") == true)
+    }
+
+    // MARK: Set Up Chirp…, footer
+
+    @Test func setUpChirpAppearsOnlyWhileSetupIsIncomplete() {
+        #expect(entry(inputs(), .showSetup) == nil)
+        #expect(entry(inputs { $0.micGranted = false }, .showSetup)?.title == "Set Up Chirp…")
+        #expect(entry(inputs { $0.accessibilityGranted = false }, .showSetup) != nil)
+        #expect(entry(inputs { $0.health = nil; $0.healthError = "x" }, .showSetup) != nil)
+        // Still checking the server is not a reason to nag.
+        #expect(entry(inputs { $0.health = nil }, .showSetup) == nil)
         #expect(MenuAction.showSetup.payload == nil)
     }
 
-    @Test func serverRowShowsTheURLWithAStatusDot() throws {
-        func row(_ configure: (inout MenuInputs) -> Void) throws -> MenuEntry {
-            try #require(MenuContent.entries(inputs(configure)).first { $0.action == .showSettings && $0.symbol == "circle.fill" })
-        }
-        let ok = try row { $0.serverURL = "https://mainframe.example.ts.net/chirp" }
-        #expect(ok.title == "https://mainframe.example.ts.net/chirp" && ok.symbolTone == .ok && ok.subtitle == "parakeet")
-        #expect(try row { $0.health = nil; $0.healthError = "x" }.symbolTone == .error)
-        #expect(try row { $0.health = Health(ready: false) }.symbolTone == .warning)
-        #expect(entry(inputs(), .copyDoctor)?.title == "Open doctor output")
+    @Test func setUpChirpSitsBetweenTheSeparatorAndSettings() {
+        let m = inputs { $0.micGranted = false }
+        #expect(groups(m)[2] == ["Set Up Chirp…", "Settings…", "About Chirp"])
     }
 
-    @Test func permissionsAppearOnlyWhenSomethingIsMissing() {
-        #expect(!MenuContent.entries(inputs()).contains { $0.isHeader && $0.title.hasPrefix("Permissions") })
-        #expect(entry(inputs(), .grantMic) == nil && entry(inputs(), .grantAX) == nil)
-
-        let mic = inputs { $0.micGranted = false }
-        #expect(entry(mic, .grantMic) != nil && entry(mic, .grantAX) == nil)
-        #expect(MenuContent.entries(mic).contains { $0.isHeader && $0.title == "Permissions needed" })
-
-        let ax = inputs { $0.accessibilityGranted = false }
-        #expect(entry(ax, .grantMic) == nil && entry(ax, .grantAX) != nil)
-    }
-
-    @Test func footerHasLaunchSettingsAboutAndQuit() {
-        let t = titles(inputs())
-        #expect(t.suffix(5) == ["Launch at Login", "Set Up Chirp…", "Settings…", "About Chirp", "Quit Chirp"])
-        #expect(entry(inputs(), .quit)?.keyEquivalent == "q" && MenuContent.entries(inputs()).first { $0.title == "Settings…" }?.keyEquivalent == ",")
+    @Test func footerHasSettingsAboutAndQuitWithTheirKeys() {
+        let settings = entry(inputs(), .showSettings)
+        #expect(settings?.keyEquivalent == "," && settings?.shortcut == "⌘,")
+        #expect(entry(inputs(), .quit)?.keyEquivalent == "q" && entry(inputs(), .quit)?.shortcut == "⌘Q")
         #expect(entry(inputs(), .showAbout) != nil)
+        #expect(titles(inputs()).suffix(3) == ["Settings…", "About Chirp", "Quit Chirp"])
     }
 
-    @Test func launchAtLoginIsAPlainCheckboxWithTheErrorUnderneath() {
-        var m = inputs()
-        func item() -> MenuEntry { MenuContent.entries(m).first { $0.title == "Launch at Login" }! }
-        #expect(item().mark == .off && item().action == .toggleLaunch && item().subtitle == nil)
-        m.launch = .on
-        #expect(item().mark == .on && item().action == .toggleLaunch)
-        m.launchError = "Operation not permitted"
-        #expect(item().subtitle == "Couldn’t change it: Operation not permitted" && item().symbolTone == .error)
-        m.launch = .unavailable
-        #expect(item().action == nil && item().mark == .off)
+    @Test func permissionsHaveNoRowsInTheMenu() {
+        let m = inputs { $0.micGranted = false; $0.accessibilityGranted = false }
+        #expect(!titles(m).contains { $0.contains("Allow") || $0.contains("Permission") })
     }
 
-    @Test func headerBlockIsTheFirstRowFollowedByTheStatusLines() {
-        let all = MenuContent.entries(inputs { $0.debugRetention = true })
-        let firstSeparator = all.firstIndex { $0.isSeparator }!
-        #expect(all[0].showsAppIcon && all[1].title == "Ready" && all[2].title.hasPrefix("DEBUG") && firstSeparator == 3)
-        #expect(all.dropFirst().allSatisfy { !$0.showsAppIcon })
+    // MARK: every state
+
+    @Test func everyStateBuildsACoherentMenu() throws {
+        let states: [(String, (inout MenuInputs) -> Void)] = [
+            ("paused", { $0.paused = true; $0.hotkeyRegistered = false }),
+            ("ready", { _ in }),
+            ("listening", { $0.state = .listening }),
+            ("unreachable", { $0.health = nil; $0.healthError = "x" }),
+            ("debug", { $0.debugRetention = true }),
+            ("use-raw", { $0.rawOfferOpen = true; $0.rawOfferKey = "⌃⌥Z" }),
+            ("setup", { $0.micGranted = false; $0.accessibilityGranted = false }),
+        ]
+        for (name, configure) in states {
+            let m = inputs(configure)
+            let all = MenuContent.entries(m)
+            // Every group has rows, none is empty or doubled up.
+            #expect(zip(all, all.dropFirst()).allSatisfy { !($0.isSeparator && $1.isSeparator) }, "\(name): doubled separator")
+            #expect(all.last?.isSeparator == false, "\(name): trailing separator")
+            for e in all where !e.isSeparator { #expect(!e.title.isEmpty && (e.value ?? "").count <= MenuContent.valueLimit, "\(name): \(e.title)") }
+            #expect(all.filter { $0.title == "Quit Chirp" }.count == 1)
+        }
     }
 
     @Test func itemPayloadsCarryTheirChoice() {
         #expect(MenuAction.pickInput("boya").payload == "boya" && MenuAction.pickInput(nil).payload == nil)
-        #expect(MenuAction.pickHotkey("control-shift-space").payload == "control-shift-space")
-        #expect(MenuAction.quit.payload == nil)
+        #expect(MenuAction.pickStyle("email").payload == "email" && MenuAction.pickSound("glass").payload == "glass")
+        #expect(MenuAction.quit.payload == nil && MenuAction.editStyles.payload == nil)
     }
 }
 
@@ -328,6 +420,17 @@ import Testing
         #expect((0..<6).allSatisfy { StatusIcon.waveAlpha(phase: $0, reduceMotion: true) == 1 })
     }
 
+    @Test func pausedDimsTheIdleBirdAndSaysSo() {
+        let paused = StatusIcon.of(state: .idle, serverReachable: true, debugRetention: false, paused: true)
+        #expect(paused.glyph == .idle && paused.dimmed && paused.paused && !paused.animatesWaves)
+        #expect(paused.accessibilityLabel == "Chirp — paused")
+        #expect(!icon(.idle).paused && !icon(.idle).dimmed)
+        // A debug badge still shows: the server keeps recordings whether or not Chirp is paused.
+        #expect(StatusIcon.of(state: .idle, serverReachable: true, debugRetention: true, paused: true).debugBadge)
+        // Paused wins over a leftover dictation state: the bird never pulses.
+        #expect(!StatusIcon.of(state: .listening, serverReachable: true, debugRetention: false, paused: true).animatesWaves)
+    }
+
     @Test func accessibilityLabelSaysWhatIsWrong() {
         #expect(icon(.idle).accessibilityLabel == "Chirp")
         #expect(icon(.idle, reachable: false).accessibilityLabel == "Chirp — server unreachable")
@@ -341,5 +444,108 @@ import Testing
         #expect(text.contains("uv run chirp-server doctor --quick") && text.contains("uv run chirp-server doctor "))
         #expect(text.contains("http://127.0.0.1:7821"))
         #expect(!text.lowercased().contains("token"))
+    }
+}
+
+@MainActor
+@Suite struct PauseGateTests {
+    /// A gate over a fake hotkey: counts registrations and says whether the shortcut is currently held.
+    @MainActor private final class Fake {
+        var registered = false
+        var registerCalls = 0
+        var unregisterCalls = 0
+        var changes = 0
+        var shortcutTaken = false
+        lazy var gate = PauseGate(
+            register: { [unowned self] in
+                registerCalls += 1
+                guard !shortcutTaken else { return false }
+                registered = true
+                return true
+            },
+            unregister: { [unowned self] in unregisterCalls += 1; registered = false },
+            onChange: { [unowned self] in changes += 1 })
+    }
+
+    @Test func pauseUnregistersTheHotkeyAndResumeRegistersItAgain() {
+        let fake = Fake()
+        #expect(fake.gate.registerHotkey() && fake.registered && fake.gate.hotkeyRegistered && !fake.gate.isPaused)
+        fake.gate.pause()
+        #expect(!fake.registered && fake.gate.isPaused && !fake.gate.hotkeyRegistered)
+        #expect(fake.gate.resume() && fake.registered && fake.gate.hotkeyRegistered && !fake.gate.isPaused)
+    }
+
+    @Test func nothingBringsTheHotkeyBackWhilePaused() {
+        let fake = Fake()
+        fake.gate.registerHotkey()
+        fake.gate.pause()
+        let calls = fake.registerCalls
+        // The shortcut recorder stopping, a new shortcut and the app start all call registerHotkey().
+        #expect(!fake.gate.registerHotkey() && !fake.registered)
+        fake.gate.suspendHotkey()
+        #expect(!fake.gate.registerHotkey() && !fake.registered && fake.registerCalls == calls)
+    }
+
+    @Test func pausingTwiceAndResumingTwiceAreHarmless() {
+        let fake = Fake()
+        fake.gate.registerHotkey()
+        fake.gate.pause(); fake.gate.pause()
+        #expect(fake.unregisterCalls == 1)
+        fake.gate.resume()
+        let calls = fake.registerCalls
+        fake.gate.resume()
+        #expect(fake.registerCalls == calls && fake.registered)
+    }
+
+    @Test func theSwitchMapsOnToRunning() {
+        let fake = Fake()
+        fake.gate.registerHotkey()
+        fake.gate.setRunning(false)
+        #expect(fake.gate.isPaused && !fake.registered)
+        fake.gate.setRunning(true)
+        #expect(!fake.gate.isPaused && fake.registered)
+    }
+
+    @Test func resumeReportsAShortcutAnotherAppOwns() {
+        let fake = Fake()
+        fake.gate.registerHotkey()
+        fake.gate.pause()
+        fake.shortcutTaken = true
+        #expect(!fake.gate.resume())
+        #expect(!fake.gate.isPaused && !fake.gate.hotkeyRegistered)
+    }
+
+    @Test func recorderSuspendsAndRestoresWhenRunning() {
+        let fake = Fake()
+        fake.gate.registerHotkey()
+        fake.gate.suspendHotkey()
+        #expect(!fake.registered && !fake.gate.hotkeyRegistered)
+        #expect(fake.gate.registerHotkey() && fake.registered)
+    }
+
+    @Test func everyChangeIsAnnouncedSoTheIconFollows() {
+        let fake = Fake()
+        fake.gate.registerHotkey()
+        let before = fake.changes
+        fake.gate.pause()
+        fake.gate.resume()
+        #expect(fake.changes >= before + 2)
+    }
+
+    @Test func statusLineFollowsTheGate() {
+        let fake = Fake()
+        fake.gate.registerHotkey()
+        func inputs() -> MenuInputs {
+            var m = MenuInputs()
+            m.health = Health(engine: "p", ready: true)
+            m.paused = fake.gate.isPaused
+            m.hotkeyRegistered = fake.gate.hotkeyRegistered
+            return m
+        }
+        #expect(MenuContent.header(inputs()).status == "Ready · ⌃⌥Space" && MenuContent.header(inputs()).isOn)
+        fake.gate.pause()
+        #expect(MenuContent.header(inputs()).status == "Paused" && !MenuContent.header(inputs()).isOn)
+        fake.gate.resume()
+        #expect(MenuContent.header(inputs()).status == "Ready · ⌃⌥Space")
     }
 }

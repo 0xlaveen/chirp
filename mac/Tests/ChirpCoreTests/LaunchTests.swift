@@ -18,6 +18,8 @@ import Testing
 
     @Test func renderSnapshotsNeedsADirectoryAndNeverLaunchesUI() {
         #expect(LaunchMode.parse(["--render-snapshots", "/tmp/out"]) == .renderSnapshots(directory: "/tmp/out"))
+        #expect(LaunchMode.parse(["--render-snapshots", "/tmp/out", "--curated"]) == .renderSnapshots(directory: "/tmp/out", curated: true))
+        #expect(LaunchMode.parse(["--render-snapshots", "/tmp/out"]) != .renderSnapshots(directory: "/tmp/out", curated: true))
         #expect(LaunchMode.parse(["-psn_0_1", "--render-snapshots", "out"]) == .renderSnapshots(directory: "out"))
         #expect(LaunchMode.parse(["--render-snapshots"]) == .usage(exitCode: 64))
         #expect(LaunchMode.parse(["--render-snapshots", "--selftest"]) == .selftest)

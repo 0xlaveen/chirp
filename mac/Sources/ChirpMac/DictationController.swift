@@ -44,16 +44,34 @@ final class DictationController {
         use: { [weak self] in self?.useRaw() },
         onChange: { [weak self] in self?.onChange?() })
 
-    /// (Re)registers the dictation hotkey from settings.
+    /// The menu's main switch. Every hotkey registration goes through it, so a paused Chirp stays unreachable.
+    private(set) lazy var gate = PauseGate(
+        register: { [weak self] in
+            guard let self else { return false }
+            return HotKeyCenter.shared.register(id: Self.dictateID, combo: settings.hotkey,
+                                                onDown: { [weak self] in self?.hotkeyDown() },
+                                                onUp: { [weak self] in self?.hotkeyUp() })
+        },
+        unregister: { HotKeyCenter.shared.unregister(id: Self.dictateID) },
+        onChange: { [weak self] in self?.onChange?() })
+
+    var isPaused: Bool { gate.isPaused }
+
+    /// (Re)registers the dictation hotkey from settings (nothing while paused).
     @discardableResult
-    func registerHotkey() -> Bool {
-        HotKeyCenter.shared.register(id: Self.dictateID, combo: settings.hotkey,
-                                     onDown: { [weak self] in self?.hotkeyDown() },
-                                     onUp: { [weak self] in self?.hotkeyUp() })
-    }
+    func registerHotkey() -> Bool { gate.registerHotkey() }
 
     /// Releases the dictation hotkey while the shortcut recorder listens; `registerHotkey()` takes it back.
-    func suspendHotkey() { HotKeyCenter.shared.unregister(id: Self.dictateID) }
+    func suspendHotkey() { gate.suspendHotkey() }
+
+    /// The menu's switch: pausing ends a dictation under way and releases the hotkeys; resuming registers the hotkey again.
+    func setRunning(_ running: Bool) {
+        if !running {
+            if Self.cancellable.contains(state) { escape() }
+            rawOffer.close()
+        }
+        gate.setRunning(running)
+    }
 
     var state: DictationState { machine.state }
     var debugRetention: Bool { hud.model.debugRetention || (health?.debugRetention ?? false) }
@@ -69,6 +87,7 @@ final class DictationController {
 
     /// "Start/Stop dictation" in the menu: a tap of the hotkey, so it starts a toggle-mode dictation or ends one.
     func toggleDictation() {
+        guard !isPaused else { return }
         let now = ProcessInfo.processInfo.systemUptime
         send(.hotkeyDown(at: now))
         send(.hotkeyUp(at: now))
@@ -389,7 +408,7 @@ final class DictationController {
         hud.show()
         if p.linger > 0 { hud.hide(after: p.linger) } else { hud.hide() }
         hud.announce(p.status)
-        if p.offersRawOutsideHUD, inserter.canUseRaw { rawOffer.open(avoiding: settings.hotkey) }
+        if p.offersRawOutsideHUD, inserter.canUseRaw, !isPaused { rawOffer.open(avoiding: settings.hotkey) }
     }
 
     /// Replace the inserted correction with the raw transcript, in place for a verified AX insertion and otherwise

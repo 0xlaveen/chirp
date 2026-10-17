@@ -124,6 +124,16 @@ import Testing
         #expect(form.serverURL.stringValue == ServerConfig.defaultURL.absoluteString)
     }
 
+    @Test func fixButtonsShowOnlyForWhatIsMissing() {
+        var s = SettingsState()
+        let form = SettingsForm(s)
+        #expect(form.micButton.isHidden && form.accessibilityButton.isHidden)
+        s.accessibilityGranted = false
+        form.apply(s)
+        #expect(form.micButton.isHidden && !form.accessibilityButton.isHidden)
+        #expect(form.micButton.accessibilityLabel() == "Fix Microphone access" && form.accessibilityButton.accessibilityLabel() == "Fix Accessibility access")
+    }
+
     @Test func launchCheckboxShowsTheRealState() {
         var s = SettingsState()
         s.launch = .on
@@ -149,37 +159,95 @@ import Testing
         #expect(form.launchHelp.textColor == .secondaryLabelColor)
     }
 
-    @Test func contentKeepsItsMarginOnEverySide() {
-        let form = SettingsForm(SettingsState())
-        form.view.layoutSubtreeIfNeeded()
-        let size = form.view.fittingSize
-        let grid = form.view.subviews[0]
-        form.view.setFrameSize(size)
-        form.view.layoutSubtreeIfNeeded()
-        #expect(abs(grid.frame.minX - 20) < 0.5 && abs(grid.frame.minY - 20) < 0.5)
-        #expect(abs(size.width - grid.frame.maxX - 20) < 0.5 && abs(size.height - grid.frame.maxY - 20) < 0.5)
+    // MARK: tabs
+
+    @Test func hasFiveTabsInTheTargetOrder() {
+        #expect(SettingsTab.allCases.map(\.title) == ["General", "Sounds", "Clean-up", "Server", "Permissions"])
+        #expect(SettingsTab.allCases.allSatisfy { NSImage(systemSymbolName: $0.symbol, accessibilityDescription: nil) != nil })
     }
 
-    @Test(arguments: [(SoundPack.chirp, 15), (SoundPack.custom, 17)])
-    func labelsShareARightEdgeAndControlsALeftEdge(pack: SoundPack, expectedLabels: Int) throws {
+    @Test func eachControlLivesOnItsOwnTab() {
+        let form = SettingsForm(SettingsState())
+        func has(_ control: NSView, _ tab: SettingsTab) -> Bool { control.isDescendant(of: form.view(for: tab)) }
+        #expect(has(form.hotkey, .general) && has(form.recorder, .general) && has(form.launch, .general) && has(form.setupButton, .general))
+        #expect(has(form.sounds, .sounds) && has(form.soundPack, .sounds) && has(form.volume, .sounds) && has(form.chooseStart, .sounds))
+        #expect(has(form.cleanupEnabled, .cleanup) && has(form.style, .cleanup) && has(form.prompts.view, .cleanup))
+        #expect(has(form.appStyles.view, .cleanup) && has(form.showChanges, .cleanup) && has(form.insertRawFirst, .cleanup))
+        #expect(has(form.serverURL, .server) && has(form.doctorButton, .server))
+        #expect(has(form.micButton, .permissions) && has(form.accessibilityButton, .permissions))
+        // and on no other
+        #expect(!has(form.launch, .server) && !has(form.serverURL, .general) && !has(form.hotkey, .sounds) && !has(form.micButton, .general))
+    }
+
+    @Test func cleanupTabCarriesEveryCleanupOption() {
+        var s = SettingsState()
+        s.cleanupEnabled = true; s.showChanges = true; s.offerRaw = false
+        let form = SettingsForm(s)
+        #expect(form.cleanupEnabled.state == .on && form.showChanges.state == .on && form.offerRaw.state == .off)
+        s.cleanupAvailable = false; s.cleanupDetail = "The server has clean-up turned off; see the README to enable it."
+        form.apply(s)
+        #expect(!form.cleanupEnabled.isEnabled)
+    }
+
+    @Test func cleanupDetailSaysWhereTheTextGoes() {
+        #expect(SettingsForm.cleanupDetail(health: Health(correction: "available", correctionLeavesMachine: false)).text.hasPrefix("Runs on this Mac"))
+        #expect(SettingsForm.cleanupDetail(health: Health(correction: "available", correctionLeavesMachine: true, correctionHost: "llm.example.com")).text
+                == "Sends the text to llm.example.com to tidy it.")
+        let off = SettingsForm.cleanupDetail(health: Health(correction: "off"))
+        #expect(!off.available && off.text.contains("turned off"))
+        #expect(SettingsForm.cleanupDetail(health: nil).available)
+    }
+
+    @Test func everyTabIsSizedToItsContent() {
+        let form = SettingsForm(SettingsState())
+        let sizes = SettingsTab.allCases.map { form.fittingSize(for: $0) }
+        #expect(sizes.allSatisfy { $0.width > 300 && $0.height > 80 })
+        // Not one tall form any more: only Clean-up (the prompt editor) is tall.
+        let heights = Dictionary(uniqueKeysWithValues: zip(SettingsTab.allCases, sizes.map(\.height)))
+        #expect(heights[.general]! < 260 && heights[.permissions]! < 200 && heights[.server]! < 300 && heights[.sounds]! < 360)
+        #expect(heights[.cleanup]! > heights[.general]! * 2)
+        // Each is fitted on its own: the sizes differ.
+        #expect(Set(sizes.map(\.height)).count == sizes.count)
+    }
+
+    @Test func contentKeepsItsMarginOnEverySide() {
+        let form = SettingsForm(SettingsState())
+        for tab in SettingsTab.allCases {
+            let view = form.view(for: tab)
+            let size = form.fittingSize(for: tab)
+            let grid = view.subviews[0]
+            view.setFrameSize(size)
+            view.layoutSubtreeIfNeeded()
+            #expect(abs(grid.frame.minX - 20) < 0.5 && abs(grid.frame.minY - 20) < 0.5, "\(tab.title)")
+            #expect(abs(size.width - grid.frame.maxX - 20) < 0.5 && abs(size.height - grid.frame.maxY - 20) < 0.5, "\(tab.title)")
+        }
+    }
+
+    @Test(arguments: [(SettingsTab.general, SoundPack.chirp, 3), (.sounds, .chirp, 3), (.sounds, .custom, 5), (.cleanup, .chirp, 7),
+                      (.server, .chirp, 4), (.permissions, .chirp, 2)])
+    func labelsShareARightEdgeAndControlsALeftEdge(tab: SettingsTab, pack: SoundPack, expectedLabels: Int) throws {
         var state = SettingsState()
         state.soundPack = pack
         let form = SettingsForm(state)
-        form.view.setFrameSize(form.view.fittingSize)
-        form.view.layoutSubtreeIfNeeded()
+        let view = form.view(for: tab)
+        view.setFrameSize(form.fittingSize(for: tab))
+        view.layoutSubtreeIfNeeded()
         func labels(in view: NSView) -> [NSTextField] {
             view.subviews.flatMap { ($0 as? NSTextField).map { [$0] } ?? labels(in: $0) }
         }
-        let rowLabels = labels(in: form.view).filter { $0.stringValue.hasSuffix(":") && $0.alignment == .right && !$0.isHidden }
-        // General 2, Sounds 3 (+ the Start/Stop sound rows of the Custom pack), Clean-up 5, Server 3, Permissions 2
+        let rowLabels = labels(in: view).filter { $0.stringValue.hasSuffix(":") && $0.alignment == .right && !$0.isHidden }
         #expect(rowLabels.count == expectedLabels)
-        let edges = rowLabels.map { form.view.convert($0.bounds, from: $0).maxX }
+        let edges = rowLabels.map { view.convert($0.bounds, from: $0).maxX }
         #expect(edges.allSatisfy { abs($0 - edges[0]) < 0.5 })
-        let controlEdges = [form.hotkey, form.launch, form.serverURL, form.micButton, form.style, form.insertRawFirst, form.appStyles.scroll].map { form.view.convert($0.bounds, from: $0).minX }
-        // The permission button sits after its status text, so compare only the controls that start a cell.
-        #expect(abs(controlEdges[0] - controlEdges[1]) < 0.5 && abs(controlEdges[0] - controlEdges[2]) < 0.5)
-        #expect(controlEdges[4...].allSatisfy { abs($0 - controlEdges[0]) < 0.5 })
-        #expect(controlEdges[0] > edges[0])
+        let leading: [NSView] = switch tab {
+        case .general: [form.hotkey, form.launch, form.setupButton]
+        case .sounds: [form.sounds, form.soundPack, form.volume]
+        case .cleanup: [form.cleanupEnabled, form.style, form.insertRawFirst, form.appStyles.scroll, form.showChanges, form.offerRaw]
+        case .server: [form.serverURL, form.doctorButton]
+        case .permissions: []
+        }
+        let controlEdges = leading.map { view.convert($0.bounds, from: $0).minX }
+        #expect(controlEdges.allSatisfy { abs($0 - controlEdges[0]) < 0.5 && $0 > edges[0] })
     }
 
     @Test func helpTextUsesTheSecondaryLabelColour() {
@@ -188,15 +256,106 @@ import Testing
         #expect(form.launchHelp.font?.pointSize == NSFont.smallSystemFontSize)
     }
 
-    @Test func opensWithoutAFocusedOrSelectedServerURL() {
+    @Test func theToolbarTabControllerHasEveryTabSizedToFit() throws {
         let form = SettingsForm(SettingsState())
-        let window = NSWindow(contentRect: .zero, styleMask: [.titled, .closable], backing: .buffered, defer: false)
+        let controller = SettingsTabs.makeController(form: form)
+        #expect(controller.tabStyle == .toolbar)
+        #expect(controller.tabViewItems.map(\.label) == SettingsTab.allCases.map(\.title))
+        #expect(controller.tabViewItems.allSatisfy { $0.image != nil })
+        for (item, tab) in zip(controller.tabViewItems, SettingsTab.allCases) {
+            let vc = try #require(item.viewController as? SettingsTabController)
+            _ = vc.view
+            #expect(vc.tab == tab)
+            let fit = form.fittingSize(for: tab)
+            // Within the screen: its natural size (a little wider only when it has to scroll).
+            #expect(vc.preferredContentSize.width >= fit.width && vc.preferredContentSize.height <= fit.height + 0.5)
+            #expect(vc.preferredContentSize.height == min(fit.height, SettingsTabController.heightLimit()) || vc.preferredContentSize.height == fit.height)
+        }
+    }
+
+    @Test func aWindowAroundTheTabsOpensWithoutAFocusedOrSelectedField() throws {
+        let form = SettingsForm(SettingsState())
+        let controller = SettingsTabs.makeController(form: form)
+        let window = NSWindow(contentViewController: controller)
+        window.styleMask = [.titled, .closable]
         window.isReleasedWhenClosed = false
-        form.install(in: window)
-        #expect(window.initialFirstResponder === form.view)
-        #expect(window.firstResponder === form.view)
         #expect(!(window.firstResponder is NSText))
-        #expect(window.contentView?.frame.width ?? 0 > 300)
+        #expect(window.contentViewController === controller && window.contentView?.frame.width ?? 0 > 300)
+        controller.selectedTabViewItemIndex = SettingsTab.server.hashValue == 0 ? 0 : SettingsTab.allCases.firstIndex(of: .server)!
+        let current = try #require(controller.tabViewItems[controller.selectedTabViewItemIndex].viewController?.view)
+        window.makeFirstResponder(current)
+        #expect(!(window.firstResponder is NSText) && form.serverURL.currentEditor() == nil)
+    }
+
+    @Test func customSoundRowsChangeOnlyTheSoundsTab() throws {
+        let form = SettingsForm(SettingsState())
+        let controller = SettingsTabs.makeController(form: form)
+        let sounds = try #require(controller.tabViewItems[1].viewController as? SettingsTabController)
+        _ = sounds.view
+        let before = sounds.preferredContentSize.height
+        form.showPack(.custom)
+        sounds.refreshSize()
+        let custom = sounds.preferredContentSize.height
+        #expect(custom > before)
+        form.showPack(.chirp)
+        sounds.refreshSize()
+        #expect(sounds.preferredContentSize.height == before, "\(before) → \(custom) → \(sounds.preferredContentSize.height)")
+    }
+}
+
+// MARK: menu views
+
+@MainActor
+@Suite struct MenuViewTests {
+    private func row(_ title: String, value: String? = nil, shortcut: String? = nil, submenu: Bool = false,
+                     action: MenuAction? = .showAbout) -> MenuRowView {
+        MenuRowView(entry: MenuEntry(title: title, value: value, shortcut: shortcut, action: action,
+                                     submenu: submenu ? [MenuEntry(title: "x", action: .showAbout)] : nil))
+    }
+
+    @Test func rowsAreTwentyFourPointsHighAndAtLeastTheMenuMinimumWide() {
+        let r = row("Clean-up", value: "Default", submenu: true)
+        #expect(r.frame.height == MenuMetrics.rowHeight && r.frame.width >= MenuMetrics.minimumWidth)
+        #expect(r.intrinsicContentSize.height == 24)
+    }
+
+    @Test func aRowNeedsRoomForItsTitleItsWholeValueAndTheChevron() {
+        let plain = row("Settings…")
+        let value = row("Microphone", value: "BOYA CM40", submenu: true)
+        let long = row("Microphone", value: "Studio Display Microphone (Built-in…", submenu: true)
+        #expect(value.fittingWidth >= plain.fittingWidth)
+        #expect(long.fittingWidth > value.fittingWidth)
+        #expect(value.fittingWidth >= MenuMetrics.minimumWidth)
+    }
+
+    @Test func rowsAreMenuItemsForVoiceOverWithTheFullLabel() {
+        let r = MenuRowView(entry: MenuEntry(title: "Microphone", value: "Studio Display Micro…", fullValue: "Studio Display Microphone (USB)",
+                                             submenu: [MenuEntry(title: "x", action: .showAbout)]))
+        #expect(r.isAccessibilityElement() && r.accessibilityRole() == .menuItem)
+        #expect(r.accessibilityLabel() == "Microphone, Studio Display Microphone (USB)")
+        #expect(r.accessibilityHelp() == "Opens a submenu")
+        let disabled = row("Start Dictation", shortcut: "⌃⌥Space", action: nil)
+        #expect(!disabled.isAccessibilityEnabled() && disabled.accessibilityLabel() == "Start Dictation, ⌃⌥Space")
+    }
+
+    @Test func headerShowsTheSwitchAndAnnouncesItsChanges() {
+        var seen: [Bool] = []
+        let on = MenuHeaderView(header: MenuContent.header(MenuInputs()))
+        on.onToggle = { seen.append($0) }
+        #expect(on.toggle.state == .on && on.frame.height == MenuHeaderView.height)
+        on.toggle.state = .off
+        on.toggle.performClick(nil)   // flips it back on and sends the action
+        #expect(seen.count == 1)
+        var paused = MenuInputs()
+        paused.paused = true
+        #expect(MenuHeaderView(header: MenuContent.header(paused)).toggle.state == .off)
+    }
+
+    @Test func headerIsOneGroupForVoiceOverAndTheSwitchIsLabelled() {
+        let view = MenuHeaderView(header: MenuContent.header(MenuInputs()))
+        #expect(view.accessibilityLabel() == "Chirp, Checking server…")
+        #expect(view.toggle.accessibilityLabel() == "Chirp")
+        #expect(view.toggle.accessibilityHelp()?.contains("Turns dictation on or off") == true)
     }
 }
 
@@ -217,13 +376,17 @@ import Testing
                       "no-mic-signal", "debug-badge", "correction-use-raw", "cleaned-no-raw-button"] {
             #expect(names.contains("hud-\(state)-light.png") && names.contains("hud-\(state)-dark.png"))
         }
-        #expect(names.contains("settings-ready-dark.png") && names.contains("menu-idle-light.png") && names.contains("menu-input-picker-dark.png"))
-        for name in ["onboarding-welcome", "onboarding-try-it-success", "onboarding-microphone-blocked", "about", "settings-custom-hotkey-sounds"] {
+        #expect(names.contains("settings-general-ready-dark.png") && names.contains("menu-ready-light.png") && names.contains("menu-microphone-submenu-dark.png"))
+        for tab in SettingsTab.allCases { #expect(names.contains { $0.hasPrefix("settings-\(tab.rawValue)-") }, "no snapshot for the \(tab.title) tab") }
+        for state in ["paused", "listening", "unreachable", "debug", "use-raw", "permissions-missing", "long-names"] {
+            #expect(names.contains("menu-\(state)-light.png") && names.contains("menu-\(state)-dark.png"))
+        }
+        for name in ["onboarding-welcome", "onboarding-try-it-success", "onboarding-microphone-blocked", "about", "settings-general-custom-hotkey"] {
             #expect(names.contains("\(name)-light.png") && names.contains("\(name)-dark.png"))
         }
         for url in files {
             let data = try Data(contentsOf: url)
-            #expect(data.count < 500_000, "\(url.lastPathComponent) is too big to commit")   // Settings holds Sounds + Clean-up prompts until it is split into tabs
+            #expect(data.count < 250_000, "\(url.lastPathComponent) is too big to commit")
             let rep = try #require(NSBitmapImageRep(data: data))
             #expect(rep.pixelsWide > 100 && rep.pixelsHigh > 50)
             // Not a flat fill: some pixel differs from the corner.
@@ -239,7 +402,7 @@ import Testing
     @Test func lightAndDarkAreDifferentImages() throws {
         let (dir, _) = try render()
         defer { try? FileManager.default.removeItem(at: dir) }
-        for name in ["hud-listening", "settings-ready", "menu-idle"] {
+        for name in ["hud-listening", "settings-general-ready", "menu-ready"] {
             let light = try Data(contentsOf: dir.appendingPathComponent("\(name)-light.png"))
             let dark = try Data(contentsOf: dir.appendingPathComponent("\(name)-dark.png"))
             #expect(light != dark)
@@ -255,5 +418,43 @@ import Testing
         #expect(try height("hud-listening-multiline-light.png") > height("hud-listening-no-text-light.png"))
         // The HUD never grows beyond its 4-line cap, however much is dictated.
         #expect(try height("hud-listening-multiline-light.png") < 400)
+    }
+
+    @Test func theCommittedSetIsCuratedAndSmall() throws {
+        let names = Snapshots.committedNames
+        let all = Set(Snapshots.allScenarios.map(\.name))
+        #expect(names.allSatisfy { all.contains($0) } && Set(names).count == names.count)
+        #expect(names.count * 2 <= 24)
+        // The menu in light and dark, one per Settings tab, setup, and the key HUD states.
+        #expect(names.contains("menu-ready") && names.contains("onboarding-welcome") && names.contains { $0.hasPrefix("hud-") })
+        for tab in SettingsTab.allCases { #expect(names.contains { $0.hasPrefix("settings-\(tab.rawValue)-") }, "\(tab.title)") }
+        #expect(Snapshots.committedScenarios.map(\.name) == names)
+    }
+
+    @Test func theCommittedFilesAreExactlyTheCuratedSetUnderThreeMegabytes() throws {
+        let dir = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent().appendingPathComponent("docs/screenshots/mac")
+        guard FileManager.default.fileExists(atPath: dir.path) else { return }   // not a full checkout
+        let files = try FileManager.default.contentsOfDirectory(atPath: dir.path).filter { $0.hasSuffix(".png") }.sorted()
+        let expected = Snapshots.committedNames.flatMap { ["\($0)-dark.png", "\($0)-light.png"] }.sorted()
+        #expect(files == expected, "docs/screenshots/mac is out of date: run mac/scripts/snapshots.sh")
+        let total = try files.reduce(0) { $0 + (try FileManager.default.attributesOfItem(atPath: dir.appendingPathComponent($1).path)[.size] as? Int ?? 0) }
+        #expect(total < 3_000_000, "\(total) bytes")
+    }
+
+    @Test func curatedRenderingWritesOnlyTheCommittedNames() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("chirp-curated-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let files = try Snapshots.render(to: dir, scenarios: Snapshots.committedScenarios)
+        #expect(Set(files.map(\.lastPathComponent)) == Set(Snapshots.committedNames.flatMap { ["\($0)-dark.png", "\($0)-light.png"] }))
+    }
+
+    @Test func theMenuSnapshotsUseTheRealRowsSoHighlightAndValuesRender() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("chirp-menu-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        _ = try Snapshots.render(to: dir, scenarios: Snapshots.menuScenarios.filter { ["menu-ready", "menu-hover"].contains($0.name) })
+        let ready = try Data(contentsOf: dir.appendingPathComponent("menu-ready-light.png"))
+        let hover = try Data(contentsOf: dir.appendingPathComponent("menu-hover-light.png"))
+        #expect(ready != hover)   // the hover scenario draws a selected row
     }
 }
