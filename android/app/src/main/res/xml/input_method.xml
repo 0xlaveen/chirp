@@ -1,5 +1,6 @@
 <input-method xmlns:android="http://schemas.android.com/apk/res/android"
-    android:settingsActivity="dev.chirp.android.SetupActivity" android:supportsSwitchingToNextInputMethod="true">
-    <subtype android:label="@string/voice_subtype" android:languageTag="en-US" android:imeSubtypeLocale="en_US" android:imeSubtypeMode="voice" />
-    <subtype android:label="@string/english_subtype" android:languageTag="en-US" android:imeSubtypeLocale="en_US" android:imeSubtypeMode="keyboard" />
+    android:settingsActivity="dev.chirp.android.SetupActivity"
+    android:supportsSwitchingToNextInputMethod="true" android:supportsInlineSuggestions="true">
+    <subtype android:imeSubtypeExtraValue="dummy" android:imeSubtypeMode="keyboard"
+        android:subtypeId="0x7000000f" android:isAsciiCapable="true" />
 </input-method>

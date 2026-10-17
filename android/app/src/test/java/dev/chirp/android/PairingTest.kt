@@ -24,4 +24,13 @@ class PairingTest {
             "chirp://pair?url=https://mac.test&token=%ZZ",
         ).forEach { uri -> assertThrows(Exception::class.java) { Pairing.parse(uri) } }
     }
+    @Test fun `cleartext is confined to the isolated emulator in debug builds`() {
+        val emulator = "http://10.0.2.2:7899"
+        if (BuildConfig.DEBUG) assertEquals("10.0.2.2", Pairing.from(emulator, "synthetic").base.host)
+        else assertThrows(Exception::class.java) { Pairing.from(emulator, "synthetic") }
+        for (url in listOf("http://10.0.2.2", "http://10.0.2.2:7898", "http://10.0.2.3:7899", "http://localhost:7899", "http://192.168.1.1:7899")) {
+            assertThrows(Exception::class.java) { Pairing.from(url, "synthetic") }
+        }
+    }
+
 }

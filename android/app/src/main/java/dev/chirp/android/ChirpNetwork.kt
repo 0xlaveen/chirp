@@ -11,10 +11,16 @@ import okio.ByteString.Companion.toByteString
 
 /** No logging interceptors, disk cache, redirects (bearer credential), pings or disk persistence. Idle resources are scoped to IME visibility. */
 object ChirpNetwork {
-    fun client(): OkHttpClient = OkHttpClient.Builder()
+    fun client(context: android.content.Context? = null): OkHttpClient = OkHttpClient.Builder()
         .connectTimeout(6, TimeUnit.SECONDS).readTimeout(12, TimeUnit.SECONDS)
         .callTimeout(12, TimeUnit.SECONDS).webSocketCloseTimeout(1, TimeUnit.SECONDS).followRedirects(false).followSslRedirects(false)
-        .retryOnConnectionFailure(false).connectionPool(okhttp3.ConnectionPool(2, 30, TimeUnit.SECONDS)).build()
+        .retryOnConnectionFailure(false).connectionPool(okhttp3.ConnectionPool(2, 30, TimeUnit.SECONDS)).apply {
+            if (context != null && android.os.Build.VERSION.SDK_INT >= 37) {
+                val policy = context.localNetworkPolicy()
+                dns(PermissionDns(okhttp3.Dns.SYSTEM, policy))
+                addInterceptor(literalPermissionInterceptor(policy))
+            }
+        }.build()
     fun healthCall(client: OkHttpClient, pairing: Pairing): okhttp3.Call {
         val request = Request.Builder().url(pairing.endpoint("v1/health"))
             .header("Authorization", "Bearer ${pairing.token}").build()

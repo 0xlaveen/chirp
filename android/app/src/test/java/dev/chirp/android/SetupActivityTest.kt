@@ -83,4 +83,13 @@ class SetupActivityTest {
         val info = activity.packageManager.getPackageInfo(activity.packageName, PackageManager.GET_PERMISSIONS)
         assertFalse(info.requestedPermissions.orEmpty().contains(Manifest.permission.CAMERA))
     }
+    @Test @Config(sdk = [37]) fun `Android 17 denial does not gate a Tailscale pairing connection`() {
+        org.robolectric.Shadows.shadowOf(org.robolectric.RuntimeEnvironment.getApplication()).denyPermissions(LOCAL_NETWORK_PERMISSION)
+        activity.state.link = syntheticLink
+        activity.testPairing(save = true)
+        assertTrue(shows("Checking Mac"))
+        assertFalse(activity.state.wifiPermissionNeeded)
+        assertFalse(activity.getSharedPreferences("chirp", 0).contains("token"))
+    }
+
 }

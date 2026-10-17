@@ -30,7 +30,7 @@ class Pairing(val base: HttpUrl, val token: String) {
 
         fun from(url: String, token: String): Pairing {
             val base = try { url.toHttpUrl() } catch (_: Exception) { error("Invalid server address") }
-            require(base.isHttps && base.username.isEmpty() && base.password.isEmpty() &&
+            require(allowedServer(base) && base.username.isEmpty() && base.password.isEmpty() &&
                 base.query == null && base.fragment == null) { "Server must use HTTPS without credentials or query" }
             require(token.length in 1..4096 && token.all { it.code in 33..126 }) { "Invalid pairing token" }
             val normalized = base.newBuilder().apply {

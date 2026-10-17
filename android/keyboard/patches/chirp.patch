@@ -1,0 +1,320 @@
+--- a/app/src/main/java/helium314/keyboard/keyboard/KeyboardActionListenerImpl.kt
++++ b/app/src/main/java/helium314/keyboard/keyboard/KeyboardActionListenerImpl.kt
+@@ -50,6 +50,8 @@
+     private var subtypeSwitchCount = 0
+ 
+     override fun onPressKey(primaryCode: Int, repeatCount: Int, pointerCount: Int, hapticEvent: HapticEvent) {
++        // CHIRP: physical mic gestures use the same tap/hold controller as the strip.
++        if (primaryCode == KeyCode.VOICE_INPUT && latinIME.onChirpVoiceTouch(android.view.MotionEvent.ACTION_DOWN)) return
+         metaOnPressKey(primaryCode)
+         keyboardSwitcher.onPressKey(primaryCode, pointerCount, latinIME.currentAutoCapsState, latinIME.currentRecapitalizeState)
+         // we need to use LatinIME for handling of key-down audio and haptics
+@@ -62,6 +64,8 @@
+     }
+ 
+     override fun onReleaseKey(primaryCode: Int, withSliding: Boolean) {
++        // CHIRP: release completes push-to-talk; tap keeps listening.
++        if (primaryCode == KeyCode.VOICE_INPUT && latinIME.onChirpVoiceTouch(android.view.MotionEvent.ACTION_UP)) return
+         metaOnReleaseKey(primaryCode)
+         keyboardSwitcher.onReleaseKey(primaryCode, withSliding, latinIME.currentAutoCapsState, latinIME.currentRecapitalizeState)
+     }
+@@ -103,6 +107,8 @@
+     }
+ 
+     override fun onCodeInput(primaryCode: Int, x: Int, y: Int, isKeyRepeat: Boolean) {
++        // CHIRP: touch voice was already handled by press/release, never toggle twice.
++        if (primaryCode == KeyCode.VOICE_INPUT) return
+         when (primaryCode) {
+             KeyCode.TOGGLE_AUTOCORRECT -> return settings.toggleAutoCorrect()
+             KeyCode.TOGGLE_INCOGNITO_MODE -> {
+@@ -172,7 +178,7 @@
+     override fun onCancelBatchInput() = latinIME.onCancelBatchInput()
+ 
+     // User released a finger outside any key
+-    override fun onCancelInput() { }
++    override fun onCancelInput() { latinIME.onChirpVoiceTouch(android.view.MotionEvent.ACTION_CANCEL) } // CHIRP
+ 
+     override fun onFinishSlidingInput() =
+         keyboardSwitcher.onFinishSlidingInput(latinIME.currentAutoCapsState, latinIME.currentRecapitalizeState)
+--- a/app/src/main/java/helium314/keyboard/latin/App.kt
++++ b/app/src/main/java/helium314/keyboard/latin/App.kt
+@@ -17,7 +17,8 @@
+ import kotlinx.coroutines.Dispatchers
+ import kotlinx.coroutines.launch
+ 
+-class App : Application() {
++// CHIRP: allow the host app to install privacy-safe diagnostics before initialization.
++open class App : Application() {
+     override fun onCreate() {
+         super.onCreate()
+         DebugFlags.init(this)
+--- a/app/src/main/java/helium314/keyboard/latin/InputView.java
++++ b/app/src/main/java/helium314/keyboard/latin/InputView.java
+@@ -72,6 +72,15 @@
+         final int index = me.getActionIndex();
+         final int x = (int)me.getX(index) + rect.left;
+         final int y = (int)me.getY(index) + rect.top;
++
++        // CHIRP: the dictation strip is above the suggestion strip. Its controls own
++        // their touches; the upstream top-padding forwarder otherwise consumes them.
++        final View chirpStrip = findViewWithTag("chirp_strip");
++        final Rect chirpRect = new Rect();
++        if (chirpStrip != null && chirpStrip.getGlobalVisibleRect(chirpRect) && chirpRect.contains(x, y)) {
++            mActiveForwarder = null;
++            return false;
++        }
+ 
+         // The touch events that hit the top padding of keyboard should be forwarded to
+         // {@link SuggestionStripView}.
+--- a/app/src/main/java/helium314/keyboard/latin/LatinIME.java
++++ b/app/src/main/java/helium314/keyboard/latin/LatinIME.java
+@@ -1217,6 +1217,10 @@
+         }
+         final int stripHeight = mKeyboardSwitcher.isShowingStripContainer() ? mKeyboardSwitcher.getStripContainer().getHeight() : 0;
+         int visibleTopY = inputHeight - visibleKeyboardView.getHeight() - stripHeight;
++        // CHIRP: reserve and accept touches on the host strip above HeliBoard's own strip.
++        final View chirpStrip = mInputView.findViewWithTag("chirp_strip");
++        if (chirpStrip != null && chirpStrip.getVisibility() == View.VISIBLE)
++            visibleTopY -= chirpStrip.getHeight();
+         if (Settings.getValues().mIsFloatingKeyboard)
+             visibleTopY = getResources().getDisplayMetrics().heightPixels;
+ 
+@@ -1419,9 +1423,27 @@
+         mSubtypeState.switchSubtype(mRichImm);
+     }
+ 
++    // CHIRP: small host hooks; upstream remains independent of the Chirp app module.
++    public boolean onChirpVoiceClick() { return false; }
++    public boolean onChirpVoiceTouch(int action) { return false; }
++
++    public void prepareChirpDictation() {
++        mInputLogic.finishInput();
++        mHandler.cancelUpdateSuggestionStrip();
++        mHandler.cancelResumeSuggestions();
++    }
++
++    public void finishChirpDictation(int selectionStart, int selectionEnd) {
++        mInputLogic.startInput(mRichImm.getCombiningRulesExtraValueOfCurrentSubtype(), mSettings.getCurrent());
++        mInputLogic.mConnection.resetCachesUponCursorMoveAndReturnSuccess(selectionStart, selectionEnd, false);
++        setNeutralSuggestionStrip();
++    }
++
+     // Implementation of {@link SuggestionStripView.Listener}.
+     @Override
+     public void onCodeInput(final int codePoint, final int x, final int y, final boolean isKeyRepeat) {
++        // CHIRP: toolbar/accessibility voice clicks stay in this keyboard.
++        if (codePoint == KeyCode.VOICE_INPUT && onChirpVoiceClick()) return;
+         mKeyboardActionListener.onCodeInput(codePoint, x, y, isKeyRepeat);
+     }
+ 
+@@ -1429,6 +1451,8 @@
+     // completely replace #onCodeInput.
+     public void onEvent(@NonNull final Event event) {
+         if (KeyCode.VOICE_INPUT == event.getKeyCode()) {
++            // CHIRP: consume voice events before the upstream voice-IME switch.
++            if (onChirpVoiceClick()) return;
+             mRichImm.switchToShortcutIme(this);
+         }
+         final InputTransaction completeInputTransaction =
+--- a/app/src/main/java/helium314/keyboard/latin/RichInputMethodManager.kt
++++ b/app/src/main/java/helium314/keyboard/latin/RichInputMethodManager.kt
+@@ -54,7 +54,8 @@
+ 
+     private var shortcuts = listOf<Shortcut>()
+ 
+-    val isShortcutImeReady get() = shortcuts.isNotEmpty()
++    // CHIRP: voice is in-process; no installed voice IME is required.
++    val isShortcutImeReady get() = true
+ 
+     fun getEnabledInputMethodSubtypes(imi: InputMethodInfo, allowsImplicitlySelectedSubtypes: Boolean) =
+         inputMethodInfoCache.getEnabledInputMethodSubtypeList(imi, allowsImplicitlySelectedSubtypes)
+--- a/app/src/main/java/helium314/keyboard/latin/define/DebugFlags.kt
++++ b/app/src/main/java/helium314/keyboard/latin/define/DebugFlags.kt
+@@ -7,73 +7,13 @@
+ package helium314.keyboard.latin.define
+ 
+ import android.content.Context
+-import android.os.Build
+-import helium314.keyboard.latin.BuildConfig
+-import helium314.keyboard.latin.settings.DebugSettings
+-import helium314.keyboard.latin.settings.Defaults
+-import helium314.keyboard.latin.utils.DeviceProtectedUtils
+-import helium314.keyboard.latin.utils.Log
+-import helium314.keyboard.latin.utils.prefs
+-import java.io.File
+-import java.io.PrintWriter
+-import java.io.StringWriter
+-import java.text.SimpleDateFormat
+-import java.util.Calendar
+-import java.util.Locale
+ 
+ object DebugFlags {
+     @JvmField
+     var DEBUG_ENABLED = false
+ 
+-    fun init(context: Context) {
+-        DEBUG_ENABLED = context.prefs().getBoolean(DebugSettings.PREF_DEBUG_MODE, Defaults.PREF_DEBUG_MODE)
+-        CrashReportExceptionHandler(context.applicationContext).install()
+-    }
++    // CHIRP: the host installs a bounded, message-free crash handler. Upstream's
++    // reporter and debug mode can retain editor content, so neither is installed.
++    @Suppress("UNUSED_PARAMETER")
++    fun init(context: Context) { DEBUG_ENABLED = false }
+ }
+-
+-// basically copied from StreetComplete
+-private class CrashReportExceptionHandler(val appContext: Context) : Thread.UncaughtExceptionHandler {
+-    private var defaultUncaughtExceptionHandler: Thread.UncaughtExceptionHandler? = null
+-
+-    fun install(): Boolean {
+-        val ueh = Thread.getDefaultUncaughtExceptionHandler()
+-        if (ueh is CrashReportExceptionHandler)
+-            return false
+-        defaultUncaughtExceptionHandler = ueh
+-        Thread.setDefaultUncaughtExceptionHandler(this)
+-        return true
+-    }
+-
+-    override fun uncaughtException(t: Thread, e: Throwable) {
+-        val stackTrace = StringWriter()
+-
+-        e.printStackTrace(PrintWriter(stackTrace))
+-        writeCrashReportToFile("""
+-Thread: ${t.name}
+-App version: ${BuildConfig.VERSION_NAME}
+-Device: ${Build.BRAND} ${Build.DEVICE}, Android ${Build.VERSION.RELEASE}
+-Locale: ${Locale.getDefault()}
+-Stack trace:
+-$stackTrace
+-Last log:
+-${Log.getLog(100).joinToString("\n")}
+-""")
+-        defaultUncaughtExceptionHandler!!.uncaughtException(t, e)
+-    }
+-
+-    private fun writeCrashReportToFile(text: String) {
+-        try {
+-            val dir = appContext.getExternalFilesDir(null)
+-            val date = SimpleDateFormat("yyyy-MM-dd_HH-mm-ss", Locale.US).format(Calendar.getInstance().time)
+-            val crashReportFile = File(dir, "crash_report_$date.txt")
+-            crashReportFile.appendText(text)
+-        } catch (_: Exception) {
+-            // can't write in external files dir, maybe device just booted and is still locked
+-            // in this case there shouldn't be any sensitive data and we can put crash logs in unprotected files dir
+-            val dir = DeviceProtectedUtils.getFilesDir(appContext) ?: return
+-            val date = SimpleDateFormat("yyyy-MM-dd_HH-mm-ss", Locale.US).format(Calendar.getInstance().time)
+-            val crashReportFile = File(dir, "crash_report_unprotected_$date.txt")
+-            crashReportFile.appendText(text)
+-        }
+-    }
+-}
+--- a/app/src/main/java/helium314/keyboard/latin/utils/Log.kt
++++ b/app/src/main/java/helium314/keyboard/latin/utils/Log.kt
+@@ -9,79 +9,21 @@
+  * It's only a little slower than the android logger, but since both are used we end up at
+  * half performance (still fast enough to not be noticeable, unless spamming thousands of log lines)
+  */
++// CHIRP: no keyboard/editor content or exception messages in logcat or the in-app log.
++// The host's CrashLog records only exception classes and message-free stack frames.
++@Suppress("UNUSED_PARAMETER")
+ object Log {
+-    @JvmStatic
+-    fun wtf(tag: String?, message: String) {
+-        log(LogLine('F', tag, message))
+-        android.util.Log.wtf(tag, message)
+-    }
+-
+-    @JvmStatic
+-    fun e(tag: String?, message: String, e: Throwable?) {
+-        log(LogLine('E', tag, "$message\n${e?.stackTraceToString()}"))
+-        android.util.Log.e(tag, message, e)
+-    }
+-
+-    @JvmStatic
+-    fun e(tag: String?, message: String) {
+-        log(LogLine('E', tag, message))
+-        android.util.Log.e(tag, message)
+-    }
+-
+-    @JvmStatic
+-    fun w(tag: String?, message: String, e: Throwable?) {
+-        log(LogLine('W', tag, "$message\n${e?.stackTraceToString()}"))
+-        android.util.Log.w(tag, message, e)
+-    }
+-
+-    @JvmStatic
+-    fun w(tag: String?, message: String) {
+-        log(LogLine('W', tag, message))
+-        android.util.Log.w(tag, message)
+-    }
+-
+-    @JvmStatic
+-    fun i(tag: String?, message: String, e: Throwable?) {
+-        log(LogLine('I', tag, "$message\n${e?.stackTraceToString()}"))
+-        android.util.Log.i(tag, message, e)
+-    }
+-
+-    @JvmStatic
+-    fun i(tag: String?, message: String) {
+-        log(LogLine('I', tag, message))
+-        android.util.Log.i(tag, message)
+-    }
+-
+-    @JvmStatic
+-    fun d(tag: String?, message: String, e: Throwable?) {
+-        log(LogLine('D', tag, "$message\n${e?.stackTraceToString()}"))
+-        android.util.Log.d(tag, message, e)
+-    }
+-
+-    @JvmStatic
+-    fun d(tag: String?, message: String) {
+-        log(LogLine('D', tag, message))
+-        android.util.Log.d(tag, message)
+-    }
+-
+-    @JvmStatic
+-    fun v(tag: String?, message: String) {
+-        log(LogLine('V', tag, message))
+-        android.util.Log.v(tag, message)
+-    }
+-
+-    private fun log(line: LogLine) {
+-        synchronized(logLines) {
+-            if (logLines.size > 12000) // clear oldest entries if list gets too long
+-                logLines.subList(0, 2000).clear()
+-            logLines.add(line)
+-        }
+-    }
+-
+-    private val logLines: MutableList<LogLine> = ArrayList(2000)
+-
+-    /** returns a copy of [logLines] */
+-    fun getLog(maxLines: Int = logLines.size) = synchronized(logLines) { logLines.takeLast(maxLines) }
++    @JvmStatic fun wtf(tag: String?, message: String) {}
++    @JvmStatic fun e(tag: String?, message: String, e: Throwable?) {}
++    @JvmStatic fun e(tag: String?, message: String) {}
++    @JvmStatic fun w(tag: String?, message: String, e: Throwable?) {}
++    @JvmStatic fun w(tag: String?, message: String) {}
++    @JvmStatic fun i(tag: String?, message: String, e: Throwable?) {}
++    @JvmStatic fun i(tag: String?, message: String) {}
++    @JvmStatic fun d(tag: String?, message: String, e: Throwable?) {}
++    @JvmStatic fun d(tag: String?, message: String) {}
++    @JvmStatic fun v(tag: String?, message: String) {}
++    fun getLog(maxLines: Int = 0): List<LogLine> = emptyList()
+ }
+ 
+ data class LogLine(val level: Char, val tag: String?, val message: String) {
+--- a/app/src/main/java/helium314/keyboard/settings/screens/MainSettingsScreen.kt
++++ b/app/src/main/java/helium314/keyboard/settings/screens/MainSettingsScreen.kt
+@@ -54,6 +54,11 @@
+             Column(
+                 Modifier.verticalScroll(rememberScrollState()).then(Modifier.padding(innerPadding))
+             ) {
++                // CHIRP: pairing and diagnostics stay reachable from keyboard settings.
++                val chirpContext = LocalContext.current
++                Preference(name = "Chirp setup & pairing", onClick = {
++                    chirpContext.startActivity(android.content.Intent().setClassName(chirpContext.packageName, "dev.chirp.android.SetupActivity"))
++                }) { NextScreenIcon() }
+                 Preference(
+                     name = stringResource(R.string.language_and_layouts_title),
+                     description = enabledSubtypes.joinToString(", ") { it.displayName() },

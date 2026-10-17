@@ -1,0 +1,117 @@
+package dev.chirp.android
+
+import android.content.res.Configuration
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.os.Looper
+import android.view.ContextThemeWrapper
+import android.view.View
+import android.view.ViewGroup
+import android.view.inputmethod.EditorInfo
+import android.view.inputmethod.InputMethodInfo
+import android.view.inputmethod.InputMethodManager
+import android.view.inputmethod.InputMethodSubtype
+import helium314.keyboard.keyboard.KeyboardSwitcher
+import helium314.keyboard.latin.RichInputMethodManager
+import helium314.keyboard.latin.settings.Settings
+import helium314.keyboard.latin.utils.SubtypeSettings
+import org.junit.Assert.*
+import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.Robolectric
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.RuntimeEnvironment
+import org.robolectric.Shadows.shadowOf
+import org.robolectric.annotation.Config
+import org.robolectric.annotation.GraphicsMode
+import org.robolectric.annotation.Implementation
+import org.robolectric.annotation.Implements
+import org.robolectric.shadows.ShadowInputMethodManager
+import java.io.File
+
+@Implements(InputMethodManager::class)
+class KeyboardInputMethods : ShadowInputMethodManager() {
+    @Implementation override fun getInputMethodList() = listOf(InputMethodInfo("dev.chirp.android", "dev.chirp.android.ChirpImeService", "Chirp Keyboard", null))
+    @Implementation override fun getCurrentInputMethodSubtype(): InputMethodSubtype = InputMethodSubtype.InputMethodSubtypeBuilder().setSubtypeLocale("en_US").setSubtypeMode("keyboard").build()
+    @Implementation fun getShortcutInputMethodsAndSubtypes() = emptyMap<InputMethodInfo, List<InputMethodSubtype>>()
+}
+
+@RunWith(RobolectricTestRunner::class)
+@Config(application = ChirpApplication::class, sdk = [37], qualifiers = "w411dp-h891dp-mdpi", shadows = [KeyboardInputMethods::class])
+@GraphicsMode(GraphicsMode.Mode.NATIVE)
+class KeyboardRenderTest {
+    class RenderIme : ChirpImeService() {
+        val editor = ChirpImeServiceTest.Editor()
+        val info = EditorInfo().apply { inputType = android.text.InputType.TYPE_CLASS_TEXT; initialSelStart = 0; initialSelEnd = 0 }
+        override fun getCurrentInputConnection() = editor.connection
+        override fun getCurrentInputEditorInfo() = info
+        override fun isInputViewShown() = true
+    }
+    @Test fun `render real HeliBoard keys with Chirp strip idle listening final in both themes`() {
+        val app = RuntimeEnvironment.getApplication()
+        Settings.init(app); SubtypeSettings.init(app); RichInputMethodManager.init(app)
+        val output = File(System.getProperty("chirp.screenshots")).apply { mkdirs() }
+        val service = Robolectric.buildService(RenderIme::class.java).create()
+        val ime = service.get()
+        try {
+            for ((name, night) in listOf("light" to Configuration.UI_MODE_NIGHT_NO, "dark" to Configuration.UI_MODE_NIGHT_YES)) {
+                RuntimeEnvironment.setQualifiers("w411dp-h891dp-" + (if (name == "dark") "night" else "notnight") + "-mdpi")
+                ime.onConfigurationChanged(Configuration(app.resources.configuration))
+                val config = Configuration(app.resources.configuration).apply { uiMode = Configuration.UI_MODE_TYPE_NORMAL or night }
+                val themed = ContextThemeWrapper(app.createConfigurationContext(config), R.style.Theme_Chirp)
+                val keys = ime.onCreateInputView()
+                ime.setInputView(keys)
+                ime.onStartInput(ime.info, false); ime.onStartInputView(ime.info, false)
+                KeyboardSwitcher.getInstance().reloadMainKeyboard()
+                val root = keys.findViewById<ViewGroup>(helium314.keyboard.latin.R.id.main_keyboard_frame)
+                // Use the production strip in a configured context; all keys/layout come from HeliBoard.
+                root.removeViewAt(0)
+                val strip = KeyboardStrip(themed); root.addView(strip, 0)
+                for (state in listOf("idle", "listening", "final")) {
+                    strip.show(when(state) { "listening" -> "Listening…"; "final" -> "Inserted · tap mic to dictate again"; else -> "Tap mic · hold to talk" },
+                        if (state == "listening") "Synthetic example for visual review" else "", state == "listening", false, state == "final", false)
+                    strip.level(if (state == "listening") .45 else 0.0)
+                    root.measure(View.MeasureSpec.makeMeasureSpec(411, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(900, View.MeasureSpec.AT_MOST))
+                    root.layout(0, 0, 411, root.measuredHeight)
+                    assertTrue(root.measuredHeight > strip.measuredHeight)
+                    assertNotNull(KeyboardSwitcher.getInstance().keyboard?.getKey('a'.code))
+                    val bitmap = Bitmap.createBitmap(411, root.measuredHeight, Bitmap.Config.ARGB_8888)
+                    root.draw(Canvas(bitmap))
+                    File(output, "keyboard-$state-$name.png").outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
+                    bitmap.recycle()
+                }
+            }
+        } finally { service.destroy() }
+    }
+    @Test fun `parent input view delivers real mic touches to Chirp instead of suggestion padding`() {
+        val app = RuntimeEnvironment.getApplication()
+        shadowOf(app).grantPermissions(android.Manifest.permission.RECORD_AUDIO)
+        val service = Robolectric.buildService(RenderIme::class.java).create()
+        val ime = service.get()
+        val window = Robolectric.buildActivity(android.app.Activity::class.java).setup()
+        try {
+            val keys = ime.onCreateInputView() as ViewGroup
+            ime.setInputView(keys)
+            ime.onStartInput(ime.info, false); ime.onStartInputView(ime.info, false)
+            // A real window is required for View.isShown/global hit rectangles and IME insets.
+            (keys.parent as? ViewGroup)?.removeView(keys)
+            window.get().setContentView(keys)
+            keys.measure(View.MeasureSpec.makeMeasureSpec(411, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(900, View.MeasureSpec.EXACTLY))
+            keys.layout(0, 0, 411, 900)
+            val strip = keys.findViewWithTag<KeyboardStrip>("chirp_strip")
+            val bounds = android.graphics.Rect(0, 0, strip.mic.width, strip.mic.height)
+            keys.offsetDescendantRectToMyCoords(strip.mic, bounds)
+            assertTrue(bounds.height() > 0)
+            val insets = android.inputmethodservice.InputMethodService.Insets()
+            ime.onComputeInsets(insets)
+            assertTrue("Android must route mic touches to the IME window", insets.touchableRegion.contains(bounds.centerX(), bounds.centerY()))
+            assertTrue("Editor resize includes the Chirp strip", insets.contentTopInsets <= bounds.top)
+            for ((action, time) in listOf(android.view.MotionEvent.ACTION_DOWN to 10L, android.view.MotionEvent.ACTION_UP to 50L)) {
+                val touch = android.view.MotionEvent.obtain(10L, time, action, bounds.exactCenterX(), bounds.exactCenterY(), 0)
+                keys.dispatchTouchEvent(touch); touch.recycle()
+            }
+            assertEquals("Pair your Mac in Chirp setup", strip.status.text.toString())
+        } finally { window.pause().stop().destroy(); service.destroy() }
+    }
+
+}

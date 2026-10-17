@@ -26,9 +26,13 @@ import kotlinx.coroutines.withContext
 
 internal class SetupState {
     var step by mutableIntStateOf(0)
+    var wifiPermissionNeeded by mutableStateOf(false)
+    var localNetwork by mutableStateOf(android.os.Build.VERSION.SDK_INT < 37)
     var mic by mutableStateOf(false)
     var inputEnabled by mutableStateOf(false)
     var bubbleEnabled by mutableStateOf(false)
+    var inputSelected by mutableStateOf(false)
+    var diagnostics by mutableStateOf("No crashes recorded")
     var paired by mutableStateOf(false)
     var status by mutableStateOf("Pair with your Mac to begin")
     var checking by mutableStateOf(false)
@@ -36,7 +40,6 @@ internal class SetupState {
     var link by mutableStateOf("")
     var health by mutableStateOf<Health?>(null)
     var correction by mutableStateOf(false)
-    var returnToPrevious by mutableStateOf(true)
     var haptics by mutableStateOf(true)
     var debug by mutableStateOf(false)
 }
@@ -46,7 +49,14 @@ open class SetupActivity : ComponentActivity() {
     internal val state = SetupState()
     private var pairingGeneration = 0
     private var pendingHealth: okhttp3.Call? = null
-    private val client by lazy { ChirpNetwork.client() }
+    private val client by lazy { ChirpNetwork.client(this) }
+    private var pendingNetworkTest: Boolean? = null
+    private val networkPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        state.localNetwork = granted
+        val pending = pendingNetworkTest; pendingNetworkTest = null
+        if (granted && pending != null) testPairing(pending)
+        else state.status = if (granted) "Wi-Fi server access allowed — test your pairing link" else "Wi-Fi server access denied. Tailscale still works; allow Wi-Fi access in app permissions if needed."
+    }
     private val micPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) {
         state.mic = it
         state.status = if (it) "Microphone permission granted" else "Microphone permission is needed to dictate — open app permissions to allow it"
@@ -67,6 +77,13 @@ open class SetupActivity : ComponentActivity() {
                     accessibilitySettings = { startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) },
                     appSettings = { startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, "package:$packageName".toUri())) },
                     picker = { getSystemService(InputMethodManager::class.java).showInputMethodPicker() },
+                    grantNetwork = { networkPermission.launch(LOCAL_NETWORK_PERMISSION) },
+                    keyboardPreferences = { startActivity(Intent(this, helium314.keyboard.settings.SettingsActivity::class.java)) },
+                    diagnostics = { state.diagnostics = CrashLog(this).text() },
+                    copyDiagnostics = {
+                        getSystemService(android.content.ClipboardManager::class.java).setPrimaryClip(
+                            android.content.ClipData.newPlainText("Chirp diagnostics", CrashLog(this).text()))
+                    },
                     scan = ::scan, check = { testPairing(save = state.link.isNotBlank()) },
                     forget = {
                         ++pairingGeneration; pendingHealth?.cancel(); pendingHealth = null
@@ -74,7 +91,7 @@ open class SetupActivity : ComponentActivity() {
                     },
                     preferences = {
                         store.correction = state.correction; store.haptics = state.haptics
-                        store.returnToPrevious = state.returnToPrevious; store.debugOverlay = state.debug
+                        store.debugOverlay = state.debug
                     },
                 )
             }
@@ -112,12 +129,16 @@ open class SetupActivity : ComponentActivity() {
     }
     override fun onResume() {
         super.onResume()
-        if (::store.isInitialized) { refresh(); if (state.paired && state.link.isBlank()) testPairing(save = false) }
+        if (::store.isInitialized) { refresh(); if (state.paired && state.link.isBlank()) testPairing(save = false, requestPermission = false) }
     }
     override fun onSaveInstanceState(outState: Bundle) { outState.putInt("step", state.step); super.onSaveInstanceState(outState) }
     private fun refresh() {
+        state.localNetwork = hasLocalNetworkAccess()
         state.mic = ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
         state.inputEnabled = getSystemService(InputMethodManager::class.java).enabledInputMethodList.any { it.packageName == packageName }
+        state.inputSelected = ComponentName.unflattenFromString(Settings.Secure.getString(contentResolver, Settings.Secure.DEFAULT_INPUT_METHOD).orEmpty()) ==
+            ComponentName(this, ChirpImeService::class.java)
+        state.diagnostics = CrashLog(this).text()
         val enabled = Settings.Secure.getString(contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES).orEmpty()
         state.bubbleEnabled = enabled.split(':').any {
             ComponentName.unflattenFromString(it) == ComponentName(this, ChirpAccessibilityService::class.java)
@@ -125,13 +146,14 @@ open class SetupActivity : ComponentActivity() {
         state.paired = store.pairing() != null
         state.health = store.health
         if (store.health?.let { !it.correctionAvailable || (it.correctionLeavesMachine && it.correctionHost == null) } != false) store.correction = false
-        state.correction = store.correction; state.returnToPrevious = store.returnToPrevious
+        state.correction = store.correction
         state.haptics = store.haptics; state.debug = store.debugOverlay
     }
-    private fun testPairing(save: Boolean) {
+    internal fun testPairing(save: Boolean, requestPermission: Boolean = true) {
         val pairing = try {
             if (save) Pairing.parse(state.link) else store.pairing() ?: error("Missing pairing")
         } catch (_: Exception) { state.status = "Paste a valid Chirp pairing link with an HTTPS server"; return }
+        state.wifiPermissionNeeded = false
         val id = ++pairingGeneration
         pendingHealth?.cancel()
         val call = ChirpNetwork.healthCall(client, pairing); pendingHealth = call
@@ -148,7 +170,14 @@ open class SetupActivity : ComponentActivity() {
                 }
                 state.status = if (health.ready) "Mac ready" else "Paired · Mac is loading its speech model"
                 refresh()
-            } catch (_: Exception) {
+            } catch (error: Exception) {
+                recordDebugNetworkFailure(this@SetupActivity, error)
+                if (pairingGeneration == id && generateSequence<Throwable>(error) { it.cause }.take(5).any { it is WifiServerPermissionRequired }) {
+                    pendingHealth = null; state.checking = false; state.wifiPermissionNeeded = true
+                    state.status = "Local network access is needed only for servers on your Wi-Fi. Tailscale works without it."
+                    if (requestPermission) { pendingNetworkTest = save; networkPermission.launch(LOCAL_NETWORK_PERMISSION) }
+                    return@launch
+                }
                 if (pairingGeneration == id) {
                     pendingHealth = null; state.checking = false
                     state.status = "Mac unreachable — is Tailscale on? Check the Mac is awake, Chirp is running, and the pairing link is current."

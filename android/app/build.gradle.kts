@@ -1,15 +1,17 @@
 plugins { alias(libs.plugins.android.application); alias(libs.plugins.compose) }
 android {
-    buildFeatures { compose = true }
+    buildFeatures { compose = true; buildConfig = true }
     namespace = "dev.chirp.android"
     compileSdk { version = release(37) { minorApiLevel = 2 } }
     buildToolsVersion = "37.0.0"
+    ndkVersion = "28.0.13004108"
+    packaging { jniLibs { useLegacyPackaging = true } }
     defaultConfig {
         applicationId = "dev.chirp.android"
         minSdk = 31
         targetSdk = 37
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = 3
+        versionName = "0.3.0"
     }
     signingConfigs {
         create("local") {
@@ -21,7 +23,20 @@ android {
     }
     // The dev-only key is per checkout (scripts/make-keystore.sh, gitignored); without it the release APK is unsigned.
     val localKeystore = rootProject.file("keystore/local-debug.keystore")
-    if (localKeystore.exists()) buildTypes { release { signingConfig = signingConfigs.getByName("local") } }
+    if (localKeystore.exists()) buildTypes {
+        debug {
+            signingConfig = signingConfigs.getByName("local")
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), rootProject.file("keyboard/upstream/app/proguard-rules.pro"))
+        }
+        release {
+            signingConfig = signingConfigs.getByName("local")
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), rootProject.file("keyboard/upstream/app/proguard-rules.pro"))
+        }
+    }
     else logger.warn("keystore/local-debug.keystore missing: release APK will be unsigned (run scripts/make-keystore.sh)")
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
@@ -31,6 +46,7 @@ android {
     testOptions { unitTests.isIncludeAndroidResources = true }
 }
 dependencies {
+    implementation(project(":keyboard"))
     implementation(platform(libs.compose.bom))
     implementation(libs.compose.material3)
     implementation(libs.activity.compose)
@@ -74,4 +90,12 @@ tasks.withType<Test>().configureEach {
     listOf("chirp.live.url", "chirp.live.tokenFile", "chirp.live.wav", "chirp.live.expect").forEach { key ->
         providers.gradleProperty(key).orNull?.let { systemProperty(key, it) }
     }
+}
+
+val generateDebugSyntheticAudio by tasks.registering(Exec::class) {
+    commandLine("sh", rootProject.file("scripts/make-synthetic-wav.sh"))
+    outputs.dir(layout.buildDirectory.dir("generated/chirp-debug-assets"))
+}
+tasks.matching { it.name == "mergeDebugAssets" || it.name == "packageDebugUnitTestForUnitTest" }.configureEach {
+    dependsOn(generateDebugSyntheticAudio)
 }

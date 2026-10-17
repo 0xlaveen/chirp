@@ -11,6 +11,11 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.*
+import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -53,7 +58,17 @@ internal fun SetupWizard(
     grantMic: () -> Unit = {}, keyboardSettings: () -> Unit = {}, accessibilitySettings: () -> Unit = {},
     appSettings: () -> Unit = {}, picker: () -> Unit = {}, scan: () -> Unit = {}, check: () -> Unit = {},
     forget: () -> Unit = {}, preferences: () -> Unit = {},
+    grantNetwork: () -> Unit = {}, keyboardPreferences: () -> Unit = {}, diagnostics: () -> Unit = {}, copyDiagnostics: () -> Unit = {},
 ) {
+    var showDiagnostics by remember { mutableStateOf(false) }
+    if (showDiagnostics) AlertDialog(onDismissRequest = { showDiagnostics = false },
+        title = { Text("Diagnostics") },
+        text = { Column(Modifier.heightIn(max = 420.dp).verticalScroll(rememberScrollState())) {
+            Text("Last 5 local crashes. Exception class, stack frames, app version and time only. No messages, text, audio or tokens.")
+            SelectionContainer { Text(state.diagnostics, style = MaterialTheme.typography.bodySmall) }
+        } },
+        confirmButton = { TextButton(copyDiagnostics) { Text("Copy diagnostics") } },
+        dismissButton = { TextButton({ showDiagnostics = false }) { Text("Close") } })
     Surface(Modifier.fillMaxSize()) {
         Box(Modifier.fillMaxSize().safeDrawingPadding(), contentAlignment = Alignment.TopCenter) {
             Column(Modifier.widthIn(max = 600.dp).fillMaxWidth().verticalScroll(rememberScrollState()).padding(24.dp),
@@ -62,7 +77,7 @@ internal fun SetupWizard(
                 Text("Your voice.\nYour keyboard.", style = MaterialTheme.typography.headlineLarge)
                 Text("Speak on your phone. Your Mac transcribes over Tailscale.", style = MaterialTheme.typography.bodyLarge)
                 LinearProgressIndicator(progress = { (state.step + 1) / 4f }, modifier = Modifier.fillMaxWidth().semantics { contentDescription = "Setup progress" })
-                Text("Step ${state.step + 1} of 4 · ${listOf("Microphone", "Input", "Pair Mac", "Try it")[state.step]}", style = MaterialTheme.typography.labelLarge)
+                Text("Step ${state.step + 1} of 4 · ${listOf("Chirp Keyboard", "Microphone", "Pair Mac", "Try it")[state.step]}", style = MaterialTheme.typography.labelLarge)
                 if (state.health?.debugRetention == true) {
                     Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)) {
                         Text("DEBUG RETENTION IS ON — the Mac may retain audio and text", Modifier.padding(16.dp), color = MaterialTheme.colorScheme.onErrorContainer)
@@ -73,25 +88,25 @@ internal fun SetupWizard(
                 }
                 when (state.step) {
                     0 -> {
+                        Text("Enable Chirp Keyboard", style = MaterialTheme.typography.titleLarge)
+                        Text("A full keyboard with Chirp’s microphone built in. Type normally, or tap the mic above the keys to dictate.")
+                        Text("Samsung: Settings → General management → Keyboard list and default.")
+                        Button(keyboardSettings, Modifier.fillMaxWidth()) { Text(if (state.inputEnabled) "Chirp Keyboard enabled ✓" else "Enable Chirp Keyboard") }
+                        OutlinedButton(picker, Modifier.fillMaxWidth()) { Text(if (state.inputSelected) "Chirp Keyboard selected ✓" else "Select it as default") }
+                        TextButton(keyboardPreferences) { Text("Keyboard layouts & settings") }
+                    }
+                    1 -> {
                         Text("Allow the microphone", style = MaterialTheme.typography.titleLarge)
                         Text("The mic opens only when you start dictation and is released as soon as you stop. No recordings or transcripts are saved on this phone.")
                         Button(grantMic, Modifier.fillMaxWidth()) { Text(if (state.mic) "Microphone allowed ✓" else "Allow microphone") }
                         TextButton(appSettings) { Text("Open app permissions") }
                     }
-                    1 -> {
-                        Text("Keep Samsung Keyboard", style = MaterialTheme.typography.titleLarge)
-                        Text("Optional floating mic: a button beside the focused text field. Your keyboard stays selected. Chirp reads only that field’s text and selection to insert safely; it never sends field contents to the Mac.")
-                        Button(accessibilitySettings, Modifier.fillMaxWidth()) { Text(if (state.bubbleEnabled) "Floating mic enabled ✓" else "Enable floating microphone") }
-                        Text("Settings → Accessibility → Installed apps → Chirp floating microphone. Sideload blocked? Try enabling once, then Apps → Chirp Voice → ⋮ → Allow restricted settings. Return here afterward.")
-                        Text("Android 17 Advanced Protection can block non-accessibility tools. If the switch is unavailable, use Chirp Voice below.")
-                        HorizontalDivider()
-                        Text("Chirp Voice keyboard", style = MaterialTheme.typography.titleMedium)
-                        Text("Works with editors that don’t support the floating mic. Enable Chirp, then use the keyboard button to select it. Voice shortcut launches start listening immediately; Samsung’s mic picker may offer only Samsung and Google.")
-                        OutlinedButton(keyboardSettings, Modifier.fillMaxWidth()) { Text(if (state.inputEnabled) "Chirp Voice enabled ✓" else "Enable Chirp Voice keyboard") }
-                        TextButton(picker) { Text("Choose keyboard") }
-                    }
                     2 -> {
                         Text("Connect your Mac", style = MaterialTheme.typography.titleLarge)
+                        if (state.wifiPermissionNeeded && !state.localNetwork) {
+                            Text("Needed only for servers on your Wi-Fi. Tailscale works without local network permission.")
+                            OutlinedButton(grantNetwork, Modifier.fillMaxWidth()) { Text("Allow Wi-Fi server access") }
+                        }
                         Text("Turn on Tailscale on both devices. On the Mac, open Chirp’s pairing QR code. Scan it or paste the pairing link below.")
                         Button(scan, Modifier.fillMaxWidth(), enabled = !state.scanning) { Text(if (state.scanning) "Scanning…" else "Scan pairing QR") }
                         OutlinedTextField(state.link, { state.link = it }, Modifier.fillMaxWidth().semantics { contentDescription = "Private Chirp pairing link" },
@@ -102,33 +117,45 @@ internal fun SetupWizard(
                     }
                     3 -> {
                         Text("Try a sentence", style = MaterialTheme.typography.titleLarge)
-                        Text("Tap the field below. Use the floating mic, or select Chirp Voice with the keyboard button. Tap to toggle; hold to talk. Cancel discards the utterance.")
+                        Text("Tap the field below. Type on Chirp Keyboard, then tap its mic to toggle dictation or hold to talk. ✕ cancels. The keyboard stays selected after every final.")
                         // Deliberately a real native editor: exercises the same InputConnection/accessibility path as other apps.
                         val editorInk = MaterialTheme.colorScheme.onSurface.toArgb()
                         val editorHint = MaterialTheme.colorScheme.onSurfaceVariant.toArgb()
                         val editorAccent = MaterialTheme.colorScheme.primary.toArgb()
+                        val bringEditor = remember { BringIntoViewRequester() }
+                        val editorScope = rememberCoroutineScope()
                         AndroidView(factory = { context -> EditText(context).apply {
                             hint = "Test dictation here"; minLines = 3
                             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
+                            onFocusChangeListener = View.OnFocusChangeListener { _, focused ->
+                                if (focused) postDelayed({ editorScope.launch { bringEditor.bringIntoView() } }, 350)
+                            }
                             isSaveEnabled = false; importantForAutofill = View.IMPORTANT_FOR_AUTOFILL_NO_EXCLUDE_DESCENDANTS
                         } }, update = { editor ->
                             editor.setTextColor(editorInk); editor.setHintTextColor(editorHint)
                             editor.backgroundTintList = ColorStateList.valueOf(editorAccent)
-                        }, modifier = Modifier.fillMaxWidth())
+                        }, modifier = Modifier.fillMaxWidth().bringIntoViewRequester(bringEditor))
                         TextButton(picker) { Text("Choose keyboard") }
                         OutlinedButton(check, Modifier.fillMaxWidth(), enabled = !state.checking) { Text("Check Mac connection") }
                         Text("Mac unreachable — is Tailscale on?", style = MaterialTheme.typography.titleSmall)
                         Text("Check Tailscale is connected on both devices, wake the Mac, and check Chirp’s server is running. If pairing was replaced, scan a new QR code.")
-                        Preference("Return to previous keyboard after dictation", state.returnToPrevious) { state.returnToPrevious = it; preferences() }
                         Preference("Haptic cues", state.haptics) { state.haptics = it; preferences() }
                         Preference(correctionLabel(state.health), state.correction,
                             state.health?.let { it.correctionAvailable && (!it.correctionLeavesMachine || it.correctionHost != null) } == true) {
                             state.correction = it; preferences()
                         }
                         Preference("Debug overlay (timings only)", state.debug) { state.debug = it; preferences() }
+                        TextButton(keyboardPreferences) { Text("Keyboard layouts & settings") }
+                        BuildSetupOptions()
+                        HorizontalDivider()
+                        Text("Optional floating microphone", style = MaterialTheme.typography.titleMedium)
+                        Text("Off by default. Enable only if you want a floating mic with another keyboard. Chirp reads the focused field locally to insert safely. Keyboard dictation works without Accessibility.")
+                        TextButton(accessibilitySettings) { Text(if (state.bubbleEnabled) "Floating mic enabled ✓" else "Enable optional floating mic") }
+                        Text("Settings → Accessibility → Installed apps. If sideloading blocks this optional feature: Apps → Chirp Keyboard → ⋮ → Allow restricted settings.")
                         TextButton(forget) { Text("Forget pairing") }
                     }
                 }
+                TextButton({ diagnostics(); showDiagnostics = true }) { Text("Diagnostics") }
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                     TextButton({ state.step-- }, enabled = state.step > 0) { Text("Back") }
                     if (state.step < 3) Button({ state.step++ }) { Text("Next") }

@@ -77,4 +77,24 @@ class ComposingSessionTest {
         final.final(ServerEvent.Final("Synthetic.", "synthetic", true)); final.forgetUndo()
         assertFalse(final.useRaw(editor.committed.length))
     }
+    @Test fun `editor disconnect during raw region replacement cannot crash the IME`() {
+        var disconnected = false
+        val connection = Proxy.newProxyInstance(InputConnection::class.java.classLoader,
+            arrayOf(InputConnection::class.java)) { _, method, _ ->
+            when (method.name) {
+                "getSelectedText" -> ""
+                "getTextBeforeCursor" -> "Synthetic."
+                "setComposingRegion" -> { disconnected = true; throw IllegalStateException("synthetic private editor detail") }
+                "finishComposingText", "endBatchEdit" -> {
+                    if (disconnected) throw IllegalStateException("synthetic private editor detail") else true
+                }
+                else -> true
+            }
+        } as InputConnection
+        val session = ComposingSession(connection)
+        assertTrue(session.final(ServerEvent.Final("Synthetic.", "synthetic", true)))
+        assertFalse(session.useRaw(10))
+        session.cancel()
+    }
+
 }

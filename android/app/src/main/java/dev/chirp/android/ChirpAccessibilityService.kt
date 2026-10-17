@@ -173,7 +173,7 @@ open class ChirpAccessibilityService : AccessibilityService() {
             message = "Grant microphone permission in Chirp setup"; return
         }
         target = FocusedInsertion.from(focused)
-        if (target == null) { message = "This field needs Chirp Voice — use the keyboard picker"; return }
+        if (target == null) { message = "This field needs Chirp Keyboard — use the keyboard picker"; return }
         if (loadPairing() == null) { target?.forget(); target = null; message = "Pair with your Mac in Chirp setup"; return }
         partial = ""; stable = ""; message = "Connecting to Mac…"
         pendingStart = true; pendingStop = false
@@ -183,7 +183,7 @@ open class ChirpAccessibilityService : AccessibilityService() {
             ContextCompat.startForegroundService(this, Intent(this, ChirpAccessibilityService::class.java).setAction(START))
         } catch (_: RuntimeException) {
             pendingStart = false; target?.forget(); target = null
-            message = "Microphone start blocked — open Chirp setup or use Chirp Voice"
+            message = "Microphone start blocked — open Chirp setup or use Chirp Keyboard"
         }
         render()
     }
@@ -202,7 +202,7 @@ open class ChirpAccessibilityService : AccessibilityService() {
                 .setOngoing(true).addAction(Notification.Action.Builder(null, "Cancel", cancel).build()).build()
             startForeground(12, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE)
             val paired = loadPairing() ?: error("Pairing required")
-            val network = ChirpNetwork.client(); client = network
+            val network = ChirpNetwork.client(this); client = network
             val session = DictationStream(
                 transportFactory = { event, failure -> createTransport(network, paired, event, failure) },
                 captureFactory = ::createCapture,
@@ -236,7 +236,7 @@ open class ChirpAccessibilityService : AccessibilityService() {
             haptic()
             if (pendingStop) session.stop()
         } catch (_: RuntimeException) {
-            cancel(); message = "Microphone start blocked — open Chirp setup or use Chirp Voice"; render()
+            cancel(); message = "Microphone start blocked — open Chirp setup or use Chirp Keyboard"; render()
         }
         return START_NOT_STICKY
     }

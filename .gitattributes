@@ -1,0 +1,5 @@
+
+# Preserve the pinned upstream archive byte-for-byte, including original whitespace.
+android/keyboard/upstream/** -text -whitespace
+# Unified patch context markers on blank lines are intentional.
+android/keyboard/patches/*.patch -whitespace
