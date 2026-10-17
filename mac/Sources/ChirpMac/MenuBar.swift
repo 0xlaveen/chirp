@@ -24,15 +24,17 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     }
 
     func refreshIcon() {
-        let symbol: String
+        // The Chirp bird (template glyphs in Contents/Resources); SF Symbols stand in when run outside the bundle.
+        let image: NSImage?
         switch controller.state {
-        case .idle: symbol = controller.health == nil ? "mic.slash" : "mic"
-        case .connecting, .listening: symbol = "mic.fill"
-        case .finalizing, .inserting: symbol = "waveform"
-        case .error: symbol = "exclamationmark.triangle"
+        case .idle: image = Self.glyph("MenuBarIdle", fallback: controller.health == nil ? "mic.slash" : "mic")
+        case .connecting, .listening, .finalizing, .inserting: image = Self.glyph("MenuBarListening", fallback: "waveform")
+        case .error: image = NSImage(systemSymbolName: "exclamationmark.triangle", accessibilityDescription: "Chirp error")
         }
         let button = item.button
-        button?.image = NSImage(systemSymbolName: symbol, accessibilityDescription: "Chirp")
+        button?.image = image
+        // Dimmed while the server is unreachable.
+        button?.appearsDisabled = controller.state == .idle && controller.health == nil
         // A persistent red dot while the server keeps recordings, so retention is never invisible.
         button?.attributedTitle = controller.debugRetention
             ? NSAttributedString(string: " ●", attributes: [.foregroundColor: NSColor.systemRed]) : NSAttributedString()
@@ -116,5 +118,14 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     @objc private func grantAX() {
         Permissions.promptAccessibility()
         Permissions.openSettings(.accessibility)
+    }
+
+    private static func glyph(_ name: String, fallback: String) -> NSImage? {
+        guard let image = Bundle.main.image(forResource: name) else {
+            return NSImage(systemSymbolName: fallback, accessibilityDescription: "Chirp")
+        }
+        image.isTemplate = true
+        image.accessibilityDescription = "Chirp"
+        return image
     }
 }

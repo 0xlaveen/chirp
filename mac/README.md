@@ -114,3 +114,9 @@ scripts/              bundle.sh, make-cert.sh, install.sh, test.sh, Chirp.entitl
 - The HUD follows the mouse's screen, not the text caret.
 - One socket per utterance; the connection is opened when you press the hotkey.
 - "Use raw" after a paste only copies the raw text; it never undoes the paste.
+
+## Icon and menu-bar glyphs
+
+`Assets/AppIcon.png` is the 1024 px app-icon master: a songbird mid-chirp with golden sound waves on an indigo-to-violet tile. It was generated with GPT Image 2.5 through the `ez-image-gen` skill, then scaled onto Apple's icon grid. `bundle.sh` turns it into `AppIcon.icns` with `sips` and `iconutil`.
+
+`Assets/MenuBarListening*.png` and `Assets/MenuBarIdle*.png` are 18 pt template glyphs (1x and 2x) of the same bird. Idle is the listening glyph with the waves erased, so the icon never shifts when its state changes. The menu bar dims the idle glyph while the server is unreachable and shows a warning triangle on errors.

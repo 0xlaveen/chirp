@@ -18,6 +18,16 @@ for b in "$BIN"/*.bundle; do
     [ -e "$b" ] && cp -R "$b" "$APP/Contents/Resources/"
 done || true
 
+# App icon (.icns from the 1024 px master) and the menu-bar template glyphs.
+ICONSET=$(mktemp -d)/AppIcon.iconset
+mkdir -p "$ICONSET"
+for pt in 16 32 128 256 512; do
+    sips -z $pt $pt Assets/AppIcon.png --out "$ICONSET/icon_${pt}x${pt}.png" >/dev/null
+    sips -z $((pt * 2)) $((pt * 2)) Assets/AppIcon.png --out "$ICONSET/icon_${pt}x${pt}@2x.png" >/dev/null
+done
+iconutil -c icns "$ICONSET" -o "$APP/Contents/Resources/AppIcon.icns"
+cp Assets/MenuBar*.png "$APP/Contents/Resources/"
+
 cat > "$APP/Contents/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -27,6 +37,7 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
     <key>CFBundleName</key><string>Chirp</string>
     <key>CFBundleDisplayName</key><string>Chirp</string>
     <key>CFBundleExecutable</key><string>ChirpMac</string>
+    <key>CFBundleIconFile</key><string>AppIcon</string>
     <key>CFBundlePackageType</key><string>APPL</string>
     <key>CFBundleShortVersionString</key><string>0.1.0</string>
     <key>CFBundleVersion</key><string>1</string>
