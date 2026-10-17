@@ -1,4 +1,5 @@
 import AppKit
+import Carbon.HIToolbox
 import ChirpCore
 import ChirpUI
 
@@ -7,8 +8,11 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     private let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
     private let controller: DictationController
     private let openSettings: () -> Void
-    private var inputName = InputDevice.defaultName()
     private var launchError: String?
+    private let badge = NSView()
+    private let glyphs = Glyphs()
+    private var pulseTimer: Timer?
+    private var pulsePhase = 0
 
     init(controller: DictationController, openSettings: @escaping () -> Void) {
         self.controller = controller
@@ -17,31 +21,71 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         let menu = NSMenu()
         menu.delegate = self
         item.menu = menu
-        InputDevice.observeChanges { [weak self] in
-            MainActor.assumeIsolated { self?.inputName = InputDevice.defaultName() }
-        }
+        installBadge()
         refreshIcon()
     }
 
+    // MARK: status icon
+
+    private var reduceMotion: Bool { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
+
     func refreshIcon() {
-        // The Chirp bird (template glyphs in Contents/Resources); SF Symbols stand in when run outside the bundle.
-        let image: NSImage?
-        switch controller.state {
-        case .idle: image = Self.glyph("MenuBarIdle", fallback: controller.health == nil ? "mic.slash" : "mic")
-        case .connecting, .listening, .finalizing, .inserting: image = Self.glyph("MenuBarListening", fallback: "waveform")
-        case .error: image = NSImage(systemSymbolName: "exclamationmark.triangle", accessibilityDescription: "Chirp error")
+        let icon = StatusIcon.of(state: controller.state, serverReachable: controller.health != nil,
+                                 debugRetention: controller.debugRetention, reduceMotion: reduceMotion)
+        guard let button = item.button else { return }
+        switch icon.glyph {
+        case .idle: button.image = glyphs.idle ?? Self.symbol(controller.health == nil ? "mic.slash" : "mic")
+        case .listening: button.image = glyphs.listening(waveAlpha: StatusIcon.waveAlpha(phase: pulsePhase, reduceMotion: reduceMotion))
+            ?? Self.symbol("waveform")
+        case .error: button.image = Self.symbol("exclamationmark.triangle")
         }
-        let button = item.button
-        button?.image = image
-        // Dimmed while the server is unreachable.
-        button?.appearsDisabled = controller.state == .idle && controller.health == nil
-        // A persistent red dot while the server keeps recordings, so retention is never invisible.
-        button?.attributedTitle = controller.debugRetention
-            ? NSAttributedString(string: " ●", attributes: [.foregroundColor: NSColor.systemRed]) : NSAttributedString()
+        button.alphaValue = icon.dimmed ? 0.45 : 1
+        button.setAccessibilityLabel(icon.accessibilityLabel)
+        button.toolTip = icon.accessibilityLabel
+        badge.isHidden = !icon.debugBadge
+        setPulsing(icon.animatesWaves)
     }
 
+    private func setPulsing(_ on: Bool) {
+        guard on != (pulseTimer != nil) else { return }
+        pulseTimer?.invalidate()
+        pulseTimer = nil
+        pulsePhase = 0
+        guard on else { return }
+        pulseTimer = Timer.scheduledTimer(withTimeInterval: StatusIcon.pulseInterval, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                self.pulsePhase += 1
+                self.refreshIcon()
+            }
+        }
+    }
+
+    /// A small red dot at the icon's top right while the server keeps recordings, so retention is never invisible.
+    private func installBadge() {
+        guard let button = item.button else { return }
+        badge.wantsLayer = true
+        badge.layer?.backgroundColor = NSColor.systemRed.cgColor
+        badge.layer?.cornerRadius = 3.5
+        badge.layer?.borderWidth = 1
+        badge.layer?.borderColor = NSColor.black.withAlphaComponent(0.35).cgColor
+        badge.isHidden = true
+        badge.translatesAutoresizingMaskIntoConstraints = false
+        button.addSubview(badge)
+        NSLayoutConstraint.activate([
+            badge.widthAnchor.constraint(equalToConstant: 7), badge.heightAnchor.constraint(equalToConstant: 7),
+            badge.trailingAnchor.constraint(equalTo: button.trailingAnchor, constant: -3),
+            badge.topAnchor.constraint(equalTo: button.topAnchor, constant: 3),
+        ])
+    }
+
+    private static func symbol(_ name: String) -> NSImage? {
+        NSImage(systemSymbolName: name, accessibilityDescription: "Chirp")
+    }
+
+    // MARK: menu
+
     func menuNeedsUpdate(_ menu: NSMenu) {
-        inputName = InputDevice.defaultName()
         Task { await controller.refreshHealth() }
         build(menu)
     }
@@ -52,9 +96,13 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         inputs.health = controller.health
         inputs.healthError = controller.healthError
         inputs.debugRetention = controller.debugRetention
-        inputs.inputName = inputName
-        inputs.correctionOn = Settings.correction
-        inputs.hotkey = Settings.hotkey
+        inputs.inputs = InputDevice.all().map(\.input)
+        inputs.defaultInput = InputDevice.systemDefault()?.input
+        inputs.chosenInputUID = settings.inputDeviceUID
+        inputs.cleanupOn = settings.correction
+        inputs.showRawAfterCleanup = settings.showRawAfterCleanup
+        inputs.hotkey = settings.hotkey
+        inputs.serverURL = settings.serverURL
         inputs.micGranted = Permissions.microphoneGranted
         inputs.accessibilityGranted = Permissions.accessibilityGranted
         inputs.launch = LaunchAtLogin.state
@@ -65,13 +113,30 @@ final class MenuBarController: NSObject, NSMenuDelegate {
 
     private func item(for entry: MenuEntry) -> NSMenuItem {
         if entry.isSeparator { return .separator() }
-        let i = NSMenuItem(title: entry.title, action: selector(for: entry.action), keyEquivalent: "")
+        if entry.isHeader { return .sectionHeader(title: entry.title) }
+        let i = NSMenuItem(title: entry.title, action: selector(for: entry.action), keyEquivalent: entry.keyEquivalent ?? "")
         if entry.action != nil { i.target = self }
         i.isEnabled = entry.action != nil || entry.submenu != nil
         i.state = switch entry.mark { case .off: .off; case .on: .on; case .mixed: .mixed }
-        i.representedObject = if case .pickHotkey(let id) = entry.action { id } else { nil }
-        let color: NSColor? = switch entry.tone { case .normal: nil; case .warning: .systemOrange; case .error: .systemRed }
-        if let color { i.attributedTitle = NSAttributedString(string: entry.title, attributes: [.foregroundColor: color]) }
+        i.representedObject = entry.action?.payload
+        i.subtitle = entry.subtitle
+        if let hotkey = entry.hotkey { Self.show(hotkey, on: i) }
+        if entry.showsAppIcon {
+            let icon = NSApp.applicationIconImage.copy() as? NSImage
+            icon?.size = NSSize(width: 22, height: 22)
+            i.image = icon
+        } else if let name = entry.symbol {
+            i.image = Self.symbolImage(name, tone: entry.symbolTone ?? entry.tone)
+        }
+        // Informational rows are disabled; explicit colours keep them at full strength instead of greyed out.
+        let font: NSFont = entry.showsAppIcon ? .systemFont(ofSize: 13, weight: .semibold) : .menuFont(ofSize: 0)
+        if entry.action == nil && entry.submenu == nil {
+            i.attributedTitle = NSAttributedString(string: entry.title, attributes: [
+                .foregroundColor: Self.textColor(entry.tone), .font: font])
+        } else if entry.tone == .warning || entry.tone == .error {
+            i.attributedTitle = NSAttributedString(string: entry.title, attributes: [
+                .foregroundColor: Self.textColor(entry.tone), .font: font])
+        }
         if let sub = entry.submenu {
             let m = NSMenu()
             for e in sub { m.addItem(item(for: e)) }
@@ -80,25 +145,81 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         return i
     }
 
+    /// Shows the dictation hotkey as the item's key equivalent (it only fires while the menu is open).
+    private static func show(_ combo: KeyCombo, on item: NSMenuItem) {
+        item.keyEquivalent = " "
+        var mask: NSEvent.ModifierFlags = []
+        if combo.modifiers & UInt32(controlKey) != 0 { mask.insert(.control) }
+        if combo.modifiers & UInt32(optionKey) != 0 { mask.insert(.option) }
+        if combo.modifiers & UInt32(shiftKey) != 0 { mask.insert(.shift) }
+        if combo.modifiers & UInt32(cmdKey) != 0 { mask.insert(.command) }
+        item.keyEquivalentModifierMask = mask
+    }
+
+    private static func textColor(_ tone: MenuEntry.Tone) -> NSColor {
+        switch tone {
+        case .error: .systemRed
+        case .warning: .systemOrange
+        default: .labelColor
+        }
+    }
+
+    private static func symbolImage(_ name: String, tone: MenuEntry.Tone) -> NSImage? {
+        let color: NSColor? = switch tone {
+        case .normal: nil
+        case .ok: .systemGreen
+        case .active: .controlAccentColor
+        case .warning: .systemOrange
+        case .error: .systemRed
+        }
+        let image = NSImage(systemSymbolName: name, accessibilityDescription: nil)
+        guard let color else { return image }
+        return image?.withSymbolConfiguration(.init(paletteColors: [color]))
+    }
+
     private func selector(for action: MenuAction?) -> Selector? {
         switch action {
         case nil: nil
-        case .toggleCorrection: #selector(toggleCorrection)
+        case .toggleDictation: #selector(toggleDictation)
+        case .pickInput: #selector(pickInput(_:))
+        case .toggleCleanup: #selector(toggleCleanup)
+        case .toggleShowRaw: #selector(toggleShowRaw)
         case .pickHotkey: #selector(pickHotkey(_:))
+        case .copyDoctor: #selector(copyDoctor)
         case .grantMic: #selector(grantMic)
         case .grantAX: #selector(grantAX)
         case .toggleLaunch: #selector(toggleLaunch)
         case .showSettings: #selector(showSettings)
+        case .showAbout: #selector(showAbout)
         case .quit: #selector(quit)
         }
     }
 
+    @objc private func toggleDictation() { controller.toggleDictation() }
+    @objc private func pickInput(_ sender: NSMenuItem) { settings.inputDeviceUID = sender.representedObject as? String }
+    @objc private func toggleCleanup() { settings.correction.toggle() }
+    @objc private func toggleShowRaw() { settings.showRawAfterCleanup.toggle() }
     @objc private func pickHotkey(_ sender: NSMenuItem) {
-        Settings.hotkey = KeyCombo.preset(id: sender.representedObject as? String)
+        settings.hotkey = KeyCombo.preset(id: sender.representedObject as? String)
         controller.registerHotkey()
     }
-    @objc private func toggleCorrection() { Settings.correction.toggle() }
+    @objc private func copyDoctor() {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(DoctorHelp.clipboardText(serverURL: settings.serverURL), forType: .string)
+    }
     @objc private func showSettings() { openSettings() }
+    @objc private func showAbout() {
+        NSApp.activate()
+        let info = Bundle.main.infoDictionary
+        NSApp.orderFrontStandardAboutPanel(options: [
+            .applicationName: "Chirp",
+            .applicationVersion: info?["CFBundleShortVersionString"] as? String ?? "dev build",
+            .version: info?["CFBundleVersion"] as? String ?? "",
+            .credits: NSAttributedString(
+                string: "Dictate into any app with a hotkey. Speech is recognised by your own chirp-server; audio never leaves your Mac.",
+                attributes: [.font: NSFont.systemFont(ofSize: 11), .foregroundColor: NSColor.secondaryLabelColor]),
+        ])
+    }
     @objc private func toggleLaunch() {
         switch LaunchAtLogin.state {
         case .needsApproval: LaunchAtLogin.openSystemSettings()
@@ -119,11 +240,45 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         Permissions.promptAccessibility()
         Permissions.openSettings(.accessibility)
     }
+}
 
-    private static func glyph(_ name: String, fallback: String) -> NSImage? {
-        guard let image = Bundle.main.image(forResource: name) else {
-            return NSImage(systemSymbolName: fallback, accessibilityDescription: "Chirp")
+/// The bird glyphs (template images in Contents/Resources). The waves are the listening glyph minus the idle bird, so
+/// the pulse can fade them while the bird stays put. SF Symbols stand in when run outside the bundle.
+@MainActor
+private final class Glyphs {
+    let idle: NSImage?
+    private let full: NSImage?
+    private let waves: NSImage?
+
+    init() {
+        idle = Self.load("MenuBarIdle")
+        full = Self.load("MenuBarListening")
+        if let full, let idle {
+            waves = NSImage(size: full.size, flipped: false) { rect in
+                full.draw(in: rect)
+                idle.draw(in: rect, from: .zero, operation: .destinationOut, fraction: 1)
+                return true
+            }
+        } else {
+            waves = nil
         }
+    }
+
+    func listening(waveAlpha: Double) -> NSImage? {
+        guard let idle, let waves else { return full }
+        guard waveAlpha < 1 else { return full }
+        let image = NSImage(size: idle.size, flipped: false) { rect in
+            idle.draw(in: rect)
+            waves.draw(in: rect, from: .zero, operation: .sourceOver, fraction: waveAlpha)
+            return true
+        }
+        image.isTemplate = true
+        image.accessibilityDescription = "Chirp"
+        return image
+    }
+
+    private static func load(_ name: String) -> NSImage? {
+        guard let image = Bundle.main.image(forResource: name) else { return nil }
         image.isTemplate = true
         image.accessibilityDescription = "Chirp"
         return image

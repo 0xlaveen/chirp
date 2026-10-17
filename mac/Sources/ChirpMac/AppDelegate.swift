@@ -13,9 +13,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         settingsWindow.onHotkeyChange = { [controller] in controller.registerHotkey() }
         controller.onChange = { [weak self] in self?.menu?.refreshIcon() }
 
-        chirpLog.info("launch microphone=\(Permissions.microphone.rawValue, privacy: .public) accessibility=\(Permissions.accessibilityGranted, privacy: .public) hotkey=\(Settings.hotkey.id, privacy: .public)")
+        chirpLog.info("launch microphone=\(Permissions.microphone.rawValue, privacy: .public) accessibility=\(Permissions.accessibilityGranted, privacy: .public) hotkey=\(settings.hotkey.id, privacy: .public)")
         if !controller.registerHotkey() {
-            NSLog("Chirp: could not register the hotkey \(Settings.hotkey.title); it may be in use by another app")
+            NSLog("Chirp: could not register the hotkey \(settings.hotkey.title); it may be in use by another app")
         }
 
         Task { await controller.refreshHealth() }
@@ -23,10 +23,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             Task { @MainActor in await controller.refreshHealth() }
         }
 
-        if !Settings.didOnboard {
+        if !settings.didOnboard {
             settingsWindow.show()
             let onboarding = Onboarding(
-                isDone: { Settings.didOnboard }, markDone: { Settings.didOnboard = true },
+                isDone: { settings.didOnboard }, markDone: { settings.didOnboard = true },
                 requestMicrophone: { await Permissions.requestMicrophone() },
                 accessibilityGranted: { Permissions.accessibilityGranted },
                 promptAccessibility: { Permissions.promptAccessibility() })

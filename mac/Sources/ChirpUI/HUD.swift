@@ -11,6 +11,8 @@ public final class HUDModel {
     public var debugRetention = false
     public var isError = false
     public var showUseRaw = false
+    /// The inserted text was rewritten by the server's clean-up.
+    public var cleaned = false
     public var reduceMotion = false
     public var onUseRaw: (() -> Void)?
 
@@ -18,7 +20,7 @@ public final class HUDModel {
 
     public func reset() {
         status = ""; stable = ""; unstable = ""; level = 0
-        isError = false; showUseRaw = false; onUseRaw = nil
+        isError = false; showUseRaw = false; cleaned = false; onUseRaw = nil
     }
 }
 
@@ -40,6 +42,13 @@ public struct HUDView: View {
                     .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(model.isError ? HUDColors.error : Color.secondary)
                 Spacer(minLength: 0)
+                if model.cleaned {
+                    Label("cleaned", systemImage: "sparkles")
+                        .font(.system(size: 10, weight: .semibold))
+                        .padding(.horizontal, 6).padding(.vertical, 2)
+                        .background(HUDColors.action.opacity(0.14), in: Capsule())
+                        .foregroundStyle(HUDColors.action)
+                }
                 if model.showUseRaw {
                     Button("Use raw") { model.onUseRaw?() }.buttonStyle(.borderless).font(.system(size: 12, weight: .semibold))
                         .foregroundStyle(HUDColors.action)
@@ -91,18 +100,22 @@ public struct OutcomePresentation: Equatable, Sendable {
     public var status: String
     public var isError = false
     public var showUseRaw = false
+    /// The text was rewritten by clean-up: the HUD shows a small "cleaned" badge.
+    public var cleaned = false
     /// Seconds the HUD stays up.
     public var linger: Double
 
-    public static func of(_ outcome: InsertionOutcome, final: FinalResult) -> OutcomePresentation {
-        switch outcome {
+    /// `offerRaw` is the "Show raw after clean-up" preference: off keeps the badge but drops the Use raw button.
+    public static func of(_ outcome: InsertionOutcome, final: FinalResult, offerRaw: Bool = true) -> OutcomePresentation {
+        let useRaw = final.canUseRaw && offerRaw
+        return switch outcome {
         case .inserted(let method):
-            OutcomePresentation(status: method == .ax ? "Inserted" : "Inserted (paste)",
-                                showUseRaw: final.canUseRaw, linger: final.canUseRaw ? 5 : 1.2)
+            OutcomePresentation(status: method == .ax ? "Inserted" : "Inserted (paste)", showUseRaw: useRaw,
+                                cleaned: final.canUseRaw, linger: useRaw ? 5 : final.canUseRaw ? 1.8 : 1.2)
         case .copied:
-            OutcomePresentation(status: "Copied — press ⌘V", linger: 3)
+            OutcomePresentation(status: "Copied — press ⌘V", cleaned: final.canUseRaw, linger: 3)
         case .insertedUnverified:
-            OutcomePresentation(status: "Inserted? If nothing appeared, press ⌘V", linger: 4)
+            OutcomePresentation(status: "Inserted? If nothing appeared, press ⌘V", cleaned: final.canUseRaw, linger: 4)
         case .refusedSecure:
             OutcomePresentation(status: "Secure field — nothing inserted", isError: true, linger: 3)
         }

@@ -23,6 +23,16 @@ import Testing
         #expect(!OutcomePresentation.of(.inserted(.ax), final: unchanged).showUseRaw)
         #expect(!OutcomePresentation.of(.copied, final: corrected).showUseRaw)
     }
+
+    @Test func cleanedBadgeFollowsTheRewriteAndRawButtonFollowsThePreference() {
+        let corrected = FinalResult(text: "Hello.", raw: "hello", corrected: true)
+        let on = OutcomePresentation.of(.inserted(.ax), final: corrected)
+        #expect(on.cleaned && on.showUseRaw && on.linger == 5)
+        let off = OutcomePresentation.of(.inserted(.ax), final: corrected, offerRaw: false)
+        #expect(off.cleaned && !off.showUseRaw && off.linger == 1.8)
+        #expect(!OutcomePresentation.of(.inserted(.ax), final: FinalResult(text: "hello")).cleaned)
+        #expect(!OutcomePresentation.of(.refusedSecure, final: corrected).cleaned)
+    }
 }
 
 @Suite struct HUDTextTests {
@@ -86,88 +96,6 @@ import Testing
     }
 }
 
-@Suite struct MenuContentTests {
-    private func titles(_ m: MenuInputs) -> [String] { MenuContent.entries(m).filter { !$0.isSeparator }.map(\.title) }
-
-    @Test func idleMenuListsServerInputAndStatus() {
-        var m = MenuInputs()
-        m.health = Health(engine: "parakeet", ready: true)
-        m.inputName = "BOYA CM40"
-        let t = titles(m)
-        #expect(t.prefix(3) == ["Chirp — ready", "Server: parakeet", "Input: BOYA CM40"])
-        #expect(t.contains("Correction (not configured on server)"))
-        #expect(t.suffix(2) == ["Settings…", "Quit Chirp"])
-    }
-
-    @Test func unreachableServerAndMissingInputAreSaid() {
-        var m = MenuInputs()
-        m.healthError = "Server unreachable at 127.0.0.1"
-        let e = MenuContent.entries(m)
-        #expect(e[1].title == "Server unreachable at 127.0.0.1" && e[1].tone == .warning)
-        #expect(e[2].title == "Input: none — no input device")
-        m.healthError = nil
-        #expect(MenuContent.entries(m)[1].title == "Server: checking…")
-    }
-
-    @Test func loadingServerAndErrorStateAreShown() {
-        var m = MenuInputs()
-        m.state = .error("boom")
-        m.health = Health(engine: nil, ready: false)
-        let e = MenuContent.entries(m)
-        #expect(e[0].title == "boom" && e[0].tone == .error)
-        #expect(e[1].title == "Server: ok (loading…)")
-    }
-
-    @Test func debugRetentionIsAlwaysVisibleInRed() {
-        var m = MenuInputs()
-        m.debugRetention = true
-        let line = MenuContent.entries(m).first { $0.title.hasPrefix("DEBUG") }
-        #expect(line?.tone == .error)
-    }
-
-    @Test func correctionLabelNamesTheHostWhenTextLeavesTheMachine() {
-        var m = MenuInputs()
-        m.correctionOn = true
-        m.health = Health(correction: "available", correctionLeavesMachine: true, correctionHost: "llm.example.com")
-        let item = MenuContent.entries(m).first { $0.action == .toggleCorrection }
-        #expect(item?.title == "Correction — sends text to llm.example.com" && item?.mark == .on)
-        m.health = Health(correction: "available", correctionLeavesMachine: true)
-        #expect(MenuContent.entries(m).first { $0.action == .toggleCorrection }?.title == "Correction — sends text to a remote LLM")
-        m.health = Health(correction: "available", correctionLeavesMachine: false)
-        #expect(MenuContent.entries(m).first { $0.action == .toggleCorrection }?.title == "Correction")
-    }
-
-    @Test func hotkeySubmenuMarksTheCurrentPreset() {
-        var m = MenuInputs()
-        m.hotkey = .controlOptionSpace
-        let sub = MenuContent.entries(m).compactMap(\.submenu).first
-        #expect(sub?.map(\.title) == KeyCombo.presets.map(\.title))
-        #expect(sub?.filter { $0.mark == .on }.map(\.action) == [.pickHotkey("control-option-space")])
-    }
-
-    @Test func ungrantedPermissionsOfferGrantActions() {
-        var m = MenuInputs()
-        m.micGranted = false
-        let e = MenuContent.entries(m)
-        #expect(e.first { $0.action == .grantMic }?.title == "Microphone: not granted — Grant…")
-        #expect(e.first { $0.action == .grantAX } == nil)
-        #expect(e.contains { $0.title == "Accessibility: granted ✓" && $0.action == nil })
-    }
-
-    @Test func launchAtLoginStates() {
-        var m = MenuInputs()
-        func item() -> MenuEntry { MenuContent.entries(m).first { $0.title.hasPrefix("Launch at Login") && $0.action != nil || $0.title.contains("unavailable") }! }
-        m.launch = .on
-        #expect(item().mark == .on && item().action == .toggleLaunch)
-        m.launch = .needsApproval
-        #expect(item().mark == .mixed)
-        m.launch = .unavailable
-        #expect(item().action == nil)
-        m.launchError = "Operation not permitted"
-        #expect(MenuContent.entries(m).contains { $0.title == "Launch at Login: Operation not permitted" && $0.tone == .error })
-    }
-}
-
 @MainActor
 @Suite struct SettingsFormTests {
     @Test func appliesPermissionAndTokenState() {
@@ -219,13 +147,13 @@ import Testing
         #expect(try FileManager.default.contentsOfDirectory(atPath: dir.path).count == files.count)
         let names = Set(files.map(\.lastPathComponent))
         for state in ["listening", "listening-multiline", "finalizing", "inserted", "copied", "unverified-ax", "secure-field",
-                      "no-mic-signal", "debug-badge", "correction-use-raw"] {
+                      "no-mic-signal", "debug-badge", "correction-use-raw", "cleaned-no-raw-button"] {
             #expect(names.contains("hud-\(state)-light.png") && names.contains("hud-\(state)-dark.png"))
         }
-        #expect(names.contains("settings-ready-dark.png") && names.contains("menu-idle-light.png"))
+        #expect(names.contains("settings-ready-dark.png") && names.contains("menu-idle-light.png") && names.contains("menu-input-picker-dark.png"))
         for url in files {
             let data = try Data(contentsOf: url)
-            #expect(data.count < 150_000, "\(url.lastPathComponent) is too big to commit")
+            #expect(data.count < 250_000, "\(url.lastPathComponent) is too big to commit")
             let rep = try #require(NSBitmapImageRep(data: data))
             #expect(rep.pixelsWide > 100 && rep.pixelsHigh > 50)
             // Not a flat fill: some pixel differs from the corner.

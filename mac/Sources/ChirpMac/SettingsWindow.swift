@@ -12,8 +12,8 @@ final class SettingsWindowController: NSObject, NSTextFieldDelegate {
 
     private var state: SettingsState {
         var s = SettingsState()
-        s.hotkey = Settings.hotkey
-        s.serverURL = Settings.serverURL
+        s.hotkey = settings.hotkey
+        s.serverURL = settings.serverURL
         s.tokenPresent = ServerConfig.readToken() != nil
         s.launch = LaunchAtLogin.state
         s.micGranted = Permissions.microphoneGranted
@@ -55,11 +55,11 @@ final class SettingsWindowController: NSObject, NSTextFieldDelegate {
     }
 
     func controlTextDidChange(_ obj: Notification) {
-        if let f = obj.object as? NSTextField { Settings.serverURL = f.stringValue }
+        if let f = obj.object as? NSTextField { settings.serverURL = f.stringValue }
     }
 
     @objc private func hotkeyChanged(_ sender: NSPopUpButton) {
-        Settings.hotkey = KeyCombo.preset(id: sender.selectedItem?.representedObject as? String)
+        settings.hotkey = KeyCombo.preset(id: sender.selectedItem?.representedObject as? String)
         onHotkeyChange?()
     }
 

@@ -12,7 +12,7 @@ enum SelfTest {
         let fast = args.contains("--fast")
         let expects = args.enumerated().filter { $0.element == "--expect" }.compactMap { args.indices.contains($0.offset + 1) ? args[$0.offset + 1] : nil }
 
-        var config = ServerConfig.load(urlString: value("--url") ?? Settings.serverURL,
+        var config = ServerConfig.load(urlString: value("--url") ?? settings.serverURL,
                                        tokenPath: value("--token-file") ?? ServerConfig.defaultTokenPath)
         if let t = ProcessInfo.processInfo.environment["CHIRP_TOKEN"] { config.token = t }
 
