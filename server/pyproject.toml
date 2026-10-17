@@ -6,6 +6,7 @@ requires-python = ">=3.13,<3.14"
 dependencies = [
   "starlette>=1.8.0", "uvicorn[standard]>=0.54.0", "parakeet-mlx>=0.5.3",
   "mlx>=0.32.4", "numpy>=2.5.4", "httpx>=0.28.1", "segno>=1.6.6",
+  "mlx-lm>=0.31.3",
 ]
 
 [project.optional-dependencies]

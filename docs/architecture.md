@@ -47,7 +47,7 @@ All endpoints sit under a base URL: either `http://127.0.0.1:7821` (Mac local) o
 
 Every request carries `Authorization: Bearer <token>`. WebSocket clients that cannot set headers may send the token as the first text frame `{"type":"auth","token":"…"}` instead. The token is never put in a URL.
 
-- `GET /v1/health` → `{"ok":true,"engine":"parakeet-mlx:tdt-0.6b-v2","ready":true,"debug_retention":false,"correction":"off|available","correction_leaves_machine":false,"correction_host":null}`. The unauthenticated variant returns only `{"ok":true}`. When correction is enabled, `correction_host` is its hostname (no credentials, path or port); otherwise it is `null`. `correction_leaves_machine` is true only for enabled, non-loopback correction.
+- `GET /v1/health` → `{"ok":true,"engine":"parakeet-mlx:tdt-0.6b-v2","ready":true,"debug_retention":false,"correction":"off|available","correction_mode":"off|managed|endpoint","correction_leaves_machine":false,"correction_host":null}`. The unauthenticated variant returns only `{"ok":true}`. For endpoint correction, `correction_host` is its hostname (no credentials, path or port); otherwise it is `null`. `correction_leaves_machine` is true only for enabled, non-loopback correction.
 - `POST /v1/transcribe`: the body is 16 kHz mono PCM16 WAV, capped at 120 s. It returns the same object as a `final` message. Used for tests and as a fallback.
 - `WS /v1/stream`:
   - client → `{"type":"start","sample_rate":16000,"encoding":"pcm_s16le","client":"mac|android","correction":false}`

@@ -116,7 +116,9 @@ def test_external_correction_health(settings):
 
 def test_loopback_hosts():
     for host in ("127.0.0.1", "localhost", "[::1]"):
-        assert not CorrectionConfig(base_url=f"http://{host}:1234/v1").leaves_machine
+        assert not CorrectionConfig(
+            mode="endpoint", base_url=f"http://{host}:1234/v1"
+        ).leaves_machine
 
 
 def test_no_sensitive_fixture_files_in_repo():

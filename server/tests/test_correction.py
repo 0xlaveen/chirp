@@ -89,3 +89,25 @@ def test_correction_final_opt_in_only(settings, server_enabled, client_enabled):
     assert len(calls) == int(server_enabled and client_enabled)
     assert result["text"] == (CLEAN if calls else RAW)
     assert result["raw"] == RAW
+
+
+@pytest.mark.parametrize(
+    "raw,clean,finish,expected",
+    [
+        (
+            "please send the schedule tomorrow before lunch",
+            "please send the schedule",
+            "stop",
+            True,
+        ),
+        ("send it monday no wait make that tuesday", "Send it Tuesday.", "stop", False),
+        ("um uh um uh send it please", "Send it please.", "stop", False),
+        ("please update the API", "Please update the API.", None, True),
+        ("please update the API", "<think>thinking</think> Updated.", "stop", True),
+        ("please update the API", "Please update...", "stop", True),
+    ],
+)
+def test_output_guard(raw, clean, finish, expected):
+    from chirp_server.correction import rejected
+
+    assert rejected(raw, clean, finish) is expected

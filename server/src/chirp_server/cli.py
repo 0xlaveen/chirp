@@ -65,6 +65,7 @@ def parser():
     model = commands.add_parser("model")
     model.add_argument("action", choices=["fetch"])
     model.add_argument("--engine", choices=["mlx", "onnx"], default="mlx")
+    model.add_argument("--cleanup", nargs="?", const="", default=None, metavar="ID")
     debug = commands.add_parser("debug")
     debug.add_argument("action", choices=["purge"])
     check = commands.add_parser("doctor")
@@ -95,9 +96,14 @@ def main():
         print(uri)
         segno.make(uri).terminal(compact=True)
     elif args.command == "model":
-        from .engine.models import fetch
+        if args.cleanup is not None:
+            from .cleanup_models import fetch
 
-        print(fetch(args.engine))
+            print(fetch(args.cleanup))
+        else:
+            from .engine.models import fetch
+
+            print(fetch(args.engine))
     elif args.command == "debug":
         print(f"Purged {Retention(settings).purge(all_files=True)} debug files")
     elif args.command == "service":

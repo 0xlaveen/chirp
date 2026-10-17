@@ -122,3 +122,68 @@ uv run python scripts/render_bench.py
 Model/alternate downloads require the explicit commands/flags documented in [server/README.md](../server/README.md#explicit-optional-downloads-and-cleanup). Default server/bench startup never downloads missing recognition models. Apple benchmarking checks already installed assets and never asks for authorization or installs assets. The initial explicitly requested M1 model probe downloaded only the en-US speech model via AssetInventory; it did not call TCC request APIs or use a microphone. No permissions, services, or Tailscale configuration were changed.
 
 Synthetic WAVs, candidate source/build/models and raw numeric results live under `~/Library/Caches/Chirp/` and may be deleted together. Apple assets are macOS-managed; use OS asset/storage controls. Only numeric benchmark evidence is committed in [bench-data/](bench-data/); no audio or recognized text is retained. These synthetic fixtures do not establish WER on accents, spontaneous speech or microphone noise. Natural recorded fixtures, isolated-host comparisons and Swift live-protocol latency remain TBM, with no production latency budget claimed.
+
+## Optional transcript cleanup (2026-10-17)
+
+Default: **off**. For managed mode choose **Qwen3 4B Instruct 2507, MLX 4-bit**
+(`qwen3-4b-instruct-2507-4bit`). It preserved the intended repair in all three
+repetitions of the two-sentence self-correction case, unlike the newer 2B and 0.8B models.
+All three are explicit catalog choices; speed alone does not select the default.
+
+Hardware: Apple M5 Pro, 64 GiB. Runtime: mlx-lm 0.32.2, MLX 0.32.4, Python 3.13.16.
+The benchmark uses the actual supervised helper, greedy sampling, thinking disabled,
+JSON-delimited source and the built-in general-dictation prompt. Three synthetic inputs
+(schedule/API dictation, a revised meeting day with Kubernetes notes, and a dictated
+Postgres question) repeat three times per model. Inputs and model responses remain in memory;
+only counts, timings and load averages are printed. The warm numbers include pipe transport,
+template application, prefill, generation and output validation. They exclude ASR and network
+latency. Each helper starts once, answers one discarded warmup/cold call, then nine measured
+calls. No transcript prefix/KV cache is retained between requests.
+
+| Model | Pinned revision | Cold first final (ms) | Warm median / min–max (ms) | Accepted / keyword checks | Repair / question checks |
+|---|---|---:|---:|---:|---:|
+| Qwen3 4B Instruct 2507 4-bit | `50d427756c6b1b2fe0c0a10f67fbda1fc8e82c1b` | 2519 | **343.9 / 318.5–374.5** | 9/9 / 9/9 | **3/3 / 3/3** |
+| Qwen3.5 2B 4-bit | `674aaa7240b91e8012fcad5d791b7dfe5ba90207` | 1977 | 177.2 / 173.4–208.9 | 9/9 / 9/9 | 0/3 / 3/3 |
+| Qwen3.5 0.8B 4-bit | `da28692b5f139cb0ec58a356b437486b7dac7462` | 1637 | 93.6 / 86.3–109.5 | 9/9 / 9/9 | 0/3 / 3/3 |
+
+“Accepted” means the defensive output guard passed; it does **not** establish semantic
+correctness. The smaller models retained the superseded Monday in the longer repair case,
+although 0.8B passed the short, one-detail repair. Question checks require a preserved question
+and rollback terms, not an assistant answer. These checks do not establish general accuracy.
+The default model integration test also checks a different pair of revised weekdays.
+
+The final run's one-minute load average ranged 18.2–19.3. An earlier, busier run (load
+27.6–28.7), before the explicit repair example was added to the prompt, measured warm
+medians of 701.6 / 478.4 / 353.7 ms and cold first finals of 14.9 / 15.5 / 7.8 seconds
+for 4B / 2B / 0.8B respectively. Both prompt and host load changed, so the difference
+cannot be attributed to the prompt. The final 4B warm sample meets the approximately
+400 ms aim; it is not a tail-latency guarantee on a shared GPU. Cold loads and load spikes
+may exceed the default eight-second budget, in which case raw text is returned and the
+helper is stopped. The next final retries; idle unload after 60 seconds also makes the
+next final cold. The production timeout includes queue wait, model load and inference.
+
+Candidate discovery checked the Hugging Face [Qwen3.5 0.8B 4-bit model](https://huggingface.co/mlx-community/Qwen3.5-0.8B-4bit)
+and [2B build](https://huggingface.co/mlx-community/Qwen3.5-2B-4bit), both uploaded
+2026-03-02, against Koi's [Qwen3 4B Instruct 2507](https://huggingface.co/mlx-community/Qwen3-4B-Instruct-2507-4bit).
+The newer [Gemma 4 E2B 4-bit](https://huggingface.co/mlx-community/gemma-4-e2b-4bit)
+card specifies mlx-vlm and 3.58 GB of multimodal weights, so it was excluded from this
+lean text-only runtime comparison. No claim of an exhaustive model leaderboard is made.
+
+Explicit acquisition used these commands; there were no cached cleanup weights before
+this run. Downloads populated only the shared Hugging Face cache (roughly 2.28 GB,
+1.75 GB and 0.63 GB of weights respectively, plus tokenizers). No service, application,
+LaunchAgent, token, Tailscale configuration or microphone permission was changed.
+
+```sh
+cd server
+uv sync --locked
+uv run chirp-server model fetch --cleanup qwen3-4b-instruct-2507-4bit
+uv run chirp-server model fetch --cleanup qwen3.5-2b-4bit
+uv run chirp-server model fetch --cleanup qwen3.5-0.8b-4bit
+uv run python scripts/bench_cleanup.py
+uv run pytest -q -m model
+```
+
+Only the three `model fetch --cleanup` commands may download weights. The benchmark and
+model tests use local pinned snapshots. For cache location and removal, see
+[server/README.md](../server/README.md#private-managed-cleanup).
