@@ -40,13 +40,18 @@ class ChirpImeServiceTest {
         var available = true
         var acceptCommit = true
         var acceptComposition = true
+        var disconnectOnRegion = false
         var region: IntRange? = null
         val connection = Proxy.newProxyInstance(InputConnection::class.java.classLoader,
             arrayOf(InputConnection::class.java)) { _, method, args ->
             when (method.name) {
                 "getSelectedText" -> ""
+                "getTextAfterCursor" -> ""
+                "getCursorCapsMode" -> 0
+                "requestCursorUpdates" -> false
+                "getExtractedText" -> android.view.inputmethod.ExtractedText().apply { selectionStart = committed.length; selectionEnd = committed.length }
                 "setComposingText" -> { if (available && acceptComposition) composing = args!![0].toString(); available && acceptComposition }
-                "setComposingRegion" -> { if (available) region = (args!![0] as Int) until (args[1] as Int); available }
+                "setComposingRegion" -> { if (disconnectOnRegion) throw IllegalStateException("synthetic private editor detail"); if (available) region = (args!![0] as Int) until (args[1] as Int); available }
                 "commitText" -> { if (available && acceptCommit) {
                     committed = region?.let { committed.replaceRange(it, args!![0].toString()) } ?: (committed + args!![0])
                     region = null; composing = ""; commits++
@@ -90,7 +95,7 @@ class ChirpImeServiceTest {
         fun partial(seq: Long = 1, text: String = "synthetic") = event(ServerEvent.Partial(seq, text, ""))
         fun final(corrected: Boolean = false) = event(ServerEvent.Final("Synthetic.", "synthetic", corrected))
     }
-    class TestIme : ChirpImeService() {
+    class TestIme : LegacyVoiceImeService() {
         var editor = Editor()
         var info = EditorInfo().apply { inputType = InputType.TYPE_CLASS_TEXT; initialSelStart = 0; initialSelEnd = 0 }
         var paired = true

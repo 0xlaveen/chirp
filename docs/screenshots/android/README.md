@@ -1,10 +1,35 @@
 # Android UI review renders
 
-22 PNGs rendered from the app's actual shared Material 3 `VoicePanel` and Compose `SetupWizard` using Robolectric's native graphics at API 37. All text is a synthetic review fixture; no microphone, phone, real pairing, or transcript is used. The set is below 2 MB.
+All displayed speech is a generated synthetic fixture. No user speech, real pairing
+credential or personal text is included.
 
-- `panel-{idle,connecting,listening,finalizing,error,raw,debug}-{light,dark}.png`: the shared panel; listening uses a 700 px inner-screen width, other states a 360 px cover-screen width. These render the shared view with review controls. IME-specific editing keys/settings and the floating bubble are additionally covered by service tests.
-- `setup-{1,2,3,4}-{light,dark}.png`: wizard screen viewports at 411 × 891 px. Longer content scrolls; these show the initial viewport, not a fabricated full-page layout.
+- `keyboard-{idle,listening,final}-{light,dark}.png`: Robolectric native graphics on
+  API 37, actual HeliBoard QWERTY keys with Chirp's production strip at 411 px width.
+  Final fixtures show the five-second raw chip. These render deterministic UI states.
+- `emulator-keyboard-{idle,listening,final}-{light,dark}.png`: the authorized Android
+  17 fold emulator (`emulator-5580`), actual IME window over the setup test field.
+  A throwaway real Parakeet server receives say-generated speech through PcmCapture
+  and StreamTransport. Listening shows live composing text; final shows committed
+  text and the keyboard still selected. These captures do not simulate a phone mic.
+- `setup-{1,2,3,4}-{light,dark}.png`: Compose wizard initial viewports at 411 × 891 px.
+  The sequence is enable/select keyboard, mic permission, pairing, test. Longer
+  content scrolls; Diagnostics is reachable throughout.
+- `panel-{idle,connecting,listening,finalizing,error,raw,debug}-{light,dark}.png`:
+  shared Material panel for the optional accessibility mic (700 px listening,
+  360 px other states). This optional surface is separate from the full keyboard.
 
-Regenerate from `android/` with `./gradlew testDebugUnitTest --tests '*VoiceUiTest*' --rerun-tasks`. The test task passes an absolute repository output path, so it does not depend on the working directory. Full verification remains `./gradlew lint testDebugUnitTest assembleDebug assembleRelease`.
+Regenerate the Robolectric artifacts from `android/`:
 
-These are rendered review artifacts, not pixel-golden assertions or evidence of One UI behavior on hardware. Font scaling, rotation, folding, Samsung app-ops/FGS enforcement, and editor-specific accessibility behavior still need the operator's phone acceptance run in `docs/android-input-options.md`.
+```sh
+./gradlew testDebugUnitTest --tests '*VoiceUiTest*' --tests '*KeyboardRenderTest*'
+```
+
+For actual emulator captures, use `android/scripts/emulator-check.py` as documented
+in `android/README.md`; it targets only the explicitly authorized emulator serial,
+uses port 7899 and a throwaway HOME, then stops its server and removes its credentials.
+No production server, Mac app or phone is accessed. The emulator has an unrelated
+UWB HAL crash loop; the helper checks specifically for Chirp Java/native crashes.
+
+These are review artifacts, not pixel-golden assertions or Galaxy hardware battery,
+latency or microphone measurements. Samsung editor quirks and folding still need
+operator acceptance on the phone.

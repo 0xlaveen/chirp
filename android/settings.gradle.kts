@@ -5,3 +5,5 @@ dependencyResolutionManagement {
 }
 rootProject.name = "ChirpVoice"
 include(":app")
+
+include(":keyboard")

@@ -1,0 +1,16 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-permission android:name="android.permission.VIBRATE" />
+    <application>
+        <activity android:name="helium314.keyboard.settings.SettingsActivity" android:exported="false"
+            android:theme="@style/platformActivityTheme" android:windowSoftInputMode="adjustResize" />
+        <activity android:name="helium314.keyboard.settings.SettingsActivity2" android:exported="false"
+            android:theme="@style/platformActivityTheme" android:windowSoftInputMode="adjustResize" />
+        <activity android:name="helium314.keyboard.keyboard.emoji.EmojiSearchActivity" android:exported="false"
+            android:theme="@style/TransparentActivityTheme" android:excludeFromRecents="true" android:noHistory="true"
+            android:windowSoftInputMode="adjustResize|stateAlwaysVisible" android:configChanges="orientation|screenSize" />
+        <provider android:name="helium314.keyboard.latin.database.ClipboardContentProvider"
+            android:authorities="@string/clipboard_provider_authority" android:grantUriPermissions="true" android:exported="false">
+            <meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/clipboard_provider_path" />
+        </provider>
+    </application>
+</manifest>

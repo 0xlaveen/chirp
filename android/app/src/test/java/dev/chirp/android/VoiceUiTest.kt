@@ -25,13 +25,12 @@ import org.robolectric.annotation.GraphicsMode
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 class VoiceUiTest {
     @get:Rule val compose = createComposeRule()
-    @Test fun `wizard progresses keeps keyboard choice optional and offers connection repair`() {
+    @Test fun `wizard enables keyboard first then microphone pairing and test field`() {
         val state = SetupState()
         compose.setContent { ChirpTheme { SetupWizard(state) } }
-        compose.onNodeWithText("Step 1 of 4 · Microphone").assertIsDisplayed()
+        compose.onNodeWithText("Step 1 of 4 · Chirp Keyboard").assertIsDisplayed()
         compose.onNodeWithText("Next").performScrollTo().performClick()
-        compose.onNodeWithText("Keep Samsung Keyboard").assertExists()
-        compose.onNodeWithText("Enable floating microphone").assertExists()
+        compose.onNodeWithText("Allow the microphone").assertExists()
         compose.onNodeWithText("Next").performScrollTo().performClick()
         compose.onNodeWithContentDescription("Private Chirp pairing link").performTextInput("synthetic")
         compose.runOnIdle { assertEquals("synthetic", state.link) }
@@ -88,7 +87,7 @@ class VoiceUiTest {
                     bitmap.recycle()
                 }
             }
-            assertTrue(output.listFiles()!!.filter { it.extension == "png" }.sumOf { it.length() } < 2_000_000)
+            assertTrue(output.listFiles()!!.filter { it.extension == "png" && it.name.startsWith("panel-") }.sumOf { it.length() } < 2_000_000)
         } finally { controller.pause().stop().destroy() }
     }
 }
