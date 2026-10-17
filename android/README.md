@@ -31,9 +31,9 @@ see [dictionary provenance and licenses](keyboard/UPSTREAM.md#english-typing-and
 The number row defaults on at inner-screen widths (600 dp and wider). Unfolded
 landscape defaults to split; cover layouts stay compact. One-handed, split, clipboard
 history and emoji are reachable from the expandable toolbar. Haptics follow Android's
-system setting. Light/dark follows the system. **Swipe typing: not available**; no
-proprietary gesture library is bundled. No compatible open-source HeliBoard decoder is
-currently available; the source review is recorded in `keyboard/UPSTREAM.md`.
+system setting. Light/dark follows the system. The default look is **Gboard-like**
+(see [Keyboard look](#keyboard-look-and-swipe-typing)). **Swipe typing is optional**: no gesture
+library is bundled, but setup and Chirp settings can load one the user supplies.
 
 Setup opens the first unfinished prerequisite and advances after returning from system
 settings. QR pairing is primary; paste is secondary. A saved pairing shows the Mac host
@@ -429,3 +429,92 @@ normal startup. No physical device or production server was used.
 
 This is a second local commit before publishing, still **0.5.1 (7)**. The current signed
 release APK is **26,950,808 bytes (25.70 MiB)**, arm64-v8a and x86_64. No APK was published.
+
+## Keyboard look and swipe typing
+
+### Keyboard look
+
+Chirp settings (the Chirp section at the top of Keyboard layouts & settings) and the last
+setup step have a **Keyboard look** chooser with a small preview of each option:
+
+| Look | HeliBoard settings it writes |
+| --- | --- |
+| **Gboard-like** (default) | Rounded style, key borders on, *Dynamic* (Material You) colours day and night |
+| **Samsung-like** | Rounded style, key borders on, user colour themes `Samsung-like` / `Samsung-like dark` |
+| HeliBoard classic | Material style, no borders, Light / Dark (HeliBoard's own defaults) |
+| HeliBoard rounded | Rounded style, borders, Light / Dark |
+| HeliBoard Holo | Holo style, Holo White |
+
+Every look is applied only through HeliBoard's existing theme preferences (`theme_style`,
+`theme_key_borders`, `theme_colors`, `theme_colors_night`, `theme_auto_day_night`) and its
+user colour themes. Nothing in the vendored keyboard was changed for this. The Gboard-like
+look follows the wallpaper through Android's dynamic colours: neutral keys with gaps on a
+tinted background, accent-tinted Shift/Backspace/?123 keys, an accent Enter key and
+long-press hint labels. The Samsung-like look uses neutral white/grey (light) or charcoal
+(dark) keys, grey function keys and a blue Enter key. Both can be fine-tuned under
+Appearance, which also still offers every HeliBoard colour, style and background. When
+Appearance holds anything other than a preset, the chooser shows it as a custom look.
+Key height, number row, one-handed and split settings are unchanged.
+
+The migration `chirp_keyboard_look_v1` runs once in `ChirpApplication`, next to the existing
+`chirp_keyboard_defaults_v1` / typing defaults. An install with no theme preference at all
+(fresh, or 0.5.x that never opened Appearance) switches to the Gboard-like look. If any
+theme preference was already written, the user chose it explicitly and it is kept.
+Later choices are never overwritten.
+
+The Chirp row now takes its colours from the active HeliBoard theme instead of a fixed green
+palette. Its background is transparent, so HeliBoard's own suggestion-row colour (or a
+background image) shows through. The idle mic uses the key text colour like Gboard's toolbar
+icons; while listening it becomes an accent pill with a contrasting icon. The waveform and
+Polishing… shimmer use the accent, darkened or lightened until it reaches 3:1 contrast
+against the row. **Use raw** and the style chip use a translucent accent chip.
+The red debug-retention banner is unchanged.
+
+### Swipe typing: findings and decision
+
+HeliBoard's gesture typing needs a native decoder. HeliBoard 4.2 ships none. It supports
+`System.load` of a user-supplied library (`JniUtils`, `LoadGestureLibPreference`),
+normally Google's proprietary `libjni_latinimegoogle.so`, with a SHA-256 check against a
+known release for each ABI. Chirp must not bundle or download that file. Options reviewed
+(2026-10-18):
+
+- **User-supplied library through HeliBoard's loader (implemented).** Same mechanism and
+  checksums as HeliBoard's *Load gesture typing library*. The user obtains the file and
+  chooses it; Chirp does not distribute, download or link to it. Quality matches Gboard's
+  decoder, because it is that decoder.
+- **HeliBoard's own open-source decoder** ([NLnet GestureTyping](https://nlnet.nl/project/GestureTyping/)):
+  planned as a GPL drop-in for the same JNI interface. Gesture data gathering runs until
+  November 2026; no release exists yet. This is the preferred future option, because it
+  would need no Chirp UI change beyond bundling it.
+- **[CleverKeys](https://github.com/tribixbite/CleverKeys)** (GPL-3.0, fork of Unexpected
+  Keyboard): an on-device CTC/transformer swipe model with ONNX Runtime (MIT), about
+  89% top-1 on its own English benchmark. Its licence is compatible, but it is a different
+  keyboard. Using it here means porting its decoder, model and ONNX Runtime into HeliBoard's
+  batch-input path (several MB of APK and a separate maintenance burden). That needs an
+  operator decision on size and scope; it is not a release-ready drop-in.
+- **FlorisBoard `StatisticalGlideTypingClassifier`** (Apache-2.0, GPL-3.0 compatible):
+  small and pure Kotlin, but FlorisBoard itself labels glide typing alpha and has it
+  disabled by default. Its quality does not justify replacing the option above.
+- **AnySoftKeyboard** (Apache-2.0) gesture typing: separate architecture with widely reported
+  accuracy problems. **FUTO Keyboard**'s decoder uses the Source First licence, which is not
+  open-source compatible, so it was rejected.
+
+**Enable swipe typing** (setup → last step, or Chirp settings):
+
+1. The card explains that Chirp has no built-in swipe typing, that a compatible library is
+   usually Google's `libjni_latinimegoogle.so` from a GApps package, that Chirp never
+   downloads or includes it, and that using it is the user's choice under that library's
+   own licence. It names the ABI the phone needs (`arm64-v8a` on the Fold).
+2. **Add gesture library…** opens the system file picker. The file is copied privately
+   (64 MB limit) and checked: an ELF shared object for this ABI, then SHA-256.
+3. A matching checksum shows **Verified gesture library**. Anything else shows **Unknown
+   library**, with the start of its hash and a warning, and needs an explicit
+   **Use anyway**. A wrong ABI or a non-library file is rejected and deleted.
+4. Chirp installs the file exactly where HeliBoard's loader expects it (read-only
+   `files/libjni_latinime.so`, checksum in `lib_checksum`) and restarts, because native
+   code loads once per process. HeliBoard's Gesture typing settings then appear.
+5. When the library is active, the card offers a **Swipe to type** switch and **Remove
+   gesture library**. A file that fails to load is reported, with a Remove action.
+
+The card warns that the library runs inside Chirp with Chirp's permissions, including
+network access. Release smoke still asserts that no `libjni_latinimegoogle` file is packaged.

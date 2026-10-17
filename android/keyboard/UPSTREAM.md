@@ -113,7 +113,11 @@ Additional CHIRP upstream changes in round 4:
 
 ### Swipe typing
 
-**Swipe typing: not available.** No proprietary `libjni_latinimegoogle.so` is bundled.
+**No gesture decoder is bundled.** No proprietary `libjni_latinimegoogle.so` is shipped or
+downloaded. Since 2026-10-18 the host's `SwipeTyping.kt` offers a guided flow that feeds a
+user-chosen file into HeliBoard's unmodified user-library loader (`JniUtils`, same file name,
+`lib_checksum` preference and SHA-256 table); see the Android README for the option review.
+The text below records the original review.
 [HeliBoard's current README](https://github.com/HeliBorg/HeliBoard) says there is no
 compatible open-source library; its [FAQ](https://github.com/HeliBorg/HeliBoard/wiki/FAQ)
 describes loading an external compatible library. The open-source
@@ -122,8 +126,14 @@ describes loading an external compatible library. The open-source
 not drop-in HeliBoard native decoders. Porting a different gesture engine and language
 model is a separate integration project, not a viable release-ready replacement for
 this pinned HeliBoard ABI. The funded [gesture-typing project](https://nlnet.nl/project/GestureTyping)
-is future work, not a bundled compatible implementation in v4.2. Setup and the README
-state the limitation explicitly. The release smoke also rejects a proprietary glide library.
+is future work, not a bundled compatible implementation in v4.2. The release smoke also
+rejects a packaged proprietary glide library.
+
+### Keyboard looks (2026-10-18)
+
+Chirp's Gboard-like (default) and Samsung-like looks are written by the host's
+`KeyboardLook.kt` into HeliBoard's existing theme preferences and user colour themes
+(`KeyboardTheme.writeUserColors`). No upstream source or resource changed.
 
 - `keyboard/KeyboardLayoutSet.kt`: copy `mIsSplitKeyboardEnabled` into the layout/cache
   identity. Upstream 4.2 otherwise leaves `isSplitLayoutEnabled` false even when the

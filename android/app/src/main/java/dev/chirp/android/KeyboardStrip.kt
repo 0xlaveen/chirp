@@ -14,6 +14,7 @@ import com.google.android.material.button.MaterialButton
 /** Shares HeliBoard's suggestion row: idle mic at the end, status replaces suggestions. */
 @SuppressLint("SetTextI18n")
 internal class KeyboardStrip(context: Context) : LinearLayout(context) {
+    private val palette = StripColors.of(context)
     val status = context.label("Tap mic", 14f).apply {
         maxLines = 1; ellipsize = TextUtils.TruncateAt.END
         accessibilityLiveRegion = View.ACCESSIBILITY_LIVE_REGION_POLITE
@@ -26,19 +27,28 @@ internal class KeyboardStrip(context: Context) : LinearLayout(context) {
         maxLines = 1; ellipsize = TextUtils.TruncateAt.END
         setPadding(context.dp(8), 0, context.dp(8), 0)
         background = android.graphics.drawable.GradientDrawable().apply {
-            setColor(VoicePalette.of(context).accent and 0x00ffffff or 0x22000000)
+            setColor(palette.chip)
             cornerRadius = context.dp(10).toFloat()
         }
     }
     private var pulse: android.animation.ValueAnimator? = null
     private var pulsingPolish = false
     private var stage = ""
-    private val meter = Waveform(context)
+    private val meter = Waveform(context).apply { color = palette.highlight }
     private var suggestions: View? = null
     private var expanded = false
     init {
         gravity = Gravity.CENTER_VERTICAL
-        setBackgroundColor(VoicePalette.of(context).background)
+        // Transparent: HeliBoard's own suggestion-row background (colour or image) shows through.
+        setBackgroundColor(android.graphics.Color.TRANSPARENT)
+        val clear = android.content.res.ColorStateList.valueOf(android.graphics.Color.TRANSPARENT)
+        cancel.backgroundTintList = clear; cancel.setTextColor(palette.ink)
+        raw.backgroundTintList = android.content.res.ColorStateList.valueOf(palette.chip); raw.setTextColor(palette.ink)
+        this.style.setTextColor(palette.ink)
+        for (button in listOf(mic, cancel, raw)) {
+            button.cornerRadius = context.dp(20)
+            button.rippleColor = android.content.res.ColorStateList.valueOf(palette.ink and 0x00ffffff or 0x22000000)
+        }
         addView(cancel, LayoutParams(context.dp(48), LayoutParams.MATCH_PARENT))
         addView(meter, LayoutParams(context.dp(32), LayoutParams.MATCH_PARENT))
         addView(status, LayoutParams(0, LayoutParams.MATCH_PARENT, 1f).apply { status.gravity = Gravity.CENTER_VERTICAL })
@@ -80,7 +90,7 @@ internal class KeyboardStrip(context: Context) : LinearLayout(context) {
         }
         status.text = if (retention) "Debug retention on · $message" else DictationAction.forStatus(message)?.label ?: message
         status.visibility = if (full) VISIBLE else GONE
-        status.setTextColor(if (retention) android.graphics.Color.WHITE else VoicePalette.of(context).ink)
+        status.setTextColor(if (retention) android.graphics.Color.WHITE else palette.ink)
         status.setBackgroundColor(if (retention) android.graphics.Color.rgb(164, 24, 24) else android.graphics.Color.TRANSPARENT)
         status.contentDescription = status.text
         cancel.visibility = if (full) VISIBLE else GONE
@@ -100,8 +110,8 @@ internal class KeyboardStrip(context: Context) : LinearLayout(context) {
                 addUpdateListener {
                     val value = it.animatedValue as Float
                     if (pulsingPolish) {
-                        val ink = VoicePalette.of(context).ink
-                        val highlight = VoicePalette.of(context).accent
+                        val ink = palette.ink
+                        val highlight = palette.highlight
                         val width = status.width.coerceAtLeast(1).toFloat()
                         status.paint.shader = android.graphics.LinearGradient(-width, 0f, width, 0f,
                             intArrayOf(ink, highlight, ink), floatArrayOf(0f, .5f, 1f), android.graphics.Shader.TileMode.CLAMP).apply {
@@ -120,9 +130,9 @@ internal class KeyboardStrip(context: Context) : LinearLayout(context) {
             else -> mic.setIconResource(R.drawable.ic_mic)
         }
         mic.backgroundTintList = android.content.res.ColorStateList.valueOf(
-            if (active) VoicePalette.of(context).accent else VoicePalette.of(context).background)
-        mic.iconTint = android.content.res.ColorStateList.valueOf(if (active) android.graphics.Color.WHITE else VoicePalette.of(context).accent)
-        mic.setTextColor(if (active) android.graphics.Color.WHITE else VoicePalette.of(context).accent)
+            if (active) palette.accent else android.graphics.Color.TRANSPARENT)
+        mic.iconTint = android.content.res.ColorStateList.valueOf(if (active) palette.onAccent else palette.ink)
+        mic.setTextColor(if (active) palette.onAccent else palette.ink)
         mic.isEnabled = !finishing
         mic.contentDescription = if (polishing) "Polishing dictation" else if (active) "Stop dictation" else "Microphone: tap to dictate, long press for options"
         if (!active || finishing) level(0.0)
@@ -138,7 +148,10 @@ internal class KeyboardStrip(context: Context) : LinearLayout(context) {
 
 private class Waveform(context: Context) : View(context) {
     var level = 0.0
-    private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = VoicePalette.of(context).accent; strokeCap = Paint.Cap.ROUND }
+    private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply { strokeCap = Paint.Cap.ROUND }
+    var color: Int
+        get() = paint.color
+        set(value) { paint.color = value; invalidate() }
     init { contentDescription = "Microphone level"; importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_NO }
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)

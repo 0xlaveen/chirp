@@ -34,6 +34,16 @@ These are review artifacts, not pixel-golden assertions or Galaxy hardware batte
 latency or microphone measurements. Samsung editor quirks and folding still need
 operator acceptance on the phone.
 
+## Keyboard looks
+
+- `keyboard-look-{gboard,samsung}-{idle,listening}-{light,dark}.png`: Robolectric
+  renders of the Gboard-like default (HeliBoard Rounded + borders, dynamic colours) and
+  the Samsung-like look (Rounded + borders, Chirp's One UI-style user colours). The
+  Chirp strip takes its ink, accent and highlight from the active keyboard colours.
+  Regenerate with `./gradlew testDebugUnitTest --tests '*KeyboardRenderTest*'`.
+- `before-keyboard-{inner,cover}-{light,dark}.png`, `before-keyboard-inner-landscape-light.png`:
+  the round-4 release captures kept for comparison (Material keys, no borders, fixed
+  green strip). The current `release-keyboard-*.png` files show the new default look.
 ## Release captures (round 4)
 
 `release-*.png` are direct, unmodified PNG captures from the minified release APK on
