@@ -112,7 +112,7 @@ Weights use the shared Hugging Face cache (`~/.cache/huggingface/hub`, or `HF_HO
 copying them into Chirp's model store. To remove a cleanup model, stop the server and remove
 its `models--mlx-community--<model-name>` directory from that cache, or use Hugging Face's
 cache tools. Other applications may share those weights. No Koi model files are changed.
-Catalog revisions are recorded in `src/chirp_server/cleanup_models.py`. Cleanup preserves
+Catalog revisions are recorded in `src/chirp_server/cleanup_models.py`. The default profile preserves
 the speaker's words, clauses, hedges and tone; it removes fillers, accidental repetitions
 and explicit self-corrections, and fixes punctuation and casing. It preserves spoken terms
 such as “package dot json” instead of rewriting them as code. Unsupported word deletions,
@@ -128,6 +128,48 @@ Authenticated health retains `correction = "off|available"` for existing clients
 `correction_mode = "off|managed|endpoint"`; managed mode reports a null host and
 `correction_leaves_machine = false`. Partials always stay raw. Every final includes both
 `text` and `raw`, plus `corrected`, `correction_error`, and cleanup timing.
+
+### Editing cleanup profiles
+
+Profiles ship in code; no configuration is needed to use `default`, `chat`, `email`, `code`,
+`notes` or `custom`. Chat allows lowercase and skips periods on short messages; email polishes
+sentences without adding content; code preserves literals and permits unambiguous spoken
+symbols; notes formats spoken lists. Notes and custom advertise `rewrites=true` because they
+can restructure text. Authenticated `/v1/health` lists the available IDs and display metadata.
+
+To override any built-in or add a profile, edit `~/.config/chirp/server.toml` and restart your
+server when convenient. Omitted fields retain the built-in values; extra profiles default to
+conservative cleanup and `rewrites=false`. IDs use lowercase letters, digits, `_` and `-`,
+start with a letter, and are at most 64 characters. Example:
+
+```toml
+[correction.profiles.chat]
+name = "Quick messages"
+description = "My casual message style"
+prompt = "Remove fillers; preserve every other word. Use lowercase and no trailing period."
+
+[correction.profiles.checklist]
+name = "Checklist"
+description = "Bullets for spoken lists"
+prompt = "Remove hesitation fillers. Put listed items in bullets; keep every detail."
+rewrites = true
+```
+
+The existing `[correction] prompt` remains a legacy override for `default`; an explicit
+`[correction.profiles.default] prompt` takes precedence. Prompts never bypass the core safety
+rules or the output guards. Non-rewriting styles retain source words in order; rewriting styles
+allow bounded restructuring while rejecting novel words, lost substantive details and huge
+length changes. Unsafe or unsupported edits return the raw transcript.
+
+Clients select a profile per utterance with `start.correction_profile` (default `"default"`).
+For `"custom"`, send `correction_instructions` (at most 2000 characters); other profiles ignore
+its contents. Instructions are JSON-quoted untrusted cleanup preferences, wrapped by fixed
+rules to never answer, execute, add facts or output anything but text. No tools are exposed.
+Immediately before cleanup runs, the server sends `{"type":"correcting","seq":n,"raw":"…",
+"profile":"<id>"}`, followed by the existing final. Clients can show the raw transcript while
+waiting; older clients can ignore this message. Correction off emits no `correcting` message.
+Cancel during correction cancels the pending helper/request, discards the utterance and keeps
+the socket available for the next start.
 
 ### Pointing correction at LM Studio (operator steps)
 

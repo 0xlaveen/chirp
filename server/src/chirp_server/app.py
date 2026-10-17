@@ -62,6 +62,8 @@ class Utterance:
         self.offset = 0
         self.seq = 0
         self.correction = False
+        self.profile = "default"
+        self.instructions = ""
         self.leased = False
         self.failure = False
         self.aborted = False
@@ -70,6 +72,15 @@ class Utterance:
         self.peak = self.rms = 0.0
 
     async def start(self, control):
+        profile = control.get("correction_profile", "default")
+        instructions = control.get("correction_instructions", "")
+        if (
+            not isinstance(profile, str)
+            or profile not in self.settings.correction.resolved_profiles
+            or not isinstance(instructions, str)
+            or len(instructions) > 2000
+        ):
+            raise AudioError()
         if (
             control.get("sample_rate") != 16000
             or control.get("encoding") != "pcm_s16le"
@@ -80,6 +91,8 @@ class Utterance:
         await asyncio.wait_for(self.worker.lease.acquire(), self.settings.queue_timeout)
         self.leased = True
         self.correction = control.get("correction", False)
+        self.profile = profile
+        self.instructions = instructions if profile == "custom" else ""
         self.stream = await self.worker.call(self.worker.engine.open_stream)
         await self.ws.send_json(
             {
@@ -187,6 +200,14 @@ class Utterance:
         self.release()
         if self.cancelled:
             return self.discard()
+        enabled = self.correction and self.settings.correction.enabled and bool(raw)
+        if enabled:
+            self.seq += 1
+            await self.ws.send_json(
+                {"type": "correcting", "seq": self.seq, "raw": raw, "profile": self.profile}
+            )
+        if self.cancelled:
+            return self.discard()
         # A cancel racing this task cancels the pending correction request with it.
         self.correcting = asyncio.create_task(
             make_final(
@@ -195,7 +216,9 @@ class Utterance:
                 self.first_partial,
                 started,
                 self.corrector,
-                self.correction,
+                enabled,
+                self.profile,
+                self.instructions,
             )
         )
         try:
@@ -240,10 +263,14 @@ class Utterance:
             self.release()
 
 
-async def make_final(raw, pcm, first_partial, started, corrector, enabled):
+async def make_final(
+    raw, pcm, first_partial, started, corrector, enabled, profile="default", instructions=""
+):
     finalized = (time.perf_counter() - started) * 1000
     correction_started = time.perf_counter()
-    result = await corrector.process(raw) if enabled else CorrectionResult(raw)
+    result = (
+        await corrector.process(raw, profile, instructions) if enabled else CorrectionResult(raw)
+    )
     return {
         "type": "final",
         "text": result.text,
@@ -319,6 +346,9 @@ def create_app(settings=None, engine=None, token=None, corrector=None):
                 "correction_mode": correction.mode,
                 "correction_leaves_machine": correction.enabled and correction.leaves_machine,
                 "correction_host": correction.host,
+                "correction_profiles": [
+                    profile.metadata() for profile in correction.resolved_profiles.values()
+                ],
             }
         )
 

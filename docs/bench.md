@@ -270,3 +270,66 @@ it does not select an older prompt. `--model` selects a cached catalog model and
 `--repetitions` repeats the full set. Benchmark output contains metrics and synthetic
 case IDs, never transcript text. No running service, LaunchAgent, token, Chirp user
 configuration or Tailscale state was accessed or modified for this tuning.
+
+## Cleanup profiles evaluation (2026-10-17)
+
+The production Qwen3 4B Instruct 2507 MLX 4-bit model passed **59/59 synthetic cases**
+with the six built-in profiles. The default profile retains the original 40 cases;
+19 new cases exercise casual chat punctuation and hedges, polished email sentences,
+literal code and spoken symbols, notes bullets, custom formatting, and hostile custom
+instructions or instruction-like dictated text. Each profile has a 90% regression floor
+in the real-model test; the two smaller model alternatives retain their existing
+conservative-only floors. Cleanup stays off by default.
+
+| Profile | Accuracy | Warm median (ms) | Warm min–max (ms) | Guard fallbacks |
+|---|---:|---:|---:|---:|
+| `default` | 40/40 (100%) | 412.3 | 322.5–985.7 | 0/40 |
+| `chat` | 3/3 (100%) | 314.1 | 311.2–350.0 | 0/3 |
+| `email` | 3/3 (100%) | 405.4 | 398.7–436.4 | 0/3 |
+| `code` | 6/6 (100%) | 226.5 | 195.3–380.7 | 1/6 |
+| `notes` | 3/3 (100%) | 400.3 | 295.8–413.5 | 0/3 |
+| `custom` | 4/4 (100%) | 325.4 | 298.4–434.6 | 0/4 |
+
+Hardware and pinned model revision are the same as above (M5 Pro, 64 GiB,
+`50d427756c6b1b2fe0c0a10f67fbda1fc8e82c1b`), using the locked runtime.
+One fresh supervised helper served one discarded cold/warmup request, then one
+sequential pass over all 59 cases. Cold first final was **4603.1 ms**;
+overall warm median was **397.7 ms**. One-minute host load ranged
+9.5–12.6. Timings include profile prompt construction, pipe transport,
+template/prefill, generation and guards, and exclude ASR and network. No per-profile
+cold-start claim is made because one helper serves all profiles. The eval timeout is
+120 seconds; production retains its eight-second whole-call timeout and raw fallback.
+These shared-host measurements are observations, not latency guarantees.
+
+All 59 results matched normalized expected words and passed required-content,
+must-drop and applicable formatting checks. The scorer now also checks requested
+trailing punctuation and literal bullet/identifier fragments; normalized word equality
+alone cannot establish chat, code or bullet-format correctness. The sole fallback was in the code profile: the guard preserved raw text that already
+satisfied the fixture, so it counted as correct.
+A fallback counts as correct only if the returned raw text itself satisfies the fixture.
+
+The immutable safety wrapper applies to every profile, including overrides. Client custom
+preferences are JSON-quoted as untrusted data between core rules. Rewriting profiles permit
+list formatting and bounded transition/conjunction removal while preserving substantive word
+order and multiplicity, negations and technical fragments; they reject novel words and huge
+length changes. Code additionally checks literal casing and symbol multiplicity, allowing
+only bounded spoken-symbol conversions. Fake-helper regressions cover `correcting` before
+helper startup, cancellation after `correcting` with no later final or retention, and a v1
+reader ignoring the new event. Heuristic guards and these small tuning fixtures do not
+establish semantic safety or accuracy on arbitrary natural dictation.
+
+Metrics are in [cleanup-profiles.json](bench-data/cleanup-profiles.json); fixtures remain
+synthetic and no transcript or model response is written by the benchmark. The required
+validation passed with **173 ordinary tests and all 5 real-model tests**, locked sync,
+Ruff lint and Ruff format checks. Validation used a throwaway HOME, cached local weights
+and ephemeral test ports; no running service, LaunchAgent, token, Chirp user configuration
+or Tailscale state was touched. No weights were downloaded.
+
+To reproduce the cached profile benchmark:
+
+```sh
+cd server
+HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 uv run python scripts/bench_cleanup.py \
+  --model qwen3-4b-instruct-2507-4bit --label profiles
+uv run pytest -q -m model
+```

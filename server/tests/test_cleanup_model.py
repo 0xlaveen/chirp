@@ -24,12 +24,19 @@ async def test_real_cleanup_eval(model_id):
         pytest.skip("cleanup weights missing; explicitly run model fetch --cleanup")
     cases = load_cases(Path(__file__).with_name("cleanup_eval.jsonl"))
     corrector = Corrector(CorrectionConfig(mode="managed", model=model_id, timeout=120))
+    # Alternatives retain their existing conservative regression contract. New styles
+    # are evaluated on the production 4B model only.
+    if model_id != DEFAULT_MODEL:
+        cases = [case for case in cases if case.get("profile", "default") == "default"]
     failures = []
+    groups = {}
     lost_content = []
     try:
         for case in cases:
-            result = await corrector.process(case["raw"])
+            profile = case.get("profile", "default")
+            result = await corrector.process(case["raw"], profile, case.get("instructions", ""))
             measured = score(case, result.text)
+            groups.setdefault(profile, []).append(measured.passed)
             if not measured.passed:
                 failures.append(case["id"])
             if not measured.must_keep:
@@ -37,5 +44,7 @@ async def test_real_cleanup_eval(model_id):
         assert 1 - len(failures) / len(cases) >= THRESHOLDS[model_id], failures
         if model_id == DEFAULT_MODEL:
             assert not lost_content, lost_content
+            for profile, passed in groups.items():
+                assert sum(passed) / len(passed) >= 0.90, profile
     finally:
         await corrector.close()

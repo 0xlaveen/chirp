@@ -50,7 +50,9 @@ def score(case: dict, text: str) -> Score:
         must_keep=all(contains(words, phrase) for phrase in case["must_keep"])
         and all(phrase in text for phrase in case.get("must_keep_literal", [])),
         must_drop=all(not contains(words, phrase) for phrase in case["must_drop"]),
-        unchanged=not case.get("unchanged", False) or text == case["raw"],
+        unchanged=(not case.get("unchanged", False) or text == case["raw"])
+        and (not case.get("required_suffix") or text.endswith(case["required_suffix"]))
+        and (not case.get("forbidden_suffix") or not text.endswith(case["forbidden_suffix"])),
     )
 
 

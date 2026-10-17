@@ -8,6 +8,7 @@ from starlette.testclient import TestClient
 from test_protocol import final
 
 from chirp_server.app import create_app
+from chirp_server.config import CorrectionConfig
 from chirp_server.correction import CorrectionResult
 from chirp_server.engine import FakeEngine
 from chirp_server.engine.fake import FakeStream
@@ -16,7 +17,7 @@ from chirp_server.retention import Retention
 
 def next_non_partial(ws):
     """First non-partial message after a cancel: must be the fresh start's ready."""
-    while (message := ws.receive_json())["type"] == "partial":
+    while (message := ws.receive_json())["type"] in {"partial", "correcting"}:
         pass
     return message
 
@@ -37,7 +38,7 @@ def test_cancel_during_finish_prevents_correction_and_retention(settings, monkey
             return BlockedStream(self)
 
     class Corrector:
-        async def process(self, raw):
+        async def process(self, raw, profile="default", instructions=""):
             corrected.append(True)
             return CorrectionResult(raw)
 
@@ -45,6 +46,7 @@ def test_cancel_during_finish_prevents_correction_and_retention(settings, monkey
     monkeypatch.setattr(Retention, "save", lambda *args: retained.append(True))
     settings.idle_seconds = 5
     settings.debug_retain = True
+    settings.correction = CorrectionConfig(mode="managed")
     with TestClient(create_app(settings, BlockedEngine(), TOKEN, Corrector())) as client:
         with client.websocket_connect("/v1/stream", headers=HEADERS) as ws:
             ws.send_json(dict(START, correction=True))
@@ -77,7 +79,7 @@ def test_cancel_during_pending_correction_cancels_request(settings, monkeypatch)
     retained = []
 
     class HangingCorrector:
-        async def process(self, raw):
+        async def process(self, raw, profile="default", instructions=""):
             entered.set()
             await asyncio.Event().wait()
             return CorrectionResult(raw)
@@ -85,6 +87,7 @@ def test_cancel_during_pending_correction_cancels_request(settings, monkeypatch)
     monkeypatch.setattr(Retention, "save", lambda *args: retained.append(True))
     settings.idle_seconds = 5
     settings.debug_retain = True
+    settings.correction = CorrectionConfig(mode="managed")
     with TestClient(create_app(settings, FakeEngine(), TOKEN, HangingCorrector())) as client:
         with client.websocket_connect("/v1/stream", headers=HEADERS) as ws:
             ws.send_json(dict(START, correction=True))
