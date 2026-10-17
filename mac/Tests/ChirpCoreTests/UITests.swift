@@ -8,11 +8,11 @@ import Testing
     @Test func eachOutcomeHasItsWording() {
         let plain = FinalResult(text: "hello")
         #expect(OutcomePresentation.of(.inserted(.ax), final: plain) == .init(status: "Inserted", linger: 1.2))
-        #expect(OutcomePresentation.of(.inserted(.paste), final: plain).status == "Inserted (paste)")
-        #expect(OutcomePresentation.of(.copied, final: plain) == .init(status: "Copied — press ⌘V", linger: 3))
-        #expect(OutcomePresentation.of(.insertedUnverified, final: plain).status == "Inserted? If nothing appeared, press ⌘V")
+        #expect(OutcomePresentation.of(.inserted(.paste), final: plain).status == "Inserted")
+        #expect(OutcomePresentation.of(.copied, final: plain) == .init(status: "Copied — ⌘V", indicator: .clipboard, linger: 3))
+        #expect(OutcomePresentation.of(.insertedUnverified, final: plain).status == "Inserted? ⌘V if empty")
         let secure = OutcomePresentation.of(.refusedSecure, final: plain)
-        #expect(secure.isError && secure.status == "Secure field — nothing inserted")
+        #expect(secure.isError && secure.status == "Secure field — not inserted" && secure.indicator == .warning)
     }
 
     @Test func useRawIsOfferedOnlyForInsertedCorrections() {
@@ -80,6 +80,13 @@ import Testing
     // The material composited over a mid-tone desktop, measured from the light and dark snapshots.
     private let lightMaterial: HUDColors.RGB = (0.78, 0.80, 0.85)
     private let darkMaterial: HUDColors.RGB = (0.27, 0.29, 0.35)
+    // The flat stand-ins used for Increase Contrast and the snapshots.
+    @Test func textIsReadableOnTheFlatSurfaces() {
+        #expect(contrast(HUDColors.errorLight, HUDColors.surfaceLight) >= 4.5)
+        #expect(contrast(HUDColors.errorDark, HUDColors.surfaceDark) >= 4.5)
+        #expect(contrast(HUDColors.actionLight, HUDColors.surfaceLight) >= 4.5)
+        #expect(contrast(HUDColors.actionDark, HUDColors.surfaceDark) >= 4.5)
+    }
 
     @Test func errorTextMeetsWCAGAANormalText() {
         #expect(contrast(HUDColors.errorLight, lightMaterial) >= 4.5)
@@ -151,7 +158,7 @@ import Testing
             view.subviews.flatMap { ($0 as? NSTextField).map { [$0] } ?? labels(in: $0) }
         }
         let rowLabels = labels(in: form.view).filter { $0.stringValue.hasSuffix(":") && $0.alignment == .right }
-        #expect(rowLabels.count == 7)
+        #expect(rowLabels.count == 8)
         let edges = rowLabels.map { form.view.convert($0.bounds, from: $0).maxX }
         #expect(edges.allSatisfy { abs($0 - edges[0]) < 0.5 })
         let controlEdges = [form.hotkey, form.launch, form.serverURL, form.micButton].map { form.view.convert($0.bounds, from: $0).minX }
@@ -191,11 +198,14 @@ import Testing
         #expect(files.count == Snapshots.allScenarios.count * 2)
         #expect(try FileManager.default.contentsOfDirectory(atPath: dir.path).count == files.count)
         let names = Set(files.map(\.lastPathComponent))
-        for state in ["listening", "listening-multiline", "finalizing", "inserted", "copied", "unverified-ax", "secure-field",
+        for state in ["listening", "listening-multiline", "listening-contrast", "listening-reduce-motion", "finalizing", "inserted", "copied", "unverified-ax", "secure-field",
                       "no-mic-signal", "debug-badge", "correction-use-raw", "cleaned-no-raw-button"] {
             #expect(names.contains("hud-\(state)-light.png") && names.contains("hud-\(state)-dark.png"))
         }
         #expect(names.contains("settings-ready-dark.png") && names.contains("menu-idle-light.png") && names.contains("menu-input-picker-dark.png"))
+        for name in ["onboarding-welcome", "onboarding-try-it-success", "onboarding-microphone-blocked", "about", "settings-custom-hotkey-sounds"] {
+            #expect(names.contains("\(name)-light.png") && names.contains("\(name)-dark.png"))
+        }
         for url in files {
             let data = try Data(contentsOf: url)
             #expect(data.count < 250_000, "\(url.lastPathComponent) is too big to commit")

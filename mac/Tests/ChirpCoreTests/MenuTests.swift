@@ -1,4 +1,5 @@
 import Foundation
+import Carbon.HIToolbox
 import Testing
 @testable import ChirpCore
 @testable import ChirpUI
@@ -213,8 +214,25 @@ import Testing
         let hotkey = try #require(MenuContent.entries(inputs()).first { $0.title == "Hotkey" })
         #expect(hotkey.subtitle == "⌃⌥Space")
         let sub = try #require(hotkey.submenu)
-        #expect(sub.map(\.title) == KeyCombo.presets.map(\.title))
+        #expect(sub.prefix(KeyCombo.presets.count).map(\.title) == KeyCombo.presets.map(\.title))
         #expect(sub.filter { $0.mark == .on }.map(\.action) == [.pickHotkey("control-option-space")])
+        // Recording happens in Settings; the menu only points there.
+        #expect(sub.last?.action == .showSettings)
+    }
+
+    @Test func aCustomHotkeyIsListedAndChecked() throws {
+        let custom = KeyCombo.custom(keyCode: 0x0F, modifiers: UInt32(controlKey | optionKey | cmdKey))
+        let hotkey = try #require(MenuContent.entries(inputs { $0.hotkey = custom }).first { $0.title == "Hotkey" })
+        #expect(hotkey.subtitle == "⌃⌥⌘R")
+        let sub = try #require(hotkey.submenu)
+        #expect(sub.filter { $0.mark == .on }.map(\.title) == ["⌃⌥⌘R (custom)"])
+    }
+
+    @Test func soundsAndSetupHaveRows() {
+        #expect(entry(inputs(), .toggleSounds)?.mark == .off)
+        #expect(entry(inputs { $0.soundsEnabled = true }, .toggleSounds)?.mark == .on)
+        #expect(entry(inputs(), .showSetup)?.title == "Set Up Chirp…")
+        #expect(MenuAction.showSetup.payload == nil)
     }
 
     @Test func serverRowShowsTheURLWithAStatusDot() throws {
@@ -242,7 +260,7 @@ import Testing
 
     @Test func footerHasLaunchSettingsAboutAndQuit() {
         let t = titles(inputs())
-        #expect(t.suffix(4) == ["Launch at Login", "Settings…", "About Chirp", "Quit Chirp"])
+        #expect(t.suffix(5) == ["Launch at Login", "Set Up Chirp…", "Settings…", "About Chirp", "Quit Chirp"])
         #expect(entry(inputs(), .quit)?.keyEquivalent == "q" && MenuContent.entries(inputs()).first { $0.title == "Settings…" }?.keyEquivalent == ",")
         #expect(entry(inputs(), .showAbout) != nil)
     }

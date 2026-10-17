@@ -27,35 +27,3 @@ public enum LaunchMode: Equatable, Sendable {
         return .usage(exitCode: flag == "--help" || flag == "-h" ? 0 : 64)
     }
 }
-
-/// First-run permission walkthrough. Marks itself done only once both prompts have completed,
-/// so an interrupted first launch onboards again.
-@MainActor
-public struct Onboarding {
-    public var isDone: () -> Bool
-    public var markDone: () -> Void
-    public var requestMicrophone: () async -> Bool
-    public var accessibilityGranted: () -> Bool
-    public var promptAccessibility: () -> Void
-
-    public init(isDone: @escaping () -> Bool, markDone: @escaping () -> Void,
-                requestMicrophone: @escaping () async -> Bool, accessibilityGranted: @escaping () -> Bool,
-                promptAccessibility: @escaping () -> Void) {
-        self.isDone = isDone
-        self.markDone = markDone
-        self.requestMicrophone = requestMicrophone
-        self.accessibilityGranted = accessibilityGranted
-        self.promptAccessibility = promptAccessibility
-    }
-
-    /// Returns false when onboarding had already run.
-    @discardableResult
-    public func runIfNeeded() async -> Bool {
-        guard !isDone() else { return false }
-        _ = await requestMicrophone()
-        if Task.isCancelled { return true }
-        if !accessibilityGranted() { promptAccessibility() }
-        markDone()
-        return true
-    }
-}

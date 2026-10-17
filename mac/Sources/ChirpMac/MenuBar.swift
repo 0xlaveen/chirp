@@ -6,16 +6,23 @@ import ChirpUI
 final class MenuBarController: NSObject, NSMenuDelegate {
     private let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
     private let controller: DictationController
-    private let openSettings: () -> Void
+    private let actions: Actions
     private var launchError: String?
     private let badge = NSView()
     private let glyphs = Glyphs()
     private var pulseTimer: Timer?
     private var pulsePhase = 0
 
-    init(controller: DictationController, openSettings: @escaping () -> Void) {
+    /// The windows the menu opens.
+    struct Actions {
+        var openSettings: () -> Void
+        var openSetup: () -> Void
+        var openAbout: () -> Void
+    }
+
+    init(controller: DictationController, actions: Actions) {
         self.controller = controller
-        self.openSettings = openSettings
+        self.actions = actions
         super.init()
         let menu = NSMenu()
         menu.delegate = self
@@ -101,6 +108,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         inputs.cleanupOn = settings.correction
         inputs.showRawAfterCleanup = settings.showRawAfterCleanup
         inputs.hotkey = settings.hotkey
+        inputs.soundsEnabled = settings.soundsEnabled
         inputs.serverURL = settings.serverURL
         inputs.micGranted = Permissions.microphoneGranted
         inputs.accessibilityGranted = Permissions.accessibilityGranted
@@ -161,8 +169,10 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         case .copyDoctor: #selector(copyDoctor)
         case .grantMic: #selector(grantMic)
         case .grantAX: #selector(grantAX)
+        case .toggleSounds: #selector(toggleSounds)
         case .toggleLaunch: #selector(toggleLaunch)
         case .showSettings: #selector(showSettings)
+        case .showSetup: #selector(showSetup)
         case .showAbout: #selector(showAbout)
         case .quit: #selector(quit)
         }
@@ -173,26 +183,17 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     @objc private func toggleCleanup() { settings.correction.toggle() }
     @objc private func toggleShowRaw() { settings.showRawAfterCleanup.toggle() }
     @objc private func pickHotkey(_ sender: NSMenuItem) {
-        settings.hotkey = KeyCombo.preset(id: sender.representedObject as? String)
+        settings.hotkey = KeyCombo.resolve(id: sender.representedObject as? String)
         controller.registerHotkey()
     }
     @objc private func copyDoctor() {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(DoctorHelp.clipboardText(serverURL: settings.serverURL), forType: .string)
     }
-    @objc private func showSettings() { openSettings() }
-    @objc private func showAbout() {
-        NSApp.activate()
-        let info = Bundle.main.infoDictionary
-        NSApp.orderFrontStandardAboutPanel(options: [
-            .applicationName: "Chirp",
-            .applicationVersion: info?["CFBundleShortVersionString"] as? String ?? "dev build",
-            .version: info?["CFBundleVersion"] as? String ?? "",
-            .credits: NSAttributedString(
-                string: "Dictate into any app with a hotkey. Speech is recognised by your own chirp-server; audio never leaves your Mac.",
-                attributes: [.font: NSFont.systemFont(ofSize: 11), .foregroundColor: NSColor.secondaryLabelColor]),
-        ])
-    }
+    @objc private func showSettings() { actions.openSettings() }
+    @objc private func showSetup() { actions.openSetup() }
+    @objc private func showAbout() { actions.openAbout() }
+    @objc private func toggleSounds() { settings.soundsEnabled.toggle() }
     @objc private func toggleLaunch() { launchError = LaunchAtLogin.toggle() }
     @objc private func quit() { NSApp.terminate(nil) }
     @objc private func grantMic() {

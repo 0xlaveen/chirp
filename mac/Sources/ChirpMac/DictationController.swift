@@ -9,6 +9,8 @@ final class DictationController {
     private(set) var health: Health?
     private(set) var healthError: String?
     var onChange: (() -> Void)?
+    /// Called on every press of the dictation hotkey (the setup window's "Try it" step listens for it).
+    var onHotkeyPressed: (() -> Void)?
 
     let hud = HUDController()
     private let capture = AudioCapture(engine: SystemCaptureEngine(pickedDevice: { InputDevice.pickedID(uid: settings.inputDeviceUID) }))
@@ -31,12 +33,18 @@ final class DictationController {
                                      onUp: { [weak self] in self?.hotkeyUp() })
     }
 
+    /// Releases the dictation hotkey while the shortcut recorder listens; `registerHotkey()` takes it back.
+    func suspendHotkey() { HotKeyCenter.shared.unregister(id: Self.dictateID) }
+
     var state: DictationState { machine.state }
     var debugRetention: Bool { hud.model.debugRetention || (health?.debugRetention ?? false) }
 
     // MARK: input from the hotkeys
 
-    func hotkeyDown() { send(.hotkeyDown(at: ProcessInfo.processInfo.systemUptime)) }
+    func hotkeyDown() {
+        onHotkeyPressed?()
+        send(.hotkeyDown(at: ProcessInfo.processInfo.systemUptime))
+    }
     func hotkeyUp() { send(.hotkeyUp(at: ProcessInfo.processInfo.systemUptime)) }
     func escape() { send(.escape) }
 
@@ -67,6 +75,7 @@ final class DictationController {
         let before = machine.state
         let effects = machine.handle(event)
         if machine.state != before {
+
             chirpLog.info("state \(String(describing: before), privacy: .public) -> \(String(describing: self.machine.state), privacy: .public)")
             // Esc is only claimed while a dictation is active, so it is untouched the rest of the time.
             if [.connecting, .listening, .finalizing].contains(machine.state) {
@@ -78,15 +87,17 @@ final class DictationController {
             onChange?()
         }
         for effect in effects { run(effect) }
+        // After the effects: the stop cue plays once capture has ended, and the start cue before the mic opens (see begin).
+        if let cue = SoundCue.cue(from: before, to: machine.state, enabled: settings.soundsEnabled) { Sounds.play(cue) }
     }
 
     private func renderStatus() {
         switch machine.state {
         case .idle, .inserting: break
-        case .connecting: hud.model.status = "Connecting…"
-        case .listening: hud.model.status = "Listening"; hud.announce("Listening")
-        case .finalizing: hud.model.status = "Finalizing"
-        case .error(let m): hud.model.status = m; hud.model.isError = true
+        case .connecting: hud.model.status = HUDStatus.connecting
+        case .listening: hud.model.status = HUDStatus.listening; hud.announce(HUDStatus.listening)
+        case .finalizing: hud.model.status = HUDStatus.finishing
+        case .error(let m): hud.model.status = m; hud.model.isError = true; hud.model.indicator = .warning
         }
     }
 
@@ -100,7 +111,8 @@ final class DictationController {
             inserter.forgetUndo()
             hud.model.status = message
             hud.model.isError = true
-            hud.model.level = 0
+            hud.model.indicator = .warning
+            hud.model.silence()
             hud.show()
             hud.announce(message)
             hud.hide(after: 3.5)
@@ -113,9 +125,9 @@ final class DictationController {
         let myEpoch = epoch
         pendingFinal = nil
         inserter.forgetUndo()
-        hud.hide()
+        hud.cancelHide()
         hud.model.reset()
-        hud.model.status = "Connecting…"
+        hud.model.status = HUDStatus.connecting
         hud.model.debugRetention = health?.debugRetention ?? false
         hud.show()
 
@@ -128,6 +140,8 @@ final class DictationController {
                 }
                 return
             }
+            // Let the start cue finish before the microphone opens, so it is never part of the recording.
+            if settings.soundsEnabled { try? await Task.sleep(for: .milliseconds(160)) }
             guard epoch == myEpoch, machine.state == .connecting || machine.state == .listening else { return }
             startStreaming(epoch: myEpoch)
         }
@@ -140,7 +154,7 @@ final class DictationController {
         let sink = CaptureSink(session: session) { [weak self] level in
             Task { @MainActor in
                 guard let self, self.epoch == myEpoch else { return }
-                self.hud.model.level = level.rms
+                self.hud.model.pushLevel(level.rms)
             }
         } onSilence: { [weak self] in
             Task { @MainActor in
@@ -202,7 +216,7 @@ final class DictationController {
 
     private func finalize() {
         stopCapture()
-        hud.model.level = 0
+        hud.model.silence()
         let session = self.session, myEpoch = epoch
         Task { await session?.stop() }
         timeoutTask?.cancel()
@@ -241,14 +255,15 @@ final class DictationController {
         eventTask?.cancel(); eventTask = nil
         Task { await s?.close() }
         guard !text.isEmpty else {
-            hud.model.status = "No speech detected"
-            hud.announce("No speech detected")
-            hud.model.level = 0
+            hud.model.status = HUDStatus.noSpeech
+            hud.model.indicator = .none
+            hud.announce(HUDStatus.noSpeech)
+            hud.model.silence()
             hud.hide(after: 1.5)
             send(.insertionFinished)
             return
         }
-        hud.model.status = "Inserting"
+        hud.model.status = HUDStatus.inserting
         Task {
             let outcome = await inserter.insert(text, undoRaw: final.canUseRaw && settings.showRawAfterCleanup ? final.raw : nil)
             show(outcome, final: final)
@@ -259,6 +274,7 @@ final class DictationController {
     private func show(_ outcome: InsertionOutcome, final: FinalResult) {
         let p = OutcomePresentation.of(outcome, final: final, offerRaw: settings.showRawAfterCleanup)
         hud.model.status = p.status
+        hud.model.indicator = p.indicator
         hud.model.cleaned = p.cleaned
         hud.model.isError = p.isError
         hud.model.showUseRaw = p.showUseRaw
@@ -278,9 +294,9 @@ final class DictationController {
             guard let outcome = await inserter.useRaw() else { return }
             hud.model.isError = outcome == .refusedSecure
             switch outcome {
-            case .inserted: hud.model.status = "Inserted raw"
-            case .refusedSecure: hud.model.status = "Secure field — nothing changed"
-            default: hud.model.status = "Copied raw — press ⌘V"
+            case .inserted: hud.model.status = "Inserted raw"; hud.model.indicator = .success
+            case .refusedSecure: hud.model.status = "Secure field — unchanged"; hud.model.indicator = .warning
+            default: hud.model.status = "Copied raw — ⌘V"; hud.model.indicator = .clipboard
             }
             hud.announce(hud.model.status)
             hud.hide(after: 1.5)
