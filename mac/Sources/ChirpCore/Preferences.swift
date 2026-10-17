@@ -11,9 +11,9 @@ public final class Preferences: @unchecked Sendable {
         get { defaults.string(forKey: "serverURL") ?? ServerConfig.defaultURL.absoluteString }
         set { defaults.set(newValue, forKey: "serverURL") }
     }
-    /// One of `KeyCombo.presets` (⌃⌥Space by default).
+    /// One of `KeyCombo.presets` (⌃⌥Space by default) or a recorded shortcut that passed `HotKeyValidation`.
     public var hotkey: KeyCombo {
-        get { KeyCombo.preset(id: defaults.string(forKey: "hotkey")) }
+        get { KeyCombo.resolve(id: defaults.string(forKey: "hotkey")) }
         set { defaults.set(newValue.id, forKey: "hotkey") }
     }
     /// Clean-up (the server's `correction` flag). Off by default.
@@ -31,6 +31,12 @@ public final class Preferences: @unchecked Sendable {
         get { defaults.string(forKey: "inputDeviceUID") }
         set { defaults.set(newValue, forKey: "inputDeviceUID") }
     }
+    /// Subtle system sounds when dictation starts and stops. Off by default.
+    public var soundsEnabled: Bool {
+        get { defaults.bool(forKey: "soundsEnabled") }
+        set { defaults.set(newValue, forKey: "soundsEnabled") }
+    }
+    /// Set only when the first-run window is finished (never on close), so an interrupted setup shows again.
     public var didOnboard: Bool {
         get { defaults.bool(forKey: "didOnboard") }
         set { defaults.set(newValue, forKey: "didOnboard") }

@@ -6,6 +6,8 @@ import ChirpUI
 final class SettingsWindowController: NSObject, NSTextFieldDelegate {
     /// Called after the hotkey preset changes so the app can re-register it.
     var onHotkeyChange: (() -> Void)?
+    /// The shortcut recorder started or stopped listening.
+    var onRecordingChanged: ((Bool) -> Void)?
     /// The server's state for the Status row, from the app's last health check.
     var serverStatus: () -> (text: String, tone: MenuEntry.Tone) = { ("Checking…", .warning) }
     private var window: NSWindow?
@@ -18,6 +20,7 @@ final class SettingsWindowController: NSObject, NSTextFieldDelegate {
         s.serverURL = settings.serverURL
         s.tokenPresent = ServerConfig.readToken() != nil
         s.launch = LaunchAtLogin.state
+        s.soundsEnabled = settings.soundsEnabled
         s.micGranted = Permissions.microphoneGranted
         s.accessibilityGranted = Permissions.accessibilityGranted
         (s.serverStatus, s.serverStatusTone) = serverStatus()
@@ -41,6 +44,14 @@ final class SettingsWindowController: NSObject, NSTextFieldDelegate {
         let form = SettingsForm(state)
         form.hotkey.target = self
         form.hotkey.action = #selector(hotkeyChanged(_:))
+        form.recorder.onCapture = { [weak self] combo in
+            settings.hotkey = combo
+            self?.form?.fillHotkeyMenu(selecting: combo)
+            self?.onHotkeyChange?()
+        }
+        form.recorder.onRecordingChanged = { [weak self] recording in self?.onRecordingChanged?(recording) }
+        form.sounds.target = self
+        form.sounds.action = #selector(toggleSounds(_:))
         form.serverURL.delegate = self
         form.launch.target = self
         form.launch.action = #selector(toggleLaunch(_:))
@@ -63,8 +74,12 @@ final class SettingsWindowController: NSObject, NSTextFieldDelegate {
     }
 
     @objc private func hotkeyChanged(_ sender: NSPopUpButton) {
-        settings.hotkey = KeyCombo.preset(id: sender.selectedItem?.representedObject as? String)
+        settings.hotkey = KeyCombo.resolve(id: sender.selectedItem?.representedObject as? String)
         onHotkeyChange?()
+    }
+
+    @objc private func toggleSounds(_ sender: NSButton) {
+        settings.soundsEnabled = sender.state == .on
     }
 
     @objc private func toggleLaunch(_ sender: NSButton) {

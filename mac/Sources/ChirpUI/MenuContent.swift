@@ -10,8 +10,8 @@ public enum LaunchState: Equatable, Sendable {
 }
 
 public enum MenuAction: Equatable, Sendable {
-    case toggleDictation, pickInput(String?), toggleCleanup, toggleShowRaw, pickHotkey(String)
-    case copyDoctor, grantMic, grantAX, toggleLaunch, showSettings, showAbout, quit
+    case toggleDictation, pickInput(String?), toggleCleanup, toggleShowRaw, pickHotkey(String), toggleSounds
+    case copyDoctor, grantMic, grantAX, toggleLaunch, showSettings, showSetup, showAbout, quit
 
     /// What the AppKit item carries to its action method.
     public var payload: String? {
@@ -67,6 +67,7 @@ public struct MenuInputs: Sendable {
     public var cleanupOn = false
     public var showRawAfterCleanup = true
     public var hotkey: KeyCombo = .controlOptionSpace
+    public var soundsEnabled = false
     public var serverURL = ServerConfig.defaultURL.absoluteString
     public var micGranted = true
     public var accessibilityGranted = true
@@ -117,11 +118,9 @@ public enum MenuContent {
             out.append(MenuEntry(title: "Start dictation", symbol: "mic.fill"))
         }
         out.append(inputPicker(m))
-        out.append(MenuEntry(
-            title: "Hotkey", subtitle: m.hotkey.title, symbol: "command",
-            submenu: KeyCombo.presets.map {
-                MenuEntry(title: $0.title, action: .pickHotkey($0.id), mark: $0 == m.hotkey ? .on : .off)
-            }))
+        out.append(hotkeyMenu(m))
+        out.append(MenuEntry(title: "Start and stop sounds", symbol: "speaker.wave.2", action: .toggleSounds,
+                             mark: m.soundsEnabled ? .on : .off))
         out.append(.separator)
 
         out.append(contentsOf: cleanup(m))
@@ -146,10 +145,24 @@ public enum MenuContent {
         out.append(MenuEntry(title: LaunchState.menuTitle, subtitle: m.launchError.map { "Couldn’t change it: \($0)" },
                              symbol: "power", symbolTone: m.launchError == nil ? nil : .error,
                              action: m.launch == .unavailable ? nil : .toggleLaunch, mark: m.launch == .on ? .on : .off))
+        out.append(MenuEntry(title: "Set Up Chirp…", symbol: "checklist", action: .showSetup))
         out.append(MenuEntry(title: "Settings…", symbol: "gearshape", action: .showSettings, keyEquivalent: ","))
         out.append(MenuEntry(title: "About Chirp", symbol: "info.circle", action: .showAbout))
         out.append(MenuEntry(title: "Quit Chirp", symbol: "power.circle", action: .quit, keyEquivalent: "q"))
         return out
+    }
+
+    /// The presets, a recorded shortcut when one is in use, and a way to record one (in Settings).
+    static func hotkeyMenu(_ m: MenuInputs) -> MenuEntry {
+        var sub = KeyCombo.presets.map {
+            MenuEntry(title: $0.title, action: .pickHotkey($0.id), mark: $0 == m.hotkey ? .on : .off)
+        }
+        if m.hotkey.isCustom {
+            sub.append(MenuEntry(title: "\(m.hotkey.title) (custom)", action: .pickHotkey(m.hotkey.id), mark: .on))
+        }
+        sub.append(.separator)
+        sub.append(MenuEntry(title: "Record Custom Shortcut…", action: .showSettings))
+        return MenuEntry(title: "Hotkey", subtitle: m.hotkey.title, symbol: "command", submenu: sub)
     }
 
     /// "Input Device": follows the system default unless one is picked and still connected.

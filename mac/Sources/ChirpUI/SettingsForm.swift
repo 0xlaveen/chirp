@@ -7,6 +7,7 @@ public struct SettingsState: Sendable {
     public var serverURL = ServerConfig.defaultURL.absoluteString
     public var tokenPresent = true
     public var launch: LaunchState = .off
+    public var soundsEnabled = false
     public var micGranted = true
     public var accessibilityGranted = true
     /// The server's state in words ("Connected", "Unreachable", …) and its tone.
@@ -34,6 +35,10 @@ public final class SettingsForm {
     /// The content view, with its 20 pt margin pinned by constraints so `fittingSize` includes it on every side.
     public let view = SettingsContentView()
     public let hotkey = NSPopUpButton(frame: .zero, pullsDown: false)
+    public let recorder = HotkeyRecorder()
+    /// Under the hotkey: how it works, or why the last recording was refused.
+    public let hotkeyHelp = SettingsForm.help("")
+    public let sounds = NSButton(checkboxWithTitle: "Play start and stop sounds", target: nil, action: nil)
     public let serverURL = NSTextField(string: "")
     public let launch = NSButton(checkboxWithTitle: "Launch Chirp at login", target: nil, action: nil)
     public let micButton = NSButton(title: "Fix…", target: nil, action: nil)
@@ -48,10 +53,7 @@ public final class SettingsForm {
     private var launchUnavailable = false
 
     public init(_ state: SettingsState) {
-        for combo in KeyCombo.presets {
-            hotkey.addItem(withTitle: combo.title)
-            hotkey.lastItem?.representedObject = combo.id
-        }
+        recorder.onStatusChange = { [weak self] _ in self?.refreshHotkeyHelp() }
         serverURL.placeholderString = ServerConfig.defaultURL.absoluteString
         serverURL.font = MenuStyle.font
         serverURL.lineBreakMode = .byTruncatingMiddle
@@ -81,7 +83,11 @@ public final class SettingsForm {
         }
 
         section("General")
-        row("Hotkey:", hotkey, help: Self.help("Tap to start/stop. Hold to talk, release to finish. Esc cancels."))
+        let hotkeyRow = NSStackView(views: [hotkey, recorder])
+        hotkeyRow.orientation = .horizontal
+        hotkeyRow.spacing = 10
+        row("Hotkey:", hotkeyRow, help: hotkeyHelp)
+        row("Sounds:", sounds, help: Self.help("Two quiet system sounds when dictation starts and stops."))
         row("Startup:", launch, help: launchHelp)
         section("Server")
         row("URL:", serverURL)
@@ -112,6 +118,7 @@ public final class SettingsForm {
             view.bottomAnchor.constraint(equalTo: grid.bottomAnchor, constant: Self.margin),
             view.trailingAnchor.constraint(equalTo: grid.trailingAnchor, constant: Self.margin),
         ])
+        refreshHotkeyHelp()
         apply(state, full: true)
     }
 
@@ -127,7 +134,8 @@ public final class SettingsForm {
     /// states and never overwrites what the user is typing or a login-item error shown under the checkbox.
     public func apply(_ s: SettingsState, full: Bool = false) {
         if full {
-            hotkey.selectItem(withTitle: s.hotkey.title)
+            fillHotkeyMenu(selecting: s.hotkey)
+            sounds.state = s.soundsEnabled ? .on : .off
             serverURL.stringValue = s.serverURL
             launch.state = s.launch == .on ? .on : .off
             launch.isEnabled = s.launch != .unavailable
@@ -145,6 +153,29 @@ public final class SettingsForm {
                                 tone: s.accessibilityGranted ? .ok : .warning, text: s.accessibilityGranted ? "Allowed" : "Not allowed")
         micButton.isHidden = s.micGranted
         accessibilityButton.isHidden = s.accessibilityGranted
+    }
+
+    /// The presets, plus the recorded shortcut when one is in use, with `current` selected.
+    public func fillHotkeyMenu(selecting current: KeyCombo) {
+        hotkey.removeAllItems()
+        for combo in KeyCombo.presets + (current.isCustom ? [current] : []) {
+            hotkey.addItem(withTitle: combo.isCustom ? "\(combo.title) (custom)" : combo.title)
+            hotkey.lastItem?.representedObject = combo.id
+        }
+        if let index = hotkey.itemArray.firstIndex(where: { $0.representedObject as? String == current.id }) {
+            hotkey.selectItem(at: index)
+        }
+    }
+
+    private func refreshHotkeyHelp() {
+        hotkeyHelp.textColor = .secondaryLabelColor
+        switch recorder.status {
+        case .idle: hotkeyHelp.stringValue = "Tap to start/stop. Hold to talk, release to finish. Esc cancels."
+        case .recording: hotkeyHelp.stringValue = "Press the shortcut you want. Esc gives up."
+        case .rejected(let why):
+            hotkeyHelp.stringValue = why.reason
+            hotkeyHelp.textColor = .systemRed
+        }
     }
 
     /// Shows why toggling launch at login failed under the checkbox; nil restores the usual help text.

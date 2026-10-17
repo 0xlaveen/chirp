@@ -6,14 +6,25 @@ import ChirpUI
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private let controller = DictationController()
     private let settingsWindow = SettingsWindowController()
+    private let aboutWindow = AboutWindowController()
+    private lazy var onboardingWindow = OnboardingWindowController(controller: controller)
     private var menu: MenuBarController?
     private var healthTimer: Timer?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        menu = MenuBarController(controller: controller, openSettings: { [settingsWindow] in settingsWindow.show() })
+        menu = MenuBarController(
+            controller: controller,
+            actions: .init(openSettings: { [settingsWindow] in settingsWindow.show() },
+                           openSetup: { [onboardingWindow] in onboardingWindow.show() },
+                           openAbout: { [aboutWindow] in aboutWindow.show() }))
         settingsWindow.serverStatus = { [controller] in MenuContent.serverStatus(health: controller.health, healthError: controller.healthError) }
         settingsWindow.onHotkeyChange = { [controller] in controller.registerHotkey() }
+        settingsWindow.onRecordingChanged = { [controller] recording in
+            // The live hotkey would start a dictation while the user is typing the new one.
+            if recording { controller.suspendHotkey() } else { controller.registerHotkey() }
+        }
         controller.onChange = { [weak self] in self?.menu?.refreshIcon() }
+        controller.onHotkeyPressed = { [weak self] in self?.onboardingWindow.hotkeyPressed() }
 
         chirpLog.info("launch microphone=\(Permissions.microphone.rawValue, privacy: .public) accessibility=\(Permissions.accessibilityGranted, privacy: .public) hotkey=\(settings.hotkey.id, privacy: .public)")
         if !controller.registerHotkey() {
@@ -25,14 +36,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             Task { @MainActor in await controller.refreshHealth() }
         }
 
-        if !settings.didOnboard {
-            settingsWindow.show()
-            let onboarding = Onboarding(
-                isDone: { settings.didOnboard }, markDone: { settings.didOnboard = true },
-                requestMicrophone: { await Permissions.requestMicrophone() },
-                accessibilityGranted: { Permissions.accessibilityGranted },
-                promptAccessibility: { Permissions.promptAccessibility() })
-            Task { await onboarding.runIfNeeded() }
-        }
+        // First run: the setup window, not Settings. It records completion itself, only once finished.
+        if !settings.didOnboard { onboardingWindow.show() }
     }
 }

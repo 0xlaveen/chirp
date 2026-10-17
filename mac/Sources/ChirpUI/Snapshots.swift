@@ -1,8 +1,9 @@
 import AppKit
+import Carbon.HIToolbox
 import ChirpCore
 import SwiftUI
 
-/// Offscreen rendering of every HUD state, the Settings window and the menu-bar menu, for UI review without
+/// Offscreen rendering of every HUD state, the Settings, setup and About windows and the menu-bar menu, for UI review without
 /// launching the app. It draws views into bitmaps only: no window is shown, and it never touches the microphone,
 /// Accessibility, the pasteboard, the system settings store or any TCC-gated API. All inputs are synthetic.
 @MainActor
@@ -20,10 +21,21 @@ public enum Snapshots {
 
     private static let sentence = "Please move the standup to three thirty and let everyone know"
 
+    /// The app icon when the source tree's `Assets/AppIcon.png` is there (a development checkout), else a bird symbol:
+    /// the icon only exists in the bundled app, and the snapshots never read the app bundle or the installed app.
+    static let appIcon: NSImage? = {
+        let url = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent().deletingLastPathComponent().appendingPathComponent("Assets/AppIcon.png")
+        if let image = NSImage(contentsOf: url) { return image }
+        return NSImage(systemSymbolName: "bird.fill", accessibilityDescription: nil)?
+            .withSymbolConfiguration(.init(pointSize: 40, weight: .regular).applying(.init(paletteColors: [.systemIndigo])))
+    }()
+
     static func hud(_ name: String, _ configure: @escaping (HUDModel) -> Void) -> Scenario {
         Scenario(name: "hud-\(name)") {
             let model = HUDModel()
-            model.reduceMotion = true
+            // No window to blur through offscreen, so the HUD draws its flat stand-in for the material.
+            model.flatSurface = true
             configure(model)
             return NSHostingView(rootView: SnapshotBackdrop { HUDView(model: model) })
         }
@@ -36,19 +48,24 @@ public enum Snapshots {
 
     private static func applyOutcome(_ outcome: InsertionOutcome, final: FinalResult, offerRaw: Bool = true, to m: HUDModel) {
         let p = OutcomePresentation.of(outcome, final: final, offerRaw: offerRaw)
-        m.status = p.status; m.isError = p.isError; m.showUseRaw = p.showUseRaw; m.cleaned = p.cleaned
+        m.status = p.status; m.indicator = p.indicator; m.isError = p.isError; m.showUseRaw = p.showUseRaw; m.cleaned = p.cleaned
     }
 
     public static var hudScenarios: [Scenario] {
         let (stable, tail) = splitPartial(text: sentence + " about the release", stable: sentence)
         let long = Array(repeating: "and then we should also check the rollout plan with the whole team", count: 5).joined(separator: ", ")
         return [
-            hud("connecting") { $0.status = "Connecting…" },
-            hud("listening") { $0.status = "Listening"; $0.level = 0.12; $0.stable = stable; $0.unstable = tail },
-            hud("listening-no-text") { $0.status = "Listening"; $0.level = 0.05 },
-            hud("listening-unstable-only") { $0.status = "Listening"; $0.level = 0.2; $0.unstable = "so the first words are" },
-            hud("listening-multiline") { $0.status = "Listening"; $0.level = 0.16; $0.stable = long; $0.unstable = " and finally" },
-            hud("finalizing") { $0.status = "Finalizing"; $0.stable = sentence; $0.unstable = " about the release" },
+            hud("connecting") { $0.status = HUDStatus.connecting },
+            hud("listening") { $0.status = HUDStatus.listening; $0.levels = .demo(peak: 0.8); $0.stable = stable; $0.unstable = tail },
+            hud("listening-no-text") { $0.status = HUDStatus.listening; $0.levels = .demo(peak: 0.45) },
+            hud("listening-unstable-only") { $0.status = HUDStatus.listening; $0.levels = .demo(peak: 1); $0.unstable = "so the first words are" },
+            hud("listening-multiline") { $0.status = HUDStatus.listening; $0.levels = .demo(peak: 0.7); $0.stable = long; $0.unstable = " and finally" },
+            hud("listening-reduce-motion") { $0.status = HUDStatus.listening; $0.reduceMotion = true; $0.stable = stable; $0.unstable = tail },
+            hud("listening-contrast") {
+                $0.status = HUDStatus.listening; $0.levels = .demo(peak: 0.8); $0.increaseContrast = true
+                $0.stable = stable; $0.unstable = tail
+            },
+            hud("finalizing") { $0.status = HUDStatus.finishing; $0.stable = sentence; $0.unstable = " about the release" },
             hud("inserted") { applyOutcome(.inserted(.ax), final: final(), to: $0) },
             hud("inserted-paste") { applyOutcome(.inserted(.paste), final: final(), to: $0) },
             hud("correction-use-raw") {
@@ -59,12 +76,12 @@ public enum Snapshots {
             hud("copied") { applyOutcome(.copied, final: final(), to: $0) },
             hud("unverified-ax") { applyOutcome(.insertedUnverified, final: final(), to: $0) },
             hud("secure-field") { applyOutcome(.refusedSecure, final: final(), to: $0) },
-            hud("no-mic-signal") { $0.status = "No microphone signal"; $0.isError = true },
+            hud("no-mic-signal") { $0.status = "No microphone signal"; $0.isError = true; $0.indicator = .warning },
             hud("error-long") {
                 $0.status = "Server rejected the token (check ~/.config/chirp/token) — then restart dictation"
-                $0.isError = true
+                $0.isError = true; $0.indicator = .warning
             },
-            hud("debug-badge") { $0.status = "Listening"; $0.level = 0.1; $0.debugRetention = true; $0.stable = stable },
+            hud("debug-badge") { $0.status = HUDStatus.listening; $0.levels = .demo(peak: 0.5); $0.debugRetention = true; $0.stable = stable },
             hud("debug-use-raw") {
                 applyOutcome(.inserted(.ax), final: final(corrected: true), to: $0)
                 $0.debugRetention = true
@@ -86,12 +103,54 @@ public enum Snapshots {
         }
         return [
             form("ready") { $0.launch = .on; $0.serverStatus = "parakeet-mlx:tdt-0.6b-v2" },
+            form("custom-hotkey-sounds") {
+                $0.hotkey = .custom(keyCode: 0x0F, modifiers: UInt32(controlKey | optionKey | cmdKey))   // ⌃⌥⌘R
+                $0.soundsEnabled = true; $0.launch = .on; $0.serverStatus = "parakeet-mlx:tdt-0.6b-v2"
+            },
+            Scenario(name: "settings-hotkey-rejected") {
+                let form = SettingsForm(SettingsState())
+                // As if ⌥Space had just been pressed in the recorder (set directly: no event monitor offscreen).
+                form.recorder.apply(.rejected(.optionOnly))
+                form.view.setFrameSize(form.view.fittingSize)
+                return form.view
+            },
             form("needs-setup") {
                 $0.tokenPresent = false; $0.micGranted = false; $0.accessibilityGranted = false
                 $0.launch = .unavailable; $0.serverURL = "https://mainframe.example.ts.net/chirp"
                 $0.serverStatus = "Unreachable"; $0.serverStatusTone = .error
             },
         ]
+    }
+
+    // MARK: setup and About
+
+    public static var onboardingScenarios: [Scenario] {
+        func step(_ name: String, _ state: OnboardingState) -> Scenario {
+            Scenario(name: "onboarding-\(name)") {
+                let view = OnboardingView(icon: appIcon)
+                view.apply(state)
+                return view
+            }
+        }
+        func checks(_ configure: (inout OnboardingChecks) -> Void) -> OnboardingChecks {
+            var c = OnboardingChecks()
+            configure(&c)
+            return c
+        }
+        return [
+            step("welcome", OnboardingState(step: .welcome)),
+            step("microphone-needed", OnboardingState(step: .microphone, checks: checks { $0.microphone = .notAsked })),
+            step("microphone-blocked", OnboardingState(step: .microphone, checks: checks { $0.microphone = .denied })),
+            step("accessibility-needed", OnboardingState(step: .accessibility, checks: checks { $0.accessibility = false })),
+            step("server-ready", OnboardingState(step: .server, checks: checks { $0.server = .ready(engine: "parakeet-mlx:tdt-0.6b-v2") })),
+            step("server-unreachable", OnboardingState(step: .server, checks: checks { $0.server = .unreachable(host: "127.0.0.1") })),
+            step("try-it-waiting", OnboardingState(step: .tryIt)),
+            step("try-it-success", OnboardingState(step: .tryIt, heardHotkey: true)),
+        ]
+    }
+
+    public static var aboutScenarios: [Scenario] {
+        [Scenario(name: "about") { AboutView(icon: appIcon, info: AboutInfo(version: "0.1.0", build: "1")) }]
     }
 
     private static let boya = AudioInput(uid: "boya", name: "BOYA CM40")
@@ -134,7 +193,7 @@ public enum Snapshots {
         ]
     }
 
-    public static var allScenarios: [Scenario] { hudScenarios + settingsScenarios + menuScenarios }
+    public static var allScenarios: [Scenario] { hudScenarios + settingsScenarios + onboardingScenarios + aboutScenarios + menuScenarios }
 
     // MARK: rendering
 
@@ -151,7 +210,8 @@ public enum Snapshots {
         host.boxType = .custom
         host.borderWidth = 0
         host.contentViewMargins = .zero
-        host.fillColor = scenario.name.hasPrefix("settings-") ? .windowBackgroundColor : .clear
+        let isWindow = ["settings-", "onboarding-", "about"].contains { scenario.name.hasPrefix($0) }
+        host.fillColor = isWindow ? .windowBackgroundColor : .clear
         host.appearance = appearance
         host.contentView = view
         host.frame = NSRect(origin: .zero, size: size)
@@ -290,7 +350,7 @@ private struct HeaderBlock: NSViewRepresentable {
         MenuHeaderView(title: head.title, hint: head.subtitle, lines: lines, icon: Self.standIn)
     }
     func updateNSView(_ view: MenuHeaderView, context: Context) {}
-    /// The app icon only exists in the bundled app; the snapshots draw the bird symbol in its place.
+    /// The real icon would add ~100 KB to every menu PNG; the menu snapshots draw the bird symbol in its place.
     private static var standIn: NSImage? {
         NSImage(systemSymbolName: "bird.fill", accessibilityDescription: nil)?
             .withSymbolConfiguration(.init(pointSize: 26, weight: .regular).applying(.init(paletteColors: [.systemIndigo])))
