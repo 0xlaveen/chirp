@@ -223,3 +223,15 @@ hardware/network failure scenarios. The full Mac suite, real-model tests, device
 tests, and e2e script were not run. Existing Android nullable-type warnings in
 `LiveServerTest.kt` were emitted during compilation; no production changes were
 made to address them.
+
+## Fix status (orchestrator, chirp/integration)
+
+| ID | Owner | Status | Evidence |
+|---|---|---|---|
+| R2-01 | server | open | strict xfail in `server/tests/test_review_round2.py` (server suite currently 63 passed + 1 xfailed) |
+| R2-02 | mac | open | known issue in `ReviewRound2Tests.swift` (Mac suite currently passes with 3 known issues) |
+| R2-03 | mac | open | known issue in `ReviewRound2Tests.swift` |
+| R2-04 | mac | open | inspection-confirmed |
+| R2-05 | mac | open | inspection-confirmed |
+| R2-06 | mac | open | inspection-confirmed |
+| R2-07 | android | **fixed** in `chirp/android-r2` 5fbf1e3, merged 0851833 | single composing-region replacement. Three ungated `ReviewRound2Test` cases and a service retry test. lint clean; 83 tests (81 pass, 2 opt-in live-server skips); debug + release build |

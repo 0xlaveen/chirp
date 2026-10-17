@@ -115,6 +115,8 @@ Chirp does **not** request the camera permission. Scanning requires Google Play
 services (present on the Fold 8), and its scanner module may need a download on
 first use. If unavailable or cancelled, paste remains available.
 See [Google code scanner](https://developers.google.com/ml-kit/vision/barcode-scanning/code-scanner).
+
+**Pairing-secret handling (for approval review).** The QR encodes the bearer token. With **Scan pairing QR**, the token is decoded on the device inside Google Play services' scanner process and returned to Chirp. Chirp never logs it. **Paste** keeps the token out of any other app's process, apart from the clipboard you pasted from; prefer it if that matters. The merged release manifest declares only `INTERNET`, `RECORD_AUDIO` and `ACCESS_NETWORK_STATE` (from Play services). It does **not** declare `CAMERA` (verified on `chirp/integration` 0851833).
 Do not put a real
 pairing link in shell history, issues, screenshots or logs. The usual server base
 is `https://mainframe.tail676ff2.ts.net/chirp`.
