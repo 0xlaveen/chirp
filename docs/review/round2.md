@@ -229,9 +229,9 @@ made to address them.
 | ID | Owner | Status | Evidence |
 |---|---|---|---|
 | R2-01 | server | open | strict xfail in `server/tests/test_review_round2.py` (server suite currently 63 passed + 1 xfailed) |
-| R2-02 | mac | open | known issue in `ReviewRound2Tests.swift` (Mac suite currently passes with 3 known issues) |
-| R2-03 | mac | open | known issue in `ReviewRound2Tests.swift` |
-| R2-04 | mac | open | inspection-confirmed |
-| R2-05 | mac | open | inspection-confirmed |
-| R2-06 | mac | open | inspection-confirmed |
+| R2-02 | mac | **fixed** in `chirp/mac-r2` 8fc5507, merged 52813fa | Use raw checks secure input first, replaces only a verified AX range in the same frontmost app, otherwise copies raw (no ⌘Z); ReviewRound2Tests now ordinary passing tests; Mac suite 100 tests, no known issues |
+| R2-03 | mac | **fixed** in `chirp/mac-r2` 8fc5507, merged 52813fa | one clipboard-restore transaction across overlapping pastes; ReviewRound2Tests now ordinary passing tests; Mac suite 100 tests, no known issues |
+| R2-04 | mac | **fixed** in `chirp/mac-r2` 8fc5507, merged 52813fa | CaptureEngine adapter; failed start/device-change rebuild unwinds; idempotent stop; ReviewRound2Tests now ordinary passing tests; Mac suite 100 tests, no known issues |
+| R2-05 | mac | **fixed** in `chirp/mac-r2` 8fc5507, merged 52813fa | raw kept only in inserter undo state; expires after 5 s (injected clock), cleared on cancel/abort/new dictation; ReviewRound2Tests now ordinary passing tests; Mac suite 100 tests, no known issues |
+| R2-06 | mac | **fixed** in `chirp/mac-r2` 8fc5507, merged 52813fa | StreamLimits: 512 KB unsent-audio bound with overflow error, 120 s cap, 10 s ready deadline, cancel closes after 300 ms grace; ReviewRound2Tests now ordinary passing tests; Mac suite 100 tests, no known issues |
 | R2-07 | android | **fixed** in `chirp/android-r2` 5fbf1e3, merged 0851833 | single composing-region replacement. Three ungated `ReviewRound2Test` cases and a service retry test. lint clean; 83 tests (81 pass, 2 opt-in live-server skips); debug + release build |
