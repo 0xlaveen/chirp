@@ -99,6 +99,8 @@ class ManagedCleanup:
         self.load_task = None
         self.ready = False
         self.keep_loaded = False
+        # The idle limit the running helper was launched with; 0 means it never exits on its own.
+        self.launched_idle = None
         self.memory_mb = None
 
     @property
@@ -140,9 +142,12 @@ class ManagedCleanup:
         if command is None:
             directory = discover(self.config.model)
             command = [sys.executable, "-m", "chirp_server.cleanup_worker", str(directory)]
+        # The helper's own idle exit is a backstop for a wedged server. With keep_loaded it is
+        # off (0): the server owns the lifecycle, and a closed pipe still ends the helper.
+        self.launched_idle = 0 if self.keep_loaded else self.config.idle_seconds
         self.process = await asyncio.create_subprocess_exec(
             *command,
-            str(self.config.idle_seconds),
+            str(self.launched_idle),
             stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.DEVNULL,
@@ -253,6 +258,10 @@ class ManagedCleanup:
                 if self.idle:
                     self.idle.cancel()
                     self.idle = None
+                if self.loaded and self.launched_idle:
+                    # This helper would still exit on its own idle limit; relaunch it without one.
+                    # The caller prewarms afterwards.
+                    await self._stop()
             elif self.loaded:
                 self._arm_idle()
 

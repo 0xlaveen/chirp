@@ -91,7 +91,9 @@ def main():
             reply({"ready": False})
             return
         reply({"ready": True, "memory_mb": measured_memory_mb()})
-        while select.select([sys.stdin], [], [], float(sys.argv[2]) + 5)[0]:
+        # 0 disables the idle exit (keep_loaded); EOF on stdin still ends the helper.
+        idle = float(sys.argv[2])
+        while select.select([sys.stdin], [], [], idle + 5 if idle > 0 else None)[0]:
             line = sys.stdin.readline()
             if not line:
                 return

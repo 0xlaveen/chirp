@@ -369,3 +369,44 @@ def test_put_settings_unsupported_outside_managed(settings, mode):
             "mode": mode,
         }
         assert not settings.state_path.exists()
+
+
+async def test_keep_loaded_helper_has_no_idle_exit_of_its_own():
+    # The helper's own idle exit used to end a keep_loaded helper ~idle_seconds + 5 s after
+    # its last call; with keep_loaded it is launched with 0 (no self-timeout).
+    corrector = service(idle_seconds=0.2)
+    managed = corrector.managed
+    managed.keep_loaded = True
+    managed.prewarm()
+    await managed.wait_warm()
+    assert managed.loaded and managed.launched_idle == 0
+    await corrector.close()
+
+    corrector = service(idle_seconds=0.2)
+    managed = corrector.managed
+    managed.prewarm()
+    await managed.wait_warm()
+    assert managed.launched_idle == 0.2
+    await corrector.close()
+
+
+async def test_turning_keep_loaded_on_relaunches_a_self_timing_helper():
+    corrector = service(idle_seconds=30)
+    managed = corrector.managed
+    spawns = counted_spawns(managed)
+    managed.prewarm()
+    await managed.wait_warm()
+    assert managed.launched_idle == 30
+    await managed.set_keep_loaded(True)
+    managed.prewarm()
+    await managed.wait_warm()
+    assert len(spawns) == 2 and managed.loaded and managed.launched_idle == 0
+    # Already without a self-timeout: turning it on again keeps the same helper.
+    await managed.set_keep_loaded(True)
+    managed.prewarm()
+    await managed.wait_warm()
+    assert len(spawns) == 2
+    # Off: the server's own idle timer unloads it.
+    await managed.set_keep_loaded(False)
+    assert managed.idle is not None
+    await corrector.close()
