@@ -291,3 +291,38 @@ runs ASR/cleanup. The source recording averages about 14.9 fps. GPU-backed devic
 necessary to assess animation smoothness. The emulator's GPU configuration was not changed.
 No phone, production Chirp configuration/server, Mac app, LaunchAgent or Tailscale setting was
 modified.
+
+
+### Selected launcher and themed icons (0.5.0)
+
+The release now uses the operator's **full-bleed moonlit pond bird** artwork. The adaptive
+icon has that complete composition as its background, navy overscan to keep the moon and
+bird inside the safe viewport, and an empty foreground (the explicitly approved fallback).
+No rounded tile is added; the launcher supplies its own mask. Legacy density variants use
+the same opaque source, with resource aliases sharing normal/round names. App-level overlays
+replace HeliBoard's icon IDs, including the About/settings icon, and the IME service references
+the new launcher mipmap explicitly.
+
+Android 13+ monochrome uses the selected round fin-bird glyph **with** waves. The floating
+microphone notification uses the **same original alpha without the detached waves**, retaining
+its eye/pupil, fins and feet. The exact supplied sources, deterministic packaging script and
+asset paths are documented in [artwork/chirp-icons/README.md](artwork/chirp-icons/README.md).
+Built-in imagegen cutout attempts were discarded; generated replacements do not ship.
+
+The full lint/unit/debug/release path passes with **202 tests, zero failures/errors, two
+opt-in skips**. Icon tests on API 31/37 verify application and IME service icon resolution,
+HeliBoard's resource overlay, visible orange bird/yellow moon under the adaptive mask,
+monochrome availability and notification alpha. Release smoke passes after the icon update.
+`scripts/emulator-icons.py` also passes on emulator-5580, leaving Chirp selected. It captures:
+
+- `release-launcher-icon.png` — actual app drawer with the selected artwork.
+- `release-app-icon-settings.png` — actual Android app-info icon.
+- `release-keyboard-picker-icon.png` — native picker; this Android build uses text-only rows,
+  while the IME's icon metadata is verified by the API tests.
+
+To repeat after release smoke: run `scripts/build-ui-probe.sh`, then
+`python3 scripts/emulator-icons.py` with the toolchain sourced and
+`ANDROID_SERIAL=emulator-5580`. Current signed release APK: **26,949,136 bytes (25.70 MiB)**,
+still **0.5.0 (6)** with the existing signing key. App lint retains warnings-as-errors; two
+narrow icon-style exceptions cover the v26 vendor-overlay qualifier and deliberately
+full-bleed legacy artwork.
