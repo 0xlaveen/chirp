@@ -3,4 +3,6 @@
     <string name="voice_subtype">English voice</string>
     <string name="english_subtype">English (Chirp)</string>
     <string name="debug_retention">DEBUG: recordings kept on Mac</string>
+    <string name="bubble_name">Chirp floating microphone</string>
+    <string name="accessibility_description">Optional microphone beside the focused text field. Chirp reads only that field’s text and selection to insert dictation safely. Field contents stay on this phone. No screen history, clipboard, or text logs. Microphone and network run only during dictation. Keep your existing keyboard.</string>
 </resources>

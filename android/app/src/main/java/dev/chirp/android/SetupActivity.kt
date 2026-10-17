@@ -1,20 +1,20 @@
 package dev.chirp.android
 
 import android.Manifest
-import android.annotation.SuppressLint
+import android.content.ComponentName
 import android.content.Intent
 import android.content.pm.PackageManager
+import androidx.core.net.toUri
 import android.os.Bundle
 import android.provider.Settings
-import android.text.InputType
-import android.view.View
 import android.view.inputmethod.InputMethodManager
-import android.widget.CheckBox
-import android.widget.EditText
-import android.widget.ScrollView
-import android.widget.TextView
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import com.google.mlkit.vision.barcode.common.Barcode
@@ -24,100 +24,84 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-@SuppressLint("SetTextI18n")
+internal class SetupState {
+    var step by mutableIntStateOf(0)
+    var mic by mutableStateOf(false)
+    var inputEnabled by mutableStateOf(false)
+    var bubbleEnabled by mutableStateOf(false)
+    var paired by mutableStateOf(false)
+    var status by mutableStateOf("Pair with your Mac to begin")
+    var checking by mutableStateOf(false)
+    var scanning by mutableStateOf(false)
+    var link by mutableStateOf("")
+    var health by mutableStateOf<Health?>(null)
+    var correction by mutableStateOf(false)
+    var returnToPrevious by mutableStateOf(true)
+    var haptics by mutableStateOf(true)
+    var debug by mutableStateOf(false)
+}
+
 open class SetupActivity : ComponentActivity() {
     private lateinit var store: SettingsStore
-    private lateinit var banner: TextView
-    private lateinit var status: TextView
-    private lateinit var link: EditText
-    private lateinit var correction: CheckBox
+    internal val state = SetupState()
     private var pairingGeneration = 0
     private var pendingHealth: okhttp3.Call? = null
     private val client by lazy { ChirpNetwork.client() }
     private val micPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) {
-        status.text = if (it) "Microphone permission granted" else "Microphone permission is needed to dictate"
+        state.mic = it
+        state.status = if (it) "Microphone permission granted" else "Microphone permission is needed to dictate — open app permissions to allow it"
     }
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         store = SettingsStore(this)
-        val content = column()
-        content.addView(label("Chirp Voice", 28f))
-        content.addView(label("Speak on your phone. Your Mac transcribes over Tailscale."))
-        banner = label("").also { content.addView(it) }
-        status = label(if (store.pairing() == null) "Pair with your Mac to begin" else "Paired with ${store.pairing()?.base?.host}")
-        content.addView(status)
-        content.button("1 · Grant microphone permission") {
-            if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED)
-                status.text = "Microphone permission already granted"
-            else micPermission.launch(Manifest.permission.RECORD_AUDIO)
-        }
-        content.button("2 · Enable Chirp in keyboard settings") { startActivity(Intent(Settings.ACTION_INPUT_METHOD_SETTINGS)) }
-        content.button("3 · Pick Chirp Voice") { getSystemService(InputMethodManager::class.java).showInputMethodPicker() }
-        content.addView(label("4 · Connect Tailscale on both devices. On the Mac run chirp-server pair, then scan its QR code or paste its pairing link here."))
-        link = EditText(this).apply {
-            hint = "chirp://pair?url=…&token=…"
-            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
-            isSingleLine = true; isSaveEnabled = false
-            importantForAutofill = View.IMPORTANT_FOR_AUTOFILL_NO_EXCLUDE_DESCENDANTS
-        }
-        content.addView(link)
-        val scan = content.button("Scan pairing QR") { }
-        scan.setOnClickListener {
-            scan.isEnabled = false
-            scanPairingQr(
-                received = { value -> if (!isDestroyed) { scan.isEnabled = true; receivePairingLink(value) } },
-                cancelled = { if (!isDestroyed) { scan.isEnabled = true; status.text = "Scan cancelled — scan again or paste the pairing link" } },
-                failed = { if (!isDestroyed) { scan.isEnabled = true; status.text = "Scanner unavailable — check Google Play services or paste the pairing link" } })
-        }
-        content.addView(label("Scanning requires Google Play services. You can always paste the link instead."))
-        val test = content.button("Test connection & save pairing") { testPairing() }
-        test.contentDescription = "Test the Mac connection and securely save the pairing"
-        correction = CheckBox(this).apply {
-            isChecked = store.correction
-            setOnCheckedChangeListener { _, value -> store.correction = value }
-        }
-        content.addView(correction)
-        content.addView(CheckBox(this).apply {
-            text = "Return to previous keyboard after dictation"; isChecked = store.returnToPrevious
-            setOnCheckedChangeListener { _, value -> store.returnToPrevious = value }
-        })
-        content.addView(CheckBox(this).apply {
-            text = "Haptic cues"; isChecked = store.haptics
-            setOnCheckedChangeListener { _, value -> store.haptics = value }
-        })
-        content.addView(CheckBox(this).apply {
-            text = "Debug overlay (timings only)"; isChecked = store.debugOverlay
-            setOnCheckedChangeListener { _, value -> store.debugOverlay = value }
-        })
-        content.addView(label("5 · Test dictation below: tap the field, pick Chirp Voice and tap the mic. Hold for push-to-talk. ✕ discards the utterance."))
-        content.addView(EditText(this).apply {
-            hint = "Test dictation here"
-            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
-            minLines = 3; isSaveEnabled = false
-            importantForAutofill = View.IMPORTANT_FOR_AUTOFILL_NO_EXCLUDE_DESCENDANTS
-        })
-        content.button("Forget pairing") { ++pairingGeneration; pendingHealth?.cancel(); store.forget(); link.text.clear(); refresh(); status.text = "Pairing removed" }
-        setContentView(ScrollView(this).apply { addView(content); systemInsets() })
-        consumePairingIntent(intent)
+        state.step = savedInstanceState?.getInt("step", 0)?.coerceIn(0, 3) ?: 0
         refresh()
-    }
-    override fun onNewIntent(intent: Intent) {
-        super.onNewIntent(intent)
+        setContent {
+            ChirpTheme {
+                SetupWizard(state,
+                    grantMic = {
+                        if (state.mic) state.status = "Microphone permission already granted"
+                        else micPermission.launch(Manifest.permission.RECORD_AUDIO)
+                    },
+                    keyboardSettings = { startActivity(Intent(Settings.ACTION_INPUT_METHOD_SETTINGS)) },
+                    accessibilitySettings = { startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) },
+                    appSettings = { startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, "package:$packageName".toUri())) },
+                    picker = { getSystemService(InputMethodManager::class.java).showInputMethodPicker() },
+                    scan = ::scan, check = { testPairing(save = state.link.isNotBlank()) },
+                    forget = {
+                        ++pairingGeneration; pendingHealth?.cancel(); pendingHealth = null
+                        store.forget(); state.link = ""; state.status = "Pairing removed"; state.checking = false; refresh()
+                    },
+                    preferences = {
+                        store.correction = state.correction; store.haptics = state.haptics
+                        store.returnToPrevious = state.returnToPrevious; store.debugOverlay = state.debug
+                    },
+                )
+            }
+        }
         consumePairingIntent(intent)
     }
+    override fun onNewIntent(intent: Intent) { super.onNewIntent(intent); consumePairingIntent(intent) }
     private fun consumePairingIntent(source: Intent) {
         val value = source.dataString
-        source.data = null // Do not keep credential-bearing intents in app state.
+        source.data = null
         if (value != null) receivePairingLink(value)
     }
     private fun receivePairingLink(value: String?) {
         try {
             Pairing.parse(value ?: error("Missing pairing link"))
-            ++pairingGeneration; pendingHealth?.cancel(); pendingHealth = null
-            link.setText(value)
-            status.text = "Pairing link received — test to save"
-        } catch (_: Exception) { status.text = "Invalid Chirp pairing link" }
+            ++pairingGeneration; pendingHealth?.cancel(); pendingHealth = null; state.checking = false
+            state.link = value.orEmpty(); state.step = 2
+            state.status = "Pairing link received — test to save"
+        } catch (_: Exception) { state.status = "Invalid Chirp pairing link" }
+    }
+    internal fun scan() {
+        state.scanning = true
+        scanPairingQr(
+            received = { if (!isDestroyed) { state.scanning = false; receivePairingLink(it) } },
+            cancelled = { if (!isDestroyed) { state.scanning = false; state.status = "Scan cancelled — scan again or paste the pairing link" } },
+            failed = { if (!isDestroyed) { state.scanning = false; state.status = "Scanner unavailable — check Google Play services or paste the pairing link" } },
+        )
     }
     protected open fun scanPairingQr(received: (String?) -> Unit, cancelled: () -> Unit, failed: () -> Unit) {
         val options = GmsBarcodeScannerOptions.Builder().setBarcodeFormats(Barcode.FORMAT_QR_CODE).build()
@@ -126,36 +110,57 @@ open class SetupActivity : ComponentActivity() {
             .addOnCanceledListener { cancelled() }
             .addOnFailureListener { failed() }
     }
-    override fun onResume() { super.onResume(); if (::store.isInitialized) refresh() }
-    private fun refresh() {
-        banner.retention(store.health?.debugRetention == true)
-        correction.text = correctionLabel(store.health)
-        correction.isEnabled = store.health?.let { it.correctionAvailable && (!it.correctionLeavesMachine || it.correctionHost != null) } == true
-        if (!correction.isEnabled) store.correction = false
-        correction.isChecked = store.correction
+    override fun onResume() {
+        super.onResume()
+        if (::store.isInitialized) { refresh(); if (state.paired && state.link.isBlank()) testPairing(save = false) }
     }
-    private fun testPairing() {
+    override fun onSaveInstanceState(outState: Bundle) { outState.putInt("step", state.step); super.onSaveInstanceState(outState) }
+    private fun refresh() {
+        state.mic = ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+        state.inputEnabled = getSystemService(InputMethodManager::class.java).enabledInputMethodList.any { it.packageName == packageName }
+        val enabled = Settings.Secure.getString(contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES).orEmpty()
+        state.bubbleEnabled = enabled.split(':').any {
+            ComponentName.unflattenFromString(it) == ComponentName(this, ChirpAccessibilityService::class.java)
+        }
+        state.paired = store.pairing() != null
+        state.health = store.health
+        if (store.health?.let { !it.correctionAvailable || (it.correctionLeavesMachine && it.correctionHost == null) } != false) store.correction = false
+        state.correction = store.correction; state.returnToPrevious = store.returnToPrevious
+        state.haptics = store.haptics; state.debug = store.debugOverlay
+    }
+    private fun testPairing(save: Boolean) {
         val pairing = try {
-            if (link.text.isNullOrBlank()) store.pairing() ?: error("Missing pairing") else Pairing.parse(link.text.toString())
-        } catch (_: Exception) { status.text = "Paste a valid Chirp pairing link with an HTTPS server"; return }
+            if (save) Pairing.parse(state.link) else store.pairing() ?: error("Missing pairing")
+        } catch (_: Exception) { state.status = "Paste a valid Chirp pairing link with an HTTPS server"; return }
         val id = ++pairingGeneration
         pendingHealth?.cancel()
-        val call = ChirpNetwork.healthCall(client, pairing)
-        pendingHealth = call
-        status.text = "Checking Mac…"
+        val call = ChirpNetwork.healthCall(client, pairing); pendingHealth = call
+        state.checking = true; state.status = "Checking Mac…"
         lifecycleScope.launch {
             try {
-                val started = android.os.SystemClock.elapsedRealtime()
                 val health = withContext(Dispatchers.IO) { ChirpNetwork.health(call) }
                 if (pairingGeneration != id) return@launch
-                pendingHealth = null
-                store.save(pairing, health)
-                link.text.clear()
-                status.text = if (health.ready) if (store.debugOverlay) "Mac ready · round trip ${android.os.SystemClock.elapsedRealtime() - started} ms" else "Mac ready"
-                    else "Paired · Mac is loading its speech model"
+                pendingHealth = null; state.checking = false
+                if (save) { store.save(pairing, health); state.link = "" }
+                else {
+                    if (correctionLabel(store.health) != correctionLabel(health) || !health.correctionAvailable) store.correction = false
+                    store.health = health
+                }
+                state.status = if (health.ready) "Mac ready" else "Paired · Mac is loading its speech model"
                 refresh()
-            } catch (_: Exception) { if (pairingGeneration == id) status.text = "Mac unreachable or pairing refused — check Tailscale and the pairing link" }
+            } catch (_: Exception) {
+                if (pairingGeneration == id) {
+                    pendingHealth = null; state.checking = false
+                    state.status = "Mac unreachable — is Tailscale on? Check the Mac is awake, Chirp is running, and the pairing link is current."
+                }
+            }
         }
     }
-    override fun onDestroy() { ++pairingGeneration; pendingHealth?.cancel(); ChirpNetwork.dispose(client); super.onDestroy() }
+    override fun onStop() {
+        ++pairingGeneration; pendingHealth?.cancel(); pendingHealth = null; state.checking = false
+        super.onStop()
+    }
+    override fun onDestroy() {
+        state.link = ""; ++pairingGeneration; pendingHealth?.cancel(); ChirpNetwork.dispose(client); super.onDestroy()
+    }
 }

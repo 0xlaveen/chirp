@@ -16,9 +16,10 @@ import android.view.MotionEvent
 import android.view.View
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputMethodManager
+import android.view.inputmethod.InputMethodSubtype
+import android.view.ContextThemeWrapper
 import android.widget.Button
 import android.widget.CheckBox
-import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.core.content.ContextCompat
 import kotlinx.coroutines.CoroutineScope
@@ -48,7 +49,6 @@ open class ChirpImeService : InputMethodService() {
     private var stopSent = false
     private var viewGeneration = 0
     private var readyVersion = 0
-    private var idleExpiry: Runnable? = null
     private var pressAt: Long? = null
     private var firstPartialLatency: Long? = null
     private var stopToFinal: Long? = null
@@ -57,6 +57,9 @@ open class ChirpImeService : InputMethodService() {
     private var composing: ComposingSession? = null
     private var status = "Tap to dictate · hold to talk"
     private var partial = ""
+    private var stable = ""
+    private var voiceMode = false
+    private lateinit var panel: VoicePanel
     private var retained = false
     private var rtt: Long? = null
     private var stopAt: Long? = null
@@ -80,17 +83,19 @@ open class ChirpImeService : InputMethodService() {
 
     @SuppressLint("ClickableViewAccessibility")
     override fun onCreateInputView(): View {
-        val column = column()
-        banner = label("").also { column.addView(it) }
-        strip = label("", 17f).apply { maxLines = 3; minHeight = dp(48) }.also { column.addView(it) }
-        mic = column.button("Microphone") { }
-        mic.contentDescription = "Microphone: tap to toggle, hold to talk"
-        mic.minHeight = dp(80)
-        mic.setOnTouchListener { view, event ->
+        panel = VoicePanel(ContextThemeWrapper(this, R.style.Theme_Chirp))
+        val column = panel.extras
+        banner = panel.banner
+        strip = panel.transcript
+        mic = panel.mic
+        mic.setOnClickListener {
+            if (phase == Phase.IDLE) startSession() else stopSession()
+        }
+        mic.setOnTouchListener { _, event ->
             if (phase == Phase.FINALIZING) return@setOnTouchListener true
             when (event.actionMasked) {
                 MotionEvent.ACTION_DOWN -> act(gesture.down(SystemClock.uptimeMillis(), phase != Phase.IDLE))
-                MotionEvent.ACTION_UP -> { view.performClick(); act(gesture.up(SystemClock.uptimeMillis())) }
+                MotionEvent.ACTION_UP -> act(gesture.up(SystemClock.uptimeMillis()))
                 MotionEvent.ACTION_CANCEL -> act(gesture.cancel())
             }
             true
@@ -98,21 +103,16 @@ open class ChirpImeService : InputMethodService() {
         correction = CheckBox(this).apply {
             setOnCheckedChangeListener { _, checked -> store.correction = checked }
         }.also { column.addView(it) }
-        val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        fun key(label: String, description: String, action: () -> Unit) {
-            row.addView(Button(this).apply {
-                text = label; contentDescription = description; minWidth = 0; minimumWidth = 0
-                setPadding(0, 0, 0, 0)
-                setOnClickListener { action() }
-            }, LinearLayout.LayoutParams(0, dp(48), 1f))
+        panel.control("✕", "Cancel dictation") {
+            cancelSession("Cancelled")
+            if (voiceMode && store.returnToPrevious) previousKeyboard()
         }
-        key("✕", "Cancel dictation") { cancelSession("Cancelled") }
-        key("⌫", "Backspace") { edit { currentInputConnection?.deleteSurroundingTextInCodePoints(1, 0) } }
-        key("Space", "Insert space") { edit { currentInputConnection?.commitText(" ", 1) } }
-        key("↵", "Enter or editor action") { edit { enter() } }
-        key("⌨ back", "Previous keyboard") { cancelSession(); previousKeyboard() }
-        column.addView(row)
-        raw = column.button("Use raw") {
+        panel.control("⌫", "Backspace") { edit { currentInputConnection?.deleteSurroundingTextInCodePoints(1, 0) } }
+        panel.control("Space", "Insert space") { edit { currentInputConnection?.commitText(" ", 1) } }
+        panel.control("↵", "Enter or editor action") { edit { enter() } }
+        panel.control("⌨ back", "Previous keyboard") { cancelSession(); previousKeyboard() }
+        raw = panel.raw
+        raw.setOnClickListener {
             val inserted = composing?.useRaw(expectedCursor) == true
             if (inserted) forgetUndo()
             render()
@@ -124,7 +124,7 @@ open class ChirpImeService : InputMethodService() {
         }
         debug = label("", 12f).also { column.addView(it) }
         render()
-        return column
+        return panel
     }
     private fun act(action: MicGesture.Action) {
         when (action) {
@@ -148,7 +148,7 @@ open class ChirpImeService : InputMethodService() {
         }
         val connection = currentInputConnection ?: run { status = "Select a text field first"; render(); return }
         if (pairing == null) { status = "Pair with your Mac in Chirp setup"; render(); return }
-        forgetUndo(); clearIdleExpiry()
+        forgetUndo()
         val id = ++generation
         pressAt = SystemClock.elapsedRealtime()
         composing = ComposingSession(connection)
@@ -156,17 +156,16 @@ open class ChirpImeService : InputMethodService() {
         composingStart = -1; lastSequence = -1
         phase = Phase.CONNECTING
         audioFinished = false; streamReady = false; stopSent = false
-        status = "Listening · connecting to Mac…"; partial = ""
+        status = "Connecting to Mac…"; partial = ""; stable = ""
         stopAt = null; finalLatency = null; stopToFinal = null; firstPartialLatency = null
         val buffer = PreReadyBuffer(send = { bytes -> transport?.audio(bytes) == true })
         preReady = buffer
-        val overlay = store.debugOverlay
         // Start capture before any network work. The buffer owns and zeroes every PCM frame.
         capture = createCapture(
             frame = { bytes -> buffer.offer(bytes) },
-            level = { value -> if (overlay) handler.post {
-                if (generation == id && phase != Phase.FINALIZING) {
-                    status = "Listening · level ${(value * 100).toInt()}%"; render()
+            level = { value -> handler.post {
+                if (generation == id && phase in setOf(Phase.CONNECTING, Phase.RECORDING)) {
+                    panel.level(value)
                 }
             } },
             done = { error -> handler.post {
@@ -199,8 +198,9 @@ open class ChirpImeService : InputMethodService() {
                 lastSequence = event.seq
                 if (firstPartialLatency == null && event.text.isNotEmpty())
                     firstPartialLatency = pressAt?.let { SystemClock.elapsedRealtime() - it }
-                partial = event.text
-                if (composing?.partial(event) != true) cancelSession("Text field unavailable — try again")
+                partial = event.text; stable = event.stable
+                // Some editors refuse composing spans: the panel still shows live text.
+                composing?.partial(event)
             }
             is ServerEvent.Final -> {
                 if (phase != Phase.FINALIZING || !stopSent) { cancelSession("Unexpected server response"); return }
@@ -209,18 +209,20 @@ open class ChirpImeService : InputMethodService() {
                 capture?.stop(); capture = null
                 preReady?.cancel(); preReady = null
                 phase = Phase.IDLE; streamReady = false
-                // Keep the authenticated socket for the next start/final pair.
+                transport?.close(immediate = true); transport = null
+                client.connectionPool.evictAll()
                 expectedCursor = (if (composingStart >= 0) composingStart else expectedCursor) + event.text.length
                 if (composing?.final(event) != true) { cancelSession("Text field unavailable — try again"); return }
                 finalLatency = stopAt?.let { SystemClock.elapsedRealtime() - it }
-                status = "Tap to dictate again"; partial = ""
-                scheduleIdleExpiry()
+                status = "Tap to dictate again"; partial = ""; stable = ""
                 undo = event.corrected && event.raw != event.text
                 if (undo) {
+                    render() // Start the undo window after the control is visible.
                     expiry = Runnable {
                         forgetUndo(); render()
                         if (visible && store.returnToPrevious) previousKeyboard()
                     }.also { handler.postDelayed(it, 5000) }
+                    return
                 } else {
                     composing = null
                     if (store.returnToPrevious) previousKeyboard()
@@ -263,11 +265,11 @@ open class ChirpImeService : InputMethodService() {
         clearDeadline(); forgetUndo()
         preReady?.cancel(); preReady = null
         capture?.stop(); capture = null
-        if (active) { transport?.close(true); transport = null }
+        transport?.close(cancel = active, immediate = !active); transport = null
+        client.connectionPool.evictAll()
         composing?.cancel(); composing = null
-        partial = ""; phase = Phase.IDLE; status = message
+        partial = ""; stable = ""; phase = Phase.IDLE; status = message
         audioFinished = false; streamReady = false; stopSent = false
-        if (visible) scheduleIdleExpiry()
         render()
     }
     protected open fun createCapture(frame: (ByteArray) -> Boolean, level: (Double) -> Unit,
@@ -322,19 +324,9 @@ open class ChirpImeService : InputMethodService() {
             }
         }
     }
-    private fun clearIdleExpiry() { idleExpiry?.let(handler::removeCallbacks); idleExpiry = null }
-    private fun scheduleIdleExpiry() {
-        clearIdleExpiry()
-        if (!visible || phase != Phase.IDLE) return
-        idleExpiry = Runnable {
-            idleExpiry = null
-            transport?.close(immediate = true); transport = null
-            client.connectionPool.evictAll()
-        }.also { handler.postDelayed(it, 30000) }
-    }
     private fun hideResources() {
         visible = false; ++viewGeneration
-        cancelSession(); clearIdleExpiry()
+        cancelSession()
         pendingHealth?.cancel(); pendingHealth = null
         transport?.close(immediate = true); transport = null
         client.dispatcher.cancelAll(); client.connectionPool.evictAll()
@@ -365,9 +357,9 @@ open class ChirpImeService : InputMethodService() {
     }
     private fun render() {
         if (!::strip.isInitialized) return
-        strip.text = partial.ifEmpty { status }
+        panel.show(status, partial, stable, phase != Phase.IDLE, phase == Phase.FINALIZING)
+        if (partial.isEmpty()) strip.text = status
         banner.retention(retained || store.health?.debugRetention == true)
-        mic.text = when (phase) { Phase.IDLE -> "● Tap to dictate"; Phase.CONNECTING -> "■ Stop · connecting…"; Phase.RECORDING -> "■ Stop"; Phase.FINALIZING -> "Finishing…" }
         correction.text = correctionLabel(store.health)
         correction.isEnabled = phase == Phase.IDLE && store.health?.let {
             it.correctionAvailable && (!it.correctionLeavesMachine || it.correctionHost != null)
@@ -393,11 +385,14 @@ open class ChirpImeService : InputMethodService() {
         if (!wasVisible) {
             ++viewGeneration
             pairing = loadPairing()
-            ensureTransport() // TLS + bearer only; the mic press sends start.
             refreshHealth()
-            scheduleIdleExpiry()
+            if (voiceMode) startSession()
         }
         render()
+    }
+    override fun onCurrentInputMethodSubtypeChanged(newSubtype: InputMethodSubtype?) {
+        super.onCurrentInputMethodSubtypeChanged(newSubtype)
+        voiceMode = newSubtype?.mode == "voice"
     }
     override fun onFinishInputView(finishingInput: Boolean) {
         if (!reconfiguring) hideResources()

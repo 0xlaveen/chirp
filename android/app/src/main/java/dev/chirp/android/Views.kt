@@ -13,10 +13,10 @@ internal fun Context.dp(value: Int) = (value * resources.displayMetrics.density)
 internal fun Context.column() = LinearLayout(this).apply {
     orientation = LinearLayout.VERTICAL
     setPadding(dp(12), dp(8), dp(12), dp(8))
-    setBackgroundColor(Color.rgb(244, 248, 245))
+    setBackgroundColor(VoicePalette.of(this@column).background)
 }
 internal fun Context.label(value: String, size: Float = 16f) = TextView(this).apply {
-    text = value; textSize = size; setTextColor(Color.rgb(24, 45, 37))
+    text = value; textSize = size; setTextColor(VoicePalette.of(this@label).ink)
     setPadding(dp(4), dp(5), dp(4), dp(5))
     isSaveEnabled = false
 }
