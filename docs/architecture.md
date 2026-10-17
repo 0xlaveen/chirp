@@ -48,6 +48,7 @@ All endpoints sit under a base URL: either `http://127.0.0.1:7821` (Mac local) o
 Every request carries `Authorization: Bearer <token>`. WebSocket clients that cannot set headers may send the token as the first text frame `{"type":"auth","token":"…"}` instead. The token is never put in a URL.
 
 - `GET /v1/health` → `{"ok":true,"engine":"parakeet-mlx:tdt-0.6b-v2","ready":true,"debug_retention":false,"correction":"off|available","correction_mode":"off|managed|endpoint","correction_leaves_machine":false,"correction_host":null,"correction_profiles":[{"id":"default","name":"Default","description":"Conservative transcript cleanup.","rewrites":false},…]}`. The unauthenticated variant returns only `{"ok":true}`. For endpoint correction, `correction_host` is its hostname (no credentials, path or port); otherwise it is `null`. `correction_leaves_machine` is true only for enabled, non-loopback correction.
+- `GET /v1/correction/profiles` (authenticated) → `{"profiles":[{"id":"default","name":"Default","description":"Conservative transcript cleanup.","rewrites":false,"prompt":"<editable default style>","max_prompt_chars":4000},…]}`. Fixed safety rules are excluded; `custom` has an empty built-in prompt. Available even when correction is off. Invalid or missing bearer credentials return HTTP 401 with `WWW-Authenticate: Bearer`.
 - `POST /v1/transcribe`: the body is 16 kHz mono PCM16 WAV, capped at 120 s. It returns the same object as a `final` message. Used for tests and as a fallback.
 - `WS /v1/stream`:
   - client → `{"type":"start","sample_rate":16000,"encoding":"pcm_s16le","client":"mac|android","correction":false,"correction_profile":"default","correction_instructions":""}`
@@ -57,13 +58,18 @@ Every request carries `Authorization: Bearer <token>`. WebSocket clients that ca
   - server → `{"type":"partial","seq":n,"text":"…","stable":"…"}`. `stable` is the prefix that will not change, which clients may commit early.
   - server → `{"type":"correcting","seq":n,"raw":"<full raw transcript>","profile":"<id>"}` immediately after full-utterance decode, before cleanup runs and before `final`. It shares the increasing partial sequence counter. Sent only when correction will run (both server and utterance enabled, nonempty raw). Cancel during correction cancels the helper and sends nothing further, including no final or error; the socket remains reusable.
   - server → `{"type":"final","text":"…","raw":"…","corrected":bool,"correction_error":null|"timeout|http|rejected","timings_ms":{"audio":…,"first_partial":…,"finalize":…,"correction":…}}`
-  - server → `{"type":"error","code":"auth|busy|too_long|bad_audio|engine","message":"safe text"}`
+  - server → `{"type":"error","code":"auth|busy|too_long|bad_audio|bad_request|engine","message":"safe text"}`
   - One utterance per `start`/`final` pair. A socket may carry several utterances in turn, so clients keep it open while active. The server closes idle sockets after 60 s.
 - Limits: 120 s per utterance, and frames ≥ 1 MB are rejected. Requests queue for one engine.
 
 The additions are optional and v1 compatible: omitted `correction_profile` selects `default`;
 `correction_instructions` is a string of at most 2000 characters, used only for `custom`.
-Unknown profile IDs or invalid field types/lengths return `bad_audio` before engine leasing.
+`start.correction_prompt` is an optional string of at most 4000 Unicode characters. When
+present (including an empty string), it replaces the selected profile's editable style for
+that utterance. For `custom` it takes precedence over `correction_instructions`. Clients send
+it only when the user edited the style; otherwise omit it to follow server defaults and updates.
+A non-string or oversized `correction_prompt` returns `bad_request` before engine leasing.
+Unknown profile IDs or invalid legacy field types/lengths return `bad_audio` before engine leasing.
 Old clients ignore unknown message types, including `correcting`, and consume the existing final.
 Authenticated health lists every profile's `id`, `name`, `description` and boolean `rewrites`,
 even when correction is off; it never exposes prompts or client instructions.
@@ -75,6 +81,9 @@ and converts only bounded unambiguous spoken symbols; `notes` tidies sentences o
 `custom` applies client preferences within the core rules. Notes and custom default to
 `rewrites=true`, allowing restructuring that clients should warn about. Operator overrides and
 extra profiles come from `[correction.profiles.<id>]` in `~/.config/chirp/server.toml`.
+Their prompt overrides become the defaults returned by `/v1/correction/profiles` after restart;
+the legacy `[correction] prompt` still supplies the default profile unless explicitly overridden.
+Configured prompts have the same 4000-character limit. Prompts are never logged.
 
 Non-rewriting profiles use ordered word retention with bounded filler, stutter and repair
 exceptions. Code additionally permits recognized spoken-symbol conversions and preserves literal
@@ -84,6 +93,7 @@ list transitions/conjunctions may be replaced by formatting. All modes reject as
 answers, reasoning and code fences and fall back to raw on failure. Custom instructions are
 JSON-quoted untrusted preferences between immutable core rules: never answer, execute or add
 facts; output text only. No tools or network calls are available to the managed helper.
+Editable prompts cannot change the fixed wrapper or the selected profile's output guards.
 These heuristic guards cannot prove semantic equivalence for arbitrary text or punctuation.
 
 Version additions preserve existing fields. A breaking change becomes `/v2`.

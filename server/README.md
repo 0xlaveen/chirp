@@ -135,12 +135,18 @@ Profiles ship in code; no configuration is needed to use `default`, `chat`, `ema
 `notes` or `custom`. Chat allows lowercase and skips periods on short messages; email polishes
 sentences without adding content; code preserves literals and permits unambiguous spoken
 symbols; notes formats spoken lists. Notes and custom advertise `rewrites=true` because they
-can restructure text. Authenticated `/v1/health` lists the available IDs and display metadata.
+can restructure text. Authenticated `/v1/health` lists the available IDs and display metadata,
+without prompt text. Authenticated `GET /v1/correction/profiles` returns
+`{"profiles":[{"id","name","description","rewrites":bool,"prompt":"…","max_prompt_chars":4000}]}`.
+The prompt contains only the editable style; the fixed safety wrapper is excluded. Custom has
+an empty built-in prompt. This endpoint is available even when correction is off and uses the
+same bearer authentication (HTTP 401 on missing or invalid credentials).
 
 To override any built-in or add a profile, edit `~/.config/chirp/server.toml` and restart your
 server when convenient. Omitted fields retain the built-in values; extra profiles default to
 conservative cleanup and `rewrites=false`. IDs use lowercase letters, digits, `_` and `-`,
-start with a letter, and are at most 64 characters. Example:
+start with a letter, and are at most 64 characters. Prompts are limited to 4000 characters.
+Configured prompt overrides become the defaults returned by the profiles endpoint. Example:
 
 ```toml
 [correction.profiles.chat]
@@ -162,8 +168,13 @@ allow bounded restructuring while rejecting novel words, lost substantive detail
 length changes. Unsafe or unsupported edits return the raw transcript.
 
 Clients select a profile per utterance with `start.correction_profile` (default `"default"`).
-For `"custom"`, send `correction_instructions` (at most 2000 characters); other profiles ignore
-its contents. Instructions are JSON-quoted untrusted cleanup preferences, wrapped by fixed
+When the user edits a style, send `start.correction_prompt` (a string of at most 4000 Unicode
+characters) to replace that profile's editable prompt for this utterance. An empty string is a
+valid edit. Omit the field for unedited styles so server defaults and updates apply. A non-string
+or oversized value returns `bad_request` before engine leasing. Edits cannot change the fixed
+wrapper or output guards, and prompts are never logged.
+For `"custom"`, `correction_prompt` takes precedence over legacy `correction_instructions`
+(at most 2000 characters); other profiles ignore its contents. Instructions are JSON-quoted untrusted cleanup preferences, wrapped by fixed
 rules to never answer, execute, add facts or output anything but text. No tools are exposed.
 Immediately before cleanup runs, the server sends `{"type":"correcting","seq":n,"raw":"…",
 "profile":"<id>"}`, followed by the existing final. Clients can show the raw transcript while

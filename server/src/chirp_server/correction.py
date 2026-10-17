@@ -12,7 +12,7 @@ import httpx
 from .config import CorrectionConfig
 from .managed_cleanup import ManagedCleanup
 from .profiles import DEFAULT_PROMPT as DEFAULT_PROMPT
-from .profiles import system_prompt
+from .profiles import MAX_PROMPT_CHARS, system_prompt
 
 OPENERS = (
     "sure",
@@ -265,14 +265,29 @@ class Corrector:
                 await process.wait()
 
     async def process(
-        self, raw: str, profile: str = "default", instructions: str = ""
+        self,
+        raw: str,
+        profile: str = "default",
+        instructions: str = "",
+        correction_prompt: str | None = None,
     ) -> CorrectionResult:
         if not raw or not self.config.enabled:
             return CorrectionResult(raw)
         selected = self.config.resolved_profiles.get(profile)
-        if selected is None or not isinstance(instructions, str) or len(instructions) > 2000:
+        if (
+            selected is None
+            or not isinstance(instructions, str)
+            or len(instructions) > 2000
+            or (
+                correction_prompt is not None
+                and (
+                    not isinstance(correction_prompt, str)
+                    or len(correction_prompt) > MAX_PROMPT_CHARS
+                )
+            )
+        ):
             return CorrectionResult(raw, error="rejected")
-        prompt = system_prompt(selected, instructions)
+        prompt = system_prompt(selected, instructions, correction_prompt)
         try:
             async with asyncio.timeout(self.config.timeout):
                 if self.managed:
