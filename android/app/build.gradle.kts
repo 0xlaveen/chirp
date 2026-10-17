@@ -28,13 +28,13 @@ android {
             signingConfig = signingConfigs.getByName("local")
             isMinifyEnabled = true
             isShrinkResources = true
-            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), rootProject.file("keyboard/upstream/app/proguard-rules.pro"))
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), rootProject.file("keyboard/upstream/app/proguard-rules.pro"), "proguard-rules.pro")
         }
         release {
             signingConfig = signingConfigs.getByName("local")
             isMinifyEnabled = true
             isShrinkResources = true
-            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), rootProject.file("keyboard/upstream/app/proguard-rules.pro"))
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), rootProject.file("keyboard/upstream/app/proguard-rules.pro"), "proguard-rules.pro")
         }
     }
     else logger.warn("keystore/local-debug.keystore missing: release APK will be unsigned (run scripts/make-keystore.sh)")
