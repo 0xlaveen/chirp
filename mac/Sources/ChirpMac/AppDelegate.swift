@@ -32,6 +32,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             NSLog("Chirp: could not register the hotkey \(settings.hotkey.title); it may be in use by another app")
         }
 
+        Sounds.prepare()   // decode the cues now so the first start sound has no wait
         Task { await controller.refreshHealth() }
         healthTimer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [controller] _ in
             Task { @MainActor in await controller.refreshHealth() }

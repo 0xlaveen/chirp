@@ -1,4 +1,5 @@
 import AppKit
+import UniformTypeIdentifiers
 import ChirpCore
 import ChirpUI
 
@@ -23,6 +24,10 @@ final class SettingsWindowController: NSObject, NSTextFieldDelegate {
         s.tokenPresent = ServerConfig.readToken() != nil
         s.launch = LaunchAtLogin.state
         s.soundsEnabled = settings.soundsEnabled
+        s.soundPack = settings.soundPack
+        s.soundVolume = settings.soundVolume
+        s.customStart = settings.customStartSound
+        s.customStop = settings.customStopSound
         s.micGranted = Permissions.microphoneGranted
         s.accessibilityGranted = Permissions.accessibilityGranted
         (s.serverStatus, s.serverStatusTone) = serverStatus()
@@ -61,6 +66,16 @@ final class SettingsWindowController: NSObject, NSTextFieldDelegate {
         form.recorder.onRecordingChanged = { [weak self] recording in self?.onRecordingChanged?(recording) }
         form.sounds.target = self
         form.sounds.action = #selector(toggleSounds(_:))
+        form.soundPack.target = self
+        form.soundPack.action = #selector(packChanged(_:))
+        form.volume.target = self
+        form.volume.action = #selector(volumeChanged(_:))
+        for (button, action) in [(form.previewStart, #selector(previewStart)), (form.previewStop, #selector(previewStop)),
+                                 (form.chooseStart, #selector(chooseStart)), (form.chooseStop, #selector(chooseStop)),
+                                 (form.removeStart, #selector(removeStart)), (form.removeStop, #selector(removeStop))] {
+            button.target = self
+            button.action = action
+        }
         form.style.target = self
         form.style.action = #selector(styleChanged(_:))
         form.instructions.onChange = { settings.correctionInstructions = $0 }
@@ -146,6 +161,71 @@ final class SettingsWindowController: NSObject, NSTextFieldDelegate {
 
     @objc private func toggleSounds(_ sender: NSButton) {
         settings.soundsEnabled = sender.state == .on
+    }
+
+    // MARK: sounds
+
+    @objc private func packChanged(_ sender: NSPopUpButton) {
+        let pack = SoundPack.resolve(id: sender.selectedItem?.representedObject as? String)
+        let previous = settings.soundPack
+        settings.soundPack = pack
+        form?.showPack(pack)
+        form?.setCustomSounds(start: settings.customStartSound, stop: settings.customStopSound)
+        // "Custom…" with nothing chosen yet goes straight to the file chooser; giving up keeps the old pack.
+        if pack == .custom, settings.customStartSound == nil, settings.customStopSound == nil {
+            if !importSound(for: .start) {
+                settings.soundPack = previous
+                form?.showPack(previous)
+            }
+        }
+        Sounds.prepare()
+    }
+
+    @objc private func volumeChanged(_ sender: NSSlider) {
+        let fraction = sender.doubleValue / 100
+        settings.soundVolume = fraction
+        form?.setVolume(fraction)
+        // Let go of the slider and hear the level (not on every tick of the drag).
+        if NSApp.currentEvent?.type == .leftMouseUp { Sounds.play(.start) }
+    }
+
+    @objc private func previewStart() { Sounds.prepare(); Sounds.play(.start) }
+    @objc private func previewStop() { Sounds.prepare(); Sounds.play(.stop) }
+    @objc private func chooseStart() { importSound(for: .start) }
+    @objc private func chooseStop() { importSound(for: .stop) }
+    @objc private func removeStart() { removeSound(for: .start) }
+    @objc private func removeStop() { removeSound(for: .stop) }
+
+    /// Asks for an audio file, copies it into Application Support and remembers the copy. Returns false when the user
+    /// cancelled or the file could not be used (the reason shows under the row).
+    @discardableResult
+    private func importSound(for cue: SoundCue) -> Bool {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.audio]   // aiff, wav, caf, m4a, mp3, …
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = false
+        panel.message = cue == .start ? "Choose the sound that plays when dictation starts."
+                                      : "Choose the sound that plays when dictation stops."
+        panel.prompt = "Choose"
+        guard panel.runModal() == .OK, let url = panel.url else { return false }
+        do {
+            let imported = try Sounds.customStore.importFile(from: url, cue: cue, replacing: settings.customSound(for: cue))
+            if cue == .start { settings.customStartSound = imported } else { settings.customStopSound = imported }
+            form?.setCustomSounds(start: settings.customStartSound, stop: settings.customStopSound)
+            Sounds.prepare()
+            Sounds.play(cue)
+            return true
+        } catch {
+            form?.setCustomSounds(start: settings.customStartSound, stop: settings.customStopSound, error: error.localizedDescription)
+            return false
+        }
+    }
+
+    private func removeSound(for cue: SoundCue) {
+        Sounds.customStore.remove(settings.customSound(for: cue))
+        if cue == .start { settings.customStartSound = nil } else { settings.customStopSound = nil }
+        form?.setCustomSounds(start: settings.customStartSound, stop: settings.customStopSound)
+        Sounds.prepare()
     }
 
     @objc private func toggleLaunch(_ sender: NSButton) {

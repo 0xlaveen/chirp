@@ -146,6 +146,8 @@ final class DictationController {
                                              available: health?.correctionProfiles)
         hud.model.styleName = startOptions.correction ? CorrectionProfile.name(for: startOptions.correctionProfile, in: health) : nil
         hud.show()
+        // The start cue plays right after this (see `send`); the microphone must not open before it is over.
+        let micMayOpen = ContinuousClock.now + .seconds(Sounds.startDelay())
 
         Task {
             chirpLog.info("microphone authorization=\(Permissions.microphone.rawValue, privacy: .public) accessibility=\(Permissions.accessibilityGranted, privacy: .public)")
@@ -156,8 +158,9 @@ final class DictationController {
                 }
                 return
             }
-            // Let the start cue finish before the microphone opens, so it is never part of the recording.
-            if settings.soundsEnabled { try? await Task.sleep(for: .milliseconds(160)) }
+            // Let the start cue finish before the microphone opens, so it is never part of the recording:
+            // min(cue length + 20 ms, 300 ms), counted from when the cue started (a permission wait counts too).
+            try? await Task.sleep(until: micMayOpen, clock: .continuous)
             guard epoch == myEpoch, machine.state == .connecting || machine.state == .listening else { return }
             startStreaming(epoch: myEpoch)
         }

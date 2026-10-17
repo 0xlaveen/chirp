@@ -228,9 +228,12 @@ import Testing
         #expect(sub.filter { $0.mark == .on }.map(\.title) == ["⌃⌥⌘R (custom)"])
     }
 
-    @Test func soundsAndSetupHaveRows() {
-        #expect(entry(inputs(), .toggleSounds)?.mark == .off)
-        #expect(entry(inputs { $0.soundsEnabled = true }, .toggleSounds)?.mark == .on)
+    @Test func soundsHasASubmenuAndSetupHasARow() throws {
+        let off = try #require(MenuContent.entries(inputs()).first { $0.title == "Sounds" })
+        #expect(off.subtitle == "Off" && off.action == nil)
+        #expect(off.submenu?.filter { $0.mark == .on }.map(\.title) == ["Off"])
+        let chirp = try #require(MenuContent.entries(inputs { $0.soundsEnabled = true }).first { $0.title == "Sounds" })
+        #expect(chirp.subtitle == "Chirp" && chirp.submenu?.filter { $0.mark == .on }.map(\.title) == ["Chirp"])
         #expect(entry(inputs(), .showSetup)?.title == "Set Up Chirp…")
         #expect(MenuAction.showSetup.payload == nil)
     }

@@ -10,7 +10,7 @@ public enum LaunchState: Equatable, Sendable {
 }
 
 public enum MenuAction: Equatable, Sendable {
-    case toggleDictation, pickInput(String?), toggleCleanup, toggleShowRaw, pickHotkey(String), pickStyle(String), toggleSounds
+    case toggleDictation, pickInput(String?), toggleCleanup, toggleShowRaw, pickHotkey(String), pickStyle(String), pickSound(String)
     case copyDoctor, grantMic, grantAX, toggleLaunch, showSettings, showSetup, showAbout, quit
 
     /// What the AppKit item carries to its action method.
@@ -19,6 +19,7 @@ public enum MenuAction: Equatable, Sendable {
         case .pickInput(let uid): uid
         case .pickHotkey(let id): id
         case .pickStyle(let id): id
+        case .pickSound(let id): id
         default: nil
         }
     }
@@ -71,6 +72,9 @@ public struct MenuInputs: Sendable {
     public var styleID = CorrectionProfile.defaultID
     public var hotkey: KeyCombo = .controlOptionSpace
     public var soundsEnabled = false
+    public var soundPack: SoundPack = .default
+    /// Whether the Custom pack has a start or a stop file yet.
+    public var hasCustomSound = false
     public var serverURL = ServerConfig.defaultURL.absoluteString
     public var micGranted = true
     public var accessibilityGranted = true
@@ -123,8 +127,7 @@ public enum MenuContent {
         }
         out.append(inputPicker(m))
         out.append(hotkeyMenu(m))
-        out.append(MenuEntry(title: "Start and stop sounds", symbol: "speaker.wave.2", action: .toggleSounds,
-                             mark: m.soundsEnabled ? .on : .off))
+        out.append(soundsMenu(m))
         out.append(.separator)
 
         out.append(contentsOf: cleanup(m))
@@ -167,6 +170,25 @@ public enum MenuContent {
         sub.append(.separator)
         sub.append(MenuEntry(title: "Record Custom Shortcut…", action: .showSettings))
         return MenuEntry(title: "Hotkey", subtitle: m.hotkey.title, symbol: "command", submenu: sub)
+    }
+
+    /// "Sounds": Off, the packs, Custom… (which asks for files in Settings until there are some).
+    static func soundsMenu(_ m: MenuInputs) -> MenuEntry {
+        let current = SoundChoice.current(enabled: m.soundsEnabled, pack: m.soundPack)
+        var sub: [MenuEntry] = []
+        for choice in SoundChoice.menuOrder {
+            if choice == .pack(.custom) { sub.append(.separator) }
+            let title: String
+            switch choice {
+            case .off: title = "Off"
+            case .pack(let p): title = p.title
+            }
+            sub.append(MenuEntry(title: title, action: .pickSound(choice.id), mark: choice == current ? .on : .off))
+            if choice == .off { sub.append(.separator) }
+        }
+        var subtitle = "Off"
+        if m.soundsEnabled { subtitle = m.soundPack == .custom ? (m.hasCustomSound ? "Custom" : "Custom (choose files)") : m.soundPack.title }
+        return MenuEntry(title: "Sounds", subtitle: subtitle, symbol: "speaker.wave.2", submenu: sub)
     }
 
     /// "Input Device": follows the system default unless one is picked and still connected.
