@@ -170,6 +170,7 @@ import Testing
         let form = SettingsForm(SettingsState())
         func has(_ control: NSView, _ tab: SettingsTab) -> Bool { control.isDescendant(of: form.view(for: tab)) }
         #expect(has(form.hotkey, .general) && has(form.recorder, .general) && has(form.launch, .general) && has(form.setupButton, .general))
+        #expect(has(form.wordWaveform, .general) && !has(form.wordWaveform, .cleanup))
         #expect(has(form.sounds, .sounds) && has(form.soundPack, .sounds) && has(form.volume, .sounds) && has(form.chooseStart, .sounds))
         #expect(has(form.cleanupEnabled, .cleanup) && has(form.style, .cleanup) && has(form.prompts.view, .cleanup))
         #expect(has(form.appStyles.view, .cleanup) && has(form.showChanges, .cleanup) && has(form.insertRawFirst, .cleanup))
@@ -223,7 +224,7 @@ import Testing
         }
     }
 
-    @Test(arguments: [(SettingsTab.general, SoundPack.chirp, 3), (.sounds, .chirp, 3), (.sounds, .custom, 5), (.cleanup, .chirp, 7),
+    @Test(arguments: [(SettingsTab.general, SoundPack.chirp, 4), (.sounds, .chirp, 3), (.sounds, .custom, 5), (.cleanup, .chirp, 8),
                       (.server, .chirp, 4), (.permissions, .chirp, 2)])
     func labelsShareARightEdgeAndControlsALeftEdge(tab: SettingsTab, pack: SoundPack, expectedLabels: Int) throws {
         var state = SettingsState()
@@ -240,7 +241,7 @@ import Testing
         let edges = rowLabels.map { view.convert($0.bounds, from: $0).maxX }
         #expect(edges.allSatisfy { abs($0 - edges[0]) < 0.5 })
         let leading: [NSView] = switch tab {
-        case .general: [form.hotkey, form.launch, form.setupButton]
+        case .general: [form.hotkey, form.wordWaveform, form.launch, form.setupButton]
         case .sounds: [form.sounds, form.soundPack, form.volume]
         case .cleanup: [form.cleanupEnabled, form.style, form.insertRawFirst, form.appStyles.scroll, form.showChanges, form.offerRaw]
         case .server: [form.serverURL, form.doctorButton]
@@ -424,7 +425,7 @@ import Testing
         let names = Snapshots.committedNames
         let all = Set(Snapshots.allScenarios.map(\.name))
         #expect(names.allSatisfy { all.contains($0) } && Set(names).count == names.count)
-        #expect(names.count * 2 <= 24)
+        #expect(names.count * 2 <= 30)
         // The menu in light and dark, one per Settings tab, setup, and the key HUD states.
         #expect(names.contains("menu-ready") && names.contains("onboarding-welcome") && names.contains { $0.hasPrefix("hud-") })
         for tab in SettingsTab.allCases { #expect(names.contains { $0.hasPrefix("settings-\(tab.rawValue)-") }, "\(tab.title)") }

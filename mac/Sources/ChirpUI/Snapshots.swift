@@ -42,6 +42,72 @@ public enum Snapshots {
     }
 
     private static let rawSentence = "move the standup to three thirty and uh let everyone know"
+
+    // MARK: word waveform demo data
+
+    /// Word timings at a natural pace with a few pauses, and levels shaped like speech inside each word (near silence
+    /// between them): deterministic, so the committed PNGs are reproducible.
+    static func demoWords(_ text: String, pauseAfter: Set<Int> = [], stableBefore: Int = 0) -> [WordTiming] {
+        var t = 0.25
+        return text.split(separator: " ").enumerated().map { i, word in
+            let length = 0.12 + 0.045 * Double(word.count)
+            let timing = WordTiming(text: String(word), start: t, end: t + length, stable: i < stableBefore)
+            t += length + (pauseAfter.contains(i) ? 0.75 : 0.09)
+            return timing
+        }
+    }
+
+    static func demoLevels(for words: [WordTiming], peak: Float = 0.9) -> UtteranceLevels {
+        let frames = Int(((words.last?.end ?? 0) + 0.3) / UtteranceLevels.frameDuration)
+        var samples = [Float](repeating: 0, count: frames)
+        for (w, word) in words.enumerated() {
+            let first = Int(word.start / UtteranceLevels.frameDuration), last = Int(word.end / UtteranceLevels.frameDuration)
+            for f in first...max(first, last) where f < frames {
+                let x = Double(f - first) / Double(max(1, last - first))          // 0...1 across the word
+                let envelope = sin(x * .pi) * (0.65 + 0.35 * sin(Double(f) * 1.7 + Double(w)))
+                samples[f] = Float(max(0.08, envelope)) * peak
+            }
+        }
+        for f in samples.indices where samples[f] == 0 { samples[f] = 0.03 + 0.02 * Float(abs(sin(Double(f) * 0.9))) }
+        return UtteranceLevels(samples: samples)
+    }
+
+    static func wordWave(_ name: String, _ text: String, pauseAfter: Set<Int> = [], stableBefore: Int = 0,
+                         _ configure: @escaping (HUDModel) -> Void = { _ in }) -> Scenario {
+        hud("wordwave-\(name)") { m in
+            m.wordWaveform = true
+            m.status = HUDStatus.listening
+            m.levels = .demo(peak: 0.8)
+            m.pulsePhase = 0.25
+            let words = demoWords(text, pauseAfter: pauseAfter, stableBefore: stableBefore)
+            m.utterance = demoLevels(for: words)
+            m.showWords(text: text, words: words)
+            configure(m)
+        }
+    }
+
+    public static var wordWaveScenarios: [Scenario] {
+        let short = "Please move the standup to three thirty and let everyone know"
+        let long = "Please move the standup to three thirty and let everyone know, then check the rollout plan with the whole team before the release review, and remind the designers about the icon sizes, we still need the dark variants and the notification badge, and finally book the room"
+        return [
+            wordWave("listening", short, pauseAfter: [4], stableBefore: 6),
+            wordWave("listening-start", "so the first", stableBefore: 0),
+            wordWave("long", long, pauseAfter: [11, 23, 34], stableBefore: 40),
+            wordWave("polishing", rawSentence, pauseAfter: [5]) { $0.beginPolishing(raw: rawSentence, style: "Email", words: nil); $0.shimmerPhase = 0.45 },
+            wordWave("revised", short, pauseAfter: [4], stableBefore: 3) { m in
+                var words = demoWords(short, pauseAfter: [4], stableBefore: 3)
+                words[6].text = "and then"; words[7].text = "let"
+                m.showWords(text: words.map(\.text).joined(separator: " "), words: words)
+            },
+            wordWave("finished", short, pauseAfter: [4]) { m in
+                m.finishWords(text: short, words: demoWords(short, pauseAfter: [4]))
+                m.status = HUDStatus.inserting
+            },
+            wordWave("reduce-motion", short, pauseAfter: [4], stableBefore: 6) { $0.reduceMotion = true },
+            wordWave("contrast", short, pauseAfter: [4], stableBefore: 6) { $0.increaseContrast = true },
+            wordWave("multiline-polishing", long, pauseAfter: [11, 23, 34]) { $0.beginPolishing(raw: long, style: "Notes", words: nil); $0.shimmerPhase = 0.6 },
+        ]
+    }
     private static let cleanedSentence = "Move the standup to 3:30 and let everyone know."
 
     private static func final(corrected: Bool = false) -> FinalResult {
@@ -163,7 +229,10 @@ public enum Snapshots {
             $0.cleanupEnabled = true
             $0.catalog = StyleCatalog(profiles: samplePrompts, source: .live)
             $0.cleanupDetail = "Runs on this Mac: tidies punctuation and wording before the text is inserted."
+            $0.keepLoaded = KeepLoadedState(settings: CleanupModelSettings(keepLoaded: true, loaded: true, model: "qwen3-4b", memoryMB: 2662),
+                                            availability: .available)
         }
+        let warmOff = CleanupModelSettings(keepLoaded: false, model: "qwen3-4b", memoryMB: 2662, memoryEstimated: true)
         return [
             form("ready", .general) { _ in },
             form("custom-hotkey", .general) { $0.hotkey = .custom(keyCode: 0x0F, modifiers: UInt32(controlKey | optionKey | cmdKey)) },   // ⌃⌥⌘R
@@ -204,6 +273,23 @@ public enum Snapshots {
                 $0.catalog = StyleCatalog(profiles: samplePrompts, source: .cached)
                 $0.editingStyle = "code"
             },
+            form("warm-off", .cleanup) { styled(&$0); $0.keepLoaded = KeepLoadedState(settings: warmOff, availability: .available) },
+            form("warm-loading", .cleanup) {
+                styled(&$0)
+                $0.keepLoaded = KeepLoadedState(settings: CleanupModelSettings(keepLoaded: true, loading: true, model: "qwen3-4b", memoryMB: 2662, memoryEstimated: true),
+                                                availability: .available)
+            },
+            form("warm-remote-host", .cleanup) {
+                styled(&$0); $0.serverHost = "mainframe.example.ts.net"
+                $0.keepLoaded = KeepLoadedState(settings: CleanupModelSettings(keepLoaded: true, loaded: true, model: "qwen3-4b", memoryMB: 2662),
+                                                availability: .available)
+            },
+            form("warm-error", .cleanup) {
+                styled(&$0)
+                $0.keepLoaded = KeepLoadedState(settings: warmOff, availability: .available, error: CleanupSettingsError.unreachable.changeFailure)
+            },
+            form("warm-old-server", .cleanup) { styled(&$0); $0.keepLoaded = KeepLoadedState(availability: .unavailable(.serverTooOld)) },
+            form("warm-remote-model", .cleanup) { styled(&$0); $0.keepLoaded = KeepLoadedState(availability: .unavailable(.remoteModel)) },
             form("no-styles", .cleanup) {
                 $0.cleanupEnabled = true; $0.cleanupStyle = "notes"; $0.serverOffersStyles = false
             },
@@ -317,6 +403,7 @@ public enum Snapshots {
     /// dark, one per Settings tab, and the setup window. The rest only render to a temporary directory for review.
     public static let committedNames: [String] = [
         "hud-listening", "hud-flow-2-polishing", "hud-flow-3-diff", "hud-correction-use-raw",
+        "hud-wordwave-listening", "hud-wordwave-long", "hud-wordwave-polishing",
         "menu-ready", "menu-cleanup-submenu",
         "settings-general-ready", "settings-sounds-pack", "settings-cleanup-custom", "settings-server-ready",
         "settings-permissions-missing", "onboarding-welcome",
@@ -327,7 +414,9 @@ public enum Snapshots {
         return committedNames.compactMap { name in all.first { $0.name == name } }
     }
 
-    public static var allScenarios: [Scenario] { hudScenarios + settingsScenarios + onboardingScenarios + aboutScenarios + menuScenarios }
+    public static var allScenarios: [Scenario] {
+        hudScenarios + wordWaveScenarios + settingsScenarios + onboardingScenarios + aboutScenarios + menuScenarios
+    }
 
     // MARK: rendering
 

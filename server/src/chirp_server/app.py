@@ -17,9 +17,11 @@ from starlette.routing import Route, WebSocketRoute
 from starlette.websockets import WebSocket, WebSocketDisconnect
 
 from .audio import MAX_FRAME, MAX_PCM, AudioError, decode_wav, levels, samples, silent
-from .config import Settings, load_token
+from .cleanup_models import DEFAULT_MODEL, model_spec
+from .config import Settings, load_token, persist_keep_loaded, read_keep_loaded
 from .correction import CorrectionResult, Corrector
 from .engine import EngineWorker
+from .managed_cleanup import ManagedCleanup
 from .profiles import MAX_PROMPT_CHARS
 from .retention import Retention
 
@@ -31,6 +33,7 @@ MESSAGES = {
     "bad_request": "Invalid correction prompt",
     "bad_audio": "Invalid audio or control frame",
     "engine": "Speech engine unavailable",
+    "unsupported": "keep_loaded requires managed correction mode",
 }
 
 
@@ -73,6 +76,8 @@ class Utterance:
         self.cancelled = False
         self.correcting = None
         self.peak = self.rms = 0.0
+        # Opt-in `start.word_timings`: partials, correcting and the final carry `words`.
+        self.word_timings = False
 
     async def start(self, control):
         if "correction_prompt" in control:
@@ -94,8 +99,17 @@ class Utterance:
             or control.get("encoding") != "pcm_s16le"
             or control.get("client") not in {"mac", "android"}
             or not isinstance(control.get("correction", False), bool)
+            or not isinstance(control.get("word_timings", False), bool)
         ):
             raise AudioError()
+        self.word_timings = control.get("word_timings", False)
+        helper = getattr(self.corrector, "managed", None)
+        managed = helper if isinstance(helper, ManagedCleanup) else None
+        if control.get("correction", False) and managed is not None:
+            # Managed cleanup: begin the cold load while the user is still speaking.
+            # This never delays the ack, partials or ASR, and never counts against
+            # an utterance's correction timeout; only a final may wait for the load.
+            managed.prewarm()
         await asyncio.wait_for(self.worker.lease.acquire(), self.settings.queue_timeout)
         self.leased = True
         self.correction = control.get("correction", False)
@@ -153,14 +167,14 @@ class Utterance:
                         elapsed = (time.perf_counter() - self.started) * 1000
                         if self.first_partial is None:
                             self.first_partial = elapsed
-                        await self.ws.send_json(
-                            {
-                                "type": "partial",
-                                "seq": self.seq,
-                                "text": partial.text,
-                                "stable": stable,
-                            }
-                        )
+                        message = {
+                            "type": "partial",
+                            "seq": self.seq,
+                            "text": partial.text,
+                            "stable": stable,
+                        }
+                        self.add_words(message, partial.words)
+                        await self.ws.send_json(message)
                 if self.stopping and self.offset == len(self.pcm):
                     return
                 if len(self.pcm) - self.offset >= 6400 or (
@@ -173,6 +187,12 @@ class Utterance:
             # Never include library exception strings: they may contain user data.
             self.failure = True
             log.warning("code=engine session=%s", self.session)
+
+    def add_words(self, message, words):
+        """Attach `words` when the client asked for timings and the engine produced them.
+        Without the flag every message is byte-identical to the pre-timings protocol."""
+        if self.word_timings and words is not None:
+            message["words"] = [word.payload() for word in words]
 
     def cancel(self):
         """Mark cancelled from the receive loop; also cancels a pending correction request."""
@@ -209,6 +229,7 @@ class Utterance:
                 self.profile,
                 self.instructions,
                 self.correction_prompt,
+                words=() if self.word_timings else None,
             )
         if self.offset < len(self.pcm):
             pending = samples(bytes(self.pcm[self.offset :]))
@@ -217,7 +238,8 @@ class Utterance:
             if self.cancelled:
                 return self.discard()
             self.offset = len(self.pcm)
-        raw = await self.worker.call(self.stream.finish)
+        transcript = await self.worker.call(self.stream.finish)
+        raw, words = transcript.text, transcript.words if self.word_timings else None
         self.stream = None
         self.release()
         if self.cancelled:
@@ -225,9 +247,9 @@ class Utterance:
         enabled = self.correction and self.settings.correction.enabled and bool(raw)
         if enabled:
             self.seq += 1
-            await self.ws.send_json(
-                {"type": "correcting", "seq": self.seq, "raw": raw, "profile": self.profile}
-            )
+            message = {"type": "correcting", "seq": self.seq, "raw": raw, "profile": self.profile}
+            self.add_words(message, words)
+            await self.ws.send_json(message)
         if self.cancelled:
             return self.discard()
         # A cancel racing this task cancels the pending correction request with it.
@@ -242,6 +264,7 @@ class Utterance:
                 self.profile,
                 self.instructions,
                 self.correction_prompt,
+                words=words,
             )
         )
         try:
@@ -296,6 +319,7 @@ async def make_final(
     profile="default",
     instructions="",
     correction_prompt=None,
+    words=None,
 ):
     finalized = (time.perf_counter() - started) * 1000
     correction_started = time.perf_counter()
@@ -308,7 +332,7 @@ async def make_final(
         )
     else:
         result = CorrectionResult(raw)
-    return {
+    final = {
         "type": "final",
         "text": result.text,
         "raw": raw,
@@ -321,6 +345,10 @@ async def make_final(
             "correction": (time.perf_counter() - correction_started) * 1000 if enabled else 0.0,
         },
     }
+    if words is not None:
+        # Timings describe `raw`; cleaned text cannot map onto the audio word for word.
+        final["words"] = [word.payload() for word in words]
+    return final
 
 
 def create_app(settings=None, engine=None, token=None, corrector=None):
@@ -339,6 +367,14 @@ def create_app(settings=None, engine=None, token=None, corrector=None):
     worker = EngineWorker(engine)
     retention = Retention(settings)
     corrector = corrector or Corrector(settings.correction)
+    helper = getattr(corrector, "managed", None)
+    managed = helper if isinstance(helper, ManagedCleanup) else None
+    config = getattr(corrector, "config", settings.correction)
+    # A client-persisted override wins over the toml value; server.toml is never rewritten.
+    override = read_keep_loaded(settings.state_path)
+    keep = {"value": bool(override if override is not None else config.keep_loaded)}
+    if managed is not None:
+        managed.keep_loaded = keep["value"]
     credential = token
     pending_auth = 0
 
@@ -358,6 +394,10 @@ def create_app(settings=None, engine=None, token=None, corrector=None):
                 retention.purge()
                 cleanup = asyncio.create_task(housekeeping())
             await worker.start()
+            if managed is not None and keep["value"]:
+                # keep_loaded: prewarm during server bring-up; the background load
+                # never blocks readiness and never idle-unloads while enabled.
+                managed.prewarm()
             yield
         finally:
             if cleanup:
@@ -386,6 +426,8 @@ def create_app(settings=None, engine=None, token=None, corrector=None):
                 "correction_profiles": [
                     profile.metadata() for profile in correction.resolved_profiles.values()
                 ],
+                "correction_keep_loaded": keep["value"],
+                "correction_loaded": bool(managed and managed.loaded),
             }
         )
 
@@ -406,6 +448,62 @@ def create_app(settings=None, engine=None, token=None, corrector=None):
                 ]
             }
         )
+
+    def correction_settings_payload():
+        if managed is None:
+            return {
+                "keep_loaded": keep["value"],
+                "loaded": False,
+                "loading": False,
+                "model": None,
+                "memory_mb": None,
+                "memory_estimated": False,
+                "mode": config.mode,
+            }
+        try:
+            estimate = model_spec(config.model).memory_mb
+        except ValueError:
+            estimate = None
+        memory, estimated = managed.memory(estimate)
+        return {
+            "keep_loaded": keep["value"],
+            "loaded": managed.loaded,
+            "loading": managed.loading,
+            "model": config.model or DEFAULT_MODEL,
+            "memory_mb": memory,
+            "memory_estimated": estimated,
+            "mode": config.mode,
+        }
+
+    async def correction_settings(request: Request):
+        if not authorized(credential, bearer(request.headers)):
+            return JSONResponse(
+                error("auth"), status_code=401, headers={"WWW-Authenticate": "Bearer"}
+            )
+        if request.method == "GET":
+            return JSONResponse(correction_settings_payload())
+        try:
+            body = json.loads(await request.body())
+        except ValueError:
+            body = None
+        if (
+            not isinstance(body, dict)
+            or set(body) != {"keep_loaded"}
+            or not isinstance(body["keep_loaded"], bool)
+        ):
+            return JSONResponse(error("bad_request"), status_code=400)
+        if managed is None:
+            return JSONResponse(error("unsupported"), status_code=409)
+        try:
+            persist_keep_loaded(settings.state_path, body["keep_loaded"])
+        except OSError:
+            return JSONResponse(error("engine"), status_code=500)
+        keep["value"] = body["keep_loaded"]
+        await managed.set_keep_loaded(body["keep_loaded"])
+        if body["keep_loaded"]:
+            # Load immediately in the background; while on, it never idle-unloads.
+            managed.prewarm()
+        return JSONResponse(correction_settings_payload())
 
     async def transcribe(request: Request):
         if not authorized(credential, bearer(request.headers)):
@@ -576,6 +674,7 @@ def create_app(settings=None, engine=None, token=None, corrector=None):
         routes=[
             Route("/v1/health", health),
             Route("/v1/correction/profiles", profiles),
+            Route("/v1/correction/settings", correction_settings, methods=["GET", "PUT"]),
             Route("/v1/transcribe", transcribe, methods=["POST"]),
             WebSocketRoute("/v1/stream", stream),
         ],

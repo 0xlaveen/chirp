@@ -13,6 +13,7 @@ import android.view.inputmethod.InputMethodManager
 import android.view.inputmethod.InputMethodSubtype
 import helium314.keyboard.keyboard.KeyboardSwitcher
 import helium314.keyboard.latin.RichInputMethodManager
+import helium314.keyboard.latin.common.ColorType
 import helium314.keyboard.latin.settings.Settings
 import helium314.keyboard.latin.utils.SubtypeSettings
 import org.junit.Assert.*
@@ -65,6 +66,8 @@ class KeyboardRenderTest {
                 KeyboardSwitcher.getInstance().reloadMainKeyboard()
                 val root = keys.findViewById<ViewGroup>(helium314.keyboard.latin.R.id.main_keyboard_frame)
                 val strip = keys.findViewWithTag<KeyboardStrip>("chirp_strip")
+                // InputView applies this on its first window layout, which a detached render never gets.
+                Settings.getValues().mColors.setBackground(root, ColorType.MAIN_BACKGROUND)
                 var idleHeight = 0
                 for (state in listOf("idle", "listening", "final")) {
                     strip.show(when(state) { "listening" -> "Listening…"; "final" -> "Inserted · tap mic to dictate again"; else -> "Tap mic · hold to talk" },
@@ -85,8 +88,42 @@ class KeyboardRenderTest {
             }
         } finally { service.destroy() }
     }
-    @Test fun `parent input view delivers real mic touches to Chirp instead of suggestion padding`() {
+    @Test fun `render Chirp keyboard looks with the Chirp row in both themes`() {
         val app = RuntimeEnvironment.getApplication()
+        Settings.init(app); SubtypeSettings.init(app); RichInputMethodManager.init(app)
+        val output = File(System.getProperty("chirp.screenshots")).apply { mkdirs() }
+        val service = Robolectric.buildService(RenderIme::class.java).create()
+        val ime = service.get()
+        try {
+            for (look in listOf(KeyboardLook.GBOARD, KeyboardLook.SAMSUNG)) {
+                applyKeyboardLook(keyboardPrefs(app), look)
+                for (name in listOf("light", "dark")) {
+                    RuntimeEnvironment.setQualifiers("w411dp-h891dp-" + (if (name == "dark") "night" else "notnight") + "-mdpi")
+                    ime.onConfigurationChanged(Configuration(app.resources.configuration))
+                    val keys = ime.onCreateInputView()
+                    ime.setInputView(keys)
+                    ime.onStartInput(ime.info, false); ime.onStartInputView(ime.info, false)
+                    KeyboardSwitcher.getInstance().reloadMainKeyboard()
+                    val root = keys.findViewById<ViewGroup>(helium314.keyboard.latin.R.id.main_keyboard_frame)
+                    val strip = keys.findViewWithTag<KeyboardStrip>("chirp_strip")
+                    assertTrue(Settings.getValues().mColors.hasKeyBorders)
+                    Settings.getValues().mColors.setBackground(root, ColorType.MAIN_BACKGROUND)
+                    for (state in listOf("idle", "listening")) {
+                        strip.show(if (state == "listening") "Listening…" else "Tap mic · hold to talk", "", state == "listening", false, false, false)
+                        strip.level(if (state == "listening") .45 else 0.0)
+                        root.measure(View.MeasureSpec.makeMeasureSpec(411, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(900, View.MeasureSpec.AT_MOST))
+                        root.layout(0, 0, 411, root.measuredHeight)
+                        val bitmap = Bitmap.createBitmap(411, root.measuredHeight, Bitmap.Config.ARGB_8888)
+                        root.draw(Canvas(bitmap))
+                        File(output, "keyboard-look-${look.name.lowercase()}-$state-$name.png").outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
+                        bitmap.recycle()
+                    }
+                }
+            }
+        } finally { applyKeyboardLook(keyboardPrefs(app), KeyboardLook.DEFAULT); service.destroy() }
+    }
+
+    @Test fun `parent input view delivers real mic touches to Chirp instead of suggestion padding`() {        val app = RuntimeEnvironment.getApplication()
         shadowOf(app).grantPermissions(android.Manifest.permission.RECORD_AUDIO)
         val service = Robolectric.buildService(RenderIme::class.java).create()
         val ime = service.get()

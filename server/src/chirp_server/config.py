@@ -1,6 +1,8 @@
 """Configuration and local credentials; never log configuration objects."""
 
+import contextlib
 import ipaddress
+import json
 import math
 import os
 import secrets
@@ -9,6 +11,7 @@ import tomllib
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from urllib.parse import urlsplit
+from uuid import uuid4
 
 from .profiles import MAX_PROMPT_CHARS, Profile, resolve_profiles
 
@@ -25,12 +28,15 @@ class CorrectionConfig:
     api_key_env: str = "CHIRP_LLM_API_KEY"
     keychain_service: str = ""
     idle_seconds: float = 60.0
+    keep_loaded: bool = False
     profiles: dict = field(default_factory=dict)
     resolved_profiles: dict[str, Profile] = field(init=False, repr=False)
 
     def __post_init__(self):
         if not isinstance(self.prompt, str) or len(self.prompt) > MAX_PROMPT_CHARS:
             raise ValueError("Invalid correction prompt")
+        if not isinstance(self.keep_loaded, bool):
+            raise ValueError("Invalid keep_loaded")
         self.resolved_profiles = resolve_profiles(self.profiles)
         if self.prompt and "prompt" not in self.profiles.get("default", {}):
             self.resolved_profiles["default"] = replace(
@@ -71,12 +77,45 @@ class CorrectionConfig:
             return True
 
 
+def default_state_path() -> Path:
+    return Path.home() / "Library/Application Support/Chirp/server-state.json"
+
+
+def read_keep_loaded(path: Path) -> bool | None:
+    """Client-set runtime override from the state file; None when absent or unreadable."""
+    try:
+        data = json.loads(Path(path).read_text())
+    except (OSError, ValueError):
+        return None
+    if not isinstance(data, dict):
+        return None
+    value = data.get("correction_keep_loaded")
+    return value if isinstance(value, bool) else None
+
+
+def persist_keep_loaded(path: Path, value: bool) -> None:
+    """Atomically rewrite the 0600 state file; server.toml is never rewritten."""
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    temporary = path.with_name(f".{path.name}.{uuid4().hex}.tmp")
+    fd = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    try:
+        with os.fdopen(fd, "w") as stream:
+            stream.write(json.dumps({"correction_keep_loaded": value}) + "\n")
+        os.replace(temporary, path)
+    except BaseException:
+        with contextlib.suppress(OSError):
+            os.unlink(temporary)
+        raise
+
+
 @dataclass
 class Settings:
     config_dir: Path = field(default_factory=lambda: Path.home() / ".config/chirp")
     debug_dir: Path = field(
         default_factory=lambda: Path.home() / "Library/Application Support/Chirp/debug"
     )
+    state_path: Path = field(default_factory=default_state_path)
     debug_retain: bool = False
     retain_days: int = 3
     model_dir: Path | None = None

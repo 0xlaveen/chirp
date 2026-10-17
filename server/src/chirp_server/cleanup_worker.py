@@ -9,6 +9,26 @@ MAX_CONTEXT = 4096
 MAX_OUTPUT = 512
 
 
+def measured_memory_mb() -> int:
+    """Peak process RSS plus active Metal memory, rounded to MiB.
+
+    Fallback approximation for hosts where the server cannot read the helper's
+    physical footprint: ru_maxrss is reported in bytes on macOS, and Metal
+    (unified-memory) allocations do not necessarily appear in RSS. The server's
+    own proc_pid_rusage phys_footprint reading is preferred whenever available.
+    """
+    import resource
+
+    total = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+    try:
+        import mlx.core as mx
+
+        total += mx.metal.get_active_memory()
+    except Exception:
+        pass
+    return round(total / 1048576)
+
+
 def reply(payload):
     sys.__stdout__.write(json.dumps(payload) + "\n")
     sys.__stdout__.flush()
@@ -70,8 +90,10 @@ def main():
         except Exception:
             reply({"ready": False})
             return
-        reply({"ready": True})
-        while select.select([sys.stdin], [], [], float(sys.argv[2]) + 5)[0]:
+        reply({"ready": True, "memory_mb": measured_memory_mb()})
+        # 0 disables the idle exit (keep_loaded); EOF on stdin still ends the helper.
+        idle = float(sys.argv[2])
+        while select.select([sys.stdin], [], [], idle + 5 if idle > 0 else None)[0]:
             line = sys.stdin.readline()
             if not line:
                 return

@@ -22,6 +22,9 @@ final class SettingsWindowController: NSObject, NSTextFieldDelegate {
     private var tabs: NSTabViewController?
     private var form: SettingsForm?
     private var refreshTimer: Timer?
+    /// What the server last said about keeping the clean-up model loaded, and the request that is updating it.
+    private var keepLoaded = KeepLoadedState()
+    private var keepLoadedTask: Task<Void, Never>?
 
     private var state: SettingsState {
         var s = SettingsState()
@@ -29,6 +32,7 @@ final class SettingsWindowController: NSObject, NSTextFieldDelegate {
         s.serverURL = settings.serverURL
         s.tokenPresent = ServerConfig.readToken() != nil
         s.launch = LaunchAtLogin.state
+        s.wordWaveform = settings.wordWaveform
         s.soundsEnabled = settings.soundsEnabled
         s.soundPack = settings.soundPack
         s.soundVolume = settings.soundVolume
@@ -50,6 +54,8 @@ final class SettingsWindowController: NSObject, NSTextFieldDelegate {
         s.catalog = catalog
         s.profiles = catalog.source == .unavailable ? CorrectionProfile.offered(by: health) : catalog.profiles
         s.serverOffersStyles = health == nil || health?.correctionProfiles != nil
+        s.keepLoaded = keepLoaded
+        s.serverHost = KeepLoaded.hostPhrase(ServerConfig(baseURL: URL(string: settings.serverURL) ?? ServerConfig.defaultURL))
         return s
     }
 
@@ -67,6 +73,57 @@ final class SettingsWindowController: NSObject, NSTextFieldDelegate {
         // Ordering the window front lets AppKit pick the first text field; park focus on the content instead.
         if let window, let tabs, let current = tabs.tabViewItems[tabs.selectedTabViewItemIndex].viewController?.view {
             window.makeFirstResponder(current)
+        }
+        if SettingsTab.allCases[tabs?.selectedTabViewItemIndex ?? 0] == .cleanup { refreshKeepLoaded() }
+    }
+
+    // MARK: keep clean-up model loaded
+
+    private var serverConfig: ServerConfig { ServerConfig.load(urlString: settings.serverURL) }
+
+    private func showKeepLoaded() {
+        form?.showKeepLoaded(keepLoaded, host: state.serverHost)
+    }
+
+    /// Asks the server, and keeps asking every 2 s (for up to 90 s) while the model is loading so the status follows it.
+    private func refreshKeepLoaded() {
+        keepLoadedTask?.cancel()
+        let config = serverConfig
+        keepLoadedTask = Task { @MainActor [weak self] in
+            for _ in 0..<45 {
+                do throws(CleanupSettingsError) {
+                    let s = try await config.fetchCleanupSettings()
+                    guard !Task.isCancelled, let self else { return }
+                    self.keepLoaded.fetched(s)
+                } catch {
+                    guard !Task.isCancelled, let self else { return }
+                    self.keepLoaded.fetchFailed(error)
+                }
+                guard let self else { return }
+                self.showKeepLoaded()
+                guard self.keepLoaded.isLoading, self.window?.isVisible == true else { return }
+                try? await Task.sleep(for: .seconds(2))
+            }
+        }
+    }
+
+    /// The switch changes at once; a refused change puts it back with the reason under it. Either way the server is
+    /// asked again afterwards, so the status shows what it really did.
+    @objc private func toggleKeepLoaded(_ sender: NSButton) {
+        let on = sender.state == .on
+        guard keepLoaded.toggle(to: on) else { showKeepLoaded(); return }
+        showKeepLoaded()
+        keepLoadedTask?.cancel()
+        let config = serverConfig
+        keepLoadedTask = Task { @MainActor [weak self] in
+            do throws(CleanupSettingsError) {
+                let s = try await config.setKeepLoaded(on)
+                self?.keepLoaded.toggleSucceeded(s)
+            } catch {
+                self?.keepLoaded.toggleFailed(error)
+            }
+            self?.showKeepLoaded()
+            self?.refreshKeepLoaded()
         }
     }
 
@@ -94,6 +151,8 @@ final class SettingsWindowController: NSObject, NSTextFieldDelegate {
         form.doctorButton.action = #selector(copyDoctor)
         form.cleanupEnabled.target = self
         form.cleanupEnabled.action = #selector(toggleCleanup(_:))
+        form.keepLoaded.target = self
+        form.keepLoaded.action = #selector(toggleKeepLoaded(_:))
         form.offerRaw.target = self
         form.offerRaw.action = #selector(toggleOfferRaw(_:))
         form.hotkey.target = self
@@ -134,13 +193,17 @@ final class SettingsWindowController: NSObject, NSTextFieldDelegate {
         form.serverURL.delegate = self
         form.launch.target = self
         form.launch.action = #selector(toggleLaunch(_:))
+        form.wordWaveform.target = self
+        form.wordWaveform.action = #selector(toggleWordWaveform(_:))
         form.micButton.target = self
         form.micButton.action = #selector(grantMic)
         form.accessibilityButton.target = self
         form.accessibilityButton.action = #selector(grantAX)
         self.form = form
 
-        let tabs = SettingsTabs.makeController(form: form)
+        let tabs = SettingsTabs.makeController(form: form) { [weak self] tab in
+            if tab == .cleanup { self?.refreshKeepLoaded() }
+        }
         self.tabs = tabs
         let w = NSWindow(contentViewController: tabs)
         w.styleMask = [.titled, .closable]
@@ -161,6 +224,7 @@ final class SettingsWindowController: NSObject, NSTextFieldDelegate {
     }
 
     @objc private func toggleCleanup(_ sender: NSButton) { settings.correction = sender.state == .on }
+    @objc private func toggleWordWaveform(_ sender: NSButton) { settings.wordWaveform = sender.state == .on }
     @objc private func toggleOfferRaw(_ sender: NSButton) { settings.showRawAfterCleanup = sender.state == .on }
 
     @objc private func hotkeyChanged(_ sender: NSPopUpButton) {

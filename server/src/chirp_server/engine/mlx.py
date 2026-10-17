@@ -4,8 +4,17 @@ import numpy as np
 
 from chirp_server.audio import silent
 
-from .base import Partial
+from .base import Partial, Transcript
 from .models import discover
+from .words import shift, tokens_to_words
+
+RATE = 16000
+
+
+def transcribe_timed(engine, pcm) -> Transcript:
+    """The engine's final decode with word timings when it has them (MLX), else text only."""
+    timed = getattr(engine, "transcribe_timed", None)
+    return timed(pcm) if timed else Transcript(engine.transcribe(pcm))
 
 
 class ParakeetMLX:
@@ -48,15 +57,28 @@ class ParakeetMLX:
         return self.model.generate(mel.astype(self.dtype))[0]
 
     def transcribe(self, pcm):
+        return self.transcribe_timed(pcm).text
+
+    def transcribe_timed(self, pcm):
+        """Full decode with the aligned pieces grouped into words (times from the first sample)."""
+        from parakeet_mlx.alignment import sentences_to_result, tokens_to_sentences
+
         if len(pcm) <= 30 * 16000:
             result = self.decode(pcm)
-            return result.text.strip() if result else ""
-        # Reuse the library's timestamp-aware overlap merge without writing a WAV.
+            if result is None:
+                return Transcript("", ())
+            return Transcript(result.text.strip(), tuple(tokens_to_words(result.tokens)))
+        tokens = self.chunked_tokens(pcm)
+        if not tokens:
+            return Transcript("", ())
+        text = sentences_to_result(tokens_to_sentences(tokens)).text.strip()
+        return Transcript(text, tuple(tokens_to_words(tokens)))
+
+    def chunked_tokens(self, pcm):
+        """Overlapping 30 s windows, merged with the library's timestamp-aware merge (no WAV)."""
         from parakeet_mlx.alignment import (
             merge_longest_common_subsequence,
             merge_longest_contiguous,
-            sentences_to_result,
-            tokens_to_sentences,
         )
 
         tokens = []
@@ -78,7 +100,7 @@ class ParakeetMLX:
                 tokens = result.tokens
             if start + 30 * 16000 >= len(pcm):
                 break
-        return sentences_to_result(tokens_to_sentences(tokens)).text.strip() if tokens else ""
+        return tokens
 
     def open_stream(self):
         if self.streaming == "incremental":
@@ -102,6 +124,11 @@ class RollingStream:
         self.committed = ""
         self.preview = ""
         self.segments = 0
+        # Word timings: committed (frozen) words, the live preview's words, and the samples
+        # cut off the front by pause segmentation, so times stay relative to the first sample.
+        self.committed_words = []
+        self.preview_words = None
+        self.base = 0
 
     def buffer(self, pcm):
         """Append stop-time audio without spending inference on a discarded partial."""
@@ -132,19 +159,39 @@ class RollingStream:
         if getattr(self.engine, "finalization", "full") == "segments":
             cut = self.pause_cut(audio)
             if cut:
-                segment = self.engine.transcribe(audio[:cut])
-                self.committed = " ".join(p for p in (self.committed, segment) if p)
-                self.segments += bool(segment)
+                segment = transcribe_timed(self.engine, audio[:cut])
+                self.committed = " ".join(p for p in (self.committed, segment.text) if p)
+                self.segments += bool(segment.text)
+                self.commit_words(segment.words)
+                self.base += cut
                 audio = audio[cut:]
                 self.parts = [audio] if audio.size else []
                 self.preview = ""
                 self.preview_tokens = []
+                self.preview_words = []
         self.preview = self.render_preview(audio) if audio.size else ""
-        return Partial(" ".join(p for p in (self.committed, self.preview) if p), self.committed)
+        return Partial(
+            " ".join(p for p in (self.committed, self.preview) if p),
+            self.committed,
+            self.words(self.preview_words if audio.size else ()),
+        )
+
+    def commit_words(self, words):
+        if words is None or self.committed_words is None:
+            self.committed_words = None
+            return
+        self.committed_words.extend(shift(words, self.base / RATE, stable=True))
+
+    def words(self, tail):
+        """The utterance's words so far, or None once any part came without timings."""
+        if tail is None or self.committed_words is None:
+            return None
+        return tuple(self.committed_words) + tuple(tail)
 
     def render_preview(self, audio):
         from .stitch import stitch_transcript
 
+        self.preview_words = None  # text-only previews (ONNX): no timings
         tail = self.engine.transcribe(audio[-8 * 16000 :])
         if len(audio) > 8 * 16000 and self.preview:
             return stitch_transcript(self.preview, tail) or tail
@@ -153,12 +200,15 @@ class RollingStream:
     def finish(self):
         audio = np.concatenate(self.parts) if self.parts else np.zeros(0, dtype=np.float32)
         self.parts.clear()
-        tail = self.engine.transcribe(audio)
-        return " ".join(p for p in (self.committed, tail) if p)
+        tail = transcribe_timed(self.engine, audio)
+        text = " ".join(p for p in (self.committed, tail.text) if p)
+        words = None if tail.words is None else shift(tail.words, self.base / RATE, stable=True)
+        return Transcript(text, self.words(words))
 
     def cancel(self):
         self.parts.clear()
         self.committed = self.preview = ""
+        self.committed_words, self.preview_words, self.base = [], None, 0
 
 
 class MLXRollingStream(RollingStream):
@@ -179,7 +229,7 @@ class MLXRollingStream(RollingStream):
         start = max(0, len(audio) - 8 * 16000)
         result = self.engine.decode(audio[start:])
         if result is None:
-            return self.preview
+            return self.preview  # silence: the text and its words stand
         for token in result.tokens:
             token.start += start / 16000
             token.end = token.start + token.duration
@@ -194,11 +244,19 @@ class MLXRollingStream(RollingStream):
                 )
         else:
             self.preview_tokens = result.tokens
+        # Pieces that end a second before the window are outside the merge's reach: later
+        # previews leave them alone.
+        self.preview_words = tokens_to_words(
+            self.preview_tokens,
+            offset=self.base / RATE,
+            stable_before=(self.base + start) / RATE - 1.0 if start else None,
+        )
         return sentences_to_result(tokens_to_sentences(self.preview_tokens)).text.strip()
 
     def cancel(self):
         self.preview_tokens.clear()
         super().cancel()
+        self.preview_words = []
 
 
 class MLXStream(RollingStream):
@@ -219,7 +277,12 @@ class MLXStream(RollingStream):
         self.pending.clear()
         try:
             self.context.add_audio(self.engine.mx.array(chunk, dtype=self.engine.mx.float32))
-            return Partial(self.context.result.text.strip())
+            result = self.context.result
+            finalized = self.context.finalized_tokens
+            words = tokens_to_words(
+                result.tokens, stable_before=finalized[-1].end if finalized else None
+            )
+            return Partial(result.text.strip(), words=tuple(words))
         except Exception:
             # Some model/library variants cannot incrementally decode; use bounded windows.
             self._close_context()

@@ -37,6 +37,18 @@ public final class HUDModel {
     public var unstable = ""
     /// Recent input levels for the waveform, newest last.
     public var levels = LevelHistory()
+    /// The word waveform (Settings → General): each word's audio drawn above it. Off keeps the HUD as it always was.
+    public var wordWaveform = false
+    /// Every level of the utterance so far, kept only while the word waveform is on.
+    public var utterance = UtteranceLevels()
+    /// The words on screen with their audio spans (empty without timings: the plain text shows instead).
+    public var wordCells: [WordCell] = []
+    /// Words whose text was revised by the latest partial, for the brief in-place crossfade.
+    public var revisedWords: Set<Int> = []
+    /// Older words were dropped from the front of a long dictation.
+    public var wordsTruncated = false
+    /// A fixed pulse position (0...1) for the current word in the snapshots; nil lets it run on the clock.
+    public var pulsePhase: Double?
     public var indicator: HUDIndicator = .waveform
     public var debugRetention = false
     public var isError = false
@@ -65,16 +77,61 @@ public final class HUDModel {
 
     public init() {}
 
-    public func pushLevel(_ rms: Float) { levels.push(rms: rms) }
+    public func pushLevel(_ rms: Float) {
+        levels.push(rms: rms)
+        if wordWaveform { utterance.push(rms: rms) }
+    }
+
+    /// A partial (or the raw transcript at `correcting`) with its word timings: lays the words out above their audio.
+    /// Without timings the cells clear and the plain text shows, so an old server or the ONNX engine degrade gracefully.
+    public func showWords(text: String, words: [WordTiming]?) {
+        guard wordWaveform else { return }
+        let trimmed = WordWaveform.tail(WordWaveform.cells(text: text, words: words))
+        let (changed, cells) = WordWaveform.revised(wordCells, to: trimmed.cells)
+        if reduceMotion {
+            wordCells = cells; revisedWords = changed; wordsTruncated = trimmed.truncated
+        } else {
+            withAnimation(.spring(response: 0.32, dampingFraction: 0.78)) {
+                wordCells = cells; revisedWords = changed; wordsTruncated = trimmed.truncated
+            }
+        }
+    }
+
+    /// The uncorrected final arrived: its words are the whole utterance, settled, shown until the HUD fades.
+    public func finishWords(text: String, words: [WordTiming]) {
+        showWords(text: text, words: words.map { WordTiming(text: $0.text, start: $0.start, end: $0.end, stable: true) })
+        revisedWords = []
+        polishing = false
+        diff = nil
+        diffFade = 0
+        stable = text
+        unstable = ""
+    }
+
+    /// Whether the word waveform draws instead of the plain transcript right now.
+    public var showsWordWaveform: Bool { wordWaveform && !wordCells.isEmpty && diff == nil }
 
     /// Clean-up started: the raw transcript stays on screen as solid text with a shimmer and the "Polishing…" status.
-    public func beginPolishing(raw: String, style: String?) {
+    /// With the word waveform on, the raw words keep their audio (`words` is the final decode's timing) and settle,
+    /// since the cleaned text cannot map onto the audio word for word: the ribbon fades out when the cleaned text lands.
+    public func beginPolishing(raw: String, style: String?, words: [WordTiming]? = nil) {
         if let style { styleName = style }
         status = HUDStatus.polishing
         indicator = .sparkle
         isError = false
         stable = raw
         unstable = ""
+        if wordWaveform {
+            if let words {
+                showWords(text: raw, words: words)
+            } else if !raw.hasSuffix(wordCells.map(\.text).joined(separator: " ")) {
+                // The final decode reworded the live words and brought no timings: nothing honest to draw.
+                wordCells = []
+            }
+            // The audio is complete: every word settles.
+            wordCells = wordCells.map { var c = $0; c.stable = true; return c }
+            revisedWords = []
+        }
         withAnimation(.easeInOut(duration: 0.2)) { polishing = true }
     }
 
@@ -107,7 +164,7 @@ public final class HUDModel {
         settle(on: cleaned)
     }
 
-    /// Shows `text` as plain solid text: no shimmer, no highlight.
+    /// Shows `text` as plain solid text: no shimmer, no highlight, and no word waveform (its words were the raw ones).
     public func settle(on text: String) {
         withAnimation(.easeInOut(duration: 0.2)) {
             polishing = false
@@ -115,6 +172,7 @@ public final class HUDModel {
             diffFade = 0
             stable = text
             unstable = ""
+            wordCells = []
         }
     }
     public func silence() { levels.clear() }
@@ -123,6 +181,7 @@ public final class HUDModel {
         status = ""; stable = ""; unstable = ""; levels.clear(); indicator = .waveform
         isError = false; showUseRaw = false; cleaned = false; onUseRaw = nil
         styleName = nil; polishing = false; diff = nil; diffFade = 0; keptOriginal = false
+        utterance.clear(); wordCells = []; revisedWords = []; wordsTruncated = false
     }
 }
 
@@ -134,12 +193,8 @@ public struct LevelHistory: Equatable, Sendable {
 
     public init() {}
 
-    /// RMS 0...1 to a bar height 0...1: -50 dBFS and below is 0, -14 dBFS and above is 1.
-    public static func normalize(rms: Float) -> Float {
-        guard rms > 0 else { return 0 }
-        let db = 20 * log10(rms)
-        return min(1, max(0, (db + 50) / 36))
-    }
+    /// RMS 0...1 to a bar height 0...1: -50 dBFS and below is 0, -14 dBFS and above is 1 (`UtteranceLevels.normalize`).
+    public static func normalize(rms: Float) -> Float { UtteranceLevels.normalize(rms: rms) }
 
     /// Adds a sample. Bars rise at once and fall by a third of the way, so the waveform reads as speech, not as jitter.
     public mutating func push(rms: Float) {
@@ -252,7 +307,13 @@ public struct HUDView: View {
                 }
             }
             let shown = HUDText.tail(stable: model.stable, unstable: model.unstable)
-            if let diff = model.diff {
+            if model.showsWordWaveform {
+                WordWaveformView(cells: model.wordCells, levels: model.utterance, revised: model.revisedWords,
+                                 truncated: model.wordsTruncated, polishing: model.polishing, animated: !model.reduceMotion,
+                                 contrast: model.increaseContrast, pulsePhase: model.pulsePhase, shimmerPhase: model.shimmerPhase,
+                                 maxWidth: Self.maxTextWidth)
+                    .transition(.opacity)
+            } else if let diff = model.diff {
                 DiffText(segments: diff, fade: model.diffFade, contrast: model.increaseContrast)
                     .frame(width: HUDText.fittedWidth(DiffText.plain(diff), font: .systemFont(ofSize: 15), max: Self.maxTextWidth),
                            alignment: .leading)

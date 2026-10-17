@@ -2,6 +2,7 @@
 
 import asyncio
 import importlib.util
+import time
 from pathlib import Path
 
 import pytest
@@ -11,8 +12,11 @@ from test_protocol import final
 
 from chirp_server.app import create_app
 from chirp_server.audio import decode_wav, samples
+from chirp_server.cleanup_models import discover
+from chirp_server.config import CorrectionConfig
 from chirp_server.engine import EngineWorker
 from chirp_server.engine.mlx import ParakeetMLX
+from chirp_server.managed_cleanup import ManagedCleanup
 
 pytestmark = pytest.mark.model
 
@@ -44,6 +48,35 @@ async def test_real_model_decode():
         await worker.close()
 
 
+async def test_prewarm_first_final_faster_than_cold():
+    """A start-triggered prewarm overlaps the cold load, so the first final that
+    uses the warm helper lands far faster than an un-prewarmed cold first final."""
+    try:
+        discover()
+    except ValueError:
+        pytest.skip("cleanup weights missing; explicitly run model fetch --cleanup")
+    config = CorrectionConfig(mode="managed", timeout=120, idle_seconds=60)
+    raw = "um, so, please send the project schedule tomorrow"
+    prompt = "Fix punctuation and casing only. Change nothing else."
+    cold = ManagedCleanup(config)
+    try:
+        started = time.perf_counter()
+        await cold.generate(raw, prompt)
+        cold_ms = (time.perf_counter() - started) * 1000
+    finally:
+        await cold.close()
+    warm = ManagedCleanup(config)
+    try:
+        warm.prewarm()
+        await warm.wait_warm()
+        started = time.perf_counter()
+        await warm.generate(raw, prompt)
+        warm_ms = (time.perf_counter() - started) * 1000
+        assert warm_ms < cold_ms
+    finally:
+        await warm.close()
+
+
 def test_real_model_stream(settings):
     settings.idle_seconds = 60
     pcm = decode_wav((fixture_directory() / "synthetic-5s.wav").read_bytes())
@@ -65,3 +98,43 @@ def test_real_model_stream(settings):
             keyword_match = "fox" in result["raw"].lower()
             assert keyword_match
             assert result["timings_ms"]["first_partial"] is not None
+
+
+def test_real_model_word_timings_align_with_text(settings):
+    """Every partial's and the final's words join back into its text, with monotonic times
+    inside the audio; words older than the preview window become stable."""
+    settings.idle_seconds = 60
+    pcm = decode_wav((fixture_directory() / "synthetic-15s.wav").read_bytes())
+    seconds = len(pcm) / 32000
+    with TestClient(create_app(settings, ParakeetMLX(), TOKEN)) as client:
+        with client.websocket_connect("/v1/stream", headers=HEADERS) as ws:
+            ws.send_json({**START, "word_timings": True})
+            assert ws.receive_json()["type"] == "ready"
+
+            async def paced():
+                for offset in range(0, len(pcm), 6400):
+                    ws.send_bytes(pcm[offset : offset + 6400])
+                    await asyncio.sleep(0.2)
+
+            asyncio.run(paced())
+            ws.send_json({"type": "stop"})
+            partials, result = [], None
+            while result is None:
+                message = ws.receive_json()
+                if message["type"] == "partial":
+                    partials.append(message)
+                elif message["type"] in {"final", "error"}:
+                    result = message
+    assert result["type"] == "final"
+    assert partials and all("words" in p for p in partials)
+    for message in [*partials, result]:
+        words = message["words"]
+        text = message.get("raw", message.get("text"))
+        joined_matches = " ".join(w["text"] for w in words) == text
+        assert joined_matches
+        assert all(0 <= w["start"] <= w["end"] <= seconds + 0.5 for w in words)
+        assert all(a["start"] <= b["start"] for a, b in zip(words, words[1:], strict=False))
+    assert all(w["stable"] for w in result["words"])
+    stable_seen = any(w["stable"] for w in partials[-1]["words"])
+    assert stable_seen
+    assert not any(w["stable"] for w in partials[0]["words"])

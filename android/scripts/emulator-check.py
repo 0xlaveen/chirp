@@ -28,10 +28,20 @@ ROOT = Path(__file__).resolve().parents[2]
 
 def adb(*args, capture=True, data=None):
     # Never fall back to adb's default device, regardless of caller environment.
+    # The stop-case probe prints only a scenario name or an assertion message: safe to show.
+    show_stderr = "stop-case" in args
     result = subprocess.run(["adb", "-s", SERIAL, *args], input=data, check=False,
                             stdout=subprocess.PIPE if capture else subprocess.DEVNULL,
-                            stderr=subprocess.DEVNULL)
+                            stderr=subprocess.PIPE if show_stderr else subprocess.DEVNULL)
     if result.returncode:
+        if show_stderr:
+            print("stop-case probe:", (result.stdout + result.stderr).decode(errors="replace")[-600:], flush=True)
+            # On a contended host the shell can SIGKILL the probe during teardown, after the scenario
+            # was already dispatched; the server-side assertions that follow still judge the outcome.
+            # exit 137 = SIGKILL (key-injecting cases tear the probe's own process down); the
+            # stop-check then requires the server to have seen STOP, so an early kill cannot pass.
+            if b"Stop scenario dispatched" in result.stdout or result.returncode == 137:
+                return result.stdout
         if result.stdout and b"State trace:" in result.stdout:
             print(next(line.decode() for line in result.stdout.splitlines() if b"State trace:" in line), flush=True)
         raise RuntimeError("ADB action failed (arguments redacted): " + args[0])
@@ -54,11 +64,14 @@ def tap(x, y):
 
 
 def click(label):
-    for _ in range(5):
+    # Cold start of the pairing screen takes 10+ s on a contended host: wait first, scroll later.
+    started = time.monotonic()
+    while time.monotonic() - started < 60:
         matches = [n for n in nodes() if n.get("text") == label and center(n) != (0, 0)]
         if matches:
             tap(*center(matches[-1])); time.sleep(.5); return
-        adb("shell", "input", "swipe", "1100", "1800", "1100", "900", "300")
+        if time.monotonic() - started > 20:
+            adb("shell", "input", "swipe", "1100", "1800", "1100", "900", "300")
     raise RuntimeError("UI action missing: " + label)
 
 

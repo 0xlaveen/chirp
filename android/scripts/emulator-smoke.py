@@ -72,12 +72,17 @@ def click(label):
     raise AssertionError('Missing accessible action: ' + label)
 
 
-def wait_for(label, seconds=15):
+def wait_for(label, seconds=45):
+    return wait_for_hierarchy(label, seconds)[0]
+
+
+def wait_for_hierarchy(label, seconds=45):
     deadline = time.monotonic() + seconds
     while time.monotonic() < deadline:
-        node = find(label)
+        hierarchy = nodes()
+        node = find(label, hierarchy)
         if node is not None:
-            return node
+            return node, hierarchy
     raise AssertionError('Missing UI state: ' + label)
 
 
@@ -111,7 +116,8 @@ def fresh_editor():
     adb('shell', 'ime', 'enable', IME)
     adb('shell', 'ime', 'set', IME)
     adb('shell', 'am', 'start', '-n', PACKAGE + '/.SetupActivity', '--es', 'section', 'settings')
-    wait_for('Try a sentence')
+    # Cold start of the settings screen takes 10-13 s on a contended host; 15 s flaked.
+    wait_for('Try a sentence', 60)
     focus_editor()
 
 
@@ -155,7 +161,10 @@ def typing_check():
     fresh_editor()
     click('More keys')
     click('Emoji')
-    assert any('emoji' in n.get('resource-id', '') for n in nodes()), 'Emoji keyboard missing'
+    # The palette inflates after the tap; on a contended host that can take several seconds.
+    deadline = time.monotonic() + 20
+    while not any('emoji' in n.get('resource-id', '') for n in nodes()):
+        assert time.monotonic() < deadline, 'Emoji keyboard missing'
     screenshot('typing-emoji')
     fresh_editor()
 
@@ -248,9 +257,13 @@ def main():
                         assert 0 <= x1 < x2 <= w and 0 <= y1 < y2 <= h, 'Clipped accessible control'
                 screenshot('keyboard-' + form + '-' + theme)
                 tap(mic)
-                wait_for('Pair your Mac in Chirp setup. Pair Mac')
+                # The pairing notice expires after 5 s and a dump can take 2 s; reuse the same dump for Cancel.
+                _, hierarchy = wait_for_hierarchy('Pair your Mac in Chirp setup. Pair Mac')
+                cancel = find('Cancel dictation', hierarchy)
+                assert cancel is not None and cancel.get('clickable') == 'true', 'Cancel missing beside pair action'
                 screenshot('pair-action-' + form + '-' + theme)
-                click('Cancel dictation')
+                tap(cancel)
+                wait_for('Microphone: tap to dictate')
                 crash_check()
         adb('shell', 'wm', 'size', '2560x1600')
         adb('shell', 'cmd', 'uimode', 'night', 'no')

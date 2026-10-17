@@ -7,6 +7,8 @@ public struct SettingsState: Sendable {
     public var serverURL = ServerConfig.defaultURL.absoluteString
     public var tokenPresent = true
     public var launch: LaunchState = .off
+    /// General: the HUD's word waveform (each word's audio above it). Off by default.
+    public var wordWaveform = false
     public var soundsEnabled = false
     public var soundPack: SoundPack = .default
     /// 0…1.
@@ -40,6 +42,9 @@ public struct SettingsState: Sendable {
     /// The styles the server offers (the built-ins until it says otherwise) and whether it offers any at all.
     public var profiles = CorrectionProfile.builtIn
     public var serverOffersStyles = true
+    /// "Keep clean-up model loaded": what the server last said, and where its memory is used ("this Mac" or the host).
+    public var keepLoaded = KeepLoadedState()
+    public var serverHost = "this Mac"
 
     public init() {}
 }
@@ -115,6 +120,8 @@ public final class SettingsForm {
     private var soundsGrid: NSGridView { grids[.sounds]! }
     public let serverURL = NSTextField(string: "")
     public let launch = NSButton(checkboxWithTitle: "Launch Chirp at login", target: nil, action: nil)
+    /// General: the HUD's word waveform.
+    public let wordWaveform = NSButton(checkboxWithTitle: "Word waveform overlay", target: nil, action: nil)
     /// General: reopens the setup walk-through.
     public let setupButton = NSButton(title: "Set Up Chirp…", target: nil, action: nil)
     /// Server: puts the chirp-server doctor command on the pasteboard.
@@ -131,6 +138,11 @@ public final class SettingsForm {
     public let showChanges = NSButton(checkboxWithTitle: "Show changes after clean-up", target: nil, action: nil)
     public let offerRaw = NSButton(checkboxWithTitle: "Offer “Use raw” for 5 seconds after clean-up", target: nil, action: nil)
     public let appStyles = AppStylesTable()
+    /// Clean-up: keeps the server's clean-up model in memory. Its state, memory cost and any error sit under it.
+    public let keepLoaded = NSButton(checkboxWithTitle: KeepLoaded.title, target: nil, action: nil)
+    private let keepLoadedStatus = StatusLine()
+    private let keepLoadedHelp = SettingsForm.help("")
+    private let keepLoadedError = SettingsForm.help("")
     private let styleHelp = SettingsForm.help("")
     private let cleanupHelp = SettingsForm.help("")
     private var grids: [SettingsTab: NSGridView] = [:]
@@ -175,6 +187,7 @@ public final class SettingsForm {
         hotkeyRow.spacing = 10
         build(.general, [
             row("Hotkey:", hotkeyRow, help: hotkeyHelp),
+            row("Overlay:", wordWaveform, help: Self.help("Draws each word's audio above it as you speak, so you can see what was heard.")),
             row("Startup:", launch, help: launchHelp),
             row("Setup:", setupButton, help: Self.help("Check the permissions and the server, and try a dictation.")),
         ])
@@ -194,8 +207,17 @@ public final class SettingsForm {
                 help: Self.help("Plays after you stop talking, up to \(SoundTiming.stopLimit) s.")),
         ], customRows: [3, 4])
 
+        let keepLoadedStack = NSStackView(views: [keepLoaded, keepLoadedStatus, keepLoadedHelp, keepLoadedError])
+        keepLoadedStack.orientation = .vertical
+        keepLoadedStack.alignment = .leading
+        keepLoadedStack.spacing = 4
+        keepLoadedError.textColor = .systemRed
+        keepLoadedError.isHidden = true
+        keepLoadedStatus.setAccessibilityLabel("Clean-up model status")
+
         build(.cleanup, [
             row("Clean-up:", cleanupEnabled, help: cleanupHelp),
+            row("Model:", keepLoadedStack),
             row("Style:", style, help: styleHelp),
             row("Prompts:", prompts.view),
             row("Per-app:", appStyles.view, help: Self.help("The frontmost app when you start dictating picks the style. Other apps use the default style.")),
@@ -330,6 +352,7 @@ public final class SettingsForm {
             serverURL.stringValue = s.serverURL
             launch.state = s.launch == .on ? .on : .off
             launch.isEnabled = s.launch != .unavailable
+            wordWaveform.state = s.wordWaveform ? .on : .off
             launchUnavailable = s.launch == .unavailable
             setLaunchError(nil)
             style.controlSize = .regular
@@ -354,6 +377,7 @@ public final class SettingsForm {
             prompts.configure(catalog: s.catalog, overrides: s.stylePrompts)
             shownCatalog = s.catalog
         }
+        showKeepLoaded(s.keepLoaded, host: s.serverHost)
         cleanupHelp.stringValue = s.cleanupDetail
         cleanupEnabled.isEnabled = s.cleanupAvailable
         tokenStatus.set(symbol: s.tokenPresent ? "checkmark.circle.fill" : "exclamationmark.triangle.fill",
@@ -367,6 +391,30 @@ public final class SettingsForm {
                                 tone: s.accessibilityGranted ? .ok : .warning, text: s.accessibilityGranted ? "Allowed" : "Not allowed")
         micButton.isHidden = s.micGranted
         accessibilityButton.isHidden = s.accessibilityGranted
+    }
+
+    /// The "Keep clean-up model loaded" switch, its status and help, or why it is unavailable; the periodic refresh
+    /// calls this too, so it only sets what changed.
+    public func showKeepLoaded(_ state: KeepLoadedState, host: String) {
+        let p = KeepLoadedPresentation(state, host: host)
+        keepLoaded.state = p.isOn ? .on : .off
+        keepLoaded.isEnabled = p.isEnabled
+        keepLoaded.setAccessibilityHelp(p.help)
+        keepLoadedHelp.stringValue = p.help
+        keepLoadedStatus.isHidden = p.status == nil
+        if let status = p.status {
+            switch p.statusTone {
+            case .ok: keepLoadedStatus.set(symbol: "circle.fill", tone: .ok, text: status)
+            case .busy: keepLoadedStatus.set(symbol: "circle.fill", tone: .warning, text: status)
+            case .idle: keepLoadedStatus.set(symbol: "circle", tone: .normal, text: status)
+            }
+            keepLoadedStatus.setAccessibilityLabel("Clean-up model: \(status)")
+        }
+        keepLoadedError.isHidden = p.error == nil
+        if let error = p.error {
+            keepLoadedError.stringValue = error
+            keepLoadedError.setAccessibilityLabel("Error: \(error)")
+        }
     }
 
     /// The presets, plus the recorded shortcut when one is in use, with `current` selected.
@@ -492,6 +540,7 @@ private final class StatusLine: NSStackView {
 
     func set(symbol: String, tone: MenuEntry.Tone, text string: String) {
         icon.image = MenuStyle.symbol(symbol, tone: tone)
+        icon.contentTintColor = tone == .normal ? .tertiaryLabelColor : nil
         text.stringValue = string
     }
 }

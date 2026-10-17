@@ -95,7 +95,7 @@ internal fun SetupWizard(
                         Text("Enable Chirp Keyboard", style = MaterialTheme.typography.titleLarge)
                         Text("A full keyboard with Chirp’s microphone built in. Type normally, or tap the mic above the keys to dictate.")
                         Text("English autocorrect, next-word and emoji suggestions are ready to use. Personalised suggestions learn typed words on this device; turn them off in Keyboard layouts & settings → Text correction. Dictation finals bypass keyboard learning.")
-                        Text("Swipe typing: not available")
+                        Text(swipeTypingSummary(androidx.compose.ui.platform.LocalContext.current))
                         Text("Samsung: Settings → General management → Keyboard list and default.")
                         Button(keyboardSettings, Modifier.fillMaxWidth()) { Text(if (state.inputEnabled) "Chirp Keyboard enabled ✓" else "Enable Chirp Keyboard") }
                         OutlinedButton(picker, Modifier.fillMaxWidth()) { Text(if (state.inputSelected) "Chirp Keyboard selected ✓" else "Select it as default") }
@@ -155,7 +155,9 @@ internal fun SetupWizard(
                             editor.setTextColor(editorInk); editor.setHintTextColor(editorHint)
                             editor.backgroundTintList = ColorStateList.valueOf(editorAccent)
                         }, modifier = Modifier.fillMaxWidth().bringIntoViewRequester(bringEditor))
-                        Text("Typing suggestions learn on this device. Swipe typing: not available", style = MaterialTheme.typography.bodySmall)
+                        Text("Typing suggestions learn on this device.", style = MaterialTheme.typography.bodySmall)
+                        KeyboardLookChooser()
+                        SwipeTypingSettings()
                         TextButton(picker) { Text("Choose keyboard") }
                         OutlinedButton(check, Modifier.fillMaxWidth(), enabled = !state.checking) { Text("Check Mac connection") }
                         if (state.status.startsWith("Mac unreachable") || state.status.startsWith("Check Tailscale")) {

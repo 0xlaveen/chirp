@@ -22,6 +22,7 @@ class ChirpApplication : App() {
             }
         }
         seedTypingDefaults(keyboard)
+        seedKeyboardLook(keyboard)
         helium314.keyboard.settings.screens.ChirpSettingsHook.content = { ChirpSettingsSection() }
         super.onCreate()
     }
