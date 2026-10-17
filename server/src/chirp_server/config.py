@@ -10,7 +10,7 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 from urllib.parse import urlsplit
 
-from .profiles import Profile, resolve_profiles
+from .profiles import MAX_PROMPT_CHARS, Profile, resolve_profiles
 
 
 @dataclass
@@ -29,6 +29,8 @@ class CorrectionConfig:
     resolved_profiles: dict[str, Profile] = field(init=False, repr=False)
 
     def __post_init__(self):
+        if not isinstance(self.prompt, str) or len(self.prompt) > MAX_PROMPT_CHARS:
+            raise ValueError("Invalid correction prompt")
         self.resolved_profiles = resolve_profiles(self.profiles)
         if self.prompt and "prompt" not in self.profiles.get("default", {}):
             self.resolved_profiles["default"] = replace(

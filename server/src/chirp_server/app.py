@@ -20,6 +20,7 @@ from .audio import MAX_FRAME, MAX_PCM, AudioError, decode_wav, levels, samples, 
 from .config import Settings, load_token
 from .correction import CorrectionResult, Corrector
 from .engine import EngineWorker
+from .profiles import MAX_PROMPT_CHARS
 from .retention import Retention
 
 log = logging.getLogger("chirp")
@@ -27,6 +28,7 @@ MESSAGES = {
     "auth": "Authentication required",
     "busy": "Speech engine busy; retry shortly",
     "too_long": "Maximum utterance is 120 seconds",
+    "bad_request": "Invalid correction prompt",
     "bad_audio": "Invalid audio or control frame",
     "engine": "Speech engine unavailable",
 }
@@ -64,6 +66,7 @@ class Utterance:
         self.correction = False
         self.profile = "default"
         self.instructions = ""
+        self.correction_prompt = None
         self.leased = False
         self.failure = False
         self.aborted = False
@@ -72,6 +75,11 @@ class Utterance:
         self.peak = self.rms = 0.0
 
     async def start(self, control):
+        if "correction_prompt" in control:
+            prompt = control["correction_prompt"]
+            if not isinstance(prompt, str) or len(prompt) > MAX_PROMPT_CHARS:
+                raise AudioError("bad_request")
+            self.correction_prompt = prompt
         profile = control.get("correction_profile", "default")
         instructions = control.get("correction_instructions", "")
         if (
@@ -219,6 +227,7 @@ class Utterance:
                 enabled,
                 self.profile,
                 self.instructions,
+                self.correction_prompt,
             )
         )
         try:
@@ -264,13 +273,27 @@ class Utterance:
 
 
 async def make_final(
-    raw, pcm, first_partial, started, corrector, enabled, profile="default", instructions=""
+    raw,
+    pcm,
+    first_partial,
+    started,
+    corrector,
+    enabled,
+    profile="default",
+    instructions="",
+    correction_prompt=None,
 ):
     finalized = (time.perf_counter() - started) * 1000
     correction_started = time.perf_counter()
-    result = (
-        await corrector.process(raw, profile, instructions) if enabled else CorrectionResult(raw)
-    )
+    if enabled:
+        args = (raw, profile, instructions)
+        result = (
+            await corrector.process(*args, correction_prompt)
+            if correction_prompt is not None
+            else await corrector.process(*args)
+        )
+    else:
+        result = CorrectionResult(raw)
     return {
         "type": "final",
         "text": result.text,
@@ -349,6 +372,24 @@ def create_app(settings=None, engine=None, token=None, corrector=None):
                 "correction_profiles": [
                     profile.metadata() for profile in correction.resolved_profiles.values()
                 ],
+            }
+        )
+
+    async def profiles(request: Request):
+        if not authorized(credential, bearer(request.headers)):
+            return JSONResponse(
+                error("auth"), status_code=401, headers={"WWW-Authenticate": "Bearer"}
+            )
+        return JSONResponse(
+            {
+                "profiles": [
+                    {
+                        **profile.metadata(),
+                        "prompt": profile.prompt,
+                        "max_prompt_chars": MAX_PROMPT_CHARS,
+                    }
+                    for profile in settings.correction.resolved_profiles.values()
+                ]
             }
         )
 
@@ -520,6 +561,7 @@ def create_app(settings=None, engine=None, token=None, corrector=None):
     app = Starlette(
         routes=[
             Route("/v1/health", health),
+            Route("/v1/correction/profiles", profiles),
             Route("/v1/transcribe", transcribe, methods=["POST"]),
             WebSocketRoute("/v1/stream", stream),
         ],
