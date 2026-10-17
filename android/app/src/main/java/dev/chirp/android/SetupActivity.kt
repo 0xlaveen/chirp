@@ -5,6 +5,7 @@ import android.content.ComponentName
 import android.content.Intent
 import android.content.pm.PackageManager
 import androidx.core.net.toUri
+import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
 import android.view.inputmethod.InputMethodManager
@@ -155,9 +156,13 @@ open class SetupActivity : ComponentActivity() {
     private fun refresh() {
         state.localNetwork = hasLocalNetworkAccess()
         state.mic = ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
-        state.inputEnabled = getSystemService(InputMethodManager::class.java).enabledInputMethodList.any { it.packageName == packageName }
-        state.inputSelected = ComponentName.unflattenFromString(Settings.Secure.getString(contentResolver, Settings.Secure.DEFAULT_INPUT_METHOD).orEmpty()) ==
-            ComponentName(this, ChirpImeService::class.java)
+        val imm = getSystemService(InputMethodManager::class.java)
+        val chirp = ComponentName(this, ChirpImeService::class.java)
+        state.inputEnabled = imm.enabledInputMethodList.any { it.packageName == packageName }
+        // Android 14+ exposes the current IME directly; newer releases can hide DEFAULT_INPUT_METHOD from apps,
+        // which left setup stuck on step 1 with Chirp already selected.
+        state.inputSelected = (Build.VERSION.SDK_INT >= 34 && imm.currentInputMethodInfo?.component == chirp) ||
+            ComponentName.unflattenFromString(Settings.Secure.getString(contentResolver, Settings.Secure.DEFAULT_INPUT_METHOD).orEmpty()) == chirp
         state.diagnostics = CrashLog(this).text()
         val enabled = Settings.Secure.getString(contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES).orEmpty()
         state.bubbleEnabled = enabled.split(':').any {
