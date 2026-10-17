@@ -24,18 +24,19 @@ internal fun ChirpSettingsSection() {
         Text("Chirp", style = MaterialTheme.typography.titleLarge)
         Text(store.pairing()?.let { "Paired with ${it.base.host} · ${store.health?.engine ?: "Engine not reported"}" } ?: "Pair your Mac to dictate",
             style = MaterialTheme.typography.bodyMedium)
-        Text("Pairing", style = MaterialTheme.typography.titleSmall)
-        TextButton({ open("pair") }) { Text("Pairing & connection") }
-        TextButton({ open("settings") }) { Text("Test dictation") }
         if (store.health.cleanupAvailable()) {
             Text("Clean-up & styles", style = MaterialTheme.typography.titleSmall)
             Row(Modifier.fillMaxWidth()) {
                 Text("Clean-up · ${correctionLabel(store.health)}", Modifier.weight(1f))
                 Switch(cleanup, { cleanup = it; store.correction = it }, modifier = Modifier.semantics { contentDescription = "Clean-up · ${correctionLabel(store.health)}" })
             }
-        }
-        CleanupStyleSettings(store.health)
-        CleanupStyleSettings(store.health, appsOnly = true)
+            Text(cleanupDescription(store.health), style = MaterialTheme.typography.bodySmall)
+            CleanupStyleSettings(store.health)
+            CleanupStyleSettings(store.health, appsOnly = true)
+        } else if (store.pairing() != null) Text("Mac has clean-up off", style = MaterialTheme.typography.bodySmall)
+        Text("Pairing", style = MaterialTheme.typography.titleSmall)
+        TextButton({ open("pair") }) { Text("Pairing & connection") }
+        TextButton({ open("settings") }) { Text("Test dictation") }
         Text("Sounds & haptics", style = MaterialTheme.typography.titleSmall)
         Row(Modifier.fillMaxWidth()) {
             Text("Haptic cues", Modifier.weight(1f))

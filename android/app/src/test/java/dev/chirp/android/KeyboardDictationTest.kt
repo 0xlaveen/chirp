@@ -196,4 +196,14 @@ class KeyboardDictationTest {
         assertEquals(0, host.editor.commits); assertFalse(voice.active)
     }
 
+    @Test fun `start requests on-Mac cleanup by default but never when the server reports off`() {
+        val store = SettingsStore(host)
+        val local = Health(true, false, true, false, null)
+        store.health = local
+        start(); assertTrue(stream.correctionRequested); voice.cancel()
+        store.correction = true
+        store.health = local.copy(correctionAvailable = false)
+        start(); assertFalse(stream.correctionRequested)
+    }
+
 }

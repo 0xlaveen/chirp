@@ -16,8 +16,19 @@ import javax.crypto.spec.GCMParameterSpec
 class SettingsStore(context: Context) {
     private val prefs = context.getSharedPreferences("chirp", Context.MODE_PRIVATE)
     var correction: Boolean
-        get() = prefs.getBoolean("correction", false)
-        set(value) { prefs.edit { putBoolean("correction", value) } }
+        get() {
+            val current = health
+            if (!current.cleanupAvailable() || prefs.getBoolean("correction_suspended", false)) return false
+            // 0.5.0 wrote a default false without recording consent. Only new explicit
+            // choices override the on-Mac default; external correction remains opt-in.
+            return if (prefs.getBoolean("correction_explicit", false)) prefs.getBoolean("correction", false)
+                else current?.correctionLeavesMachine == false
+        }
+        set(value) { prefs.edit {
+            putBoolean("correction", value)
+            putBoolean("correction_explicit", true)
+            putBoolean("correction_suspended", false)
+        } }
     var defaultStyle: String
         get() = prefs.getString("default_style", "default") ?: "default"
         set(value) { require(CleanupStyles.validId(value)); prefs.edit { putString("default_style", value) } }
@@ -64,6 +75,12 @@ class SettingsStore(context: Context) {
     var health: Health?
         get() = try { prefs.getString("health", null)?.let(Protocol::health) } catch (_: Exception) { null }
         set(value) {
+            val previous = health
+            if (previous != null && (previous.cleanupAvailable() && !value.cleanupAvailable() ||
+                    previous.correctionLeavesMachine != value?.correctionLeavesMachine ||
+                    previous.correctionHost != value?.correctionHost)) {
+                prefs.edit { putBoolean("correction_suspended", true) }
+            }
             if (value == null) prefs.edit { remove("health") }
             else prefs.edit { putString("health", JSONObject().put("ok", true).put("ready", value.ready)
                 .put("debug_retention", value.debugRetention).put("engine", value.engine.orEmpty())
@@ -94,7 +111,6 @@ class SettingsStore(context: Context) {
         check(prefs.edit().putString("url", pairing.base.toString())
             .putString("iv", Base64.encodeToString(cipher.iv, Base64.NO_WRAP))
             .putString("token", Base64.encodeToString(encrypted, Base64.NO_WRAP)).commit())
-        correction = false
         this.health = health
     }
     fun forget() {

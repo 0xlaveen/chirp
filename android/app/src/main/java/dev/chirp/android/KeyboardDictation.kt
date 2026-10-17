@@ -129,6 +129,9 @@ internal class KeyboardDictation(
     private fun quickOptions() {
         val anchor = strip?.mic ?: return
         android.widget.PopupMenu(anchor.context, anchor).apply {
+            if (store.health.cleanupAvailable()) menu.add(if (store.correction) "Clean-up: on ✓" else "Clean-up: off").setOnMenuItemClickListener {
+                store.correction = !store.correction; true
+            } else menu.add("Mac has clean-up off").isEnabled = false
             if (store.health.cleanupAvailable()) {
                 val selected = styleOverride ?: store.style(targetPackage).id
                 CleanupStyles.profiles(store.health).forEach { profile ->
@@ -137,9 +140,6 @@ internal class KeyboardDictation(
                         styleOverride = profile.id; currentStyle = profile; render(); true
                     }
                 }
-            }
-            if (store.health.cleanupAvailable()) menu.add((if (store.correction) "Clean-up on ✓" else "Clean-up off") + " · " + correctionLabel(store.health)).setOnMenuItemClickListener {
-                store.correction = !store.correction; true
             }
             menu.add("Chirp settings").setOnMenuItemClickListener { setup(); true }
             show()
@@ -182,8 +182,6 @@ internal class KeyboardDictation(
                 val health = withContext(Dispatchers.IO) { ChirpNetwork.health(call) }
                 if (!visible || destroyed || version != id) return@launch
                 healthCall = null
-                if (!health.correctionAvailable || correctionLabel(store.health) != correctionLabel(health) ||
-                    health.correctionLeavesMachine && health.correctionHost == null) store.correction = false
                 store.health = health; retained = health.debugRetention; render()
             } catch (_: Exception) { if (version == id) healthCall = null }
         }

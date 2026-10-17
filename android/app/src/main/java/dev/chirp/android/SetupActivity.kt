@@ -94,8 +94,9 @@ open class SetupActivity : ComponentActivity() {
                         ++pairingGeneration; ChirpNetwork.cancel(pendingHealth); pendingHealth = null
                         store.forget(); state.link = ""; state.status = "Pairing removed"; state.checking = false; refresh()
                     },
+                    correctionChanged = { store.correction = it },
                     preferences = {
-                        store.correction = state.correction; store.haptics = state.haptics
+                        store.haptics = state.haptics
                         store.debugOverlay = state.debug
                     },
                 )
@@ -167,7 +168,6 @@ open class SetupActivity : ComponentActivity() {
         state.paired = pairing != null
         state.host = pairing?.base?.host.orEmpty()
         state.health = store.health
-        if (store.health?.let { !it.correctionAvailable || (it.correctionLeavesMachine && it.correctionHost == null) } != false) store.correction = false
         state.correction = store.correction
         state.haptics = store.haptics; state.debug = store.debugOverlay
     }
@@ -187,7 +187,6 @@ open class SetupActivity : ComponentActivity() {
                 pendingHealth = null; state.checking = false
                 if (save) { store.save(pairing, health); state.link = "" }
                 else {
-                    if (correctionLabel(store.health) != correctionLabel(health) || !health.correctionAvailable) store.correction = false
                     store.health = health
                 }
                 state.status = if (health.ready) "Mac ready" else "Paired · Mac is loading its speech model"

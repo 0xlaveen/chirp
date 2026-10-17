@@ -30,7 +30,6 @@ def check(probe, work, expect_crash=False):
             print('Crash captured:', label, '; exceptions:', [item['exception'] for item in entries], flush=True)
         return crashed
 
-    click('Clean-up · Correction on Mac')
     cases = ('partial', 'hide', 'unbind') if expect_crash else (
         'immediate', 'listening', 'partial', 'polishing', 'double', 'hide', 'focus', 'unbind')
     for case in cases:
@@ -43,13 +42,15 @@ def check(probe, work, expect_crash=False):
         mic = wait_for('Microphone: tap to dictate')
         before = probe['editor_text']()
         x, y = probe['center'](mic)
-        # Verify the effective keyboard setting after each process restart.
+        # The first menu item must expose the default without toggling it on.
         adb('shell', 'input', 'swipe', str(x), str(y), str(x), str(y), '700')
-        off = probe['find']('Clean-up off · Correction on Mac')
-        if off is not None:
-            probe['tap'](off)
+        if expect_crash:
+            # The pre-fix Android baseline predates the default and menu-label change.
+            off = probe['find']('Clean-up off · Correction on Mac')
+            if off is not None: probe['tap'](off)
+            else: adb('shell', 'input', 'keyevent', '4')
         else:
-            wait_for('Clean-up on ✓ · Correction on Mac')
+            wait_for('Clean-up: on ✓')
             adb('shell', 'input', 'keyevent', '4')
         try:
             adb('shell', 'CLASSPATH=/data/local/tmp/chirp-ui-probe.jar', 'app_process', '/',
@@ -78,6 +79,7 @@ def check(probe, work, expect_crash=False):
             raise AssertionError('Chirp crashed in stop scenario: ' + case)
         state = json.loads((work / 'events.json').read_text())
         print('Stop:', case, '; content-free server state:', state, flush=True)
+        assert state['correction_requested'], 'On-Mac clean-up was not on by default'
         if case == 'immediate':
             assert state['stop'] and state['frames'] == 0, 'Immediate stop sent audio or missed STOP'
             assert state['empty'] or state['error'] == 'bad_audio', 'Missing empty final / old error'

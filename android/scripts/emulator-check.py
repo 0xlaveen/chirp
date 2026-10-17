@@ -118,7 +118,6 @@ def cleanup_check(output, work):
         raise AssertionError("Editor accessibility root did not return")
     normal_nodes = _probe["wait_for"].__globals__["nodes"]
     # Real managed cleanup, full synthetic utterances, and native one-tap raw replacement.
-    _probe["click"]("Clean-up · Correction on Mac")
     for night in (False, True):
         theme = "dark" if night else "light"
         adb("shell", "cmd", "uimode", "night", "yes" if night else "no")
@@ -177,7 +176,6 @@ def cleanup_check(output, work):
 
 def cleanup_frames(output, work):
     import wave
-    _probe["click"]("Clean-up · Correction on Mac")
     focus_editor()
     x, y, _, _ = mic_position(False, work)
     with wave.open(str(ROOT / "android/app/build/generated/chirp-debug-assets/synthetic.wav")) as wav:

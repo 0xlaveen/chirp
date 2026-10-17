@@ -81,13 +81,14 @@ class ChirpImeServiceTest {
                         val order: MutableList<String>) : ImeTransport {
         var connected = false
         var starts = 0
+        var correctionRequested = false
         var stops = 0
         var closed = false
         var cancelled = false
         var immediate = false
         val frames = mutableListOf<ByteArray>()
         override fun connect() { connected = true }
-        override fun start(correction: Boolean): Boolean { starts++; order += "stream.start"; return !closed }
+        override fun start(correction: Boolean): Boolean { correctionRequested = correction; starts++; order += "stream.start"; return !closed }
         override fun audio(bytes: ByteArray): Boolean { frames += bytes.copyOf(); return !closed }
         override fun stop(): Boolean { stops++; order += "stream.stop"; return !closed }
         override fun close(cancel: Boolean, immediate: Boolean) { closed = true; cancelled = cancel; this.immediate = immediate }

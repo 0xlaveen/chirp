@@ -44,3 +44,6 @@ internal fun correctionLabel(health: Health?): String = when {
 }
 
 internal fun Health?.cleanupAvailable() = this?.let { it.correctionAvailable && (!it.correctionLeavesMachine || it.correctionHost != null) } == true
+internal fun cleanupDescription(health: Health?) = if (health?.correctionLeavesMachine == true)
+    "When enabled, sends text to ${health.correctionHost ?: "the external host"} for clean-up"
+    else "Polishes punctuation and filler words on your Mac; text never leaves it"

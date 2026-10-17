@@ -398,3 +398,34 @@ release on **emulator-5580 only**, including setup/scanner, typing/autocorrect, 
 emoji, Fold layouts/themes, mic recovery, settings and Diagnostics with no Chirp crash.
 Chirp was reselected after force-stops. Release is **0.5.1 (7)**, **26,950,788 bytes
 (25.70 MiB)**, arm64-v8a and x86_64, signed with the existing local development key.
+
+
+### 0.5.1 clean-up default follow-up (2026-10-18)
+
+Clean-up now defaults **on** after pairing with an available **on-Mac** correction server.
+The `correction_explicit` flag records a user's toggle independently of the legacy
+`correction` boolean: an untouched 0.5.0 `false` no longer hides the feature after upgrade.
+Explicit OFF persists across refreshes and restarts. Setup, keyboard settings, and the mic
+menu record choices; changing haptics or the debug overlay does not. External correction
+still requires explicit opt-in and a known host. Availability drops or correction-destination
+changes suspend correction until the user enables it again. A server reporting correction
+off always produces `correction=false` on start, even after an earlier explicit ON.
+
+Setup places Clean-up and styles directly below the paired Mac/engine, explains that local
+cleanup polishes punctuation/filler words without text leaving the Mac, and shows **Mac has
+clean-up off** when unavailable. External correction retains its destination disclosure.
+The mic long-press menu starts with **Clean-up: on ✓** or **Clean-up: off**.
+
+The full `lint testDebugUnitTest assembleDebug assembleRelease` path passed: **235 tests,
+zero failures/errors, two opt-in skips**. New coverage includes local/external defaults,
+legacy preference migration, explicit OFF, privacy/availability transitions, server-off start
+frames, visible controls and independent toggle callbacks. The real managed TLS stop matrix
+passed all eight scenarios on **emulator-5580**, without enabling correction in the harness:
+every observed start frame carried `correction=true`, and managed polishing ran with clean
+logcat and in-app Diagnostics. The signed minified release UI smoke also passed. Live
+speech/start-frame checks use debug's isolated TLS trust; release retains system trust only.
+The AVD was run as a disposable read-only instance at port 5580 after stale AVD locks blocked
+normal startup. No physical device or production server was used.
+
+This is a second local commit before publishing, still **0.5.1 (7)**. The current signed
+release APK is **26,950,808 bytes (25.70 MiB)**, arm64-v8a and x86_64. No APK was published.
