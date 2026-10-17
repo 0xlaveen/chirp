@@ -101,4 +101,15 @@ class DictationStreamTest {
         assertTrue(cancelled.finals.isEmpty()); assertEquals(1, cancelled.ended)
     }
 
+    @Test fun `blank finals after stop discard polishing raw and terminate once`() {
+        for (polishing in listOf(false, true)) {
+            val h = Harness(); h.session.start(true); h.transport.ready(); h.session.stop(); h.advance()
+            if (polishing) h.transport.event(ServerEvent.Correcting(2, "synthetic raw", "default"))
+            h.transport.event(ServerEvent.Final(" ", "", false)); h.advance(450)
+            assertTrue(h.finals.isEmpty()); assertEquals("Didn't catch that", h.statuses.last())
+            h.session.cancel(); h.transport.failure(); h.transport.final(); h.advance(12000)
+            assertEquals(1, h.ended); assertTrue(h.transport.closed)
+        }
+    }
+
 }

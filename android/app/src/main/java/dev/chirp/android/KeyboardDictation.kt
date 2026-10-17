@@ -176,7 +176,7 @@ internal class KeyboardDictation(
         if (!checkHealth) return
         val id = ++version
         val call = ChirpNetwork.healthCall(client, paired)
-        healthCall?.cancel(); healthCall = call
+        ChirpNetwork.cancel(healthCall); healthCall = call
         scope.launch {
             try {
                 val health = withContext(Dispatchers.IO) { ChirpNetwork.health(call) }
@@ -264,7 +264,7 @@ internal class KeyboardDictation(
                 if (!notice && visible) { notice = true; handler.postDelayed(expiry, 5000) }
                 if (!undo) { composing?.cancel(); composing = null }
                 text = ""; resync(selectionStart, selectionEnd)
-                client.connectionPool.evictAll(); render()
+                ChirpNetwork.release(client); render()
             },
         )
         session = stream
@@ -293,8 +293,8 @@ internal class KeyboardDictation(
     }
     private fun forgetUndo() { handler.removeCallbacks(expiry); undo = false; composing?.forgetUndo(); if (!active) composing = null }
     fun hidden() {
-        visible = false; ++version; healthCall?.cancel(); healthCall = null
-        closeWarm(); cancel(); client.dispatcher.cancelAll(); client.connectionPool.evictAll()
+        visible = false; ++version; ChirpNetwork.cancel(healthCall); healthCall = null
+        closeWarm(); cancel(); ChirpNetwork.release(client, cancel = true)
     }
     fun destroy() {
         destroyed = true; hidden(); scope.cancel(); handler.removeCallbacksAndMessages(null)

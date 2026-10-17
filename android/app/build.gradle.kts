@@ -10,8 +10,8 @@ android {
         applicationId = "dev.chirp.android"
         minSdk = 31
         targetSdk = 37
-        versionCode = 6
-        versionName = "0.5.0"
+        versionCode = 7
+        versionName = "0.5.1"
     }
     signingConfigs {
         create("local") {
@@ -44,6 +44,7 @@ android {
     }
     lint { warningsAsErrors = true; lintConfig = file("lint.xml") }
     testOptions { unitTests.isIncludeAndroidResources = true }
+    sourceSets.getByName("debug").res.directories.add(layout.buildDirectory.dir("generated/chirp-debug-res").get().asFile.path)
 }
 dependencies {
     implementation(project(":keyboard"))
@@ -96,6 +97,13 @@ val generateDebugSyntheticAudio by tasks.registering(Exec::class) {
     commandLine("sh", rootProject.file("scripts/make-synthetic-wav.sh"))
     outputs.dir(layout.buildDirectory.dir("generated/chirp-debug-assets"))
 }
+val generateEmulatorTls by tasks.registering(Exec::class) {
+    outputs.upToDateWhen { false } // Renew the disposable test certificate before expiry.
+    commandLine("sh", rootProject.file("scripts/make-emulator-tls.sh"))
+    outputs.dir(layout.buildDirectory.dir("generated/chirp-debug-res"))
+    outputs.dir(layout.buildDirectory.dir("emulator-tls"))
+}
+tasks.matching { it.name == "preDebugBuild" }.configureEach { dependsOn(generateEmulatorTls) }
 tasks.matching { it.name == "mergeDebugAssets" || it.name == "packageDebugUnitTestForUnitTest" }.configureEach {
     dependsOn(generateDebugSyntheticAudio)
 }

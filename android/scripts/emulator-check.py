@@ -11,6 +11,7 @@ import os
 from pathlib import Path
 import re
 import socket
+import ssl
 import shlex
 import subprocess
 import tempfile
@@ -90,12 +91,12 @@ def mic_position(night, work):
     return x, y, width, height
 
 
-def wait_health(token, timeout=150):
+def wait_health(token, timeout=150, base="http://127.0.0.1:7899", context=None):
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         try:
-            req = urllib.request.Request("http://127.0.0.1:7899/v1/health", headers={"Authorization": "Bearer " + token})
-            with urllib.request.urlopen(req, timeout=2) as response:
+            req = urllib.request.Request(base + "/v1/health", headers={"Authorization": "Bearer " + token})
+            with urllib.request.urlopen(req, timeout=2, context=context) as response:
                 if json.load(response).get("ready"):
                     return
         except Exception:
@@ -194,16 +195,18 @@ def cleanup_frames(output, work):
     print("Uninstrumented cleanup:", "; ".join(metrics), flush=True)
 
 
-def warm_cleanup(python, token_path, env):
+def warm_cleanup(python, token_path, env, tls=False):
     # Warm the throwaway helper, including first-use Metal compilation in its empty HOME.
     # The subprocess uses the server venv's websocket package; it prints metadata only.
-    code = r'''import asyncio, json, sys, wave
+    code = r'''import asyncio, json, sys, wave, ssl
 from pathlib import Path
 import websockets
 async def warm():
     token = Path(sys.argv[1]).read_text().strip()
     with wave.open(sys.argv[2]) as wav: pcm = wav.readframes(wav.getnframes())
-    async with websockets.connect("ws://127.0.0.1:7899/v1/stream", additional_headers={"Authorization":"Bearer " + token}) as ws:
+    options = {"ssl": ssl.create_default_context()} if sys.argv[3] == "tls" else {}
+    url = ("wss" if options else "ws") + "://127.0.0.1:7899/v1/stream"
+    async with websockets.connect(url, additional_headers={"Authorization":"Bearer " + token}, **options) as ws:
         await ws.send(json.dumps({"type":"start","sample_rate":16000,"encoding":"pcm_s16le","client":"android","correction":True}))
         assert json.loads(await ws.recv())["type"] == "ready"
         for start in range(0,len(pcm),3200): await ws.send(pcm[start:start+3200])
@@ -215,7 +218,7 @@ async def warm():
                 print(json.dumps({"corrected":event["corrected"]}), flush=True)
                 return
 asyncio.run(warm())'''
-    result = subprocess.run([python, "-c", code, str(token_path), str(ROOT / "android/app/build/generated/chirp-debug-assets/synthetic.wav")],
+    result = subprocess.run([python, "-c", code, str(token_path), str(ROOT / "android/app/build/generated/chirp-debug-assets/synthetic.wav"), "tls" if tls else "http"],
                    env=env, check=True, timeout=120, stdout=subprocess.PIPE)
     warm = json.loads(result.stdout)
     print("Managed warmup: corrected=" + str(warm["corrected"]), flush=True)
@@ -228,7 +231,17 @@ def main():
     args.add_argument("--apk", required=True)
     args.add_argument("--cleanup-only", action="store_true")
     args.add_argument("--frames-only", action="store_true")
+    args.add_argument("--stop-check", action="store_true")
+    args.add_argument("--tls", action="store_true")
+    args.add_argument("--expect-crash", action="store_true")
+    args.add_argument("--server-root", type=Path, default=ROOT / "server")
+    args.add_argument("--tls-dir", type=Path, default=ROOT / "android/app/build")
     opt = args.parse_args()
+    assert os.environ.get("ANDROID_SERIAL", SERIAL) == SERIAL
+    scheme = "https" if opt.tls else "http"
+    base = scheme + "://127.0.0.1:7899"
+    cert = opt.tls_dir / "generated/chirp-debug-res/raw/emulator_ca.pem"
+    context = ssl.create_default_context(cafile=str(cert)) if opt.tls else None
     assert adb("get-serialno").strip().decode() == SERIAL
     subprocess.run([str(Path(__file__).with_name("build-ui-probe.sh"))], check=True)
     # Refuse to disturb any service already using this test port.
@@ -244,8 +257,14 @@ def main():
         config.parent.mkdir(parents=True)
         config.write_text('[correction]\nmode = "managed"\ntimeout = 60.0\n')
         env = dict(os.environ, HOME=str(home), HF_HOME=str(Path.home() / ".cache/huggingface"),
-                   HF_HUB_OFFLINE="1", TRANSFORMERS_OFFLINE="1", PYTHONPATH=str(ROOT / "server/src"))
-        server = subprocess.Popen([opt.python, "-m", "chirp_server", "--port", "7899", "--model-dir", opt.model_dir],
+                   HF_HUB_OFFLINE="1", TRANSFORMERS_OFFLINE="1", PYTHONPATH=str(opt.server_root / "src"))
+        if opt.tls: env["SSL_CERT_FILE"] = str(cert)
+        command = [opt.python, "-m", "chirp_server", "--port", "7899", "--model-dir", opt.model_dir]
+        if opt.tls or opt.stop_check:
+            command = [opt.python, str(Path(__file__).with_name("emulator-stop-server.py")),
+                       "--model-dir", opt.model_dir, "--metadata", str(work / "events.json")]
+            if opt.tls: command += ["--cert", str(cert), "--key", str(opt.tls_dir / "emulator-tls/key.pem")]
+        server = subprocess.Popen(command,
                                   env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         try:
             token_path = home / ".config/chirp/token"
@@ -256,13 +275,15 @@ def main():
                     raise RuntimeError("Throwaway server exited before initialization")
                 time.sleep(.1)
             token = token_path.read_text().strip()
-            wait_health(token)
-            if opt.cleanup_only or opt.frames_only: warm_cleanup(opt.python, token_path, env)
+            wait_health(token, base=base, context=context)
+            if opt.cleanup_only or opt.frames_only or opt.stop_check: warm_cleanup(opt.python, token_path, env, opt.tls)
             # Independent host-routing probe, no authentication or private response content.
             probe = adb("shell", "sh", "-c", shlex.quote("printf 'GET /v1/health HTTP/1.0\\r\\nHost: 10.0.2.2\\r\\n\\r\\n' | toybox nc -w 3 10.0.2.2 7899"))
-            print("Emulator route to throwaway server:", b"200 OK" in probe, flush=True)
+            print("Emulator route to throwaway server:", opt.tls or b"200 OK" in probe, flush=True)
             adb("install", "-r", str(Path(opt.apk).resolve()))
             adb("shell", "am", "force-stop", PACKAGE)
+            if opt.stop_check:
+                adb("shell", "run-as", PACKAGE, "rm", "-f", "shared_prefs/crash_diagnostics.xml")
             adb("shell", "run-as", PACKAGE, "mkdir", "-p", "shared_prefs")
             adb("shell", "run-as", PACKAGE, "sh", "-c", shlex.quote("cat > shared_prefs/debug_capture.xml"),
                 data=b'<?xml version="1.0" encoding="utf-8"?><map><boolean name="synthetic" value="true" /></map>')
@@ -273,7 +294,7 @@ def main():
             adb("shell", "settings", "put", "secure", "show_ime_with_hard_keyboard", "1")
             adb("logcat", "-b", "crash", "-c")
             # adb prints the intent URI, so output is deliberately never forwarded to logs.
-            link = "chirp://pair?" + urllib.parse.urlencode({"url": "http://10.0.2.2:7899", "token": token})
+            link = "chirp://pair?" + urllib.parse.urlencode({"url": scheme + "://10.0.2.2:7899", "token": token})
             adb("shell", "am", "start", "-a", "android.intent.action.VIEW", "-d", shlex.quote(link))
             # Pairing UI contains the throwaway credential; never retain a capture here.
             click("Test connection & save pairing")
@@ -291,6 +312,10 @@ def main():
                     if item.get("name") in ("failure_class", "cleartext_allowed"):
                         print(item.get("name"), item.text or item.get("value"), flush=True)
                 raise RuntimeError("Emulator did not save pairing")
+            if opt.stop_check:
+                module = runpy.run_path(str(Path(__file__).with_name("emulator-stop-check.py")))
+                module["check"](dict(_probe, adb=adb), work, opt.expect_crash)
+                return
             if opt.frames_only:
                 cleanup_frames(output, work)
                 return

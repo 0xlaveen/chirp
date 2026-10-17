@@ -88,7 +88,9 @@ internal class DictationStream(
                 val finish = Runnable {
                     if (live) {
                         close(false)
-                        try { final(event) } finally { ended() }
+                        try {
+                            if (event.text.isBlank()) changed("Didn't catch that", null) else final(event)
+                        } finally { ended() }
                     }
                 }
                 val remaining = if (polishing) (450 - (android.os.SystemClock.uptimeMillis() - polishingAt)).coerceAtLeast(0) else 0
@@ -96,8 +98,11 @@ internal class DictationStream(
             }
             is ServerEvent.Failure -> fail(when (event.code) {
                 "auth" -> "Pairing refused — pair again in Chirp setup"
+                "bad_audio" -> "Didn't catch that"
+                "engine" -> "Speech engine hiccup"
                 "busy" -> "Mac is busy — try again"
                 "too_long" -> "Dictation limit is 120 seconds"
+                "bad_request" -> "Clean-up prompt too long — shorten it in Chirp settings"
                 else -> "Mac speech engine unavailable — try again"
             })
             ServerEvent.Unknown -> Unit

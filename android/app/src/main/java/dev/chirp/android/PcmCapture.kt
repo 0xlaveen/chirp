@@ -81,7 +81,7 @@ class PcmCapture internal constructor(
                     total += count
                     if (total >= 16000 * 120) break
                 }
-                if (!signalled && error == null) error = "No microphone signal"
+                if (!signalled && error == null && running.get()) error = "No microphone signal"
             } catch (_: Exception) {
                 if (running.get()) error = "Microphone unavailable — check permission in Chirp setup"
             } finally {

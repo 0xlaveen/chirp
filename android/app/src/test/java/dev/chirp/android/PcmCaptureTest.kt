@@ -52,4 +52,23 @@ class PcmCaptureTest {
         assertTrue(error.get().orEmpty().contains("Microphone unavailable"))
         assertFalse(error.get().orEmpty().contains("private"))
     }
+    @Test fun `stop before first frame releases without reporting a microphone failure`() {
+        val done = CountDownLatch(1)
+        val error = AtomicReference<String?>("unfinished")
+        var opened = false
+        var closed = false
+        val input = object : PcmInput {
+            override fun start() { opened = true }
+            override fun read(samples: ShortArray, offset: Int, count: Int) = -1
+            override fun stop() = Unit
+            override fun close() { closed = true }
+        }
+        val capture = PcmCapture({ fail("No frame should be sent"); false }, {}, {
+            error.set(it); done.countDown()
+        }, input)
+        capture.stop(); capture.start()
+        assertTrue(done.await(10, TimeUnit.SECONDS)); assertNull(error.get())
+        assertFalse(opened); assertTrue(closed)
+    }
+
 }

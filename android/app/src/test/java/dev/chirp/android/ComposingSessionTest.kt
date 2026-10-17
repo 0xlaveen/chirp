@@ -114,12 +114,12 @@ class ComposingSessionTest {
         assertEquals(expected, editor.composing)
         assertTrue(session.partial(ServerEvent.Partial(2, text, text)))
         assertEquals(expected, editor.composing)
-        assertTrue(session.final(ServerEvent.Final(text, text, false)))
+        assertEquals(text.isNotBlank(), session.final(ServerEvent.Final(text, text, false)))
         assertEquals(before + expected, editor.committed)
         assertEquals(expected.length, session.committedLength)
         // Also cover a final without any composing partial.
         val direct = Editor().apply { committed = before }
-        assertTrue(ComposingSession(direct.connection).final(ServerEvent.Final(text, text, false)))
+        assertEquals(text.isNotBlank(), ComposingSession(direct.connection).final(ServerEvent.Final(text, text, false)))
         assertEquals(before + expected, direct.committed)
     }
     @Test fun `sentence punctuation and closing brackets receive one separator`() {
@@ -175,6 +175,22 @@ class ComposingSessionTest {
         assertEquals("Previous. Next.", editor.committed)
         assertTrue(session.useRaw(editor.committed.length))
         assertEquals("Previous. next", editor.committed)
+    }
+
+    @Test fun `empty final preserves selection and performs no commit`() {
+        var commits = 0
+        val connection = Proxy.newProxyInstance(InputConnection::class.java.classLoader,
+            arrayOf(InputConnection::class.java)) { _, method, _ ->
+            when (method.name) {
+                "getSelectedText" -> "selected fixture"
+                "getTextBeforeCursor" -> "prefix"
+                "commitText" -> { commits++; true }
+                else -> true
+            }
+        } as InputConnection
+        val session = ComposingSession(connection)
+        assertFalse(session.final(ServerEvent.Final("", "", false)))
+        assertEquals(0, commits); assertEquals(0, session.committedLength)
     }
 
 }
