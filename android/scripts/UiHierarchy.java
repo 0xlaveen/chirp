@@ -26,6 +26,10 @@ public final class UiHierarchy {
             AccessibilityServiceInfo info = automation.getServiceInfo();
             info.flags |= AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS | AccessibilityServiceInfo.FLAG_REPORT_VIEW_IDS;
             automation.setServiceInfo(info);
+            if (args.length == 4 && args[0].equals("stop-case")) {
+                stopCase(automation, args[1], Float.parseFloat(args[2]), Float.parseFloat(args[3]));
+                return;
+            }
             if (args.length == 3 && args[0].equals("tap")) {
                 long now = android.os.SystemClock.uptimeMillis();
                 float x = Float.parseFloat(args[1]), y = Float.parseFloat(args[2]);
@@ -161,4 +165,63 @@ public final class UiHierarchy {
         xml.endTag(null, "node");
     }
     private static String safe(CharSequence value) { return value == null ? "" : value.toString(); }
+
+    private static void tap(UiAutomation automation, float x, float y) {
+        long now = android.os.SystemClock.uptimeMillis();
+        for (int action : new int[]{0, 1}) {
+            android.view.MotionEvent event = android.view.MotionEvent.obtain(now, android.os.SystemClock.uptimeMillis(), action, x, y, 0);
+            event.setSource(android.view.InputDevice.SOURCE_TOUCHSCREEN);
+            automation.injectInputEvent(event, true); event.recycle();
+        }
+    }
+    private static boolean has(UiAutomation automation, String label) {
+        for (AccessibilityWindowInfo window : automation.getWindows())
+            if (find(window.getRoot(), label) != null) return true;
+        return false;
+    }
+    private static void await(UiAutomation automation, String label) {
+        long deadline = android.os.SystemClock.uptimeMillis() + 35000;
+        while (android.os.SystemClock.uptimeMillis() < deadline) {
+            if (has(automation, label)) return;
+            android.os.SystemClock.sleep(16);
+        }
+        throw new IllegalStateException("Stop scenario state missing: " + label);
+    }
+    private static void stopCase(UiAutomation automation, String mode, float x, float y) {
+        AccessibilityNodeInfo status = null;
+        tap(automation, x, y);
+        if (mode.equals("immediate")) {
+            android.os.SystemClock.sleep(10);
+            if (!has(automation, "Connecting to Mac…"))
+                throw new IllegalStateException("Immediate stop was not before Ready");
+        } else {
+            await(automation, "Listening…");
+            if (mode.equals("polishing")) {
+                for (AccessibilityWindowInfo window : automation.getWindows()) {
+                    status = find(window.getRoot(), "Listening…");
+                    if (status != null) break;
+                }
+            }
+            // Pacing synthetic input; partial observation is checked independently on the server.
+            android.os.SystemClock.sleep(mode.equals("listening") ? 100 : 2700);
+        }
+        tap(automation, x, y);
+        if (mode.equals("immediate")) await(automation, "Didn't catch that");
+        if (mode.equals("double")) { tap(automation, x, y); tap(automation, x, y); }
+        if (mode.equals("polishing")) {
+            long deadline = android.os.SystemClock.uptimeMillis() + 35000;
+            boolean seen = false;
+            while (android.os.SystemClock.uptimeMillis() < deadline) {
+                if (status != null && status.refresh() && safe(status.getText()).equals("Polishing…")) { seen = true; break; }
+                android.os.SystemClock.sleep(16);
+            }
+            if (!seen) throw new IllegalStateException("Polishing stop state missing");
+            tap(automation, x, y);
+        }
+        if (mode.equals("hide") || mode.equals("focus") || mode.equals("unbind")) {
+            int code = mode.equals("hide") ? android.view.KeyEvent.KEYCODE_BACK : android.view.KeyEvent.KEYCODE_HOME;
+            for (int action : new int[]{0, 1}) automation.injectInputEvent(new android.view.KeyEvent(action, code), true);
+        }
+        System.out.println("Stop scenario dispatched: " + mode);
+    }
 }

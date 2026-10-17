@@ -163,4 +163,47 @@ class KeyboardDictationTest {
         advance(5000); assertEquals(android.view.View.GONE, strip.status.visibility)
     }
 
+    @Test fun `empty final removes partial and briefly explains without committing`() {
+        start(); stream.partial(); advance(16); tap(); advance(0)
+        stream.event(ServerEvent.Final("", "", false))
+        assertEquals("", host.editor.committed); assertEquals("", host.editor.composing)
+        assertEquals(0, host.editor.commits); assertFalse(voice.active)
+        assertEquals("Didn't catch that", strip.status.text.toString())
+        advance(5000); assertEquals(android.view.View.GONE, strip.status.visibility)
+    }
+    @Test fun `every server error survives stop and late cancel callbacks`() {
+        for ((code, message) in mapOf(
+            "bad_audio" to "Didn't catch that", "engine" to "Speech engine hiccup",
+            "busy" to "Mac is busy — try again", "too_long" to "Dictation limit is 120 seconds",
+            "auth" to "Pairing refused — pair again in Chirp setup",
+            "bad_request" to "Clean-up prompt too long — shorten it in Chirp settings",
+            "unknown" to "Mac speech engine unavailable — try again")) {
+            start(); stream.partial(); advance(16); tap(); tap(); advance(0)
+            val old = stream
+            stream.event(ServerEvent.Failure(code))
+            assertFalse(voice.active); assertEquals("", host.editor.committed)
+            assertEquals(message, strip.status.contentDescription.toString().substringBefore(". Pair Mac"))
+            voice.hidden(); old.final(); capture.finish(); advance(0)
+            assertEquals(0, host.editor.commits)
+            voice.shown()
+        }
+    }
+    @Test fun `stop then focus loss discards delayed polishing result`() {
+        start(); tap(); advance(0)
+        stream.event(ServerEvent.Correcting(2, "synthetic raw", "default"))
+        stream.final(true)
+        voice.input(host.info, false); advance(12000)
+        assertEquals(0, host.editor.commits); assertFalse(voice.active)
+    }
+
+    @Test fun `start requests on-Mac cleanup by default but never when the server reports off`() {
+        val store = SettingsStore(host)
+        val local = Health(true, false, true, false, null)
+        store.health = local
+        start(); assertTrue(stream.correctionRequested); voice.cancel()
+        store.correction = true
+        store.health = local.copy(correctionAvailable = false)
+        start(); assertFalse(stream.correctionRequested)
+    }
+
 }

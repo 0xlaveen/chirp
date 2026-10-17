@@ -21,6 +21,7 @@ private class SyntheticPcmInput(private val context: Context) : PcmInput {
     private var stream: DataInputStream? = null
     private var left = 0
     @Volatile private var stopped = false
+    private var firstRead = true
     override val finished get() = left < 2
     override fun start() {
         val input = DataInputStream(context.assets.open("synthetic.wav")); stream = input
@@ -32,6 +33,10 @@ private class SyntheticPcmInput(private val context: Context) : PcmInput {
         }
     }
     override fun read(samples: ShortArray, offset: Int, count: Int): Int {
+        if (firstRead) {
+            firstRead = false
+            Thread.sleep(context.getSharedPreferences("debug_capture", 0).getLong("initial_frame_delay_ms", 0).coerceIn(0, 4000))
+        }
         if (stopped || left < 2) return -1
         val size = minOf(count, left / 2)
         for (i in 0 until size) samples[offset + i] = java.lang.Short.reverseBytes(stream!!.readShort())

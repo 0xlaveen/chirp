@@ -326,3 +326,106 @@ To repeat after release smoke: run `scripts/build-ui-probe.sh`, then
 still **0.5.0 (6)** with the existing signing key. App lint retains warnings-as-errors; two
 narrow icon-style exceptions cover the v26 vendor-overlay qualifier and deliberately
 full-bleed legacy artwork.
+
+
+### 0.5.1 stop-crash validation (2026-10-17)
+
+The phone's crash was TLS teardown on the main thread. A minified baseline built from
+`2c9c2e8` (the Android implementation also present at `a31415b`), with only the emulator TLS
+trust setup and version metadata changed, reproduced it on **emulator-5580**. Both
+`adb logcat -b crash` and the app's Diagnostics recorded:
+
+```text
+android.os.NetworkOnMainThreadException
+  ConscryptEngineSocket.drainOutgoingQueue → ConscryptEngineSocket.close
+  okhttp3.internal.connection.RealConnectionPool.evictAll → ConnectionPool.evictAll
+  KeyboardDictation.start$lambda$9 (KeyboardDictation.kt:267)
+  DictationStream.event$lambda$0 (DictationStream.kt:91)
+```
+
+The R8 debug mapping (`app/build/intermediates/mapping/debug/minifyDebugWithR8/mapping.txt`,
+R8 9.4.24) confirms the synthetic callback and source line. TLS `close_notify` writes explain
+why earlier cleartext speech checks passed. The same synchronous pool eviction was called
+on keyboard hide and through setup/style-editor client disposal.
+
+All HTTP call cancellation, pool eviction and dispatcher shutdown now use one process-wide
+background queue. Cancellation snapshots the outgoing session's calls before enqueueing, so
+late cleanup cannot cancel calls created after an immediate keyboard hide/show. WebSocket
+close/cancel stays asynchronous. Health, pairing and profile HTTP requests already run on
+`Dispatchers.IO`; their lifecycle cancellation/disposal now also leaves the main thread.
+Debug builds enable StrictMode network detection with `penaltyDeath`.
+
+An empty/blank final now cancels the utterance's composition, inserts nothing (including no
+separator or deletion of a selected field), and briefly shows **Didn't catch that**. Stopping
+capture before the first frame is a normal completion. `bad_audio`, `engine`, `busy`,
+`too_long`, `auth`, `bad_request`, and unknown errors have bounded local messages; auth keeps
+the Pair Mac recovery action. Regression tests cover these messages, empty results before
+and during polishing, repeated stop/cancel/focus-loss callbacks, and main-thread pool eviction.
+
+`./gradlew lint testDebugUnitTest assembleDebug assembleRelease` passed: **217 tests,
+zero failures/errors, two opt-in skips**. The stop matrix passed with real cached Parakeet
+and managed Qwen cleanup, throwaway HOME and port **7899** only:
+
+- Current server over HTTP: all eight cases plus in-app Diagnostics.
+- Current server over TLS: all eight cases with clean logcat and crash preferences.
+- Pre-`a31415b` server (`2c9c2e8`) over TLS: all eight cases plus in-app Diagnostics,
+  including a zero-frame stop returning `bad_audio` rather than an empty final.
+- Cases: stop before Ready with zero audio frames, listening, after a partial, during
+  polishing, repeated stop taps, stop/hide, stop/focus loss, and stop/IME unbind.
+
+The harness delays Ready and the first synthetic frame for the immediate case, holds final
+delivery briefly to observe real managed polishing, and waits for each server session to
+retire. These controls affect only debug capture and the disposable test server. No audio,
+transcripts, credentials or TLS private keys are committed. Content-free baseline/fixed
+crash evidence is stored outside git under `/tmp/chirp-stopcrash-{baseline,fixed}/`.
+
+Reproduce the matrix after building debug (requires `openssl` for the generated test cert):
+
+```sh
+source ~/.local/share/chirp-android/env.sh
+ANDROID_SERIAL=emulator-5580 python3 android/scripts/emulator-check.py --stop-check --tls \
+  --python /path/to/server/.venv/bin/python --model-dir /path/to/cached/parakeet-mlx \
+  --apk android/app/build/outputs/apk/debug/app-debug.apk
+# Omit --tls for HTTP. To check old behaviour, create a disposable detached worktree
+# at a31415b^ and add --server-root /path/to/old-worktree/server.
+```
+
+The debug-only test cert/key is generated under `app/build/`, with trust restricted to
+`10.0.2.2`. The matching cert is bundled in debug; the private key stays on the host.
+Release artifact inspection confirms no synthetic source, cleartext exception, emulator
+trust certificate or private key. `scripts/emulator-smoke.sh` passed the signed minified
+release on **emulator-5580 only**, including setup/scanner, typing/autocorrect, clipboard,
+emoji, Fold layouts/themes, mic recovery, settings and Diagnostics with no Chirp crash.
+Chirp was reselected after force-stops. Release is **0.5.1 (7)**, **26,950,788 bytes
+(25.70 MiB)**, arm64-v8a and x86_64, signed with the existing local development key.
+
+
+### 0.5.1 clean-up default follow-up (2026-10-18)
+
+Clean-up now defaults **on** after pairing with an available **on-Mac** correction server.
+The `correction_explicit` flag records a user's toggle independently of the legacy
+`correction` boolean: an untouched 0.5.0 `false` no longer hides the feature after upgrade.
+Explicit OFF persists across refreshes and restarts. Setup, keyboard settings, and the mic
+menu record choices; changing haptics or the debug overlay does not. External correction
+still requires explicit opt-in and a known host. Availability drops or correction-destination
+changes suspend correction until the user enables it again. A server reporting correction
+off always produces `correction=false` on start, even after an earlier explicit ON.
+
+Setup places Clean-up and styles directly below the paired Mac/engine, explains that local
+cleanup polishes punctuation/filler words without text leaving the Mac, and shows **Mac has
+clean-up off** when unavailable. External correction retains its destination disclosure.
+The mic long-press menu starts with **Clean-up: on ✓** or **Clean-up: off**.
+
+The full `lint testDebugUnitTest assembleDebug assembleRelease` path passed: **235 tests,
+zero failures/errors, two opt-in skips**. New coverage includes local/external defaults,
+legacy preference migration, explicit OFF, privacy/availability transitions, server-off start
+frames, visible controls and independent toggle callbacks. The real managed TLS stop matrix
+passed all eight scenarios on **emulator-5580**, without enabling correction in the harness:
+every observed start frame carried `correction=true`, and managed polishing ran with clean
+logcat and in-app Diagnostics. The signed minified release UI smoke also passed. Live
+speech/start-frame checks use debug's isolated TLS trust; release retains system trust only.
+The AVD was run as a disposable read-only instance at port 5580 after stale AVD locks blocked
+normal startup. No physical device or production server was used.
+
+This is a second local commit before publishing, still **0.5.1 (7)**. The current signed
+release APK is **26,950,808 bytes (25.70 MiB)**, arm64-v8a and x86_64. No APK was published.

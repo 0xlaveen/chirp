@@ -91,11 +91,12 @@ open class SetupActivity : ComponentActivity() {
                     },
                     scan = ::scan, check = { testPairing(save = state.link.isNotBlank()) },
                     forget = {
-                        ++pairingGeneration; pendingHealth?.cancel(); pendingHealth = null
+                        ++pairingGeneration; ChirpNetwork.cancel(pendingHealth); pendingHealth = null
                         store.forget(); state.link = ""; state.status = "Pairing removed"; state.checking = false; refresh()
                     },
+                    correctionChanged = { store.correction = it },
                     preferences = {
-                        store.correction = state.correction; store.haptics = state.haptics
+                        store.haptics = state.haptics
                         store.debugOverlay = state.debug
                     },
                 )
@@ -127,7 +128,7 @@ open class SetupActivity : ComponentActivity() {
     private fun receivePairingLink(value: String?) {
         try {
             Pairing.parse(value ?: error("Missing pairing link"))
-            ++pairingGeneration; pendingHealth?.cancel(); pendingHealth = null; state.checking = false
+            ++pairingGeneration; ChirpNetwork.cancel(pendingHealth); pendingHealth = null; state.checking = false
             state.link = value.orEmpty(); state.step = 2
             state.status = "Pairing link received — test to save"
         } catch (_: Exception) { state.status = "Invalid Chirp pairing link" }
@@ -167,7 +168,6 @@ open class SetupActivity : ComponentActivity() {
         state.paired = pairing != null
         state.host = pairing?.base?.host.orEmpty()
         state.health = store.health
-        if (store.health?.let { !it.correctionAvailable || (it.correctionLeavesMachine && it.correctionHost == null) } != false) store.correction = false
         state.correction = store.correction
         state.haptics = store.haptics; state.debug = store.debugOverlay
     }
@@ -177,7 +177,7 @@ open class SetupActivity : ComponentActivity() {
         } catch (_: Exception) { state.status = "Paste a valid Chirp pairing link with an HTTPS server"; return }
         state.wifiPermissionNeeded = false
         val id = ++pairingGeneration
-        pendingHealth?.cancel()
+        ChirpNetwork.cancel(pendingHealth)
         val call = ChirpNetwork.healthCall(client, pairing); pendingHealth = call
         state.checking = true; state.status = "Checking Mac…"
         lifecycleScope.launch {
@@ -187,7 +187,6 @@ open class SetupActivity : ComponentActivity() {
                 pendingHealth = null; state.checking = false
                 if (save) { store.save(pairing, health); state.link = "" }
                 else {
-                    if (correctionLabel(store.health) != correctionLabel(health) || !health.correctionAvailable) store.correction = false
                     store.health = health
                 }
                 state.status = if (health.ready) "Mac ready" else "Paired · Mac is loading its speech model"
@@ -209,10 +208,10 @@ open class SetupActivity : ComponentActivity() {
         }
     }
     override fun onStop() {
-        ++pairingGeneration; pendingHealth?.cancel(); pendingHealth = null; state.checking = false
+        ++pairingGeneration; ChirpNetwork.cancel(pendingHealth); pendingHealth = null; state.checking = false
         super.onStop()
     }
     override fun onDestroy() {
-        state.link = ""; ++pairingGeneration; pendingHealth?.cancel(); ChirpNetwork.dispose(client); super.onDestroy()
+        state.link = ""; ++pairingGeneration; ChirpNetwork.cancel(pendingHealth); ChirpNetwork.dispose(client); super.onDestroy()
     }
 }

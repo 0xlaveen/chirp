@@ -2,6 +2,8 @@ package dev.chirp.android
 
 import java.io.IOException
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.Executor
+import java.util.concurrent.Executors
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
@@ -11,6 +13,9 @@ import okio.ByteString.Companion.toByteString
 
 /** No logging interceptors, disk cache, redirects (bearer credential), pings or disk persistence. Idle resources are scoped to IME visibility. */
 object ChirpNetwork {
+    private val housekeeping = NetworkHousekeeping()
+    fun release(client: OkHttpClient, cancel: Boolean = false) = housekeeping.release(client, cancel)
+    fun cancel(call: okhttp3.Call?) = housekeeping.cancel(call)
     fun client(context: android.content.Context? = null): OkHttpClient = OkHttpClient.Builder()
         .connectTimeout(6, TimeUnit.SECONDS).readTimeout(12, TimeUnit.SECONDS)
         .callTimeout(12, TimeUnit.SECONDS).webSocketCloseTimeout(1, TimeUnit.SECONDS).followRedirects(false).followSslRedirects(false)
@@ -50,10 +55,31 @@ object ChirpNetwork {
         }
     }
     fun dispose(client: OkHttpClient) {
-        client.dispatcher.cancelAll()
-        client.connectionPool.evictAll()
-        client.dispatcher.executorService.shutdown()
+        housekeeping.release(client, cancel = true, dispose = true)
     }
+}
+
+/** TLS eviction/cancellation can write close_notify. Never run them on the caller's looper.
+ * One process-wide queue preserves release order and survives client dispatcher shutdown.
+ * OkHttp cancellation, eviction and executor shutdown are all idempotent.
+ */
+internal class NetworkHousekeeping(
+    private val executor: Executor = Executors.newSingleThreadExecutor { task ->
+        Thread(task, "ChirpNetworkCleanup").apply { isDaemon = true }
+    },
+    private val evict: (OkHttpClient) -> Unit = { it.connectionPool.evictAll() },
+) {
+    fun release(client: OkHttpClient, cancel: Boolean = false, dispose: Boolean = false) {
+        // A hide/show can reuse this client before cleanup runs. Cancel only the calls
+        // owned by the old visibility period, never the next utterance's new calls.
+        val calls = if (cancel) client.dispatcher.queuedCalls() + client.dispatcher.runningCalls() else emptyList()
+        executor.execute {
+            calls.forEach { it.cancel() }
+            evict(client)
+            if (dispose) client.dispatcher.executorService.shutdown()
+        }
+    }
+    fun cancel(call: okhttp3.Call?) { if (call != null) executor.execute { call.cancel() } }
 }
 
 interface ImeTransport {

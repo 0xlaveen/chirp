@@ -63,6 +63,7 @@ class ComposingSession(private val connection: InputConnection, private val anch
 
     fun final(event: ServerEvent.Final): Boolean {
         if (!live) return false
+        if (event.text.isBlank()) { cancel(); return false }
         live = false
         val text = atBoundary(event.text)
         wholeRegion()

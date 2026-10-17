@@ -58,6 +58,7 @@ internal fun SetupWizard(
     grantMic: () -> Unit = {}, keyboardSettings: () -> Unit = {}, accessibilitySettings: () -> Unit = {},
     appSettings: () -> Unit = {}, picker: () -> Unit = {}, scan: () -> Unit = {}, check: () -> Unit = {},
     forget: () -> Unit = {}, preferences: () -> Unit = {},
+    correctionChanged: (Boolean) -> Unit = {},
     grantNetwork: () -> Unit = {}, keyboardPreferences: () -> Unit = {}, diagnostics: () -> Unit = {}, copyDiagnostics: () -> Unit = {},
 ) {
     var showDiagnostics by remember { mutableStateOf(false) }
@@ -125,6 +126,14 @@ internal fun SetupWizard(
                         if (state.paired) {
                             Text("Paired with ${state.host}", style = MaterialTheme.typography.titleMedium)
                             Text("Engine: ${state.health?.engine ?: "Not reported by Mac"}")
+                            if (state.health.cleanupAvailable()) {
+                                Preference("Clean-up · ${correctionLabel(state.health)}", state.correction) {
+                                    state.correction = it; correctionChanged(it)
+                                }
+                                Text(cleanupDescription(state.health), style = MaterialTheme.typography.bodySmall)
+                                CleanupStyleSettings(state.health)
+                            } else Text("Mac has clean-up off", style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                         TextButton({ state.step = 2 }) { Text(if (state.paired) "Change pairing" else "Pair Mac") }
                         Text("Try a sentence", style = MaterialTheme.typography.titleLarge)
@@ -153,11 +162,6 @@ internal fun SetupWizard(
                             Text("Check Tailscale is connected on both devices. Wake the Mac and start Chirp, then check the connection again.")
                         }
                         Preference("Haptic cues", state.haptics) { state.haptics = it; preferences() }
-                        if (state.health.cleanupAvailable()) Preference("Clean-up · ${correctionLabel(state.health)}", state.correction,
-                            state.health?.let { it.correctionAvailable && (!it.correctionLeavesMachine || it.correctionHost != null) } == true) {
-                            state.correction = it; preferences()
-                        }
-                        CleanupStyleSettings(state.health)
                         Preference("Debug overlay (timings only)", state.debug) { state.debug = it; preferences() }
                         TextButton(keyboardPreferences) { Text("Keyboard layouts & settings") }
                         BuildSetupOptions()
