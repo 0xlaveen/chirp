@@ -17,12 +17,15 @@ import androidx.activity.ComponentActivity
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
+import com.google.mlkit.vision.barcode.common.Barcode
+import com.google.mlkit.vision.codescanner.GmsBarcodeScannerOptions
+import com.google.mlkit.vision.codescanner.GmsBarcodeScanning
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 @SuppressLint("SetTextI18n")
-class SetupActivity : ComponentActivity() {
+open class SetupActivity : ComponentActivity() {
     private lateinit var store: SettingsStore
     private lateinit var banner: TextView
     private lateinit var status: TextView
@@ -51,7 +54,7 @@ class SetupActivity : ComponentActivity() {
         }
         content.button("2 · Enable Chirp in keyboard settings") { startActivity(Intent(Settings.ACTION_INPUT_METHOD_SETTINGS)) }
         content.button("3 · Pick Chirp Voice") { getSystemService(InputMethodManager::class.java).showInputMethodPicker() }
-        content.addView(label("4 · Connect Tailscale on both devices. On the Mac run chirp-server pair, then paste its pairing link here."))
+        content.addView(label("4 · Connect Tailscale on both devices. On the Mac run chirp-server pair, then scan its QR code or paste its pairing link here."))
         link = EditText(this).apply {
             hint = "chirp://pair?url=…&token=…"
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
@@ -59,6 +62,15 @@ class SetupActivity : ComponentActivity() {
             importantForAutofill = View.IMPORTANT_FOR_AUTOFILL_NO_EXCLUDE_DESCENDANTS
         }
         content.addView(link)
+        val scan = content.button("Scan pairing QR") { }
+        scan.setOnClickListener {
+            scan.isEnabled = false
+            scanPairingQr(
+                received = { value -> if (!isDestroyed) { scan.isEnabled = true; receivePairingLink(value) } },
+                cancelled = { if (!isDestroyed) { scan.isEnabled = true; status.text = "Scan cancelled — scan again or paste the pairing link" } },
+                failed = { if (!isDestroyed) { scan.isEnabled = true; status.text = "Scanner unavailable — check Google Play services or paste the pairing link" } })
+        }
+        content.addView(label("Scanning requires Google Play services. You can always paste the link instead."))
         val test = content.button("Test connection & save pairing") { testPairing() }
         test.contentDescription = "Test the Mac connection and securely save the pairing"
         correction = CheckBox(this).apply {
@@ -97,10 +109,22 @@ class SetupActivity : ComponentActivity() {
     private fun consumePairingIntent(source: Intent) {
         val value = source.dataString
         source.data = null // Do not keep credential-bearing intents in app state.
-        if (value != null) {
-            try { Pairing.parse(value); link.setText(value); status.text = "Pairing link received — test to save" }
-            catch (_: Exception) { status.text = "Invalid Chirp pairing link" }
-        }
+        if (value != null) receivePairingLink(value)
+    }
+    private fun receivePairingLink(value: String?) {
+        try {
+            Pairing.parse(value ?: error("Missing pairing link"))
+            ++pairingGeneration; pendingHealth?.cancel(); pendingHealth = null
+            link.setText(value)
+            status.text = "Pairing link received — test to save"
+        } catch (_: Exception) { status.text = "Invalid Chirp pairing link" }
+    }
+    protected open fun scanPairingQr(received: (String?) -> Unit, cancelled: () -> Unit, failed: () -> Unit) {
+        val options = GmsBarcodeScannerOptions.Builder().setBarcodeFormats(Barcode.FORMAT_QR_CODE).build()
+        GmsBarcodeScanning.getClient(this, options).startScan()
+            .addOnSuccessListener { received(it.rawValue) }
+            .addOnCanceledListener { cancelled() }
+            .addOnFailureListener { failed() }
     }
     override fun onResume() { super.onResume(); if (::store.isInitialized) refresh() }
     private fun refresh() {

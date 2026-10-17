@@ -13,13 +13,18 @@ class ComposingSessionTest {
         var available = true
         var finishes = 0
         var selected = ""
+        var region: IntRange? = null
         val connection = Proxy.newProxyInstance(InputConnection::class.java.classLoader,
             arrayOf(InputConnection::class.java)) { _, method, args ->
             when (method.name) {
                 "getSelectedText" -> selected
                 "setComposingText" -> { if (available) composing = args!![0].toString(); available }
-                "commitText" -> { if (available) { committed += args!![0].toString(); composing = "" }; available }
-                "finishComposingText" -> { finishes++; committed += composing; composing = ""; true }
+                "setComposingRegion" -> { if (available) region = (args!![0] as Int) until (args[1] as Int); available }
+                "commitText" -> { if (available) {
+                    committed = region?.let { committed.replaceRange(it, args!![0].toString()) } ?: (committed + args!![0])
+                    region = null; composing = ""
+                }; available }
+                "finishComposingText" -> { finishes++; committed += composing; composing = ""; region = null; true }
                 "getTextBeforeCursor" -> committed.takeLast(args!![0] as Int)
                 "deleteSurroundingText" -> { committed = committed.dropLast(args!![0] as Int); true }
                 "beginBatchEdit", "endBatchEdit" -> true
@@ -53,11 +58,11 @@ class ComposingSessionTest {
     @Test fun `raw replacement is bounded and refuses changed cursor text`() {
         val editor = Editor(); val session = ComposingSession(editor.connection)
         session.final(ServerEvent.Final("Synthetic.", "synthetic", true))
-        assertTrue(session.useRaw()); assertEquals("prefix synthetic", editor.committed)
-        assertFalse(session.useRaw())
+        assertTrue(session.useRaw(editor.committed.length)); assertEquals("prefix synthetic", editor.committed)
+        assertFalse(session.useRaw(editor.committed.length))
         val second = ComposingSession(editor.connection)
         second.final(ServerEvent.Final("Changed.", "changed", true)); editor.committed += " user edit"
-        assertFalse(second.useRaw()); assertTrue(editor.committed.endsWith(" user edit"))
+        assertFalse(second.useRaw(editor.committed.length)); assertTrue(editor.committed.endsWith(" user edit"))
     }
     @Test fun `cancel restores selected text replaced by composition`() {
         val editor = Editor(); editor.selected = "original selection"
@@ -70,6 +75,6 @@ class ComposingSessionTest {
         session.cancel(); assertEquals(0, editor.finishes)
         val final = ComposingSession(editor.connection)
         final.final(ServerEvent.Final("Synthetic.", "synthetic", true)); final.forgetUndo()
-        assertFalse(final.useRaw())
+        assertFalse(final.useRaw(editor.committed.length))
     }
 }

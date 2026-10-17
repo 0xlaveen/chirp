@@ -27,21 +27,39 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
     lint { warningsAsErrors = true }
+    testOptions { unitTests.isIncludeAndroidResources = true }
 }
 dependencies {
     implementation(libs.okhttp)
     implementation(libs.core)
     implementation(libs.activity)
     implementation(libs.coroutines)
+    implementation(libs.code.scanner)
+    constraints {
+        implementation(libs.fragment) { because("Play services brings an old Fragment incompatible with Activity Result APIs") }
+    }
     testImplementation(libs.junit)
     testImplementation(libs.json)
     testImplementation(libs.mockwebserver)
     testImplementation(libs.okhttp.tls)
+    testImplementation(libs.robolectric)
 }
 
 // Opt-in live transport check against a running chirp-server (see README "JVM live check").
 // Without -Pchirp.live.url the LiveServerTest is skipped.
 tasks.withType<Test>().configureEach {
+    // Robolectric on JDK 17+: https://robolectric.org/getting-started/#running-with-java-17-and-higher
+    jvmArgs(
+        "--add-opens=java.base/java.lang=ALL-UNNAMED",
+        "--add-opens=java.base/java.util=ALL-UNNAMED",
+        "--add-opens=java.base/java.io=ALL-UNNAMED",
+        "--add-opens=java.base/java.net=ALL-UNNAMED",
+        "--add-opens=java.base/java.security=ALL-UNNAMED",
+        "--add-opens=java.base/java.text=ALL-UNNAMED",
+        "--add-opens=java.base/jdk.internal.access=ALL-UNNAMED",
+        "--add-opens=java.desktop/java.awt.font=ALL-UNNAMED",
+        "--add-opens=jdk.compiler/com.sun.tools.javac.api=ALL-UNNAMED",
+    )
     listOf("chirp.live.url", "chirp.live.tokenFile", "chirp.live.wav", "chirp.live.expect").forEach { key ->
         providers.gradleProperty(key).orNull?.let { systemProperty(key, it) }
     }
