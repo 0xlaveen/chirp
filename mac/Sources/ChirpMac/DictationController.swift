@@ -11,7 +11,7 @@ final class DictationController {
     var onChange: (() -> Void)?
 
     let hud = HUDController()
-    private let capture = AudioCapture()
+    private let capture = AudioCapture(engine: SystemCaptureEngine())
     private let inserter = TextInserter(env: SystemInsertion.environment(), pasteboard: SystemPasteboard())
 
     private var session: StreamSession?
@@ -140,7 +140,12 @@ final class DictationController {
             }
         }
         do {
-            try capture.start { sink.handle($0) }
+            try capture.start(onFailure: { [weak self] in
+                Task { @MainActor in
+                    guard let self, self.epoch == myEpoch, self.machine.state.isActive else { return }
+                    self.send(.failed("The microphone stopped — check the input device"))
+                }
+            }) { sink.handle($0) }
         } catch {
             send(.failed(error is CaptureError ? "No microphone input device" : "Could not start the microphone"))
             return
@@ -199,7 +204,7 @@ final class DictationController {
         }
     }
 
-    private func stopCapture() { if capture.isRunning { capture.stop() } }
+    private func stopCapture() { capture.stop() }
 
     private func teardown(cancelServer: Bool) {
         epoch += 1   // invalidates every in-flight callback of the old session

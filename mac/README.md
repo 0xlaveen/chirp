@@ -62,7 +62,7 @@ If secure input is on (a password field, `IsSecureEventInputEnabled()`), Chirp r
 - Chromium browsers: Chrome (and Canary), Chromium, Brave, Edge, Arc, Vivaldi, Opera
 - Electron apps: VS Code, Cursor, Slack, Discord, Notion, Teams, Obsidian
 
-**Use raw** (offered for 5 s after a corrected insertion): for AX insertions the exact inserted range is reselected (`AXSelectedTextRange`) and overwritten with the raw transcript, but only if the field still holds the inserted text there; otherwise the raw text is copied. For pasted text there is no range to reselect, so Chirp posts ⌘Z and pastes the raw text, which is best effort: an app that doesn't undo the paste as one step ends up with both.
+**Use raw** (offered for 5 s after a corrected insertion): secure input is checked first and refuses with no side effect. For AX insertions the exact inserted range is reselected (`AXSelectedTextRange`) and overwritten with the raw transcript, but only if the same app is still frontmost and the field still holds the inserted text there; otherwise the raw text is copied ("Copied raw — press ⌘V"). A pasted insertion can't be verified, so Chirp never posts a blind ⌘Z: it copies the raw text for a manual ⌘V. The raw transcript is kept only in the inserter's undo state, which is cleared when the 5 s expire, on Esc/cancel, on errors and when a new dictation starts.
 
 ## Configuration
 
@@ -91,7 +91,7 @@ It prints partials, the final text and timings (client-measured stop→final plu
 
 ## Tests
 
-`./scripts/test.sh` runs the `ChirpCore` tests (Swift Testing). Under the Command Line Tools SwiftPM doesn't find the Swift Testing macro plugin on its own, so the script passes `-Xswiftc -plugin-path` for it; with Xcode installed it is plain `swift test`. The tests cover: the protocol codec, the dictation state machine, hotkey dispatch and tap/hold timing, insertion strategy including a fake AX that applies late, pasteboard restore and Use raw (fakes), PCM conversion and framing, the silence guard, and `StreamSession` against an in-process mock WebSocket server on loopback.
+`./scripts/test.sh` runs the `ChirpCore` tests (Swift Testing). Under the Command Line Tools SwiftPM doesn't find the Swift Testing macro plugin on its own, so the script passes `-Xswiftc -plugin-path` for it; with Xcode installed it is plain `swift test`. The tests cover: the protocol codec, the dictation state machine, hotkey dispatch and tap/hold timing, insertion strategy including a fake AX that applies late, pasteboard restore and Use raw (fakes), PCM conversion and framing, the silence guard, `StreamSession` against an in-process mock WebSocket server on loopback and against an injected transport that stalls (queue overflow, 120 s cap, ready deadline, prompt cancel), `AudioCapture` against a fake engine (failed start unwinds, retry, idempotent stop, device change), the HUD/menu/settings content, and the offscreen snapshot renderer.
 
 ## UI snapshots (no app launch)
 
@@ -113,4 +113,4 @@ scripts/              bundle.sh, make-cert.sh, install.sh, test.sh, Chirp.entitl
 - Insertion cannot work in secure fields, and some apps ignore both AX writes and synthetic ⌘V.
 - The HUD follows the mouse's screen, not the text caret.
 - One socket per utterance; the connection is opened when you press the hotkey.
-- "Use raw" after a paste depends on the target app's undo.
+- "Use raw" after a paste only copies the raw text; it never undoes the paste.

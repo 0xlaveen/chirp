@@ -1,0 +1,140 @@
+import AVFoundation
+import Foundation
+import Testing
+@testable import ChirpCore
+
+/// Scriptable engine: counts installs and removals so a leaked tap shows up as an imbalance. No hardware.
+final class FakeEngine: CaptureEngine, @unchecked Sendable {
+    var format: AVAudioFormat? = AVAudioFormat(standardFormatWithSampleRate: 48_000, channels: 1)!
+    var startError: Error?
+    var taps = 0                // currently installed
+    var installs = 0, removes = 0, stops = 0
+    private var block: (@Sendable (AVAudioPCMBuffer) -> Void)?
+    private var onChange: (@Sendable () -> Void)?
+
+    var inputFormat: AVAudioFormat? { format }
+    func installTap(_ block: @escaping @Sendable (AVAudioPCMBuffer) -> Void) {
+        // A real engine throws on a second tap on the same bus; model that.
+        precondition(taps == 0, "duplicate tap")
+        taps += 1; installs += 1
+        self.block = block
+    }
+    func removeTap() { taps = max(0, taps - 1); removes += 1; block = nil }
+    func prepare() {}
+    func start() throws { if let startError { throw startError } }
+    func stop() { stops += 1 }
+    func setConfigurationChangeHandler(_ handler: (@Sendable () -> Void)?) { onChange = handler }
+
+    /// Delivers `seconds` of a synthetic tone through the installed tap.
+    func deliver(seconds: Double) {
+        let format = format!
+        let n = AVAudioFrameCount(format.sampleRate * seconds)
+        let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: n)!
+        buffer.frameLength = n
+        for i in 0..<Int(n) { buffer.floatChannelData![0][i] = 0.3 * sinf(Float(i) * 0.05) }
+        block?(buffer)
+    }
+    func changeConfiguration() { onChange?() }
+    var hasChangeHandler: Bool { onChange != nil }
+}
+
+final class FrameBox: @unchecked Sendable {
+    private let lock = NSLock()
+    private var frames: [Data] = []
+    var count: Int { lock.withLock { frames.count } }
+    var bytes: Int { lock.withLock { frames.reduce(0) { $0 + $1.count } } }
+    func add(_ d: Data) { lock.withLock { frames.append(d) } }
+}
+
+@Suite struct AudioCaptureTests {
+    struct Boom: Error {}
+
+    @Test func failedStartAfterTheTapWasInstalledUnwindsEverything() throws {
+        let engine = FakeEngine()
+        engine.startError = Boom()
+        let capture = AudioCapture(engine: engine)
+        #expect(throws: Boom.self) { try capture.start { _ in } }
+        #expect(engine.taps == 0)                       // the tap did not leak
+        #expect(engine.stops == 1)
+        #expect(!capture.isRunning)
+        #expect(!engine.hasChangeHandler)
+    }
+
+    @Test func retryAfterAFailedStartInstallsOneCleanTap() throws {
+        let engine = FakeEngine()
+        let box = FrameBox()
+        let capture = AudioCapture(engine: engine)
+        engine.startError = Boom()
+        #expect(throws: Boom.self) { try capture.start { _ in } }
+        engine.startError = nil
+        try capture.start { box.add($0) }               // would trap on a duplicate tap if the first leaked
+        #expect(capture.isRunning && engine.taps == 1)
+        engine.deliver(seconds: 0.2)
+        #expect(box.count > 0)
+        capture.stop()
+        #expect(engine.taps == 0)
+    }
+
+    @Test func stopIsIdempotentAndHarmlessWhenNeverStarted() throws {
+        let engine = FakeEngine()
+        let capture = AudioCapture(engine: engine)
+        capture.stop()
+        #expect(engine.stops == 0 && engine.removes == 0)
+        let box = FrameBox()
+        try capture.start { box.add($0) }
+        engine.deliver(seconds: 0.11)
+        capture.stop()
+        let afterFirst = (engine.removes, engine.stops, box.bytes)
+        capture.stop()
+        capture.stop()
+        #expect(engine.removes == afterFirst.0 && engine.stops == afterFirst.1 && box.bytes == afterFirst.2)
+        #expect(!capture.isRunning)
+    }
+
+    @Test func stopDeliversTheTrailingPartialFramePadded() throws {
+        let engine = FakeEngine()
+        let box = FrameBox()
+        let capture = AudioCapture(engine: engine)
+        try capture.start { box.add($0) }
+        engine.deliver(seconds: 0.075)                  // 1.5 frames at 50 ms
+        let before = box.count
+        capture.stop()
+        #expect(box.count == before + 1)
+        #expect(box.bytes % 2 == 0)
+    }
+
+    @Test func noInputDeviceThrowsAndLeavesNothingInstalled() {
+        let engine = FakeEngine()
+        engine.format = nil
+        let capture = AudioCapture(engine: engine)
+        #expect(throws: CaptureError.self) { try capture.start { _ in } }
+        #expect(engine.installs == 0 && !capture.isRunning)
+    }
+
+    @Test func aDeviceChangeRebuildsTheTapOnTheNewFormat() throws {
+        let engine = FakeEngine()
+        let box = FrameBox()
+        let capture = AudioCapture(engine: engine)
+        try capture.start { box.add($0) }
+        engine.format = AVAudioFormat(standardFormatWithSampleRate: 44_100, channels: 1)
+        engine.changeConfiguration()
+        #expect(engine.installs == 2 && engine.taps == 1 && capture.isRunning)
+        engine.deliver(seconds: 0.2)
+        #expect(box.count > 0)
+        capture.stop()
+        #expect(engine.taps == 0)
+    }
+
+    @Test func aFailedRebuildUnwindsAndReportsOnce() throws {
+        let engine = FakeEngine()
+        let failures = FrameBox()
+        let capture = AudioCapture(engine: engine)
+        try capture.start(onFailure: { failures.add(Data()) }) { _ in }
+        engine.startError = Boom()
+        engine.changeConfiguration()
+        #expect(failures.count == 1)
+        #expect(engine.taps == 0 && !capture.isRunning)
+        engine.changeConfiguration()                    // handler was removed; nothing more happens
+        #expect(failures.count == 1)
+    }
+}
