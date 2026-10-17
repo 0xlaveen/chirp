@@ -120,7 +120,7 @@ hardware/load caveats are in [bench.md](../docs/bench.md).
 A reference plist is in `launchd/dev.chirp.server.plist`. Only when the operator chooses:
 
 ```sh
-uv run chirp-server service install
+uv run chirp-server --root-path /chirp service install   # flags before "service" are kept in the LaunchAgent
 uv run chirp-server service uninstall
 ```
 

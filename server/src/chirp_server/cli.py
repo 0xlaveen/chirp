@@ -15,7 +15,7 @@ from .retention import Retention
 LABEL = "dev.chirp.server"
 
 
-def service(action):
+def service(action, arguments=()):
     destination = Path.home() / "Library/LaunchAgents" / f"{LABEL}.plist"
     target = f"gui/{os.getuid()}"
     if action == "uninstall":
@@ -34,7 +34,7 @@ def service(action):
         plistlib.dump(
             {
                 "Label": LABEL,
-                "ProgramArguments": [executable, "-m", "chirp_server"],
+                "ProgramArguments": [executable, "-m", "chirp_server", *arguments],
                 "RunAtLoad": True,
                 "KeepAlive": True,
                 "EnvironmentVariables": {"PYTHONUNBUFFERED": "1"},
@@ -93,7 +93,9 @@ def main():
     elif args.command == "debug":
         print(f"Purged {Retention(settings).purge(all_files=True)} debug files")
     elif args.command == "service":
-        service(args.action)
+        forwarded = ["--port", str(args.port)] if args.port != 7821 else []
+        forwarded += ["--root-path", args.root_path] if args.root_path else []
+        service(args.action, forwarded)
     else:
         import uvicorn
 
