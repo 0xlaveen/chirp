@@ -10,11 +10,12 @@ MAX_OUTPUT = 512
 
 
 def measured_memory_mb() -> int:
-    """Peak process RSS plus peak Metal wired memory, rounded to MiB.
+    """Peak process RSS plus active Metal memory, rounded to MiB.
 
-    ru_maxrss is reported in bytes on macOS; Metal (unified-memory) allocations do
-    not necessarily appear in RSS, so the sum, not the max, approximates the real
-    resident footprint of the loaded weights and working set.
+    Fallback approximation for hosts where the server cannot read the helper's
+    physical footprint: ru_maxrss is reported in bytes on macOS, and Metal
+    (unified-memory) allocations do not necessarily appear in RSS. The server's
+    own proc_pid_rusage phys_footprint reading is preferred whenever available.
     """
     import resource
 
@@ -22,7 +23,7 @@ def measured_memory_mb() -> int:
     try:
         import mlx.core as mx
 
-        total += mx.metal.get_peak_memory()
+        total += mx.metal.get_active_memory()
     except Exception:
         pass
     return round(total / 1048576)

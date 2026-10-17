@@ -2,6 +2,8 @@
 
 import asyncio
 import contextlib
+import ctypes
+import ctypes.util
 import json
 import logging
 import os
@@ -16,6 +18,75 @@ log = logging.getLogger("chirp")
 # can never outlive a dictation session; a final may still wait for the in-flight
 # load inside its own whole-call budget.
 PREWARM_SECONDS = 30.0
+
+_RUSAGE_INFO_V4 = 4
+
+
+class _RUsageInfoV4(ctypes.Structure):
+    """rusage_info_v4 from <sys/resource.h>; only libproc writes into it."""
+
+    _fields_ = [
+        ("ri_uuid", ctypes.c_uint8 * 16),
+        ("ri_user_time", ctypes.c_uint64),
+        ("ri_system_time", ctypes.c_uint64),
+        ("ri_pkg_idle_wkups", ctypes.c_uint64),
+        ("ri_interrupt_wkups", ctypes.c_uint64),
+        ("ri_pageins", ctypes.c_uint64),
+        ("ri_wired_size", ctypes.c_uint64),
+        ("ri_resident_size", ctypes.c_uint64),
+        ("ri_phys_footprint", ctypes.c_uint64),
+        ("ri_proc_start_abstime", ctypes.c_uint64),
+        ("ri_proc_exit_abstime", ctypes.c_uint64),
+        ("ri_child_user_time", ctypes.c_uint64),
+        ("ri_child_system_time", ctypes.c_uint64),
+        ("ri_child_pkg_idle_wkups", ctypes.c_uint64),
+        ("ri_child_interrupt_wkups", ctypes.c_uint64),
+        ("ri_child_pageins", ctypes.c_uint64),
+        ("ri_child_elapsed_abstime", ctypes.c_uint64),
+        ("ri_diskio_bytesread", ctypes.c_uint64),
+        ("ri_diskio_byteswritten", ctypes.c_uint64),
+        ("ri_cpu_time_qos_default", ctypes.c_uint64),
+        ("ri_cpu_time_qos_maintenance", ctypes.c_uint64),
+        ("ri_cpu_time_qos_background", ctypes.c_uint64),
+        ("ri_cpu_time_qos_utility", ctypes.c_uint64),
+        ("ri_cpu_time_qos_legacy", ctypes.c_uint64),
+        ("ri_cpu_time_qos_user_initiated", ctypes.c_uint64),
+        ("ri_cpu_time_qos_user_interactive", ctypes.c_uint64),
+        ("ri_billed_system_time", ctypes.c_uint64),
+        ("ri_serviced_system_time", ctypes.c_uint64),
+        ("ri_logical_writes", ctypes.c_uint64),
+        ("ri_lifetime_max_phys_footprint", ctypes.c_uint64),
+        ("ri_instructions", ctypes.c_uint64),
+        ("ri_cycles", ctypes.c_uint64),
+        ("ri_billed_energy", ctypes.c_uint64),
+        ("ri_serviced_energy", ctypes.c_uint64),
+        ("ri_interval_max_phys_footprint", ctypes.c_uint64),
+        ("ri_runnable_time", ctypes.c_uint64),
+    ]
+
+
+_libproc = None
+
+
+def helper_footprint_mb(pid: int) -> int | None:
+    """The helper's current physical footprint in binary MiB: the same figure
+    Activity Monitor's Memory column shows, via proc_pid_rusage(RUSAGE_INFO_V4).
+    None when libproc or the call is unavailable (non-macOS host, dead pid)."""
+    global _libproc
+    try:
+        if _libproc is None:
+            name = ctypes.util.find_library("libproc")
+            if not name:
+                return None
+            _libproc = ctypes.CDLL(name)
+            _libproc.proc_pid_rusage.argtypes = [ctypes.c_int, ctypes.c_int, ctypes.c_void_p]
+            _libproc.proc_pid_rusage.restype = ctypes.c_int
+        info = _RUsageInfoV4()
+        if _libproc.proc_pid_rusage(pid, _RUSAGE_INFO_V4, ctypes.byref(info)) != 0:
+            return None
+        return round(info.ri_phys_footprint / 1048576)
+    except (OSError, AttributeError, ValueError):
+        return None
 
 
 class ManagedCleanup:
@@ -43,6 +114,15 @@ class ManagedCleanup:
         if self.memory_mb is not None:
             return self.memory_mb, False
         return estimate_mb, estimate_mb is not None
+
+    def _measure(self):
+        """Refresh the loaded helper's resident footprint (Activity-Monitor-style).
+        The helper's ready-line value stays only as the fallback for hosts where
+        the server cannot read a child's physical footprint."""
+        if self.process is not None and self.process.returncode is None:
+            footprint = helper_footprint_mb(self.process.pid)
+            if footprint is not None:
+                self.memory_mb = footprint
 
     async def _read(self):
         line = await self.process.stdout.readline()
@@ -82,6 +162,7 @@ class ManagedCleanup:
         if isinstance(memory, (int, float)) and not isinstance(memory, bool) and memory >= 0:
             self.memory_mb = int(memory)
         self.ready = True
+        self._measure()
 
     def prewarm(self):
         """Begin the cold load in the background; never blocks the caller.
@@ -124,8 +205,11 @@ class ManagedCleanup:
         async with asyncio.timeout(self.config.timeout):
             if self.load_task is not None:
                 # A start-triggered prewarm may still be loading; this final's
-                # whole-call timeout includes waiting for it.
-                await self.load_task
+                # whole-call timeout includes waiting for it. Shielded: cancelling
+                # this final (timeout or utterance cancel) must not cancel the
+                # shared load other finals may be waiting on. A failed load is
+                # absorbed by _prewarm, so generate retries cold below.
+                await asyncio.shield(self.load_task)
             async with self.lock:
                 if self.idle:
                     self.idle.cancel()
@@ -139,6 +223,7 @@ class ManagedCleanup:
                     reply = await self._read()
                     if reply.get("ok") is not True:
                         raise ValueError("Helper failed")
+                    self._measure()
                     return reply["text"], reply.get("finish_reason")
                 except BaseException:
                     # Cancellation must discard late replies before the next utterance.

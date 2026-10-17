@@ -1,6 +1,8 @@
 """Fake-helper coverage for start prewarm, keep_loaded and the settings endpoint."""
 
+import asyncio
 import json
+import os
 import stat
 import sys
 import time
@@ -16,7 +18,7 @@ from chirp_server.cleanup_models import DEFAULT_MODEL, MODELS
 from chirp_server.config import CorrectionConfig, persist_keep_loaded, read_keep_loaded
 from chirp_server.correction import Corrector
 from chirp_server.engine import FakeEngine
-from chirp_server.managed_cleanup import ManagedCleanup
+from chirp_server.managed_cleanup import ManagedCleanup, helper_footprint_mb
 
 HELPER = str(Path(__file__).with_name("fake_cleanup_helper.py"))
 COMMAND = [sys.executable, "-u", HELPER]
@@ -134,6 +136,90 @@ def test_final_waits_for_inflight_prewarm(settings):
     assert corrector.managed.process is None
 
 
+def test_timed_out_final_keeps_shared_prewarm_load(settings):
+    # (a) A final whose whole-call timeout fires while the prewarm is still loading
+    # falls back to raw; the shared load is not cancelled and later finals reuse it.
+    corrector = service(command=DELAYED, timeout=0.5)
+    spawns = counted_spawns(corrector.managed)
+    settings.correction = corrector.config
+    with TestClient(create_app(settings, FakeEngine("hello there"), TOKEN, corrector)) as client:
+        with client.websocket_connect("/v1/stream", headers=HEADERS) as ws:
+            ws.send_json({**START, "correction": True})
+            assert ws.receive_json()["type"] == "ready"
+            ws.send_bytes(PCM)
+            ws.send_json({"type": "stop"})
+            result = final(ws)
+        assert result["corrected"] is False
+        assert result["correction_error"] == "timeout"
+        assert result["text"] == result["raw"] == "hello there"
+        # The load outlived the timed-out final and completes (a live pid alone
+        # would still be mid-load; the load task must be done).
+        assert wait_until(lambda: corrector.managed.loaded and not corrector.managed.loading)
+        with client.websocket_connect("/v1/stream", headers=HEADERS) as ws:
+            ws.send_json({**START, "correction": True})
+            assert ws.receive_json()["type"] == "ready"
+            ws.send_bytes(PCM)
+            ws.send_json({"type": "stop"})
+            warm = final(ws)
+    assert warm["corrected"] and warm["text"] == "Hello there."
+    assert len(spawns) == 1
+
+
+async def test_one_timed_out_final_does_not_cancel_shared_load():
+    # (b) Two finals wait on one in-flight load; the one that times out must not
+    # cancel the load the other is still waiting on.
+    corrector = service(command=DELAYED, timeout=10)
+    managed = corrector.managed
+    spawns = counted_spawns(managed)
+    first = asyncio.create_task(managed.generate("first", "p"))
+    await asyncio.sleep(0.05)  # settle into the shared-load wait
+    managed.config.timeout = 0.05
+    with pytest.raises(TimeoutError):
+        await managed.generate("second", "p")
+    text, finish = await first
+    assert text == "First." and finish == "stop"
+    assert managed.loaded and len(spawns) == 1
+    await corrector.close()
+
+
+def test_cancel_during_prewarm_wait_suppresses_only_that_final(settings):
+    # (c) An utterance cancel while the final waits on the prewarm suppresses only
+    # that final; the shared load survives and warms the next utterance.
+    corrector = service(command=DELAYED)
+    settings.correction = corrector.config
+    with TestClient(create_app(settings, FakeEngine("hello there"), TOKEN, corrector)) as client:
+        with client.websocket_connect("/v1/stream", headers=HEADERS) as ws:
+            ws.send_json({**START, "correction": True})
+            assert ws.receive_json()["type"] == "ready"
+            ws.send_bytes(PCM)
+            ws.send_json({"type": "stop"})
+            message = ws.receive_json()
+            while message["type"] == "partial":
+                message = ws.receive_json()
+            assert message["type"] == "correcting"
+            ws.send_json({"type": "cancel"})
+            # No final follows the cancel; the reused socket serves the next start.
+            ws.send_json({**START, "correction": True})
+            response = ws.receive_json()
+            while response["type"] == "partial":
+                response = ws.receive_json()
+            assert response["type"] == "ready"
+            assert wait_until(lambda: corrector.managed.loaded)
+            ws.send_bytes(PCM)
+            ws.send_json({"type": "stop"})
+            result = final(ws)
+    assert result["corrected"] and result["text"] == "Hello there."
+
+
+def test_helper_footprint_mb_reads_this_process():
+    value = helper_footprint_mb(os.getpid())
+    if sys.platform == "darwin":
+        assert isinstance(value, int) and value > 0
+    else:
+        assert value is None
+    assert helper_footprint_mb(-1) is None
+
+
 def test_cancelled_start_leaves_warm_helper_on_idle_timer(settings):
     corrector = service(command=DELAYED, idle_seconds=0.15)
     settings.correction = corrector.config
@@ -176,7 +262,8 @@ def test_keep_loaded_settings_lifecycle(settings):
         assert corrector.managed.loaded
         live = client.get("/v1/correction/settings", headers=HEADERS).json()
         assert live["loaded"] is True and live["loading"] is False
-        assert live["memory_mb"] == 12 and live["memory_estimated"] is False
+        assert isinstance(live["memory_mb"], int) and live["memory_mb"] > 0
+        assert live["memory_estimated"] is False
         health = client.get("/v1/health", headers=HEADERS).json()
         assert health["correction_keep_loaded"] is True
         assert health["correction_loaded"] is True
@@ -187,7 +274,7 @@ def test_keep_loaded_settings_lifecycle(settings):
         after = client.get("/v1/correction/settings", headers=HEADERS).json()
         assert after["loaded"] is False and after["loading"] is False
         # The last measured memory survives the unload.
-        assert after["memory_mb"] == 12 and after["memory_estimated"] is False
+        assert after["memory_mb"] == live["memory_mb"] and after["memory_estimated"] is False
 
 
 def test_keep_loaded_persists_and_overrides_toml(settings):

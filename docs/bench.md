@@ -360,18 +360,29 @@ doctor` reports the effective keep_loaded state and the loaded-helper memory.
 
 ### Measured helper memory
 
-`memory_mb` is the helper process's peak RSS (`ru_maxrss`) plus peak MLX Metal wired
-memory, rounded to MiB, measured once after the model loads. File-mapped weights can
-appear in both terms, so the sum is an upper bound on the real unified-memory
-footprint. When the helper is not loaded, the settings endpoint reports the last
-measured value for the model, else this catalog estimate with
-`memory_estimated: true`.
+`memory_mb` is the helper process's current physical footprint — the same figure
+Activity Monitor's Memory column shows — read by the server via
+`proc_pid_rusage(RUSAGE_INFO_V4).ri_phys_footprint`, in binary MiB (bytes / 1048576,
+rounded to int). It is measured after the model loads and refreshed after every
+generate, so it tracks the resident working set rather than a load-time peak. (An
+earlier draft of this metric summed peak RSS plus peak Metal wired memory; on
+Apple Silicon unified memory the weights appear in both terms, which double-counted
+to ~4670 MiB for the 4B and was replaced before deploy.) If the server cannot read a
+child's footprint (non-macOS host), the helper's ready-line approximation — peak RSS
+plus active Metal memory — is used instead. When the helper is not loaded, the
+settings endpoint reports the last measured value for the model, else the
+steady-state catalog estimate below with `memory_estimated: true`.
 
-| Cleanup model | Memory (MiB) | Cold load (s) | 1-min load |
-|---|---:|---:|---:|
-| Qwen3 4B Instruct 2507 4-bit (default) | 4670 | 4.66 | 19.9 |
-| Qwen3.5 2B 4-bit | 2616 | 2.87 | 21.1 |
-| Qwen3.5 0.8B 4-bit | 1006 | 5.47 | 22.2 |
+| Cleanup model | At load (MiB) | After one generate (MiB) | Cold load (s) | 1-min load |
+|---|---:|---:|---:|---:|
+| Qwen3 4B Instruct 2507 4-bit (default) | 2440 | **2563** | 11.64 | 37.7 |
+| Qwen3.5 2B 4-bit | 1491 | **1607** | 12.72 | 38.6 |
+| Qwen3.5 0.8B 4-bit | 892 | **1011** | 15.60 | 39.6 |
+
+This measurement pass ran while the host was heavily contended (1-min load 37.7–39.6,
+hence the slow cold loads; the prewarm/keep_loaded rows above measured 2.9–5.5 s
+loads at 1-min load ~20). The catalog estimates use the after-generate steady-state
+values, which keep_loaded sessions typically report.
 
 ### First-final latency after an idle unload
 

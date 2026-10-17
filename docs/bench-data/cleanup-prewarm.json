@@ -1,14 +1,24 @@
 {
   "label": "cleanup-prewarm-2026-10-17",
   "host": "Apple M5 Pro, 64 GiB, macOS 27.0.1",
-  "note": "contended host; 1-minute loadavg 19.9-24.7 across all rows",
+  "note": "contended host; 1-minute loadavg 19.9-39.6 across all rows",
   "memory_measurements": {
-    "definition": "helper peak process RSS (ru_maxrss) plus peak MLX Metal wired memory, rounded to MiB; an upper bound because file-mapped weights may appear in both terms",
+    "definition": "helper current physical footprint via proc_pid_rusage(RUSAGE_INFO_V4).ri_phys_footprint, binary MiB; read by the server after load and refreshed after each generate (Activity Monitor Memory column). Replaces the earlier peak-RSS-plus-peak-Metal sum, which double-counted unified memory",
     "models": {
-      "qwen3-4b-instruct-2507-4bit": {"memory_mb": 4670, "cold_load_s": 4.66, "loadavg": 19.9},
-      "qwen3.5-2b-4bit": {"memory_mb": 2616, "cold_load_s": 2.87, "loadavg": 21.1},
-      "qwen3.5-0.8b-4bit": {"memory_mb": 1006, "cold_load_s": 5.47, "loadavg": 22.2}
-    }
+      "qwen3-4b-instruct-2507-4bit": {
+        "footprint_at_load_mb": 2440, "footprint_after_generate_mb": 2563,
+        "cold_load_s": 11.64, "loadavg": 37.7
+      },
+      "qwen3.5-2b-4bit": {
+        "footprint_at_load_mb": 1491, "footprint_after_generate_mb": 1607,
+        "cold_load_s": 12.72, "loadavg": 38.6
+      },
+      "qwen3.5-0.8b-4bit": {
+        "footprint_at_load_mb": 892, "footprint_after_generate_mb": 1011,
+        "cold_load_s": 15.60, "loadavg": 39.6
+      }
+    },
+    "superseded_metric_note": "an earlier draft summed ru_maxrss + mx.metal.get_peak_memory(): 4670/2616/1006 MiB, double-counting file-mapped weights"
   },
   "prewarm_first_final_after_idle_unload": {
     "method": "real WebSocket path, fake ASR engine, real cached 4B helper; each measured utterance follows an idle unload; start -> ~3 s speech -> stop",

@@ -126,12 +126,13 @@ endpoint) reports `{"keep_loaded", "loaded", "loading", "model", "memory_mb",
 "memory_estimated", "mode"}`. `PUT` with `{"keep_loaded": bool}` persists the override and
 applies it immediately: true loads in the background and never idle-unloads; false re-arms the
 idle timer. Invalid bodies return 400 `bad_request`; outside managed mode PUT returns 409
-`unsupported`. `memory_mb` is the loaded helper's measured memory (peak process RSS plus peak
-MLX Metal wired memory, an upper bound; see
-[bench.md](../docs/bench.md#cleanup-prewarm-and-keep_loaded-2026-10-17)), or the last
-measured value when unloaded, or a per-model catalog estimate with `memory_estimated: true`;
-null outside managed mode. It is binary MiB (bytes / 1048576, rounded to int); clients
-format gigabytes as `memory_mb / 1024`. Authenticated `/v1/health` adds `correction_keep_loaded` and
+`unsupported`. `memory_mb` is the loaded helper's measured memory — its current physical footprint,
+the figure Activity Monitor's Memory column shows, read via
+`proc_pid_rusage(RUSAGE_INFO_V4).ri_phys_footprint` and refreshed after every generate
+(see [bench.md](../docs/bench.md#cleanup-prewarm-and-keep_loaded-2026-10-17)) — or the
+last measured value when unloaded, or a per-model catalog estimate with
+`memory_estimated: true`; null outside managed mode. It is binary MiB
+(bytes / 1048576, rounded to int); clients format gigabytes as `memory_mb / 1024`. Authenticated `/v1/health` adds `correction_keep_loaded` and
 `correction_loaded` (additive; unauthenticated health stays `{"ok": true}`), and
 `chirp-server doctor` reports the effective keep_loaded state and the loaded-helper memory
 estimate.
