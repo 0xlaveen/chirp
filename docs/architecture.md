@@ -52,11 +52,11 @@ Every request carries `Authorization: Bearer <token>`. WebSocket clients that ca
 - `WS /v1/stream`:
   - client → `{"type":"start","sample_rate":16000,"encoding":"pcm_s16le","client":"mac|android","correction":false}`
   - client → binary frames: raw PCM16LE mono at 16 kHz, 20–100 ms per frame
-  - client → `{"type":"stop"}` (finalize) or `{"type":"cancel"}` (discard, no final)
+  - client → `{"type":"stop"}` (finalize) or `{"type":"cancel"}` (discard, no final). The server keeps reading control/disconnect frames during finalization; cancel or disconnect discards the utterance (no correction request — an in-flight one is cancelled, no retained debug files, no final). After a cancel the client receives `{"type":"error","code":"cancelled",…}`; a disconnect discards silently.
   - server → `{"type":"ready","session":"<random id>","engine":"…","debug_retention":bool}`
   - server → `{"type":"partial","seq":n,"text":"…","stable":"…"}`. `stable` is the prefix that will not change, which clients may commit early.
   - server → `{"type":"final","text":"…","raw":"…","corrected":bool,"correction_error":null|"timeout|http|rejected","timings_ms":{"audio":…,"first_partial":…,"finalize":…,"correction":…}}`
-  - server → `{"type":"error","code":"auth|busy|too_long|bad_audio|engine","message":"safe text"}`
+  - server → `{"type":"error","code":"auth|busy|too_long|bad_audio|engine|cancelled","message":"safe text"}`
   - One utterance per `start`/`final` pair. A socket may carry several utterances in turn, so clients keep it open while active. The server closes idle sockets after 60 s.
 - Limits: 120 s per utterance, and frames ≥ 1 MB are rejected. Requests queue for one engine.
 
