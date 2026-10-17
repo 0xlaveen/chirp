@@ -54,11 +54,8 @@ fun MainSettingsScreen(
             Column(
                 Modifier.verticalScroll(rememberScrollState()).then(Modifier.padding(innerPadding))
             ) {
-                // CHIRP: pairing and diagnostics stay reachable from keyboard settings.
-                val chirpContext = LocalContext.current
-                Preference(name = "Chirp setup & pairing", onClick = {
-                    chirpContext.startActivity(android.content.Intent().setClassName(chirpContext.packageName, "dev.chirp.android.SetupActivity"))
-                }) { NextScreenIcon() }
+                // CHIRP: the host supplies its settings section without a library dependency.
+                ChirpSettingsHook.content?.invoke()
                 Preference(
                     name = stringResource(R.string.language_and_layouts_title),
                     description = enabledSubtypes.joinToString(", ") { it.displayName() },
@@ -132,4 +129,9 @@ private fun PreviewScreen() {
             MainSettingsScreen({}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {})
         }
     }
+}
+
+// CHIRP: installed by the host Application before settings composition.
+object ChirpSettingsHook {
+    var content: (@androidx.compose.runtime.Composable () -> Unit)? = null
 }

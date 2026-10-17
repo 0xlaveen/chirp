@@ -102,4 +102,31 @@ class KeyboardDictationTest {
         assertEquals("Synthetic. Synthetic.", host.editor.committed)
     }
 
+    @Test fun `microphone denial offers app permissions and does not start capture`() {
+        shadowOf(RuntimeEnvironment.getApplication()).denyPermissions(Manifest.permission.RECORD_AUDIO)
+        strip.mic.performClick()
+        assertFalse(voice.active)
+        assertEquals("Open mic settings", strip.status.text.toString())
+        strip.status.performClick()
+        val intent = shadowOf(host).nextStartedActivity
+        assertEquals(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS, intent.action)
+        assertEquals("package:dev.chirp.android", intent.dataString)
+    }
+    @Test fun `connection failure offers Tailscale recovery without retaining partial text`() {
+        start(); stream.partial(); stream.failure()
+        assertFalse(voice.active)
+        assertEquals("", host.editor.composing)
+        assertEquals("Check Tailscale", strip.status.text.toString())
+        assertFalse(strip.status.text.contains("synthetic"))
+    }
+    @Test fun `dictated spelling bypasses keyboard autocorrection and learning`() {
+        start(); stream.event(ServerEvent.Partial(1, "teh im", ""))
+        tap(); advance(0)
+        stream.event(ServerEvent.Final("teh im", "teh im", false))
+        assertEquals("teh im", host.editor.committed)
+        assertEquals("", host.editor.composing)
+        assertFalse(voice.ownsComposition)
+        assertEquals(1, resyncs)
+    }
+
 }

@@ -73,6 +73,13 @@ class SetupActivityTest {
         assertNull(invalid.data); assertTrue(shows("Invalid Chirp pairing link"))
         assertEquals(syntheticLink, activity.state.link)
     }
+    @Test fun `pairing action returns existing setup activity to pairing step`() {
+        activity.state.step = 3
+        controller.newIntent(Intent().putExtra("section", "pair"))
+        assertEquals(2, activity.state.step)
+        controller.newIntent(Intent().putExtra("section", "settings"))
+        assertEquals(3, activity.state.step)
+    }
     @Test fun `late scan result cannot feed a destroyed activity`() {
         scan()
         controller.pause().stop().destroy()

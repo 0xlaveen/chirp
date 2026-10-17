@@ -11,7 +11,7 @@ sealed interface ServerEvent {
 }
 
 data class Health(val ready: Boolean, val debugRetention: Boolean, val correctionAvailable: Boolean,
-                  val correctionLeavesMachine: Boolean, val correctionHost: String?)
+                  val correctionLeavesMachine: Boolean, val correctionHost: String?, val engine: String? = null)
 
 object Protocol {
     fun start(correction: Boolean): String = JSONObject().put("type", "start")
@@ -35,6 +35,7 @@ object Protocol {
         require(json.getBoolean("ok") && json.has("ready")) { "Authenticated health required" }
         return Health(json.getBoolean("ready"), json.getBoolean("debug_retention"),
             json.optString("correction") == "available", json.optBoolean("correction_leaves_machine"),
-            json.optString("correction_host").takeIf { it.isNotBlank() })
+            json.optString("correction_host").takeIf { it.isNotBlank() },
+            json.optString("engine").takeIf { it.isNotBlank() }?.take(80))
     }
 }

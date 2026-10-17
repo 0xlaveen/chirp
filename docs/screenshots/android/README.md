@@ -33,3 +33,35 @@ UWB HAL crash loop; the helper checks specifically for Chirp Java/native crashes
 These are review artifacts, not pixel-golden assertions or Galaxy hardware battery,
 latency or microphone measurements. Samsung editor quirks and folding still need
 operator acceptance on the phone.
+
+## Release captures (round 4)
+
+`release-*.png` are direct, unmodified PNG captures from the minified release APK on
+`emulator-5580`, Android 17. Each file is below 2 MB. They are the primary review set:
+
+- `release-keyboard-{inner,cover}-{light,dark}.png`: single suggestion row with mic;
+  inner width has a number row, cover width stays compact.
+- `release-pair-action-{inner,cover}-{light,dark}.png`: accessible pairing recovery in
+  that same row, with no duplicated partial text.
+- `release-pairing-light.png`, `release-scanner-light.png`: QR-first pairing and actual
+  Google Play scanner surface, opened from the release APK.
+- `release-typing-{autocorrect,contraction,next-word,clipboard,emoji}.png`: real
+  HeliBoard key taps; `teh` corrects to sentence-cased `The`, `im` to `I'm`, next-word
+  predictions, local clipboard history, and the emoji keyboard.
+- `release-keyboard-inner-landscape-light.png`: landscape split with real key geometry checks; one-handed control reachability.
+- `release-talkback.png`: release with TalkBack enabled; native accessibility click,
+  long-click and mic/status/cancel labels are checked before the capture.
+
+Regenerate with the toolchain sourced:
+
+```sh
+android/scripts/emulator-smoke.sh
+android/scripts/build-ui-probe.sh
+python3 android/scripts/emulator-talkback.py
+```
+
+The scripts restore display size/density/night mode and TalkBack service settings.
+The smoke intentionally resets only Chirp's data on the authorized disposable emulator.
+The shell-only probe supplements stock `uiautomator dump`, which omits the IME window
+on this image. It is not packaged with the app. Neither release nor debug captures
+establish Samsung hardware microphone quality or Tailscale performance.

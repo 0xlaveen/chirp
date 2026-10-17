@@ -64,9 +64,8 @@ class KeyboardRenderTest {
                 ime.onStartInput(ime.info, false); ime.onStartInputView(ime.info, false)
                 KeyboardSwitcher.getInstance().reloadMainKeyboard()
                 val root = keys.findViewById<ViewGroup>(helium314.keyboard.latin.R.id.main_keyboard_frame)
-                // Use the production strip in a configured context; all keys/layout come from HeliBoard.
-                root.removeViewAt(0)
-                val strip = KeyboardStrip(themed); root.addView(strip, 0)
+                val strip = keys.findViewWithTag<KeyboardStrip>("chirp_strip")
+                var idleHeight = 0
                 for (state in listOf("idle", "listening", "final")) {
                     strip.show(when(state) { "listening" -> "Listening…"; "final" -> "Inserted · tap mic to dictate again"; else -> "Tap mic · hold to talk" },
                         if (state == "listening") "Synthetic example for visual review" else "", state == "listening", false, state == "final", false)
@@ -74,6 +73,9 @@ class KeyboardRenderTest {
                     root.measure(View.MeasureSpec.makeMeasureSpec(411, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(900, View.MeasureSpec.AT_MOST))
                     root.layout(0, 0, 411, root.measuredHeight)
                     assertTrue(root.measuredHeight > strip.measuredHeight)
+                    if (state == "idle") idleHeight = root.measuredHeight
+                    else assertEquals("Dictation must reuse the suggestion row height", idleHeight, root.measuredHeight)
+                    assertFalse("Partial belongs only in the editor", strip.status.text.contains("Synthetic example"))
                     assertNotNull(KeyboardSwitcher.getInstance().keyboard?.getKey('a'.code))
                     val bitmap = Bitmap.createBitmap(411, root.measuredHeight, Bitmap.Config.ARGB_8888)
                     root.draw(Canvas(bitmap))
@@ -110,8 +112,25 @@ class KeyboardRenderTest {
                 val touch = android.view.MotionEvent.obtain(10L, time, action, bounds.exactCenterX(), bounds.exactCenterY(), 0)
                 keys.dispatchTouchEvent(touch); touch.recycle()
             }
-            assertEquals("Pair your Mac in Chirp setup", strip.status.text.toString())
+            shadowOf(Looper.getMainLooper()).idle()
+            assertEquals("Pair Mac", strip.status.text.toString())
         } finally { window.pause().stop().destroy(); service.destroy() }
+    }
+
+    @Test fun `landscape split preference reaches actual keyboard layout`() {
+        RuntimeEnvironment.setQualifiers("w800dp-h600dp-land-mdpi")
+        val app = RuntimeEnvironment.getApplication()
+        helium314.keyboard.latin.utils.DeviceProtectedUtils.getSharedPreferences(app).edit()
+            .putBoolean(Settings.PREF_ENABLE_SPLIT_KEYBOARD_LANDSCAPE, true).commit()
+        val controller = Robolectric.buildService(RenderIme::class.java).create()
+        val ime = controller.get()
+        try {
+            val keys = ime.onCreateInputView()
+            ime.setInputView(keys)
+            ime.onStartInput(ime.info, false); ime.onStartInputView(ime.info, false)
+            KeyboardSwitcher.getInstance().reloadMainKeyboard()
+            assertTrue("Split must affect the built keyboard and its cache key", KeyboardSwitcher.getInstance().keyboard!!.mId.isSplitLayout)
+        } finally { controller.destroy() }
     }
 
 }

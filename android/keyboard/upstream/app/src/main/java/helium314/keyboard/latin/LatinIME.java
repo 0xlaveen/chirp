@@ -1218,9 +1218,6 @@ public class LatinIME extends InputMethodService implements
         final int stripHeight = mKeyboardSwitcher.isShowingStripContainer() ? mKeyboardSwitcher.getStripContainer().getHeight() : 0;
         int visibleTopY = inputHeight - visibleKeyboardView.getHeight() - stripHeight;
         // CHIRP: reserve and accept touches on the host strip above HeliBoard's own strip.
-        final View chirpStrip = mInputView.findViewWithTag("chirp_strip");
-        if (chirpStrip != null && chirpStrip.getVisibility() == View.VISIBLE)
-            visibleTopY -= chirpStrip.getHeight();
         if (Settings.getValues().mIsFloatingKeyboard)
             visibleTopY = getResources().getDisplayMetrics().heightPixels;
 

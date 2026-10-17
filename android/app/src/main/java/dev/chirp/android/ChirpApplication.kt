@@ -16,11 +16,11 @@ class ChirpApplication : App() {
                 putString(Settings.PREF_ENABLED_SUBTYPES, english)
                 putString(Settings.PREF_SELECTED_SUBTYPE, english)
                 putBoolean(Settings.PREF_THEME_DAY_NIGHT, true)
-                // Disable learning of field/dictation content; do not persist transcripts.
-                putBoolean(Settings.PREF_KEY_USE_PERSONALIZED_DICTS, false)
                 putBoolean("chirp_keyboard_defaults_v1", true)
             }
         }
+        seedTypingDefaults(keyboard)
+        helium314.keyboard.settings.screens.ChirpSettingsHook.content = { ChirpSettingsSection() }
         super.onCreate()
     }
 }

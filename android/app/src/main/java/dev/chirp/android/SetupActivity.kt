@@ -38,6 +38,7 @@ internal class SetupState {
     var checking by mutableStateOf(false)
     var scanning by mutableStateOf(false)
     var link by mutableStateOf("")
+    var host by mutableStateOf("")
     var health by mutableStateOf<Health?>(null)
     var correction by mutableStateOf(false)
     var haptics by mutableStateOf(true)
@@ -47,6 +48,7 @@ internal class SetupState {
 open class SetupActivity : ComponentActivity() {
     private lateinit var store: SettingsStore
     internal val state = SetupState()
+    private var awaitingPrerequisite = false
     private var pairingGeneration = 0
     private var pendingHealth: okhttp3.Call? = null
     private val client by lazy { ChirpNetwork.client(this) }
@@ -59,6 +61,7 @@ open class SetupActivity : ComponentActivity() {
     }
     private val micPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) {
         state.mic = it
+        if (it) state.step = setupStep(state.inputEnabled, state.inputSelected, true, state.paired)
         state.status = if (it) "Microphone permission granted" else "Microphone permission is needed to dictate — open app permissions to allow it"
     }
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -66,6 +69,8 @@ open class SetupActivity : ComponentActivity() {
         store = SettingsStore(this)
         state.step = savedInstanceState?.getInt("step", 0)?.coerceIn(0, 3) ?: 0
         refresh()
+        if (savedInstanceState == null) state.step = setupStep(state.inputEnabled, state.inputSelected, state.mic, state.paired)
+        consumeSection(intent)
         setContent {
             ChirpTheme {
                 SetupWizard(state,
@@ -73,10 +78,10 @@ open class SetupActivity : ComponentActivity() {
                         if (state.mic) state.status = "Microphone permission already granted"
                         else micPermission.launch(Manifest.permission.RECORD_AUDIO)
                     },
-                    keyboardSettings = { startActivity(Intent(Settings.ACTION_INPUT_METHOD_SETTINGS)) },
+                    keyboardSettings = { awaitingPrerequisite = true; startActivity(Intent(Settings.ACTION_INPUT_METHOD_SETTINGS)) },
                     accessibilitySettings = { startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) },
-                    appSettings = { startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, "package:$packageName".toUri())) },
-                    picker = { getSystemService(InputMethodManager::class.java).showInputMethodPicker() },
+                    appSettings = { awaitingPrerequisite = true; startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, "package:$packageName".toUri())) },
+                    picker = { awaitingPrerequisite = true; getSystemService(InputMethodManager::class.java).showInputMethodPicker() },
                     grantNetwork = { networkPermission.launch(LOCAL_NETWORK_PERMISSION) },
                     keyboardPreferences = { startActivity(Intent(this, helium314.keyboard.settings.SettingsActivity::class.java)) },
                     diagnostics = { state.diagnostics = CrashLog(this).text() },
@@ -98,7 +103,22 @@ open class SetupActivity : ComponentActivity() {
         }
         consumePairingIntent(intent)
     }
-    override fun onNewIntent(intent: Intent) { super.onNewIntent(intent); consumePairingIntent(intent) }
+    override fun onNewIntent(intent: Intent) { super.onNewIntent(intent); consumeSection(intent); consumePairingIntent(intent) }
+    private fun consumeSection(source: Intent) {
+        when (source.getStringExtra("section")) {
+            "pair" -> state.step = 2
+            "settings" -> state.step = 3
+            "network" -> { state.step = 3; state.status = "Check Tailscale is connected on both devices, wake your Mac, and start Chirp on the Mac." }
+        }
+    }
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus && awaitingPrerequisite && ::store.isInitialized) {
+            refresh()
+            state.step = setupStep(state.inputEnabled, state.inputSelected, state.mic, state.paired)
+            awaitingPrerequisite = false
+        }
+    }
     private fun consumePairingIntent(source: Intent) {
         val value = source.dataString
         source.data = null
@@ -143,7 +163,9 @@ open class SetupActivity : ComponentActivity() {
         state.bubbleEnabled = enabled.split(':').any {
             ComponentName.unflattenFromString(it) == ComponentName(this, ChirpAccessibilityService::class.java)
         }
-        state.paired = store.pairing() != null
+        val pairing = store.pairing()
+        state.paired = pairing != null
+        state.host = pairing?.base?.host.orEmpty()
         state.health = store.health
         if (store.health?.let { !it.correctionAvailable || (it.correctionLeavesMachine && it.correctionHost == null) } != false) store.correction = false
         state.correction = store.correction
@@ -170,6 +192,7 @@ open class SetupActivity : ComponentActivity() {
                 }
                 state.status = if (health.ready) "Mac ready" else "Paired · Mac is loading its speech model"
                 refresh()
+                if (save) state.step = 3
             } catch (error: Exception) {
                 recordDebugNetworkFailure(this@SetupActivity, error)
                 if (pairingGeneration == id && generateSequence<Throwable>(error) { it.cause }.take(5).any { it is WifiServerPermissionRequired }) {
