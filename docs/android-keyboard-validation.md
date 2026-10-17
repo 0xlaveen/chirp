@@ -13,9 +13,9 @@ IME `dev.chirp.android/.ChirpImeService`, version code 3. HeliBoard v4.2 at
 ./gradlew lint testDebugUnitTest assembleDebug assembleRelease
 ```
 
-PASS. 153 tests, 0 failures, 0 errors;
+PASS. 162 tests, 0 failures, 0 errors;
 2 opt-in LiveServerTest cases skipped. Tests include API 31/37 lifecycle,
-editor disconnect/raw replacement, two consecutive dictations, tap/hold, cancel,
+editor disconnect/raw replacement, smart spacing at cursor boundaries, two consecutive dictations, tap/hold, cancel,
 late events after hide/destroy, selection safety, real PCM framing/release,
 crash-log privacy/retention/delegation, resolved-address/VPN permission policy,
 app initialization, real-keyboard touch routing/window insets, wizard and renders.
@@ -26,7 +26,8 @@ The explicitly authorized `emulator-5580` (Android 17 fold AVD) passed the separ
 `android/scripts/emulator-check.py` run using real cached Parakeet, a throwaway HOME
 and port 7899, Keystore pairing, debug-generated synthetic speech through the real
 PcmCapture/StreamTransport path, live composing partials, committed finals, two
-consecutive utterances, tap/hold/cancel/hide, ordinary QWERTY typing after dictation,
+consecutive utterances with exactly one boundary space in both partials and finals,
+tap/hold/cancel/hide, ordinary QWERTY typing after dictation,
 HeliBoard settings → Chirp setup, and viewing/copying Diagnostics. Light and dark
 screenshots are in [screenshots/android](screenshots/android/README.md).
 No Chirp Java/native crash was recorded. The emulator has an unrelated UWB HAL crash
@@ -48,6 +49,22 @@ and synthetic-input preference removed; the emulator stays running with Chirp se
   outside matching VPN routes. Denial does not gate Tailscale. No DNS lookup is added
   to the microphone press/capture path.
 
+## Dictation spacing follow-up
+
+ComposingSession snapshots the character immediately before insertion and retains only
+whether a separator is needed. Partials and finals use the same boundary: one leading
+space after a letter/digit or punctuation; none at field start, after whitespace/newlines,
+or after opening brackets/quotes. Incoming leading whitespace is preserved without
+adding another space. A mid-word cursor inserts a separator after the preceding letter
+while preserving the suffix. Cancel removes the whole composing span, including any
+added separator. Raw replacement retains the separator and updates cursor tracking
+for subsequent dictations, including when raw and corrected lengths differ.
+
+Regression cases cover those boundaries, direct finals without partials, cursor at the
+start of a nonempty field, Unicode brackets/quotes/whitespace, empty results, repeated
+partials and raw/cancel. The emulator repeat check now asserts separator placement for
+both the live partial and final, and its final screenshots show consecutive utterances.
+
 ## Artifacts
 
 Both APKs retain the existing local certificate, SHA-256
@@ -57,8 +74,8 @@ on the already-installed emulator package. No keystore is committed.
 
 | APK | Bytes | MiB | SHA-256 |
 | --- | ---: | ---: | --- |
-| debug | 39,935,887 | 38.09 | `be7d5e8ae9f3a74cf52d81a42fe9fa8cb5bfb888c3aa3de6d168d89eead1f7b3` |
-| release | 26,149,508 | 24.94 | `b9301f55336c3076aa260a678a2adec65a949ba18b100a0b8faa9cd3eb53c2cf` |
+| debug | 39,936,923 | 38.09 | `6a30af952bfeaa6dff125b68230d66ffea7287fb298f314867b3f7665f5afad2` |
+| release | 26,149,992 | 24.94 | `1266adaf86f9b3a8d9def240d1360c714c16dd673c717757b3704655b43ce3d1` |
 
 Paths: `android/app/build/outputs/apk/{debug,release}/app-{debug,release}.apk`.
 Use **release** for the phone. It contains neither the generated WAV, synthetic capture

@@ -6,29 +6,45 @@ import android.view.inputmethod.InputConnection
 class ComposingSession(private val connection: InputConnection) {
     private var live = true
     private var replacedSelection = editor("") { connection.getSelectedText(0)?.toString().orEmpty() }
+    // Snapshot the boundary before any partial moves the cursor into our composing span.
+    // Retain only the decision, not surrounding editor text.
+    private val needsSpace = editor(false) {
+        connection.getTextBeforeCursor(1, 0)?.lastOrNull()?.let { previous ->
+            !previous.isWhitespace() && previous != '\'' && previous != '"' &&
+                Character.getType(previous) != Character.START_PUNCTUATION.toInt() &&
+                Character.getType(previous) != Character.INITIAL_QUOTE_PUNCTUATION.toInt()
+        } ?: false
+    }
     private var seq = -1L
     private var composing = false
     private var finalText: String? = null
     private var rawText: String? = null
+    var committedLength = 0
+        private set
+
+    private fun atBoundary(text: String): String =
+        if (needsSpace && text.isNotEmpty() && !text.first().isWhitespace()) " $text" else text
 
     fun partial(event: ServerEvent.Partial): Boolean {
         if (!live || event.seq <= seq) return true
         seq = event.seq
-        return editor(false) { connection.setComposingText(event.text, 1) }.also { accepted ->
+        return editor(false) { connection.setComposingText(atBoundary(event.text), 1) }.also { accepted ->
             if (accepted) composing = true
         }
     }
     fun final(event: ServerEvent.Final): Boolean {
         if (!live) return false
         live = false
-        val inserted = editor(false) { connection.commitText(event.text, 1) }
+        val text = atBoundary(event.text)
+        val inserted = editor(false) { connection.commitText(text, 1) }
+        if (inserted) committedLength = text.length
         if (!inserted && composing) editor(false) { connection.setComposingText(replacedSelection, 1) }
         editor(false) { connection.finishComposingText() }
         replacedSelection = ""
         composing = false
         if (inserted && event.corrected && event.raw != event.text) {
-            finalText = event.text
-            rawText = event.raw
+            finalText = text
+            rawText = atBoundary(event.raw)
         }
         return inserted
     }
@@ -59,7 +75,9 @@ class ComposingSession(private val connection: InputConnection) {
             // Mark the verified final for a single replacement. Never delete it first:
             // a rejected commit must leave the corrected text in the editor.
             if (!editor(false) { connection.setComposingRegion(cursor - text.length, cursor) }) return false
-            editor(false) { connection.commitText(raw, 1) }.also { if (it) forgetUndo() }
+            editor(false) { connection.commitText(raw, 1) }.also {
+                if (it) { committedLength = raw.length; forgetUndo() }
+            }
         } finally { editor(false) { connection.finishComposingText() }; editor(false) { connection.endBatchEdit() } }
     }
 }

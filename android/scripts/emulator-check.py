@@ -217,8 +217,16 @@ def main():
                 assert adb("shell", "settings", "get", "secure", "default_input_method").decode().strip() == IME
                 # Repeat immediately: the original reported first-use behavior must not recur.
                 before_repeat = editor().get("text", "")
-                tap(x, y); time.sleep(1.5); tap(x, y); time.sleep(2)
-                assert editor().get("text", "") != before_repeat, "Second utterance did not commit"
+                boundary = before_repeat + ("" if not before_repeat or before_repeat[-1].isspace() else " ")
+                tap(x, y); time.sleep(2.5)
+                repeat_live = editor().get("text", "")
+                assert repeat_live.startswith(boundary) and len(repeat_live) > len(boundary), "Repeat partial lacks a word separator"
+                assert not repeat_live[len(boundary)].isspace(), "Repeat partial doubled the separator"
+                tap(x, y); time.sleep(2)
+                repeat_final = editor().get("text", "")
+                assert repeat_final.startswith(boundary) and len(repeat_final) > len(boundary), "Repeat final lacks a word separator"
+                assert not repeat_final[len(boundary)].isspace(), "Repeat final doubled the separator"
+                screenshot(output / ("emulator-keyboard-final-" + theme + ".png"))
                 assert adb("shell", "settings", "get", "secure", "default_input_method").decode().strip() == IME
                 # Tap the actual QWERTY 'a' key after dictation to verify HeliBoard's
                 # composing/cache handoff, rather than injecting text via adb input text.
@@ -241,7 +249,7 @@ def main():
             click("Diagnostics")
             click("Copy diagnostics")
             click("Close")
-            print("PASS: real Parakeet server; Keystore pairing; composing partials/finals; two utterances; tap/hold/cancel/hide; typing after dictation; keyboard settings/setup/diagnostics; light/dark screenshots; IME retained; no Chirp crash.")
+            print("PASS: real Parakeet server; Keystore pairing; composing partials/finals; two utterances with smart spacing; tap/hold/cancel/hide; typing after dictation; keyboard settings/setup/diagnostics; light/dark screenshots; IME retained; no Chirp crash.")
         finally:
             server.terminate()
             try:

@@ -211,8 +211,9 @@ open class LegacyVoiceImeService : InputMethodService() {
                 phase = Phase.IDLE; streamReady = false
                 transport?.close(immediate = true); transport = null
                 client.connectionPool.evictAll()
-                expectedCursor = (if (composingStart >= 0) composingStart else expectedCursor) + event.text.length
+                val insertionStart = if (composingStart >= 0) composingStart else expectedCursor
                 if (composing?.final(event) != true) { cancelSession("Text field unavailable — try again"); return }
+                expectedCursor = insertionStart + (composing?.committedLength ?: 0)
                 finalLatency = stopAt?.let { SystemClock.elapsedRealtime() - it }
                 status = "Tap to dictate again"; partial = ""; stable = ""
                 undo = event.corrected && event.raw != event.text

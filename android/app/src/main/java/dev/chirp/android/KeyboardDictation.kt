@@ -65,10 +65,13 @@ internal class KeyboardDictation(
         view.mic.setOnTouchListener { _, event -> touch(event.actionMasked); true }
         view.cancel.setOnClickListener { cancel("Cancelled") }
         view.raw.setOnClickListener {
+            val target = composing ?: return@setOnClickListener
+            val previousLength = target.committedLength
             applying = true
-            val changed = try { composing?.useRaw(expectedCursor) == true } finally { applying = false }
+            val changed = try { target.useRaw(expectedCursor) } finally { applying = false }
             if (changed) {
-                // Read only the selection metadata, never retain surrounding field content.
+                expectedCursor += target.committedLength - previousLength
+                selectionStart = expectedCursor; selectionEnd = expectedCursor
                 forgetUndo(); resync(selectionStart, selectionEnd)
             }
             render()
@@ -155,10 +158,12 @@ internal class KeyboardDictation(
                 retained = it; store.health = store.health?.copy(debugRetention = it); render()
             },
             final = { result ->
-                expectedCursor = insertionStart + result.text.length
                 applying = true
                 val inserted = try { composing?.final(result) == true } finally { applying = false }
-                if (inserted) { selectionStart = expectedCursor; selectionEnd = expectedCursor }
+                if (inserted) {
+                    expectedCursor = insertionStart + (composing?.committedLength ?: 0)
+                    selectionStart = expectedCursor; selectionEnd = expectedCursor
+                }
                 message = if (inserted) "Inserted · tap mic to dictate again" else "Text field unavailable — try again"
                 text = ""; finalLatency = stopAt?.let { SystemClock.elapsedRealtime() - it }
                 undo = inserted && result.corrected && result.raw != result.text

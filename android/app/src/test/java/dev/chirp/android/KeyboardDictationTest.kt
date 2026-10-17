@@ -57,7 +57,8 @@ class KeyboardDictationTest {
         start(); stream.partial(); assertEquals("synthetic", host.editor.composing)
         finish(); assertFalse(voice.active); assertTrue(capture.released); assertTrue(stream.closed)
         assertEquals("Synthetic.", host.editor.committed)
-        start(); finish(); assertEquals("Synthetic.Synthetic.", host.editor.committed)
+        start(); stream.partial(); assertEquals(" synthetic", host.editor.composing)
+        finish(); assertEquals("Synthetic. Synthetic.", host.editor.committed)
         assertEquals(2, host.editor.commits); assertEquals(2, resyncs)
     }
     @Test fun `hold before ready waits for release and cancel rejects late results`() {
@@ -79,6 +80,9 @@ class KeyboardDictationTest {
         assertEquals(android.view.View.VISIBLE, strip.raw.visibility)
         strip.raw.performClick(); assertEquals("synthetic", host.editor.committed)
         assertEquals(android.view.View.GONE, strip.raw.visibility)
+        start(); stream.partial(); finish(true)
+        assertEquals("synthetic Synthetic.", host.editor.committed)
+        strip.raw.performClick(); assertEquals("synthetic synthetic", host.editor.committed)
         start(); finish(true); advance(5000)
         assertEquals(android.view.View.GONE, strip.raw.visibility)
     }
@@ -95,7 +99,7 @@ class KeyboardDictationTest {
         assertEquals("Synthetic.", host.editor.committed)
         host.editor.disconnectOnRegion = false
         start(); finish()
-        assertEquals("Synthetic.Synthetic.", host.editor.committed)
+        assertEquals("Synthetic. Synthetic.", host.editor.committed)
     }
 
 }
