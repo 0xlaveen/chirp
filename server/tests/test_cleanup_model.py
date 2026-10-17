@@ -1,57 +1,41 @@
-"""Cached-only, synthetic real cleanup. Never log input or output."""
+"""Cached-only, synthetic real cleanup. Failure messages contain case IDs only."""
+
+from pathlib import Path
 
 import pytest
 
-from chirp_server.cleanup_models import discover
+from chirp_server.cleanup_eval import load_cases, score
+from chirp_server.cleanup_models import DEFAULT_MODEL, MODELS, discover
 from chirp_server.config import CorrectionConfig
 from chirp_server.correction import Corrector
 
 pytestmark = pytest.mark.model
 
+# The default must clean at least 90% and retain every required content phrase.
+# Alternatives have explicit, lower regression floors; they are not default candidates.
+THRESHOLDS = {DEFAULT_MODEL: 0.90, "qwen3.5-2b-4bit": 0.55, "qwen3.5-0.8b-4bit": 0.45}
 
-async def test_real_cleanup_dictation():
+
+@pytest.mark.parametrize("model_id", MODELS)
+async def test_real_cleanup_eval(model_id):
     try:
-        discover()
+        discover(model_id)
     except ValueError:
         pytest.skip("cleanup weights missing; explicitly run model fetch --cleanup")
-    corrector = Corrector(CorrectionConfig(mode="managed", timeout=60))
+    cases = load_cases(Path(__file__).with_name("cleanup_eval.jsonl"))
+    corrector = Corrector(CorrectionConfig(mode="managed", model=model_id, timeout=120))
+    failures = []
+    lost_content = []
     try:
-        result = await corrector.process(
-            "um please send the project schedule tomorrow "
-            "we need to review the API changes before lunch"
-        )
-        accepted = result.error is None and result.corrected
-        preserved = all(word in result.text.lower() for word in ("schedule", "api", "lunch"))
-        assert accepted and preserved
-        repair = await corrector.process(
-            "please book the review for monday no wait make that tuesday "
-            "send the kubernetes notes before the meeting"
-        )
-        respected_repair = (
-            repair.error is None
-            and "tuesday" in repair.text.lower()
-            and "monday" not in repair.text.lower()
-            and "wait" not in repair.text.lower()
-        )
-        assert respected_repair
-        repair = await corrector.process("book the review wednesday no wait make that friday")
-        generalized_repair = (
-            repair.error is None
-            and "friday" in repair.text.lower()
-            and "wednesday" not in repair.text.lower()
-            and "wait" not in repair.text.lower()
-        )
-        assert generalized_repair
-        question = await corrector.process(
-            "can you explain how the database migration works "
-            "please include the postgres rollback steps"
-        )
-        preserved_question = (
-            question.error is None
-            and question.text.lower().startswith("can you explain")
-            and "rollback" in question.text.lower()
-            and "?" in question.text
-        )
-        assert preserved_question
+        for case in cases:
+            result = await corrector.process(case["raw"])
+            measured = score(case, result.text)
+            if not measured.passed:
+                failures.append(case["id"])
+            if not measured.must_keep:
+                lost_content.append(case["id"])
+        assert 1 - len(failures) / len(cases) >= THRESHOLDS[model_id], failures
+        if model_id == DEFAULT_MODEL:
+            assert not lost_content, lost_content
     finally:
         await corrector.close()

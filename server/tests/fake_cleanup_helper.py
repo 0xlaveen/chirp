@@ -15,7 +15,10 @@ for line in sys.stdin:
     if text == "invalid":
         print("[]", flush=True)
         continue
+    reply = (
+        sys.argv[2] if len(sys.argv) > 2 and sys.argv[1] == "--reply" else text.capitalize() + "."
+    )
     print(
-        json.dumps({"ok": True, "text": text.capitalize() + ".", "finish_reason": "stop"}),
+        json.dumps({"ok": True, "text": reply, "finish_reason": "stop"}),
         flush=True,
     )

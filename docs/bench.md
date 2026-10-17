@@ -123,7 +123,7 @@ Model/alternate downloads require the explicit commands/flags documented in [ser
 
 Synthetic WAVs, candidate source/build/models and raw numeric results live under `~/Library/Caches/Chirp/` and may be deleted together. Apple assets are macOS-managed; use OS asset/storage controls. Only numeric benchmark evidence is committed in [bench-data/](bench-data/); no audio or recognized text is retained. These synthetic fixtures do not establish WER on accents, spontaneous speech or microphone noise. Natural recorded fixtures, isolated-host comparisons and Swift live-protocol latency remain TBM, with no production latency budget claimed.
 
-## Optional transcript cleanup (2026-10-17)
+## Initial three-input cleanup benchmark (2026-10-17)
 
 Default: **off**. For managed mode choose **Qwen3 4B Instruct 2507, MLX 4-bit**
 (`qwen3-4b-instruct-2507-4bit`). It preserved the intended repair in all three
@@ -187,3 +187,86 @@ uv run pytest -q -m model
 Only the three `model fetch --cleanup` commands may download weights. The benchmark and
 model tests use local pinned snapshots. For cache location and removal, see
 [server/README.md](../server/README.md#private-managed-cleanup).
+
+## Conservative cleanup evaluation (2026-10-17)
+
+Keep **Qwen3 4B Instruct 2507 4-bit** as the managed default; cleanup remains off by
+default. The broader synthetic eval exposed aggressive rewriting that the initial
+three-input keyword benchmark above missed. On the 40-case set, the old production
+prompt/guard (`a88617a`) passed 19/40 cases on 4B. The revised prompt, Unicode JSON
+input and ordered word-retention guard passed **40/40**, including the original
+hedged meeting-day correction: “So I think we should meet on Tuesday at 3 p.m. and
+bring the slides.” The hedge remains intact.
+
+| Model (same pinned revisions as above) | Before passes | After passes | Before warm median (ms) | After warm median / min–max (ms) | Before / after cold first final (ms) | After fallbacks |
+|---|---:|---:|---:|---:|---:|---:|
+| Qwen3 4B Instruct 2507 4-bit | 19/40 (47.5%) | **40/40 (100%)** | 371.6 | **397.8 / 309.4–702.2** | 18899.2 / 2563.4 | 0/40 |
+| Qwen3.5 2B 4-bit | 15/40 (37.5%) | 23/40 (57.5%) | 157.5 | 190.7 / 137.3–343.2 | 6257.9 / 2592.2 | 2/40 |
+| Qwen3.5 0.8B 4-bit | 17/40 (42.5%) | 20/40 (50%) | 77.2 | 91.7 / 73.8–170.9 | 2543.4 / 1944.5 | 7/40 |
+
+Same M5 Pro and locked runtime as above. Each model used one fresh helper, one
+unscored cold/warmup call and one measured pass over all 40 cases. Calls are sequential
+and use the actual managed pipes, template, greedy decoding (temperature 0), disabled
+thinking and final output guard. Baseline load averages ranged 28.5–35.3; final tuned
+load ranged 13.1–15.7. Before/after latency is observed on a shared host, not an isolated
+causal comparison or a latency budget. An earlier tuned 4B run measured a 542.3 ms warm
+median and a 10.2 s cold call, exceeding the production eight-second timeout. Eval uses
+120 seconds so it measures quality rather than startup timeout behavior. Production
+still returns raw on timeout. The final 0.8B cold/warmup call was rejected and returned raw;
+it is excluded from the 40 measured cases for every model.
+
+The checked-in [40 synthetic cases](../server/tests/cleanup_eval.jsonl) cover fillers,
+explicit and chained repairs, stutters, repetition with emphasis, hedges, negations,
+lists, questions, commands, instruction-like dictated content, code, spoken technical
+terms, URLs, numbers, dates, names, long clauses, unchanged clean text, profanity and
+non-English words. No real transcripts or new weights were acquired. These are tuning
+fixtures, not a held-out natural speech accuracy estimate. The initial conservative
+prompt scored 37/40 on 4B, 24/40 on 2B and 20/40 on 0.8B. A combined hedge/repair example
+and readable Unicode JSON inputs produced the final row. This does not establish which
+of those two changes caused each improvement.
+
+The [scorer](../server/src/chirp_server/cleanup_eval.py) normalizes Unicode, casing
+and punctuation, then checks exact equality or at most 8% word edit distance against
+explicit expected variants. Every pass also requires all case-specific must-keep
+phrases, no must-drop phrases, and byte-for-byte equality on already-clean cases.
+Words retain order and multiplicity. Near matching never overrides these checks.
+The final exact / near counts were 40/40 and 40/40 for 4B, 22/40 and 24/40 for 2B,
+and 20/40 and 23/40 for 0.8B. A fallback is scored as returned raw text and generally
+fails cleanup checks; guard acceptance alone is never scored as accuracy. Aggregate
+counts, failed case IDs, timings and load evidence are in
+[cleanup-conservative.json](bench-data/cleanup-conservative.json).
+
+The guard replaces the old roughly 50% set-overlap threshold. It requires ordered
+source words, allowing only bounded filler/stutter deletions and single-value repairs
+between weekdays, months, spoken numbers, integer values or capitalized names. It
+checks literal URL, code-call, identifier, numeric-format and operator fragments too.
+It rejects dropped hedges, negations, clauses, paraphrases, invented answers and
+reordered content, returning the raw input. Multiword or otherwise ambiguous repairs
+can conservatively fall back to raw. Filler classification remains heuristic, and
+punctuation/case changes can affect meaning; this is not a semantic proof for arbitrary
+speech. The prompt tells the model to preserve ambiguous words and meaningful “like,”
+“you know,” “I mean” and repetition.
+
+`pytest -m model` evaluates all three cached models. The 4B default must pass at least
+90% with every must-keep phrase preserved; alternative regression floors are 55% for
+2B and 45% for 0.8B. These lower floors document their limitations and do not qualify
+them as defaults. Ordinary tests use a synthetic fake helper, including attempted
+hedge/negation loss, reordered clauses, code/URL changes and the original bad summary.
+The complete required validation passed: locked sync, Ruff lint and format checks,
+143 ordinary tests and all 5 real-model tests (three cleanup models and two ASR tests).
+
+Reproduce the current evaluation without downloads or a server port:
+
+```sh
+cd server
+uv sync --locked
+HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 uv run python scripts/bench_cleanup.py --label conservative
+uv run pytest -q -m model
+```
+
+To reproduce the baseline, use the correction and helper modules from `a88617a` with
+the same new fixtures, scorer and benchmark harness. The `--label` flag labels results;
+it does not select an older prompt. `--model` selects a cached catalog model and
+`--repetitions` repeats the full set. Benchmark output contains metrics and synthetic
+case IDs, never transcript text. No running service, LaunchAgent, token, Chirp user
+configuration or Tailscale state was accessed or modified for this tuning.

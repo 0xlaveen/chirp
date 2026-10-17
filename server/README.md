@@ -112,9 +112,14 @@ Weights use the shared Hugging Face cache (`~/.cache/huggingface/hub`, or `HF_HO
 copying them into Chirp's model store. To remove a cleanup model, stop the server and remove
 its `models--mlx-community--<model-name>` directory from that cache, or use Hugging Face's
 cache tools. Other applications may share those weights. No Koi model files are changed.
-Catalog revisions are recorded in `src/chirp_server/cleanup_models.py`. The 4B default
-passed the measured self-correction cases; the newer smaller models were faster but retained
-superseded details on the longer repair case. See [bench.md](../docs/bench.md).
+Catalog revisions are recorded in `src/chirp_server/cleanup_models.py`. Cleanup preserves
+the speaker's words, clauses, hedges and tone; it removes fillers, accidental repetitions
+and explicit self-corrections, and fixes punctuation and casing. It preserves spoken terms
+such as “package dot json” instead of rewriting them as code. Unsupported word deletions,
+additions or reordering fall back to raw text. Ambiguous repairs may also fall back to raw.
+The 4B default passed 40/40 synthetic evaluation cases; the faster 2B and 0.8B alternatives
+passed 23/40 and 20/40. See [bench.md](../docs/bench.md#conservative-cleanup-evaluation-2026-10-17)
+for scoring, timings, guard limitations and reproduction commands.
 
 Set `mode = "off"` to disable cleanup. Managed mode and loopback endpoint mode keep text on
 this Mac; a remote endpoint receives final text when the client opts in. Endpoint redirects
