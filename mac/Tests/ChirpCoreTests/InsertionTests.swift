@@ -33,8 +33,8 @@ final class FakeSystem {
             axInsert: { _ in self.calls.append("ax"); return self.ax },
             axReplace: { range, expected, new in self.calls.append("axReplace:\(range.location),\(range.length):\(expected)→\(new)"); return self.axReplaceResult },
             postPaste: { self.calls.append("paste"); return self.pasteResult },
-            postUndo: { self.calls.append("undo"); return true },
-            sleep: { _ in }), pasteboard: board)
+            // The restore delay is instant, but the undo window must not elapse mid-test (cancelled by forgetUndo).
+            sleep: { d in if d >= .seconds(1) { try? await Task.sleep(for: d) } }), pasteboard: board)
     }
 }
 
@@ -127,35 +127,61 @@ final class FakeSystem {
     @Test func useRawReplacesTheExactAXRangeWithoutUndo() async {
         let sys = FakeSystem(), board = FakePasteboard()
         let inserter = sys.inserter(board: board)
-        _ = await inserter.insert("Hello, world.")
-        #expect(await inserter.replaceLast(with: "hello world") == .inserted(.ax))
+        _ = await inserter.insert("Hello, world.", undoRaw: "hello world")
+        #expect(await inserter.useRaw() == .inserted(.ax))
         #expect(sys.calls == ["ax", "axReplace:3,5:Hello, world.→hello world"])
-        #expect(!sys.calls.contains("undo"))
     }
 
     @Test func useRawCopiesWhenTheFieldChanged() async {
         let sys = FakeSystem(), board = FakePasteboard()
         sys.axReplaceResult = false
         let inserter = sys.inserter(board: board)
-        _ = await inserter.insert("Hello, world.")
-        #expect(await inserter.replaceLast(with: "hello world") == .copied)
+        _ = await inserter.insert("Hello, world.", undoRaw: "hello world")
+        #expect(await inserter.useRaw() == .copied)
         #expect(board.text == "hello world")
     }
 
-    @Test func useRawAfterPasteUsesUndoThenPastesRaw() async {
+    /// A paste can't be verified, so there is no blind ⌘Z: the raw text is copied for a manual ⌘V.
+    @Test func useRawAfterPasteCopiesRawWithoutUndoOrPaste() async {
         let sys = FakeSystem(), board = FakePasteboard()
         sys.bundle = "com.apple.Terminal"
         let inserter = sys.inserter(board: board)
-        _ = await inserter.insert("Hello, world.")
-        #expect(await inserter.replaceLast(with: "hello world") == .inserted(.paste))
-        #expect(sys.calls == ["paste", "undo", "paste"])
+        _ = await inserter.insert("Hello, world.", undoRaw: "hello world")
+        #expect(await inserter.useRaw() == .copied)
+        #expect(sys.calls == ["paste"])
+        await inserter.settle()
+        #expect(board.text == "hello world")
+        #expect(board.lastWriteTransient == false)
     }
 
-    @Test func useRawWithNothingInsertedJustCopies() async {
+    @Test func useRawNeverActsOnAnotherApp() async {
         let sys = FakeSystem(), board = FakePasteboard()
         let inserter = sys.inserter(board: board)
-        #expect(await inserter.replaceLast(with: "raw") == .copied)
-        #expect(board.text == "raw")
-        #expect(sys.calls.isEmpty)
+        _ = await inserter.insert("Hello, world.", undoRaw: "hello world")
+        sys.bundle = "com.apple.mail"
+        #expect(await inserter.useRaw() == .copied)
+        #expect(sys.calls == ["ax"])                    // no axReplace in the other app's field
+        #expect(board.text == "hello world")
+    }
+
+    @Test func useRawRefusesInSecureInputBeforeAnySideEffect() async {
+        let sys = FakeSystem(), board = FakePasteboard()
+        let inserter = sys.inserter(board: board)
+        _ = await inserter.insert("Hello, world.", undoRaw: "hello world")
+        sys.secure = true
+        #expect(await inserter.useRaw() == .refusedSecure)
+        #expect(sys.calls == ["ax"])
+        #expect(board.text == "user clipboard")
+        #expect(await inserter.useRaw() == nil)         // and it is spent
+    }
+
+    @Test func useRawWithNothingToReplaceDoesNothing() async {
+        let sys = FakeSystem(), board = FakePasteboard()
+        let inserter = sys.inserter(board: board)
+        #expect(await inserter.useRaw() == nil)
+        _ = await inserter.insert("plain")             // no correction, so no raw is kept
+        #expect(!inserter.canUseRaw)
+        #expect(await inserter.useRaw() == nil)
+        #expect(board.text == "user clipboard")
     }
 }

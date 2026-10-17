@@ -1,5 +1,6 @@
 import AppKit
 import ChirpCore
+import ChirpUI
 
 /// Glue between the pure state machine and the system: capture, socket, HUD, insertion.
 @MainActor
@@ -10,7 +11,7 @@ final class DictationController {
     var onChange: (() -> Void)?
 
     let hud = HUDController()
-    private let capture = AudioCapture()
+    private let capture = AudioCapture(engine: SystemCaptureEngine())
     private let inserter = TextInserter(env: SystemInsertion.environment(), pasteboard: SystemPasteboard())
 
     private var session: StreamSession?
@@ -18,7 +19,6 @@ final class DictationController {
     private var timeoutTask: Task<Void, Never>?
     private var epoch = 0
     private var pendingFinal: FinalResult?
-    private var lastInsertion: (final: FinalResult, outcome: InsertionOutcome)?
 
     static let dictateID: UInt32 = 1
     private static let escapeID: UInt32 = 2
@@ -86,9 +86,10 @@ final class DictationController {
         switch effect {
         case .start: begin()
         case .finalize: finalize()
-        case .cancel: teardown(cancelServer: true); hud.hide()
+        case .cancel: teardown(cancelServer: true); hud.hide(); inserter.forgetUndo()
         case .abort(let message):
             teardown(cancelServer: true)
+            inserter.forgetUndo()
             hud.model.status = message
             hud.model.isError = true
             hud.model.level = 0
@@ -103,6 +104,7 @@ final class DictationController {
         epoch += 1
         let myEpoch = epoch
         pendingFinal = nil
+        inserter.forgetUndo()
         hud.hide()
         hud.model.reset()
         hud.model.status = "Connecting…"
@@ -138,7 +140,12 @@ final class DictationController {
             }
         }
         do {
-            try capture.start { sink.handle($0) }
+            try capture.start(onFailure: { [weak self] in
+                Task { @MainActor in
+                    guard let self, self.epoch == myEpoch, self.machine.state.isActive else { return }
+                    self.send(.failed("The microphone stopped — check the input device"))
+                }
+            }) { sink.handle($0) }
         } catch {
             send(.failed(error is CaptureError ? "No microphone input device" : "Could not start the microphone"))
             return
@@ -197,10 +204,11 @@ final class DictationController {
         }
     }
 
-    private func stopCapture() { if capture.isRunning { capture.stop() } }
+    private func stopCapture() { capture.stop() }
 
     private func teardown(cancelServer: Bool) {
         epoch += 1   // invalidates every in-flight callback of the old session
+        pendingFinal = nil
         timeoutTask?.cancel()
         stopCapture()
         eventTask?.cancel()
@@ -215,7 +223,9 @@ final class DictationController {
 
     private func insert() {
         timeoutTask?.cancel()
+        // Consume the final: nothing but the inserter's short-lived undo state may outlive this insertion.
         guard let final = pendingFinal else { send(.insertionFinished); return }
+        pendingFinal = nil
         let text = final.text.trimmingCharacters(in: .whitespacesAndNewlines)
         let s = session
         session = nil
@@ -231,48 +241,36 @@ final class DictationController {
         }
         hud.model.status = "Inserting"
         Task {
-            let outcome = await inserter.insert(text)
-            lastInsertion = (final, outcome)
+            let outcome = await inserter.insert(text, undoRaw: final.canUseRaw ? final.raw : nil)
             show(outcome, final: final)
             send(.insertionFinished)
         }
     }
 
     private func show(_ outcome: InsertionOutcome, final: FinalResult) {
-        hud.model.isError = false
-        var linger = 1.2
-        switch outcome {
-        case .inserted(let method):
-            hud.model.status = method == .ax ? "Inserted" : "Inserted (paste)"
-            if final.canUseRaw {
-                hud.model.showUseRaw = true
-                hud.model.onUseRaw = { [weak self] in self?.useRaw() }
-                linger = 5
-            }
-        case .copied:
-            hud.model.status = "Copied — press ⌘V"
-            linger = 3
-        case .insertedUnverified:
-            hud.model.status = "Inserted? If nothing appeared, press ⌘V"
-            linger = 4
-        case .refusedSecure:
-            hud.model.status = "Secure field — nothing inserted"
-            hud.model.isError = true
-            linger = 3
-        }
+        let p = OutcomePresentation.of(outcome, final: final)
+        hud.model.status = p.status
+        hud.model.isError = p.isError
+        hud.model.showUseRaw = p.showUseRaw
+        hud.model.onUseRaw = p.showUseRaw ? { [weak self] in self?.useRaw() } : nil
         hud.show()
-        hud.hide(after: linger)
-        hud.announce(hud.model.status)
+        hud.hide(after: p.linger)
+        hud.announce(p.status)
     }
 
-    /// Replace the inserted correction with the raw transcript: in place for AX insertions, via ⌘Z for pasted ones.
+    /// Replace the inserted correction with the raw transcript, in place for a verified AX insertion and otherwise
+    /// by copying it; the inserter refuses once the undo window has expired or the target changed.
     private func useRaw() {
-        guard let last = lastInsertion, last.final.canUseRaw, !machine.state.isActive else { return }
-        lastInsertion = nil
+        guard !machine.state.isActive else { return }
         hud.model.showUseRaw = false
         Task {
-            let outcome = await inserter.replaceLast(with: last.final.raw)
-            hud.model.status = outcome == .copied ? "Copied raw — press ⌘V" : "Inserted raw"
+            guard let outcome = await inserter.useRaw() else { return }
+            hud.model.isError = outcome == .refusedSecure
+            switch outcome {
+            case .inserted: hud.model.status = "Inserted raw"
+            case .refusedSecure: hud.model.status = "Secure field — nothing changed"
+            default: hud.model.status = "Copied raw — press ⌘V"
+            }
             hud.announce(hud.model.status)
             hud.hide(after: 1.5)
         }

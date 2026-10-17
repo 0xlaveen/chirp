@@ -10,8 +10,9 @@ let package = Package(
     ],
     targets: [
         .target(name: "ChirpCore"),
-        .executableTarget(name: "ChirpMac", dependencies: ["ChirpCore"]),
-        .testTarget(name: "ChirpCoreTests", dependencies: ["ChirpCore"]),
+        .target(name: "ChirpUI", dependencies: ["ChirpCore"]),
+        .executableTarget(name: "ChirpMac", dependencies: ["ChirpCore", "ChirpUI"]),
+        .testTarget(name: "ChirpCoreTests", dependencies: ["ChirpCore", "ChirpUI"]),
     ],
     swiftLanguageModes: [.v6]
 )

@@ -12,8 +12,7 @@ public enum SystemInsertion {
             frontmostBundleID: { NSWorkspace.shared.frontmostApplication?.bundleIdentifier },
             axInsert: { await axInsert($0) },
             axReplace: { await axReplace(range: $0, expected: $1, replacement: $2) },
-            postPaste: { postCommandKey(CGKeyCode(kVK_ANSI_V)) },
-            postUndo: { postCommandKey(CGKeyCode(kVK_ANSI_Z)) }
+            postPaste: { postCommandKey(CGKeyCode(kVK_ANSI_V)) }
         )
     }
 
