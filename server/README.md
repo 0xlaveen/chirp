@@ -35,8 +35,8 @@ await credentials concurrently. A socket supports sequential utterances and clos
 PCM must be mono, little-endian signed 16-bit at 16 kHz. Frames of 1 MB or more are rejected;
 utterances are capped at 120 seconds. POST accepts a WAV body with the same format and limit.
 Cancel or disconnect during finalization discards the utterance: no correction request (an
-in-flight one is cancelled), nothing retained, and an `error` with code `cancelled` replaces
-the final (disconnects discard silently).
+in-flight one is cancelled) and nothing retained. A cancelled utterance delivers no final and
+no error acknowledgement; the socket stays usable for the next start.
 Rolling partials consume roughly 200 ms of new audio at a time, coalescing up to two seconds
 per inference when the engine lags. MLX previews decode an eight-second window and reuse the
 library's timestamped token merger to retain the whole live transcript. The default final

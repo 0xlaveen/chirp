@@ -30,7 +30,6 @@ MESSAGES = {
     "too_long": "Maximum utterance is 120 seconds",
     "bad_audio": "Invalid audio or control frame",
     "engine": "Speech engine unavailable",
-    "cancelled": "Utterance cancelled during finalization",
 }
 
 
@@ -388,6 +387,10 @@ def create_app(settings=None, engine=None, token=None, corrector=None):
             reader = asyncio.create_task(receive(ws))
             done, _ = await asyncio.wait({finisher, reader}, return_when=asyncio.FIRST_COMPLETED)
             if finisher in done:
+                # A completed reader's frame must not be lost; keep it for re-dispatch.
+                if reader.done() and not reader.cancelled():
+                    with contextlib.suppress(Exception, asyncio.CancelledError):
+                        raced.append(reader.result())
                 reader.cancel()
                 with contextlib.suppress(Exception, asyncio.CancelledError):
                     await reader
@@ -457,11 +460,10 @@ def create_app(settings=None, engine=None, token=None, corrector=None):
                     utterance = None
                 elif kind == "stop" and utterance:
                     final, raced = await finalize(ws, utterance)
+                    # A cancelled utterance sends nothing: no final, no error; the
+                    # socket stays usable for the next start.
                     if final is not None:
                         await ws.send_json(final)
-                    else:
-                        with contextlib.suppress(Exception):
-                            await ws.send_json(error("cancelled"))
                     await utterance.close()
                     utterance = None
                     carry.extend(raced)

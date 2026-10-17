@@ -14,6 +14,13 @@ from chirp_server.engine.fake import FakeStream
 from chirp_server.retention import Retention
 
 
+def next_non_partial(ws):
+    """First non-partial message after a cancel: must be the fresh start's ready."""
+    while (message := ws.receive_json())["type"] == "partial":
+        pass
+    return message
+
+
 def test_cancel_during_finish_prevents_correction_and_retention(settings, monkeypatch):
     entered, release = threading.Event(), threading.Event()
     corrected, retained = [], []
@@ -49,10 +56,20 @@ def test_cancel_during_finish_prevents_correction_and_retention(settings, monkey
                 ws.send_json({"type": "cancel"})
             finally:
                 release.set()
-            result = final(ws)
-    assert result["type"] == "error" and result["code"] == "cancelled"
+            # Nothing follows a client cancel: no final, no error. Skipping the first
+            # utterance's stale partials, the next message must be the ready of a fresh
+            # start on the reused socket, not a straggler.
+            ws.send_json(START)
+            assert next_non_partial(ws)["type"] == "ready"
+            assert not corrected
+            assert not retained
+            ws.send_bytes(PCM)
+            ws.send_json({"type": "stop"})
+            assert final(ws)["type"] == "final"
+    # Only the second, normal utterance was retained; the cancelled one never reached
+    # correction or retention.
     assert not corrected
-    assert not retained
+    assert retained == [True]
 
 
 def test_cancel_during_pending_correction_cancels_request(settings, monkeypatch):
@@ -76,6 +93,10 @@ def test_cancel_during_pending_correction_cancels_request(settings, monkeypatch)
             ws.send_json({"type": "stop"})
             assert entered.wait(5)
             ws.send_json({"type": "cancel"})
-            result = final(ws)
-    assert result["type"] == "error" and result["code"] == "cancelled"
-    assert not retained
+            # No acknowledgement follows the cancel; the socket stays usable.
+            ws.send_json(START)
+            assert next_non_partial(ws)["type"] == "ready"
+            assert not retained
+            ws.send_bytes(PCM)
+            ws.send_json({"type": "stop"})
+            assert final(ws)["type"] == "final"
