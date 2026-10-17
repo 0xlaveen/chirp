@@ -67,6 +67,8 @@ def parser():
     model.add_argument("--engine", choices=["mlx", "onnx"], default="mlx")
     debug = commands.add_parser("debug")
     debug.add_argument("action", choices=["purge"])
+    check = commands.add_parser("doctor")
+    check.add_argument("--quick", action="store_true", help="skip the real model load and decode")
     launch = commands.add_parser("service")
     launch.add_argument("action", choices=["install", "uninstall"])
     return result
@@ -74,6 +76,12 @@ def parser():
 
 def main():
     args = parser().parse_args()
+    if args.command == "doctor":
+        from .doctor import doctor
+
+        # Read-only diagnostics run before config parsing so a broken config is reported,
+        # not raised.
+        raise SystemExit(doctor(args))
     settings = Settings.read(args.config)
     if args.command == "pair":
         import segno

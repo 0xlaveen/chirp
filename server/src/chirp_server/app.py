@@ -6,6 +6,7 @@ import json
 import logging
 import secrets
 import time
+from collections import deque
 from contextlib import asynccontextmanager
 from urllib.parse import urlsplit
 from uuid import uuid4
@@ -65,6 +66,8 @@ class Utterance:
         self.leased = False
         self.failure = False
         self.aborted = False
+        self.cancelled = False
+        self.correcting = None
         self.peak = self.rms = 0.0
 
     async def start(self, control):
@@ -151,6 +154,17 @@ class Utterance:
             self.failure = True
             log.warning("code=engine session=%s", self.session)
 
+    def cancel(self):
+        """Mark cancelled from the receive loop; also cancels a pending correction request."""
+        self.cancelled = True
+        if self.correcting is not None:
+            self.correcting.cancel()
+
+    def discard(self):
+        # Cancelled during finalization: no correction, no retention, no final.
+        log.info("session=%s bytes=%d cancelled_during_finalize=1", self.session, len(self.pcm))
+        return None
+
     async def finish(self):
         started = time.perf_counter()
         self.stopping = True
@@ -158,24 +172,41 @@ class Utterance:
         await self.task
         if self.failure:
             raise RuntimeError("engine")
+        if self.cancelled:
+            return self.discard()
         if not self.pcm:
             raise AudioError()
         if self.offset < len(self.pcm):
             pending = samples(bytes(self.pcm[self.offset :]))
             buffer = getattr(self.stream, "buffer", self.stream.feed)
             await self.worker.call(buffer, pending)
+            if self.cancelled:
+                return self.discard()
             self.offset = len(self.pcm)
         raw = await self.worker.call(self.stream.finish)
         self.stream = None
         self.release()
-        final = await make_final(
-            raw,
-            bytes(self.pcm),
-            self.first_partial,
-            started,
-            self.corrector,
-            self.correction,
+        if self.cancelled:
+            return self.discard()
+        # A cancel racing this task cancels the pending correction request with it.
+        self.correcting = asyncio.create_task(
+            make_final(
+                raw,
+                bytes(self.pcm),
+                self.first_partial,
+                started,
+                self.corrector,
+                self.correction,
+            )
         )
+        try:
+            final = await self.correcting
+        except asyncio.CancelledError:
+            return self.discard()
+        finally:
+            self.correcting = None
+        if self.cancelled:
+            return self.discard()
         self.retention.save(self.session, bytes(self.pcm), final)
         log.info(
             "session=%s bytes=%d peak=%.5f rms=%.5f finalize_ms=%.1f identity_present=%s",
@@ -342,6 +373,48 @@ def create_app(settings=None, engine=None, token=None, corrector=None):
             return control
         return message.get("bytes", b"")
 
+    async def finalize(ws, utterance):
+        """Await finish() while still observing the socket (R2-01).
+
+        Cancel or disconnect during finalization marks the utterance cancelled, which
+        suppresses correction, retention and final delivery; native inference still
+        drains on its owning thread. Frames racing with finalization are returned for
+        normal dispatch afterwards.
+        """
+        finisher = asyncio.create_task(utterance.finish())
+        raced = []
+        while not finisher.done():
+            reader = asyncio.create_task(receive(ws))
+            done, _ = await asyncio.wait({finisher, reader}, return_when=asyncio.FIRST_COMPLETED)
+            if finisher in done:
+                # A completed reader's frame must not be lost; keep it for re-dispatch.
+                if reader.done() and not reader.cancelled():
+                    with contextlib.suppress(Exception, asyncio.CancelledError):
+                        raced.append(reader.result())
+                reader.cancel()
+                with contextlib.suppress(Exception, asyncio.CancelledError):
+                    await reader
+                break
+            try:
+                message = reader.result()
+            except WebSocketDisconnect:
+                utterance.cancel()
+                await finisher
+                break
+            except TimeoutError:
+                continue  # The idle deadline restarts; keep waiting for finalization.
+            except AudioError:
+                utterance.cancel()
+                await finisher
+                raise
+            if isinstance(message, bytes):
+                raced.append(message)
+            elif message.get("type") == "cancel":
+                utterance.cancel()
+            else:
+                raced.append(message)
+        return finisher.result(), raced
+
     async def stream(ws: WebSocket):
         nonlocal pending_auth
         utterance = None
@@ -370,8 +443,9 @@ def create_app(settings=None, engine=None, token=None, corrector=None):
                 await ws.send_json(error("auth"))
                 await ws.close(code=4401)
                 return
+            carry = deque()
             while True:
-                message = await receive(ws)
+                message = carry.popleft() if carry else await receive(ws)
                 if isinstance(message, bytes):
                     if utterance is None:
                         raise AudioError()
@@ -385,10 +459,14 @@ def create_app(settings=None, engine=None, token=None, corrector=None):
                     await utterance.close()
                     utterance = None
                 elif kind == "stop" and utterance:
-                    final = await utterance.finish()
-                    await ws.send_json(final)
+                    final, raced = await finalize(ws, utterance)
+                    # A cancelled utterance sends nothing: no final, no error; the
+                    # socket stays usable for the next start.
+                    if final is not None:
+                        await ws.send_json(final)
                     await utterance.close()
                     utterance = None
+                    carry.extend(raced)
                 else:
                     raise AudioError()
         except WebSocketDisconnect:

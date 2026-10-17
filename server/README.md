@@ -34,6 +34,9 @@ First-frame authentication has a separate five-second deadline; at most eight so
 await credentials concurrently. A socket supports sequential utterances and closes after 60 seconds without client traffic.
 PCM must be mono, little-endian signed 16-bit at 16 kHz. Frames of 1 MB or more are rejected;
 utterances are capped at 120 seconds. POST accepts a WAV body with the same format and limit.
+Cancel or disconnect during finalization discards the utterance: no correction request (an
+in-flight one is cancelled) and nothing retained. A cancelled utterance delivers no final and
+no error acknowledgement; the socket stays usable for the next start.
 Rolling partials consume roughly 200 ms of new audio at a time, coalescing up to two seconds
 per inference when the engine lags. MLX previews decode an eight-second window and reuse the
 library's timestamped token merger to retain the whole live transcript. The default final
@@ -77,6 +80,49 @@ API keys come from the named environment variable or Keychain, never the TOML fi
 Enabled external correction reports `correction_leaves_machine=true` and `correction_host`
 so clients can label the destination. POST uses raw decoding (no client correction request).
 
+### Pointing correction at LM Studio (operator steps)
+
+LM Studio is installed at `/Applications/LM Studio.app`. Chirp never starts it, loads no models
+in it, and sends nothing until correction is enabled below. The operator does, once:
+
+1. Open LM Studio, go to the **Developer** (local server) tab and press **Start Server**.
+   Note the local endpoint, by default `http://127.0.0.1:1234/v1`.
+2. Load a model there and copy its exact identifier (for example
+   `lmstudio-community/Qwen2.5-7B-Instruct-GGUF`) from the server page, or list it with
+   `curl http://127.0.0.1:1234/v1/models` while it runs.
+3. Point Chirp at it in `~/.config/chirp/server.toml`:
+
+   ```toml
+   [correction]
+   enabled = true
+   base_url = "http://127.0.0.1:1234/v1"
+   model = "<the identifier copied above>"
+   ```
+
+4. LM Studio needs no API key; when none is configured no Authorization header is sent.
+
+A loopback `base_url` keeps final text on this machine (health/doctor report it as such).
+If LM Studio is stopped, times out or answers like an assistant, the corrector fails closed
+to the raw transcript and `correction_error` says why.
+
+## Doctor
+
+```sh
+uv run chirp-server doctor          # full run, including a real model load and fixture decode
+uv run chirp-server doctor --quick  # same checks, but skips the model load/decode
+```
+
+Read-only diagnostics, one `[OK]/[WARN]/[FAIL]` line per check with a remediation hint where
+needed: Python/uv environment, MLX availability, the model directory (which path) and a warm
+decode of the synthetic 5 s fixture (`--quick` skips it; the transcript is matched on a
+keyword in memory and never printed), config file parse, token presence and mode (the value is
+never printed or created), port 7821 free vs held by chirp-server, debug retention state plus
+the count and size of retained files, the correction host and whether final text leaves the
+machine, `tailscale serve status --json` parsed read-only to report whether `/chirp` is
+published and tailnet-only (doctor never changes Tailscale), and whether the optional
+LaunchAgent is installed. The exit code is 1 only when a check FAILs. Doctor creates no files
+and starts no services.
+
 ## Privacy and debugging
 
 Audio and text stay in memory and are discarded on stop/cancel/disconnect. No recording,
@@ -101,6 +147,7 @@ uv run ruff check .
 uv run ruff format --check .
 uv run pytest
 uv run pytest -m model
+uv run chirp-server doctor --quick
 uv run python scripts/generate_fixtures.py
 uv run python tests/client_sim.py "$HOME/Library/Caches/Chirp/fixtures/synthetic-5s.wav"
 uv run python scripts/bench.py --output "$HOME/Library/Caches/Chirp/bench.json"
