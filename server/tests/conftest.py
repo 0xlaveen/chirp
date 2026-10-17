@@ -24,6 +24,7 @@ def settings(tmp_path):
     return Settings(
         config_dir=tmp_path / "config",
         debug_dir=tmp_path / "debug",
+        state_path=tmp_path / "state" / "server-state.json",
         idle_seconds=0.2,
         auth_seconds=0.05,
         queue_timeout=0.05,

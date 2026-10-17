@@ -161,7 +161,8 @@ def test_correcting_precedes_helper_and_old_client_ignores_it(settings, enabled,
 
     async def send(ws, payload, *args, **kwargs):
         if payload.get("type") == "correcting":
-            assert corrector.managed.process is None
+            # The start prewarmed the helper; correcting still precedes the final.
+            assert corrector.managed.process is not None
             announced.append(True)
         await original_send(ws, payload, *args, **kwargs)
 
@@ -176,7 +177,8 @@ def test_correcting_precedes_helper_and_old_client_ignores_it(settings, enabled,
             ws.send_bytes(PCM)
             partial = ws.receive_json()
             assert partial["type"] == "partial"
-            assert corrector.managed.process is None
+            if enabled:
+                assert corrector.managed.process is not None  # start prewarmed it
             ws.send_json({"type": "stop"})
             messages = []
             # Old v1 clients dispatch known types and ignore unknown types until final.

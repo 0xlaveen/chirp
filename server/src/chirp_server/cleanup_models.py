@@ -9,17 +9,27 @@ from pathlib import Path
 class CleanupModel:
     repository: str
     revision: str
+    # Measured physical-footprint MiB (steady state after one generation; see
+    # docs/bench.md) on the reference M5 Pro; the estimate reported before this
+    # server has measured one of its own loads.
+    memory_mb: int
 
 
 MODELS = {
     "qwen3-4b-instruct-2507-4bit": CleanupModel(
-        "mlx-community/Qwen3-4B-Instruct-2507-4bit", "50d427756c6b1b2fe0c0a10f67fbda1fc8e82c1b"
+        "mlx-community/Qwen3-4B-Instruct-2507-4bit",
+        "50d427756c6b1b2fe0c0a10f67fbda1fc8e82c1b",
+        2563,
     ),
     "qwen3.5-2b-4bit": CleanupModel(
-        "mlx-community/Qwen3.5-2B-4bit", "674aaa7240b91e8012fcad5d791b7dfe5ba90207"
+        "mlx-community/Qwen3.5-2B-4bit",
+        "674aaa7240b91e8012fcad5d791b7dfe5ba90207",
+        1607,
     ),
     "qwen3.5-0.8b-4bit": CleanupModel(
-        "mlx-community/Qwen3.5-0.8B-4bit", "da28692b5f139cb0ec58a356b437486b7dac7462"
+        "mlx-community/Qwen3.5-0.8B-4bit",
+        "da28692b5f139cb0ec58a356b437486b7dac7462",
+        1011,
     ),
 }
 DEFAULT_MODEL = "qwen3-4b-instruct-2507-4bit"

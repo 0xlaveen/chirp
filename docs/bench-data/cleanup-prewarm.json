@@ -1,0 +1,37 @@
+{
+  "label": "cleanup-prewarm-2026-10-17",
+  "host": "Apple M5 Pro, 64 GiB, macOS 27.0.1",
+  "note": "contended host; 1-minute loadavg 19.9-39.6 across all rows",
+  "memory_measurements": {
+    "definition": "helper current physical footprint via proc_pid_rusage(RUSAGE_INFO_V4).ri_phys_footprint, binary MiB; read by the server after load and refreshed after each generate (Activity Monitor Memory column). Replaces the earlier peak-RSS-plus-peak-Metal sum, which double-counted unified memory",
+    "models": {
+      "qwen3-4b-instruct-2507-4bit": {
+        "footprint_at_load_mb": 2440, "footprint_after_generate_mb": 2563,
+        "cold_load_s": 11.64, "loadavg": 37.7
+      },
+      "qwen3.5-2b-4bit": {
+        "footprint_at_load_mb": 1491, "footprint_after_generate_mb": 1607,
+        "cold_load_s": 12.72, "loadavg": 38.6
+      },
+      "qwen3.5-0.8b-4bit": {
+        "footprint_at_load_mb": 892, "footprint_after_generate_mb": 1011,
+        "cold_load_s": 15.60, "loadavg": 39.6
+      }
+    },
+    "superseded_metric_note": "an earlier draft summed ru_maxrss + mx.metal.get_peak_memory(): 4670/2616/1006 MiB, double-counting file-mapped weights"
+  },
+  "prewarm_first_final_after_idle_unload": {
+    "method": "real WebSocket path, fake ASR engine, real cached 4B helper; each measured utterance follows an idle unload; start -> ~3 s speech -> stop",
+    "runs": 3,
+    "no-prewarm": {
+      "stop_to_final_ms": {"median": 4930.5, "min": 3745.7, "max": 5020.5},
+      "correction_ms": {"median": 4927.8, "min": 3743.6, "max": 5018.8},
+      "corrected": 3, "raw_fallbacks": 0, "loadavg_min_max": [19.9, 24.7]
+    },
+    "prewarm": {
+      "stop_to_final_ms": {"median": 1709.8, "min": 740.1, "max": 5961.3},
+      "correction_ms": {"median": 1707.9, "min": 738.2, "max": 5954.1},
+      "corrected": 3, "raw_fallbacks": 0, "loadavg_min_max": [20.9, 24.5]
+    }
+  }
+}

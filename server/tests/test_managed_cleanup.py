@@ -1,5 +1,6 @@
 import asyncio
 import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -105,7 +106,11 @@ def test_managed_protocol(settings):
             ws.send_bytes(PCM)
             partial = ws.receive_json()
             assert partial["text"] == "please send the schedule"
-            assert corrector.managed.process is None
+            # The start itself prewarms the helper; the final reuses the warm load.
+            deadline = time.perf_counter() + 5
+            while not corrector.managed.loaded:
+                assert time.perf_counter() < deadline
+                time.sleep(0.01)
             ws.send_json({"type": "stop"})
             result = final(ws)
             assert result["corrected"] and result["raw"] == partial["text"]

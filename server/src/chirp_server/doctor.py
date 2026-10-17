@@ -18,7 +18,7 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 from .cli import LABEL
-from .config import Settings
+from .config import Settings, read_keep_loaded
 
 OK, WARN, FAIL = "OK", "WARN", "FAIL"
 DEFAULT_FIXTURE = Path.home() / "Library/Caches/Chirp/fixtures/synthetic-5s.wav"
@@ -230,13 +230,27 @@ def check_correction(settings: Settings) -> Check:
     if not config.enabled:
         return Check("correction", OK, "off; finals keep raw text on this machine")
     if config.mode == "managed":
-        from .cleanup_models import discover
+        from .cleanup_models import discover, model_spec
 
         try:
             discover(config.model)
         except ValueError:
             return Check("correction", WARN, "managed model missing", "run model fetch --cleanup")
-        return Check("correction", OK, "managed; final text stays on this machine")
+        # The effective keep_loaded is the client-persisted override, else server.toml.
+        override = read_keep_loaded(settings.state_path)
+        keep = override if override is not None else config.keep_loaded
+        source = "state override" if override is not None else "server.toml"
+        try:
+            estimate = model_spec(config.model).memory_mb
+        except ValueError:
+            estimate = None
+        memory = f"; loaded helper ≈ {estimate} MiB" if estimate else ""
+        return Check(
+            "correction",
+            OK,
+            f"managed; keep_loaded {'on' if keep else 'off'} ({source}){memory};"
+            " final text stays on this machine",
+        )
     host = urlsplit(config.base_url).hostname or "unknown host"
     if config.leaves_machine:
         return Check(
