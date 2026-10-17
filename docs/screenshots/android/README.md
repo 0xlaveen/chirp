@@ -75,3 +75,39 @@ The smoke intentionally resets only Chirp's data on the authorized disposable em
 The shell-only probe supplements stock `uiautomator dump`, which omits the IME window
 on this image. It is not packaged with the app. Neither release nor debug captures
 establish Samsung hardware microphone quality or Tailscale performance.
+
+## Fold function-key placement
+
+`fold-layout-{before,after}-{gboard,samsung}-{form}-{light,dark}.png` are direct
+release-APK captures on emulator-5580. `before` is unmodified 0.5.2; `after` includes
+the functional-layout fix without a version bump. Both looks use the same geometry.
+
+| Form | Display override | Density | Result before the fix |
+| --- | --- | --- | --- |
+| `avd-native` | reset (2076 × 2152) | reset (390 dpi) | Phone arrangement; about 851 dp smallest width |
+| `inner-portrait` | 1968 × 2184 | 420 dpi | Tablet arrangement; about 749 dp smallest width |
+| `inner-landscape` | 2184 × 1968 | 420 dpi | Tablet arrangement, split |
+| `cover-portrait` | 1080 × 2520 | 420 dpi | Phone arrangement |
+| `cover-landscape` | 2520 × 1080 | 420 dpi | Phone arrangement |
+
+The native AVD misses the bug: upstream's sw768dp metric is 2, below the tablet
+test of 3; sw600dp is 3. The representative inner overrides expose it. After the fix,
+Backspace aligns with Z–M and Enter aligns with space/period at bottom-right. Shift
+starts row three; the tablet-only punctuation and second Shift disappear. Portrait
+uses the full width with comfortable letter proportions; inner landscape keeps the
+existing split mode. Cover key coordinates are unchanged in both looks and themes.
+
+With the desired APK installed and toolchain sourced, regenerate either look:
+
+```sh
+android/scripts/build-ui-probe.sh
+python3 android/scripts/emulator-fold-layout.py --look gboard
+python3 android/scripts/emulator-fold-layout.py --look samsung
+# Add --before only when running the unmodified 0.5.2 baseline APK.
+```
+
+The helper asserts real accessibility key bounds, letter widths, bottom-row order
+and landscape split; it restores size, density, night mode and rotation settings.
+It selects the requested look through the production chooser and leaves it selected.
+The dimensions approximate the reported Fold inner screen; these are emulator
+layout checks, with hardware acceptance left to the operator.

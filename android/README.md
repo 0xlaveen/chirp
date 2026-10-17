@@ -35,6 +35,25 @@ system setting. Light/dark follows the system. The default look is **Gboard-like
 (see [Keyboard look](#keyboard-look-and-swipe-typing)). **Swipe typing is optional**: no gesture
 library is bundled, but setup and Chirp settings can load one the user supplies.
 
+Unfolding keeps the cover keyboard's function-key arrangement in both looks: Shift
+starts the third letter row, Backspace ends it, and Enter sits after the period at
+bottom-right. Chirp seeds HeliBoard's phone functional layout once; explicitly chosen
+global or per-language functional layouts remain yours. Inner landscape retains the
+existing split setting. See [Fold layout details](keyboard/UPSTREAM.md#fold-function-key-arrangement-2026-10-18)
+and the `fold-layout-*.png` before/after emulator captures.
+
+Fold-layout validation (2026-10-18): `lint testDebugUnitTest assembleDebug
+assembleRelease` passed (256 cases, zero failures/errors, two opt-in skips).
+Forty release screenshots cover before/after, both looks, light/dark, native AVD,
+inner portrait/landscape and cover portrait/landscape. Key geometry checks passed;
+cover and native-AVD coordinates remain unchanged. Release `emulator-smoke.sh` and
+the TLS stop matrix (`emulator-check.py --tls --stop-check`) passed on emulator-5580
+only. All eight stop scenarios delivered STOP and retired their stream, with clean
+Chirp crash/Diagnostics checks under StrictMode network death. The disposable server
+reported `engine` during polishing and `bad_audio` during focus teardown; the matrix
+checks stop/teardown safety rather than correction quality. No phone or emulator-5582
+was used, and the version remains 0.5.2 (8).
+
 Setup opens the first unfinished prerequisite and advances after returning from system
 settings. QR pairing is primary; paste is secondary. A saved pairing shows the Mac host
 and reported engine. HeliBoard settings start with a Chirp section: pairing, test
