@@ -21,7 +21,10 @@ def generate(line, model, tokenizer, sampler):
     request = json.loads(line)
     messages = [
         {"role": "system", "content": request["system"]},
-        {"role": "user", "content": "Transcript JSON: " + json.dumps(request["text"])},
+        {
+            "role": "user",
+            "content": "Transcript JSON: " + json.dumps(request["text"], ensure_ascii=False),
+        },
     ]
     tokens = tokenizer.apply_chat_template(
         messages,

@@ -1,0 +1,1016 @@
+{
+  "baseline_source": "a88617a",
+  "cases": 40,
+  "repetitions": 1,
+  "validation": {
+    "unit_passed": 143,
+    "model_passed": 5,
+    "ruff_check": "passed",
+    "ruff_format": "passed",
+    "uv_sync_locked": "passed"
+  },
+  "runs": [
+    {
+      "label": "baseline",
+      "model": "qwen3-4b-instruct-2507-4bit",
+      "cold_ms": 18899.2,
+      "cold_error": null,
+      "warm_median_ms": 371.6,
+      "warm_min_ms": 213.9,
+      "warm_max_ms": 908.4,
+      "runs": 40,
+      "passed": 19,
+      "exact": 19,
+      "near": 20,
+      "must_keep": 24,
+      "must_drop": 38,
+      "unchanged": 35,
+      "rejected": 0,
+      "failures": [
+        {
+          "id": "hedged-repair",
+          "error": null
+        },
+        {
+          "id": "literal-like",
+          "error": null
+        },
+        {
+          "id": "filler-you-know",
+          "error": null
+        },
+        {
+          "id": "meaningful-repetition",
+          "error": null
+        },
+        {
+          "id": "number-repair",
+          "error": null
+        },
+        {
+          "id": "multi-repair",
+          "error": null
+        },
+        {
+          "id": "hedged-repair-long",
+          "error": null
+        },
+        {
+          "id": "hedges",
+          "error": null
+        },
+        {
+          "id": "ordered-list",
+          "error": null
+        },
+        {
+          "id": "question-command",
+          "error": null
+        },
+        {
+          "id": "spoken-filename",
+          "error": null
+        },
+        {
+          "id": "spoken-command",
+          "error": null
+        },
+        {
+          "id": "literal-code",
+          "error": null
+        },
+        {
+          "id": "spoken-numbers",
+          "error": null
+        },
+        {
+          "id": "names",
+          "error": null
+        },
+        {
+          "id": "run-on",
+          "error": null
+        },
+        {
+          "id": "multi-clause",
+          "error": null
+        },
+        {
+          "id": "already-clean-question",
+          "error": null
+        },
+        {
+          "id": "profanity",
+          "error": null
+        },
+        {
+          "id": "code-switch",
+          "error": null
+        },
+        {
+          "id": "literal-repair-words",
+          "error": null
+        }
+      ],
+      "loadavg_min_max": [
+        33.5,
+        35.3
+      ]
+    },
+    {
+      "label": "baseline",
+      "model": "qwen3.5-2b-4bit",
+      "cold_ms": 6257.9,
+      "cold_error": null,
+      "warm_median_ms": 157.5,
+      "warm_min_ms": 94.3,
+      "warm_max_ms": 372.7,
+      "runs": 40,
+      "passed": 15,
+      "exact": 15,
+      "near": 18,
+      "must_keep": 31,
+      "must_drop": 17,
+      "unchanged": 39,
+      "rejected": 1,
+      "failures": [
+        {
+          "id": "hedged-repair",
+          "error": null
+        },
+        {
+          "id": "filler-like",
+          "error": null
+        },
+        {
+          "id": "filler-you-know",
+          "error": null
+        },
+        {
+          "id": "name-repair",
+          "error": null
+        },
+        {
+          "id": "number-repair",
+          "error": "rejected"
+        },
+        {
+          "id": "multi-repair",
+          "error": null
+        },
+        {
+          "id": "hedged-repair-long",
+          "error": null
+        },
+        {
+          "id": "hedges",
+          "error": null
+        },
+        {
+          "id": "list",
+          "error": null
+        },
+        {
+          "id": "ordered-list",
+          "error": null
+        },
+        {
+          "id": "question",
+          "error": null
+        },
+        {
+          "id": "command",
+          "error": null
+        },
+        {
+          "id": "instruction-data",
+          "error": null
+        },
+        {
+          "id": "spoken-filename",
+          "error": null
+        },
+        {
+          "id": "spoken-command",
+          "error": null
+        },
+        {
+          "id": "technical",
+          "error": null
+        },
+        {
+          "id": "url",
+          "error": null
+        },
+        {
+          "id": "date",
+          "error": null
+        },
+        {
+          "id": "names",
+          "error": null
+        },
+        {
+          "id": "multi-clause",
+          "error": null
+        },
+        {
+          "id": "profanity",
+          "error": null
+        },
+        {
+          "id": "non-english",
+          "error": null
+        },
+        {
+          "id": "code-switch",
+          "error": null
+        },
+        {
+          "id": "unfinished",
+          "error": null
+        },
+        {
+          "id": "literal-repair-words",
+          "error": null
+        }
+      ],
+      "loadavg_min_max": [
+        29.9,
+        31.9
+      ]
+    },
+    {
+      "label": "baseline",
+      "model": "qwen3.5-0.8b-4bit",
+      "cold_ms": 2543.4,
+      "cold_error": null,
+      "warm_median_ms": 77.2,
+      "warm_min_ms": 50.0,
+      "warm_max_ms": 153.1,
+      "runs": 40,
+      "passed": 17,
+      "exact": 17,
+      "near": 20,
+      "must_keep": 30,
+      "must_drop": 27,
+      "unchanged": 40,
+      "rejected": 5,
+      "failures": [
+        {
+          "id": "hedged-repair",
+          "error": null
+        },
+        {
+          "id": "simple-fillers",
+          "error": null
+        },
+        {
+          "id": "stutter",
+          "error": "rejected"
+        },
+        {
+          "id": "name-repair",
+          "error": null
+        },
+        {
+          "id": "number-repair",
+          "error": null
+        },
+        {
+          "id": "multi-repair",
+          "error": "rejected"
+        },
+        {
+          "id": "hedged-repair-long",
+          "error": "rejected"
+        },
+        {
+          "id": "hedges",
+          "error": null
+        },
+        {
+          "id": "negative",
+          "error": null
+        },
+        {
+          "id": "list",
+          "error": null
+        },
+        {
+          "id": "instruction-data",
+          "error": "rejected"
+        },
+        {
+          "id": "spoken-filename",
+          "error": null
+        },
+        {
+          "id": "technical",
+          "error": null
+        },
+        {
+          "id": "url",
+          "error": null
+        },
+        {
+          "id": "numbers",
+          "error": null
+        },
+        {
+          "id": "date",
+          "error": null
+        },
+        {
+          "id": "spoken-numbers",
+          "error": null
+        },
+        {
+          "id": "names",
+          "error": null
+        },
+        {
+          "id": "run-on",
+          "error": null
+        },
+        {
+          "id": "multi-clause",
+          "error": null
+        },
+        {
+          "id": "profanity",
+          "error": null
+        },
+        {
+          "id": "non-english",
+          "error": "rejected"
+        },
+        {
+          "id": "unfinished",
+          "error": null
+        }
+      ],
+      "loadavg_min_max": [
+        28.5,
+        29.9
+      ]
+    },
+    {
+      "label": "tuned-v1",
+      "model": "qwen3-4b-instruct-2507-4bit",
+      "cold_ms": 5216.5,
+      "cold_error": null,
+      "warm_median_ms": 512.5,
+      "warm_min_ms": 369.7,
+      "warm_max_ms": 1288.2,
+      "runs": 40,
+      "passed": 37,
+      "exact": 37,
+      "near": 37,
+      "must_keep": 40,
+      "must_drop": 37,
+      "unchanged": 40,
+      "rejected": 2,
+      "failures": [
+        {
+          "id": "hedged-repair",
+          "error": null
+        },
+        {
+          "id": "names",
+          "error": "rejected"
+        },
+        {
+          "id": "code-switch",
+          "error": "rejected"
+        }
+      ],
+      "loadavg_min_max": [
+        17.4,
+        24.0
+      ]
+    },
+    {
+      "label": "tuned-v1",
+      "model": "qwen3.5-2b-4bit",
+      "cold_ms": 6943.1,
+      "cold_error": null,
+      "warm_median_ms": 251.0,
+      "warm_min_ms": 173.2,
+      "warm_max_ms": 439.1,
+      "runs": 40,
+      "passed": 24,
+      "exact": 23,
+      "near": 25,
+      "must_keep": 37,
+      "must_drop": 24,
+      "unchanged": 40,
+      "rejected": 3,
+      "failures": [
+        {
+          "id": "hedged-repair",
+          "error": null
+        },
+        {
+          "id": "filler-like",
+          "error": null
+        },
+        {
+          "id": "name-repair",
+          "error": null
+        },
+        {
+          "id": "number-repair",
+          "error": null
+        },
+        {
+          "id": "multi-repair",
+          "error": null
+        },
+        {
+          "id": "hedged-repair-long",
+          "error": null
+        },
+        {
+          "id": "negative",
+          "error": null
+        },
+        {
+          "id": "list",
+          "error": null
+        },
+        {
+          "id": "question",
+          "error": null
+        },
+        {
+          "id": "spoken-command",
+          "error": "rejected"
+        },
+        {
+          "id": "url",
+          "error": null
+        },
+        {
+          "id": "date",
+          "error": null
+        },
+        {
+          "id": "names",
+          "error": "rejected"
+        },
+        {
+          "id": "multi-clause",
+          "error": null
+        },
+        {
+          "id": "profanity",
+          "error": null
+        },
+        {
+          "id": "non-english",
+          "error": "rejected"
+        }
+      ],
+      "loadavg_min_max": [
+        23.2,
+        24.3
+      ]
+    },
+    {
+      "label": "tuned-v1",
+      "model": "qwen3.5-0.8b-4bit",
+      "cold_ms": 3765.3,
+      "cold_error": "rejected",
+      "warm_median_ms": 166.9,
+      "warm_min_ms": 110.2,
+      "warm_max_ms": 542.8,
+      "runs": 40,
+      "passed": 20,
+      "exact": 20,
+      "near": 22,
+      "must_keep": 36,
+      "must_drop": 20,
+      "unchanged": 40,
+      "rejected": 6,
+      "failures": [
+        {
+          "id": "hedged-repair",
+          "error": "rejected"
+        },
+        {
+          "id": "filler-like",
+          "error": null
+        },
+        {
+          "id": "day-repair",
+          "error": null
+        },
+        {
+          "id": "name-repair",
+          "error": null
+        },
+        {
+          "id": "number-repair",
+          "error": null
+        },
+        {
+          "id": "multi-repair",
+          "error": null
+        },
+        {
+          "id": "hedged-repair-long",
+          "error": null
+        },
+        {
+          "id": "negative",
+          "error": null
+        },
+        {
+          "id": "list",
+          "error": null
+        },
+        {
+          "id": "question",
+          "error": "rejected"
+        },
+        {
+          "id": "instruction-data",
+          "error": null
+        },
+        {
+          "id": "spoken-filename",
+          "error": null
+        },
+        {
+          "id": "technical",
+          "error": null
+        },
+        {
+          "id": "url",
+          "error": "rejected"
+        },
+        {
+          "id": "numbers",
+          "error": null
+        },
+        {
+          "id": "names",
+          "error": "rejected"
+        },
+        {
+          "id": "multi-clause",
+          "error": null
+        },
+        {
+          "id": "profanity",
+          "error": null
+        },
+        {
+          "id": "non-english",
+          "error": "rejected"
+        },
+        {
+          "id": "code-switch",
+          "error": "rejected"
+        }
+      ],
+      "loadavg_min_max": [
+        22.9,
+        23.5
+      ]
+    },
+    {
+      "label": "tuned-v2",
+      "model": "qwen3-4b-instruct-2507-4bit",
+      "cold_ms": 10162.3,
+      "cold_error": null,
+      "warm_median_ms": 542.3,
+      "warm_min_ms": 390.3,
+      "warm_max_ms": 943.4,
+      "runs": 40,
+      "passed": 40,
+      "exact": 40,
+      "near": 40,
+      "must_keep": 40,
+      "must_drop": 40,
+      "unchanged": 40,
+      "rejected": 0,
+      "failures": [],
+      "loadavg_min_max": [
+        32.2,
+        36.1
+      ]
+    },
+    {
+      "label": "tuned-v2",
+      "model": "qwen3.5-2b-4bit",
+      "cold_ms": 4339.9,
+      "cold_error": null,
+      "warm_median_ms": 237.7,
+      "warm_min_ms": 178.3,
+      "warm_max_ms": 455.3,
+      "runs": 40,
+      "passed": 24,
+      "exact": 23,
+      "near": 25,
+      "must_keep": 37,
+      "must_drop": 24,
+      "unchanged": 40,
+      "rejected": 2,
+      "failures": [
+        {
+          "id": "hedged-repair",
+          "error": null
+        },
+        {
+          "id": "filler-like",
+          "error": null
+        },
+        {
+          "id": "name-repair",
+          "error": null
+        },
+        {
+          "id": "number-repair",
+          "error": null
+        },
+        {
+          "id": "multi-repair",
+          "error": null
+        },
+        {
+          "id": "hedged-repair-long",
+          "error": null
+        },
+        {
+          "id": "negative",
+          "error": null
+        },
+        {
+          "id": "list",
+          "error": null
+        },
+        {
+          "id": "question",
+          "error": null
+        },
+        {
+          "id": "spoken-command",
+          "error": "rejected"
+        },
+        {
+          "id": "url",
+          "error": null
+        },
+        {
+          "id": "names",
+          "error": null
+        },
+        {
+          "id": "multi-clause",
+          "error": null
+        },
+        {
+          "id": "profanity",
+          "error": null
+        },
+        {
+          "id": "non-english",
+          "error": "rejected"
+        },
+        {
+          "id": "code-switch",
+          "error": null
+        }
+      ],
+      "loadavg_min_max": [
+        29.3,
+        31.4
+      ]
+    },
+    {
+      "label": "tuned-v2",
+      "model": "qwen3.5-0.8b-4bit",
+      "cold_ms": 3182.4,
+      "cold_error": null,
+      "warm_median_ms": 157.2,
+      "warm_min_ms": 98.4,
+      "warm_max_ms": 718.2,
+      "runs": 40,
+      "passed": 19,
+      "exact": 19,
+      "near": 22,
+      "must_keep": 37,
+      "must_drop": 19,
+      "unchanged": 40,
+      "rejected": 7,
+      "failures": [
+        {
+          "id": "hedged-repair",
+          "error": null
+        },
+        {
+          "id": "filler-like",
+          "error": null
+        },
+        {
+          "id": "day-repair",
+          "error": null
+        },
+        {
+          "id": "name-repair",
+          "error": null
+        },
+        {
+          "id": "number-repair",
+          "error": null
+        },
+        {
+          "id": "multi-repair",
+          "error": null
+        },
+        {
+          "id": "hedged-repair-long",
+          "error": null
+        },
+        {
+          "id": "hedges",
+          "error": "rejected"
+        },
+        {
+          "id": "negative",
+          "error": null
+        },
+        {
+          "id": "list",
+          "error": null
+        },
+        {
+          "id": "question",
+          "error": "rejected"
+        },
+        {
+          "id": "instruction-data",
+          "error": null
+        },
+        {
+          "id": "spoken-filename",
+          "error": null
+        },
+        {
+          "id": "technical",
+          "error": null
+        },
+        {
+          "id": "url",
+          "error": "rejected"
+        },
+        {
+          "id": "numbers",
+          "error": null
+        },
+        {
+          "id": "names",
+          "error": "rejected"
+        },
+        {
+          "id": "multi-clause",
+          "error": null
+        },
+        {
+          "id": "profanity",
+          "error": "rejected"
+        },
+        {
+          "id": "non-english",
+          "error": "rejected"
+        },
+        {
+          "id": "code-switch",
+          "error": "rejected"
+        }
+      ],
+      "loadavg_min_max": [
+        27.6,
+        29.1
+      ]
+    },
+    {
+      "label": "final",
+      "model": "qwen3-4b-instruct-2507-4bit",
+      "cold_ms": 2563.4,
+      "cold_error": null,
+      "warm_median_ms": 397.8,
+      "warm_min_ms": 309.4,
+      "warm_max_ms": 702.2,
+      "runs": 40,
+      "passed": 40,
+      "exact": 40,
+      "near": 40,
+      "must_keep": 40,
+      "must_drop": 40,
+      "unchanged": 40,
+      "rejected": 0,
+      "failures": [],
+      "loadavg_min_max": [
+        13.1,
+        14.8
+      ]
+    },
+    {
+      "label": "final",
+      "model": "qwen3.5-2b-4bit",
+      "cold_ms": 2592.2,
+      "cold_error": null,
+      "warm_median_ms": 190.7,
+      "warm_min_ms": 137.3,
+      "warm_max_ms": 343.2,
+      "runs": 40,
+      "passed": 23,
+      "exact": 22,
+      "near": 24,
+      "must_keep": 37,
+      "must_drop": 23,
+      "unchanged": 40,
+      "rejected": 2,
+      "failures": [
+        {
+          "id": "hedged-repair",
+          "error": null
+        },
+        {
+          "id": "filler-like",
+          "error": null
+        },
+        {
+          "id": "name-repair",
+          "error": null
+        },
+        {
+          "id": "number-repair",
+          "error": null
+        },
+        {
+          "id": "multi-repair",
+          "error": null
+        },
+        {
+          "id": "hedged-repair-long",
+          "error": null
+        },
+        {
+          "id": "negative",
+          "error": null
+        },
+        {
+          "id": "list",
+          "error": null
+        },
+        {
+          "id": "question",
+          "error": null
+        },
+        {
+          "id": "command",
+          "error": null
+        },
+        {
+          "id": "spoken-command",
+          "error": "rejected"
+        },
+        {
+          "id": "url",
+          "error": null
+        },
+        {
+          "id": "names",
+          "error": null
+        },
+        {
+          "id": "multi-clause",
+          "error": null
+        },
+        {
+          "id": "profanity",
+          "error": null
+        },
+        {
+          "id": "non-english",
+          "error": "rejected"
+        },
+        {
+          "id": "code-switch",
+          "error": null
+        }
+      ],
+      "loadavg_min_max": [
+        14.8,
+        15.7
+      ]
+    },
+    {
+      "label": "final",
+      "model": "qwen3.5-0.8b-4bit",
+      "cold_ms": 1944.5,
+      "cold_error": "rejected",
+      "warm_median_ms": 91.7,
+      "warm_min_ms": 73.8,
+      "warm_max_ms": 170.9,
+      "runs": 40,
+      "passed": 20,
+      "exact": 20,
+      "near": 23,
+      "must_keep": 36,
+      "must_drop": 20,
+      "unchanged": 40,
+      "rejected": 7,
+      "failures": [
+        {
+          "id": "hedged-repair",
+          "error": "rejected"
+        },
+        {
+          "id": "filler-like",
+          "error": null
+        },
+        {
+          "id": "day-repair",
+          "error": null
+        },
+        {
+          "id": "name-repair",
+          "error": null
+        },
+        {
+          "id": "number-repair",
+          "error": null
+        },
+        {
+          "id": "multi-repair",
+          "error": null
+        },
+        {
+          "id": "hedged-repair-long",
+          "error": null
+        },
+        {
+          "id": "hedges",
+          "error": "rejected"
+        },
+        {
+          "id": "negative",
+          "error": null
+        },
+        {
+          "id": "list",
+          "error": null
+        },
+        {
+          "id": "question",
+          "error": "rejected"
+        },
+        {
+          "id": "instruction-data",
+          "error": null
+        },
+        {
+          "id": "spoken-filename",
+          "error": null
+        },
+        {
+          "id": "technical",
+          "error": null
+        },
+        {
+          "id": "url",
+          "error": "rejected"
+        },
+        {
+          "id": "numbers",
+          "error": null
+        },
+        {
+          "id": "multi-clause",
+          "error": null
+        },
+        {
+          "id": "profanity",
+          "error": "rejected"
+        },
+        {
+          "id": "non-english",
+          "error": "rejected"
+        },
+        {
+          "id": "code-switch",
+          "error": "rejected"
+        }
+      ],
+      "loadavg_min_max": [
+        15.4,
+        15.4
+      ]
+    }
+  ]
+}
