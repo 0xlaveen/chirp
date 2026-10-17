@@ -195,7 +195,21 @@ class Utterance:
         if self.cancelled:
             return self.discard()
         if not self.pcm:
-            raise AudioError()
+            # A tap released before the first audio frame: an empty final, not a protocol error.
+            await self.worker.call(self.stream.cancel)
+            self.stream = None
+            self.release()
+            return await make_final(
+                "",
+                b"",
+                self.first_partial,
+                started,
+                self.corrector,
+                False,
+                self.profile,
+                self.instructions,
+                self.correction_prompt,
+            )
         if self.offset < len(self.pcm):
             pending = samples(bytes(self.pcm[self.offset :]))
             buffer = getattr(self.stream, "buffer", self.stream.feed)

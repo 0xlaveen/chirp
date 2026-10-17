@@ -295,6 +295,9 @@ final class DictationController {
         case "auth": "Server rejected the token (check ~/.config/chirp/token)"
         case "busy": "Server is busy — try again"
         case "too_long": "Utterance too long"
+        case "bad_audio": "Didn't catch that — try again"
+        case "bad_request": "Clean-up prompt is too long"
+        case "engine": "Speech engine hiccup — try again"
         default: message
         }
     }

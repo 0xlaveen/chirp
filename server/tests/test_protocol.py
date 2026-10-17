@@ -354,3 +354,16 @@ def test_stable_prefix_update_emits_during_pause(settings):
             assert frozen["stable"] == frozen["text"]
             ws.send_json({"type": "stop"})
             assert final(ws)["raw"].startswith(frozen["stable"])
+
+
+def test_stop_before_any_audio_returns_empty_final_and_socket_stays_usable(client):
+    # A quick tap can release the hotkey before the first PCM frame is sent.
+    with client.websocket_connect("/v1/stream", headers=HEADERS) as ws:
+        ws.send_json(START)
+        assert ws.receive_json()["type"] == "ready"
+        ws.send_json({"type": "stop"})
+        final = ws.receive_json()
+        assert final["type"] == "final"
+        assert final["text"] == "" and final["raw"] == ""
+        ws.send_json(START)
+        assert ws.receive_json()["type"] == "ready"
