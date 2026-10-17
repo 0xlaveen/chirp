@@ -163,7 +163,10 @@ public enum Snapshots {
             $0.cleanupEnabled = true
             $0.catalog = StyleCatalog(profiles: samplePrompts, source: .live)
             $0.cleanupDetail = "Runs on this Mac: tidies punctuation and wording before the text is inserted."
+            $0.keepLoaded = KeepLoadedState(settings: CleanupModelSettings(keepLoaded: true, loaded: true, model: "qwen3-4b", memoryMB: 2662),
+                                            availability: .available)
         }
+        let warmOff = CleanupModelSettings(keepLoaded: false, model: "qwen3-4b", memoryMB: 2662, memoryEstimated: true)
         return [
             form("ready", .general) { _ in },
             form("custom-hotkey", .general) { $0.hotkey = .custom(keyCode: 0x0F, modifiers: UInt32(controlKey | optionKey | cmdKey)) },   // ⌃⌥⌘R
@@ -204,6 +207,23 @@ public enum Snapshots {
                 $0.catalog = StyleCatalog(profiles: samplePrompts, source: .cached)
                 $0.editingStyle = "code"
             },
+            form("warm-off", .cleanup) { styled(&$0); $0.keepLoaded = KeepLoadedState(settings: warmOff, availability: .available) },
+            form("warm-loading", .cleanup) {
+                styled(&$0)
+                $0.keepLoaded = KeepLoadedState(settings: CleanupModelSettings(keepLoaded: true, loading: true, model: "qwen3-4b", memoryMB: 2662, memoryEstimated: true),
+                                                availability: .available)
+            },
+            form("warm-remote-host", .cleanup) {
+                styled(&$0); $0.serverHost = "mainframe.example.ts.net"
+                $0.keepLoaded = KeepLoadedState(settings: CleanupModelSettings(keepLoaded: true, loaded: true, model: "qwen3-4b", memoryMB: 2662),
+                                                availability: .available)
+            },
+            form("warm-error", .cleanup) {
+                styled(&$0)
+                $0.keepLoaded = KeepLoadedState(settings: warmOff, availability: .available, error: CleanupSettingsError.unreachable.changeFailure)
+            },
+            form("warm-old-server", .cleanup) { styled(&$0); $0.keepLoaded = KeepLoadedState(availability: .unavailable(.serverTooOld)) },
+            form("warm-remote-model", .cleanup) { styled(&$0); $0.keepLoaded = KeepLoadedState(availability: .unavailable(.remoteModel)) },
             form("no-styles", .cleanup) {
                 $0.cleanupEnabled = true; $0.cleanupStyle = "notes"; $0.serverOffersStyles = false
             },

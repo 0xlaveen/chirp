@@ -6,6 +6,8 @@ import AppKit
 public final class SettingsTabController: NSViewController {
     public let tab: SettingsTab
     private let form: SettingsForm
+    /// The tab's content came on screen (the user chose it, or the window opened on it).
+    public var onAppear: ((SettingsTab) -> Void)?
 
     public init(tab: SettingsTab, form: SettingsForm) {
         self.tab = tab
@@ -41,6 +43,11 @@ public final class SettingsTabController: NSViewController {
         }
     }
 
+    override public func viewDidAppear() {
+        super.viewDidAppear()
+        onAppear?(tab)
+    }
+
     /// The content changed height (the Custom sound rows appeared): measure it again.
     public func refreshSize() {
         guard isViewLoaded else { return }
@@ -58,12 +65,14 @@ public final class SettingsTabController: NSViewController {
 /// window takes the selected tab's title and size.
 @MainActor
 public enum SettingsTabs {
-    public static func makeController(form: SettingsForm) -> NSTabViewController {
+    public static func makeController(form: SettingsForm, onAppear: ((SettingsTab) -> Void)? = nil) -> NSTabViewController {
         let controller = NSTabViewController()
         controller.tabStyle = .toolbar
         controller.transitionOptions = []
         for tab in SettingsTab.allCases {
-            let item = NSTabViewItem(viewController: SettingsTabController(tab: tab, form: form))
+            let tabController = SettingsTabController(tab: tab, form: form)
+            tabController.onAppear = onAppear
+            let item = NSTabViewItem(viewController: tabController)
             item.label = tab.title
             item.image = NSImage(systemSymbolName: tab.symbol, accessibilityDescription: tab.title)
             item.toolTip = tab.title

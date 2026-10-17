@@ -223,7 +223,7 @@ import Testing
         }
     }
 
-    @Test(arguments: [(SettingsTab.general, SoundPack.chirp, 3), (.sounds, .chirp, 3), (.sounds, .custom, 5), (.cleanup, .chirp, 7),
+    @Test(arguments: [(SettingsTab.general, SoundPack.chirp, 3), (.sounds, .chirp, 3), (.sounds, .custom, 5), (.cleanup, .chirp, 8),
                       (.server, .chirp, 4), (.permissions, .chirp, 2)])
     func labelsShareARightEdgeAndControlsALeftEdge(tab: SettingsTab, pack: SoundPack, expectedLabels: Int) throws {
         var state = SettingsState()

@@ -134,10 +134,13 @@ public struct Health: Decodable, Sendable, Equatable {
     public var correctionHost: String?
     /// The clean-up styles the server offers; nil from a server that predates them.
     public var correctionProfiles: [CorrectionProfile]?
+    /// Authenticated health only; nil from a server that predates "keep clean-up model loaded".
+    public var correctionKeepLoaded: Bool?
+    public var correctionLoaded: Bool?
 
     public init(ok: Bool = true, engine: String? = nil, ready: Bool? = nil, debugRetention: Bool? = nil,
                 correction: String? = nil, correctionLeavesMachine: Bool? = nil, correctionHost: String? = nil,
-                correctionProfiles: [CorrectionProfile]? = nil) {
+                correctionProfiles: [CorrectionProfile]? = nil, correctionKeepLoaded: Bool? = nil, correctionLoaded: Bool? = nil) {
         self.ok = ok
         self.engine = engine
         self.ready = ready
@@ -146,6 +149,8 @@ public struct Health: Decodable, Sendable, Equatable {
         self.correctionLeavesMachine = correctionLeavesMachine
         self.correctionHost = correctionHost
         self.correctionProfiles = correctionProfiles
+        self.correctionKeepLoaded = correctionKeepLoaded
+        self.correctionLoaded = correctionLoaded
     }
 
     public var correctionAvailable: Bool { correction == "available" }
