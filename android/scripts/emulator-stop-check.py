@@ -80,6 +80,7 @@ def check(probe, work, expect_crash=False):
         state = json.loads((work / 'events.json').read_text())
         print('Stop:', case, '; content-free server state:', state, flush=True)
         assert state['correction_requested'], 'On-Mac clean-up was not on by default'
+        assert state['stop'], 'Server never received STOP: ' + case
         if case == 'immediate':
             assert state['stop'] and state['frames'] == 0, 'Immediate stop sent audio or missed STOP'
             assert state['empty'] or state['error'] == 'bad_audio', 'Missing empty final / old error'
