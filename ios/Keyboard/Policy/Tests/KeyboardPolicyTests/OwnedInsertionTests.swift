@@ -57,9 +57,9 @@ func refusesUncertainInitialContext(_ mode: Int) {
     case 1: cursor.after = nil
     case 2: cursor.selection = "selected"
     case 3: cursor.uncertain = true
-    case 4: cursor.before = String(repeating: "a", count: 256)
-    case 5: cursor.after = String(repeating: "a", count: 256)
-    default: cursor.before = String(repeating: "👩", count: 128)
+    case 4: cursor.before = String(repeating: "a", count: InsertionLimits.maximumContextUTF16 + 1)
+    case 5: cursor.after = String(repeating: "a", count: InsertionLimits.maximumContextUTF16 + 1)
+    default: cursor.before = String(repeating: "👩", count: InsertionLimits.maximumContextUTF16 / 2 + 1)
     }
     var policy = OwnedInsertion()
     let began = policy.begin(generation: UUID(), utteranceID: UUID(), context: cursor, now: Date())
@@ -185,7 +185,7 @@ func editsOrFieldChangesNeverAuthorizeReplacement(_ mode: Int) {
 @Test func oversizedResultsPreserveExistingContentForManualRecovery() {
     var f = Fixture()
     #expect(f.apply(f.event("mine")) != nil)
-    #expect(f.apply(f.event(String(repeating: "x", count: 192), kind: .final, sequence: 1)) == nil)
+    #expect(f.apply(f.event(String(repeating: "x", count: InsertionLimits.maximumResultUTF16 + 1), kind: .final, sequence: 1)) == nil)
     #expect(f.cursor.before == "A: mine")
     #expect(f.policy.requiresRecovery)
 }
@@ -212,4 +212,28 @@ func graphemeCannotAbsorbUserAnchor(_ suffix: String) {
     #expect(!cursor.isUsable)
     cursor.before = "👩\u{200d}"; cursor.after = "💻"
     #expect(!cursor.isUsable)
+}
+
+@Test(arguments: ["a", "👩", "界"])
+func resultBoundsAcceptBoundaryAndRefuseUnicodeOverflowBeforeAnyEdit(_ unit: String) {
+    var f = Fixture()
+    let fitting = String(repeating: unit, count: InsertionLimits.maximumResultUTF16 / unit.utf16.count)
+    #expect(fitting.utf16.count == InsertionLimits.maximumResultUTF16)
+    // 8192 UTF16 implies at most 24576 UTF8 bytes (BMP scalars use at
+    // most three each); emoji uses four bytes for two UTF16 units.
+    #expect(fitting.utf8.count <= InsertionLimits.maximumResultUTF8)
+    #expect(f.apply(f.event(fitting)) != nil)
+    let prior = f.cursor
+    #expect(f.apply(f.event(fitting + unit, kind: .final, sequence: 1)) == nil)
+    #expect(f.cursor == prior)
+    #expect(f.policy.requiresRecovery)
+}
+
+@Test func emojiBeyondBridgeByteLimitCannotPlanAnyWrite() {
+    var f = Fixture()
+    let tooLarge = String(repeating: "👩", count: InsertionLimits.maximumResultUTF8 / 4 + 1)
+    #expect(tooLarge.utf8.count > InsertionLimits.maximumResultUTF8)
+    #expect(f.apply(f.event(tooLarge)) == nil)
+    #expect(f.cursor.before == "A: ")
+    #expect(f.policy.requiresRecovery)
 }

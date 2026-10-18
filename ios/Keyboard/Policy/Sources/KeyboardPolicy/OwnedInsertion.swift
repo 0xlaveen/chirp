@@ -1,8 +1,15 @@
 import Foundation
 
-/// Only short, exactly reproducible contexts qualify. UIKit does not report whether
-/// its context is complete. A moving/truncated window therefore loses ownership;
-/// the limit is a conservative refusal threshold, not proof of completeness.
+/// Resource bounds accommodate multi-sentence dictation within the app's 120-second
+/// utterance limit. They are not evidence that a host context is complete.
+public enum InsertionLimits {
+    public static let maximumResultUTF16 = 8_192
+    public static let maximumResultUTF8 = 65_536 // SharedBridge publication limit.
+    public static let maximumContextUTF16 = 16_384
+}
+
+/// UIKit does not report whether its context is complete. A moving/truncated
+/// window therefore loses ownership even when it is below the resource bounds.
 public struct CursorContext: Equatable, Sendable {
     public var documentID: UUID
     public var before: String?
@@ -21,7 +28,9 @@ public struct CursorContext: Equatable, Sendable {
 
     public var isUsable: Bool {
         guard !uncertain, let before, let after else { return false }
-        return (selection ?? "").isEmpty && before.utf16.count < 256 && after.utf16.count < 256 &&
+        return (selection ?? "").isEmpty &&
+            before.utf16.count <= InsertionLimits.maximumContextUTF16 &&
+            after.utf16.count <= InsertionLimits.maximumContextUTF16 &&
             (before + after).count == before.count + after.count
     }
 }
@@ -115,8 +124,11 @@ public struct OwnedInsertion: Sendable {
             return nil
         }
         guard event.kind != .raw || (isFinal && rawRequested), context.isUsable,
-              let expected, context == expected, event.text.utf16.count < 192,
-              ((expected.before ?? "").utf16.count - ownedText.utf16.count + event.text.utf16.count) < 256 else {
+              let expected, context == expected,
+              event.text.utf16.count <= InsertionLimits.maximumResultUTF16,
+              event.text.utf8.count <= InsertionLimits.maximumResultUTF8,
+              ((expected.before ?? "").utf16.count - ownedText.utf16.count + event.text.utf16.count)
+                <= InsertionLimits.maximumContextUTF16 else {
             invalidate(); return nil
         }
         let anchor = String((expected.before ?? "").dropLast(ownedText.count))

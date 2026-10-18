@@ -8,13 +8,17 @@ private final class FakeProxy {
     var deletes = 0
     var inserts = 0
     var afterDelete: ((FakeProxy) -> Void)?
+    var contextWindow: Int?
 
     func delete() {
         deletes += 1
         cursor.before?.removeLast()
         afterDelete?(self)
     }
-    func insert(_ text: String) { inserts += 1; cursor.before = (cursor.before ?? "") + text }
+    func insert(_ text: String) {
+        inserts += 1; cursor.before = (cursor.before ?? "") + text
+        if let contextWindow { cursor.before = String((cursor.before ?? "").suffix(contextWindow)) }
+    }
     func apply(_ plan: EditPlan) -> Bool {
         VerifiedEditor.apply(plan, context: { self.cursor }, deleteBackward: { self.delete() }, insertText: { self.insert($0) })
     }
@@ -110,4 +114,77 @@ func cancelAndEndAfterFinalOrRawPreserveCommittedText(_ useRaw: Bool) {
     #expect(cursor == committed)
     policy.invalidate() // End session only invalidates; it does not request an edit.
     #expect(cursor == committed)
+}
+
+@MainActor
+@Test func twoThousandCharacterUtteranceSupportsEveryReplacementAndRaw() throws {
+    let started = ContinuousClock.now
+    defer { print("2K partial/correcting/final/raw executor duration: \(started.duration(to: .now))") }
+    let proxy = FakeProxy()
+    // Exercise an existing document context larger than the previous 256-unit cap.
+    let anchor = String(repeating: "Existing user content. ", count: 30)
+    proxy.cursor.before = anchor
+    proxy.cursor.after = String(repeating: "Following user content. ", count: 30)
+    let after = proxy.cursor.after
+    let now = Date(timeIntervalSince1970: 100)
+    let generation = UUID(), utterance = UUID()
+    var policy = OwnedInsertion()
+    let began = policy.begin(generation: generation, utteranceID: utterance, context: proxy.cursor, now: now)
+    #expect(began)
+    let kinds: [ResultKind] = [.partial, .correcting, .final, .raw]
+    for (sequence, kind) in kinds.enumerated() {
+        let phrase = ["First sentence. ", "More sentences. ", "Final sentence. ", "Raw transcript. "][sequence]
+        let text = String((String(repeating: phrase, count: 140)).prefix(2_048))
+        #expect(text.count == 2_048)
+        let event = TextEvent(generation: generation, utteranceID: utterance, kind: kind, text: text,
+                              sequence: sequence, createdAt: now, expiresAt: now.addingTimeInterval(30))
+        let proposed = policy.plan(event, context: proxy.cursor, now: now,
+                                   leaseUntil: event.expiresAt, rawRequested: kind == .raw)
+        let plan = try #require(proposed)
+        let applied = proxy.apply(plan)
+        #expect(applied)
+        let confirmed = policy.didApply(plan, observed: proxy.cursor, now: now)
+        #expect(confirmed)
+        #expect(proxy.cursor.before == anchor + text)
+        #expect(proxy.cursor.after == after)
+    }
+    #expect(proxy.deletes == 3 * 2_048)
+    #expect(proxy.inserts == 4)
+    #expect(!policy.requiresRecovery)
+}
+
+@MainActor
+@Test(arguments: [false, true])
+func actualContextWindowTruncationRefusesLongReplacement(_ truncateDuringInsertion: Bool) throws {
+    let proxy = FakeProxy()
+    let now = Date(timeIntervalSince1970: 100)
+    let generation = UUID(), utterance = UUID()
+    var policy = OwnedInsertion()
+    let began = policy.begin(generation: generation, utteranceID: utterance, context: proxy.cursor, now: now)
+    #expect(began)
+    let text = String(repeating: "word ", count: 410)
+    var event = TextEvent(generation: generation, utteranceID: utterance, kind: .partial, text: text,
+                          createdAt: now, expiresAt: now.addingTimeInterval(30))
+    let proposed = policy.plan(event, context: proxy.cursor, now: now, leaseUntil: event.expiresAt)
+    let plan = try #require(proposed)
+    if truncateDuringInsertion { proxy.contextWindow = 64 }
+    let applied = proxy.apply(plan)
+    let confirmed = policy.didApply(plan, observed: proxy.cursor, now: now)
+    if truncateDuringInsertion {
+        #expect(!applied)
+        #expect(!confirmed)
+    } else {
+        #expect(applied)
+        #expect(confirmed)
+        // The host subsequently exposes a shifted 64-character window. Even
+        // with the same document ID and owned suffix, the original anchor is lost.
+        proxy.cursor.before = String((proxy.cursor.before ?? "").suffix(64))
+    }
+    let preserved = proxy.cursor
+    event.id = UUID(); event.sequence = 1; event.kind = .final
+    #expect(policy.plan(event, context: proxy.cursor, now: now, leaseUntil: event.expiresAt) == nil)
+    #expect(policy.requiresRecovery)
+    #expect(proxy.deletes == 0)
+    #expect(proxy.inserts == 1)
+    #expect(proxy.cursor == preserved)
 }

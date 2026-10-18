@@ -115,11 +115,16 @@ app/bridge's expiry). Any ambiguity preserves remaining content and directs
 manual recovery in Chirp. No clipboard recovery happens automatically here.
 
 UIKit supplies no complete-context/truncation flag and some hosts use short or
-asynchronous context windows. The conservative limits are fewer than 256 UTF-16
-units per context side and fewer than 192 per incoming result. These limits do
-not prove context completeness: exact anchor/post-edit verification remains
-required. A shifting window or long utterance may leave an already-inserted
-partial and refuse the final; recover explicitly in the app. No claim is made
+asynchronous context windows. Resource bounds are 16,384 UTF-16 units per context side, 8,192 UTF-16 units
+per result and 65,536 UTF-8 bytes per result (inclusive). These accommodate
+multi-sentence dictation within the 120-second utterance limit. The byte bound
+matches SharedBridge; with the current UTF-16 cap, valid Swift strings use at
+most 24,576 UTF-8 bytes (BMP scalars use at most three bytes per UTF-16 unit;
+emoji typically use four bytes per two units), so the UTF-16 cap is reached
+first. Oversized input is refused before any edit rather than partially written.
+The bounds do not prove context completeness: exact anchor/post-edit verification
+remains required. An actually shifting/truncated window may leave an already-
+inserted partial and refuse the final; recover explicitly in the app. No claim is made
 that documentIdentifier detects every host bug or that callbacks prove all edits.
 Context is transient in-memory evidence only and never sent to the server.
 
@@ -134,11 +139,12 @@ swift test --package-path ios/Keyboard/Policy \
   -Xswiftc /Library/Developer/CommandLineTools/usr/lib/swift/host/plugins/testing
 ```
 
-Run through `koi run`: **18 Swift Testing test functions passed**, including
-parameter matrices (46 executed cases counting parameter expansions), exit 0.
+Run through `koi run`: **22 Swift Testing test functions passed**, including
+parameter matrices (53 executed cases counting parameter expansions), exit 0.
 The initial run failed in mutating-method `#expect` macro expansion; evaluating
-those booleans before assertion corrected the test code. Successful run log:
-`~/.koi/run-logs/d1a70343-19bf-471a-9a08-02ba13ed91e7-20261018T055003-3199.log`.
+those booleans before assertion corrected the test code (the same applies to
+mutating calls inside `#require`). Latest successful follow-up run log:
+`~/.koi/run-logs/d1a70343-19bf-471a-9a08-02ba13ed91e7-20261018T055536-17156.log`.
 
 Coverage: partial/correcting/final/cancel/raw, duplicate/reordered/foreign/stale
 results, stale lease, fixed-clock raw deadline at +4/+5 seconds, hide/reload and
@@ -147,6 +153,16 @@ context truncation/unavailability, non-BMP and extended graphemes, regional
 indicators, combining marks, ZWJ families, every actual deletion step, host ignored
 or altered deletion, document/selection/context change during deletion, final/raw
 survival after Cancel/End, empty finals and oversized-result manual recovery.
+The long fake-host regression applies a 2,048-character partial, correcting,
+final and explicitly requested raw result, preserving preexisting contexts over
+256 characters and checking every one of 6,144 deletion steps. Measured
+`ContinuousClock` duration was **0.06373075 seconds** (runner: 0.064 seconds);
+this is Mac fake-host evidence, not iOS performance. Separate tests expose an
+actual 64-character context window during insertion and after established
+ownership; both refuse further replacement without deleting additional content.
+ASCII, emoji and BMP boundary matrices accept exactly 8,192 UTF-16 units and
+refuse the next unit before edits. A greater-than-64-KiB emoji result is also
+refused before any write.
 
 `swiftc -frontend -parse` passed for all six UIKit/Intents/Widgets source files;
 `git diff --check` passed. Parsing is syntax-only, **not** SDK typechecking or an
