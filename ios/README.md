@@ -309,7 +309,20 @@ mac/scripts/test.sh && (cd mac && swift build -c release)   # 380 tests / 61 sui
 swift test --package-path ios/Keyboard/Policy \
   -Xswiftc -plugin-path \
   -Xswiftc /Library/Developer/CommandLineTools/usr/lib/swift/host/plugins/testing
+cd ios && ./scripts/check-sources.sh        # regenerate + structural, plist and per-target syntax checks
+./scripts/typecheck-catalyst.sh             # optional Catalyst compiler aid (see below)
 ```
+
+`check-sources.sh` regenerates the project, runs the structural project check
+(`check-project.py`), lints every plist/entitlement and the pbxproj, parses
+each target's Swift sources and shell/Python syntax — its own output says "no
+iOS typechecking claimed". `typecheck-catalyst.sh` is an optional compiler
+aid: it compiles the session coordinator, microphone capture, pairing scanner
+and debug-fixture sources for the Mac Catalyst target, substituting a
+temporary ActivityKit facade in a scratch directory (shipping sources are
+unmodified). It has already caught one real conditional-API mistake, but it
+does not validate the iOS SDK, signing, the simulator, SwiftUI view macro
+expansion, App Intents or ActivityKit, and it is not runtime evidence.
 
 After full Xcode is installed: `./scripts/toolchain.sh`, then
 `./scripts/simulator.sh build|test|ui <simulator-uuid>` on disposable iPhone
@@ -331,7 +344,8 @@ ios/
   Widgets/    WidgetKit bundle: Live Activity UI, Control Center controls
   Shared/     ChirpIOSCore package: pairing, Keychain, preferences, encrypted history/bridge
   Config/     Project.xcconfig, Info.plists, entitlements (per target)
-  scripts/    toolchain.sh, generate-project.py, simulator.sh
+  scripts/    toolchain.sh, generate-project.py, simulator.sh,
+              check-sources.sh, check-project.py, typecheck-catalyst.sh
   Tests/      Simulator unit tests (app)
   UITests/    Simulator UI tests
 ```
