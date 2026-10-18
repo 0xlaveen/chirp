@@ -95,7 +95,7 @@ final class ProtectedFiles: @unchecked Sendable {
         var values = URLResourceValues(); values.isExcludedFromBackup = true
         try url.setResourceValues(values)
         #if os(iOS)
-        try FileManager.default.setAttributes([.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication], atPath: url.path)
+        try FileManager.default.setAttributes([.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication], ofItemAtPath: url.path)
         #endif
     }
     func transaction<T>(_ body: () throws -> T) throws -> T {
