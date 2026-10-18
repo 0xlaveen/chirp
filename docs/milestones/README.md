@@ -6,6 +6,7 @@
 | M2 | macOS dictation client (menu bar, hotkey, HUD, insertion) | `chirp/mac` | [M2-mac.md](M2-mac.md) |
 | M3 | Android voice IME for Galaxy Z Fold 8 | `chirp/android` | [M3-android.md](M3-android.md) |
 | M4 | Integration: tailscale serve, end-to-end tests, operator docs, bench numbers | `chirp/integration` | [M4-integration.md](M4-integration.md) |
+| M5 | iOS app and dictation keyboard for iPhone/iPad | `chirp/ios` | [M5-ios.md](M5-ios.md) |
 
 M1, M2 and M3 run in parallel against the frozen protocol in [architecture §3](../architecture.md#3-wire-protocol-v1-frozen-for-parallel-work). M4 runs after they merge into `chirp/integration`.
 
