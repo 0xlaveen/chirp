@@ -56,23 +56,23 @@ Everything here is manual operator work on hardware you own. Agents never
 operate devices, and there is intentionally **no auto-install script** — device
 installation is Xcode's Run action, performed by you.
 
-1. Verify the toolchain from `ios/`:
+1. Verify the toolchain (run from the repo root; the script is cwd-independent):
 
    ```sh
-   cd ios
-   ./scripts/toolchain.sh     # prints iOS Simulator SDK path, Xcode version, available simulators
+   ios/scripts/toolchain.sh   # prints iOS Simulator SDK path, Xcode version, available simulators
    ```
 
-   If it prints `BLOCKED: select a full Xcode installation…`, install Xcode,
-   launch it once, accept the license, and run `sudo xcode-select -s
-   /Applications/Xcode.app` (or `xcode-select` to the correct path).
+   While the Command Line Tools are selected it exits 2 with `BLOCKED: select a
+   full Xcode installation…` — install Xcode, launch it once, accept the
+   license, and run `sudo xcode-select -s /Applications/Xcode.app` (or
+   `xcode-select` to the correct path).
 
 2. The Xcode project is generated deterministically and checked in as
    `ios/Chirp.xcodeproj` (generator: `ios/scripts/generate-project.py`, Python 3
    standard library only, no XcodeGen). Regenerate after moving/adding sources:
 
    ```sh
-   python3 scripts/generate-project.py
+   python3 ios/scripts/generate-project.py
    ```
 
 3. Choose your signing identity and identifiers. Defaults live in
@@ -122,7 +122,7 @@ profiles; nothing here is validated for that path.
 Simulator checks (never devices) are scripted:
 
 ```sh
-./scripts/simulator.sh build|test|ui SIMULATOR-UUID
+ios/scripts/simulator.sh build|test|ui SIMULATOR-UUID
 ```
 
 It regenerates the project, then runs an **unsigned** `xcodebuild` against an
@@ -309,8 +309,8 @@ mac/scripts/test.sh && (cd mac && swift build -c release)   # 380 tests / 61 sui
 swift test --package-path ios/Keyboard/Policy \
   -Xswiftc -plugin-path \
   -Xswiftc /Library/Developer/CommandLineTools/usr/lib/swift/host/plugins/testing
-cd ios && ./scripts/check-sources.sh        # regenerate + structural, plist and per-target syntax checks
-./scripts/typecheck-catalyst.sh             # optional Catalyst compiler aid (see below)
+ios/scripts/check-sources.sh                # regenerate + structural, plist and per-target syntax checks
+ios/scripts/typecheck-catalyst.sh           # optional Catalyst compiler aid (see below)
 ```
 
 `check-sources.sh` regenerates the project, runs the structural project check
@@ -324,8 +324,8 @@ unmodified). It has already caught one real conditional-API mistake, but it
 does not validate the iOS SDK, signing, the simulator, SwiftUI view macro
 expansion, App Intents or ActivityKit, and it is not runtime evidence.
 
-After full Xcode is installed: `./scripts/toolchain.sh`, then
-`./scripts/simulator.sh build|test|ui <simulator-uuid>` on disposable iPhone
+After full Xcode is installed: `ios/scripts/toolchain.sh`, then
+`ios/scripts/simulator.sh build|test|ui <simulator-uuid>` on disposable iPhone
 and iPad simulators (unsigned), plus the `KeyboardPolicy` package tests on the
 simulator. Those gates have **not** been run; simulator results also cannot
 establish hardware keyboard handoff, background-audio survival, lock-screen
