@@ -11,6 +11,7 @@ Index of everything under `docs/`. Start with the architecture doc; everything e
 | [android-keyboard-validation.md](android-keyboard-validation.md) | Chirp Keyboard 0.3.0 validation record |
 | [milestones/](milestones/README.md) | M1 server, M2 macOS client, M3 Android IME, M4 integration — specs and worker rules |
 | [review/round2.md](review/round2.md) | Independent review, round 2 (findings and evidence) |
+| [review/word-waveform.md](review/word-waveform.md) | Design notes for the Mac word-waveform HUD overlay: shipped variant, rejected alternatives, protocol and latency benchmarks |
 | [screenshots/](screenshots/) | UI captures: [mac](screenshots/mac/) (curated light/dark snapshots) and [android](screenshots/android/) (described in its [README](screenshots/android/README.md)) |
 | [bench-data/](bench-data/) | Committed numeric benchmark results (no audio or transcripts) |
 | [assets/](assets/) | Resized artwork used by the top-level README |

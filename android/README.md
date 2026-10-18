@@ -1,460 +1,135 @@
 # Chirp Keyboard for Android
 
-Chirp 0.5.0 combines HeliBoard 4.2's full keyboard with in-keyboard dictation to your
-Mac over Tailscale. The application ID and IME component remain
-`dev.chirp.android` / `dev.chirp.android/.ChirpImeService` so the signed APK installs
-as an update and preserves Android Keystore pairing. Version code is 6.
+A full HeliBoard keyboard for the Galaxy Z Fold with a microphone key that streams your voice to the `chirp-server` on your Mac — over Tailscale, from any app. Live text appears underlined in the focused field while you speak; the final replaces it. An optional clean-up pass on the Mac polishes the final text, and an opt-in history keeps recent dictations on the phone, encrypted.
 
-## Phone setup
+The application ID and IME component stay `dev.chirp.android` / `dev.chirp.android/.ChirpImeService`, so a signed APK installs as an **update** and preserves your pairing (the token is encrypted under an Android Keystore key). Current version: **0.6.0**, version code 10.
 
-1. Install the **signed release APK as an update**, without uninstalling Chirp.
-2. Open Chirp Keyboard. In step 1, **Enable Chirp Keyboard**, then **Select it as default**.
-   On Samsung: Settings → General management → Keyboard list and default.
-3. Allow microphone permission. If already paired, pairing stays saved. Otherwise,
-   turn on Tailscale on both devices, scan the existing Mac QR, and **Test connection & save pairing**.
-4. Tap the test field. Type normally, then tap the mic in the suggestion row to start.
-   The **stop icon** finishes and **✕** discards dictation. Long press the toolbar mic
-   to choose a style, toggle clean-up (when offered by the Mac), or open Chirp settings. A configured keyboard voice key still
-   supports push-to-talk.
-5. Dictate twice. The full keyboard always stays selected after a final, including
-   when an old installation had auto-return enabled. **Use raw** is available for
-   five seconds after a corrected final; moving/editing the field invalidates it.
+| At a glance | |
+|---|---|
+| Keyboard base | HeliBoard 4.2 (GPL-3.0), vendored and patched — see [Upstream](#upstream) |
+| Looks | **Gboard-like** default, a **Samsung-like** option, three classic HeliBoard looks |
+| Fold layout | Phone-style function keys on the inner screen, number row ≥ 600 dp, split landscape |
+| Swipe typing | Not bundled; you can load a user-supplied library — see [Keyboard](#keyboard) |
+| Clean-up | On by default after pairing when the Mac cleans up locally; external endpoints need explicit opt-in |
+| History | Opt-in, on-device only, AES-GCM encrypted under an Android Keystore key |
+| Retention | Nothing written by default; diagnostics carry exception classes and frames only |
 
-English (US) QWERTY, autocorrect at moderate confidence, suggestions, next-word
-prediction, auto-capitalisation, double-space period, key popups and symbol/accent
-long presses work out of the box. Personalised suggestions learn typed words on this
-device; turn them off in Keyboard layouts & settings → Text correction. Dictation
-finals bypass keyboard autocorrection and learning. The already-bundled English US
-dictionary is pinned to Codeberg, with an added English emoji suggestion dictionary;
-see [dictionary provenance and licenses](keyboard/UPSTREAM.md#english-typing-and-emoji-dictionaries-2026-10-17).
+**Contents**
 
-The number row defaults on at inner-screen widths (600 dp and wider). Unfolded
-landscape defaults to split; cover layouts stay compact. One-handed, split, clipboard
-history and emoji are reachable from the expandable toolbar. Haptics follow Android's
-system setting. Light/dark follows the system. The default look is **Gboard-like**
-(see [Keyboard look](#keyboard-look-and-swipe-typing)). **Swipe typing is optional**: no gesture
-library is bundled, but setup and Chirp settings can load one the user supplies.
+- [Install](#install) — build the APK, put it on the phone, enable the keyboard · [Pair](#pair) — QR, paste, Wi-Fi servers
+- [Dictate](#dictate) — start/stop/cancel, quick options, clean-up, styles, Use raw
+- [Keyboard](#keyboard) — typing, looks, Fold layout, swipe typing, floating mic
+- [Dictation history](#dictation-history) · [Privacy](#privacy) · [Troubleshoot](#troubleshoot)
+- [Develop and test](#develop-and-test) — toolchain, gradle, emulator harnesses
+- [Upstream](#upstream) — HeliBoard, patches, dictionaries, license
+- [Validation records](#validation-records) — dated runs, measurements and APK sizes
 
-Unfolding keeps the cover keyboard's function-key arrangement in both looks: Shift
-starts the third letter row, Backspace ends it, and Enter sits after the period at
-bottom-right. Chirp seeds HeliBoard's phone functional layout once; explicitly chosen
-global or per-language functional layouts remain yours. Inner landscape retains the
-existing split setting. See [Fold layout details](keyboard/UPSTREAM.md#fold-function-key-arrangement-2026-10-18)
-and the `fold-layout-*.png` before/after emulator captures.
+## Install
 
-Fold-layout validation (2026-10-18): `lint testDebugUnitTest assembleDebug
-assembleRelease` passed (256 cases, zero failures/errors, two opt-in skips).
-Forty release screenshots cover before/after, both looks, light/dark, native AVD,
-inner portrait/landscape and cover portrait/landscape. Key geometry checks passed;
-cover and native-AVD coordinates remain unchanged. Release `emulator-smoke.sh` and
-the TLS stop matrix (`emulator-check.py --tls --stop-check`) passed on emulator-5580
-only. All eight stop scenarios delivered STOP and retired their stream, with clean
-Chirp crash/Diagnostics checks under StrictMode network death. The disposable server
-reported `engine` during polishing and `bad_audio` during focus teardown; the matrix
-checks stop/teardown safety rather than correction quality. No phone or emulator-5582
-was used, and the version remains 0.5.2 (8).
-
-Setup opens the first unfinished prerequisite and advances after returning from system
-settings. QR pairing is primary; paste is secondary. A saved pairing shows the Mac host
-and reported engine. HeliBoard settings start with a Chirp section: pairing, test
-field, clean-up and styles (only when supported), per-app styles, sounds/haptics, and diagnostics. The mic shares the suggestion
-row, and active dictation replaces suggestions with waveform, status, cancel and done.
-Partials appear only in the text field. Recoverable errors offer Pair Mac, Open mic
-settings, or Check Tailscale. Debug retention stays visible in the row while reported.
-
-The floating accessibility mic is **optional and off by default**; keyboard dictation
-needs no Accessibility permission. Enable it only if you choose to use another keyboard.
-For sideload restrictions: Apps → Chirp Keyboard → ⋮ → Allow restricted settings,
-then Accessibility → Installed apps. An already-enabled optional service remains
-under the user's Android setting; the app does not enable it on update.
-
-## Android 17 Wi-Fi permission
-
-Android 17/API 37 needs `ACCESS_LOCAL_NETWORK` for servers reached directly over
-Wi-Fi/Ethernet. Chirp checks the paired server's resolved addresses and matching VPN
-routes in its network workers, never on the microphone press path. Setup requests
-permission only after a connection targets a local address outside a VPN. This includes
-RFC1918, link-local and local CGNAT/IPv6 addresses. Loopback JVM test servers are exempt.
-
-**Needed only for servers on your Wi-Fi. Tailscale works without this permission.**
-Android explicitly excludes VPN traffic from its local-network definition, so the
-operator's `.ts.net` server resolving to 100.x through Tailscale is not permission-gated.
-Denial never prevents trying that tailnet connection. No DNS result or server address
-is added to diagnostics. Sources: [Android local-network definition](https://developer.android.com/privacy-and-security/local-network-definition)
-and [Android 17 permission behavior](https://developer.android.com/privacy-and-security/local-network-permission).
-
-## Diagnostics and the reported first-use failure
-
-The previous voice-only keyboard defaulted to auto-return, explicitly switching to
-Samsung after a final (or after the raw chip's five-second expiry). This is removed
-from the full keyboard. The old voice-only implementation lives only in test sources;
-it is not registered or shipped. Its historical preference now defaults OFF.
-
-A reproducible uncaught exception existed if an editor disconnected during the raw
-composing-region replacement or its cleanup. The first regression failed before the
-fix. All editor calls in `ComposingSession` now fail safely without exposing editor
-exceptions, losing the corrected text on a rejected replacement, or allowing late
-callbacks to insert into another field. Lifecycle coverage includes final, repeated
-utterances, hide/unbind/destroy, stale capture/transport callbacks, cancel and raw expiry.
-The original installed emulator crash buffer was empty; this does **not** establish
-that the operator's phone hit that same exception.
-
-Setup → **Diagnostics** shows/copies the last five local uncaught crashes. The handler
-writes synchronously before delegating termination. Stored fields are time, app version,
-exception class and at most 48 message-free class/method/line frames. It does not store
-exception messages, cause messages, filenames, thread names, text, audio, URLs or tokens.
-The private, backup-excluded log survives an app restart/update. HeliBoard's original
-crash handler and keyboard logger are disabled so they cannot retain a second content log.
-
-## Build and test
+### Build the APK (once, on the Mac)
 
 ```sh
-source ~/.local/share/chirp-android/env.sh
+source ~/.local/share/chirp-android/env.sh   # toolchain; see "Develop and test"
 cd android
-./gradlew lint testDebugUnitTest assembleDebug assembleRelease
-scripts/emulator-smoke.sh
+./gradlew assembleRelease
 ```
 
-Use the **existing** `keystore/local-debug.keystore` to sign updates; never generate a
-replacement key for an already-installed app. Debug and release both use that key in
-this local build. APKs are `app/build/outputs/apk/{debug,release}/app-{debug,release}.apk`.
-The host and library use NDK 28.0.13004108; the app setting is needed to strip JNI symbols.
-The release supports arm64 phones and x86_64 emulator validation. See
-[keyboard/UPSTREAM.md](keyboard/UPSTREAM.md) for the pinned source, license, adapter,
-upstream patch and vendor-only lint workaround. App lint remains strict.
+The APK lands at `app/build/outputs/apk/release/app-release.apk`. It is signed with `keystore/local-debug.keystore` (create it once with `scripts/make-keystore.sh`; without it the release build is unsigned). **Never generate a replacement key for an app that is already installed** — Android would refuse the update. Debug and release builds both use this local key.
 
-Robolectric runs on API 31 and 37 with fake input connections, transport and capture.
-The integrated keyboard renders actual HeliBoard keys and the production Chirp row
-in idle/listening/final states, light/dark, under `../docs/screenshots/android/`.
-Existing transport tests use isolated TLS loopback servers. LiveServerTest stays
-opt-in; no production Chirp server or port 7821 is used by the default check.
+### Put it on the phone
 
-## Mandatory release smoke
+Install **as an update, without uninstalling Chirp** — that is what keeps the saved pairing. Either works:
 
-Run `android/scripts/emulator-smoke.sh` with the toolchain sourced after every change.
-It builds and installs the minified release APK, clears only the authorized disposable
-emulator's Chirp data, walks state-aware setup, opens/backs out of the real Google QR
-scanner, opens the native editor, checks keyboard/mic/recovery/options, and exercises
-actual HeliBoard keys: `teh` → `the` (sentence-cased at field start), `im` → `I'm`,
-next-word suggestions, clipboard history and emoji. It checks inner and cover layouts
-in both themes, settings/diagnostics, packaged dictionary hashes, absence of debug
-assets/proprietary glide libraries and the Chirp crash buffer. Failure exits non-zero.
-Every ADB call pins `emulator-5580`; other serials are refused. It changes no phone,
-Mac configuration, production server or Tailscale state.
+- **Over Tailscale (Taildrop):** from the Mac, `tailscale file cp app/build/outputs/apk/release/app-release.apk <phone>:` — the file arrives as a notification in the phone's Tailscale app. Tap it to open the installer.
+- **adb:** `adb install -r app/build/outputs/apk/release/app-release.apk` over USB or wireless debugging.
 
-A tiny shell-only UiAutomator probe reads all accessibility windows because Android 17's
-stock `uiautomator dump` returns the editor window without the IME. It is built under a
-temporary directory, pushed to the disposable emulator and removed in cleanup. It ships
-in neither APK. Real release captures are `docs/screenshots/android/release-*.png`, each
-under 2 MB. Release has no synthetic capture source or emulator cleartext policy.
+Opening a sideloaded APK can trigger a **Play Protect** screen warning about an unknown developer. Choose **More details → Install anyway** to continue. (A separate, optional sideload restriction can affect the floating microphone only — see [Optional floating microphone](#optional-floating-microphone).)
 
-## Explicit emulator speech check (debug only)
+### First launch
 
-The operator-authorized emulator is **emulator-5580 only**. The helper refuses other
-serials, starts the actual server with a throwaway HOME on port 7899, uses the existing
-cached speech model, pairs through the QR deep-link path, and feeds generated speech
-through the real `PcmCapture` framing, buffer, `StreamTransport` and composing/final path.
-All subprocess/intent output that could contain a credential is suppressed. The test
-server and test credentials are removed in cleanup; the emulator is left running.
+Chirp Keyboard's setup has four steps — *Chirp Keyboard, Microphone, Pair Mac, Try it* — and always opens on the first unfinished one, advancing automatically after you return from system settings.
+
+1. **Enable Chirp Keyboard**, then **Select it as default**. On Samsung: Settings → General management → Keyboard list and default.
+2. **Allow the microphone.** The mic opens only when you start dictation and is released as soon as you stop.
+3. **Pair your Mac** — see [Pair](#pair). If the phone was already paired, the saved pairing survives the update.
+4. **Try it:** tap the test field, type, then dictate. This step also holds the keyboard-look chooser, swipe-typing setup, history setting and Diagnostics.
+
+HeliBoard's own settings (Keyboard layouts & settings) start with a **Chirp section**: pairing, test field, clean-up and styles (only when the Mac offers them), per-app styles, sounds/haptics, and diagnostics.
+
+## Pair
+
+On the Mac, print the secret pairing QR (see [server/README.md](../server/README.md#pair-a-device); the server must be published on your tailnet, e.g. `https://<your-mac>.<tailnet>.ts.net/chirp`):
 
 ```sh
-source ~/.local/share/chirp-android/env.sh
-python3 android/scripts/emulator-check.py \
-  --python /path/to/chirp/server/.venv/bin/python \
-  --model-dir /path/to/cached/parakeet-mlx \
-  --apk android/app/build/outputs/apk/debug/app-debug.apk
+uv run chirp-server pair --url https://<your-mac>.<tailnet>.ts.net/chirp
 ```
 
-The debug test-step switch **Debug: synthetic speech (no microphone)** selects a
-say-generated 16 kHz mono WAV. The asset is generated into `app/build/`, never committed.
-On macOS the debug build invokes `say`/`afconvert`; other hosts may set
-`CHIRP_SYNTHETIC_WAV` to a generated synthetic-only WAV. This file source, switch and
-asset are excluded from release. The release capture uses AudioRecord only.
-The debug cleartext policy permits only `10.0.2.2`; URL validation further restricts
-HTTP to port 7899. Release permits HTTPS only and has no cleartext exception.
+On the phone, setup step 3 (*Connect your Mac*) — with Tailscale on, on both devices:
 
-Emulator screenshots are independent of the deterministic Robolectric renders. Neither
-run establishes Galaxy hardware microphone quality, battery cost or Tailscale latency;
-those still need operator acceptance on the phone.
+- **Scan pairing QR** is primary (the scanner uses Google Play services). **Paste pairing link instead** works without it.
+- **Test connection & save pairing** verifies the connection before anything is stored.
+- A saved pairing shows the Mac host and the engine it reports, and offers **Check Mac connection** and **Forget pairing**.
 
-## License
+The token is stored encrypted (AES-GCM) under the Android Keystore alias `chirp_pairing_v1`; pairing links are parsed strictly (`chirp://pair?url=…&token=…`, HTTPS only) and never rendered into logs. Recoverable connection problems offer **Pair Mac**, **Open mic settings** or **Check Tailscale** (which opens the Tailscale app when it is installed).
 
-The combined Android app includes GPL-3.0 HeliBoard code. Personal use; corresponding
-source is available in this repository. Keep the upstream licenses/notices intact.
-See [keyboard/UPSTREAM.md](keyboard/UPSTREAM.md).
+### Servers on your Wi-Fi (Android 17)
 
-## Round 4 validation (2026-10-17)
+Android 17/API 37 needs `ACCESS_LOCAL_NETWORK` for servers reached directly over Wi-Fi/Ethernet. Chirp checks the paired server's resolved addresses and matching VPN routes in its network workers, never on the microphone press path. Setup requests permission only after a connection targets a local address outside a VPN. This includes RFC1918, link-local and local CGNAT/IPv6 addresses. Loopback JVM test servers are exempt.
 
-The full `lint testDebugUnitTest assembleDebug assembleRelease` path passes: 175 tests,
-0 failures/errors, 2 pre-existing opt-in skips. Release
-smoke passes scanner open/back, state-aware setup, actual autocorrect/next-word keys,
-clipboard, emoji, the integrated mic and recovery, inner/cover light/dark, unfolded
-landscape split, one-handed control reachability, settings/diagnostics and crash checks.
-`emulator-talkback.py` additionally enables actual TalkBack, validates mic/status/cancel
-labels and native click/long-click actions, then restores accessibility/notification
-settings. Run it after release smoke with the shell probe rebuilt:
+**Needed only for servers on your Wi-Fi. Tailscale works without this permission.** Android explicitly excludes VPN traffic from its local-network definition, so an operator's `.ts.net` server resolving to 100.x through Tailscale is not permission-gated. Denial never prevents trying that tailnet connection. No DNS result or server address is added to diagnostics. Sources: [Android local-network definition](https://developer.android.com/privacy-and-security/local-network-definition) and [Android 17 permission behavior](https://developer.android.com/privacy-and-security/local-network-permission).
 
-```sh
-android/scripts/build-ui-probe.sh
-python3 android/scripts/emulator-talkback.py
-```
+## Dictate
 
-Debug synthetic E2E passed against the isolated real Parakeet server with Keystore
-pairing, live composing text, repeated committed finals, cancellation, quick options,
-normal typing after dictation, light/dark and IME retention. The throwaway server was
-stopped. It does not claim live speech transport over HTTPS from the release build;
-the release APK uses AudioRecord and smoke validates its UI without a live HTTPS
-speech session or the debug synthetic/cleartext facilities.
+### Start, stop, cancel
 
-Release APK: **26,684,648 bytes (25.45 MiB)**, containing arm64-v8a and x86_64. The
-English US dictionary adds **0 bytes** because the pinned file was already bundled;
-the new emoji dictionary is 45,272 bytes before APK compression (21,095 packaged bytes). The typing/defaults
-phase adds 25,068 bytes relative to the pre-typing UX release build (26,659,580 bytes).
-Screenshots in `../docs/screenshots/android/release-*.png` are from the real release
-emulator, each below 2 MB. No phone, production server, Mac app or Tailscale setting was
-used or modified.
+- Tap the **mic in the suggestion row** to start. The mic changes colour and icon while listening, with a waveform and a subtle pulse.
+- Tap the **stop icon** the mic becomes to finish and insert. **✕** discards the dictation.
+- **Long press the mic** for quick options: **Clean-up: on ✓ / Clean-up: off** (or *Mac has clean-up off*), the styles the Mac advertises (`Style · <name>`, with `· rewrites` where it may restructure, ✓ on the active one), and **Chirp settings**.
+- A configured keyboard **voice key** still supports push-to-talk: press-and-hold to talk, release to finish; a short tap toggles.
+- Haptic cues fire on start, manual stop and successful insertion when haptics are enabled (they follow Android's system setting).
 
+The full keyboard always **stays selected after a final** — including when an old installation had the voice-only keyboard's auto-return enabled. (That auto-return is gone; the old voice-only implementation lives only in test sources and is not registered or shipped, and its historical preference now defaults OFF.) **Use raw** is offered for five seconds after a corrected final; moving the cursor or editing the field invalidates it.
 
-## Clean-up, styles and streaming (0.5.0)
+### What you see while you speak
 
-The mic changes colour and icon while listening, with a waveform and subtle pulse.
-Start, manual stop and successful insertion use haptic cues when enabled. Showing the
-keyboard prewarms the bearer-authenticated socket without sending `start` or capturing
-sound. An unused warm socket closes after 30 seconds or when the keyboard hides.
-Capture still starts on press, before the server's `ready`, through the bounded buffer.
+Partials appear only in the text field, underlined with a slightly dimmed tail (supplied as spans when the editor supports them); the suggestion row is replaced by the waveform, status, ✕ and stop. Partials are coalesced to one editor update per 16 ms (latest sequence wins). Editors that can verify their composing text receive only the changed suffix; UTF-16 surrogate pairs stay intact. A server `stable` prefix becomes normal committed text while the remaining tail composes. A final or cancel re-marks the whole utterance so clean-up replaces it atomically and cancel restores the selection.
 
-Partials are coalesced to one editor update per 16 ms, retaining the latest sequence.
-Verified editors receive only the changed suffix; UTF-16 pairs remain intact. A server
-`stable` prefix becomes normal editor text while the remaining tail composes. A final or
-cancel re-marks the utterance so cleanup replaces it atomically and cancel restores the
-selection. Editors that cannot verify their composing text use full composition updates.
-Underlining and a slightly dimmed tail are supplied as spans when the editor supports them.
+Showing the keyboard prewarms the bearer-authenticated socket without sending `start` or capturing sound; an unused warm socket closes after 30 seconds or when the keyboard hides. Capture still starts on press, before the server's `ready`, through a bounded buffer. Reduced-motion settings disable the pulse, shimmer and transition animations.
 
-On `correcting`, the full raw transcript remains underlined in the field. The suggestion
-row shows **Polishing…**, an animated shimmer and the selected style chip. State changes
-fade/slide over 180 ms; polishing stays readable for at least 450 ms for very fast finals.
-Reduced-motion settings disable the pulse, shimmer and transition animations. Final commits
-cleaned text and shows **cleaned · Use raw** for five seconds. The raw action is one tap,
-exposed to TalkBack, and invalidated by edits or cursor changes. Correction errors,
-disconnects and a 12-second polishing timeout commit the raw text with **kept original**.
-Recovery/error notices dismiss after five seconds to restore normal suggestions.
+### Clean-up
 
-Long press the mic to select any health-advertised style plus Custom for the current editor.
-Chirp settings provide a default style and editable package-based overrides. Initial defaults
-cover Slack/WhatsApp/Discord/Google and Samsung Messages (Chat), Gmail/Outlook/Samsung Email
-(Email), Termux and code editors (Code), and Samsung Notes/Keep/Obsidian/Notion (Notes).
-Matching uses `EditorInfo.packageName` exactly; removed rows inherit the default. Styles
-missing from current health fall back to the selected default or Default. Styles stay hidden
-when cleanup is unavailable, including an undisclosed external correction destination.
+Clean-up asks the Mac to polish the **final** text only; partials always stay raw. After pairing it is **on by default when the Mac's correction stays on that Mac**; an external correction endpoint requires explicit opt-in and a known host. Your toggle is recorded (`correction_explicit`) and persists across refreshes and restarts; if the Mac loses clean-up availability or its correction destination changes, clean-up suspends until you enable it again, and a server reporting clean-up off always dictates with `correction=false`.
 
-**Clean-up styles** loads editable defaults from the authenticated
-`GET /v1/correction/profiles`. Every style shows its description; its prompt editor offers
-an Edited badge, a Unicode character count, the server's limit (at most 4000), and Reset to
-default. Fixed safety rules always apply. Existing Custom instructions migrate into Custom's
-prompt. Only edited styles send optional `start.correction_prompt`; resetting omits the field
-so future server defaults apply. The legacy `correction_instructions` protocol limit remains
-2000 characters. Health caches only profile metadata, not default prompts. User edits are
-private app preferences excluded from backup. Text and prompts are never logged.
+While it runs, the raw transcript stays underlined in the field and the row shows **Polishing…**, an animated shimmer and the selected style chip; polishing stays readable for at least 450 ms even for very fast finals, and state changes fade over 180 ms. The final commits the cleaned text and shows a **cleaned** notice with a **Use raw** button for five seconds — one tap, exposed to TalkBack, invalidated by edits or cursor changes. Correction errors, disconnects and a 12-second polishing timeout commit the raw text with a **kept original** note. Recovery and error notices dismiss after five seconds to restore normal suggestions. An empty or blank final cancels the composition, inserts nothing (not even a separator or a deletion of a selection) and briefly shows **Didn't catch that**.
 
-The new prompt endpoint/override protocol is covered with an isolated TLS fake server. A
-server that does not yet expose the endpoint still supports normal styles; the editor shows
-a retry action. Prompt loading requires the corresponding server addition.
+### Styles
 
-### 0.5.0 validation (2026-10-17)
+Long press the mic to pick any health-advertised style plus Custom for the current editor. Chirp settings provide a default style and editable package-based overrides; matching uses `EditorInfo.packageName` exactly, and removed rows inherit the default. Initial defaults:
 
-`./gradlew lint testDebugUnitTest assembleDebug assembleRelease` passed with **198 tests,
-zero failures/errors, two opt-in skips**. Tests cover protocol metadata and editable prompts,
-TLS bearer requests, omission/reset/migration, Unicode limits, exact package mapping,
-prewarming/expiry, coalescing, suffix edits with a real `BaseInputConnection`, stable-prefix
-rollback, cancellation, polishing fallback, readable transitions and reduced motion.
+| Style | Packages |
+|---|---|
+| Chat | Slack, WhatsApp, Discord, Google Messages, Samsung Messages |
+| Email | Gmail, Outlook, Samsung Email |
+| Code | Termux and code editors (Acode, RHMsoft, Spck, DroidEdit) |
+| Notes | Samsung Notes, Keep, Obsidian, Notion |
 
-Managed cleanup E2E passed against a real Parakeet/Qwen server on **7899** with a temporary
-HOME, `[correction] mode="managed"`, and the shared offline HF cache. The helper is warmed
-before UI captures to exclude first-use model/Metal setup; the app still has its normal
-12-second polishing deadline. The capture helper requires `ffmpeg` to keep the exported recording below ten seconds.
-The debug asset uses messy synthetic speech generated under
-`app/build/`. No audio is committed. Both themes captured underlined raw composition,
-Polishing + style, cleaned + Use raw, and native accessible raw replacement. The test removes
-its server, credentials and device probes and re-selects Chirp after force-stop.
+Styles missing from current health fall back to the selected default (or Default), and stay hidden when clean-up is unavailable — including an undisclosed external correction destination.
 
-```sh
-source ~/.local/share/chirp-android/env.sh
-ANDROID_SERIAL=emulator-5580 python3 android/scripts/emulator-check.py --cleanup-only \
-  --python /path/to/server/.venv/bin/python \
-  --model-dir /path/to/cached/parakeet-mlx \
-  --apk android/app/build/outputs/apk/debug/app-debug.apk
-# Same setup without recording/accessibility polling during speech:
-# replace --cleanup-only with --frames-only
-```
+### Editable style prompts
 
-Release `scripts/emulator-smoke.sh` and actual `emulator-talkback.py` also passed on
-**emulator-5580 only**. Release smoke covers the signed minified APK, setup/scanner, typing,
-clipboard/emoji, mic recovery/options, inner/cover themes, landscape split, settings and no
-crash. Release remains AudioRecord-only and HTTPS-only; live managed speech was exercised
-through the debug synthetic/cleartext path. APK: **26,716,080 bytes (25.48 MiB)**, version
-**0.5.0 (6)**, arm64-v8a and x86_64, signed with the existing local key.
+**Clean-up styles** loads editable defaults from the authenticated `GET /v1/correction/profiles`. Every style shows its description; its prompt editor offers an **Edited** badge, a Unicode character count, the server's limit (at most 4000) and **Reset to default**. Fixed safety rules always apply. Existing Custom instructions migrate into Custom's prompt. Only edited styles send the optional `start.correction_prompt`; resetting omits the field so future server defaults apply. The legacy `correction_instructions` field remains limited to 2000 characters. Health caches only profile metadata, not default prompts. User edits are private app preferences excluded from backup; text and prompts are never logged. A server that does not yet expose the endpoint still supports normal styles; the editor then shows a retry action.
 
-Artifacts are under `../docs/screenshots/android/`:
+## Keyboard
 
-- `emulator-cleanup-{polishing,cleaned,styles}-{light,dark}.png` — actual emulator states.
-- `emulator-cleanup-streaming.mp4` — a silent 9.54-second screen recording (10-second capture cap).
-- `emulator-cleanup-gfxinfo.txt` — recorded run: 194/199 janky frames, p50 85 ms.
-- `emulator-cleanup-uninstrumented-gfxinfo.txt` — no capture/polling during speech:
-  161/170 janky frames, p50 133 ms.
-- `emulator-release-typing-gfxinfo.txt` — ordinary release typing baseline:
-  83/95 janky frames, p50 32 ms.
+### Typing
 
-These measurements do **not** establish smooth 60 fps. The authorized AVD has
-`hw.gpu.enabled=no`; ordinary typing is also substantially janky, and its host concurrently
-runs ASR/cleanup. The source recording averages about 14.9 fps. GPU-backed device validation remains
-necessary to assess animation smoothness. The emulator's GPU configuration was not changed.
-No phone, production Chirp configuration/server, Mac app, LaunchAgent or Tailscale setting was
-modified.
+English (US) QWERTY, autocorrect at moderate confidence, suggestions, next-word prediction, auto-capitalisation, double-space period, key popups and symbol/accent long presses work out of the box. Personalised suggestions learn typed words on this device; turn them off in Keyboard layouts & settings → Text correction. Dictation finals bypass keyboard autocorrection and learning. The already-bundled English US dictionary is pinned to Codeberg, with an added English emoji suggestion dictionary; see [dictionary provenance and licenses](keyboard/UPSTREAM.md#english-typing-and-emoji-dictionaries-2026-10-17).
 
-
-### Selected launcher and themed icons (0.5.0)
-
-The release now uses the operator's **full-bleed moonlit pond bird** artwork. The adaptive
-icon has that complete composition as its background, navy overscan to keep the moon and
-bird inside the safe viewport, and an empty foreground (the explicitly approved fallback).
-No rounded tile is added; the launcher supplies its own mask. Legacy density variants use
-the same opaque source, with resource aliases sharing normal/round names. App-level overlays
-replace HeliBoard's icon IDs, including the About/settings icon, and the IME service references
-the new launcher mipmap explicitly.
-
-Android 13+ monochrome uses the selected round fin-bird glyph **with** waves. The floating
-microphone notification uses the **same original alpha without the detached waves**, retaining
-its eye/pupil, fins and feet. The exact supplied sources, deterministic packaging script and
-asset paths are documented in [artwork/chirp-icons/README.md](artwork/chirp-icons/README.md).
-Built-in imagegen cutout attempts were discarded; generated replacements do not ship.
-
-The full lint/unit/debug/release path passes with **202 tests, zero failures/errors, two
-opt-in skips**. Icon tests on API 31/37 verify application and IME service icon resolution,
-HeliBoard's resource overlay, visible orange bird/yellow moon under the adaptive mask,
-monochrome availability and notification alpha. Release smoke passes after the icon update.
-`scripts/emulator-icons.py` also passes on emulator-5580, leaving Chirp selected. It captures:
-
-- `release-launcher-icon.png` — actual app drawer with the selected artwork.
-- `release-app-icon-settings.png` — actual Android app-info icon.
-- `release-keyboard-picker-icon.png` — native picker; this Android build uses text-only rows,
-  while the IME's icon metadata is verified by the API tests.
-
-To repeat after release smoke: run `scripts/build-ui-probe.sh`, then
-`python3 scripts/emulator-icons.py` with the toolchain sourced and
-`ANDROID_SERIAL=emulator-5580`. Current signed release APK: **26,949,136 bytes (25.70 MiB)**,
-still **0.5.0 (6)** with the existing signing key. App lint retains warnings-as-errors; two
-narrow icon-style exceptions cover the v26 vendor-overlay qualifier and deliberately
-full-bleed legacy artwork.
-
-
-### 0.5.1 stop-crash validation (2026-10-17)
-
-The phone's crash was TLS teardown on the main thread. A minified baseline built from
-`2c9c2e8` (the Android implementation also present at `a31415b`), with only the emulator TLS
-trust setup and version metadata changed, reproduced it on **emulator-5580**. Both
-`adb logcat -b crash` and the app's Diagnostics recorded:
-
-```text
-android.os.NetworkOnMainThreadException
-  ConscryptEngineSocket.drainOutgoingQueue → ConscryptEngineSocket.close
-  okhttp3.internal.connection.RealConnectionPool.evictAll → ConnectionPool.evictAll
-  KeyboardDictation.start$lambda$9 (KeyboardDictation.kt:267)
-  DictationStream.event$lambda$0 (DictationStream.kt:91)
-```
-
-The R8 debug mapping (`app/build/intermediates/mapping/debug/minifyDebugWithR8/mapping.txt`,
-R8 9.4.24) confirms the synthetic callback and source line. TLS `close_notify` writes explain
-why earlier cleartext speech checks passed. The same synchronous pool eviction was called
-on keyboard hide and through setup/style-editor client disposal.
-
-All HTTP call cancellation, pool eviction and dispatcher shutdown now use one process-wide
-background queue. Cancellation snapshots the outgoing session's calls before enqueueing, so
-late cleanup cannot cancel calls created after an immediate keyboard hide/show. WebSocket
-close/cancel stays asynchronous. Health, pairing and profile HTTP requests already run on
-`Dispatchers.IO`; their lifecycle cancellation/disposal now also leaves the main thread.
-Debug builds enable StrictMode network detection with `penaltyDeath`.
-
-An empty/blank final now cancels the utterance's composition, inserts nothing (including no
-separator or deletion of a selected field), and briefly shows **Didn't catch that**. Stopping
-capture before the first frame is a normal completion. `bad_audio`, `engine`, `busy`,
-`too_long`, `auth`, `bad_request`, and unknown errors have bounded local messages; auth keeps
-the Pair Mac recovery action. Regression tests cover these messages, empty results before
-and during polishing, repeated stop/cancel/focus-loss callbacks, and main-thread pool eviction.
-
-`./gradlew lint testDebugUnitTest assembleDebug assembleRelease` passed: **217 tests,
-zero failures/errors, two opt-in skips**. The stop matrix passed with real cached Parakeet
-and managed Qwen cleanup, throwaway HOME and port **7899** only:
-
-- Current server over HTTP: all eight cases plus in-app Diagnostics.
-- Current server over TLS: all eight cases with clean logcat and crash preferences.
-- Pre-`a31415b` server (`2c9c2e8`) over TLS: all eight cases plus in-app Diagnostics,
-  including a zero-frame stop returning `bad_audio` rather than an empty final.
-- Cases: stop before Ready with zero audio frames, listening, after a partial, during
-  polishing, repeated stop taps, stop/hide, stop/focus loss, and stop/IME unbind.
-
-The harness delays Ready and the first synthetic frame for the immediate case, holds final
-delivery briefly to observe real managed polishing, and waits for each server session to
-retire. These controls affect only debug capture and the disposable test server. No audio,
-transcripts, credentials or TLS private keys are committed. Content-free baseline/fixed
-crash evidence is stored outside git under `/tmp/chirp-stopcrash-{baseline,fixed}/`.
-
-Reproduce the matrix after building debug (requires `openssl` for the generated test cert):
-
-```sh
-source ~/.local/share/chirp-android/env.sh
-ANDROID_SERIAL=emulator-5580 python3 android/scripts/emulator-check.py --stop-check --tls \
-  --python /path/to/server/.venv/bin/python --model-dir /path/to/cached/parakeet-mlx \
-  --apk android/app/build/outputs/apk/debug/app-debug.apk
-# Omit --tls for HTTP. To check old behaviour, create a disposable detached worktree
-# at a31415b^ and add --server-root /path/to/old-worktree/server.
-```
-
-The debug-only test cert/key is generated under `app/build/`, with trust restricted to
-`10.0.2.2`. The matching cert is bundled in debug; the private key stays on the host.
-Release artifact inspection confirms no synthetic source, cleartext exception, emulator
-trust certificate or private key. `scripts/emulator-smoke.sh` passed the signed minified
-release on **emulator-5580 only**, including setup/scanner, typing/autocorrect, clipboard,
-emoji, Fold layouts/themes, mic recovery, settings and Diagnostics with no Chirp crash.
-Chirp was reselected after force-stops. Release is **0.5.1 (7)**, **26,950,788 bytes
-(25.70 MiB)**, arm64-v8a and x86_64, signed with the existing local development key.
-
-
-### 0.5.1 clean-up default follow-up (2026-10-18)
-
-Clean-up now defaults **on** after pairing with an available **on-Mac** correction server.
-The `correction_explicit` flag records a user's toggle independently of the legacy
-`correction` boolean: an untouched 0.5.0 `false` no longer hides the feature after upgrade.
-Explicit OFF persists across refreshes and restarts. Setup, keyboard settings, and the mic
-menu record choices; changing haptics or the debug overlay does not. External correction
-still requires explicit opt-in and a known host. Availability drops or correction-destination
-changes suspend correction until the user enables it again. A server reporting correction
-off always produces `correction=false` on start, even after an earlier explicit ON.
-
-Setup places Clean-up and styles directly below the paired Mac/engine, explains that local
-cleanup polishes punctuation/filler words without text leaving the Mac, and shows **Mac has
-clean-up off** when unavailable. External correction retains its destination disclosure.
-The mic long-press menu starts with **Clean-up: on ✓** or **Clean-up: off**.
-
-The full `lint testDebugUnitTest assembleDebug assembleRelease` path passed: **235 tests,
-zero failures/errors, two opt-in skips**. New coverage includes local/external defaults,
-legacy preference migration, explicit OFF, privacy/availability transitions, server-off start
-frames, visible controls and independent toggle callbacks. The real managed TLS stop matrix
-passed all eight scenarios on **emulator-5580**, without enabling correction in the harness:
-every observed start frame carried `correction=true`, and managed polishing ran with clean
-logcat and in-app Diagnostics. The signed minified release UI smoke also passed. Live
-speech/start-frame checks use debug's isolated TLS trust; release retains system trust only.
-The AVD was run as a disposable read-only instance at port 5580 after stale AVD locks blocked
-normal startup. No physical device or production server was used.
-
-This is a second local commit before publishing, still **0.5.1 (7)**. The current signed
-release APK is **26,950,808 bytes (25.70 MiB)**, arm64-v8a and x86_64. No APK was published.
-
-## Keyboard look and swipe typing
+One-handed, split, clipboard history and emoji are reachable from the expandable toolbar. Light/dark follows the system.
 
 ### Keyboard look
 
-Chirp settings (the Chirp section at the top of Keyboard layouts & settings) and the last
-setup step have a **Keyboard look** chooser with a small preview of each option:
+Chirp settings (the Chirp section at the top of Keyboard layouts & settings) and the last setup step have a **Keyboard look** chooser with a small preview of each option:
 
 | Look | HeliBoard settings it writes |
 | --- | --- |
@@ -464,134 +139,245 @@ setup step have a **Keyboard look** chooser with a small preview of each option:
 | HeliBoard rounded | Rounded style, borders, Light / Dark |
 | HeliBoard Holo | Holo style, Holo White |
 
-Every look is applied only through HeliBoard's existing theme preferences (`theme_style`,
-`theme_key_borders`, `theme_colors`, `theme_colors_night`, `theme_auto_day_night`) and its
-user colour themes. Nothing in the vendored keyboard was changed for this. The Gboard-like
-look follows the wallpaper through Android's dynamic colours: neutral keys with gaps on a
-tinted background, accent-tinted Shift/Backspace/?123 keys, an accent Enter key and
-long-press hint labels. The Samsung-like look uses neutral white/grey (light) or charcoal
-(dark) keys, grey function keys and a blue Enter key. Both can be fine-tuned under
-Appearance, which also still offers every HeliBoard colour, style and background. When
-Appearance holds anything other than a preset, the chooser shows it as a custom look.
-Key height, number row, one-handed and split settings are unchanged.
+Every look is applied only through HeliBoard's existing theme preferences (`theme_style`, `theme_key_borders`, `theme_colors`, `theme_colors_night`, `theme_auto_day_night`) and its user colour themes; nothing in the vendored keyboard was changed for this. The Gboard-like look follows the wallpaper through Android's dynamic colours: neutral keys with gaps on a tinted background, accent-tinted Shift/Backspace/?123 keys, an accent Enter key and long-press hint labels. The Samsung-like look uses neutral white/grey (light) or charcoal (dark) keys, grey function keys and a blue Enter key. Both can be fine-tuned under Appearance, which also still offers every HeliBoard colour, style and background; when Appearance holds anything other than a preset, the chooser shows it as a custom look. Key height, number row, one-handed and split settings are unchanged.
 
-The migration `chirp_keyboard_look_v1` runs once in `ChirpApplication`, next to the existing
-`chirp_keyboard_defaults_v1` / typing defaults. An install with no theme preference at all
-(fresh, or 0.5.x that never opened Appearance) switches to the Gboard-like look. If any
-theme preference was already written, the user chose it explicitly and it is kept.
-Later choices are never overwritten.
+The migration `chirp_keyboard_look_v1` runs once in `ChirpApplication`, next to the existing `chirp_keyboard_defaults_v1` / typing defaults. An install with no theme preference at all (fresh, or 0.5.x that never opened Appearance) switches to the Gboard-like look; any theme preference already written was chosen explicitly and is kept. Later choices are never overwritten.
 
-The Chirp row now takes its colours from the active HeliBoard theme instead of a fixed green
-palette. Its background is transparent, so HeliBoard's own suggestion-row colour (or a
-background image) shows through. The idle mic uses the key text colour like Gboard's toolbar
-icons; while listening it becomes an accent pill with a contrasting icon. The waveform and
-Polishing… shimmer use the accent, darkened or lightened until it reaches 3:1 contrast
-against the row. **Use raw** and the style chip use a translucent accent chip.
-The red debug-retention banner is unchanged.
+The Chirp row takes its colours from the active HeliBoard theme instead of a fixed green palette. Its background is transparent, so HeliBoard's own suggestion-row colour (or a background image) shows through. The idle mic uses the key text colour like Gboard's toolbar icons; while listening it becomes an accent pill with a contrasting icon. The waveform and Polishing… shimmer use the accent, darkened or lightened until it reaches 3:1 contrast against the row. **Use raw** and the style chip use a translucent accent chip. The red debug-retention banner is unchanged.
 
-### Swipe typing: findings and decision
+### Fold inner/cover layout
 
-HeliBoard's gesture typing needs a native decoder. HeliBoard 4.2 ships none. It supports
-`System.load` of a user-supplied library (`JniUtils`, `LoadGestureLibPreference`),
-normally Google's proprietary `libjni_latinimegoogle.so`, with a SHA-256 check against a
-known release for each ABI. Chirp must not bundle or download that file. Options reviewed
-(2026-10-18):
+Unfolding keeps the cover keyboard's function-key arrangement in both looks: **Shift starts the third letter row, Backspace ends it, and Enter sits after the period at bottom-right** — instead of HeliBoard's tablet arrangement. Chirp seeds HeliBoard's phone functional layout once (migration `chirp_functional_layout_v1`); explicitly chosen global or per-language functional layouts remain yours. The number row defaults on at inner-screen widths (600 dp and wider; an explicit choice wins). Unfolded landscape defaults to split; cover layouts stay compact. See [Fold layout details](keyboard/UPSTREAM.md#fold-function-key-arrangement-2026-10-18) and the `fold-layout-*.png` before/after emulator captures in [docs/screenshots/android](../docs/screenshots/android).
 
-- **User-supplied library through HeliBoard's loader (implemented).** Same mechanism and
-  checksums as HeliBoard's *Load gesture typing library*. The user obtains the file and
-  chooses it; Chirp does not distribute, download or link to it. Quality matches Gboard's
-  decoder, because it is that decoder.
-- **HeliBoard's own open-source decoder** ([NLnet GestureTyping](https://nlnet.nl/project/GestureTyping/)):
-  planned as a GPL drop-in for the same JNI interface. Gesture data gathering runs until
-  November 2026; no release exists yet. This is the preferred future option, because it
-  would need no Chirp UI change beyond bundling it.
-- **[CleverKeys](https://github.com/tribixbite/CleverKeys)** (GPL-3.0, fork of Unexpected
-  Keyboard): an on-device CTC/transformer swipe model with ONNX Runtime (MIT), about
-  89% top-1 on its own English benchmark. Its licence is compatible, but it is a different
-  keyboard. Using it here means porting its decoder, model and ONNX Runtime into HeliBoard's
-  batch-input path (several MB of APK and a separate maintenance burden). That needs an
-  operator decision on size and scope; it is not a release-ready drop-in.
-- **FlorisBoard `StatisticalGlideTypingClassifier`** (Apache-2.0, GPL-3.0 compatible):
-  small and pure Kotlin, but FlorisBoard itself labels glide typing alpha and has it
-  disabled by default. Its quality does not justify replacing the option above.
-- **AnySoftKeyboard** (Apache-2.0) gesture typing: separate architecture with widely reported
-  accuracy problems. **FUTO Keyboard**'s decoder uses the Source First licence, which is not
-  open-source compatible, so it was rejected.
+### Swipe typing
+
+HeliBoard's gesture typing needs a native decoder, and HeliBoard 4.2 ships none. It supports `System.load` of a user-supplied library (`JniUtils`, `LoadGestureLibPreference`), normally Google's proprietary `libjni_latinimegoogle.so`, with a SHA-256 check against a known release for each ABI. **Chirp must not bundle or download that file**, so no gesture library is bundled — but setup and Chirp settings can load one you supply. Options reviewed (2026-10-18):
+
+- **User-supplied library through HeliBoard's loader (implemented).** Same mechanism and checksums as HeliBoard's *Load gesture typing library*. You obtain the file and choose it; Chirp does not distribute, download or link to it. Quality matches Gboard's decoder, because it is that decoder.
+- **HeliBoard's own open-source decoder** ([NLnet GestureTyping](https://nlnet.nl/project/GestureTyping/)): planned as a GPL drop-in for the same JNI interface. Gesture data gathering runs until November 2026; no release exists yet. Preferred future option — it would need no Chirp UI change beyond bundling it.
+- **[CleverKeys](https://github.com/tribixbite/CleverKeys)** (GPL-3.0, fork of Unexpected Keyboard): an on-device CTC/transformer swipe model with ONNX Runtime (MIT), about 89% top-1 on its own English benchmark. Licence-compatible but a different keyboard: porting its decoder, model and ONNX Runtime into HeliBoard's batch-input path means several MB of APK and a separate maintenance burden. Not release-ready; needs an operator decision.
+- **FlorisBoard `StatisticalGlideTypingClassifier`** (Apache-2.0, GPL-3.0 compatible): small and pure Kotlin, but FlorisBoard labels glide typing alpha, disabled by default; its quality does not justify replacing the option above.
+- **AnySoftKeyboard** (Apache-2.0): separate architecture with widely reported accuracy problems. **FUTO Keyboard**'s decoder uses the Source First licence, which is not open-source compatible — rejected.
 
 **Enable swipe typing** (setup → last step, or Chirp settings):
 
-1. The card explains that Chirp has no built-in swipe typing, that a compatible library is
-   usually Google's `libjni_latinimegoogle.so` from a GApps package, that Chirp never
-   downloads or includes it, and that using it is the user's choice under that library's
-   own licence. It names the ABI the phone needs (`arm64-v8a` on the Fold).
-2. **Add gesture library…** opens the system file picker. The file is copied privately
-   (64 MB limit) and checked: an ELF shared object for this ABI, then SHA-256.
-3. A matching checksum shows **Verified gesture library**. Anything else shows **Unknown
-   library**, with the start of its hash and a warning, and needs an explicit
-   **Use anyway**. A wrong ABI or a non-library file is rejected and deleted.
-4. Chirp installs the file exactly where HeliBoard's loader expects it (read-only
-   `files/libjni_latinime.so`, checksum in `lib_checksum`) and restarts, because native
-   code loads once per process. HeliBoard's Gesture typing settings then appear.
-5. When the library is active, the card offers a **Swipe to type** switch and **Remove
-   gesture library**. A file that fails to load is reported, with a Remove action.
+1. The card explains that Chirp has no built-in swipe typing, that a compatible library is usually Google's `libjni_latinimegoogle.so` from a GApps package, that Chirp never downloads or includes it, and that using it is your choice under that library's own licence. It names the ABI the phone needs (`arm64-v8a` on the Fold).
+2. **Add gesture library…** opens the system file picker. The file is copied privately (64 MB limit) and checked: an ELF shared object for this ABI, then SHA-256.
+3. A matching checksum shows **Verified gesture library**. Anything else shows **Unknown library**, with the start of its hash and a warning, and needs an explicit **Use anyway**. A wrong ABI or a non-library file is rejected and deleted.
+4. Chirp installs the file exactly where HeliBoard's loader expects it (read-only `files/libjni_latinime.so`, checksum in `lib_checksum`) and restarts, because native code loads once per process. HeliBoard's Gesture typing settings then appear.
+5. When the library is active, the card offers a **Swipe to type** switch and **Remove gesture library**. A file that fails to load is reported, with a Remove action.
 
-The card warns that the library runs inside Chirp with Chirp's permissions, including
-network access. Release smoke still asserts that no `libjni_latinimegoogle` file is packaged.
-## Dictation history (opt-in, on-device)
+The card warns that the library runs inside Chirp with Chirp's permissions, including network access — use only a file from a source you trust. Release smoke still asserts that no `libjni_latinimegoogle` file is packaged.
 
-Dictation history is **off by default**. When enabled, committed finals (plus the raw text
-when on-Mac clean-up rewrote them) are stored on the phone only, encrypted with AES-GCM
-under a dedicated Android Keystore alias (`chirp_history_v1`) in credential-encrypted
-storage — never sent to the Mac, never logged, and excluded from backup and device transfer
-(`data_extraction_rules.xml` now also excludes the `file` domain). The store keeps at most
-**200 entries** and prunes by age: **24 hours, 7 days (default) or 30 days**. Password and
-incognito fields (`TYPE_TEXT_VARIATION_PASSWORD` variants and
-`IME_FLAG_NO_PERSONALIZED_LEARNING`) are never recorded, and cancelled dictations leave
-no entry. While the device is locked the store is unavailable and the panel says so.
+### Optional floating microphone
 
-- **Keyboard**: a clock button sits next to the mic in the Chirp row. It opens an
-  in-keyboard panel (over the key area, like HeliBoard's clipboard panel, so height and
-  insets are unchanged). First use offers one-tap **Keep history on this phone** — nothing
-  is written before that. Tapping an entry reinserts it through the same boundary and
-  selection path as a dictated final; long-press offers **Copy**, **Insert raw** (when the
-  entry was cleaned) and **Delete**. **Use raw** after a cleaned dictation updates the
-  stored entry. Back or the keyboard button closes the panel; plaintext stays in memory only
-  while the panel is open. The keys are hidden from accessibility while the panel is up.
-- **Settings**: the Chirp section has a **Dictation history** switch, the retention chooser,
-  **Open history** (a full screen with search, copy, copy-raw and per-entry delete, excluded
-  from recents thumbnails) and **Clear history**. Turning the feature off asks first and
-  then deletes the file and the Keystore key.
+The floating accessibility mic is **optional and off by default**; keyboard dictation needs no Accessibility permission. Enable it only if you choose to use another keyboard — it reads the focused field locally to insert safely, runs as a microphone foreground service with a notification, and field contents stay on the phone. For sideload restrictions: Apps → Chirp Keyboard → ⋮ → Allow restricted settings, then Accessibility → Installed apps. An already-enabled optional service remains under your Android setting; the app does not enable it on update. Design notes on this and the other input paths considered are in [docs/android-input-options.md](../docs/android-input-options.md).
 
-A small pre-existing fix ships with it: moving the cursor after a cleaned final dismissed
-the raw-undo chip but left the "cleaned" notice pinned open forever, hiding the row's idle
-buttons. The notice now expires on its five-second timer.
+## Dictation history
 
-Unit coverage (Robolectric): encryption round-trip with software keys, tamper/corrupt file
-discard, retention pruning, the 200-entry cap, opt-in gating, password/incognito exclusion,
-clear-on-disable (including a record racing the disable), used-raw updates, insert boundary
-logic, panel states, settings screen search, and the notice-expiry regression (fails without
-the fix). `./gradlew lint testDebugUnitTest assembleDebug assembleRelease` passed on the
-merged branch: **285 tests, zero failures/errors, two opt-in skips**.
+Dictation history is **off by default**. When enabled, committed finals (plus the raw text when on-Mac clean-up rewrote them) are stored **on the phone only**, encrypted with AES-GCM under a dedicated Android Keystore alias (`chirp_history_v1`) in credential-encrypted storage — never sent to the Mac, never logged, and excluded from backup and device transfer (`data_extraction_rules.xml` excludes the root, file and sharedpref domains). The store keeps at most **200 entries** and prunes by age: **24 hours, 7 days (default) or 30 days**. Password and incognito fields (`TYPE_TEXT_VARIATION_PASSWORD` variants and `IME_FLAG_NO_PERSONALIZED_LEARNING`) are never recorded, and cancelled dictations leave no entry. While the device is locked the store is unavailable and the panel says so ("Unlock your phone to see dictation history.").
 
-Emulator validation ran on **emulator-5582 only** (a second disposable read-only
-`chirp-fold` instance; emulator-5580 belonged to a parallel worker), debug APK with the
-throwaway TLS server on port 7899: `--history-check` drives the demo end to end —
-keyboard opt-in, synthetic dictation with clean-up, ciphertext check (no plaintext words on
-disk), erase and reinsert from the panel, long-press Insert raw, Fold inner/cover in light
-and dark, back-closes-panel, history-screen search, and turn-off-deletes-file. Screenshots
-land in `docs/screenshots/android/` as `emulator-history-*.png`; the pre-feature
-baseline strip is `history-before-keyboard-inner-{light,dark}.png`. Before that, the full
-`--stop-check --tls` matrix and the release smoke (`scripts/emulator-smoke.sh`) were
-re-run on this branch. No physical device or production server was used.
+- **Keyboard**: a clock button sits next to the mic in the Chirp row. It opens an in-keyboard panel (over the key area, like HeliBoard's clipboard panel, so height and insets are unchanged). First use offers one-tap **Keep history on this phone** — nothing is written before that. Tapping an entry reinserts it through the same boundary and selection path as a dictated final; long-press offers **Copy**, **Insert raw** (when the entry was cleaned) and **Delete**. **Use raw** after a cleaned dictation updates the stored entry. Back or the keyboard button closes the panel; plaintext stays in memory only while the panel is open, and the keys are hidden from accessibility while it is up.
+- **Settings**: the Chirp section has a **Keep dictation history on this phone** switch, the retention chooser, **Open history** (a full screen with search, copy, copy-raw and per-entry delete, excluded from recents thumbnails) and **Clear history**. Turning the feature off asks first and then deletes the file and the Keystore key.
 
-Reproduce (after building debug):
+A small pre-existing fix shipped with it: moving the cursor after a cleaned final used to dismiss the raw-undo chip but leave the "cleaned" notice pinned open forever, hiding the row's idle buttons. The notice now expires on its five-second timer.
+
+## Privacy
+
+- **Nothing is retained by default.** Audio and transcripts live in memory for the length of an utterance. No text, audio, URLs or tokens are logged; server error strings are never rendered into diagnostics. While the Mac runs with debug retention, a red **DEBUG: recordings kept on Mac** banner stays visible in the Chirp row.
+- **The mic opens only when you start dictation** and is released as soon as you stop. The optional floating mic declares the same rules in its accessibility description.
+- **History is opt-in and on-device.** Entries never leave the phone, are AES-GCM encrypted under a Keystore key, and are excluded from backup and device transfer.
+- **Pairing secrets are encrypted at rest** (Android Keystore) and redacted from any `toString`. Pairing links are treated as secrets; they are parsed strictly and never logged.
+- **Crash diagnostics are bounded.** Setup → Diagnostics shows/copies the last five local uncaught crashes: time, app version, exception class and at most 48 message-free class/method/line frames. The handler writes synchronously before delegating termination. It does not store exception messages, cause messages, filenames, thread names, text, audio, URLs or tokens. The private, backup-excluded log survives an app restart/update. HeliBoard's original crash handler and keyboard logger are disabled so they cannot retain a second content log.
+- **Clean-up disclosure.** Styles stay hidden when clean-up is unavailable, including an undisclosed external correction destination; external correction always requires explicit opt-in and shows its host.
+
+## Troubleshoot
+
+Setup → **Diagnostics** copies the bounded crash log (see [Privacy](#privacy)). Common messages on the suggestion-row status bar:
+
+| Bar message | What it means | What to do |
+|---|---|---|
+| "Pairing refused — pair again in Chirp setup" | Server `auth` error | Re-pair from setup (**Pair Mac**) |
+| "Didn't catch that" | Empty/blank final or server `bad_audio` | Speak again; nothing was inserted |
+| "Speech engine hiccup" | Server `engine` error | Retry; check `chirp-server doctor` on the Mac |
+| "Mac is busy — try again" | Server `busy` (engine occupied) | Retry after a moment |
+| "Dictation limit is 120 seconds" | Server `too_long` | Split long dictations |
+| "Clean-up prompt too long — shorten it in Chirp settings" | Server `bad_request` on the prompt | Edit the style prompt |
+| "Mac speech engine unavailable — try again" | Unknown server error | Retry; check the server |
+| "Mac took too long to finish — try again" | Final timed out locally | Retry; check the Mac's load |
+| "Mac connection is too slow — try again" | Transport stalled | Check Tailscale (**Check Tailscale**) |
+| "kept original" after Polishing… | Clean-up failed, timed out (12 s) or the socket dropped | Raw text was inserted; edit the style or check the Mac |
+| "Unlock your phone to see dictation history." | History store is credential-encrypted | Unlock the device |
+
+Recoverable errors also offer **Pair Mac**, **Open mic settings** and **Check Tailscale** actions. A historical note: a reproducible 0.5.1-era crash (`NetworkOnMainThreadException` during TLS teardown on stop/keyboard-hide) was fixed by moving all HTTP cancellation, pool eviction and dispatcher shutdown to one process-wide background queue — see the [validation record](#051-stop-crash-fix-2026-10-17). If an editor disconnected during the raw composing-region replacement, older builds could crash; all editor calls in `ComposingSession` now fail safely without exposing editor exceptions, losing the corrected text on a rejected replacement, or allowing late callbacks to insert into another field (lifecycle coverage: final, repeated utterances, hide/unbind/destroy, stale capture/transport callbacks, cancel and raw expiry). The first regression test for that crash failed before the fix; the original installed emulator crash buffer was empty, which does **not** establish that the operator's phone hit that same exception.
+
+## Develop and test
+
+### Toolchain (once)
+
+```sh
+android/scripts/setup-toolchain.sh   # user-scoped; no sudo, no emulator images
+```
+
+Installs Zulu JDK 21 and the Android SDK (platform-tools, android-37.2, build-tools 37.0.0) under `~/.local/share/chirp-android/` (override with `CHIRP_TOOLS`/`ANDROID_HOME`) and writes `~/.local/share/chirp-android/env.sh`, which exports `JAVA_HOME`, `ANDROID_HOME` and `PATH`.
+
+### Build and unit tests
 
 ```sh
 source ~/.local/share/chirp-android/env.sh
-ANDROID_SERIAL=emulator-5582 python3 android/scripts/emulator-check.py --history-check --tls \
-  --python /path/to/server/.venv/bin/python --model-dir /path/to/cached/parakeet-mlx \
+cd android
+./gradlew lint testDebugUnitTest assembleDebug assembleRelease
+```
+
+Use the **existing** `keystore/local-debug.keystore` to sign updates; never generate a replacement key for an already-installed app. APKs are `app/build/outputs/apk/{debug,release}/app-{debug,release}.apk`. The host and library use NDK 28.0.13004108; the app setting is needed to strip JNI symbols. The release supports arm64 phones and x86_64 emulator validation (`abiFilters` in the keyboard module). App lint remains strict (warnings as errors); only the vendored keyboard's `lint*Analyze*` tasks are disabled (upstream lint crash — see [Upstream](#upstream)). See [keyboard/UPSTREAM.md](keyboard/UPSTREAM.md) for the pinned source, license, adapter, upstream patch and vendor-only lint workaround.
+
+Robolectric runs on API 31 and 37 with fake input connections, transport and capture. The integrated keyboard renders actual HeliBoard keys and the production Chirp row in idle/listening/final states, light/dark, under `../docs/screenshots/android/`. Existing transport tests use isolated TLS loopback servers. LiveServerTest stays opt-in (`-Pchirp.live.url` …); no production Chirp server or port 7821 is used by the default check.
+
+### Mandatory release smoke
+
+Run `android/scripts/emulator-smoke.sh` with the toolchain sourced after every change. It builds and installs the minified release APK, clears only the authorized disposable emulator's Chirp data, walks state-aware setup, opens/backs out of the real Google QR scanner, opens the native editor, checks keyboard/mic/recovery/options, and exercises actual HeliBoard keys: `teh` → `the` (sentence-cased at field start), `im` → `I'm`, next-word suggestions, clipboard history and emoji. It checks inner and cover layouts in both themes, unfolded landscape split, one-handed reachability, settings/diagnostics, packaged dictionary hashes, absence of debug assets/proprietary glide libraries and the Chirp crash buffer. Failure exits non-zero. Every ADB call pins `emulator-5580`; other serials are refused. It changes no phone, Mac configuration, production server or Tailscale state.
+
+A tiny shell-only UiAutomator probe reads all accessibility windows because Android 17's stock `uiautomator dump` returns the editor window without the IME (`scripts/build-ui-probe.sh` builds it under a temporary directory from `UiHierarchy.java`, pushes it to the disposable emulator and removes it in cleanup; it ships in neither APK). Real release captures are `docs/screenshots/android/release-*.png`, each under 2 MB. Release has no synthetic capture source or emulator cleartext policy.
+
+### Emulator speech checks (debug only)
+
+The operator-authorized emulator is **emulator-5580 only** — `emulator-check.py` refuses other serials (an `ANDROID_SERIAL` that disagrees is rejected too). The helper starts the actual server with a throwaway HOME on port 7899, uses the existing cached speech model, pairs through the QR deep-link path, and feeds generated speech through the real `PcmCapture` framing, buffer, `StreamTransport` and composing/final path. All subprocess/intent output that could contain a credential is suppressed. The test server and test credentials are removed in cleanup; the emulator is left running.
+
+```sh
+source ~/.local/share/chirp-android/env.sh
+python3 android/scripts/emulator-check.py \
+  --python /path/to/chirp/server/.venv/bin/python \
+  --model-dir /path/to/cached/parakeet-mlx \
   --apk android/app/build/outputs/apk/debug/app-debug.apk
 ```
 
-Still **0.5.1 (7)**, no version bump. The signed release APK is **27,025,176 bytes
-(25.76 MiB)**. No APK was published.
+| Flag | Runs |
+|---|---|
+| *(none)* | Debug synthetic-speech E2E |
+| `--tls` | HTTPS/WSS on 7899 with the disposable debug CA |
+| `--stop-check` | The eight-scenario stop matrix (all stop/teardown paths, incl. crash checks) |
+| `--history-check` | Dictation-history flow (opt-in, reinsert, Insert raw, ciphertext check) |
+| `--cleanup-only` | Managed clean-up E2E only |
+| `--frames-only` | Uninstrumented frame metrics (no recording/polling during speech) |
+| `--expect-crash` | Pre-fix TLS baseline expecting `NetworkOnMainThreadException` |
+| `--server-root PATH` | Use another server checkout (default: the repo's `server/`) |
+| `--tls-dir PATH` | Root for the debug CA/key (default `android/app/build`) |
+
+Reproduce the TLS stop matrix after building debug (requires `openssl` for the generated test cert):
+
+```sh
+source ~/.local/share/chirp-android/env.sh
+python3 android/scripts/emulator-check.py --stop-check --tls \
+  --python /path/to/server/.venv/bin/python --model-dir /path/to/cached/parakeet-mlx \
+  --apk android/app/build/outputs/apk/debug/app-debug.apk
+# Omit --tls for HTTP. To check old behaviour, create a disposable detached worktree
+# at a31415b^ and add --server-root /path/to/old-worktree/server.
+```
+
+The debug-only test cert/key is generated under `app/build/` (`generated/chirp-debug-res/raw/emulator_ca.pem` and `emulator-tls/key.pem`; 7-day CA, renewed near expiry, SAN restricted to `10.0.2.2`/`127.0.0.1`), with trust restricted to `10.0.2.2`; the private key stays on the host. The matching cert is bundled in debug only.
+
+The debug test-step switch **Debug: synthetic speech (no microphone)** selects a say-generated 16 kHz mono WAV. The asset is generated into `app/build/`, never committed. On macOS the debug build invokes `say`/`afconvert`; other hosts may set `CHIRP_SYNTHETIC_WAV` to a generated synthetic-only WAV. This file source, switch and asset are excluded from release. The release capture uses AudioRecord only. The debug cleartext policy permits only `10.0.2.2`; URL validation further restricts HTTP to port 7899. Release permits HTTPS only and has no cleartext exception.
+
+Emulator screenshots are independent of the deterministic Robolectric renders. Neither run establishes Galaxy hardware microphone quality, battery cost or Tailscale latency; those still need operator acceptance on the phone.
+
+### TalkBack, icons, fold captures, battery
+
+```sh
+android/scripts/build-ui-probe.sh                    # rebuild the shell probe first
+python3 android/scripts/emulator-talkback.py         # enables real TalkBack, validates mic/status/cancel
+                                                     # labels and native click/long-click, restores settings
+python3 android/scripts/emulator-icons.py            # captures release-launcher-icon.png,
+                                                     # release-app-icon-settings.png, release-keyboard-picker-icon.png
+python3 android/scripts/emulator-fold-layout.py --look samsung   # (or gboard) fold-layout-*.png captures
+android/scripts/battery-session.sh                   # operator-driven battery session → docs/bench.md row
+```
+
+`make-icons.swift` regenerates the launcher/notification icon resources from the approved artwork — sources, deterministic packaging and asset paths are in [artwork/chirp-icons/README.md](artwork/chirp-icons/README.md).
+
+## Upstream
+
+- **Source**: HeliBoard v4.2 stable (checked 2026-10-17), pinned at commit `0c60dffb03a4e2e7a37cb82210f5299f93c03979`; `keyboard/upstream/` is the complete vendored release source archive, not a submodule.
+- **License**: HeliBoard is GPL-3.0 (with AOSP Apache-2.0 code and separately licensed assets). The combined Android app includes GPL-3.0 HeliBoard code. Personal use; corresponding source is available in this repository. Keep the upstream licenses/notices intact. See [keyboard/UPSTREAM.md](keyboard/UPSTREAM.md).
+- **Patches**: every upstream change is marked **CHIRP** and recorded in `keyboard/patches/chirp.patch` — host hooks, disabled crash reporter and keyboard logging, in-process voice availability, voice-key touch handling, number-row/fold defaults, accessibility refresh, split-layout cache fix.
+- **Dictionaries**: `main_en-US.dict` and `emoji_en.dict` from the Codeberg-pinned [aosp-dictionaries](https://codeberg.org/Helium314/aosp-dictionaries); SHA-256s are tabulated and smoke-checked. See [dictionary provenance](keyboard/UPSTREAM.md#english-typing-and-emoji-dictionaries-2026-10-17).
+- **Lint**: AGP 9.4.1/Kotlin 2.4.21 lint crashes on one upstream file; only the vendored library's `lint*Analyze*` tasks are disabled (reports kept). The Chirp app lint stays strict.
+- **Icons**: app-level overlays replace HeliBoard's icon IDs; sources and packaging are in [artwork/chirp-icons/README.md](artwork/chirp-icons/README.md).
+
+## Validation records
+
+Dated records of what was actually run, per feature, with the APK sizes of the day. The earliest full record (0.3.0) is [docs/android-keyboard-validation.md](../docs/android-keyboard-validation.md).
+
+### Round 4 typing release (2026-10-17)
+
+The full `lint testDebugUnitTest assembleDebug assembleRelease` path passed: 175 tests, 0 failures/errors, 2 pre-existing opt-in skips. Release smoke passed scanner open/back, state-aware setup, actual autocorrect/next-word keys, clipboard, emoji, the integrated mic and recovery, inner/cover light/dark, unfolded landscape split, one-handed control reachability, settings/diagnostics and crash checks. `emulator-talkback.py` additionally enabled actual TalkBack and validated mic/status/cancel labels and native click/long-click actions before restoring the settings. Debug synthetic E2E passed against the isolated real Parakeet server with Keystore pairing, live composing text, repeated committed finals, cancellation, quick options, normal typing after dictation, light/dark and IME retention; the throwaway server was stopped. It does not claim live speech transport over HTTPS from the release build — the release APK uses AudioRecord, and smoke validates its UI without a live HTTPS speech session or the debug synthetic/cleartext facilities. Release APK: **26,684,648 bytes (25.45 MiB)**, containing arm64-v8a and x86_64. The English US dictionary added **0 bytes** because the pinned file was already bundled; the new emoji dictionary is 45,272 bytes before APK compression (21,095 packaged bytes). The typing/defaults phase added 25,068 bytes relative to the pre-typing UX release build (26,659,580 bytes). Screenshots in `../docs/screenshots/android/release-*.png` are from the real release emulator, each below 2 MB. No phone, production server, Mac app or Tailscale setting was used or modified.
+
+### 0.5.0 clean-up, styles and streaming (2026-10-17)
+
+`./gradlew lint testDebugUnitTest assembleDebug assembleRelease` passed with **198 tests, zero failures/errors, two opt-in skips**. Tests cover protocol metadata and editable prompts, TLS bearer requests, omission/reset/migration, Unicode limits, exact package mapping, prewarming/expiry, coalescing, suffix edits with a real `BaseInputConnection`, stable-prefix rollback, cancellation, polishing fallback, readable transitions and reduced motion.
+
+Managed cleanup E2E passed against a real Parakeet/Qwen server on **7899** with a temporary HOME, `[correction] mode="managed"`, and the shared offline HF cache. The helper was warmed before UI captures to exclude first-use model/Metal setup; the app still has its normal 12-second polishing deadline. The capture helper requires `ffmpeg` to keep the exported recording below ten seconds. The debug asset used messy synthetic speech generated under `app/build/`; no audio is committed. Both themes captured underlined raw composition, Polishing + style, cleaned + Use raw, and native accessible raw replacement. The test removes its server, credentials and device probes and re-selects Chirp after force-stop. Reproduce with `--cleanup-only` (or `--frames-only` for the uninstrumented run) in the [emulator speech check](#emulator-speech-checks-debug-only) command.
+
+Release `scripts/emulator-smoke.sh` and actual `emulator-talkback.py` also passed on **emulator-5580 only**. Release remains AudioRecord-only and HTTPS-only; live managed speech was exercised through the debug synthetic/cleartext path. APK: **26,716,080 bytes (25.48 MiB)**, version **0.5.0 (6)**, arm64-v8a and x86_64, signed with the existing local key.
+
+Artifacts under `../docs/screenshots/android/`:
+
+- `emulator-cleanup-{polishing,cleaned,styles}-{light,dark}.png` — actual emulator states.
+- `emulator-cleanup-streaming.mp4` — a silent 9.54-second screen recording (10-second capture cap).
+- `emulator-cleanup-gfxinfo.txt` — recorded run: 194/199 janky frames, p50 85 ms.
+- `emulator-cleanup-uninstrumented-gfxinfo.txt` — no capture/polling during speech: 161/170 janky frames, p50 133 ms.
+- `emulator-release-typing-gfxinfo.txt` — ordinary release typing baseline: 83/95 janky frames, p50 32 ms.
+
+These measurements do **not** establish smooth 60 fps. The authorized AVD has `hw.gpu.enabled=no`; ordinary typing is also substantially janky, and its host concurrently runs ASR/cleanup. The source recording averages about 14.9 fps. GPU-backed device validation remains necessary to assess animation smoothness. The emulator's GPU configuration was not changed. No phone, production Chirp configuration/server, Mac app, LaunchAgent or Tailscale setting was modified.
+
+### 0.5.0 launcher and themed icons
+
+The release uses the operator's **full-bleed moonlit pond bird** artwork. The adaptive icon has that complete composition as its background, navy overscan to keep the moon and bird inside the safe viewport, and an empty foreground (the explicitly approved fallback). No rounded tile is added; the launcher supplies its own mask. Legacy density variants use the same opaque source, with resource aliases sharing normal/round names. App-level overlays replace HeliBoard's icon IDs, including the About/settings icon, and the IME service references the new launcher mipmap explicitly. Android 13+ monochrome uses the selected round fin-bird glyph **with** waves. The floating microphone notification uses the **same original alpha without the detached waves**, retaining its eye/pupil, fins and feet. The exact supplied sources, deterministic packaging script and asset paths are documented in [artwork/chirp-icons/README.md](artwork/chirp-icons/README.md). Built-in imagegen cutout attempts were discarded; generated replacements do not ship.
+
+The full lint/unit/debug/release path passed with **202 tests, zero failures/errors, two opt-in skips**. Icon tests on API 31/37 verify application and IME service icon resolution, HeliBoard's resource overlay, visible orange bird/yellow moon under the adaptive mask, monochrome availability and notification alpha. Release smoke passed after the icon update. `scripts/emulator-icons.py` also passed on emulator-5580, leaving Chirp selected, capturing `release-launcher-icon.png` (actual app drawer), `release-app-icon-settings.png` (actual Android app-info icon) and `release-keyboard-picker-icon.png` (native picker; this Android build uses text-only rows, while the IME's icon metadata is verified by the API tests). Signed release APK: **26,949,136 bytes (25.70 MiB)**, still **0.5.0 (6)**. App lint retains warnings-as-errors; two narrow icon-style exceptions cover the v26 vendor-overlay qualifier and deliberately full-bleed legacy artwork.
+
+### 0.5.1 stop-crash fix (2026-10-17)
+
+The phone's crash was TLS teardown on the main thread. A minified baseline built from `2c9c2e8` (the Android implementation also present at `a31415b`), with only the emulator TLS trust setup and version metadata changed, reproduced it on **emulator-5580**. Both `adb logcat -b crash` and the app's Diagnostics recorded:
+
+```text
+android.os.NetworkOnMainThreadException
+  ConscryptEngineSocket.drainOutgoingQueue → ConscryptEngineSocket.close
+  okhttp3.internal.connection.RealConnectionPool.evictAll → ConnectionPool.evictAll
+  KeyboardDictation.start$lambda$9 (KeyboardDictation.kt:267)
+  DictationStream.event$lambda$0 (DictationStream.kt:91)
+```
+
+The R8 debug mapping (`app/build/intermediates/mapping/debug/minifyDebugWithR8/mapping.txt`, R8 9.4.24) confirms the synthetic callback and source line. TLS `close_notify` writes explain why earlier cleartext speech checks passed. The same synchronous pool eviction was called on keyboard hide and through setup/style-editor client disposal.
+
+All HTTP call cancellation, pool eviction and dispatcher shutdown now use one process-wide background queue. Cancellation snapshots the outgoing session's calls before enqueueing, so late cleanup cannot cancel calls created after an immediate keyboard hide/show. WebSocket close/cancel stays asynchronous. Health, pairing and profile HTTP requests already run on `Dispatchers.IO`; their lifecycle cancellation/disposal now also leaves the main thread. Debug builds enable StrictMode network detection with `penaltyDeath`.
+
+An empty/blank final cancels the utterance's composition, inserts nothing, and briefly shows **Didn't catch that**. Stopping capture before the first frame is a normal completion. `bad_audio`, `engine`, `busy`, `too_long`, `auth`, `bad_request` and unknown errors have bounded local messages (see [Troubleshoot](#troubleshoot)); auth keeps the Pair Mac recovery action. Regression tests cover these messages, empty results before and during polishing, repeated stop/cancel/focus-loss callbacks, and main-thread pool eviction.
+
+`./gradlew lint testDebugUnitTest assembleDebug assembleRelease` passed: **217 tests, zero failures/errors, two opt-in skips**. The stop matrix passed with real cached Parakeet and managed Qwen cleanup, throwaway HOME and port **7899** only:
+
+- Current server over HTTP: all eight cases plus in-app Diagnostics.
+- Current server over TLS: all eight cases with clean logcat and crash preferences.
+- Pre-`a31415b` server (`2c9c2e8`) over TLS: all eight cases plus in-app Diagnostics, including a zero-frame stop returning `bad_audio` rather than an empty final.
+- Cases: stop before Ready with zero audio frames, listening, after a partial, during polishing, repeated stop taps, stop/hide, stop/focus loss, and stop/IME unbind.
+
+The harness delays Ready and the first synthetic frame for the immediate case, holds final delivery briefly to observe real managed polishing, and waits for each server session to retire. These controls affect only debug capture and the disposable test server. No audio, transcripts, credentials or TLS private keys are committed. Content-free baseline/fixed crash evidence is stored outside git under `/tmp/chirp-stopcrash-{baseline,fixed}/`. Reproduce with `--stop-check --tls` as shown in [Develop and test](#emulator-speech-checks-debug-only).
+
+Release artifact inspection confirms no synthetic source, cleartext exception, emulator trust certificate or private key. `scripts/emulator-smoke.sh` passed the signed minified release on **emulator-5580 only**, including setup/scanner, typing/autocorrect, clipboard, emoji, Fold layouts/themes, mic recovery, settings and Diagnostics with no Chirp crash. Chirp was reselected after force-stops. Release was **0.5.1 (7)**, **26,950,788 bytes (25.70 MiB)**, arm64-v8a and x86_64, signed with the existing local development key.
+
+### 0.5.1 clean-up default follow-up (2026-10-18)
+
+Clean-up now defaults **on** after pairing with an available **on-Mac** correction server. The `correction_explicit` flag records a user's toggle independently of the legacy `correction` boolean: an untouched 0.5.0 `false` no longer hides the feature after upgrade. Explicit OFF persists across refreshes and restarts. Setup, keyboard settings and the mic menu record choices; changing haptics or the debug overlay does not. External correction still requires explicit opt-in and a known host. Availability drops or correction-destination changes suspend correction until the user enables it again. A server reporting correction off always produces `correction=false` on start, even after an earlier explicit ON. Setup places Clean-up and styles directly below the paired Mac/engine, explains that local cleanup polishes punctuation/filler words without text leaving the Mac, and shows **Mac has clean-up off** when unavailable. External correction retains its destination disclosure.
+
+The full `lint testDebugUnitTest assembleDebug assembleRelease` path passed: **235 tests, zero failures/errors, two opt-in skips**. New coverage includes local/external defaults, legacy preference migration, explicit OFF, privacy/availability transitions, server-off start frames, visible controls and independent toggle callbacks. The real managed TLS stop matrix passed all eight scenarios on **emulator-5580**, without enabling correction in the harness: every observed start frame carried `correction=true`, and managed polishing ran with clean logcat and in-app Diagnostics. The signed minified release UI smoke also passed. Live speech/start-frame checks use debug's isolated TLS trust; release retains system trust only. The AVD was run as a disposable read-only instance at port 5580 after stale AVD locks blocked normal startup. No physical device or production server was used. Signed release APK at that point: **26,950,808 bytes (25.70 MiB)**; no APK was published.
+
+### Fold inner-screen layout (2026-10-18)
+
+Fold-layout validation: `lint testDebugUnitTest assembleDebug assembleRelease` passed (256 cases, zero failures/errors, two opt-in skips). Forty release screenshots cover before/after, both looks, light/dark, native AVD, inner portrait/landscape and cover portrait/landscape. Key geometry checks passed; cover and native-AVD coordinates remain unchanged. Release `emulator-smoke.sh` and the TLS stop matrix (`emulator-check.py --tls --stop-check`) passed on emulator-5580 only. All eight stop scenarios delivered STOP and retired their stream, with clean Chirp crash/Diagnostics checks under StrictMode network death. The disposable server reported `engine` during polishing and `bad_audio` during focus teardown; the matrix checks stop/teardown safety rather than correction quality. No phone or emulator-5582 was used, and the version remained **0.5.2 (8)** at that point.
+
+### Dictation history (2026-10-18; released as 0.6.0)
+
+Unit coverage (Robolectric): encryption round-trip with software keys, tamper/corrupt file discard, retention pruning, the 200-entry cap, opt-in gating, password/incognito exclusion, clear-on-disable (including a record racing the disable), used-raw updates, insert boundary logic, panel states, settings-screen search, and the notice-expiry regression (fails without the fix). `./gradlew lint testDebugUnitTest assembleDebug assembleRelease` passed on the merged branch: **285 tests, zero failures/errors, two opt-in skips**.
+
+Emulator validation ran on **emulator-5582 only** (a second disposable read-only `chirp-fold` instance, used while emulator-5580 belonged to a parallel worker — the checked-in helper itself pins emulator-5580), debug APK with the throwaway TLS server on port 7899: `--history-check` drives the demo end to end — keyboard opt-in, synthetic dictation with clean-up, ciphertext check (no plaintext words on disk), erase and reinsert from the panel, long-press Insert raw, Fold inner/cover in light and dark, back-closes-panel, history-screen search, and turn-off-deletes-file. Screenshots land in `docs/screenshots/android/` as `emulator-history-*.png`; the pre-feature baseline strip is `history-before-keyboard-inner-{light,dark}.png`. Before that, the full `--stop-check --tls` matrix and the release smoke (`scripts/emulator-smoke.sh`) were re-run on this branch. No physical device or production server was used.
+
+Reproduce after building debug, with the [emulator speech check](#emulator-speech-checks-debug-only) command plus `--history-check --tls` (on the authorized emulator-5580). The branch carried no version bump — still **0.5.1 (7)**, signed release APK **27,025,176 bytes (25.76 MiB)** — and was released as **0.6.0 (10)** with the history feature. No APK was published beyond the repository.

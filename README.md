@@ -13,7 +13,7 @@ Chirp turns speech into text on machines you own. Speech recognition runs locall
 - **System-wide Mac dictation.** ⌃⌥Space in any app: tap to toggle, hold to push-to-talk, Esc to cancel. A floating HUD shows the live transcript while you speak; text is inserted directly (Accessibility), pasted, or copied as a fallback.
 - **Recognition stays on your Mac.** The server binds to `127.0.0.1` only and runs Parakeet TDT v2 via MLX. Remote access, if you want it for the phone, is tailnet-only through Tailscale Serve.
 - **Optional clean-up.** A local Qwen model can polish the final transcript — fillers, stutters, punctuation, casing — with styles for chat, email, code and notes, per-app styles, and editable prompts. Off by default; every clean-up keeps the raw text one keystroke away ("Use raw" for 5 s).
-- **Android keyboard.** A full HeliBoard keyboard plus a mic key: live text appears underlined in the field, and the final replaces it. English QWERTY, autocorrect, suggestions, clipboard history, emoji — and dictation into your Mac.
+- **Android keyboard.** A full HeliBoard keyboard plus a mic key: live text appears underlined in the field, and the final replaces it. Gboard-like default look with a Samsung-like option, a Fold-tuned inner-screen layout, English QWERTY with autocorrect, clipboard history and emoji, and an opt-in on-device encrypted dictation history. Swipe typing works with a library you supply — none is bundled.
 - **Private by default.** No recordings, transcripts or logs of what you said. Debug retention is opt-in, local-only and loudly visible in both clients. Pairing uses a secret bearer token shown as a local QR code.
 
 ## Screenshots
@@ -24,11 +24,13 @@ Chirp turns speech into text on machines you own. Speech recognition runs locall
 | :---: | :---: | :---: |
 | <a href="docs/screenshots/mac/menu-ready-light.png"><img src="docs/screenshots/mac/menu-ready-light.png" width="280" alt="Chirp menu-bar menu"></a> | <a href="docs/screenshots/mac/hud-listening-light.png"><img src="docs/screenshots/mac/hud-listening-light.png" width="280" alt="Floating HUD with live transcript and waveform"></a> | <a href="docs/screenshots/mac/settings-cleanup-custom-light.png"><img src="docs/screenshots/mac/settings-cleanup-custom-light.png" width="280" alt="Settings window, Clean-up tab with style prompts"></a> |
 
-**Android** — keyboard, clean-up flow and pairing ([all captures](docs/screenshots/android/)):
+**Android** — keyboard looks, dictation history, Fold layout and pairing ([all captures](docs/screenshots/android/)):
 
-| Keyboard with mic | Polishing on the strip | Pair by QR |
+| Gboard-like look | Samsung-like look | Fold inner layout |
 | :---: | :---: | :---: |
-| <a href="docs/screenshots/android/release-keyboard-inner-light.png"><img src="docs/screenshots/android/release-keyboard-inner-light.png" width="280" alt="Chirp keyboard with number row, suggestions and mic key"></a> | <a href="docs/screenshots/android/emulator-cleanup-polishing-light.png"><img src="docs/screenshots/android/emulator-cleanup-polishing-light.png" width="280" alt="Keyboard strip showing Polishing status and style chip"></a> | <a href="docs/screenshots/android/release-pairing-light.png"><img src="docs/screenshots/android/release-pairing-light.png" width="280" alt="Pairing screen with QR scanner"></a> |
+| <a href="docs/screenshots/android/keyboard-look-gboard-idle-light.png"><img src="docs/screenshots/android/keyboard-look-gboard-idle-light.png" width="280" alt="Chirp keyboard with the Gboard-like default look: dynamic colours, key borders, mic key"></a> | <a href="docs/screenshots/android/keyboard-look-samsung-idle-light.png"><img src="docs/screenshots/android/keyboard-look-samsung-idle-light.png" width="280" alt="Chirp keyboard with the Samsung-like look: neutral keys, blue Enter key"></a> | <a href="docs/screenshots/android/fold-layout-after-gboard-inner-portrait-light.png"><img src="docs/screenshots/android/fold-layout-after-gboard-inner-portrait-light.png" width="280" alt="Fold inner-screen keyboard with phone-style Enter and Backspace arrangement"></a> |
+| Dictation history | Polishing on the strip | Pair by QR |
+| <a href="docs/screenshots/android/keyboard-history-light.png"><img src="docs/screenshots/android/keyboard-history-light.png" width="280" alt="In-keyboard dictation history panel with recent entries"></a> | <a href="docs/screenshots/android/emulator-cleanup-polishing-light.png"><img src="docs/screenshots/android/emulator-cleanup-polishing-light.png" width="280" alt="Keyboard strip showing Polishing status and style chip"></a> | <a href="docs/screenshots/android/release-pairing-light.png"><img src="docs/screenshots/android/release-pairing-light.png" width="280" alt="Pairing screen with QR scanner"></a> |
 
 ## How it works
 
