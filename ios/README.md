@@ -39,8 +39,8 @@ These are macOS execution of the portable models, storage/crypto and
 insertion-safety logic, plus source and structural checks. The app's own
 simulator unit/UI tests have **not** run, and no iOS SDK, simulator or runtime
 behavior is validated. App and device behavior described below is implemented
-but pending the Xcode and device gates; the app track's evidence document
-lands with its merge. The manual acceptance checklist for both iPhone and iPad
+but pending the Xcode and device gates; the app track's evidence is in
+[ios-app.md](../docs/review/ios-app.md). The manual acceptance checklist for both iPhone and iPad
 lives in [docs/milestones/M5-ios.md](../docs/milestones/M5-ios.md).
 
 One server prerequisite: the server must run the updated source from this
@@ -109,7 +109,7 @@ installation is Xcode's Run action, performed by you.
    actions separately:
 
    ```sh
-   CHIRP_SIMULATOR_UUID=<simulator-uuid>
+   CHIRP_SIMULATOR_UUID='PASTE-AN-AVAILABLE-SIMULATOR-UUID-HERE'
    ios/scripts/simulator.sh build "$CHIRP_SIMULATOR_UUID"
    ios/scripts/simulator.sh test "$CHIRP_SIMULATOR_UUID"
    ios/scripts/simulator.sh ui "$CHIRP_SIMULATOR_UUID"
@@ -358,7 +358,8 @@ simulator. Those gates have **not** been run; simulator results also cannot
 establish hardware keyboard handoff, background-audio survival, lock-screen
 behavior or App Store acceptance. Evidence and exact logs:
 [docs/review/ios-foundation.md](../docs/review/ios-foundation.md),
-[docs/review/ios-keyboard.md](../docs/review/ios-keyboard.md), shared-package
+[docs/review/ios-keyboard.md](../docs/review/ios-keyboard.md),
+[docs/review/ios-app.md](../docs/review/ios-app.md), shared-package
 API contract in [Shared/README.md](Shared/README.md).
 
 ## Layout
