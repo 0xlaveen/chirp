@@ -1,0 +1,30 @@
+{
+  "ChirpIOS": [
+    "App/ChirpApp.swift",
+    "App/DebugFixtures.swift",
+    "App/MicrophoneCapture.swift",
+    "App/PairingScanner.swift",
+    "App/PrivacyController.swift",
+    "App/SessionCoordinator.swift",
+    "App/SettingsViews.swift",
+    "Intents/ChirpActivityAttributes.swift",
+    "Intents/ChirpLiveActivity.swift",
+    "Intents/SessionIntents.swift"
+  ],
+  "ChirpKeyboard": [
+    "Keyboard/ChirpKeyboardViewController.swift",
+    "Keyboard/KeyboardBridgeClient.swift"
+  ],
+  "ChirpWidgets": [
+    "Intents/ChirpActivityAttributes.swift",
+    "Intents/SessionIntents.swift",
+    "Widgets/ChirpWidgets.swift"
+  ],
+  "ChirpIOSTests": [
+    "Tests/CaptureSinkTests.swift",
+    "Tests/SessionCoordinatorTests.swift"
+  ],
+  "ChirpIOSUITests": [
+    "UITests/ChirpUITests.swift"
+  ]
+}
