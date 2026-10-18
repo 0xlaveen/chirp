@@ -1,3 +1,4 @@
+#if os(macOS)
 import Carbon.HIToolbox
 import Foundation
 
@@ -198,3 +199,5 @@ public final class HotKeyCenter {
         }, types.count, &types, nil, nil)
     }
 }
+
+#endif
