@@ -12,7 +12,7 @@ struct SessionCoordinatorTests {
         var copied: [String] = []
         var date = Date()
         var activity = true
-        var streams = 0
+        var transports: [SyntheticTransport] = []
     }
     struct Fixture {
         let model: SessionCoordinator
@@ -32,8 +32,9 @@ struct SessionCoordinatorTests {
         let transport = SyntheticTransport(), audio = SyntheticAudio(), values = Values()
         let model = SessionCoordinator(services: stores, audio: audio, http: URLSession(configuration: http),
             makeStream: { _, options, _ in
-                defer { values.streams += 1 }
-                return StreamSession(transport: values.streams == 0 ? transport : SyntheticTransport(), options: options)
+                let next = values.transports.isEmpty ? transport : SyntheticTransport()
+                values.transports.append(next)
+                return StreamSession(transport: next, options: options)
             },
             requestPermission: { permission }, permissionGranted: { permission }, activityBegin: { _ in }, activityActive: { values.activity },
             activityUpdate: { _, _ in }, activityEnd: {}, copyText: { values.copied.append($0) },
@@ -47,8 +48,8 @@ struct SessionCoordinatorTests {
         }
         #expect(check(), "Expected synthetic event to complete within one second")
     }
-    func ready(_ f: Fixture) async throws {
-        f.transport.push(#"{"type":"ready","session":"synthetic","debug_retention":false}"#)
+    func ready(_ f: Fixture, index: Int = 0) async throws {
+        f.values.transports[index].push(#"{"type":"ready","session":"synthetic","debug_retention":false}"#)
         try await eventually { f.model.phase == .listening }
     }
 
@@ -146,9 +147,12 @@ struct SessionCoordinatorTests {
         let oldFailure = try #require(f.audio.failures.first)
         f.model.cancelDictation()
         try await f.model.begin()
+        #expect(f.values.transports.count == 2)
+        #expect(f.values.transports[0] !== f.values.transports[1])
+        try await ready(f, index: 1)
         oldLimit(); oldFailure()
         try await Task.sleep(for: .milliseconds(20))
-        #expect(f.model.armed && f.model.phase == .connecting)
+        #expect(f.model.armed && f.model.phase == .listening)
         #expect(f.audio.finishCount == 0)
     }
 
@@ -165,13 +169,35 @@ struct SessionCoordinatorTests {
         #expect(f.values.copied.isEmpty)
     }
 
-    @Test func privateModeAndEmptyFinalNeverEnterHistory() async throws {
+    @Test func privateModeNeverEntersHistory() async throws {
         let f = try await fixture(); defer { f.clean() }
         try f.stores.history.setEnabled(true)
         f.model.preferences.privacyMode = true; f.model.savePreferences()
         try await f.model.begin(); try await ready(f); f.model.stopDictation()
         f.transport.push(#"{"type":"final","text":"Private final"}"#)
         try await eventually { f.model.phase == .finished }
+        #expect(try f.stores.history.entries().isEmpty)
+    }
+
+    @Test(arguments: ["", " \n\t"])
+    func blankCompanionFinalResolvesStopWithoutHistoryOrClipboard(_ blank: String) async throws {
+        let f = try await fixture(); defer { f.clean() }
+        try f.stores.history.setEnabled(true)
+        try await f.model.begin(source: .companion); try await ready(f)
+        let stopping = Task { () -> Bool in
+            do { _ = try await f.model.perform(action: .stop); return false }
+            catch { return (error as? SessionFailure) == .cancelled }
+        }
+        try await eventually { f.audio.finishCount == 1 }
+        let message = try JSONSerialization.data(withJSONObject: ["type": "final", "text": blank, "raw": blank])
+        f.transport.push(String(decoding: message, as: UTF8.self))
+        #expect(await stopping.value, "Blank final must resolve the pending companion waiter with an error")
+        #expect(f.model.armed && f.model.phase == .armed)
+        #expect(f.model.text.isEmpty && f.model.raw.isEmpty && f.model.words.isEmpty)
+        #expect(f.model.notice == SessionFailure.noResult.localizedDescription)
+        f.transport.push(#"{"type":"final","text":"Delayed stale final"}"#)
+        try await Task.sleep(for: .milliseconds(20))
+        #expect(f.values.copied.isEmpty)
         #expect(try f.stores.history.entries().isEmpty)
     }
 
