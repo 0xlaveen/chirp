@@ -115,7 +115,10 @@ internal class KeyboardHistory(
         val view = panel ?: return
         state = when { !store.available -> State.LOCKED; !store.enabled -> State.OPT_IN; else -> State.LOADING }
         view.visibility = View.VISIBLE
+        // The accessibility framework still serves HeliBoard's virtual key nodes under
+        // NO_HIDE_DESCENDANTS; an invisible view leaves the tree entirely. Layout is unchanged.
         keys?.importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS
+        keys?.visibility = View.INVISIBLE
         strip?.historyOpen(true)
         render()
         if (state == State.LOADING) load()
@@ -127,6 +130,7 @@ internal class KeyboardHistory(
         entries = emptyList() // Plaintext lives only while the panel is open.
         panel?.apply { visibility = View.GONE; list.removeAllViews() }
         keys?.importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_AUTO
+        keys?.visibility = View.VISIBLE
         strip?.historyOpen(false)
     }
 

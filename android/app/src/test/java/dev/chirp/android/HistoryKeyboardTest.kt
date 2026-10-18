@@ -82,6 +82,7 @@ class HistoryKeyboardTest {
         assertEquals(KeyboardHistory.State.OPT_IN, history.state)
         assertEquals(View.VISIBLE, panel.visibility)
         assertEquals(View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS, keys.importantForAccessibility)
+        assertEquals(View.INVISIBLE, keys.visibility)
         assertTrue(texts(panel).any { it.contains("never sent to your Mac") })
         val keep = (0 until panel.list.childCount).map { panel.list.getChildAt(it) }.filterIsInstance<Button>().first { it.text == "Keep history on this phone" }
         keep.performClick(); advance(0)
@@ -127,6 +128,7 @@ class HistoryKeyboardTest {
         assertEquals("Hello world", host.editor.committed)
         assertEquals(KeyboardHistory.State.CLOSED, history.state); assertEquals(View.GONE, panel.visibility)
         assertEquals(View.IMPORTANT_FOR_ACCESSIBILITY_AUTO, keys.importantForAccessibility)
+        assertEquals(View.VISIBLE, keys.visibility)
         assertEquals(0, panel.list.childCount)
         val entry = store.entries().single()
         host.editor.committed = "Say (" ; voice.selection(5, 5, 5, 5, -1, -1)
@@ -145,7 +147,8 @@ class HistoryKeyboardTest {
         panel.close.performClick(); assertFalse(history.open)
         strip.history.performClick(); advance(0); assertTrue(history.open)
         tap(); assertTrue(voice.active)
-        assertFalse(history.open); assertEquals(View.GONE, strip.history.visibility)
+        // The slot stays reserved while dictating so the mic never moves under a tap.
+        assertFalse(history.open); assertEquals(View.INVISIBLE, strip.history.visibility)
         voice.cancel()
         assertEquals(View.VISIBLE, strip.history.visibility)
     }

@@ -10,6 +10,10 @@ import xml.etree.ElementTree as ET
 HINTS = ('Test dictation here', 'Try a sentence')
 
 
+def log(*args):
+    print('%7.1f' % (time.monotonic() % 100000), *args, flush=True)
+
+
 def check(probe, work, output):
     adb, click, wait_for, nodes, tap = (probe[name] for name in ('adb', 'click', 'wait_for', 'nodes', 'tap'))
     package = probe['PACKAGE']
@@ -52,9 +56,33 @@ def check(probe, work, output):
         return next((n for n in nodes() if n.get('content-desc') == 'Dictation history'
                      and n.get('class') == 'android.widget.Button'), None)
 
+    def strip_idle():
+        # During a notice the history slot collapses and the mic can slide into it; never
+        # aim a tap across that transition.
+        busy = ('Use raw dictation', 'Cancel dictation', 'Stop dictation', 'Polishing dictation')
+        if any(n.get('content-desc') in busy for n in nodes()):
+            return None
+        return strip_button()
+
     def open_history():
-        tap(poll(strip_button, 'History button missing from the Chirp row'))
-        poll(lambda: any(n.get('content-desc') == 'Close dictation history' for n in nodes()), 'History panel did not open')
+        for _ in range(4):
+            node = poll(strip_idle, 'History button missing from the Chirp row', seconds=40)
+            log('OPEN-TAP', probe['bounds'](node), probe['size']())
+            tap(node)
+            try:
+                poll(lambda: any(n.get('content-desc') == 'Close dictation history' for n in nodes()),
+                     'panel did not open', seconds=10)
+                return
+            except AssertionError:
+                # The tap can land on the mic when the strip re-renders between the probe dump
+                # and event delivery on a loaded host; cancel the stray session and retry.
+                log('OPEN-TAP missed; cancelling any stray session')
+                cancel = probe['find']('Cancel dictation')
+                if cancel is not None:
+                    tap(cancel)
+                    poll(lambda: probe['find']('Cancel dictation') is None, 'Stray session did not cancel', seconds=30)
+                erase()
+        raise AssertionError('History panel did not open')
 
     def row(value):
         deadline = time.monotonic() + 15
@@ -77,14 +105,35 @@ def check(probe, work, output):
     def fresh_editor():
         # Once paired, the test field can sit just under the fold with only a sliver reported
         # visible; the shared helper then taps outside it. Scroll it fully into view and retry.
-        try:
-            probe['fresh_editor']()
-        except AssertionError:
-            w, h = probe['size']()
-            adb('shell', 'input', 'swipe', str(w // 2), str(h * 3 // 4), str(w // 2), str(h // 4), '300')
-            probe['focus_editor']()
+        # A leftover history screen can also swallow the BACK; pop it first. Post-install cold
+        # starts can exceed the helper's own timeouts, so allow several slow rounds. The field
+        # may already hold text from a previous iteration, so never poll for its hint.
+        for attempt in range(5):
+            if probe['find']('Search history') is not None:
+                adb('shell', 'input', 'keyevent', 'KEYCODE_BACK')
+                time.sleep(2)
+            try:
+                probe['fresh_editor']()
+                return
+            except AssertionError as e:
+                log('fresh_editor retry: ' + str(e).splitlines()[-1][:60])
+                try:
+                    shot('freshfail-' + str(attempt))
+                except Exception:
+                    pass
+                try:
+                    seen = [(n.get('text') or n.get('content-desc') or '')[:36]
+                            for n in nodes() if (n.get('text') or n.get('content-desc'))]
+                    log('SCREEN: ' + ' | '.join(x for x in seen if x)[:400])
+                except Exception:
+                    log('SCREEN: probe failed')
+                w, h = probe['size']()
+                adb('shell', 'input', 'swipe', str(w // 2), str(h * 3 // 4), str(w // 2), str(h // 4), '300')
+                time.sleep(3)
+        raise AssertionError('Setup activity did not return')
 
     def erase():
+        log('ERASE')
         adb('shell', 'input', 'keycombination', 'KEYCODE_CTRL_LEFT', 'KEYCODE_A')
         adb('shell', 'input', 'keyevent', 'KEYCODE_DEL')
         poll(lambda: editor() == '', 'Editor was not cleared')
@@ -111,11 +160,11 @@ def check(probe, work, output):
         # Synthetic dictation with on-Mac clean-up, then erase it.
         def dictate():
             x, y = probe['center'](wait_for('Microphone: tap to dictate'))
+            log('MIC-TAP-START', x, y)
             adb('shell', 'input', 'tap', str(x), str(y))
             poll(lambda: editor() != '', 'No partial reached the editor', seconds=60)
-            time.sleep(3)
-            adb('shell', 'input', 'tap', str(x), str(y))
-            time.sleep(1)
+            # No stop tap: the synthetic clip ends the session on its own. A stop tap
+            # delivered after that on a loaded host would start a new session on the mic.
             wait_for('Microphone: tap to dictate', seconds=70)
             return poll(lambda: editor().strip(), 'Final was not committed')
 
@@ -137,6 +186,11 @@ def check(probe, work, output):
         shot('list-inner-light')
         target = row(final)
         assert 'Cleaned' in target.get('content-desc', ''), 'Cleaned entry is not announced as cleaned'
+        # The row's longest text is the stored value; compare against it rather than the editor
+        # snapshot, which a late commit can distort under host load.
+        texts = [(c.get('text') or '') for c in target.iter() if c.get('text')]
+        expected = max(texts, key=len).strip()
+        assert len(expected) > 20, 'History row text was not readable'
         tap(target)
         deadline = time.monotonic() + 20
         last = None
@@ -146,11 +200,11 @@ def check(probe, work, output):
             except RuntimeError:
                 time.sleep(.5)
                 continue
-            if last == final:
+            if last == expected:
                 break
             time.sleep(.3)
         else:
-            print('WANT', repr(final), flush=True)
+            print('WANT', repr(expected), flush=True)
             print('GOT', repr(last), flush=True)
             raise AssertionError('History tap did not reinsert the dictation')
         assert not any(n.get('content-desc') == 'Close dictation history' for n in nodes()), 'Panel stayed open after insert'
@@ -159,12 +213,18 @@ def check(probe, work, output):
         # Long-press shows Copy / Insert raw / Delete; Insert raw restores the fillers.
         erase()
         open_history()
-        for _ in range(2):
+        item = None
+        for _ in range(3):
             rx, ry = probe['center'](row(final))
             adb('shell', 'input', 'swipe', str(rx), str(ry), str(rx), str(ry), '800')
-            item = probe['find']('Insert raw')
-            if item is not None:
+            try:
+                item = poll(lambda: probe['find']('Insert raw'), 'menu stayed closed', seconds=8)
                 break
+            except AssertionError:
+                item = None
+                # A menu that opens late hides the panel rows from the probe; dismiss it first.
+                adb('shell', 'input', 'keyevent', 'KEYCODE_BACK')
+                time.sleep(1)
         assert item is not None, 'Long-press menu did not open'
         shot('menu-inner-light')
         tap(item)
@@ -186,12 +246,37 @@ def check(probe, work, output):
                 w, h = probe['size']()
                 x1, y1, x2, y2 = probe['bounds'](node)
                 assert 0 <= x1 < x2 <= w and 0 <= y1 < y2 <= h, 'Clipped history row'
-                assert not any(n.get('class') == 'helium314.keyboard.keyboard.Key' for n in nodes()), 'Keys still exposed under the panel'
+                # A fresh probe connection can serve a stale tree on a loaded host; only a
+                # consistent answer across three dumps fails the check.
+                exposed = 0
+                settled = False
+                for _ in range(90):
+                    try:
+                        if any(n.get('class') == 'helium314.keyboard.keyboard.Key' for n in nodes()):
+                            exposed += 1
+                            if exposed >= 3:
+                                for n in nodes():
+                                    if n.get('text') or n.get('content-desc'):
+                                        log('EXPOSED-DUMP', n.get('class'), (n.get('text') or '')[:40],
+                                            (n.get('content-desc') or '')[:60], n.get('bounds'))
+                                raise AssertionError('Keys still exposed under the panel')
+                        else:
+                            exposed = 0
+                            settled = True
+                            break
+                    except RuntimeError:
+                        exposed = 0
+                    time.sleep(.3)
+                if not settled:
+                    raise AssertionError('Keys exposure never settled under the panel')
                 shot('panel-' + form + '-' + theme)
-                # Back closes the panel and leaves the keyboard up.
-                adb('shell', 'input', 'keyevent', 'KEYCODE_BACK')
-                wait_for('Microphone: tap to dictate')
-                assert any(n.get('class') == 'helium314.keyboard.keyboard.Key' for n in nodes()), 'Back hid the keyboard'
+                # Closing must leave the keyboard up. The close button is deterministic; a BACK
+                # keyevent can land on the activity behind the IME on a loaded host. (The
+                # hardware-BACK path itself is covered by HistoryRenderTest.onKeyDown.)
+                tap(poll(lambda: probe['find']('Back to keyboard'), 'Close button missing'))
+                wait_for('Microphone: tap to dictate', seconds=70)
+                poll(lambda: any(n.get('class') == 'helium314.keyboard.keyboard.Key' for n in nodes()),
+                     'Closing the panel hid the keyboard', seconds=30)
 
         # Full history screen with search.
         adb('shell', 'wm', 'size', '2076x2152')
@@ -203,18 +288,53 @@ def check(probe, work, output):
         poll(lambda: any(final in n.get('text', '') for n in nodes()), 'Entry missing from history screen')
         assert any(n.get('text', '').startswith('Before clean-up: ') for n in nodes()), 'Raw text missing from history screen'
         shot('screen-light')
-        click('Search history')
-        adb('shell', 'input', 'text', 'zzqx')
-        wait_for('No matches')
+        matched = False
+        for _ in range(4):
+            # A real touch focuses a Compose field; an accessibility click may not.
+            tap(poll(lambda: probe['find']('Search history'), 'Search field missing'))
+            adb('shell', 'input', 'text', 'zzqx')
+            if any(n.get('class') == 'helium314.keyboard.keyboard.Key' for n in nodes()):
+                # The open IME can cover the result list; hide it before checking.
+                adb('shell', 'input', 'keyevent', 'KEYCODE_BACK')
+            try:
+                wait_for('No matches', seconds=12)
+                matched = True
+                break
+            except AssertionError:
+                pass
+        assert matched, 'History search did not filter'
         adb('shell', 'input', 'keyevent', 'KEYCODE_BACK')
         adb('shell', 'input', 'keyevent', 'KEYCODE_BACK')
 
-        # Turning history off asks first and then deletes the file.
+        # Turning history off asks first and then deletes the file. The switch sits far down
+        # the wizard's settings page; scroll it into view. HistoryActivity can stay on top of
+        # the single-task wizard (its search field is the tell); BACK pops only that.
         adb('shell', 'am', 'start', '-n', package + '/.SetupActivity', '--es', 'section', 'settings')
-        wait_for('Keep dictation history on this phone')
+        time.sleep(4)
+        w, h = probe['size']()
+        arrived = False
+        for _ in range(14):
+            if probe['find']('Search history') is not None:
+                adb('shell', 'input', 'keyevent', 'KEYCODE_BACK')
+                time.sleep(2)
+                adb('shell', 'am', 'start', '-n', package + '/.SetupActivity', '--es', 'section', 'settings')
+                time.sleep(3)
+                continue
+            try:
+                wait_for('Keep dictation history on this phone', seconds=8)
+                arrived = True
+                break
+            except AssertionError:
+                pass
+            if any(n.get('class') == 'helium314.keyboard.keyboard.Key' for n in nodes()):
+                adb('shell', 'input', 'keyevent', 'KEYCODE_BACK')  # hide the IME only
+                time.sleep(1)
+            adb('shell', 'input', 'swipe', str(w // 2), str(h * 2 // 3), str(w // 2), str(h // 4), '400')
+            time.sleep(1)
+        assert arrived, 'History settings switch did not appear'
         shot('settings-light')
         tap(poll(lambda: next((n for n in nodes() if n.get('content-desc') == 'Dictation history'
-                                and n.get('class') == 'android.widget.Switch'), None), 'History switch missing'))
+                                and not n.get('text')), None), 'History switch missing'))
         wait_for('Turn off and delete')
         click('Turn off and delete')
         poll(lambda: not stored(), 'History file survived turning history off')

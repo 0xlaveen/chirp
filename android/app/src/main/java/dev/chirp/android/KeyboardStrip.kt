@@ -97,7 +97,8 @@ internal class KeyboardStrip(context: Context) : LinearLayout(context) {
         status.setBackgroundColor(if (retention) android.graphics.Color.rgb(164, 24, 24) else android.graphics.Color.TRANSPARENT)
         status.contentDescription = status.text
         cancel.visibility = if (full) VISIBLE else GONE
-        history.visibility = if (full) GONE else VISIBLE
+        // INVISIBLE, not GONE: the mic must never slide into the history slot mid-transition.
+        history.visibility = if (full) INVISIBLE else VISIBLE
         cancel.isEnabled = active || undo || error
         meter.visibility = if (active && !finishing) VISIBLE else GONE
         raw.visibility = if (undo) VISIBLE else GONE

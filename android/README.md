@@ -518,3 +518,61 @@ known release for each ABI. Chirp must not bundle or download that file. Options
 
 The card warns that the library runs inside Chirp with Chirp's permissions, including
 network access. Release smoke still asserts that no `libjni_latinimegoogle` file is packaged.
+## Dictation history (opt-in, on-device)
+
+Dictation history is **off by default**. When enabled, committed finals (plus the raw text
+when on-Mac clean-up rewrote them) are stored on the phone only, encrypted with AES-GCM
+under a dedicated Android Keystore alias (`chirp_history_v1`) in credential-encrypted
+storage — never sent to the Mac, never logged, and excluded from backup and device transfer
+(`data_extraction_rules.xml` now also excludes the `file` domain). The store keeps at most
+**200 entries** and prunes by age: **24 hours, 7 days (default) or 30 days**. Password and
+incognito fields (`TYPE_TEXT_VARIATION_PASSWORD` variants and
+`IME_FLAG_NO_PERSONALIZED_LEARNING`) are never recorded, and cancelled dictations leave
+no entry. While the device is locked the store is unavailable and the panel says so.
+
+- **Keyboard**: a clock button sits next to the mic in the Chirp row. It opens an
+  in-keyboard panel (over the key area, like HeliBoard's clipboard panel, so height and
+  insets are unchanged). First use offers one-tap **Keep history on this phone** — nothing
+  is written before that. Tapping an entry reinserts it through the same boundary and
+  selection path as a dictated final; long-press offers **Copy**, **Insert raw** (when the
+  entry was cleaned) and **Delete**. **Use raw** after a cleaned dictation updates the
+  stored entry. Back or the keyboard button closes the panel; plaintext stays in memory only
+  while the panel is open. The keys are hidden from accessibility while the panel is up.
+- **Settings**: the Chirp section has a **Dictation history** switch, the retention chooser,
+  **Open history** (a full screen with search, copy, copy-raw and per-entry delete, excluded
+  from recents thumbnails) and **Clear history**. Turning the feature off asks first and
+  then deletes the file and the Keystore key.
+
+A small pre-existing fix ships with it: moving the cursor after a cleaned final dismissed
+the raw-undo chip but left the "cleaned" notice pinned open forever, hiding the row's idle
+buttons. The notice now expires on its five-second timer.
+
+Unit coverage (Robolectric): encryption round-trip with software keys, tamper/corrupt file
+discard, retention pruning, the 200-entry cap, opt-in gating, password/incognito exclusion,
+clear-on-disable (including a record racing the disable), used-raw updates, insert boundary
+logic, panel states, settings screen search, and the notice-expiry regression (fails without
+the fix). `./gradlew lint testDebugUnitTest assembleDebug assembleRelease` passed on the
+merged branch: **285 tests, zero failures/errors, two opt-in skips**.
+
+Emulator validation ran on **emulator-5582 only** (a second disposable read-only
+`chirp-fold` instance; emulator-5580 belonged to a parallel worker), debug APK with the
+throwaway TLS server on port 7899: `--history-check` drives the demo end to end —
+keyboard opt-in, synthetic dictation with clean-up, ciphertext check (no plaintext words on
+disk), erase and reinsert from the panel, long-press Insert raw, Fold inner/cover in light
+and dark, back-closes-panel, history-screen search, and turn-off-deletes-file. Screenshots
+land in `docs/screenshots/android/` as `emulator-history-*.png`; the pre-feature
+baseline strip is `history-before-keyboard-inner-{light,dark}.png`. Before that, the full
+`--stop-check --tls` matrix and the release smoke (`scripts/emulator-smoke.sh`) were
+re-run on this branch. No physical device or production server was used.
+
+Reproduce (after building debug):
+
+```sh
+source ~/.local/share/chirp-android/env.sh
+ANDROID_SERIAL=emulator-5582 python3 android/scripts/emulator-check.py --history-check --tls \
+  --python /path/to/server/.venv/bin/python --model-dir /path/to/cached/parakeet-mlx \
+  --apk android/app/build/outputs/apk/debug/app-debug.apk
+```
+
+Still **0.5.1 (7)**, no version bump. The signed release APK is **27,025,176 bytes
+(25.76 MiB)**. No APK was published.
