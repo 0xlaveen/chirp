@@ -1,4 +1,7 @@
+import Foundation
+#if os(macOS)
 import AppKit
+#endif
 
 /// One pasteboard item as `type → data`.
 public typealias PasteboardItem = [String: Data]
@@ -17,6 +20,7 @@ public enum PasteboardMarkers {
     public static let concealed = "org.nspasteboard.ConcealedType"
 }
 
+#if os(macOS)
 @MainActor
 public struct SystemPasteboard: PasteboardClient {
     public init() {}
@@ -54,3 +58,5 @@ public struct SystemPasteboard: PasteboardClient {
         if !restored.isEmpty { board.writeObjects(restored) }
     }
 }
+
+#endif

@@ -70,16 +70,23 @@ public struct CorrectionProfile: Codable, Sendable, Equatable, Identifiable {
         health?.correctionProfiles?.first { $0.id == id }?.name ?? displayName(for: id)
     }
 
-    /// `text` limited to `maxInstructionLength` characters (grapheme clusters, so an emoji is never cut in half).
+    /// `text` limited to `maxInstructionLength` Unicode scalars (Python server character count), preserving whole graphemes.
     /// Nil stays nil.
     public static func clamp(_ text: String?) -> String? {
         guard let text else { return nil }
-        return text.count > maxInstructionLength ? String(text.prefix(maxInstructionLength)) : text
+        return clampPrompt(text, limit: maxInstructionLength)
     }
 
-    /// `text` limited to `limit` characters (grapheme clusters).
+    /// `text` limited to `limit` Unicode scalars, preserving whole graphemes.
     public static func clampPrompt(_ text: String, limit: Int = maxPromptLength) -> String {
-        text.count > limit ? String(text.prefix(limit)) : text
+        let limit = max(0, limit)
+        var used = 0
+        return String(text.prefix { character in
+            let count = character.unicodeScalars.count
+            guard used + count <= limit else { return false }
+            used += count
+            return true
+        })
     }
 }
 
