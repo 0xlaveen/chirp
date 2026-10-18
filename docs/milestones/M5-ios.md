@@ -1,6 +1,8 @@
 # M5 — Chirp for iPhone and iPad
 
-Status: implementation plan, 2026-10-18. Integration branch `chirp/ios`, based on
+Status: source integrated and CLT checks passed, 2026-10-18; iOS build and
+simulator/device acceptance blocked on operator Xcode/signing setup. Final
+evidence: [iOS integration](../review/ios-integration.md). Integration branch `chirp/ios`, based on
 `main` at `e4d9e6d`. The parent orchestrator reviews and merges; no worker pushes,
 opens a PR, merges main, or installs on physical devices.
 

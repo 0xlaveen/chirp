@@ -13,6 +13,7 @@ Index of everything under `docs/`. Start with the architecture doc; everything e
 | [review/ios-foundation.md](review/ios-foundation.md) | iOS foundation evidence: portable ChirpCore + shared package, macOS-CLT test results, pending Xcode/device gates |
 | [review/ios-keyboard.md](review/ios-keyboard.md) | iOS keyboard, intents and Live Activity evidence: insertion-safety tests, fake-host validation, pending simulator/runtime acceptance |
 | [review/ios-app.md](review/ios-app.md) | iPhone/iPad app and generated project: source/compiler checks, unexecuted simulator tests and operator acceptance |
+| [review/ios-integration.md](review/ios-integration.md) | Integrated branch handoff, final CLT test evidence and remaining Xcode/signing/device gates |
 | [review/round2.md](review/round2.md) | Independent review, round 2 (findings and evidence) |
 | [review/word-waveform.md](review/word-waveform.md) | Design notes for the Mac word-waveform HUD overlay: shipped variant, rejected alternatives, protocol and latency benchmarks |
 | [screenshots/](screenshots/) | UI captures: [mac](screenshots/mac/) (curated light/dark snapshots) and [android](screenshots/android/) (described in its [README](screenshots/android/README.md)) |
