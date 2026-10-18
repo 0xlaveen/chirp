@@ -1,0 +1,774 @@
+// !$*UTF8*$!
+{
+"archiveVersion" = 1;
+"classes" = {
+};
+"objectVersion" = 60;
+"objects" = {
+"02F4119391250025E77BD1F3" = {
+"explicitFileType" = "wrapper.cfbundle";
+"includeInIndex" = 0;
+"isa" = "PBXFileReference";
+"path" = "ChirpIOSUITests.xctest";
+"sourceTree" = "BUILT_PRODUCTS_DIR";
+};
+"053EC651A622492A47CB1CDF" = {
+"isa" = "XCLocalSwiftPackageReference";
+"relativePath" = "../mac";
+};
+"0A3E27B8CA818264D75C8D81" = {
+"children" = ("A88B65AC05B3702AB2B3C45C", "390F618B6E5543AE40C0272F", "2DC1A2B7C0466F6949307DA8", "5EC79932DBFF96418BA84DDD", "02F4119391250025E77BD1F3");
+"isa" = "PBXGroup";
+"name" = "Products";
+"sourceTree" = "<group>";
+};
+"0B67573A1FB8DCFD0FD43FD1" = {
+"isa" = "XCSwiftPackageProductDependency";
+"package" = "053EC651A622492A47CB1CDF";
+"productName" = "ChirpCore";
+};
+"0D8F6BDAD5F4118491C3E017" = {
+"buildActionMask" = 2147483647;
+"files" = ("AE839AB1443038F0DD418AF5", "9C18402CCD4074F9A129D89D");
+"isa" = "PBXSourcesBuildPhase";
+"runOnlyForDeploymentPostprocessing" = 0;
+};
+"0F48A84C04C83045DDC3FE6B" = {
+"buildConfigurationList" = "FE7300D6F55A95D8D68BC086";
+"buildPhases" = ("81E6D33E840BC2F14A37A2C8", "894870DBFED56393EF1E1548", "FCCAA5C12E409A7BFF4C500C", "AFC32963E7959E7A34264826");
+"buildRules" = ();
+"dependencies" = ("75E86A13B4BFA3E786E57F06", "3058CDB0B6DF836E5358E404");
+"isa" = "PBXNativeTarget";
+"name" = "ChirpIOS";
+"packageProductDependencies" = ("D0520187AD40099F5633FFD6", "73752CE3E81628B6F5929C81");
+"productName" = "ChirpIOS";
+"productReference" = "A88B65AC05B3702AB2B3C45C";
+"productType" = "com.apple.product-type.application";
+};
+"10B3F68C39D9A1F210E6B9CE" = {
+"fileRef" = "4AD441DFB1033D3B6CA64FBE";
+"isa" = "PBXBuildFile";
+};
+"16316148253E18F164ECBF54" = {
+"isa" = "PBXFileReference";
+"lastKnownFileType" = "sourcecode.swift";
+"path" = "Keyboard/ChirpKeyboardViewController.swift";
+"sourceTree" = "SOURCE_ROOT";
+};
+"184B519F8E1416CCE38CFFD7" = {
+"baseConfigurationReference" = "EE1E752050BF380B88186C3D";
+"buildSettings" = {
+"DEBUG_INFORMATION_FORMAT" = "dwarf";
+"ENABLE_TESTABILITY" = "YES";
+"SWIFT_ACTIVE_COMPILATION_CONDITIONS" = "$(inherited) DEBUG";
+"SWIFT_OPTIMIZATION_LEVEL" = "-Onone";
+};
+"isa" = "XCBuildConfiguration";
+"name" = "Debug";
+};
+"1922B098E983995960BE56B0" = {
+"buildConfigurations" = ("184B519F8E1416CCE38CFFD7", "A824290273A346217D9BE6F4");
+"defaultConfigurationIsVisible" = 0;
+"defaultConfigurationName" = "Debug";
+"isa" = "XCConfigurationList";
+};
+"1A1B20ABB3004B35FE9E88B1" = {
+"fileRef" = "256160421D7CAC18D6FE843F";
+"isa" = "PBXBuildFile";
+};
+"244210E48437B6556980A702" = {
+"attributes" = {
+"BuildIndependentTargetsInParallel" = "YES";
+"LastUpgradeCheck" = "1600";
+};
+"buildConfigurationList" = "1922B098E983995960BE56B0";
+"compatibilityVersion" = "Xcode 15.0";
+"developmentRegion" = "en";
+"isa" = "PBXProject";
+"knownRegions" = ("en", "Base");
+"mainGroup" = "C8D2DC745BFC63C0D67231CE";
+"packageReferences" = ("5B4002BED79CE6D06D0C2D3B", "B7EEDE2413F08C27632A0C81", "053EC651A622492A47CB1CDF");
+"productRefGroup" = "0A3E27B8CA818264D75C8D81";
+"projectDirPath" = "";
+"projectRoot" = "";
+"targets" = ("0F48A84C04C83045DDC3FE6B", "7A060B6D671544E6BADA4578", "BBB83079F2083B9AB8973A4A", "C5698A5FD46D1111E5ED7BF5", "5CC599C253B264CD432344D8");
+};
+"256160421D7CAC18D6FE843F" = {
+"isa" = "PBXFileReference";
+"lastKnownFileType" = "sourcecode.swift";
+"path" = "UITests/ChirpUITests.swift";
+"sourceTree" = "SOURCE_ROOT";
+};
+"290EC6D66F714FA84A807384" = {
+"fileRef" = "2DC1A2B7C0466F6949307DA8";
+"isa" = "PBXBuildFile";
+"settings" = {
+"ATTRIBUTES" = ("CodeSignOnCopy", "RemoveHeadersOnCopy");
+};
+};
+"2B02DC9242BB560AE323B382" = {
+"buildConfigurations" = ("D9D3CFDB895671E7A35DC3DF", "5B90C4E45EA894506DC9CE6A");
+"defaultConfigurationIsVisible" = 0;
+"defaultConfigurationName" = "Debug";
+"isa" = "XCConfigurationList";
+};
+"2B1A667E0C3F932DF0943EE0" = {
+"buildConfigurations" = ("50EC9C5C15DB9AFC529C9CC3", "C8886D81BE131B0FD9FA18D3");
+"defaultConfigurationIsVisible" = 0;
+"defaultConfigurationName" = "Debug";
+"isa" = "XCConfigurationList";
+};
+"2C96B5D9C4C1F0158DAE2A91" = {
+"buildConfigurations" = ("9057F11E31BF0BA6A6E3AE74", "98A0616A245297778BB2CEA5");
+"defaultConfigurationIsVisible" = 0;
+"defaultConfigurationName" = "Debug";
+"isa" = "XCConfigurationList";
+};
+"2D32EC9DB5DC246C063E6D45" = {
+"fileRef" = "F7C6E013D1C497B6B17789A6";
+"isa" = "PBXBuildFile";
+};
+"2DC1A2B7C0466F6949307DA8" = {
+"explicitFileType" = "wrapper.app-extension";
+"includeInIndex" = 0;
+"isa" = "PBXFileReference";
+"path" = "ChirpWidgets.appex";
+"sourceTree" = "BUILT_PRODUCTS_DIR";
+};
+"2EE7023BE9AF5663255E8C16" = {
+"fileRef" = "407901DFAB173EAD557A1B15";
+"isa" = "PBXBuildFile";
+};
+"3058CDB0B6DF836E5358E404" = {
+"isa" = "PBXTargetDependency";
+"target" = "BBB83079F2083B9AB8973A4A";
+};
+"33456C59515124D91A913981" = {
+"isa" = "PBXTargetDependency";
+"target" = "0F48A84C04C83045DDC3FE6B";
+};
+"390F618B6E5543AE40C0272F" = {
+"explicitFileType" = "wrapper.app-extension";
+"includeInIndex" = 0;
+"isa" = "PBXFileReference";
+"path" = "ChirpKeyboard.appex";
+"sourceTree" = "BUILT_PRODUCTS_DIR";
+};
+"3A81213BA00E2A1CB073CDC1" = {
+"isa" = "PBXFileReference";
+"lastKnownFileType" = "sourcecode.swift";
+"path" = "Tests/CaptureSinkTests.swift";
+"sourceTree" = "SOURCE_ROOT";
+};
+"3ACCB2B039C57C2F6A546706" = {
+"isa" = "PBXFileReference";
+"lastKnownFileType" = "sourcecode.swift";
+"path" = "Intents/SessionIntents.swift";
+"sourceTree" = "SOURCE_ROOT";
+};
+"3B50188F47687F81F41796A9" = {
+"buildActionMask" = 2147483647;
+"files" = ();
+"isa" = "PBXResourcesBuildPhase";
+"runOnlyForDeploymentPostprocessing" = 0;
+};
+"407901DFAB173EAD557A1B15" = {
+"isa" = "PBXFileReference";
+"lastKnownFileType" = "sourcecode.swift";
+"path" = "App/ChirpApp.swift";
+"sourceTree" = "SOURCE_ROOT";
+};
+"43DBF6F2D6B24B5555D140F4" = {
+"isa" = "XCSwiftPackageProductDependency";
+"package" = "5B4002BED79CE6D06D0C2D3B";
+"productName" = "ChirpIOSCore";
+};
+"4AD441DFB1033D3B6CA64FBE" = {
+"isa" = "PBXFileReference";
+"lastKnownFileType" = "folder.assetcatalog";
+"path" = "App/Assets.xcassets";
+"sourceTree" = "SOURCE_ROOT";
+};
+"4FAFA1719549217F423588B7" = {
+"isa" = "XCSwiftPackageProductDependency";
+"package" = "5B4002BED79CE6D06D0C2D3B";
+"productName" = "ChirpIOSCore";
+};
+"50EC9C5C15DB9AFC529C9CC3" = {
+"baseConfigurationReference" = "EE1E752050BF380B88186C3D";
+"buildSettings" = {
+"APPLICATION_EXTENSION_API_ONLY" = "YES";
+"CODE_SIGN_ENTITLEMENTS" = "Config/Keyboard.entitlements";
+"DEBUG_INFORMATION_FORMAT" = "dwarf";
+"ENABLE_TESTABILITY" = "YES";
+"GENERATE_INFOPLIST_FILE" = "NO";
+"INFOPLIST_FILE" = "Config/Keyboard-Info.plist";
+"PRODUCT_BUNDLE_IDENTIFIER" = "$(CHIRP_BUNDLE_ID).keyboard";
+"PRODUCT_NAME" = "$(TARGET_NAME)";
+"SDKROOT" = "iphoneos";
+"SKIP_INSTALL" = "YES";
+"SUPPORTED_PLATFORMS" = "iphonesimulator iphoneos";
+"SWIFT_ACTIVE_COMPILATION_CONDITIONS" = "$(inherited) DEBUG";
+"SWIFT_OPTIMIZATION_LEVEL" = "-Onone";
+"TARGETED_DEVICE_FAMILY" = "1,2";
+};
+"isa" = "XCBuildConfiguration";
+"name" = "Debug";
+};
+"5244768EF36217B33F6DB4EA" = {
+"isa" = "PBXFileReference";
+"lastKnownFileType" = "sourcecode.swift";
+"path" = "App/SessionCoordinator.swift";
+"sourceTree" = "SOURCE_ROOT";
+};
+"53A57DC6D9FAC6677F17AF34" = {
+"buildActionMask" = 2147483647;
+"files" = ("8D2F01F69F24F3CB045CE403", "5F77219877996F9F233FF398", "E91FD130ADCFE9AFE4486B7B");
+"isa" = "PBXFrameworksBuildPhase";
+"runOnlyForDeploymentPostprocessing" = 0;
+};
+"546BF70B0E0D0600EBE59D5F" = {
+"isa" = "PBXFileReference";
+"lastKnownFileType" = "sourcecode.swift";
+"path" = "App/SettingsViews.swift";
+"sourceTree" = "SOURCE_ROOT";
+};
+"5489775F59197B06F86E3268" = {
+"isa" = "PBXTargetDependency";
+"target" = "0F48A84C04C83045DDC3FE6B";
+};
+"54F89B21697FA591108BFCF7" = {
+"baseConfigurationReference" = "EE1E752050BF380B88186C3D";
+"buildSettings" = {
+"ASSETCATALOG_COMPILER_APPICON_NAME" = "AppIcon";
+"CODE_SIGN_ENTITLEMENTS" = "Config/App.entitlements";
+"DEBUG_INFORMATION_FORMAT" = "dwarf";
+"ENABLE_TESTABILITY" = "YES";
+"GENERATE_INFOPLIST_FILE" = "NO";
+"INFOPLIST_FILE" = "Config/App-Info.plist";
+"PRODUCT_BUNDLE_IDENTIFIER" = "$(CHIRP_BUNDLE_ID)";
+"PRODUCT_NAME" = "$(TARGET_NAME)";
+"SDKROOT" = "iphoneos";
+"SKIP_INSTALL" = "NO";
+"SUPPORTED_PLATFORMS" = "iphonesimulator iphoneos";
+"SWIFT_ACTIVE_COMPILATION_CONDITIONS" = "$(inherited) CHIRP_APP DEBUG";
+"SWIFT_OPTIMIZATION_LEVEL" = "-Onone";
+"TARGETED_DEVICE_FAMILY" = "1,2";
+};
+"isa" = "XCBuildConfiguration";
+"name" = "Debug";
+};
+"55A609E27A6A2C05AC498409" = {
+"buildActionMask" = 2147483647;
+"files" = ();
+"isa" = "PBXFrameworksBuildPhase";
+"runOnlyForDeploymentPostprocessing" = 0;
+};
+"5B2D6EAD3359456382DF2A09" = {
+"fileRef" = "16316148253E18F164ECBF54";
+"isa" = "PBXBuildFile";
+};
+"5B4002BED79CE6D06D0C2D3B" = {
+"isa" = "XCLocalSwiftPackageReference";
+"relativePath" = "Shared";
+};
+"5B90C4E45EA894506DC9CE6A" = {
+"baseConfigurationReference" = "EE1E752050BF380B88186C3D";
+"buildSettings" = {
+"BUNDLE_LOADER" = "$(TEST_HOST)";
+"DEBUG_INFORMATION_FORMAT" = "dwarf-with-dsym";
+"ENABLE_TESTABILITY" = "NO";
+"GENERATE_INFOPLIST_FILE" = "YES";
+"PRODUCT_BUNDLE_IDENTIFIER" = "$(CHIRP_BUNDLE_ID).tests";
+"PRODUCT_NAME" = "$(TARGET_NAME)";
+"SDKROOT" = "iphoneos";
+"SUPPORTED_PLATFORMS" = "iphonesimulator iphoneos";
+"SWIFT_OPTIMIZATION_LEVEL" = "-O";
+"TARGETED_DEVICE_FAMILY" = "1,2";
+"TEST_HOST" = "$(BUILT_PRODUCTS_DIR)/ChirpIOS.app/ChirpIOS";
+};
+"isa" = "XCBuildConfiguration";
+"name" = "Release";
+};
+"5CC599C253B264CD432344D8" = {
+"buildConfigurationList" = "D396A50054D4C74C1EB84AB8";
+"buildPhases" = ("9C084C2604BB2D2F307C5ED1", "55A609E27A6A2C05AC498409", "717777046B50E69E0D7191AC");
+"buildRules" = ();
+"dependencies" = ("5489775F59197B06F86E3268");
+"isa" = "PBXNativeTarget";
+"name" = "ChirpIOSUITests";
+"packageProductDependencies" = ();
+"productName" = "ChirpIOSUITests";
+"productReference" = "02F4119391250025E77BD1F3";
+"productType" = "com.apple.product-type.bundle.ui-testing";
+};
+"5EC79932DBFF96418BA84DDD" = {
+"explicitFileType" = "wrapper.cfbundle";
+"includeInIndex" = 0;
+"isa" = "PBXFileReference";
+"path" = "ChirpIOSTests.xctest";
+"sourceTree" = "BUILT_PRODUCTS_DIR";
+};
+"5F77219877996F9F233FF398" = {
+"isa" = "PBXBuildFile";
+"productRef" = "E6533E35BD0572961BFD91A5";
+};
+"624F7ECEAD4AEFDB8A1AF483" = {
+"buildActionMask" = 2147483647;
+"files" = ();
+"isa" = "PBXResourcesBuildPhase";
+"runOnlyForDeploymentPostprocessing" = 0;
+};
+"66EE54F49A90947E379FF886" = {
+"fileRef" = "DA2DECE1AC0AC0865B2B2738";
+"isa" = "PBXBuildFile";
+};
+"67A8EC32616AE2EA72F605F4" = {
+"buildActionMask" = 2147483647;
+"files" = ();
+"isa" = "PBXFrameworksBuildPhase";
+"runOnlyForDeploymentPostprocessing" = 0;
+};
+"6B22E0C71A0818A0F08D013D" = {
+"fileRef" = "3ACCB2B039C57C2F6A546706";
+"isa" = "PBXBuildFile";
+};
+"6BCA2A32758F2F8F520B61BA" = {
+"isa" = "PBXBuildFile";
+"productRef" = "4FAFA1719549217F423588B7";
+};
+"6D1F1FC5D01A08C464358FA6" = {
+"fileRef" = "8952404D863F235C98688289";
+"isa" = "PBXBuildFile";
+};
+"7130A715AEDE5079A1CDCEF2" = {
+"fileRef" = "CE3B07AD77E4020CFAE90611";
+"isa" = "PBXBuildFile";
+};
+"717777046B50E69E0D7191AC" = {
+"buildActionMask" = 2147483647;
+"files" = ();
+"isa" = "PBXResourcesBuildPhase";
+"runOnlyForDeploymentPostprocessing" = 0;
+};
+"73752CE3E81628B6F5929C81" = {
+"isa" = "XCSwiftPackageProductDependency";
+"package" = "053EC651A622492A47CB1CDF";
+"productName" = "ChirpCore";
+};
+"75E86A13B4BFA3E786E57F06" = {
+"isa" = "PBXTargetDependency";
+"target" = "7A060B6D671544E6BADA4578";
+};
+"788CD3EAF56DDC47856418CB" = {
+"buildActionMask" = 2147483647;
+"files" = ("F898C31D03CB3D06D161C0BF", "F93428EA268812C5D48E1B8E", "66EE54F49A90947E379FF886");
+"isa" = "PBXSourcesBuildPhase";
+"runOnlyForDeploymentPostprocessing" = 0;
+};
+"7A060B6D671544E6BADA4578" = {
+"buildConfigurationList" = "2B1A667E0C3F932DF0943EE0";
+"buildPhases" = ("E20E2520430B170339781840", "53A57DC6D9FAC6677F17AF34", "CBF5AD2303B0581BD1933146");
+"buildRules" = ();
+"dependencies" = ();
+"isa" = "PBXNativeTarget";
+"name" = "ChirpKeyboard";
+"packageProductDependencies" = ("43DBF6F2D6B24B5555D140F4", "E6533E35BD0572961BFD91A5", "9E63B659BBFB7DB257A8528A");
+"productName" = "ChirpKeyboard";
+"productReference" = "390F618B6E5543AE40C0272F";
+"productType" = "com.apple.product-type.app-extension";
+};
+"7E8471A262772252E1C967A1" = {
+"isa" = "PBXFileReference";
+"lastKnownFileType" = "sourcecode.swift";
+"path" = "Tests/SessionCoordinatorTests.swift";
+"sourceTree" = "SOURCE_ROOT";
+};
+"81E6D33E840BC2F14A37A2C8" = {
+"buildActionMask" = 2147483647;
+"files" = ("2EE7023BE9AF5663255E8C16", "9DA4136449A70375BF7F6AC2", "7130A715AEDE5079A1CDCEF2", "2D32EC9DB5DC246C063E6D45", "BD10D83DEE4EA0B277650DA4", "DABAD216F142457394EB337C", "86AB6939C51A710D8148CB33", "6D1F1FC5D01A08C464358FA6", "9935B0517F7DCB195542C7A3", "6B22E0C71A0818A0F08D013D");
+"isa" = "PBXSourcesBuildPhase";
+"runOnlyForDeploymentPostprocessing" = 0;
+};
+"86AB6939C51A710D8148CB33" = {
+"fileRef" = "546BF70B0E0D0600EBE59D5F";
+"isa" = "PBXBuildFile";
+};
+"894870DBFED56393EF1E1548" = {
+"buildActionMask" = 2147483647;
+"files" = ("8F531C21F9AFCC0576CB537B", "D6C4BB608FEBF9450A4CD04D");
+"isa" = "PBXFrameworksBuildPhase";
+"runOnlyForDeploymentPostprocessing" = 0;
+};
+"8952404D863F235C98688289" = {
+"isa" = "PBXFileReference";
+"lastKnownFileType" = "sourcecode.swift";
+"path" = "Intents/ChirpActivityAttributes.swift";
+"sourceTree" = "SOURCE_ROOT";
+};
+"897F15EB2B7F1F5268A88485" = {
+"fileRef" = "D6322BC836F5768FD547E346";
+"isa" = "PBXBuildFile";
+};
+"8D2F01F69F24F3CB045CE403" = {
+"isa" = "PBXBuildFile";
+"productRef" = "43DBF6F2D6B24B5555D140F4";
+};
+"8F531C21F9AFCC0576CB537B" = {
+"isa" = "PBXBuildFile";
+"productRef" = "D0520187AD40099F5633FFD6";
+};
+"9057F11E31BF0BA6A6E3AE74" = {
+"baseConfigurationReference" = "EE1E752050BF380B88186C3D";
+"buildSettings" = {
+"APPLICATION_EXTENSION_API_ONLY" = "YES";
+"CODE_SIGN_ENTITLEMENTS" = "Config/Widgets.entitlements";
+"DEBUG_INFORMATION_FORMAT" = "dwarf";
+"ENABLE_TESTABILITY" = "YES";
+"GENERATE_INFOPLIST_FILE" = "NO";
+"INFOPLIST_FILE" = "Config/Widgets-Info.plist";
+"PRODUCT_BUNDLE_IDENTIFIER" = "$(CHIRP_BUNDLE_ID).widgets";
+"PRODUCT_NAME" = "$(TARGET_NAME)";
+"SDKROOT" = "iphoneos";
+"SKIP_INSTALL" = "YES";
+"SUPPORTED_PLATFORMS" = "iphonesimulator iphoneos";
+"SWIFT_ACTIVE_COMPILATION_CONDITIONS" = "$(inherited) DEBUG";
+"SWIFT_OPTIMIZATION_LEVEL" = "-Onone";
+"TARGETED_DEVICE_FAMILY" = "1,2";
+};
+"isa" = "XCBuildConfiguration";
+"name" = "Debug";
+};
+"97DB0E0410A2A33CDDD42F03" = {
+"baseConfigurationReference" = "EE1E752050BF380B88186C3D";
+"buildSettings" = {
+"DEBUG_INFORMATION_FORMAT" = "dwarf-with-dsym";
+"ENABLE_TESTABILITY" = "NO";
+"GENERATE_INFOPLIST_FILE" = "YES";
+"PRODUCT_BUNDLE_IDENTIFIER" = "$(CHIRP_BUNDLE_ID).uitests";
+"PRODUCT_NAME" = "$(TARGET_NAME)";
+"SDKROOT" = "iphoneos";
+"SUPPORTED_PLATFORMS" = "iphonesimulator iphoneos";
+"SWIFT_OPTIMIZATION_LEVEL" = "-O";
+"TARGETED_DEVICE_FAMILY" = "1,2";
+"TEST_TARGET_NAME" = "ChirpIOS";
+};
+"isa" = "XCBuildConfiguration";
+"name" = "Release";
+};
+"98A0616A245297778BB2CEA5" = {
+"baseConfigurationReference" = "EE1E752050BF380B88186C3D";
+"buildSettings" = {
+"APPLICATION_EXTENSION_API_ONLY" = "YES";
+"CODE_SIGN_ENTITLEMENTS" = "Config/Widgets.entitlements";
+"DEBUG_INFORMATION_FORMAT" = "dwarf-with-dsym";
+"ENABLE_TESTABILITY" = "NO";
+"GENERATE_INFOPLIST_FILE" = "NO";
+"INFOPLIST_FILE" = "Config/Widgets-Info.plist";
+"PRODUCT_BUNDLE_IDENTIFIER" = "$(CHIRP_BUNDLE_ID).widgets";
+"PRODUCT_NAME" = "$(TARGET_NAME)";
+"SDKROOT" = "iphoneos";
+"SKIP_INSTALL" = "YES";
+"SUPPORTED_PLATFORMS" = "iphonesimulator iphoneos";
+"SWIFT_OPTIMIZATION_LEVEL" = "-O";
+"TARGETED_DEVICE_FAMILY" = "1,2";
+};
+"isa" = "XCBuildConfiguration";
+"name" = "Release";
+};
+"9935B0517F7DCB195542C7A3" = {
+"fileRef" = "D43596DB45D6A208B2AFE3EF";
+"isa" = "PBXBuildFile";
+};
+"9C084C2604BB2D2F307C5ED1" = {
+"buildActionMask" = 2147483647;
+"files" = ("1A1B20ABB3004B35FE9E88B1");
+"isa" = "PBXSourcesBuildPhase";
+"runOnlyForDeploymentPostprocessing" = 0;
+};
+"9C18402CCD4074F9A129D89D" = {
+"fileRef" = "7E8471A262772252E1C967A1";
+"isa" = "PBXBuildFile";
+};
+"9C584540D9698FBC8554207C" = {
+"fileRef" = "390F618B6E5543AE40C0272F";
+"isa" = "PBXBuildFile";
+"settings" = {
+"ATTRIBUTES" = ("CodeSignOnCopy", "RemoveHeadersOnCopy");
+};
+};
+"9DA4136449A70375BF7F6AC2" = {
+"fileRef" = "B4849430B43DE46230EF97B5";
+"isa" = "PBXBuildFile";
+};
+"9E63B659BBFB7DB257A8528A" = {
+"isa" = "XCSwiftPackageProductDependency";
+"package" = "B7EEDE2413F08C27632A0C81";
+"productName" = "KeyboardPolicy";
+};
+"A824290273A346217D9BE6F4" = {
+"baseConfigurationReference" = "EE1E752050BF380B88186C3D";
+"buildSettings" = {
+"DEBUG_INFORMATION_FORMAT" = "dwarf-with-dsym";
+"ENABLE_TESTABILITY" = "NO";
+"SWIFT_OPTIMIZATION_LEVEL" = "-O";
+};
+"isa" = "XCBuildConfiguration";
+"name" = "Release";
+};
+"A88B65AC05B3702AB2B3C45C" = {
+"explicitFileType" = "wrapper.application";
+"includeInIndex" = 0;
+"isa" = "PBXFileReference";
+"path" = "ChirpIOS.app";
+"sourceTree" = "BUILT_PRODUCTS_DIR";
+};
+"AE839AB1443038F0DD418AF5" = {
+"fileRef" = "3A81213BA00E2A1CB073CDC1";
+"isa" = "PBXBuildFile";
+};
+"AFC32963E7959E7A34264826" = {
+"buildActionMask" = 2147483647;
+"dstPath" = "";
+"dstSubfolderSpec" = 13;
+"files" = ("9C584540D9698FBC8554207C", "290EC6D66F714FA84A807384");
+"isa" = "PBXCopyFilesBuildPhase";
+"name" = "Embed App Extensions";
+"runOnlyForDeploymentPostprocessing" = 0;
+};
+"B4849430B43DE46230EF97B5" = {
+"isa" = "PBXFileReference";
+"lastKnownFileType" = "sourcecode.swift";
+"path" = "App/DebugFixtures.swift";
+"sourceTree" = "SOURCE_ROOT";
+};
+"B7EEDE2413F08C27632A0C81" = {
+"isa" = "XCLocalSwiftPackageReference";
+"relativePath" = "Keyboard/Policy";
+};
+"BBB83079F2083B9AB8973A4A" = {
+"buildConfigurationList" = "2C96B5D9C4C1F0158DAE2A91";
+"buildPhases" = ("788CD3EAF56DDC47856418CB", "67A8EC32616AE2EA72F605F4", "624F7ECEAD4AEFDB8A1AF483");
+"buildRules" = ();
+"dependencies" = ();
+"isa" = "PBXNativeTarget";
+"name" = "ChirpWidgets";
+"packageProductDependencies" = ();
+"productName" = "ChirpWidgets";
+"productReference" = "2DC1A2B7C0466F6949307DA8";
+"productType" = "com.apple.product-type.app-extension";
+};
+"BD10D83DEE4EA0B277650DA4" = {
+"fileRef" = "CCC72244D8552098F7A7ECDF";
+"isa" = "PBXBuildFile";
+};
+"BD9CA9A5BDEA3D1765390780" = {
+"baseConfigurationReference" = "EE1E752050BF380B88186C3D";
+"buildSettings" = {
+"DEBUG_INFORMATION_FORMAT" = "dwarf";
+"ENABLE_TESTABILITY" = "YES";
+"GENERATE_INFOPLIST_FILE" = "YES";
+"PRODUCT_BUNDLE_IDENTIFIER" = "$(CHIRP_BUNDLE_ID).uitests";
+"PRODUCT_NAME" = "$(TARGET_NAME)";
+"SDKROOT" = "iphoneos";
+"SUPPORTED_PLATFORMS" = "iphonesimulator iphoneos";
+"SWIFT_ACTIVE_COMPILATION_CONDITIONS" = "$(inherited) DEBUG";
+"SWIFT_OPTIMIZATION_LEVEL" = "-Onone";
+"TARGETED_DEVICE_FAMILY" = "1,2";
+"TEST_TARGET_NAME" = "ChirpIOS";
+};
+"isa" = "XCBuildConfiguration";
+"name" = "Debug";
+};
+"C5698A5FD46D1111E5ED7BF5" = {
+"buildConfigurationList" = "2B02DC9242BB560AE323B382";
+"buildPhases" = ("0D8F6BDAD5F4118491C3E017", "F5A926C4C3B7E121EEF576FE", "3B50188F47687F81F41796A9");
+"buildRules" = ();
+"dependencies" = ("33456C59515124D91A913981");
+"isa" = "PBXNativeTarget";
+"name" = "ChirpIOSTests";
+"packageProductDependencies" = ("4FAFA1719549217F423588B7", "0B67573A1FB8DCFD0FD43FD1");
+"productName" = "ChirpIOSTests";
+"productReference" = "5EC79932DBFF96418BA84DDD";
+"productType" = "com.apple.product-type.bundle.unit-test";
+};
+"C8886D81BE131B0FD9FA18D3" = {
+"baseConfigurationReference" = "EE1E752050BF380B88186C3D";
+"buildSettings" = {
+"APPLICATION_EXTENSION_API_ONLY" = "YES";
+"CODE_SIGN_ENTITLEMENTS" = "Config/Keyboard.entitlements";
+"DEBUG_INFORMATION_FORMAT" = "dwarf-with-dsym";
+"ENABLE_TESTABILITY" = "NO";
+"GENERATE_INFOPLIST_FILE" = "NO";
+"INFOPLIST_FILE" = "Config/Keyboard-Info.plist";
+"PRODUCT_BUNDLE_IDENTIFIER" = "$(CHIRP_BUNDLE_ID).keyboard";
+"PRODUCT_NAME" = "$(TARGET_NAME)";
+"SDKROOT" = "iphoneos";
+"SKIP_INSTALL" = "YES";
+"SUPPORTED_PLATFORMS" = "iphonesimulator iphoneos";
+"SWIFT_OPTIMIZATION_LEVEL" = "-O";
+"TARGETED_DEVICE_FAMILY" = "1,2";
+};
+"isa" = "XCBuildConfiguration";
+"name" = "Release";
+};
+"C8D2DC745BFC63C0D67231CE" = {
+"children" = ("EE1E752050BF380B88186C3D", "407901DFAB173EAD557A1B15", "B4849430B43DE46230EF97B5", "CE3B07AD77E4020CFAE90611", "F7C6E013D1C497B6B17789A6", "CCC72244D8552098F7A7ECDF", "5244768EF36217B33F6DB4EA", "546BF70B0E0D0600EBE59D5F", "8952404D863F235C98688289", "D43596DB45D6A208B2AFE3EF", "3ACCB2B039C57C2F6A546706", "4AD441DFB1033D3B6CA64FBE", "16316148253E18F164ECBF54", "D6322BC836F5768FD547E346", "DA2DECE1AC0AC0865B2B2738", "3A81213BA00E2A1CB073CDC1", "7E8471A262772252E1C967A1", "256160421D7CAC18D6FE843F", "0A3E27B8CA818264D75C8D81");
+"isa" = "PBXGroup";
+"sourceTree" = "<group>";
+};
+"CBF5AD2303B0581BD1933146" = {
+"buildActionMask" = 2147483647;
+"files" = ();
+"isa" = "PBXResourcesBuildPhase";
+"runOnlyForDeploymentPostprocessing" = 0;
+};
+"CCC72244D8552098F7A7ECDF" = {
+"isa" = "PBXFileReference";
+"lastKnownFileType" = "sourcecode.swift";
+"path" = "App/PrivacyController.swift";
+"sourceTree" = "SOURCE_ROOT";
+};
+"CE3B07AD77E4020CFAE90611" = {
+"isa" = "PBXFileReference";
+"lastKnownFileType" = "sourcecode.swift";
+"path" = "App/MicrophoneCapture.swift";
+"sourceTree" = "SOURCE_ROOT";
+};
+"D0520187AD40099F5633FFD6" = {
+"isa" = "XCSwiftPackageProductDependency";
+"package" = "5B4002BED79CE6D06D0C2D3B";
+"productName" = "ChirpIOSCore";
+};
+"D396A50054D4C74C1EB84AB8" = {
+"buildConfigurations" = ("BD9CA9A5BDEA3D1765390780", "97DB0E0410A2A33CDDD42F03");
+"defaultConfigurationIsVisible" = 0;
+"defaultConfigurationName" = "Debug";
+"isa" = "XCConfigurationList";
+};
+"D43596DB45D6A208B2AFE3EF" = {
+"isa" = "PBXFileReference";
+"lastKnownFileType" = "sourcecode.swift";
+"path" = "Intents/ChirpLiveActivity.swift";
+"sourceTree" = "SOURCE_ROOT";
+};
+"D6322BC836F5768FD547E346" = {
+"isa" = "PBXFileReference";
+"lastKnownFileType" = "sourcecode.swift";
+"path" = "Keyboard/KeyboardBridgeClient.swift";
+"sourceTree" = "SOURCE_ROOT";
+};
+"D6C4BB608FEBF9450A4CD04D" = {
+"isa" = "PBXBuildFile";
+"productRef" = "73752CE3E81628B6F5929C81";
+};
+"D9D3CFDB895671E7A35DC3DF" = {
+"baseConfigurationReference" = "EE1E752050BF380B88186C3D";
+"buildSettings" = {
+"BUNDLE_LOADER" = "$(TEST_HOST)";
+"DEBUG_INFORMATION_FORMAT" = "dwarf";
+"ENABLE_TESTABILITY" = "YES";
+"GENERATE_INFOPLIST_FILE" = "YES";
+"PRODUCT_BUNDLE_IDENTIFIER" = "$(CHIRP_BUNDLE_ID).tests";
+"PRODUCT_NAME" = "$(TARGET_NAME)";
+"SDKROOT" = "iphoneos";
+"SUPPORTED_PLATFORMS" = "iphonesimulator iphoneos";
+"SWIFT_ACTIVE_COMPILATION_CONDITIONS" = "$(inherited) DEBUG";
+"SWIFT_OPTIMIZATION_LEVEL" = "-Onone";
+"TARGETED_DEVICE_FAMILY" = "1,2";
+"TEST_HOST" = "$(BUILT_PRODUCTS_DIR)/ChirpIOS.app/ChirpIOS";
+};
+"isa" = "XCBuildConfiguration";
+"name" = "Debug";
+};
+"DA2DECE1AC0AC0865B2B2738" = {
+"isa" = "PBXFileReference";
+"lastKnownFileType" = "sourcecode.swift";
+"path" = "Widgets/ChirpWidgets.swift";
+"sourceTree" = "SOURCE_ROOT";
+};
+"DABAD216F142457394EB337C" = {
+"fileRef" = "5244768EF36217B33F6DB4EA";
+"isa" = "PBXBuildFile";
+};
+"E20E2520430B170339781840" = {
+"buildActionMask" = 2147483647;
+"files" = ("5B2D6EAD3359456382DF2A09", "897F15EB2B7F1F5268A88485");
+"isa" = "PBXSourcesBuildPhase";
+"runOnlyForDeploymentPostprocessing" = 0;
+};
+"E6533E35BD0572961BFD91A5" = {
+"isa" = "XCSwiftPackageProductDependency";
+"package" = "053EC651A622492A47CB1CDF";
+"productName" = "ChirpCore";
+};
+"E655590674167EED1111A094" = {
+"isa" = "PBXBuildFile";
+"productRef" = "0B67573A1FB8DCFD0FD43FD1";
+};
+"E91FD130ADCFE9AFE4486B7B" = {
+"isa" = "PBXBuildFile";
+"productRef" = "9E63B659BBFB7DB257A8528A";
+};
+"EE1E752050BF380B88186C3D" = {
+"isa" = "PBXFileReference";
+"lastKnownFileType" = "text.xcconfig";
+"path" = "Config/Project.xcconfig";
+"sourceTree" = "SOURCE_ROOT";
+};
+"EF54797DB1180CC47F4B2D61" = {
+"baseConfigurationReference" = "EE1E752050BF380B88186C3D";
+"buildSettings" = {
+"ASSETCATALOG_COMPILER_APPICON_NAME" = "AppIcon";
+"CODE_SIGN_ENTITLEMENTS" = "Config/App.entitlements";
+"DEBUG_INFORMATION_FORMAT" = "dwarf-with-dsym";
+"ENABLE_TESTABILITY" = "NO";
+"GENERATE_INFOPLIST_FILE" = "NO";
+"INFOPLIST_FILE" = "Config/App-Info.plist";
+"PRODUCT_BUNDLE_IDENTIFIER" = "$(CHIRP_BUNDLE_ID)";
+"PRODUCT_NAME" = "$(TARGET_NAME)";
+"SDKROOT" = "iphoneos";
+"SKIP_INSTALL" = "NO";
+"SUPPORTED_PLATFORMS" = "iphonesimulator iphoneos";
+"SWIFT_ACTIVE_COMPILATION_CONDITIONS" = "$(inherited) CHIRP_APP";
+"SWIFT_OPTIMIZATION_LEVEL" = "-O";
+"TARGETED_DEVICE_FAMILY" = "1,2";
+};
+"isa" = "XCBuildConfiguration";
+"name" = "Release";
+};
+"F5A926C4C3B7E121EEF576FE" = {
+"buildActionMask" = 2147483647;
+"files" = ("6BCA2A32758F2F8F520B61BA", "E655590674167EED1111A094");
+"isa" = "PBXFrameworksBuildPhase";
+"runOnlyForDeploymentPostprocessing" = 0;
+};
+"F7C6E013D1C497B6B17789A6" = {
+"isa" = "PBXFileReference";
+"lastKnownFileType" = "sourcecode.swift";
+"path" = "App/PairingScanner.swift";
+"sourceTree" = "SOURCE_ROOT";
+};
+"F898C31D03CB3D06D161C0BF" = {
+"fileRef" = "8952404D863F235C98688289";
+"isa" = "PBXBuildFile";
+};
+"F93428EA268812C5D48E1B8E" = {
+"fileRef" = "3ACCB2B039C57C2F6A546706";
+"isa" = "PBXBuildFile";
+};
+"FCCAA5C12E409A7BFF4C500C" = {
+"buildActionMask" = 2147483647;
+"files" = ("10B3F68C39D9A1F210E6B9CE");
+"isa" = "PBXResourcesBuildPhase";
+"runOnlyForDeploymentPostprocessing" = 0;
+};
+"FE7300D6F55A95D8D68BC086" = {
+"buildConfigurations" = ("54F89B21697FA591108BFCF7", "EF54797DB1180CC47F4B2D61");
+"defaultConfigurationIsVisible" = 0;
+"defaultConfigurationName" = "Debug";
+"isa" = "XCConfigurationList";
+};
+};
+"rootObject" = "244210E48437B6556980A702";
+}

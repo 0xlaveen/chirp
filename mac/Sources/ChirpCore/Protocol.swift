@@ -143,8 +143,8 @@ public enum ClientMessage {
             message["correction_instructions"] = text
         }
         if let prompt = o.correctionPrompt {
-            let text = CorrectionProfile.clampPrompt(prompt).trimmingCharacters(in: .whitespacesAndNewlines)
-            if !text.isEmpty { message["correction_prompt"] = text }
+            // Presence (including empty) overrides the style on the wire. UI policy may omit blank edits.
+            message["correction_prompt"] = CorrectionProfile.clampPrompt(prompt)
         }
         if o.wordTimings { message["word_timings"] = true }
         return json(message)

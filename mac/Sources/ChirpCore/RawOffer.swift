@@ -1,3 +1,4 @@
+#if os(macOS)
 import Carbon.HIToolbox
 import Foundation
 
@@ -79,3 +80,5 @@ public final class RawOffer {
         isOpen = false
     }
 }
+
+#endif

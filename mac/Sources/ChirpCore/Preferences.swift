@@ -14,11 +14,13 @@ public final class Preferences: @unchecked Sendable {
         get { defaults.string(forKey: "serverURL") ?? ServerConfig.defaultURL.absoluteString }
         set { defaults.set(newValue, forKey: "serverURL") }
     }
+    #if os(macOS)
     /// One of `KeyCombo.presets` (⌃⌥Space by default) or a recorded shortcut that passed `HotKeyValidation`.
     public var hotkey: KeyCombo {
         get { KeyCombo.resolve(id: defaults.string(forKey: "hotkey")) }
         set { defaults.set(newValue.id, forKey: "hotkey") }
     }
+    #endif
     /// Clean-up (the server's `correction` flag). Off by default.
     public var correction: Bool {
         get { defaults.bool(forKey: "correction") }

@@ -1,3 +1,4 @@
+#if os(macOS)
 import AppKit
 import ApplicationServices
 import Carbon.HIToolbox
@@ -97,3 +98,5 @@ public enum SystemInsertion {
         return true
     }
 }
+
+#endif

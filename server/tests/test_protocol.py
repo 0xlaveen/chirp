@@ -77,12 +77,13 @@ def test_ws_auth(client, headers, first):
 
 
 @pytest.mark.parametrize("header", [True, False])
-def test_stream_partials_final_reuse(client, engine, header):
+@pytest.mark.parametrize("client_name", ["mac", "android", "ios"])
+def test_stream_partials_final_reuse(client, engine, header, client_name):
     with client.websocket_connect("/v1/stream", headers=HEADERS if header else {}) as ws:
         if not header:
             ws.send_json({"type": "auth", "token": TOKEN})
         for _ in range(2):
-            ws.send_json(START)
+            ws.send_json({**START, "client": client_name})
             assert ws.receive_json()["type"] == "ready"
             ws.send_bytes(PCM)
             partial = ws.receive_json()
