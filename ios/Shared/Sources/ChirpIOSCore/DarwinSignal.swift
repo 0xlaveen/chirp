@@ -1,6 +1,6 @@
 import Foundation
 import CoreFoundation
-import Darwin
+import CDarwinNotify
 
 public final class DarwinObservation: @unchecked Sendable {
     private let lock = NSLock()

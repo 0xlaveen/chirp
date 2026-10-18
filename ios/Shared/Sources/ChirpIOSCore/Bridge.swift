@@ -62,8 +62,8 @@ public final class SharedBridge: Sendable {
     public static let maximumTTL: TimeInterval = 120
     public static let maximumQueue = 64
     public static let maximumBytes = 256 * 1024
-    private struct Receipt: Codable { var id: UUID; var expiresAt: Date }
-    private struct Document: Codable {
+    private struct Receipt: Codable, Equatable { var id: UUID; var expiresAt: Date }
+    private struct Document: Codable, Equatable {
         var state: BridgeState?
         var commands: [BridgeCommand] = []
         var results: [BridgeResult] = []
@@ -109,9 +109,12 @@ public final class SharedBridge: Sendable {
         }
     }
     private func pruned() throws -> Document {
-        var d = try load(); try prune(&d)
-        // Persist cleanup even when the operation that follows is rejected.
-        if try sealed.files.read("mailbox.sealed", max: Self.maximumBytes) != nil { try save(d) }
+        var d = try load()
+        let previous = d
+        try prune(&d)
+        // Persist actual cleanup even when the operation that follows is rejected.
+        // Frequent keyboard reconciliation must not reencrypt/fsync unchanged state.
+        if d != previous { try save(d) }
         return d
     }
     private func validTime(created: Date, expires: Date) throws {
@@ -130,9 +133,7 @@ public final class SharedBridge: Sendable {
     }
     public func state() throws -> BridgeState? {
         try sealed.files.transaction {
-            var d = try pruned()
-            // Reconcile persists expiry deletion, so expired text does not stay on disk after a read.
-            if try sealed.files.read("mailbox.sealed", max: Self.maximumBytes) != nil { try save(d) }
+            let d = try pruned()
             return d.state
         }
     }

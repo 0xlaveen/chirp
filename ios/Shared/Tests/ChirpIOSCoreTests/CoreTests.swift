@@ -111,6 +111,36 @@ struct HistoryTests {
         #expect(throws: CoreError.corrupt) { try history.entries() }
         try history.setEnabled(false); #expect(try history.entries().isEmpty)
     }
+    @Test func rawUpdateIsAtomicAndTamperFailsClosed() throws {
+        let root = try temporaryRoot(); defer { try? FileManager.default.removeItem(at: root) }
+        let history = try HistoryStore(root: root, secrets: MemorySecretStore())
+        try history.setEnabled(true)
+        let entry = try #require(try history.record(text: "cleaned", raw: "raw sentinel", corrected: true))
+        let updated = try #require(try history.useRaw(id: entry.id))
+        #expect(updated.id == entry.id && updated.createdAt == entry.createdAt)
+        #expect(updated.text == "raw sentinel" && updated.raw == "raw sentinel" && !updated.corrected)
+        #expect(try history.entries().count == 1)
+        #expect(try history.useRaw(id: UUID()) == nil)
+        let file = root.appendingPathComponent("history/entries.sealed")
+        var data = try Data(contentsOf: file); data[data.count - 1] ^= 1; try data.write(to: file)
+        #expect(throws: CoreError.corrupt) { try history.useRaw(id: entry.id) }
+    }
+    @Test func disableRacingRawUpdateCannotRecreateCiphertextOrKey() async throws {
+        let root = try temporaryRoot(); defer { try? FileManager.default.removeItem(at: root) }
+        let secrets = MemorySecretStore()
+        let history = try HistoryStore(root: root, secrets: secrets)
+        let another = try HistoryStore(root: root, secrets: secrets)
+        try history.setEnabled(true)
+        let entry = try #require(try history.record(text: "cleaned", raw: "raw", corrected: true))
+        await withTaskGroup(of: Void.self) { group in
+            for _ in 0..<30 { group.addTask { _ = try? another.useRaw(id: entry.id) } }
+            group.addTask { try? history.setEnabled(false) }
+        }
+        #expect(try history.useRaw(id: entry.id) == nil)
+        #expect(try history.entries().isEmpty)
+        #expect(try secrets.read(account: HistoryStore.keyAccount) == nil)
+        #expect(!FileManager.default.fileExists(atPath: root.appendingPathComponent("history/entries.sealed").path))
+    }
     @Test func concurrentDisableAndWritersCannotResurrectData() async throws {
         let root = try temporaryRoot(); defer { try? FileManager.default.removeItem(at: root) }
         let secrets = MemorySecretStore()
@@ -187,6 +217,24 @@ struct BridgeTests {
         #expect(throws: CoreError.queueFull) { try writer.send(BridgeCommand(generation: generation, action: .end, createdAt: clock.now(), expiresAt: clock.now() + 10)) }
         #expect(try app.takeCommands(generation: generation).count == 64)
     }
+    @Test func readOnlyReconciliationDoesNotWriteButRejectedExpiredWritePrunes() throws {
+        let root = try temporaryRoot(); defer { try? FileManager.default.removeItem(at: root) }
+        let clock = TestClock(), secrets = MemorySecretStore(), generation = UUID()
+        let app = try SharedBridge(root: root, secrets: secrets, role: .app, now: clock.now)
+        let keyboard = try SharedBridge(root: root, secrets: secrets, role: .keyboard, now: clock.now)
+        try app.publish(BridgeState(generation: generation, phase: .armed, leaseUntil: clock.now() + 8))
+        let file = root.appendingPathComponent("bridge/mailbox.sealed")
+        let before = try Data(contentsOf: file)
+        _ = try keyboard.state(); _ = try keyboard.state()
+        #expect(try Data(contentsOf: file) == before)
+        clock.advance(9)
+        #expect(throws: CoreError.staleGeneration) {
+            try keyboard.send(BridgeCommand(generation: generation, action: .end,
+                createdAt: clock.now(), expiresAt: clock.now() + 5))
+        }
+        #expect(try Data(contentsOf: file) != before)
+        #expect(try keyboard.state() == nil)
+    }
     @Test func tamperOversizeTTLAndRoleFailClosed() throws {
         let root = try temporaryRoot(); defer { try? FileManager.default.removeItem(at: root) }
         let clock = TestClock(), secrets = MemorySecretStore(), generation = UUID(), utterance = UUID()
@@ -221,4 +269,31 @@ struct PreferenceAndDiagnosticTests {
         #expect(!string.contains("secret")); #expect(string.contains("failed"))
         #expect(!string.contains("token")); #expect(!string.contains("url"))
     }
+}
+
+struct DarwinSignalTests {
+    @Test func observationCanCancelDuringConcurrentWake() async {
+        let signal = DarwinSignal(name: "dev.chirp.tests." + UUID().uuidString)
+        let probe = WakeProbe()
+        let (events, continuation) = AsyncStream.makeStream(of: Bool.self)
+        let observation = signal.observe { probe.increment(); continuation.yield(true) }
+        let timeout = Task { try? await Task.sleep(for: .seconds(2)); continuation.finish() }
+        signal.post()
+        let delivered = await events.first(where: { $0 })
+        timeout.cancel()
+        #expect(delivered == true)
+        await withTaskGroup(of: Void.self) { group in
+            for _ in 0..<50 { group.addTask { signal.post() } }
+            group.addTask { observation.cancel(); observation.cancel() }
+        }
+        signal.post()
+        // Queued OS callbacks retain their Swift closure; cancellation never leaves an unsafe observer pointer.
+        #expect(probe.count >= 1)
+    }
+}
+private final class WakeProbe: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value = 0
+    var count: Int { lock.withLock { value } }
+    func increment() { lock.withLock { value += 1 } }
 }

@@ -53,14 +53,20 @@ unknown destination information fails closed. `SessionDuration` cases are
 
 `HistoryStore.settings()` returns enabled/retention/generation. `setEnabled`,
 `setRetention(.day/.week/.month)`, `record(text:raw:corrected:) -> HistoryEntry?`,
-`entries() -> [HistoryEntry]` (newest first), `delete(id:)`, and `clear()` are
+`entries() -> [HistoryEntry]` (newest first), `delete(id:)`,
+`useRaw(id:) -> HistoryEntry?`, and `clear()` are
 synchronous and locked. Entries expose id, createdAt, text, raw, corrected. Search
 can filter the returned in-memory entries. Only record noncancelled finals when
 session privacy allows; empty entries are ignored. History defaults off, caps at
 200 entries and 4 MiB, defaults to 7 days, and prunes on reads/writes/retention
 changes. It has a separate AES-256-GCM Keychain key. Disabling first writes a
 fence, then deletes ciphertext and key under the same multi-process lock. Reads
-of disabled history retry deletion; no cached enabled flag/key can resurrect it.
+of disabled history retry deletion; no cached enabled flag/key can resurrect it. `useRaw` updates only an existing
+retained entry using its stored raw, marks corrected false, and returns nil after
+disable/clear/expiry; it cannot recreate an entry or key.
+
+Storage methods perform synchronous bounded file IO/locking and must run only on
+coordinator/UI worker paths, never an audio tap or real-time conversion callback.
 
 Bridge usage:
 

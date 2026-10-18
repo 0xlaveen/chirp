@@ -6,7 +6,8 @@ let package = Package(
     products: [.library(name: "ChirpIOSCore", targets: ["ChirpIOSCore"])],
     dependencies: [.package(path: "../../mac")],
     targets: [
-        .target(name: "ChirpIOSCore", dependencies: [.product(name: "ChirpCore", package: "mac")]),
+        .target(name: "CDarwinNotify", publicHeadersPath: "include"),
+        .target(name: "ChirpIOSCore", dependencies: ["CDarwinNotify", .product(name: "ChirpCore", package: "mac")]),
         .testTarget(name: "ChirpIOSCoreTests", dependencies: ["ChirpIOSCore"]),
     ],
     swiftLanguageModes: [.v6]

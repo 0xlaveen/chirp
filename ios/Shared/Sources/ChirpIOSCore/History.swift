@@ -95,6 +95,23 @@ public final class HistoryStore: Sendable {
             try save(load().filter { $0.id != id })
         }
     }
+    /// Replaces only an existing retained final with its stored raw text. Never records a new entry.
+    /// Safe after disable/clear/expiry: nil means no retained entry could be changed.
+    @discardableResult
+    public func useRaw(id: UUID) throws -> HistoryEntry? {
+        try sealed.files.transaction {
+            let settings = try settingsLocked()
+            guard settings.enabled else { return nil }
+            var entries = try prune(load(), settings: settings)
+            guard let index = entries.firstIndex(where: { $0.id == id }),
+                  let raw = entries[index].raw,
+                  !raw.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+            entries[index].text = raw
+            entries[index].corrected = false
+            try save(entries)
+            return entries[index]
+        }
+    }
     public func clear() throws {
         try sealed.files.transaction {
             try sealed.files.remove("entries.sealed"); try sealed.secrets.delete(account: Self.keyAccount)
