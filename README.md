@@ -14,6 +14,7 @@ Chirp turns speech into text on machines you own. Speech recognition runs locall
 - **Recognition stays on your Mac.** The server binds to `127.0.0.1` only and runs Parakeet TDT v2 via MLX. Remote access, if you want it for the phone, is tailnet-only through Tailscale Serve.
 - **Optional clean-up.** A local Qwen model can polish the final transcript — fillers, stutters, punctuation, casing — with styles for chat, email, code and notes, per-app styles, and editable prompts. Off by default; every clean-up keeps the raw text one keystroke away ("Use raw" for 5 s).
 - **Android keyboard.** A full HeliBoard keyboard plus a mic key: live text appears underlined in the field, and the final replaces it. Gboard-like default look with a Samsung-like option, a Fold-tuned inner-screen layout, English QWERTY with autocorrect, clipboard history and emoji, and an opt-in on-device encrypted dictation history. Swipe typing works with a library you supply — none is bundled.
+- **iPhone and iPad dictation (implemented, pending Xcode validation).** A native SwiftUI app plus a dictation-first custom keyboard for iOS/iPadOS 18: pair by QR to the same Mac server, dictate from any text field with verified safe replacement, companion controls (Action Button, Control Center, Shortcuts, Live Activity) and opt-in on-device encrypted history. Not installable yet — no iOS build/simulator/device check has run; see [ios/README.md](ios/README.md).
 - **Private by default.** No recordings, transcripts or logs of what you said. Debug retention is opt-in, local-only and loudly visible in both clients. Pairing uses a secret bearer token shown as a local QR code.
 
 ## Screenshots
@@ -43,10 +44,13 @@ flowchart LR
         SRV["chirp-server<br/>Parakeet ASR (MLX)<br/>+ optional Qwen clean-up"]
     end
     KBD["Chirp Keyboard<br/>(Android, Galaxy Z Fold)"]
+    IOS["Chirp for iOS<br/>(app + dictation keyboard,<br/>iPhone/iPad)"]
     APP -- "audio · WebSocket<br/>127.0.0.1:7821" --> SRV
     SRV -- "live partials + final text" --> APP
     KBD -- "audio · WSS over Tailscale Serve<br/>(tailnet only)" --> SRV
     SRV -- "live partials + final text" --> KBD
+    IOS -- "audio (app process) · WSS over Tailscale Serve<br/>(tailnet only)" --> SRV
+    SRV -- "live partials + final text" --> IOS
 ```
 
 ## Quick start
@@ -91,6 +95,10 @@ adb install -r app/build/outputs/apk/release/app-release.apk
 
 On the phone: enable Chirp Keyboard, grant the microphone, then pair by scanning the QR that `uv run chirp-server pair` prints on the Mac. Full setup, build and validation notes: [android/README.md](android/README.md).
 
+### 4. Chirp for iPhone and iPad (not installable yet)
+
+The iOS/iPadOS 18 app, dictation keyboard and companion controls are implemented on the iOS integration branch, but no installable build exists: the build machine has only the Command Line Tools, and no iOS compile, simulator or device check has run. The server must also be restarted from this branch's source so it accepts `ios` clients. Once full Xcode is available, the operator install steps (same-Team signing, Full Access, pairing, per-device Run) are in [ios/README.md](ios/README.md); the implementation-evidence record and pending gates are in [docs/review/ios-foundation.md](docs/review/ios-foundation.md) and [docs/review/ios-keyboard.md](docs/review/ios-keyboard.md).
+
 ## Privacy & security
 
 - **Nothing is retained by default.** Audio and transcripts live in memory for the length of an utterance, then they are gone. Logs carry only timings, byte counts and error codes. There is no telemetry.
@@ -105,6 +113,7 @@ On the phone: enable Chirp Keyboard, grant the microphone, then pair by scanning
 server/   Speech server: Python 3.13, Starlette, parakeet-mlx (uv project) + tests and benchmarks
 mac/      Chirp for Mac: Swift 6 / SwiftPM / AppKit menu-bar app
 android/  Chirp Keyboard: HeliBoard-based Android IME + setup app (see android/README.md)
+ios/      Chirp for iPhone and iPad: SwiftUI app + dictation keyboard (see ios/README.md)
 docs/     Architecture, benchmarks, testing, milestones — indexed in docs/README.md
 scripts/  Cross-component end-to-end check (scripts/e2e-local.sh)
 ```
@@ -115,9 +124,9 @@ scripts/  Cross-component end-to-end check (scripts/e2e-local.sh)
 - [Architecture](docs/architecture.md) — components, wire protocol, privacy rules, permissions, measurement plan
 - [Benchmarks](docs/bench.md) — measured engine, finalization and clean-up-model results
 - [Testing](docs/TESTING.md) — automated checks, operator steps, privacy checks
-- [Milestones](docs/milestones/README.md) — M1 server, M2 macOS client, M3 Android IME, M4 integration
+- [Milestones](docs/milestones/README.md) — M1 server, M2 macOS client, M3 Android IME, M4 integration, M5 iOS
 
-Component docs: [server/README.md](server/README.md) · [mac/README.md](mac/README.md) · [android/README.md](android/README.md)
+Component docs: [server/README.md](server/README.md) · [mac/README.md](mac/README.md) · [android/README.md](android/README.md) · [ios/README.md](ios/README.md)
 
 ## Licensing
 
