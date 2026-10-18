@@ -6,7 +6,7 @@
 
 <p align="center"><strong>Local-first English voice dictation for your Mac and your phone.</strong></p>
 
-Chirp turns speech into text on machines you own. Speech recognition runs locally on your Mac (Parakeet on Apple Silicon) — press a hotkey in any app, talk, and the text lands in the focused field. An optional clean-up pass removes fillers and fixes punctuation; by default it runs as a model on the same Mac, so no text leaves the machine. The Android keyboard (a HeliBoard build for the Galaxy Z Fold) has a microphone key that streams your voice to that same Mac over Tailscale and inserts text in the focused field. Nothing — no audio, no transcripts — is retained by default.
+Chirp turns speech into text on machines you own. Speech recognition runs locally on your Mac (Parakeet on Apple Silicon) — press a hotkey in any app, talk, and the text lands in the focused field. An optional clean-up pass removes fillers and fixes punctuation; by default it runs as a model on the same Mac, so no text leaves the machine. The Android keyboard (a HeliBoard build for the Galaxy Z Fold) has a microphone key that streams your voice to that same Mac over Tailscale and inserts text in the focused field. Nothing — no audio, no transcripts — is retained by default; the single exception is iOS's transient encrypted app↔keyboard mailbox (see [Privacy & security](#privacy--security)).
 
 ## Highlights
 
@@ -14,7 +14,7 @@ Chirp turns speech into text on machines you own. Speech recognition runs locall
 - **Recognition stays on your Mac.** The server binds to `127.0.0.1` only and runs Parakeet TDT v2 via MLX. Remote access, if you want it for the phone, is tailnet-only through Tailscale Serve.
 - **Optional clean-up.** A local Qwen model can polish the final transcript — fillers, stutters, punctuation, casing — with styles for chat, email, code and notes, per-app styles, and editable prompts. Off by default; every clean-up keeps the raw text one keystroke away ("Use raw" for 5 s).
 - **Android keyboard.** A full HeliBoard keyboard plus a mic key: live text appears underlined in the field, and the final replaces it. Gboard-like default look with a Samsung-like option, a Fold-tuned inner-screen layout, English QWERTY with autocorrect, clipboard history and emoji, and an opt-in on-device encrypted dictation history. Swipe typing works with a library you supply — none is bundled.
-- **iPhone and iPad dictation (implemented, pending Xcode validation).** A native SwiftUI app plus a dictation-first custom keyboard for iOS/iPadOS 18: pair by QR to the same Mac server, dictate from any text field with verified safe replacement, companion controls (Action Button, Control Center, Shortcuts, Live Activity) and opt-in on-device encrypted history. Not installable yet — no iOS build/simulator/device check has run; see [ios/README.md](ios/README.md).
+- **iPhone and iPad dictation (implemented, pending Xcode validation).** A native SwiftUI app plus a dictation-first custom keyboard for iOS/iPadOS 18: pair by QR to the same Mac server, dictate from compatible text fields with verified safe replacement (secure fields and hosts that disallow custom keyboards use Apple's keyboard; unreliable editor contexts stop auto-replacement safely), companion controls (Action Button, Control Center, Shortcuts, Live Activity) and opt-in on-device encrypted history. Not installable yet — no iOS build/simulator/device check has run; see [ios/README.md](ios/README.md).
 - **Private by default.** No recordings, transcripts or logs of what you said. Debug retention is opt-in, local-only and loudly visible in both clients. Pairing uses a secret bearer token shown as a local QR code.
 
 ## Screenshots
@@ -101,7 +101,7 @@ The iOS/iPadOS 18 app, dictation keyboard and companion controls are implemented
 
 ## Privacy & security
 
-- **Nothing is retained by default.** Audio and transcripts live in memory for the length of an utterance, then they are gone. Logs carry only timings, byte counts and error codes. There is no telemetry.
+- **Nothing is retained by default.** Audio and transcripts live in memory for the length of an utterance, then they are gone. One disk exception, iOS only: the app↔keyboard mailbox holds AES-GCM-encrypted transient text until consumed or expired, deleted on next access (no purge daemon); opt-in dictation history is encrypted too. Logs carry only timings, byte counts and error codes. There is no telemetry.
 - **Debug retention is opt-in, local and loud.** With `--debug-retain`, WAV + transcript files are written under `~/Library/Application Support/Chirp/debug/`, expire after three days, and both clients show a persistent red warning.
 - **Tailnet-only exposure.** The server binds to loopback. Publishing it for the phone uses `tailscale serve` (your private tailnet, TLS from the tailnet cert) — never the public internet.
 - **Bearer pairing.** Clients authenticate with a token generated on the Mac (`~/.config/chirp/token`, mode 0600). The pairing QR/URI is printed locally only; treat it as a secret. Audio is rejected before authentication even begins.

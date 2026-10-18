@@ -3,9 +3,12 @@
 A native SwiftUI app plus a dictation-first custom keyboard for iOS/iPadOS 18.
 Recognition and optional clean-up run on your existing Mac speech server — the
 iPhone or iPad only captures audio, streams it over your tailnet, and inserts
-text. Same trust model as the Android keyboard: nothing is retained by default,
-pairing is a secret QR shown locally on the Mac, and the server never accepts a
-public host.
+text. Same trust model as the Android keyboard: nothing persistent is kept by
+default (the only on-device dictation text is the encrypted transient
+app↔keyboard mailbox and opt-in encrypted history), pairing is a secret QR
+shown locally on the Mac, the iOS client's pairing accepts only tailnet
+`.ts.net` hosts, and the server itself binds to loopback — a public host is
+never used.
 
 This is a **personal install** target. No App Store distribution, TestFlight or
 ad-hoc readiness is claimed or tested.
@@ -29,12 +32,16 @@ What has actually passed, on macOS with the CLT (see
 | `mac/scripts/test.sh` + `cd mac && swift build -c release` | 380 tests in 61 suites + release build, exit 0 |
 | `swift test --package-path ios/Keyboard/Policy …` (insertion safety) | 22 test functions (53 expanded cases), exit 0 |
 | `swiftc -frontend -parse` on the six UIKit/Intents/Widgets sources | parse-only pass — **not** an iOS build |
+| `ios/scripts/check-sources.sh` (project structure, plists, per-target syntax) | passed, exit 0 |
+| `ios/scripts/typecheck-catalyst.sh` (focused Catalyst typecheck of SessionCoordinator, MicrophoneCapture, PairingScanner, DebugFixtures plus ChirpCore/ChirpIOSCore, with a temporary Activity facade) | passed — a compiler aid, **not** iOS SDK validation; excludes SwiftUI views, ActivityKit, intents, widgets and all runtime behavior |
 
-These are macOS execution of portable logic and source parsing. They are not
-simulator or hardware acceptance; every runtime claim below is implemented and
-unit-tested, but pending Xcode and device gates. The manual acceptance
-checklist for both iPhone and iPad lives in
-[docs/milestones/M5-ios.md](../docs/milestones/M5-ios.md).
+These are macOS execution of the portable models, storage/crypto and
+insertion-safety logic, plus source and structural checks. The app's own
+simulator unit/UI tests have **not** run, and no iOS SDK, simulator or runtime
+behavior is validated. App and device behavior described below is implemented
+but pending the Xcode and device gates; the app track's evidence document
+lands with its merge. The manual acceptance checklist for both iPhone and iPad
+lives in [docs/milestones/M5-ios.md](../docs/milestones/M5-ios.md).
 
 One server prerequisite: the server must run the updated source from this
 branch, which accepts `"ios"` alongside `"mac"` and `"android"` as `client`
@@ -96,18 +103,39 @@ installation is Xcode's Run action, performed by you.
    (Settings → Accounts), and pick that team for the ChirpIOS,
    ChirpKeyboard and ChirpWidgets targets (automatic signing).
 
-5. Connect the iPhone by cable, trust the computer, enable Developer Mode on the
+5. Pass the simulator gates on **both** an iPhone and an iPad simulator before
+   installing on any hardware. Get explicit UUIDs from
+   `xcrun simctl list devices available`, then for each UUID run the three
+   actions separately:
+
+   ```sh
+   CHIRP_SIMULATOR_UUID=<simulator-uuid>
+   ios/scripts/simulator.sh build "$CHIRP_SIMULATOR_UUID"
+   ios/scripts/simulator.sh test "$CHIRP_SIMULATOR_UUID"
+   ios/scripts/simulator.sh ui "$CHIRP_SIMULATOR_UUID"
+   ```
+
+   The script regenerates the project and runs an **unsigned** `xcodebuild`
+   against that explicit available iPhone/iPad simulator UUID: `test` runs the
+   `ChirpIOS` scheme unit tests, `ui` the `ChirpIOS-UI` UI tests. It never
+   installs on devices. All six gates (build, unit and UI on both device
+   families) must pass before the hardware steps below, which are then purely
+   your choice as operator.
+
+6. Connect the iPhone by cable, trust the computer, enable Developer Mode on the
    device (Settings → Privacy & Security → Developer Mode), select the device,
    choose the **ChirpIOS** scheme and press ⌘R (Run). Check that both embedded
    extensions got profiles with your App Group and keychain access group.
 
-6. Repeat on the iPad: same project, same team and identifiers, select the
+7. Repeat on the iPad: same project, same team and identifiers, select the
    iPad, Run. It is one universal app (iPhone + iPad device families).
 
-7. **Updates (both devices):** build again and Run over the existing install.
-   Never delete the app to update it — the pairing token and history key live
-   in the Keychain/App Group container, and uninstalling destroys them, forcing
-   a re-pair and losing saved history.
+8. **Updates (both devices):** build again and Run over the existing install;
+   updating in place preserves pairing, preferences and history. Do not
+   uninstall to update: removal deletes the app's container data — losing any
+   saved encrypted history — and can force a re-pair, while Keychain items are
+   not reliably removed on uninstall, so do not count on uninstall deleting the
+   token or history key either.
 
 Sign-in, provisioning and device trust are operator-only actions; no worker
 performs Apple ID login. Free Personal Team profiles expire after **seven
@@ -118,17 +146,6 @@ the capability is missing, the app and keyboard will report that shared storage
 is unavailable rather than silently degrading. TestFlight or ad-hoc
 distribution needs a paid Apple Developer Program membership and matching
 profiles; nothing here is validated for that path.
-
-Simulator checks (never devices) are scripted:
-
-```sh
-ios/scripts/simulator.sh build|test|ui SIMULATOR-UUID
-```
-
-It regenerates the project, then runs an **unsigned** `xcodebuild` against an
-explicit available iPhone/iPad simulator UUID (`ChirpIOS` scheme for build and
-unit tests, `ChirpIOS-UI` for UI tests). Get UUIDs from
-`xcrun simctl list devices available`.
 
 ## Pair with your Mac
 
@@ -143,10 +160,11 @@ unit tests, `ChirpIOS-UI` for UI tests). Get UUIDs from
    permission when asked; if it is denied, the scanner tells you and you can
    paste the secret link into **Secret pairing link** and tap **Test connection
    and save pairing** instead.
-4. Pairing is saved to the Keychain only after the authenticated health check
-   succeeds; the "Mac pairing saved in Keychain" state means the Mac was
-   verified. **Check Mac connection** re-verifies later; **Forget pairing**
-   clears the token.
+4. Chirp verifies the authenticated connection before saving anything: the
+   **Saved pairing** section then shows "Mac pairing saved" with the Mac's
+   tailnet host and recognition engine, so you can confirm you paired the
+   right machine. The token itself is stored in the iOS Keychain. **Check Mac
+   connection** re-verifies later; **Forget pairing** clears the token.
 
 Accepted links are exactly `chirp://pair?url=…&token=…` with an HTTPS
 `*.ts.net` host and a simple unencoded base path such as `/chirp` (nondefault
@@ -184,14 +202,17 @@ keyboard, Live Activity) exposes End session.
 Session length (Settings tab): **5 minutes (default), 15 minutes, 1 hour,
 Never**. Never lasts until ended, interrupted, terminated or revoked — iOS may
 still suspend the app; indefinite background execution is not guaranteed.
-Interruptions (calls, Siri, route changes), expiry and transport failure all
-end the session safely; the notice tells you to reopen Chirp.
+Interruptions (calls, Siri, route changes) and expiry end the session safely.
+A transport failure during clean-up keeps the raw transcript and leaves the
+session armed; other transport failures end the session. The notice tells you
+when to reopen Chirp.
 
 While dictating: **Stop dictation** finalizes (⌘Space toggles, Esc cancels).
 After the final you get explicit **Copy**, **Share** and — when clean-up
 changed the text — **Use raw** for 5 seconds (⌘⇧Z); the original transcript is
 expandable below. ⌘⇧E ends the session. The app never writes the clipboard by
-itself. Utterances are capped at 120 seconds and stop automatically.
+itself. Utterances stop automatically just under the 120-second protocol cap
+(about 119 seconds).
 
 If the server runs with `--debug-retain`, a persistent red banner "DEBUG: Mac
 keeps recordings" stays on screen in the app, keyboard and Live Activity.
@@ -267,9 +288,14 @@ when it matters; surrounding editor text is never collected.
 
 ## Privacy & security
 
-- **Nothing retained by default.** No audio or transcripts on disk outside the
-  server's opt-in debug retention, which both clients banner in red. Idle audio
-  is discarded on device, never streamed.
+- **Nothing persistent by default.** No audio is ever written to disk, and
+  there is no persistent transcript storage by default — with one transient
+  exception: the app↔keyboard mailbox holds AES-GCM-encrypted text on disk
+  until it is consumed or expires, deleted opportunistically on the next
+  access (there is no background purge daemon). Opt-in encrypted history is
+  separate and always ciphertext. The server's opt-in debug retention is
+  bannered in red on every surface, and idle audio is discarded on device,
+  never streamed.
 - **Pairing is a secret.** The QR/link is printed locally on the Mac only;
   treat it like a password. The token lives in the iOS Keychain (this-device,
   after first unlock, never synced) and is never rendered or logged. Do not
@@ -324,9 +350,10 @@ unmodified). It has already caught one real conditional-API mistake, but it
 does not validate the iOS SDK, signing, the simulator, SwiftUI view macro
 expansion, App Intents or ActivityKit, and it is not runtime evidence.
 
-After full Xcode is installed: `ios/scripts/toolchain.sh`, then
-`ios/scripts/simulator.sh build|test|ui <simulator-uuid>` on disposable iPhone
-and iPad simulators (unsigned), plus the `KeyboardPolicy` package tests on the
+After full Xcode is installed: run `ios/scripts/toolchain.sh`, then the three
+simulator actions from the install section — build, unit tests (`ChirpIOS`
+scheme) and UI tests (`ChirpIOS-UI` scheme) — on disposable iPhone and iPad
+simulators (unsigned), plus the `KeyboardPolicy` package tests on the
 simulator. Those gates have **not** been run; simulator results also cannot
 establish hardware keyboard handoff, background-audio survival, lock-screen
 behavior or App Store acceptance. Evidence and exact logs:
