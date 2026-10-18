@@ -140,7 +140,8 @@ Host: Apple Swift 6.4, `/Library/Developer/CommandLineTools`; full Xcode absent.
   session. A full-view Catalyst attempt is blocked by absent `SwiftUIMacros`
   plugin in CLT. Actual ActivityKit, SwiftUI views, App Intents, Widgets and
   keyboard UIKit compile paths remain pending the iOS SDK.
-- Fourteen app unit-test functions and two UI tests are written, not executed.
+- Fifteen app unit-test functions (including empty/whitespace parameter cases)
+  and two UI tests are written, not executed.
   Synthetic inputs cover Ready/partial/correcting/final/timings, explicit copy,
   companion ownership, repeated Stop waiters, delayed finals, expiry, permissions,
   Live Activity loss, duplicate starts, stale capture callbacks, history/raw/privacy,
@@ -160,6 +161,17 @@ plist, parse and focused Catalyst checks passed. Log:
 `/Users/rex/.koi/run-logs/416b5f88-d92d-4f5f-ba2e-33d2b3464dce-20261018T060639-43332.log`.
 No runtime test count is attributed to that job. Privacy covers are explicitly
 sized from each UIWindowScene coordinate space, without UIScreen.main.
+
+Test-only follow-up: fixture transports are retained in a per-stream registry;
+the stale-callback test asserts distinct instances and waits for utterance B's
+own Ready before invoking delayed callbacks from A. Fresh-transport behavior was
+already present in the original commit, and the registry now makes it explicit.
+A parameterized empty/whitespace companion-final test verifies the Stop waiter
+returns an error, transient state clears, history/clipboard remain untouched and
+a delayed final cannot revive the cancelled utterance. These tests remain
+unexecuted pending the iOS SDK. Follow-up `ios/scripts/check-sources.sh` and
+`ios/scripts/typecheck-catalyst.sh` both passed (exit 0; no warnings); only syntax
+and the focused compiler aid ran, with the same documented exclusions.
 
 ## Operator acceptance after Xcode
 
