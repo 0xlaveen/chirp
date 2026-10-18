@@ -100,10 +100,16 @@ def focus_editor():
             hierarchy = nodes()
             editor = next((n for n in hierarchy if n.get('class') == 'android.widget.EditText' and visible(n)), None)
             if editor is not None:
-                x, y = center(editor)
-                adb('shell', 'CLASSPATH=/data/local/tmp/chirp-ui-probe.jar', 'app_process', '/', 'dev.chirp.smoke.UiHierarchy', 'tap', str(x), str(y))
-                wait_for('Microphone: tap to dictate')
-                return
+                # boundsInScreen is not clipped to the viewport: a mostly-below-fold field
+                # still reports its full height, and its centre tap lands off screen. Only
+                # tap when the centre is comfortably inside the visible area.
+                x1, y1, x2, y2 = [int(v) for v in editor.get('bounds').strip('[]').replace('][', ',').split(',')]
+                cy = (y1 + y2) // 2
+                if 100 < cy < h - 120:
+                    x, y = center(editor)
+                    adb('shell', 'CLASSPATH=/data/local/tmp/chirp-ui-probe.jar', 'app_process', '/', 'dev.chirp.smoke.UiHierarchy', 'tap', str(x), str(y))
+                    wait_for('Microphone: tap to dictate')
+                    return
             start, end = (h * 3 // 4, h // 3) if direction == 'up' else (h // 3, h * 3 // 4)
             adb('shell', 'input', 'swipe', str(w // 2), str(start), str(w // 2), str(end), '250')
     raise AssertionError('Test editor is not visible')

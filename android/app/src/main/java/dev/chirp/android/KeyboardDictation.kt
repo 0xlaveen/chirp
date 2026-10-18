@@ -27,6 +27,8 @@ internal class KeyboardDictation(
     private val resync: (Int, Int) -> Unit,
     private val pairing: () -> Pairing? = { SettingsStore(host).pairing() },
     private val checkHealth: Boolean = true,
+    private val history: HistoryRecorder? = null,
+    private val started: () -> Unit = {},
 ) {
     private val handler = Handler(Looper.getMainLooper())
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
@@ -84,6 +86,8 @@ internal class KeyboardDictation(
     private var firstPartial: Long? = null
     private var stopAt: Long? = null
     private var finalLatency: Long? = null
+    private var historyInfo: EditorInfo? = null
+    private var historyId: String? = null
     private val expiry = Runnable { forgetUndo(); notice = false; message = "Tap mic · hold to talk"; render() }
     val active get() = session != null
     val ownsComposition get() = active || applying
@@ -102,6 +106,7 @@ internal class KeyboardDictation(
             if (changed) {
                 expectedCursor += target.committedLength - previousLength
                 selectionStart = expectedCursor; selectionEnd = expectedCursor
+                historyId?.let { history?.usedRaw(it) }
                 forgetUndo(); message = "Used raw"; handler.postDelayed(expiry, 5000); resync(selectionStart, selectionEnd)
             }
             render()
@@ -201,7 +206,8 @@ internal class KeyboardDictation(
         }
         val paired = pairing() ?: run { showNotice("Pair your Mac in Chirp setup"); return }
         val connection = host.currentInputConnection ?: return
-        forgetUndo(); notice = false; prepare()
+        forgetUndo(); notice = false; started(); prepare()
+        historyInfo = info; historyId = null
         currentStyle = CleanupStyles.profiles(store.health).firstOrNull { it.id == styleOverride } ?: store.style(targetPackage)
         insertionStart = minOf(selectionStart, selectionEnd).takeIf { it >= 0 } ?: minOf(info.initialSelStart, info.initialSelEnd)
         expectedCursor = insertionStart
@@ -239,6 +245,7 @@ internal class KeyboardDictation(
                     selectionStart = expectedCursor; selectionEnd = expectedCursor
                 }
                 notice = inserted
+                historyId = if (inserted) history?.record(result.text, result.raw.takeIf { result.corrected }, historyInfo) else null
                 if (inserted) haptic()
                 message = if (!inserted) "Text field unavailable — try again"
                     else if (result.correctionError != null) "kept original"
@@ -270,6 +277,25 @@ internal class KeyboardDictation(
             instructions = "", prompt = store.promptEdits[currentStyle.id])
         haptic()
     }
+    /** Reinserts a history entry through the same boundary/selection path as a dictated final. */
+    fun insertText(value: String): Boolean {
+        if (destroyed || value.isBlank()) return false
+        if (active || undo) cancel()
+        val connection = host.currentInputConnection ?: return false
+        val info = host.currentInputEditorInfo
+        prepare()
+        val anchor = minOf(selectionStart, selectionEnd).takeIf { it >= 0 } ?: info?.let { minOf(it.initialSelStart, it.initialSelEnd) } ?: -1
+        val insertion = ComposingSession(connection, anchor)
+        applying = true
+        val inserted = try { insertion.final(ServerEvent.Final(value, value, false)) } finally { applying = false }
+        if (inserted && anchor >= 0) {
+            expectedCursor = anchor + insertion.committedLength
+            selectionStart = expectedCursor; selectionEnd = expectedCursor
+        }
+        resync(selectionStart, selectionEnd)
+        if (inserted) haptic() else showNotice("Text field unavailable — try again")
+        return inserted
+    }
     private fun stop() { stopAt = SystemClock.elapsedRealtime(); session?.stop(); haptic(); render() }
     fun beforeEdit() { if (active || undo) cancel() }
     fun selection(oldStart: Int, oldEnd: Int, start: Int, end: Int, composingStart: Int, composingEnd: Int) {
@@ -278,7 +304,10 @@ internal class KeyboardDictation(
         if (active) {
             if (composingStart >= 0 && start == composingEnd && end == composingEnd) insertionStart = composingStart
             else if (start != oldStart || end != oldEnd) cancel("Text field changed — start again")
-        } else if (undo && (start != expectedCursor || end != expectedCursor)) { forgetUndo(); render() }
+        } else if (undo && (start != expectedCursor || end != expectedCursor)) {
+            // forgetUndo cancels the expiry; keep the "cleaned" notice from pinning the row open.
+            forgetUndo(); if (notice) handler.postDelayed(expiry, 5000); render()
+        }
     }
     fun cancel(status: String = "Tap mic · hold to talk") {
         gesture.cancel(); partialFrames.clear()

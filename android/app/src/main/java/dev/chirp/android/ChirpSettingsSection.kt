@@ -45,6 +45,7 @@ internal fun ChirpSettingsSection() {
         Text("Voice cues use haptics. Keyboard sound controls are below.", style = MaterialTheme.typography.bodySmall)
         KeyboardLookChooser()
         SwipeTypingSettings()
+        HistorySettings()
         Text("Diagnostics", style = MaterialTheme.typography.titleSmall)
         TextButton({ diagnostics = true }) { Text("Chirp diagnostics") }
         HorizontalDivider()
