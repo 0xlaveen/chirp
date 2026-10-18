@@ -53,7 +53,7 @@ Every request carries `Authorization: Bearer <token>`. WebSocket clients that ca
 - `GET /v1/correction/profiles` (authenticated) → `{"profiles":[{"id":"default","name":"Default","description":"Conservative transcript cleanup.","rewrites":false,"prompt":"<editable default style>","max_prompt_chars":4000},…]}`. Fixed safety rules are excluded; `custom` has an empty built-in prompt. Available even when correction is off. Invalid or missing bearer credentials return HTTP 401 with `WWW-Authenticate: Bearer`.
 - `POST /v1/transcribe`: the body is 16 kHz mono PCM16 WAV, capped at 120 s. It returns the same object as a `final` message. Used for tests and as a fallback.
 - `WS /v1/stream`:
-  - client → `{"type":"start","sample_rate":16000,"encoding":"pcm_s16le","client":"mac|android","correction":false,"correction_profile":"default","correction_instructions":""}`
+  - client → `{"type":"start","sample_rate":16000,"encoding":"pcm_s16le","client":"mac|android|ios","correction":false,"correction_profile":"default","correction_instructions":""}`
   - client → binary frames: raw PCM16LE mono at 16 kHz, 20–100 ms per frame
   - client → `{"type":"stop"}` (finalize) or `{"type":"cancel"}` (discard, no final). The server keeps reading control/disconnect frames during finalization; cancel or disconnect discards the utterance (no correction request — an in-flight one is cancelled, no retained debug files). A cancelled utterance sends no final and no error, and the socket stays usable for the next start; a disconnect has nobody to tell.
   - server → `{"type":"ready","session":"<random id>","engine":"…","debug_retention":bool}`
