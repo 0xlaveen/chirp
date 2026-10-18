@@ -1,0 +1,199 @@
+# iOS keyboard, intents and activity evidence
+
+Date: 2026-10-18. Track: `ios-keyboard`. Personal-install implementation for
+M5; full iOS SDK build and simulator/runtime acceptance remain pending. No push,
+PR, main merge, physical installation, Apple ID operation or service was performed.
+
+## Source membership and integration contract
+
+Deployment target is iOS/iPadOS 18. The project/configuration owner is `ios-app`.
+Do not recursively compile all of `ios/` into every target.
+
+| Sources/product | ChirpIOS app | ChirpKeyboard | ChirpWidgets |
+|---|---|---|---|
+| `Keyboard/ChirpKeyboardViewController.swift` | no | yes | no |
+| `Keyboard/KeyboardBridgeClient.swift` | no | yes | no |
+| Local package `Keyboard/Policy`, product `KeyboardPolicy` | no | link | no |
+| Local package `Shared`, product `ChirpIOSCore` | link | link | no |
+| `Intents/SessionIntents.swift` | yes | no | yes |
+| `Intents/ChirpActivityAttributes.swift` | yes | no | yes |
+| `Intents/ChirpLiveActivity.swift` | yes | no | no |
+| `Widgets/ChirpWidgets.swift` | no | no | yes |
+
+Do not add `Keyboard/Policy/Package.swift` or its `Tests/` as extension source
+files. Its `Sources/KeyboardPolicy` are built by SwiftPM. Keyboard principal:
+`$(PRODUCT_MODULE_NAME).ChirpKeyboardViewController`. Widget bundle:
+`ChirpWidgetsBundle`, the **only** `@main` in the widget target. App retains its
+separate app entry point. `ChirpShortcuts` exposes four App Shortcuts.
+
+Set `CHIRP_APP` in **app only** `SWIFT_ACTIVE_COMPILATION_CONDITIONS`, retaining
+inherited settings. Each intent conforms to `AudioRecordingIntent` and
+`LiveActivityIntent`, selecting the containing app process. The app compilation
+calls `try await SessionCoordinator.shared.perform(action:)` with `SessionAction`
+`.start/.stop/.cancel/.end`, returning a content-free local status `String`.
+The widget compilation has no coordinator dependency and throws a fixed setup
+message if incorrectly run there. Never include coordinator or capture sources
+in the widget. Start uses `openAppWhenRun = true` for foreground permission/setup;
+Stop/Cancel/End can act on the existing session in the app process. This does not
+promise cold background microphone access. Companion Stop explicitly copies
+only that companion utterance's fresh final; stopping a keyboard utterance must
+not copy it. `ios-app` confirmed this routing/ownership contract.
+
+`@MainActor ChirpLiveActivity` is app-only: `begin(debugRetention:) throws`,
+`update(phase:debugRetention:) async`, `end() async`, `isActive: Bool`.
+App must begin successfully **before** capture, update on its two-second heartbeat
+and state changes, stop capture when `isActive` is false, and end activity on
+teardown. Disabled/unavailable Live Activities refuse session recording. A
+15-second `staleDate` prevents indefinite healthy status after a crash; lock screen,
+compact and minimal presentations expose expiry. Staleness is a UI warning,
+not proof that a crashed process can be commanded. Activity state contains only
+an allowlisted phase enum and debug-retention boolean; attributes contain no
+transcript, hostname, URL, prompt, credential or arbitrary coordinator string.
+
+Shared APIs are owned by `ios-foundation`, separately committed and merged by
+the parent. `KeyboardBridgeClient` uses `SharedConfiguration(bundle: .main)`,
+`containerURL()`, `KeychainSecretStore(accessGroup:)`, and
+`SharedBridge(root:secrets:role: .keyboard)`. It calls `state()`, `send(_:)`, and
+`takeResults(generation:utteranceID:)`. Keep configured App Group and Keychain
+group identical across app and keyboard. Shared bridge encrypts mailbox contents;
+keyboard never writes transcript defaults/files itself. Signal is
+`DarwinSignal(name: DarwinSignal.bridgeChanged)`, with retained observation and
+payload-free `post()`. App posts after publishing; keyboard re-reads on appearance,
+signal, and a visible-only 0.5-second reconciliation timer. Appearance invalidates
+and replaces any prior timer; disappearance stops it and releases the observer.
+
+App preserves the keyboard-created UUID on `.start` and publishes increasing
+`BridgeResult.sequence` per utterance. `BridgeState` includes generation,
+utteranceID, lease, phase, debugRetention, styleID and authenticated
+`availableStyleIDs` (including custom/server profiles). App validates/persists
+`.style(id)` using its preferences/consent rules and retains finished utteranceID
+for final/Use raw consumption. Keyboard never selects an undisclosed cleanup
+destination or edits prompts. Shared `takeResults` atomically consumes results;
+replay receipts remain encrypted. Command TTL is at most five seconds and bounded
+by the current app lease. Lease expiry or generation change invalidates ownership.
+
+## Behavior and safety
+
+UIKit controls: mic/stop, cancel, Use raw, style, visible End session, space,
+delete, return, Open Chirp and globe/input-mode picker. System text styles,
+multiline labels, 48-point minimum key heights, explicit VoiceOver labels,
+adaptive rows and increased spacing at iPad widths are implemented. They still
+need simulator accessibility/layout verification.
+
+No keyboard audio or network capture exists. With Full Access denied/revoked,
+keyboard immediately drops the bridge and ownership, performs no IPC, explains
+setup, and retains space/delete/return/globe. Revocation means cancellation cannot
+be guaranteed; use the app/activity End control to stop the armed session. On hide
+with access, best-effort cancel is limited to a matching generation and current
+keyboard-owned active utterance. It never cancels another app/companion UUID or
+ends the armed session. An unaccepted pending start cannot safely be canceled as
+an unrelated current utterance; its short command TTL and app lease still apply.
+
+The first mic without a valid session attempts `chirp://session/start` using only
+`NSExtensionContext.open`. Both initial UI and completion failure explain opening
+Chirp manually. There is no UIApplication responder chain, private selector,
+automatic return promise or guaranteed keyboard URL handoff. Keyboard URL opening
+is an App Store review risk; this milestone targets personal installation.
+
+`OwnedInsertion` binds generation, utterance UUID, documentIdentifier, exact
+before/after context and selection evidence. It refuses unavailable, changed,
+selected, oversized or known-truncated context, stale/foreign/repeated events,
+expired leases, post-terminal partials/finals, and leading combining/ZWJ text that
+would absorb user graphemes. It never reacquires ownership merely because text
+looks identical after a field switch/hide/reload. The UIKit adapter calls the
+same `VerifiedEditor` exercised by fake-proxy tests. Every delete checks both the
+current document/context and expected remaining suffix, then verifies the host's
+actual result before issuing another delete. Swift extended grapheme boundaries
+are used; a host deleting another unit stops the edit immediately. Insertions are
+also verified before ownership transfers.
+
+Cancel retracts only an active, still-verified suffix; a final/Use raw result is
+committed and survives Cancel and End. End sends the session command and invalidates
+local ownership without deleting text. Use raw requires an explicit request and
+expires five seconds after successful final application (also subject to the
+app/bridge's expiry). Any ambiguity preserves remaining content and directs
+manual recovery in Chirp. No clipboard recovery happens automatically here.
+
+UIKit supplies no complete-context/truncation flag and some hosts use short or
+asynchronous context windows. The conservative limits are fewer than 256 UTF-16
+units per context side and fewer than 192 per incoming result. These limits do
+not prove context completeness: exact anchor/post-edit verification remains
+required. A shifting window or long utterance may leave an already-inserted
+partial and refuse the final; recover explicitly in the app. No claim is made
+that documentIdentifier detects every host bug or that callbacks prove all edits.
+Context is transient in-memory evidence only and never sent to the server.
+
+## Executed validation
+
+Environment: Apple Swift 6.4 (`arm64-apple-macosx27.0.0`),
+`xcode-select -p` = `/Library/Developer/CommandLineTools`. No full Xcode/iOS SDK.
+
+```
+swift test --package-path ios/Keyboard/Policy \
+  -Xswiftc -plugin-path \
+  -Xswiftc /Library/Developer/CommandLineTools/usr/lib/swift/host/plugins/testing
+```
+
+Run through `koi run`: **18 Swift Testing test functions passed**, including
+parameter matrices (46 executed cases counting parameter expansions), exit 0.
+The initial run failed in mutating-method `#expect` macro expansion; evaluating
+those booleans before assertion corrected the test code. Successful run log:
+`~/.koi/run-logs/d1a70343-19bf-471a-9a08-02ba13ed91e7-20261018T055003-3199.log`.
+
+Coverage: partial/correcting/final/cancel/raw, duplicate/reordered/foreign/stale
+results, stale lease, fixed-clock raw deadline at +4/+5 seconds, hide/reload and
+late final, identical context in another document, selection/cursor/user edits,
+context truncation/unavailability, non-BMP and extended graphemes, regional
+indicators, combining marks, ZWJ families, every actual deletion step, host ignored
+or altered deletion, document/selection/context change during deletion, final/raw
+survival after Cancel/End, empty finals and oversized-result manual recovery.
+
+`swiftc -frontend -parse` passed for all six UIKit/Intents/Widgets source files;
+`git diff --check` passed. Parsing is syntax-only, **not** SDK typechecking or an
+iOS build. Shared bridge/API agreement was source-reviewed in the foundation
+worktree; shared tests are the foundation track's evidence, not this test count.
+
+After Xcode is available, run this package's tests on disposable iPhone and iPad
+simulators (select `KeyboardPolicy` package scheme), and the containing app's
+unsigned simulator build/unit/UI schemes. Check compiler-generated App Intents
+metadata, dual target membership, process routing and extension embedding.
+Exercise real UITextDocumentProxy in Notes/test-host plain and rich text fields:
+partial/final, every Unicode family above, selection, cursor, same-text field
+switch, hide/reappear, final after hide, short context windows, Full Access denial,
+permission/setup rejection, repeated appearance, 5-second raw expiry, custom style,
+VoiceOver/large text, narrow iPad/landscape and light/dark. Verify mic indicator
+through armed idle, visible End, dismissed/stale activity, killed/relaunched app,
+Control Center Start/End and Shortcuts Start/Stop/Cancel/End. These simulator and
+runtime checks were **not run**. Simulator tests cannot establish hardware handoff,
+background survival, OS throttling, lock-screen behavior or App Store acceptance.
+
+## Primary Apple sources checked 2026-10-18
+
+- [AudioRecordingIntent](https://developer.apple.com/documentation/appintents/audiorecordingintent):
+  iOS/iPadOS 18+, audio recording intents; an active Live Activity is required
+  throughout recording. Armed idle capture still records, so its activity stays.
+- [LiveActivityIntent](https://developer.apple.com/documentation/appintents/liveactivityintent):
+  iOS/iPadOS 17+, app-process execution and activity-start behavior. This permits
+  app execution but does not remove microphone permission/background restrictions.
+- [Creating controls](https://developer.apple.com/documentation/widgetkit/creating-controls-to-perform-actions-across-the-system):
+  iOS 18 control button uses `StaticControlConfiguration` and
+  `ControlWidgetButton(action:label:)` with an AppIntent.
+- [Adding interactivity](https://developer.apple.com/documentation/widgetkit/adding-interactivity-to-widgets-and-live-activities):
+  interactive activity intents belong in the app target; LiveActivityIntent runs
+  in the containing app process.
+- [Displaying live data](https://developer.apple.com/documentation/activitykit/displaying-live-data-with-live-activities)
+  and [Activity.request](https://developer.apple.com/documentation/activitykit/activity/request(attributes:content:pushtype:)):
+  ActivityAttributes/ContentState, ActivityConfiguration/DynamicIsland, activity
+  authorization, `ActivityContent`, throwing request, async update/end.
+- [App Shortcuts provider](https://developer.apple.com/documentation/appintents/appshortcutsprovider/appshortcuts):
+  `@AppShortcutsBuilder static var appShortcuts: [AppShortcut]`.
+- [UITextDocumentProxy](https://developer.apple.com/documentation/uikit/uitextdocumentproxy):
+  before/after context, selectedText, documentIdentifier, insertion/deletion APIs.
+- [Custom keyboard guide](https://developer.apple.com/library/archive/documentation/General/Conceptual/ExtensibilityPG/CustomKeyboard.html):
+  microphone unavailable to keyboard extensions, even with Full Access.
+- [NSExtensionContext.open](https://developer.apple.com/documentation/foundation/nsextensioncontext/open(_:completionhandler:)):
+  URL open completion reports success; support depends on the extension point,
+  and the documented supported examples do not guarantee keyboard handoff.
+
+Apple pages were checked through the logged-in ego browser and Apple-only web
+search. Ego task space was closed after research. No new toolchain was installed.
