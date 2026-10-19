@@ -30,7 +30,7 @@ What has actually passed, on macOS with the CLT (see
 |---|---|
 | `ios/Shared/scripts/test.sh` (portable pairing/storage/history/bridge) | 20 tests in 5 suites, exit 0 |
 | `mac/scripts/test.sh` + `cd mac && swift build -c release` | 380 tests in 61 suites + release build, exit 0 |
-| `swift test --package-path ios/Keyboard/Policy …` (insertion safety) | 22 test functions (53 expanded cases), exit 0 |
+| `swift test --package-path ios/Keyboard/Policy` (insertion safety + voice-first presenter) | 49 test functions (130 expanded cases), exit 0 |
 | `swiftc -frontend -parse` on the six UIKit/Intents/Widgets sources | parse-only pass — **not** an iOS build |
 | `ios/scripts/check-sources.sh` (project structure, plists, per-target syntax) | passed, exit 0 |
 | `ios/scripts/typecheck-catalyst.sh` (focused Catalyst typecheck of SessionCoordinator, MicrophoneCapture, PairingScanner, DebugFixtures plus ChirpCore/ChirpIOSCore, with a temporary Activity facade) | passed — a compiler aid, **not** iOS SDK validation; excludes SwiftUI views, ActivityKit, intents, widgets and all runtime behavior |
@@ -219,14 +219,35 @@ keeps recordings" stays on screen in the app, keyboard and Live Activity.
 
 ## Dictate from any app (keyboard)
 
-Switch to Chirp Keyboard in your editor. Its keys: **Start dictation / Stop
-dictation**, **Cancel**, **Use raw**, **Style**, **End session**, **Open
-Chirp**, Space, Delete, Return and the globe.
+Chirp Keyboard is voice-first: keep Apple's keyboard for typing and switch to
+Chirp to dictate. There is deliberately no QWERTY layout.
+
+Layout, top to bottom:
+
+- **Status line** — phase, a keyboard-local **elapsed timer** while this
+  keyboard's own utterance is connecting/listening, and **time remaining** in
+  the session (omitted for "Never"), e.g. `Listening… · 0:07 · 12:30 left`.
+  Below it a detail line (collapsed in landscape iPhone) shows short,
+  content-free guidance for the session's error code (unreachable → check
+  Tailscale/Mac, auth → re-pair in Chirp, permission → microphone in Chirp,
+  timeout, interrupted, busy, too long, storage, …).
+- **One large primary button** (≥ 64 pt; full width on iPhone, capped at a
+  readable width and centered on iPad) whose role follows state: *Open Chirp
+  to start session* → *Start dictation* → *Stop dictation* → disabled
+  *Polishing…*. A small *Open Chirp* link appears only in fallback states.
+- **Secondary row** — **Cancel**, **Use raw** (shows the seconds left in its
+  5 s window) and the **Style** menu.
+- **Bottom row** — globe (only when iOS asks for it), **Space**, **Delete**
+  (press and hold repeats, accelerating; it stops on release and if the
+  keyboard takes ownership of an utterance), **Return** and **End session**.
+
+Start and stop give a light haptic when Full Access is on.
 
 1. Arm a session in the app first (see above). The keyboard shows "Session
    armed".
-2. Tap **Start dictation**. The first tap when no session exists tries to open
-   Chirp via `chirp://session/start`; iOS may refuse this from a keyboard
+2. Tap **Start dictation**. The primary button reads *Open Chirp to start
+   session* when no session exists; tapping it tries to open Chirp via
+   `chirp://session/start`; iOS may refuse this from a keyboard
    extension. The keyboard then tells you to open Chirp manually and return
    with the system Back-to-app affordance or the app switcher — automatic
    return is not possible.
@@ -332,9 +353,8 @@ logic — not iOS runtime evidence):
 ```sh
 ios/Shared/scripts/test.sh                 # 20 tests / 5 suites
 mac/scripts/test.sh && (cd mac && swift build -c release)   # 380 tests / 61 suites + release
-swift test --package-path ios/Keyboard/Policy \
-  -Xswiftc -plugin-path \
-  -Xswiftc /Library/Developer/CommandLineTools/usr/lib/swift/host/plugins/testing
+swift test --package-path ios/Keyboard/Policy   # full Xcode selected; with only the CLT add
+#   -Xswiftc -plugin-path -Xswiftc /Library/Developer/CommandLineTools/usr/lib/swift/host/plugins/testing
 ios/scripts/check-sources.sh                # regenerate + structural, plist and per-target syntax checks
 ios/scripts/typecheck-catalyst.sh           # optional Catalyst compiler aid (see below)
 ```
