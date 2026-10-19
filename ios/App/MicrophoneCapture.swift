@@ -46,9 +46,7 @@ final class MicrophoneCapture: SessionAudio {
             let format = input.outputFormat(forBus: 0)
             guard format.sampleRate > 0, format.channelCount > 0 else { throw SessionFailure.audio }
             sink.configure(format: format)
-            input.installTap(onBus: 0, bufferSize: 1024, format: format) { [sink] buffer, _ in
-                sink.receive(buffer)
-            }
+            input.installTap(onBus: 0, bufferSize: 1024, format: format, block: Self.tap(sink))
             tapped = true
             engine.prepare()
             try engine.start()
@@ -59,6 +57,12 @@ final class MicrophoneCapture: SessionAudio {
             disarm()
             throw SessionFailure.audio
         }
+    }
+
+    /// AVAudioEngine calls taps on its realtime thread. A closure written inside this @MainActor class
+    /// would inherit main-actor isolation, and Swift 6's runtime isolation check traps on that thread.
+    nonisolated static func tap(_ sink: CaptureSink) -> AVAudioNodeTapBlock {
+        { buffer, _ in sink.receive(buffer) }
     }
 
     func begin(stream: StreamSession, onFailure: @escaping @Sendable () -> Void, onLimit: @escaping @Sendable () -> Void) throws {

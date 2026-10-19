@@ -384,7 +384,8 @@ final class ChirpKeyboardViewController: UIInputViewController {
         fallback = "Open Chirp manually if iOS refuses. Return here using Back to app or the app switcher."
         render()
         guard let url = URL(string: "chirp://session/start") else { return }
-        extensionContext?.open(url, completionHandler: { [weak self] opened in
+        // The completion's thread is unspecified; @Sendable keeps it free of main-actor isolation checks.
+        extensionContext?.open(url, completionHandler: { @Sendable [weak self] opened in
             Task { @MainActor [weak self] in
                 self?.fallback = opened
                     ? "Set up the session in Chirp, then return using the app switcher."
