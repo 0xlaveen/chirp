@@ -1,4 +1,7 @@
-import ActivityKit
+// ActivityKit's Activity reference has async update/end APIs but no Sendable
+// conformance in this SDK. Keep ownership on MainActor and use the framework's
+// concurrency compatibility boundary for those calls.
+@preconcurrency import ActivityKit
 import Foundation
 
 /// App target only. Begin successfully BEFORE enabling capture, including idle

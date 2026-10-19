@@ -14,7 +14,7 @@ struct SessionCoordinatorTests {
         var activity = true
         var transports: [SyntheticTransport] = []
     }
-    struct Fixture {
+    @MainActor struct Fixture {
         let model: SessionCoordinator
         let transport: SyntheticTransport
         let audio: SyntheticAudio

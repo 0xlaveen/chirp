@@ -20,5 +20,6 @@ if [ "$action" = test ]; then operation=test; fi
 if [ "$action" = ui ]; then operation=test; scheme=ChirpIOS-UI; fi
 exec xcodebuild -project Chirp.xcodeproj -scheme "$scheme" -configuration Debug \
   -sdk iphonesimulator -destination "platform=iOS Simulator,id=$device" \
+  -parallel-testing-enabled NO \
   -derivedDataPath DerivedData CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO \
   "$operation"
