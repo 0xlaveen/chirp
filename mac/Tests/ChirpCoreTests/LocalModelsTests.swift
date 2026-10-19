@@ -144,4 +144,20 @@ import Testing
         #expect(view.start.isEnabled)
     }
 
+    @MainActor @Test func catalogChangesCannotRelabelAnInFlightDownloadAndPauseStaysAvailable() throws {
+        let view = LocalModelsView()
+        var state = LocalModelsState()
+        state.apply(try catalogEvent())
+        state.pick(.speech, choice: "v3")
+        state.models[.speech]?.phase = "downloading"
+        view.apply(state)
+        #expect(!view.addRepository.isEnabled)
+        state.apply(try LocalSetupEvent.decode(Data(#"{"event":"added","model":"speech","choice":"new-model"}"#.utf8)))
+        #expect(state.choices[.speech] == "v3")
+        state.catalogBusy = true
+        view.apply(state)
+        #expect(view.speech.title == "Pause" && view.speech.isEnabled)
+        #expect(!view.cleanup.isEnabled)
+    }
+
 }
