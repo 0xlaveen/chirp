@@ -132,4 +132,16 @@ import Testing
         #expect(state.option(.cleanup)?.ready == true)  // Retry verifies cached files again.
     }
 
+    @MainActor @Test func choosingCorrectionFirstStillRequiresASpeechModelBeforeRestart() {
+        let view = LocalModelsView()
+        var state = LocalModelsState()
+        state.restartRequired = true
+        state.models[.cleanup]?.phase = "complete"
+        view.apply(state)
+        #expect(!view.start.isEnabled)
+        state.models[.speech]?.phase = "complete"
+        view.apply(state)
+        #expect(view.start.isEnabled)
+    }
+
 }

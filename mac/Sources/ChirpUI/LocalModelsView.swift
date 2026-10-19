@@ -137,7 +137,9 @@ public final class LocalModelsView: NSView {
         correction.state = state.correctionEnabled ? .on : .off
         correction.isEnabled = state.correctionMode == "managed" && !state.restartRequired
         correction.toolTip = "Uses the selected local correction model after applying it to the server."
-        start.isEnabled = !state.starting && !state.catalogBusy && !state.models.values.contains(where: \.busy) && (state.restartRequired || state.models[.speech]?.ready == true && !state.serverRunning)
+        let selectedSpeech = state.options.first { $0.kind == .speech && $0.id == state.activeModels["speech"] }
+        let speechReady = selectedSpeech?.ready ?? (state.models[.speech]?.ready == true)
+        start.isEnabled = speechReady && !state.starting && !state.catalogBusy && !state.models.values.contains(where: \.busy) && (state.restartRequired || !state.serverRunning)
         start.title = state.starting ? "Starting…" : state.restartRequired ? "Apply & Restart Server" : state.serverRunning ? "Server Running" : "Start Local Server"
         status.stringValue = state.message
         status.textColor = state.errorMessage != nil ? .systemRed : state.serverRunning ? .systemGreen : .secondaryLabelColor
