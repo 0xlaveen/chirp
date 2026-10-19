@@ -136,7 +136,7 @@ struct LiveKeyboardHost: UIViewRepresentable {
         let view = UITextView()
         view.font = .preferredFont(forTextStyle: .title2)
         view.accessibilityIdentifier = "chirp.host.text"
-        view.text = "Host prefix. "
+        view.text = ProcessInfo.processInfo.arguments.contains("--chirp-keyboard-host-empty") ? "" : "Host prefix. "
         view.autocorrectionType = .no
         view.spellCheckingType = .no
         view.selectedRange = NSRange(location: view.text.utf16.count, length: 0)

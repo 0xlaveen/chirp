@@ -3,10 +3,19 @@ import XCTest
 /// Runs against the installed extension, never an in-process keyboard mock.
 final class ChirpKeyboardUITests: XCTestCase {
     @MainActor func testSyntheticDictationInRealKeyboardPreservesPrefix() throws {
+        try runSyntheticDictation(prefix: "Host prefix. ", extraArguments: [])
+    }
+
+    /// UIKit reports nil before/after context in an empty field; dictation must still insert there.
+    @MainActor func testSyntheticDictationInEmptyHostField() throws {
+        try runSyntheticDictation(prefix: "", extraArguments: ["--chirp-keyboard-host-empty"])
+    }
+
+    @MainActor private func runSyntheticDictation(prefix: String, extraArguments: [String]) throws {
         continueAfterFailure = false
         XCUIDevice.shared.orientation = .portrait
         let app = XCUIApplication()
-        app.launchArguments = ["--chirp-ui-test", "--chirp-keyboard-host"]
+        app.launchArguments = ["--chirp-ui-test", "--chirp-keyboard-host"] + extraArguments
         app.launch()
         defer {
             app.activate()
@@ -25,8 +34,10 @@ final class ChirpKeyboardUITests: XCTestCase {
         app.activate()
         let field = app.textViews["chirp.host.text"]
         field.tap()
-        XCTAssertEqual(field.value as? String, "Host prefix. ")
+        XCTAssertEqual(field.value as? String ?? "", prefix)
         try selectChirpKeyboard(in: app)
+        // A tap in the empty area below the text puts the caret after the prefix, as a user would.
+        field.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.6)).tap()
 
         // The redesign lands separately. Once status exists, failures are assertions.
         let status = app.staticTexts["chirp.keyboard.status"]
@@ -44,12 +55,17 @@ final class ChirpKeyboardUITests: XCTestCase {
         let primary = app.buttons["chirp.keyboard.primary"]
         XCTAssertTrue(primary.isEnabled)
         primary.tap()
-        XCTAssertTrue(wait(for: field, key: "value", equalTo: "Host prefix. synthetic words"), "Real mailbox partial must reach the editor")
+        let partialArrived = wait(for: field, key: "value", equalTo: prefix + "synthetic words")
+        let observed = XCTAttachment(string: "Host text after partial: " + String(describing: field.value))
+        observed.name = "Host field value after first primary tap"
+        observed.lifetime = .keepAlways
+        add(observed)
+        XCTAssertTrue(partialArrived, "Real mailbox partial must reach the editor; host text was \(String(describing: field.value))")
         primary.tap()
-        XCTAssertTrue(wait(for: field, key: "value", equalTo: "Host prefix. Synthetic words."), "Final must replace only the keyboard-owned partial")
+        XCTAssertTrue(wait(for: field, key: "value", equalTo: prefix + "Synthetic words."), "Final must replace only the keyboard-owned partial")
         app.buttons["chirp.keyboard.end"].tap()
         XCTAssertTrue(wait(for: app.staticTexts["chirp.host.phase"], key: "label", equalTo: "idle"))
-        XCTAssertEqual(field.value as? String, "Host prefix. Synthetic words.")
+        XCTAssertEqual(field.value as? String, prefix + "Synthetic words.")
     }
 
     @MainActor private func wait(for element: XCUIElement, key: String, equalTo value: String) -> Bool {
