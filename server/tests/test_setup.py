@@ -119,7 +119,7 @@ def test_start_reloads_managed_plist_without_rewriting_it(tmp_path, monkeypatch,
     setup.start_server(7821)
     assert path.read_bytes() == content
     assert [c[0][1] for c in calls] == ["bootout", "bootstrap"]
-    assert all(c[1]["timeout"] == 10 for c in calls)
+    assert [c[1]["timeout"] for c in calls] == [10, 5]
     assert events(capsys)[-1]["event"] == "started"
 
 
@@ -129,3 +129,34 @@ def test_download_uses_verified_http_and_honors_explicit_ca(monkeypatch):
     setup.configure_downloads()
     assert setup.os.environ["HF_HUB_DISABLE_XET"] == "1"
     assert setup.os.environ["SSL_CERT_FILE"] == "/custom/trusted.pem"
+
+
+def test_start_retries_bootstrap_while_bootout_settles(tmp_path, monkeypatch, capsys):
+    import plistlib
+    import subprocess
+
+    monkeypatch.setattr(setup.Path, "home", lambda: tmp_path)
+    monkeypatch.setattr(setup.speech_models, "discover", lambda: "/cached/speech")
+    replies = iter([False, True])
+    monkeypatch.setattr(setup, "server_running", lambda _: next(replies))
+    monkeypatch.setattr(setup.time, "sleep", lambda _: None)
+    path = tmp_path / "Library/LaunchAgents/dev.chirp.server.plist"
+    path.parent.mkdir(parents=True)
+    path.write_bytes(
+        plistlib.dumps(
+            {"Label": "dev.chirp.server", "ProgramArguments": ["/python", "-m", "chirp_server"]}
+        )
+    )
+    attempts = 0
+
+    def launch(args, **kwargs):
+        nonlocal attempts
+        if args[1] == "bootstrap":
+            attempts += 1
+            if attempts < 3:
+                raise subprocess.CalledProcessError(5, args)
+
+    monkeypatch.setattr(setup.subprocess, "run", launch)
+    setup.start_server(7821)
+    assert attempts == 3
+    assert events(capsys)[-1]["event"] == "started"
