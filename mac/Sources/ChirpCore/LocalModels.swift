@@ -111,7 +111,7 @@ public struct LocalModelsState: Sendable {
             if restartRequired { message = "Selection saved. Apply and restart the server when you’re ready." }
         case "catalog_progress": message = event.message ?? message
         case "added":
-            if let kind = event.model, let choice = event.choice { choices[kind] = choice; models[kind] = LocalModelProgress() }
+            if let kind = event.model, let choice = event.choice, models[kind]?.busy != true { choices[kind] = choice; models[kind] = LocalModelProgress() }
         case "selected":
             if let kind = event.model { models[kind]?.phase = "complete" }
             restartRequired = true

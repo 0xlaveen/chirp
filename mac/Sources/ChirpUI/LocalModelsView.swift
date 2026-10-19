@@ -120,7 +120,7 @@ public final class LocalModelsView: NSView {
             picker.isEnabled = !row.busy && !state.starting && !state.catalogBusy
             let button = model == .speech ? speech : cleanup
             button.title = row.ready ? (option == nil ? "Downloaded" : selected ? "Selected" : "Use Model") : row.phase == "verifying" ? "Checking…" : row.phase == "cancelling" ? "Pausing…" : row.busy ? "Pause" : row.phase == "cancelled" ? "Resume" : row.phase == "error" ? "Retry" : "Download"
-            button.isEnabled = !state.starting && row.phase != "cancelling" && row.phase != "verifying" && !(row.ready && (selected || option == nil))
+            button.isEnabled = !state.starting && (!state.catalogBusy || row.busy) && row.phase != "cancelling" && row.phase != "verifying" && !(row.ready && (selected || option == nil))
             descriptions[model]?.stringValue = option.map { $0.details + ($0.license.isEmpty ? "" : " · " + $0.license) } ?? model.subtitle
             details[model]?.stringValue = selected && row.ready ? (state.restartRequired ? "Selected · Restart to apply" : "Selected · Ready for offline use") : row.detail
             details[model]?.textColor = row.phase == "error" ? .systemRed : row.ready ? .systemGreen : .secondaryLabelColor
@@ -133,7 +133,7 @@ public final class LocalModelsView: NSView {
         }
         checkUpdates.isEnabled = !state.catalogBusy && !state.starting
         checkUpdates.title = state.catalogBusy ? "Checking Models…" : "Check for Updates"
-        addRepository.isEnabled = !state.catalogBusy && !state.starting
+        addRepository.isEnabled = !state.catalogBusy && !state.starting && !state.models.values.contains(where: \.busy)
         correction.state = state.correctionEnabled ? .on : .off
         correction.isEnabled = state.correctionMode == "managed" && !state.restartRequired
         correction.toolTip = "Uses the selected local correction model after applying it to the server."
