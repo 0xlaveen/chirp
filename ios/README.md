@@ -13,35 +13,34 @@ never used.
 This is a **personal install** target. No App Store distribution, TestFlight or
 ad-hoc readiness is claimed or tested.
 
-## Status: written, not yet installable (2026-10-18)
+## Status: builds and passes simulator gates; not yet on a device (2026-10-19)
 
-The source for the app, keyboard, widgets and intents is complete on the iOS
-integration branch, but **no installable build exists yet**. The Mac used for
-development has only the Command Line Tools — `xcode-select -p` returns
-`/Library/Developer/CommandLineTools` — so there is no full Xcode, no iOS SDK
-and no iOS Simulator runtime. **No iOS compile, simulator run, entitlement,
-provisioning or on-device check is claimed anywhere in this repo.**
+Full Xcode with the iPhoneSimulator 27.0 SDK is now on the build Mac. The app,
+keyboard and widgets **build**, and the unit and UI tests **pass on iPhone and
+iPad simulators**, including a UI test that drives the **real installed Chirp
+Keyboard extension**. That test adds the keyboard in simulator Settings, allows
+Full Access, switches to it with the globe key, and dictates synthetic audio
+into an app text field through the real encrypted App Group mailbox. **Nothing
+has been installed, signed for or run on a physical iPhone or iPad yet.**
 
-What has actually passed, on macOS with the CLT (see
-[docs/review/ios-foundation.md](../docs/review/ios-foundation.md) and
-[docs/review/ios-keyboard.md](../docs/review/ios-keyboard.md)):
-
-| Check | Result |
+| Check (2026-10-19) | Result |
 |---|---|
-| `ios/Shared/scripts/test.sh` (portable pairing/storage/history/bridge) | 20 tests in 5 suites, exit 0 |
-| `mac/scripts/test.sh` + `cd mac && swift build -c release` | 380 tests in 61 suites + release build, exit 0 |
-| `swift test --package-path ios/Keyboard/Policy` (insertion safety + voice-first presenter) | 62 test functions (142 expanded cases), exit 0 |
-| `swiftc -frontend -parse` on the six UIKit/Intents/Widgets sources | parse-only pass — **not** an iOS build |
-| `ios/scripts/check-sources.sh` (project structure, plists, per-target syntax) | passed, exit 0 |
-| `ios/scripts/typecheck-catalyst.sh` (focused Catalyst typecheck of SessionCoordinator, MicrophoneCapture, PairingScanner, DebugFixtures plus ChirpCore/ChirpIOSCore, with a temporary Activity facade) | passed — a compiler aid, **not** iOS SDK validation; excludes SwiftUI views, ActivityKit, intents, widgets and all runtime behavior |
+| `ios/scripts/simulator.sh build` — iPhone 17 and iPad Pro 11-inch (M5), iOS 27.0 | BUILD SUCCEEDED on both |
+| `ios/scripts/simulator.sh test` — same two simulators | 15 tests in 2 suites, both |
+| `ios/scripts/simulator.sh ui` — same two simulators | 4/4 pass, no skips, both: app pair/dictate/raw/end, history + rotation, real keyboard dictation after existing text and into an empty field |
+| `swift test --package-path ios/Keyboard/Policy` (insertion safety + voice-first presenter) | 62 test functions in 9 suites (142 expanded cases) |
+| `ios/Shared/scripts/test.sh` (pairing/storage/history/bridge) | 20 tests in 5 suites |
+| `mac/scripts/test.sh` | 393 tests in 62 suites |
+| `ios/scripts/check-sources.sh` | passed |
 
-These are macOS execution of the portable models, storage/crypto and
-insertion-safety logic, plus source and structural checks. The app's own
-simulator unit/UI tests have **not** run, and no iOS SDK, simulator or runtime
-behavior is validated. App and device behavior described below is implemented
-but pending the Xcode and device gates; the app track's evidence is in
-[ios-app.md](../docs/review/ios-app.md). The manual acceptance checklist for both iPhone and iPad
-lives in [docs/milestones/M5-ios.md](../docs/milestones/M5-ios.md).
+Simulator runs use synthetic audio and a synthetic transport — no microphone,
+no Mac server. They cannot establish device signing/provisioning, the
+keyboard's URL handoff to the app, background-audio survival, lock-screen
+behavior or App Store acceptance; those remain operator device gates in
+[docs/milestones/M5-ios.md](../docs/milestones/M5-ios.md). Evidence:
+[docs/review/ios-simulator.md](../docs/review/ios-simulator.md),
+[docs/review/ios-keyboard.md](../docs/review/ios-keyboard.md),
+[docs/review/ios-app.md](../docs/review/ios-app.md).
 
 One server prerequisite: the server must run the updated source from this
 branch, which accepts `"ios"` alongside `"mac"` and `"android"` as `client`
@@ -92,8 +91,10 @@ installation is Xcode's Run action, performed by you.
    | `CHIRP_KEYCHAIN_ACCESS_GROUP` | `$(AppIdentifierPrefix)dev.chirp.ios.shared` |
    | `DEVELOPMENT_TEAM` | empty — you must set it |
 
-   Create an **untracked** `ios/Config/Local.xcconfig` (the project includes it
-   if present) with at least `DEVELOPMENT_TEAM = <your team>`; change the bundle
+   Copy `ios/Config/Local.example.xcconfig` to the **untracked**
+   `ios/Config/Local.xcconfig` (the project includes it if present) and set at
+   least `DEVELOPMENT_TEAM = <your team>` (Xcode → Settings → Accounts shows
+   it); the keychain group follows `CHIRP_BUNDLE_ID` automatically; change the bundle
    prefix, App Group and keychain group there too if `dev.chirp.ios` collides
    with another app on your Apple ID. Whatever you choose, the **same** team,
    App Group and keychain access group must apply to all three targets — app,
@@ -115,8 +116,11 @@ installation is Xcode's Run action, performed by you.
    ios/scripts/simulator.sh ui "$CHIRP_SIMULATOR_UUID"
    ```
 
-   The script regenerates the project and runs an **unsigned** `xcodebuild`
-   against that explicit available iPhone/iPad simulator UUID: `test` runs the
+   The script regenerates the project and runs `xcodebuild` with simulator-only
+   **ad-hoc** signing (`CODE_SIGN_IDENTITY=-`, no team or Apple ID) so the App
+   Group and shared-Keychain entitlements exist and the keyboard UI test can
+   reach the app; `CHIRP_SIMULATOR_SIGNING=unsigned` reproduces the old unsigned
+   build. It targets that explicit available iPhone/iPad simulator UUID: `test` runs the
    `ChirpIOS` scheme unit tests, `ui` the `ChirpIOS-UI` UI tests. It never
    installs on devices. All six gates (build, unit and UI on both device
    families) must pass before the hardware steps below, which are then purely
@@ -347,8 +351,7 @@ when it matters; surrounding editor text is never collected.
 
 ## Develop and test
 
-Runs today with only the Command Line Tools (macOS execution of portable
-logic — not iOS runtime evidence):
+Portable logic (runs on macOS; also works with only the Command Line Tools):
 
 ```sh
 ios/Shared/scripts/test.sh                 # 20 tests / 5 suites
@@ -370,13 +373,15 @@ unmodified). It has already caught one real conditional-API mistake, but it
 does not validate the iOS SDK, signing, the simulator, SwiftUI view macro
 expansion, App Intents or ActivityKit, and it is not runtime evidence.
 
-After full Xcode is installed: run `ios/scripts/toolchain.sh`, then the three
-simulator actions from the install section — build, unit tests (`ChirpIOS`
-scheme) and UI tests (`ChirpIOS-UI` scheme) — on disposable iPhone and iPad
-simulators (unsigned), plus the `KeyboardPolicy` package tests on the
-simulator. Those gates have **not** been run; simulator results also cannot
-establish hardware keyboard handoff, background-audio survival, lock-screen
-behavior or App Store acceptance. Evidence and exact logs:
+With full Xcode: `ios/scripts/toolchain.sh`, then the three simulator actions
+from the install section — build, unit tests (`ChirpIOS` scheme) and UI tests
+(`ChirpIOS-UI` scheme, which includes `ChirpKeyboardUITests`) — on a disposable
+iPhone **and** iPad simulator. The keyboard UI test changes simulator Settings
+(adds Chirp Keyboard, allows Full Access); only use simulators you don't mind
+reconfiguring, and don't run two UI suites on one simulator at once. Simulator
+results cannot establish hardware keyboard handoff, background-audio survival,
+lock-screen behavior or App Store acceptance. Evidence and exact logs:
+[docs/review/ios-simulator.md](../docs/review/ios-simulator.md),
 [docs/review/ios-foundation.md](../docs/review/ios-foundation.md),
 [docs/review/ios-keyboard.md](../docs/review/ios-keyboard.md),
 [docs/review/ios-app.md](../docs/review/ios-app.md), shared-package
@@ -400,8 +405,9 @@ ios/
 
 ## Known limits
 
-- **Not installable yet.** Full Xcode and an iOS SDK are absent on the build
-  machine; no iOS compile/simulator/device validation has run.
+- **Not yet run on a device.** Simulator build, unit and UI gates pass on
+  iPhone and iPad; signing, provisioning and every on-device check are still
+  operator steps.
 - **Personal install only.** No App Store readiness; the keyboard's URL-open
   handoff is a known App Store review risk.
 - **The keyboard has no microphone, ever** (Apple sandbox). A session must be
