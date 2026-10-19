@@ -152,12 +152,20 @@ def start_server(port):
             timeout=10,
             check=False,
         )
-        subprocess.run(
-            ["/bin/launchctl", "bootstrap", domain, str(destination)],
-            capture_output=True,
-            timeout=10,
-            check=True,
-        )
+        # launchd can briefly reject bootstrap while a previous bootout settles.
+        for attempt in range(3):
+            try:
+                subprocess.run(
+                    ["/bin/launchctl", "bootstrap", domain, str(destination)],
+                    capture_output=True,
+                    timeout=5,
+                    check=True,
+                )
+                break
+            except subprocess.CalledProcessError:
+                if attempt == 2:
+                    raise
+                time.sleep(0.5)
     else:
         from .cli import service
 

@@ -134,7 +134,7 @@ final class LocalModelsWindowController: NSObject {
         // Read-only discovery and startup must not leave a permanently spinning UI.
         if action != "download" {
             Task { [weak self, child] in
-                try? await Task.sleep(for: .seconds(action == "start" ? 65 : 15))
+                try? await Task.sleep(for: .seconds(action == "start" ? 80 : 15))
                 guard self?.jobs[key]?.id == id, child.process.isRunning else { return }
                 child.process.terminate()
             }
