@@ -2,8 +2,10 @@
 import ChirpCore
 import ChirpIOSCore
 import Foundation
+import SwiftUI
+import UIKit
 
-/// Synthetic-only in-memory dependencies. Not compiled into Release. No mic, Keychain or network access.
+/// Synthetic transport/audio. Not compiled into Release. No microphone or network access.
 final class SyntheticHTTP: URLProtocol, @unchecked Sendable {
     override class func canInit(with request: URLRequest) -> Bool { true }
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
@@ -72,16 +74,74 @@ final class SyntheticAudio: SessionAudio {
 }
 
 extension SessionCoordinator {
-    static func synthetic() -> SessionCoordinator {
+    static func synthetic(sharedKeyboard: Bool = false) -> SessionCoordinator {
         do {
             let root = FileManager.default.temporaryDirectory.appendingPathComponent("chirp-synthetic-" + UUID().uuidString)
-            let services = try AppServices(root: root, secrets: MemorySecretStore())
+            let services = try sharedKeyboard ? AppServices.production() : AppServices(root: root, secrets: MemorySecretStore())
             let config = URLSessionConfiguration.ephemeral; config.protocolClasses = [SyntheticHTTP.self]
             return SessionCoordinator(services: services, audio: SyntheticAudio(), http: URLSession(configuration: config),
                 makeStream: { _, options, _ in StreamSession(transport: SyntheticTransport(automatic: true), options: options) },
                 requestPermission: { true }, permissionGranted: { true }, activityBegin: { _ in }, activityActive: { true },
-                activityUpdate: { _, _ in }, activityEnd: {}, production: false)
-        } catch { return SessionCoordinator(production: false) }
+                activityUpdate: { _, _ in }, activityEnd: {}, production: sharedKeyboard)
+        } catch {
+            let model = SessionCoordinator(audio: SyntheticAudio(), production: false)
+            model.show(error)
+            return model
+        }
     }
+}
+
+/// The shared-store fixture can only be selected on a simulator with both arguments.
+enum KeyboardTestMode {
+    static var enabled: Bool {
+        #if targetEnvironment(simulator)
+        let args = ProcessInfo.processInfo.arguments
+        return args.contains("--chirp-ui-test") && args.contains("--chirp-keyboard-host")
+        #else
+        return false
+        #endif
+    }
+}
+
+struct KeyboardTestHost: View {
+    @ObservedObject var model: SessionCoordinator
+    @State private var setup = "Preparing synthetic shared session"
+    var body: some View {
+        VStack {
+            Text(setup).accessibilityIdentifier("chirp.host.setup")
+            Text(model.phase.rawValue).accessibilityIdentifier("chirp.host.phase")
+            LiveKeyboardHost().frame(maxWidth: .infinity, maxHeight: .infinity)
+            Button("End fixture session") { model.endSession() }
+                .accessibilityIdentifier("chirp.host.end")
+        }.padding()
+            .task {
+                await model.pair(link: "chirp://pair?url=https%3A%2F%2Fsynthetic.test.ts.net%2Fchirp&token=synthetic-only")
+                guard model.paired else {
+                    setup = "Simulator shared App Group/Keychain unavailable: " + model.notice
+                    return
+                }
+                do {
+                    try await model.armSession()
+                    setup = "Synthetic shared session armed"
+                } catch {
+                    setup = "Simulator shared session could not arm: " + error.localizedDescription
+                }
+            }
+    }
+}
+
+/// UIKit editor hosts the installed extension; updateUIView never replaces its text.
+struct LiveKeyboardHost: UIViewRepresentable {
+    func makeUIView(context: Context) -> UITextView {
+        let view = UITextView()
+        view.font = .preferredFont(forTextStyle: .title2)
+        view.accessibilityIdentifier = "chirp.host.text"
+        view.text = "Host prefix. "
+        view.autocorrectionType = .no
+        view.spellCheckingType = .no
+        view.selectedRange = NSRange(location: view.text.utf16.count, length: 0)
+        return view
+    }
+    func updateUIView(_ view: UITextView, context: Context) {}
 }
 #endif
