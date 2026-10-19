@@ -364,6 +364,8 @@ def create_app(settings=None, engine=None, token=None, corrector=None):
             engine = ParakeetMLX(
                 settings.model_dir, settings.precision, settings.streaming, settings.finalization
             )
+    if settings.speech_model != "parakeet-v2" and settings.engine == "mlx":
+        engine.name = f"parakeet-mlx:{settings.speech_model}"
     worker = EngineWorker(engine)
     retention = Retention(settings)
     corrector = corrector or Corrector(settings.correction)
@@ -417,6 +419,8 @@ def create_app(settings=None, engine=None, token=None, corrector=None):
             {
                 "ok": True,
                 "engine": engine.name,
+                "speech_model": settings.speech_model,
+                "correction_model": correction.model or DEFAULT_MODEL,
                 "ready": worker.ready,
                 "debug_retention": settings.debug_retain,
                 "correction": "available" if correction.enabled else "off",

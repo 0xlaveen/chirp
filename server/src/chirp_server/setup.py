@@ -6,7 +6,7 @@ import subprocess
 import time
 from pathlib import Path
 
-from . import cleanup_models
+from . import cleanup_models, model_catalog
 from .config import Settings
 from .engine import models as speech_models
 
@@ -18,7 +18,15 @@ def emit(event, **values):
 def status(settings):
     result = []
     for kind, title, discover in (
-        ("speech", "Parakeet · English speech", speech_models.discover),
+        (
+            "speech",
+            "Parakeet · Speech recognition",
+            lambda: (
+                speech_models.discover(settings.model_dir)
+                if settings.model_dir
+                else speech_models.discover()
+            ),
+        ),
         (
             "cleanup",
             f"Qwen · {settings.correction.model or cleanup_models.DEFAULT_MODEL}",
@@ -44,12 +52,20 @@ def configure_downloads():
         os.environ["SSL_CERT_FILE"] = str(keychain)
 
 
-def download(kind, settings):
+def download(kind, settings, choice=None):
     configure_downloads()
     from huggingface_hub import hf_hub_download, snapshot_download
     from huggingface_hub.utils import tqdm
 
-    if kind == "speech":
+    if choice:
+        option = model_catalog.resolve(choice, kind)
+        repository, revision = option.repository, option.revision
+        patterns = speech_models.FILES if kind == "speech" else cleanup_models.PATTERNS
+        local = speech_models.model_root() / "parakeet-mlx" if option.id == "parakeet-v2" else None
+
+        def discover():
+            return model_catalog.directory(option)
+    elif kind == "speech":
         repository, revision = speech_models.REPOSITORY, speech_models.REVISION
         patterns = speech_models.FILES
         local = speech_models.model_root() / "parakeet-mlx"
@@ -123,12 +139,43 @@ def server_running(port):
         return False
 
 
-def start_server(port):
-    speech_models.discover()
-    if server_running(port):
+def server_matches(port, wanted):
+    if not any(kind in wanted for kind in ("speech", "cleanup")):
+        return True
+    import httpx
+
+    try:
+        token = (model_catalog.root() / "token").read_text().strip()
+        response = httpx.get(
+            f"http://127.0.0.1:{port}/v1/health",
+            timeout=1,
+            trust_env=False,
+            headers={"Authorization": "Bearer " + token},
+        )
+        response.raise_for_status()
+        health = response.json()
+        if health.get("ready") is not True:
+            return False
+        if "speech" in wanted and health.get("speech_model") != wanted["speech"]["id"]:
+            return False
+        if "cleanup" in wanted:
+            return (
+                health.get("correction_model") == wanted["cleanup"]["id"]
+                and health.get("correction_mode") == "managed"
+                and health.get("correction_leaves_machine") is False
+            )
+        return True
+    except (OSError, httpx.HTTPError, ValueError):
+        return False
+
+
+def start_server(port, model_dir=None):
+    speech_models.discover(model_dir) if model_dir else speech_models.discover()
+    if server_running(port) and not model_catalog.pending_restart():
         emit("started")
         return
     emit("starting")
+    wanted = model_catalog.read_json(model_catalog.root() / "model-selection.json")
     label = "dev.chirp.server"
     domain = f"gui/{os.getuid()}"
     destination = Path.home() / "Library/LaunchAgents" / f"{label}.plist"
@@ -141,6 +188,8 @@ def start_server(port):
         arguments = document.get("ProgramArguments", [])
         if document.get("Label") != label or arguments[1:3] != ["-m", "chirp_server"]:
             raise ValueError("Unexpected local server service")
+        if "--model-dir" in arguments and model_catalog.pending_restart():
+            raise ValueError("Remove the service model-dir override before applying model choices")
         service_port = (
             int(arguments[arguments.index("--port") + 1]) if "--port" in arguments else 7821
         )
@@ -172,14 +221,36 @@ def start_server(port):
         service("install", ["--port", str(port)] if port != 7821 else [])
     deadline = time.monotonic() + 45
     while time.monotonic() < deadline:
-        if server_running(port):
-            emit("started")
+        if server_running(port) and server_matches(port, wanted):
+            result = model_catalog.update_json(
+                model_catalog.root() / "model-selection.json",
+                lambda data: (
+                    {**data, "restart_required": False, "correction_changed": False}
+                    if all(data.get(key) == wanted.get(key) for key in ("speech", "cleanup"))
+                    else data
+                ),
+            )
+            emit(
+                "started",
+                enable_correction=bool(
+                    wanted.get("correction_changed") and not result.get("restart_required")
+                ),
+            )
             return
         time.sleep(0.5)
     raise TimeoutError("Server did not become ready")
 
 
-def run(action, model, config, port):
+def emit_catalog(settings):
+    emit(
+        "catalog",
+        options=model_catalog.options(settings),
+        active_models=model_catalog.active_ids(settings),
+        restart_required=model_catalog.pending_restart(),
+    )
+
+
+def run(action, model, config, port, choice=None, repository=None):
     try:
         settings = Settings.read(config)
         if action == "status":
@@ -189,22 +260,66 @@ def run(action, model, config, port):
                 correction_mode=settings.correction.mode,
                 server_running=server_running(port),
             )
+            emit_catalog(settings)
         elif action == "download":
-            download(model, settings)
+            download(model, settings, choice) if choice else download(model, settings)
+        elif action == "select":
+            if not choice:
+                raise ValueError("Choose a model first")
+            emit("progress", model=model, phase="verifying")
+            selected = model_catalog.choose(choice, model)
+            emit("selected", model=model, choice=selected.id)
+            emit_catalog(Settings.read(config))
+        elif action == "add":
+            configure_downloads()
+            added = model_catalog.add(model, repository or "")
+            emit("added", model=model, choice=added.id)
+            emit_catalog(settings)
+        elif action == "refresh":
+            configure_downloads()
+            sources = {(m.kind, m.repository) for m in model_catalog.catalog().values()}
+            failures = 0
+            for kind, source in sorted(sources):
+                emit("catalog_progress", message=f"Checking {source.split('/')[-1]}…")
+                try:
+                    model_catalog.add(kind, source)
+                except Exception:
+                    failures += 1
+            emit_catalog(settings)
+            if failures:
+                emit(
+                    "error",
+                    message=f"Could not check {failures} model(s). Choices kept; retry online.",
+                )
+                return 1
+            emit("catalog_progress", message="Models are up to date. Choose a model to download.")
         else:
-            start_server(port)
+            start_server(port, settings.model_dir) if settings.model_dir else start_server(port)
         return 0
     except KeyboardInterrupt:
         emit("cancelled", model=model)
         return 130
     except Exception:
         # Exception text can contain signed download URLs or credentials.
-        message = (
-            "Could not start the server. Check its configuration and try again."
-            if action == "start"
-            else "Could not finish setup. Check your connection and free disk space, then retry."
-            if action == "download"
-            else "Could not read local setup. Check the server configuration."
+        messages = {
+            "start": "Could not start the server. Check its configuration and try again.",
+            "download": (
+                "Could not finish setup. Check your connection and free disk space, then retry."
+            ),
+            "select": (
+                "This model could not be loaded. Your previous selection is kept. "
+                "Choose a compatible model or retry its download."
+            ),
+            "add": (
+                "Could not add this model. Use a public Hugging Face repository with "
+                "compatible Parakeet TDT or quantized MLX text weights."
+            ),
+        }
+        emit(
+            "error",
+            model=model if action in {"download", "select"} else None,
+            message=messages.get(
+                action, "Could not read local setup. Check the connection and server configuration."
+            ),
         )
-        emit("error", model=model if action == "download" else None, message=message)
         return 1

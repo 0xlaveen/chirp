@@ -66,10 +66,12 @@ def check_model(model_dir: Path | None = None) -> Check:
         return Check(
             "model",
             FAIL,
-            "no valid English Parakeet TDT v2 model found",
-            "uv run chirp-server model fetch",
+            "no valid Parakeet TDT speech model found",
+            "Download the selected speech model in Chirp → Manage Local Models…"
+            if model_dir
+            else "uv run chirp-server model fetch",
         )
-    return Check("model", OK, f"valid English Parakeet TDT v2 at {directory}")
+    return Check("model", OK, f"valid Parakeet TDT at {directory}")
 
 
 def _fixture_samples(fixture: Path):
@@ -352,12 +354,13 @@ def check_launchagent(home: Path | None = None) -> Check:
 
 def doctor(args, tailscale_status: tuple[int, str] | None = None) -> int:
     """Run every check in order; return 1 only when some check FAILs."""
-    checks = [check_environment(), check_mlx(), check_model(args.model_dir)]
+    settings, config_check = load_settings(args.config)
+    model_dir = args.model_dir or settings.model_dir
+    checks = [check_environment(), check_mlx(), check_model(model_dir)]
     if getattr(args, "quick", False):
         print("[SKIP] warm decode: skipped (--quick)")
     else:
-        checks.append(asyncio.run(check_warm_decode(args.model_dir)))
-    settings, config_check = load_settings(args.config)
+        checks.append(asyncio.run(check_warm_decode(model_dir)))
     checks.extend(
         [
             config_check,

@@ -4,14 +4,14 @@
 
 <h1 align="center">Chirp</h1>
 
-<p align="center"><strong>Local-first English voice dictation for your Mac and your phone.</strong></p>
+<p align="center"><strong>Local-first voice dictation for your Mac and your phone.</strong></p>
 
 Chirp turns speech into text on machines you own. Speech recognition runs locally on your Mac (Parakeet on Apple Silicon) — press a hotkey in any app, talk, and the text lands in the focused field. An optional clean-up pass removes fillers and fixes punctuation; by default it runs as a model on the same Mac, so no text leaves the machine. The Android keyboard (a HeliBoard build for the Galaxy Z Fold) has a microphone key that streams your voice to that same Mac over Tailscale and inserts text in the focused field. Nothing — no audio, no transcripts — is retained by default; the single exception is iOS's transient encrypted app↔keyboard mailbox (see [Privacy & security](#privacy--security)).
 
 ## Highlights
 
 - **System-wide Mac dictation.** ⌃⌥Space in any app: tap to toggle, hold to push-to-talk, Esc to cancel. A floating HUD shows the live transcript while you speak; text is inserted directly (Accessibility), pasted, or copied as a fallback.
-- **Recognition stays on your Mac.** The server binds to `127.0.0.1` only and runs Parakeet TDT v2 via MLX. Remote access, if you want it for the phone, is tailnet-only through Tailscale Serve.
+- **Recognition stays on your Mac.** The server binds to `127.0.0.1` only and runs your selected Parakeet TDT model via MLX (English v2 by default, with multilingual v3 available). Remote access, if you want it for the phone, is tailnet-only through Tailscale Serve.
 - **Optional clean-up.** A local Qwen model can polish the final transcript — fillers, stutters, punctuation, casing — with styles for chat, email, code and notes, per-app styles, and editable prompts. Off by default; every clean-up keeps the raw text one keystroke away ("Use raw" for 5 s).
 - **Android keyboard.** A full HeliBoard keyboard plus a mic key: live text appears underlined in the field, and the final replaces it. Gboard-like default look with a Samsung-like option, a Fold-tuned inner-screen layout, English QWERTY with autocorrect, clipboard history and emoji, and an opt-in on-device encrypted dictation history. Swipe typing works with a library you supply — none is bundled.
 - **iPhone and iPad dictation (implemented, pending Xcode validation).** A native SwiftUI app plus a dictation-first custom keyboard for iOS/iPadOS 18: pair by QR to the same Mac server, dictate from compatible text fields with verified safe replacement (secure fields and hosts that disallow custom keyboards use Apple's keyboard; unreliable editor contexts stop auto-replacement safely), companion controls (Action Button, Control Center, Shortcuts, Live Activity) and opt-in on-device encrypted history. Not installable yet — no iOS build/simulator/device check has run; see [ios/README.md](ios/README.md).
@@ -55,32 +55,28 @@ flowchart LR
 
 ## Quick start
 
-### 1. Speech server (Mac)
+### 1. Standalone Mac install
 
-Python 3.13 + [uv](https://docs.astral.sh/uv/). Nothing is downloaded or started on install; the server binds to `127.0.0.1:7821` only.
-
-```sh
-cd server
-uv sync --locked
-uv run chirp-server                    # start (foreground)
-uv run chirp-server doctor --quick     # verify the setup
-```
-
-The server reuses the cached English Parakeet model (`~/.koi/voice-models/parakeet-mlx`); if it is missing, `uv run chirp-server model fetch` downloads the pinned revision. Details, configuration and clean-up models: [server/README.md](server/README.md).
-
-### 2. Chirp for Mac
-
-Native Swift 6 / AppKit menu-bar app; the Command Line Tools are enough (no Xcode).
+From a Chirp checkout on an Apple Silicon Mac, install [uv](https://docs.astral.sh/uv/getting-started/installation/) and Apple Command Line Tools (`xcode-select --install`), then run:
 
 ```sh
-cd mac
-./scripts/make-cert.sh                 # once: stable signing identity
-./scripts/test.sh && ./scripts/bundle.sh
-./scripts/install.sh
-open ~/Applications/Chirp.app
+./scripts/install-mac.sh
 ```
 
-Grant Microphone and Accessibility when the Set Up window asks, then press ⌃⌥Space in any text field and speak. Details, permissions and settings: [mac/README.md](mac/README.md).
+This installs the server's locked Python environment under `~/Library/Application Support/Chirp/server`, builds and signs `Chirp.app`, installs it in `~/Applications`, and opens its model picker. No dotfiles, Nix, Koi, or Tailscale installation is required. macOS may ask you to approve the local signing identity. This is a source installer; a notarized downloadable Mac release is not provided yet.
+
+### 2. Choose your models
+
+In **Models on this Mac** (also **Settings → Server → Manage Local Models…**):
+
+1. Choose a speech model and click **Download**. Parakeet v2 is the English default; v3 offers multilingual recognition.
+2. Optionally choose and download a local correction model. **Use Model** checks that it loads, then saves your choice; choosing a correction model configures managed local correction.
+3. Click **Start Local Server**, or **Apply & Restart Server** after changing a selection. Downloading a model alone never switches the running server.
+4. Grant Microphone and Accessibility in Set Up Chirp, then press **⌃⌥Space** in a text field and speak.
+
+**Check for Updates** looks up newer revisions of known models without downloading weights or changing your selection. **Add Model** accepts a public Hugging Face `owner/model` repository and checks for a compatible Parakeet TDT or quantized MLX language model. Downloads show size, percentage, Pause/Resume and Retry. Newly added models are checked for loader compatibility, not transcription/correction quality; [benchmarked defaults and tradeoffs](docs/bench.md) remain unchanged.
+
+For server-only installation use `./scripts/install-mac.sh --server-only`. Developer setup and CLI instructions: [server/README.md](server/README.md). App permissions and behavior: [mac/README.md](mac/README.md). Repository access and licensing are separate from installation; see [Licensing](#licensing).
 
 ### 3. Chirp Keyboard (Android)
 
