@@ -25,6 +25,10 @@ final class LocalModelsWindowController: NSObject {
         guard settings.serverConfig().isLoopback else { return }
         if window == nil {
             let v = LocalModelsView()
+            v.speechPicker.target = self; v.speechPicker.action = #selector(speechPicked(_:))
+            v.cleanupPicker.target = self; v.cleanupPicker.action = #selector(cleanupPicked(_:))
+            v.checkUpdates.target = self; v.checkUpdates.action = #selector(checkUpdatesPressed)
+            v.addRepository.target = self; v.addRepository.action = #selector(addPressed)
             v.speech.target = self; v.speech.action = #selector(speechPressed)
             v.cleanup.target = self; v.cleanup.action = #selector(cleanupPressed)
             v.start.target = self; v.start.action = #selector(startPressed)
@@ -42,6 +46,20 @@ final class LocalModelsWindowController: NSObject {
     private func refresh() {
         state.correctionEnabled = settings.correction
         view?.apply(state)
+    }
+
+    @objc private func speechPicked(_ sender: NSPopUpButton) { picked(.speech, sender) }
+    @objc private func cleanupPicked(_ sender: NSPopUpButton) { picked(.cleanup, sender) }
+    private func picked(_ model: LocalModel, _ sender: NSPopUpButton) {
+        guard let id = sender.selectedItem?.representedObject as? String else { return }
+        state.pick(model, choice: id); refresh()
+    }
+    @objc private func checkUpdatesPressed() { run("refresh") }
+    @objc private func addPressed() {
+        guard let view else { return }
+        let repository = view.repository.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !repository.isEmpty else { return }
+        run("add", model: view.repositoryKind.indexOfSelectedItem == 0 ? .speech : .cleanup, repository: repository)
     }
 
     @objc private func speechPressed() { download(.speech) }
@@ -62,6 +80,10 @@ final class LocalModelsWindowController: NSObject {
             child.process.interrupt() // HF keeps partial files for the next attempt.
             return
         }
+        if state.option(model)?.ready == true {
+            state.models[model]?.phase = "verifying"
+            refresh(); run("select", model: model); return
+        }
         state.models[model]?.phase = "preparing"
         state.models[model]?.message = nil
         refresh()
@@ -74,16 +96,20 @@ final class LocalModelsWindowController: NSObject {
             return URL(fileURLWithPath: path)
         }
         let home = FileManager.default.homeDirectoryForCurrentUser
-        let candidates = ["/run/current-system/sw/bin/chirp-server", home.appendingPathComponent(".local/bin/chirp-server").path,
-                          home.appendingPathComponent(".local/share/chirp/src/server/.venv/bin/chirp-server").path,
-                          home.appendingPathComponent("Documents/Programming/chirp/server/.venv/bin/chirp-server").path]
+        let candidates = [home.appendingPathComponent("Library/Application Support/Chirp/server/.venv/bin/chirp-server").path, "/run/current-system/sw/bin/chirp-server", home.appendingPathComponent(".local/bin/chirp-server").path,
+                          home.appendingPathComponent(".local/share/chirp/src/server/.venv/bin/chirp-server").path]
             + (ProcessInfo.processInfo.environment["PATH"] ?? "").split(separator: ":").map { "\($0)/chirp-server" }
         return candidates.first(where: { FileManager.default.isExecutableFile(atPath: $0) }).map { URL(fileURLWithPath: $0) }
     }
 
-    private func run(_ action: String, model: LocalModel? = nil) {
-        guard settings.serverConfig().isLoopback else { return }
-        let key = model?.rawValue ?? action
+    private func run(_ action: String, model: LocalModel? = nil, repository: String? = nil) {
+        guard settings.serverConfig().isLoopback else {
+            state.starting = false
+            state.message = "Choose This Mac as your server to manage local models."
+            if let model { state.models[model]?.phase = "error"; state.models[model]?.message = state.message }
+            refresh(); return
+        }
+        let key = ["download", "select"].contains(action) ? model?.rawValue ?? action : action
         guard jobs[key] == nil else { return }
         if action != "status" { state.errorMessage = nil }
         guard let executable = executable() else {
@@ -96,7 +122,10 @@ final class LocalModelsWindowController: NSObject {
         let id = UUID()
         child.process.executableURL = executable
         let port = settings.serverConfig().baseURL.port ?? 7821
-        child.process.arguments = ["--port", String(port), "setup", action] + (model.map { ["--model", $0.rawValue] } ?? [])
+        var arguments = ["--port", String(port), "setup", action] + (model.map { ["--model", $0.rawValue] } ?? [])
+        if ["download", "select"].contains(action), let model, let choice = state.choices[model] { arguments += ["--choice", choice] }
+        if let repository { arguments += ["--repository", repository] }
+        child.process.arguments = arguments
         var environment = ProcessInfo.processInfo.environment
         environment["PYTHONUNBUFFERED"] = "1"
         child.process.environment = environment
@@ -110,6 +139,7 @@ final class LocalModelsWindowController: NSObject {
             state.starting = false; refresh(); return
         }
         jobs[key] = (id, child)
+        if ["refresh", "add"].contains(action) { state.catalogBusy = true; refresh() }
         Task.detached(priority: .utility) { [weak self, child] in
             var buffer = Data()
             var sawEvent = false
@@ -134,7 +164,8 @@ final class LocalModelsWindowController: NSObject {
         // Read-only discovery and startup must not leave a permanently spinning UI.
         if action != "download" {
             Task { [weak self, child] in
-                try? await Task.sleep(for: .seconds(action == "start" ? 80 : 15))
+                let timeout = switch action { case "start": 80; case "select": 120; case "refresh": 300; case "add": 60; default: 15 }
+                try? await Task.sleep(for: .seconds(timeout))
                 guard self?.jobs[key]?.id == id, child.process.isRunning else { return }
                 child.process.terminate()
             }
@@ -144,6 +175,7 @@ final class LocalModelsWindowController: NSObject {
     private func receive(_ event: LocalSetupEvent, key: String, id: UUID) {
         guard jobs[key]?.id == id else { return }
         if let model = event.model, state.models[model]?.phase == "cancelling", event.event == "progress" { return }
+        if event.event == "started", event.enableCorrection == true { settings.correction = true }
         state.apply(event); refresh()
     }
 
@@ -151,10 +183,11 @@ final class LocalModelsWindowController: NSObject {
         guard jobs[key]?.id == id else { return }
         jobs.removeValue(forKey: key)
         if action == "start" { state.starting = false }
+        if ["refresh", "add"].contains(action) { state.catalogBusy = false }
         if !sawEvent {
             state.message = "Update chirp-server to use in-app model setup, then retry."
         }
-        if let model, !state.models[model, default: .init()].ready {
+        if ["download", "select"].contains(action), let model, !state.models[model, default: .init()].ready {
             if code == 130 || interrupted { state.models[model]?.phase = "cancelled" }
             else if state.models[model]?.phase != "error" {
                 state.models[model]?.phase = "error"

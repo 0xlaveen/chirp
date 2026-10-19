@@ -420,7 +420,14 @@ public enum Snapshots {
                 var state = LocalModelsState()
                 state.correctionMode = "managed"
                 state.correctionEnabled = true
-                state.message = "Download the speech model, then start your local server."
+                state.options = [
+                    LocalModelOption(id: "v2", kind: .speech, title: "Parakeet TDT v2 · English", repository: "mlx-community/parakeet-tdt-0.6b-v2", revision: "8ae155301e", sizeBytes: 2_472_000_000, details: "English · existing default", license: "cc-by-4.0", ready: name == "ready", active: true),
+                    LocalModelOption(id: "v3", kind: .speech, title: "Parakeet TDT v3 · Multilingual", repository: "mlx-community/parakeet-tdt-0.6b-v3", revision: "ed2b7e8c15", sizeBytes: 2_509_000_000, details: "25 languages"),
+                    LocalModelOption(id: "qwen", kind: .cleanup, title: "Qwen3 4B Instruct · 4-bit", repository: "mlx-community/Qwen3-4B-Instruct-2507-4bit", revision: "50d427756c", sizeBytes: 2_263_000_000, details: "Local text correction", ready: name == "ready", active: true),
+                ]
+                state.choices = [.speech: "v2", .cleanup: "qwen"]
+                state.activeModels = ["speech": "v2", "cleanup": "qwen"]
+                state.message = "Choose and download models, then start your local server."
                 for model in LocalModel.allCases {
                     state.models[model]?.phase = switch name {
                     case "downloading": "downloading"

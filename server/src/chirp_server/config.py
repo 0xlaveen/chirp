@@ -119,6 +119,7 @@ class Settings:
     debug_retain: bool = False
     retain_days: int = 3
     model_dir: Path | None = None
+    speech_model: str = "parakeet-v2"
     engine: str = "mlx"
     precision: str = "float32"
     streaming: str = "rolling"
@@ -141,6 +142,9 @@ class Settings:
             result.correction = CorrectionConfig(**data.get("correction", {}))
         if result.retain_days < 1 or result.correction.timeout <= 0:
             raise ValueError("Invalid configuration limits")
+        from .model_catalog import apply_settings
+
+        apply_settings(result)
         return result
 
 

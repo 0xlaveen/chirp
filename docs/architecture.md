@@ -64,6 +64,8 @@ Every request carries `Authorization: Bearer <token>`. WebSocket clients that ca
   - One utterance per `start`/`final` pair. A socket may carry several utterances in turn, so clients keep it open while active. The server closes idle sockets after 60 s.
 - Limits: 120 s per utterance, and frames ≥ 1 MB are rejected. Requests queue for one engine.
 
+Authenticated health also includes the selected `speech_model` and `correction_model` IDs. These optional metadata fields contain no token, prompt, audio, or transcript. Unauthenticated health remains minimal.
+
 ### Optional correction fields (v1-compatible additions)
 
 The additions are optional and v1 compatible: omitted `correction_profile` selects `default`;

@@ -5,7 +5,7 @@ Local streaming speech-to-text for Chirp. Python 3.13, Starlette and Parakeet ML
 | At a glance | |
 |---|---|
 | Binds to | `127.0.0.1:7821` only — never the network |
-| Engine | Parakeet TDT 0.6B v2 (English) via MLX; ONNX int8 as an alternative |
+| Engine | Selectable Parakeet TDT via MLX (English v2 default, multilingual v3 available); ONNX v2 int8 alternative |
 | Auth | Bearer token, constant-time comparison; audio is rejected before authentication |
 | Retention | Nothing written by default; debug retention is opt-in, local and loudly visible |
 | Clean-up ("correction") | Off by default; optional on-Mac Qwen model or external OpenAI-compatible endpoint |
@@ -55,6 +55,28 @@ Useful flags:
 | `--finalization segments` | Opt-in pause-precommit finalization |
 | `--debug-retain` | Opt into local debug recording — see [Privacy and debugging](#privacy-and-debugging) |
 | `--config /path/to/server.toml` | Config file instead of `~/.config/chirp/server.toml` |
+
+## Selectable local models
+
+The Mac app's **Manage Local Models…** window provides selection, explicit downloads and update checks without editing configuration. For a standalone server install run `./scripts/install-mac.sh --server-only` from the repo root; it uses a locked environment in `~/Library/Application Support/Chirp/server`.
+
+From `server/`, the equivalent helper commands are:
+
+```sh
+uv run chirp-server setup status          # offline catalog, sizes, cached and selected models
+uv run chirp-server setup refresh         # metadata only; checks latest repository revisions
+uv run chirp-server setup download --model speech --choice parakeet-v3
+uv run chirp-server setup select --model speech --choice parakeet-v3
+uv run chirp-server setup download --model cleanup --choice qwen3.5-2b-4bit
+uv run chirp-server setup select --model cleanup --choice qwen3.5-2b-4bit
+uv run chirp-server setup start           # start/restart to apply saved selections
+```
+
+`setup add --model speech|cleanup --repository owner/model` adds a compatible public Hugging Face model. Its returned catalog ID includes an immutable revision; use that ID with download/select. Refresh never upgrades a running model or downloads its weights. Compatibility checks accept 16 kHz Parakeet TDT for speech and quantized MLX-LM architectures for correction; actual loading is checked before selection. Newly added models are not quality-benchmarked, and new architectures may require a runtime update. Startup and inference remain offline, with `trust_remote_code=False`.
+
+User choices live in `~/.config/chirp/model-selection.json`, checked metadata in `model-catalog.json`. Selecting correction enables managed local mode; config TOML is preserved. After a change the UI asks for **Apply & Restart Server**, which ends active dictation sessions. Older pinned versions remain available. `--model-dir` explicitly overrides the speech selection; managed launch agents with that override must be adjusted before the UI can apply a different model.
+
+Authenticated health adds `speech_model` and `correction_model`; unauthenticated health remains `{"ok":true}` only.
 
 ## Pair a device
 

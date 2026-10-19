@@ -33,13 +33,19 @@ macOS ties Microphone and Accessibility grants to the app's code signature. An a
 
 It creates a self-signed "Chirp Local Dev" code-signing certificate in your login keychain. macOS may ask for your login password to trust it, and the first `codesign` may ask to allow keychain access (choose *Always Allow*). If the identity is missing, `bundle.sh` signs ad-hoc and warns.
 
-### Download local models
+### Choose and download local models
 
-Open **Settings → Server → Manage Local Models…**, or **Set Up Models…** on the setup window's server step. Download **Speech recognition** (Parakeet) and, for local clean-up, **Local correction** (Qwen). Each card shows byte progress and percentage; **Pause**, **Resume**, and **Retry** keep partial downloads. Closing the window keeps downloads running. A model is marked downloaded only after its files validate.
+For a standalone install use `./scripts/install-mac.sh` from the repository root. It installs the server in Application Support and the app in `~/Applications`; it does not require dotfiles or Nix. The app finds this server without relying on the terminal's PATH. Existing CLI/Nix-managed installations remain supported.
 
-Choose **Start Local Server** after the speech download completes. Existing managed launch agents are reused. **Use local Qwen correction** controls the app's clean-up preference when the server is configured with `[correction] mode = "managed"`; it does not change a remote server's configuration. Downloads are explicit and local setup is available only with a loopback server URL. `ChirpMac --models` opens the same window.
+Open **Settings → Server → Manage Local Models…**, or **Set Up Models…** on the setup window's server step. Pick a speech model (English Parakeet v2 or multilingual v3) and a local correction model (Qwen3 4B Instruct, Qwen3.5 0.8B/2B/4B). Model sizes appear in the picker; details describe the default or alternative. Smaller correction models scored lower in Chirp's evaluations; compatibility alone does not guarantee quality.
 
-The helper exposes `chirp-server setup status`, `setup download --model speech|cleanup`, and `setup start` as newline-delimited JSON for this UI. Status does not download weights. Download errors never include signed URLs or credentials.
+**Download** shows byte progress and percentage. **Pause**, **Resume**, and **Retry** preserve partial downloads; closing the window keeps them running. **Use Model** checks that downloaded weights load before saving the choice. A failed check keeps the previous selection. Downloading by itself never replaces the running model. **Apply & Restart Server** activates saved choices; schedule this between dictations because restarting ends existing sessions. **Start Local Server** installs a user launch agent for a standalone installation, or reuses an existing managed agent.
+
+**Check for Updates** checks known repositories for current revisions without downloading weights. Older choices remain available. **Add Model** checks a public Hugging Face `owner/model` for the selected type. Speech models must use the 16 kHz Parakeet TDT MLX interface; correction requires quantized safetensors and an architecture supported by the installed MLX-LM library. Adding/checking models only reads metadata. A new architecture may require updating Chirp's locked runtime. Model code is never loaded from the repository.
+
+Choosing **Use Model** for correction configures managed local correction; applying it to the server enables the app's clean-up preference. **Use local correction** subsequently toggles that preference. Choices are stored atomically under `~/.config/chirp/` in `model-selection.json`; checked metadata lives in `model-catalog.json`. Server TOML, pairing tokens, and dotfiles are not rewritten. CLI `--model-dir` remains an explicit override; remove a service's override before applying a different speech selection in the app.
+
+The helper exposes `chirp-server setup status`, `setup refresh`, `setup add --model speech|cleanup --repository owner/model`, `setup download --model speech|cleanup --choice ID`, `setup select --model speech|cleanup --choice ID`, and `setup start` as newline-delimited JSON. Status is offline. Downloads/checks are explicit. Local setup is available only for a loopback server URL. `ChirpMac --models` opens the same window.
 
 ## Permissions
 

@@ -40,7 +40,15 @@ def model_spec(model_id: str = "") -> CleanupModel:
     try:
         return MODELS[model_id or DEFAULT_MODEL]
     except KeyError:
-        raise ValueError("Unknown cleanup model; use a catalog id") from None
+        from .model_catalog import resolve, selection
+
+        selected = selection().get("cleanup")
+        model = selected if selected and selected.id == model_id else resolve(model_id, "cleanup")
+        return CleanupModel(
+            model.repository,
+            model.revision,
+            model.memory_mb or round(model.size_bytes / 1048576 * 1.25),
+        )
 
 
 def complete(path: Path) -> bool:

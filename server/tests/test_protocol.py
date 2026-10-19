@@ -26,6 +26,8 @@ def test_health_redaction(client):
     assert health == {
         "ok": True,
         "engine": "fake",
+        "speech_model": "parakeet-v2",
+        "correction_model": "qwen3-4b-instruct-2507-4bit",
         "ready": True,
         "debug_retention": False,
         "correction": "off",

@@ -73,8 +73,12 @@ def parser():
     launch = commands.add_parser("service")
     launch.add_argument("action", choices=["install", "uninstall"])
     setup = commands.add_parser("setup", help="local Mac setup with JSON progress")
-    setup.add_argument("action", choices=["status", "download", "start"])
+    setup.add_argument(
+        "action", choices=["status", "download", "start", "refresh", "add", "select"]
+    )
     setup.add_argument("--model", choices=["speech", "cleanup"], default="speech")
+    setup.add_argument("--choice", help="catalog id (including its pinned revision)")
+    setup.add_argument("--repository", help="Hugging Face owner/repository for add")
     return result
 
 
@@ -83,7 +87,9 @@ def main():
     if args.command == "setup":
         from .setup import run
 
-        raise SystemExit(run(args.action, args.model, args.config, args.port))
+        raise SystemExit(
+            run(args.action, args.model, args.config, args.port, args.choice, args.repository)
+        )
     if args.command == "doctor":
         from .doctor import doctor
 
@@ -122,7 +128,8 @@ def main():
 
         from .app import accept_prefix, create_app
 
-        settings.model_dir = args.model_dir
+        if args.model_dir is not None:
+            settings.model_dir = args.model_dir
         settings.engine = args.engine
         settings.precision = args.precision
         settings.streaming = args.streaming

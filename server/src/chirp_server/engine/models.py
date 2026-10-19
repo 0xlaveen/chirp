@@ -12,18 +12,25 @@ def model_root() -> Path:
     return Path.home() / "Library/Application Support/Chirp/models"
 
 
-def valid_v2(directory: Path) -> bool:
+def valid_tdt(directory: Path) -> bool:
     try:
         config = json.loads((directory / "config.json").read_text())
-        # English v2: 1024-token vocabulary, TDT durations, 16 kHz. v3 is multilingual.
+        # Both English v2 and multilingual v3 use this TDT interface.
         return (
             all((directory / name).is_file() for name in FILES)
             and config["sample_rate"] == 16000
-            and config["decoder"]["vocab_size"] == 1024
+            and config["decoder"]["vocab_size"] > 0
             and config["model_defaults"]["tdt_durations"] == [0, 1, 2, 3, 4]
         )
     except (OSError, ValueError, KeyError, TypeError):
         return False
+
+
+def valid_v2(directory: Path) -> bool:
+    return (
+        valid_tdt(directory)
+        and json.loads((directory / "config.json").read_text())["decoder"]["vocab_size"] == 1024
+    )
 
 
 def discover(explicit: Path | None = None) -> Path:
@@ -36,7 +43,7 @@ def discover(explicit: Path | None = None) -> Path:
         ]
     )
     for directory in candidates:
-        if directory and valid_v2(directory):
+        if directory and (valid_tdt(directory) if explicit else valid_v2(directory)):
             return directory
     raise ValueError("English Parakeet v2 model missing; run chirp-server model fetch")
 
