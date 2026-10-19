@@ -25,6 +25,7 @@
     "Tests/SessionCoordinatorTests.swift"
   ],
   "ChirpIOSUITests": [
+    "UITests/ChirpKeyboardUITests.swift",
     "UITests/ChirpUITests.swift"
   ]
 }
