@@ -33,6 +33,14 @@ macOS ties Microphone and Accessibility grants to the app's code signature. An a
 
 It creates a self-signed "Chirp Local Dev" code-signing certificate in your login keychain. macOS may ask for your login password to trust it, and the first `codesign` may ask to allow keychain access (choose *Always Allow*). If the identity is missing, `bundle.sh` signs ad-hoc and warns.
 
+### Download local models
+
+Open **Settings → Server → Manage Local Models…**, or **Set Up Models…** on the setup window's server step. Download **Speech recognition** (Parakeet) and, for local clean-up, **Local correction** (Qwen). Each card shows byte progress and percentage; **Pause**, **Resume**, and **Retry** keep partial downloads. Closing the window keeps downloads running. A model is marked downloaded only after its files validate.
+
+Choose **Start Local Server** after the speech download completes. Existing managed launch agents are reused. **Use local Qwen correction** controls the app's clean-up preference when the server is configured with `[correction] mode = "managed"`; it does not change a remote server's configuration. Downloads are explicit and local setup is available only with a loopback server URL. `ChirpMac --models` opens the same window.
+
+The helper exposes `chirp-server setup status`, `setup download --model speech|cleanup`, and `setup start` as newline-delimited JSON for this UI. Status does not download weights. Download errors never include signed URLs or credentials.
+
 ## Permissions
 
 On first launch the **Set Up Chirp** window opens (reopen it any time from Settings → General, or from the menu's "Set Up Chirp…", which appears while a permission is missing or the server is unreachable). Its steps are Welcome, Microphone, Accessibility, the speech server and Try it. Each permission or server step shows live status — it turns green as soon as you grant access in System Settings — and a **Fix** button. Skipping a step is allowed: Chirp then works with what it has (without Accessibility it copies instead of typing). The Try it step has a text field and turns green when it hears your hotkey. The "set up" flag is stored only when you finish the last step; closing the window early shows it again next launch. Permissions are granted in **System Settings → Privacy & Security**:
@@ -157,7 +165,7 @@ Quit Chirp                                    ⌘Q
 | Clean-up | Value: the default style, or Off. Submenu: Clean up Text (checkmark), the styles (checkmark on the default), Show Changes after Clean-up, Edit Styles… A server with clean-up off shows "Unavailable" and one explanatory line. |
 | Microphone | Value: the device in use. Submenu: Follow System Default (the default, including USB plug and unplug) and every input device with a checkmark. A picked device that is unplugged falls back to the default. The choice applies from the next dictation. |
 | Sounds | Value: Off or the pack. Submenu: Off, Chirp, Soft, Glass, Click, System, Custom… |
-| Server | Value: "This Mac" for a server on loopback, else its host. Submenu: the URL, Engine and Status lines (disabled) and Copy Doctor Command (puts the `chirp-server doctor` commands on the clipboard; run them in your checkout's `server/` directory). |
+| Server | Value: "This Mac" for a server on loopback, else its host. Submenu: the URL, Engine and Status lines (disabled) and Copy Doctor Command (copies diagnostics that use `chirp-server` on PATH, or the local server environment when run from the checkout root or `server/` directory). |
 | Set Up Chirp… | The first-run window. Only while the Microphone or Accessibility permission is missing or the server is unreachable. |
 | Settings…, About Chirp, Quit Chirp | Settings (⌘,), a window with the icon and version, and Quit (⌘Q). |
 
@@ -172,7 +180,7 @@ Settings is a native preferences window with toolbar tabs (`NSTabViewController`
 | General | Hotkey (presets and Record Shortcut…), Launch at login, Set Up Chirp… |
 | Sounds | Cues on/off, pack with ▶ previews, volume, the Custom pack's start and stop files |
 | Clean-up | Clean up dictated text, Keep clean-up model loaded, the default style, the per-style prompt editor, per-app styles with Test, Insert raw immediately, Show changes after clean-up, Offer Use raw for 5 seconds |
-| Server | URL, token location, status, Copy Doctor Command |
+| Server | URL, token location, status, Manage Local Models…, Copy Doctor Command |
 | Permissions | Microphone and Accessibility status; a Fix button only for one that is missing |
 
 The icon is the bird glyph. While you dictate its sound waves pulse (they stay steady when Reduce Motion is on), it is dimmed while the server is unreachable or Chirp is paused, it turns into a warning triangle on errors, and a small red dot sits at its corner while debug retention is on.

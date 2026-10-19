@@ -126,6 +126,7 @@ public final class SettingsForm {
     public let setupButton = NSButton(title: "Set Up Chirp…", target: nil, action: nil)
     /// Server: puts the chirp-server doctor command on the pasteboard.
     public let doctorButton = NSButton(title: "Copy Doctor Command", target: nil, action: nil)
+    public let modelsButton = NSButton(title: "Manage Local Models…", target: nil, action: nil)
     public let micButton = NSButton(title: "Fix…", target: nil, action: nil)
     public let accessibilityButton = NSButton(title: "Fix…", target: nil, action: nil)
     /// Under the checkbox: what it does, or why the last change failed.
@@ -167,7 +168,7 @@ public final class SettingsForm {
         micButton.setAccessibilityLabel("Fix Microphone access")
         accessibilityButton.setAccessibilityLabel("Fix Accessibility access")
 
-        for button in [setupButton, doctorButton] { button.bezelStyle = .rounded }
+        for button in [setupButton, doctorButton, modelsButton] { button.bezelStyle = .rounded }
         setupButton.setAccessibilityLabel("Set up Chirp")
 
         func row(_ title: String, _ control: NSView, help: NSTextField? = nil) -> [NSView] {
@@ -231,6 +232,7 @@ public final class SettingsForm {
             row("Token:", tokenStatus, help: tokenHelp),
             row("Status:", serverStatus),
             row("Doctor:", doctorButton, help: Self.help("Copies the command that checks the server, to run in Terminal.")),
+            row("Models:", modelsButton, help: Self.help("Download speech and local Qwen models, see progress, and start this Mac's server.")),
         ])
 
         build(.permissions, [
@@ -385,6 +387,7 @@ public final class SettingsForm {
         tokenHelp.stringValue = s.tokenPresent ? "Chirp sends this token with every request."
                                                : "No token yet — start chirp-server once to create it."
         serverStatus.set(symbol: "circle.fill", tone: s.serverStatusTone, text: s.serverStatus)
+        modelsButton.isEnabled = ServerConfig.load(urlString: s.serverURL).isLoopback
         micStatus.set(symbol: s.micGranted ? "checkmark.circle.fill" : "exclamationmark.triangle.fill",
                       tone: s.micGranted ? .ok : .warning, text: s.micGranted ? "Allowed" : "Not allowed")
         accessibilityStatus.set(symbol: s.accessibilityGranted ? "checkmark.circle.fill" : "exclamationmark.triangle.fill",

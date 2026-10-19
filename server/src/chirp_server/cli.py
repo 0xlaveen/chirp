@@ -72,11 +72,18 @@ def parser():
     check.add_argument("--quick", action="store_true", help="skip the real model load and decode")
     launch = commands.add_parser("service")
     launch.add_argument("action", choices=["install", "uninstall"])
+    setup = commands.add_parser("setup", help="local Mac setup with JSON progress")
+    setup.add_argument("action", choices=["status", "download", "start"])
+    setup.add_argument("--model", choices=["speech", "cleanup"], default="speech")
     return result
 
 
 def main():
     args = parser().parse_args()
+    if args.command == "setup":
+        from .setup import run
+
+        raise SystemExit(run(args.action, args.model, args.config, args.port))
     if args.command == "doctor":
         from .doctor import doctor
 

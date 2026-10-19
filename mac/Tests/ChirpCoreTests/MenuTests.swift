@@ -441,9 +441,34 @@ import Testing
 @Suite struct DoctorHelpTests {
     @Test func clipboardTextHasTheCommandsAndNoSecrets() {
         let text = DoctorHelp.clipboardText(serverURL: "http://127.0.0.1:7821")
-        #expect(text.contains("uv run chirp-server doctor --quick") && text.contains("uv run chirp-server doctor "))
+        #expect(text.contains("chirp-server doctor --quick") && text.contains("chirp-server doctor\n"))
         #expect(text.contains("http://127.0.0.1:7821"))
         #expect(!text.lowercased().contains("token"))
+    }
+
+    @Test(arguments: ["installed", "checkout", "server"])
+    func copiedDiagnosticsRunWithoutEditingPaths(location: String) throws {
+        let manager = FileManager.default
+        let root = manager.temporaryDirectory.appendingPathComponent("Chirp help \(UUID().uuidString)")
+        defer { try? manager.removeItem(at: root) }
+        let bin = root.appendingPathComponent(location == "installed" ? "bin" : "server/.venv/bin")
+        try manager.createDirectory(at: bin, withIntermediateDirectories: true)
+        let executable = bin.appendingPathComponent("chirp-server")
+        try "#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"$CHIRP_TEST_CALLS\"\n".write(to: executable, atomically: true, encoding: .utf8)
+        try manager.setAttributes([.posixPermissions: 0o755], ofItemAtPath: executable.path)
+        let calls = root.appendingPathComponent("calls")
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/bin/zsh")
+        process.arguments = ["-f", "-c", DoctorHelp.clipboardText(serverURL: "http://127.0.0.1:7821")]
+        process.currentDirectoryURL = location == "server" ? root.appendingPathComponent("server") : root
+        process.environment = [
+            "PATH": location == "installed" ? "\(bin.path):/usr/bin:/bin" : "/usr/bin:/bin",
+            "CHIRP_TEST_CALLS": calls.path,
+        ]
+        try process.run()
+        process.waitUntilExit()
+        #expect(process.terminationStatus == 0)
+        #expect(try String(contentsOf: calls, encoding: .utf8) == "doctor --quick\ndoctor\n")
     }
 }
 

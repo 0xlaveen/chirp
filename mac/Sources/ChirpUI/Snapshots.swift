@@ -414,8 +414,38 @@ public enum Snapshots {
         return committedNames.compactMap { name in all.first { $0.name == name } }
     }
 
+    public static var localModelsScenarios: [Scenario] {
+        ["missing", "downloading", "paused", "error", "ready"].map { name in
+            Scenario(name: "models-" + name) {
+                var state = LocalModelsState()
+                state.correctionMode = "managed"
+                state.correctionEnabled = true
+                state.message = "Download the speech model, then start your local server."
+                for model in LocalModel.allCases {
+                    state.models[model]?.phase = switch name {
+                    case "downloading": "downloading"
+                    case "paused": "cancelled"
+                    case "error": "error"
+                    case "ready": "complete"
+                    default: "missing"
+                    }
+                    state.models[model]?.completed = 850_000_000
+                    state.models[model]?.total = 2_470_000_000
+                    state.models[model]?.message = "Connection interrupted. Retry to continue."
+                }
+                if name == "ready" {
+                    state.serverRunning = true
+                    state.message = "Server running · Ready to dictate"
+                }
+                let view = LocalModelsView()
+                view.apply(state)
+                return view
+            }
+        }
+    }
+
     public static var allScenarios: [Scenario] {
-        hudScenarios + wordWaveScenarios + settingsScenarios + onboardingScenarios + aboutScenarios + menuScenarios
+        hudScenarios + wordWaveScenarios + settingsScenarios + onboardingScenarios + aboutScenarios + menuScenarios + localModelsScenarios
     }
 
     // MARK: rendering
@@ -433,7 +463,7 @@ public enum Snapshots {
         host.boxType = .custom
         host.borderWidth = 0
         host.contentViewMargins = .zero
-        let isWindow = ["settings-", "onboarding-", "about"].contains { scenario.name.hasPrefix($0) }
+        let isWindow = ["settings-", "onboarding-", "models-", "about"].contains { scenario.name.hasPrefix($0) }
         host.fillColor = isWindow ? .windowBackgroundColor : .clear
         host.appearance = appearance
         host.contentView = view

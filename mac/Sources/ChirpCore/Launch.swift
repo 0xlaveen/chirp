@@ -1,6 +1,6 @@
 import Foundation
 
-/// What a process invocation asks for. Only a bare launch starts the UI, which onboards and requests TCC grants.
+/// What a process invocation asks for. A bare launch or --models starts the UI, which onboards and requests TCC grants.
 public enum LaunchMode: Equatable, Sendable {
     case app
     case selftest
@@ -11,6 +11,7 @@ public enum LaunchMode: Equatable, Sendable {
 
     public static let usageText = """
         usage: ChirpMac                         launch the menu-bar app
+               ChirpMac --models                open local model setup
                ChirpMac --selftest <audio> [--url URL] [--token-file PATH] [--expect WORD] [--fast]
                ChirpMac --render-snapshots <dir> [--curated]   draw the HUD, Settings and menu to PNGs (light and dark)
         """
@@ -22,6 +23,7 @@ public enum LaunchMode: Equatable, Sendable {
             guard i + 1 < arguments.count, !arguments[i + 1].hasPrefix("-") else { return .usage(exitCode: 64) }
             return .renderSnapshots(directory: arguments[i + 1], curated: arguments.contains("--curated"))
         }
+        if arguments.filter({ !$0.hasPrefix("-psn_") }) == ["--models"] { return .app }
         guard let flag = arguments.first(where: { $0.hasPrefix("-") && !$0.hasPrefix("-psn_") }) else {
             return arguments.isEmpty || arguments.allSatisfy({ $0.hasPrefix("-psn_") }) ? .app : .usage(exitCode: 64)
         }

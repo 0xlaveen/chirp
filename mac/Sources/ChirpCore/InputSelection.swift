@@ -26,9 +26,18 @@ public enum DoctorHelp {
     public static func clipboardText(serverURL: String) -> String {
         """
         # Chirp server diagnostics (read-only; Chirp is pointed at \(serverURL))
-        cd <your chirp checkout>/server
-        uv run chirp-server doctor --quick   # skips the model load
-        uv run chirp-server doctor           # full run, including a model load and fixture decode
+        if command -v chirp-server >/dev/null 2>&1; then
+            chirp-server doctor --quick
+            chirp-server doctor
+        elif [ -x server/.venv/bin/chirp-server ]; then
+            server/.venv/bin/chirp-server doctor --quick
+            server/.venv/bin/chirp-server doctor
+        elif [ -x .venv/bin/chirp-server ]; then
+            .venv/bin/chirp-server doctor --quick
+            .venv/bin/chirp-server doctor
+        else
+            echo 'Run these diagnostics from your Chirp checkout or its server directory, or add chirp-server to PATH.'
+        fi
         """
     }
 }

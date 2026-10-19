@@ -6,6 +6,7 @@ public struct OnboardingState: Sendable {
     public var flow = OnboardingFlow()
     public var checks = OnboardingChecks()
     public var hotkey: KeyCombo = .controlOptionSpace
+    public var localModelsAvailable = false
 
     public init() {}
     public init(step: OnboardingStep, checks: OnboardingChecks = OnboardingChecks(), heardHotkey: Bool = false,
@@ -125,7 +126,8 @@ public final class OnboardingView: NSView {
 
     public func apply(_ state: OnboardingState) {
         let step = state.flow.step
-        let status = OnboardingStatus.of(step, state.checks)
+        var status = OnboardingStatus.of(step, state.checks)
+        if step == .server, state.localModelsAvailable { status?.fixTitle = "Set Up Models…" }
         primary.title = state.flow.primaryTitle(state.checks)
         back.isHidden = state.flow.isFirst
         rebuildDots(current: step.rawValue)

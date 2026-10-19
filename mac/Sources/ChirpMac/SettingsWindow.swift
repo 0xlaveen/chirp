@@ -17,6 +17,7 @@ final class SettingsWindowController: NSObject, NSTextFieldDelegate {
     var catalog: () -> StyleCatalog = { .unavailable }
     /// "Set Up Chirp…" in General.
     var onOpenSetup: (() -> Void)?
+    var onOpenModels: (() -> Void)?
     private var testTask: Task<Void, Never>?
     private var window: NSWindow?
     private var tabs: NSTabViewController?
@@ -149,6 +150,8 @@ final class SettingsWindowController: NSObject, NSTextFieldDelegate {
         form.setupButton.action = #selector(openSetup)
         form.doctorButton.target = self
         form.doctorButton.action = #selector(copyDoctor)
+        form.modelsButton.target = self
+        form.modelsButton.action = #selector(openModels)
         form.cleanupEnabled.target = self
         form.cleanupEnabled.action = #selector(toggleCleanup(_:))
         form.keepLoaded.target = self
@@ -217,6 +220,7 @@ final class SettingsWindowController: NSObject, NSTextFieldDelegate {
     }
 
     @objc private func openSetup() { onOpenSetup?() }
+    @objc private func openModels() { onOpenModels?() }
 
     @objc private func copyDoctor() {
         NSPasteboard.general.clearContents()

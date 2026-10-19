@@ -7,9 +7,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let controller = DictationController()
     private let settingsWindow = SettingsWindowController()
     private let aboutWindow = AboutWindowController()
+    private let localModelsWindow = LocalModelsWindowController()
     private lazy var onboardingWindow = OnboardingWindowController(controller: controller)
     private var menu: MenuBarController?
     private var healthTimer: Timer?
+
+    func applicationWillTerminate(_ notification: Notification) { localModelsWindow.stop() }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         menu = MenuBarController(
@@ -18,6 +21,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                            openSetup: { [onboardingWindow] in onboardingWindow.show() },
                            openAbout: { [aboutWindow] in aboutWindow.show() }))
         settingsWindow.onOpenSetup = { [onboardingWindow] in onboardingWindow.show() }
+        settingsWindow.onOpenModels = { [localModelsWindow] in localModelsWindow.show() }
+        onboardingWindow.onOpenModels = { [localModelsWindow] in localModelsWindow.show() }
+        localModelsWindow.onServerChanged = { [controller] in Task { await controller.refreshHealth() } }
         settingsWindow.serverStatus = { [controller] in MenuContent.serverStatus(health: controller.health, healthError: controller.healthError) }
         settingsWindow.health = { [controller] in controller.health }
         settingsWindow.catalog = { [controller] in controller.styleCatalog }
@@ -42,5 +48,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         // First run: the setup window, not Settings. It records completion itself, only once finished.
         if !settings.didOnboard { onboardingWindow.show() }
+        if ProcessInfo.processInfo.arguments.contains("--models") { localModelsWindow.show() }
     }
 }

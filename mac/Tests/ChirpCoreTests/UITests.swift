@@ -225,7 +225,7 @@ import Testing
     }
 
     @Test(arguments: [(SettingsTab.general, SoundPack.chirp, 4), (.sounds, .chirp, 3), (.sounds, .custom, 5), (.cleanup, .chirp, 8),
-                      (.server, .chirp, 4), (.permissions, .chirp, 2)])
+                      (.server, .chirp, 5), (.permissions, .chirp, 2)])
     func labelsShareARightEdgeAndControlsALeftEdge(tab: SettingsTab, pack: SoundPack, expectedLabels: Int) throws {
         var state = SettingsState()
         state.soundPack = pack
@@ -244,7 +244,7 @@ import Testing
         case .general: [form.hotkey, form.wordWaveform, form.launch, form.setupButton]
         case .sounds: [form.sounds, form.soundPack, form.volume]
         case .cleanup: [form.cleanupEnabled, form.style, form.insertRawFirst, form.appStyles.scroll, form.showChanges, form.offerRaw]
-        case .server: [form.serverURL, form.doctorButton]
+        case .server: [form.serverURL, form.doctorButton, form.modelsButton]
         case .permissions: []
         }
         let controlEdges = leading.map { view.convert($0.bounds, from: $0).minX }
