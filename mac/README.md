@@ -157,7 +157,7 @@ Quit Chirp                                    ⌘Q
 | Clean-up | Value: the default style, or Off. Submenu: Clean up Text (checkmark), the styles (checkmark on the default), Show Changes after Clean-up, Edit Styles… A server with clean-up off shows "Unavailable" and one explanatory line. |
 | Microphone | Value: the device in use. Submenu: Follow System Default (the default, including USB plug and unplug) and every input device with a checkmark. A picked device that is unplugged falls back to the default. The choice applies from the next dictation. |
 | Sounds | Value: Off or the pack. Submenu: Off, Chirp, Soft, Glass, Click, System, Custom… |
-| Server | Value: "This Mac" for a server on loopback, else its host. Submenu: the URL, Engine and Status lines (disabled) and Copy Doctor Command (puts the `chirp-server doctor` commands on the clipboard; run them in your checkout's `server/` directory). |
+| Server | Value: "This Mac" for a server on loopback, else its host. Submenu: the URL, Engine and Status lines (disabled) and Copy Doctor Command (copies diagnostics that use `chirp-server` on PATH, or the local server environment when run from the checkout root or `server/` directory). |
 | Set Up Chirp… | The first-run window. Only while the Microphone or Accessibility permission is missing or the server is unreachable. |
 | Settings…, About Chirp, Quit Chirp | Settings (⌘,), a window with the icon and version, and Quit (⌘Q). |
 
