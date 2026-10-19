@@ -7,6 +7,7 @@ import ChirpUI
 /// the last step is finished, never when the window is closed early.
 @MainActor
 final class OnboardingWindowController: NSObject, NSWindowDelegate {
+    var onOpenModels: (() -> Void)?
     private let controller: DictationController
     private var flow = OnboardingFlow()
     private var window: NSWindow?
@@ -38,6 +39,7 @@ final class OnboardingWindowController: NSObject, NSWindowDelegate {
         s.flow = flow
         s.checks = checks
         s.hotkey = settings.hotkey
+        s.localModelsAvailable = settings.serverConfig().isLoopback
         return s
     }
 
@@ -113,6 +115,7 @@ final class OnboardingWindowController: NSObject, NSWindowDelegate {
             Permissions.promptAccessibility()
             Permissions.openSettings(.accessibility)
         case .server:
+            if settings.serverConfig().isLoopback { onOpenModels?(); return }
             NSPasteboard.general.clearContents()
             NSPasteboard.general.setString(DoctorHelp.clipboardText(serverURL: settings.serverURL), forType: .string)
         case .welcome, .tryIt: break

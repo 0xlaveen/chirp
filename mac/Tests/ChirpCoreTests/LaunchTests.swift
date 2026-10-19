@@ -7,6 +7,12 @@ import Testing
         #expect(LaunchMode.parse(["-psn_0_12345"]) == .app)
     }
 
+    @Test func localModelsLaunchIsExplicit() {
+        #expect(LaunchMode.parse(["--models"]) == .app)
+        #expect(LaunchMode.parse(["-psn_0_1", "--models"]) == .app)
+        #expect(LaunchMode.parse(["--models", "--bogus"]) == .usage(exitCode: 64))
+    }
+
     @Test func anyCLIFlagPrintsUsageAndNeverLaunchesUI() {
         #expect(LaunchMode.parse(["--help"]) == .usage(exitCode: 0))
         #expect(LaunchMode.parse(["-h"]) == .usage(exitCode: 0))
