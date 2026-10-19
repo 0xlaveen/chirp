@@ -47,6 +47,11 @@ def configure_downloads():
     # Determinate exports the Mac's trusted Keychain roots for Python/OpenSSL.
     # Honor an explicit CA override; never disable certificate verification.
     os.environ["HF_HUB_DISABLE_XET"] = "1"
+    # Reading a selected model can import the Hub before download configuration.
+    # Its constants are initialized once, so update the already-loaded setting too.
+    from huggingface_hub import constants
+
+    constants.HF_HUB_DISABLE_XET = True
     keychain = Path("/etc/nix/macos-keychain.crt")
     if "SSL_CERT_FILE" not in os.environ and keychain.is_file():
         os.environ["SSL_CERT_FILE"] = str(keychain)

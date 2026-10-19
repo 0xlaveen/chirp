@@ -124,10 +124,14 @@ def test_start_reloads_managed_plist_without_rewriting_it(tmp_path, monkeypatch,
 
 
 def test_download_uses_verified_http_and_honors_explicit_ca(monkeypatch):
+    from huggingface_hub import constants
+
+    monkeypatch.setattr(constants, "HF_HUB_DISABLE_XET", False)
     monkeypatch.setenv("SSL_CERT_FILE", "/custom/trusted.pem")
     monkeypatch.delenv("HF_HUB_DISABLE_XET", raising=False)
     setup.configure_downloads()
     assert setup.os.environ["HF_HUB_DISABLE_XET"] == "1"
+    assert constants.HF_HUB_DISABLE_XET is True
     assert setup.os.environ["SSL_CERT_FILE"] == "/custom/trusted.pem"
 
 
