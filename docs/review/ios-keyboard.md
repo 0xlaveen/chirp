@@ -117,6 +117,39 @@ Also in the package: `RecordingClock` (keyboard-local elapsed timer), `ClockText
   (plus `chirp.keyboard.open` for the fallback link). `chirp.keyboard.status`
   carries the full composed status line.
 
+### UIKit nil context (empty field, caret at start/end)
+
+Found by the simulator UI test: `UITextDocumentProxy` returns `nil` for
+`documentContextBeforeInput` at the start of a document, usually `nil` for the
+after context at the end, and `nil` for both in an empty field. `CursorContext.isUsable`
+refused any `nil`, so dictating into an empty field or at the start of text was
+silently refused (the keyboard showed "Text kept in place"). `CursorContext.init`
+now takes `hasText` (the adapter passes `textDocumentProxy.hasText`) and
+normalises `nil` to `""` only where that is provable:
+
+| before | after | hasText | result |
+|---|---|---|---|
+| nil | text | any | caret at start: before = "" |
+| text | nil or "" | any | caret at end: after = "" |
+| nil | nil | false | empty field: both "" |
+| nil | nil | true or unknown | ambiguous: still unusable |
+| any | any | contradicts context (e.g. false with text, true with both empty) | unusable |
+
+Selection, `uncertain`, size bounds and grapheme rules are unchanged. Safety still
+rests on `VerifiedEditor`: every edit re-reads the host and stops on any mismatch.
+A host that lies about being empty gets at most one insertion that is then checked
+(refused if the context disagrees) and never a deletion of text it did not insert;
+a host that ignores an insertion produces zero deletions (tested). A host that
+hides text *after* the caret can still not be distinguished from end-of-document,
+but deletion only ever touches the owned suffix before the caret. Tests:
+`CursorContextTests.swift` (normalisation table, equality across `nil`/`""`
+spellings, a UIKit-like fake host for empty field, caret at start, middle and end
+with `nil` or `""` after, ambiguous nil refused before any edit, ignored insert,
+cancel in an empty field). Simulator evidence: `ChirpKeyboardUITests` dictates
+into the real keyboard with a prefix and with an empty host field
+(`--chirp-keyboard-host-empty`); the caret in the prefix case is placed by tapping
+below the text, as a user would. No device claims.
+
 No IPC message, audio, network or clipboard was added; `OwnedInsertion`,
 `VerifiedEditor` and the bridge protocol and bounds are unchanged. Layout and
 accessibility behaviour have only been compiled for the simulator SDK, not
@@ -185,10 +218,11 @@ Run through `koi run`: **22 Swift Testing test functions passed**, including
 parameter matrices (53 executed cases counting parameter expansions), exit 0.
 After the voice-first presenter was added, a later run on a full-Xcode machine
 (`swift test --package-path ios/Keyboard/Policy`, no plugin flags needed) passed
-**49 test functions in 7 suites (130 expanded cases)**: the 27 new functions
-(77 cases) cover every phase × Full Access × lease state, every error code,
+**62 test functions in 9 suites (142 expanded cases)**: the 40 new functions
+(89 cases) cover every phase × Full Access × lease state, every error code,
 raw countdown rounding/closure, status-line timers, style menu, fallback/recovery
-precedence, compact height, `RecordingClock`, Delete repeat cadence and metrics.
+precedence, compact height, `RecordingClock`, Delete repeat cadence and metrics,
+and the UIKit nil-context conventions below.
 The initial run failed in mutating-method `#expect` macro expansion; evaluating
 those booleans before assertion corrected the test code (the same applies to
 mutating calls inside `#require`). Latest successful follow-up run log:

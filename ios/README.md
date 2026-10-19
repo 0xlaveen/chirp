@@ -30,7 +30,7 @@ What has actually passed, on macOS with the CLT (see
 |---|---|
 | `ios/Shared/scripts/test.sh` (portable pairing/storage/history/bridge) | 20 tests in 5 suites, exit 0 |
 | `mac/scripts/test.sh` + `cd mac && swift build -c release` | 380 tests in 61 suites + release build, exit 0 |
-| `swift test --package-path ios/Keyboard/Policy` (insertion safety + voice-first presenter) | 49 test functions (130 expanded cases), exit 0 |
+| `swift test --package-path ios/Keyboard/Policy` (insertion safety + voice-first presenter) | 62 test functions (142 expanded cases), exit 0 |
 | `swiftc -frontend -parse` on the six UIKit/Intents/Widgets sources | parse-only pass — **not** an iOS build |
 | `ios/scripts/check-sources.sh` (project structure, plists, per-target syntax) | passed, exit 0 |
 | `ios/scripts/typecheck-catalyst.sh` (focused Catalyst typecheck of SessionCoordinator, MicrophoneCapture, PairingScanner, DebugFixtures plus ChirpCore/ChirpIOSCore, with a temporary Activity facade) | passed — a compiler aid, **not** iOS SDK validation; excludes SwiftUI views, ActivityKit, intents, widgets and all runtime behavior |

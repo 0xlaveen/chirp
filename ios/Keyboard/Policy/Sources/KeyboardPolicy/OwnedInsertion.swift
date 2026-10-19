@@ -17,8 +17,21 @@ public struct CursorContext: Equatable, Sendable {
     public var selection: String?
     public var uncertain: Bool
 
+    /// UIKit reports `nil` for the context before the caret at the start of a document and after it at the
+    /// end, and `nil` for both in an empty field. `nil` is normalised to `""` only where that is provable:
+    /// one side `nil` while the other is present (caret at the start/end), or both `nil` with
+    /// `hasText == false` (empty field). Both `nil` without that proof, or a `hasText` that contradicts the
+    /// context, stays unusable. `VerifiedEditor` still re-checks the host after every edit.
     public init(documentID: UUID, before: String?, after: String?, selection: String? = nil,
-                uncertain: Bool = false) {
+                hasText: Bool? = nil, uncertain: Bool = false) {
+        var before = before, after = after, uncertain = uncertain
+        if before == nil, after != nil { before = "" }
+        else if after == nil, before != nil { after = "" }
+        else if before == nil, after == nil, hasText == false { before = ""; after = "" }
+        if let hasText, hasText != !((before ?? "").isEmpty && (after ?? "").isEmpty && (selection ?? "").isEmpty),
+           before != nil, after != nil {
+            uncertain = true // hasText disagrees with the reported context
+        }
         self.documentID = documentID
         self.before = before
         self.after = after

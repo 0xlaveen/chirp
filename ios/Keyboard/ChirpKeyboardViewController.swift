@@ -240,7 +240,8 @@ final class ChirpKeyboardViewController: UIInputViewController {
         let proxy = textDocumentProxy
         return CursorContext(documentID: proxy.documentIdentifier,
                              before: proxy.documentContextBeforeInput,
-                             after: proxy.documentContextAfterInput, selection: proxy.selectedText)
+                             after: proxy.documentContextAfterInput, selection: proxy.selectedText,
+                             hasText: proxy.hasText)
     }
 
     private func invalidateOwnership() {
