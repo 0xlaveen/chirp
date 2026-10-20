@@ -93,7 +93,7 @@ import Testing
     // MARK: the structure
 
     @Test func readyMenuHasTheTargetStructure() {
-        #expect(groups(inputs()) == [["Start Dictation"], ["Clean-up", "Microphone", "Sounds", "Server"],
+        #expect(groups(inputs()) == [["Start Dictation", "Start Notes"], ["Clean-up", "Microphone", "Sounds", "Server"],
                                      ["Settings…", "About Chirp"], ["Quit Chirp"]])
         #expect(MenuContent.header(inputs()).title == "Chirp")
     }
@@ -172,7 +172,7 @@ import Testing
         let open = try #require(entry(inputs { $0.rawOfferOpen = true; $0.rawOfferKey = "⌃⌥Z" }, .useRaw))
         #expect(open.title == "Use Raw for Last Dictation" && open.shortcut == "⌃⌥Z")
         #expect(try #require(entry(inputs { $0.rawOfferOpen = true }, .useRaw)).shortcut == nil)
-        #expect(groups(inputs { $0.rawOfferOpen = true })[0] == ["Start Dictation", "Use Raw for Last Dictation"])
+        #expect(groups(inputs { $0.rawOfferOpen = true })[0] == ["Start Dictation", "Use Raw for Last Dictation", "Start Notes"])
     }
 
     // MARK: Clean-up
@@ -379,6 +379,44 @@ import Testing
         }
     }
 
+    // MARK: Live Notes
+
+    @Test func notesRowsSitUnderDictationWithTheirShortcut() throws {
+        let start = try #require(entry(inputs(), .toggleNotes))
+        #expect(start.title == "Start Notes" && start.shortcut == "⌃⌥N")
+        #expect(entry(inputs(), "Show Notes Window") == nil)
+        #expect(groups(inputs { $0.notesHasDocument = true })[0] == ["Start Dictation", "Start Notes", "Show Notes Window"])
+        #expect(entry(inputs { $0.notesHasDocument = true }, "Show Notes Window")?.action == .showNotes)
+        #expect(entry(inputs { $0.notesHotkeyRegistered = false }, .toggleNotes)?.shortcut == nil)
+    }
+
+    @Test func notesAndDictationExcludeEachOther() {
+        // Idle: both can start.
+        #expect(entry(inputs(), "Start Dictation")?.action == .toggleDictation)
+        #expect(entry(inputs(), "Start Notes")?.action == .toggleNotes)
+        // Dictating: Notes cannot start.
+        #expect(entry(inputs { $0.state = .listening }, "Start Notes")?.isEnabled == false)
+        #expect(entry(inputs { $0.state = .correcting }, "Start Notes")?.isEnabled == false)
+        // Notes recording: Start Dictation is disabled, Stop Notes is offered and the window row shows.
+        let recording = inputs { $0.notesRecording = true; $0.notesElapsed = "01:05" }
+        #expect(entry(recording, "Start Dictation")?.isEnabled == false)
+        #expect(entry(recording, "Stop Notes")?.action == .toggleNotes)
+        #expect(entry(recording, "Show Notes Window") != nil)
+        // Finishing: nothing starts until the last pass is done.
+        let finishing = inputs { $0.notesFinishing = true }
+        #expect(entry(finishing, "Start Notes")?.isEnabled == false && entry(finishing, "Start Dictation")?.isEnabled == false)
+        // Paused: neither starts, and no shortcut is shown.
+        let paused = inputs { $0.paused = true; $0.hotkeyRegistered = false; $0.notesHotkeyRegistered = false }
+        #expect(entry(paused, "Start Notes")?.isEnabled == false && entry(paused, "Start Notes")?.shortcut == nil)
+    }
+
+    @Test func headerShowsNotesElapsed() {
+        let h = MenuContent.header(inputs { $0.notesRecording = true; $0.notesElapsed = "01:05" })
+        #expect(h.status == "Notes · 01:05" && h.tone == .active)
+        #expect(MenuContent.header(inputs { $0.notesFinishing = true }).status == "Notes · Finishing…")
+        #expect(MenuContent.header(inputs { $0.notesRecording = true; $0.paused = true }).status == "Paused")
+    }
+
     @Test func itemPayloadsCarryTheirChoice() {
         #expect(MenuAction.pickInput("boya").payload == "boya" && MenuAction.pickInput(nil).payload == nil)
         #expect(MenuAction.pickStyle("email").payload == "email" && MenuAction.pickSound("glass").payload == "glass")
@@ -429,6 +467,16 @@ import Testing
         #expect(StatusIcon.of(state: .idle, serverReachable: true, debugRetention: true, paused: true).debugBadge)
         // Paused wins over a leftover dictation state: the bird never pulses.
         #expect(!StatusIcon.of(state: .listening, serverReachable: true, debugRetention: false, paused: true).animatesWaves)
+    }
+
+    @Test func notesRecordingShowsThePulsingListeningGlyph() {
+        let notes = StatusIcon.of(state: .idle, serverReachable: true, debugRetention: false, notesRecording: true)
+        #expect(notes.glyph == .listening && notes.animatesWaves && !notes.dimmed)
+        #expect(notes.accessibilityLabel == "Chirp — taking notes")
+        #expect(!StatusIcon.of(state: .idle, serverReachable: true, debugRetention: false, reduceMotion: true, notesRecording: true).animatesWaves)
+        #expect(StatusIcon.of(state: .idle, serverReachable: true, debugRetention: true, notesRecording: true).debugBadge)
+        // The open mic shows even while the server is unreachable.
+        #expect(StatusIcon.of(state: .idle, serverReachable: false, debugRetention: false, notesRecording: true).glyph == .listening)
     }
 
     @Test func accessibilityLabelSaysWhatIsWrong() {
