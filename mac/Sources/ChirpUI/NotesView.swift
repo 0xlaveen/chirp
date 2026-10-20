@@ -452,7 +452,6 @@ private struct EditPreviewPicker: View {
 
 private struct TranscriptPane: View {
     @Bindable var model: NotesModel
-    @State private var atBottom = true
 
     var body: some View {
         VStack(spacing: 0) {
@@ -489,9 +488,9 @@ private struct TranscriptPane: View {
                 }
                 .onScrollGeometryChange(for: Bool.self) { g in
                     g.contentOffset.y + g.containerSize.height >= g.contentSize.height - 40
-                } action: { _, bottom in atBottom = bottom }
+                } action: { _, bottom in model.transcriptAtBottom = bottom }
                 .onChange(of: model.document) {
-                    if atBottom { proxy.scrollTo("bottom", anchor: .bottom) }
+                    if model.transcriptAtBottom { proxy.scrollTo("bottom", anchor: .bottom) }
                 }
             }
         }

@@ -52,6 +52,9 @@ public final class NotesModel {
     public var tab: NotesTab = .notes
     /// The transcript shows each segment's raw text.
     public var showRaw = false
+    /// The transcript pane is scrolled to its end, so new segments keep it there. Kept here rather than in `@State`:
+    /// the Command Line Tools toolchain has no SwiftUI macro plugins.
+    public var transcriptAtBottom = true
     /// The user's "Structure notes" toggle.
     public var structureEnabled = true
     public var privacyLine = NotesStatus.privacy
