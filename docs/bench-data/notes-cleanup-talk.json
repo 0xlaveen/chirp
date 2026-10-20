@@ -1,0 +1,231 @@
+{
+  "cleanup_before": {
+    "model": "qwen3-4b-instruct-2507-4bit",
+    "style": "live_notes",
+    "talk": {
+      "segments": 59,
+      "chars_p50": 854,
+      "p50_ms": 2425,
+      "p95_ms": 4855,
+      "failed": 20,
+      "fail_rate": 0.339,
+      "causes": {
+        "reorder": 2,
+        "dropped:name": 12,
+        "dropped:function": 5,
+        "dropped:negation": 1
+      }
+    },
+    "messy": {
+      "segments": 23,
+      "chars_p50": 612,
+      "p50_ms": 1473,
+      "p95_ms": 1678,
+      "failed": 1,
+      "fail_rate": 0.043,
+      "causes": {
+        "dropped:number": 1
+      }
+    }
+  },
+  "cleanup_prompt_only": {
+    "model": "qwen3-4b-instruct-2507-4bit",
+    "style": "live_notes",
+    "talk": {
+      "segments": 59,
+      "chars_p50": 854,
+      "p50_ms": 2291,
+      "p95_ms": 2795,
+      "failed": 11,
+      "fail_rate": 0.186,
+      "causes": {
+        "reorder": 2,
+        "dropped:name": 7,
+        "dropped:function": 2
+      }
+    },
+    "messy": {
+      "segments": 23,
+      "chars_p50": 612,
+      "p50_ms": 1530,
+      "p95_ms": 1709,
+      "failed": 1,
+      "fail_rate": 0.043,
+      "causes": {
+        "dropped:name": 1
+      }
+    }
+  },
+  "cleanup_after": {
+    "model": "qwen3-4b-instruct-2507-4bit",
+    "style": "live_notes",
+    "talk": {
+      "segments": 59,
+      "chars_p50": 854,
+      "p50_ms": 2360,
+      "p95_ms": 3070,
+      "failed": 7,
+      "fail_rate": 0.119,
+      "causes": {
+        "reorder": 2,
+        "dropped:name": 3,
+        "dropped:function": 2
+      },
+      "hedges_restored": 4
+    },
+    "messy": {
+      "segments": 23,
+      "chars_p50": 612,
+      "p50_ms": 1630,
+      "p95_ms": 1776,
+      "failed": 1,
+      "fail_rate": 0.043,
+      "causes": {
+        "dropped:number": 1
+      },
+      "hedges_restored": 0
+    }
+  },
+  "talk_structure_after": {
+    "overall": {
+      "runs": 20,
+      "p50_ms": 3908,
+      "p95_ms": 5091,
+      "max_ms": 5397,
+      "tokens_p50": 316,
+      "tokens_p95": 416,
+      "tokens_max": 419,
+      "pass": 16,
+      "fail": 4,
+      "pass_rate": 0.8
+    },
+    "rejected_by": {
+      "name": 2,
+      "number": 2
+    },
+    "failures": [
+      {
+        "id": "talk-kestrel-3",
+        "reason": "name"
+      },
+      {
+        "id": "talk-kestrel-4",
+        "reason": "number"
+      },
+      {
+        "id": "talk-tessellate-1",
+        "reason": "name"
+      },
+      {
+        "id": "meeting-ops-2",
+        "reason": "number"
+      }
+    ],
+    "correction": {
+      "live_notes_segments": {
+        "rejected": 7,
+        "corrected": 52
+      }
+    },
+    "negatives": {
+      "cases": 32,
+      "rejected": 32,
+      "missed": [],
+      "by_kind": {
+        "structure": 20,
+        "correction": 12
+      },
+      "structure_rejected_by": {
+        "name": 3,
+        "number": 3,
+        "date": 1,
+        "contact": 2,
+        "negation": 6,
+        "novel": 3,
+        "forbidden": 1,
+        "opener": 1
+      }
+    }
+  },
+  "messy_after": {
+    "overall": {
+      "runs": 11,
+      "p50_ms": 1741,
+      "p95_ms": 3299,
+      "max_ms": 3299,
+      "tokens_p50": 128,
+      "tokens_p95": 256,
+      "tokens_max": 256,
+      "pass": 10,
+      "fail": 1,
+      "pass_rate": 0.909
+    },
+    "rejected_by": {
+      "number": 1
+    },
+    "failures": [
+      {
+        "id": "pf-export",
+        "reason": "number"
+      }
+    ],
+    "correction": {
+      "live_notes/segment": {
+        "runs": 23,
+        "chars_p50": 612,
+        "chars_max": 675,
+        "p50_ms": 1590,
+        "p95_ms": 1771,
+        "max_ms": 1797,
+        "pass": 22,
+        "pass_rate": 0.957,
+        "errors": {
+          "rejected": 1
+        },
+        "hesitations_left": "0/82"
+      },
+      "default/segment": {
+        "runs": 23,
+        "chars_p50": 612,
+        "chars_max": 675,
+        "p50_ms": 1599,
+        "p95_ms": 1831,
+        "max_ms": 1907,
+        "pass": 4,
+        "pass_rate": 0.174,
+        "errors": {
+          "rejected": 19
+        },
+        "hesitations_left": "0/2"
+      },
+      "live_notes/whole": {
+        "runs": 11,
+        "chars_p50": 769,
+        "chars_max": 2035,
+        "p50_ms": 1927,
+        "p95_ms": 5088,
+        "max_ms": 5088,
+        "pass": 8,
+        "pass_rate": 0.727,
+        "errors": {
+          "rejected": 3
+        },
+        "hesitations_left": "0/61"
+      },
+      "default/whole": {
+        "runs": 11,
+        "chars_p50": 769,
+        "chars_max": 2035,
+        "p50_ms": 1946,
+        "p95_ms": 4973,
+        "max_ms": 4973,
+        "pass": 0,
+        "pass_rate": 0.0,
+        "errors": {
+          "rejected": 11
+        },
+        "hesitations_left": "0/0"
+      }
+    }
+  }
+}

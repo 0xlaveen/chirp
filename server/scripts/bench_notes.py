@@ -17,6 +17,7 @@ and prints `{"structure": ..., "reorganize": ...}`.
 
 import argparse
 import asyncio
+import difflib
 import json
 import math
 import re
@@ -25,11 +26,11 @@ import time
 from collections import Counter
 from pathlib import Path
 
-from chirp_server import notes
+from chirp_server import correction, notes
 from chirp_server.cleanup_models import DEFAULT_MODEL, MODELS, discover
 from chirp_server.config import CorrectionConfig
-from chirp_server.correction import HESITATIONS, WORD, Corrector, rejected
-from chirp_server.profiles import LIVE_NOTES, LIVE_NOTES_ID
+from chirp_server.correction import HESITATIONS, WORD, Corrector, notes_max_tokens, rejected
+from chirp_server.profiles import LIVE_NOTES, LIVE_NOTES_ID, system_prompt
 
 TESTS = Path(__file__).resolve().parents[1] / "tests"
 SETS = {
@@ -522,13 +523,135 @@ async def bench_reorganize(
     }
 
 
+def cleanup_cause(raw, text, finish):
+    """Why `live_notes` clean-up rejected `text` (None when accepted): the first failing
+    precondition, else the first edit `notes_faithful` cannot license, by kind."""
+    profile = LIVE_NOTES
+    if not text:
+        return "empty"
+    if finish not in {"stop", "eos"}:
+        return "finish"
+    if not rejected(raw, text, finish, profile):
+        return None
+    shared = [
+        ("marker", any(m in text.lower() for m in ("<think>", "</think>", "```"))),
+        ("ellipsis", text.endswith(("...", "…")) and not raw.rstrip().endswith(("...", "…"))),
+        (
+            "truncated",
+            raw.lower().startswith(text.lower())
+            and len(raw) - len(text) > 8
+            and not text.endswith((".", "!", "?")),
+        ),
+        ("length", len(text) > max(len(raw) * 2.5, len(raw) + 200)),
+    ]
+    for name, failed in shared:
+        if failed:
+            return name
+    if correction.notes_faithful(raw, text) and not correction.protected_fragments(raw, text):
+        return "fragment"
+    source = [w.casefold().replace("’", "'") for w in WORD.findall(raw)]
+    target = [w.casefold().replace("’", "'") for w in WORD.findall(text)]
+    names = {w.casefold() for w in WORD.findall(raw) if w[:1].isupper()}
+    matcher = difflib.SequenceMatcher(a=source, b=target, autojunk=False)
+    for op, i1, i2, j1, j2 in matcher.get_opcodes():
+        before, after = source[i1:i2], target[j1:j2]
+        if op == "insert":
+            return "inserted:" + ("filler" if set(after) <= correction.SPOKEN_FILLERS else "word")
+        if op == "replace":
+            if "".join(before) == "".join(after):
+                return "compound"
+            if any(w in correction.NUMBER_WORDS or w.isdigit() for w in before + after):
+                return "number_format"
+            if any("'" in w for w in before + after):
+                return "contraction"
+            if Counter(after) - Counter(before) and not (Counter(after) - Counter(source)):
+                return "reorder"
+            return "substitution"
+    if Counter(target) - Counter(source):
+        return "inserted:word"
+    dropped = Counter(source) - Counter(target)
+    if not dropped:
+        return "reorder"
+    for word in dropped:
+        if word in correction.NEGATION_WORDS:
+            return "dropped:negation"
+        if word in correction.NUMBER_WORDS or any(c.isdigit() for c in word):
+            return "dropped:number"
+    if any(word in names for word in dropped):
+        return "dropped:name"
+    if all(
+        word in correction.FUNCTION_WORDS
+        for word in dropped
+        if word not in correction.SPOKEN_FILLERS
+    ):
+        return "dropped:function"
+    return "dropped:content"
+
+
+async def bench_cleanup(model_id, dump):
+    """`live_notes` clean-up on every talk segment and every messy transcript cut into
+    segments, with the cause of each rejection (`--mode cleanup`)."""
+    sets = {
+        "talk": [s for case in read_jsonl(SETS["talk"]) for s in case["segments"]],
+        "messy": [p for case in read_jsonl(SETS["messy"]) for p in segments_of(case["transcript"])],
+    }
+    config = CorrectionConfig(mode="managed", model=model_id, notes_timeout=120)
+    corrector = Corrector(config)
+    prompt = system_prompt(LIVE_NOTES)
+    result, outputs = {}, []
+    try:
+        await corrector.complete("Reply with OK.", "Notes JSON: {}", 8, priority="structure")
+        for name, segments in sets.items():
+            rows = []
+            for raw in segments:
+                started = time.perf_counter()
+                text, finish = await corrector.complete(
+                    prompt,
+                    "Transcript JSON: " + json.dumps(raw, ensure_ascii=False),
+                    notes_max_tokens(raw),
+                    timeout=120,
+                )
+                ms = (time.perf_counter() - started) * 1000
+                cause = cleanup_cause(raw, text, finish)
+                restored = None
+                if cause and finish in {"stop", "eos"}:
+                    # As the server does: put dropped hedges back, then the same guard again.
+                    restored = correction.restore_hedges(raw, text)
+                    if restored is not None and not rejected(raw, restored, finish, LIVE_NOTES):
+                        cause, text = None, restored
+                    else:
+                        restored = None
+                rows.append(
+                    {"chars": len(raw), "ms": ms, "cause": cause, "restored": restored is not None}
+                )
+                outputs.append({"set": name, "cause": cause, "raw": raw, "text": text})
+            failed = [row for row in rows if row["cause"]]
+            result[name] = {
+                "segments": len(rows),
+                "chars_p50": round(statistics.median(row["chars"] for row in rows)),
+                "p50_ms": round(statistics.median(row["ms"] for row in rows)),
+                "p95_ms": round(percentile([row["ms"] for row in rows], 0.95)),
+                "failed": len(failed),
+                "fail_rate": round(len(failed) / len(rows), 3),
+                "causes": dict(Counter(row["cause"] for row in failed)),
+                "hedges_restored": sum(row["restored"] for row in rows),
+            }
+    finally:
+        await corrector.close()
+    if dump:
+        write_dump(dump, outputs)
+    return {"model": model_id, "style": LIVE_NOTES_ID, **result}
+
+
 async def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--model", choices=list(MODELS), default=DEFAULT_MODEL)
     parser.add_argument("--set", choices=list(SETS), default="clean", dest="fixtures")
     parser.add_argument("--repetitions", type=int, default=3)
     parser.add_argument("--dump", help="write every output (synthetic text) to this JSONL file")
-    parser.add_argument("--mode", choices=["structure", "reorganize", "both"], default="structure")
+    parser.add_argument(
+        "--mode", choices=["structure", "reorganize", "both", "cleanup"], default="structure"
+    )
     parser.add_argument(
         "--no-priority",
         action="store_true",
@@ -547,6 +670,9 @@ async def main():
         raise SystemExit(
             "cleanup weights missing; explicitly run `model fetch --cleanup`"
         ) from None
+    if arguments.mode == "cleanup":
+        print(json.dumps(await bench_cleanup(arguments.model, arguments.dump), indent=2))
+        return
     if arguments.mode == "reorganize":
         result = await bench_reorganize(
             arguments.model,

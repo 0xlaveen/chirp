@@ -773,3 +773,58 @@ uv run python scripts/bench_notes.py --mode reorganize --repetitions 1
 ```
 
 Metrics are in [notes-talk.json](bench-data/notes-talk.json).
+
+## Live Notes clean-up on talk-style speech (2026-10-20)
+
+The talk set (previous section) showed the `live_notes` segment clean-up failing closed on 20 of 59
+segments (34 %, against 1 of 23 on the messy set). Those segments reach structuring as raw text
+full of fillers. `bench_notes.py --mode cleanup` runs the clean-up on every talk segment and every
+messy segment cut at 675 characters, exactly as the server does, and keeps the model output to
+find the first edit `notes_faithful` cannot license. Same machine and model, temperature 0.
+
+The 20 talk failures, by the edit that blocked them:
+
+| Cause | Segments | Change |
+|---|---:|---|
+| "I think" / "I guess" dropped mid-sentence, mostly before a number ("about, I think, two hundred") | 8 | Hedges stay protected. Two prompt rewrites ("never fillers", two examples) did not change the model's output, so the clean-up now **puts the hedge back** at its aligned position when that is the only unlicensed edit, and the result must pass the unchanged guard |
+| Restarts the guard did not know | 6 | Licensed, below |
+| Real changes: content dropped after "sorry", "it says" dropped, a misheard name respelled ("hal sion" → "halcyon"), words reordered, "it's it keeps" → "it's keeps", the aside "the word was" dropped, "and and" dropped entirely | 6-7 | Still rejected |
+
+Licensed restarts (all in `notes_faithful`, used only by the hidden `live_notes` style):
+
+- a repeated phrase that contains a number word but is not all numbers ("one of the, one of the");
+  "twenty twenty six" is still a number;
+- repeats with a filler *phrase* between the copies, as with single fillers ("a kind of a a");
+- an article swapped for another ("do a, an actual launch");
+- either copy of a short repeated subject, up to two words apart ("it's just, it's not", "there's
+  only, there's six"); the words in between stay;
+- up to four words the speaker takes back with "sorry", and the marker ("hal sion, sorry,
+  halcyon"). Never after "I'm/so/really …" or before "for/about/to/that/…" (an apology), and never
+  when the span holds a number or a negation.
+
+The prompt also now says to keep names exactly as transcribed, even when they look misheard.
+
+| Clean-up, `live_notes` | Before | After |
+|---|---:|---:|
+| Talk segments failing closed | 20/59 (34 %) | **7/59 (11.9 %)**, 4 of the passes by restored hedges |
+| Messy segments failing closed | 1/23 | 1/23 (the model drops "the other one", correctly rejected) |
+| Dictation-style `default` on the messy segments (comparison, unchanged guard) | 4/23 passed | 4/23 passed |
+| Talk structuring after clean-up | 15/20 | **16/20** |
+| Messy structuring | 10/11 | 10/11 |
+| Structuring negatives | 32/32 | 32/32 |
+
+**The ≤ 10 % target is not met** (11.9 %): every remaining failure is an output that is not a
+deletion of the input (a reorder, a respelled name, dropped attribution or content), and licensing
+those would let the clean-up change what was said. Clean-up latency is unchanged (p50 2.4 s, p95
+3.1 s for 854-character segments). Dictation correction (`default` and the other profiles) and its
+guards are untouched.
+
+Reproduce:
+
+```sh
+cd server
+uv run python scripts/bench_notes.py --mode cleanup --dump /tmp/cleanup-out.jsonl
+uv run python scripts/bench_notes.py --set talk --repetitions 1
+```
+
+Metrics are in [notes-cleanup-talk.json](bench-data/notes-cleanup-talk.json).
