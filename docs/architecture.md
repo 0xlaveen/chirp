@@ -103,7 +103,7 @@ Responses:
 | Status | Body | When |
 |---|---|---|
 | 200 | `{"markdown":"## …\n- …","structured":true,"error":null,"timings_ms":{"structure":1234.5}}` | The model's output passed the guards |
-| 200 | `{"markdown":null,"structured":false,"error":"timeout\|http\|rejected","timings_ms":{…}}` | Fails closed like `correction_error`: guard rejection, helper failure, timeout or endpoint error. The client keeps its previous block |
+| 200 | `{"markdown":null,"structured":false,"error":"timeout\|http\|rejected","reason":"novel…\|null","timings_ms":{…}}` | Fails closed like `correction_error`: guard rejection, helper failure, timeout or endpoint error. The client keeps its previous block. `reason` (failures only, optional for clients) names the guard that rejected the output, e.g. `name`, `number`, `date`, `negation`, `novel`, `length`, `grammar`, `forbidden`, `finish`; `null` for timeouts and transport or parse errors. It is a name only, never text, and is also in the log line |
 | 400 | `{"type":"error","code":"bad_notes","message":"Invalid notes request"}` | Malformed JSON, wrong types, limits exceeded, unknown keys, body over 64 KiB |
 | 401 | `{"type":"error","code":"auth",…}` with `WWW-Authenticate: Bearer` | Missing or wrong bearer token |
 | 409 | `{"type":"error","code":"notes_off","message":"Notes structuring needs correction enabled on the server"}` | `correction.mode == "off"` |
@@ -134,10 +134,11 @@ never takes the engine lease, so it does not block `/v1/stream`. The whole pass 
 accepted only if it passes `notes_rejected`, one function per check: no think blocks, code fences,
 H1 titles, tables, links or assistant openers; at most `max(1.2 x transcript, 300)` characters;
 every line within the allowed Markdown subset (`##`/`###` headings of at most 6 words, `-` bullets
-with one nested level, `- [ ]` tasks, plain lines); every number, as digits or number words, was
-spoken; no weekday or month, email address, URL or domain that was not spoken; no capitalised word
-(a name, place, product or acronym) that was not spoken, checking bold words and a to-do's owner
-even at the start of a line; at least 50 % of the content words (stemmed, outside stopwords and
+with one nested level, `- [ ]` tasks, plain lines); every number, as digits, number words or an
+abbreviated scale (`$300M`), was spoken; no weekday or month, email address, URL or domain that was
+not spoken; no capitalised word (a name, place, product or acronym) that was not spoken, checking
+bold words and a to-do's owner even at the start of a line (a bold phrase opening a line is sentence
+case); names, numbers and dates may also come from the request's outline; at least 50 % of the content words (stemmed, outside stopwords and
 labels such as "Decision" or "Suggestion") occur in the transcript, so paraphrase passes but an
 unrelated answer does not; and no flipped negation: a line that restates a negated transcript
 clause's head and most of its content words ("we will not ship on friday" to "- Ship on Friday")
@@ -171,7 +172,8 @@ Request (`Content-Type: application/json`, body at most 64 KiB):
 |---|---|---|
 | 200 | `{"markdown":"…","reorganized":true,"changed":true,"error":null,"timings_ms":{"reorganize":1234.5}}` | The output passed the reorganize guards |
 | 200 | `{"markdown":"<input notes, trimmed>","reorganized":true,"changed":false,"error":null,…}` | The output equals the input apart from trailing spaces and blank lines; the client applies nothing |
-| 200 | `{"markdown":null,"reorganized":false,"changed":false,"error":"timeout\|http\|rejected",…}` | Fails closed: guard rejection, helper failure, timeout or endpoint error |
+| 200 | `{"markdown":null,"reorganized":false,"changed":false,"error":"timeout\|http\|rejected","reason":"…\|null",…}` | Fails closed: guard rejection, helper failure, timeout or endpoint error. `reason` as for structuring, with the reorganize guard names (`novel_name`, `novel_number`, `novel_date`, `novel_contact`, `novel`, `dropped_number`, `number_moved`, `dropped_line`, `coverage`, `heading`, `negation`, `task_dropped`, `task_state`, `task_owner`, `task_invented`, `decision_dropped`, `decision_invented`, `length`, `grammar`, `forbidden`, `opener`, `finish`, `empty`) |
+| 200 | `{"markdown":null,"reorganized":false,"changed":false,"error":"preempted",…}` | Not run: a correction queued while it generated and took the helper (managed only). The client treats it as not run: no failure note, no retry backoff |
 | 400 / 401 / 409 / 503 | as `/v1/notes/structure` (`bad_notes`, `auth`, `notes_off`, `busy`) | Same rules |
 
 Authenticated health carries `"notes_reorganize": true` on servers with the endpoint (absent on
@@ -180,9 +182,10 @@ older servers; a 404 from an older server means only reorganize is unavailable).
 Reorganize shares the server-wide structuring lock with `/v1/notes/structure`: one notes generation
 at a time, and a second request of either kind gets `503 busy`. It uses the structuring backend,
 never starts while corrections are queued, gives way to a correction that queues while it runs
-(managed helper; it then answers `timeout`), never takes the engine lease and never retains
+(managed helper; it then answers `preempted`), never takes the engine lease and never retains
 anything.
-The pass is bounded by `[correction] structure_timeout` and 1024 output tokens
+The pass is bounded by `[correction] reorganize_timeout` (default 45 s, validated like
+`structure_timeout`) and 1024 output tokens
 (`REORGANIZE_MAX_TOKENS`, the helper's cap). The system prompt plus a 3500-character document plus
 1024 output tokens fit the helper's 4096-token context; a model test measures this with the real
 tokenizer.
@@ -199,9 +202,10 @@ outline, and at least half the content words from them; every number and date of
 present; every input line with at least 3 content words keeps 60 % of its stemmed content words
 and the document keeps 90 % of its distinct ones; headings use input words or `Action items`,
 `Decisions`, `Open questions`, `Next steps`, `Notes`; every negated or hedged input line keeps a
-negation or hedge in the output line that holds its content, no negation is added, and the
-structuring flip check passes; every distinct task keeps exactly its checked state, no task is
-invented, and every `**Decision:**`/`**Question:**` line keeps its label. These are heuristics
+negation (a negated line) or a negation or hedge (a hedged one) in the output line that holds its
+content, no negation is added, and the structuring flip check passes on the output lines whose
+source is not itself an affirmative line next to a negated one in the notes; every distinct task keeps exactly its checked state and its people
+(bold names and a capitalised owner), no task is invented, and every `**Decision:**`/`**Question:**` line keeps its label. These are heuristics
 tuned for English, like the other guards.
 
 **Managed helper pipe protocol** (private to `managed_cleanup.py` and `cleanup_worker.py`). The
@@ -217,7 +221,7 @@ steps back until none are queued). A running structuring generation is never int
 correction waits at most one pass, which `max_tokens` bounds. A running reorganize generation (up
 to 1024 tokens, about 15 s, longer than a dictation's budget) is abandoned as soon as a correction
 queues: the helper is killed and reloaded for the correction, and the reorganize answers
-`timeout` (see `docs/bench.md`, "Notes reorganize").
+`preempted` (see `docs/bench.md`, "Notes reorganize").
 
 ### Built-in profiles and overrides
 

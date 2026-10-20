@@ -32,7 +32,11 @@ from chirp_server.correction import HESITATIONS, WORD, Corrector, rejected
 from chirp_server.profiles import LIVE_NOTES, LIVE_NOTES_ID
 
 TESTS = Path(__file__).resolve().parents[1] / "tests"
-SETS = {"clean": TESTS / "notes_eval.jsonl", "messy": TESTS / "notes_messy_eval.jsonl"}
+SETS = {
+    "clean": TESTS / "notes_eval.jsonl",
+    "messy": TESTS / "notes_messy_eval.jsonl",
+    "talk": TESTS / "notes_talk_eval.jsonl",
+}
 NEGATIVES = TESTS / "notes_negatives.jsonl"
 REORGANIZE_SET = TESTS / "notes_reorganize_eval.jsonl"
 REORGANIZE_NEGATIVES = TESTS / "notes_reorganize_negatives.jsonl"
@@ -174,6 +178,20 @@ async def bench_correction(corrector, cases):
     return {key: correction_summary(group) for key, group in rows.items()}, outputs
 
 
+async def corrected_windows(corrector, cases):
+    """`--set talk`: each ASR segment through `live_notes` clean-up first (raw text when it
+    fails closed, as the app keeps it), then the window joined with newlines, as the app sends."""
+    windows, errors = [], Counter()
+    for case in cases:
+        texts = []
+        for raw in case["segments"]:
+            result = await corrector.process(raw, LIVE_NOTES_ID)
+            errors[result.error or "corrected"] += 1
+            texts.append(result.text if result.corrected else raw)
+        windows.append(case | {"transcript": "\n".join(texts)})
+    return windows, dict(errors)
+
+
 async def bench(model_id, repetitions, dump, fixtures):
     cases = read_jsonl(SETS[fixtures])
     config = CorrectionConfig(
@@ -190,6 +208,9 @@ async def bench(model_id, repetitions, dump, fixtures):
         if fixtures == "messy":
             correction, corrected = await bench_correction(corrector, cases)
             outputs.extend(corrected)
+        if fixtures == "talk":
+            cases, segment_errors = await corrected_windows(corrector, cases)
+            correction = {"live_notes_segments": segment_errors}
         for _ in range(repetitions):
             for case in cases:
                 transcript, outline = case["transcript"], case.get("outline", [])
@@ -201,7 +222,7 @@ async def bench(model_id, repetitions, dump, fixtures):
                     priority="structure",
                 )
                 ms = (time.perf_counter() - started) * 1000
-                reason = notes.rejection_reason(transcript, text, finish)
+                reason = notes.rejection_reason(transcript, text, finish, outline)
                 rows.append(
                     {
                         "id": case["id"],
@@ -213,6 +234,8 @@ async def bench(model_id, repetitions, dump, fixtures):
                     }
                 )
                 outputs.append({"id": case["id"], "reason": reason, "markdown": text})
+                if fixtures == "talk":
+                    outputs[-1]["transcript"] = transcript
     finally:
         await corrector.close()
     if dump:
@@ -221,7 +244,8 @@ async def bench(model_id, repetitions, dump, fixtures):
     by_size = {}
     for row in rows:
         suffix = row["id"].rsplit("-", 1)[1]
-        size = int(suffix) if suffix.isdigit() else 600 * math.ceil(row["chars"] / 600)
+        sized = suffix.isdigit() and int(suffix) >= 100
+        size = int(suffix) if sized else 600 * math.ceil(row["chars"] / 600)
         by_size.setdefault(size, []).append(row)
     by_size = {size: summary(group) for size, group in sorted(by_size.items())}
     result = {

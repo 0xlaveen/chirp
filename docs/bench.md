@@ -684,3 +684,92 @@ uv run pytest -q -m model tests/test_notes_reorganize.py
 `--max-chars` adds rows with the trailing whole sections the client would send for documents above
 it; `--no-priority` skips the correction-during-reorganize check. Metrics, the tuning steps and the
 yield-only priority figures are in [notes-reorganize.json](bench-data/notes-reorganize.json).
+
+## Notes review fixes and talk-style structuring (2026-10-20)
+
+Server follow-up to the `feat/notes-edit` review (issue #17 comment), on the same machine and model
+(`qwen3-4b-instruct-2507-4bit`, warm, temperature 0, 1-minute load about 2.5-3). Every failure
+response of `/v1/notes/structure` and `/v1/notes/reorganize` now carries `reason`, the name of the
+guard that rejected it, which is also in the log line. The histograms below are those names.
+
+**Talk-style set.** Real use showed about every other append failing on a long product talk.
+`server/tests/notes_talk_eval.jsonl` imitates it: 20 invented windows (15 from three conference talks
+about an AI crypto-trading product, 5 from product and ops meetings) of 1650-3560 characters, each
+2-4 ASR segments of 40-90 s. The speech is raw recognition output with fillers and restarts,
+invented product and company names misheard inconsistently ("Kestrel" as "Castrel"/"Kestral",
+"Novalith" as "Nova lith"/"Novalit", "Crockbot", "SuperTick", "X Crypto Cycle"), trading jargon,
+numbers spoken as words ("six months back", "four point two million", "three hundred million") and
+incidental negations ("still doesn't feel proactive enough"). As the app does, each segment goes
+through the `live_notes` clean-up first (raw text when it fails closed), then the joined window is
+structured (`--set talk`).
+
+| Talk set | Runs | p50 (ms) | p95 (ms) | Output tokens p50 / max | Passed | Rejected by |
+|---|---:|---:|---:|---:|---:|---|
+| Before (review head) | 20 | 5384 | 7019 | 312 / 436 | 13/20 (65 %) | `name` 4, `number` 3 |
+| After | 20 | 5689 | 7199 | 343 / 453 | **15/20 (75 %)** | `name` 2, `number` 2, `negation` 1 |
+
+The `live_notes` clean-up of the talk segments failed closed on 20 of 59 (34 %, against 1 of 23 on
+the messy product-feedback set), so a third of these windows were structured from raw text with
+fillers. That is a separate, clean-up-side cause and is not changed here.
+
+What the `name` and `number` rejections were, and what changed:
+
+- **False positives, fixed.**
+  - `## API Docs And Cuts`: the model reused a heading from the request's outline (the client's
+    own earlier headings), which the guard compared with the transcript only. The outline now
+    licenses names, numbers and dates; overlap and flips still compare with the transcript.
+  - `**Decided to kill** the voice version`: a bold phrase opening a line is sentence case when
+    the rest is lowercase. A single bold word ("**Sarah**") is still checked as a name.
+  - `$300M` for a spoken "three hundred million": abbreviated scales (`k`, `M`, `B`) read as the
+    scaled value. `$400M` or a bare `300` still fail. Tokens with digits ("300M") are left to the
+    number guard instead of also counting as capitalised names.
+- **Real inventions, still rejected:** "monitors X (formerly Twitter)" and "~$300M AUM" (background
+  knowledge), "100% confidence" (never said), "$20,000" for a spoken "up from twenty" (an inferred
+  scale), and in the messy set an invented example "(e.g., 03/04 instead of 04/03)". One remaining
+  judgement call: a single bold verb opening a line (`**Anticipate** email …`) cannot be told from a
+  bold name.
+- **The one false `negation`:** "Home screen is the problem" next to "they asked why it wasn't on
+  the home screen". Exempting "why … wasn't" would also let a real flip of that statement through,
+  so it stays.
+- **Prompt:** structuring now says to spell names exactly as transcribed, even when they look
+  misheard, and never to add background knowledge or remarks like "(incomplete)". The greedy
+  outputs did change: the messy set went from 11/11 to 10/11 (the invented example dates above),
+  and the clean set stayed at 15/16 (the 4000-character `finish`).
+
+Structuring negatives: 32/32 rejected. Messy set 10/11, clean set 15/16 (p95 12.4 s at 4000
+characters, unchanged).
+
+**Reorganize guards after the review** (same fixtures; one run each):
+
+- A negated line must stay negated ("not hire" may not become "maybe hire"); a hedged one may stay
+  hedged or become negated, and "not sure"/"don't know" count as hedges.
+- A number may not move to a line that a line without it matches better (swapped quotes); merged
+  and split lines keep their numbers. A first version that required each number on the single
+  best-matching line rejected three faithful splits of shorthand lines (10/12 → 7/12) and was
+  replaced.
+- A task keeps its people (bold names and a capitalised owner): `task_owner`.
+- `dont`/`wont`/`cant`/`didnt`/`isnt` and similar count as negations, and negation words are left
+  out of the coverage word counts ("dont" → "don't" is not a dropped word).
+- The flip check skips output lines whose source line already reads as a flip within the notes
+  ("Book the venue for June" next to "Do not book the venue before the deposit clears").
+- `[correction] reorganize_timeout` (default 45 s) bounds the pass instead of `structure_timeout`.
+- A preempted reorganize answers `error: "preempted"` (not `timeout`); the client treats it as not
+  run.
+
+| Reorganize | Before review | After |
+|---|---:|---:|
+| Valid, 3500-character cap | 10/12 | 10/12 |
+| Valid incl. 2500 client scope rows | 15/18 | 15/18 |
+| Negatives (78 old + 6 from the review: negation to hedge, swapped quotes and dates, dropped owners) | 78/78 | **84/84** |
+| Corrections during a reorganize within budget (dictation / segment) | 9/9 / 9/9 | 9/9 / 9/9 (p50 1718 / 2032 ms) |
+
+Reproduce:
+
+```sh
+cd server
+uv run python scripts/bench_notes.py --set talk --repetitions 1 --dump /tmp/talk-out.jsonl
+uv run python scripts/bench_notes.py --set messy --repetitions 1
+uv run python scripts/bench_notes.py --mode reorganize --repetitions 1
+```
+
+Metrics are in [notes-talk.json](bench-data/notes-talk.json).

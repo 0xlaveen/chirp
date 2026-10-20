@@ -176,6 +176,7 @@ model = "your-loaded-model"
 timeout = 8.0
 # notes_timeout = 15.0
 # structure_timeout = 30.0
+# reorganize_timeout = 45.0
 api_key_env = "CHIRP_LLM_API_KEY"
 # keychain_service = "chirp-llm" # security find-generic-password -s SERVICE -w
 # prompt = "Custom transcript cleanup prompt"
@@ -195,6 +196,7 @@ retain_days = 3
 | `timeout` | Whole-call correction timeout in seconds (default 8.0) |
 | `notes_timeout` | Whole-call timeout for a Live Notes segment's clean-up (`live_notes` style) in seconds (default 15.0); dictation keeps `timeout` |
 | `structure_timeout` | Whole-call Notes structuring timeout in seconds (default 30.0); the same finite, positive validation as `timeout` |
+| `reorganize_timeout` | Whole-call Notes reorganize timeout in seconds (default 45.0; up to 1024 output tokens, about 15 s on an M5 Pro at 3500 characters); the same validation |
 | `api_key_env` | Environment variable holding the API key (endpoint mode) |
 | `keychain_service` | Read the key from Keychain: `security find-generic-password -s SERVICE -w` |
 | `prompt` | Legacy override for the `default` profile's prompt |
@@ -350,7 +352,8 @@ A success returns `{"markdown":"…","structured":true,"error":null,"timings_ms"
 When the model fails, times out or its output is rejected by the guards (invented names, numbers,
 dates or contacts, an unrelated answer, a negated statement flipped to a positive one, formatting
 outside the allowed Markdown subset), the answer is HTTP 200 with
-`"markdown":null,"structured":false` and `error` of `timeout`, `http` or `rejected`, and the client
+`"markdown":null,"structured":false` and `error` of `timeout`, `http` or `rejected` (plus `reason`,
+the name of the guard that rejected it, such as `name` or `negation`; never text), and the client
 keeps its previous notes. Only one structuring request runs at a time (a second gets `503 busy`),
 a request body is capped at 64 KiB, and the transcript at 6000 characters. Request and response
 details are in [the architecture doc](../docs/architecture.md#live-notes-structuring-v1-compatible-addition).
@@ -365,13 +368,14 @@ sections and bullets and moves loose lines under the right heading, without drop
 anything. The body is `{"notes":"<Markdown, at most 3500 chars>","outline":["Earlier heading"],
 "final":false}`; the answer is `{"markdown":"…","reorganized":true,"changed":true|false,
 "error":null,"timings_ms":{"reorganize":…}}`, or `"markdown":null,"reorganized":false` with
-`error` of `timeout`, `http` or `rejected`. `changed:false` means the output equalled the input
+`error` of `timeout`, `http`, `rejected` or `preempted` (and `reason`, the rejecting guard's name).
+`changed:false` means the output equalled the input
 apart from whitespace. Its guards reject dropped lines, numbers, dates, tasks, Decisions and
 Questions, changed task states, invented names, numbers, dates, tasks or headings, flipped, added
 or dropped negations and hedges, summaries and padding, and markup the input did not have. It
 shares the one-at-a-time structuring lock (`503 busy`), uses up to 1024 output tokens, and in
-managed mode gives way to any correction that queues while it runs (it then answers `timeout`
-and the client retries). Details are in [the architecture
+managed mode gives way to any correction that queues while it runs (it then answers `preempted`,
+which the client treats as not run and retries after the next segment). Details are in [the architecture
 doc](../docs/architecture.md#live-notes-reorganize-v1-compatible-addition); benchmarks:
 
 ```sh

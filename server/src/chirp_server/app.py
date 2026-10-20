@@ -551,21 +551,21 @@ def create_app(settings=None, engine=None, token=None, corrector=None):
         def respond(fields, result, elapsed):
             transcript, outline, _final = fields
             log.info(
-                "notes_structure chars=%d outline=%d structured=%s error=%s ms=%.1f",
+                "notes_structure chars=%d outline=%d structured=%s error=%s reason=%s ms=%.1f",
                 len(transcript),
                 len(outline),
                 result.structured,
                 result.error,
+                result.reason,
                 elapsed,
             )
-            return JSONResponse(
-                {
-                    "markdown": result.markdown,
-                    "structured": result.structured,
-                    "error": result.error,
-                    "timings_ms": {"structure": elapsed},
-                }
-            )
+            body = {
+                "markdown": result.markdown,
+                "structured": result.structured,
+                "error": result.error,
+                "timings_ms": {"structure": elapsed},
+            }
+            return JSONResponse(body if result.structured else body | {"reason": result.reason})
 
         return await notes_pass(
             request,
@@ -580,23 +580,24 @@ def create_app(settings=None, engine=None, token=None, corrector=None):
         def respond(fields, result, elapsed):
             text, outline, _final = fields
             log.info(
-                "notes_reorganize chars=%d outline=%d reorganized=%s changed=%s error=%s ms=%.1f",
+                "notes_reorganize chars=%d outline=%d reorganized=%s changed=%s error=%s reason=%s "
+                "ms=%.1f",
                 len(text),
                 len(outline),
                 result.reorganized,
                 result.changed,
                 result.error,
+                result.reason,
                 elapsed,
             )
-            return JSONResponse(
-                {
-                    "markdown": result.markdown,
-                    "reorganized": result.reorganized,
-                    "changed": result.changed,
-                    "error": result.error,
-                    "timings_ms": {"reorganize": elapsed},
-                }
-            )
+            body = {
+                "markdown": result.markdown,
+                "reorganized": result.reorganized,
+                "changed": result.changed,
+                "error": result.error,
+                "timings_ms": {"reorganize": elapsed},
+            }
+            return JSONResponse(body if result.reorganized else body | {"reason": result.reason})
 
         return await notes_pass(
             request,

@@ -29,6 +29,9 @@ class CorrectionConfig:
     # running structuring pass (see docs/bench.md).
     notes_timeout: float = 15.0
     structure_timeout: float = 30.0
+    # A reorganize generates up to 1024 tokens: about 15 s at the cap on an M5 Pro (docs/bench.md),
+    # so slower Macs need more room than structuring's 30 s.
+    reorganize_timeout: float = 45.0
     api_key_env: str = "CHIRP_LLM_API_KEY"
     keychain_service: str = ""
     idle_seconds: float = 60.0
@@ -52,7 +55,13 @@ class CorrectionConfig:
         self.enabled = self.mode != "off"
         if any(
             not math.isfinite(v) or v <= 0
-            for v in (self.timeout, self.notes_timeout, self.structure_timeout, self.idle_seconds)
+            for v in (
+                self.timeout,
+                self.notes_timeout,
+                self.structure_timeout,
+                self.reorganize_timeout,
+                self.idle_seconds,
+            )
         ):
             raise ValueError("Invalid correction limits")
         if self.mode == "endpoint":
