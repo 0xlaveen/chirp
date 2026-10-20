@@ -444,3 +444,30 @@ final class NotesURLStub: URLProtocol, @unchecked Sendable {
         #expect(m.liveTail == "and then")
     }
 }
+
+/// Opt-in check against a real server: `CHIRP_LIVE_NOTES_URL=http://127.0.0.1:7899 CHIRP_LIVE_NOTES_TOKEN_FILE=…
+/// ./scripts/test.sh --filter NotesLiveServer`. Skipped otherwise, so CI and the normal run never need a server.
+@Suite struct NotesLiveServerTests {
+    static let url = ProcessInfo.processInfo.environment["CHIRP_LIVE_NOTES_URL"]
+
+    @Test(.enabled(if: url != nil)) func structuresASampleThroughTheRealEndpoint() async throws {
+        let env = ProcessInfo.processInfo.environment
+        let config = ServerConfig.load(urlString: Self.url, tokenPath: env["CHIRP_LIVE_NOTES_TOKEN_FILE"] ?? ServerConfig.defaultTokenPath)
+        let health = try await config.fetchHealth()
+        #expect(health.notesStructure == true)
+        let transcript = """
+            Okay so the kickoff for the Lantern project. We decided to keep the vendor contract.
+            Maya will send the draft spec by Friday. We will not add new headcount this quarter.
+            """
+        let r = try await config.structureNotes(NotesStructureRequest(transcript: transcript, outline: ["Intro"], final: true))
+        if health.correction == "off" {
+            Issue.record("server has correction off; expected 409 before this point")
+            return
+        }
+        #expect(r.structured, "structured:false error=\(r.error ?? "nil")")
+        let blocks = NotesMarkdown.blocks(r.markdown ?? "")
+        #expect(blocks.contains { if case .bullet = $0 { true } else { false } })
+        // Prints the timings only, never the notes, like the app's logs.
+        print("live notes: structured=\(r.structured) blocks=\(blocks.count) timings=\(r.timingsMs ?? [:])")
+    }
+}
