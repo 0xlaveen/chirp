@@ -207,7 +207,7 @@ final class NotesController {
         }
         let state = NotesModel.displayState(recorder: recorder.state, startError: startError)
         if state != lastState {
-            chirpLog.info("notes \(String(describing: self.lastState.logName), privacy: .public) -> \(state.logName, privacy: .public) segments=\(self.recorder.document.segments.count, privacy: .public) frozen=\(self.recorder.document.frozen.count, privacy: .public)")
+            chirpLog.info("notes \(String(describing: self.lastState.logName), privacy: .public) -> \(state.logName, privacy: .public) segments=\(self.recorder.document.segments.count, privacy: .public) chars=\(self.recorder.document.text.utf16.count, privacy: .public) tail=\(self.recorder.document.tail.utf16.count, privacy: .public)")
             lastState = state
             if !recorder.state.isCapturing { capture.stop() }
         }
