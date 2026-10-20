@@ -30,6 +30,8 @@ final class SettingsWindowController: NSObject, NSTextFieldDelegate {
     private var state: SettingsState {
         var s = SettingsState()
         s.hotkey = settings.hotkey
+        s.activationMode = settings.activationMode
+        s.autoStopSilence = settings.autoStopSilence
         s.serverURL = settings.serverURL
         s.tokenPresent = ServerConfig.readToken() != nil
         s.launch = LaunchAtLogin.state
@@ -166,6 +168,10 @@ final class SettingsWindowController: NSObject, NSTextFieldDelegate {
             self?.onHotkeyChange?()
         }
         form.recorder.onRecordingChanged = { [weak self] recording in self?.onRecordingChanged?(recording) }
+        form.mode.target = self
+        form.mode.action = #selector(modeChanged(_:))
+        form.silence.target = self
+        form.silence.action = #selector(silenceChanged(_:))
         form.sounds.target = self
         form.sounds.action = #selector(toggleSounds(_:))
         form.soundPack.target = self
@@ -234,6 +240,17 @@ final class SettingsWindowController: NSObject, NSTextFieldDelegate {
     @objc private func hotkeyChanged(_ sender: NSPopUpButton) {
         settings.hotkey = KeyCombo.resolve(id: sender.selectedItem?.representedObject as? String)
         onHotkeyChange?()
+    }
+
+    @objc private func modeChanged(_ sender: NSPopUpButton) {
+        settings.activationMode = (sender.selectedItem?.representedObject as? String).flatMap(ActivationMode.init(rawValue:)) ?? .autoStop
+        form?.showMode(settings.activationMode, silence: settings.autoStopSilence)
+        onHotkeyChange?()
+    }
+
+    @objc private func silenceChanged(_ sender: NSPopUpButton) {
+        guard let seconds = sender.selectedItem?.representedObject as? Double else { return }
+        settings.autoStopSilence = seconds
     }
 
     @objc private func styleChanged(_ sender: NSPopUpButton) {

@@ -1,23 +1,31 @@
 #if os(macOS)
 import Carbon.HIToolbox
+import CoreGraphics
 import Foundation
 
-/// A global shortcut: a Carbon key code plus Carbon modifier flags (`optionKey`, `controlKey`, …).
+/// A global shortcut: a Carbon key code plus Carbon modifier flags (`optionKey`, `controlKey`, …), or a modifier
+/// pressed on its own (⌥, Right ⌥, fn…), which `keyCode` marks with `KeyCombo.anyModifierKey` or the modifier key's code.
 public struct KeyCombo: Sendable, Equatable, Identifiable {
     public let id: String
     public let title: String
     public let keyCode: UInt32
     public let modifiers: UInt32
 
+    /// `keyCode` of a modifier-only shortcut that either side's key triggers.
+    public static let anyModifierKey: UInt32 = 0xFFFF
+
     public static let controlOptionSpace = KeyCombo(id: "control-option-space", title: "⌃⌥Space", keyCode: UInt32(kVK_Space), modifiers: UInt32(controlKey | optionKey))
     public static let controlShiftSpace = KeyCombo(id: "control-shift-space", title: "⌃⇧Space", keyCode: UInt32(kVK_Space), modifiers: UInt32(controlKey | shiftKey))
     public static let controlOptionCommandSpace = KeyCombo(id: "control-option-command-space", title: "⌃⌥⌘Space", keyCode: UInt32(kVK_Space), modifiers: UInt32(controlKey | optionKey | cmdKey))
+    /// ⌥ on its own, either side. Matched from the event tap, so it needs Accessibility.
+    public static let option = KeyCombo(id: "option", title: "⌥ Option", keyCode: anyModifierKey, modifiers: UInt32(optionKey))
+    /// The right ⌥ on its own, leaving the left one for typing special characters.
+    public static let rightOption = KeyCombo(id: "right-option", title: "Right ⌥ Option", keyCode: UInt32(kVK_RightOption), modifiers: UInt32(optionKey))
     public static let escape = KeyCombo(id: "escape", title: "Esc", keyCode: UInt32(kVK_Escape), modifiers: 0)
 
-    /// Selectable dictation hotkeys; the first is the default. Each includes ⌃ or ⌘: since macOS 15, Carbon hot keys
-    /// whose only modifiers are ⌥ (or ⌥⇧) register without error but never fire. ⌃Space alone is Raycast's default
-    /// and the system input-source switcher, so it is not offered.
-    public static let presets: [KeyCombo] = [.controlOptionSpace, .controlShiftSpace, .controlOptionCommandSpace]
+    /// Selectable dictation hotkeys; the first is the default. ⌃Space alone is Raycast's default and the system
+    /// input-source switcher, so it is not offered.
+    public static let presets: [KeyCombo] = [.controlOptionSpace, .option, .rightOption, .controlShiftSpace, .controlOptionCommandSpace]
 
     /// Unknown ids, including the retired "option-space" and "option-shift-space", fall back to the default.
     public static func preset(id: String?) -> KeyCombo { presets.first { $0.id == id } ?? .controlOptionSpace }
@@ -28,12 +36,21 @@ public struct KeyCombo: Sendable, Equatable, Identifiable {
 
     /// A recorded shortcut. Not validated here: `HotKeyValidation.validate` decides which combinations can fire.
     public static func custom(keyCode: UInt32, modifiers: UInt32) -> KeyCombo {
-        KeyCombo(id: "\(customPrefix)\(keyCode):\(modifiers)",
-                 title: HotKeyValidation.modifierSymbols(modifiers) + KeyNames.name(for: keyCode),
-                 keyCode: keyCode, modifiers: modifiers)
+        let title = ModifierKeys.isModifierOnly(keyCode) ? ModifierKeys.title(keyCode: keyCode, modifiers: modifiers)
+                                                         : HotKeyValidation.modifierSymbols(modifiers) + KeyNames.name(for: keyCode)
+        return KeyCombo(id: "\(customPrefix)\(keyCode):\(modifiers)", title: title, keyCode: keyCode, modifiers: modifiers)
     }
 
     public var isCustom: Bool { id.hasPrefix(Self.customPrefix) }
+
+    /// A modifier pressed and released on its own, with no other key.
+    public var isModifierOnly: Bool { ModifierKeys.isModifierOnly(keyCode) }
+
+    /// Carbon cannot deliver it: a modifier on its own, or a key with only ⌥ (or ⌥⇧), which since macOS 15 registers
+    /// without error and never fires. These are matched from a session event tap instead, which needs Accessibility.
+    public var needsEventTap: Bool {
+        isModifierOnly || modifiers == UInt32(optionKey) || modifiers == UInt32(optionKey | shiftKey)
+    }
 
     /// The stored id back to a combo: a preset, or a custom shortcut that still passes validation. Anything else
     /// (unknown ids, a custom id that can never fire, such as one saved by hand) falls back to the default.
@@ -46,14 +63,79 @@ public struct KeyCombo: Sendable, Equatable, Identifiable {
     }
 }
 
+/// The modifier keys themselves: which Carbon flag each sets, its side, and how a modifier-only shortcut is named.
+public enum ModifierKeys {
+    /// fn (🌐) as a modifier-only flag; Carbon hot keys have none (this is `kEventKeyModifierFnMask`).
+    public static let fn: UInt32 = 1 << 17
+
+    private struct Key {
+        let code: Int
+        let modifier: Int
+        /// The device-dependent `CGEventFlags` bit set while this side's key is down.
+        let deviceBit: UInt64
+        let side: String?
+    }
+
+    private static let keys: [Key] = [
+        Key(code: kVK_Control, modifier: controlKey, deviceBit: 0x1, side: "Left"),
+        Key(code: kVK_RightControl, modifier: controlKey, deviceBit: 0x2000, side: "Right"),
+        Key(code: kVK_Option, modifier: optionKey, deviceBit: 0x20, side: "Left"),
+        Key(code: kVK_RightOption, modifier: optionKey, deviceBit: 0x40, side: "Right"),
+        Key(code: kVK_Shift, modifier: shiftKey, deviceBit: 0x2, side: "Left"),
+        Key(code: kVK_RightShift, modifier: shiftKey, deviceBit: 0x4, side: "Right"),
+        Key(code: kVK_Command, modifier: cmdKey, deviceBit: 0x8, side: "Left"),
+        Key(code: kVK_RightCommand, modifier: cmdKey, deviceBit: 0x10, side: "Right"),
+        Key(code: kVK_Function, modifier: Int(fn), deviceBit: 0x800000, side: nil),
+    ]
+
+    /// `CGEventFlags` device-independent masks (shift, control, alternate, command, secondary fn).
+    static let cgShift: UInt64 = 0x20000, cgControl: UInt64 = 0x40000, cgOption: UInt64 = 0x80000
+    static let cgCommand: UInt64 = 0x100000, cgFn: UInt64 = 0x800000
+
+    public static func isModifierKey(_ keyCode: UInt32) -> Bool { keys.contains { $0.code == Int(keyCode) } }
+
+    /// A modifier-only shortcut's key code: either side, or one modifier key.
+    public static func isModifierOnly(_ keyCode: UInt32) -> Bool { keyCode == KeyCombo.anyModifierKey || isModifierKey(keyCode) }
+
+    /// The Carbon flag a modifier key sets.
+    public static func modifier(of keyCode: UInt32) -> UInt32? { keys.first { $0.code == Int(keyCode) }.map { UInt32($0.modifier) } }
+
+    /// Whether `keyCode`'s own side is held in `cgFlags` (always true for `anyModifierKey`).
+    static func sideHeld(_ keyCode: UInt32, cgFlags: UInt64) -> Bool {
+        guard let key = keys.first(where: { $0.code == Int(keyCode) }) else { return true }
+        return cgFlags & key.deviceBit != 0
+    }
+
+    /// `CGEventFlags` to Carbon flags (⌃⌥⇧⌘, plus `fn` when asked: a key event on a laptop's arrow or F-key carries fn).
+    public static func carbon(cgFlags: UInt64, includingFn: Bool) -> UInt32 {
+        var m = 0
+        if cgFlags & cgControl != 0 { m |= controlKey }
+        if cgFlags & cgOption != 0 { m |= optionKey }
+        if cgFlags & cgShift != 0 { m |= shiftKey }
+        if cgFlags & cgCommand != 0 { m |= cmdKey }
+        return UInt32(m) | (includingFn && cgFlags & cgFn != 0 ? fn : 0)
+    }
+
+    /// "⌥ Option", "Right ⌥ Option", "fn", or the symbols when several modifiers make up the shortcut ("⌃⌥").
+    static func title(keyCode: UInt32, modifiers: UInt32) -> String {
+        let symbols = HotKeyValidation.modifierSymbols(modifiers)
+        let names: [UInt32: String] = [UInt32(controlKey): "Control", UInt32(optionKey): "Option", UInt32(shiftKey): "Shift",
+                                       UInt32(cmdKey): "Command"]
+        guard let name = names[modifiers] else { return symbols }
+        let side = keys.first { $0.code == Int(keyCode) }?.side.map { "\($0) " } ?? ""
+        return "\(side)\(symbols) \(name)"
+    }
+}
+
 /// Which recorded shortcuts can actually fire, and why not when they cannot. Carbon registers some combinations
-/// without error that never reach the app, so registration success proves nothing.
+/// without error that never reach the app, so registration success proves nothing; those go through the event tap.
 public enum HotKeyValidation {
     public enum Rejection: Error, Equatable, Sendable {
+        /// A typing key on its own would stop that key from typing.
         case noModifier
         case shiftOnly
-        /// Since macOS 15 a Carbon hot key whose only modifiers are ⌥ or ⌥⇧ is registered and never delivered.
-        case optionOnly
+        /// ⇧ on its own is pressed for every capital letter.
+        case shiftAlone
         /// ⌃Space alone: Raycast's default shortcut and the input-source switcher.
         case controlSpace
         case reserved(String)
@@ -62,9 +144,9 @@ public enum HotKeyValidation {
         /// One sentence for the recorder to show next to the field.
         public var reason: String {
             switch self {
-            case .noModifier: "Hold ⌃ or ⌘ together with the key."
-            case .shiftOnly: "⇧ alone would break typing. Add ⌃ or ⌘."
-            case .optionOnly: "macOS 15 and later never delivers shortcuts that use only ⌥ or ⌥⇧. Add ⌃ or ⌘."
+            case .noModifier: "On its own this key would stop typing. Add ⌃, ⌥ or ⌘, or press a modifier alone."
+            case .shiftOnly: "⇧ alone would break typing. Add ⌃, ⌥ or ⌘."
+            case .shiftAlone: "⇧ on its own is pressed for every capital letter. Try ⌥ or Right ⌥."
             case .controlSpace: "⌃Space is Raycast’s default shortcut and the input-source switcher. Try ⌃⌥Space."
             case .reserved(let owner): "macOS reserves this shortcut for \(owner)."
             case .escape: "Esc cancels a dictation, so it can’t start one."
@@ -82,23 +164,40 @@ public enum HotKeyValidation {
         (kVK_ANSI_Q, cmdKey, "Quit"),
     ]
 
-    /// `modifiers` are Carbon flags; bits other than ⌃⌥⇧⌘ (caps lock, fn) are ignored.
+    /// `modifiers` are Carbon flags; bits other than ⌃⌥⇧⌘ (caps lock; fn unless the shortcut is a modifier alone)
+    /// are ignored. A modifier key's own code, or `KeyCombo.anyModifierKey`, makes a modifier-only shortcut.
     public static func validate(keyCode: UInt32, modifiers rawModifiers: UInt32) -> Result<KeyCombo, Rejection> {
-        let modifiers = rawModifiers & relevantModifiers
         if Int(keyCode) == kVK_Escape { return .failure(.escape) }
-        if modifiers == 0 { return .failure(.noModifier) }
-        if modifiers == UInt32(shiftKey) { return .failure(.shiftOnly) }
-        if modifiers == UInt32(optionKey) || modifiers == UInt32(optionKey | shiftKey) { return .failure(.optionOnly) }
+        if ModifierKeys.isModifierOnly(keyCode) {
+            var modifiers = rawModifiers & (relevantModifiers | ModifierKeys.fn)
+            if let own = ModifierKeys.modifier(of: keyCode) {
+                // One side's key: the shortcut is that modifier alone.
+                modifiers = own
+            }
+            if modifiers == 0 { return .failure(.noModifier) }
+            if modifiers == UInt32(shiftKey) { return .failure(.shiftAlone) }
+            return .success(combo(keyCode: keyCode, modifiers: modifiers))
+        }
+        let modifiers = rawModifiers & relevantModifiers
+        let typing = KeyNames.isTypingKey(keyCode)
+        if modifiers == 0, typing { return .failure(.noModifier) }
+        if modifiers == UInt32(shiftKey), typing { return .failure(.shiftOnly) }
         if Int(keyCode) == kVK_Space, modifiers == UInt32(controlKey) { return .failure(.controlSpace) }
         if let hit = reserved.first(where: { $0.key == Int(keyCode) && UInt32($0.modifiers) == modifiers }) {
             return .failure(.reserved(hit.owner))
         }
-        return .success(.custom(keyCode: keyCode, modifiers: modifiers))
+        return .success(combo(keyCode: keyCode, modifiers: modifiers))
     }
 
-    /// ⌃⌥⇧⌘ in the order macOS writes them.
+    /// The preset with these keys when there is one (recording ⌥ alone gives the "⌥ Option" preset), else a custom one.
+    private static func combo(keyCode: UInt32, modifiers: UInt32) -> KeyCombo {
+        KeyCombo.presets.first { $0.keyCode == keyCode && $0.modifiers == modifiers } ?? .custom(keyCode: keyCode, modifiers: modifiers)
+    }
+
+    /// fn⌃⌥⇧⌘ in the order macOS writes them.
     public static func modifierSymbols(_ modifiers: UInt32) -> String {
         var s = ""
+        if modifiers & ModifierKeys.fn != 0 { s += "fn" }
         if modifiers & UInt32(controlKey) != 0 { s += "⌃" }
         if modifiers & UInt32(optionKey) != 0 { s += "⌥" }
         if modifiers & UInt32(shiftKey) != 0 { s += "⇧" }
@@ -129,10 +228,100 @@ public enum KeyNames {
     ]
 
     public static func name(for keyCode: UInt32) -> String { names[Int(keyCode)] ?? "Key \(keyCode)" }
+
+    private static let functionKeys: Set<Int> = [
+        kVK_F1, kVK_F2, kVK_F3, kVK_F4, kVK_F5, kVK_F6, kVK_F7, kVK_F8, kVK_F9, kVK_F10, kVK_F11, kVK_F12, kVK_F13,
+        kVK_F14, kVK_F15, kVK_F16, kVK_F17, kVK_F18, kVK_F19, kVK_F20,
+    ]
+
+    /// Every key but F1–F20 types or moves the cursor, so on its own (or with ⇧ alone) it cannot be the shortcut.
+    public static func isTypingKey(_ keyCode: UInt32) -> Bool { !functionKeys.contains(Int(keyCode)) }
 }
 
-/// Registers Carbon hot keys, which deliver press *and* release without Input Monitoring permission.
-/// Carbon delivers these on the main thread through the application event target.
+/// Matches one shortcut against the raw key events of the session event tap, for what Carbon cannot deliver.
+/// A key shortcut is pressed and released like a Carbon hot key, and its events are swallowed so the focused app never
+/// types them. A modifier-only shortcut is never swallowed (the modifier keeps working for everything else): it is
+/// down while exactly its modifiers are held, and pressing any other key or modifier meanwhile makes it a `chord` —
+/// the user meant ⌥← or ⌥-click, not dictation — and nothing more fires until its modifiers are let go.
+public struct ShortcutMatcher: Sendable {
+    public enum Action: Sendable, Equatable { case down, up, chord }
+    public struct Outcome: Sendable, Equatable {
+        public var action: Action?
+        /// Keep the event from the focused app.
+        public var swallow = false
+        static let none = Outcome(action: nil)
+    }
+
+    private enum Phase: Sendable { case idle, pressed, spoiled }
+
+    public let combo: KeyCombo
+    private var phase = Phase.idle
+
+    public init(combo: KeyCombo) { self.combo = combo }
+
+    public mutating func keyDown(keyCode: UInt16, cgFlags: UInt64, isRepeat: Bool) -> Outcome {
+        if combo.isModifierOnly {
+            guard phase == .pressed else { return .none }
+            phase = .spoiled
+            return Outcome(action: .chord)
+        }
+        guard UInt32(keyCode) == combo.keyCode else { return .none }
+        if phase == .pressed { return Outcome(action: nil, swallow: true) }   // key repeat
+        guard ModifierKeys.carbon(cgFlags: cgFlags, includingFn: false) == combo.modifiers else { return .none }
+        if isRepeat { return Outcome(action: nil, swallow: true) }
+        phase = .pressed
+        return Outcome(action: .down, swallow: true)
+    }
+
+    public mutating func keyUp(keyCode: UInt16) -> Outcome {
+        guard !combo.isModifierOnly, phase == .pressed, UInt32(keyCode) == combo.keyCode else { return .none }
+        phase = .idle
+        return Outcome(action: .up, swallow: true)
+    }
+
+    /// A modifier went down or up; `keyCode` is the modifier key that changed.
+    public mutating func flagsChanged(keyCode: UInt16, cgFlags: UInt64) -> Outcome {
+        guard combo.isModifierOnly else { return .none }
+        let mods = ModifierKeys.carbon(cgFlags: cgFlags, includingFn: true)
+        let side = ModifierKeys.sideHeld(combo.keyCode, cgFlags: cgFlags)
+        let holdsAll = mods & combo.modifiers == combo.modifiers && side
+        let exact = mods == combo.modifiers && side
+        switch phase {
+        case .idle:
+            // Only pressing one of its own modifiers starts it: letting go of ⌘ in ⌘⌥ leaves ⌥ held, but that is not a press.
+            let pressedOwn = (ModifierKeys.modifier(of: UInt32(keyCode)) ?? 0) & combo.modifiers != 0
+            if exact, pressedOwn {
+                phase = .pressed
+                return Outcome(action: .down)
+            }
+            // Its modifier held together with another one (⌘ then ⌥): wait until they are let go.
+            if mods & combo.modifiers != 0, mods & ~combo.modifiers != 0 { phase = .spoiled }
+        case .pressed:
+            if exact { return .none }
+            if holdsAll {
+                phase = .spoiled   // another modifier joined
+                return Outcome(action: .chord)
+            }
+            phase = .idle
+            return Outcome(action: .up)
+        case .spoiled:
+            if mods & combo.modifiers == 0 || !side { phase = .idle }
+        }
+        return .none
+    }
+
+    /// A click while the modifier is held (⌥-click) is a chord too.
+    public mutating func mouseDown() -> Outcome {
+        guard combo.isModifierOnly, phase == .pressed else { return .none }
+        phase = .spoiled
+        return Outcome(action: .chord)
+    }
+}
+
+/// Registers global shortcuts. Carbon hot keys deliver press *and* release without Input Monitoring permission, on
+/// the main thread through the application event target. Shortcuts Carbon cannot deliver (`KeyCombo.needsEventTap`)
+/// come from a session event tap on the main run loop instead, which exists only while one is registered and needs
+/// Accessibility (registration fails without it).
 @MainActor
 public final class HotKeyCenter {
     public static let shared = HotKeyCenter()
@@ -143,17 +332,46 @@ public final class HotKeyCenter {
         var onUp: () -> Void
     }
 
+    private struct TapEntry {
+        var matcher: ShortcutMatcher
+        var onDown: () -> Void
+        var onUp: () -> Void
+        var onChord: () -> Void
+    }
+
+    /// One event from the tap, reduced to what the matchers need.
+    enum TapEvent: Sendable {
+        case keyDown(keyCode: UInt16, cgFlags: UInt64, isRepeat: Bool)
+        case keyUp(keyCode: UInt16)
+        case flagsChanged(keyCode: UInt16, cgFlags: UInt64)
+        case mouseDown
+    }
+
     private var entries: [UInt32: Entry] = [:]
+    private var tapEntries: [UInt32: TapEntry] = [:]
     private var handlerInstalled = false
+    private var tap: CFMachPort?
+    private var tapSource: CFRunLoopSource?
+    /// Handlers matched by the tap, run on the next main-queue turn.
+    private var pendingHandlers: [() -> Void] = []
     private static let signature: OSType = 0x43484B50   // 'CHKP'
 
     private init() {}
 
-    /// Registers `combo` under `id`, replacing an earlier registration with the same id.
+    /// Registers `combo` under `id`, replacing an earlier registration with the same id. `onChord` fires when a
+    /// modifier-only shortcut turned out to be part of another shortcut (see `ShortcutMatcher`).
     @discardableResult
-    public func register(id: UInt32, combo: KeyCombo, onDown: @escaping () -> Void, onUp: @escaping () -> Void = {}) -> Bool {
-        installHandlerIfNeeded()
+    public func register(id: UInt32, combo: KeyCombo, onDown: @escaping () -> Void, onUp: @escaping () -> Void = {},
+                         onChord: @escaping () -> Void = {}) -> Bool {
         unregister(id: id)
+        if combo.needsEventTap {
+            let running = startTap()
+            chirpLog.info("hotkey register id=\(id, privacy: .public) combo=\(combo.id, privacy: .public) tap=\(running, privacy: .public)")
+            guard running else { return false }
+            tapEntries[id] = TapEntry(matcher: ShortcutMatcher(combo: combo), onDown: onDown, onUp: onUp, onChord: onChord)
+            return true
+        }
+        installHandlerIfNeeded()
         var ref: EventHotKeyRef?
         let status = RegisterEventHotKey(combo.keyCode, combo.modifiers, EventHotKeyID(signature: Self.signature, id: id),
                                          GetApplicationEventTarget(), 0, &ref)
@@ -164,8 +382,8 @@ public final class HotKeyCenter {
     }
 
     public func unregister(id: UInt32) {
-        guard let entry = entries.removeValue(forKey: id) else { return }
-        if let ref = entry.ref { UnregisterEventHotKey(ref) }
+        if let entry = entries.removeValue(forKey: id), let ref = entry.ref { UnregisterEventHotKey(ref) }
+        if tapEntries.removeValue(forKey: id) != nil, tapEntries.isEmpty { stopTap() }
     }
 
     /// Routes a Carbon event to its handlers (also called directly by tests).
@@ -177,6 +395,83 @@ public final class HotKeyCenter {
     /// Test hook: add handlers without touching Carbon.
     func addForTesting(id: UInt32, onDown: @escaping () -> Void, onUp: @escaping () -> Void) {
         entries[id] = Entry(ref: nil, onDown: onDown, onUp: onUp)
+    }
+
+    /// Test hook: a tap-matched shortcut without creating the tap.
+    func addTapForTesting(id: UInt32, combo: KeyCombo, onDown: @escaping () -> Void, onUp: @escaping () -> Void = {},
+                          onChord: @escaping () -> Void = {}) {
+        tapEntries[id] = TapEntry(matcher: ShortcutMatcher(combo: combo), onDown: onDown, onUp: onUp, onChord: onChord)
+    }
+
+    /// Feeds one tap event to every tap-matched shortcut. Returns whether to swallow it and the handlers to run; the
+    /// tap runs them after returning, so a slow handler never holds the event (macOS disables a tap that stalls).
+    func route(_ event: TapEvent) -> (swallow: Bool, handlers: [() -> Void]) {
+        var swallow = false
+        var handlers: [() -> Void] = []
+        for id in tapEntries.keys.sorted() {
+            guard var entry = tapEntries[id] else { continue }
+            let outcome: ShortcutMatcher.Outcome
+            switch event {
+            case .keyDown(let key, let flags, let isRepeat): outcome = entry.matcher.keyDown(keyCode: key, cgFlags: flags, isRepeat: isRepeat)
+            case .keyUp(let key): outcome = entry.matcher.keyUp(keyCode: key)
+            case .flagsChanged(let key, let flags): outcome = entry.matcher.flagsChanged(keyCode: key, cgFlags: flags)
+            case .mouseDown: outcome = entry.matcher.mouseDown()
+            }
+            tapEntries[id] = entry
+            swallow = swallow || outcome.swallow
+            switch outcome.action {
+            case .down?: handlers.append(entry.onDown)
+            case .up?: handlers.append(entry.onUp)
+            case .chord?: handlers.append(entry.onChord)
+            case nil: break
+            }
+        }
+        return (swallow, handlers)
+    }
+
+    // MARK: event tap
+
+    private func startTap() -> Bool {
+        if tap != nil { return true }
+        let types: [CGEventType] = [.keyDown, .keyUp, .flagsChanged, .leftMouseDown, .rightMouseDown, .otherMouseDown]
+        let mask = types.reduce(CGEventMask(0)) { $0 | (CGEventMask(1) << $1.rawValue) }
+        guard let port = CGEvent.tapCreate(tap: .cgSessionEventTap, place: .headInsertEventTap, options: .defaultTap,
+                                           eventsOfInterest: mask, callback: hotKeyTapCallback, userInfo: nil) else { return false }
+        let source = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, port, 0)
+        CFRunLoopAddSource(CFRunLoopGetMain(), source, .commonModes)
+        CGEvent.tapEnable(tap: port, enable: true)
+        tap = port
+        tapSource = source
+        return true
+    }
+
+    private func stopTap() {
+        guard let port = tap else { return }
+        CGEvent.tapEnable(tap: port, enable: false)
+        if let tapSource { CFRunLoopRemoveSource(CFRunLoopGetMain(), tapSource, .commonModes) }
+        CFMachPortInvalidate(port)
+        tap = nil
+        tapSource = nil
+    }
+
+    /// macOS turns a tap off when a callback is slow or after secure input; turn it straight back on.
+    fileprivate func reenableTap() {
+        if let tap { CGEvent.tapEnable(tap: tap, enable: true) }
+    }
+
+    fileprivate func tapReceived(_ event: TapEvent) -> Bool {
+        let (swallow, handlers) = route(event)
+        if !handlers.isEmpty {
+            pendingHandlers += handlers
+            DispatchQueue.main.async { MainActor.assumeIsolated { HotKeyCenter.shared.runPendingHandlers() } }
+        }
+        return swallow
+    }
+
+    private func runPendingHandlers() {
+        let handlers = pendingHandlers
+        pendingHandlers = []
+        for handler in handlers { handler() }
     }
 
     private func installHandlerIfNeeded() {
@@ -198,6 +493,26 @@ public final class HotKeyCenter {
             return noErr
         }, types.count, &types, nil, nil)
     }
+}
+
+/// The tap's callback: on the main run loop, so it may enter the main actor. Returns nil to swallow the event.
+private func hotKeyTapCallback(proxy: CGEventTapProxy, type: CGEventType, event: CGEvent,
+                               userInfo: UnsafeMutableRawPointer?) -> Unmanaged<CGEvent>? {
+    let keyCode = UInt16(truncatingIfNeeded: event.getIntegerValueField(.keyboardEventKeycode))
+    let flags = event.flags.rawValue
+    let tapEvent: HotKeyCenter.TapEvent
+    switch type {
+    case .tapDisabledByTimeout, .tapDisabledByUserInput:
+        MainActor.assumeIsolated { HotKeyCenter.shared.reenableTap() }
+        return Unmanaged.passUnretained(event)
+    case .keyDown: tapEvent = .keyDown(keyCode: keyCode, cgFlags: flags, isRepeat: event.getIntegerValueField(.keyboardEventAutorepeat) != 0)
+    case .keyUp: tapEvent = .keyUp(keyCode: keyCode)
+    case .flagsChanged: tapEvent = .flagsChanged(keyCode: keyCode, cgFlags: flags)
+    case .leftMouseDown, .rightMouseDown, .otherMouseDown: tapEvent = .mouseDown
+    default: return Unmanaged.passUnretained(event)
+    }
+    let swallow = MainActor.assumeIsolated { HotKeyCenter.shared.tapReceived(tapEvent) }
+    return swallow ? nil : Unmanaged.passUnretained(event)
 }
 
 #endif
