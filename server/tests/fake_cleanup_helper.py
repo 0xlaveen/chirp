@@ -26,11 +26,20 @@ for line in sys.stdin:
     if notes_correction:
         text = json.loads(request["user"].removeprefix("Transcript JSON: "))
     structure = "user" in request and not notes_correction
+    # Reorganize sends `Notes JSON: {"outline": ..., "notes": ...}`; structure has "transcript".
+    try:
+        payload = json.loads(request["user"].removeprefix("Notes JSON: ")) if structure else {}
+    except ValueError:
+        payload = {}
+    reorganize = isinstance(payload, dict) and "notes" in payload
+    trigger = "notes" if reorganize else "transcript"
     if option("--log"):
         # Synthetic request log for tests: which kind arrived, with the notes keys echoed.
         with open(option("--log"), "a") as log:
             entry = {
-                "kind": "structure"
+                "kind": "reorganize"
+                if reorganize
+                else "structure"
                 if structure
                 else "notes_correction"
                 if notes_correction
@@ -42,20 +51,23 @@ for line in sys.stdin:
             }
             log.write(json.dumps(entry) + "\n")
     if structure:
-        if '"transcript": "hang"' in request["user"]:
+        if f'"{trigger}": "hang"' in request["user"]:
             sys.stdin.read()
             break
-        if '"transcript": "crash"' in request["user"]:
+        if f'"{trigger}": "crash"' in request["user"]:
             raise SystemExit(1)
-        if '"transcript": "fail"' in request["user"]:
+        if f'"{trigger}": "fail"' in request["user"]:
             print(json.dumps({"ok": False}), flush=True)
             continue
-        if '"transcript": "invalid"' in request["user"]:
+        if f'"{trigger}": "invalid"' in request["user"]:
             print("[]", flush=True)
             continue
         if option("--slow-structure"):
             time.sleep(float(option("--slow-structure")))
-        reply = option("--reply-structure") or "## Notes\n- Done"
+        if reorganize:
+            reply = option("--reply-reorganize") or "## Notes\n- Done"
+        else:
+            reply = option("--reply-structure") or "## Notes\n- Done"
         print(json.dumps({"ok": True, "text": reply, "finish_reason": "stop"}), flush=True)
         continue
     if text == "hang":

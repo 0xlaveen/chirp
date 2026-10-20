@@ -49,9 +49,10 @@ Every request carries `Authorization: Bearer <token>`. WebSocket clients that ca
 
 ### Endpoints
 
-- `GET /v1/health` → `{"ok":true,"engine":"parakeet-mlx:tdt-0.6b-v2","ready":true,"debug_retention":false,"correction":"off|available","correction_mode":"off|managed|endpoint","correction_leaves_machine":false,"correction_host":null,"correction_profiles":[{"id":"default","name":"Default","description":"Conservative transcript cleanup.","rewrites":false},…],…,"notes_structure":true,"notes_correction":true}`. The unauthenticated variant returns only `{"ok":true}`. For endpoint correction, `correction_host` is its hostname (no credentials, path or port); otherwise it is `null`. `correction_leaves_machine` is true only for enabled, non-loopback correction.
+- `GET /v1/health` → `{"ok":true,"engine":"parakeet-mlx:tdt-0.6b-v2","ready":true,"debug_retention":false,"correction":"off|available","correction_mode":"off|managed|endpoint","correction_leaves_machine":false,"correction_host":null,"correction_profiles":[{"id":"default","name":"Default","description":"Conservative transcript cleanup.","rewrites":false},…],…,"notes_structure":true,"notes_correction":true,"notes_reorganize":true}`. The unauthenticated variant returns only `{"ok":true}`. For endpoint correction, `correction_host` is its hostname (no credentials, path or port); otherwise it is `null`. `correction_leaves_machine` is true only for enabled, non-loopback correction.
 - `GET /v1/correction/profiles` (authenticated) → `{"profiles":[{"id":"default","name":"Default","description":"Conservative transcript cleanup.","rewrites":false,"prompt":"<editable default style>","max_prompt_chars":4000},…]}`. Fixed safety rules are excluded; `custom` has an empty built-in prompt. Available even when correction is off. Invalid or missing bearer credentials return HTTP 401 with `WWW-Authenticate: Bearer`.
 - `POST /v1/notes/structure` (authenticated, JSON): stateless Live Notes structuring, specified [below](#live-notes-structuring-v1-compatible-addition). `/v1/stream` is unchanged.
+- `POST /v1/notes/reorganize` (authenticated, JSON): stateless reorganize of a whole Live Notes document (or its trailing sections), specified [below](#live-notes-reorganize-v1-compatible-addition). `/v1/stream` and `/v1/notes/structure` are unchanged.
 - `POST /v1/transcribe`: the body is 16 kHz mono PCM16 WAV, capped at 120 s. It returns the same object as a `final` message. Used for tests and as a fallback.
 - `WS /v1/stream`:
   - client → `{"type":"start","sample_rate":16000,"encoding":"pcm_s16le","client":"mac|android|ios","correction":false,"correction_profile":"default","correction_instructions":""}`
@@ -145,6 +146,64 @@ incidental negation out ("whether it works or not") is allowed. Like the correct
 are heuristics: they catch invented names and numbers, answers and flipped statements but cannot
 prove semantic equivalence, and they are tuned for English. The transcript pane is always one click away in the client.
 
+### Live Notes reorganize (v1-compatible addition)
+
+`POST /v1/notes/reorganize` regroups an editable notes document: it merges duplicate sections and
+bullets and gathers tasks, decisions and questions, without dropping or inventing content. Like
+structuring it is stateless: the client sends the Markdown each time and applies the answer only
+if the document has not changed since (no merge).
+
+Request (`Content-Type: application/json`, body at most 64 KiB):
+
+```json
+{"notes": "## Launch plan\n- …", "outline": ["Earlier heading"], "final": false}
+```
+
+- `notes`: the user's and the AI's Markdown source, 1-3500 Unicode characters after trimming
+  (`MAX_REORGANIZE_CHARS`). Untrusted data. A longer document sends only its trailing whole
+  sections that fit.
+- `outline`: as for structuring (at most 24 strings, 120 characters each, 1500 in total): the
+  headings of the settled sections above, context only.
+- `final`: optional bool; it only changes the log line.
+- Unknown keys (including `transcript`) are rejected.
+
+| Status | Body | When |
+|---|---|---|
+| 200 | `{"markdown":"…","reorganized":true,"changed":true,"error":null,"timings_ms":{"reorganize":1234.5}}` | The output passed the reorganize guards |
+| 200 | `{"markdown":"<input notes, trimmed>","reorganized":true,"changed":false,"error":null,…}` | The output equals the input apart from trailing spaces and blank lines; the client applies nothing |
+| 200 | `{"markdown":null,"reorganized":false,"changed":false,"error":"timeout\|http\|rejected",…}` | Fails closed: guard rejection, helper failure, timeout or endpoint error |
+| 400 / 401 / 409 / 503 | as `/v1/notes/structure` (`bad_notes`, `auth`, `notes_off`, `busy`) | Same rules |
+
+Authenticated health carries `"notes_reorganize": true` on servers with the endpoint (absent on
+older servers; a 404 from an older server means only reorganize is unavailable).
+
+Reorganize shares the server-wide structuring lock with `/v1/notes/structure`: one notes generation
+at a time, and a second request of either kind gets `503 busy`. It uses the structuring backend,
+never starts while corrections are queued, gives way to a correction that queues while it runs
+(managed helper; it then answers `timeout`), never takes the engine lease and never retains
+anything.
+The pass is bounded by `[correction] structure_timeout` and 1024 output tokens
+(`REORGANIZE_MAX_TOKENS`, the helper's cap). The system prompt plus a 3500-character document plus
+1024 output tokens fit the helper's 4096-token context; a model test measures this with the real
+tokenizer.
+
+The guards (`reorganize_rejection_reason`, reported on the wire only as `rejected`) compare the
+output with the input notes and reuse the structuring helpers, so they ask whether something was
+dropped, invented or flipped rather than counting exact words. In order: no empty or unfinished
+output, think block or assistant opener, and no code fence, H1, table or link unless the input
+has one; every line is in the subset (`#`-`###` headings, `#` only if the input has an H1;
+`- `/`  - `/`    - ` bullets and `- [ ]`/`- [x]` tasks; plain lines; the fallback header) or uses a
+lead-in the person already typed (`1.`, `*`, `>`, a table); a length between 0.6 and
+1.15 × input + 200 characters; no name, number, date or contact that is not in the notes or
+outline, and at least half the content words from them; every number and date of the input still
+present; every input line with at least 3 content words keeps 60 % of its stemmed content words
+and the document keeps 90 % of its distinct ones; headings use input words or `Action items`,
+`Decisions`, `Open questions`, `Next steps`, `Notes`; every negated or hedged input line keeps a
+negation or hedge in the output line that holds its content, no negation is added, and the
+structuring flip check passes; every distinct task keeps exactly its checked state, no task is
+invented, and every `**Decision:**`/`**Question:**` line keeps its label. These are heuristics
+tuned for English, like the other guards.
+
 **Managed helper pipe protocol** (private to `managed_cleanup.py` and `cleanup_worker.py`). The
 request `{"text","system"}` is unchanged. Two optional keys exist for structuring: `"user"`, a
 string that is the *entire* user message and replaces the `Transcript JSON: …` wrapper, and
@@ -155,7 +214,10 @@ The server writes the keys only when set, so correction requests are byte-identi
 **Priority.** The helper serves requests one at a time. A queued correction always runs before a
 queued structuring request (a structuring caller that reaches the helper while corrections wait
 steps back until none are queued). A running structuring generation is never interrupted, so a
-correction waits at most one pass, which `max_tokens` bounds.
+correction waits at most one pass, which `max_tokens` bounds. A running reorganize generation (up
+to 1024 tokens, about 15 s, longer than a dictation's budget) is abandoned as soon as a correction
+queues: the helper is killed and reloaded for the correction, and the reorganize answers
+`timeout` (see `docs/bench.md`, "Notes reorganize").
 
 ### Built-in profiles and overrides
 
@@ -210,7 +272,7 @@ Version additions preserve existing fields. A breaking change becomes `/v2`.
   - It writes `<session>.wav` plus a `<session>.json` transcript/timings file to `~/Library/Application Support/Chirp/debug/` (mode 0700/0600).
   - Files are purged after `retain_days` (default 3), on start and hourly. `chirp-server debug purge` deletes them all now.
   - `ready` and `health` report `debug_retention: true`. Both clients then show a persistent red "DEBUG: recording kept" indicator, and the server logs a warning banner at start.
-- **Notes structuring is stateless and never retained.** `POST /v1/notes/structure` writes no files, not even with debug retention, and its log line carries only lengths, counts, the error code and timings, never the transcript, outline, prompt or Markdown. Segment audio follows the per-utterance rules above.
+- **Notes structuring and reorganize are stateless and never retained.** `POST /v1/notes/structure` and `POST /v1/notes/reorganize` write no files, not even with debug retention, and their log lines carry only lengths, counts, flags, the error code and timings, never the transcript, notes, outline, prompt or Markdown. Segment audio follows the per-utterance rules above.
 - **Correction is off by default.** When it is enabled with a non-loopback `base_url`, health reports `correction_leaves_machine: true`, and clients label the toggle "sends text to <host>". Audio never leaves the Mac. Only the final text does, and only when correction is on.
 - **Secrets:**
   - Server token: `~/.config/chirp/token`, 0600, generated on first run. `chirp-server pair` prints it as a `chirp://pair?url=…&token=…` QR code and string, shown locally in the terminal only.

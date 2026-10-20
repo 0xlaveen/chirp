@@ -89,6 +89,10 @@ def helper_footprint_mb(pid: int) -> int | None:
         return None
 
 
+class Preempted(TimeoutError):
+    """A reorganize generation gave way to a queued correction (reported as `timeout`)."""
+
+
 class ManagedCleanup:
     def __init__(self, config, *, command=None):
         self.config = config
@@ -100,6 +104,8 @@ class ManagedCleanup:
         self.waiting = 0
         self.no_waiting = asyncio.Event()
         self.no_waiting.set()
+        # Set while any correction waits: a running reorganize gives way to it (see generate).
+        self.queued = asyncio.Event()
         self.idle = None
         self.load_task = None
         self.ready = False
@@ -210,8 +216,27 @@ class ManagedCleanup:
         if self.load_task is not None:
             await self.load_task
 
+    async def _read_preemptible(self):
+        """A reorganize reply, abandoned as soon as a correction queues. A reorganize generation
+        is the longest the helper runs (up to 1024 tokens, ~15 s), longer than a dictation's
+        whole budget, so it gives way: the caller's error path kills the helper, the correction
+        reloads it (about a second with cached weights) and the client retries the reorganize."""
+        read = asyncio.ensure_future(self._read())
+        queued = asyncio.ensure_future(self.queued.wait())
+        try:
+            done, _ = await asyncio.wait({read, queued}, return_when=asyncio.FIRST_COMPLETED)
+        finally:
+            for task in (read, queued):
+                if not task.done():
+                    task.cancel()
+                    with contextlib.suppress(asyncio.CancelledError):
+                        await task
+        if read in done:
+            return read.result()
+        raise Preempted()
+
     async def _acquire(self, priority):
-        if priority == "structure":
+        if priority in {"structure", "reorganize"}:
             while True:
                 await self.no_waiting.wait()
                 await self.lock.acquire()
@@ -221,12 +246,14 @@ class ManagedCleanup:
                 self.lock.release()
         self.waiting += 1
         self.no_waiting.clear()
+        self.queued.set()
         try:
             await self.lock.acquire()
         finally:
             self.waiting -= 1
             if not self.waiting:
                 self.no_waiting.set()
+                self.queued.clear()
 
     async def generate(
         self,
@@ -240,7 +267,8 @@ class ManagedCleanup:
     ):
         """One helper generation. `user` replaces the whole user message and `max_tokens`
         the output cap; both keys are sent only when given, so correction requests stay
-        exactly `{"text", "system"}`. `priority="structure"` yields to queued corrections."""
+        exactly `{"text", "system"}`. `priority="structure"` yields to queued corrections;
+        `priority="reorganize"` also abandons its running generation when one queues."""
         request = {"text": raw, "system": prompt}
         if user is not None:
             request["user"] = user
@@ -264,7 +292,10 @@ class ManagedCleanup:
                     await self._ensure_ready()
                     self.process.stdin.write(json.dumps(request).encode() + b"\n")
                     await self.process.stdin.drain()
-                    reply = await self._read()
+                    if priority == "reorganize":
+                        reply = await self._read_preemptible()
+                    else:
+                        reply = await self._read()
                     if reply.get("ok") is not True:
                         raise ValueError("Helper failed")
                     self._measure()
