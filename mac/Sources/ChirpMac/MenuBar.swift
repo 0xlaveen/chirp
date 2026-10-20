@@ -19,6 +19,22 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         var openSettings: (SettingsTab?) -> Void
         var openSetup: () -> Void
         var openAbout: () -> Void
+        var toggleNotes: () -> Void = {}
+        var showNotes: () -> Void = {}
+        /// Live Notes' state for the menu and the icon.
+        var notes: () -> NotesMenuState = { NotesMenuState() }
+        /// The menu's switch, for Live Notes (pausing stops it and releases ⌃⌥N).
+        var setRunning: (Bool) -> Void = { _ in }
+    }
+
+    /// What the menu and the icon need from Live Notes.
+    struct NotesMenuState {
+        var recording = false
+        var finishing = false
+        var elapsed: String?
+        var hasDocument = false
+        var hotkeyRegistered = true
+        var debugRetention = false
     }
 
     init(controller: DictationController, actions: Actions) {
@@ -38,9 +54,11 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     private var reduceMotion: Bool { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
 
     func refreshIcon() {
+        let notes = actions.notes()
         let icon = StatusIcon.of(state: controller.state, serverReachable: controller.health != nil,
-                                 debugRetention: controller.debugRetention, reduceMotion: reduceMotion,
-                                 rawOfferOpen: controller.rawOffer.isOpen, paused: controller.isPaused)
+                                 debugRetention: controller.debugRetention || notes.debugRetention, reduceMotion: reduceMotion,
+                                 rawOfferOpen: controller.rawOffer.isOpen, paused: controller.isPaused,
+                                 notesRecording: notes.recording)
         guard let button = item.button else { return }
         switch icon.glyph {
         case .idle: button.image = glyphs.idle ?? Self.symbol(controller.health == nil ? "mic.slash" : "mic")
@@ -141,6 +159,13 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         inputs.serverURL = settings.serverURL
         inputs.micGranted = Permissions.microphoneGranted
         inputs.accessibilityGranted = Permissions.accessibilityGranted
+        let notes = actions.notes()
+        inputs.notesRecording = notes.recording
+        inputs.notesFinishing = notes.finishing
+        inputs.notesElapsed = notes.elapsed
+        inputs.notesHasDocument = notes.hasDocument
+        inputs.notesHotkeyRegistered = notes.hotkeyRegistered
+        inputs.debugRetention = controller.debugRetention || notes.debugRetention
         menu.removeAllItems()
         menu.addItem(headerItem(MenuContent.header(inputs), menu: menu))
         for entry in MenuContent.entries(inputs) { menu.addItem(topLevelItem(for: entry)) }
@@ -152,6 +177,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         view.onToggle = { [weak self, weak menu] running in
             guard let self else { return }
             self.controller.setRunning(running)
+            self.actions.setRunning(running)
             self.refreshIcon()
             // Let the switch finish its slide, then close the menu on the new state.
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { menu?.cancelTracking() }
@@ -194,6 +220,8 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         switch action {
         case nil: nil
         case .toggleDictation: #selector(toggleDictation)
+        case .toggleNotes: #selector(toggleNotes)
+        case .showNotes: #selector(showNotes)
         case .useRaw: #selector(useRaw)
         case .pickInput: #selector(pickInput(_:))
         case .toggleCleanup: #selector(toggleCleanup)
@@ -210,6 +238,8 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     }
 
     @objc private func toggleDictation() { controller.toggleDictation() }
+    @objc private func toggleNotes() { actions.toggleNotes() }
+    @objc private func showNotes() { actions.showNotes() }
     @objc private func useRaw() { controller.rawOffer.take() }
     @objc private func pickInput(_ sender: NSMenuItem) { settings.inputDeviceUID = sender.representedObject as? String }
     @objc private func toggleCleanup() { settings.correction.toggle() }

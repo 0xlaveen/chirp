@@ -13,6 +13,9 @@ final class DictationController {
     var onChange: (() -> Void)?
     /// Called on every press of the dictation hotkey (the setup window's "Try it" step listens for it).
     var onHotkeyPressed: (() -> Void)?
+    /// Live Notes is recording and holds the engine: a new dictation shows a toast instead of starting.
+    var isBlocked: () -> Bool = { false }
+    static let blockedMessage = "Notes is recording — stop it to dictate"
 
     let hud = HUDController()
     private let capture = AudioCapture(engine: SystemCaptureEngine(pickedDevice: { InputDevice.pickedID(uid: settings.inputDeviceUID) }))
@@ -116,15 +119,32 @@ final class DictationController {
 
     private func deliver(_ events: [DictationEvent]) {
         for event in events {
-            if case .hotkeyDown = event { onHotkeyPressed?() }
+            if case .hotkeyDown = event {
+                onHotkeyPressed?()
+                if showBlockedToast() { return }
+            }
             send(event)
         }
     }
 
     /// "Start/Stop dictation" in the menu: starts a dictation or finishes the one under way, in either mode.
     func toggleDictation() {
-        guard !isPaused else { return }
+        guard !isPaused, !showBlockedToast() else { return }
         send(.toggle)
+    }
+
+    /// While Notes records, an idle dictation does not start: a short HUD toast says why and no event is sent.
+    private func showBlockedToast() -> Bool {
+        guard !machine.state.isActive, isBlocked() else { return false }
+        hud.cancelHide()
+        hud.model.reset()
+        hud.model.status = Self.blockedMessage
+        hud.model.indicator = .warning
+        hud.model.silence()
+        hud.show()
+        hud.announce(Self.blockedMessage)
+        hud.hide(after: 1.5)
+        return true
     }
 
     // MARK: health

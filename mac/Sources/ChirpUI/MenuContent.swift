@@ -8,7 +8,7 @@ public enum LaunchState: Equatable, Sendable {
 }
 
 public enum MenuAction: Equatable, Sendable {
-    case toggleDictation, useRaw, pickInput(String?), toggleCleanup, toggleShowChanges, pickStyle(String), pickSound(String)
+    case toggleDictation, toggleNotes, showNotes, useRaw, pickInput(String?), toggleCleanup, toggleShowChanges, pickStyle(String), pickSound(String)
     case copyDoctor, showSettings, editStyles, showSetup, showAbout, quit
 
     /// What the AppKit item carries to its action method.
@@ -92,6 +92,15 @@ public struct MenuInputs: Sendable {
     public var serverURL = ServerConfig.defaultURL.absoluteString
     public var micGranted = true
     public var accessibilityGranted = true
+    /// Live Notes is recording (starting or listening); `notesElapsed` is its `mm:ss`.
+    public var notesRecording = false
+    public var notesElapsed: String?
+    /// Live Notes is finishing its last segment and pass.
+    public var notesFinishing = false
+    /// A notes document exists (recorded, not yet discarded with New).
+    public var notesHasDocument = false
+    /// ⌃⌥N is registered (not while paused, or when another app owns it).
+    public var notesHotkeyRegistered = true
 
     public init() {}
 
@@ -121,6 +130,8 @@ public enum MenuContent {
     /// debug warning; the idle line carries the hotkey.
     public static func statusLine(_ m: MenuInputs) -> (text: String, tone: MenuEntry.Tone) {
         if m.paused { return ("Paused", .normal) }
+        if m.notesRecording { return ("Notes · \(m.notesElapsed ?? "00:00")", .active) }
+        if m.notesFinishing { return ("Notes · Finishing…", .active) }
         switch m.state {
         case .connecting: return ("Connecting…", .active)
         case .listening: return ("Listening…", .active)
@@ -148,10 +159,12 @@ public enum MenuContent {
         var out: [MenuEntry] = [.separator]
 
         // Dictation: the same toggle as the hotkey. Off while paused or while a dictation is wrapping up.
+        // Notes holds the engine: dictation cannot start while it records (the hotkey shows a toast instead).
         let shortcut = m.paused || !m.hotkeyRegistered ? nil : m.hotkey.title
+        let notesBusy = m.notesRecording || m.notesFinishing
         switch m.state {
         case .idle, .error:
-            out.append(MenuEntry(title: "Start Dictation", shortcut: shortcut, action: m.paused ? nil : .toggleDictation))
+            out.append(MenuEntry(title: "Start Dictation", shortcut: shortcut, action: m.paused || notesBusy ? nil : .toggleDictation))
         case .connecting, .listening:
             out.append(MenuEntry(title: "Stop Dictation", shortcut: shortcut, action: .toggleDictation))
         case .finalizing, .correcting, .inserting:
@@ -160,6 +173,7 @@ public enum MenuContent {
         if m.rawOfferOpen {
             out.append(MenuEntry(title: "Use Raw for Last Dictation", shortcut: m.rawOfferKey, action: .useRaw))
         }
+        out += notesRows(m)
         out.append(.separator)
 
         out.append(cleanupMenu(m))
@@ -175,6 +189,26 @@ public enum MenuContent {
         out.append(MenuEntry(title: "Quit Chirp", shortcut: "⌘Q", action: .quit, keyEquivalent: "q"))
         return out
     }
+
+    /// Live Notes: Start/Stop with ⌃⌥N, and a way back to the window while there are notes. Notes cannot start
+    /// during a dictation, while paused, or while the last session is still finishing.
+    static func notesRows(_ m: MenuInputs) -> [MenuEntry] {
+        let shortcut = m.paused || !m.notesHotkeyRegistered ? nil : notesHotkeyTitle
+        var rows: [MenuEntry]
+        if m.notesRecording {
+            rows = [MenuEntry(title: "Stop Notes", shortcut: shortcut, action: .toggleNotes)]
+        } else {
+            let canStart = !m.paused && !m.state.isActive && !m.notesFinishing
+            rows = [MenuEntry(title: "Start Notes", shortcut: shortcut, action: canStart ? .toggleNotes : nil)]
+        }
+        if m.notesHasDocument || m.notesRecording || m.notesFinishing {
+            rows.append(MenuEntry(title: "Show Notes Window", action: .showNotes))
+        }
+        return rows
+    }
+
+    /// The Live Notes hotkey's glyphs (fixed: ⌃⌥N).
+    public static let notesHotkeyTitle = "⌃⌥N"
 
     private static func row(_ title: String, value: String, tone: MenuEntry.Tone = .normal, submenu: [MenuEntry]?) -> MenuEntry {
         let short = truncated(value)

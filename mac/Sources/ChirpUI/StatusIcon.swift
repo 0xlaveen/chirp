@@ -15,12 +15,19 @@ public struct StatusIcon: Equatable, Sendable {
     public var cleanedBadge: Bool
     /// The sound waves pulse while listening (unless Reduce Motion is on).
     public var animatesWaves: Bool
+    /// Live Notes holds the microphone open: the listening glyph, so an open mic is never invisible.
+    public var notes = false
 
     public static func of(state: DictationState, serverReachable: Bool, debugRetention: Bool,
-                          reduceMotion: Bool = false, rawOfferOpen: Bool = false, paused: Bool = false) -> StatusIcon {
+                          reduceMotion: Bool = false, rawOfferOpen: Bool = false, paused: Bool = false,
+                          notesRecording: Bool = false) -> StatusIcon {
         // Paused never has a dictation under way (pausing ends it), so the idle bird is dimmed.
         if paused {
             return StatusIcon(glyph: .idle, dimmed: true, paused: true, debugBadge: debugRetention, cleanedBadge: false, animatesWaves: false)
+        }
+        if notesRecording {
+            return StatusIcon(glyph: .listening, dimmed: false, debugBadge: debugRetention, cleanedBadge: false,
+                              animatesWaves: !reduceMotion, notes: true)
         }
         let glyph: Glyph = switch state {
         case .idle: .idle
@@ -42,7 +49,7 @@ public struct StatusIcon: Equatable, Sendable {
     public var accessibilityLabel: String {
         var label = switch glyph {
         case .idle: paused ? "Chirp — paused" : dimmed ? "Chirp — server unreachable" : "Chirp"
-        case .listening: "Chirp — dictating"
+        case .listening: notes ? "Chirp — taking notes" : "Chirp — dictating"
         case .error: "Chirp — error"
         }
         if cleanedBadge { label += ", cleaned text inserted, Use raw available" }

@@ -22,6 +22,8 @@ public struct KeyCombo: Sendable, Equatable, Identifiable {
     /// The right ⌥ on its own, leaving the left one for typing special characters.
     public static let rightOption = KeyCombo(id: "right-option", title: "Right ⌥ Option", keyCode: UInt32(kVK_RightOption), modifiers: UInt32(optionKey))
     public static let escape = KeyCombo(id: "escape", title: "Esc", keyCode: UInt32(kVK_Escape), modifiers: 0)
+    /// Live Notes' fixed toggle (not one of the dictation presets).
+    public static let controlOptionN = KeyCombo(id: "control-option-n", title: "⌃⌥N", keyCode: UInt32(kVK_ANSI_N), modifiers: UInt32(controlKey | optionKey))
 
     /// Selectable dictation hotkeys; the first is the default. ⌃Space alone is Raycast's default and the system
     /// input-source switcher, so it is not offered.

@@ -12,6 +12,7 @@ Chirp turns speech into text on machines you own. Speech recognition runs locall
 
 - **System-wide Mac dictation.** ⌃⌥Space — or any shortcut you record, including ⌥ on its own — in any app. Auto-stop (press, talk, it stops when you pause) or hold to talk; Esc cancels. A floating HUD shows the live transcript while you speak; text is inserted directly (Accessibility), pasted, or copied as a fallback.
 - **Recognition stays on your Mac.** The server binds to `127.0.0.1` only and runs your selected Parakeet TDT model via MLX (English v2 by default, with multilingual v3 available). Remote access, if you want it for the phone, is tailnet-only through Tailscale Serve.
+- **Live Notes on Mac.** ⌃⌥N keeps the microphone open for a meeting or a long think-aloud and turns what you say into live Markdown notes — headings, bullets, to-dos, decisions and open questions — in a resizable window next to the full transcript, using the same local model as clean-up. Copy or save the notes as Markdown; nothing is kept otherwise.
 - **Optional clean-up.** A local Qwen model can polish the final transcript — fillers, stutters, punctuation, casing — with styles for chat, email, code and notes, per-app styles, and editable prompts. Off by default; every clean-up keeps the raw text one keystroke away ("Use raw" for 5 s).
 - **Android keyboard.** A full HeliBoard keyboard plus a mic key: live text appears underlined in the field, and the final replaces it. Gboard-like default look with a Samsung-like option, a Fold-tuned inner-screen layout, English QWERTY with autocorrect, clipboard history and emoji, and an opt-in on-device encrypted dictation history. Swipe typing works with a library you supply — none is bundled.
 - **iPhone and iPad dictation (implemented, pending Xcode validation).** A native SwiftUI app plus a dictation-first custom keyboard for iOS/iPadOS 18: pair by QR to the same Mac server, dictate from compatible text fields with verified safe replacement (secure fields and hosts that disallow custom keyboards use Apple's keyboard; unreliable editor contexts stop auto-replacement safely), companion controls (Action Button, Control Center, Shortcuts, Live Activity) and opt-in on-device encrypted history. Not installable yet — no iOS build/simulator/device check has run; see [ios/README.md](ios/README.md).
@@ -19,11 +20,13 @@ Chirp turns speech into text on machines you own. Speech recognition runs locall
 
 ## Screenshots
 
-**Mac** — menu bar, dictation HUD and Settings ([all light + dark captures](docs/screenshots/mac/)):
+**Mac** — menu bar, dictation HUD, Settings and Live Notes ([all light + dark captures](docs/screenshots/mac/)):
 
 | Menu bar | HUD while speaking | Clean-up in Settings |
 | :---: | :---: | :---: |
 | <a href="docs/screenshots/mac/menu-ready-light.png"><img src="docs/screenshots/mac/menu-ready-light.png" width="280" alt="Chirp menu-bar menu"></a> | <a href="docs/screenshots/mac/hud-listening-light.png"><img src="docs/screenshots/mac/hud-listening-light.png" width="280" alt="Floating HUD with live transcript and waveform"></a> | <a href="docs/screenshots/mac/settings-cleanup-custom-light.png"><img src="docs/screenshots/mac/settings-cleanup-custom-light.png" width="280" alt="Settings window, Clean-up tab with style prompts"></a> |
+| Live Notes | Notes and transcript | |
+| <a href="docs/screenshots/mac/notes-recording-light.png"><img src="docs/screenshots/mac/notes-recording-light.png" width="280" alt="Chirp Notes window with live Markdown notes"></a> | <a href="docs/screenshots/mac/notes-split-dark.png"><img src="docs/screenshots/mac/notes-split-dark.png" width="280" alt="Chirp Notes window, notes and transcript side by side, dark"></a> | |
 
 **Android** — keyboard looks, dictation history, Fold layout and pairing ([all captures](docs/screenshots/android/)):
 
@@ -98,6 +101,7 @@ The iOS/iPadOS 18 app, dictation keyboard and companion controls are implemented
 ## Privacy & security
 
 - **Nothing is retained by default.** Audio and transcripts live in memory for the length of an utterance, then they are gone. One disk exception, iOS only: the app↔keyboard mailbox holds AES-GCM-encrypted transient text until consumed or expired, deleted on next access (no purge daemon); opt-in dictation history is encrypted too. Logs carry only timings, byte counts and error codes. There is no telemetry.
+- **Live Notes stay in memory** until you Save or Copy them; structuring runs on the same local model as clean-up (and is off by default when clean-up points at another host). No autosave, no window restoration, no notes text in logs.
 - **Debug retention is opt-in, local and loud.** With `--debug-retain`, WAV + transcript files are written under `~/Library/Application Support/Chirp/debug/`, expire after three days, and both clients show a persistent red warning.
 - **Tailnet-only exposure.** The server binds to loopback. Publishing it for the phone uses `tailscale serve` (your private tailnet, TLS from the tailnet cert) — never the public internet.
 - **Bearer pairing.** Clients authenticate with a token generated on the Mac (`~/.config/chirp/token`, mode 0600). The pairing QR/URI is printed locally only; treat it as a secret. Audio is rejected before authentication even begins.
