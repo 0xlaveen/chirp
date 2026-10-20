@@ -143,6 +143,8 @@ final class ChirpKeyboardViewController: UIInputViewController {
                 bridge = try KeyboardBridgeClient()
                 bridge?.onChange = { [weak self] in self?.reconcile() }
             } catch { fallback = "Shared session unavailable. Open Chirp to finish setup." }
+            // Lets the app's setup checklist show "keyboard ready". Only a timestamp is stored.
+            try? KeyboardSetupStore(root: SharedConfiguration(bundle: .main).containerURL()).recordFullAccess()
         }
         reconcile()
         timer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in

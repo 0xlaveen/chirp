@@ -130,7 +130,7 @@ public enum KeyboardPresenter {
     private static func text(_ i: KeyboardInputs, live: Bool, phase: KeyboardPhase?) -> (String, String?) {
         guard i.hasFullAccess else {
             return ("Dictation needs Full Access",
-                    "Enable Chirp Full Access in Settings → General → Keyboard, then open Chirp to set up. Space, delete, return and next keyboard work here.")
+                    "Open Settings → Chirp → Keyboards and turn on Allow Full Access, then start a session in Chirp. Space, delete, return and next keyboard work here.")
         }
         if let fallback = i.fallback { return ("Open Chirp", fallback) }
         if i.requiresRecovery {
@@ -139,7 +139,7 @@ public enum KeyboardPresenter {
         }
         guard live, let phase else {
             return ("Start a session in Chirp",
-                    "Tap the button to try opening Chirp, then return to your editor. Handoff and automatic return are not guaranteed.")
+                    "Tap the button to open Chirp and tap Start keyboard session, then come back here with the app switcher.")
         }
         let idle = "Microphone stays active in Chirp. Idle audio is discarded. End session turns it off."
         switch phase {

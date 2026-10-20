@@ -87,7 +87,10 @@ struct SessionSettingsView: View {
                 Link("Open Chirp permissions", destination: URL(string: UIApplication.openSettingsURLString)!)
             }
             Section("Keyboard setup") {
-                Text("Add Chirp Keyboard in Settings → General → Keyboard → Keyboards, then allow Full Access. Full Access enables the encrypted shared mailbox; the keyboard never accesses the microphone. Some apps and secure fields use Apple's keyboard.")
+                Label(model.keyboardReady ? "Chirp Keyboard is on with Full Access" : "Chirp Keyboard not detected yet",
+                      systemImage: model.keyboardReady ? "checkmark.circle.fill" : "keyboard")
+                Link("Open Chirp in Settings", destination: URL(string: UIApplication.openSettingsURLString)!)
+                Text("In Settings → Chirp → Keyboards, turn on Chirp Keyboard and Allow Full Access (or Settings → General → Keyboard → Keyboards → Add New Keyboard). Then switch to it with the globe key in any app. Full Access enables the encrypted shared mailbox; the keyboard never accesses the microphone. Some apps and secure fields use Apple's keyboard.")
                 Text("If the keyboard cannot open Chirp, open the app manually and start a session. Return with the app switcher or system Back affordance. Automatic return to an arbitrary editor is unavailable.")
             }
             Section("Content-free diagnostics") {

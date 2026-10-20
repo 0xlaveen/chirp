@@ -178,8 +178,16 @@ supported way to point iOS at a public server.
 
 ## Enable the keyboard
 
-On the device: **Settings → General → Keyboard → Keyboards → Add New Keyboard →
-Chirp Keyboard**, then select Chirp Keyboard and enable **Full Access**.
+The **Dictate** tab has a **Set up Chirp Keyboard** checklist: pair your Mac,
+turn on the keyboard, start a session. Each step shows a check mark when done.
+
+1. Tap **Open Chirp in Settings** (also in the Settings tab). In Settings →
+   Chirp → **Keyboards**, turn on **Chirp Keyboard** and **Allow Full Access**.
+   The long way also works: Settings → General → Keyboard → Keyboards → Add
+   New Keyboard → Chirp.
+2. Open Chirp Keyboard once in any app (globe key). With Full Access it writes
+   a content-free timestamp to the App Group, so the checklist marks the step
+   done. Without Full Access it cannot, and the step stays open.
 
 Full Access is required because the keyboard talks to the app through the
 encrypted App Group mailbox — it never gives the keyboard a microphone; Apple's
@@ -211,10 +219,21 @@ A transport failure during clean-up keeps the raw transcript and leaves the
 session armed; other transport failures end the session. The notice tells you
 when to reopen Chirp.
 
-While dictating: **Stop dictation** finalizes (⌘Space toggles, Esc cancels).
-After the final you get explicit **Copy**, **Share** and — when clean-up
-changed the text — **Use raw** for 5 seconds (⌘⇧Z); the original transcript is
-expandable below. ⌘⇧E ends the session. The app never writes the clipboard by
+While dictating: **Stop dictation** finalizes. After the final you get
+explicit **Copy**, **Share** and — when clean-up changed the text — **Use raw**
+for 5 seconds; the original transcript is expandable below.
+
+Hardware keyboard shortcuts in the app live in a **Dictation** menu, so they work
+from every tab and show in the iPad's hold-⌘ overlay and menu bar:
+
+| Shortcut | Action |
+|---|---|
+| ⌘Return | Start or stop dictation (⌘Space is Spotlight on iPadOS) |
+| ⌘. (or Esc while dictating) | Cancel dictation |
+| ⌘⇧C | Copy result |
+| ⌘⇧Z | Use raw transcript |
+| ⌘⇧K | Start keyboard session |
+| ⌘⇧E | End session | The app never writes the clipboard by
 itself. Utterances stop automatically just under the 120-second protocol cap
 (about 119 seconds).
 
@@ -271,12 +290,29 @@ never blindly deletes by length. Size bounds: results up to 8,192 UTF-16 units,
 per-side context evidence up to 16,384 UTF-16 units, results up to 65,536 UTF-8
 bytes — oversized input is refused before any edit rather than half-written.
 
+## iPad with a hardware keyboard
+
+Two iPadOS limits shape this: iPadOS hides on-screen keyboards, including Chirp
+Keyboard, while a hardware keyboard is attached; and keyboard extensions never
+receive hardware key presses. So there are two ways to dictate into another app:
+
+- **Show Chirp Keyboard.** Press the globe key (or Control-Space) until Chirp is
+  chosen, then use the small keyboard bar at the bottom of the screen to show
+  it, and tap Start/Stop dictation. Text goes in at the cursor as usual.
+- **A global shortcut key.** In the Shortcuts app, make a shortcut with Chirp's
+  **Toggle Chirp dictation** action. Then Settings → Accessibility → Keyboards →
+  **Full Keyboard Access** → on → **Commands**, and give that shortcut a key
+  combination. With a keyboard session running, press it to start; press it
+  again to stop. Chirp copies the final text, so press ⌘V to paste. Toggle
+  runs in the background and never starts a session cold: with no session it
+  fails and asks you to open Chirp.
+
 ## Companion controls (Action Button, Control Center, Shortcuts)
 
 Two iOS 18 controls — **Chirp dictation** (start) and **End Chirp session** —
 can be added to Control Center and the Action Button (supported hardware). App
-Shortcuts phrases: "Start dictation with Chirp", "Stop dictation with
-Chirp", "Cancel dictation with Chirp", "End session with Chirp". While a
+Shortcuts phrases: "Start dictation with Chirp", "Toggle dictation with
+Chirp", "Stop dictation with Chirp", "Cancel dictation with Chirp", "End session with Chirp". While a
 session runs, a Live Activity on the lock screen/Dynamic Island shows the
 content-free phase (e.g. "Microphone active · dictating") with Start/Stop/
 Cancel/End buttons; enable Live Activities for Chirp in system settings or
@@ -284,7 +320,7 @@ session start refuses.
 
 Companion start requires the app in the foreground for permission/setup — the
 intent opens Chirp rather than recording cold in the background. Companion
-**Stop** is the one path that explicitly copies its own fresh final to the
+**Stop** (and **Toggle** when it stops) is the one path that explicitly copies its own fresh final to the
 clipboard; keyboard and in-app dictation never write the clipboard implicitly.
 Nothing transcript-like ever appears on the lock screen.
 
@@ -341,6 +377,8 @@ when it matters; surrounding editor text is never collected.
 | Symptom | Meaning / fix |
 |---|---|
 | "Dictation needs Full Access" | Enable Full Access for Chirp Keyboard in Settings → General → Keyboard → Keyboards. |
+| Setup step 2 never shows done | Open Chirp Keyboard once in any app with Full Access on. The step needs the keyboard to reach the App Group, which only works with Full Access. |
+| Chirp Keyboard doesn't appear on iPad | A hardware keyboard is attached. Show it from the keyboard bar at the bottom of the screen, or use the Toggle dictation shortcut key. |
 | "Start a session in Chirp" in the keyboard | No armed session (or the lease expired). Open Chirp, tap Start keyboard session, return to your editor. |
 | "iOS could not open Chirp from this keyboard" | Expected fallback; open Chirp manually and return via app switcher. |
 | "Text kept in place" | The editor's context changed or is unreliable; recover the dictation in the app. Your text is never auto-deleted. |
