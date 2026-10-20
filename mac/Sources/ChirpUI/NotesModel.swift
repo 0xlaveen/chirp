@@ -43,19 +43,9 @@ public enum NotesStatus {
     public static func speakerDownloadPrompt(size: String) -> String {
         "Speaker labels need a \(size) on-device model, downloaded once. Audio never leaves this Mac."
     }
-}
-
-/// The on-device speaker model, as the Notes window shows it.
-public enum SpeakerModelState: Equatable, Sendable {
-    case notDownloaded
-    /// 0…1.
-    case downloading(Double)
-    case loading
-    case ready
-    case failed(String)
-
-    public var isFailure: Bool { if case .failed = self { true } else { false } }
-    public var isDownloading: Bool { if case .downloading = self { true } else { false } }
+    public static func speakerRedownloadPrompt(size: String) -> String {
+        "The speaker model on this Mac did not load. Remove it and download it again (\(size))? Audio never leaves this Mac."
+    }
 }
 
 /// One transcript row: a whole segment (no labels, or a gap), or one speaker turn of a labelled segment.

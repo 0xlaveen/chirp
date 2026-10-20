@@ -120,7 +120,7 @@ func run(_ clip: URL, _ o: Options, model: LoadedSpeakerModel, loadSeconds: Doub
                                  structure: { _ in .failed("off") },
                                  options: StartOptions(client: "mac", correction: false, wordTimings: true),
                                  structuring: false, health: nil, serverHost: o.server.host ?? "")
-    let diarizer = model.makeDiarizer()
+    let diarizer = model.makeSortformerDiarizer()
     recorder.speakers = diarizer
     var lags: [Double] = []
     var tentative = 0
@@ -173,7 +173,8 @@ func main() async throws {
     try FileManager.default.createDirectory(at: o.out, withIntermediateDirectories: true)
     let rssBefore = rss().now
     let t0 = Date()
-    let model = try await SpeakerModel.load(o.precision, variant: o.variant)
+    // Running the bench is the operator's consent to fetch the model (pinned revision, checked hashes).
+    let model = try await SpeakerModel.load(o.precision, variant: o.variant, download: true)
     let loadSeconds = Date().timeIntervalSince(t0)
     let rssLoaded = rss().now
     for clip in o.clips {

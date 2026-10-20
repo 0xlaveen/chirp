@@ -635,13 +635,14 @@ private struct NotesFooter: View {
                         .lineLimit(1)
                 }
             }
-            Toggle(NotesStatus.speakerLabels, isOn: Binding(get: { model.speakerLabels },
+            // On while downloading too, so switching it off cancels the download.
+            Toggle(NotesStatus.speakerLabels, isOn: Binding(get: { model.speakerLabels || model.speakerModel.isDownloading },
                                                              set: { model.onSpeakerLabelsToggle($0) }))
                 .toggleStyle(.switch)
                 .controlSize(.mini)
                 .font(.caption)
                 .help(NotesStatus.speakerHelp)
-                .disabled(model.isRecording || model.isBusy || model.speakerModel.isDownloading)
+                .disabled(model.isRecording || model.isBusy)
             Toggle("Structure notes", isOn: Binding(get: { model.structureEnabled },
                                                     set: { model.structureEnabled = $0; model.onStructureToggle($0) }))
                 .toggleStyle(.switch)

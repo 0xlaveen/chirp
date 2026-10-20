@@ -335,7 +335,7 @@ public enum Snapshots {
     }
 
     public static var aboutScenarios: [Scenario] {
-        [Scenario(name: "about") { AboutView(icon: appIcon, info: AboutInfo(version: "0.1.0", build: "1")) }]
+        [Scenario(name: "about") { AboutView(icon: appIcon, info: AboutInfo(version: "0.1.0", build: "1"), onNotices: {}) }]
     }
 
     private static let boya = AudioInput(uid: "boya", name: "BOYA CM40")

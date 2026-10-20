@@ -258,6 +258,8 @@ public final class NotesRecorder {
     private var labelJobs: [Int: LabelJob] = [:]
     private var labelQueue: [LabelJob] = []
     private var labelTask: Task<Void, Never>?
+    /// Segments labelled at the timeout, kept to label again once the diarizer has settled their audio.
+    private var tentativeJobs: [LabelJob] = []
     /// The diarizer the current recording feeds.
     private var activeSpeakers: SpeakerDiarizing?
 
@@ -674,6 +676,7 @@ public final class NotesRecorder {
     private func schedule() {
         guard !structuring.isOff else { return }
         guard passTask == nil, finalizingCount == 0, labelQueue.isEmpty else { pending = true; return }
+        relabelSettled()
         pending = false
         var appendWaiting = false
         if state.isCapturing {
@@ -1069,13 +1072,27 @@ public final class NotesRecorder {
     }
 
     private func label(_ job: LabelJob, timeline: SpeakerTimeline, tentative: Bool) {
+        if tentative { tentativeJobs.append(job) }
         guard let turns = SpeakerAttribution.turns(words: job.words, raw: job.raw, text: job.text, offset: job.offset,
                                                    end: job.end, spans: timeline.labellingSpans(includeTentative: tentative),
                                                    previousSlot: document.lastSpeakerSlot) else { return }
         document.attachSpeakers(turns, toSegment: job.segment, tentative: tentative)
     }
 
+    /// Labels attached at the timeout are attached again from the settled timeline once it covers them (before a
+    /// pass, so the notes see the better labels).
+    private func relabelSettled() {
+        guard !tentativeJobs.isEmpty, let speakers = activeSpeakers else { return }
+        let timeline = speakers.snapshot
+        let settled = tentativeJobs.filter { timeline.finalizedThrough + 0.001 >= $0.end }
+        guard !settled.isEmpty else { return }
+        tentativeJobs.removeAll { timeline.finalizedThrough + 0.001 >= $0.end }
+        for job in settled { label(job, timeline: timeline, tentative: false) }
+        changed()
+    }
+
     private func dropLabels() {
+        tentativeJobs.removeAll()
         labelTask?.cancel()
         labelTask = nil
         labelJobs.removeAll()
@@ -1099,11 +1116,12 @@ public final class NotesRecorder {
         if let seq = current, let old, segments[seq] != nil { finalize(seq, old) }
         current = nil
         router.setSpeakers(nil)
-        if let speakers = activeSpeakers {
-            // The tail settles while the last final decodes; the session stays open for the next Record.
-            Task { await speakers.flush() }
-        }
+        // The tail settles while the last final decodes; the session stays open for the next Record.
+        let flush = activeSpeakers.map { speakers in Task { await speakers.flush() } }
         await waitUntil { self.segments.isEmpty && self.passTask == nil && self.labelQueue.isEmpty }
+        // Record cannot start before this returns, so the Stop silence is in the model before any new audio.
+        await flush?.value
+        relabelSettled()
         guard epoch == myEpoch else { return }
         if let h = held {
             dropHeld()

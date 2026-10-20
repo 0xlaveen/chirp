@@ -190,7 +190,22 @@ public final class FakeDiarizer: SpeakerDiarizing, @unchecked Sendable {
         }
     }
 
-    public func flush() async { lock.withLock { flushes += 1; flushed = fedThrough } }
+    /// Flushes wait here until `releaseFlush()` while this is set (tests of Stop's ordering).
+    public var holdFlush = false
+    private var heldFlush: CheckedContinuation<Void, Never>?
+
+    public func flush() async {
+        let hold = lock.withLock { holdFlush }
+        if hold { await withCheckedContinuation { c in lock.withLock { heldFlush = c } } }
+        lock.withLock { flushes += 1; flushed = fedThrough }
+    }
+
+    public func releaseFlush() {
+        let c = lock.withLock { () -> CheckedContinuation<Void, Never>? in defer { heldFlush = nil }; holdFlush = false; return heldFlush }
+        c?.resume()
+    }
+
+    public var flushWaiting: Bool { lock.withLock { heldFlush != nil } }
 
     public var snapshot: SpeakerTimeline {
         lock.withLock {

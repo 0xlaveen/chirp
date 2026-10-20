@@ -322,6 +322,58 @@ private func span(_ slot: Int, _ start: Double, _ end: Double) -> SpeakerSpan { 
         await eventually("the pass") { !stub.requests.isEmpty }
         #expect(stub.requests[0].transcript == "Person 1: We ship Friday.\nPerson 2: Agreed.")
         await r.stop()
+        // Stop's flush settled the diarizer: the tentative labels were attached again from the settled timeline.
+        #expect(!r.document.segments[0].labelsTentative)
+    }
+
+    /// Privacy: a full labelled session (two recordings, labels, a pass, New) writes nothing under Application
+    /// Support or Chirp's caches. Labels, names and the timeline live in memory only.
+    @Test func aLabelledSessionWritesNoFiles() async throws {
+        let before = SpeakerPrivacyTests.footprint()
+        let server = try MockServer()
+        let port = try await server.start()
+        defer { server.stop() }
+        server.script(0, .init(final: twoVoices))
+        server.script(1, .init(final: twoVoices))
+        let stub = StructureStub(), clock = ManualClock()
+        let fake = FakeDiarizer(script: [span(3, 0, 0.5), span(1, 0.55, 1.0), span(3, 1.0, 1.5), span(1, 1.55, 2.0)], lag: 0)
+        let r = make(port, stub: stub, clock: clock)
+        r.speakers = fake
+        await record(r, frames: 20)
+        await r.stop()
+        await record(r, frames: 20)
+        await r.stop()
+        #expect(r.document.speakerCount == 2 && !stub.requests.isEmpty)
+        _ = r.document.exportMarkdown()          // what Copy would put on the pasteboard; Save… is the user's choice
+        r.reset()
+        let after = SpeakerPrivacyTests.footprint()
+        // Other apps write under Application Support meanwhile: only Chirp's and FluidAudio's own paths count.
+        let changed = after.filter { before[$0.key] != $0.value }.map(\.key)
+            .filter { $0.localizedCaseInsensitiveContains("chirp") || $0.contains("FluidAudio") }
+        #expect(changed.isEmpty, "\(changed)")
+    }
+
+    @Test func stopWaitsForTheFlushSoTheNextRecordStartsAfterIt() async throws {
+        let server = try MockServer()
+        let port = try await server.start()
+        defer { server.stop() }
+        server.script(0, .init(final: twoVoices))
+        let stub = StructureStub(), clock = ManualClock()
+        let fake = FakeDiarizer(script: [span(3, 0, 0.5), span(1, 0.55, 1.0)], lag: 0)
+        fake.holdFlush = true
+        let r = make(port, stub: stub, clock: clock)
+        r.speakers = fake
+        await record(r, frames: 20)
+        let stopped = Task { await r.stop() }
+        await eventually("flush waiting") { fake.flushWaiting }
+        try? await Task.sleep(for: .milliseconds(100))
+        // Still finishing: Record cannot start while the Stop silence is not in the model yet.
+        #expect(r.state == .stopping)
+        r.start()
+        #expect(r.state == .stopping)
+        fake.releaseFlush()
+        await stopped.value
+        #expect(r.state == .stopped && fake.flushes == 1)
     }
 
     @Test func recordAfterStopKeepsPersonNumbers() async throws {
@@ -387,19 +439,37 @@ private func span(_ slot: Int, _ start: Double, _ end: Double) -> SpeakerSpan { 
         #expect(line.range(of: #"^notes labels speakers=\d+ lag_ms=\d+ tentative=(true|false)$"#, options: .regularExpression) != nil)
     }
 
-    /// The speaker code writes no files, keeps no defaults and opens no connections; only the model store removes
-    /// its own cache (and FluidAudio downloads it once, behind the explicit prompt).
-    @Test func speakerCodeNeverWritesOrSends() throws {
-        let sources = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
-            .deletingLastPathComponent().appendingPathComponent("Sources")
-        let files = ["ChirpCore/Speakers.swift", "ChirpCore/SpeakerAttribution.swift", "ChirpSpeakers/SortformerSpeakers.swift"]
-        let banned = ["write(to", "createFile", "FileHandle", "UserDefaults", "URLSession", "NWConnection", "Logger(", "print(",
-                      "os_log", "NSLog", "Keychain", "SecItem"]
-        for file in files {
-            let text = try String(contentsOf: sources.appendingPathComponent(file), encoding: .utf8)
-            for word in banned { #expect(!text.contains(word), "\(file) uses \(word)") }
-        }
+    /// Apache-2.0 §4(a) and CC BY 4.0: the app bundle ships FluidAudio's licence and the model's attribution.
+    @Test func theNoticesShipInTheAppBundle() throws {
+        let mac = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let notices = try String(contentsOf: mac.appendingPathComponent("Assets/ThirdParty/NOTICES.md"), encoding: .utf8)
+        #expect(notices.contains("CC BY 4.0") && notices.contains("ae9a27ab45dc0aa3abede7d2d6bad2b7a69aa6d1")
+                && notices.contains("nvidia/diar_streaming_sortformer_4spk-v2.1"))
+        let licence = try String(contentsOf: mac.appendingPathComponent("Assets/ThirdParty/FluidAudio/LICENSE.txt"), encoding: .utf8)
+        #expect(licence.contains("Apache License") && licence.contains("Version 2.0"))
+        let bundle = try String(contentsOf: mac.appendingPathComponent("scripts/bundle.sh"), encoding: .utf8)
+        #expect(bundle.contains("cp -R Assets/ThirdParty \"$APP/Contents/Resources/ThirdParty\""))
     }
+
+    /// What a labelled session could leave behind: everything under Application Support and Chirp's caches (the
+    /// bench's own audio aside), with modification dates.
+    static func footprint() -> [String: Date] {
+        let fm = FileManager.default
+        let library = fm.homeDirectoryForCurrentUser.appendingPathComponent("Library")
+        var out: [String: Date] = [:]
+        for root in [library.appendingPathComponent("Application Support"), library.appendingPathComponent("Caches/Chirp")] {
+            guard let walk = fm.enumerator(at: root, includingPropertiesForKeys: [.contentModificationDateKey],
+                                           options: [.skipsHiddenFiles]) else { continue }
+            for case let url as URL in walk {
+                let path = url.path
+                if path.contains("/speaker-bench") || path.contains("/FluidAudio/Models") { walk.skipDescendants(); continue }
+                if walk.level > 3 { walk.skipDescendants() }
+                out[path] = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
+            }
+        }
+        return out
+    }
+
 }
 
 @MainActor

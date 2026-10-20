@@ -1,14 +1,22 @@
 import ChirpCore
+import CryptoKit
 @preconcurrency import FluidAudio
 import Foundation
 
-/// The on-device speaker model for Live Notes labels: NVIDIA's streaming Sortformer (CC-BY-4.0) as CoreML, through
-/// FluidAudio (Apache-2.0). It downloads once from Hugging Face at a pinned revision, after the user's explicit
-/// consent, into `~/Library/Application Support/FluidAudio/Models/sortformer`; inference never needs the network.
+/// The on-device speaker model for Live Notes labels: NVIDIA's streaming Sortformer (CC-BY-4.0), converted to CoreML
+/// by FluidInference, through FluidAudio (Apache-2.0). It downloads once, from Hugging Face over HTTPS at a pinned
+/// revision and only after the user's Download, into `~/Library/Application Support/FluidAudio/Models/sortformer`,
+/// and the files are checked against the hashes below. Every other load is offline: a missing or damaged model fails
+/// instead of being fetched or repaired (FluidAudio's own purge-and-re-download included).
 public enum SpeakerModel {
     public static let repo = "FluidInference/diar-streaming-sortformer-coreml"
     /// The Hugging Face commit the bench measured; a moved `main` can never change what loads.
     public static let revision = "ae9a27ab45dc0aa3abede7d2d6bad2b7a69aa6d1"
+    /// The only host the model comes from. FluidAudio would take `REGISTRY_URL` / `MODEL_REGISTRY_URL` from the
+    /// environment; the app always sets this instead (tests point it at a local server).
+    nonisolated(unsafe) static var registry = "https://huggingface.co"
+    /// The model cache root; tests use a temporary directory.
+    nonisolated(unsafe) static var root: URL?
 
     /// Weight builds of the same model: fp16 and the 6-bit palettized one (the app's).
     public enum Precision: String, Sendable, CaseIterable {
@@ -30,6 +38,28 @@ public enum SpeakerModel {
     public static let precision: Precision = .palettized
     public static let variant: Variant = .fast
 
+    /// The app's build at `revision`: each file's size and SHA-256 (the Hub's LFS hashes; the two `model.mil` files
+    /// checked against their git blob ids). A download that does not match is deleted.
+    static let manifest: [(path: String, size: Int, sha256: String)] = [
+        ("analytics/coremldata.bin", 202, "2906b22a79f1d41870fbc9ed0348c9103b06a4794653b6bb0a609bfcd44217b9"),
+        ("coremldata.bin", 1091, "96db957cd3c8bb35c1127b2405c360e0e5d2e3a7808b30692f1fb55fd6062719"),
+        ("model0/analytics/coremldata.bin", 108, "5a8281049b2a65a3be541cfd9f949e84b8fe1c5251ce90e46da1626fed54e58a"),
+        ("model0/coremldata.bin", 632, "c392b563ce501ebe841e1ff7d8a4ff659ee72cdaa6784e16114739feaa37aecc"),
+        ("model0/model.mil", 31782, "f6b9b011973f566a8037664418abd87c3c878c2b5bcfaa86d4eceebcfba6b4df"),
+        ("model0/weights/0-weight.bin", 8_948_544, "88a98803e35186b1dfb41d7f748f7cee5093bb6efeb117f56953c17549792fa4"),
+        ("model1/analytics/coremldata.bin", 108, "5a8281049b2a65a3be541cfd9f949e84b8fe1c5251ce90e46da1626fed54e58a"),
+        ("model1/coremldata.bin", 593, "93887e1d6f29e366d58f88efc4caa3b35e189a960db6f91bae3ea5721e3c825d"),
+        ("model1/model.mil", 1_220_622, "9b14e85cb0bf274ab646242d9dfbe84ef61cc6956b4d0b203a3fbebc74b40383"),
+        ("model1/weights/1-weight.bin", 86_889_664, "ebc39adbaef1d895b0c6f432b5480425fecdfac139fb232ddb21d0dd76b923a8"),
+    ]
+
+    public enum LoadError: Error, Equatable {
+        /// An offline load found no complete model: only the user's Download may fetch it.
+        case notDownloaded
+        /// The downloaded files did not match the pinned hashes (they were deleted).
+        case checksum(String)
+    }
+
     static func config(_ precision: Precision, _ variant: Variant = variant) -> SortformerConfig {
         var c = variant == .fast ? SortformerConfig.default : SortformerConfig.balancedV2_1
         c.precision = precision.fluid
@@ -38,42 +68,99 @@ public enum SpeakerModel {
 
     /// FluidAudio's model cache root.
     public static var directory: URL {
-        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        root ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("FluidAudio/Models", isDirectory: true)
     }
 
     /// This model's folder (both precisions), what Remove deletes.
     public static var folder: URL { directory.appendingPathComponent("sortformer", isDirectory: true) }
 
-    /// The pinned build is on disk, so loading it needs no network (and no consent prompt).
-    public static func isDownloaded(_ precision: Precision = precision) -> Bool {
-        guard let bundle = ModelNames.Sortformer.bundle(for: config(precision)) else { return false }
-        let fm = FileManager.default
-        let marker = folder.appendingPathComponent(".fluidaudio-revision")
-        let stored = (try? String(contentsOf: marker, encoding: .utf8))?.trimmingCharacters(in: .whitespacesAndNewlines)
-        return stored == revision && fm.fileExists(atPath: folder.appendingPathComponent(bundle).path)
+    static func bundle(_ precision: Precision, _ variant: Variant = variant) -> URL? {
+        ModelNames.Sortformer.bundle(for: config(precision, variant)).map { folder.appendingPathComponent($0) }
     }
 
-    /// Downloads (once) and compiles the model. `progress` gets 0…1 on an unspecified queue.
-    public static func load(_ precision: Precision = precision, variant: Variant = variant,
+    /// The pinned build is completely on disk (revision marker, and every file at its pinned size), so loading it
+    /// needs no network and no consent prompt.
+    public static func isDownloaded(_ precision: Precision = precision, variant: Variant = variant) -> Bool {
+        guard let bundle = bundle(precision, variant) else { return false }
+        let marker = folder.appendingPathComponent(".fluidaudio-revision")
+        let stored = (try? String(contentsOf: marker, encoding: .utf8))?.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard stored == revision, FileManager.default.fileExists(atPath: bundle.path) else { return false }
+        guard precision == Self.precision, variant == Self.variant else { return true }
+        return manifest.allSatisfy { file in
+            let size = (try? FileManager.default.attributesOfItem(atPath: bundle.appendingPathComponent(file.path).path)[.size]) as? Int
+            return size == file.size
+        }
+    }
+
+    /// Anything of the model on disk: a complete, partial or damaged download.
+    public static func hasFiles() -> Bool {
+        let items = (try? FileManager.default.contentsOfDirectory(atPath: folder.path)) ?? []
+        return !items.isEmpty
+    }
+
+    /// Loads the model. With `download` false (every load but the one after the user's Download) FluidAudio runs in
+    /// offline mode: nothing is fetched, and a damaged model is not purged and fetched again. `progress` gets 0…1 on
+    /// an unspecified queue.
+    public static func load(_ precision: Precision = precision, variant: Variant = variant, download: Bool,
                             progress: (@Sendable (Double) -> Void)? = nil) async throws -> LoadedSpeakerModel {
+        ModelRegistry.baseURL = registry
         ModelRegistry.revisionOverrides[repo] = revision
+        ModelHub.offlineMode = !download
+        defer { ModelHub.offlineMode = true }
+        guard download || isDownloaded(precision, variant: variant) else { throw LoadError.notDownloaded }
         var handler: ProgressHandler?
         if let progress { handler = { (update: DownloadProgress) in progress(update.fractionCompleted) } }
         let models = try await SortformerModels.loadFromHuggingFace(config: config(precision, variant),
                                                                      cacheDirectory: directory, progressHandler: handler)
+        if download, precision == Self.precision, variant == Self.variant, let bundle = bundle(precision, variant) {
+            if let bad = mismatch(in: bundle) {
+                try? remove()
+                throw LoadError.checksum(bad)
+            }
+        }
         return LoadedSpeakerModel(models: models, precision: precision, variant: variant)
     }
 
-    /// Settings › Remove model: deletes the cached model (both builds).
+    /// The first file whose size or SHA-256 differs from the manifest, if any.
+    static func mismatch(in bundle: URL) -> String? {
+        for file in manifest {
+            let url = bundle.appendingPathComponent(file.path)
+            guard let handle = try? FileHandle(forReadingFrom: url) else { return file.path }
+            defer { try? handle.close() }
+            var hasher = SHA256()
+            var size = 0
+            while let chunk = try? handle.read(upToCount: 1 << 20), !chunk.isEmpty {
+                hasher.update(data: chunk)
+                size += chunk.count
+            }
+            let hex = hasher.finalize().map { String(format: "%02x", $0) }.joined()
+            if size != file.size || hex != file.sha256 { return file.path }
+        }
+        return nil
+    }
+
+    /// Settings › Remove model: deletes the cached model (both builds, partial downloads too).
     public static func remove() throws {
         guard FileManager.default.fileExists(atPath: folder.path) else { return }
         try FileManager.default.removeItem(at: folder)
     }
 }
 
+/// The app's `SpeakerModelStore`: the pinned palettized build in FluidAudio's cache.
+public struct SortformerModelStore: SpeakerModelStore {
+    public init() {}
+    public var sizeText: String { SpeakerModel.precision.sizeText }
+    public func isDownloaded() -> Bool { SpeakerModel.isDownloaded() }
+    public func hasFiles() -> Bool { SpeakerModel.hasFiles() }
+    public func load(download: Bool, progress: @escaping @Sendable (Double) -> Void) async throws -> any SpeakerDiarizerFactory {
+        try await SpeakerModel.load(download: download, progress: progress)
+    }
+    public func remove() throws { try SpeakerModel.remove() }
+}
+
 /// A compiled model, ready to start diarizers from (warm loads take ~0.1 s).
-public final class LoadedSpeakerModel: @unchecked Sendable {
+public final class LoadedSpeakerModel: SpeakerDiarizerFactory, @unchecked Sendable {
     let models: SortformerModels
     public let precision: SpeakerModel.Precision
     public let variant: SpeakerModel.Variant
@@ -84,7 +171,8 @@ public final class LoadedSpeakerModel: @unchecked Sendable {
         self.variant = variant
     }
 
-    public func makeDiarizer() -> SortformerSpeakerDiarizer { SortformerSpeakerDiarizer(model: self) }
+    public func makeDiarizer() -> SpeakerDiarizing { makeSortformerDiarizer() }
+    public func makeSortformerDiarizer() -> SortformerSpeakerDiarizer { SortformerSpeakerDiarizer(model: self) }
 }
 
 /// One Notes document's diarizer: a single streaming Sortformer whose speaker cache keeps Person N the same person
@@ -116,7 +204,9 @@ public final class SortformerSpeakerDiarizer: SpeakerDiarizing, @unchecked Senda
 
     // Shared with the audio thread and readers, under `lock`.
     private let lock = NSLock()
+    /// Waiting frames from `head` on: dropping the oldest only moves `head` (the audio thread never shifts the array).
     private var pending: [(pcm: Data, at: TimeInterval)] = []
+    private var head = 0
     private var pendingSamples = 0
     private var draining = false
     private var generation = 0
@@ -132,6 +222,9 @@ public final class SortformerSpeakerDiarizer: SpeakerDiarizing, @unchecked Senda
     }
     private var pieces: [Piece] = []
     private var samplesFed = 0
+    /// The generation the model's state belongs to: a run for a newer one resets the model first, so audio after New
+    /// never meets the old speakers (whatever the queue was doing when New came).
+    private var modelGeneration = 0
 
     init(model: LoadedSpeakerModel) {
         var timelineConfig = DiarizerTimelineConfig.sortformerDefault
@@ -150,9 +243,9 @@ public final class SortformerSpeakerDiarizer: SpeakerDiarizing, @unchecked Senda
         let start = lock.withLock { () -> Bool in
             pending.append((pcm16, documentTime))
             pendingSamples += pcm16.count / 2
-            while pendingSamples > Int(Self.maxPending * Self.rate), let first = pending.first {
-                pending.removeFirst()
-                pendingSamples -= first.pcm.count / 2
+            while pendingSamples > Int(Self.maxPending * Self.rate), head < pending.count {
+                pendingSamples -= pending[head].pcm.count / 2
+                head += 1
                 _stats.droppedFrames += 1
             }
             guard !draining, pendingSamples >= Self.step else { return false }
@@ -176,13 +269,9 @@ public final class SortformerSpeakerDiarizer: SpeakerDiarizing, @unchecked Senda
         lock.withLock {
             generation += 1
             pending.removeAll()
+            head = 0
             pendingSamples = 0
             timeline = SpeakerTimeline()
-        }
-        queue.async {
-            self.diarizer.reset()
-            self.pieces.removeAll()
-            self.samplesFed = 0
         }
     }
 
@@ -203,12 +292,18 @@ public final class SortformerSpeakerDiarizer: SpeakerDiarizing, @unchecked Senda
                 draining = false
                 return ([], generation)
             }
-            defer { pending.removeAll(keepingCapacity: true); pendingSamples = 0 }
-            return (pending, generation)
+            defer { pending.removeAll(keepingCapacity: true); head = 0; pendingSamples = 0 }
+            return (Array(pending[head...]), generation)
         }
     }
 
     private func run(_ batch: [(pcm: Data, at: TimeInterval)], generation gen: Int, padding: TimeInterval) {
+        if gen != modelGeneration {
+            diarizer.reset()
+            pieces.removeAll()
+            samplesFed = 0
+            modelGeneration = gen
+        }
         var samples: [Float] = []
         samples.reserveCapacity(batch.reduce(0) { $0 + $1.pcm.count / 2 } + Int(padding * Self.rate))
         for (pcm, at) in batch {

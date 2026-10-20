@@ -20,6 +20,8 @@ let package = Package(
         .target(name: "ChirpSpeakers", dependencies: ["ChirpCore", .product(name: "FluidAudio", package: "FluidAudio")]),
         .executableTarget(name: "ChirpMac", dependencies: ["ChirpCore", "ChirpUI", "ChirpSpeakers"]),
         .testTarget(name: "ChirpCoreTests", dependencies: ["ChirpCore", "ChirpUI"]),
+        // The real model store against a local server and a temporary cache: consent and offline loads, no model needed.
+        .testTarget(name: "ChirpSpeakersTests", dependencies: ["ChirpCore", "ChirpSpeakers"]),
     ],
     swiftLanguageModes: [.v6]
 )

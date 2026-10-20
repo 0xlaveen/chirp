@@ -60,7 +60,7 @@ final class SettingsWindowController: NSObject, NSTextFieldDelegate {
         s.profiles = catalog.source == .unavailable ? CorrectionProfile.offered(by: health) : catalog.profiles
         s.serverOffersStyles = health == nil || health?.correctionProfiles != nil
         s.keepLoaded = keepLoaded
-        s.speakerModelDownloaded = SpeakerModel.isDownloaded()
+        s.speakerModelDownloaded = SpeakerModel.hasFiles()
         s.serverHost = KeepLoaded.hostPhrase(ServerConfig(baseURL: URL(string: settings.serverURL) ?? ServerConfig.defaultURL))
         return s
     }

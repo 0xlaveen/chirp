@@ -67,11 +67,9 @@ final class NotesController {
     /// The speaker model was downloaded or removed (Settings shows it).
     var onSpeakerModelChange: (() -> Void)?
 
-    /// Speaker labels: the compiled model while a document may use it, and this document's diarizer (one per
-    /// document, so Person N stays the same person across Record after Stop). Memory only; dropped on New.
-    private var speakerModel: LoadedSpeakerModel?
-    private var diarizer: SortformerSpeakerDiarizer?
-    private var speakerLoad: Task<LoadedSpeakerModel?, Never>?
+    /// Speaker labels: the switch, consent, offline loads, Remove and this document's diarizer.
+    let speakers = SpeakerLabels(store: SortformerModelStore(), enabled: settings.notesSpeakerLabels,
+                                 onPreference: { settings.notesSpeakerLabels = $0 })
 
     private let capture = AudioCapture(engine: SystemCaptureEngine(pickedDevice: { InputDevice.pickedID(uid: settings.inputDeviceUID) }))
     private var tick: Timer?
@@ -123,9 +121,17 @@ final class NotesController {
             guard let self else { return }
             chirpLog.info("\(SpeakerLog.labels(speakers: self.recorder.document.speakerCount, lag: lag, tentative: tentative), privacy: .public)")
         }
-        if settings.notesSpeakerLabels, !SpeakerModel.isDownloaded() { settings.notesSpeakerLabels = false }
-        model.speakerLabels = settings.notesSpeakerLabels
-        model.speakerModel = SpeakerModel.isDownloaded() ? .ready : .notDownloaded
+        speakers.onChange = { [weak self] in
+            self?.sync()
+            self?.onSpeakerModelChange?()
+        }
+        speakers.confirm = { [weak self] prompt, done in
+            let message = switch prompt {
+            case .download(let size): NotesStatus.speakerDownloadPrompt(size: size)
+            case .redownload(let size): NotesStatus.speakerRedownloadPrompt(size: size)
+            }
+            (self?.confirmSpeakerDownload ?? { _, done in done(false) })(message, done)
+        }
         sync()
     }
 
@@ -154,20 +160,21 @@ final class NotesController {
         guard !gate.isPaused, !isActive else { return }
         guard !isDictating() else { NSSound.beep(); return }
         onShowWindow?(focus)
-        if settings.notesSpeakerLabels, speakerModel == nil {
-            // The model compiles once (warm loads take ~0.1 s); recording starts as soon as it is ready.
-            guard speakerLoad == nil else { return }
+        if speakers.needsLoad {
+            // The model loads offline (~0.1 s warm); recording starts as soon as it is ready, or without labels if
+            // it is gone (labels turn off: nothing downloads without the user's Download).
+            guard !speakers.isLoading else { return }
             Task {
-                _ = await loadSpeakerModel()
+                _ = await speakers.prepare()
                 self.start(focus: focus)
             }
             return
         }
         let health = resolvedHealth()
         startError = nil
-        let labels = settings.notesSpeakerLabels && speakerModel != nil
-        if labels, diarizer == nil { diarizer = speakerModel?.makeDiarizer() }
-        recorder.speakers = labels ? diarizer : nil
+        let diarizer = speakers.readyDiarizer()
+        let labels = diarizer != nil
+        recorder.speakers = diarizer
         recorder.options = settings.notesStartOptions(health: health, speakerLabels: labels)
         recorder.serverHost = settings.serverConfig().host
         applyAvailability(health)
@@ -242,96 +249,23 @@ final class NotesController {
         guard !isActive else { return }
         startError = nil
         recorder.reset()
-        dropSpeakers()
+        speakers.reset()
+        recorder.speakers = nil
     }
 
     // MARK: speaker labels
 
-    /// The footer's "Label speakers" switch. Turning it on the first time asks before downloading the model.
+    /// The footer's "Label speakers" switch (applies from the next Record).
     private func setSpeakerLabels(_ on: Bool) {
         guard !isActive else { return }
-        guard on else {
-            settings.notesSpeakerLabels = false
-            model.speakerLabels = false
-            return
-        }
-        if SpeakerModel.isDownloaded() {
-            enableSpeakerLabels()
-            return
-        }
-        guard !model.speakerModel.isDownloading else { return }
-        let message = NotesStatus.speakerDownloadPrompt(size: SpeakerModel.precision.sizeText)
-        let ask = confirmSpeakerDownload ?? { _, done in done(false) }
-        ask(message) { [weak self] download in
-            guard let self, download else { return }
-            Task {
-                guard await self.loadSpeakerModel() != nil else { return }
-                self.enableSpeakerLabels()
-                self.onSpeakerModelChange?()
-            }
-        }
+        speakers.setEnabled(on, documentHasLabels: recorder.document.speakerCount > 0)
+        if !speakers.enabled, speakers.diarizer == nil { recorder.speakers = nil }
     }
 
-    private func enableSpeakerLabels() {
-        settings.notesSpeakerLabels = true
-        model.speakerLabels = true
-        if model.speakerModel.isFailure { model.speakerModel = .ready }
-    }
-
-    /// Downloads (only after consent) and compiles the model; nil, with the reason in the footer, when that failed.
-    private func loadSpeakerModel() async -> LoadedSpeakerModel? {
-        if let speakerModel { return speakerModel }
-        if let speakerLoad { return await speakerLoad.value }
-        let downloading = !SpeakerModel.isDownloaded()
-        model.speakerModel = downloading ? .downloading(0) : .loading
-        sync()
-        let started = Date()
-        let task = Task { @MainActor [weak self] () -> LoadedSpeakerModel? in
-            do {
-                return try await SpeakerModel.load(progress: { fraction in
-                    Task { @MainActor in
-                        guard let self, downloading, case .downloading = self.model.speakerModel else { return }
-                        self.model.speakerModel = .downloading(min(fraction, 0.99))
-                    }
-                })
-            } catch {
-                return nil
-            }
-        }
-        speakerLoad = task
-        let loaded = await task.value
-        speakerLoad = nil
-        speakerModel = loaded
-        chirpLog.info("notes speaker model loaded=\(loaded != nil, privacy: .public) downloaded=\(downloading, privacy: .public) ms=\(Int(Date().timeIntervalSince(started) * 1000), privacy: .public)")
-        if loaded == nil {
-            model.speakerModel = .failed(downloading ? "the download failed" : "the model did not load")
-            settings.notesSpeakerLabels = false
-            model.speakerLabels = false
-        } else {
-            model.speakerModel = .ready
-        }
-        sync()
-        return loaded
-    }
-
-    /// New, or the model removed: this document's speakers and the compiled model go (memory only, nothing to wipe).
-    private func dropSpeakers() {
-        diarizer?.reset()
-        diarizer = nil
-        recorder.speakers = nil
-        speakerModel = nil
-    }
-
-    /// Settings › Remove: deletes the downloaded model; labels turn off until the user downloads it again.
+    /// Settings › Remove: deletes the model, partial downloads too; refused while recording or loading.
     func removeSpeakerModel() {
-        guard !isActive else { NSSound.beep(); return }
-        dropSpeakers()
-        do { try SpeakerModel.remove() } catch { chirpLog.error("notes speaker model remove failed") }
-        settings.notesSpeakerLabels = false
-        model.speakerLabels = false
-        model.speakerModel = SpeakerModel.isDownloaded() ? .ready : .notDownloaded
-        onSpeakerModelChange?()
-        sync()
+        guard !isActive, speakers.remove() else { NSSound.beep(); return }
+        recorder.speakers = nil
     }
 
     func markSaved() { recorder.markSaved() }
@@ -393,6 +327,8 @@ final class NotesController {
         model.state = state
         model.document = recorder.document
         model.structuring = recorder.structuring
+        model.speakerLabels = speakers.enabled
+        model.speakerModel = speakers.model
         let reorganize = recorder.reorganizeStatus
         model.reorganizeStatus = reorganize
         // The editor replays the AI changes right away, onto text that matches `model.document` before them.

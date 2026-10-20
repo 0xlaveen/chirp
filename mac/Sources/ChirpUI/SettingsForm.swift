@@ -48,7 +48,7 @@ public struct SettingsState: Sendable {
     /// "Keep clean-up model loaded": what the server last said, and where its memory is used ("this Mac" or the host).
     public var keepLoaded = KeepLoadedState()
     public var serverHost = "this Mac"
-    /// Live Notes' speaker-label model is on this Mac (Remove deletes it).
+    /// Some of Live Notes' speaker-label model is on this Mac, complete or not (Remove deletes it).
     public var speakerModelDownloaded = false
 
     public init() {}
