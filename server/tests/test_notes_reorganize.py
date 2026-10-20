@@ -714,17 +714,19 @@ def test_successes_carry_no_reason(settings):
         assert "reason" not in structured.json()
 
 
-# Speaker labels (Mac Live Notes, issue #18): notes carry `**Person 2**` owners and the `Person N:` paragraphs of a
-# fallback block; a reorganize keeps them.
+# Speaker labels (Mac Live Notes, issue #18): notes carry `**Person 2**` owners and the
+# `Person N:` paragraphs of a fallback block; a reorganize keeps them.
 LABELLED_NOTES = (
-    "## Spec\n- [ ] **Person 2** to send the spec by **Friday**\n## Budget\nPerson 1: no new headcount\n"
+    "## Spec\n- [ ] **Person 2** to send the spec by **Friday**\n"
+    "## Budget\nPerson 1: no new headcount\n"
     "## Spec\n- **Question:** who owns the beta?"
 )
 
 
 def test_a_reorganize_keeps_speaker_labels():
     moved = (
-        "## Spec\n- [ ] **Person 2** to send the spec by **Friday**\n- **Question:** who owns the beta?\n\n"
+        "## Spec\n- [ ] **Person 2** to send the spec by **Friday**\n"
+        "- **Question:** who owns the beta?\n\n"
         "## Budget\n- Person 1: no new headcount"
     )
     assert notes.reorganize_rejection_reason(LABELLED_NOTES, moved, "stop") is None

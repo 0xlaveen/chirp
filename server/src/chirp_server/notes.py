@@ -110,9 +110,9 @@ EXAMPLES = [
 ]
 
 
-# Mac Live Notes speaker labels (issue #18). A labelled transcript has `Person 2: …` lines (M1 sends no
-# names). Only such a transcript, or notes holding such labels, gets the rule and the example below: every other
-# request keeps exactly the prompt it had before labels existed.
+# Mac Live Notes speaker labels (issue #18). A labelled transcript has `Person 2: …` lines (M1
+# sends no names). Only such a transcript, or notes holding such labels, gets the rule and the
+# example below: every other request keeps exactly the prompt it had before labels existed.
 SPEAKER_LABEL = re.compile(r"^\s*(?:- (?:\[[ xX]\] )?)?Person \d+: ", re.M)
 PERSON = re.compile(r"\bPerson \d+\b")
 _SPEAKER_RULE = """\
@@ -148,13 +148,21 @@ def _examples(examples=EXAMPLES) -> str:
 NOTES_STYLE = _STYLE_RULES + "\n" + _examples()
 _LAST_RULE = "If the transcript has nothing substantive"
 NOTES_STYLE_LABELLED = (
-    _STYLE_RULES.replace(_LAST_RULE, _SPEAKER_RULE + _LAST_RULE) + "\n" + _examples([*EXAMPLES, SPEAKER_EXAMPLE])
+    _STYLE_RULES.replace(_LAST_RULE, _SPEAKER_RULE + _LAST_RULE)
+    + "\n"
+    + _examples([*EXAMPLES, SPEAKER_EXAMPLE])
 )
 
 
 def notes_system_prompt(labelled: bool = False) -> str:
-    """The structuring prompt; `labelled` (the transcript has `Person N:` lines) adds the speaker rule."""
-    return NOTES_CORE + "\n\n" + (NOTES_STYLE_LABELLED if labelled else NOTES_STYLE) + "\n\n" + NOTES_CORE
+    """The structuring prompt; `labelled` (`Person N:` transcript lines) adds the speaker rule."""
+    return (
+        NOTES_CORE
+        + "\n\n"
+        + (NOTES_STYLE_LABELLED if labelled else NOTES_STYLE)
+        + "\n\n"
+        + NOTES_CORE
+    )
 
 
 def validate_request(body) -> tuple[str, list[str], bool]:
@@ -515,8 +523,8 @@ def check_names(transcript: str, headings: list[str], body: list[str]) -> str | 
             gap = text[previous_end : match.start()]
             previous_end = match.end()
             initial = match.start() == 0 or re.search(r"[.!?:;(\"“—–]\s*$", gap)
-            # With speaker labels in play (`Person N:` lines), a line-initial `Name:` is a label: it must have been
-            # spoken. Without them the old sentence-initial exemption stands unchanged.
+            # With speaker labels in play (`Person N:` lines), a line-initial `Name:` is a label:
+            # it must have been spoken. Without them the sentence-initial exemption stands.
             label = labelled and match.start() == 0 and text[match.end() : match.end() + 1] == ":"
             if initial and not label and sum(char.isupper() for char in word) < 2:
                 continue
@@ -835,16 +843,18 @@ def _reorganize_examples() -> str:
 
 
 REORGANIZE_STYLE = _REORGANIZE_RULES + "\n" + _reorganize_examples()
-# Notes holding speaker labels (`Person 2:`, `**Person 2**`) also keep them; other notes get the prompt unchanged.
+# Notes holding speaker labels (`Person 2:`, `**Person 2**`) also keep them; other notes get the
+# prompt unchanged.
 REORGANIZE_STYLE_LABELLED = REORGANIZE_STYLE.replace(
     "- Keep the person's wording, headings, negations",
-    "- Keep the person's wording, headings, speaker labels (`Person 2:`, never renumbered), negations",
+    "- Keep the person's wording, headings, speaker labels (`Person 2:`, never renumbered), "
+    "negations",
     1,
 )
 
 
 def reorganize_system_prompt(labelled: bool = False) -> str:
-    """The reorganize prompt; `labelled` (the notes mention `Person N`) adds the speaker-label rule."""
+    """The reorganize prompt; `labelled` (the notes mention `Person N`) adds the label rule."""
     style = REORGANIZE_STYLE_LABELLED if labelled else REORGANIZE_STYLE
     return REORGANIZE_CORE + "\n\n" + style + "\n\n" + REORGANIZE_CORE
 

@@ -716,26 +716,48 @@ async def test_real_model_structures_eval_entries():
         await corrector.close()
 
 
-# Speaker labels (Mac Live Notes, issue #18): labels arrive as transcript text, one `Person N:` or name per line.
+# Speaker labels (Mac Live Notes, issue #18): labels arrive as transcript text, one `Person N:`
+# (or, after an M2 rename, a name) per line.
 LABELLED = "Person 1: we will ship on friday\nPerson 2: i can send the spec by tuesday"
 
 
 def test_a_speaker_label_in_the_transcript_is_accepted():
-    assert notes.rejection_reason(LABELLED, "- [ ] **Person 2** to send the spec by **Tuesday**", "stop") is None
+    assert (
+        notes.rejection_reason(
+            LABELLED, "- [ ] **Person 2** to send the spec by **Tuesday**", "stop"
+        )
+        is None
+    )
 
 
 def test_an_unknown_person_label_is_rejected():
     # Person 7 never spoke: the number guard catches the invented label.
-    assert notes.rejection_reason(LABELLED, "- [ ] **Person 7** to send the spec by **Tuesday**", "stop") == "number"
+    assert (
+        notes.rejection_reason(
+            LABELLED, "- [ ] **Person 7** to send the spec by **Tuesday**", "stop"
+        )
+        == "number"
+    )
 
 
 def test_a_renamed_speaker_is_accepted_and_an_invented_name_is_not():
     transcript = "Maya: i will send the spec by friday\nPerson 2: sounds good"
-    assert notes.rejection_reason(transcript, "- [ ] **Maya** to send the spec by **Friday**", "stop") is None
-    assert notes.rejection_reason(transcript, "- [ ] **Theo** to send the spec by **Friday**", "stop") == "name"
-    # A line-initial label is checked too once labels are in play (unlabelled transcripts keep the exemption).
-    assert notes.rejection_reason(transcript, "- Theo: sends the spec by **Friday**", "stop") == "name"
-    assert notes.rejection_reason(transcript, "- Maya: sends the spec by **Friday**", "stop") is None
+    assert (
+        notes.rejection_reason(transcript, "- [ ] **Maya** to send the spec by **Friday**", "stop")
+        is None
+    )
+    assert (
+        notes.rejection_reason(transcript, "- [ ] **Theo** to send the spec by **Friday**", "stop")
+        == "name"
+    )
+    # A line-initial label is checked too once labels are in play (unlabelled transcripts keep
+    # the sentence-initial exemption).
+    assert (
+        notes.rejection_reason(transcript, "- Theo: sends the spec by **Friday**", "stop") == "name"
+    )
+    assert (
+        notes.rejection_reason(transcript, "- Maya: sends the spec by **Friday**", "stop") is None
+    )
 
 
 def test_only_a_labelled_transcript_gets_the_speaker_rule():
@@ -746,7 +768,9 @@ def test_only_a_labelled_transcript_gets_the_speaker_rule():
     plain = notes.notes_system_prompt()
     assert "Person" not in plain
     assert labelled.replace(notes._SPEAKER_RULE, "").startswith(plain[: plain.index("Example 1")])
-    assert notes.has_speaker_labels(LABELLED) and not notes.has_speaker_labels("Update: the vendor called back")
+    assert notes.has_speaker_labels(LABELLED) and not notes.has_speaker_labels(
+        "Update: the vendor called back"
+    )
 
 
 def test_the_labelled_example_passes_its_own_guards():
@@ -755,8 +779,21 @@ def test_the_labelled_example_passes_its_own_guards():
 
 
 def test_labels_off_guards_match_main_for_colon_lines():
-    # Review B2: a capitalised `Word:` line is not a speaker label; the sentence-initial exemption stands.
-    assert notes.rejection_reason("So we ship friday\nUpdate: the vendor called back",
-                                  "- Reminder: the vendor called back", "stop") is None
-    assert notes.reorganize_rejection_reason("## Plan\n- Note: call the vendor\n- ship friday",
-                                             "## Plan\n- Reminder: call the vendor\n- ship friday", "stop") is None
+    # Review B2: a capitalised `Word:` line is not a speaker label; the sentence-initial
+    # exemption stands.
+    assert (
+        notes.rejection_reason(
+            "So we ship friday\nUpdate: the vendor called back",
+            "- Reminder: the vendor called back",
+            "stop",
+        )
+        is None
+    )
+    assert (
+        notes.reorganize_rejection_reason(
+            "## Plan\n- Note: call the vendor\n- ship friday",
+            "## Plan\n- Reminder: call the vendor\n- ship friday",
+            "stop",
+        )
+        is None
+    )
