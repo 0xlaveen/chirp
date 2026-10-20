@@ -11,7 +11,7 @@ final class NotesController {
     let model = NotesModel()
     private(set) lazy var recorder = NotesRecorder(
         makeSession: { StreamSession(config: settings.serverConfig(), options: $0) },
-        structure: { request in try await settings.serverConfig().structureNotes(request, timeout: Self.structureTimeout) },
+        structure: { request in try await Self.structure(request) },
         reorganize: { request in try await Self.reorganize(request) },
         options: settings.notesStartOptions(health: nil), structuring: settings.notesStructureEnabled(health: nil),
         autoReorganize: settings.notesAutoReorganize)
@@ -21,23 +21,37 @@ final class NotesController {
     /// A reorganize pass may take longer (up to 3500 chars in and out).
     static let reorganizeTimeout: TimeInterval = 50
 
-    /// One reorganize call, logged with counts only.
+    /// One structuring call, logged with counts and the guard name only.
+    private nonisolated static func structure(_ request: NotesStructureRequest) async throws -> NotesStructureResponse {
+        try await timed({ try await settings.serverConfig().structureNotes(request, timeout: structureTimeout) }) { result, ms in
+            chirpLog.info("notes structure chars=\(request.transcript.count, privacy: .public) result=\(result, privacy: .public) ms=\(ms, privacy: .public)")
+        } result: { $0.structured ? "ok" : $0.failureLabel }
+    }
+
+    /// One reorganize call, logged with counts and the guard name only.
     private nonisolated static func reorganize(_ request: NotesReorganizeRequest) async throws -> NotesReorganizeResponse {
+        try await timed({ try await settings.serverConfig().reorganizeNotes(request, timeout: reorganizeTimeout) }) { result, ms in
+            chirpLog.info("notes reorganize chars=\(request.notes.count, privacy: .public) scope=\(request.range.length, privacy: .public) result=\(result, privacy: .public) ms=\(ms, privacy: .public)")
+        } result: { $0.reorganized ? ($0.changed ? "changed" : "unchanged") : $0.failureLabel }
+    }
+
+    /// Runs `call`, then logs its outcome (`result` of the answer, or the error code) and duration.
+    private nonisolated static func timed<R: Sendable>(_ call: () async throws -> R, log: (String, Int) -> Void,
+                                                      result: (R) -> String) async throws -> R {
         let start = ContinuousClock.now
-        func log(_ result: String) {
-            let elapsed = (ContinuousClock.now - start).components
-            let ms = Double(elapsed.seconds) * 1000 + Double(elapsed.attoseconds) / 1e15
-            chirpLog.info("notes reorganize chars=\(request.notes.count, privacy: .public) scope=\(request.range.length, privacy: .public) result=\(result, privacy: .public) ms=\(Int(ms), privacy: .public)")
+        func ms() -> Int {
+            let e = (ContinuousClock.now - start).components
+            return Int(Double(e.seconds) * 1000 + Double(e.attoseconds) / 1e15)
         }
         do {
-            let r = try await settings.serverConfig().reorganizeNotes(request, timeout: reorganizeTimeout)
-            log(r.reorganized ? (r.changed ? "changed" : "unchanged") : (r.error ?? "failed"))
+            let r = try await call()
+            log(result(r), ms())
             return r
         } catch let error as NotesStructureError {
-            log(error.code)
+            log(error.code, ms())
             throw error
         } catch {
-            log("http")
+            log((error as? URLError)?.code == .timedOut ? "timeout" : "http", ms())
             throw error
         }
     }
@@ -70,6 +84,14 @@ final class NotesController {
 
     init() {
         recorder.onChange = { [weak self] in self?.sync() }
+        recorder.onPassEvent = { event in
+            switch event {
+            case .split(let chars, let depth, let parts, let fallbacks):
+                chirpLog.info("notes split chars=\(chars, privacy: .public) depth=\(depth, privacy: .public) parts=\(parts, privacy: .public) fallbacks=\(fallbacks, privacy: .public)")
+            case .organize(let steps, let failed, let conflict):
+                chirpLog.info("notes organize steps=\(steps, privacy: .public) failed=\(failed, privacy: .public) conflict=\(conflict, privacy: .public)")
+            }
+        }
         model.tab = NotesTab(rawValue: settings.notesTab) ?? .notes
         model.structureEnabled = false
         model.onRecordToggle = { [weak self] in self?.toggle(fromHotkey: false) }
@@ -256,8 +278,9 @@ final class NotesController {
         model.enqueue(recorder.takePendingChanges())
         model.debugRetention = recorder.debugRetention || (resolvedHealth()?.debugRetention ?? false)
         model.elapsed = recorder.elapsed
+        model.finishingElapsed = recorder.stoppingElapsed
         model.reduceMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
-        setTicking(recorder.state.isCapturing)
+        setTicking(recorder.state.isActive)
         let announcement = model.announcement
         if announcement != lastAnnouncement {
             lastAnnouncement = announcement
@@ -285,6 +308,7 @@ final class NotesController {
             MainActor.assumeIsolated {
                 guard let self else { return }
                 self.model.elapsed = self.recorder.elapsed
+                self.model.finishingElapsed = self.recorder.stoppingElapsed
                 self.onChange?()
             }
         }

@@ -528,6 +528,11 @@ public enum Snapshots {
                 $0.reorganizeStatus = .applied(at: 1)
             },
             notes("reorganizing") { $0.reorganizeStatus = .running },
+            notes("organizing") { $0.state = .stopped; $0.reorganizeStatus = .organizing(step: 2, of: 3) },
+            notes("organize-partial") {
+                $0.state = .stopped
+                $0.reorganizeStatus = .organized(failed: 1, reason: "rejected: novel_name")
+            },
             notes("split") {
                 $0.tab = .split
                 var d = demoNotes(short: true)

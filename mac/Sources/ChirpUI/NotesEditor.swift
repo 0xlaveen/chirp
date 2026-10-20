@@ -115,6 +115,15 @@ final class NotesTextView: NSTextView {
         return super.resignFirstResponder()
     }
 
+    /// Paste is plain text with `\n` line endings (a CRLF paste would hide headings from the section and style rules).
+    override func readSelection(from pboard: NSPasteboard, type: NSPasteboard.PasteboardType) -> Bool {
+        guard let pasted = pboard.string(forType: .string) else { return super.readSelection(from: pboard, type: type) }
+        let clean = pasted.replacingOccurrences(of: "\r\n", with: "\n").replacingOccurrences(of: "\r", with: "\n")
+        guard clean != pasted else { return super.readSelection(from: pboard, type: type) }
+        insertText(clean, replacementRange: selectedRange())
+        return true
+    }
+
     override func unmarkText() {
         super.unmarkText()
         coordinator?.markedTextEnded()
@@ -130,7 +139,7 @@ final class NotesTextView: NSTextView {
         }
     }
 
-    /// Edit ▸ Reorganize Notes (⌥⌘R), through the responder chain.
+    /// Edit ▸ Organize Notes (⌥⌘R), through the responder chain.
     @objc func reorganizeNotes(_ sender: Any?) { coordinator?.model.onReorganize() }
 
     /// ⌘Z / ⇧⌘Z act on the notes' own undo stack (the window's would be empty).
@@ -160,7 +169,7 @@ final class NotesTextView: NSTextView {
 @MainActor
 final class NotesEditorCoordinator: NSObject, NSTextViewDelegate {
     static let updateAction = "Update Notes"
-    static let reorganizeAction = "Reorganize Notes"
+    static let reorganizeAction = "Organize Notes"
     static let toggleAction = "Toggle Task"
 
     let model: NotesModel
@@ -176,6 +185,11 @@ final class NotesEditorCoordinator: NSObject, NSTextViewDelegate {
     private var needsDrain = false
     private var lastFocusRequest: Int
     private var lastFocus: (inTail: Bool, composing: Bool)?
+    /// AI changes that arrived while an input method was composing, replayed once it ends (oldest first).
+    private var deferred: [NotesTextChange] = []
+    /// The model text the storage last matched, marked text aside: what `deferred` changes and an uncommitted
+    /// composition are both relative to.
+    private var syncedText = ""
 
     init(model: NotesModel) {
         self.model = model
@@ -202,6 +216,7 @@ final class NotesEditorCoordinator: NSObject, NSTextViewDelegate {
         // Sized by the clip view (autoresizing): a preset width would be added to the clip view's own.
         textView.frame = NSRect(origin: .zero, size: scrollView.contentSize)
         load()
+        model.editorOwner = ObjectIdentifier(self)
         model.onPendingChanges = { [weak self] in self?.pendingChangesArrived() }
         model.undoReorganize = { [weak self] in self?.undoReorganize() }
         // NSTextView's undo and redo change the storage without `shouldChangeText` or `textDidChange`, so they are
@@ -244,8 +259,11 @@ final class NotesEditorCoordinator: NSObject, NSTextViewDelegate {
         v.textContainer?.lineFragmentPadding = 0
     }
 
-    /// The editor goes away (Preview, another tab): nothing more is queued for it.
+    /// The editor goes away (Preview, another tab): nothing more is queued for it. Switching Notes ↔ Split builds the
+    /// new editor before this one is dismantled, so it only lets go of what it still owns.
     func detach() {
+        guard model.editorOwner == ObjectIdentifier(self) else { return }
+        model.editorOwner = nil
         model.onPendingChanges = nil
         model.undoReorganize = {}
         model.onEditorFocus(false, false)
@@ -259,6 +277,8 @@ final class NotesEditorCoordinator: NSObject, NSTextViewDelegate {
         isApplyingModelChange = false
         undo.removeAllActions()
         _ = model.takePendingChanges()
+        deferred.removeAll()
+        syncedText = model.document.text
         updateTint()
     }
 
@@ -302,6 +322,7 @@ final class NotesEditorCoordinator: NSObject, NSTextViewDelegate {
     private func reportEdit() {
         defer { pendingEdit = nil; pendingKind = .user }
         guard !textView.hasMarkedText() else { reportFocus(); return }
+        if !deferred.isEmpty { replayDeferred() }
         let old = model.document.text, current = textView.string
         guard old != current else { return }
         var edit: (range: NSRange, string: String)
@@ -314,6 +335,7 @@ final class NotesEditorCoordinator: NSObject, NSTextViewDelegate {
         reporting = true
         model.onUserEdit(edit.range, edit.string, pendingKind)
         reporting = false
+        syncedText = model.document.text
         if let storage = textView.textStorage {
             NotesEditorStyle.restyle(storage, range: NSRange(location: edit.range.location, length: edit.string.utf16.count))
         }
@@ -327,9 +349,12 @@ final class NotesEditorCoordinator: NSObject, NSTextViewDelegate {
     /// Tells the recorder whether an append would land under the caret: focus with the selection touching the tail,
     /// or IME composing.
     func reportFocus(resigning: Bool = false) {
-        let tailStart = model.document.tailStart
         let focused = !resigning && isFocused()
-        let inTail = focused && textView.selectedRanges.contains { NSMaxRange($0.rangeValue) >= tailStart }
+        let document = model.document
+        // Touching the tail as an edit would claim it; the end of the user's own last line does not.
+        let inTail = focused && textView.selectedRanges.contains {
+            document.touchesTail($0.rangeValue) || $0.rangeValue.location > document.tailStart
+        }
         if model.editorFocused != focused {
             // Not during a SwiftUI update: this can run while the editor replays a change from `update()`.
             DispatchQueue.main.async { [model] in model.editorFocused = focused }
@@ -351,9 +376,20 @@ final class NotesEditorCoordinator: NSObject, NSTextViewDelegate {
     func drain() {
         needsDrain = false
         let changes = model.takePendingChanges()
+        if textView.hasMarkedText() {
+            // Replaying now would make NSTextView drop the composition; it goes in once the text is committed.
+            deferred += changes
+            return
+        }
+        if !deferred.isEmpty {
+            deferred += changes
+            reportEdit()
+            return
+        }
         guard !changes.isEmpty else { return }
         let pinned = isPinnedToBottom
-        for change in changes { apply(change) }
+        applyAll(changes)
+        syncedText = model.document.text
         if !textView.hasMarkedText(), textView.string != model.document.text {
             chirpLog.info("notes editor resync storage=\(self.textView.string.utf16.count, privacy: .public) model=\(self.model.document.text.utf16.count, privacy: .public)")
             load()
@@ -363,32 +399,82 @@ final class NotesEditorCoordinator: NSObject, NSTextViewDelegate {
         if pinned, changes.contains(where: { $0.kind == .append }) { textView.scrollToEndOfDocument(nil) }
     }
 
-    /// One AI change as one undo group, with the caret kept where the user left it.
-    func apply(_ change: NotesTextChange) {
+    /// Composition ended: replays the AI changes that waited for it around the text it committed (relative to
+    /// `syncedText`), so `reportEdit` then reports just the committed text.
+    private func replayDeferred() {
+        let changes = deferred
+        deferred.removeAll()
+        let pinned = isPinnedToBottom
+        guard let user = NotesDocument.diff(syncedText, textView.string, kind: .user) else {
+            applyAll(changes)
+            syncedText = model.document.text
+            return
+        }
+        // The committed text replaced `userOld` units at `userStart` (in the text the changes are relative to).
+        var userStart = user.range.location
+        let userOld = user.range.length, userNew = user.replacement.utf16.count
+        var mappedChanges: [NotesTextChange] = []
+        for change in changes {
+            var mapped = change
+            if change.range.location >= userStart {
+                // At or after the committed text: it goes after it (an append at the end follows what was typed).
+                mapped.range.location += change.range.location >= userStart + userOld
+                    ? userNew - userOld : userStart + userNew - change.range.location
+            } else {
+                // Before it: the committed text moves instead.
+                userStart += change.replacement.utf16.count - change.range.length
+            }
+            mappedChanges.append(mapped)
+        }
+        applyAll(mappedChanges)
+        syncedText = model.document.text
+        updateTint()
+        if pinned, changes.contains(where: { $0.kind == .append }) { textView.scrollToEndOfDocument(nil) }
+    }
+
+    /// Replays changes in order; a run of Organize's in-place replacements is one undo group.
+    private func applyAll(_ changes: [NotesTextChange]) {
+        var i = 0
+        while i < changes.count {
+            guard changes[i].kind == .organize else { apply(changes[i]); i += 1; continue }
+            textView.breakUndoCoalescing()
+            undo.beginUndoGrouping()
+            while i < changes.count, changes[i].kind == .organize { apply(changes[i], grouped: true); i += 1 }
+            undo.setActionName(Self.reorganizeAction)
+            undo.endUndoGrouping()
+        }
+    }
+
+    /// One AI change as one undo group (unless `grouped` in an open one), with the caret kept where the user left it.
+    func apply(_ change: NotesTextChange, grouped: Bool = false) {
         guard let storage = textView.textStorage, NSMaxRange(change.range) <= storage.length else { return }
         let selection = textView.selectedRanges.map(\.rangeValue)
         let reorganize = change.kind == .reorganize
         let caret = reorganize ? caretLine(selection.first ?? NSRange(), scope: change.range) : nil
         let anchor = reorganize ? scrollAnchor() : nil
         isApplyingModelChange = true
-        textView.breakUndoCoalescing()
-        undo.beginUndoGrouping()
+        if !grouped {
+            textView.breakUndoCoalescing()
+            undo.beginUndoGrouping()
+        }
         if textView.shouldChangeText(in: change.range, replacementString: change.replacement) {
             storage.replaceCharacters(in: change.range, with: change.replacement)
             textView.didChangeText()
         }
-        undo.setActionName(reorganize ? Self.reorganizeAction : Self.updateAction)
-        undo.endUndoGrouping()
+        if !grouped {
+            undo.setActionName(reorganize ? Self.reorganizeAction : Self.updateAction)
+            undo.endUndoGrouping()
+        }
         NotesEditorStyle.restyle(storage, range: reorganize ? nil : NSRange(location: change.range.location, length: change.replacement.utf16.count))
         isApplyingModelChange = false
-        if reorganize {
-            let location = caret.map { mapCaret($0, change: change) } ?? selection.first?.location ?? 0
-            textView.setSelectedRange(NSRange(location: min(location, storage.length), length: 0))
-            if let anchor { restoreScroll(anchor, change: change) }
+        if reorganize, let caret {
+            textView.setSelectedRange(NSRange(location: min(mapCaret(caret, change: change), storage.length), length: 0))
         } else {
+            // Selections before the change (for a reorganize: before its scope) stay exactly as they were.
             let mapped = selection.map { Self.map($0, through: change) }
             textView.selectedRanges = mapped.map { NSValue(range: $0) }
         }
+        if let anchor { restoreScroll(anchor, change: change) }
     }
 
     /// A selection across a suffix change: before it, unchanged; after it, shifted; inside it, clamped.

@@ -62,7 +62,7 @@ Run on the reference Mac after installing the build with `./scripts/install-mac.
 6. Set the server's correction mode to off and restart it → Notes shows the explanation banner above the editor, the editor stays editable, and Copy/Save export your typed notes plus the transcript.
 7. ⌃⌥N, then talk for about 5 minutes through a mock meeting that revisits "budget" twice, with two to-dos, a decision and a "we will **not** …" sentence. While it records, type your own bullet above the AI tail and fix a word inside the tail. Check: the caret never jumps; the tail you edited loses its tint; new AI notes appear after it.
 8. Wait for an auto-reorganize (about 3 minutes, after 15 s without typing). Check: the budget sections merge; the to-dos and the negation survive; the **Reorganized · Undo** chip appears, and **Undo** restores the previous text in one step.
-9. Press Reorganize, then type immediately → "Notes changed while reorganizing — try again", and your typing is intact.
+9. Press Organize, then type immediately → "Notes changed while organizing — try again", and your typing is intact. With a "Not structured — see transcript" section in the notes (left alone), press Organize again → the status counts `Organizing notes… 1/2`, the section is replaced by structured notes, and one ⌘Z brings it back.
 10. Toggle Preview → the same content, read-only. Click a `[ ]` in the editor → it toggles, and ⌘Z untoggles it.
 11. Turn Auto-reorganize off → for 5 minutes no automatic reorganize, while the button still works. Turn "Structure notes" off → the editor stays editable and the Hearing strip still shows speech.
 12. Stop, then Save… → the `.md` has your edits, the reorganized notes and the transcript appendix.

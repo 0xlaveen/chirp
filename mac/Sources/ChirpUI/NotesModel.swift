@@ -21,9 +21,20 @@ public enum NotesStatus {
     public static let listening = "Listening…"
     public static let updating = "Updating notes…"
     public static let finishing = "Finishing…"
-    public static let reorganizing = "Reorganizing notes…"
+    public static let reorganizing = "Organizing notes…"
     public static let placeholder = "Type notes, or press Record (\(MenuContent.notesHotkeyTitle))…"
-    public static let reorganized = "Notes reorganized"
+    public static let reorganized = "Notes organized"
+    public static let organized = "Organized"
+    public static let organizeLabel = "Organize"
+    public static let organizeHelp = "Clean up and organize notes"
+
+    /// "Organizing notes… 2/4" while Organize works through its steps.
+    public static func organizing(_ step: Int, of total: Int) -> String { "Organizing notes… \(step)/\(total)" }
+
+    /// "Couldn’t organize 1 section (rejected: novel_name) — kept as is".
+    public static func organizeFailed(_ count: Int, reason: String?) -> String {
+        "Couldn’t organize \(count) section\(count == 1 ? "" : "s")\(reason.map { " (\($0))" } ?? "") — kept as is"
+    }
     public static let stopped = "Stopped"
     public static let empty = "Press Record or \(MenuContent.notesHotkeyTitle) to start taking notes."
     public static let privacy = "Notes stay in memory until you save them."
@@ -53,7 +64,7 @@ public final class NotesModel {
     /// The user's "Auto-reorganize" toggle.
     public var autoReorganize = true
     public var reorganizeStatus: ReorganizeStatus = .idle
-    /// The "Reorganized · Undo" chip was dismissed for the reorganize applied at this time.
+    /// The "Organized · Undo" chip was dismissed for the reorganize applied at this time.
     public var dismissedChip: TimeInterval?
     /// The editor has keyboard focus (set by the editor).
     public var editorFocused = false
@@ -62,6 +73,8 @@ public final class NotesModel {
 
     /// AI changes the editor has not replayed yet. Not observed: the editor drains them as they arrive.
     @ObservationIgnored public private(set) var pendingChanges: [NotesTextChange] = []
+    /// The editor that owns the hooks below (the newest one on screen).
+    @ObservationIgnored public var editorOwner: ObjectIdentifier?
     /// Set by the editor while it is on screen; called whenever changes are queued.
     @ObservationIgnored public var onPendingChanges: (() -> Void)?
 
@@ -117,9 +130,9 @@ public final class NotesModel {
         case .idle: ""
         case .starting: NotesStatus.connecting
         case .recording:
-            isReorganizing ? NotesStatus.reorganizing : structuring == .running ? NotesStatus.updating : NotesStatus.listening
-        case .stopping: isReorganizing ? NotesStatus.reorganizing : NotesStatus.finishing
-        case .stopped where isReorganizing, .idle where isReorganizing: NotesStatus.reorganizing
+            isReorganizing ? reorganizingText : structuring == .running ? NotesStatus.updating : NotesStatus.listening
+        case .stopping: (isReorganizing ? reorganizingText : NotesStatus.finishing) + finishingSuffix
+        case .stopped where isReorganizing, .idle where isReorganizing: reorganizingText
         case .stopped: NotesStatus.stopped
         case .error(let message): message
         }
@@ -128,7 +141,21 @@ public final class NotesModel {
     /// An append pass is running on the AI tail.
     public var isUpdating: Bool { structuring == .running }
 
-    public var isReorganizing: Bool { reorganizeStatus == .running }
+    public var isReorganizing: Bool { reorganizeStatus.isRunning }
+
+    private var reorganizingText: String {
+        if case .organizing(let step, let total) = reorganizeStatus { return NotesStatus.organizing(step, of: total) }
+        return NotesStatus.reorganizing
+    }
+
+    /// How long Stop has been finishing, while it is (set by the controller once a second).
+    public var finishingElapsed: TimeInterval?
+
+    /// " · 12 s" once Stop has taken a few seconds, so a long finish never looks stuck.
+    private var finishingSuffix: String {
+        guard let e = finishingElapsed, e >= 3 else { return "" }
+        return " · \(Int(e)) s"
+    }
 
     /// The empty-state art: no notes, nothing recorded yet, and the editor not focused (a click focuses it).
     public var showsEmptyState: Bool {
@@ -151,14 +178,18 @@ public final class NotesModel {
     /// The small line under the editor about the last reorganize.
     public var reorganizeNote: String? {
         switch reorganizeStatus {
-        case .failed(let code): "Couldn’t reorganize (\(code)) — will retry"
-        case .conflict: "Notes changed while reorganizing — try again"
-        case .tooLong: "Too long to reorganize — split the last section with a heading"
+        case .failed(let code): "Couldn’t organize (\(code)) — will retry"
+        case .organized(let failed, let reason): failed == 0 ? NotesStatus.organized : NotesStatus.organizeFailed(failed, reason: reason)
+        case .conflict: "Notes changed while organizing — try again"
+        case .tooLong: "Too long to organize — split the last section with a heading"
         default: nil
         }
     }
 
-    /// "Reorganized · Undo" shows after a reorganize until the next edit or append, a click, or 20 s.
+    /// The reorganize note reports a finished Organize with nothing left behind.
+    public var reorganizeNoteIsSuccess: Bool { reorganizeStatus == .organized(failed: 0, reason: nil) }
+
+    /// "Organized · Undo" shows after a reorganize until the next edit or append, a click, or 20 s.
     public var showUndoChip: Bool {
         if case .applied(let at) = reorganizeStatus { return dismissedChip != at }
         return false

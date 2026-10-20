@@ -218,4 +218,46 @@ import Testing
         // Debug builds are slower than the app; this guards against an accidental quadratic restyle.
         #expect(elapsed < .milliseconds(200), "restyle took \(elapsed)")
     }
+
+    @Test func organizeReplacementsAreOneUndoStep() {
+        let h = Harness()
+        var d = NotesDocument()
+        for i in 0..<2 {
+            d.append(NotesSegment(id: i, offset: 0, raw: "raw \(i)"))
+            d.freezeAll()
+        }
+        h.model.document = d
+        h.editor.update()
+        let before = h.text
+        var after = h.model.document
+        let changes = after.replaceFallbacks(after.untouchedFallbacks.map { ($0.block, [NotesPiece.markdown("- \($0.body)")]) },
+                                             ifVersion: after.version)
+        h.model.document = after
+        h.model.enqueue(changes)
+        #expect(h.text == "- raw 0\n\n- raw 1" && h.text == h.model.document.text)
+        #expect(h.editor.undo.undoActionName == NotesEditorCoordinator.reorganizeAction)
+        h.editor.undo.undo()
+        #expect(h.text == before && h.model.document.text == before)
+    }
+
+    @Test func pastedCRLFTextArrivesWithNewlines() {
+        let h = Harness(typed: "x")
+        let board = NSPasteboard(name: NSPasteboard.Name("chirp-test-\(UUID().uuidString)"))
+        defer { board.releaseGlobally() }
+        board.clearContents()
+        board.setString("## A\r\n- one\r\n- two", forType: .string)
+        h.editor.textView.setSelectedRange(NSRange(location: 1, length: 0))
+        #expect(h.editor.textView.readSelection(from: board, type: .string))
+        #expect(h.text == "x## A\n- one\n- two" && h.model.document.text == h.text)
+    }
+
+    @Test func aSelectionBeforeTheReorganizeScopeIsKept() throws {
+        let long = (1...5).map { "## S\($0)\n" + String(repeating: "- a point in section \($0)\n", count: 40) }.joined()
+        let h = Harness(typed: long)
+        h.editor.textView.selectedRanges = [NSValue(range: NSRange(location: 3, length: 4)), NSValue(range: NSRange(location: 20, length: 2))]
+        let scope = try #require(h.model.document.reorganizeScope())
+        #expect(scope.range.location > 30)
+        try #require(h.reorganize("## S5\n- merged") != nil)
+        #expect(h.editor.textView.selectedRanges.map(\.rangeValue) == [NSRange(location: 3, length: 4), NSRange(location: 20, length: 2)])
+    }
 }

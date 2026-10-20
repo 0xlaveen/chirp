@@ -182,10 +182,17 @@ func unwrap<T>(_ value: T?, sourceLocation: SourceLocation = #_sourceLocation) t
         #expect(d.text == "mia\n- b" && d.tailStart == end(d))
     }
 
-    @Test func insertingExactlyAtANonEmptyTailClaimsIt() throws {
+    @Test func typingAtTheEndOfOnesOwnLineShiftsTheTail() throws {
+        // The tail starts with its separator newline: an insertion right before it extends the user's line.
         var d = try withTail()
         d.userEdit(NSRange(location: 5, length: 0), "z")
-        #expect(d.tailStart == end(d))
+        #expect(d.tailStart == 6 && d.tail == "\n- a\n- b" && !d.touchesTail(NSRange(location: 6, length: 0)))
+        // A tail with no separator (the user's text ended in a blank line) starts with AI text: inserting there claims.
+        var bare = doc(["a"], typed: "mine\n\n")
+        bare.apply(ok("- a"), for: try #require(bare.nextStructureRequest()))
+        #expect(bare.tail == "- a" && bare.touchesTail(NSRange(location: 6, length: 0)))
+        bare.userEdit(NSRange(location: 6, length: 0), "z")
+        #expect(bare.tailStart == end(bare))
     }
 
     @Test func typingAtTheEndWithAnEmptyTailStaysTheUsers() throws {
@@ -411,5 +418,103 @@ func unwrap<T>(_ value: T?, sourceLocation: SourceLocation = #_sourceLocation) t
         #expect(!d.isDirty)
         d.userEdit(NSRange(location: 0, length: 0), "typed")
         #expect(d.isDirty && d.charsSinceReorganize == 5)
+    }
+}
+
+/// Splitting rejected windows, fallback blocks and Organize's in-place replacement (orchestrator follow-up on #17).
+@Suite struct NotesPiecesTests {
+    private let sentence = "This is a sentence about the budget review. "
+
+    @Test func splitsAtTheSentenceEndNearestTheMiddle() throws {
+        let text = String(repeating: sentence, count: 24)              // ~1050 chars
+        let (a, b) = try #require(NotesDocument.split(text))
+        #expect(a.hasSuffix(".") && b.hasPrefix("This is"))
+        #expect(a.count >= NotesDocument.minSplitChars && b.count >= NotesDocument.minSplitChars)
+        #expect(abs(a.count - b.count) < sentence.count * 2)
+        // Too short to split into two parts of the minimum size.
+        #expect(NotesDocument.split(String(repeating: sentence, count: 15)) == nil)
+        // No sentence end: the nearest space.
+        let words = String(repeating: "word ", count: 200)
+        let (c, d) = try #require(NotesDocument.split(words))
+        #expect(c.hasSuffix("word") && d.hasPrefix("word"))
+    }
+
+    @Test func piecesReplaceTheTailInOrderAndSettleIt() throws {
+        var d = NotesDocument()
+        d.userEdit(NSRange(location: 0, length: 0), "mine")
+        d.append(NotesSegment(id: 0, offset: 0, raw: "first half. second half."))
+        let r = try #require(d.nextStructureRequest())
+        let change = try unwrap(d.applyPieces([.markdown("## A\n- a"), .fallback("second half.")], for: r))
+        #expect(d.text == "mine\n\n## A\n- a\n\n" + NotesDocument.fallbackHeader + "\n\nsecond half.")
+        #expect(change.kind == .append && d.tail.isEmpty && d.nextStructureRequest() == nil)
+        #expect(d.untouchedFallbacks.map(\.body) == ["second half."])
+        // A stale request is ignored like any append.
+        #expect(d.applyPieces([.markdown("- x")], for: r) == nil)
+    }
+
+    @Test func organizeReplacesUntouchedFallbacksInPlaceAndLeavesEditedOnes() throws {
+        var d = NotesDocument()
+        d.append(NotesSegment(id: 0, offset: 0, raw: "raw one"))
+        d.freezeAll()
+        d.userEdit(NSRange(location: d.text.utf16.count, length: 0), "\n\n## Mine\n- typed\n\n")
+        d.append(NotesSegment(id: 1, offset: 0, raw: "raw two"))
+        d.freezeAll()
+        #expect(d.untouchedFallbacks.map(\.body) == ["raw one", "raw two"])
+        // The user edits the first block: it is theirs now.
+        let one = (d.text as NSString).range(of: "raw one")
+        d.userEdit(NSRange(location: one.location, length: 3), "RAW")
+        #expect(d.untouchedFallbacks.map(\.body) == ["raw two"])
+        let before = d.text
+        let changes = d.replaceFallbacks(d.untouchedFallbacks.map { ($0.block, [NotesPiece.markdown("- two, structured")]) },
+                                         ifVersion: d.version)
+        #expect(changes.count == 1 && changes[0].kind == .organize)
+        #expect(changes[0].applied(to: before) == d.text)
+        #expect(d.text.contains("RAW one") && d.text.hasSuffix("- typed\n\n- two, structured") && d.untouchedFallbacks.isEmpty)
+        #expect(d.tailStart == d.text.utf16.count)
+    }
+
+    @Test func organizeReplacementsAreVersionChecked() {
+        var d = NotesDocument()
+        d.append(NotesSegment(id: 0, offset: 0, raw: "raw one"))
+        d.freezeAll()
+        let blocks = d.untouchedFallbacks
+        let version = d.version
+        d.userEdit(NSRange(location: 0, length: 0), "x")
+        let before = d.text
+        #expect(d.replaceFallbacks(blocks.map { ($0.block, [NotesPiece.markdown("- one")]) }, ifVersion: version).isEmpty)
+        #expect(d.text == before)
+    }
+
+    @Test func severalBlocksReplayInOrder() {
+        var d = NotesDocument()
+        for i in 0..<3 {
+            d.append(NotesSegment(id: i, offset: 0, raw: "raw \(i)"))
+            d.freezeAll()
+        }
+        let before = d.text
+        let changes = d.replaceFallbacks(d.untouchedFallbacks.map { ($0.block, [NotesPiece.markdown("- \($0.body)!")]) },
+                                         ifVersion: d.version)
+        #expect(changes.count == 3)
+        #expect(changes.reduce(before) { $1.applied(to: $0) } == d.text)
+        #expect(d.text == "- raw 0!\n\n- raw 1!\n\n- raw 2!")
+    }
+
+    @Test func failureLabelsCarryOnlyAGuardName() throws {
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let s = try decoder.decode(NotesStructureResponse.self, from: Data(#"{"markdown":null,"structured":false,"error":"rejected","reason":"novel_name"}"#.utf8))
+        #expect(s.reason == "novel_name" && s.failureLabel == "rejected: novel_name")
+        let r = try decoder.decode(NotesReorganizeResponse.self, from: Data(#"{"markdown":null,"reorganized":false,"error":"rejected","reason":"negation"}"#.utf8))
+        #expect(r.failureLabel == "rejected: negation")
+        #expect(NotesFailure.label(error: "rejected", reason: "Some free text!") == "rejected")
+        #expect(NotesFailure.label(error: nil, reason: nil) == "http" && NotesFailure.label(error: "timeout", reason: nil) == "timeout")
+        let preempted = try decoder.decode(NotesReorganizeResponse.self, from: Data(#"{"markdown":null,"reorganized":false,"changed":false,"error":"preempted"}"#.utf8))
+        #expect(preempted.preempted && !NotesReorganizeResponse.failed("timeout").preempted)
+    }
+
+    @Test func crlfTextStillHasSectionsAndStyles() {
+        let text = "intro\r\n## A\r\n- a\r\n## B\r\n- b"
+        #expect(NotesMarkdown.sections(text).map(\.heading) == [nil, "A", "B"])
+        #expect(NotesMarkdown.styleRuns(Substring(text)).contains(NotesStyleRun(NSRange(location: 7, length: 5), .heading(2))))
     }
 }

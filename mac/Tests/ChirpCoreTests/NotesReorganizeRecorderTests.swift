@@ -13,6 +13,8 @@ final class PassStub: @unchecked Sendable {
     private var held: [CheckedContinuation<Void, Never>] = []
     var holdStructure = false
     var holdReorganize = false
+    /// A switch the reply closures can read (set by the test that installs them).
+    var poison: Flag?
     var structureReply: @Sendable (NotesStructureRequest) throws -> NotesStructureResponse = { r in
         NotesStructureResponse(markdown: "## Heard\n- \(r.transcript.split(separator: "\n").count) segments", structured: true)
     }
@@ -57,6 +59,13 @@ final class PassStub: @unchecked Sendable {
         }
         for c in waiting { c.resume() }
     }
+}
+
+/// Counts calls across `@Sendable` closures.
+final class Counter: @unchecked Sendable {
+    private let lock = NSLock()
+    private var n = 0
+    func next() -> Int { lock.withLock { defer { n += 1 }; return n } }
 }
 
 @MainActor
@@ -113,68 +122,93 @@ final class PassStub: @unchecked Sendable {
         await r.cut()
     }
 
-    @Test func autoWaitsForCharsAndIntervalAndTypingIdle() async throws {
+    /// Two sections of about 700 chars each: over `reorganizeEveryChars` in all, and each within the recording scope.
+    private func typeTwoSections(_ r: NotesRecorder, _ tag: String = "") {
+        type(r, chars: 700, title: "First\(tag)")
+        type(r, chars: 700, title: "Second\(tag)")
+    }
+
+    @Test func autoRunsOnlyRightAfterACommitOnTheRecordingScope() async throws {
         let stub = PassStub(), clock = ManualClock()
         let (r, server) = try await recording(stub, clock)
         defer { server.stop() }
-        type(r, chars: 600)                                   // under reorganizeEveryChars
+        typeTwoSections(r)
         await settle()
         clock.advance(NotesRecorder.reorganizeMinInterval + 1)
         await settle()
+        // Everything is due, but no segment was committed: no timer starts a reorganize mid-segment.
         #expect(stub.reorganizes.isEmpty)
-        type(r, chars: 700, title: "More")                    // enough now, but typing just happened
-        await settle()
-        clock.advance(NotesRecorder.typingIdle - 1)
-        await settle()
-        #expect(stub.reorganizes.isEmpty)
-        type(r, chars: 16, title: "Last")                     // still typing: the idle clock restarts
-        await settle()
-        clock.advance(NotesRecorder.typingIdle - 1)
-        await settle()
-        #expect(stub.reorganizes.isEmpty)
-        clock.advance(1)
-        await eventually("auto reorganize") { stub.reorganizes.count == 1 }
+        await segment(r)
+        await eventually("append, then auto reorganize") { stub.reorganizes.count == 1 }
+        #expect(stub.structures.count == 1 && stub.maxRunning == 1)
+        // While recording only the trailing whole sections within recordingReorganizeChars go.
+        let sent = stub.reorganizes[0]
+        #expect(sent.notes.unicodeScalars.count <= NotesDocument.recordingReorganizeChars && sent.notes.contains("## Heard"))
+        #expect(!sent.notes.contains("## First") && sent.outline.contains("First"))
         await eventually("applied") { if case .applied = r.reorganizeStatus { true } else { false } }
         #expect(tidied(r) && r.document.charsSinceReorganize == 0)
         #expect(r.takePendingChanges().last?.kind == .reorganize)
-        // The interval since the last one now holds the next one back.
-        type(r, chars: 1300, title: "Again")
+        // Enough new text, but the interval since the last one holds the next one back…
+        typeTwoSections(r, "2")
         await settle()
-        clock.advance(NotesRecorder.typingIdle + 1)
-        await settle()
+        clock.advance(NotesRecorder.minInterval)
+        await segment(r)
+        await eventually("second append") { stub.structures.count == 2 && !r.passInFlight }
         #expect(stub.reorganizes.count == 1)
-        clock.advance(NotesRecorder.reorganizeMinInterval)
+        // …and so does recent typing.
+        clock.advance(NotesRecorder.reorganizeMinInterval - 5)
+        r.userEdit(NSRange(location: 0, length: 0), "x")
+        await segment(r)
+        await eventually("third append") { stub.structures.count == 3 && !r.passInFlight }
+        #expect(stub.reorganizes.count == 1)
+        clock.advance(NotesRecorder.typingIdle)
+        await segment(r)
         await eventually("second reorganize") { stub.reorganizes.count == 2 }
         await r.stop()
     }
 
-    @Test func appendWinsAndPassesNeverOverlap() async throws {
+    @Test func appendGoesFirstAndPassesNeverOverlap() async throws {
         let stub = PassStub(), clock = ManualClock()
         stub.holdStructure = true
         let (r, server) = try await recording(stub, clock)
         defer { server.stop() }
-        await segment(r)
-        await eventually("append running") { stub.waiting == 1 }
-        type(r, chars: 1300)
+        typeTwoSections(r)
         await settle()
         clock.advance(NotesRecorder.reorganizeMinInterval + NotesRecorder.typingIdle)
+        await segment(r)
+        await eventually("append running") { stub.waiting == 1 }
         await settle()
-        // Reorganize is due, but the slot is taken.
-        #expect(stub.reorganizes.isEmpty)
-        await segment(r)                                      // and another append becomes due
-        await eventually("segment 1") { r.document.segments.count == 2 }
+        #expect(stub.reorganizes.isEmpty)                      // due, but the slot is the append's
         stub.release()
-        await eventually("first append done") { !r.passInFlight && stub.structures.count == 1 }
-        await settle()
-        // The append waits out minInterval and still goes first.
-        #expect(stub.reorganizes.isEmpty)
-        clock.advance(NotesRecorder.minInterval)
-        await eventually("second append") { stub.structures.count == 2 }
         await eventually("then the reorganize") { stub.reorganizes.count == 1 }
-        #expect(stub.maxRunning == 1)
+        #expect(stub.structures.count == 1 && stub.maxRunning == 1)
         await r.stop()
         #expect(stub.maxRunning == 1)
     }
+
+    @Test func aPreemptedReorganizeIsNotAFailure() async throws {
+        let stub = PassStub(), clock = ManualClock()
+        let calls = Counter()
+        stub.reorganizeReply = { r in
+            if calls.next() == 0 { return NotesReorganizeResponse(markdown: nil, reorganized: false, changed: false, error: "preempted") }
+            return NotesReorganizeResponse(markdown: r.notes.trimmingCharacters(in: .whitespacesAndNewlines) + "\n- tidied", reorganized: true)
+        }
+        let (r, server) = try await recording(stub, clock)
+        defer { server.stop() }
+        typeTwoSections(r)
+        await settle()
+        clock.advance(NotesRecorder.reorganizeMinInterval + 1)
+        await segment(r)
+        await eventually("preempted") { stub.reorganizes.count == 1 && !r.passInFlight }
+        #expect(r.reorganizeStatus == .idle)                   // no "Couldn't reorganize" note
+        // No backoff: the next commit (once its append has run) tries again.
+        clock.advance(NotesRecorder.minInterval)
+        await segment(r)
+        await eventually("retried after the next commit") { stub.reorganizes.count == 2 }
+        await eventually("applied") { tidied(r) }
+        await r.stop()
+    }
+
 
     @Test func anEditDuringAManualReorganizeIsAConflict() async throws {
         let stub = PassStub(), clock = ManualClock()
@@ -196,27 +230,29 @@ final class PassStub: @unchecked Sendable {
 
     @Test func anEditDuringAnAutoReorganizeRetriesSilently() async throws {
         let stub = PassStub(), clock = ManualClock()
-        stub.holdReorganize = true
         let (r, server) = try await recording(stub, clock)
         defer { server.stop() }
-        type(r, chars: 1300)
+        typeTwoSections(r)
         await settle()
         clock.advance(NotesRecorder.reorganizeMinInterval)
+        stub.holdReorganize = true
+        await segment(r)
         await eventually("auto running") { stub.waiting == 1 }
         r.userEdit(NSRange(location: 0, length: 0), "x")
-        stub.holdReorganize = false
         stub.release()
         await eventually("discarded") { !r.passInFlight }
         #expect(r.reorganizeStatus == .idle && !tidied(r))
-        await settle()
         clock.advance(NotesRecorder.reorganizeRetryAfter - 1)
-        await settle()
+        await segment(r)
+        await eventually("append") { stub.structures.count == 2 && !r.passInFlight }
         #expect(stub.reorganizes.count == 1)
-        clock.advance(1)
+        clock.advance(NotesRecorder.minInterval)
+        await segment(r)
         await eventually("retry") { stub.reorganizes.count == 2 }
         await eventually("applied") { tidied(r) }
         await r.stop()
     }
+
 
     @Test func manualSkipsThresholdsButWaitsForAPass() async throws {
         let stub = PassStub(), clock = ManualClock()
@@ -239,17 +275,41 @@ final class PassStub: @unchecked Sendable {
         let stub = PassStub(), clock = ManualClock()
         let (r, server) = try await recording(stub, clock, auto: false)
         defer { server.stop() }
-        type(r, chars: 1300)
+        typeTwoSections(r)
         await settle()
         clock.advance(NotesRecorder.reorganizeMinInterval * 2)
-        await settle()
+        await segment(r)
+        await eventually("append") { stub.structures.count == 1 && !r.passInFlight }
         #expect(stub.reorganizes.isEmpty)
         r.reorganizeNow()
         await eventually("manual still works") { stub.reorganizes.count == 1 }
+        // A manual one sends the full scope, not the recording one.
+        #expect(stub.reorganizes[0].notes.unicodeScalars.count > NotesDocument.recordingReorganizeChars)
         r.setAutoReorganize(true)
         await r.stop()                                         // Stop's final append changed the notes: one final pass
         #expect(stub.reorganizes.map(\.final) == [false, true])
     }
+
+    @Test func stopSkipsItsReorganizeRightAfterOneOnTheSameText() async throws {
+        for (wait, expected) in [(0.0, 1), (NotesRecorder.stopReorganizeSkip + 1, 2)] {
+            let stub = PassStub(), clock = ManualClock()
+            // The same Markdown every time, so Stop's own append changes nothing; a reorganize that fails.
+            stub.structureReply = { _ in NotesStructureResponse(markdown: "## Heard\n- the same", structured: true) }
+            stub.reorganizeReply = { _ in .failed("rejected") }
+            let (r, server) = try await recording(stub, clock)
+            defer { server.stop() }
+            type(r, chars: 200)
+            await segment(r)
+            await eventually("append") { stub.structures.count == 1 && !r.passInFlight }
+            r.reorganizeNow()
+            await eventually("reorganize") { stub.reorganizes.count == 1 && !r.passInFlight }
+            clock.advance(wait)
+            await r.stop()
+            #expect(stub.reorganizes.count == expected, "after \(wait) s")
+            #expect(r.state == .stopped)
+        }
+    }
+
 
     @Test func stopIsFinalAppendThenSettleThenOneFinalReorganize() async throws {
         let stub = PassStub(), clock = ManualClock()
@@ -273,11 +333,11 @@ final class PassStub: @unchecked Sendable {
         type(r, chars: 200)
         let stopping = Task { await r.stop() }
         await eventually("final reorganize running") { stub.waiting == 1 }
-        #expect(r.state == .stopping && r.reorganizeStatus == .running)
+        #expect(r.state == .stopping && r.reorganizeStatus == .running && r.stoppingElapsed != nil)
         r.userEdit(NSRange(location: 0, length: 0), "x")
         stub.release()
         await stopping.value
-        #expect(r.state == .stopped && r.document.text.hasPrefix("x## Typed") && !tidied(r))
+        #expect(r.state == .stopped && r.document.text.hasPrefix("x## Typed") && !tidied(r) && r.stoppingElapsed == nil)
         #expect(stub.reorganizes.count == 1)
     }
 
@@ -360,6 +420,38 @@ final class PassStub: @unchecked Sendable {
         clock.advance(1)
         await eventually("released") { !r.isHolding }
         #expect(r.document.text == "x\n\n## Heard\n- 1 segments")
+        await r.stop()
+    }
+
+    @Test func aReorganizeThatLandsDropsAHeldAppend() async throws {
+        let stub = PassStub(), clock = ManualClock()
+        let (r, server) = try await recording(stub, clock)
+        defer { server.stop() }
+        type(r, chars: 200)
+        r.setEditorFocus(inTail: true, composing: false)
+        r.userEdit(NSRange(location: r.document.text.utf16.count, length: 0), "!")
+        await segment(r)
+        await eventually("held") { r.isHolding }
+        r.reorganizeNow()
+        await eventually("applied") { tidied(r) }
+        #expect(!r.isHolding)
+        await r.stop()
+    }
+
+    @Test func aReorganizeIsDiscardedWhileComposing() async throws {
+        let stub = PassStub(), clock = ManualClock()
+        stub.holdReorganize = true
+        let (r, server) = try await recording(stub, clock)
+        defer { server.stop() }
+        type(r, chars: 200)
+        r.reorganizeNow()
+        await eventually("running") { stub.waiting == 1 }
+        r.setEditorFocus(inTail: false, composing: true)
+        let before = r.document.text
+        stub.release()
+        await eventually("finished") { !r.passInFlight }
+        #expect(r.document.text == before && r.reorganizeStatus == .conflict)
+        r.setEditorFocus(inTail: false, composing: false)
         await r.stop()
     }
 
