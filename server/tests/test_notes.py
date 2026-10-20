@@ -738,7 +738,25 @@ def test_a_renamed_speaker_is_accepted_and_an_invented_name_is_not():
     assert notes.rejection_reason(transcript, "- Maya: sends the spec by **Friday**", "stop") is None
 
 
-def test_the_prompt_has_the_speaker_rule():
-    prompt = notes.notes_system_prompt()
-    assert "Never invent or guess a real name for `Person N`" in prompt
-    assert "Person 2: okay. i can send the spec by friday" in prompt
+def test_only_a_labelled_transcript_gets_the_speaker_rule():
+    labelled = notes.notes_system_prompt(True)
+    assert "Never invent or guess a real name for `Person N`" in labelled
+    assert "Person 2: okay. i can send the spec by friday" in labelled
+    # Without labels the prompt is the one from before speaker labels: no rule, no labelled example.
+    plain = notes.notes_system_prompt()
+    assert "Person" not in plain
+    assert labelled.replace(notes._SPEAKER_RULE, "").startswith(plain[: plain.index("Example 1")])
+    assert notes.has_speaker_labels(LABELLED) and not notes.has_speaker_labels("Update: the vendor called back")
+
+
+def test_the_labelled_example_passes_its_own_guards():
+    outline, transcript, markdown = notes.SPEAKER_EXAMPLE
+    assert notes.rejection_reason(transcript, markdown, "stop") is None
+
+
+def test_labels_off_guards_match_main_for_colon_lines():
+    # Review B2: a capitalised `Word:` line is not a speaker label; the sentence-initial exemption stands.
+    assert notes.rejection_reason("So we ship friday\nUpdate: the vendor called back",
+                                  "- Reminder: the vendor called back", "stop") is None
+    assert notes.reorganize_rejection_reason("## Plan\n- Note: call the vendor\n- ship friday",
+                                             "## Plan\n- Reminder: call the vendor\n- ship friday", "stop") is None

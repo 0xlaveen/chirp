@@ -221,7 +221,7 @@ async def bench(model_id, repetitions, dump, fixtures):
                 transcript, outline = case["transcript"], case.get("outline", [])
                 started = time.perf_counter()
                 text, finish = await corrector.complete(
-                    notes.notes_system_prompt(),
+                    notes.notes_system_prompt(notes.has_speaker_labels(transcript)),
                     notes.notes_user_message(outline, transcript),
                     notes.NOTES_MAX_TOKENS,
                     priority="structure",

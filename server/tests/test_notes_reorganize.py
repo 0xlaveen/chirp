@@ -714,9 +714,10 @@ def test_successes_carry_no_reason(settings):
         assert "reason" not in structured.json()
 
 
-# Speaker labels (Mac Live Notes, issue #18): notes carry `**Person 2**` owners and names; a reorganize keeps them.
+# Speaker labels (Mac Live Notes, issue #18): notes carry `**Person 2**` owners and the `Person N:` paragraphs of a
+# fallback block; a reorganize keeps them.
 LABELLED_NOTES = (
-    "## Spec\n- [ ] **Person 2** to send the spec by **Friday**\n## Budget\n- Maya: no new headcount\n"
+    "## Spec\n- [ ] **Person 2** to send the spec by **Friday**\n## Budget\nPerson 1: no new headcount\n"
     "## Spec\n- **Question:** who owns the beta?"
 )
 
@@ -724,17 +725,19 @@ LABELLED_NOTES = (
 def test_a_reorganize_keeps_speaker_labels():
     moved = (
         "## Spec\n- [ ] **Person 2** to send the spec by **Friday**\n- **Question:** who owns the beta?\n\n"
-        "## Budget\n- Maya: no new headcount"
+        "## Budget\n- Person 1: no new headcount"
     )
     assert notes.reorganize_rejection_reason(LABELLED_NOTES, moved, "stop") is None
 
 
-def test_a_reorganize_that_renumbers_or_renames_a_speaker_is_rejected():
+def test_a_reorganize_that_renumbers_or_names_a_speaker_is_rejected():
     renumbered = LABELLED_NOTES.replace("Person 2", "Person 3")
-    renamed = LABELLED_NOTES.replace("Maya", "Theo")
+    named = LABELLED_NOTES.replace("Person 1:", "Theo:")
     assert notes.reorganize_rejection_reason(LABELLED_NOTES, renumbered, "stop") is not None
-    assert notes.reorganize_rejection_reason(LABELLED_NOTES, renamed, "stop") is not None
+    assert notes.reorganize_rejection_reason(LABELLED_NOTES, named, "stop") is not None
 
 
-def test_the_reorganize_prompt_has_the_speaker_rule():
-    assert "speaker labels (`Person 2:`, never renumbered)" in notes.reorganize_system_prompt()
+def test_only_labelled_notes_get_the_speaker_rule():
+    assert "speaker labels (`Person 2:`, never renumbered)" in notes.reorganize_system_prompt(True)
+    assert "Person" not in notes.reorganize_system_prompt()
+    assert len(notes.reorganize_system_prompt(True)) <= 3600
