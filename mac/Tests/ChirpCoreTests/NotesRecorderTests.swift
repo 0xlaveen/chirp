@@ -229,15 +229,15 @@ final class StructureStub: @unchecked Sendable {
         send(r, frames: 3)
         await r.stop()
         #expect(stub.requests.map(\.final) == [true])
-        #expect(r.document.frozen.map(\.markdown) == ["## Notes\n- 1 segments"])
-        #expect(r.document.openBlock == nil && r.document.livePartial.isEmpty)
+        #expect(r.document.text == "## Notes\n- 1 segments" && r.document.tail.isEmpty)
+        #expect(r.document.livePartial.isEmpty)
         #expect(r.state == .stopped && r.document.isDirty)
         // Record again continues the same document.
         r.start()
         await eventually("ready again") { r.state == .recording }
         send(r, frames: 2)
         await r.stop()
-        #expect(r.document.segments.count == 2 && r.document.frozen.count == 2)
+        #expect(r.document.segments.count == 2 && r.document.text == "## Notes\n- 1 segments\n\n## Notes\n- 1 segments")
         #expect(stub.requests.last?.outline == ["Notes"] && stub.requests.last?.transcript == "Segment 1.")
     }
 
@@ -286,7 +286,7 @@ final class StructureStub: @unchecked Sendable {
         await eventually("ready") { old.state == .recording }
         send(old, frames: 2)
         await old.stop()
-        #expect(stub.requests.isEmpty && old.document.frozen.isEmpty && old.document.segments.count == 1)
+        #expect(stub.requests.isEmpty && old.document.text.isEmpty && old.document.segments.count == 1)
 
         stub.reply = { _ in throw NotesStructureError.off }
         let r = make(server, port: port, stub: stub, clock: clock)
@@ -389,7 +389,7 @@ final class StructureStub: @unchecked Sendable {
         send(r, frames: 2)
         await r.cut()
         await eventually("failed pass") { r.structuring == .failed("rejected") }
-        #expect(r.document.openBlock == nil && r.document.unstructuredTail == "Segment 0.")
+        #expect(r.document.text.isEmpty && r.document.unstructuredTail == "Segment 0.")
         await r.stop()
     }
 }

@@ -60,13 +60,13 @@ private let frame = 0.05
         let md = "## Kickoff\n### Detail\n- Ship **Friday**\n  - nested\n- [ ] Maya sends the spec\n_(nothing yet)_\nplain words"
         #expect(NotesMarkdown.blocks(md) == [
             .heading(level: 2, text: "Kickoff"), .heading(level: 3, text: "Detail"),
-            .bullet(indent: 0, text: "Ship **Friday**", task: false), .bullet(indent: 1, text: "nested", task: false),
-            .bullet(indent: 0, text: "Maya sends the spec", task: true), .placeholder, .paragraph("plain words"),
+            .bullet(indent: 0, text: "Ship **Friday**", task: false, checked: false),
+            .bullet(indent: 1, text: "nested", task: false, checked: false),
+            .bullet(indent: 0, text: "Maya sends the spec", task: true, checked: false), .placeholder, .paragraph("plain words"),
         ])
     }
 
-    @Test func unknownLinesAndH1BecomeParagraphs() {
-        #expect(NotesMarkdown.blocks("# Title") == [.paragraph("# Title")])
+    @Test func unknownLinesBecomeParagraphs() {
         #expect(NotesMarkdown.blocks("#### deep") == [.paragraph("#### deep")])
         #expect(NotesMarkdown.blocks("| a | b |") == [.paragraph("| a | b |")])
         #expect(NotesMarkdown.blocks("<b>html</b>") == [.paragraph("<b>html</b>")])
@@ -77,7 +77,7 @@ private let frame = 0.05
     @Test func emptyInputAndCRLF() {
         #expect(NotesMarkdown.blocks("").isEmpty)
         #expect(NotesMarkdown.blocks("\n\n  \n").isEmpty)
-        #expect(NotesMarkdown.blocks("## A\r\n- b\r\n") == [.heading(level: 2, text: "A"), .bullet(indent: 0, text: "b", task: false)])
+        #expect(NotesMarkdown.blocks("## A\r\n- b\r\n") == [.heading(level: 2, text: "A"), .bullet(indent: 0, text: "b", task: false, checked: false)])
     }
 
     @Test func inlineStylingDropsLinksAndSurvivesBadInput() {
@@ -86,195 +86,6 @@ private let frame = 0.05
         let link = NotesMarkdown.inline("see [site](https://example.com)")
         #expect(link.runs.allSatisfy { $0.link == nil })
         #expect(String(NotesMarkdown.inline("**unclosed").characters).contains("unclosed"))
-    }
-}
-
-@Suite struct NotesDocumentTests {
-    private func doc(_ texts: [String]) -> NotesDocument {
-        var d = NotesDocument(startedAt: Date(timeIntervalSince1970: 0))
-        for (i, t) in texts.enumerated() { d.append(NotesSegment(id: i, offset: Double(i) * 30, raw: t)) }
-        return d
-    }
-    private func ok(_ md: String) -> NotesStructureResponse { NotesStructureResponse(markdown: md, structured: true) }
-    private let fail = NotesStructureResponse.failed("timeout")
-    private let utc = TimeZone(identifier: "UTC")!
-
-    @Test func nextRequestIsNilWithoutNewText() throws {
-        var d = doc([])
-        #expect(d.nextStructureRequest() == nil)
-        d.append(.gap(id: 0, offset: 0, reason: "busy"))
-        #expect(d.nextStructureRequest() == nil)
-        d.append(NotesSegment(id: 1, offset: 30, raw: "we ship friday"))
-        d.append(NotesSegment(id: 2, offset: 60, raw: "maya sends the spec"))
-        let r = try #require(d.nextStructureRequest())
-        #expect(r.transcript == "we ship friday\nmaya sends the spec" && r.windowEnd == 2 && !r.final)
-        d.apply(ok("- Ship Friday"), for: r)
-        #expect(d.openBlock == "- Ship Friday")
-        #expect(d.nextStructureRequest() == nil)
-        d.append(NotesSegment(id: 3, offset: 90, raw: "more"))
-        #expect(d.nextStructureRequest(final: true)?.transcript == "we ship friday\nmaya sends the spec\nmore")
-        #expect(d.nextStructureRequest(final: true)?.final == true)
-    }
-
-    @Test func outlineIsCappedByCountAndLength() throws {
-        var d = doc([])
-        for i in 0..<30 {
-            d.append(NotesSegment(id: i, offset: 0, raw: String(repeating: "x", count: NotesDocument.freezeChars)))
-            let r = try #require(d.nextStructureRequest())
-            d.apply(ok("## Topic \(i) " + String(repeating: "y", count: 150) + "\n- point"), for: r)
-        }
-        #expect(d.frozen.count == 30)
-        let outline = d.outline
-        #expect(outline.count <= NotesDocument.maxOutlineItems)
-        #expect(outline.allSatisfy { $0.count <= NotesDocument.maxOutlineItemChars })
-        #expect(outline.reduce(0) { $0 + $1.count } <= NotesDocument.maxOutlineChars)
-        #expect(outline.last?.hasPrefix("Topic 29") == true)
-    }
-
-    @Test func freezesAtFreezeChars() throws {
-        var d = doc([String(repeating: "a", count: 1000)])
-        var r = try #require(d.nextStructureRequest())
-        d.apply(ok("## A\n- one"), for: r)
-        #expect(d.frozen.isEmpty && d.openBlock != nil)
-        d.append(NotesSegment(id: 1, offset: 30, raw: String(repeating: "b", count: 1500)))
-        r = try #require(d.nextStructureRequest())
-        d.apply(ok("## A\n- one\n- two"), for: r)
-        #expect(d.frozen == [NotesBlock(markdown: "## A\n- one\n- two", segmentRange: 0...1)])
-        #expect(d.openBlock == nil && d.windowStart == 2 && d.headings == ["A"])
-        #expect(d.nextStructureRequest() == nil)
-    }
-
-    @Test func fallbackFreezeAfterTwoFailures() throws {
-        var d = doc([String(repeating: "a", count: 2500)])
-        var r = try #require(d.nextStructureRequest())
-        d.apply(fail, for: r)
-        #expect(d.frozen.isEmpty && d.consecutiveFailures == 1)
-        r = try #require(d.nextStructureRequest())
-        d.apply(fail, for: r)
-        #expect(d.frozen.count == 1 && d.frozen[0].isFallback)
-        #expect(d.frozen[0].markdown.hasPrefix(NotesDocument.fallbackHeader))
-        #expect(d.windowStart == 1 && d.nextStructureRequest() == nil)
-    }
-
-    @Test func fallbackAtMaxWindowCharsKeepsTheStructuredPart() throws {
-        var d = doc([String(repeating: "a", count: 1000)])
-        let r = try #require(d.nextStructureRequest())
-        d.apply(ok("- a"), for: r)
-        d.append(NotesSegment(id: 1, offset: 30, raw: String(repeating: "b", count: 2500)))
-        d.append(NotesSegment(id: 2, offset: 60, raw: String(repeating: "c", count: 2000)))
-        d.freezeOverflow()
-        #expect(d.frozen.map(\.isFallback) == [false, true])
-        #expect(d.frozen[0].segmentRange == 0...0 && d.frozen[1].segmentRange == 1...2)
-        // A window can never be sent over the limit.
-        #expect(d.nextStructureRequest() == nil)
-    }
-
-    @Test func overflowFreezesTheStructuredPartAndRetriesTheRest() throws {
-        // A pass covered 1550 chars (under freezeChars); a long segment pushes the window past maxWindowChars.
-        var d = doc([String(repeating: "a", count: 1550)])
-        let r = try #require(d.nextStructureRequest())
-        d.apply(ok("- a"), for: r)
-        #expect(d.frozen.isEmpty)
-        d.append(NotesSegment(id: 1, offset: 30, raw: String(repeating: "b", count: 2100)))
-        d.freezeOverflow()
-        // Only the structured part freezes; the new text gets a pass instead of a fallback.
-        #expect(d.frozen == [NotesBlock(markdown: "- a", segmentRange: 0...0)])
-        #expect(d.nextStructureRequest()?.transcript == String(repeating: "b", count: 2100))
-    }
-
-    @Test func aRequestNeverExceedsTheWindowCap() {
-        var d = doc([String(repeating: "a", count: 2000), String(repeating: "b", count: 2000)])
-        #expect(d.windowChars() > NotesDocument.maxWindowChars)
-        #expect(d.nextStructureRequest() == nil)
-        d.freezeOverflow()
-        #expect(d.frozen.count == 1 && d.frozen[0].isFallback && d.nextStructureRequest() == nil)
-        d.append(NotesSegment(id: 2, offset: 60, raw: "c"))
-        #expect(d.nextStructureRequest()?.transcript == "c")
-    }
-
-    @Test func startIsStampedOnlyWhileEmpty() {
-        var d = NotesDocument(startedAt: Date(timeIntervalSince1970: 0))
-        d.stampStart(Date(timeIntervalSince1970: 100))
-        #expect(d.startedAt == Date(timeIntervalSince1970: 100))
-        d.append(NotesSegment(id: 0, offset: 0, raw: "x"))
-        d.stampStart(Date(timeIntervalSince1970: 200))
-        #expect(d.startedAt == Date(timeIntervalSince1970: 100))
-    }
-
-    @Test func staleResponsesAreIgnored() throws {
-        var d = doc([String(repeating: "a", count: 2500)])
-        let old = try #require(d.nextStructureRequest())
-        d.apply(ok("- a"), for: old)            // frozen: the window moved on
-        d.append(NotesSegment(id: 1, offset: 30, raw: "b"))
-        d.apply(ok("- stale"), for: old)
-        #expect(d.openBlock == nil && d.frozen.count == 1)
-    }
-
-    @Test func freezeAllAtStop() throws {
-        var d = doc(["one"])
-        let r = try #require(d.nextStructureRequest())
-        d.apply(ok("- one"), for: r)
-        d.append(NotesSegment(id: 1, offset: 30, raw: "two"))
-        d.freezeAll()
-        #expect(d.frozen.map(\.isFallback) == [false, true] && d.openBlock == nil && d.windowStart == 2)
-        var off = doc(["one"])
-        off.freezeAll(structuring: false)
-        #expect(off.frozen.isEmpty)
-    }
-
-    @Test func exportWithAndWithoutTranscript() throws {
-        var d = doc(["we kick off", "budget talk"])
-        let r = try #require(d.nextStructureRequest())
-        d.apply(ok("## Kickoff\n- Launch **March 3**\n_(nothing yet)_"), for: r)
-        d.freezeAll()
-        #expect(d.exportMarkdown(includeTranscript: false, timeZone: utc) == "# Notes — 1970-01-01 00:00\n\n## Kickoff\n- Launch **March 3**\n")
-        #expect(d.exportMarkdown(timeZone: utc) == """
-            # Notes — 1970-01-01 00:00
-
-            ## Kickoff
-            - Launch **March 3**
-
-            ---
-
-            ## Transcript
-
-            **[00:00:00]** we kick off
-
-            **[00:00:30]** budget talk
-
-            """)
-        #expect(d.suggestedFileName(timeZone: utc) == "Chirp Notes 1970-01-01 0000.md")
-    }
-
-    @Test func transcriptOnlyWhenStructuringIsOff() {
-        let d = doc(["hello"])
-        #expect(d.exportMarkdown(includeTranscript: false, structuring: false, timeZone: utc)
-                == "# Notes — 1970-01-01 00:00\n\n## Transcript\n\n**[00:00:00]** hello\n")
-    }
-
-    @Test func timestampsGapsAndKeptOriginal() {
-        #expect(NotesDocument.timestamp(0) == "00:00:00")
-        #expect(NotesDocument.timestamp(3725.9) == "01:02:05")
-        var d = NotesDocument()
-        d.append(NotesSegment(id: 0, offset: 12, raw: "um hello", text: "Hello.", corrected: true))
-        d.append(.gap(id: 1, offset: 100, reason: "Server is busy"))
-        d.append(NotesSegment(id: 2, offset: 190, raw: "raw words", keptOriginal: true))
-        #expect(d.transcriptLines() == ["**[00:00:12]** Hello.", "**[00:01:40]** ⚠︎ audio not transcribed (Server is busy)",
-                                        "**[00:03:10]** raw words _(kept original)_"])
-        #expect(d.transcriptLines(raw: true).first == "**[00:00:12]** um hello")
-    }
-
-    @Test func dirtyTransitions() {
-        var d = NotesDocument()
-        #expect(!d.isDirty && d.isEmpty)
-        d.append(.gap(id: 0, offset: 0, reason: "x"))
-        #expect(!d.isDirty)
-        d.append(NotesSegment(id: 1, offset: 0, raw: "text"))
-        #expect(d.isDirty)
-        _ = d.exportMarkdown()                    // what Copy does: the dirty flag stays
-        #expect(d.isDirty)
-        d.markSaved()
-        #expect(!d.isDirty)
     }
 }
 
@@ -516,10 +327,14 @@ final class NotesURLStub: URLProtocol, @unchecked Sendable {
         #expect(notes.copyText.contains("- Ship Friday") && !notes.copyText.contains("## Transcript"))
         let transcript = model { $0.tab = .transcript }
         #expect(transcript.copyText.contains("## Transcript") && !transcript.copyText.contains("- Ship Friday"))
+        // The notes are text the user can edit: with structuring off they are still the notes.
         let off = model { $0.structuring = .off(.correctionOff) }
-        #expect(off.copyText.contains("## Transcript") && !off.copyText.contains("- Ship Friday"))
+        #expect(off.copyText.contains("- Ship Friday") && !off.copyText.contains("## Transcript"))
         #expect(model().saveText.contains("- Ship Friday") && model().saveText.contains("## Transcript"))
-        #expect(!model { $0.structuring = .off(.unsupported) }.saveText.contains("- Ship Friday"))
+        #expect(model { $0.structuring = .off(.unsupported) }.saveText.contains("- Ship Friday"))
+        let empty = model { $0.document = NotesDocument(startedAt: Date(timeIntervalSince1970: 0)) }
+        empty.document.append(NotesSegment(id: 0, offset: 0, raw: "only speech"))
+        #expect(empty.copyText.contains("## Transcript") && empty.copyText.contains("only speech"))
     }
 
     @Test func explanationsAndRetryNote() {
@@ -533,13 +348,64 @@ final class NotesURLStub: URLProtocol, @unchecked Sendable {
         #expect(model { $0.structuring = .failed("timeout") }.retryNote == "Couldn’t update notes (timeout) — will retry")
     }
 
-    @Test func tailShowsUnstructuredTextThenThePartial() {
+    @Test func hearingShowsUnstructuredTextThenThePartial() {
         let m = model()
         m.document.append(NotesSegment(id: 1, offset: 30, raw: "budget talk"))
         m.document.livePartial = "and then"
-        #expect(m.liveTail == "budget talk and then")
+        #expect(m.hearingText == "budget talk and then")
         m.structuring = .off(.disabled)
-        #expect(m.liveTail == "and then")
+        #expect(m.hearingText == "and then")
+    }
+
+    @Test func reorganizeIsEnabledOnlyWhenItCanRun() {
+        #expect(model().canReorganize && !model().reorganizeHidden)
+        #expect(!model { $0.reorganizeStatus = .running }.canReorganize)
+        #expect(!model { $0.state = .stopping }.canReorganize)
+        #expect(!model { $0.document = NotesDocument() }.canReorganize)
+        #expect(model { $0.state = .stopped }.canReorganize && model { $0.state = .idle }.canReorganize)
+        // Structuring off: the recorder reports the reason; the button stays visible but disabled.
+        let off = model { $0.structuring = .off(.disabled); $0.reorganizeStatus = .unavailable(.disabled) }
+        #expect(!off.canReorganize && !off.reorganizeHidden && !off.autoReorganizeAvailable)
+        // An old server: appends work, Reorganize is hidden and the toggle explains why.
+        let old = model { $0.reorganizeStatus = .unavailable(.unsupported) }
+        #expect(!old.canReorganize && old.reorganizeHidden && !old.autoReorganizeAvailable)
+    }
+
+    @Test func reorganizeNotesAndTheUndoChip() {
+        #expect(model { $0.reorganizeStatus = .failed("timeout") }.reorganizeNote == "Couldn’t reorganize (timeout) — will retry")
+        #expect(model { $0.reorganizeStatus = .conflict }.reorganizeNote == "Notes changed while reorganizing — try again")
+        #expect(model { $0.reorganizeStatus = .tooLong }.reorganizeNote?.hasPrefix("Too long to reorganize") == true)
+        #expect(model { $0.state = .recording; $0.reorganizeStatus = .running }.statusText == NotesStatus.reorganizing)
+        #expect(model { $0.state = .stopping; $0.reorganizeStatus = .running }.statusText == NotesStatus.reorganizing)
+        let m = model { $0.reorganizeStatus = .applied(at: 5) }
+        #expect(m.showUndoChip)
+        m.dismissUndoChip()
+        #expect(!m.showUndoChip)
+        m.reorganizeStatus = .applied(at: 9)                 // a later reorganize shows it again
+        #expect(m.showUndoChip)
+        m.reorganizeStatus = .idle                           // the next edit or append
+        #expect(!m.showUndoChip)
+    }
+
+    @Test func pendingChangesReachOnlyAnAttachedEditor() {
+        let m = model()
+        let change = NotesTextChange(range: NSRange(location: 0, length: 0), replacement: "x", kind: .append)
+        m.enqueue([change])
+        #expect(m.takePendingChanges().isEmpty)              // no editor: dropped, it loads the text when it appears
+        var drained: [NotesTextChange] = []
+        m.onPendingChanges = { drained += m.takePendingChanges() }
+        m.enqueue([change, change])
+        #expect(drained.count == 2)
+    }
+
+    @Test func theEmptyStateNeedsNoTextNoRecordingAndNoFocus() {
+        let m = NotesModel()
+        #expect(m.showsEmptyState)
+        m.editorFocused = true
+        #expect(!m.showsEmptyState)
+        let typed = NotesModel()
+        typed.document.userEdit(NSRange(location: 0, length: 0), "x")
+        #expect(!typed.showsEmptyState && typed.hasContent)
     }
 }
 

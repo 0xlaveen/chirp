@@ -194,6 +194,16 @@ public final class Preferences: @unchecked Sendable {
         get { defaults.string(forKey: "notesTab") ?? "notes" }
         set { defaults.set(newValue, forKey: "notesTab") }
     }
+    /// Live Notes' "Auto-reorganize" toggle (on by default). A preference, never notes content.
+    public var notesAutoReorganize: Bool {
+        get { defaults.object(forKey: "notesAutoReorganize") as? Bool ?? true }
+        set { defaults.set(newValue, forKey: "notesAutoReorganize") }
+    }
+    /// The Notes pane shows the read-only Preview instead of the editor.
+    public var notesPreview: Bool {
+        get { defaults.bool(forKey: "notesPreview") }
+        set { defaults.set(newValue, forKey: "notesPreview") }
+    }
     /// Whether structuring is on: the user's choice for this server's scope, else on only when correction stays on
     /// this Mac. Unknown health is always off, since nothing says where the text would go.
     public func notesStructureEnabled(health: Health?) -> Bool {

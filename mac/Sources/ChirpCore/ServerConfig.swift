@@ -37,6 +37,9 @@ public struct ServerConfig: Sendable, Equatable {
     /// `POST …/v1/notes/structure`, keeping any base path such as `/chirp`.
     public var notesStructureURL: URL { baseURL.appendingPathComponent("v1/notes/structure") }
 
+    /// `POST …/v1/notes/reorganize`, keeping any base path such as `/chirp`.
+    public var notesReorganizeURL: URL { baseURL.appendingPathComponent("v1/notes/reorganize") }
+
     public func authorized(_ request: URLRequest) -> URLRequest {
         var r = request
         if let token { r.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization") }
@@ -60,7 +63,18 @@ public struct ServerConfig: Sendable, Equatable {
     /// `URLError` and the caller treats it as `error: "timeout"`. Non-200 answers throw `NotesStructureError`.
     public func structureNotes(_ r: NotesStructureRequest, session: URLSession = .shared,
                                timeout: TimeInterval = 35) async throws -> NotesStructureResponse {
-        var req = authorized(URLRequest(url: notesStructureURL))
+        try await postNotes(r, to: notesStructureURL, session: session, timeout: timeout)
+    }
+
+    /// One reorganize pass, with the same error mapping as `structureNotes` (a 404 means only reorganize is missing).
+    public func reorganizeNotes(_ r: NotesReorganizeRequest, session: URLSession = .shared,
+                                timeout: TimeInterval = 50) async throws -> NotesReorganizeResponse {
+        try await postNotes(r, to: notesReorganizeURL, session: session, timeout: timeout)
+    }
+
+    private func postNotes<Request: Encodable, Response: Decodable>(_ r: Request, to url: URL, session: URLSession,
+                                                                    timeout: TimeInterval) async throws -> Response {
+        var req = authorized(URLRequest(url: url))
         req.httpMethod = "POST"
         req.timeoutInterval = timeout
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -70,6 +84,6 @@ public struct ServerConfig: Sendable, Equatable {
         guard status == 200 else { throw NotesStructureError.from(status: status) }
         let decoder = JSONDecoder()
         decoder.keyDecodingStrategy = .convertFromSnakeCase
-        return try decoder.decode(NotesStructureResponse.self, from: data)
+        return try decoder.decode(Response.self, from: data)
     }
 }
