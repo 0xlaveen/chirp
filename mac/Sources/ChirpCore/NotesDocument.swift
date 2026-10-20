@@ -32,10 +32,18 @@ public struct NotesSegment: Equatable, Sendable, Identifiable {
     public var isGap: Bool { failure != nil }
 }
 
+/// Part of a window's notes after the server rejected the whole window and it was split: structured Markdown, or
+/// a part that still failed at the smallest size and stays as raw text under the fallback header.
+public enum NotesPiece: Equatable, Sendable {
+    case markdown(String)
+    case fallback(String)
+}
+
 /// One change to the notes text, UTF-16 `range` in the text before the change. Every AI mutation returns the change
 /// it applied, so the editor can replay exactly that delta onto its text storage.
 public struct NotesTextChange: Equatable, Sendable {
-    public enum Kind: Equatable, Sendable { case user, append, reorganize, toggleTask }
+    /// `organize`: Organize re-structured fallback blocks in place (one undo group with the rest of its batch).
+    public enum Kind: Equatable, Sendable { case user, append, reorganize, toggleTask, organize }
 
     public var range: NSRange
     public var replacement: String
@@ -98,6 +106,9 @@ public struct NotesDocument: Equatable, Sendable {
     public private(set) var lastReorganizeVersion = 0
     /// UTF-16 units inserted (user or AI) since the last reorganize.
     public private(set) var charsSinceReorganize = 0
+    /// Every fallback block the client appended, exactly as appended. One still found verbatim in `text` is one the
+    /// user has not edited, which Organize may re-structure in place.
+    public private(set) var fallbackBlocks: [String] = []
     /// The current segment's live partial. Display only: never exported.
     public var livePartial = ""
     /// There is content that was not saved with Save… (Copy does not count).
@@ -309,7 +320,9 @@ public struct NotesDocument: Equatable, Sendable {
     private mutating func appendFallback() {
         let rest = windowSegments
         if !rest.isEmpty {
-            text = settledText + tailSeparator + Self.fallbackHeader + "\n\n" + rest.map(\.text).joined(separator: "\n\n")
+            let block = Self.fallbackBlock(rest.map(\.text).joined(separator: "\n\n"))
+            fallbackBlocks.append(block)
+            text = settledText + tailSeparator + block
         }
         windowStart = segments.count
         structuredEnd = windowStart - 1
@@ -340,6 +353,94 @@ public struct NotesDocument: Equatable, Sendable {
         while suffix > 0, splits(a, at: a.count - suffix) || splits(b, at: b.count - suffix) { suffix -= 1 }
         let replacement = String(decoding: b[prefix..<(b.count - suffix)], as: UTF16.self)
         return NotesTextChange(range: NSRange(location: prefix, length: a.count - suffix - prefix), replacement: replacement, kind: kind)
+    }
+
+    // MARK: split windows and fallback blocks
+
+    /// The smallest part a rejected window is split into.
+    public static let minSplitChars = 400
+
+    public static func fallbackBlock(_ body: String) -> String { fallbackHeader + "\n\n" + body }
+
+    /// Pieces as notes text: the Markdown parts and the fallback blocks, a blank line apart.
+    public static func render(_ pieces: [NotesPiece]) -> String {
+        pieces.map { piece -> String in
+            switch piece {
+            case .markdown(let md): md.trimmingCharacters(in: .whitespacesAndNewlines)
+            case .fallback(let body): fallbackBlock(body.trimmingCharacters(in: .whitespacesAndNewlines))
+            }
+        }.filter { !$0.isEmpty }.joined(separator: "\n\n")
+    }
+
+    /// Splits `text` in two at the sentence end nearest its middle (else the nearest space), each part at least
+    /// `minPart` characters; nil when it is too short to split.
+    public static func split(_ text: String, minPart: Int = minSplitChars) -> (String, String)? {
+        let chars = Array(text)
+        guard chars.count >= 2 * minPart else { return nil }
+        let middle = chars.count / 2
+        func cut(_ isBoundary: (Int) -> Bool) -> Int? {
+            (minPart...(chars.count - minPart)).filter(isBoundary).min { abs($0 - middle) < abs($1 - middle) }
+        }
+        let sentence = cut { i in
+            chars[i].isWhitespace && (chars[i - 1] == "." || chars[i - 1] == "?" || chars[i - 1] == "!" || chars[i - 1] == "\n")
+        }
+        guard let at = sentence ?? cut({ chars[$0].isWhitespace }) else { return nil }
+        let a = String(chars[..<at]).trimmingCharacters(in: .whitespacesAndNewlines)
+        let b = String(chars[at...]).trimmingCharacters(in: .whitespacesAndNewlines)
+        return a.isEmpty || b.isEmpty ? nil : (a, b)
+    }
+
+    /// Takes the parts of a window that was split after a rejection: they replace the tail in order (a part that
+    /// still failed as a fallback block), and the tail settles, so that text is never sent again as one window.
+    @discardableResult
+    public mutating func applyPieces(_ pieces: [NotesPiece], for request: NotesStructureRequest) -> NotesTextChange? {
+        guard request.documentID == id, request.windowGeneration == windowGeneration, request.windowEnd >= windowStart,
+              request.windowEnd < segments.count, request.windowEnd > structuredEnd, !pieces.isEmpty else { return nil }
+        return recordingChange(.append) { d in
+            d.replaceTail(with: Self.render(pieces))
+            for case .fallback(let body) in pieces {
+                d.fallbackBlocks.append(Self.fallbackBlock(body.trimmingCharacters(in: .whitespacesAndNewlines)))
+            }
+            d.structuredEnd = request.windowEnd
+            d.consecutiveFailures = 0
+            d.settleTail()
+            d.overflow()
+        }
+    }
+
+    /// The fallback blocks still in the text exactly as appended, with the raw text under each header.
+    public var untouchedFallbacks: [(block: String, body: String)] {
+        fallbackBlocks.filter { text.contains($0) }.map { ($0, String($0.dropFirst(Self.fallbackHeader.count + 2))) }
+    }
+
+    /// Organize: each untouched fallback block replaced in place by its re-structured pieces, only when the text is
+    /// still exactly `version`. Returns the changes in the order to replay them (one undo group); empty when nothing
+    /// applied.
+    public mutating func replaceFallbacks(_ replacements: [(block: String, pieces: [NotesPiece])], ifVersion expected: Int)
+        -> [NotesTextChange] {
+        guard version == expected else { return [] }
+        var located: [(range: NSRange, block: String, pieces: [NotesPiece])] = []
+        for r in replacements {
+            let found = (text as NSString).range(of: r.block)
+            if found.location != NSNotFound { located.append((found, r.block, r.pieces)) }
+        }
+        // From the end backwards, so every range is still where it was found when its change is replayed.
+        var changes: [NotesTextChange] = []
+        var inserted = 0
+        for item in located.sorted(by: { $0.range.location > $1.range.location }) {
+            let change = NotesTextChange(range: item.range, replacement: Self.render(item.pieces), kind: .organize)
+            text = change.applied(to: text)
+            let delta = change.replacement.utf16.count - item.range.length
+            if NSMaxRange(item.range) <= tailStart { tailStart += delta } else { settleTail() }
+            fallbackBlocks.removeAll { $0 == item.block }
+            for case .fallback(let body) in item.pieces {
+                fallbackBlocks.append(Self.fallbackBlock(body.trimmingCharacters(in: .whitespacesAndNewlines)))
+            }
+            inserted += change.replacement.utf16.count
+            changes.append(change)
+        }
+        if !changes.isEmpty { changed(inserted: inserted) }
+        return changes
     }
 
     // MARK: reorganize

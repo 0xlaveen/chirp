@@ -139,7 +139,7 @@ final class NotesTextView: NSTextView {
         }
     }
 
-    /// Edit ▸ Reorganize Notes (⌥⌘R), through the responder chain.
+    /// Edit ▸ Organize Notes (⌥⌘R), through the responder chain.
     @objc func reorganizeNotes(_ sender: Any?) { coordinator?.model.onReorganize() }
 
     /// ⌘Z / ⇧⌘Z act on the notes' own undo stack (the window's would be empty).
@@ -169,7 +169,7 @@ final class NotesTextView: NSTextView {
 @MainActor
 final class NotesEditorCoordinator: NSObject, NSTextViewDelegate {
     static let updateAction = "Update Notes"
-    static let reorganizeAction = "Reorganize Notes"
+    static let reorganizeAction = "Organize Notes"
     static let toggleAction = "Toggle Task"
 
     let model: NotesModel
@@ -388,7 +388,7 @@ final class NotesEditorCoordinator: NSObject, NSTextViewDelegate {
         }
         guard !changes.isEmpty else { return }
         let pinned = isPinnedToBottom
-        for change in changes { apply(change) }
+        applyAll(changes)
         syncedText = model.document.text
         if !textView.hasMarkedText(), textView.string != model.document.text {
             chirpLog.info("notes editor resync storage=\(self.textView.string.utf16.count, privacy: .public) model=\(self.model.document.text.utf16.count, privacy: .public)")
@@ -406,13 +406,14 @@ final class NotesEditorCoordinator: NSObject, NSTextViewDelegate {
         deferred.removeAll()
         let pinned = isPinnedToBottom
         guard let user = NotesDocument.diff(syncedText, textView.string, kind: .user) else {
-            for change in changes { apply(change) }
+            applyAll(changes)
             syncedText = model.document.text
             return
         }
         // The committed text replaced `userOld` units at `userStart` (in the text the changes are relative to).
         var userStart = user.range.location
         let userOld = user.range.length, userNew = user.replacement.utf16.count
+        var mappedChanges: [NotesTextChange] = []
         for change in changes {
             var mapped = change
             if change.range.location >= userStart {
@@ -423,29 +424,47 @@ final class NotesEditorCoordinator: NSObject, NSTextViewDelegate {
                 // Before it: the committed text moves instead.
                 userStart += change.replacement.utf16.count - change.range.length
             }
-            apply(mapped)
+            mappedChanges.append(mapped)
         }
+        applyAll(mappedChanges)
         syncedText = model.document.text
         updateTint()
         if pinned, changes.contains(where: { $0.kind == .append }) { textView.scrollToEndOfDocument(nil) }
     }
 
-    /// One AI change as one undo group, with the caret kept where the user left it.
-    func apply(_ change: NotesTextChange) {
+    /// Replays changes in order; a run of Organize's in-place replacements is one undo group.
+    private func applyAll(_ changes: [NotesTextChange]) {
+        var i = 0
+        while i < changes.count {
+            guard changes[i].kind == .organize else { apply(changes[i]); i += 1; continue }
+            textView.breakUndoCoalescing()
+            undo.beginUndoGrouping()
+            while i < changes.count, changes[i].kind == .organize { apply(changes[i], grouped: true); i += 1 }
+            undo.setActionName(Self.reorganizeAction)
+            undo.endUndoGrouping()
+        }
+    }
+
+    /// One AI change as one undo group (unless `grouped` in an open one), with the caret kept where the user left it.
+    func apply(_ change: NotesTextChange, grouped: Bool = false) {
         guard let storage = textView.textStorage, NSMaxRange(change.range) <= storage.length else { return }
         let selection = textView.selectedRanges.map(\.rangeValue)
         let reorganize = change.kind == .reorganize
         let caret = reorganize ? caretLine(selection.first ?? NSRange(), scope: change.range) : nil
         let anchor = reorganize ? scrollAnchor() : nil
         isApplyingModelChange = true
-        textView.breakUndoCoalescing()
-        undo.beginUndoGrouping()
+        if !grouped {
+            textView.breakUndoCoalescing()
+            undo.beginUndoGrouping()
+        }
         if textView.shouldChangeText(in: change.range, replacementString: change.replacement) {
             storage.replaceCharacters(in: change.range, with: change.replacement)
             textView.didChangeText()
         }
-        undo.setActionName(reorganize ? Self.reorganizeAction : Self.updateAction)
-        undo.endUndoGrouping()
+        if !grouped {
+            undo.setActionName(reorganize ? Self.reorganizeAction : Self.updateAction)
+            undo.endUndoGrouping()
+        }
         NotesEditorStyle.restyle(storage, range: reorganize ? nil : NSRange(location: change.range.location, length: change.replacement.utf16.count))
         isApplyingModelChange = false
         if reorganize, let caret {

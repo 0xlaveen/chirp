@@ -95,19 +95,24 @@ private struct NotesHeader: View {
 
     private var reorganizeButton: some View {
         Button(action: model.onReorganize) {
-            Group {
-                if model.isReorganizing {
-                    ProgressView().controlSize(.small).scaleEffect(0.7)
-                } else {
-                    Image(systemName: "wand.and.stars").font(.system(size: 14, weight: .regular))
+            HStack(spacing: 5) {
+                Group {
+                    if model.isReorganizing {
+                        ProgressView().controlSize(.small).scaleEffect(0.6)
+                    } else {
+                        Image(systemName: "wand.and.stars").font(.system(size: 13, weight: .regular))
+                    }
                 }
+                .frame(width: 16, height: 16)
+                Text(NotesStatus.organizeLabel).font(.callout)
             }
-            .frame(width: 30, height: 24)
+            .padding(.horizontal, 6)
+            .frame(height: 24)
         }
         .buttonStyle(.borderless)
         .disabled(!model.canReorganize)
-        .help("Reorganize notes")
-        .accessibilityLabel("Reorganize notes")
+        .help(NotesStatus.organizeHelp)
+        .accessibilityLabel(NotesStatus.organizeHelp)
     }
 
     private func iconButton(_ symbol: String, label: String, enabled: Bool, action: @escaping () -> Void) -> some View {
@@ -221,9 +226,10 @@ private struct NotesStatusLines: View {
         if !notes.isEmpty {
             VStack(alignment: .leading, spacing: 4) {
                 ForEach(notes, id: \.self) { note in
-                    Label(note, systemImage: "arrow.clockwise")
+                    let success = note == model.reorganizeNote && model.reorganizeNoteIsSuccess
+                    Label(note, systemImage: success ? "checkmark.circle" : "arrow.clockwise")
                         .font(.caption)
-                        .foregroundStyle(.orange)
+                        .foregroundStyle(success ? AnyShapeStyle(.secondary) : AnyShapeStyle(Color.orange))
                 }
             }
             .frame(maxWidth: NotesViewMetrics.readingWidth, alignment: .leading)
@@ -265,14 +271,14 @@ private struct HearingStrip: View {
     }
 }
 
-/// "Reorganized · Undo", for 20 s after a reorganize (or until the next edit or append).
+/// "Organized · Undo", for 20 s after a reorganize (or until the next edit or append).
 private struct UndoChip: View {
     let model: NotesModel
 
     var body: some View {
         HStack(spacing: 6) {
             Image(systemName: "wand.and.stars").font(.caption)
-            Text("Reorganized").font(.caption.weight(.medium))
+            Text(NotesStatus.organized).font(.caption.weight(.medium))
             Text("·").font(.caption).foregroundStyle(.secondary)
             Button {
                 model.undoReorganize()
@@ -282,7 +288,7 @@ private struct UndoChip: View {
             }
             .buttonStyle(.plain)
             .foregroundStyle(Color.accentColor)
-            .accessibilityLabel("Undo reorganize")
+            .accessibilityLabel("Undo organize")
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 5)

@@ -54,7 +54,7 @@ final class NotesWindowController: NSObject, NSWindowDelegate {
     }
 
     /// Chirp is a menu-bar app with no visible main menu; this hidden one gives the Notes editor the standard
-    /// Undo/Redo, clipboard and Find key equivalents, plus Edit ▸ Reorganize Notes (⌥⌘R). Every item goes through the
+    /// Undo/Redo, clipboard and Find key equivalents, plus Edit ▸ Organize Notes (⌥⌘R). Every item goes through the
     /// responder chain, so it only acts while the Notes editor (or another text field) is first responder.
     static func installEditMenu() {
         guard NSApp.mainMenu?.item(withTitle: "Edit") == nil else { return }
@@ -85,7 +85,7 @@ final class NotesWindowController: NSObject, NSWindowDelegate {
         findItem.submenu = find
         edit.addItem(findItem)
         edit.addItem(.separator())
-        add(edit, "Reorganize Notes", NSSelectorFromString("reorganizeNotes:"), "r", [.command, .option])
+        add(edit, "Organize Notes", NSSelectorFromString("reorganizeNotes:"), "r", [.command, .option])
         let editItem = NSMenuItem(title: "Edit", action: nil, keyEquivalent: "")
         editItem.submenu = edit
         main.addItem(editItem)
