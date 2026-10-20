@@ -197,8 +197,8 @@ def repeated_phrases(words: list[str]) -> set[int]:
     for size in range(1, MAX_REPEAT + 1):
         for i in range(len(words) - 2 * size + 1):
             phrase = words[i : i + size]
-            # "twenty twenty six" is a number, not a stutter.
-            if phrase == words[i + size : i + 2 * size] and not any(
+            # "twenty twenty six" is a number, not a stutter; "one of the, one of the" is.
+            if phrase == words[i + size : i + 2 * size] and not all(
                 word in NUMBER_WORDS or any(char.isdigit() for char in word) for word in phrase
             ):
                 found.update(range(i, i + size))
@@ -223,25 +223,69 @@ def abandoned_restarts(words: list[str]) -> set[int]:
 
 
 # "the list is, uh, it's actually nice": the speaker restates the subject after the verb.
-RESTATED_SUBJECTS = frozenset("it's that's they're he's she's we're".split())
+RESTATED_SUBJECTS = frozenset("it's that's they're he's she's we're there's".split())
 COPULAS = frozenset("is are was were".split())
+ARTICLES = frozenset("a an the".split())
+# "it's just, it's not the same", "there's only, there's six": either copy of the subject may go.
+SUBJECT_GAP = 2
 
 
 def restated_subjects(words: list[str]) -> set[int]:
-    return {
+    found = {
         i for i in range(1, len(words)) if words[i] in RESTATED_SUBJECTS and words[i - 1] in COPULAS
     }
+    for i, word in enumerate(words):
+        if word not in RESTATED_SUBJECTS:
+            continue
+        for gap in range(SUBJECT_GAP + 1):
+            between = words[i + 1 : i + 1 + gap]
+            if (
+                i + 1 + gap < len(words)
+                and words[i + 1 + gap] == word
+                and not any(_protected(other) for other in between)
+            ):
+                found.add(i + 1 + gap)
+    # "we're going to do a, an actual launch": an article the speaker swaps for another.
+    found.update(
+        i
+        for i in range(len(words) - 1)
+        if words[i] in ARTICLES and words[i + 1] in ARTICLES and words[i] != words[i + 1]
+    )
+    return found
 
 
-def notes_faithful(raw: str, text: str) -> bool:
-    """`text` is `raw` with only fillers, repeats and restarts deleted, in order, none added."""
+# "the second screen is where hal sion, sorry, halcyon talks": a few words the speaker takes back
+# with "sorry", and the marker itself. Never an apology ("I'm sorry", "sorry about that").
+REPAIR_SPAN = 4
+APOLOGY_BEFORE = frozenset("i'm im am so very really was were feel be".split())
+APOLOGY_AFTER = frozenset("for about to that but if i we you".split())
+
+
+def repaired_spans(words: list[str]) -> set[int]:
+    found = set()
+    for i, word in enumerate(words):
+        if word != "sorry" or i == 0 or words[i - 1] in APOLOGY_BEFORE:
+            continue
+        if i + 1 >= len(words) or words[i + 1] in APOLOGY_AFTER:
+            continue
+        span = range(max(0, i - REPAIR_SPAN), i)
+        if not any(_protected(words[j]) for j in span):
+            found.update(span)
+            found.add(i)
+    return found
+
+
+def _notes_words(raw: str) -> tuple[list, list[str], set[int]]:
+    """(matches, words, optional positions) of a Live Notes segment: the words the clean-up may
+    delete are fillers, filler phrases, a sentence's leading "and", repeats and restarts."""
     matches = list(WORD.finditer(raw))
     source = [match.group().casefold().replace("’", "'") for match in matches]
-    target = [match.casefold().replace("’", "'") for match in WORD.findall(text)]
     optional = {i for i, word in enumerate(source) if word in SPOKEN_FILLERS}
+    phrases = set()
     for i in range(len(source) - 1):
         if tuple(source[i : i + 2]) in FILLER_PHRASES:
-            optional.update((i, i + 1))
+            phrases.update((i, i + 1))
+    optional |= phrases
     # A sentence may drop its leading "and" ("Oh, and the demo moved" -> "The demo moved").
     for i, word in enumerate(source):
         if word != "and":
@@ -253,11 +297,23 @@ def notes_faithful(raw: str, text: str) -> bool:
             r"[.!?]", raw[matches[before].end() : matches[before + 1].start()]
         ):
             optional.add(i)
-    # Repeats and restarts are found with fillers skipped: "we have, uh, we have".
-    core = [i for i, word in enumerate(source) if word not in SPOKEN_FILLERS]
+    # Repeats and restarts are found with fillers skipped: "we have, uh, we have", "a kind of a".
+    core = [i for i, word in enumerate(source) if word not in SPOKEN_FILLERS and i not in phrases]
     words = [source[i] for i in core]
-    found = repeated_phrases(words) | abandoned_restarts(words) | restated_subjects(words)
+    found = (
+        repeated_phrases(words)
+        | abandoned_restarts(words)
+        | restated_subjects(words)
+        | repaired_spans(words)
+    )
     optional.update(core[i] for i in found)
+    return matches, source, optional
+
+
+def notes_faithful(raw: str, text: str) -> bool:
+    """`text` is `raw` with only fillers, repeats and restarts deleted, in order, none added."""
+    _, source, optional = _notes_words(raw)
+    target = [match.casefold().replace("’", "'") for match in WORD.findall(text)]
     reachable = {0}
     for i, word in enumerate(source):
         reachable = {
@@ -271,6 +327,53 @@ def notes_faithful(raw: str, text: str) -> bool:
         if not reachable:
             return False
     return len(target) in reachable and protected_fragments(raw, text)
+
+
+# The model drops "I think" before a number although the prompt says to keep it (docs/bench.md).
+# Deleting a hedge changes how sure the speaker was, so it is never licensed; instead the
+# clean-up puts the hedge back where it was and the result must pass `notes_faithful` as is.
+HEDGE_PHRASES = frozenset({("i", "think"), ("i", "guess"), ("i'd", "say")})
+
+
+def restore_hedges(raw: str, text: str) -> str | None:
+    """`text` with the hedges it dropped put back, when that is its only unlicensed edit."""
+    matches, source, optional = _notes_words(raw)
+    targets = list(WORD.finditer(text))
+    target = [match.group().casefold().replace("’", "'") for match in targets]
+    hedges = {i for i in range(len(source) - 1) if tuple(source[i : i + 2]) in HEDGE_PHRASES}
+    # Breadth-first over (source, target) positions, fewest restored hedges first.
+    frontier, seen = [(0, 0, ())], set()
+    while frontier:
+        following = []
+        for i, j, restored in frontier:
+            if (i, j) in seen:
+                continue
+            seen.add((i, j))
+            if i == len(source):
+                if j == len(target):
+                    if not restored:
+                        return None  # already faithful: nothing to restore
+                    return _insert_hedges(raw, text, matches, targets, restored)
+                continue
+            if i in optional:
+                frontier.append((i + 1, j, restored))
+            if j < len(target) and source[i] == target[j]:
+                frontier.append((i + 1, j + 1, restored))
+            if i in hedges:
+                following.append((i + 2, j, (*restored, (j, i))))
+        frontier = following
+    return None
+
+
+def _insert_hedges(raw, text, matches, targets, restored) -> str:
+    for j, i in sorted(restored, reverse=True):
+        phrase = raw[matches[i].start() : matches[i + 1].end()]
+        if j < len(targets):
+            at = targets[j].start()
+            text = text[:at] + phrase + " " + text[at:]
+        else:
+            text = text.rstrip(".!? ") + " " + phrase + text[len(text.rstrip(".!? ")) :]
+    return text
 
 
 def protected_fragments(raw: str, text: str) -> bool:
@@ -489,7 +592,10 @@ class Corrector:
                     timeout=budget,
                 )
                 if rejected(raw, text, finish, selected):
-                    return CorrectionResult(raw, error="rejected")
+                    restored = restore_hedges(raw, text) if finish in {"stop", "eos"} else None
+                    if restored is None or rejected(raw, restored, finish, selected):
+                        return CorrectionResult(raw, error="rejected")
+                    text = restored
                 return CorrectionResult(text, text != raw)
         except (TimeoutError, httpx.TimeoutException):
             return CorrectionResult(raw, error="timeout")

@@ -163,7 +163,8 @@ LIVE_NOTES = Profile(
     """This is one segment of a long spoken monologue or meeting. Make it readable by DELETING
 words only:
 - Delete fillers: um, uh, er, ah, hmm, oh, like, yeah, yes, okay, so, well, basically, actually,
-  literally, right, just, anyway, kind of, sort of, you know, I mean.
+  literally, right, just, anyway, kind of, sort of, you know, I mean. These are the only fillers:
+  "I think", "I guess" and "I'd say" are hedges, never fillers, and always stay.
 - Delete stutters and immediate repetitions: "the the" -> "the",
   "we have, uh, we have" -> "we have".
 - Delete a restart the speaker abandons and repeats: "something that can be, something that we
@@ -174,6 +175,9 @@ Never add, replace or reorder a word. Do not fix grammar, paraphrase, summarize,
 sentences or complete thoughts. Keep every sentence, including short asides and afterthoughts,
 and every other word: negations (not, no, never, don't, didn't, can't, wasn't), numbers, names,
 hedges (I think, I'd say, maybe, probably, I guess), "the other one" and questions.
+Keep "I think" and "I guess" wherever they are, also mid-sentence and before a number.
+Keep names, product names and odd words exactly as transcribed, even when they look misheard;
+never correct or respell them.
 If unsure whether a word is a filler, keep it.
 
 Examples (input JSON string -> output text):
@@ -184,7 +188,9 @@ Examples (input JSON string -> output text):
 "I don't, I don't know whether it works or not" -> I don't know whether it works or not.
 "so yeah I'd say, um, I think the crash is worse" -> I'd say I think the crash is worse.
 "oh and I almost forgot, um, the page is fast" -> I almost forgot, the page is fast.
-"okay um Maya said it took like forty seconds" -> Maya said it took forty seconds.""",
+"okay um Maya said it took like forty seconds" -> Maya said it took forty seconds.
+"we have around, uh, I think two hundred seats" -> We have around, I think two hundred seats.
+"the bill is, um, I guess up from last month" -> The bill is, I guess, up from last month.""",
 )
 
 
