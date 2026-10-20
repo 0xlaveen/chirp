@@ -85,7 +85,9 @@ final class StructureStub: @unchecked Sendable {
                              options: StartOptions(client: "mac", correction: true), structuring: true, health: health)
     }
 
-    private func eventually(_ what: String = "condition", within seconds: Double = 5,
+    /// Polls until `condition` holds. The limit is generous because other suites (the snapshot renderer) can hold
+    /// the main actor for seconds in a full run; a passing check returns as soon as the condition is true.
+    private func eventually(_ what: String = "condition", within seconds: Double = 60,
                             _ condition: () -> Bool) async {
         let deadline = Date().addingTimeInterval(seconds)
         while !condition() {
@@ -124,7 +126,7 @@ final class StructureStub: @unchecked Sendable {
     @Test func oldSegmentCorrectionOverlapsNewCapture() async throws {
         let (server, port) = try await started(try MockServer())
         defer { server.stop() }
-        server.script(0, .init(correcting: true, finalDelay: 0.6))
+        server.script(0, .init(correcting: true, finalDelay: 2.0))
         let stub = StructureStub(), clock = ManualClock()
         let r = make(server, port: port, stub: stub, clock: clock)
         r.start()
@@ -143,7 +145,7 @@ final class StructureStub: @unchecked Sendable {
     @Test func finalsAppendInOrderWhenTheSecondArrivesFirst() async throws {
         let (server, port) = try await started(try MockServer())
         defer { server.stop() }
-        server.script(0, .init(finalDelay: 0.6))
+        server.script(0, .init(finalDelay: 2.0))
         let stub = StructureStub(), clock = ManualClock()
         let r = make(server, port: port, stub: stub, clock: clock)
         r.start()
@@ -164,7 +166,7 @@ final class StructureStub: @unchecked Sendable {
         let (server, port) = try await started(try MockServer())
         defer { server.stop() }
         server.script(0, .init(finalDelay: 0.4))
-        server.script(1, .init(correcting: true, finalDelay: 1.0))
+        server.script(1, .init(correcting: true, finalDelay: 3.0))
         let stub = StructureStub(), clock = ManualClock()
         let r = make(server, port: port, stub: stub, clock: clock)
         r.start()
@@ -315,7 +317,7 @@ final class StructureStub: @unchecked Sendable {
     @Test func noPassWhileASegmentIsStillFinalizing() async throws {
         let (server, port) = try await started(try MockServer())
         defer { server.stop() }
-        server.script(2, .init(finalDelay: 1.0))          // decoding, not yet `correcting`
+        server.script(2, .init(finalDelay: 3.0))          // decoding, not yet `correcting`
         let stub = StructureStub(), clock = ManualClock()
         let r = make(server, port: port, stub: stub, clock: clock)
         r.start()
