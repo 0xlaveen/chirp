@@ -13,7 +13,7 @@ from pathlib import Path
 from urllib.parse import urlsplit
 from uuid import uuid4
 
-from .profiles import MAX_PROMPT_CHARS, Profile, resolve_profiles
+from .profiles import LIVE_NOTES, LIVE_NOTES_ID, MAX_PROMPT_CHARS, Profile, resolve_profiles
 
 
 @dataclass
@@ -25,6 +25,9 @@ class CorrectionConfig:
     model: str = ""
     prompt: str = ""
     timeout: float = 8.0
+    # Live Notes segment correction: longer input than a dictation, and it may queue behind a
+    # running structuring pass (see docs/bench.md).
+    notes_timeout: float = 15.0
     structure_timeout: float = 30.0
     api_key_env: str = "CHIRP_LLM_API_KEY"
     keychain_service: str = ""
@@ -49,7 +52,7 @@ class CorrectionConfig:
         self.enabled = self.mode != "off"
         if any(
             not math.isfinite(v) or v <= 0
-            for v in (self.timeout, self.structure_timeout, self.idle_seconds)
+            for v in (self.timeout, self.notes_timeout, self.structure_timeout, self.idle_seconds)
         ):
             raise ValueError("Invalid correction limits")
         if self.mode == "endpoint":
@@ -63,6 +66,12 @@ class CorrectionConfig:
                 or url.fragment
             ):
                 raise ValueError("Correction requires an HTTP(S) base URL without credentials")
+
+    def profile(self, profile_id) -> Profile | None:
+        """A listed style, or the hidden Live Notes style; None for anything else."""
+        if profile_id == LIVE_NOTES_ID:
+            return LIVE_NOTES
+        return self.resolved_profiles.get(profile_id)
 
     @property
     def host(self) -> str | None:

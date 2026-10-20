@@ -12,7 +12,7 @@ import httpx
 from .config import CorrectionConfig
 from .managed_cleanup import ManagedCleanup
 from .profiles import DEFAULT_PROMPT as DEFAULT_PROMPT
-from .profiles import MAX_PROMPT_CHARS, system_prompt
+from .profiles import LIVE_NOTES_ID, MAX_PROMPT_CHARS, system_prompt
 
 OPENERS = (
     "sure",
@@ -55,6 +55,8 @@ def rejected(raw: str, text: str, finish, profile=None) -> bool:
     source = re.sub(r"^(?:(?:um|uh|er|ah|like|you know)[\s,]+)+", "", raw.lower())
     if any(text.lower().startswith(op) and not source.startswith(op) for op in OPENERS):
         return True
+    if profile and profile.id == LIVE_NOTES_ID:
+        return not notes_faithful(raw, text)
     if profile and profile.rewrites:
         return not rewrite_faithful(raw, text)
     if profile and profile.id == "code":
@@ -155,6 +157,120 @@ def faithful(raw: str, text: str) -> bool:
         return False
 
     return protected_fragments(raw, text)
+
+
+# --- Live Notes segments ---------------------------------------------------------------------
+# Long-form speech is full of fillers, stutters and restarts that dictation rarely has. The
+# guard still allows deletions only, in order, and only of these words, of a phrase spoken
+# twice in a row, or of a short restart; casing and punctuation are free.
+
+HESITATIONS = frozenset("um uh er erm uhm ah eh hmm hm mm mhm".split())
+SPOKEN_FILLERS = HESITATIONS | frozenset(
+    "oh like yeah yep yes okay ok so well basically actually literally right just anyway".split()
+)
+FILLER_PHRASES = (("you", "know"), ("i", "mean"), ("kind", "of"), ("sort", "of"))
+NUMBER_WORDS = frozenset(word for group in VALUE_GROUPS[2:] for word in group) | {"million"}
+NEGATION_WORDS = frozenset(
+    "not no never nothing nobody none nor neither cannot can't don't doesn't didn't won't "
+    "isn't aren't wasn't weren't shouldn't couldn't wouldn't haven't hasn't hadn't mustn't "
+    "without".split()
+)
+# Grammar words a restart may drop without losing content ("that can be, something that").
+FUNCTION_WORDS = frozenset(
+    "i me my we us our you your he him his she her it its they them their this that these those "
+    "a an the and or but if then than as of to in on at by for with from about into "
+    "is are was were be been being am do does did have has had will would can could should "
+    "shall may might must i'm i've i'd i'll we're we've we'd we'll you're you've it's that's "
+    "there there's here what which who how when where why".split()
+)
+MAX_REPEAT = 4
+MAX_RESTART = 5
+
+
+def _protected(word: str) -> bool:
+    return word in NUMBER_WORDS or word in NEGATION_WORDS or any(char.isdigit() for char in word)
+
+
+def repeated_phrases(words: list[str]) -> set[int]:
+    """Positions of the first copy of a phrase (1-4 words) said twice in a row."""
+    found = set()
+    for size in range(1, MAX_REPEAT + 1):
+        for i in range(len(words) - 2 * size + 1):
+            phrase = words[i : i + size]
+            # "twenty twenty six" is a number, not a stutter.
+            if phrase == words[i + size : i + 2 * size] and not any(
+                word in NUMBER_WORDS or any(char.isdigit() for char in word) for word in phrase
+            ):
+                found.update(range(i, i + size))
+    return found
+
+
+def abandoned_restarts(words: list[str]) -> set[int]:
+    """Positions of a short restart: the speaker begins again with the same word, and every
+    dropped word is a grammar word or is said again right after. No negation or number."""
+    found = set()
+    for i, first in enumerate(words):
+        for size in range(2, MAX_RESTART + 1):
+            if i + size >= len(words) or words[i + size] != first:
+                continue
+            span = words[i : i + size]
+            following = set(words[i + size : i + 2 * size + 3])
+            if not any(_protected(word) for word in span) and all(
+                word in FUNCTION_WORDS or word in following for word in span
+            ):
+                found.update(range(i, i + size))
+    return found
+
+
+# "the list is, uh, it's actually nice": the speaker restates the subject after the verb.
+RESTATED_SUBJECTS = frozenset("it's that's they're he's she's we're".split())
+COPULAS = frozenset("is are was were".split())
+
+
+def restated_subjects(words: list[str]) -> set[int]:
+    return {
+        i for i in range(1, len(words)) if words[i] in RESTATED_SUBJECTS and words[i - 1] in COPULAS
+    }
+
+
+def notes_faithful(raw: str, text: str) -> bool:
+    """`text` is `raw` with only fillers, repeats and restarts deleted, in order, none added."""
+    matches = list(WORD.finditer(raw))
+    source = [match.group().casefold().replace("’", "'") for match in matches]
+    target = [match.casefold().replace("’", "'") for match in WORD.findall(text)]
+    optional = {i for i, word in enumerate(source) if word in SPOKEN_FILLERS}
+    for i in range(len(source) - 1):
+        if tuple(source[i : i + 2]) in FILLER_PHRASES:
+            optional.update((i, i + 1))
+    # A sentence may drop its leading "and" ("Oh, and the demo moved" -> "The demo moved").
+    for i, word in enumerate(source):
+        if word != "and":
+            continue
+        before = i - 1
+        while before >= 0 and source[before] in SPOKEN_FILLERS:
+            before -= 1
+        if before < 0 or re.search(
+            r"[.!?]", raw[matches[before].end() : matches[before + 1].start()]
+        ):
+            optional.add(i)
+    # Repeats and restarts are found with fillers skipped: "we have, uh, we have".
+    core = [i for i, word in enumerate(source) if word not in SPOKEN_FILLERS]
+    words = [source[i] for i in core]
+    found = repeated_phrases(words) | abandoned_restarts(words) | restated_subjects(words)
+    optional.update(core[i] for i in found)
+    reachable = {0}
+    for i, word in enumerate(source):
+        reachable = {
+            following
+            for j in reachable
+            for following in (
+                ([j] if i in optional else [])
+                + ([j + 1] if j < len(target) and word == target[j] else [])
+            )
+        }
+        if not reachable:
+            return False
+    return len(target) in reachable and protected_fragments(raw, text)
 
 
 def protected_fragments(raw: str, text: str) -> bool:
@@ -326,7 +442,7 @@ class Corrector:
     ) -> CorrectionResult:
         if not raw or not self.config.enabled:
             return CorrectionResult(raw)
-        selected = self.config.resolved_profiles.get(profile)
+        selected = self.config.profile(profile)
         if (
             selected is None
             or not isinstance(instructions, str)
@@ -341,6 +457,8 @@ class Corrector:
         ):
             return CorrectionResult(raw, error="rejected")
         prompt = system_prompt(selected, instructions, correction_prompt)
+        if selected.id == LIVE_NOTES_ID:
+            return await self._process_notes(raw, prompt, selected)
         try:
             async with asyncio.timeout(self.config.timeout):
                 text, finish = await self.complete(
@@ -358,3 +476,29 @@ class Corrector:
             return CorrectionResult(raw, error="http")
         except (ValueError, KeyError, IndexError, TypeError, AttributeError):
             return CorrectionResult(raw, error="rejected")
+
+    async def _process_notes(self, raw: str, prompt: str, selected) -> CorrectionResult:
+        """A Live Notes segment: its own budget, and an output cap sized to the segment."""
+        budget = self.config.notes_timeout
+        try:
+            async with asyncio.timeout(budget):
+                text, finish = await self.complete(
+                    prompt,
+                    "Transcript JSON: " + json.dumps(raw, ensure_ascii=False),
+                    notes_max_tokens(raw),
+                    timeout=budget,
+                )
+                if rejected(raw, text, finish, selected):
+                    return CorrectionResult(raw, error="rejected")
+                return CorrectionResult(text, text != raw)
+        except (TimeoutError, httpx.TimeoutException):
+            return CorrectionResult(raw, error="timeout")
+        except (httpx.HTTPError, OSError):
+            return CorrectionResult(raw, error="http")
+        except (ValueError, KeyError, IndexError, TypeError, AttributeError):
+            return CorrectionResult(raw, error="rejected")
+
+
+def notes_max_tokens(raw: str) -> int:
+    # Deleting only never lengthens the text; English is about 4 characters per token.
+    return min(1024, 64 + len(raw) // 2)

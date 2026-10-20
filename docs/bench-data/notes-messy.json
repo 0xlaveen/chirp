@@ -1,0 +1,231 @@
+{
+  "date": "2026-10-20",
+  "messy": {
+    "model": "qwen3-4b-instruct-2507-4bit",
+    "set": "messy",
+    "token_count": "tokenizer",
+    "overlap_floor": 0.5,
+    "max_tokens": 768,
+    "cold_ms": 1010,
+    "overall": {
+      "runs": 11,
+      "p50_ms": 1726,
+      "p95_ms": 3148,
+      "max_ms": 3148,
+      "tokens_p50": 131,
+      "tokens_p95": 256,
+      "tokens_max": 256,
+      "pass": 11,
+      "fail": 0,
+      "pass_rate": 1.0
+    },
+    "by_chars": {
+      "1200": {
+        "runs": 8,
+        "p50_ms": 1617,
+        "p95_ms": 2074,
+        "max_ms": 2074,
+        "tokens_p50": 122,
+        "tokens_p95": 163,
+        "tokens_max": 163,
+        "pass": 8,
+        "fail": 0,
+        "pass_rate": 1.0
+      },
+      "1800": {
+        "runs": 2,
+        "p50_ms": 2455,
+        "p95_ms": 2657,
+        "max_ms": 2657,
+        "tokens_p50": 198,
+        "tokens_p95": 215,
+        "tokens_max": 215,
+        "pass": 2,
+        "fail": 0,
+        "pass_rate": 1.0
+      },
+      "2400": {
+        "runs": 1,
+        "p50_ms": 3148,
+        "p95_ms": 3148,
+        "max_ms": 3148,
+        "tokens_p50": 256,
+        "tokens_p95": 256,
+        "tokens_max": 256,
+        "pass": 1,
+        "fail": 0,
+        "pass_rate": 1.0
+      }
+    },
+    "rejected_by": {},
+    "negatives": {
+      "cases": 32,
+      "rejected": 32,
+      "missed": [],
+      "by_kind": {
+        "structure": 20,
+        "correction": 12
+      },
+      "structure_rejected_by": {
+        "name": 3,
+        "number": 3,
+        "date": 1,
+        "contact": 2,
+        "negation": 6,
+        "novel": 3,
+        "forbidden": 1,
+        "opener": 1
+      }
+    },
+    "correction": {
+      "live_notes/segment": {
+        "runs": 23,
+        "chars_p50": 612,
+        "chars_max": 675,
+        "p50_ms": 1530,
+        "p95_ms": 1790,
+        "max_ms": 1960,
+        "pass": 22,
+        "pass_rate": 0.957,
+        "errors": {
+          "rejected": 1
+        },
+        "hesitations_left": "0/82"
+      },
+      "default/segment": {
+        "runs": 23,
+        "chars_p50": 612,
+        "chars_max": 675,
+        "p50_ms": 1594,
+        "p95_ms": 1868,
+        "max_ms": 1966,
+        "pass": 4,
+        "pass_rate": 0.174,
+        "errors": {
+          "rejected": 19
+        },
+        "hesitations_left": "0/2"
+      },
+      "live_notes/whole": {
+        "runs": 11,
+        "chars_p50": 769,
+        "chars_max": 2035,
+        "p50_ms": 1902,
+        "p95_ms": 4864,
+        "max_ms": 4864,
+        "pass": 8,
+        "pass_rate": 0.727,
+        "errors": {
+          "rejected": 3
+        },
+        "hesitations_left": "0/61"
+      },
+      "default/whole": {
+        "runs": 11,
+        "chars_p50": 769,
+        "chars_max": 2035,
+        "p50_ms": 1986,
+        "p95_ms": 4959,
+        "max_ms": 4959,
+        "pass": 0,
+        "pass_rate": 0.0,
+        "errors": {
+          "rejected": 11
+        },
+        "hesitations_left": "0/0"
+      }
+    }
+  },
+  "clean": {
+    "model": "qwen3-4b-instruct-2507-4bit",
+    "set": "clean",
+    "token_count": "tokenizer",
+    "overlap_floor": 0.5,
+    "max_tokens": 768,
+    "cold_ms": 945,
+    "overall": {
+      "runs": 16,
+      "p50_ms": 4215,
+      "p95_ms": 8839,
+      "max_ms": 8839,
+      "tokens_p50": 362,
+      "tokens_p95": 768,
+      "tokens_max": 768,
+      "pass": 15,
+      "fail": 1,
+      "pass_rate": 0.938
+    },
+    "by_chars": {
+      "800": {
+        "runs": 4,
+        "p50_ms": 2196,
+        "p95_ms": 2336,
+        "max_ms": 2336,
+        "tokens_p50": 179,
+        "tokens_p95": 196,
+        "tokens_max": 196,
+        "pass": 4,
+        "fail": 0,
+        "pass_rate": 1.0
+      },
+      "1600": {
+        "runs": 4,
+        "p50_ms": 3805,
+        "p95_ms": 4075,
+        "max_ms": 4075,
+        "tokens_p50": 328,
+        "tokens_p95": 352,
+        "tokens_max": 352,
+        "pass": 4,
+        "fail": 0,
+        "pass_rate": 1.0
+      },
+      "2400": {
+        "runs": 4,
+        "p50_ms": 4857,
+        "p95_ms": 5698,
+        "max_ms": 5698,
+        "tokens_p50": 420,
+        "tokens_p95": 501,
+        "tokens_max": 501,
+        "pass": 4,
+        "fail": 0,
+        "pass_rate": 1.0
+      },
+      "4000": {
+        "runs": 4,
+        "p50_ms": 7352,
+        "p95_ms": 8839,
+        "max_ms": 8839,
+        "tokens_p50": 634,
+        "tokens_p95": 768,
+        "tokens_max": 768,
+        "pass": 3,
+        "fail": 1,
+        "pass_rate": 0.75
+      }
+    },
+    "rejected_by": {
+      "finish": 1
+    },
+    "negatives": {
+      "cases": 32,
+      "rejected": 32,
+      "missed": [],
+      "by_kind": {
+        "structure": 20,
+        "correction": 12
+      },
+      "structure_rejected_by": {
+        "name": 3,
+        "number": 3,
+        "date": 1,
+        "contact": 2,
+        "negation": 6,
+        "novel": 3,
+        "forbidden": 1,
+        "opener": 1
+      }
+    }
+  }
+}

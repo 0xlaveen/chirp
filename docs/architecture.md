@@ -49,7 +49,7 @@ Every request carries `Authorization: Bearer <token>`. WebSocket clients that ca
 
 ### Endpoints
 
-- `GET /v1/health` → `{"ok":true,"engine":"parakeet-mlx:tdt-0.6b-v2","ready":true,"debug_retention":false,"correction":"off|available","correction_mode":"off|managed|endpoint","correction_leaves_machine":false,"correction_host":null,"correction_profiles":[{"id":"default","name":"Default","description":"Conservative transcript cleanup.","rewrites":false},…],…,"notes_structure":true}`. The unauthenticated variant returns only `{"ok":true}`. For endpoint correction, `correction_host` is its hostname (no credentials, path or port); otherwise it is `null`. `correction_leaves_machine` is true only for enabled, non-loopback correction.
+- `GET /v1/health` → `{"ok":true,"engine":"parakeet-mlx:tdt-0.6b-v2","ready":true,"debug_retention":false,"correction":"off|available","correction_mode":"off|managed|endpoint","correction_leaves_machine":false,"correction_host":null,"correction_profiles":[{"id":"default","name":"Default","description":"Conservative transcript cleanup.","rewrites":false},…],…,"notes_structure":true,"notes_correction":true}`. The unauthenticated variant returns only `{"ok":true}`. For endpoint correction, `correction_host` is its hostname (no credentials, path or port); otherwise it is `null`. `correction_leaves_machine` is true only for enabled, non-loopback correction.
 - `GET /v1/correction/profiles` (authenticated) → `{"profiles":[{"id":"default","name":"Default","description":"Conservative transcript cleanup.","rewrites":false,"prompt":"<editable default style>","max_prompt_chars":4000},…]}`. Fixed safety rules are excluded; `custom` has an empty built-in prompt. Available even when correction is off. Invalid or missing bearer credentials return HTTP 401 with `WWW-Authenticate: Bearer`.
 - `POST /v1/notes/structure` (authenticated, JSON): stateless Live Notes structuring, specified [below](#live-notes-structuring-v1-compatible-addition). `/v1/stream` is unchanged.
 - `POST /v1/transcribe`: the body is 16 kHz mono PCM16 WAV, capped at 120 s. It returns the same object as a `final` message. Used for tests and as a fallback.
@@ -112,17 +112,38 @@ Authenticated `GET /v1/health` always carries `"notes_structure": true` on serve
 the endpoint, whatever the correction mode, so a client tells an old server (field absent) from
 correction being off (`correction == "off"`).
 
+Authenticated health also carries `"notes_correction": true` on servers with the hidden
+`live_notes` correction style for Live Notes segments. It is never listed in
+`correction_profiles` or `/v1/correction/profiles` (and cannot be overridden in config), but a
+`start` with `correction_profile: "live_notes"` is accepted. Its guard (`notes_faithful`) is
+separate from the dictation guards, which are unchanged: the output may only delete words, in
+order, with free casing and punctuation, and only spoken fillers (um, uh, er, ah, hmm, oh, like,
+yeah, yes, okay, ok, so, well, basically, actually, literally, right, just, anyway, kind of,
+sort of, you know, I mean), the first copy of a phrase of up to four words said twice in a row
+(fillers skipped between copies; never number words), a short restart (up to five words, when
+the speaker starts again with the same word, every dropped word is a grammar word or said again
+right after, and none is a negation or number), a sentence-initial "and", and a restated subject
+after a verb ("the list is, it's nice"). Negations, numbers, names, hedges and every other word
+must survive. The call is bounded by `[correction] notes_timeout` (default 15 s; dictation keeps
+`timeout`), the output by `64 + len(segment) / 2` tokens.
+
 Structuring uses the configured correction backend (the managed Qwen helper or the endpoint) but
 never takes the engine lease, so it does not block `/v1/stream`. The whole pass is bounded by
 `[correction] structure_timeout` (default 30 s), the output by 768 tokens, and a model output is
-accepted only if it passes `notes_rejected`: no think blocks, code fences, H1 titles, tables, links
-or assistant openers; every line within the allowed Markdown subset (`##`/`###` headings of at most
-6 words, `-` bullets with one nested level, `- [ ]` tasks, plain lines); at least 85 % of its
-content words occur in the transcript (after light stemming, allowing a small glue-word list);
-every digit run is spoken as digits or number words; negations are kept; and the notes are at most
-`max(1.2 x transcript, 300)` characters. Like the correction guards these are heuristics: they catch
-invented content and a dropped "not" but cannot prove semantic equivalence, and they are tuned for
-English. The transcript pane is always one click away in the client.
+accepted only if it passes `notes_rejected`, one function per check: no think blocks, code fences,
+H1 titles, tables, links or assistant openers; at most `max(1.2 x transcript, 300)` characters;
+every line within the allowed Markdown subset (`##`/`###` headings of at most 6 words, `-` bullets
+with one nested level, `- [ ]` tasks, plain lines); every number, as digits or number words, was
+spoken; no weekday or month, email address, URL or domain that was not spoken; no capitalised word
+(a name, place, product or acronym) that was not spoken, checking bold words and a to-do's owner
+even at the start of a line; at least 50 % of the content words (stemmed, outside stopwords and
+labels such as "Decision" or "Suggestion") occur in the transcript, so paraphrase passes but an
+unrelated answer does not; and no flipped negation: a line that restates a negated transcript
+clause's head and most of its content words ("we will not ship on friday" to "- Ship on Friday")
+without a negation, negative wording ("lacks", "unclear") or a hedge is rejected, while leaving an
+incidental negation out ("whether it works or not") is allowed. Like the correction guards these
+are heuristics: they catch invented names and numbers, answers and flipped statements but cannot
+prove semantic equivalence, and they are tuned for English. The transcript pane is always one click away in the client.
 
 **Managed helper pipe protocol** (private to `managed_cleanup.py` and `cleanup_worker.py`). The
 request `{"text","system"}` is unchanged. Two optional keys exist for structuring: `"user"`, a
@@ -229,7 +250,7 @@ Version additions preserve existing fields. A breaking change becomes `/v2`.
 - Silence guard: if peak/RMS stays at zero for 1.5 s, the client shows "No microphone signal" and sends nothing, the same as Koi.
 - Undo: after a corrected final, the Mac HUD offers a 5 s "Use raw". Android shows a chip on the strip.
 - **Live Notes (Mac only).** ⌃⌥N (or the menu) starts a long session with the microphone open the whole time, shown in a Notes window rather than the HUD.
-  - **Rolling segments.** The client cuts the audio into ordinary `/v1/stream` utterances of at most 90 s (never before 20 s; at a 0.6 s pause, 0.3 s after 60 s). At a cut it opens the next socket and routes capture to it first, then sends `stop` on the old one, which finalizes and corrects in the background. No audio is dropped, the protocol is unchanged, and the 120 s cap and 60 s idle timeout never apply to the session as a whole. Each segment uses the `default` style plus the user's edited default prompt.
+  - **Rolling segments.** The client cuts the audio into ordinary `/v1/stream` utterances of at most 45 s (never before 12 s; at a 0.6 s pause, 0.3 s after 30 s), so each segment's clean-up stays short and inside its budget. At a cut it opens the next socket and routes capture to it first, then sends `stop` on the old one, which finalizes and corrects in the background. No audio is dropped, the protocol is unchanged, and the 120 s cap and 60 s idle timeout never apply to the session as a whole. Each segment uses the hidden `live_notes` style when health has `notes_correction` (fillers, stutters and restarts removed under its own guard; the user's edited dictation prompt does not apply), otherwise the `default` style plus the user's edited default prompt.
   - **Structuring.** After a segment's final (at most every 15 s, one pass at a time, never while a segment of the session is still correcting) the client posts the open window's corrected text and the frozen headings to `POST /v1/notes/structure`. Once a window passes 1600 characters its Markdown freezes and a new window starts, so every pass is bounded and earlier notes never change. A window past 3600 characters, or past 1600 after two failed passes, freezes as plain "Not structured" text. Stop waits for the last final, runs one `final` pass and freezes everything. With correction off or an older server, Notes is a live transcript.
   - **Mutual exclusion.** Notes holds the engine lease almost continuously, so on the Mac Notes and dictation exclude each other: the dictation hotkey shows "Notes is recording — stop it to dictate" and Start Dictation is disabled while Notes records; Notes cannot start mid-dictation. Phone clients may see `busy` meanwhile. Pausing Chirp stops Notes and keeps the notes.
   - Notes and transcripts stay in memory until Save… (a user-chosen `.md`) or Copy; see §4.
