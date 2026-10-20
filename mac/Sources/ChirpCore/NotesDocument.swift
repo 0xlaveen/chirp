@@ -69,11 +69,17 @@ public struct NotesDocument: Equatable, Sendable {
     public static let maxReorganizeChars = 3500
     /// A scope shorter than this (trimmed) has nothing to reorganize.
     public static let minReorganizeChars = 80
+    /// The scope of an automatic reorganize while recording: about 5 s of generation, so it fits between two segment
+    /// cuts (a queued segment clean-up preempts it on the server). Stop and the button use the full scope.
+    public static let recordingReorganizeChars = 1200
     public static let maxOutlineItems = 24
     public static let maxOutlineItemChars = 120
     public static let maxOutlineChars = 1500
     public static let fallbackHeader = "_Not structured — see transcript_"
 
+    /// This document, as opposed to one that New or a discarded close replaced: a pass carries it, so a late answer
+    /// for a discarded document is never applied to the next one.
+    public let id = UUID()
     public private(set) var segments: [NotesSegment] = []
     /// The notes, Markdown source, user and AI text (without the `# Notes — date` title export adds).
     public private(set) var text = ""
@@ -138,12 +144,12 @@ public struct NotesDocument: Equatable, Sendable {
 
     /// The editor changed its text storage (typing, paste, undo/redo, a task toggle). Applies the edit and moves the
     /// tail: an edit wholly before it shifts it; an edit that touches a non-empty tail claims it, so the whole tail
-    /// becomes user text and the next pass starts a new, empty tail after it.
+    /// becomes user text and the next pass starts a new, empty tail after it. Typing at the end of the user's own last
+    /// line (an insertion at `tailStart`, where the tail starts with its separator newline) only shifts it.
     @discardableResult
     public mutating func userEdit(_ range: NSRange, _ replacement: String, kind: NotesTextChange.Kind = .user) -> NotesTextChange {
         let change = NotesTextChange(range: range, replacement: replacement, kind: kind)
-        let tailEmpty = tailStart >= count
-        let claims = range.upperBound > tailStart || (range.location == tailStart && range.length == 0 && !tailEmpty)
+        let claims = touchesTail(range)
         text = change.applied(to: text)
         if claims {
             settleTail()
@@ -153,6 +159,14 @@ public struct NotesDocument: Equatable, Sendable {
         }
         changed(inserted: replacement.utf16.count)
         return change
+    }
+
+    /// Whether an edit of `range` would claim the tail (and so whether an append would land under a caret there).
+    public func touchesTail(_ range: NSRange) -> Bool {
+        guard tailStart < count else { return false }
+        if range.upperBound > tailStart { return true }
+        // An insertion right before the separator extends the user's line; right before AI text, it edits the tail.
+        return range.location == tailStart && range.length == 0 && (text as NSString).character(at: tailStart) != 10
     }
 
     /// Toggles the task box on `line` (0-based) as a user edit; nil when that line is not a task.
@@ -227,7 +241,7 @@ public struct NotesDocument: Equatable, Sendable {
         guard transcript.count <= Self.maxWindowChars,
               !transcript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
         return NotesStructureRequest(transcript: transcript, outline: outline, final: final, windowEnd: segments.count - 1,
-                                     version: version, windowGeneration: windowGeneration)
+                                     version: version, windowGeneration: windowGeneration, documentID: id)
     }
 
     /// Takes a pass's answer. A success replaces the tail (separator included) and settles it once the window is long
@@ -237,7 +251,7 @@ public struct NotesDocument: Equatable, Sendable {
     /// the text change it made, if any.
     @discardableResult
     public mutating func apply(_ response: NotesStructureResponse, for request: NotesStructureRequest) -> NotesTextChange? {
-        guard request.windowGeneration == windowGeneration, request.windowEnd >= windowStart,
+        guard request.documentID == id, request.windowGeneration == windowGeneration, request.windowEnd >= windowStart,
               request.windowEnd < segments.count, request.windowEnd > structuredEnd else { return nil }
         return recordingChange(.append) { d in
             if response.structured, let md = response.markdown?.trimmingCharacters(in: .whitespacesAndNewlines), !md.isEmpty {
@@ -330,16 +344,16 @@ public struct NotesDocument: Equatable, Sendable {
 
     // MARK: reorganize
 
-    /// What a reorganize pass may rewrite: the longest suffix of whole sections within `maxReorganizeChars`, and the
-    /// headings above it (context only). Nil when even the last section is too long, or the scope is under
+    /// What a reorganize pass may rewrite: the longest suffix of whole sections within `maxChars` (Unicode scalars),
+    /// and the headings above it (context only). Nil when even the last section is too long, or the scope is under
     /// `minReorganizeChars`. Sections before the scope are settled and never change.
-    public func reorganizeScope() -> (range: NSRange, outline: [String])? {
+    public func reorganizeScope(maxChars: Int = maxReorganizeChars) -> (range: NSRange, outline: [String])? {
         let ns = text as NSString
         let sections = NotesMarkdown.sections(text)
         var start = ns.length, chars = 0
         for section in sections.reversed() {
             let size = ns.substring(with: section.range).unicodeScalars.count
-            guard chars + size <= Self.maxReorganizeChars else { break }
+            guard chars + size <= maxChars else { break }
             chars += size
             start = section.range.location
         }
@@ -357,10 +371,11 @@ public struct NotesDocument: Equatable, Sendable {
     }
 
     /// The next reorganize, or nil when the scope is empty or (unless `manual`) nothing changed since the last one.
-    public func reorganizeRequest(final: Bool, manual: Bool) -> NotesReorganizeRequest? {
-        guard manual || version != lastReorganizeVersion, let scope = reorganizeScope() else { return nil }
+    public func reorganizeRequest(final: Bool, manual: Bool, maxChars: Int = maxReorganizeChars) -> NotesReorganizeRequest? {
+        guard manual || version != lastReorganizeVersion, let scope = reorganizeScope(maxChars: maxChars) else { return nil }
         let notes = (text as NSString).substring(with: scope.range)
-        return NotesReorganizeRequest(notes: notes, outline: scope.outline, final: final, version: version, range: scope.range)
+        return NotesReorganizeRequest(notes: notes, outline: scope.outline, final: final, version: version, range: scope.range,
+                                      documentID: id)
     }
 
     /// Takes a reorganize answer, only when the text is exactly what the request was made from (`version`). A changed
@@ -368,7 +383,8 @@ public struct NotesDocument: Equatable, Sendable {
     /// nil (and the caller records a conflict when `version` moved).
     @discardableResult
     public mutating func applyReorganize(_ response: NotesReorganizeResponse, for request: NotesReorganizeRequest) -> NotesTextChange? {
-        guard request.version == version, response.reorganized else { return nil }
+        guard request.documentID == id, request.version == version, NSMaxRange(request.range) <= count,
+              response.reorganized else { return nil }
         guard response.changed, let md = response.markdown?.trimmingCharacters(in: .whitespacesAndNewlines), !md.isEmpty else {
             lastReorganizeVersion = version
             charsSinceReorganize = 0

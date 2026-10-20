@@ -115,11 +115,17 @@ public enum NotesMarkdown {
     public static func styleRuns(_ text: Substring, base: Int = 0) -> [NotesStyleRun] {
         var runs: [NotesStyleRun] = []
         var location = base
-        for line in text.split(separator: "\n", omittingEmptySubsequences: false) {
+        for line in lines(text) {
             lineRuns(line, at: location, into: &runs)
             location += line.utf16.count + 1
         }
         return runs
+    }
+
+    /// Lines split on UTF-16 `\n` (Swift's `"\n"` Character does not match the `"\r\n"` grapheme), so offsets
+    /// stay exact for CRLF text too; a line keeps its `\r`.
+    static func lines(_ text: Substring) -> [Substring] {
+        text.utf16.split(separator: 10, omittingEmptySubsequences: false).map { Substring($0) }
     }
 
     private static func lineRuns(_ line: Substring, at start: Int, into runs: inout [NotesStyleRun]) {
@@ -223,7 +229,7 @@ public enum NotesMarkdown {
         var result: [(range: NSRange, heading: String?)] = []
         var start = 0, location = 0
         var current: String?
-        for line in text.split(separator: "\n", omittingEmptySubsequences: false) {
+        for line in lines(Substring(text)) {
             if let (_, title) = heading(line) {
                 if location > start || current != nil { result.append((NSRange(location: start, length: location - start), current)) }
                 start = location

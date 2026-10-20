@@ -62,6 +62,8 @@ public final class NotesModel {
 
     /// AI changes the editor has not replayed yet. Not observed: the editor drains them as they arrive.
     @ObservationIgnored public private(set) var pendingChanges: [NotesTextChange] = []
+    /// The editor that owns the hooks below (the newest one on screen).
+    @ObservationIgnored public var editorOwner: ObjectIdentifier?
     /// Set by the editor while it is on screen; called whenever changes are queued.
     @ObservationIgnored public var onPendingChanges: (() -> Void)?
 

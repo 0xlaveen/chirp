@@ -120,6 +120,11 @@ public final class NotesRecorder {
     public static let reorganizeRetryAfter: TimeInterval = 60
     /// A held append is applied after this long without a keystroke, even with the caret in the tail.
     public static let holdMax: TimeInterval = 10
+    /// While recording, auto-reorganize starts only this soon after a segment commit: the free stretch before the
+    /// next cut queues a clean-up that would preempt it.
+    public static let reorganizeAfterCommit: TimeInterval = 5
+    /// Stop skips its reorganize when one ended this recently on the same text.
+    public static let stopReorganizeSkip: TimeInterval = 30
 
     public private(set) var state: NotesRecorderState = .idle { didSet { if state != oldValue { changed() } } }
     public private(set) var document = NotesDocument()
@@ -187,6 +192,12 @@ public final class NotesRecorder {
     /// The newest append that arrived while the caret was in the tail.
     private var held: (request: NotesStructureRequest, response: NotesStructureResponse)?
     private var holdTask: Task<Void, Never>?
+    /// When the last segment was committed to the document.
+    private var lastCommit: TimeInterval?
+    /// `document.version` when the last reorganize that ran (not preempted) ended.
+    private var versionAtReorganizeEnd: Int?
+    /// When Stop began, for the elapsed time on "Finishing…".
+    private var stoppingSince: TimeInterval?
     private var waiters: [(check: () -> Bool, resume: CheckedContinuation<Void, Never>)] = []
 
     public init(makeSession: @escaping (StartOptions) -> StreamSession, structure: @escaping Structure,
@@ -221,6 +232,9 @@ public final class NotesRecorder {
 
     /// An append result is waiting for the caret to leave the tail.
     public var isHolding: Bool { held != nil }
+
+    /// How long Stop has been finishing (nil when not stopping).
+    public var stoppingElapsed: TimeInterval? { stoppingSince.map { now() - $0 } }
 
     /// What Reorganize can do now.
     public var reorganizeStatus: ReorganizeStatus {
@@ -326,6 +340,16 @@ public final class NotesRecorder {
     /// New: an empty document (only while not recording).
     public func reset() {
         guard !state.isActive else { return }
+        // A pass still running (a manual reorganize while stopped) belongs to the discarded document.
+        epoch += 1
+        passTask?.cancel()
+        passTask = nil
+        passKind = nil
+        manualReorganize = false
+        timer?.cancel()
+        timer = nil
+        timerDeadline = nil
+        pending = false
         document = NotesDocument()
         router.resetTime()
         failureStreak = 0
@@ -334,7 +358,9 @@ public final class NotesRecorder {
         reorganizeState = .idle
         reorganizeRetry = false
         lastReorganizeEnd = nil
+        versionAtReorganizeEnd = nil
         lastKeystroke = nil
+        lastCommit = nil
         state = .idle
         if !structuringAllowed.isOff { structuring = .idle }
         changed()
@@ -473,6 +499,7 @@ public final class NotesRecorder {
         while let next = results.removeValue(forKey: nextCommit) {
             if let s = next { document.append(s) }
             nextCommit += 1
+            lastCommit = now()
         }
         updateLivePartial()
         schedule()
@@ -591,20 +618,17 @@ public final class NotesRecorder {
             }
             return
         }
-        guard !appendWaiting, autoReorganize, reorganizeSupported, state == .recording, held == nil,
-              document.charsSinceReorganize >= Self.reorganizeEveryChars,
-              let request = document.reorganizeRequest(final: false, manual: false) else { return }
+        // Auto, while recording: only in the quiet stretch right after a segment commit (its append, if due, runs
+        // first), on at most the trailing `recordingReorganizeChars`. When anything else holds it back, the next
+        // commit looks again; no timer.
         let t = now()
-        var wait: TimeInterval = 0
-        if let end = lastReorganizeEnd {
-            wait = max(wait, (reorganizeRetry ? Self.reorganizeRetryAfter : Self.reorganizeMinInterval) - (t - end))
-        }
-        if let k = lastKeystroke { wait = max(wait, Self.typingIdle - (t - k)) }
-        if wait > 0 {
-            pending = true
-            armTimer(after: wait)
-            return
-        }
+        guard !appendWaiting, autoReorganize, reorganizeSupported, state == .recording, held == nil,
+              let commit = lastCommit, t - commit <= Self.reorganizeAfterCommit,
+              document.charsSinceReorganize >= Self.reorganizeEveryChars,
+              lastReorganizeEnd.map({ t - $0 >= (reorganizeRetry ? Self.reorganizeRetryAfter : Self.reorganizeMinInterval) }) ?? true,
+              lastKeystroke.map({ t - $0 >= Self.typingIdle }) ?? true,
+              let request = document.reorganizeRequest(final: false, manual: false, maxChars: NotesDocument.recordingReorganizeChars)
+        else { return }
         runReorganize(request, manual: false)
     }
 
@@ -620,7 +644,10 @@ public final class NotesRecorder {
             guard !Task.isCancelled, self.epoch == myEpoch else { return }
             self.timer = nil
             self.timerDeadline = nil
-            if self.pending { self.schedule() }
+            if self.pending {
+                self.schedule()
+                self.changed()
+            }
         }
     }
 
@@ -703,7 +730,17 @@ public final class NotesRecorder {
                                     failure: NotesStructureError?) {
         passTask = nil
         passKind = nil
+        if response.preempted, failure == nil {
+            // Not run: a segment clean-up took the model. No note and no backoff; the next commit tries again (a
+            // manual one stays asked for).
+            reorganizeState = .idle
+            schedule()
+            if manual { manualReorganize = true }
+            changed()
+            return
+        }
         lastReorganizeEnd = now()
+        versionAtReorganizeEnd = document.version
         reorganizeRetry = true
         switch failure {
         case .unsupported:
@@ -716,13 +753,18 @@ public final class NotesRecorder {
             structuring = .off(.correctionOff)
             reorganizeState = .idle
         default:
-            if request.version != document.version {
+            if request.version != document.version || request.documentID != document.id {
+                reorganizeState = manual ? .conflict : .idle
+            } else if editorComposing {
+                // An input method is composing text the model has not seen: never replace under it.
                 reorganizeState = manual ? .conflict : .idle
             } else if !response.reorganized {
                 reorganizeState = .failed(response.error ?? "http")
             } else {
                 reorganizeRetry = false
                 if let change = document.applyReorganize(response, for: request) {
+                    // A held append was for the tail this just settled.
+                    dropHeld()
                     publish(change)
                     reorganizeState = .applied(at: now())
                 } else {
@@ -739,6 +781,8 @@ public final class NotesRecorder {
     private func finish(error: String?) async {
         guard state.isCapturing else { return }
         let myEpoch = epoch
+        stoppingSince = now()
+        defer { stoppingSince = nil }
         state = .stopping
         timer?.cancel()
         timer = nil
@@ -761,7 +805,10 @@ public final class NotesRecorder {
         }
         publish(document.freezeAll(structuring: !structuring.isOff))
         document.livePartial = ""
-        if !structuring.isOff, autoReorganize, reorganizeSupported, document.version != document.lastReorganizeVersion,
+        // One final reorganize, unless one just ran on this very text (it would only take time: up to 50 s more).
+        let justTried = versionAtReorganizeEnd == document.version
+            && (lastReorganizeEnd.map { now() - $0 < Self.stopReorganizeSkip } ?? false)
+        if !structuring.isOff, autoReorganize, reorganizeSupported, !justTried, document.version != document.lastReorganizeVersion,
            let request = document.reorganizeRequest(final: true, manual: false) {
             runReorganize(request, manual: false)
             await waitUntil { self.passTask == nil }

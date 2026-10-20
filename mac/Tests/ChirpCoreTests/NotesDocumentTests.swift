@@ -182,10 +182,17 @@ func unwrap<T>(_ value: T?, sourceLocation: SourceLocation = #_sourceLocation) t
         #expect(d.text == "mia\n- b" && d.tailStart == end(d))
     }
 
-    @Test func insertingExactlyAtANonEmptyTailClaimsIt() throws {
+    @Test func typingAtTheEndOfOnesOwnLineShiftsTheTail() throws {
+        // The tail starts with its separator newline: an insertion right before it extends the user's line.
         var d = try withTail()
         d.userEdit(NSRange(location: 5, length: 0), "z")
-        #expect(d.tailStart == end(d))
+        #expect(d.tailStart == 6 && d.tail == "\n- a\n- b" && !d.touchesTail(NSRange(location: 6, length: 0)))
+        // A tail with no separator (the user's text ended in a blank line) starts with AI text: inserting there claims.
+        var bare = doc(["a"], typed: "mine\n\n")
+        bare.apply(ok("- a"), for: try #require(bare.nextStructureRequest()))
+        #expect(bare.tail == "- a" && bare.touchesTail(NSRange(location: 6, length: 0)))
+        bare.userEdit(NSRange(location: 6, length: 0), "z")
+        #expect(bare.tailStart == end(bare))
     }
 
     @Test func typingAtTheEndWithAnEmptyTailStaysTheUsers() throws {

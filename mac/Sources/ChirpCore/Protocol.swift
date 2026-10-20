@@ -212,15 +212,18 @@ public struct NotesStructureRequest: Encodable, Sendable, Equatable {
     public var windowEnd: Int
     public var version: Int
     public var windowGeneration: Int
+    /// The `NotesDocument.id` the request was made from.
+    public var documentID: UUID?
 
     public init(transcript: String, outline: [String] = [], final: Bool = false, windowEnd: Int = 0, version: Int = 0,
-                windowGeneration: Int = 0) {
+                windowGeneration: Int = 0, documentID: UUID? = nil) {
         self.transcript = transcript
         self.outline = outline
         self.final = final
         self.windowEnd = windowEnd
         self.version = version
         self.windowGeneration = windowGeneration
+        self.documentID = documentID
     }
 
     private enum CodingKeys: String, CodingKey { case transcript, outline, final }
@@ -266,20 +269,25 @@ public struct NotesReorganizeRequest: Encodable, Sendable, Equatable {
     public var final: Bool
     public var version: Int
     public var range: NSRange
+    /// The `NotesDocument.id` the request was made from.
+    public var documentID: UUID?
 
-    public init(notes: String, outline: [String] = [], final: Bool = false, version: Int = 0, range: NSRange = NSRange()) {
+    public init(notes: String, outline: [String] = [], final: Bool = false, version: Int = 0, range: NSRange = NSRange(),
+                documentID: UUID? = nil) {
         self.notes = notes
         self.outline = outline
         self.final = final
         self.version = version
         self.range = range
+        self.documentID = documentID
     }
 
     private enum CodingKeys: String, CodingKey { case notes, outline, final }
 }
 
 /// The reorganize answer. `reorganized:false` fails closed (`markdown` nil, `error` says why); `changed:false` means
-/// the notes were already tidy and nothing is applied.
+/// the notes were already tidy and nothing is applied. `error: "preempted"` means a queued segment clean-up took the
+/// model first: the pass did not run, which is not a failure.
 public struct NotesReorganizeResponse: Decodable, Sendable, Equatable {
     public var markdown: String?
     public var reorganized: Bool
@@ -294,6 +302,9 @@ public struct NotesReorganizeResponse: Decodable, Sendable, Equatable {
         self.error = error
         self.timingsMs = timingsMs
     }
+
+    /// The server gave the model to a segment clean-up before this pass finished.
+    public var preempted: Bool { !reorganized && error == "preempted" }
 
     /// A failed pass, as the client records a timeout or transport error of its own.
     public static func failed(_ code: String) -> NotesReorganizeResponse {
