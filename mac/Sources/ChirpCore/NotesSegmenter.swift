@@ -3,13 +3,15 @@ import Foundation
 /// Decides where a Live Notes recording is cut into segments, each one an ordinary utterance well under the server's
 /// 120 s cap. It prefers a pause: never before `minSegment`, then at the first `pauseCut` of quiet (a shorter
 /// `relaxedPause` once the segment is past `relaxedAfter`), and at `maxSegment` whatever is being said.
+/// Segments are kept short because each one is cleaned up on its own: at most 45 s (about 700 characters) cleans up
+/// in about 2 s and passes the guard far more often than a 90 s one (docs/bench.md, Live Notes clean-up).
 /// Fed once per 50 ms frame from the capture thread, under the sink's lock, like `SilenceGuard`.
 public struct NotesSegmenter: Sendable {
-    public static let minSegment: TimeInterval = 20
+    public static let minSegment: TimeInterval = 12
     public static let pauseCut: TimeInterval = 0.6
-    public static let relaxedAfter: TimeInterval = 60
+    public static let relaxedAfter: TimeInterval = 30
     public static let relaxedPause: TimeInterval = 0.3
-    public static let maxSegment: TimeInterval = 90
+    public static let maxSegment: TimeInterval = 45
     /// A frame is quiet below this RMS (0…1).
     public static let quietRMS: Float = 0.015
 

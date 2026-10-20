@@ -212,12 +212,17 @@ public final class Preferences: @unchecked Sendable {
         if let choice = notesStructure, (notesStructureScope ?? "local") == Self.notesStructureScope(for: health) { return choice }
         return health.correctionLeavesMachine != true
     }
-    /// The `start` options for a Live Notes segment: the clean-up toggle (when the server offers it), always the default
-    /// style with the user's edited default prompt; per-app styles and word timings never apply.
+    /// The `start` options for a Live Notes segment: the clean-up toggle (when the server offers it) with the server's
+    /// hidden `live_notes` style, whose prompt is tuned to its guard, so no edited prompt goes along. An older server
+    /// gets the default style with the user's edited default prompt. Per-app styles and word timings never apply.
     public func notesStartOptions(health: Health?) -> StartOptions {
-        StartOptions(client: "mac", correction: correction && (health?.correctionAvailable ?? false),
-                     correctionProfile: CorrectionProfile.defaultID,
-                     correctionPrompt: correctionPrompts[CorrectionProfile.defaultID], wordTimings: false)
+        let enabled = correction && (health?.correctionAvailable ?? false)
+        if health?.notesCorrection == true {
+            return StartOptions(client: "mac", correction: enabled, correctionProfile: CorrectionProfile.liveNotesID,
+                                wordTimings: false)
+        }
+        return StartOptions(client: "mac", correction: enabled, correctionProfile: CorrectionProfile.defaultID,
+                            correctionPrompt: correctionPrompts[CorrectionProfile.defaultID], wordTimings: false)
     }
     /// Set only when the first-run window is finished (never on close), so an interrupted setup shows again.
     public var didOnboard: Bool {

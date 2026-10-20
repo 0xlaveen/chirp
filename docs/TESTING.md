@@ -55,7 +55,7 @@ Each step needs the operator's hands or approval. Do them in order.
 Run on the reference Mac after installing the build with `./scripts/install-mac.sh` and selecting the default correction model.
 
 1. Press ⌃⌥N and talk for about 3 minutes through a mock meeting with a decision, two to-dos and a "we will **not** …" sentence. Check the headings, the `☐` tasks, the Decision line, and that the negation is kept.
-2. Leave it running for at least 10 minutes with intermittent silence. Check that the menu-bar bird pulses throughout, that segments keep landing in the transcript (each ≤ 90 s, none lost at a cut), and that frozen sections do not change.
+2. Leave it running for at least 10 minutes with intermittent silence. Check that the menu-bar bird pulses throughout, that segments keep landing in the transcript (each ≤ 45 s, none lost at a cut), filler words (um, uh, like, yeah) are gone from the transcript when clean-up is on, and that frozen sections do not change.
 3. Press the dictation hotkey while Notes records → the "Notes is recording — stop it to dictate" toast and no dictation. Stop Notes, then dictate normally.
 4. Stop, Save… to the Desktop, and open the `.md` file (notes, `---`, then the `## Transcript` appendix). Record a little more, then quit Chirp with the unsaved notes → the Save… / Discard / Cancel alert appears.
 5. Touch a marker file, run a session without saving, then `find ~/Library -newer <marker> -path '*Chirp*'` and look in `~/Library/Saved Application State`: no notes content on disk. Check `log show --predicate 'subsystem == "dev.chirp.mac"' --last 15m` and the server log: no spoken words.

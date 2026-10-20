@@ -21,12 +21,20 @@ def option(name):
 for line in sys.stdin:
     request = json.loads(line)
     text = request["text"]
-    structure = "user" in request
+    # Live Notes segment correction sends its own `Transcript JSON:` user message.
+    notes_correction = str(request.get("user", "")).startswith("Transcript JSON: ")
+    if notes_correction:
+        text = json.loads(request["user"].removeprefix("Transcript JSON: "))
+    structure = "user" in request and not notes_correction
     if option("--log"):
         # Synthetic request log for tests: which kind arrived, with the notes keys echoed.
         with open(option("--log"), "a") as log:
             entry = {
-                "kind": "structure" if structure else "correction",
+                "kind": "structure"
+                if structure
+                else "notes_correction"
+                if notes_correction
+                else "correction",
                 "user": request.get("user"),
                 "max_tokens": request.get("max_tokens"),
                 "keys": sorted(request),

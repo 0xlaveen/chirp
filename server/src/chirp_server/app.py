@@ -92,7 +92,7 @@ class Utterance:
         instructions = control.get("correction_instructions", "")
         if (
             not isinstance(profile, str)
-            or profile not in self.settings.correction.resolved_profiles
+            or self.settings.correction.profile(profile) is None
             or not isinstance(instructions, str)
             or len(instructions) > 2000
         ):
@@ -437,6 +437,8 @@ def create_app(settings=None, engine=None, token=None, corrector=None):
                 "correction_keep_loaded": keep["value"],
                 "correction_loaded": bool(managed and managed.loaded),
                 "notes_structure": True,
+                # The hidden `live_notes` style for Live Notes segments exists.
+                "notes_correction": True,
             }
         )
 

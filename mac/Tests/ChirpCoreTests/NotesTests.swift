@@ -14,41 +14,41 @@ private let frame = 0.05
         return nil
     }
 
-    @Test func neverCutsBeforeTwentySecondsEvenWithPauses() {
+    @Test func neverCutsBeforeTwelveSecondsEvenWithPauses() {
         var s = NotesSegmenter()
-        for _ in 0..<9 {
+        for _ in 0..<5 {
             #expect(run(&s, speech, for: 1) == nil)
             #expect(run(&s, quiet, for: 1) == nil)
         }
         #expect(s.elapsed < NotesSegmenter.minSegment)
     }
 
-    @Test func cutsAtAPauseOfPointSixAfterTwentySeconds() {
+    @Test func cutsAtAPauseOfPointSixAfterTwelveSeconds() {
         var s = NotesSegmenter()
-        #expect(run(&s, speech, for: 25) == nil)
+        #expect(run(&s, speech, for: 15) == nil)
         #expect(run(&s, quiet, for: 0.5) == nil)
         let cut = run(&s, quiet, for: 0.5)
-        #expect(cut != nil && abs(cut! - 25.6) < 0.01)
+        #expect(cut != nil && abs(cut! - 15.6) < 0.01)
     }
 
-    @Test func aShortPauseIsEnoughAfterSixtySeconds() {
+    @Test func aShortPauseIsEnoughAfterThirtySeconds() {
         var s = NotesSegmenter()
-        #expect(run(&s, speech, for: 30) == nil)
-        #expect(run(&s, quiet, for: 0.35) == nil)   // 0.35 s does not cut at 30 s
-        #expect(run(&s, speech, for: 30) == nil)
+        #expect(run(&s, speech, for: 15) == nil)
+        #expect(run(&s, quiet, for: 0.35) == nil)   // 0.35 s does not cut at 15 s
+        #expect(run(&s, speech, for: 15) == nil)
         let cut = run(&s, quiet, for: 1)
-        #expect(cut != nil && abs(cut! - 60.65) < 0.01)
+        #expect(cut != nil && abs(cut! - 30.65) < 0.01)
     }
 
-    @Test func forcedCutAtExactlyNinetySecondsOfSpeech() {
+    @Test func forcedCutAtExactlyFortyFiveSecondsOfSpeech() {
         var s = NotesSegmenter()
-        let cut = run(&s, speech, for: 100)
+        let cut = run(&s, speech, for: 60)
         #expect(cut != nil && abs(cut! - NotesSegmenter.maxSegment) < 0.001)
     }
 
     @Test func resetStartsANewSegment() {
         var s = NotesSegmenter()
-        _ = run(&s, speech, for: 90)
+        _ = run(&s, speech, for: 45)
         s.reset()
         #expect(s.elapsed == 0 && s.quiet == 0)
         #expect(run(&s, quiet, for: 10) == nil)
@@ -244,6 +244,31 @@ final class NotesURLStub: URLProtocol, @unchecked Sendable {
         #expect(o == StartOptions(client: "mac", correction: true, correctionProfile: "default", correctionPrompt: "Keep it tidy.", wordTimings: false))
         #expect(!prefs.notesStartOptions(health: Health(correction: "off")).correction)
         #expect(!prefs.notesStartOptions(health: nil).correction)
+    }
+
+    @Test func segmentsUseTheHiddenNotesStyleWhenTheServerHasIt() {
+        let name = "chirp-test-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: name)!
+        defer { defaults.removePersistentDomain(forName: name) }
+        let prefs = Preferences(defaults: defaults)
+        prefs.correction = true
+        prefs.correctionPrompts = ["default": "Keep it tidy."]
+        let o = prefs.notesStartOptions(health: Health(correction: "available", notesCorrection: true))
+        // The edited dictation prompt never replaces the notes style, whose prompt matches its guard.
+        #expect(o == StartOptions(client: "mac", correction: true, correctionProfile: "live_notes", wordTimings: false))
+        #expect(ClientMessage.start(o).contains("\"correction_profile\":\"live_notes\""))
+        #expect(!ClientMessage.start(o).contains("correction_prompt"))
+        #expect(!prefs.notesStartOptions(health: Health(correction: "off", notesCorrection: true)).correction)
+        // An older server (no `notes_correction`, or false) keeps the default style.
+        #expect(prefs.notesStartOptions(health: Health(correction: "available", notesCorrection: false)).correctionProfile == "default")
+    }
+
+    @Test func healthDecodesNotesCorrection() throws {
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let new = try decoder.decode(Health.self, from: Data(#"{"ok":true,"notes_structure":true,"notes_correction":true}"#.utf8))
+        #expect(new.notesCorrection == true)
+        #expect(try decoder.decode(Health.self, from: Data(#"{"ok":true,"notes_structure":true}"#.utf8)).notesCorrection == nil)
     }
 }
 

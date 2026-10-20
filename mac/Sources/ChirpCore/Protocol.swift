@@ -176,11 +176,13 @@ public struct Health: Decodable, Sendable, Equatable {
     public var notesStructure: Bool?
     /// `POST /v1/notes/reorganize` exists (authenticated health only); nil from a server that predates it.
     public var notesReorganize: Bool?
+    /// The hidden `live_notes` style exists (authenticated health only); nil from an older server, which gets `default`.
+    public var notesCorrection: Bool?
 
     public init(ok: Bool = true, engine: String? = nil, ready: Bool? = nil, debugRetention: Bool? = nil,
                 correction: String? = nil, correctionLeavesMachine: Bool? = nil, correctionHost: String? = nil,
                 correctionProfiles: [CorrectionProfile]? = nil, correctionKeepLoaded: Bool? = nil, correctionLoaded: Bool? = nil,
-                notesStructure: Bool? = nil, notesReorganize: Bool? = nil) {
+                notesStructure: Bool? = nil, notesCorrection: Bool? = nil, notesReorganize: Bool? = nil) {
         self.ok = ok
         self.engine = engine
         self.ready = ready
@@ -192,6 +194,7 @@ public struct Health: Decodable, Sendable, Equatable {
         self.correctionKeepLoaded = correctionKeepLoaded
         self.correctionLoaded = correctionLoaded
         self.notesStructure = notesStructure
+        self.notesCorrection = notesCorrection
         self.notesReorganize = notesReorganize
     }
 

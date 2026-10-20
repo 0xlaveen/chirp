@@ -450,44 +450,133 @@ def test_openers_are_allowed_when_spoken():
     assert notes.notes_rejected("we should ship", "Sure we should ship", "stop")
 
 
-def test_novel_content_threshold():
-    transcript = "alpha beta gamma delta epsilon zeta eta theta iota kappa"
-    # 17 of 20 content words are spoken: 85%.
-    ok = "- " + transcript + " alpha beta gamma delta epsilon zeta eta"
-    assert not rejected(ok + " one two three", transcript)
-    assert rejected(ok + " one two three four", transcript)
-    # Allowlisted glue and headings never count as novel.
-    assert not rejected("## Brand new heading\n- the alpha and the beta", transcript)
+def test_overlap_floor_allows_paraphrase_but_not_an_unrelated_answer():
+    transcript = (
+        "the settings page isn't clear and the the save button is way at the bottom so you "
+        "have to scroll. also there are two places for notification settings"
+    )
+    paraphrase = (
+        "## Settings\n- Settings page lacks clarity\n- **Issue:** save button only visible "
+        "after scrolling\n- Notification settings duplicated in two places"
+    )
+    assert not rejected(paraphrase, transcript)
+    answer = "- Rendering pipelines benefit from memoization, caching layers and lazy hydration"
+    assert notes.rejection_reason(transcript, answer, "stop") == "novel"
+    # Short outputs are left to the other guards: too few words to measure overlap.
+    assert not rejected("- Duplicated notification toggles", transcript)
 
 
-def test_ratio_uses_light_normalisation():
-    assert not rejected("- Launch moving, moved and moves", "we are moving the launch")
-    assert not rejected("- vendors' contracts", "the vendor's contract")
-
-
-def test_negation_is_kept():
+def test_negation_flip_is_rejected():
     transcript = "we will not ship on friday"
-    assert rejected("- Ship on Friday", transcript)
+    assert notes.rejection_reason(transcript, "- Ship on Friday", "stop") == "negation"
+    assert rejected("- [ ] Ship on Friday", transcript)
+    assert rejected("- **Decision:** ship on Friday", transcript)
     assert not rejected("- We will not ship on Friday", transcript)
-    assert not rejected("- Not shipping Friday", "we will not ship on friday")
-    assert not rejected("- Do not ship", "we do not ship no no")  # duplicate "no no" counts once
-    # Each negated sentence needs its own negation, up to the spoken count.
-    both = "we cannot ship. we will never go"
-    assert rejected("- cannot ship or go", both)
-    assert not rejected("- cannot ship\n- will never go", both)
-    # A negation in the notes that was never spoken is not a guard failure by itself.
-    assert not rejected("- Ship Friday, not later", "we ship friday and not later")
+    assert not rejected("- Not shipping Friday", transcript)
+    assert not rejected("- **Decision:** no Friday ship", transcript)
+    # Each negated clause is checked on its own, also after a conjunction or condition.
+    both = "we cannot ship and we will never go"
+    assert rejected("- Cannot ship\n- Will go", both)
+    assert not rejected("- Cannot ship\n- Will never go", both)
+    dark = "we are not doing dark mode until the design system is done"
+    assert rejected("- Doing dark mode this sprint", dark)
+    assert not rejected("- Dark mode waits for the design system", dark)
 
 
-def test_non_negating_idioms_are_not_required():
+def test_incidental_negations_may_be_left_out():
+    transcript = (
+        "I don't know whether it supports the locale or not. I didn't really have any problems "
+        "with the email sign in, it worked. Brightline can't do the custom firmware and we need "
+        "the custom firmware for the warehouse"
+    )
+    notes_md = (
+        "- [ ] Check whether it supports the locale\n"
+        "- Email sign in worked\n"
+        "- Brightline **cannot** do custom firmware\n"
+        "- Custom firmware needed for the warehouse integration"
+    )
+    assert not rejected(notes_md, transcript)
+    # Negative wording counts as negated: "unclear" for "not clear", "lacks", a question.
+    unclear = "the pricing page is not clear about the enterprise tier"
+    assert not rejected("- Pricing page unclear about the enterprise tier", unclear)
+    assert not rejected("- Pricing page lacks detail on the enterprise tier", unclear)
+    assert not rejected("- **Question:** is the pricing page clear on enterprise?", unclear)
+    assert rejected("- Pricing page clear about the enterprise tier", unclear)
+    # A to-do for something not done yet is the to-do, not a flip.
+    assert not rejected("- [ ] Call the caterer", "I haven't called the caterer yet")
+    assert rejected("- Called the caterer", "I haven't called the caterer yet")
+
+
+def test_non_negating_idioms_are_not_flips():
     reminder = "we can ship friday. also don't forget to call the caterer. no worries about it"
     assert not rejected("- Ship Friday\n- [ ] Call the caterer", reminder)
-    # The carve-out is narrow: other negations in the same transcript still count.
-    assert rejected("- Ship Friday\n- [ ] Call the caterer", reminder + ". we can't book it")
+    assert not rejected("- [ ] Check whether it works", "check whether it works or not")
+    assert rejected("- Ship Friday", "we don't ship friday and don't forget the caterer")
+
+
+def test_invented_names_are_rejected():
+    transcript = "maya will send the spec and the vendor is late. someone should call legal"
+    assert not rejected("- [ ] **Maya** to send the spec\n- Vendor is late", transcript)
+    assert not rejected("- [ ] Someone to call legal", transcript)
+    for markdown in (
+        "- [ ] **Sarah** to send the spec",  # bold, sentence-initial
+        "- [ ] Sarah to send the spec",  # a to-do's owner
+        "- Vendor Acme is late",  # mid-sentence capital
+        "- Vendor is late; ask the QA team",  # an acronym
+        "## SLA review\n- Vendor is late",  # an acronym in a heading
+    ):
+        assert notes.rejection_reason(transcript, markdown, "stop") == "name", markdown
+    # Labels, Title Case headings, "I", "OK" and bold emphasis of spoken words are fine.
     assert not rejected(
-        "- Ship Friday\n- [ ] Call the caterer\n- Can't book it", reminder + ". we can't book it"
+        "## Vendor Status Review\n- **Blocker:** vendor is late\n- I think it's OK\n"
+        "- **Not** sent yet: the spec",
+        transcript + ". okay i think it's not sent yet",
     )
-    assert rejected("- Call the caterer", "we don't ship friday and don't forget the caterer")
+
+
+def test_invented_dates_and_contacts_are_rejected():
+    transcript = "the demo moved to monday. email the vendor at sales@vendor.example"
+    assert not rejected("- Demo moved to **Monday**\n- Email sales@vendor.example", transcript)
+    assert notes.rejection_reason(transcript, "- Demo moved to Tuesday", "stop") == "date"
+    assert notes.rejection_reason(transcript, "- Demo moved in june", "stop") == "date"
+    for markdown in ("- Email ops@vendor.example", "- See www.vendor.com", "- See vendor.io"):
+        assert notes.rejection_reason(transcript, markdown, "stop") == "contact", markdown
+
+
+def test_number_words_in_the_notes_are_checked():
+    transcript = "we have thirty two points and the billing item is thirteen"
+    assert not rejected("- Thirty two points\n- Billing item: thirteen", transcript)
+    assert rejected("- Thirty four points", transcript)
+    assert rejected("- Billing item: eleven", transcript)
+    # A lone "one" is a pronoun and ordinals are not counted; adjacent groups stay separate.
+    assert not rejected("- Billing item is the big one, first in line", transcript)
+    assert not rejected("- Cut to two, three cards", "cut it to two, maybe three cards")
+    assert rejected("- Twenty one cards", "twenty cards")
+
+
+def test_committed_structure_negatives_are_rejected_for_their_reason():
+    cases = [
+        json.loads(line)
+        for line in Path(__file__).with_name("notes_negatives.jsonl").read_text().splitlines()
+    ]
+    structure = [case for case in cases if case["kind"] == "structure"]
+    assert len(structure) >= 15
+    assert {"name", "number", "negation", "novel", "contact"} <= {c["why"] for c in structure}
+    for case in structure:
+        reason = notes.rejection_reason(case["transcript"], case["output"], "stop")
+        assert reason == case["why"], case["id"]
+
+
+def test_messy_eval_set_shape():
+    entries = [
+        json.loads(line)
+        for line in Path(__file__).with_name("notes_messy_eval.jsonl").read_text().splitlines()
+    ]
+    assert len(entries) >= 10 and len({entry["id"] for entry in entries}) == len(entries)
+    for entry in entries:
+        assert 600 <= len(entry["transcript"]) <= 2400, entry["id"]
+        assert set(entry) == {"id", "outline", "transcript", "keywords"}
+        assert all(word.lower() in entry["transcript"].lower() for word in entry["keywords"])
 
 
 def test_numbers_match_digits_or_words():
