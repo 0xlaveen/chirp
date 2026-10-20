@@ -185,7 +185,7 @@ public final class NotesRecorder {
     private var editorInTail = false
     private var editorComposing = false
     /// The newest append that arrived while the caret was in the tail.
-    private var held: (request: NotesStructureRequest, response: NotesStructureResponse, since: TimeInterval)?
+    private var held: (request: NotesStructureRequest, response: NotesStructureResponse)?
     private var holdTask: Task<Void, Never>?
     private var waiters: [(check: () -> Bool, resume: CheckedContinuation<Void, Never>)] = []
 
@@ -523,7 +523,10 @@ public final class NotesRecorder {
         changed()
     }
 
-    private var holdsAppends: Bool { editorInTail || editorComposing }
+    /// An append would land under the user's typing: IME is composing, or the caret is in the tail and a key was
+    /// pressed within `holdMax`.
+    private var holdsAppends: Bool { editorComposing || (editorInTail && typedRecently) }
+    private var typedRecently: Bool { lastKeystroke.map { now() - $0 < Self.holdMax } ?? false }
 
     private func dropHeld() {
         held = nil
@@ -541,17 +544,16 @@ public final class NotesRecorder {
 
     /// Applies the held append once `holdMax` passed without a keystroke (never while IME is composing).
     private func armHold() {
-        guard let h = held else { return }
+        guard held != nil else { return }
         holdTask?.cancel()
-        let since = max(lastKeystroke ?? h.since, h.since)
-        let wait = max(0, Self.holdMax - (now() - since))
+        // Composing alone re-checks every `holdMax`; the end of composition releases it sooner (`setEditorFocus`).
+        let wait = typedRecently ? Self.holdMax - (now() - (lastKeystroke ?? now())) : Self.holdMax
         let sleep = self.sleep, myEpoch = epoch
         holdTask = Task {
             await sleep(.milliseconds(Int((wait * 1000).rounded(.up))))
-            guard !Task.isCancelled, self.epoch == myEpoch, let h = self.held else { return }
+            guard !Task.isCancelled, self.epoch == myEpoch, self.held != nil else { return }
             self.holdTask = nil
-            let quiet = self.now() - max(self.lastKeystroke ?? h.since, h.since) >= Self.holdMax
-            if quiet, !self.editorComposing { self.releaseHeld() } else { self.armHold() }
+            if !self.holdsAppends { self.releaseHeld() } else { self.armHold() }
         }
     }
 
@@ -657,7 +659,7 @@ public final class NotesRecorder {
             structuring = .off(disable)
         } else if response.structured, holdsAppends, state != .stopping {
             // The caret is in the tail: keep the newest answer until it leaves (or the user goes quiet).
-            held = (request, response, now())
+            held = (request, response)
             armHold()
             structuring = .idle
         } else {
