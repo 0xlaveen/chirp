@@ -372,9 +372,21 @@ final class NotesURLStub: URLProtocol, @unchecked Sendable {
     }
 
     @Test func reorganizeNotesAndTheUndoChip() {
-        #expect(model { $0.reorganizeStatus = .failed("timeout") }.reorganizeNote == "Couldn’t reorganize (timeout) — will retry")
-        #expect(model { $0.reorganizeStatus = .conflict }.reorganizeNote == "Notes changed while reorganizing — try again")
-        #expect(model { $0.reorganizeStatus = .tooLong }.reorganizeNote?.hasPrefix("Too long to reorganize") == true)
+        #expect(model { $0.reorganizeStatus = .failed("timeout") }.reorganizeNote == "Couldn’t organize (timeout) — will retry")
+        #expect(model { $0.reorganizeStatus = .failed("rejected: negation") }.reorganizeNote == "Couldn’t organize (rejected: negation) — will retry")
+        #expect(model { $0.reorganizeStatus = .conflict }.reorganizeNote == "Notes changed while organizing — try again")
+        #expect(model { $0.reorganizeStatus = .tooLong }.reorganizeNote?.hasPrefix("Too long to organize") == true)
+        // Organize: progress, then a clear result.
+        #expect(model { $0.state = .stopped; $0.reorganizeStatus = .organizing(step: 2, of: 4) }.statusText == "Organizing notes… 2/4")
+        let done = model { $0.reorganizeStatus = .organized(failed: 0, reason: nil) }
+        #expect(done.reorganizeNote == "Organized" && done.reorganizeNoteIsSuccess)
+        let partial = model { $0.reorganizeStatus = .organized(failed: 1, reason: "rejected: novel_name") }
+        #expect(partial.reorganizeNote == "Couldn’t organize 1 section (rejected: novel_name) — kept as is" && !partial.reorganizeNoteIsSuccess)
+        #expect(model { $0.reorganizeStatus = .organized(failed: 2, reason: nil) }.reorganizeNote == "Couldn’t organize 2 sections — kept as is")
+        #expect(!model { $0.reorganizeStatus = .organizing(step: 1, of: 3) }.canReorganize)
+        // Finishing shows how long it has taken once it is more than a moment.
+        #expect(model { $0.state = .stopping; $0.finishingElapsed = 1 }.statusText == NotesStatus.finishing)
+        #expect(model { $0.state = .stopping; $0.finishingElapsed = 12.4 }.statusText == NotesStatus.finishing + " · 12 s")
         #expect(model { $0.state = .recording; $0.reorganizeStatus = .running }.statusText == NotesStatus.reorganizing)
         #expect(model { $0.state = .stopping; $0.reorganizeStatus = .running }.statusText == NotesStatus.reorganizing)
         let m = model { $0.reorganizeStatus = .applied(at: 5) }

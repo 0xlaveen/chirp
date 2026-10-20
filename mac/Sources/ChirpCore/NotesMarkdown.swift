@@ -72,7 +72,7 @@ public enum NotesMarkdown {
     static func heading(_ line: some StringProtocol) -> (level: Int, text: String)? {
         let hashes = line.prefix { $0 == "#" }.count
         guard (1...3).contains(hashes), line.dropFirst(hashes).first == " " else { return nil }
-        let text = line.dropFirst(hashes + 1).trimmingCharacters(in: .whitespaces)
+        let text = line.dropFirst(hashes + 1).trimmingCharacters(in: .whitespacesAndNewlines)
         return text.isEmpty ? nil : (hashes, text)
     }
 

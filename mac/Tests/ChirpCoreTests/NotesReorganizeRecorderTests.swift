@@ -13,6 +13,8 @@ final class PassStub: @unchecked Sendable {
     private var held: [CheckedContinuation<Void, Never>] = []
     var holdStructure = false
     var holdReorganize = false
+    /// A switch the reply closures can read (set by the test that installs them).
+    var poison: Flag?
     var structureReply: @Sendable (NotesStructureRequest) throws -> NotesStructureResponse = { r in
         NotesStructureResponse(markdown: "## Heard\n- \(r.transcript.split(separator: "\n").count) segments", structured: true)
     }
