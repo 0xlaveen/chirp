@@ -264,6 +264,59 @@ class Corrector:
                 process.kill()
                 await process.wait()
 
+    async def complete(
+        self,
+        system: str,
+        user: str,
+        max_tokens: int,
+        *,
+        priority: str = "correction",
+        timeout: float | None = None,  # noqa: ASYNC109 - the backend call's own budget
+        legacy_text: str | None = None,
+    ) -> tuple[str, str | None]:
+        """One backend completion: (stripped text, finish reason). Raises the backend's own
+        exceptions; callers map them to a safe error code and never log them.
+
+        `legacy_text` is the correction transcript: the managed helper then builds the
+        `Transcript JSON:` message itself, so correction requests are unchanged.
+        """
+        budget = timeout or self.config.timeout
+        if self.managed:
+            if legacy_text is not None:
+                text, finish = await self.managed.generate(legacy_text, system)
+            else:
+                text, finish = await self.managed.generate(
+                    "",
+                    system,
+                    user=user,
+                    max_tokens=max_tokens,
+                    timeout=budget,
+                    priority=priority,
+                )
+            return text.strip(), finish
+        key = await self.key()
+        async with httpx.AsyncClient(
+            timeout=budget,
+            transport=self.transport,
+            trust_env=False,
+        ) as client:
+            response = await client.post(
+                self.config.base_url.rstrip("/") + "/chat/completions",
+                headers={"Authorization": f"Bearer {key}"} if key else {},
+                json={
+                    "model": self.config.model,
+                    "temperature": 0,
+                    "max_tokens": max_tokens,
+                    "messages": [
+                        {"role": "system", "content": system},
+                        {"role": "user", "content": user},
+                    ],
+                },
+            )
+            response.raise_for_status()
+            choice = response.json()["choices"][0]
+            return choice["message"]["content"].strip(), choice.get("finish_reason")
+
     async def process(
         self,
         raw: str,
@@ -290,41 +343,15 @@ class Corrector:
         prompt = system_prompt(selected, instructions, correction_prompt)
         try:
             async with asyncio.timeout(self.config.timeout):
-                if self.managed:
-                    text, finish = await self.managed.generate(raw, prompt)
-                    text = text.strip()
-                    if rejected(raw, text, finish, selected):
-                        return CorrectionResult(raw, error="rejected")
-                    return CorrectionResult(text, text != raw)
-                key = await self.key()
-                async with httpx.AsyncClient(
-                    timeout=self.config.timeout,
-                    transport=self.transport,
-                    trust_env=False,
-                ) as client:
-                    response = await client.post(
-                        self.config.base_url.rstrip("/") + "/chat/completions",
-                        headers={"Authorization": f"Bearer {key}"} if key else {},
-                        json={
-                            "model": self.config.model,
-                            "temperature": 0,
-                            "max_tokens": 512,
-                            "messages": [
-                                {"role": "system", "content": prompt},
-                                {
-                                    "role": "user",
-                                    "content": "Transcript JSON: "
-                                    + json.dumps(raw, ensure_ascii=False),
-                                },
-                            ],
-                        },
-                    )
-                    response.raise_for_status()
-                    choice = response.json()["choices"][0]
-                    text = choice["message"]["content"].strip()
-                    if rejected(raw, text, choice.get("finish_reason"), selected):
-                        return CorrectionResult(raw, error="rejected")
-                    return CorrectionResult(text, text != raw)
+                text, finish = await self.complete(
+                    prompt,
+                    "Transcript JSON: " + json.dumps(raw, ensure_ascii=False),
+                    512,
+                    legacy_text=raw,
+                )
+                if rejected(raw, text, finish, selected):
+                    return CorrectionResult(raw, error="rejected")
+                return CorrectionResult(text, text != raw)
         except (TimeoutError, httpx.TimeoutException):
             return CorrectionResult(raw, error="timeout")
         except (httpx.HTTPError, OSError):

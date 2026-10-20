@@ -96,6 +96,7 @@ Full protocol details, including every message field, are in [the architecture d
 | `GET /v1/health` | bearer | Adds readiness, retention and correction information |
 | `GET /v1/correction/profiles` | bearer | Clean-up profile list with editable prompts (works even when correction is off) |
 | `GET`/`PUT /v1/correction/settings` | bearer | Clean-up `keep_loaded` state (see [keep_loaded](#keep_loaded)) |
+| `POST /v1/notes/structure` | bearer | Live Notes: structure a transcript window into Markdown (see [Notes structuring](#notes-structuring)) |
 | `POST /v1/transcribe` | bearer | 16 kHz mono PCM16 WAV body (same limits as streaming); returns the final object |
 | `WS /v1/stream` | bearer | Streaming dictation |
 
@@ -131,6 +132,8 @@ Cancel or disconnect during finalization discards the utterance: no correction r
 | `bad_audio` | Invalid audio or control frame |
 | `bad_request` | Invalid correction prompt/settings body (HTTP 400) |
 | `unsupported` | PUT settings outside managed mode (HTTP 409) |
+| `bad_notes` | Invalid notes-structuring request (HTTP 400) |
+| `notes_off` | Notes structuring needs correction enabled (HTTP 409) |
 | `engine` | Speech engine unavailable |
 
 ### Streaming and finalization
@@ -170,6 +173,7 @@ mode = "off" # off (default), managed, endpoint
 base_url = "http://127.0.0.1:1234/v1"
 model = "your-loaded-model"
 timeout = 8.0
+# structure_timeout = 30.0
 api_key_env = "CHIRP_LLM_API_KEY"
 # keychain_service = "chirp-llm" # security find-generic-password -s SERVICE -w
 # prompt = "Custom transcript cleanup prompt"
@@ -187,6 +191,7 @@ retain_days = 3
 | `base_url` | Endpoint-mode server URL |
 | `model` | Endpoint-mode model identifier |
 | `timeout` | Whole-call correction timeout in seconds (default 8.0) |
+| `structure_timeout` | Whole-call Notes structuring timeout in seconds (default 30.0); the same finite, positive validation as `timeout` |
 | `api_key_env` | Environment variable holding the API key (endpoint mode) |
 | `keychain_service` | Read the key from Keychain: `security find-generic-password -s SERVICE -w` |
 | `prompt` | Legacy override for the `default` profile's prompt |
@@ -325,6 +330,42 @@ LM Studio is installed at `/Applications/LM Studio.app`. Chirp never starts it, 
 4. LM Studio needs no API key; when none is configured no Authorization header is sent.
 
 A loopback `base_url` keeps final text on this machine (health/doctor report it as such). If LM Studio is stopped, times out or answers like an assistant, the corrector fails closed to the raw transcript and `correction_error` says why.
+
+## Notes structuring
+
+`POST /v1/notes/structure` powers Live Notes on the Mac. It is stateless JSON, uses the same
+correction backend (managed Qwen helper or endpoint), needs correction enabled (otherwise `409
+notes_off`) and does not take the engine lease, so dictation and `/v1/stream` are unaffected.
+
+```sh
+curl -s -H "Authorization: Bearer $(cat ~/.config/chirp/token)" -H 'Content-Type: application/json' \
+  -d '{"transcript":"We decided to keep the vendor. Maya will send the spec by Friday.","outline":[]}' \
+  http://127.0.0.1:7821/v1/notes/structure
+```
+
+A success returns `{"markdown":"…","structured":true,"error":null,"timings_ms":{"structure":…}}`.
+When the model fails, times out or its output is rejected by the guards (invented words or numbers,
+a dropped negation, formatting outside the allowed Markdown subset), the answer is HTTP 200 with
+`"markdown":null,"structured":false` and `error` of `timeout`, `http` or `rejected`, and the client
+keeps its previous notes. Only one structuring request runs at a time (a second gets `503 busy`),
+a request body is capped at 64 KiB, and the transcript at 6000 characters. Request and response
+details are in [the architecture doc](../docs/architecture.md#live-notes-structuring-v1-compatible-addition).
+Text is never retained or logged (the log line has lengths, counts, the error code and timings),
+even with `--debug-retain`.
+
+In managed mode a queued dictation correction is always served before a queued structuring
+request; a running structuring generation (at most 768 tokens) is never interrupted.
+
+Measure it on your Mac with the cached default model (not run in CI):
+
+```sh
+uv run python scripts/bench_notes.py --repetitions 3 [--dump out.jsonl]
+```
+
+It structures the synthetic transcripts in `tests/notes_eval.jsonl` (about 800, 1600, 2400 and
+4000 characters) and prints p50/p95 latency, output tokens and how many outputs pass the guards,
+with a histogram of which guard rejected the rest. Results are in the Notes structuring section of
+[bench.md](../docs/bench.md). `uv run pytest -m model` additionally structures two of those entries.
 
 ## Doctor
 
