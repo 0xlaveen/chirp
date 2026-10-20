@@ -5,7 +5,7 @@ import Combine
 import Foundation
 import UIKit
 
-enum SessionAction { case start, stop, cancel, end }
+enum SessionAction { case start, stop, toggle, cancel, end }
 enum DictationSource { case app, keyboard, companion }
 
 struct AppServices {
@@ -13,11 +13,13 @@ struct AppServices {
     let preferences: PreferenceStore
     let history: HistoryStore
     let bridge: SharedBridge
+    let keyboardSetup: KeyboardSetupStore
     init(root: URL, secrets: any SecretStore) throws {
         pairing = try PairingStore(root: root, secrets: secrets)
         preferences = try PreferenceStore(root: root)
         history = try HistoryStore(root: root, secrets: secrets)
         bridge = try SharedBridge(root: root, secrets: secrets, role: .app)
+        keyboardSetup = try KeyboardSetupStore(root: root)
     }
     static func production() throws -> Self {
         let config = SharedConfiguration(bundle: .main)
@@ -40,6 +42,8 @@ final class SessionCoordinator: ObservableObject {
     @Published private(set) var notice = ""
     @Published private(set) var debugRetention = false
     @Published private(set) var canUseRaw = false
+    /// Chirp Keyboard has opened with Full Access at least once (see `KeyboardSetupStore`).
+    @Published private(set) var keyboardReady = false
     @Published var preferences = IOSPreferences()
     @Published private(set) var profiles: [CorrectionProfile] = []
     @Published private(set) var diagnostics: [DiagnosticEvent] = []
@@ -105,6 +109,7 @@ final class SessionCoordinator: ObservableObject {
             paired = config != nil
             try stores?.bridge.endSession()
         } catch { notice = SessionFailure.storage.localizedDescription }
+        refreshSetup()
         guard production else { return }
         observation = signal.observe { [weak self] in Task { @MainActor in self?.processCommands() } }
         for name in [AVAudioSession.interruptionNotification, AVAudioSession.routeChangeNotification,
@@ -357,6 +362,8 @@ final class SessionCoordinator: ObservableObject {
         do { try services?.bridge.endSession(); signal.post() } catch { notice = SessionFailure.storage.localizedDescription }
     }
 
+    func refreshSetup() { keyboardReady = (try? services?.keyboardSetup.fullAccessSeenAt()) != nil }
+
     func reconcile() { if armed { do { try reconcileOrThrow(); processCommands() } catch { endSession(code: .interrupted) } } }
     private func reconcileOrThrow() throws {
         guard armed else { throw SessionFailure.expired }
@@ -469,9 +476,15 @@ final class SessionCoordinator: ObservableObject {
             return "Recording. Stop Chirp to copy the final text."
         case .stop:
             guard let id = utterance, stream != nil else { throw SessionFailure.noResult }
+            let copies = companion == id // Only a companion-owned utterance copies; keyboard/app paths never copy.
             stopDictation()
             try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in waiters[id, default: []].append(continuation) }
-            return "Dictation finished." // Only a companion-owned utterance copied; keyboard/app paths never copy.
+            return copies ? "Copied. Paste with ⌘V." : "Dictation finished."
+        case .toggle:
+            // One action for a hardware-keyboard shortcut: start in an armed session, or stop and copy.
+            if utterance != nil, stream != nil { return try await perform(action: .stop) }
+            _ = try await perform(action: .start)
+            return "Recording. Run Toggle Chirp dictation again to stop and copy."
         case .cancel: cancelDictation(); return "Dictation cancelled."
         case .end: endSession(); return "Session ended. Microphone off."
         }

@@ -14,7 +14,7 @@ struct SessionCoordinatorTests {
         var activity = true
         var transports: [SyntheticTransport] = []
     }
-    struct Fixture {
+    @MainActor struct Fixture {
         let model: SessionCoordinator
         let transport: SyntheticTransport
         let audio: SyntheticAudio
@@ -84,6 +84,19 @@ struct SessionCoordinatorTests {
         _ = try await first.value
         _ = try await second.value
         #expect(f.values.copied == ["Fresh synthetic final"])
+    }
+
+    @Test func toggleStartsInArmedSessionThenStopsAndCopies() async throws {
+        let f = try await fixture(); defer { f.clean() }
+        try await f.model.armSession()
+        _ = try await f.model.perform(action: .toggle)
+        try await ready(f)
+        let stopping = Task { try await f.model.perform(action: .toggle) }
+        try await Task.sleep(for: .milliseconds(10))
+        f.transport.push(#"{"type":"final","text":"Hotkey final"}"#)
+        #expect(try await stopping.value == "Copied. Paste with ⌘V.")
+        #expect(f.values.copied == ["Hotkey final"])
+        #expect(f.model.armed)
     }
 
     @Test func keyboardStopIntentDoesNotCopy() async throws {

@@ -1,11 +1,23 @@
 import XCTest
 
 final class ChirpUITests: XCTestCase {
+    @MainActor private func selectTab(_ title: String, symbol: String, in app: XCUIApplication) {
+        // iPadOS 27 exposes its top tab strip as buttons rather than a TabBar.
+        let tab = app.tabBars.buttons[title]
+        if tab.exists {
+            tab.tap()
+        } else {
+            let topTab = app.buttons.matching(identifier: symbol).firstMatch
+            XCTAssertTrue(topTab.waitForExistence(timeout: 5))
+            topTab.tap()
+        }
+    }
+
     @MainActor func pairedApp() -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments = ["--chirp-ui-test"]
         app.launch()
-        app.tabBars.buttons["Pair Mac"].tap()
+        selectTab("Pair Mac", symbol: "qrcode.viewfinder", in: app)
         let link = app.secureTextFields["pairingLink"]
         XCTAssertTrue(link.waitForExistence(timeout: 5))
         link.tap()
@@ -17,28 +29,32 @@ final class ChirpUITests: XCTestCase {
 
     @MainActor func testSyntheticPairDictateRawAndEnd() {
         let app = pairedApp()
-        app.tabBars.buttons["Dictate"].tap()
-        app.buttons["Dictate"].tap()
-        XCTAssertTrue(app.buttons["Stop dictation"].waitForExistence(timeout: 5))
-        app.buttons["Stop dictation"].tap()
-        XCTAssertTrue(app.buttons["Use raw"].waitForExistence(timeout: 5))
+        selectTab("Dictate", symbol: "mic", in: app)
+        app.buttons["chirp.dictation.start"].tap()
+        XCTAssertTrue(app.buttons["chirp.dictation.stop"].waitForExistence(timeout: 5))
+        app.buttons["chirp.dictation.stop"].tap()
+        XCTAssertTrue(app.buttons["chirp.dictation.raw"].waitForExistence(timeout: 5))
         XCTAssertEqual(app.staticTexts["transcript"].label, "Synthetic words.")
-        app.buttons["Use raw"].tap()
+        app.buttons["chirp.dictation.raw"].tap()
         XCTAssertEqual(app.staticTexts["transcript"].label, "synthetic words")
-        app.buttons["End session"].firstMatch.tap()
+        app.buttons["chirp.session.end"].tap()
         XCTAssertTrue(app.staticTexts["Microphone off"].waitForExistence(timeout: 5))
         XCTAssertFalse(app.staticTexts["transcript"].exists)
     }
 
     @MainActor func testHistoryOffAndAdaptiveOrientation() {
         let app = pairedApp()
-        app.tabBars.buttons["History"].tap()
-        let history = app.switches["Keep encrypted history on this device"]
+        selectTab("History", symbol: "clock", in: app)
+        // SwiftUI's iOS 27 toggle can be exposed as a different element type.
+        let history = app.descendants(matching: .any).matching(identifier: "chirp.history.enabled").firstMatch
+        XCTAssertTrue(history.waitForExistence(timeout: 5))
         XCTAssertEqual(history.value as? String, "0")
+        defer { XCUIDevice.shared.orientation = .portrait }
         XCUIDevice.shared.orientation = .landscapeLeft
         XCTAssertTrue(history.waitForExistence(timeout: 5))
+        XCTAssertEqual(history.value as? String, "0")
         XCUIDevice.shared.orientation = .portrait
-        app.tabBars.buttons["Settings"].tap()
+        selectTab("Settings", symbol: "gear", in: app)
         XCTAssertTrue(app.staticTexts["Microphone session"].exists)
     }
 }
