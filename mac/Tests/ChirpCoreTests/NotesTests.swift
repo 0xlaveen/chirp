@@ -479,4 +479,33 @@ final class NotesURLStub: URLProtocol, @unchecked Sendable {
         // Prints counts and timings only, never the notes, like the app's logs.
         print("live reorganize: reorganized=\(r.reorganized) changed=\(r.changed) chars=\(request.notes.count) timings=\(r.timingsMs ?? [:])")
     }
+
+    /// Managed server only, with a correction sent while this runs (for example `client_sim.py --correction` a few
+    /// seconds in): the reorganize gives way and comes back `preempted`, which the client treats as not run.
+    @Test(.enabled(if: url != nil && ProcessInfo.processInfo.environment["CHIRP_LIVE_NOTES_PREEMPT"] != nil))
+    func aReorganizeGivesWayToACorrection() async throws {
+        let env = ProcessInfo.processInfo.environment
+        let config = ServerConfig.load(urlString: Self.url, tokenPath: env["CHIRP_LIVE_NOTES_TOKEN_FILE"] ?? ServerConfig.defaultTokenPath)
+        // About 3300 characters: a reorganize long enough (10+ s) for the correction to arrive mid-generation.
+        let text = (1...30).map { "## Station \($0)\n- Crate \($0) holds \($0 * 3) parts for the north line\n- [ ] check crate \($0) seals\n" }
+            .joined()
+        var document = NotesDocument(text: text)
+        let request = try #require(document.reorganizeRequest(final: false, manual: true))
+        let r = try await config.reorganizeNotes(request)
+        #expect(r.preempted && r.markdown == nil && !r.changed, "error=\(r.error ?? "nil")")
+        #expect(document.applyReorganize(r, for: request) == nil)
+        print("live preempt: error=\(r.error ?? "nil") reason=\(r.reason ?? "nil") timings=\(r.timingsMs ?? [:])")
+    }
+
+    /// Against a server whose backend answers with an invented name (endpoint mode with a stub): the rejection reaches
+    /// the client with the guard's name.
+    @Test(.enabled(if: url != nil && ProcessInfo.processInfo.environment["CHIRP_LIVE_NOTES_REJECT"] != nil))
+    func aRejectedStructureCarriesItsReason() async throws {
+        let env = ProcessInfo.processInfo.environment
+        let config = ServerConfig.load(urlString: Self.url, tokenPath: env["CHIRP_LIVE_NOTES_TOKEN_FILE"] ?? ServerConfig.defaultTokenPath)
+        let r = try await config.structureNotes(NotesStructureRequest(transcript: "we will ship the beta next week", outline: []))
+        #expect(!r.structured && r.markdown == nil && r.error == "rejected")
+        #expect(NotesFailure.guardName(r.reason) == r.reason && r.reason != nil)
+        print("live reject: error=\(r.error ?? "nil") reason=\(r.reason ?? "nil") label=\(r.failureLabel)")
+    }
 }

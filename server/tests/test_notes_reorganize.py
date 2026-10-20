@@ -248,15 +248,15 @@ def test_endpoint_reorganizes_with_its_budget(settings):
 
 
 @pytest.mark.parametrize(
-    "handle,error",
+    "handle,error,reason",
     [
-        (lambda request: httpx.Response(500), "http"),
-        (lambda request: reply("```\n" + GOOD + "\n```"), "rejected"),
-        (lambda request: reply(GOOD, "length"), "rejected"),
-        (lambda request: httpx.Response(200, json={"unexpected": True}), "rejected"),
+        (lambda request: httpx.Response(500), "http", None),
+        (lambda request: reply("```\n" + GOOD + "\n```"), "rejected", "forbidden"),
+        (lambda request: reply(GOOD, "length"), "rejected", "finish"),
+        (lambda request: httpx.Response(200, json={"unexpected": True}), "rejected", None),
     ],
 )
-def test_endpoint_failures_fail_closed(settings, handle, error):
+def test_endpoint_failures_fail_closed(settings, handle, error, reason):
     with run(settings, endpoint_corrector(handle)) as client:
         body = post(client, {"notes": NOTES}).json()
     assert body == {
@@ -264,6 +264,7 @@ def test_endpoint_failures_fail_closed(settings, handle, error):
         "reorganized": False,
         "changed": False,
         "error": error,
+        "reason": reason,
         "timings_ms": {"reorganize": pytest.approx(body["timings_ms"]["reorganize"])},
     }
 
@@ -274,11 +275,35 @@ def test_endpoint_timeout(settings):
         return reply(GOOD)
 
     config = CorrectionConfig(
-        mode="endpoint", base_url="http://127.0.0.1:1234/v1", timeout=2, structure_timeout=0.1
+        mode="endpoint", base_url="http://127.0.0.1:1234/v1", timeout=2, reorganize_timeout=0.1
     )
     corrector = Corrector(config, httpx.MockTransport(slow))
     with run(settings, corrector) as client:
         assert post(client, {"notes": NOTES}).json()["error"] == "timeout"
+
+
+def test_reorganize_timeout_is_its_own_and_validated():
+    for bad in (0, -1, float("nan"), float("inf")):
+        with pytest.raises(ValueError):
+            CorrectionConfig(mode="managed", reorganize_timeout=bad)
+    config = CorrectionConfig(mode="managed")
+    assert config.reorganize_timeout == 45.0 and config.structure_timeout == 30.0
+
+
+def test_reorganize_is_not_bounded_by_the_structure_timeout(settings):
+    async def slow(request):
+        await asyncio.sleep(0.3)
+        return reply(GOOD)
+
+    config = CorrectionConfig(
+        mode="endpoint",
+        base_url="http://127.0.0.1:1234/v1",
+        timeout=2,
+        structure_timeout=0.1,
+        reorganize_timeout=2,
+    )
+    with run(settings, Corrector(config, httpx.MockTransport(slow))) as client:
+        assert post(client, {"notes": NOTES}).json()["reorganized"] is True
 
 
 # --- concurrency ---------------------------------------------------------------------------
@@ -324,7 +349,7 @@ async def test_a_queued_correction_preempts_a_running_reorganize(tmp_path):
         waited = time.monotonic() - started
         result = await running
         assert corrected.corrected and waited < 2.5  # not the 3 s the reorganize had left
-        assert result == notes.ReorganizeResult(None, False, False, "timeout")
+        assert result == notes.ReorganizeResult(None, False, False, "preempted")
         assert [entry["kind"] for entry in read_log(log)] == ["reorganize", "correction"]
         assert (await notes.reorganize(corrector, NOTES, [])).reorganized  # helper restarted
     finally:
@@ -349,6 +374,22 @@ async def test_a_queued_reorganize_waits_for_corrections(tmp_path):
         ]
     finally:
         await corrector.close()
+
+
+async def test_a_preempted_reorganize_is_reported_as_preempted(settings, tmp_path, caplog):
+    log = tmp_path / "requests.jsonl"
+    corrector = service("--slow-structure", "3.0", "--log", str(log), timeout=8)
+    app = create_app(settings, FakeEngine(), TOKEN, corrector=corrector)
+    caplog.set_level(logging.INFO)
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://t") as c:
+        running = asyncio.create_task(c.post(URL, headers=HEADERS, json={"notes": NOTES}))
+        await wait_for(log, 1)
+        assert (await corrector.process("please send the schedule")).corrected
+        body = (await running).json()
+    await corrector.close()
+    assert body["markdown"] is None and body["reorganized"] is False
+    assert body["changed"] is False and body["error"] == "preempted"
+    assert "reorganized=False changed=False error=preempted" in caplog.text
 
 
 def test_reorganize_does_not_hold_the_engine_lease(settings):
@@ -642,3 +683,32 @@ async def test_real_model_reorganizes_eval_entries():
             assert tasks_kept(result.markdown, entry["expect_tasks"]), entry["id"]
     finally:
         await corrector.close()
+
+
+# --- failure reasons -------------------------------------------------------------------------
+
+
+def test_rejections_name_their_guard_in_the_response_and_log(settings, caplog):
+    caplog.set_level(logging.INFO)
+    corrector = service(
+        "--reply-reorganize",
+        GOOD.replace("ask jo", "ask Priya and jo"),
+        "--reply-structure",
+        "## Plan\n- [ ] **Sarah** to ship on Friday",
+        timeout=2,
+    )
+    with run(settings, corrector) as client:
+        reorganized = post(client, {"notes": NOTES}).json()
+        structured = client.post(STRUCTURE_URL, headers=HEADERS, json={"transcript": TRANSCRIPT})
+    assert reorganized["error"] == "rejected" and reorganized["reason"] == "novel_name"
+    assert structured.json()["error"] == "rejected" and structured.json()["reason"] == "name"
+    assert "error=rejected reason=novel_name" in caplog.text
+    assert "error=rejected reason=name" in caplog.text
+    assert "Priya" not in caplog.text and "Sarah" not in caplog.text
+
+
+def test_successes_carry_no_reason(settings):
+    with run(settings, service(timeout=2)) as client:
+        assert "reason" not in post(client, {"notes": NOTES}).json()
+        structured = client.post(STRUCTURE_URL, headers=HEADERS, json={"transcript": TRANSCRIPT})
+        assert "reason" not in structured.json()

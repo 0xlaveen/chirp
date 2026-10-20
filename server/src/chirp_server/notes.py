@@ -20,6 +20,7 @@ from .correction import (
     VALUE_GROUPS,
     WORD,
 )
+from .managed_cleanup import Preempted
 
 MAX_TRANSCRIPT_CHARS = 6000
 MAX_OUTLINE_ITEMS = 24
@@ -61,8 +62,9 @@ give each negated statement its own bullet. Keep "not sure" or "don't know" in t
 for example `- **Question:** **not** sure who owns QA`.
 Drop fillers, false starts, repetition and small talk. Merge repeated points.
 Write only what the speaker said. Never comment on the transcript itself, its wording or the \
-speech recognition (no "unclear what X refers to", no "the speaker says"), and never add \
-advice, opinions or answers of your own.
+speech recognition (no "unclear what X refers to", no "the speaker says", no "(incomplete)"), and \
+never add advice, opinions, answers or background knowledge of your own. Spell names exactly as \
+transcribed, even when they look misheard.
 If the transcript has nothing substantive, output exactly: _(nothing yet)_
 """
 
@@ -193,7 +195,11 @@ OVERLAP_MIN_WORDS = 6
 
 DATE_WORDS = frozenset(VALUE_GROUPS[0] | VALUE_GROUPS[1]) - {"may"}
 
-NEGATIONS = NEGATION_WORDS
+# Typed notes often drop the apostrophe ("dont book the bus"); dictation's list is unchanged.
+NEGATIONS = NEGATION_WORDS | frozenset(
+    "dont doesnt didnt wont cant isnt arent wasnt werent shouldnt couldnt wouldnt havent hasnt "
+    "hadnt mustnt".split()
+)
 # Output words that carry a negated meaning without a "not": "lacks", "missing", "unclear".
 NEGATIVE_MEANING = frozenset(
     "lack lacks lacking lacked missing absent unable fails failed failing instead rather "
@@ -443,6 +449,8 @@ def check_names(transcript: str, headings: list[str], body: list[str]) -> str | 
     source = stem_set(words_of(transcript))
 
     def novel(word: str) -> bool:
+        if any(char.isdigit() for char in word):
+            return False  # "300M", "Q3": the number guard owns digits
         lowered = word.casefold().replace("’", "'")
         common = lowered in ALLOWED or lowered in SPOKEN_FILLERS or lowered in STOPWORDS
         return not common and lowered not in NEGATIONS and not stems(lowered) & source
@@ -456,7 +464,7 @@ def check_names(transcript: str, headings: list[str], body: list[str]) -> str | 
         # label (`**Blocker:**`); so is a to-do's owner (`- [ ] Sarah to send ...`).
         statement = MARKER.sub("", line)
         marked = [
-            span.group(1)
+            sentence_case(span.group(1)) if span.start() == 0 else span.group(1)
             for span in BOLD.finditer(statement)
             if not (span.start() == 0 and span.group(1).endswith(":"))
         ]
@@ -482,10 +490,34 @@ def check_names(transcript: str, headings: list[str], body: list[str]) -> str | 
     return None
 
 
+SCALED = re.compile(r"(\d+(?:\.\d+)?)\s?(k|m|mm|b|bn)\b", re.I)
+SCALE = {"k": 1000, "m": 1000000, "mm": 1000000, "b": 1000000000, "bn": 1000000000}
+
+
+def sentence_case(span: str) -> str:
+    """A bold phrase opening a line ("**Decided to kill** X"): its capital first word is sentence
+    case, not a name, when the rest is lowercase. One bold word ("**Sarah**") is still checked."""
+    words = WORD.findall(span)
+    if (
+        len(words) >= 2
+        and sum(char.isupper() for char in words[0]) == 1
+        and all(word.islower() or not word.isalpha() for word in words[1:])
+    ):
+        return span[span.index(words[0]) + len(words[0]) :]
+    return span
+
+
 def check_numbers(transcript: str, markdown: str) -> str | None:
     """Every number in the notes, as digits or number words, was spoken."""
     spoken = words_of(transcript)
     allowed = set(digit_runs(transcript)) | spoken_numbers(spoken)
+
+    def abbreviated(match: re.Match) -> str:
+        # "$300M" for a spoken "three hundred million": the scaled value was spoken.
+        value = round(float(match.group(1)) * SCALE[match.group(2).lower()])
+        return " " if str(value) in allowed else match.group()
+
+    markdown = SCALED.sub(abbreviated, markdown)
     if any(run not in allowed for run in digit_runs(markdown)):
         return "number"
     if any(value not in allowed for value in written_numbers(markdown)):
@@ -604,11 +636,14 @@ def todo_for_unfinished(line: str, clause_words: list[str]) -> bool:
     return line.lstrip().startswith("- [ ] ") and bool(unfinished & set(clause_words))
 
 
-def rejection_reason(transcript: str, markdown: str, finish) -> str | None:
+def rejection_reason(transcript: str, markdown: str, finish, outline: list[str] = ()) -> str | None:
     """Name of the first guard that fails, or None when `markdown` is acceptable.
 
-    The reason is for tests and the operator bench only: the API reports `rejected`.
+    The outline (the client's own earlier headings) may supply names, numbers and dates, as when
+    a section reuses "API Docs"; overlap and flips compare with the transcript only. The reason
+    goes to the client and log as `reason`, never any text.
     """
+    source = "\n".join([transcript, *outline])
     for check in (check_finish,):
         if reason := check(transcript, markdown, finish):
             return reason
@@ -622,9 +657,9 @@ def rejection_reason(transcript: str, markdown: str, finish) -> str | None:
     if not body and not headings:
         return None  # Only the placeholder: nothing to compare.
     for check in (check_numbers, check_dates, check_contacts):
-        if reason := check(transcript, markdown):
+        if reason := check(source, markdown):
             return reason
-    if reason := check_names(transcript, headings, body):
+    if reason := check_names(source, headings, body):
         return reason
     for check in (check_overlap, check_flips):
         if reason := check(transcript, body):
@@ -642,6 +677,8 @@ class NotesResult:
     markdown: str | None
     structured: bool
     error: str | None = None
+    # The failing guard's name for `rejected` (a name only, never text), for the client and log.
+    reason: str | None = None
 
 
 async def structure(corrector, transcript: str, outline: list[str]) -> NotesResult:
@@ -656,8 +693,8 @@ async def structure(corrector, transcript: str, outline: list[str]) -> NotesResu
                 priority="structure",
                 timeout=budget,
             )
-        if notes_rejected(transcript, text, finish):
-            return NotesResult(None, False, "rejected")
+        if reason := rejection_reason(transcript, text, finish, outline):
+            return NotesResult(None, False, "rejected", reason)
         return NotesResult(text, True)
     except (TimeoutError, httpx.TimeoutException):
         return NotesResult(None, False, "timeout")
@@ -838,8 +875,16 @@ def _body_lines(markdown: str) -> list[str]:
     ]
 
 
+def _reorganize_words(words) -> list[str]:
+    """Content words without negations ("dont" -> "don't" is not a dropped word; the negation
+    guard owns them)."""
+    return [
+        word for word in content_words(words) if word not in NEGATIONS and not word.endswith("n't")
+    ]
+
+
 def _content(line: str) -> list[str]:
-    return content_words(words_of(statement_text(_structure_line(line))))
+    return _reorganize_words(words_of(statement_text(_structure_line(line))))
 
 
 def _share(words: list[str], vocabulary: set[str]) -> float:
@@ -925,29 +970,51 @@ def _numbers(line: str) -> set[str]:
     return tokens | written_numbers(line) | {word for word in words_of(line) if word in DATE_WORDS}
 
 
+def _values(line: str) -> set[str]:
+    """Every reading of a line's numbers and dates, for finding a number on it."""
+    words = words_of(line)
+    written = {token.replace(",", "") for token in NUMBER.findall(line)}
+    dates = {word for word in words if word in DATE_WORDS}
+    return written | set(digit_runs(line)) | spoken_numbers(words) | dates
+
+
+def _moved(words: list[str], holder: set[str], others: list[set[str]]) -> bool:
+    """The output line (`words`) took its number from `holder` only through words that a line
+    without the number also has, and that line matches the output line better: a swap."""
+    shared = {word for word in words if stems(word) & holder}
+    share = _share(words, holder)
+    return not shared or any(
+        all(stems(word) & other for word in shared) and _share(words, other) > share
+        for other in others
+    )
+
+
 def check_reorganize_dropped_numbers(notes: str, markdown: str) -> str | None:
-    """Every number and date of an input line is still there, on an output line that keeps
-    some of that line's content (merging duplicates keeps them; "99.2%" is not kept by a "2"
-    elsewhere)."""
-    outputs = []
-    for line in _lines(markdown):
-        words = words_of(line)
-        written = {token.replace(",", "") for token in NUMBER.findall(line)}
-        values = written | set(digit_runs(line)) | spoken_numbers(words)
-        dates = {word for word in words if word in DATE_WORDS}
-        outputs.append((values | dates, stem_set(_content(line))))
+    """Every number and date stays with what it was about.
+
+    Dropped: each number of an input line is on an output line that keeps some of that line's
+    content ("99.2%" is not kept by a "2" elsewhere). Moved: a number may not sit on a line that
+    a line without it matches better ("Venue $1,200 / Catering $4,200" may not swap). Merged
+    and split lines keep their numbers."""
+    inputs = [(_values(line), stem_set(_content(line))) for line in _lines(notes)]
+    outputs = [(_values(line), _content(line)) for line in _lines(markdown)]
     for line in _lines(notes):
-        wanted = _numbers(line)
-        if not wanted:
-            continue
         context = _content(line)
-        for value in wanted:
+        for value in _numbers(line):
             if not any(
                 value in values
-                and (not context or any(stems(word) & vocabulary for word in context))
-                for values, vocabulary in outputs
+                and (not context or any(stems(word) & stem_set(words) for word in context))
+                for values, words in outputs
             ):
                 return "dropped_number"
+    for values, words in outputs:
+        if not words:
+            continue
+        for value in values:
+            holders = [vocabulary for found, vocabulary in inputs if value in found]
+            others = [vocabulary for found, vocabulary in inputs if value not in found]
+            if holders and all(_moved(words, holder, others) for holder in holders):
+                return "number_moved"
     return None
 
 
@@ -960,7 +1027,7 @@ def check_reorganize_coverage(source: str, notes: str, markdown: str) -> str | N
         ):
             return "dropped_line"
     groups: dict[str, set[str]] = {}
-    for word in content_words(words_of(notes)):
+    for word in _reorganize_words(words_of(notes)):
         groups.setdefault(min(stems(word), key=len), set()).update(stems(word))
     if groups:
         kept = sum(1 for variants in groups.values() if variants & vocabulary)
@@ -984,8 +1051,12 @@ def _negative(line: str) -> bool:
 
 
 def _hedged(line: str) -> bool:
+    """A hedge word, or a negated knowing ("not sure", "don't know"): uncertainty, not denial."""
     words = words_of(line)
-    return any(word in HEDGE_WORDS for word in words)
+    return any(word in HEDGE_WORDS for word in words) or any(
+        (word in NEGATIONS or word.endswith("n't")) and following in EPISTEMIC
+        for word, following in zip(words, words[1:], strict=False)
+    )
 
 
 def _keeps_doubt(line: str) -> bool:
@@ -1002,9 +1073,12 @@ def check_reorganize_negations(notes: str, markdown: str) -> str | None:
     """No negated or hedged line loses its negation or hedge, and none is added.
 
     Each input line with a negation or hedge is matched to the output line holding most of its
-    content words; that line must still carry one. An output line with a negation must have a
-    negated input line among its sources. Then the structuring flip check runs over the whole
-    output, with the notes as the transcript."""
+    content words. A negated line's match must still be negated ("not hire" may not become
+    "maybe hire"); a hedged one's may be hedged or negated. An output line with a negation must
+    have a negated input line among its sources. Then the structuring flip check runs over the
+    output with the notes as the transcript, skipping output lines whose source line already
+    reads as a flip within the notes ("Book the venue for June" next to "Do not book the venue
+    before the deposit clears")."""
     inputs = _body_lines(notes)
     outputs = _body_lines(markdown)
     vocabularies = [stem_set(words_of(statement_text(_structure_line(line)))) for line in outputs]
@@ -1014,11 +1088,12 @@ def check_reorganize_negations(notes: str, markdown: str) -> str | None:
         words = _content(line)
         if not words:
             continue
+        keeps = _keeps_doubt if _hedged(line) else _negative
         shares = [_share(words, vocabulary) for vocabulary in vocabularies]
         if not shares or max(shares) < REORG_NEGATION_MATCH:
             continue
-        best = max(range(len(shares)), key=lambda i: (shares[i], _keeps_doubt(outputs[i])))
-        if not _keeps_doubt(outputs[best]):
+        best = max(range(len(shares)), key=lambda i: (shares[i], keeps(outputs[i])))
+        if not keeps(outputs[best]):
             return "negation"
     sources = [
         (stem_set(words_of(statement_text(_structure_line(line)))), _keeps_doubt(line))
@@ -1033,55 +1108,87 @@ def check_reorganize_negations(notes: str, markdown: str) -> str | None:
             continue
         if not any(doubt and share >= REORG_NEGATION_MATCH / 2 for share, doubt in shares):
             return "negation"
-    return check_flips(notes, [_structure_line(line) for line in outputs])
+    affirmed = {i for i, line in enumerate(inputs) if check_flips(notes, [_structure_line(line)])}
+    checked = []
+    for line in outputs:
+        words = _content(line)
+        shares = [_share(words, vocabulary) for vocabulary, _ in sources]
+        if shares and max(shares) > 0 and shares.index(max(shares)) in affirmed:
+            continue
+        checked.append(_structure_line(line))
+    return check_flips(notes, checked)
 
 
-def _items(markdown: str) -> tuple[list[tuple[str, list[str]]], list[tuple[str, list[str]]]]:
-    """(tasks, labelled lines) as (state, content words): `x`/` ` or `decision`/`question`."""
+def _names(text: str) -> set[str]:
+    """A task's people: capitalised words in bold and a capitalised owner ("Jo to confirm")."""
+    names = {
+        word.casefold()
+        for span in BOLD.finditer(text)
+        if not span.group(1).endswith(":")
+        for word in WORD.findall(span.group(1))
+        if any(char.isupper() for char in word)
+    }
+    owner = OWNER.match(text.replace("**", ""))
+    if owner and owner.group(1)[0].isupper() and owner.group(1).lower() not in ANYONE:
+        names.add(owner.group(1).casefold())
+    return names
+
+
+def _items(markdown: str):
+    """(tasks, labelled lines) as (state, content words, all words, names): the state is `x`/` `
+    or `decision`/`question`; names are kept only for tasks."""
     tasks, labelled = [], []
     for line in markdown.splitlines():
         if task := TASK.match(line):
-            words = content_words(words_of(task.group(2).replace("**", "")))
-            tasks.append((task.group(1).lower(), words or words_of(task.group(2))))
+            text = task.group(2)
+            words = content_words(words_of(text.replace("**", "")))
+            entry = (task.group(1).lower(), words or words_of(text), set(words_of(text)))
+            tasks.append((*entry, _names(text)))
         elif label := LABELLED.match(line):
-            words = content_words(words_of(label.group(2).replace("**", "")))
-            labelled.append((label.group(1).lower(), words or words_of(label.group(2))))
+            text = label.group(2)
+            words = content_words(words_of(text.replace("**", "")))
+            labelled.append((label.group(1).lower(), words or words_of(text), set(), set()))
     return tasks, labelled
 
 
-def _distinct(items: list[tuple[str, list[str]]]) -> list[tuple[set[str], list[str]]]:
-    """Input items with near-identical wording grouped: (states, words) per distinct item."""
-    groups: list[tuple[set[str], list[str]]] = []
-    for state, words in items:
-        for states, kept in groups:
+def _distinct(items):
+    """Input items with near-identical wording grouped: (states, words, names) per item."""
+    groups: list[tuple[set[str], list[str], set[str]]] = []
+    for state, words, _, names in items:
+        for states, kept, kept_names in groups:
             vocabulary = stem_set(kept)
             matched = sum(1 for word in set(words) if stems(word) & vocabulary)
             if matched / max(len(set(words)), len(set(kept)), 1) >= REORG_TASK_DUPLICATE:
                 states.add(state)
+                kept_names |= names
                 break
         else:
-            groups.append(({state}, words))
+            groups.append(({state}, words, set(names)))
     return groups
 
 
 def _check_items(inputs, outputs, dropped: str, changed: str, invented: str) -> str | None:
     """Each distinct input item has an output item holding most of its words, in one of its
-    states; every output item comes from an input item, and there are no more than before."""
-    vocabularies = [(state, stem_set(words)) for state, words in outputs]
-    for states, words in _distinct(inputs):
+    states and with its people; every output item comes from an input item, and there are no
+    more than before."""
+    found = [(state, stem_set(words), every) for state, words, every, _ in outputs]
+    for states, words, names in _distinct(inputs):
         matches = [
-            state
-            for state, vocabulary in vocabularies
+            (state, every)
+            for state, vocabulary, every in found
             if _share(words, vocabulary) >= REORG_TASK_MATCH
         ]
         if not matches:
             return dropped
-        if not states & set(matches):
+        same = [every for state, every in matches if state in states]
+        if not same:
             return changed
-    sources = [stem_set(words) for _, words in inputs]
+        if names and not any(names <= every for every in same):
+            return "task_owner"
+    sources = [stem_set(words) for _, words, _, _ in inputs]
     if len(outputs) > len(inputs) or any(
         not any(_share(words, vocabulary) >= REORG_TASK_MATCH for vocabulary in sources)
-        for _, words in outputs
+        for _, words, _, _ in outputs
     ):
         return invented
     return None
@@ -1132,11 +1239,12 @@ class ReorganizeResult:
     reorganized: bool
     changed: bool = False
     error: str | None = None
+    reason: str | None = None  # as NotesResult.reason
 
 
 async def reorganize(corrector, notes: str, outline: list[str]) -> ReorganizeResult:
     """One reorganize pass. Never raises backend errors and never includes their text."""
-    budget = corrector.config.structure_timeout
+    budget = corrector.config.reorganize_timeout
     try:
         async with asyncio.timeout(budget):
             text, finish = await corrector.complete(
@@ -1149,9 +1257,12 @@ async def reorganize(corrector, notes: str, outline: list[str]) -> ReorganizeRes
         text = clean_output(text)
         if finish in {"stop", "eos"} and _unchanged(notes, text):
             return ReorganizeResult(notes, True, False)
-        if reorganize_rejected(notes, text, finish, outline):
-            return ReorganizeResult(None, False, False, "rejected")
+        if reason := reorganize_rejection_reason(notes, text, finish, outline):
+            return ReorganizeResult(None, False, False, "rejected", reason)
         return ReorganizeResult(text, True, True)
+    except Preempted:
+        # A correction queued and took the helper: the pass did not run (the client retries).
+        return ReorganizeResult(None, False, False, "preempted")
     except (TimeoutError, httpx.TimeoutException):
         return ReorganizeResult(None, False, False, "timeout")
     except (httpx.HTTPError, OSError):
