@@ -48,6 +48,8 @@ public struct SettingsState: Sendable {
     /// "Keep clean-up model loaded": what the server last said, and where its memory is used ("this Mac" or the host).
     public var keepLoaded = KeepLoadedState()
     public var serverHost = "this Mac"
+    /// Live Notes' speaker-label model is on this Mac (Remove deletes it).
+    public var speakerModelDownloaded = false
 
     public init() {}
 }
@@ -135,6 +137,8 @@ public final class SettingsForm {
     /// Server: puts the chirp-server doctor command on the pasteboard.
     public let doctorButton = NSButton(title: "Copy Doctor Command", target: nil, action: nil)
     public let modelsButton = NSButton(title: "Manage Local Models…", target: nil, action: nil)
+    /// General: deletes Live Notes' on-device speaker model.
+    public let removeSpeakerModel = NSButton(title: "Remove Speaker Model", target: nil, action: nil)
     public let micButton = NSButton(title: "Fix…", target: nil, action: nil)
     public let accessibilityButton = NSButton(title: "Fix…", target: nil, action: nil)
     /// Under the checkbox: what it does, or why the last change failed.
@@ -176,7 +180,7 @@ public final class SettingsForm {
         micButton.setAccessibilityLabel("Fix Microphone access")
         accessibilityButton.setAccessibilityLabel("Fix Accessibility access")
 
-        for button in [setupButton, doctorButton, modelsButton] { button.bezelStyle = .rounded }
+        for button in [setupButton, doctorButton, modelsButton, removeSpeakerModel] { button.bezelStyle = .rounded }
         setupButton.setAccessibilityLabel("Set up Chirp")
 
         func row(_ title: String, _ control: NSView, help: NSTextField? = nil) -> [NSView] {
@@ -201,6 +205,7 @@ public final class SettingsForm {
             row("Overlay:", wordWaveform, help: Self.help("Draws each word's audio above it as you speak, so you can see what was heard.")),
             row("Startup:", launch, help: launchHelp),
             row("Setup:", setupButton, help: Self.help("Check the permissions and the server, and try a dictation.")),
+            row("Speakers:", removeSpeakerModel),
         ])
 
         let packRow = NSStackView(views: [soundPack, previewStart, previewStop])
@@ -407,6 +412,11 @@ public final class SettingsForm {
                                                : "No token yet — start chirp-server once to create it."
         serverStatus.set(symbol: "circle.fill", tone: s.serverStatusTone, text: s.serverStatus)
         modelsButton.isEnabled = ServerConfig.load(urlString: s.serverURL).isLoopback
+        removeSpeakerModel.isEnabled = s.speakerModelDownloaded
+        removeSpeakerModel.title = s.speakerModelDownloaded ? "Remove Speaker Model" : "Speaker Model Not Downloaded"
+        removeSpeakerModel.toolTip = s.speakerModelDownloaded
+            ? "Live Notes labels speakers with a model on this Mac. Removing it turns labels off until you download it again."
+            : "Live Notes downloads its speaker model only when you turn on Label speakers, and asks first."
         micStatus.set(symbol: s.micGranted ? "checkmark.circle.fill" : "exclamationmark.triangle.fill",
                       tone: s.micGranted ? .ok : .warning, text: s.micGranted ? "Allowed" : "Not allowed")
         accessibilityStatus.set(symbol: s.accessibilityGranted ? "checkmark.circle.fill" : "exclamationmark.triangle.fill",

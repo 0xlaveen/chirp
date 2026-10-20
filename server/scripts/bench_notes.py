@@ -4,7 +4,8 @@
 1600, 2400 and 4000 characters). `--set messy` uses tests/notes_messy_eval.jsonl, invented
 filler-heavy speech (600-2100 characters), and also runs Live Notes segment correction on
 each transcript cut into segment-sized pieces and on the whole transcript (the old 90 s
-segment), with the `live_notes` style and, for comparison, `default`. Every run also checks
+segment), with the `live_notes` style and, for comparison, `default`. `--set labelled` uses
+tests/notes_labelled_eval.jsonl, invented meetings with speaker labels (`Person 2: ...`). Every run also checks
 that the guards reject each case in tests/notes_negatives.jsonl. Reports latency, output
 tokens and guard pass rates. Not run in CI: it needs the model weights.
 """
@@ -26,7 +27,12 @@ from chirp_server.correction import HESITATIONS, WORD, Corrector, rejected
 from chirp_server.profiles import LIVE_NOTES, LIVE_NOTES_ID
 
 TESTS = Path(__file__).resolve().parents[1] / "tests"
-SETS = {"clean": TESTS / "notes_eval.jsonl", "messy": TESTS / "notes_messy_eval.jsonl"}
+SETS = {
+    "clean": TESTS / "notes_eval.jsonl",
+    "messy": TESTS / "notes_messy_eval.jsonl",
+    # Mac Live Notes speaker labels (#18): invented meetings, one `Person N:` or name per line.
+    "labelled": TESTS / "notes_labelled_eval.jsonl",
+}
 NEGATIVES = TESTS / "notes_negatives.jsonl"
 # About 15 characters per second of speech: a 45 s segment (the client's maximum).
 SEGMENT_CHARS = 675

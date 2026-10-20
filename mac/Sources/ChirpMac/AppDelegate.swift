@@ -60,6 +60,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         notes.onChange = { [weak self] in self?.menu?.refreshIcon() }
         notes.onShowWindow = { [weak self] focus in self?.notesWindow.show(focus: focus) }
         notesWindow.onOpenModels = { [localModelsWindow] in localModelsWindow.show() }
+        settingsWindow.onRemoveSpeakerModel = { [notes] in notes.removeSpeakerModel() }
+        notes.onSpeakerModelChange = { [settingsWindow] in settingsWindow.speakerModelChanged() }
         controller.onHotkeyPressed = { [weak self] in self?.onboardingWindow.hotkeyPressed() }
 
         chirpLog.info("launch microphone=\(Permissions.microphone.rawValue, privacy: .public) accessibility=\(Permissions.accessibilityGranted, privacy: .public) hotkey=\(settings.hotkey.id, privacy: .public)")

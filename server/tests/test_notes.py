@@ -713,3 +713,28 @@ async def test_real_model_structures_eval_entries():
             assert all(word.lower() in lowered for word in entry["keywords"]), entry["id"]
     finally:
         await corrector.close()
+
+
+# Speaker labels (Mac Live Notes, issue #18): labels arrive as transcript text, one `Person N:` or name per line.
+LABELLED = "Person 1: we will ship on friday\nPerson 2: i can send the spec by tuesday"
+
+
+def test_a_speaker_label_in_the_transcript_is_accepted():
+    assert notes.rejection_reason(LABELLED, "- [ ] **Person 2** to send the spec by **Tuesday**", "stop") is None
+
+
+def test_an_unknown_person_label_is_rejected():
+    # Person 7 never spoke: the number guard catches the invented label.
+    assert notes.rejection_reason(LABELLED, "- [ ] **Person 7** to send the spec by **Tuesday**", "stop") == "number"
+
+
+def test_a_renamed_speaker_is_accepted_and_an_invented_name_is_not():
+    transcript = "Maya: i will send the spec by friday\nPerson 2: sounds good"
+    assert notes.rejection_reason(transcript, "- [ ] **Maya** to send the spec by **Friday**", "stop") is None
+    assert notes.rejection_reason(transcript, "- [ ] **Theo** to send the spec by **Friday**", "stop") == "name"
+
+
+def test_the_prompt_has_the_speaker_rule():
+    prompt = notes.notes_system_prompt()
+    assert "Never invent or guess a real name for `Person N`" in prompt
+    assert "Person 2: okay. i can send the spec by friday" in prompt

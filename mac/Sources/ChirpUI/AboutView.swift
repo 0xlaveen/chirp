@@ -48,13 +48,19 @@ public final class AboutView: NSView {
         blurb.textColor = .secondaryLabelColor
         blurb.alignment = .center
         blurb.preferredMaxLayoutWidth = Self.width - 72
+        let credits = NSTextField(wrappingLabelWithString: "Live Notes speaker labels run on this Mac with FluidAudio (Apache-2.0) and NVIDIA Sortformer (CC-BY-4.0).")
+        credits.font = .systemFont(ofSize: NSFont.smallSystemFontSize)
+        credits.textColor = .tertiaryLabelColor
+        credits.alignment = .center
+        credits.preferredMaxLayoutWidth = Self.width - 72
 
-        let stack = NSStackView(views: [iconView, name, version, blurb])
+        let stack = NSStackView(views: [iconView, name, version, blurb, credits])
         stack.orientation = .vertical
         stack.alignment = .centerX
         stack.spacing = 4
         stack.setCustomSpacing(10, after: iconView)
         stack.setCustomSpacing(14, after: version)
+        stack.setCustomSpacing(10, after: blurb)
         stack.translatesAutoresizingMaskIntoConstraints = false
         addSubview(stack)
         NSLayoutConstraint.activate([

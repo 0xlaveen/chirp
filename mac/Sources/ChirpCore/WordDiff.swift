@@ -31,28 +31,50 @@ public enum WordDiff {
     public static func segments(raw: String, cleaned: String) -> [Segment]? {
         let a = words(raw), b = words(cleaned)
         guard a != b, !b.isEmpty, a.count * b.count <= maxPairs else { return nil }
-        let ka = a.map(key), kb = b.map(key)
-        // Longest common subsequence over the normalised keys.
-        var table = [[Int]](repeating: [Int](repeating: 0, count: b.count + 1), count: a.count + 1)
-        for i in stride(from: a.count - 1, through: 0, by: -1) {
-            for j in stride(from: b.count - 1, through: 0, by: -1) {
-                table[i][j] = ka[i] == kb[j] ? table[i + 1][j + 1] + 1 : max(table[i + 1][j], table[i][j + 1])
-            }
-        }
-        var out: [Segment] = []
-        var i = 0, j = 0
-        while i < a.count || j < b.count {
-            if i < a.count, j < b.count, ka[i] == kb[j] {
-                out.append(Segment(a[i] == b[j] ? .same : .changed, b[j]))
-                i += 1; j += 1
-            } else if j < b.count, i == a.count || table[i][j + 1] >= table[i + 1][j] {
-                out.append(Segment(.added, b[j])); j += 1
-            } else {
-                out.append(Segment(.removed, a[i])); i += 1
-            }
+        let out = walk(a.map(key), b.map(key)).map { step -> Segment in
+            guard let j = step.cleaned else { return Segment(.removed, a[step.raw!]) }
+            guard let i = step.raw else { return Segment(.added, b[j]) }
+            return Segment(a[i] == b[j] ? .same : .changed, b[j])
         }
         // A replacement reads removed-then-added, whichever way the walk happened to break the tie.
         return reorderedReplacements(out)
+    }
+
+    /// For each cleaned word, the index of the raw word it matches (same word up to case and punctuation), or nil
+    /// for a word the clean-up added. Nil when the texts are too long to compare cheaply.
+    public static func alignment(raw: [String], cleaned: [String]) -> [Int?]? {
+        let ka = raw.map(key), kb = cleaned.map(key)
+        if ka == kb { return Array(cleaned.indices) }
+        guard raw.count * cleaned.count <= maxPairs else { return nil }
+        var out = [Int?](repeating: nil, count: cleaned.count)
+        for step in walk(ka, kb) { if let j = step.cleaned { out[j] = step.raw } }
+        return out
+    }
+
+    /// Splits text into words the way the diff and the alignment count them.
+    public static func words(_ s: String) -> [String] { s.split(whereSeparator: \.isWhitespace).map(String.init) }
+
+    /// The longest-common-subsequence walk over normalised keys, in reading order: matched pairs, then words only in
+    /// the cleaned text (`raw` nil) or only in the raw text (`cleaned` nil).
+    private static func walk(_ ka: [String], _ kb: [String]) -> [(raw: Int?, cleaned: Int?)] {
+        var table = [[Int]](repeating: [Int](repeating: 0, count: kb.count + 1), count: ka.count + 1)
+        for i in stride(from: ka.count - 1, through: 0, by: -1) {
+            for j in stride(from: kb.count - 1, through: 0, by: -1) {
+                table[i][j] = ka[i] == kb[j] ? table[i + 1][j + 1] + 1 : max(table[i + 1][j], table[i][j + 1])
+            }
+        }
+        var out: [(raw: Int?, cleaned: Int?)] = []
+        var i = 0, j = 0
+        while i < ka.count || j < kb.count {
+            if i < ka.count, j < kb.count, ka[i] == kb[j] {
+                out.append((i, j)); i += 1; j += 1
+            } else if j < kb.count, i == ka.count || table[i][j + 1] >= table[i + 1][j] {
+                out.append((nil, j)); j += 1
+            } else {
+                out.append((i, nil)); i += 1
+            }
+        }
+        return out
     }
 
     /// The text the segments spell once the removed words are gone.
@@ -73,8 +95,6 @@ public enum WordDiff {
         flush()
         return out
     }
-
-    private static func words(_ s: String) -> [String] { s.split(whereSeparator: \.isWhitespace).map(String.init) }
 
     /// Case and punctuation are not part of a word's identity ("Three," matches "three").
     private static func key(_ w: String) -> String {

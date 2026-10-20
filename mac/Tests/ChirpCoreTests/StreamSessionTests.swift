@@ -24,6 +24,8 @@ final class MockServer: @unchecked Sendable {
         /// Send `correcting` at once on `stop`, then the final after `finalDelay` seconds.
         var correcting = false
         var finalDelay: Double = 0
+        /// Send this `final` message (JSON) instead of the default one.
+        var final: String?
     }
 
     private let listener: NWListener
@@ -144,9 +146,9 @@ final class MockServer: @unchecked Sendable {
                 let i = index[ObjectIdentifier(c)] ?? 0
                 return (i, _sockets[i] ?? Socket())
             }
-            let final = numberedFinals
+            let final = socket.final ?? (numberedFinals
                 ? #"{"type":"final","text":"Segment \#(i).","raw":"segment \#(i)","corrected":true}"#
-                : #"{"type":"final","text":"Hello, world.","raw":"hello world","corrected":true,"timings_ms":{"audio":200,"first_partial":50,"finalize":30}}"#
+                : #"{"type":"final","text":"Hello, world.","raw":"hello world","corrected":true,"timings_ms":{"audio":200,"first_partial":50,"finalize":30}}"#)
             if socket.correcting {
                 send(c, #"{"type":"correcting","seq":1,"raw":"segment \#(i)","profile":"default"}"#)
             }

@@ -345,8 +345,8 @@ private struct TranscriptPane: View {
                                 .font(.callout)
                                 .foregroundStyle(.tertiary)
                         }
-                        ForEach(model.document.segments) { segment in
-                            row(segment)
+                        ForEach(model.transcriptRows) { row in
+                            self.row(row)
                         }
                         if !model.document.livePartial.isEmpty {
                             HStack(alignment: .firstTextBaseline, spacing: 12) {
@@ -378,11 +378,21 @@ private struct TranscriptPane: View {
             .foregroundStyle(.secondary)
     }
 
-    @ViewBuilder private func row(_ s: NotesSegment) -> some View {
+    @ViewBuilder private func row(_ r: TranscriptRow) -> some View {
+        let s = r.segment
         HStack(alignment: .firstTextBaseline, spacing: 12) {
-            stamp(s.offset)
+            stamp(r.offset)
             VStack(alignment: .leading, spacing: 3) {
-                if let failure = s.failure {
+                if let turn = r.turn {
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        if let chip = r.chip { SpeakerChip(name: chip.name, color: chip.color, approximate: chip.approximate) }
+                        Text(model.showRaw ? turn.raw : turn.text)
+                            .font(.system(size: 13))
+                            .lineSpacing(2)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    if (turn.keptOriginal || s.keptOriginal) && !model.showRaw { keptOriginal }
+                } else if let failure = s.failure {
                     Text("⚠︎ audio not transcribed (\(failure))")
                         .font(.system(size: 13))
                         .foregroundStyle(.orange)
@@ -391,18 +401,48 @@ private struct TranscriptPane: View {
                         .font(.system(size: 13))
                         .lineSpacing(2)
                         .fixedSize(horizontal: false, vertical: true)
-                    if s.keptOriginal && !model.showRaw {
-                        Text("kept original")
-                            .font(.caption2.weight(.medium))
-                            .foregroundStyle(.secondary)
-                            .padding(.horizontal, 5)
-                            .padding(.vertical, 1)
-                            .background(Capsule().strokeBorder(Color.secondary.opacity(0.4)))
-                    }
+                    if s.keptOriginal && !model.showRaw { keptOriginal }
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
+    }
+
+    private var keptOriginal: some View {
+        Text("kept original")
+            .font(.caption2.weight(.medium))
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 5)
+            .padding(.vertical, 1)
+            .background(Capsule().strokeBorder(Color.secondary.opacity(0.4)))
+    }
+}
+
+/// A person's colour, the same in the transcript and wherever a chip shows. System colours, so both themes keep
+/// their contrast.
+enum SpeakerPalette {
+    static let colors: [Color] = [.blue, .orange, .green, .purple, .pink, .teal, .brown, .indigo]
+    static func color(_ index: Int) -> Color { colors[((index % colors.count) + colors.count) % colors.count] }
+}
+
+/// "Person 2" (or a name) on a capsule of the person's colour; dotted when the label is approximate (no word timings).
+struct SpeakerChip: View {
+    let name: String
+    let color: Int
+    var approximate = false
+
+    var body: some View {
+        let tint = SpeakerPalette.color(color)
+        Text(name)
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(tint)
+            .lineLimit(1)
+            .padding(.horizontal, 7)
+            .padding(.vertical, 1)
+            .background(Capsule().fill(tint.opacity(0.14)))
+            .overlay(Capsule().strokeBorder(tint.opacity(0.55), style: StrokeStyle(lineWidth: 1, dash: approximate ? [2, 2] : [])))
+            .fixedSize()
+            .accessibilityLabel("Speaker: \(name)" + (approximate ? ", approximate" : ""))
     }
 }
 
@@ -448,6 +488,23 @@ private struct NotesFooter: View {
                     .background(Capsule().fill(Color.red))
             }
             Spacer(minLength: 8)
+            if let status = model.speakerStatus {
+                HStack(spacing: 4) {
+                    if case .downloading = model.speakerModel { ProgressView().controlSize(.mini) }
+                    if case .loading = model.speakerModel { ProgressView().controlSize(.mini) }
+                    Text(status)
+                        .font(.caption)
+                        .foregroundStyle(model.speakerModel.isFailure ? AnyShapeStyle(Color.orange) : AnyShapeStyle(.secondary))
+                        .lineLimit(1)
+                }
+            }
+            Toggle(NotesStatus.speakerLabels, isOn: Binding(get: { model.speakerLabels },
+                                                             set: { model.onSpeakerLabelsToggle($0) }))
+                .toggleStyle(.switch)
+                .controlSize(.mini)
+                .font(.caption)
+                .help(NotesStatus.speakerHelp)
+                .disabled(model.isRecording || model.isBusy || model.speakerModel.isDownloading)
             Toggle("Structure notes", isOn: Binding(get: { model.structureEnabled },
                                                     set: { model.structureEnabled = $0; model.onStructureToggle($0) }))
                 .toggleStyle(.switch)

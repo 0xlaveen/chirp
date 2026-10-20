@@ -489,6 +489,40 @@ public enum Snapshots {
         return d
     }
 
+    /// The same meeting with speaker labels: three people, a backchannel, a turn across a segment boundary, an
+    /// approximate segment (no word timings) and a renamed person.
+    static func demoSpeakers(renamed: Bool = false) -> NotesDocument {
+        var d = NotesDocument(startedAt: Date(timeIntervalSince1970: 1_792_504_980))
+        typealias T = SpeakerAttribution.Turn
+        let said: [(TimeInterval, String, [T])] = [
+            (12, "okay so we're kicking off the lantern project today and the launch target moved to march third yeah march third", [
+                T(slot: 2, start: 12, text: "Okay, so we're kicking off the Lantern project today, and the launch target moved to March third.",
+                  raw: "okay so we're kicking off the lantern project today and the launch target moved to march third"),
+                T(slot: 0, start: 19.4, text: "Yeah, March third.", raw: "yeah march third"),
+            ]),
+            (48, "maya will send the draft spec by friday and theo books the design review", [
+                T(slot: 0, start: 48, text: "Maya will send the draft spec by Friday, and Theo books the design review.",
+                  raw: "maya will send the draft spec by friday and theo books the design review"),
+            ]),
+            (95, "on budget we decided to keep the vendor contract but no new headcount this quarter agreed", [
+                T(slot: 3, start: 95, text: "On budget, we decided to keep the vendor contract, but no new headcount this quarter.",
+                  raw: "on budget we decided to keep the vendor contract but no new headcount this quarter"),
+                T(slot: 2, start: 103.2, text: "Agreed.", raw: "agreed"),
+            ]),
+            (151, "open question is who owns qa for the beta", [
+                T(slot: 0, start: 151, text: "Open question is who owns QA for the beta.", raw: "open question is who owns qa for the beta",
+                  approximate: true),
+            ]),
+        ]
+        for (i, s) in said.enumerated() {
+            d.append(NotesSegment(id: i, offset: s.0, raw: s.1, text: s.2.map(\.text).joined(separator: " "), corrected: true))
+            d.attachSpeakers(s.2, toSegment: i)
+        }
+        if renamed { d.renameSpeaker(2, to: "Maya") }
+        d.livePartial = "the beta itself should start in the second week"
+        return d
+    }
+
     static func notes(_ name: String, _ configure: @escaping (NotesModel) -> Void) -> Scenario {
         Scenario(name: "notes-\(name)") {
             let model = NotesModel()
@@ -513,6 +547,17 @@ public enum Snapshots {
             },
             notes("transcript-raw") { $0.tab = .transcript; $0.showRaw = true; $0.document = demoNotes(gap: true) },
             notes("transcript") { $0.tab = .transcript; $0.document = demoNotes(gap: true) },
+            notes("transcript-speakers") {
+                $0.tab = .transcript; $0.document = demoSpeakers(); $0.speakerLabels = true; $0.speakerModel = .ready
+            },
+            notes("transcript-speakers-renamed") {
+                $0.tab = .transcript; $0.document = demoSpeakers(renamed: true); $0.speakerLabels = true; $0.speakerModel = .ready
+            },
+            notes("speakers-downloading") {
+                $0.state = .idle; $0.tab = .transcript; $0.speakerModel = .downloading(0.42); $0.elapsed = 0
+                $0.document = NotesDocument()
+            },
+            notes("speakers-failed") { $0.tab = .transcript; $0.speakerModel = .failed("the download failed") },
             notes("structuring-off") {
                 var d = NotesDocument(startedAt: Date(timeIntervalSince1970: 1_792_504_980))
                 for s in demoNotes().segments { d.append(s) }

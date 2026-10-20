@@ -63,6 +63,10 @@ Drop fillers, false starts, repetition and small talk. Merge repeated points.
 Write only what the speaker said. Never comment on the transcript itself, its wording or the \
 speech recognition (no "unclear what X refers to", no "the speaker says"), and never add \
 advice, opinions or answers of your own.
+Lines may start with a speaker label such as `Person 2:` or a name. Attribute only where it \
+matters: action owners (`- [ ] **Person 2** to send the spec by **Friday**`), decisions or \
+questions raised by someone, and disagreements. Never invent or guess a real name for \
+`Person N`. Keep labels exactly as written. Don't prefix every bullet.
 If the transcript has nothing substantive, output exactly: _(nothing yet)_
 """
 
@@ -104,6 +108,17 @@ EXAMPLES = [
         "- **Question:** **not** sure the budget covers it\n"
         "- Can't book before **June 1**\n"
         "- [ ] Call the caterer",
+    ),
+    (
+        [],
+        "Person 1: so for the spec review, we will not hire a contractor this quarter\n"
+        "Person 2: okay. i can send the spec by friday\n"
+        "Person 1: great. and who owns the beta?\n"
+        "Person 3: yeah good question",
+        "## Spec review\n"
+        "- We will **not** hire a contractor this quarter\n"
+        "- [ ] **Person 2** to send the spec by **Friday**\n"
+        "- **Question:** who owns the beta?",
     ),
 ]
 

@@ -13,6 +13,10 @@ public struct NotesSegment: Equatable, Sendable, Identifiable {
     public var keptOriginal: Bool
     /// Set for a gap: why this stretch of audio was not transcribed.
     public var failure: String?
+    /// Who said what (speaker labels on); nil without labels: off, a gap, or no model.
+    public var turns: [SpeakerTurn]?
+    /// The labels were attached before the diarizer settled this stretch (they waited the maximum time).
+    public var labelsTentative = false
 
     public init(id: Int, offset: TimeInterval, raw: String, text: String? = nil, corrected: Bool = false,
                 keptOriginal: Bool = false, failure: String? = nil) {
@@ -75,6 +79,8 @@ public struct NotesDocument: Equatable, Sendable {
     /// There is content that was not saved with Save… (Copy does not count).
     public private(set) var isDirty = false
     public private(set) var startedAt: Date
+    /// The people speaker labels found in this document (Person 1, Person 2…).
+    public private(set) var roster = SpeakerRoster()
 
     public init(startedAt: Date = Date()) { self.startedAt = startedAt }
 
@@ -100,6 +106,32 @@ public struct NotesDocument: Equatable, Sendable {
 
     public mutating func markSaved() { isDirty = false }
 
+    // MARK: speakers
+
+    /// Labels a committed segment: each turn's diarizer slot becomes a person, numbered by first appearance.
+    public mutating func attachSpeakers(_ turns: [SpeakerAttribution.Turn], toSegment id: Int, tentative: Bool = false) {
+        guard segments.indices.contains(id), !segments[id].isGap, !turns.isEmpty else { return }
+        segments[id].turns = turns.map {
+            SpeakerTurn(person: roster.person(forSlot: $0.slot), start: $0.start, text: $0.text, raw: $0.raw,
+                        approximate: $0.approximate, keptOriginal: $0.keptOriginal)
+        }
+        segments[id].labelsTentative = tentative
+        isDirty = true
+    }
+
+    /// A session-only name for a person (nil or blank: "Person N" again). Later passes and exports use it.
+    public mutating func renameSpeaker(_ id: Int, to name: String?) { roster.rename(id, to: name) }
+
+    /// The diarizer slot of the last labelled turn, for words the diarizer never placed.
+    public var lastSpeakerSlot: Int? {
+        segments.last { $0.turns?.isEmpty == false }?.turns?.last.flatMap { roster.slot(for: $0.person) }
+    }
+
+    /// People heard so far (after merges).
+    public var speakerCount: Int {
+        Set(segments.flatMap { $0.turns ?? [] }.map { roster.resolve($0.person) }).count
+    }
+
     // MARK: the open window
 
     /// The open window's segments that carry text.
@@ -108,9 +140,15 @@ public struct NotesDocument: Equatable, Sendable {
         return segments[windowStart...].filter { !$0.isGap && !$0.text.isEmpty }
     }
 
-    /// The open window's transcript as a pass sends it (segments joined with newlines), up to segment index `end`.
+    /// The open window's transcript as a pass sends it (segments joined with newlines, a labelled segment one
+    /// `Person 2: …` line per turn), up to segment index `end`.
     func windowTranscript(through end: Int? = nil) -> String {
-        windowSegments.filter { $0.id <= (end ?? Int.max) }.map(\.text).joined(separator: "\n")
+        windowSegments.filter { $0.id <= (end ?? Int.max) }.map(labelledText).joined(separator: "\n")
+    }
+
+    private func labelledText(_ s: NotesSegment) -> String {
+        guard let turns = s.turns, !turns.isEmpty else { return s.text }
+        return turns.map { roster.displayName($0.person) + ": " + $0.text }.joined(separator: "\n")
     }
 
     /// Transcript characters in the open window as sent, up to segment index `end` (all of it when nil).
@@ -236,11 +274,18 @@ public struct NotesDocument: Equatable, Sendable {
     }
 
     /// One line per segment: `**[00:00:12]** text`, gaps and "kept original" marked. `raw` swaps in the raw text.
+    /// A labelled segment has one line per turn instead: `**[00:01:12] Person 1:** text`.
     public func transcriptLines(raw: Bool = false) -> [String] {
-        segments.map { s in
+        segments.flatMap { s -> [String] in
+            if let turns = s.turns, !turns.isEmpty, s.failure == nil {
+                return turns.map { t in
+                    "**[\(Self.timestamp(t.start))] \(roster.displayName(t.person)):** " + (raw ? t.raw : t.text)
+                        + ((s.keptOriginal || t.keptOriginal) && !raw ? " _(kept original)_" : "")
+                }
+            }
             let stamp = "**[\(Self.timestamp(s.offset))]** "
-            if let failure = s.failure { return stamp + "⚠︎ audio not transcribed (\(failure))" }
-            return stamp + (raw ? s.raw : s.text) + (s.keptOriginal && !raw ? " _(kept original)_" : "")
+            if let failure = s.failure { return [stamp + "⚠︎ audio not transcribed (\(failure))"] }
+            return [stamp + (raw ? s.raw : s.text) + (s.keptOriginal && !raw ? " _(kept original)_" : "")]
         }
     }
 

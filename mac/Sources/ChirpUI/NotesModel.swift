@@ -24,6 +24,39 @@ public enum NotesStatus {
     public static let stopped = "Stopped"
     public static let empty = "Press Record or \(MenuContent.notesHotkeyTitle) to start taking notes."
     public static let privacy = "Notes stay in memory until you save them."
+    public static let speakerLabels = "Label speakers"
+    public static let speakerHelp = "Labels who is talking as Person 1, Person 2… On this Mac only: voices, labels and audio never leave it. Up to 4 people; a 5th voice joins the closest one."
+    public static func speakerDownloadPrompt(size: String) -> String {
+        "Speaker labels need a \(size) on-device model, downloaded once. Audio never leaves this Mac."
+    }
+}
+
+/// The on-device speaker model, as the Notes window shows it.
+public enum SpeakerModelState: Equatable, Sendable {
+    case notDownloaded
+    /// 0…1.
+    case downloading(Double)
+    case loading
+    case ready
+    case failed(String)
+
+    public var isFailure: Bool { if case .failed = self { true } else { false } }
+    public var isDownloading: Bool { if case .downloading = self { true } else { false } }
+}
+
+/// One transcript row: a whole segment (no labels, or a gap), or one speaker turn of a labelled segment.
+public struct TranscriptRow: Identifiable, Equatable {
+    public var id: String
+    public var offset: TimeInterval
+    public var segment: NotesSegment
+    public var turn: SpeakerTurn?
+    /// The speaker chip's name and colour slot; nil when the chip collapses (same person as the row before).
+    public var chip: (name: String, color: Int, approximate: Bool)?
+
+    public static func == (a: TranscriptRow, b: TranscriptRow) -> Bool {
+        a.id == b.id && a.offset == b.offset && a.segment == b.segment && a.turn == b.turn
+            && a.chip?.name == b.chip?.name && a.chip?.color == b.chip?.color && a.chip?.approximate == b.chip?.approximate
+    }
 }
 
 /// What the Notes window shows: a mirror of `NotesRecorder` plus the window's own choices. In memory only; the
@@ -45,6 +78,9 @@ public final class NotesModel {
     /// The server is on this Mac, so "Manage Local Models…" can open the models window.
     public var canManageModels = false
     public var reduceMotion = false
+    /// The user's "Label speakers" toggle, and the model behind it.
+    public var speakerLabels = false
+    public var speakerModel: SpeakerModelState = .notDownloaded
 
     public var onRecordToggle: () -> Void = {}
     public var onCopy: () -> Void = {}
@@ -53,6 +89,7 @@ public final class NotesModel {
     public var onManageModels: () -> Void = {}
     public var onStructureToggle: (Bool) -> Void = { _ in }
     public var onTabChange: (NotesTab) -> Void = { _ in }
+    public var onSpeakerLabelsToggle: (Bool) -> Void = { _ in }
 
     public init() {}
 
@@ -141,6 +178,47 @@ public final class NotesModel {
 
     /// A start error may be recorded only while the recorder is not starting, recording or finishing.
     public static func acceptsStartError(_ recorder: NotesRecorderState) -> Bool { !recorder.isActive }
+
+    // MARK: speakers
+
+    /// The footer's speaker line: the download, or how many people were heard.
+    public var speakerStatus: String? {
+        switch speakerModel {
+        case .downloading(let f): return "Downloading speaker model… \(Int((f * 100).rounded()))%"
+        case .loading: return speakerLabels ? "Loading speaker model…" : nil
+        case .failed(let message): return "Speaker labels unavailable: \(message)"
+        case .notDownloaded, .ready:
+            guard speakerLabels else { return nil }
+            let n = document.speakerCount
+            return n == 0 ? nil : n == 1 ? "1 speaker" : "\(n) speakers"
+        }
+    }
+
+    /// A chip reappears for the same person after this long.
+    public static let chipRepeat: TimeInterval = 60
+
+    /// The transcript's rows: a labelled segment gives one row per turn, and consecutive turns by one person (across
+    /// segments too) collapse the chip until a minute has passed.
+    public var transcriptRows: [TranscriptRow] {
+        var rows: [TranscriptRow] = []
+        var last: (person: Int, at: TimeInterval)?
+        let roster = document.roster
+        for s in document.segments {
+            guard let turns = s.turns, !turns.isEmpty, !s.isGap else {
+                rows.append(TranscriptRow(id: "\(s.id)", offset: s.offset, segment: s))
+                last = nil
+                continue
+            }
+            for (i, t) in turns.enumerated() {
+                let person = roster.resolve(t.person)
+                let same = last.map { $0.person == person && t.start - $0.at < Self.chipRepeat } ?? false
+                if !same { last = (person, t.start) }
+                rows.append(TranscriptRow(id: "\(s.id).\(i)", offset: t.start, segment: s, turn: t,
+                                          chip: same ? nil : (roster.displayName(person), roster.colorIndex(person), t.approximate)))
+            }
+        }
+        return rows
+    }
 
     /// The words VoiceOver hears for a status change.
     public var announcement: String {

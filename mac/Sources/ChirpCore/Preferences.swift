@@ -204,15 +204,22 @@ public final class Preferences: @unchecked Sendable {
     }
     /// The `start` options for a Live Notes segment: the clean-up toggle (when the server offers it) with the server's
     /// hidden `live_notes` style, whose prompt is tuned to its guard, so no edited prompt goes along. An older server
-    /// gets the default style with the user's edited default prompt. Per-app styles and word timings never apply.
-    public func notesStartOptions(health: Health?) -> StartOptions {
+    /// gets the default style with the user's edited default prompt. Per-app styles never apply; word timings only
+    /// with `speakerLabels` (they place the words on the speaker timeline).
+    public func notesStartOptions(health: Health?, speakerLabels: Bool = false) -> StartOptions {
         let enabled = correction && (health?.correctionAvailable ?? false)
         if health?.notesCorrection == true {
             return StartOptions(client: "mac", correction: enabled, correctionProfile: CorrectionProfile.liveNotesID,
-                                wordTimings: false)
+                                wordTimings: speakerLabels)
         }
         return StartOptions(client: "mac", correction: enabled, correctionProfile: CorrectionProfile.defaultID,
-                            correctionPrompt: correctionPrompts[CorrectionProfile.defaultID], wordTimings: false)
+                            correctionPrompt: correctionPrompts[CorrectionProfile.defaultID], wordTimings: speakerLabels)
+    }
+    /// Live Notes' "Label speakers" toggle: off until the user turns it on and the on-device model is downloaded.
+    /// A preference only; no label, name or voice is ever stored.
+    public var notesSpeakerLabels: Bool {
+        get { defaults.bool(forKey: "notesSpeakerLabels") }
+        set { defaults.set(newValue, forKey: "notesSpeakerLabels") }
     }
     /// Set only when the first-run window is finished (never on close), so an interrupted setup shows again.
     public var didOnboard: Bool {
