@@ -439,6 +439,7 @@ def create_app(settings=None, engine=None, token=None, corrector=None):
                 "notes_structure": True,
                 # The hidden `live_notes` style for Live Notes segments exists.
                 "notes_correction": True,
+                "notes_reorganize": True,
             }
         )
 
@@ -516,8 +517,9 @@ def create_app(settings=None, engine=None, token=None, corrector=None):
             managed.prewarm()
         return JSONResponse(correction_settings_payload())
 
-    async def notes_structure(request: Request):
-        """Stateless structuring: no engine lease, no retention, lengths-only logging."""
+    async def notes_pass(request: Request, validate, run, respond):
+        """Shared by the notes endpoints: stateless, no engine lease, no retention, and one
+        notes generation at a time server-wide (`structuring`)."""
         if not authorized(credential, bearer(request.headers)):
             return JSONResponse(
                 error("auth"), status_code=401, headers={"WWW-Authenticate": "Bearer"}
@@ -530,7 +532,7 @@ def create_app(settings=None, engine=None, token=None, corrector=None):
                 if len(body) + len(chunk) > notes.MAX_BODY_BYTES:
                     raise ValueError("Request too large")
                 body.extend(chunk)
-            transcript, outline, _final = notes.validate_request(json.loads(bytes(body)))
+            fields = validate(json.loads(bytes(body)))
         except ValueError:  # includes malformed JSON and invalid UTF-8
             return JSONResponse(error("bad_notes"), status_code=400)
         if structuring.locked():
@@ -539,23 +541,69 @@ def create_app(settings=None, engine=None, token=None, corrector=None):
             started = time.perf_counter()
             if managed is not None:
                 managed.prewarm()
-            result = await notes.structure(corrector, transcript, outline)
+            result = await run(*fields[:2])
             elapsed = (time.perf_counter() - started) * 1000
-        log.info(
-            "notes_structure chars=%d outline=%d structured=%s error=%s ms=%.1f",
-            len(transcript),
-            len(outline),
-            result.structured,
-            result.error,
-            elapsed,
-        )
-        return JSONResponse(
-            {
+        return respond(fields, result, elapsed)
+
+    async def notes_structure(request: Request):
+        """Lengths-only logging; the transcript and Markdown never reach the log."""
+
+        def respond(fields, result, elapsed):
+            transcript, outline, _final = fields
+            log.info(
+                "notes_structure chars=%d outline=%d structured=%s error=%s reason=%s ms=%.1f",
+                len(transcript),
+                len(outline),
+                result.structured,
+                result.error,
+                result.reason,
+                elapsed,
+            )
+            body = {
                 "markdown": result.markdown,
                 "structured": result.structured,
                 "error": result.error,
                 "timings_ms": {"structure": elapsed},
             }
+            return JSONResponse(body if result.structured else body | {"reason": result.reason})
+
+        return await notes_pass(
+            request,
+            notes.validate_request,
+            lambda transcript, outline: notes.structure(corrector, transcript, outline),
+            respond,
+        )
+
+    async def notes_reorganize(request: Request):
+        """Lengths-only logging; the notes and Markdown never reach the log."""
+
+        def respond(fields, result, elapsed):
+            text, outline, _final = fields
+            log.info(
+                "notes_reorganize chars=%d outline=%d reorganized=%s changed=%s error=%s reason=%s "
+                "ms=%.1f",
+                len(text),
+                len(outline),
+                result.reorganized,
+                result.changed,
+                result.error,
+                result.reason,
+                elapsed,
+            )
+            body = {
+                "markdown": result.markdown,
+                "reorganized": result.reorganized,
+                "changed": result.changed,
+                "error": result.error,
+                "timings_ms": {"reorganize": elapsed},
+            }
+            return JSONResponse(body if result.reorganized else body | {"reason": result.reason})
+
+        return await notes_pass(
+            request,
+            notes.validate_reorganize_request,
+            lambda text, outline: notes.reorganize(corrector, text, outline),
+            respond,
         )
 
     async def transcribe(request: Request):
@@ -730,6 +778,7 @@ def create_app(settings=None, engine=None, token=None, corrector=None):
             Route("/v1/correction/settings", correction_settings, methods=["GET", "PUT"]),
             Route("/v1/transcribe", transcribe, methods=["POST"]),
             Route("/v1/notes/structure", notes_structure, methods=["POST"]),
+            Route("/v1/notes/reorganize", notes_reorganize, methods=["POST"]),
             WebSocketRoute("/v1/stream", stream),
         ],
         lifespan=lifespan,

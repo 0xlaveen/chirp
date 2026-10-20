@@ -39,6 +39,7 @@ def test_health_redaction(client):
         "correction_loaded": False,
         "notes_structure": True,
         "notes_correction": True,
+        "notes_reorganize": True,
     }
 
 

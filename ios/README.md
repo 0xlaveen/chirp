@@ -13,35 +13,34 @@ never used.
 This is a **personal install** target. No App Store distribution, TestFlight or
 ad-hoc readiness is claimed or tested.
 
-## Status: written, not yet installable (2026-10-18)
+## Status: builds and passes simulator gates; not yet on a device (2026-10-19)
 
-The source for the app, keyboard, widgets and intents is complete on the iOS
-integration branch, but **no installable build exists yet**. The Mac used for
-development has only the Command Line Tools — `xcode-select -p` returns
-`/Library/Developer/CommandLineTools` — so there is no full Xcode, no iOS SDK
-and no iOS Simulator runtime. **No iOS compile, simulator run, entitlement,
-provisioning or on-device check is claimed anywhere in this repo.**
+Full Xcode with the iPhoneSimulator 27.0 SDK is now on the build Mac. The app,
+keyboard and widgets **build**, and the unit and UI tests **pass on iPhone and
+iPad simulators**, including a UI test that drives the **real installed Chirp
+Keyboard extension**. That test adds the keyboard in simulator Settings, allows
+Full Access, switches to it with the globe key, and dictates synthetic audio
+into an app text field through the real encrypted App Group mailbox. **Nothing
+has been installed, signed for or run on a physical iPhone or iPad yet.**
 
-What has actually passed, on macOS with the CLT (see
-[docs/review/ios-foundation.md](../docs/review/ios-foundation.md) and
-[docs/review/ios-keyboard.md](../docs/review/ios-keyboard.md)):
-
-| Check | Result |
+| Check (2026-10-19) | Result |
 |---|---|
-| `ios/Shared/scripts/test.sh` (portable pairing/storage/history/bridge) | 20 tests in 5 suites, exit 0 |
-| `mac/scripts/test.sh` + `cd mac && swift build -c release` | 380 tests in 61 suites + release build, exit 0 |
-| `swift test --package-path ios/Keyboard/Policy …` (insertion safety) | 22 test functions (53 expanded cases), exit 0 |
-| `swiftc -frontend -parse` on the six UIKit/Intents/Widgets sources | parse-only pass — **not** an iOS build |
-| `ios/scripts/check-sources.sh` (project structure, plists, per-target syntax) | passed, exit 0 |
-| `ios/scripts/typecheck-catalyst.sh` (focused Catalyst typecheck of SessionCoordinator, MicrophoneCapture, PairingScanner, DebugFixtures plus ChirpCore/ChirpIOSCore, with a temporary Activity facade) | passed — a compiler aid, **not** iOS SDK validation; excludes SwiftUI views, ActivityKit, intents, widgets and all runtime behavior |
+| `ios/scripts/simulator.sh build` — iPhone 17 and iPad Pro 11-inch (M5), iOS 27.0 | BUILD SUCCEEDED on both |
+| `ios/scripts/simulator.sh test` — same two simulators | 15 tests in 2 suites, both |
+| `ios/scripts/simulator.sh ui` — same two simulators | 4/4 pass, no skips, both: app pair/dictate/raw/end, history + rotation, real keyboard dictation after existing text and into an empty field |
+| `swift test --package-path ios/Keyboard/Policy` (insertion safety + voice-first presenter) | 62 test functions in 9 suites (142 expanded cases) |
+| `ios/Shared/scripts/test.sh` (pairing/storage/history/bridge) | 20 tests in 5 suites |
+| `mac/scripts/test.sh` | 393 tests in 62 suites |
+| `ios/scripts/check-sources.sh` | passed |
 
-These are macOS execution of the portable models, storage/crypto and
-insertion-safety logic, plus source and structural checks. The app's own
-simulator unit/UI tests have **not** run, and no iOS SDK, simulator or runtime
-behavior is validated. App and device behavior described below is implemented
-but pending the Xcode and device gates; the app track's evidence is in
-[ios-app.md](../docs/review/ios-app.md). The manual acceptance checklist for both iPhone and iPad
-lives in [docs/milestones/M5-ios.md](../docs/milestones/M5-ios.md).
+Simulator runs use synthetic audio and a synthetic transport — no microphone,
+no Mac server. They cannot establish device signing/provisioning, the
+keyboard's URL handoff to the app, background-audio survival, lock-screen
+behavior or App Store acceptance; those remain operator device gates in
+[docs/milestones/M5-ios.md](../docs/milestones/M5-ios.md). Evidence:
+[docs/review/ios-simulator.md](../docs/review/ios-simulator.md),
+[docs/review/ios-keyboard.md](../docs/review/ios-keyboard.md),
+[docs/review/ios-app.md](../docs/review/ios-app.md).
 
 One server prerequisite: the server must run the updated source from this
 branch, which accepts `"ios"` alongside `"mac"` and `"android"` as `client`
@@ -92,8 +91,10 @@ installation is Xcode's Run action, performed by you.
    | `CHIRP_KEYCHAIN_ACCESS_GROUP` | `$(AppIdentifierPrefix)dev.chirp.ios.shared` |
    | `DEVELOPMENT_TEAM` | empty — you must set it |
 
-   Create an **untracked** `ios/Config/Local.xcconfig` (the project includes it
-   if present) with at least `DEVELOPMENT_TEAM = <your team>`; change the bundle
+   Copy `ios/Config/Local.example.xcconfig` to the **untracked**
+   `ios/Config/Local.xcconfig` (the project includes it if present) and set at
+   least `DEVELOPMENT_TEAM = <your team>` (Xcode → Settings → Accounts shows
+   it); the keychain group follows `CHIRP_BUNDLE_ID` automatically; change the bundle
    prefix, App Group and keychain group there too if `dev.chirp.ios` collides
    with another app on your Apple ID. Whatever you choose, the **same** team,
    App Group and keychain access group must apply to all three targets — app,
@@ -115,8 +116,11 @@ installation is Xcode's Run action, performed by you.
    ios/scripts/simulator.sh ui "$CHIRP_SIMULATOR_UUID"
    ```
 
-   The script regenerates the project and runs an **unsigned** `xcodebuild`
-   against that explicit available iPhone/iPad simulator UUID: `test` runs the
+   The script regenerates the project and runs `xcodebuild` with simulator-only
+   **ad-hoc** signing (`CODE_SIGN_IDENTITY=-`, no team or Apple ID) so the App
+   Group and shared-Keychain entitlements exist and the keyboard UI test can
+   reach the app; `CHIRP_SIMULATOR_SIGNING=unsigned` reproduces the old unsigned
+   build. It targets that explicit available iPhone/iPad simulator UUID: `test` runs the
    `ChirpIOS` scheme unit tests, `ui` the `ChirpIOS-UI` UI tests. It never
    installs on devices. All six gates (build, unit and UI on both device
    families) must pass before the hardware steps below, which are then purely
@@ -174,8 +178,16 @@ supported way to point iOS at a public server.
 
 ## Enable the keyboard
 
-On the device: **Settings → General → Keyboard → Keyboards → Add New Keyboard →
-Chirp Keyboard**, then select Chirp Keyboard and enable **Full Access**.
+The **Dictate** tab has a **Set up Chirp Keyboard** checklist: pair your Mac,
+turn on the keyboard, start a session. Each step shows a check mark when done.
+
+1. Tap **Open Chirp in Settings** (also in the Settings tab). In Settings →
+   Chirp → **Keyboards**, turn on **Chirp Keyboard** and **Allow Full Access**.
+   The long way also works: Settings → General → Keyboard → Keyboards → Add
+   New Keyboard → Chirp.
+2. Open Chirp Keyboard once in any app (globe key). With Full Access it writes
+   a content-free timestamp to the App Group, so the checklist marks the step
+   done. Without Full Access it cannot, and the step stays open.
 
 Full Access is required because the keyboard talks to the app through the
 encrypted App Group mailbox — it never gives the keyboard a microphone; Apple's
@@ -207,10 +219,21 @@ A transport failure during clean-up keeps the raw transcript and leaves the
 session armed; other transport failures end the session. The notice tells you
 when to reopen Chirp.
 
-While dictating: **Stop dictation** finalizes (⌘Space toggles, Esc cancels).
-After the final you get explicit **Copy**, **Share** and — when clean-up
-changed the text — **Use raw** for 5 seconds (⌘⇧Z); the original transcript is
-expandable below. ⌘⇧E ends the session. The app never writes the clipboard by
+While dictating: **Stop dictation** finalizes. After the final you get
+explicit **Copy**, **Share** and — when clean-up changed the text — **Use raw**
+for 5 seconds; the original transcript is expandable below.
+
+Hardware keyboard shortcuts in the app live in a **Dictation** menu, so they work
+from every tab and show in the iPad's hold-⌘ overlay and menu bar:
+
+| Shortcut | Action |
+|---|---|
+| ⌘Return | Start or stop dictation (⌘Space is Spotlight on iPadOS) |
+| ⌘. (or Esc while dictating) | Cancel dictation |
+| ⌘⇧C | Copy result |
+| ⌘⇧Z | Use raw transcript |
+| ⌘⇧K | Start keyboard session |
+| ⌘⇧E | End session | The app never writes the clipboard by
 itself. Utterances stop automatically just under the 120-second protocol cap
 (about 119 seconds).
 
@@ -219,14 +242,35 @@ keeps recordings" stays on screen in the app, keyboard and Live Activity.
 
 ## Dictate from any app (keyboard)
 
-Switch to Chirp Keyboard in your editor. Its keys: **Start dictation / Stop
-dictation**, **Cancel**, **Use raw**, **Style**, **End session**, **Open
-Chirp**, Space, Delete, Return and the globe.
+Chirp Keyboard is voice-first: keep Apple's keyboard for typing and switch to
+Chirp to dictate. There is deliberately no QWERTY layout.
+
+Layout, top to bottom:
+
+- **Status line** — phase, a keyboard-local **elapsed timer** while this
+  keyboard's own utterance is connecting/listening, and **time remaining** in
+  the session (omitted for "Never"), e.g. `Listening… · 0:07 · 12:30 left`.
+  Below it a detail line (collapsed in landscape iPhone) shows short,
+  content-free guidance for the session's error code (unreachable → check
+  Tailscale/Mac, auth → re-pair in Chirp, permission → microphone in Chirp,
+  timeout, interrupted, busy, too long, storage, …).
+- **One large primary button** (≥ 64 pt; full width on iPhone, capped at a
+  readable width and centered on iPad) whose role follows state: *Open Chirp
+  to start session* → *Start dictation* → *Stop dictation* → disabled
+  *Polishing…*. A small *Open Chirp* link appears only in fallback states.
+- **Secondary row** — **Cancel**, **Use raw** (shows the seconds left in its
+  5 s window) and the **Style** menu.
+- **Bottom row** — globe (only when iOS asks for it), **Space**, **Delete**
+  (press and hold repeats, accelerating; it stops on release and if the
+  keyboard takes ownership of an utterance), **Return** and **End session**.
+
+Start and stop give a light haptic when Full Access is on.
 
 1. Arm a session in the app first (see above). The keyboard shows "Session
    armed".
-2. Tap **Start dictation**. The first tap when no session exists tries to open
-   Chirp via `chirp://session/start`; iOS may refuse this from a keyboard
+2. Tap **Start dictation**. The primary button reads *Open Chirp to start
+   session* when no session exists; tapping it tries to open Chirp via
+   `chirp://session/start`; iOS may refuse this from a keyboard
    extension. The keyboard then tells you to open Chirp manually and return
    with the system Back-to-app affordance or the app switcher — automatic
    return is not possible.
@@ -246,12 +290,29 @@ never blindly deletes by length. Size bounds: results up to 8,192 UTF-16 units,
 per-side context evidence up to 16,384 UTF-16 units, results up to 65,536 UTF-8
 bytes — oversized input is refused before any edit rather than half-written.
 
+## iPad with a hardware keyboard
+
+Two iPadOS limits shape this: iPadOS hides on-screen keyboards, including Chirp
+Keyboard, while a hardware keyboard is attached; and keyboard extensions never
+receive hardware key presses. So there are two ways to dictate into another app:
+
+- **Show Chirp Keyboard.** Press the globe key (or Control-Space) until Chirp is
+  chosen, then use the small keyboard bar at the bottom of the screen to show
+  it, and tap Start/Stop dictation. Text goes in at the cursor as usual.
+- **A global shortcut key.** In the Shortcuts app, make a shortcut with Chirp's
+  **Toggle Chirp dictation** action. Then Settings → Accessibility → Keyboards →
+  **Full Keyboard Access** → on → **Commands**, and give that shortcut a key
+  combination. With a keyboard session running, press it to start; press it
+  again to stop. Chirp copies the final text, so press ⌘V to paste. Toggle
+  runs in the background and never starts a session cold: with no session it
+  fails and asks you to open Chirp.
+
 ## Companion controls (Action Button, Control Center, Shortcuts)
 
 Two iOS 18 controls — **Chirp dictation** (start) and **End Chirp session** —
 can be added to Control Center and the Action Button (supported hardware). App
-Shortcuts phrases: "Start dictation with Chirp", "Stop dictation with
-Chirp", "Cancel dictation with Chirp", "End session with Chirp". While a
+Shortcuts phrases: "Start dictation with Chirp", "Toggle dictation with
+Chirp", "Stop dictation with Chirp", "Cancel dictation with Chirp", "End session with Chirp". While a
 session runs, a Live Activity on the lock screen/Dynamic Island shows the
 content-free phase (e.g. "Microphone active · dictating") with Start/Stop/
 Cancel/End buttons; enable Live Activities for Chirp in system settings or
@@ -259,7 +320,7 @@ session start refuses.
 
 Companion start requires the app in the foreground for permission/setup — the
 intent opens Chirp rather than recording cold in the background. Companion
-**Stop** is the one path that explicitly copies its own fresh final to the
+**Stop** (and **Toggle** when it stops) is the one path that explicitly copies its own fresh final to the
 clipboard; keyboard and in-app dictation never write the clipboard implicitly.
 Nothing transcript-like ever appears on the lock screen.
 
@@ -316,6 +377,8 @@ when it matters; surrounding editor text is never collected.
 | Symptom | Meaning / fix |
 |---|---|
 | "Dictation needs Full Access" | Enable Full Access for Chirp Keyboard in Settings → General → Keyboard → Keyboards. |
+| Setup step 2 never shows done | Open Chirp Keyboard once in any app with Full Access on. The step needs the keyboard to reach the App Group, which only works with Full Access. |
+| Chirp Keyboard doesn't appear on iPad | A hardware keyboard is attached. Show it from the keyboard bar at the bottom of the screen, or use the Toggle dictation shortcut key. |
 | "Start a session in Chirp" in the keyboard | No armed session (or the lease expired). Open Chirp, tap Start keyboard session, return to your editor. |
 | "iOS could not open Chirp from this keyboard" | Expected fallback; open Chirp manually and return via app switcher. |
 | "Text kept in place" | The editor's context changed or is unreliable; recover the dictation in the app. Your text is never auto-deleted. |
@@ -326,15 +389,13 @@ when it matters; surrounding editor text is never collected.
 
 ## Develop and test
 
-Runs today with only the Command Line Tools (macOS execution of portable
-logic — not iOS runtime evidence):
+Portable logic (runs on macOS; also works with only the Command Line Tools):
 
 ```sh
 ios/Shared/scripts/test.sh                 # 20 tests / 5 suites
 mac/scripts/test.sh && (cd mac && swift build -c release)   # 380 tests / 61 suites + release
-swift test --package-path ios/Keyboard/Policy \
-  -Xswiftc -plugin-path \
-  -Xswiftc /Library/Developer/CommandLineTools/usr/lib/swift/host/plugins/testing
+swift test --package-path ios/Keyboard/Policy   # full Xcode selected; with only the CLT add
+#   -Xswiftc -plugin-path -Xswiftc /Library/Developer/CommandLineTools/usr/lib/swift/host/plugins/testing
 ios/scripts/check-sources.sh                # regenerate + structural, plist and per-target syntax checks
 ios/scripts/typecheck-catalyst.sh           # optional Catalyst compiler aid (see below)
 ```
@@ -350,13 +411,15 @@ unmodified). It has already caught one real conditional-API mistake, but it
 does not validate the iOS SDK, signing, the simulator, SwiftUI view macro
 expansion, App Intents or ActivityKit, and it is not runtime evidence.
 
-After full Xcode is installed: run `ios/scripts/toolchain.sh`, then the three
-simulator actions from the install section — build, unit tests (`ChirpIOS`
-scheme) and UI tests (`ChirpIOS-UI` scheme) — on disposable iPhone and iPad
-simulators (unsigned), plus the `KeyboardPolicy` package tests on the
-simulator. Those gates have **not** been run; simulator results also cannot
-establish hardware keyboard handoff, background-audio survival, lock-screen
-behavior or App Store acceptance. Evidence and exact logs:
+With full Xcode: `ios/scripts/toolchain.sh`, then the three simulator actions
+from the install section — build, unit tests (`ChirpIOS` scheme) and UI tests
+(`ChirpIOS-UI` scheme, which includes `ChirpKeyboardUITests`) — on a disposable
+iPhone **and** iPad simulator. The keyboard UI test changes simulator Settings
+(adds Chirp Keyboard, allows Full Access); only use simulators you don't mind
+reconfiguring, and don't run two UI suites on one simulator at once. Simulator
+results cannot establish hardware keyboard handoff, background-audio survival,
+lock-screen behavior or App Store acceptance. Evidence and exact logs:
+[docs/review/ios-simulator.md](../docs/review/ios-simulator.md),
 [docs/review/ios-foundation.md](../docs/review/ios-foundation.md),
 [docs/review/ios-keyboard.md](../docs/review/ios-keyboard.md),
 [docs/review/ios-app.md](../docs/review/ios-app.md), shared-package
@@ -380,8 +443,9 @@ ios/
 
 ## Known limits
 
-- **Not installable yet.** Full Xcode and an iOS SDK are absent on the build
-  machine; no iOS compile/simulator/device validation has run.
+- **Not yet run on a device.** Simulator build, unit and UI gates pass on
+  iPhone and iPad; signing, provisioning and every on-device check are still
+  operator steps.
 - **Personal install only.** No App Store readiness; the keyboard's URL-open
   handoff is a known App Store review risk.
 - **The keyboard has no microphone, ever** (Apple sandbox). A session must be

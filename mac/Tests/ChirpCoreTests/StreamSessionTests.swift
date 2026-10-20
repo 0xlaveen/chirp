@@ -24,7 +24,9 @@ final class MockServer: @unchecked Sendable {
         /// Send `correcting` at once on `stop`, then the final after `finalDelay` seconds.
         var correcting = false
         var finalDelay: Double = 0
-        /// Send this `final` message (JSON) instead of the default one.
+        /// The final's text instead of the default one.
+        var finalText: String?
+        /// Send this `final` message (JSON) as it is, instead of the default one.
         var final: String?
     }
 
@@ -146,7 +148,11 @@ final class MockServer: @unchecked Sendable {
                 let i = index[ObjectIdentifier(c)] ?? 0
                 return (i, _sockets[i] ?? Socket())
             }
-            let final = socket.final ?? (numberedFinals
+            let scripted = socket.finalText.flatMap { text in
+                (try? JSONSerialization.data(withJSONObject: ["type": "final", "text": text, "raw": text, "corrected": true]))
+                    .map { String(decoding: $0, as: UTF8.self) }
+            }
+            let final = socket.final ?? scripted ?? (numberedFinals
                 ? #"{"type":"final","text":"Segment \#(i).","raw":"segment \#(i)","corrected":true}"#
                 : #"{"type":"final","text":"Hello, world.","raw":"hello world","corrected":true,"timings_ms":{"audio":200,"first_partial":50,"finalize":30}}"#)
             if socket.correcting {

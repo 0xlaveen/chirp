@@ -21,6 +21,20 @@ public enum NotesStatus {
     public static let listening = "Listening…"
     public static let updating = "Updating notes…"
     public static let finishing = "Finishing…"
+    public static let reorganizing = "Organizing notes…"
+    public static let placeholder = "Type notes, or press Record (\(MenuContent.notesHotkeyTitle))…"
+    public static let reorganized = "Notes organized"
+    public static let organized = "Organized"
+    public static let organizeLabel = "Organize"
+    public static let organizeHelp = "Clean up and organize notes"
+
+    /// "Organizing notes… 2/4" while Organize works through its steps.
+    public static func organizing(_ step: Int, of total: Int) -> String { "Organizing notes… \(step)/\(total)" }
+
+    /// "Couldn’t organize 1 section (rejected: novel_name) — kept as is".
+    public static func organizeFailed(_ count: Int, reason: String?) -> String {
+        "Couldn’t organize \(count) section\(count == 1 ? "" : "s")\(reason.map { " (\($0))" } ?? "") — kept as is"
+    }
     public static let stopped = "Stopped"
     public static let empty = "Press Record or \(MenuContent.notesHotkeyTitle) to start taking notes."
     public static let privacy = "Notes stay in memory until you save them."
@@ -59,8 +73,15 @@ public struct TranscriptRow: Identifiable, Equatable {
     }
 }
 
+/// A run of the Hearing strip: a person's words (with their name where the speaker changes), or unlabelled text.
+public struct HearingPart: Equatable, Sendable {
+    public var name: String?
+    public var color: Int
+    public var text: String
+}
+
 /// What the Notes window shows: a mirror of `NotesRecorder` plus the window's own choices. In memory only; the
-/// controller stores just the two preferences (the tab and the "Structure notes" toggle).
+/// controller stores just the preferences (the tab, "Structure notes", "Auto-reorganize" and Edit/Preview).
 @MainActor @Observable
 public final class NotesModel {
     public var state: NotesRecorderState = .idle
@@ -71,6 +92,9 @@ public final class NotesModel {
     public var tab: NotesTab = .notes
     /// The transcript shows each segment's raw text.
     public var showRaw = false
+    /// The transcript pane is scrolled to its end, so new segments keep it there. Kept here rather than in `@State`:
+    /// the Command Line Tools toolchain has no SwiftUI macro plugins.
+    public var transcriptAtBottom = true
     /// The user's "Structure notes" toggle.
     public var structureEnabled = true
     public var privacyLine = NotesStatus.privacy
@@ -81,6 +105,24 @@ public final class NotesModel {
     /// The user's "Label speakers" toggle, and the model behind it.
     public var speakerLabels = false
     public var speakerModel: SpeakerModelState = .notDownloaded
+    /// The Notes pane shows the read-only Preview instead of the editor.
+    public var preview = false
+    /// The user's "Auto-reorganize" toggle.
+    public var autoReorganize = true
+    public var reorganizeStatus: ReorganizeStatus = .idle
+    /// The "Organized · Undo" chip was dismissed for the reorganize applied at this time.
+    public var dismissedChip: TimeInterval?
+    /// The editor has keyboard focus (set by the editor).
+    public var editorFocused = false
+    /// Bumped to ask the editor to take keyboard focus (the empty state was clicked, the window opened with focus).
+    public var focusRequest = 0
+
+    /// AI changes the editor has not replayed yet. Not observed: the editor drains them as they arrive.
+    @ObservationIgnored public private(set) var pendingChanges: [NotesTextChange] = []
+    /// The editor that owns the hooks below (the newest one on screen).
+    @ObservationIgnored public var editorOwner: ObjectIdentifier?
+    /// Set by the editor while it is on screen; called whenever changes are queued.
+    @ObservationIgnored public var onPendingChanges: (() -> Void)?
 
     public var onRecordToggle: () -> Void = {}
     public var onCopy: () -> Void = {}
@@ -90,8 +132,30 @@ public final class NotesModel {
     public var onStructureToggle: (Bool) -> Void = { _ in }
     public var onTabChange: (NotesTab) -> Void = { _ in }
     public var onSpeakerLabelsToggle: (Bool) -> Void = { _ in }
+    /// The editor changed the text: the range (UTF-16, in the old text) and its replacement.
+    @ObservationIgnored public var onUserEdit: (NSRange, String, NotesTextChange.Kind) -> Void = { _, _, _ in }
+    public var onReorganize: () -> Void = {}
+    public var onAutoReorganizeToggle: (Bool) -> Void = { _ in }
+    public var onPreviewToggle: (Bool) -> Void = { _ in }
+    /// The caret is in the AI tail with focus, and whether IME is composing.
+    @ObservationIgnored public var onEditorFocus: (_ inTail: Bool, _ composing: Bool) -> Void = { _, _ in }
+    /// Set by the editor: undoes the last reorganize if it is still the top undo group (the chip's Undo).
+    @ObservationIgnored public var undoReorganize: () -> Void = {}
 
     public init() {}
+
+    /// Queues AI changes for the editor. With no editor on screen they are dropped: an editor that appears loads
+    /// `document.text` as it is then.
+    public func enqueue(_ changes: [NotesTextChange]) {
+        guard !changes.isEmpty, let sink = onPendingChanges else { return }
+        pendingChanges += changes
+        sink()
+    }
+
+    public func takePendingChanges() -> [NotesTextChange] {
+        defer { pendingChanges.removeAll() }
+        return pendingChanges
+    }
 
     public var isRecording: Bool { state.isCapturing }
     public var isBusy: Bool { state == .stopping }
@@ -112,15 +176,75 @@ public final class NotesModel {
         switch state {
         case .idle: ""
         case .starting: NotesStatus.connecting
-        case .recording: structuring == .running ? NotesStatus.updating : NotesStatus.listening
-        case .stopping: NotesStatus.finishing
+        case .recording:
+            isReorganizing ? reorganizingText : structuring == .running ? NotesStatus.updating : NotesStatus.listening
+        case .stopping: (isReorganizing ? reorganizingText : NotesStatus.finishing) + finishingSuffix
+        case .stopped where isReorganizing, .idle where isReorganizing: reorganizingText
         case .stopped: NotesStatus.stopped
         case .error(let message): message
         }
     }
 
-    /// A pass is running on the open block.
+    /// An append pass is running on the AI tail.
     public var isUpdating: Bool { structuring == .running }
+
+    public var isReorganizing: Bool { reorganizeStatus.isRunning }
+
+    private var reorganizingText: String {
+        if case .organizing(let step, let total) = reorganizeStatus { return NotesStatus.organizing(step, of: total) }
+        return NotesStatus.reorganizing
+    }
+
+    /// How long Stop has been finishing, while it is (set by the controller once a second).
+    public var finishingElapsed: TimeInterval?
+
+    /// " · 12 s" once Stop has taken a few seconds, so a long finish never looks stuck.
+    private var finishingSuffix: String {
+        guard let e = finishingElapsed, e >= 3 else { return "" }
+        return " · \(Int(e)) s"
+    }
+
+    /// The empty-state art: no notes, nothing recorded yet, and the editor not focused (a click focuses it).
+    public var showsEmptyState: Bool {
+        document.text.isEmpty && document.segments.isEmpty && state == .idle && !editorFocused
+    }
+
+    /// The Reorganize button can be pressed: structuring and the endpoint are available, there are notes, and no
+    /// reorganize is running and the recording is not finishing.
+    public var canReorganize: Bool {
+        if case .unavailable = reorganizeStatus { return false }
+        return !isReorganizing && !isBusy && !document.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    /// The server has structuring but no reorganize endpoint: the button is hidden and the toggle explains why.
+    public var reorganizeHidden: Bool { reorganizeStatus == .unavailable(.unsupported) && !structuring.isOff }
+
+    /// The "Auto-reorganize" toggle can be flipped (it shows off otherwise).
+    public var autoReorganizeAvailable: Bool { !structuring.isOff && !reorganizeHidden }
+
+    /// The small line under the editor about the last reorganize.
+    public var reorganizeNote: String? {
+        switch reorganizeStatus {
+        case .failed(let code): "Couldn’t organize (\(code)) — will retry"
+        case .organized(let failed, let reason): failed == 0 ? NotesStatus.organized : NotesStatus.organizeFailed(failed, reason: reason)
+        case .conflict: "Notes changed while organizing — try again"
+        case .tooLong: "Too long to organize — split the last section with a heading"
+        default: nil
+        }
+    }
+
+    /// The reorganize note reports a finished Organize with nothing left behind.
+    public var reorganizeNoteIsSuccess: Bool { reorganizeStatus == .organized(failed: 0, reason: nil) }
+
+    /// "Organized · Undo" shows after a reorganize until the next edit or append, a click, or 20 s.
+    public var showUndoChip: Bool {
+        if case .applied(let at) = reorganizeStatus { return dismissedChip != at }
+        return false
+    }
+
+    public func dismissUndoChip() {
+        if case .applied(let at) = reorganizeStatus { dismissedChip = at }
+    }
 
     /// Why the notes pane shows an explanation instead of notes; nil when structuring is available.
     public var explanation: String? {
@@ -142,7 +266,7 @@ public final class NotesModel {
     /// "Manage Local Models…" is offered next to the explanation.
     public var offersModels: Bool { structuring == .off(.correctionOff) && canManageModels }
 
-    /// The small line under the notes after a failed pass.
+    /// The small line under the notes after a failed append pass.
     public var retryNote: String? {
         if case .failed(let code) = structuring { return "Couldn’t update notes (\(code)) — will retry" }
         return nil
@@ -151,23 +275,39 @@ public final class NotesModel {
     /// Structuring can run at all (the toggle is the only thing keeping it off).
     public var structuringAvailable: Bool { !structuring.isOff || structuring == .off(.disabled) }
 
-    /// The notes pane's grey tail: what no pass has structured yet, then the live partials.
-    public var liveTail: String {
-        let structured = structuring.isOff ? "" : document.unstructuredTail
-        return [structured, document.livePartial].filter { !$0.isEmpty }.joined(separator: " ")
+    /// The "Hearing…" strip under the editor: what no pass has structured yet, then the live partials. Never part of
+    /// the editable text.
+    public var hearingText: String {
+        hearingParts.map { ($0.name.map { $0 + ": " } ?? "") + $0.text }.joined(separator: " ")
+    }
+
+    /// The Hearing strip by speaker: a name only where the speaker changes; the live partial is never labelled.
+    public var hearingParts: [HearingPart] {
+        var parts: [HearingPart] = []
+        var last: Int?
+        if !structuring.isOff {
+            let roster = document.roster
+            for part in document.unstructuredParts where !part.text.isEmpty {
+                let name = part.person.flatMap { $0 == last ? nil : roster.displayName($0) }
+                parts.append(HearingPart(name: name, color: part.person.map(roster.colorIndex) ?? 0, text: part.text))
+                last = part.person
+            }
+        }
+        if !document.livePartial.isEmpty { parts.append(HearingPart(name: nil, color: 0, text: document.livePartial)) }
+        return parts
     }
 
     /// What Copy Markdown copies: the notes, or the transcript when the Transcript tab is showing (and always the
     /// transcript when there are no notes).
     public var copyText: String {
-        if tab == .transcript || !structuringAvailable || document.notesBody.isEmpty {
-            return document.exportMarkdown(includeTranscript: true, structuring: false)
+        if tab == .transcript || document.notesBody.isEmpty {
+            return document.exportMarkdown(includeNotes: false)
         }
         return document.exportMarkdown(includeTranscript: false)
     }
 
     /// What Save… writes: the notes with the transcript appendix (the transcript only without notes).
-    public var saveText: String { document.exportMarkdown(includeTranscript: true, structuring: structuringAvailable) }
+    public var saveText: String { document.exportMarkdown(includeTranscript: true) }
 
     /// The recorder's state, unless a start failed before the recorder ran: that error shows only while the recorder
     /// is idle, stopped or in error itself, never over Connecting/Listening/Finishing.

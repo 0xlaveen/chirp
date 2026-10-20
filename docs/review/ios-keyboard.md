@@ -74,11 +74,86 @@ by the current app lease. Lease expiry or generation change invalidates ownershi
 
 ## Behavior and safety
 
-UIKit controls: mic/stop, cancel, Use raw, style, visible End session, space,
-delete, return, Open Chirp and globe/input-mode picker. System text styles,
-multiline labels, 48-point minimum key heights, explicit VoiceOver labels,
-adaptive rows and increased spacing at iPad widths are implemented. They still
-need simulator accessibility/layout verification.
+### Voice-first layout and presenter
+
+The keyboard is voice-first (no QWERTY; users keep Apple's keyboard for typing).
+All decisions live in the pure `KeyboardPresenter.screen(_:)` in the
+`KeyboardPolicy` package (no UIKit, no ChirpIOSCore): `KeyboardInputs` mirrors
+phase, lease, session expiry, style, debug retention, error code, ownership
+flags, raw window, start-pending, fallback, recording start, globe and compact
+height, plus `now`; `KeyboardScreen` returns the status/detail/warning text,
+primary action (kind, title, SF symbol, hint, enabled), enabled flags, raw
+countdown, style menu items and the visibility flags. `KeyboardPhase` and
+`KeyboardError` mirror `SessionPhase`/`DiagnosticCode` raw values (a test pins
+them). `ChirpKeyboardViewController` only gathers inputs and applies the result.
+Also in the package: `RecordingClock` (keyboard-local elapsed timer), `ClockText`,
+`KeyRepeat` (Delete cadence) and `KeyboardMetrics` (layout rules).
+
+- Primary button (≥ 64 pt): *Open Chirp to start session* (no session or lease) → *Start dictation* (armed/finished; *Starting…* while the
+  start is pending) → *Stop dictation* (connecting/listening) → disabled
+  *Polishing…*. The separate Open Chirp key is gone; a small *Open Chirp* link
+  shows only when a fallback message or recovery state is on screen. Without
+  Full Access the primary is a disabled *Full Access required*.
+- Status: phase, elapsed time (only for an utterance this keyboard owns,
+  from its first observation of connecting/listening) and `sessionExpiresAt`
+  remaining (omitted for Never), joined with " · ". Raw shows its remaining
+  whole seconds (rounded up) during the 5 s window.
+- Secondary row: Cancel, Use raw, Style. Bottom row: globe (only when
+  `needsInputModeSwitchKey`), Space, Delete, Return, End session.
+- Delete repeats while held (0.4 s pause, then accelerating to ~28/s). It stops
+  on touch-up/cancel, on hide, when ownership is invalidated, and if the keyboard
+  acquires an utterance; its edits are local and never touch an owned suffix.
+  Space/Delete/Return still invalidate ownership. VoiceOver activation performs
+  one press and release.
+- `BridgeState.errorCode` maps to fixed, short guidance with no content from the
+  transcript, host or server (`KeyboardError.guidance`); recovery/fallback
+  messages outrank it.
+- Light `UIImpactFeedbackGenerator` haptic on start/stop, only with Full Access.
+- iPad (width ≥ 600, regular height): larger keys, 12 pt spacing, 24 pt insets,
+  primary capped at 440 pt and centered. Compact height (landscape iPhone):
+  36 pt secondary keys, 6 pt spacing and the detail line collapses.
+- Dynamic Type text styles, VoiceOver labels/hints/values, and identifiers
+  `chirp.keyboard.{primary,status,detail,cancel,raw,style,end,space,delete,return,globe}`
+  (plus `chirp.keyboard.open` for the fallback link). `chirp.keyboard.status`
+  carries the full composed status line.
+
+### UIKit nil context (empty field, caret at start/end)
+
+Found by the simulator UI test: `UITextDocumentProxy` returns `nil` for
+`documentContextBeforeInput` at the start of a document, usually `nil` for the
+after context at the end, and `nil` for both in an empty field. `CursorContext.isUsable`
+refused any `nil`, so dictating into an empty field or at the start of text was
+silently refused (the keyboard showed "Text kept in place"). `CursorContext.init`
+now takes `hasText` (the adapter passes `textDocumentProxy.hasText`) and
+normalises `nil` to `""` only where that is provable:
+
+| before | after | hasText | result |
+|---|---|---|---|
+| nil | text | any | caret at start: before = "" |
+| text | nil or "" | any | caret at end: after = "" |
+| nil | nil | false | empty field: both "" |
+| nil | nil | true or unknown | ambiguous: still unusable |
+| any | any | contradicts context (e.g. false with text, true with both empty) | unusable |
+
+Selection, `uncertain`, size bounds and grapheme rules are unchanged. Safety still
+rests on `VerifiedEditor`: every edit re-reads the host and stops on any mismatch.
+A host that lies about being empty gets at most one insertion that is then checked
+(refused if the context disagrees) and never a deletion of text it did not insert;
+a host that ignores an insertion produces zero deletions (tested). A host that
+hides text *after* the caret can still not be distinguished from end-of-document,
+but deletion only ever touches the owned suffix before the caret. Tests:
+`CursorContextTests.swift` (normalisation table, equality across `nil`/`""`
+spellings, a UIKit-like fake host for empty field, caret at start, middle and end
+with `nil` or `""` after, ambiguous nil refused before any edit, ignored insert,
+cancel in an empty field). Simulator evidence: `ChirpKeyboardUITests` dictates
+into the real keyboard with a prefix and with an empty host field
+(`--chirp-keyboard-host-empty`); the caret in the prefix case is placed by tapping
+below the text, as a user would. No device claims.
+
+No IPC message, audio, network or clipboard was added; `OwnedInsertion`,
+`VerifiedEditor` and the bridge protocol and bounds are unchanged. Layout and
+accessibility behaviour have only been compiled for the simulator SDK, not
+exercised.
 
 No keyboard audio or network capture exists. With Full Access denied/revoked,
 keyboard immediately drops the bridge and ownership, performs no IPC, explains
@@ -141,6 +216,13 @@ swift test --package-path ios/Keyboard/Policy \
 
 Run through `koi run`: **22 Swift Testing test functions passed**, including
 parameter matrices (53 executed cases counting parameter expansions), exit 0.
+After the voice-first presenter was added, a later run on a full-Xcode machine
+(`swift test --package-path ios/Keyboard/Policy`, no plugin flags needed) passed
+**62 test functions in 9 suites (142 expanded cases)**: the 40 new functions
+(89 cases) cover every phase × Full Access × lease state, every error code,
+raw countdown rounding/closure, status-line timers, style menu, fallback/recovery
+precedence, compact height, `RecordingClock`, Delete repeat cadence and metrics,
+and the UIKit nil-context conventions below.
 The initial run failed in mutating-method `#expect` macro expansion; evaluating
 those booleans before assertion corrected the test code (the same applies to
 mutating calls inside `#require`). Latest successful follow-up run log:

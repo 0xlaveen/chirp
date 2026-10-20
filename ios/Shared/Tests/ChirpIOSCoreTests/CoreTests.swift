@@ -297,3 +297,17 @@ private final class WakeProbe: @unchecked Sendable {
     var count: Int { lock.withLock { value } }
     func increment() { lock.withLock { value += 1 } }
 }
+
+struct KeyboardSetupTests {
+    @Test func markerStartsEmptyAndStoresOnlyATimestamp() throws {
+        let root = try temporaryRoot(); defer { try? FileManager.default.removeItem(at: root) }
+        let store = try KeyboardSetupStore(root: root)
+        #expect(try store.fullAccessSeenAt() == nil)
+        let seen = Date(timeIntervalSince1970: 1_800_000_000)
+        try store.recordFullAccess(now: seen)
+        #expect(try KeyboardSetupStore(root: root).fullAccessSeenAt() == seen)
+        let saved = try Data(contentsOf: root.appendingPathComponent("keyboard/setup.json"))
+        let keys = try #require(JSONSerialization.jsonObject(with: saved) as? [String: Any]).keys
+        #expect(Array(keys) == ["fullAccessSeenAt"])
+    }
+}

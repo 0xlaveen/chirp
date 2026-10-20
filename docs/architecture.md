@@ -49,9 +49,10 @@ Every request carries `Authorization: Bearer <token>`. WebSocket clients that ca
 
 ### Endpoints
 
-- `GET /v1/health` → `{"ok":true,"engine":"parakeet-mlx:tdt-0.6b-v2","ready":true,"debug_retention":false,"correction":"off|available","correction_mode":"off|managed|endpoint","correction_leaves_machine":false,"correction_host":null,"correction_profiles":[{"id":"default","name":"Default","description":"Conservative transcript cleanup.","rewrites":false},…],…,"notes_structure":true,"notes_correction":true}`. The unauthenticated variant returns only `{"ok":true}`. For endpoint correction, `correction_host` is its hostname (no credentials, path or port); otherwise it is `null`. `correction_leaves_machine` is true only for enabled, non-loopback correction.
+- `GET /v1/health` → `{"ok":true,"engine":"parakeet-mlx:tdt-0.6b-v2","ready":true,"debug_retention":false,"correction":"off|available","correction_mode":"off|managed|endpoint","correction_leaves_machine":false,"correction_host":null,"correction_profiles":[{"id":"default","name":"Default","description":"Conservative transcript cleanup.","rewrites":false},…],…,"notes_structure":true,"notes_correction":true,"notes_reorganize":true}`. The unauthenticated variant returns only `{"ok":true}`. For endpoint correction, `correction_host` is its hostname (no credentials, path or port); otherwise it is `null`. `correction_leaves_machine` is true only for enabled, non-loopback correction.
 - `GET /v1/correction/profiles` (authenticated) → `{"profiles":[{"id":"default","name":"Default","description":"Conservative transcript cleanup.","rewrites":false,"prompt":"<editable default style>","max_prompt_chars":4000},…]}`. Fixed safety rules are excluded; `custom` has an empty built-in prompt. Available even when correction is off. Invalid or missing bearer credentials return HTTP 401 with `WWW-Authenticate: Bearer`.
 - `POST /v1/notes/structure` (authenticated, JSON): stateless Live Notes structuring, specified [below](#live-notes-structuring-v1-compatible-addition). `/v1/stream` is unchanged.
+- `POST /v1/notes/reorganize` (authenticated, JSON): stateless reorganize of a whole Live Notes document (or its trailing sections), specified [below](#live-notes-reorganize-v1-compatible-addition). `/v1/stream` and `/v1/notes/structure` are unchanged.
 - `POST /v1/transcribe`: the body is 16 kHz mono PCM16 WAV, capped at 120 s. It returns the same object as a `final` message. Used for tests and as a fallback.
 - `WS /v1/stream`:
   - client → `{"type":"start","sample_rate":16000,"encoding":"pcm_s16le","client":"mac|android|ios","correction":false,"correction_profile":"default","correction_instructions":""}`
@@ -102,7 +103,7 @@ Responses:
 | Status | Body | When |
 |---|---|---|
 | 200 | `{"markdown":"## …\n- …","structured":true,"error":null,"timings_ms":{"structure":1234.5}}` | The model's output passed the guards |
-| 200 | `{"markdown":null,"structured":false,"error":"timeout\|http\|rejected","timings_ms":{…}}` | Fails closed like `correction_error`: guard rejection, helper failure, timeout or endpoint error. The client keeps its previous block |
+| 200 | `{"markdown":null,"structured":false,"error":"timeout\|http\|rejected","reason":"novel…\|null","timings_ms":{…}}` | Fails closed like `correction_error`: guard rejection, helper failure, timeout or endpoint error. The client keeps its previous block. `reason` (failures only, optional for clients) names the guard that rejected the output, e.g. `name`, `number`, `date`, `negation`, `novel`, `length`, `grammar`, `forbidden`, `finish`; `null` for timeouts and transport or parse errors. It is a name only, never text, and is also in the log line |
 | 400 | `{"type":"error","code":"bad_notes","message":"Invalid notes request"}` | Malformed JSON, wrong types, limits exceeded, unknown keys, body over 64 KiB |
 | 401 | `{"type":"error","code":"auth",…}` with `WWW-Authenticate: Bearer` | Missing or wrong bearer token |
 | 409 | `{"type":"error","code":"notes_off","message":"Notes structuring needs correction enabled on the server"}` | `correction.mode == "off"` |
@@ -133,10 +134,11 @@ never takes the engine lease, so it does not block `/v1/stream`. The whole pass 
 accepted only if it passes `notes_rejected`, one function per check: no think blocks, code fences,
 H1 titles, tables, links or assistant openers; at most `max(1.2 x transcript, 300)` characters;
 every line within the allowed Markdown subset (`##`/`###` headings of at most 6 words, `-` bullets
-with one nested level, `- [ ]` tasks, plain lines); every number, as digits or number words, was
-spoken; no weekday or month, email address, URL or domain that was not spoken; no capitalised word
-(a name, place, product or acronym) that was not spoken, checking bold words and a to-do's owner
-even at the start of a line; at least 50 % of the content words (stemmed, outside stopwords and
+with one nested level, `- [ ]` tasks, plain lines); every number, as digits, number words or an
+abbreviated scale (`$300M`), was spoken; no weekday or month, email address, URL or domain that was
+not spoken; no capitalised word (a name, place, product or acronym) that was not spoken, checking
+bold words and a to-do's owner even at the start of a line (a bold phrase opening a line is sentence
+case); names, numbers and dates may also come from the request's outline; at least 50 % of the content words (stemmed, outside stopwords and
 labels such as "Decision" or "Suggestion") occur in the transcript, so paraphrase passes but an
 unrelated answer does not; and no flipped negation: a line that restates a negated transcript
 clause's head and most of its content words ("we will not ship on friday" to "- Ship on Friday")
@@ -144,6 +146,67 @@ without a negation, negative wording ("lacks", "unclear") or a hedge is rejected
 incidental negation out ("whether it works or not") is allowed. Like the correction guards these
 are heuristics: they catch invented names and numbers, answers and flipped statements but cannot
 prove semantic equivalence, and they are tuned for English. The transcript pane is always one click away in the client.
+
+### Live Notes reorganize (v1-compatible addition)
+
+`POST /v1/notes/reorganize` regroups an editable notes document: it merges duplicate sections and
+bullets and gathers tasks, decisions and questions, without dropping or inventing content. Like
+structuring it is stateless: the client sends the Markdown each time and applies the answer only
+if the document has not changed since (no merge).
+
+Request (`Content-Type: application/json`, body at most 64 KiB):
+
+```json
+{"notes": "## Launch plan\n- …", "outline": ["Earlier heading"], "final": false}
+```
+
+- `notes`: the user's and the AI's Markdown source, 1-3500 Unicode characters after trimming
+  (`MAX_REORGANIZE_CHARS`). Untrusted data. A longer document sends only its trailing whole
+  sections that fit.
+- `outline`: as for structuring (at most 24 strings, 120 characters each, 1500 in total): the
+  headings of the settled sections above, context only.
+- `final`: optional bool; it only changes the log line.
+- Unknown keys (including `transcript`) are rejected.
+
+| Status | Body | When |
+|---|---|---|
+| 200 | `{"markdown":"…","reorganized":true,"changed":true,"error":null,"timings_ms":{"reorganize":1234.5}}` | The output passed the reorganize guards |
+| 200 | `{"markdown":"<input notes, trimmed>","reorganized":true,"changed":false,"error":null,…}` | The output equals the input apart from trailing spaces and blank lines; the client applies nothing |
+| 200 | `{"markdown":null,"reorganized":false,"changed":false,"error":"timeout\|http\|rejected","reason":"…\|null",…}` | Fails closed: guard rejection, helper failure, timeout or endpoint error. `reason` as for structuring, with the reorganize guard names (`novel_name`, `novel_number`, `novel_date`, `novel_contact`, `novel`, `dropped_number`, `number_moved`, `dropped_line`, `coverage`, `heading`, `negation`, `task_dropped`, `task_state`, `task_owner`, `task_invented`, `decision_dropped`, `decision_invented`, `length`, `grammar`, `forbidden`, `opener`, `finish`, `empty`) |
+| 200 | `{"markdown":null,"reorganized":false,"changed":false,"error":"preempted",…}` | Not run: a correction queued while it generated and took the helper (managed only). The client treats it as not run: no failure note, no retry backoff |
+| 400 / 401 / 409 / 503 | as `/v1/notes/structure` (`bad_notes`, `auth`, `notes_off`, `busy`) | Same rules |
+
+Authenticated health carries `"notes_reorganize": true` on servers with the endpoint (absent on
+older servers; a 404 from an older server means only reorganize is unavailable).
+
+Reorganize shares the server-wide structuring lock with `/v1/notes/structure`: one notes generation
+at a time, and a second request of either kind gets `503 busy`. It uses the structuring backend,
+never starts while corrections are queued, gives way to a correction that queues while it runs
+(managed helper; it then answers `preempted`), never takes the engine lease and never retains
+anything.
+The pass is bounded by `[correction] reorganize_timeout` (default 45 s, validated like
+`structure_timeout`) and 1024 output tokens
+(`REORGANIZE_MAX_TOKENS`, the helper's cap). The system prompt plus a 3500-character document plus
+1024 output tokens fit the helper's 4096-token context; a model test measures this with the real
+tokenizer.
+
+The guards (`reorganize_rejection_reason`, reported on the wire only as `rejected`) compare the
+output with the input notes and reuse the structuring helpers, so they ask whether something was
+dropped, invented or flipped rather than counting exact words. In order: no empty or unfinished
+output, think block or assistant opener, and no code fence, H1, table or link unless the input
+has one; every line is in the subset (`#`-`###` headings, `#` only if the input has an H1;
+`- `/`  - `/`    - ` bullets and `- [ ]`/`- [x]` tasks; plain lines; the fallback header) or uses a
+lead-in the person already typed (`1.`, `*`, `>`, a table); a length between 0.6 and
+1.15 × input + 200 characters; no name, number, date or contact that is not in the notes or
+outline, and at least half the content words from them; every number and date of the input still
+present; every input line with at least 3 content words keeps 60 % of its stemmed content words
+and the document keeps 90 % of its distinct ones; headings use input words or `Action items`,
+`Decisions`, `Open questions`, `Next steps`, `Notes`; every negated or hedged input line keeps a
+negation (a negated line) or a negation or hedge (a hedged one) in the output line that holds its
+content, no negation is added, and the structuring flip check passes on the output lines whose
+source is not itself an affirmative line next to a negated one in the notes; every distinct task keeps exactly its checked state and its people
+(bold names and a capitalised owner), no task is invented, and every `**Decision:**`/`**Question:**` line keeps its label. These are heuristics
+tuned for English, like the other guards.
 
 **Managed helper pipe protocol** (private to `managed_cleanup.py` and `cleanup_worker.py`). The
 request `{"text","system"}` is unchanged. Two optional keys exist for structuring: `"user"`, a
@@ -155,7 +218,10 @@ The server writes the keys only when set, so correction requests are byte-identi
 **Priority.** The helper serves requests one at a time. A queued correction always runs before a
 queued structuring request (a structuring caller that reaches the helper while corrections wait
 steps back until none are queued). A running structuring generation is never interrupted, so a
-correction waits at most one pass, which `max_tokens` bounds.
+correction waits at most one pass, which `max_tokens` bounds. A running reorganize generation (up
+to 1024 tokens, about 15 s, longer than a dictation's budget) is abandoned as soon as a correction
+queues: the helper is killed and reloaded for the correction, and the reorganize answers
+`preempted` (see `docs/bench.md`, "Notes reorganize").
 
 ### Built-in profiles and overrides
 
@@ -210,10 +276,10 @@ Version additions preserve existing fields. A breaking change becomes `/v2`.
   - It writes `<session>.wav` plus a `<session>.json` transcript/timings file to `~/Library/Application Support/Chirp/debug/` (mode 0700/0600).
   - Files are purged after `retain_days` (default 3), on start and hourly. `chirp-server debug purge` deletes them all now.
   - `ready` and `health` report `debug_retention: true`. Both clients then show a persistent red "DEBUG: recording kept" indicator, and the server logs a warning banner at start.
-- **Notes structuring is stateless and never retained.** `POST /v1/notes/structure` writes no files, not even with debug retention, and its log line carries only lengths, counts, the error code and timings, never the transcript, outline, prompt or Markdown. Segment audio follows the per-utterance rules above.
+- **Notes structuring and reorganize are stateless and never retained.** `POST /v1/notes/structure` and `POST /v1/notes/reorganize` write no files, not even with debug retention, and their log lines carry only lengths, counts, flags, the error code and timings, never the transcript, notes, outline, prompt or Markdown. Segment audio follows the per-utterance rules above.
 - **Speaker labels (Mac Live Notes) never leave the Mac.** Diarization runs in the ChirpMac process with CoreML (FluidAudio's streaming Sortformer). Its model downloads once from Hugging Face at a pinned revision, only after the user's explicit Download, into `~/Library/Application Support/FluidAudio/Models/sortformer`; inference needs no network, and Settings › General removes the model.
   - The diarizer state, the speaker timeline, the roster (Person N, session names) and every label are memory-only and go with New, a discarded close or quit. Audio is held only in Sortformer's rolling context (and a bounded 30 s queue). No embedding, label or name is written to disk, UserDefaults or logs, or sent anywhere.
-  - Labels and names reach the server only as transcript text (`Person 2: …` lines) inside the existing structuring request, under the same rules as the transcript (off while health is unknown, per-host opt-in off the machine). `/v1/stream` is unchanged; the only addition there is the existing opt-in `word_timings`, asked for only while labels are on.
+  - Labels and names reach the server only as text: `Person 2: …` lines in the existing structuring request, and the labels the notes already hold in a reorganize request, under the same rules as the transcript (off while health is unknown, per-host opt-in off the machine). `/v1/stream` is unchanged; the only addition there is the existing opt-in `word_timings`, asked for only while labels are on.
   - Logs carry `notes labels speakers=N lag_ms=… tentative=…` only. Tests assert the log line's shape and that the speaker code has no file, defaults, network or logging calls.
 - **Correction is off by default.** When it is enabled with a non-loopback `base_url`, health reports `correction_leaves_machine: true`, and clients label the toggle "sends text to <host>". Audio never leaves the Mac. Only the final text does, and only when correction is on.
 - **Secrets:**
@@ -255,7 +321,9 @@ Version additions preserve existing fields. A breaking change becomes `/v2`.
 - Undo: after a corrected final, the Mac HUD offers a 5 s "Use raw". Android shows a chip on the strip.
 - **Live Notes (Mac only).** ⌃⌥N (or the menu) starts a long session with the microphone open the whole time, shown in a Notes window rather than the HUD.
   - **Rolling segments.** The client cuts the audio into ordinary `/v1/stream` utterances of at most 45 s (never before 12 s; at a 0.6 s pause, 0.3 s after 30 s), so each segment's clean-up stays short and inside its budget. At a cut it opens the next socket and routes capture to it first, then sends `stop` on the old one, which finalizes and corrects in the background. No audio is dropped, the protocol is unchanged, and the 120 s cap and 60 s idle timeout never apply to the session as a whole. Each segment uses the hidden `live_notes` style when health has `notes_correction` (fillers, stutters and restarts removed under its own guard; the user's edited dictation prompt does not apply), otherwise the `default` style plus the user's edited default prompt.
-  - **Structuring.** After a segment's final (at most every 15 s, one pass at a time, never while a segment of the session is still correcting) the client posts the open window's corrected text and the frozen headings to `POST /v1/notes/structure`. Once a window passes 1600 characters its Markdown freezes and a new window starts, so every pass is bounded and earlier notes never change. A window past 3600 characters, or past 1600 after two failed passes, freezes as plain "Not structured" text. Stop waits for the last final, runs one `final` pass and freezes everything. With correction off or an older server, Notes is a live transcript.
+  - **One editable document, an AI-owned tail.** The notes are one Markdown source string (`NotesDocument.text`) that the user can edit at any time. The AI owns only a suffix, the tail (`text[tailStart...]`): an append pass only ever replaces the tail, so nothing before `tailStart` is touched. An edit wholly before the tail shifts `tailStart`; an edit that touches a non-empty tail *claims* it — the whole tail becomes user text, the window moves past the segments it covered (they are never re-sent) and a `windowGeneration` bump makes any pass in flight for the old tail stale. Typing at the end with an empty tail stays the user's, and so does an insertion right before the tail's separator newline (the end of the user's own last line): it shifts `tailStart` instead of claiming. Every AI mutation returns the `NotesTextChange` it made; the Mac editor replays exactly that delta onto its `NSTextStorage` as one undo group and checks the result matches the model. Live partials and unstructured speech are never in the text: they show in a separate "Hearing" strip.
+  - **Structuring.** After a segment's final (at most every 15 s, never while a segment of the session is still correcting) the client posts the open window's corrected text and the settled text's headings to `POST /v1/notes/structure`, and the answer replaces the tail. Once a window passes 1600 characters the tail settles (it becomes ordinary text) and a new window starts, so every pass is bounded. A window the server *rejects* is structured again in halves at a sentence end, then quarters (min 400 characters); the parts are appended in order and the tail settles, and only a part that still fails becomes a "Not structured" section. Otherwise a window past 3600 characters, or past 1600 after two failed passes (timeouts, busy), is appended as an ordinary, editable "Not structured" section. If the caret is in the tail while the user is typing (or an input method is composing), the newest answer is held until the caret leaves, focus leaves or 10 s pass without a keystroke. Stop waits for the last final, runs one `final` pass and settles everything. With correction off or an older server, Notes is a live transcript and a plain editor.
+  - **Reorganize and the shared pass slot.** `POST /v1/notes/reorganize` rewrites the longest suffix of whole sections within 3500 characters (earlier headings go along as context only). Append and reorganize share one client pass slot (and the server's `structuring` lock), so they never overlap and only the user can change the text while a reorganize runs; append wins when both are due. Auto-reorganize runs after ≥ 1200 inserted characters, ≥ 180 s since the last one and 15 s without typing, but while recording only within 5 s of a segment commit and on at most the trailing 1200 characters of whole sections (a segment clean-up queued at the next cut preempts it; the server answers `error: "preempted"`, which the client treats as not run: no note, no backoff, retry after the next commit). Stop runs one full-scope pass unless one ended under 30 s ago on the same text. The Organize button skips the thresholds: it first re-structures the pending window and every fallback block the user has not edited (tracked verbatim; replaced in place as one version-checked undo group), then reorganizes the full scope. A result is applied only if `version` is unchanged since the request; otherwise it is discarded (auto retries after 60 s; a manual one says the notes changed). An applied reorganize settles everything and is one undo step. A 404 hides only reorganize.
   - **Mutual exclusion.** Notes holds the engine lease almost continuously, so on the Mac Notes and dictation exclude each other: the dictation hotkey shows "Notes is recording — stop it to dictate" and Start Dictation is disabled while Notes records; Notes cannot start mid-dictation. Phone clients may see `busy` meanwhile. Pausing Chirp stops Notes and keeps the notes.
   - Notes and transcripts stay in memory until Save… (a user-chosen `.md`) or Copy; see §4.
 

@@ -1,0 +1,1699 @@
+{
+  "final_3500": {
+    "model": "qwen3-4b-instruct-2507-4bit",
+    "set": "reorganize",
+    "token_count": "tokenizer",
+    "max_tokens": 1024,
+    "max_chars": 3500,
+    "scope_chars": 3500,
+    "system_prompt_chars": 3535,
+    "system_prompt_tokens": 879,
+    "context": 4096,
+    "cold_ms": 2188,
+    "overall": {
+      "runs": 12,
+      "p50_ms": 11156,
+      "p95_ms": 15617,
+      "max_ms": 15617,
+      "tokens_p50": 656,
+      "tokens_p95": 955,
+      "tokens_max": 955,
+      "pass": 10,
+      "fail": 2,
+      "pass_rate": 0.833,
+      "finish": {
+        "stop": 12
+      },
+      "changed": 12,
+      "rejected_by": {
+        "dropped_number": 2
+      },
+      "chars_max": 3430,
+      "prompt_tokens_max": 1984,
+      "context_max": 3008,
+      "keywords_kept": "10/10",
+      "tasks_kept": "10/10"
+    },
+    "by_size": {
+      "1000": {
+        "runs": 3,
+        "p50_ms": 4950,
+        "p95_ms": 4985,
+        "max_ms": 4985,
+        "tokens_p50": 280,
+        "tokens_p95": 287,
+        "tokens_max": 287,
+        "pass": 3,
+        "fail": 0,
+        "pass_rate": 1.0,
+        "finish": {
+          "stop": 3
+        },
+        "changed": 3,
+        "rejected_by": {},
+        "chars_max": 1016,
+        "prompt_tokens_max": 1205,
+        "context_max": 2229,
+        "keywords_kept": "3/3",
+        "tasks_kept": "3/3"
+      },
+      "2000": {
+        "runs": 3,
+        "p50_ms": 9745,
+        "p95_ms": 9754,
+        "max_ms": 9754,
+        "tokens_p50": 561,
+        "tokens_p95": 571,
+        "tokens_max": 571,
+        "pass": 1,
+        "fail": 2,
+        "pass_rate": 0.333,
+        "finish": {
+          "stop": 3
+        },
+        "changed": 3,
+        "rejected_by": {
+          "dropped_number": 2
+        },
+        "chars_max": 1971,
+        "prompt_tokens_max": 1540,
+        "context_max": 2564,
+        "keywords_kept": "1/1",
+        "tasks_kept": "1/1"
+      },
+      "3000": {
+        "runs": 3,
+        "p50_ms": 14989,
+        "p95_ms": 15133,
+        "max_ms": 15133,
+        "tokens_p50": 885,
+        "tokens_p95": 911,
+        "tokens_max": 911,
+        "pass": 3,
+        "fail": 0,
+        "pass_rate": 1.0,
+        "finish": {
+          "stop": 3
+        },
+        "changed": 3,
+        "rejected_by": {},
+        "chars_max": 3016,
+        "prompt_tokens_max": 1848,
+        "context_max": 2872,
+        "keywords_kept": "3/3",
+        "tasks_kept": "3/3"
+      },
+      "3500": {
+        "runs": 3,
+        "p50_ms": 15002,
+        "p95_ms": 15617,
+        "max_ms": 15617,
+        "tokens_p50": 923,
+        "tokens_p95": 955,
+        "tokens_max": 955,
+        "pass": 3,
+        "fail": 0,
+        "pass_rate": 1.0,
+        "finish": {
+          "stop": 3
+        },
+        "changed": 3,
+        "rejected_by": {},
+        "chars_max": 3430,
+        "prompt_tokens_max": 1984,
+        "context_max": 3008,
+        "keywords_kept": "3/3",
+        "tasks_kept": "3/3"
+      }
+    },
+    "failures": [
+      {
+        "id": "fundraiser-2000",
+        "reason": "dropped_number"
+      },
+      {
+        "id": "talk-2000",
+        "reason": "dropped_number"
+      }
+    ],
+    "rows": [
+      {
+        "id": "offsite-1000",
+        "chars": 1003,
+        "prompt_tokens": 1205,
+        "tokens": 280,
+        "finish": "stop",
+        "ms": 4985,
+        "reason": null,
+        "changed": true
+      },
+      {
+        "id": "release-1000",
+        "chars": 974,
+        "prompt_tokens": 1197,
+        "tokens": 287,
+        "finish": "stop",
+        "ms": 4950,
+        "reason": null,
+        "changed": true
+      },
+      {
+        "id": "cafe-1000",
+        "chars": 1016,
+        "prompt_tokens": 1179,
+        "tokens": 258,
+        "finish": "stop",
+        "ms": 4524,
+        "reason": null,
+        "changed": true
+      },
+      {
+        "id": "fundraiser-2000",
+        "chars": 1949,
+        "prompt_tokens": 1540,
+        "tokens": 561,
+        "finish": "stop",
+        "ms": 9745,
+        "reason": "dropped_number",
+        "changed": true
+      },
+      {
+        "id": "talk-2000",
+        "chars": 1971,
+        "prompt_tokens": 1474,
+        "tokens": 502,
+        "finish": "stop",
+        "ms": 8634,
+        "reason": "dropped_number",
+        "changed": true
+      },
+      {
+        "id": "hiring-2000",
+        "chars": 1924,
+        "prompt_tokens": 1500,
+        "tokens": 571,
+        "finish": "stop",
+        "ms": 9754,
+        "reason": null,
+        "changed": true
+      },
+      {
+        "id": "migration-3000",
+        "chars": 2904,
+        "prompt_tokens": 1747,
+        "tokens": 741,
+        "finish": "stop",
+        "ms": 12559,
+        "reason": null,
+        "changed": true
+      },
+      {
+        "id": "garden-3000",
+        "chars": 2927,
+        "prompt_tokens": 1817,
+        "tokens": 885,
+        "finish": "stop",
+        "ms": 15133,
+        "reason": null,
+        "changed": true
+      },
+      {
+        "id": "podcast-3000",
+        "chars": 3016,
+        "prompt_tokens": 1848,
+        "tokens": 911,
+        "finish": "stop",
+        "ms": 14989,
+        "reason": null,
+        "changed": true
+      },
+      {
+        "id": "support-3500",
+        "chars": 3414,
+        "prompt_tokens": 1864,
+        "tokens": 872,
+        "finish": "stop",
+        "ms": 14146,
+        "reason": null,
+        "changed": true
+      },
+      {
+        "id": "wedding-3500",
+        "chars": 3388,
+        "prompt_tokens": 1984,
+        "tokens": 955,
+        "finish": "stop",
+        "ms": 15617,
+        "reason": null,
+        "changed": true
+      },
+      {
+        "id": "lab-3500",
+        "chars": 3430,
+        "prompt_tokens": 1907,
+        "tokens": 923,
+        "finish": "stop",
+        "ms": 15002,
+        "reason": null,
+        "changed": true
+      }
+    ],
+    "negatives": {
+      "cases": 78,
+      "rejected": 78,
+      "missed": [],
+      "rejected_by": {
+        "dropped_number": 15,
+        "novel_name": 4,
+        "novel_date": 6,
+        "negation": 14,
+        "task_state": 4,
+        "heading": 5,
+        "novel_number": 5,
+        "length": 8,
+        "task_invented": 3,
+        "decision_dropped": 4,
+        "forbidden": 5,
+        "grammar": 3,
+        "coverage": 1,
+        "dropped_line": 1
+      },
+      "cases_by_why": {
+        "offsite-dropped_line": [
+          "dropped_line",
+          "dropped_number"
+        ],
+        "offsite-novel_name": [
+          "novel_name",
+          "novel_name"
+        ],
+        "offsite-novel_date": [
+          "novel_date",
+          "novel_date"
+        ],
+        "offsite-negation-flip": [
+          "negation",
+          "negation"
+        ],
+        "offsite-hedge-dropped": [
+          "negation",
+          "negation"
+        ],
+        "offsite-task_state": [
+          "task_state",
+          "task_state"
+        ],
+        "offsite-heading": [
+          "heading",
+          "heading"
+        ],
+        "offsite-novel_number": [
+          "novel_number",
+          "novel_number"
+        ],
+        "offsite-dropped_number": [
+          "dropped_number",
+          "dropped_number"
+        ],
+        "offsite-coverage": [
+          "coverage",
+          "dropped_number"
+        ],
+        "offsite-injection": [
+          "injection",
+          "length"
+        ],
+        "offsite-length": [
+          "length",
+          "length"
+        ],
+        "release-task_dropped": [
+          "task_dropped",
+          "dropped_number"
+        ],
+        "release-task_invented": [
+          "task_invented",
+          "task_invented"
+        ],
+        "release-decision_dropped": [
+          "decision_dropped",
+          "decision_dropped"
+        ],
+        "release-negation_added": [
+          "negation",
+          "negation"
+        ],
+        "release-hedge-dropped": [
+          "negation",
+          "negation"
+        ],
+        "release-forbidden": [
+          "forbidden",
+          "forbidden"
+        ],
+        "release-grammar": [
+          "grammar",
+          "grammar"
+        ],
+        "release-novel_number": [
+          "novel_number",
+          "novel_number"
+        ],
+        "release-dropped_number": [
+          "dropped_number",
+          "dropped_number"
+        ],
+        "release-novel_date": [
+          "novel_date",
+          "novel_date"
+        ],
+        "release-length": [
+          "length",
+          "length"
+        ],
+        "cafe-negation-flip": [
+          "negation",
+          "negation"
+        ],
+        "cafe-hedge-dropped": [
+          "negation",
+          "negation"
+        ],
+        "cafe-negation_added": [
+          "negation",
+          "negation"
+        ],
+        "cafe-task_state": [
+          "task_state",
+          "task_state"
+        ],
+        "cafe-novel_name": [
+          "novel_name",
+          "novel_name"
+        ],
+        "cafe-decision_dropped": [
+          "decision_dropped",
+          "decision_dropped"
+        ],
+        "cafe-forbidden-link": [
+          "forbidden",
+          "forbidden"
+        ],
+        "cafe-dropped_line": [
+          "dropped_line",
+          "dropped_number"
+        ],
+        "cafe-novel_date": [
+          "novel_date",
+          "novel_date"
+        ],
+        "cafe-heading": [
+          "heading",
+          "heading"
+        ],
+        "fundraiser-dropped_line": [
+          "dropped_line",
+          "dropped_number"
+        ],
+        "fundraiser-coverage": [
+          "coverage",
+          "coverage"
+        ],
+        "fundraiser-novel_date": [
+          "novel_date",
+          "novel_date"
+        ],
+        "fundraiser-novel_number": [
+          "novel_number",
+          "novel_number"
+        ],
+        "fundraiser-dropped_number": [
+          "dropped_number",
+          "dropped_number"
+        ],
+        "fundraiser-heading": [
+          "heading",
+          "heading"
+        ],
+        "fundraiser-task_invented": [
+          "task_invented",
+          "task_invented"
+        ],
+        "fundraiser-grammar": [
+          "grammar",
+          "grammar"
+        ],
+        "fundraiser-forbidden-link": [
+          "forbidden",
+          "forbidden"
+        ],
+        "fundraiser-decision_dropped": [
+          "decision_dropped",
+          "decision_dropped"
+        ],
+        "fundraiser-negation-flip": [
+          "negation",
+          "negation"
+        ],
+        "fundraiser-hedge-dropped": [
+          "negation",
+          "negation"
+        ],
+        "fundraiser-injection": [
+          "injection",
+          "length"
+        ],
+        "fundraiser-length": [
+          "length",
+          "length"
+        ],
+        "talk-forbidden-table": [
+          "forbidden",
+          "forbidden"
+        ],
+        "talk-negation-flip": [
+          "negation",
+          "negation"
+        ],
+        "talk-hedge-dropped": [
+          "negation",
+          "negation"
+        ],
+        "talk-task_dropped": [
+          "task_dropped",
+          "dropped_number"
+        ],
+        "talk-decision_dropped": [
+          "decision_dropped",
+          "decision_dropped"
+        ],
+        "talk-dropped_number": [
+          "dropped_number",
+          "dropped_number"
+        ],
+        "talk-novel_number": [
+          "novel_number",
+          "novel_number"
+        ],
+        "talk-novel_name": [
+          "novel_name",
+          "novel_name"
+        ],
+        "talk-novel_date": [
+          "novel_date",
+          "novel_date"
+        ],
+        "talk-task_state": [
+          "task_state",
+          "task_state"
+        ],
+        "talk-heading": [
+          "heading",
+          "heading"
+        ],
+        "talk-injection": [
+          "injection",
+          "length"
+        ],
+        "talk-coverage": [
+          "coverage",
+          "dropped_number"
+        ],
+        "hiring-negation-flip": [
+          "negation",
+          "negation"
+        ],
+        "hiring-negation-flip2": [
+          "negation",
+          "negation"
+        ],
+        "hiring-hedge-dropped": [
+          "negation",
+          "negation"
+        ],
+        "hiring-novel_name": [
+          "novel_name",
+          "novel_name"
+        ],
+        "hiring-task_state": [
+          "task_state",
+          "task_state"
+        ],
+        "hiring-task_dropped": [
+          "task_dropped",
+          "dropped_number"
+        ],
+        "hiring-task_invented": [
+          "task_invented",
+          "task_invented"
+        ],
+        "hiring-decision_dropped": [
+          "decision_dropped",
+          "dropped_number"
+        ],
+        "hiring-dropped_line": [
+          "dropped_line",
+          "dropped_number"
+        ],
+        "hiring-novel_number": [
+          "novel_number",
+          "novel_number"
+        ],
+        "hiring-dropped_number": [
+          "dropped_number",
+          "dropped_number"
+        ],
+        "hiring-novel_date": [
+          "novel_date",
+          "novel_date"
+        ],
+        "hiring-heading": [
+          "heading",
+          "heading"
+        ],
+        "hiring-grammar": [
+          "grammar",
+          "grammar"
+        ],
+        "hiring-forbidden-fence": [
+          "forbidden",
+          "forbidden"
+        ],
+        "hiring-injection": [
+          "injection",
+          "length"
+        ],
+        "hiring-length": [
+          "length",
+          "length"
+        ],
+        "hiring-coverage": [
+          "coverage",
+          "dropped_line"
+        ]
+      }
+    },
+    "priority": {
+      "default": {
+        "runs": 9,
+        "budget_ms": 8000.0,
+        "p50_ms": 1658,
+        "max_ms": 2241,
+        "within_budget": 9,
+        "errors": {},
+        "reorganize_preempted": 9
+      },
+      "live_notes": {
+        "runs": 9,
+        "budget_ms": 15000.0,
+        "p50_ms": 1982,
+        "max_ms": 2030,
+        "within_budget": 9,
+        "errors": {},
+        "reorganize_preempted": 9
+      },
+      "rows": [
+        {
+          "id": "lab-3500",
+          "profile": "default",
+          "budget_ms": 8000.0,
+          "ms": 2241,
+          "error": null,
+          "reorganize": "preempted"
+        },
+        {
+          "id": "lab-3500",
+          "profile": "live_notes",
+          "budget_ms": 15000.0,
+          "ms": 1967,
+          "error": null,
+          "reorganize": "preempted"
+        },
+        {
+          "id": "support-3500",
+          "profile": "default",
+          "budget_ms": 8000.0,
+          "ms": 1615,
+          "error": null,
+          "reorganize": "preempted"
+        },
+        {
+          "id": "support-3500",
+          "profile": "live_notes",
+          "budget_ms": 15000.0,
+          "ms": 1988,
+          "error": null,
+          "reorganize": "preempted"
+        },
+        {
+          "id": "wedding-3500",
+          "profile": "default",
+          "budget_ms": 8000.0,
+          "ms": 1650,
+          "error": null,
+          "reorganize": "preempted"
+        },
+        {
+          "id": "wedding-3500",
+          "profile": "live_notes",
+          "budget_ms": 15000.0,
+          "ms": 1975,
+          "error": null,
+          "reorganize": "preempted"
+        },
+        {
+          "id": "lab-3500",
+          "profile": "default",
+          "budget_ms": 8000.0,
+          "ms": 1658,
+          "error": null,
+          "reorganize": "preempted"
+        },
+        {
+          "id": "lab-3500",
+          "profile": "live_notes",
+          "budget_ms": 15000.0,
+          "ms": 1999,
+          "error": null,
+          "reorganize": "preempted"
+        },
+        {
+          "id": "support-3500",
+          "profile": "default",
+          "budget_ms": 8000.0,
+          "ms": 1646,
+          "error": null,
+          "reorganize": "preempted"
+        },
+        {
+          "id": "support-3500",
+          "profile": "live_notes",
+          "budget_ms": 15000.0,
+          "ms": 1979,
+          "error": null,
+          "reorganize": "preempted"
+        },
+        {
+          "id": "wedding-3500",
+          "profile": "default",
+          "budget_ms": 8000.0,
+          "ms": 1675,
+          "error": null,
+          "reorganize": "preempted"
+        },
+        {
+          "id": "wedding-3500",
+          "profile": "live_notes",
+          "budget_ms": 15000.0,
+          "ms": 1985,
+          "error": null,
+          "reorganize": "preempted"
+        },
+        {
+          "id": "lab-3500",
+          "profile": "default",
+          "budget_ms": 8000.0,
+          "ms": 1709,
+          "error": null,
+          "reorganize": "preempted"
+        },
+        {
+          "id": "lab-3500",
+          "profile": "live_notes",
+          "budget_ms": 15000.0,
+          "ms": 2030,
+          "error": null,
+          "reorganize": "preempted"
+        },
+        {
+          "id": "support-3500",
+          "profile": "default",
+          "budget_ms": 8000.0,
+          "ms": 1670,
+          "error": null,
+          "reorganize": "preempted"
+        },
+        {
+          "id": "support-3500",
+          "profile": "live_notes",
+          "budget_ms": 15000.0,
+          "ms": 1982,
+          "error": null,
+          "reorganize": "preempted"
+        },
+        {
+          "id": "wedding-3500",
+          "profile": "default",
+          "budget_ms": 8000.0,
+          "ms": 1648,
+          "error": null,
+          "reorganize": "preempted"
+        },
+        {
+          "id": "wedding-3500",
+          "profile": "live_notes",
+          "budget_ms": 15000.0,
+          "ms": 1969,
+          "error": null,
+          "reorganize": "preempted"
+        }
+      ]
+    }
+  },
+  "client_scope_2500": {
+    "model": "qwen3-4b-instruct-2507-4bit",
+    "set": "reorganize",
+    "token_count": "tokenizer",
+    "max_tokens": 1024,
+    "max_chars": 3500,
+    "scope_chars": 2500,
+    "system_prompt_chars": 3535,
+    "system_prompt_tokens": 879,
+    "context": 4096,
+    "cold_ms": 1855,
+    "overall": {
+      "runs": 18,
+      "p50_ms": 11518,
+      "p95_ms": 16146,
+      "max_ms": 16146,
+      "tokens_p50": 701,
+      "tokens_p95": 955,
+      "tokens_max": 955,
+      "pass": 15,
+      "fail": 3,
+      "pass_rate": 0.833,
+      "finish": {
+        "stop": 18
+      },
+      "changed": 18,
+      "rejected_by": {
+        "dropped_number": 2,
+        "task_invented": 1
+      },
+      "chars_max": 3430,
+      "prompt_tokens_max": 1984,
+      "context_max": 3008,
+      "keywords_kept": "15/15",
+      "tasks_kept": "15/15"
+    },
+    "by_size": {
+      "1000": {
+        "runs": 3,
+        "p50_ms": 4908,
+        "p95_ms": 4995,
+        "max_ms": 4995,
+        "tokens_p50": 280,
+        "tokens_p95": 287,
+        "tokens_max": 287,
+        "pass": 3,
+        "fail": 0,
+        "pass_rate": 1.0,
+        "finish": {
+          "stop": 3
+        },
+        "changed": 3,
+        "rejected_by": {},
+        "chars_max": 1016,
+        "prompt_tokens_max": 1205,
+        "context_max": 2229,
+        "keywords_kept": "3/3",
+        "tasks_kept": "3/3"
+      },
+      "2000": {
+        "runs": 3,
+        "p50_ms": 9614,
+        "p95_ms": 9616,
+        "max_ms": 9616,
+        "tokens_p50": 561,
+        "tokens_p95": 571,
+        "tokens_max": 571,
+        "pass": 1,
+        "fail": 2,
+        "pass_rate": 0.333,
+        "finish": {
+          "stop": 3
+        },
+        "changed": 3,
+        "rejected_by": {
+          "dropped_number": 2
+        },
+        "chars_max": 1971,
+        "prompt_tokens_max": 1540,
+        "context_max": 2564,
+        "keywords_kept": "1/1",
+        "tasks_kept": "1/1"
+      },
+      "3000": {
+        "runs": 3,
+        "p50_ms": 15312,
+        "p95_ms": 15351,
+        "max_ms": 15351,
+        "tokens_p50": 885,
+        "tokens_p95": 911,
+        "tokens_max": 911,
+        "pass": 3,
+        "fail": 0,
+        "pass_rate": 1.0,
+        "finish": {
+          "stop": 3
+        },
+        "changed": 3,
+        "rejected_by": {},
+        "chars_max": 3016,
+        "prompt_tokens_max": 1848,
+        "context_max": 2872,
+        "keywords_kept": "3/3",
+        "tasks_kept": "3/3"
+      },
+      "3500": {
+        "runs": 3,
+        "p50_ms": 15337,
+        "p95_ms": 16146,
+        "max_ms": 16146,
+        "tokens_p50": 923,
+        "tokens_p95": 955,
+        "tokens_max": 955,
+        "pass": 3,
+        "fail": 0,
+        "pass_rate": 1.0,
+        "finish": {
+          "stop": 3
+        },
+        "changed": 3,
+        "rejected_by": {},
+        "chars_max": 3430,
+        "prompt_tokens_max": 1984,
+        "context_max": 3008,
+        "keywords_kept": "3/3",
+        "tasks_kept": "3/3"
+      },
+      "scope-2500": {
+        "runs": 6,
+        "p50_ms": 11518,
+        "p95_ms": 13268,
+        "max_ms": 13268,
+        "tokens_p50": 701,
+        "tokens_p95": 802,
+        "tokens_max": 802,
+        "pass": 5,
+        "fail": 1,
+        "pass_rate": 0.833,
+        "finish": {
+          "stop": 6
+        },
+        "changed": 6,
+        "rejected_by": {
+          "task_invented": 1
+        },
+        "chars_max": 2468,
+        "prompt_tokens_max": 1685,
+        "context_max": 2709,
+        "keywords_kept": "5/5",
+        "tasks_kept": "5/5"
+      }
+    },
+    "failures": [
+      {
+        "id": "fundraiser-2000",
+        "reason": "dropped_number"
+      },
+      {
+        "id": "talk-2000",
+        "reason": "dropped_number"
+      },
+      {
+        "id": "wedding-3500 (scope)",
+        "reason": "task_invented"
+      }
+    ],
+    "rows": [
+      {
+        "id": "offsite-1000",
+        "chars": 1003,
+        "prompt_tokens": 1205,
+        "tokens": 280,
+        "finish": "stop",
+        "ms": 4908,
+        "reason": null,
+        "changed": true
+      },
+      {
+        "id": "release-1000",
+        "chars": 974,
+        "prompt_tokens": 1197,
+        "tokens": 287,
+        "finish": "stop",
+        "ms": 4995,
+        "reason": null,
+        "changed": true
+      },
+      {
+        "id": "cafe-1000",
+        "chars": 1016,
+        "prompt_tokens": 1179,
+        "tokens": 258,
+        "finish": "stop",
+        "ms": 4555,
+        "reason": null,
+        "changed": true
+      },
+      {
+        "id": "fundraiser-2000",
+        "chars": 1949,
+        "prompt_tokens": 1540,
+        "tokens": 561,
+        "finish": "stop",
+        "ms": 9614,
+        "reason": "dropped_number",
+        "changed": true
+      },
+      {
+        "id": "talk-2000",
+        "chars": 1971,
+        "prompt_tokens": 1474,
+        "tokens": 502,
+        "finish": "stop",
+        "ms": 8547,
+        "reason": "dropped_number",
+        "changed": true
+      },
+      {
+        "id": "hiring-2000",
+        "chars": 1924,
+        "prompt_tokens": 1500,
+        "tokens": 571,
+        "finish": "stop",
+        "ms": 9616,
+        "reason": null,
+        "changed": true
+      },
+      {
+        "id": "migration-3000",
+        "chars": 2904,
+        "prompt_tokens": 1747,
+        "tokens": 741,
+        "finish": "stop",
+        "ms": 12388,
+        "reason": null,
+        "changed": true
+      },
+      {
+        "id": "migration-3000 (scope)",
+        "chars": 2410,
+        "prompt_tokens": 1611,
+        "tokens": 672,
+        "finish": "stop",
+        "ms": 10866,
+        "reason": null,
+        "changed": true
+      },
+      {
+        "id": "garden-3000",
+        "chars": 2927,
+        "prompt_tokens": 1817,
+        "tokens": 885,
+        "finish": "stop",
+        "ms": 15351,
+        "reason": null,
+        "changed": true
+      },
+      {
+        "id": "garden-3000 (scope)",
+        "chars": 2468,
+        "prompt_tokens": 1671,
+        "tokens": 802,
+        "finish": "stop",
+        "ms": 13268,
+        "reason": null,
+        "changed": true
+      },
+      {
+        "id": "podcast-3000",
+        "chars": 3016,
+        "prompt_tokens": 1848,
+        "tokens": 911,
+        "finish": "stop",
+        "ms": 15312,
+        "reason": null,
+        "changed": true
+      },
+      {
+        "id": "podcast-3000 (scope)",
+        "chars": 2452,
+        "prompt_tokens": 1685,
+        "tokens": 774,
+        "finish": "stop",
+        "ms": 13051,
+        "reason": null,
+        "changed": true
+      },
+      {
+        "id": "support-3500",
+        "chars": 3414,
+        "prompt_tokens": 1864,
+        "tokens": 872,
+        "finish": "stop",
+        "ms": 14902,
+        "reason": null,
+        "changed": true
+      },
+      {
+        "id": "support-3500 (scope)",
+        "chars": 2305,
+        "prompt_tokens": 1556,
+        "tokens": 630,
+        "finish": "stop",
+        "ms": 10661,
+        "reason": null,
+        "changed": true
+      },
+      {
+        "id": "wedding-3500",
+        "chars": 3388,
+        "prompt_tokens": 1984,
+        "tokens": 955,
+        "finish": "stop",
+        "ms": 16146,
+        "reason": null,
+        "changed": true
+      },
+      {
+        "id": "wedding-3500 (scope)",
+        "chars": 2216,
+        "prompt_tokens": 1625,
+        "tokens": 690,
+        "finish": "stop",
+        "ms": 11413,
+        "reason": "task_invented",
+        "changed": true
+      },
+      {
+        "id": "lab-3500",
+        "chars": 3430,
+        "prompt_tokens": 1907,
+        "tokens": 923,
+        "finish": "stop",
+        "ms": 15337,
+        "reason": null,
+        "changed": true
+      },
+      {
+        "id": "lab-3500 (scope)",
+        "chars": 2416,
+        "prompt_tokens": 1592,
+        "tokens": 712,
+        "finish": "stop",
+        "ms": 11624,
+        "reason": null,
+        "changed": true
+      }
+    ],
+    "negatives": {
+      "cases": 78,
+      "rejected": 78,
+      "missed": [],
+      "rejected_by": {
+        "dropped_number": 15,
+        "novel_name": 4,
+        "novel_date": 6,
+        "negation": 14,
+        "task_state": 4,
+        "heading": 5,
+        "novel_number": 5,
+        "length": 8,
+        "task_invented": 3,
+        "decision_dropped": 4,
+        "forbidden": 5,
+        "grammar": 3,
+        "coverage": 1,
+        "dropped_line": 1
+      },
+      "cases_by_why": {
+        "offsite-dropped_line": [
+          "dropped_line",
+          "dropped_number"
+        ],
+        "offsite-novel_name": [
+          "novel_name",
+          "novel_name"
+        ],
+        "offsite-novel_date": [
+          "novel_date",
+          "novel_date"
+        ],
+        "offsite-negation-flip": [
+          "negation",
+          "negation"
+        ],
+        "offsite-hedge-dropped": [
+          "negation",
+          "negation"
+        ],
+        "offsite-task_state": [
+          "task_state",
+          "task_state"
+        ],
+        "offsite-heading": [
+          "heading",
+          "heading"
+        ],
+        "offsite-novel_number": [
+          "novel_number",
+          "novel_number"
+        ],
+        "offsite-dropped_number": [
+          "dropped_number",
+          "dropped_number"
+        ],
+        "offsite-coverage": [
+          "coverage",
+          "dropped_number"
+        ],
+        "offsite-injection": [
+          "injection",
+          "length"
+        ],
+        "offsite-length": [
+          "length",
+          "length"
+        ],
+        "release-task_dropped": [
+          "task_dropped",
+          "dropped_number"
+        ],
+        "release-task_invented": [
+          "task_invented",
+          "task_invented"
+        ],
+        "release-decision_dropped": [
+          "decision_dropped",
+          "decision_dropped"
+        ],
+        "release-negation_added": [
+          "negation",
+          "negation"
+        ],
+        "release-hedge-dropped": [
+          "negation",
+          "negation"
+        ],
+        "release-forbidden": [
+          "forbidden",
+          "forbidden"
+        ],
+        "release-grammar": [
+          "grammar",
+          "grammar"
+        ],
+        "release-novel_number": [
+          "novel_number",
+          "novel_number"
+        ],
+        "release-dropped_number": [
+          "dropped_number",
+          "dropped_number"
+        ],
+        "release-novel_date": [
+          "novel_date",
+          "novel_date"
+        ],
+        "release-length": [
+          "length",
+          "length"
+        ],
+        "cafe-negation-flip": [
+          "negation",
+          "negation"
+        ],
+        "cafe-hedge-dropped": [
+          "negation",
+          "negation"
+        ],
+        "cafe-negation_added": [
+          "negation",
+          "negation"
+        ],
+        "cafe-task_state": [
+          "task_state",
+          "task_state"
+        ],
+        "cafe-novel_name": [
+          "novel_name",
+          "novel_name"
+        ],
+        "cafe-decision_dropped": [
+          "decision_dropped",
+          "decision_dropped"
+        ],
+        "cafe-forbidden-link": [
+          "forbidden",
+          "forbidden"
+        ],
+        "cafe-dropped_line": [
+          "dropped_line",
+          "dropped_number"
+        ],
+        "cafe-novel_date": [
+          "novel_date",
+          "novel_date"
+        ],
+        "cafe-heading": [
+          "heading",
+          "heading"
+        ],
+        "fundraiser-dropped_line": [
+          "dropped_line",
+          "dropped_number"
+        ],
+        "fundraiser-coverage": [
+          "coverage",
+          "coverage"
+        ],
+        "fundraiser-novel_date": [
+          "novel_date",
+          "novel_date"
+        ],
+        "fundraiser-novel_number": [
+          "novel_number",
+          "novel_number"
+        ],
+        "fundraiser-dropped_number": [
+          "dropped_number",
+          "dropped_number"
+        ],
+        "fundraiser-heading": [
+          "heading",
+          "heading"
+        ],
+        "fundraiser-task_invented": [
+          "task_invented",
+          "task_invented"
+        ],
+        "fundraiser-grammar": [
+          "grammar",
+          "grammar"
+        ],
+        "fundraiser-forbidden-link": [
+          "forbidden",
+          "forbidden"
+        ],
+        "fundraiser-decision_dropped": [
+          "decision_dropped",
+          "decision_dropped"
+        ],
+        "fundraiser-negation-flip": [
+          "negation",
+          "negation"
+        ],
+        "fundraiser-hedge-dropped": [
+          "negation",
+          "negation"
+        ],
+        "fundraiser-injection": [
+          "injection",
+          "length"
+        ],
+        "fundraiser-length": [
+          "length",
+          "length"
+        ],
+        "talk-forbidden-table": [
+          "forbidden",
+          "forbidden"
+        ],
+        "talk-negation-flip": [
+          "negation",
+          "negation"
+        ],
+        "talk-hedge-dropped": [
+          "negation",
+          "negation"
+        ],
+        "talk-task_dropped": [
+          "task_dropped",
+          "dropped_number"
+        ],
+        "talk-decision_dropped": [
+          "decision_dropped",
+          "decision_dropped"
+        ],
+        "talk-dropped_number": [
+          "dropped_number",
+          "dropped_number"
+        ],
+        "talk-novel_number": [
+          "novel_number",
+          "novel_number"
+        ],
+        "talk-novel_name": [
+          "novel_name",
+          "novel_name"
+        ],
+        "talk-novel_date": [
+          "novel_date",
+          "novel_date"
+        ],
+        "talk-task_state": [
+          "task_state",
+          "task_state"
+        ],
+        "talk-heading": [
+          "heading",
+          "heading"
+        ],
+        "talk-injection": [
+          "injection",
+          "length"
+        ],
+        "talk-coverage": [
+          "coverage",
+          "dropped_number"
+        ],
+        "hiring-negation-flip": [
+          "negation",
+          "negation"
+        ],
+        "hiring-negation-flip2": [
+          "negation",
+          "negation"
+        ],
+        "hiring-hedge-dropped": [
+          "negation",
+          "negation"
+        ],
+        "hiring-novel_name": [
+          "novel_name",
+          "novel_name"
+        ],
+        "hiring-task_state": [
+          "task_state",
+          "task_state"
+        ],
+        "hiring-task_dropped": [
+          "task_dropped",
+          "dropped_number"
+        ],
+        "hiring-task_invented": [
+          "task_invented",
+          "task_invented"
+        ],
+        "hiring-decision_dropped": [
+          "decision_dropped",
+          "dropped_number"
+        ],
+        "hiring-dropped_line": [
+          "dropped_line",
+          "dropped_number"
+        ],
+        "hiring-novel_number": [
+          "novel_number",
+          "novel_number"
+        ],
+        "hiring-dropped_number": [
+          "dropped_number",
+          "dropped_number"
+        ],
+        "hiring-novel_date": [
+          "novel_date",
+          "novel_date"
+        ],
+        "hiring-heading": [
+          "heading",
+          "heading"
+        ],
+        "hiring-grammar": [
+          "grammar",
+          "grammar"
+        ],
+        "hiring-forbidden-fence": [
+          "forbidden",
+          "forbidden"
+        ],
+        "hiring-injection": [
+          "injection",
+          "length"
+        ],
+        "hiring-length": [
+          "length",
+          "length"
+        ],
+        "hiring-coverage": [
+          "coverage",
+          "dropped_line"
+        ]
+      }
+    },
+    "priority": null
+  },
+  "priority_without_preemption": {
+    "default": {
+      "runs": 9,
+      "budget_ms": 8000.0,
+      "p50_ms": 8002,
+      "max_ms": 8002,
+      "within_budget": 0,
+      "errors": {
+        "timeout": 9
+      }
+    },
+    "live_notes": {
+      "runs": 9,
+      "budget_ms": 15000.0,
+      "p50_ms": 15002,
+      "max_ms": 15028,
+      "within_budget": 3,
+      "errors": {
+        "timeout": 6
+      }
+    },
+    "rows": [
+      {
+        "id": "lab-3500",
+        "profile": "default",
+        "budget_ms": 8000.0,
+        "ms": 8002,
+        "error": "timeout",
+        "reorganize_ms": 15051
+      },
+      {
+        "id": "lab-3500",
+        "profile": "live_notes",
+        "budget_ms": 15000.0,
+        "ms": 15028,
+        "error": "timeout",
+        "reorganize_ms": 15292
+      },
+      {
+        "id": "support-3500",
+        "profile": "default",
+        "budget_ms": 8000.0,
+        "ms": 8002,
+        "error": "timeout",
+        "reorganize_ms": 18522
+      },
+      {
+        "id": "support-3500",
+        "profile": "live_notes",
+        "budget_ms": 15000.0,
+        "ms": 14500,
+        "error": null,
+        "reorganize_ms": 14602
+      },
+      {
+        "id": "wedding-3500",
+        "profile": "default",
+        "budget_ms": 8000.0,
+        "ms": 8002,
+        "error": "timeout",
+        "reorganize_ms": 15977
+      },
+      {
+        "id": "wedding-3500",
+        "profile": "live_notes",
+        "budget_ms": 15000.0,
+        "ms": 15002,
+        "error": "timeout",
+        "reorganize_ms": 16126
+      },
+      {
+        "id": "lab-3500",
+        "profile": "default",
+        "budget_ms": 8000.0,
+        "ms": 8001,
+        "error": "timeout",
+        "reorganize_ms": 15543
+      },
+      {
+        "id": "lab-3500",
+        "profile": "live_notes",
+        "budget_ms": 15000.0,
+        "ms": 15002,
+        "error": "timeout",
+        "reorganize_ms": 22835
+      },
+      {
+        "id": "support-3500",
+        "profile": "default",
+        "budget_ms": 8000.0,
+        "ms": 8002,
+        "error": "timeout",
+        "reorganize_ms": 20550
+      },
+      {
+        "id": "support-3500",
+        "profile": "live_notes",
+        "budget_ms": 15000.0,
+        "ms": 14285,
+        "error": null,
+        "reorganize_ms": 14406
+      },
+      {
+        "id": "wedding-3500",
+        "profile": "default",
+        "budget_ms": 8000.0,
+        "ms": 8002,
+        "error": "timeout",
+        "reorganize_ms": 15841
+      },
+      {
+        "id": "wedding-3500",
+        "profile": "live_notes",
+        "budget_ms": 15000.0,
+        "ms": 15002,
+        "error": "timeout",
+        "reorganize_ms": 16153
+      },
+      {
+        "id": "lab-3500",
+        "profile": "default",
+        "budget_ms": 8000.0,
+        "ms": 8002,
+        "error": "timeout",
+        "reorganize_ms": 16186
+      },
+      {
+        "id": "lab-3500",
+        "profile": "live_notes",
+        "budget_ms": 15000.0,
+        "ms": 15020,
+        "error": "timeout",
+        "reorganize_ms": 15935
+      },
+      {
+        "id": "support-3500",
+        "profile": "default",
+        "budget_ms": 8000.0,
+        "ms": 8002,
+        "error": "timeout",
+        "reorganize_ms": 16484
+      },
+      {
+        "id": "support-3500",
+        "profile": "live_notes",
+        "budget_ms": 15000.0,
+        "ms": 14806,
+        "error": null,
+        "reorganize_ms": 14879
+      },
+      {
+        "id": "wedding-3500",
+        "profile": "default",
+        "budget_ms": 8000.0,
+        "ms": 8001,
+        "error": "timeout",
+        "reorganize_ms": 16608
+      },
+      {
+        "id": "wedding-3500",
+        "profile": "live_notes",
+        "budget_ms": 15000.0,
+        "ms": 15002,
+        "error": "timeout",
+        "reorganize_ms": 16539
+      }
+    ]
+  },
+  "tuning": [
+    {
+      "step": "Issue prompt, 3500-char cap",
+      "pass": 0,
+      "runs": 12,
+      "rejected_by": {
+        "dropped_line": 5,
+        "dropped_number": 2,
+        "task_invented": 1,
+        "finish": 4
+      },
+      "finish": {
+        "stop": 8,
+        "length": 4
+      }
+    },
+    {
+      "step": "+ keep injected lines, tasks once, no trailing spaces; 2500 client scope rows",
+      "pass": 2,
+      "runs": 18,
+      "rejected_by": {
+        "dropped_number": 6,
+        "dropped_line": 1,
+        "length": 4,
+        "task_invented": 2,
+        "finish": 3
+      },
+      "finish": {
+        "stop": 15,
+        "length": 3
+      }
+    },
+    {
+      "step": "move-never-copy prompt (no collection sections); list markers are not numbers; trailing spaces stripped before the guards",
+      "pass": 11,
+      "runs": 18,
+      "rejected_by": {
+        "dropped_number": 6,
+        "dropped_line": 1
+      },
+      "finish": {
+        "stop": 18
+      }
+    },
+    {
+      "step": "+ keep done tasks and every number",
+      "pass": 10,
+      "runs": 18,
+      "rejected_by": {
+        "novel_number": 1,
+        "dropped_number": 5,
+        "dropped_line": 2
+      },
+      "finish": {
+        "stop": 18
+      }
+    },
+    {
+      "step": "\"every line exactly once\" first, merging keeps both copies, done task in the example",
+      "pass": 14,
+      "runs": 18,
+      "rejected_by": {
+        "dropped_number": 2,
+        "task_invented": 1,
+        "negation": 1
+      },
+      "finish": {
+        "stop": 18
+      }
+    },
+    {
+      "step": "+ could/likely/tentative count as hedges (final, 2500 client scope rows)",
+      "pass": 15,
+      "runs": 18,
+      "rejected_by": {
+        "dropped_number": 2,
+        "task_invented": 1
+      },
+      "finish": {
+        "stop": 18
+      }
+    }
+  ]
+}

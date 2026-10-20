@@ -32,12 +32,14 @@ final class NotesWindowController: NSObject, NSWindowDelegate {
         if focus {
             NSApp.activate()
             w.makeKeyAndOrderFront(nil)
+            notes.model.focusRequest += 1   // the editor takes the keyboard
         } else {
             w.orderFront(nil)
         }
     }
 
     private func makeWindow() -> NSWindow {
+        Self.installEditMenu()
         let size = NotesViewMetrics.defaultSize
         let w = NSWindow(contentRect: NSRect(origin: .zero, size: size),
                          styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
@@ -50,6 +52,45 @@ final class NotesWindowController: NSObject, NSWindowDelegate {
         w.delegate = self
         w.center()
         return w
+    }
+
+    /// Chirp is a menu-bar app with no visible main menu; this hidden one gives the Notes editor the standard
+    /// Undo/Redo, clipboard and Find key equivalents, plus Edit ▸ Organize Notes (⌥⌘R). Every item goes through the
+    /// responder chain, so it only acts while the Notes editor (or another text field) is first responder.
+    static func installEditMenu() {
+        guard NSApp.mainMenu?.item(withTitle: "Edit") == nil else { return }
+        let main = NSApp.mainMenu ?? NSMenu()
+        if main.items.isEmpty { main.addItem(NSMenuItem(title: "Chirp", action: nil, keyEquivalent: "")) }
+        let edit = NSMenu(title: "Edit")
+        func add(_ menu: NSMenu, _ title: String, _ action: Selector, _ key: String, _ mods: NSEvent.ModifierFlags = .command, tag: Int = 0) {
+            let item = NSMenuItem(title: title, action: action, keyEquivalent: key)
+            item.keyEquivalentModifierMask = mods
+            item.tag = tag
+            menu.addItem(item)
+        }
+        add(edit, "Undo", NSSelectorFromString("undo:"), "z")
+        add(edit, "Redo", NSSelectorFromString("redo:"), "z", [.command, .shift])
+        edit.addItem(.separator())
+        add(edit, "Cut", #selector(NSText.cut(_:)), "x")
+        add(edit, "Copy", #selector(NSText.copy(_:)), "c")
+        add(edit, "Paste", #selector(NSText.paste(_:)), "v")
+        add(edit, "Select All", #selector(NSText.selectAll(_:)), "a")
+        edit.addItem(.separator())
+        let find = NSMenu(title: "Find")
+        let finder = #selector(NSTextView.performTextFinderAction(_:))
+        add(find, "Find…", finder, "f", tag: NSTextFinder.Action.showFindInterface.rawValue)
+        add(find, "Find Next", finder, "g", tag: NSTextFinder.Action.nextMatch.rawValue)
+        add(find, "Find Previous", finder, "g", [.command, .shift], tag: NSTextFinder.Action.previousMatch.rawValue)
+        add(find, "Use Selection for Find", finder, "e", tag: NSTextFinder.Action.setSearchString.rawValue)
+        let findItem = NSMenuItem(title: "Find", action: nil, keyEquivalent: "")
+        findItem.submenu = find
+        edit.addItem(findItem)
+        edit.addItem(.separator())
+        add(edit, "Organize Notes", NSSelectorFromString("reorganizeNotes:"), "r", [.command, .option])
+        let editItem = NSMenuItem(title: "Edit", action: nil, keyEquivalent: "")
+        editItem.submenu = edit
+        main.addItem(editItem)
+        NSApp.mainMenu = main
     }
 
     // MARK: closing and the dirty guard

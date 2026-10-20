@@ -1,0 +1,1099 @@
+{
+  "talk_before": {
+    "overall": {
+      "runs": 20,
+      "p50_ms": 5384,
+      "p95_ms": 7019,
+      "max_ms": 7407,
+      "tokens_p50": 312,
+      "tokens_p95": 427,
+      "tokens_max": 436,
+      "pass": 13,
+      "fail": 7,
+      "pass_rate": 0.65
+    },
+    "by_chars": {
+      "1800": {
+        "runs": 6,
+        "p50_ms": 3771,
+        "p95_ms": 5621,
+        "max_ms": 5621,
+        "tokens_p50": 226,
+        "tokens_p95": 355,
+        "tokens_max": 355,
+        "pass": 4,
+        "fail": 2,
+        "pass_rate": 0.667
+      },
+      "2400": {
+        "runs": 3,
+        "p50_ms": 4957,
+        "p95_ms": 5789,
+        "max_ms": 5789,
+        "tokens_p50": 296,
+        "tokens_p95": 345,
+        "tokens_max": 345,
+        "pass": 1,
+        "fail": 2,
+        "pass_rate": 0.333
+      },
+      "3000": {
+        "runs": 6,
+        "p50_ms": 5799,
+        "p95_ms": 7019,
+        "max_ms": 7019,
+        "tokens_p50": 344,
+        "tokens_p95": 427,
+        "tokens_max": 427,
+        "pass": 3,
+        "fail": 3,
+        "pass_rate": 0.5
+      },
+      "3600": {
+        "runs": 5,
+        "p50_ms": 6325,
+        "p95_ms": 7407,
+        "max_ms": 7407,
+        "tokens_p50": 383,
+        "tokens_p95": 436,
+        "tokens_max": 436,
+        "pass": 5,
+        "fail": 0,
+        "pass_rate": 1.0
+      }
+    },
+    "rejected_by": {
+      "name": 4,
+      "number": 3
+    },
+    "failures": [
+      {
+        "id": "talk-kestrel-3",
+        "reason": "name"
+      },
+      {
+        "id": "talk-kestrel-4",
+        "reason": "name"
+      },
+      {
+        "id": "talk-kestrel-5",
+        "reason": "name"
+      },
+      {
+        "id": "talk-halcyon-3",
+        "reason": "name"
+      },
+      {
+        "id": "talk-tessellate-1",
+        "reason": "number"
+      },
+      {
+        "id": "talk-tessellate-3",
+        "reason": "number"
+      },
+      {
+        "id": "meeting-ops-2",
+        "reason": "number"
+      }
+    ],
+    "correction": {
+      "live_notes_segments": {
+        "rejected": 20,
+        "corrected": 39
+      }
+    }
+  },
+  "talk_after": {
+    "overall": {
+      "runs": 20,
+      "p50_ms": 5689,
+      "p95_ms": 7199,
+      "max_ms": 7508,
+      "tokens_p50": 337,
+      "tokens_p95": 425,
+      "tokens_max": 453,
+      "pass": 15,
+      "fail": 5,
+      "pass_rate": 0.75
+    },
+    "by_chars": {
+      "1800": {
+        "runs": 6,
+        "p50_ms": 4017,
+        "p95_ms": 5632,
+        "max_ms": 5632,
+        "tokens_p50": 234,
+        "tokens_p95": 348,
+        "tokens_max": 348,
+        "pass": 5,
+        "fail": 1,
+        "pass_rate": 0.833
+      },
+      "2400": {
+        "runs": 3,
+        "p50_ms": 5434,
+        "p95_ms": 6008,
+        "max_ms": 6008,
+        "tokens_p50": 324,
+        "tokens_p95": 367,
+        "tokens_max": 367,
+        "pass": 2,
+        "fail": 1,
+        "pass_rate": 0.667
+      },
+      "3000": {
+        "runs": 6,
+        "p50_ms": 6204,
+        "p95_ms": 7508,
+        "max_ms": 7508,
+        "tokens_p50": 365,
+        "tokens_p95": 453,
+        "tokens_max": 453,
+        "pass": 3,
+        "fail": 3,
+        "pass_rate": 0.5
+      },
+      "3600": {
+        "runs": 5,
+        "p50_ms": 6696,
+        "p95_ms": 7199,
+        "max_ms": 7199,
+        "tokens_p50": 396,
+        "tokens_p95": 425,
+        "tokens_max": 425,
+        "pass": 5,
+        "fail": 0,
+        "pass_rate": 1.0
+      }
+    },
+    "rejected_by": {
+      "name": 2,
+      "number": 2,
+      "negation": 1
+    },
+    "failures": [
+      {
+        "id": "talk-kestrel-4",
+        "reason": "name"
+      },
+      {
+        "id": "talk-tessellate-1",
+        "reason": "name"
+      },
+      {
+        "id": "talk-tessellate-3",
+        "reason": "number"
+      },
+      {
+        "id": "meeting-ops-2",
+        "reason": "number"
+      },
+      {
+        "id": "meeting-product-1",
+        "reason": "negation"
+      }
+    ],
+    "correction": {
+      "live_notes_segments": {
+        "rejected": 20,
+        "corrected": 39
+      }
+    },
+    "negatives": {
+      "cases": 32,
+      "rejected": 32,
+      "missed": [],
+      "by_kind": {
+        "structure": 20,
+        "correction": 12
+      },
+      "structure_rejected_by": {
+        "name": 3,
+        "number": 3,
+        "date": 1,
+        "contact": 2,
+        "negation": 6,
+        "novel": 3,
+        "forbidden": 1,
+        "opener": 1
+      }
+    }
+  },
+  "messy_after": {
+    "overall": {
+      "runs": 11,
+      "p50_ms": 2301,
+      "p95_ms": 4378,
+      "max_ms": 4378,
+      "tokens_p50": 128,
+      "tokens_p95": 256,
+      "tokens_max": 256,
+      "pass": 10,
+      "fail": 1,
+      "pass_rate": 0.909
+    },
+    "rejected_by": {
+      "number": 1
+    },
+    "failures": [
+      {
+        "id": "pf-export",
+        "reason": "number"
+      }
+    ],
+    "negatives": {
+      "cases": 32,
+      "rejected": 32,
+      "missed": [],
+      "by_kind": {
+        "structure": 20,
+        "correction": 12
+      },
+      "structure_rejected_by": {
+        "name": 3,
+        "number": 3,
+        "date": 1,
+        "contact": 2,
+        "negation": 6,
+        "novel": 3,
+        "forbidden": 1,
+        "opener": 1
+      }
+    }
+  },
+  "clean_after": {
+    "overall": {
+      "runs": 16,
+      "p50_ms": 5776,
+      "p95_ms": 12441,
+      "max_ms": 12441,
+      "tokens_p50": 354,
+      "tokens_p95": 768,
+      "tokens_max": 768,
+      "pass": 15,
+      "fail": 1,
+      "pass_rate": 0.938
+    },
+    "rejected_by": {
+      "finish": 1
+    },
+    "failures": [
+      {
+        "id": "reno-4000",
+        "reason": "finish"
+      }
+    ]
+  },
+  "reorganize_after_review": {
+    "overall": {
+      "runs": 12,
+      "p50_ms": 10540,
+      "p95_ms": 15374,
+      "max_ms": 15374,
+      "tokens_p50": 656,
+      "tokens_p95": 955,
+      "tokens_max": 955,
+      "pass": 10,
+      "fail": 2,
+      "pass_rate": 0.833,
+      "finish": {
+        "stop": 12
+      },
+      "changed": 12,
+      "rejected_by": {
+        "dropped_number": 2
+      },
+      "chars_max": 3430,
+      "prompt_tokens_max": 1984,
+      "context_max": 3008,
+      "keywords_kept": "10/10",
+      "tasks_kept": "10/10"
+    },
+    "by_size": {
+      "1000": {
+        "runs": 3,
+        "p50_ms": 4565,
+        "p95_ms": 4615,
+        "max_ms": 4615,
+        "tokens_p50": 280,
+        "tokens_p95": 287,
+        "tokens_max": 287,
+        "pass": 3,
+        "fail": 0,
+        "pass_rate": 1.0,
+        "finish": {
+          "stop": 3
+        },
+        "changed": 3,
+        "rejected_by": {},
+        "chars_max": 1016,
+        "prompt_tokens_max": 1205,
+        "context_max": 2229,
+        "keywords_kept": "3/3",
+        "tasks_kept": "3/3"
+      },
+      "2000": {
+        "runs": 3,
+        "p50_ms": 8981,
+        "p95_ms": 9123,
+        "max_ms": 9123,
+        "tokens_p50": 561,
+        "tokens_p95": 571,
+        "tokens_max": 571,
+        "pass": 1,
+        "fail": 2,
+        "pass_rate": 0.333,
+        "finish": {
+          "stop": 3
+        },
+        "changed": 3,
+        "rejected_by": {
+          "dropped_number": 2
+        },
+        "chars_max": 1971,
+        "prompt_tokens_max": 1540,
+        "context_max": 2564,
+        "keywords_kept": "1/1",
+        "tasks_kept": "1/1"
+      },
+      "3000": {
+        "runs": 3,
+        "p50_ms": 14510,
+        "p95_ms": 14653,
+        "max_ms": 14653,
+        "tokens_p50": 885,
+        "tokens_p95": 911,
+        "tokens_max": 911,
+        "pass": 3,
+        "fail": 0,
+        "pass_rate": 1.0,
+        "finish": {
+          "stop": 3
+        },
+        "changed": 3,
+        "rejected_by": {},
+        "chars_max": 3016,
+        "prompt_tokens_max": 1848,
+        "context_max": 2872,
+        "keywords_kept": "3/3",
+        "tasks_kept": "3/3"
+      },
+      "3500": {
+        "runs": 3,
+        "p50_ms": 14885,
+        "p95_ms": 15374,
+        "max_ms": 15374,
+        "tokens_p50": 923,
+        "tokens_p95": 955,
+        "tokens_max": 955,
+        "pass": 3,
+        "fail": 0,
+        "pass_rate": 1.0,
+        "finish": {
+          "stop": 3
+        },
+        "changed": 3,
+        "rejected_by": {},
+        "chars_max": 3430,
+        "prompt_tokens_max": 1984,
+        "context_max": 3008,
+        "keywords_kept": "3/3",
+        "tasks_kept": "3/3"
+      }
+    },
+    "failures": [
+      {
+        "id": "fundraiser-2000",
+        "reason": "dropped_number"
+      },
+      {
+        "id": "talk-2000",
+        "reason": "dropped_number"
+      }
+    ],
+    "negatives": {
+      "cases": 84,
+      "rejected": 84,
+      "missed": [],
+      "rejected_by": {
+        "dropped_number": 15,
+        "novel_name": 4,
+        "novel_date": 6,
+        "negation": 16,
+        "task_state": 4,
+        "heading": 5,
+        "novel_number": 5,
+        "length": 8,
+        "task_invented": 3,
+        "decision_dropped": 4,
+        "forbidden": 5,
+        "grammar": 3,
+        "coverage": 1,
+        "dropped_line": 1,
+        "number_moved": 2,
+        "task_owner": 2
+      },
+      "cases_by_why": {
+        "offsite-dropped_line": [
+          "dropped_line",
+          "dropped_number"
+        ],
+        "offsite-novel_name": [
+          "novel_name",
+          "novel_name"
+        ],
+        "offsite-novel_date": [
+          "novel_date",
+          "novel_date"
+        ],
+        "offsite-negation-flip": [
+          "negation",
+          "negation"
+        ],
+        "offsite-hedge-dropped": [
+          "negation",
+          "negation"
+        ],
+        "offsite-task_state": [
+          "task_state",
+          "task_state"
+        ],
+        "offsite-heading": [
+          "heading",
+          "heading"
+        ],
+        "offsite-novel_number": [
+          "novel_number",
+          "novel_number"
+        ],
+        "offsite-dropped_number": [
+          "dropped_number",
+          "dropped_number"
+        ],
+        "offsite-coverage": [
+          "coverage",
+          "dropped_number"
+        ],
+        "offsite-injection": [
+          "injection",
+          "length"
+        ],
+        "offsite-length": [
+          "length",
+          "length"
+        ],
+        "release-task_dropped": [
+          "task_dropped",
+          "dropped_number"
+        ],
+        "release-task_invented": [
+          "task_invented",
+          "task_invented"
+        ],
+        "release-decision_dropped": [
+          "decision_dropped",
+          "decision_dropped"
+        ],
+        "release-negation_added": [
+          "negation",
+          "negation"
+        ],
+        "release-hedge-dropped": [
+          "negation",
+          "negation"
+        ],
+        "release-forbidden": [
+          "forbidden",
+          "forbidden"
+        ],
+        "release-grammar": [
+          "grammar",
+          "grammar"
+        ],
+        "release-novel_number": [
+          "novel_number",
+          "novel_number"
+        ],
+        "release-dropped_number": [
+          "dropped_number",
+          "dropped_number"
+        ],
+        "release-novel_date": [
+          "novel_date",
+          "novel_date"
+        ],
+        "release-length": [
+          "length",
+          "length"
+        ],
+        "cafe-negation-flip": [
+          "negation",
+          "negation"
+        ],
+        "cafe-hedge-dropped": [
+          "negation",
+          "negation"
+        ],
+        "cafe-negation_added": [
+          "negation",
+          "negation"
+        ],
+        "cafe-task_state": [
+          "task_state",
+          "task_state"
+        ],
+        "cafe-novel_name": [
+          "novel_name",
+          "novel_name"
+        ],
+        "cafe-decision_dropped": [
+          "decision_dropped",
+          "decision_dropped"
+        ],
+        "cafe-forbidden-link": [
+          "forbidden",
+          "forbidden"
+        ],
+        "cafe-dropped_line": [
+          "dropped_line",
+          "dropped_number"
+        ],
+        "cafe-novel_date": [
+          "novel_date",
+          "novel_date"
+        ],
+        "cafe-heading": [
+          "heading",
+          "heading"
+        ],
+        "fundraiser-dropped_line": [
+          "dropped_line",
+          "dropped_number"
+        ],
+        "fundraiser-coverage": [
+          "coverage",
+          "coverage"
+        ],
+        "fundraiser-novel_date": [
+          "novel_date",
+          "novel_date"
+        ],
+        "fundraiser-novel_number": [
+          "novel_number",
+          "novel_number"
+        ],
+        "fundraiser-dropped_number": [
+          "dropped_number",
+          "dropped_number"
+        ],
+        "fundraiser-heading": [
+          "heading",
+          "heading"
+        ],
+        "fundraiser-task_invented": [
+          "task_invented",
+          "task_invented"
+        ],
+        "fundraiser-grammar": [
+          "grammar",
+          "grammar"
+        ],
+        "fundraiser-forbidden-link": [
+          "forbidden",
+          "forbidden"
+        ],
+        "fundraiser-decision_dropped": [
+          "decision_dropped",
+          "decision_dropped"
+        ],
+        "fundraiser-negation-flip": [
+          "negation",
+          "negation"
+        ],
+        "fundraiser-hedge-dropped": [
+          "negation",
+          "negation"
+        ],
+        "fundraiser-injection": [
+          "injection",
+          "length"
+        ],
+        "fundraiser-length": [
+          "length",
+          "length"
+        ],
+        "talk-forbidden-table": [
+          "forbidden",
+          "forbidden"
+        ],
+        "talk-negation-flip": [
+          "negation",
+          "negation"
+        ],
+        "talk-hedge-dropped": [
+          "negation",
+          "negation"
+        ],
+        "talk-task_dropped": [
+          "task_dropped",
+          "dropped_number"
+        ],
+        "talk-decision_dropped": [
+          "decision_dropped",
+          "decision_dropped"
+        ],
+        "talk-dropped_number": [
+          "dropped_number",
+          "dropped_number"
+        ],
+        "talk-novel_number": [
+          "novel_number",
+          "novel_number"
+        ],
+        "talk-novel_name": [
+          "novel_name",
+          "novel_name"
+        ],
+        "talk-novel_date": [
+          "novel_date",
+          "novel_date"
+        ],
+        "talk-task_state": [
+          "task_state",
+          "task_state"
+        ],
+        "talk-heading": [
+          "heading",
+          "heading"
+        ],
+        "talk-injection": [
+          "injection",
+          "length"
+        ],
+        "talk-coverage": [
+          "coverage",
+          "dropped_number"
+        ],
+        "hiring-negation-flip": [
+          "negation",
+          "negation"
+        ],
+        "hiring-negation-flip2": [
+          "negation",
+          "negation"
+        ],
+        "hiring-hedge-dropped": [
+          "negation",
+          "negation"
+        ],
+        "hiring-novel_name": [
+          "novel_name",
+          "novel_name"
+        ],
+        "hiring-task_state": [
+          "task_state",
+          "task_state"
+        ],
+        "hiring-task_dropped": [
+          "task_dropped",
+          "dropped_number"
+        ],
+        "hiring-task_invented": [
+          "task_invented",
+          "task_invented"
+        ],
+        "hiring-decision_dropped": [
+          "decision_dropped",
+          "dropped_number"
+        ],
+        "hiring-dropped_line": [
+          "dropped_line",
+          "dropped_number"
+        ],
+        "hiring-novel_number": [
+          "novel_number",
+          "novel_number"
+        ],
+        "hiring-dropped_number": [
+          "dropped_number",
+          "dropped_number"
+        ],
+        "hiring-novel_date": [
+          "novel_date",
+          "novel_date"
+        ],
+        "hiring-heading": [
+          "heading",
+          "heading"
+        ],
+        "hiring-grammar": [
+          "grammar",
+          "grammar"
+        ],
+        "hiring-forbidden-fence": [
+          "forbidden",
+          "forbidden"
+        ],
+        "hiring-injection": [
+          "injection",
+          "length"
+        ],
+        "hiring-length": [
+          "length",
+          "length"
+        ],
+        "hiring-coverage": [
+          "coverage",
+          "dropped_line"
+        ],
+        "review-release-negation-to-hedge": [
+          "negation",
+          "negation"
+        ],
+        "review-hiring-negation-to-hedge": [
+          "negation",
+          "negation"
+        ],
+        "review-offsite-number-swap": [
+          "dropped_number",
+          "number_moved"
+        ],
+        "review-hiring-date-swap": [
+          "dropped_number",
+          "number_moved"
+        ],
+        "review-talk-owner-dropped": [
+          "task_owner",
+          "task_owner"
+        ],
+        "review-fundraiser-owner-dropped": [
+          "task_owner",
+          "task_owner"
+        ]
+      }
+    },
+    "priority": {
+      "default": {
+        "runs": 9,
+        "budget_ms": 8000.0,
+        "p50_ms": 1718,
+        "max_ms": 2321,
+        "within_budget": 9,
+        "errors": {},
+        "reorganize_preempted": 9
+      },
+      "live_notes": {
+        "runs": 9,
+        "budget_ms": 15000.0,
+        "p50_ms": 2032,
+        "max_ms": 2121,
+        "within_budget": 9,
+        "errors": {},
+        "reorganize_preempted": 9
+      },
+      "rows": [
+        {
+          "id": "lab-3500",
+          "profile": "default",
+          "budget_ms": 8000.0,
+          "ms": 2321,
+          "error": null,
+          "reorganize": "preempted"
+        },
+        {
+          "id": "lab-3500",
+          "profile": "live_notes",
+          "budget_ms": 15000.0,
+          "ms": 1948,
+          "error": null,
+          "reorganize": "preempted"
+        },
+        {
+          "id": "support-3500",
+          "profile": "default",
+          "budget_ms": 8000.0,
+          "ms": 1629,
+          "error": null,
+          "reorganize": "preempted"
+        },
+        {
+          "id": "support-3500",
+          "profile": "live_notes",
+          "budget_ms": 15000.0,
+          "ms": 1971,
+          "error": null,
+          "reorganize": "preempted"
+        },
+        {
+          "id": "wedding-3500",
+          "profile": "default",
+          "budget_ms": 8000.0,
+          "ms": 1625,
+          "error": null,
+          "reorganize": "preempted"
+        },
+        {
+          "id": "wedding-3500",
+          "profile": "live_notes",
+          "budget_ms": 15000.0,
+          "ms": 2032,
+          "error": null,
+          "reorganize": "preempted"
+        },
+        {
+          "id": "lab-3500",
+          "profile": "default",
+          "budget_ms": 8000.0,
+          "ms": 1676,
+          "error": null,
+          "reorganize": "preempted"
+        },
+        {
+          "id": "lab-3500",
+          "profile": "live_notes",
+          "budget_ms": 15000.0,
+          "ms": 2078,
+          "error": null,
+          "reorganize": "preempted"
+        },
+        {
+          "id": "support-3500",
+          "profile": "default",
+          "budget_ms": 8000.0,
+          "ms": 1696,
+          "error": null,
+          "reorganize": "preempted"
+        },
+        {
+          "id": "support-3500",
+          "profile": "live_notes",
+          "budget_ms": 15000.0,
+          "ms": 2022,
+          "error": null,
+          "reorganize": "preempted"
+        },
+        {
+          "id": "wedding-3500",
+          "profile": "default",
+          "budget_ms": 8000.0,
+          "ms": 1752,
+          "error": null,
+          "reorganize": "preempted"
+        },
+        {
+          "id": "wedding-3500",
+          "profile": "live_notes",
+          "budget_ms": 15000.0,
+          "ms": 2069,
+          "error": null,
+          "reorganize": "preempted"
+        },
+        {
+          "id": "lab-3500",
+          "profile": "default",
+          "budget_ms": 8000.0,
+          "ms": 1806,
+          "error": null,
+          "reorganize": "preempted"
+        },
+        {
+          "id": "lab-3500",
+          "profile": "live_notes",
+          "budget_ms": 15000.0,
+          "ms": 2121,
+          "error": null,
+          "reorganize": "preempted"
+        },
+        {
+          "id": "support-3500",
+          "profile": "default",
+          "budget_ms": 8000.0,
+          "ms": 1730,
+          "error": null,
+          "reorganize": "preempted"
+        },
+        {
+          "id": "support-3500",
+          "profile": "live_notes",
+          "budget_ms": 15000.0,
+          "ms": 2024,
+          "error": null,
+          "reorganize": "preempted"
+        },
+        {
+          "id": "wedding-3500",
+          "profile": "default",
+          "budget_ms": 8000.0,
+          "ms": 1718,
+          "error": null,
+          "reorganize": "preempted"
+        },
+        {
+          "id": "wedding-3500",
+          "profile": "live_notes",
+          "budget_ms": 15000.0,
+          "ms": 2035,
+          "error": null,
+          "reorganize": "preempted"
+        }
+      ]
+    }
+  },
+  "reorganize_scope_2500_after_review": {
+    "overall": {
+      "runs": 18,
+      "p50_ms": 11157,
+      "p95_ms": 15516,
+      "max_ms": 15516,
+      "tokens_p50": 701,
+      "tokens_p95": 955,
+      "tokens_max": 955,
+      "pass": 15,
+      "fail": 3,
+      "pass_rate": 0.833,
+      "finish": {
+        "stop": 18
+      },
+      "changed": 18,
+      "rejected_by": {
+        "dropped_number": 2,
+        "task_invented": 1
+      },
+      "chars_max": 3430,
+      "prompt_tokens_max": 1984,
+      "context_max": 3008,
+      "keywords_kept": "15/15",
+      "tasks_kept": "15/15"
+    },
+    "by_size": {
+      "1000": {
+        "runs": 3,
+        "p50_ms": 4569,
+        "p95_ms": 4634,
+        "max_ms": 4634,
+        "tokens_p50": 280,
+        "tokens_p95": 287,
+        "tokens_max": 287,
+        "pass": 3,
+        "fail": 0,
+        "pass_rate": 1.0,
+        "finish": {
+          "stop": 3
+        },
+        "changed": 3,
+        "rejected_by": {},
+        "chars_max": 1016,
+        "prompt_tokens_max": 1205,
+        "context_max": 2229,
+        "keywords_kept": "3/3",
+        "tasks_kept": "3/3"
+      },
+      "2000": {
+        "runs": 3,
+        "p50_ms": 9050,
+        "p95_ms": 9225,
+        "max_ms": 9225,
+        "tokens_p50": 561,
+        "tokens_p95": 571,
+        "tokens_max": 571,
+        "pass": 1,
+        "fail": 2,
+        "pass_rate": 0.333,
+        "finish": {
+          "stop": 3
+        },
+        "changed": 3,
+        "rejected_by": {
+          "dropped_number": 2
+        },
+        "chars_max": 1971,
+        "prompt_tokens_max": 1540,
+        "context_max": 2564,
+        "keywords_kept": "1/1",
+        "tasks_kept": "1/1"
+      },
+      "3000": {
+        "runs": 3,
+        "p50_ms": 14537,
+        "p95_ms": 14682,
+        "max_ms": 14682,
+        "tokens_p50": 885,
+        "tokens_p95": 911,
+        "tokens_max": 911,
+        "pass": 3,
+        "fail": 0,
+        "pass_rate": 1.0,
+        "finish": {
+          "stop": 3
+        },
+        "changed": 3,
+        "rejected_by": {},
+        "chars_max": 3016,
+        "prompt_tokens_max": 1848,
+        "context_max": 2872,
+        "keywords_kept": "3/3",
+        "tasks_kept": "3/3"
+      },
+      "3500": {
+        "runs": 3,
+        "p50_ms": 14828,
+        "p95_ms": 15516,
+        "max_ms": 15516,
+        "tokens_p50": 923,
+        "tokens_p95": 955,
+        "tokens_max": 955,
+        "pass": 3,
+        "fail": 0,
+        "pass_rate": 1.0,
+        "finish": {
+          "stop": 3
+        },
+        "changed": 3,
+        "rejected_by": {},
+        "chars_max": 3430,
+        "prompt_tokens_max": 1984,
+        "context_max": 3008,
+        "keywords_kept": "3/3",
+        "tasks_kept": "3/3"
+      },
+      "scope-2500": {
+        "runs": 6,
+        "p50_ms": 11157,
+        "p95_ms": 12796,
+        "max_ms": 12796,
+        "tokens_p50": 701,
+        "tokens_p95": 802,
+        "tokens_max": 802,
+        "pass": 5,
+        "fail": 1,
+        "pass_rate": 0.833,
+        "finish": {
+          "stop": 6
+        },
+        "changed": 6,
+        "rejected_by": {
+          "task_invented": 1
+        },
+        "chars_max": 2468,
+        "prompt_tokens_max": 1685,
+        "context_max": 2709,
+        "keywords_kept": "5/5",
+        "tasks_kept": "5/5"
+      }
+    },
+    "failures": [
+      {
+        "id": "fundraiser-2000",
+        "reason": "dropped_number"
+      },
+      {
+        "id": "talk-2000",
+        "reason": "dropped_number"
+      },
+      {
+        "id": "wedding-3500 (scope)",
+        "reason": "task_invented"
+      }
+    ]
+  }
+}

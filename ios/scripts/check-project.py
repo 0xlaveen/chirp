@@ -32,6 +32,8 @@ for name in targets:
     for config_ref in objects[targets[name]['buildConfigurationList']]['buildConfigurations']:
         config = objects[config_ref]
         assert config['buildSettings']['ENABLE_TESTABILITY'] == ('YES' if config['name'] == 'Debug' else 'NO')
+        if config['name'] == 'Debug':
+            assert config['buildSettings']['ONLY_ACTIVE_ARCH'] == 'YES'
 assert all(s['TEST_HOST'] == '$(BUILT_PRODUCTS_DIR)/ChirpIOS.app/ChirpIOS' for s in settings('ChirpIOSTests'))
 assert all(s['ASSETCATALOG_COMPILER_APPICON_NAME'] == 'AppIcon' for s in settings('ChirpIOS'))
 assert hashlib.sha256((root/'App/Assets.xcassets/AppIcon.appiconset/AppIcon.png').read_bytes()).digest() == hashlib.sha256((root.parent/'mac/Assets/AppIcon.png').read_bytes()).digest()

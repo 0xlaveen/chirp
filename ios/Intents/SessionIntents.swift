@@ -42,6 +42,23 @@ struct StopChirpIntent: AudioRecordingIntent, LiveActivityIntent {
     }
 }
 
+/// Runs in the background so a hardware-keyboard shortcut can drive dictation from any app: starts in an
+/// armed session, or stops and copies the final for ⌘V. It never arms a session cold.
+struct ToggleChirpDictationIntent: AudioRecordingIntent, LiveActivityIntent {
+    static var title: LocalizedStringResource { "Toggle Chirp dictation" }
+    static var description: IntentDescription {
+        IntentDescription("Starts dictation while a Chirp session is running, or stops it and copies the text so you can paste it. Assign it a keyboard shortcut to dictate from any app.")
+    }
+    @MainActor func perform() async throws -> some IntentResult & ProvidesDialog {
+        #if CHIRP_APP
+        let message = try await SessionCoordinator.shared.perform(action: .toggle)
+        #else
+        let message = try unavailableIntentMessage()
+        #endif
+        return .result(dialog: "\(message)")
+    }
+}
+
 struct CancelChirpIntent: AudioRecordingIntent, LiveActivityIntent {
     static var title: LocalizedStringResource { "Cancel Chirp dictation" }
     @MainActor func perform() async throws -> some IntentResult & ProvidesDialog {
@@ -71,6 +88,8 @@ struct ChirpShortcuts: AppShortcutsProvider {
     static var appShortcuts: [AppShortcut] {
         AppShortcut(intent: StartChirpIntent(), phrases: ["Start dictation with \(.applicationName)"],
                     shortTitle: "Start dictation", systemImageName: "mic")
+        AppShortcut(intent: ToggleChirpDictationIntent(), phrases: ["Toggle dictation with \(.applicationName)"],
+                    shortTitle: "Toggle dictation", systemImageName: "mic.circle")
         AppShortcut(intent: StopChirpIntent(), phrases: ["Stop dictation with \(.applicationName)"],
                     shortTitle: "Stop dictation", systemImageName: "stop.fill")
         AppShortcut(intent: CancelChirpIntent(), phrases: ["Cancel dictation with \(.applicationName)"],

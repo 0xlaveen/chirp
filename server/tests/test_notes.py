@@ -225,21 +225,22 @@ def test_endpoint_structures_with_the_notes_budget(settings):
 
 
 @pytest.mark.parametrize(
-    "handle,error",
+    "handle,error,reason",
     [
-        (lambda request: httpx.Response(500), "http"),
-        (lambda request: reply("# Title\n- Ship Friday"), "rejected"),
-        (lambda request: reply(MARKDOWN, "length"), "rejected"),
-        (lambda request: httpx.Response(200, json={"unexpected": True}), "rejected"),
+        (lambda request: httpx.Response(500), "http", None),
+        (lambda request: reply("# Title\n- Ship Friday"), "rejected", "forbidden"),
+        (lambda request: reply(MARKDOWN, "length"), "rejected", "finish"),
+        (lambda request: httpx.Response(200, json={"unexpected": True}), "rejected", None),
     ],
 )
-def test_endpoint_failures_fail_closed(settings, handle, error):
+def test_endpoint_failures_fail_closed(settings, handle, error, reason):
     with run(settings, endpoint_corrector(handle)) as client:
         body = post(client, {"transcript": TRANSCRIPT}).json()
     assert body == {
         "markdown": None,
         "structured": False,
         "error": error,
+        "reason": reason,
         "timings_ms": {"structure": pytest.approx(body["timings_ms"]["structure"])},
     }
 
@@ -732,6 +733,9 @@ def test_a_renamed_speaker_is_accepted_and_an_invented_name_is_not():
     transcript = "Maya: i will send the spec by friday\nPerson 2: sounds good"
     assert notes.rejection_reason(transcript, "- [ ] **Maya** to send the spec by **Friday**", "stop") is None
     assert notes.rejection_reason(transcript, "- [ ] **Theo** to send the spec by **Friday**", "stop") == "name"
+    # A line-initial label is checked too once labels are in play (unlabelled transcripts keep the exemption).
+    assert notes.rejection_reason(transcript, "- Theo: sends the spec by **Friday**", "stop") == "name"
+    assert notes.rejection_reason(transcript, "- Maya: sends the spec by **Friday**", "stop") is None
 
 
 def test_the_prompt_has_the_speaker_rule():

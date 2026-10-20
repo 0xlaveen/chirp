@@ -254,7 +254,11 @@ private func span(_ slot: Int, _ start: Double, _ end: Double) -> SpeakerSpan { 
 
     private func make(_ port: UInt16, stub: StructureStub, clock: ManualClock) -> NotesRecorder {
         let config = ServerConfig(baseURL: URL(string: "http://127.0.0.1:\(port)")!)
-        return NotesRecorder(makeSession: { StreamSession(config: config, options: $0) }, structure: { try await stub.call($0) },
+        // Its own connection pool: URLSession.shared allows 6 connections per host, shared with the other suites'
+        // mock servers running in parallel.
+        let urlSession = URLSession(configuration: .ephemeral)
+        return NotesRecorder(makeSession: { StreamSession(config: config, options: $0, urlSession: urlSession) },
+                             structure: { try await stub.call($0) },
                              now: { clock.now }, sleep: { await clock.sleep($0) },
                              options: StartOptions(client: "mac", correction: true, wordTimings: true), structuring: true,
                              health: Health(correction: "available", notesStructure: true))
@@ -437,5 +441,51 @@ private func span(_ slot: Int, _ start: Double, _ end: Double) -> SpeakerSpan { 
         #expect(m.speakerStatus == "Speaker labels unavailable: the download failed")
         #expect(NotesStatus.speakerDownloadPrompt(size: "234 MB")
                 == "Speaker labels need a 234 MB on-device model, downloaded once. Audio never leaves this Mac.")
+    }
+}
+
+/// Speaker labels in #25's editable document: the Hearing strip, fallback blocks (what Organize re-structures).
+@MainActor
+@Suite struct SpeakerEditableNotesTests {
+    private func labelled() -> NotesDocument {
+        var d = NotesDocument(startedAt: Date(timeIntervalSince1970: 0))
+        d.append(NotesSegment(id: 0, offset: 0, raw: "we ship friday ok", text: "We ship Friday. OK."))
+        d.attachSpeakers([.init(slot: 1, start: 0, text: "We ship Friday."), .init(slot: 0, start: 3, text: "OK.")], toSegment: 0)
+        d.append(NotesSegment(id: 1, offset: 20, raw: "and the beta", text: "And the beta."))
+        d.attachSpeakers([.init(slot: 0, start: 20, text: "And the beta.")], toSegment: 1)
+        d.append(NotesSegment(id: 2, offset: 40, raw: "unlabelled words"))
+        return d
+    }
+
+    @Test func theHearingStripNamesWhoIsTalkingWhereTheSpeakerChanges() {
+        let m = NotesModel()
+        m.document = labelled()
+        m.document.livePartial = "and then"
+        #expect(m.hearingParts.map(\.name) == ["Person 1", "Person 2", nil, nil, nil])
+        #expect(m.hearingText == "Person 1: We ship Friday. Person 2: OK. And the beta. unlabelled words and then")
+        #expect(m.hearingParts[1].color == 1)
+    }
+
+    @Test func withoutLabelsTheHearingStripIsUnchanged() {
+        var d = NotesDocument()
+        d.append(NotesSegment(id: 0, offset: 0, raw: "we ship friday"))
+        d.append(NotesSegment(id: 1, offset: 20, raw: "and the beta"))
+        d.livePartial = "and then"
+        let m = NotesModel()
+        m.document = d
+        #expect(m.hearingText == [d.unstructuredTail, d.livePartial].joined(separator: " "))
+        #expect(m.hearingParts.allSatisfy { $0.name == nil })
+    }
+
+    @Test func aFallbackBlockKeepsWhoSaidWhatForOrganize() {
+        var d = labelled()
+        d.freezeAll()
+        #expect(d.text == NotesDocument.fallbackBlock("Person 1: We ship Friday.\n\nPerson 2: OK.\n\nPerson 2: And the beta.\n\nunlabelled words"))
+        #expect(d.untouchedFallbacks.first?.body.hasPrefix("Person 1: We ship Friday.") == true)
+        var plain = NotesDocument()
+        plain.append(NotesSegment(id: 0, offset: 0, raw: "a"))
+        plain.append(NotesSegment(id: 1, offset: 9, raw: "b"))
+        plain.freezeAll()
+        #expect(plain.text == NotesDocument.fallbackBlock("a\n\nb"))
     }
 }
