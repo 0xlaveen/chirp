@@ -39,12 +39,25 @@ def generate(line, model, tokenizer, sampler):
     from mlx_lm import stream_generate
 
     request = json.loads(line)
+    max_output = request.get("max_tokens", MAX_OUTPUT)
+    if (
+        isinstance(max_output, bool)
+        or not isinstance(max_output, int)
+        or not 1 <= max_output <= 1024
+    ):
+        reply({"ok": False})
+        return
+    # `user`, when present, is the entire user message (Notes structuring); legacy
+    # correction requests carry only `text` and keep the transcript wrapper.
+    user = request.get("user")
+    if user is None:
+        user = "Transcript JSON: " + json.dumps(request["text"], ensure_ascii=False)
+    elif not isinstance(user, str):
+        reply({"ok": False})
+        return
     messages = [
         {"role": "system", "content": request["system"]},
-        {
-            "role": "user",
-            "content": "Transcript JSON: " + json.dumps(request["text"], ensure_ascii=False),
-        },
+        {"role": "user", "content": user},
     ]
     tokens = tokenizer.apply_chat_template(
         messages,
@@ -52,7 +65,7 @@ def generate(line, model, tokenizer, sampler):
         add_generation_prompt=True,
         enable_thinking=False,
     )
-    if len(tokens) + MAX_OUTPUT > MAX_CONTEXT:
+    if len(tokens) + max_output > MAX_CONTEXT:
         reply({"ok": False})
         return
     chunks = []
@@ -61,7 +74,7 @@ def generate(line, model, tokenizer, sampler):
         model,
         tokenizer,
         prompt=tokens,
-        max_tokens=MAX_OUTPUT,
+        max_tokens=max_output,
         sampler=sampler,
     ):
         chunks.append(last.text)

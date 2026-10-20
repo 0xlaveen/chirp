@@ -25,6 +25,7 @@ class CorrectionConfig:
     model: str = ""
     prompt: str = ""
     timeout: float = 8.0
+    structure_timeout: float = 30.0
     api_key_env: str = "CHIRP_LLM_API_KEY"
     keychain_service: str = ""
     idle_seconds: float = 60.0
@@ -46,7 +47,10 @@ class CorrectionConfig:
         if self.mode not in {"off", "managed", "endpoint"}:
             raise ValueError("Invalid correction mode")
         self.enabled = self.mode != "off"
-        if any(not math.isfinite(v) or v <= 0 for v in (self.timeout, self.idle_seconds)):
+        if any(
+            not math.isfinite(v) or v <= 0
+            for v in (self.timeout, self.structure_timeout, self.idle_seconds)
+        ):
             raise ValueError("Invalid correction limits")
         if self.mode == "endpoint":
             url = urlsplit(self.base_url)

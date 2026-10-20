@@ -412,3 +412,82 @@ HF_HUB_OFFLINE=1 uv run pytest -q -m model
 ```
 
 Metrics are in [cleanup-prewarm.json](bench-data/cleanup-prewarm.json).
+
+## Notes structuring (2026-10-20)
+
+`POST /v1/notes/structure` through the real supervised helper with the cached default model
+(`qwen3-4b-instruct-2507-4bit`, warm, `max_tokens` 768, temperature 0), on the reference
+Apple M5 Pro (macOS 27.0.1, 1-minute load about 2-4, so close to quiet). The input is
+`server/tests/notes_eval.jsonl`: 16 invented transcripts (four topics, each at about 800,
+1600, 2400 and 4000 characters; long ones run into the next topic as a real session does),
+dense with numbers, decisions, to-dos, questions and negations. Greedy decoding makes repeated
+runs identical, so each figure is one run of each entry; cold load of the helper was 968 ms
+(cached weights). Guard figures use the committed `notes_rejected`.
+
+| Window (chars) | Runs | p50 (ms) | p95 (ms) | Output tokens p50 / p95 | Guards passed |
+|---:|---:|---:|---:|---:|---:|
+| ~800 | 4 | 2177 | 2264 | 180 / 188 | 4/4 |
+| ~1600 | 4 | 3604 | 6139 | 304 / 332 | 4/4 |
+| ~2400 | 4 | 5188 | 5540 | 450 / 494 | 3/4 |
+| ~4000 | 4 | 7966 | 8680 | 682 / 768 | 2/4 |
+| All | 16 | 4539 | 8680 | 338 / 768 | 13/16 (81%) |
+
+Windows up to 2400 characters, which is the size the client freezes at, pass the guards 11/12
+(92%). The p95 of a 2400-character pass is 5.5 s, inside the 10 s target. Both 4000-character
+misses are explained below: one was cut off at the 768-token cap (`finish == length`, so it is
+rejected by design) and one dropped a negation.
+
+How the guard pass rate got there (same 16 entries, same guards; only the prompt and the
+negation bookkeeping changed):
+
+| Step | Passed | Rejected by |
+|---|---:|---|
+| Prompt as first written | 6/16 (38%) | negation 9, finish 1 |
+| + explicit negation rule and a third few-shot example that keeps "not sure" / "haven't" | 9/16 (56%) | negation 5, finish 2 |
+| + "don't forget", "no problem", "no worries", "can't wait", "not only" are not counted as spoken negations | 12/16 (75%) | negation 3, finish 1 |
+| + a Question bullet keeps its hedge ("**not** sure whether X") | 13/16 (81%) | negation 2, finish 1 |
+
+What was and was not tuned:
+
+- **The novel-content threshold stays at 85 %.** It never rejected a faithful output in any run
+  (every rejection above is negation or the token cap), so there was nothing to tune. The
+  normalisation was widened from plain suffix stripping to stem variants (`shipping` / `ship`,
+  `moving` / `move`, `priorities` / `priority`) and tokens containing digits (`3rd`, `2pm`)
+  are left to the number guard; both came out of unit tests rather than the bench.
+- **The negation, number and injection guards were not weakened.** The only change on the
+  negation side is that five idioms whose "negation" is not semantic (`don't forget to call` is a
+  reminder) are not counted on the transcript side. A dropped `not` in any other sentence still
+  rejects, as does `we will not ship on friday` to `- Ship on Friday` (tested).
+- **What the remaining rejections are.** The model sometimes summarises "I'm not sure who owns it"
+  as a bare question, or drops a negated side remark. The guard is deliberately stricter than
+  a human reader, because a dropped `not` flips a decision. The cost is a `structured:false,
+  error:"rejected"` answer and the client keeps its previous block, then retries or freezes a
+  fallback block (see the issue's failure handling). The eval transcripts have about one
+  negated sentence in every three to four sentences, which is denser than most meetings, so
+  expect a higher pass rate on ordinary speech. This is a synthetic set: it measures the
+  guards and latency, not summary quality.
+- **The 768-token cap cuts off 4000-character windows.** One of the four 4000-character
+  outputs hit it and the median of that row is already 682 tokens. Windows that large should
+  not be sent.
+
+Recommended client constants for M2 (the issue's starting values were `freezeChars` 2400 and
+`maxWindowChars` 5000):
+
+- `freezeChars` **1600**. The open window can then reach about 1600 plus one segment
+  (a 90 s segment is roughly 1300 characters of speech), around 2900 characters, which stays
+  where the 2400-character row shows 450-500 output tokens and 5.5 s p95 rather than the
+  4000-character row where outputs reach the cap.
+- `maxWindowChars` **3600** for the fallback freeze, below the 4000-character row.
+- `NOTES_MAX_TOKENS` stays at 768: the largest output in the 2400-character row is 494 tokens,
+  and only the 4000-character row reaches the cap.
+
+Reproduce (cached weights only; the script refuses to run without them):
+
+```sh
+cd server
+uv run python scripts/bench_notes.py --repetitions 1 --dump /tmp/notes-out.jsonl
+uv run pytest -q -m model tests/test_notes.py
+```
+
+Metrics are in [notes-structuring.json](bench-data/notes-structuring.json). `--dump` writes every
+output (synthetic text) to a file you choose, for inspecting which guard rejected what.

@@ -1,0 +1,87 @@
+{
+  "model": "qwen3-4b-instruct-2507-4bit",
+  "token_count": "tokenizer",
+  "novel_threshold": 0.85,
+  "max_tokens": 768,
+  "cold_ms": 968,
+  "overall": {
+    "runs": 16,
+    "p50_ms": 4539,
+    "p95_ms": 8680,
+    "max_ms": 8680,
+    "tokens_p50": 338,
+    "tokens_p95": 768,
+    "tokens_max": 768,
+    "pass": 13,
+    "fail": 3,
+    "pass_rate": 0.812
+  },
+  "by_chars": {
+    "800": {
+      "runs": 4,
+      "p50_ms": 2177,
+      "p95_ms": 2264,
+      "max_ms": 2264,
+      "tokens_p50": 180,
+      "tokens_p95": 188,
+      "tokens_max": 188,
+      "pass": 4,
+      "fail": 0,
+      "pass_rate": 1.0
+    },
+    "1600": {
+      "runs": 4,
+      "p50_ms": 3604,
+      "p95_ms": 6139,
+      "max_ms": 6139,
+      "tokens_p50": 304,
+      "tokens_p95": 332,
+      "tokens_max": 332,
+      "pass": 4,
+      "fail": 0,
+      "pass_rate": 1.0
+    },
+    "2400": {
+      "runs": 4,
+      "p50_ms": 5188,
+      "p95_ms": 5540,
+      "max_ms": 5540,
+      "tokens_p50": 450,
+      "tokens_p95": 494,
+      "tokens_max": 494,
+      "pass": 3,
+      "fail": 1,
+      "pass_rate": 0.75
+    },
+    "4000": {
+      "runs": 4,
+      "p50_ms": 7966,
+      "p95_ms": 8680,
+      "max_ms": 8680,
+      "tokens_p50": 682,
+      "tokens_p95": 768,
+      "tokens_max": 768,
+      "pass": 2,
+      "fail": 2,
+      "pass_rate": 0.5
+    }
+  },
+  "rejected_by": {
+    "negation": 2,
+    "finish": 1
+  },
+  "failures": [
+    {
+      "id": "launch-2400",
+      "reason": "negation"
+    },
+    {
+      "id": "launch-4000",
+      "reason": "finish"
+    },
+    {
+      "id": "reno-4000",
+      "reason": "negation"
+    }
+  ]
+}

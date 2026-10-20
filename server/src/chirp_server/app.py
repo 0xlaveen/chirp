@@ -16,6 +16,7 @@ from starlette.responses import JSONResponse
 from starlette.routing import Route, WebSocketRoute
 from starlette.websockets import WebSocket, WebSocketDisconnect
 
+from . import notes
 from .audio import MAX_FRAME, MAX_PCM, AudioError, decode_wav, levels, samples, silent
 from .cleanup_models import DEFAULT_MODEL, model_spec
 from .config import Settings, load_token, persist_keep_loaded, read_keep_loaded
@@ -34,6 +35,8 @@ MESSAGES = {
     "bad_audio": "Invalid audio or control frame",
     "engine": "Speech engine unavailable",
     "unsupported": "keep_loaded requires managed correction mode",
+    "bad_notes": "Invalid notes request",
+    "notes_off": "Notes structuring needs correction enabled on the server",
 }
 
 
@@ -379,6 +382,7 @@ def create_app(settings=None, engine=None, token=None, corrector=None):
         managed.keep_loaded = keep["value"]
     credential = token
     pending_auth = 0
+    structuring = asyncio.Lock()  # at most one structuring pass server-wide
 
     async def housekeeping():
         while True:
@@ -432,6 +436,7 @@ def create_app(settings=None, engine=None, token=None, corrector=None):
                 ],
                 "correction_keep_loaded": keep["value"],
                 "correction_loaded": bool(managed and managed.loaded),
+                "notes_structure": True,
             }
         )
 
@@ -508,6 +513,48 @@ def create_app(settings=None, engine=None, token=None, corrector=None):
             # Load immediately in the background; while on, it never idle-unloads.
             managed.prewarm()
         return JSONResponse(correction_settings_payload())
+
+    async def notes_structure(request: Request):
+        """Stateless structuring: no engine lease, no retention, lengths-only logging."""
+        if not authorized(credential, bearer(request.headers)):
+            return JSONResponse(
+                error("auth"), status_code=401, headers={"WWW-Authenticate": "Bearer"}
+            )
+        if not config.enabled:
+            return JSONResponse(error("notes_off"), status_code=409)
+        try:
+            body = bytearray()
+            async for chunk in request.stream():
+                if len(body) + len(chunk) > notes.MAX_BODY_BYTES:
+                    raise ValueError("Request too large")
+                body.extend(chunk)
+            transcript, outline, _final = notes.validate_request(json.loads(bytes(body)))
+        except ValueError:  # includes malformed JSON and invalid UTF-8
+            return JSONResponse(error("bad_notes"), status_code=400)
+        if structuring.locked():
+            return JSONResponse(error("busy"), status_code=503)
+        async with structuring:
+            started = time.perf_counter()
+            if managed is not None:
+                managed.prewarm()
+            result = await notes.structure(corrector, transcript, outline)
+            elapsed = (time.perf_counter() - started) * 1000
+        log.info(
+            "notes_structure chars=%d outline=%d structured=%s error=%s ms=%.1f",
+            len(transcript),
+            len(outline),
+            result.structured,
+            result.error,
+            elapsed,
+        )
+        return JSONResponse(
+            {
+                "markdown": result.markdown,
+                "structured": result.structured,
+                "error": result.error,
+                "timings_ms": {"structure": elapsed},
+            }
+        )
 
     async def transcribe(request: Request):
         if not authorized(credential, bearer(request.headers)):
@@ -680,6 +727,7 @@ def create_app(settings=None, engine=None, token=None, corrector=None):
             Route("/v1/correction/profiles", profiles),
             Route("/v1/correction/settings", correction_settings, methods=["GET", "PUT"]),
             Route("/v1/transcribe", transcribe, methods=["POST"]),
+            Route("/v1/notes/structure", notes_structure, methods=["POST"]),
             WebSocketRoute("/v1/stream", stream),
         ],
         lifespan=lifespan,

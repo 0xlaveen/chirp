@@ -95,6 +95,11 @@ class ManagedCleanup:
         self.command = command
         self.process = None
         self.lock = asyncio.Lock()
+        # Corrections queued for the helper; a structuring caller never takes the lock
+        # while any are waiting, so a correction never waits behind a *queued* structure.
+        self.waiting = 0
+        self.no_waiting = asyncio.Event()
+        self.no_waiting.set()
         self.idle = None
         self.load_task = None
         self.ready = False
@@ -205,9 +210,44 @@ class ManagedCleanup:
         if self.load_task is not None:
             await self.load_task
 
-    async def generate(self, raw, prompt):
+    async def _acquire(self, priority):
+        if priority == "structure":
+            while True:
+                await self.no_waiting.wait()
+                await self.lock.acquire()
+                if not self.waiting:
+                    return
+                # A correction queued while this caller waited for the lock: yield to it.
+                self.lock.release()
+        self.waiting += 1
+        self.no_waiting.clear()
+        try:
+            await self.lock.acquire()
+        finally:
+            self.waiting -= 1
+            if not self.waiting:
+                self.no_waiting.set()
+
+    async def generate(
+        self,
+        raw,
+        prompt,
+        *,
+        user=None,
+        max_tokens=None,
+        timeout=None,  # noqa: ASYNC109 - the whole-call budget includes queue time
+        priority="correction",
+    ):
+        """One helper generation. `user` replaces the whole user message and `max_tokens`
+        the output cap; both keys are sent only when given, so correction requests stay
+        exactly `{"text", "system"}`. `priority="structure"` yields to queued corrections."""
+        request = {"text": raw, "system": prompt}
+        if user is not None:
+            request["user"] = user
+        if max_tokens is not None:
+            request["max_tokens"] = max_tokens
         # Queue time consumes the same budget, but a queued timeout never kills another call.
-        async with asyncio.timeout(self.config.timeout):
+        async with asyncio.timeout(timeout or self.config.timeout):
             if self.load_task is not None:
                 # A start-triggered prewarm may still be loading; this final's
                 # whole-call timeout includes waiting for it. Shielded: cancelling
@@ -215,15 +255,14 @@ class ManagedCleanup:
                 # shared load other finals may be waiting on. A failed load is
                 # absorbed by _prewarm, so generate retries cold below.
                 await asyncio.shield(self.load_task)
-            async with self.lock:
+            await self._acquire(priority)
+            try:
                 if self.idle:
                     self.idle.cancel()
                     self.idle = None
                 try:
                     await self._ensure_ready()
-                    self.process.stdin.write(
-                        json.dumps({"text": raw, "system": prompt}).encode() + b"\n"
-                    )
+                    self.process.stdin.write(json.dumps(request).encode() + b"\n")
                     await self.process.stdin.drain()
                     reply = await self._read()
                     if reply.get("ok") is not True:
@@ -236,6 +275,8 @@ class ManagedCleanup:
                     raise
                 finally:
                     self._arm_idle()
+            finally:
+                self.lock.release()
 
     def _arm_idle(self):
         if self.idle:
