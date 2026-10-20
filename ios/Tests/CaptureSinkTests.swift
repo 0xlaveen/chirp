@@ -23,6 +23,24 @@ struct CaptureSinkTests {
         transport.sent.reduce(0) { sum, message in if case .data(let data) = message { sum + data.count } else { sum } }
     }
 
+    /// Regression: on device, AVAudioEngine runs taps on its realtime thread. A main-actor-isolated tap
+    /// trapped in Swift 6's runtime isolation check as soon as a session armed the microphone.
+    @Test func microphoneTapRunsOffTheMainActor() async throws {
+        let transport = SyntheticTransport(), session = StreamSession(transport: transport, options: StartOptions())
+        let sink = CaptureSink(), input = try buffer()
+        sink.configure(format: input.format)
+        await session.open()
+        try sink.begin(session, onFailure: {}, onLimit: {})
+        sink.ready()
+        let tap = MicrophoneCapture.tap(sink)
+        let time = AVAudioTime(sampleTime: 0, atRate: 16_000)
+        await withCheckedContinuation { (done: CheckedContinuation<Void, Never>) in
+            DispatchQueue(label: "dev.chirp.tests.realtime").async { tap(input, time); done.resume() }
+        }
+        #expect(binaryBytes(transport) > 0)
+        await session.stop()
+    }
+
     @Test func idleDiscardsAndReadyPrecedesAllAudioIncludingFlush() async throws {
         let transport = SyntheticTransport(), session = StreamSession(transport: transport, options: StartOptions())
         let sink = CaptureSink(), input = try buffer()

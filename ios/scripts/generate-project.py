@@ -34,7 +34,10 @@ def configs(name, settings):
     for mode in ('Debug', 'Release'):
         values = dict(settings)
         if mode == 'Debug':
-            values.update(SWIFT_OPTIMIZATION_LEVEL='-Onone', DEBUG_INFORMATION_FORMAT='dwarf', ENABLE_TESTABILITY='YES')
+            # Swift package products use the destination's active architecture in
+            # Debug. Extensions must match it rather than also requesting x86_64
+            # modules that the arm64 package build does not produce.
+            values.update(SWIFT_OPTIMIZATION_LEVEL='-Onone', DEBUG_INFORMATION_FORMAT='dwarf', ENABLE_TESTABILITY='YES', ONLY_ACTIVE_ARCH='YES')
             values['SWIFT_ACTIVE_COMPILATION_CONDITIONS'] = values.get('SWIFT_ACTIVE_COMPILATION_CONDITIONS', '$(inherited)') + ' DEBUG'
         else:
             values.update(SWIFT_OPTIMIZATION_LEVEL='-O', DEBUG_INFORMATION_FORMAT='dwarf-with-dsym', ENABLE_TESTABILITY='NO')
