@@ -74,7 +74,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         Sounds.prepare()   // decode the cues now so the first start sound has no wait
         Task { await controller.refreshHealth() }
         healthTimer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [controller] _ in
-            Task { @MainActor in await controller.refreshHealth() }
+            Task { @MainActor in
+                controller.retryHotkeyIfNeeded()
+                await controller.refreshHealth()
+            }
+        }
+        // Posted when any app's Accessibility access changes; the trust check settles a moment later.
+        DistributedNotificationCenter.default().addObserver(forName: Notification.Name("com.apple.accessibility.api"),
+                                                            object: nil, queue: .main) { [controller] _ in
+            Task { @MainActor in
+                try? await Task.sleep(for: .seconds(1))
+                controller.retryHotkeyIfNeeded()
+            }
         }
 
         // First run: the setup window, not Settings. It records completion itself, only once finished.

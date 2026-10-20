@@ -10,7 +10,7 @@ Chirp turns speech into text on machines you own. Speech recognition runs locall
 
 ## Highlights
 
-- **System-wide Mac dictation.** ⌃⌥Space in any app: tap to toggle, hold to push-to-talk, Esc to cancel. A floating HUD shows the live transcript while you speak; text is inserted directly (Accessibility), pasted, or copied as a fallback.
+- **System-wide Mac dictation.** ⌃⌥Space — or any shortcut you record, including ⌥ on its own — in any app. Auto-stop (press, talk, it stops when you pause) or hold to talk; Esc cancels. A floating HUD shows the live transcript while you speak; text is inserted directly (Accessibility), pasted, or copied as a fallback.
 - **Recognition stays on your Mac.** The server binds to `127.0.0.1` only and runs your selected Parakeet TDT model via MLX (English v2 by default, with multilingual v3 available). Remote access, if you want it for the phone, is tailnet-only through Tailscale Serve.
 - **Live Notes on Mac.** ⌃⌥N keeps the microphone open for a meeting or a long think-aloud and turns what you say into live Markdown notes — headings, bullets, to-dos, decisions and open questions — in a resizable window next to the full transcript, using the same local model as clean-up. Copy or save the notes as Markdown; nothing is kept otherwise.
 - **Optional clean-up.** A local Qwen model can polish the final transcript — fillers, stutters, punctuation, casing — with styles for chat, email, code and notes, per-app styles, and editable prompts. Off by default; every clean-up keeps the raw text one keystroke away ("Use raw" for 5 s).

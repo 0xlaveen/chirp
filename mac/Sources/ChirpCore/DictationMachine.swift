@@ -15,9 +15,38 @@ public enum DictationState: Sendable, Equatable {
     }
 }
 
+/// How the dictation hotkey works.
+public enum ActivationMode: String, CaseIterable, Sendable {
+    /// Press once and talk; the dictation ends when you pause (`AutoStopDetector`), or at the next press.
+    case autoStop = "auto-stop"
+    /// Talk while the hotkey is held; letting go finishes.
+    case holdToTalk = "hold"
+
+    public var title: String {
+        switch self {
+        case .autoStop: "Auto-stop"
+        case .holdToTalk: "Hold to talk"
+        }
+    }
+
+    /// One sentence for Settings.
+    public var help: String {
+        switch self {
+        case .autoStop: "Press once and talk. Chirp stops when you pause, or when you press again."
+        case .holdToTalk: "Hold the hotkey while you talk; let go to finish."
+        }
+    }
+}
+
 public enum DictationEvent: Sendable, Equatable {
     case hotkeyDown(at: TimeInterval)
     case hotkeyUp(at: TimeInterval)
+    /// The hotkey, a modifier on its own, was part of another shortcut (⌥←): a dictation it just started is dropped.
+    case hotkeyChord
+    /// "Start/Stop Dictation" in the menu: starts a dictation, or finishes the one under way, in either mode.
+    case toggle
+    /// Auto-stop: the speaker paused long enough, or never spoke.
+    case silence
     case escape
     case serverReady
     /// The server started clean-up on the final transcript (`correcting`).
@@ -44,15 +73,18 @@ public enum DictationEffect: Sendable, Equatable {
 }
 
 /// Pure state machine: idle → connecting → listening → finalizing → [correcting →] inserting → idle (+ error).
-/// A press shorter than `tapThreshold` toggles; a longer press is push-to-talk until release.
+/// Auto-stop: a press starts, the next press or `silence` finishes. Hold to talk: the release finishes; a press shorter
+/// than `tapThreshold` was not meant as dictation and is dropped with a hint.
 public struct DictationMachine: Sendable {
     public static let tapThreshold: TimeInterval = 0.3
+    public static let holdHint = "Hold the hotkey while you talk"
 
+    public var mode: ActivationMode
     public private(set) var state: DictationState = .idle
-    /// Set while the activating key is still down and its press length is undecided.
+    /// Set while the activating key is still down.
     private var pressStart: TimeInterval?
 
-    public init() {}
+    public init(mode: ActivationMode = .autoStop) { self.mode = mode }
 
     @discardableResult
     public mutating func handle(_ event: DictationEvent) -> [DictationEffect] {
@@ -62,17 +94,42 @@ public struct DictationMachine: Sendable {
             pressStart = t
             return [.start]
 
+        case (.idle, .toggle), (.error, .toggle):
+            state = .connecting
+            pressStart = nil
+            return [.start]
+
         case (.connecting, .hotkeyDown), (.listening, .hotkeyDown):
-            // Already recording. A new press while the first is undecided is key repeat; otherwise it's the toggle-off tap.
+            // Already recording. A new press while the first is still down is key repeat; otherwise it stops.
             guard pressStart == nil else { return [] }
+            state = .finalizing
+            return [.finalize]
+
+        case (.connecting, .toggle), (.listening, .toggle):
+            pressStart = nil
             state = .finalizing
             return [.finalize]
 
         case (.connecting, .hotkeyUp(let t)), (.listening, .hotkeyUp(let t)):
             guard let start = pressStart else { return [] }
             pressStart = nil
-            if t - start < Self.tapThreshold { return [] }   // tap: keep recording until the next tap
-            state = .finalizing                                // hold released: push-to-talk
+            guard mode == .holdToTalk else { return [] }      // auto-stop: the release means nothing
+            if t - start < Self.tapThreshold {
+                state = .error(Self.holdHint)
+                return [.abort(Self.holdHint)]
+            }
+            state = .finalizing
+            return [.finalize]
+
+        case (.connecting, .hotkeyChord), (.listening, .hotkeyChord):
+            guard pressStart != nil else { return [] }
+            pressStart = nil
+            state = .idle
+            return [.cancel]
+
+        case (.listening, .silence):
+            guard mode == .autoStop else { return [] }
+            state = .finalizing
             return [.finalize]
 
         case (.connecting, .serverReady):

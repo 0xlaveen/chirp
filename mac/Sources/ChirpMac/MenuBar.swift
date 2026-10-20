@@ -153,6 +153,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         inputs.rawOfferOpen = controller.rawOffer.isOpen
         inputs.rawOfferKey = controller.rawOffer.hotkeyActive ? RawOffer.combo.title : nil
         inputs.hotkey = settings.hotkey
+        inputs.activationMode = settings.activationMode
         inputs.soundsEnabled = settings.soundsEnabled
         inputs.soundPack = settings.soundPack
         inputs.serverURL = settings.serverURL

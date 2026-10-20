@@ -236,11 +236,12 @@ public enum Snapshots {
         return [
             form("ready", .general) { _ in },
             form("custom-hotkey", .general) { $0.hotkey = .custom(keyCode: 0x0F, modifiers: UInt32(controlKey | optionKey | cmdKey)) },   // ⌃⌥⌘R
+            form("option-hold", .general) { $0.hotkey = .option; $0.activationMode = .holdToTalk },
             form("login-unavailable", .general) { $0.launch = .unavailable },
             Scenario(name: "settings-general-hotkey-rejected") {
                 let form = SettingsForm(SettingsState())
-                // As if ⌥Space had just been pressed in the recorder (set directly: no event monitor offscreen).
-                form.recorder.apply(.rejected(.optionOnly))
+                // As if ⇧ had just been pressed and let go in the recorder (set directly: no event monitor offscreen).
+                form.recorder.apply(.rejected(.shiftAlone))
                 let view = form.view(for: .general)
                 view.setFrameSize(form.fittingSize(for: .general))
                 return view

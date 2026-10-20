@@ -31,6 +31,8 @@ final class DictationController {
     /// "Insert raw immediately": the raw insertion started when `correcting` arrived (nil outcome: cancelled first).
     private var rawInsertTask: Task<InsertionOutcome?, Never>?
     private var startOptions = StartOptions()
+    /// The hotkey's presses for the current mode and shortcut; rebuilt whenever the hotkey is registered.
+    private var gesture = HotkeyGesture()
 
     /// Longer than the server's own clean-up timeout (8 s by default), so the server's fallback normally wins.
     static let correctionTimeout: Duration = .seconds(12)
@@ -51,21 +53,41 @@ final class DictationController {
     private(set) lazy var gate = PauseGate(
         register: { [weak self] in
             guard let self else { return false }
-            return HotKeyCenter.shared.register(id: Self.dictateID, combo: settings.hotkey,
+            let combo = settings.hotkey
+            self.gesture = HotkeyGesture(mode: settings.activationMode, modifierOnly: combo.isModifierOnly)
+            self.machine.mode = settings.activationMode
+            return HotKeyCenter.shared.register(id: Self.dictateID, combo: combo,
                                                 onDown: { [weak self] in self?.hotkeyDown() },
-                                                onUp: { [weak self] in self?.hotkeyUp() })
+                                                onUp: { [weak self] in self?.hotkeyUp() },
+                                                onChord: { [weak self] in self?.hotkeyChord() })
         },
         unregister: { HotKeyCenter.shared.unregister(id: Self.dictateID) },
         onChange: { [weak self] in self?.onChange?() })
 
     var isPaused: Bool { gate.isPaused }
 
+    /// The shortcut recorder holds the hotkey released.
+    private var hotkeySuspended = false
+
     /// (Re)registers the dictation hotkey from settings (nothing while paused).
     @discardableResult
-    func registerHotkey() -> Bool { gate.registerHotkey() }
+    func registerHotkey() -> Bool {
+        hotkeySuspended = false
+        return gate.registerHotkey()
+    }
 
     /// Releases the dictation hotkey while the shortcut recorder listens; `registerHotkey()` takes it back.
-    func suspendHotkey() { gate.suspendHotkey() }
+    func suspendHotkey() {
+        hotkeySuspended = true
+        gate.suspendHotkey()
+    }
+
+    /// A hotkey matched from the event tap cannot register before Accessibility is granted; try again once it is.
+    func retryHotkeyIfNeeded() {
+        guard !gate.isPaused, !hotkeySuspended, !gate.hotkeyRegistered, settings.hotkey.needsEventTap,
+              Permissions.accessibilityGranted else { return }
+        registerHotkey()
+    }
 
     /// The menu's switch: pausing ends a dictation under way and releases the hotkeys; resuming registers the hotkey again.
     func setRunning(_ running: Bool) {
@@ -82,19 +104,33 @@ final class DictationController {
     // MARK: input from the hotkeys
 
     func hotkeyDown() {
-        onHotkeyPressed?()
-        if showBlockedToast() { return }
-        send(.hotkeyDown(at: ProcessInfo.processInfo.systemUptime))
+        let now = ProcessInfo.processInfo.systemUptime
+        deliver(gesture.down(at: now))
+        guard gesture.needsArmTimer else { return }
+        Task { [weak self] in
+            try? await Task.sleep(for: .seconds(HotkeyGesture.armDelay))
+            guard let self else { return }
+            self.deliver(self.gesture.armDue(pressedAt: now, at: ProcessInfo.processInfo.systemUptime))
+        }
     }
-    func hotkeyUp() { send(.hotkeyUp(at: ProcessInfo.processInfo.systemUptime)) }
+    func hotkeyUp() { deliver(gesture.up(at: ProcessInfo.processInfo.systemUptime)) }
+    func hotkeyChord() { deliver(gesture.chord()) }
     func escape() { send(.escape) }
 
-    /// "Start/Stop dictation" in the menu: a tap of the hotkey, so it starts a toggle-mode dictation or ends one.
+    private func deliver(_ events: [DictationEvent]) {
+        for event in events {
+            if case .hotkeyDown = event {
+                onHotkeyPressed?()
+                if showBlockedToast() { return }
+            }
+            send(event)
+        }
+    }
+
+    /// "Start/Stop dictation" in the menu: starts a dictation or finishes the one under way, in either mode.
     func toggleDictation() {
         guard !isPaused, !showBlockedToast() else { return }
-        let now = ProcessInfo.processInfo.systemUptime
-        send(.hotkeyDown(at: now))
-        send(.hotkeyUp(at: now))
+        send(.toggle)
     }
 
     /// While Notes records, an idle dictation does not start: a short HUD toast says why and no event is sent.
@@ -220,7 +256,8 @@ final class DictationController {
     private func startStreaming(epoch myEpoch: Int) {
         let session = StreamSession(config: settings.serverConfig(), options: startOptions)
         self.session = session
-        let sink = CaptureSink(session: session) { [weak self] level in
+        let autoStop = machine.mode == .autoStop ? AutoStopDetector(silence: settings.autoStopSilence) : nil
+        let sink = CaptureSink(session: session, autoStop: autoStop) { [weak self] level in
             Task { @MainActor in
                 guard let self, self.epoch == myEpoch else { return }
                 self.hud.model.pushLevel(level.rms)
@@ -229,6 +266,11 @@ final class DictationController {
             Task { @MainActor in
                 guard let self, self.epoch == myEpoch, self.machine.state.isActive else { return }
                 self.send(.failed("No microphone signal"))
+            }
+        } onAutoStop: { [weak self] in
+            Task { @MainActor in
+                guard let self, self.epoch == myEpoch else { return }
+                self.send(.silence)
             }
         }
         do {
@@ -463,23 +505,29 @@ final class CaptureSink: @unchecked Sendable {
     private let onLevel: @Sendable (Level) -> Void
     private let onSilence: @Sendable () -> Void
     private let lock = NSLock()
+    private let onAutoStop: @Sendable () -> Void
     private var guardState = SilenceGuard()
+    private var autoStop: AutoStopDetector?
     private var clock: TimeInterval = 0
 
-    init(session: StreamSession, onLevel: @escaping @Sendable (Level) -> Void, onSilence: @escaping @Sendable () -> Void) {
+    init(session: StreamSession, autoStop: AutoStopDetector? = nil, onLevel: @escaping @Sendable (Level) -> Void,
+         onSilence: @escaping @Sendable () -> Void, onAutoStop: @escaping @Sendable () -> Void = {}) {
         self.session = session
+        self.autoStop = autoStop
         self.onLevel = onLevel
         self.onSilence = onSilence
+        self.onAutoStop = onAutoStop
     }
 
     func handle(_ frame: Data) {
         session.sendAudio(frame)
         let level = Level(pcm16: frame)
-        let silent = lock.withLock { () -> Bool in
+        let (silent, paused) = lock.withLock { () -> (Bool, Bool) in
             clock += Double(frame.count / 2) / PCMConverter.sampleRate
-            return guardState.feed(level, at: clock)
+            return (guardState.feed(level, at: clock), autoStop?.feed(level, at: clock) ?? false)
         }
         onLevel(level)
         if silent { onSilence() }
+        if paused { onAutoStop() }
     }
 }

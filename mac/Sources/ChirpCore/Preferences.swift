@@ -21,6 +21,19 @@ public final class Preferences: @unchecked Sendable {
         set { defaults.set(newValue.id, forKey: "hotkey") }
     }
     #endif
+    /// Auto-stop (the default) or hold to talk. An unknown stored value falls back to auto-stop.
+    public var activationMode: ActivationMode {
+        get { defaults.string(forKey: "activationMode").flatMap(ActivationMode.init(rawValue:)) ?? .autoStop }
+        set { defaults.set(newValue.rawValue, forKey: "activationMode") }
+    }
+    /// Auto-stop: seconds of quiet after speech that end a dictation (one of `AutoStopDetector.silenceChoices`).
+    public var autoStopSilence: TimeInterval {
+        get {
+            guard let v = defaults.object(forKey: "autoStopSilence") as? Double, v.isFinite else { return AutoStopDetector.defaultSilence }
+            return min(max(v, 0.5), 10)
+        }
+        set { defaults.set(newValue.isFinite ? min(max(newValue, 0.5), 10) : AutoStopDetector.defaultSilence, forKey: "autoStopSilence") }
+    }
     /// Clean-up (the server's `correction` flag). Off by default.
     public var correction: Bool {
         get { defaults.bool(forKey: "correction") }

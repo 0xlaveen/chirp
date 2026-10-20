@@ -6,6 +6,7 @@ public struct OnboardingState: Sendable {
     public var flow = OnboardingFlow()
     public var checks = OnboardingChecks()
     public var hotkey: KeyCombo = .controlOptionSpace
+    public var activationMode: ActivationMode = .autoStop
     public var localModelsAvailable = false
 
     public init() {}
@@ -133,7 +134,7 @@ public final class OnboardingView: NSView {
         rebuildDots(current: step.rawValue)
 
         for view in content.arrangedSubviews { content.removeArrangedSubview(view); view.removeFromSuperview() }
-        let (symbol, body) = Self.copy(step, hotkey: state.hotkey)
+        let (symbol, body) = Self.copy(step, hotkey: state.hotkey, mode: state.activationMode)
         content.addArrangedSubview(header(step: step, symbol: symbol))
         let title = NSTextField(labelWithString: step.title)
         title.font = .systemFont(ofSize: 22, weight: .semibold)
@@ -158,7 +159,7 @@ public final class OnboardingView: NSView {
 
     // MARK: pieces
 
-    private static func copy(_ step: OnboardingStep, hotkey: KeyCombo) -> (symbol: String, body: String) {
+    private static func copy(_ step: OnboardingStep, hotkey: KeyCombo, mode: ActivationMode) -> (symbol: String, body: String) {
         switch step {
         case .welcome:
             ("", "Press a hotkey in any app, talk, and your words appear where you’re typing. Setup takes a minute: Chirp needs the microphone, Accessibility and a speech server.")
@@ -169,7 +170,10 @@ public final class OnboardingView: NSView {
         case .server:
             ("server.rack", "Chirp sends audio to chirp-server, which runs on this Mac unless you point Chirp elsewhere in Settings.")
         case .tryIt:
-            ("waveform", "Click the box, press \(hotkey.title) and say something. Tap to start and stop, or hold to talk.")
+            switch mode {
+            case .autoStop: ("waveform", "Click the box, press \(hotkey.title) and say something. Chirp stops when you pause.")
+            case .holdToTalk: ("waveform", "Click the box, hold \(hotkey.title) and say something, then let go.")
+            }
         }
     }
 

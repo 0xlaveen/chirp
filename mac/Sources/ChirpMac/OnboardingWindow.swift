@@ -39,6 +39,7 @@ final class OnboardingWindowController: NSObject, NSWindowDelegate {
         s.flow = flow
         s.checks = checks
         s.hotkey = settings.hotkey
+        s.activationMode = settings.activationMode
         s.localModelsAvailable = settings.serverConfig().isLoopback
         return s
     }

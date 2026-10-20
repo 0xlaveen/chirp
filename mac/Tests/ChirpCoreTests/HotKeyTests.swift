@@ -13,12 +13,15 @@ import Testing
         #expect(KeyCombo.preset(id: nil) == .controlOptionSpace)
     }
 
-    /// macOS 15+ silently ignores Carbon hot keys with only ⌥/⇧ modifiers, and ⌃Space alone belongs to Raycast/input sources.
+    /// macOS 15+ silently ignores Carbon hot keys with only ⌥/⇧ modifiers, so those come from the event tap; ⌃Space
+    /// alone belongs to Raycast/input sources.
     @Test func everyPresetCanFireOnCurrentMacOS() {
         for combo in KeyCombo.presets {
-            #expect(combo.modifiers & UInt32(controlKey | cmdKey) != 0, "\(combo.title) needs ⌃ or ⌘")
+            #expect(combo.needsEventTap || combo.modifiers & UInt32(controlKey | cmdKey) != 0, "\(combo.title) needs ⌃ or ⌘")
             #expect(combo.modifiers != UInt32(controlKey), "\(combo.title) is ⌃Space alone")
+            #expect(KeyCombo.resolve(id: combo.id) == combo)
         }
+        #expect(KeyCombo.preset(id: "option") == .option && KeyCombo.preset(id: "right-option") == .rightOption)
         #expect(KeyCombo.preset(id: "option-space") == .controlOptionSpace)
         #expect(KeyCombo.preset(id: "option-shift-space") == .controlOptionSpace)
     }
@@ -36,9 +39,10 @@ import Testing
         #expect(log == ["down", "up"])
     }
 
-    /// Press/release timing drives the machine exactly as the Carbon events do: tap toggles, hold is push-to-talk.
+    /// Press/release timing drives the machine exactly as the Carbon events do: auto-stop toggles on each press,
+    /// hold to talk finishes on release.
     @Test func tapAndHoldThroughDispatch() {
-        var machine = DictationMachine()
+        var machine = DictationMachine(mode: .autoStop)
         var clock: TimeInterval = 0
         let center = HotKeyCenter.shared
         center.addForTesting(id: 9002, onDown: { machine.handle(.hotkeyDown(at: clock)) }, onUp: { machine.handle(.hotkeyUp(at: clock)) })
@@ -54,7 +58,7 @@ import Testing
         clock = 5.05
         center.dispatch(id: 9002, pressed: false)
 
-        var hold = DictationMachine()
+        var hold = DictationMachine(mode: .holdToTalk)
         clock = 10
         center.addForTesting(id: 9003, onDown: { hold.handle(.hotkeyDown(at: clock)) }, onUp: { hold.handle(.hotkeyUp(at: clock)) })
         defer { center.unregister(id: 9003) }

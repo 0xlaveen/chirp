@@ -74,6 +74,7 @@ public struct MenuInputs: Sendable {
     public var paused = false
     /// The dictation hotkey is registered (it is not while paused, or when another app owns the shortcut).
     public var hotkeyRegistered = true
+    public var activationMode: ActivationMode = .autoStop
     /// Every input device, the system default among them, and the one the user picked (nil follows the default).
     public var inputs: [AudioInput] = []
     public var defaultInput: AudioInput?
@@ -145,7 +146,12 @@ public enum MenuContent {
         }
         if h.ready == false { return ("Loading model…", .warning) }
         if m.debugRetention { return ("DEBUG recordings kept", .error) }
-        return m.hotkeyRegistered ? ("Ready · \(m.hotkey.title)", .normal) : ("Ready · shortcut in use elsewhere", .warning)
+        if !m.hotkeyRegistered {
+            // A tap-matched shortcut (⌥ on its own) fails only without Accessibility; a Carbon one, when another app owns it.
+            return m.hotkey.needsEventTap && !m.accessibilityGranted ? ("Ready · hotkey needs Accessibility", .warning)
+                                                                     : ("Ready · shortcut in use elsewhere", .warning)
+        }
+        return ("Ready · \(m.activationMode == .holdToTalk ? "hold " : "")\(m.hotkey.title)", .normal)
     }
 
     /// The rows below the header.
