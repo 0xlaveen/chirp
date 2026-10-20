@@ -174,13 +174,15 @@ public struct Health: Decodable, Sendable, Equatable {
     public var correctionLoaded: Bool?
     /// `POST /v1/notes/structure` exists (authenticated health only); nil from a server that predates Live Notes.
     public var notesStructure: Bool?
+    /// `POST /v1/notes/reorganize` exists (authenticated health only); nil from a server that predates it.
+    public var notesReorganize: Bool?
     /// The hidden `live_notes` style exists (authenticated health only); nil from an older server, which gets `default`.
     public var notesCorrection: Bool?
 
     public init(ok: Bool = true, engine: String? = nil, ready: Bool? = nil, debugRetention: Bool? = nil,
                 correction: String? = nil, correctionLeavesMachine: Bool? = nil, correctionHost: String? = nil,
                 correctionProfiles: [CorrectionProfile]? = nil, correctionKeepLoaded: Bool? = nil, correctionLoaded: Bool? = nil,
-                notesStructure: Bool? = nil, notesCorrection: Bool? = nil) {
+                notesStructure: Bool? = nil, notesCorrection: Bool? = nil, notesReorganize: Bool? = nil) {
         self.ok = ok
         self.engine = engine
         self.ready = ready
@@ -193,25 +195,35 @@ public struct Health: Decodable, Sendable, Equatable {
         self.correctionLoaded = correctionLoaded
         self.notesStructure = notesStructure
         self.notesCorrection = notesCorrection
+        self.notesReorganize = notesReorganize
     }
 
     public var correctionAvailable: Bool { correction == "available" }
 }
 
-/// `POST /v1/notes/structure`: the open window's transcript plus the frozen headings for continuity. Only
-/// `transcript`, `outline` and `final` go on the wire; `windowEnd` (the last segment index the window covered) stays
-/// on the client so a late response can be matched to the window it was asked for. Never logged.
+/// `POST /v1/notes/structure`: the open window's transcript plus the settled headings for continuity. Only
+/// `transcript`, `outline` and `final` go on the wire; `windowEnd` (the last segment index the window covered),
+/// `version` and `windowGeneration` stay on the client so a late response can be matched to the window and tail it
+/// was asked for. Never logged.
 public struct NotesStructureRequest: Encodable, Sendable, Equatable {
     public var transcript: String
     public var outline: [String]
     public var final: Bool
     public var windowEnd: Int
+    public var version: Int
+    public var windowGeneration: Int
+    /// The `NotesDocument.id` the request was made from.
+    public var documentID: UUID?
 
-    public init(transcript: String, outline: [String] = [], final: Bool = false, windowEnd: Int = 0) {
+    public init(transcript: String, outline: [String] = [], final: Bool = false, windowEnd: Int = 0, version: Int = 0,
+                windowGeneration: Int = 0, documentID: UUID? = nil) {
         self.transcript = transcript
         self.outline = outline
         self.final = final
         self.windowEnd = windowEnd
+        self.version = version
+        self.windowGeneration = windowGeneration
+        self.documentID = documentID
     }
 
     private enum CodingKeys: String, CodingKey { case transcript, outline, final }
@@ -223,31 +235,127 @@ public struct NotesStructureResponse: Decodable, Sendable, Equatable {
     public var markdown: String?
     public var structured: Bool
     public var error: String?
+    /// Which guard rejected the output (`novel_name`, `negation`, `dropped_number`…); nil from older servers.
+    public var reason: String?
     public var timingsMs: [String: Double]?
 
-    public init(markdown: String?, structured: Bool, error: String? = nil, timingsMs: [String: Double]? = nil) {
+    public init(markdown: String?, structured: Bool, error: String? = nil, reason: String? = nil, timingsMs: [String: Double]? = nil) {
         self.markdown = markdown
         self.structured = structured
         self.error = error
+        self.reason = reason
         self.timingsMs = timingsMs
     }
+
+    /// `rejected: novel_name`, or the bare code: what a retry note and a log line show.
+    public var failureLabel: String { NotesFailure.label(error: error, reason: reason) }
 
     /// A failed pass, as the client records a timeout or transport error of its own.
     public static func failed(_ code: String) -> NotesStructureResponse { NotesStructureResponse(markdown: nil, structured: false, error: code) }
 
-    private enum CodingKeys: String, CodingKey { case markdown, structured, error, timingsMs }
+    private enum CodingKeys: String, CodingKey { case markdown, structured, error, reason, timingsMs }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         markdown = try c.decodeIfPresent(String.self, forKey: .markdown)
         structured = try c.decodeIfPresent(Bool.self, forKey: .structured) ?? false
         error = try c.decodeIfPresent(String.self, forKey: .error)
+        reason = try? c.decodeIfPresent(String.self, forKey: .reason)
         timingsMs = try? c.decodeIfPresent([String: Double].self, forKey: .timingsMs)
         if markdown == nil { structured = false }
     }
 }
 
-/// Why `structureNotes` got no answer to use.
+/// `POST /v1/notes/reorganize`: the trailing sections of the notes (user and AI Markdown) plus the headings above
+/// them for context. Only `notes`, `outline` and `final` go on the wire; `version` and `range` (the scope, UTF-16, in
+/// the text the request was made from) stay on the client so a result is applied only to the text it was made for.
+/// Never logged.
+public struct NotesReorganizeRequest: Encodable, Sendable, Equatable {
+    public var notes: String
+    public var outline: [String]
+    public var final: Bool
+    public var version: Int
+    public var range: NSRange
+    /// The `NotesDocument.id` the request was made from.
+    public var documentID: UUID?
+
+    public init(notes: String, outline: [String] = [], final: Bool = false, version: Int = 0, range: NSRange = NSRange(),
+                documentID: UUID? = nil) {
+        self.notes = notes
+        self.outline = outline
+        self.final = final
+        self.version = version
+        self.range = range
+        self.documentID = documentID
+    }
+
+    private enum CodingKeys: String, CodingKey { case notes, outline, final }
+}
+
+/// The reorganize answer. `reorganized:false` fails closed (`markdown` nil, `error` says why); `changed:false` means
+/// the notes were already tidy and nothing is applied. `error: "preempted"` means a queued segment clean-up took the
+/// model first: the pass did not run, which is not a failure.
+public struct NotesReorganizeResponse: Decodable, Sendable, Equatable {
+    public var markdown: String?
+    public var reorganized: Bool
+    public var changed: Bool
+    public var error: String?
+    /// Which guard rejected the output; nil from older servers.
+    public var reason: String?
+    public var timingsMs: [String: Double]?
+
+    public init(markdown: String?, reorganized: Bool, changed: Bool = true, error: String? = nil, reason: String? = nil,
+                timingsMs: [String: Double]? = nil) {
+        self.markdown = markdown
+        self.reorganized = reorganized
+        self.changed = changed
+        self.error = error
+        self.reason = reason
+        self.timingsMs = timingsMs
+    }
+
+    public var failureLabel: String { NotesFailure.label(error: error, reason: reason) }
+
+    /// The server gave the model to a segment clean-up before this pass finished.
+    public var preempted: Bool { !reorganized && error == "preempted" }
+
+    /// A failed pass, as the client records a timeout or transport error of its own.
+    public static func failed(_ code: String) -> NotesReorganizeResponse {
+        NotesReorganizeResponse(markdown: nil, reorganized: false, changed: false, error: code)
+    }
+
+    private enum CodingKeys: String, CodingKey { case markdown, reorganized, changed, error, reason, timingsMs }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        markdown = try c.decodeIfPresent(String.self, forKey: .markdown)
+        reorganized = try c.decodeIfPresent(Bool.self, forKey: .reorganized) ?? false
+        changed = try c.decodeIfPresent(Bool.self, forKey: .changed) ?? false
+        error = try c.decodeIfPresent(String.self, forKey: .error)
+        reason = try? c.decodeIfPresent(String.self, forKey: .reason)
+        timingsMs = try? c.decodeIfPresent([String: Double].self, forKey: .timingsMs)
+        if markdown == nil { reorganized = false; changed = false }
+    }
+}
+
+/// How a failed notes pass is shown and logged.
+public enum NotesFailure {
+    /// A guard name as the server sends it (`novel_name`), or nil for anything else: it is shown and logged, so
+    /// it must never be free text.
+    public static func guardName(_ reason: String?) -> String? {
+        guard let reason, (1...40).contains(reason.count),
+              reason.allSatisfy({ $0 == "_" || ($0.isASCII && ($0.isLowercase || $0.isNumber)) }) else { return nil }
+        return reason
+    }
+
+    /// `rejected: novel_name`, or just the code (`timeout`) without a usable reason.
+    public static func label(error: String?, reason: String?) -> String {
+        let code = error ?? "http"
+        return guardName(reason).map { "\(code): \($0)" } ?? code
+    }
+}
+
+/// Why `structureNotes` or `reorganizeNotes` got no answer to use.
 public enum NotesStructureError: Error, Equatable, Sendable {
     /// 409 `notes_off`: correction is off on the server.
     case off

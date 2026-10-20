@@ -412,7 +412,7 @@ public enum Snapshots {
         "menu-ready", "menu-cleanup-submenu",
         "settings-general-ready", "settings-sounds-pack", "settings-cleanup-custom", "settings-server-ready",
         "settings-permissions-missing", "onboarding-welcome",
-        "notes-recording", "notes-split",
+        "notes-editing", "notes-split",
     ]
 
     public static var committedScenarios: [Scenario] {
@@ -459,9 +459,11 @@ public enum Snapshots {
 
     // MARK: Live Notes
 
-    /// An invented meeting: three structured segments frozen, two more in the open block, a live partial.
-    static func demoNotes(gap: Bool = false, short: Bool = false) -> NotesDocument {
+    /// An invented meeting: an agenda the user typed, three structured segments settled, two more in the AI tail,
+    /// a live partial.
+    static func demoNotes(gap: Bool = false, short: Bool = false, typed: Bool = true) -> NotesDocument {
         var d = NotesDocument(startedAt: Date(timeIntervalSince1970: 1_792_504_980))
+        if typed { d.userEdit(NSRange(location: 0, length: 0), "## Agenda\n- Lantern kickoff\n- Budget check-in\n- [x] Share the doc with Maya\n") }
         let said: [(TimeInterval, String, String)] = [
             (12, "okay so we're kicking off the lantern project today and the launch target moved to march third",
              "Okay, so we're kicking off the Lantern project today, and the launch target moved to March third."),
@@ -473,7 +475,7 @@ public enum Snapshots {
         for (i, s) in said.enumerated() { d.append(NotesSegment(id: i, offset: s.0, raw: s.1, text: s.2, corrected: true)) }
         let first = ["## Project kickoff", "- Launch target moved to **March 3**", "- [ ] Maya to send the draft spec by **Friday**",
                      "- [ ] Theo to book the design review", "", "## Budget", "- **Decision:** keep the vendor contract",
-                     "- No new headcount this quarter"].joined(separator: "\n")
+                     "- _No_ new headcount this quarter"].joined(separator: "\n")
         if let r = d.nextStructureRequest() { d.apply(NotesStructureResponse(markdown: first, structured: true), for: r) }
         d.freezeAll()
         if short { return d }
@@ -485,7 +487,22 @@ public enum Snapshots {
         let open = ["## Beta", "- **Question:** who owns QA for the beta?", "- Beta starts in the second week of **April**"]
             .joined(separator: "\n")
         if let r = d.nextStructureRequest() { d.apply(NotesStructureResponse(markdown: open, structured: true), for: r) }
+        d.append(NotesSegment(id: 6, offset: 201, raw: "and marketing wants a teaser", text: "And marketing wants a teaser."))
         d.livePartial = "and we still need the onboarding emails for the first"
+        return d
+    }
+
+    /// The demo after a reorganize: the agenda and the kickoff merged, tasks collected at the end.
+    static func reorganizedNotes() -> NotesDocument {
+        var d = demoNotes()
+        let md = ["## Agenda", "- Lantern kickoff", "- Budget check-in", "", "## Project kickoff", "- Launch target moved to **March 3**",
+                  "", "## Budget", "- **Decision:** keep the vendor contract", "- _No_ new headcount this quarter", "",
+                  "## Beta", "- Beta starts in the second week of **April**", "- **Question:** who owns QA for the beta?", "",
+                  "## Action items", "- [x] Share the doc with Maya", "- [ ] Maya to send the draft spec by **Friday**",
+                  "- [ ] Theo to book the design review"].joined(separator: "\n")
+        if let r = d.reorganizeRequest(final: false, manual: true) {
+            d.applyReorganize(NotesReorganizeResponse(markdown: md, reorganized: true, changed: true), for: r)
+        }
         return d
     }
 
@@ -504,7 +521,18 @@ public enum Snapshots {
 
     public static var notesScenarios: [Scenario] {
         [
-            notes("recording") { $0.structuring = .running },
+            notes("editing") { $0.structuring = .running },
+            notes("preview") { $0.preview = true },
+            notes("reorganized") {
+                $0.document = reorganizedNotes()
+                $0.reorganizeStatus = .applied(at: 1)
+            },
+            notes("reorganizing") { $0.reorganizeStatus = .running },
+            notes("organizing") { $0.state = .stopped; $0.reorganizeStatus = .organizing(step: 2, of: 3) },
+            notes("organize-partial") {
+                $0.state = .stopped
+                $0.reorganizeStatus = .organized(failed: 1, reason: "rejected: novel_name")
+            },
             notes("split") {
                 $0.tab = .split
                 var d = demoNotes(short: true)
@@ -513,18 +541,22 @@ public enum Snapshots {
             },
             notes("transcript-raw") { $0.tab = .transcript; $0.showRaw = true; $0.document = demoNotes(gap: true) },
             notes("transcript") { $0.tab = .transcript; $0.document = demoNotes(gap: true) },
-            notes("structuring-off") {
+            notes("structuring-off-editable") {
                 var d = NotesDocument(startedAt: Date(timeIntervalSince1970: 1_792_504_980))
+                d.userEdit(NSRange(location: 0, length: 0), "## My notes\n- Lantern launch moved to **March 3**\n- Ask Theo about the design review\n- [ ] ")
                 for s in demoNotes().segments { d.append(s) }
                 d.livePartial = "and we still need the onboarding emails"
                 $0.document = d
                 $0.structuring = .off(.correctionOff)
+                $0.reorganizeStatus = .unavailable(.correctionOff)
             },
             notes("structure-failed") {
                 $0.structuring = .failed("timeout")
+                $0.reorganizeStatus = .failed("rejected")
                 $0.privacyLine = NotesStatus.privacy + " · Structuring sends text to llm.example.com"
                 $0.debugRetention = true
             },
+            notes("old-server") { $0.reorganizeStatus = .unavailable(.unsupported) },
             notes("stopped") {
                 $0.state = .stopped
                 var d = demoNotes()
@@ -563,6 +595,12 @@ public enum Snapshots {
         host.contentView = view
         host.frame = NSRect(origin: .zero, size: size)
         view.layoutSubtreeIfNeeded()
+        // An NSTextView inside SwiftUI lays out lazily; make it draw offscreen.
+        for textView in textViews(in: host) {
+            if let tlm = textView.textLayoutManager { tlm.ensureLayout(for: tlm.documentRange) }
+            textView.needsDisplay = true
+        }
+        view.layoutSubtreeIfNeeded()
         guard let rep = NSBitmapImageRep(
             bitmapDataPlanes: nil, pixelsWide: Int(size.width * 2), pixelsHigh: Int(size.height * 2), bitsPerSample: 8,
             samplesPerPixel: 4, hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB,
@@ -570,6 +608,10 @@ public enum Snapshots {
         rep.size = size
         appearance.performAsCurrentDrawingAppearance { host.cacheDisplay(in: host.bounds, to: rep) }
         return rep.representation(using: .png, properties: [:])
+    }
+
+    private static func textViews(in view: NSView) -> [NSTextView] {
+        (view as? NSTextView).map { [$0] } ?? view.subviews.flatMap(textViews)
     }
 
     /// Writes `<scenario>-<appearance>.png` for every scenario and appearance; returns the files written.

@@ -97,6 +97,7 @@ Full protocol details, including every message field, are in [the architecture d
 | `GET /v1/correction/profiles` | bearer | Clean-up profile list with editable prompts (works even when correction is off) |
 | `GET`/`PUT /v1/correction/settings` | bearer | Clean-up `keep_loaded` state (see [keep_loaded](#keep_loaded)) |
 | `POST /v1/notes/structure` | bearer | Live Notes: structure a transcript window into Markdown (see [Notes structuring](#notes-structuring)) |
+| `POST /v1/notes/reorganize` | bearer | Live Notes: reorganize an edited notes document (see [Notes structuring](#notes-structuring)) |
 | `POST /v1/transcribe` | bearer | 16 kHz mono PCM16 WAV body (same limits as streaming); returns the final object |
 | `WS /v1/stream` | bearer | Streaming dictation |
 
@@ -132,7 +133,7 @@ Cancel or disconnect during finalization discards the utterance: no correction r
 | `bad_audio` | Invalid audio or control frame |
 | `bad_request` | Invalid correction prompt/settings body (HTTP 400) |
 | `unsupported` | PUT settings outside managed mode (HTTP 409) |
-| `bad_notes` | Invalid notes-structuring request (HTTP 400) |
+| `bad_notes` | Invalid notes-structuring or reorganize request (HTTP 400) |
 | `notes_off` | Notes structuring needs correction enabled (HTTP 409) |
 | `engine` | Speech engine unavailable |
 
@@ -175,6 +176,7 @@ model = "your-loaded-model"
 timeout = 8.0
 # notes_timeout = 15.0
 # structure_timeout = 30.0
+# reorganize_timeout = 45.0
 api_key_env = "CHIRP_LLM_API_KEY"
 # keychain_service = "chirp-llm" # security find-generic-password -s SERVICE -w
 # prompt = "Custom transcript cleanup prompt"
@@ -194,6 +196,7 @@ retain_days = 3
 | `timeout` | Whole-call correction timeout in seconds (default 8.0) |
 | `notes_timeout` | Whole-call timeout for a Live Notes segment's clean-up (`live_notes` style) in seconds (default 15.0); dictation keeps `timeout` |
 | `structure_timeout` | Whole-call Notes structuring timeout in seconds (default 30.0); the same finite, positive validation as `timeout` |
+| `reorganize_timeout` | Whole-call Notes reorganize timeout in seconds (default 45.0; up to 1024 output tokens, about 15 s on an M5 Pro at 3500 characters); the same validation |
 | `api_key_env` | Environment variable holding the API key (endpoint mode) |
 | `keychain_service` | Read the key from Keychain: `security find-generic-password -s SERVICE -w` |
 | `prompt` | Legacy override for the `default` profile's prompt |
@@ -349,7 +352,8 @@ A success returns `{"markdown":"…","structured":true,"error":null,"timings_ms"
 When the model fails, times out or its output is rejected by the guards (invented names, numbers,
 dates or contacts, an unrelated answer, a negated statement flipped to a positive one, formatting
 outside the allowed Markdown subset), the answer is HTTP 200 with
-`"markdown":null,"structured":false` and `error` of `timeout`, `http` or `rejected`, and the client
+`"markdown":null,"structured":false` and `error` of `timeout`, `http` or `rejected` (plus `reason`,
+the name of the guard that rejected it, such as `name` or `negation`; never text), and the client
 keeps its previous notes. Only one structuring request runs at a time (a second gets `503 busy`),
 a request body is capped at 64 KiB, and the transcript at 6000 characters. Request and response
 details are in [the architecture doc](../docs/architecture.md#live-notes-structuring-v1-compatible-addition).
@@ -358,6 +362,27 @@ even with `--debug-retain`.
 
 In managed mode a queued dictation correction is always served before a queued structuring
 request; a running structuring generation (at most 768 tokens) is never interrupted.
+
+`POST /v1/notes/reorganize` regroups the Mac's editable notes document: it merges duplicate
+sections and bullets and moves loose lines under the right heading, without dropping or inventing
+anything. The body is `{"notes":"<Markdown, at most 3500 chars>","outline":["Earlier heading"],
+"final":false}`; the answer is `{"markdown":"…","reorganized":true,"changed":true|false,
+"error":null,"timings_ms":{"reorganize":…}}`, or `"markdown":null,"reorganized":false` with
+`error` of `timeout`, `http`, `rejected` or `preempted` (and `reason`, the rejecting guard's name).
+`changed:false` means the output equalled the input
+apart from whitespace. Its guards reject dropped lines, numbers, dates, tasks, Decisions and
+Questions, changed task states, invented names, numbers, dates, tasks or headings, flipped, added
+or dropped negations and hedges, summaries and padding, and markup the input did not have. It
+shares the one-at-a-time structuring lock (`503 busy`), uses up to 1024 output tokens, and in
+managed mode gives way to any correction that queues while it runs (it then answers `preempted`,
+which the client treats as not run and retries after the next segment). Details are in [the architecture
+doc](../docs/architecture.md#live-notes-reorganize-v1-compatible-addition); benchmarks:
+
+```sh
+uv run python scripts/bench_notes.py --mode reorganize --repetitions 1 --dump /tmp/reorg-out.jsonl
+```
+
+(`--mode structure`, the default, is the structuring bench; `--mode both` runs both.)
 
 Measure it on your Mac with the cached default model (not run in CI):
 

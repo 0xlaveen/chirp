@@ -40,6 +40,43 @@ public enum StructuringStatus: Equatable, Sendable {
     }
 }
 
+/// The Reorganize button's and the auto pass's state.
+public enum ReorganizeStatus: Equatable, Sendable {
+    /// Structuring is off, or the server has no reorganize endpoint (`.unsupported`).
+    case unavailable(StructuringOff)
+    case idle, running
+    /// A reorganize changed the notes at this time (the recorder's clock).
+    case applied(at: TimeInterval)
+    /// The last pass failed with this code (`timeout`, `rejected`, `http`, `busy`…); auto retries later.
+    case failed(String)
+    /// Organize is at this step (structuring the pending window and fallback blocks, then reorganizing).
+    case organizing(step: Int, of: Int)
+    /// Organize finished; `failed` sections (or the reorganize) kept as they were, the first one for `reason`.
+    case organized(failed: Int, reason: String?)
+    /// The notes changed while a manual reorganize ran, so its result was discarded.
+    case conflict
+    /// The last section alone is over `NotesDocument.maxReorganizeChars`.
+    case tooLong
+}
+
+extension ReorganizeStatus {
+    /// A reorganize or an Organize is running.
+    public var isRunning: Bool {
+        switch self {
+        case .running, .organizing: true
+        default: false
+        }
+    }
+}
+
+/// What a pass did, for the controller's counts-only log.
+public enum NotesPassEvent: Equatable, Sendable {
+    /// A rejected window was split: how deep, into how many parts, and how many stayed raw.
+    case split(windowChars: Int, depth: Int, parts: Int, fallbacks: Int)
+    /// Organize ran this many steps; `failed` sections kept as they were.
+    case organize(steps: Int, failed: Int, conflict: Bool)
+}
+
 /// Routes capture frames to the current segment's socket and runs the segmenter, on the audio thread. The swap at a
 /// cut is atomic under the lock, so every frame lands on exactly one socket, in order.
 final class NotesFrameRouter: @unchecked Sendable {
@@ -85,6 +122,9 @@ final class NotesFrameRouter: @unchecked Sendable {
 @MainActor
 public final class NotesRecorder {
     public typealias Structure = @Sendable (NotesStructureRequest) async throws -> NotesStructureResponse
+    public typealias Reorganize = @Sendable (NotesReorganizeRequest) async throws -> NotesReorganizeResponse
+
+    public enum PassKind: Equatable, Sendable { case append, reorganize }
 
     /// A pass starts at most this often (counted from the end of the last one).
     public static let minInterval: TimeInterval = 15
@@ -92,19 +132,45 @@ public final class NotesRecorder {
     public static let finalTimeout: TimeInterval = 25
     /// Segments in a row that may fail before recording stops.
     public static let maxSegmentFailures = 3
+    /// Auto-reorganize waits for this many inserted characters (user or AI) since the last one…
+    public static let reorganizeEveryChars = 1200
+    /// …this long since the last one ended…
+    public static let reorganizeMinInterval: TimeInterval = 180
+    /// …and this long without a keystroke.
+    public static let typingIdle: TimeInterval = 15
+    /// A rejected window is split at most this deep (halves, then quarters) before a part falls back to raw text.
+    public static let maxSplitDepth = 2
+    /// After a failed or discarded reorganize, auto waits this long instead of `reorganizeMinInterval`.
+    public static let reorganizeRetryAfter: TimeInterval = 60
+    /// A held append is applied after this long without a keystroke, even with the caret in the tail.
+    public static let holdMax: TimeInterval = 10
+    /// While recording, auto-reorganize starts only this soon after a segment commit: the free stretch before the
+    /// next cut queues a clean-up that would preempt it.
+    public static let reorganizeAfterCommit: TimeInterval = 5
+    /// Stop skips its reorganize when one ended this recently on the same text.
+    public static let stopReorganizeSkip: TimeInterval = 30
 
     public private(set) var state: NotesRecorderState = .idle { didSet { if state != oldValue { changed() } } }
     public private(set) var document = NotesDocument()
     public private(set) var structuring: StructuringStatus
     public private(set) var debugRetention = false
+    /// AI changes to `document.text` the editor has not replayed yet, oldest first.
+    public private(set) var pendingChanges: [NotesTextChange] = []
+    /// The user's "Auto-reorganize" toggle.
+    public private(set) var autoReorganize: Bool
+    /// The kind of the pass in flight, if any.
+    public private(set) var passKind: PassKind?
     /// The `start` options for the next segments (the controller refreshes them before each recording).
     public var options: StartOptions
     /// Shown as "Server unreachable at <host>" when the first segment cannot connect.
     public var serverHost: String
     public var onChange: (() -> Void)?
+    /// Splits and Organize runs, for the log (counts only).
+    public var onPassEvent: ((NotesPassEvent) -> Void)?
 
     private let makeSession: (StartOptions) -> StreamSession
     private let structure: Structure
+    private let reorganize: Reorganize
     private let now: () -> TimeInterval
     private let sleep: @Sendable (Duration) async -> Void
     private let router = NotesFrameRouter()
@@ -135,14 +201,41 @@ public final class NotesRecorder {
     /// What the user and the server allow, independent of the running state.
     private var structuringAllowed: StructuringStatus
     private var epoch = 0
+
+    /// The server has `POST /v1/notes/reorganize` (health), and it did not answer 404 this session.
+    private var reorganizeSupported = false
+    private var reorganizeEndpointMissing = false
+    private var reorganizeState: ReorganizeStatus = .idle
+    private var manualReorganize = false
+    private var lastReorganizeEnd: TimeInterval?
+    /// The last reorganize failed or was discarded: auto retries after `reorganizeRetryAfter`.
+    private var reorganizeRetry = false
+    private var lastKeystroke: TimeInterval?
+    private var timerDeadline: TimeInterval?
+    /// The editor's caret is in the tail (or IME is composing): appends wait.
+    private var editorInTail = false
+    private var editorComposing = false
+    /// The newest append that arrived while the caret was in the tail.
+    private var held: (request: NotesStructureRequest, response: NotesStructureResponse)?
+    private var holdTask: Task<Void, Never>?
+    /// When the last segment was committed to the document.
+    private var lastCommit: TimeInterval?
+    /// `document.version` when the last reorganize that ran (not preempted) ended.
+    private var versionAtReorganizeEnd: Int?
+    /// When Stop began, for the elapsed time on "Finishing…".
+    private var stoppingSince: TimeInterval?
     private var waiters: [(check: () -> Bool, resume: CheckedContinuation<Void, Never>)] = []
 
     public init(makeSession: @escaping (StartOptions) -> StreamSession, structure: @escaping Structure,
+                reorganize: @escaping Reorganize = { _ in throw NotesStructureError.unsupported(404) },
                 now: @escaping () -> TimeInterval = { ProcessInfo.processInfo.systemUptime },
                 sleep: @escaping @Sendable (Duration) async -> Void = { try? await Task.sleep(for: $0) },
-                options: StartOptions, structuring: Bool, health: Health? = nil, serverHost: String = "") {
+                options: StartOptions, structuring: Bool, autoReorganize: Bool = true, health: Health? = nil, serverHost: String = "") {
         self.makeSession = makeSession
         self.structure = structure
+        self.reorganize = reorganize
+        self.autoReorganize = autoReorganize
+        reorganizeSupported = health?.notesReorganize == true
         self.now = now
         self.sleep = sleep
         self.options = options
@@ -163,11 +256,38 @@ public final class NotesRecorder {
 
     public var passInFlight: Bool { passTask != nil }
 
+    /// An append result is waiting for the caret to leave the tail.
+    public var isHolding: Bool { held != nil }
+
+    /// How long Stop has been finishing (nil when not stopping).
+    public var stoppingElapsed: TimeInterval? { stoppingSince.map { now() - $0 } }
+
+    /// What Reorganize can do now.
+    public var reorganizeStatus: ReorganizeStatus {
+        if case .off(let why) = structuring { return .unavailable(why) }
+        if !reorganizeSupported { return .unavailable(.unsupported) }
+        return reorganizeState
+    }
+
+    /// Hands the editor the AI changes to replay (and forgets them).
+    public func takePendingChanges() -> [NotesTextChange] {
+        defer { pendingChanges.removeAll() }
+        return pendingChanges
+    }
+
+    private func publish(_ change: NotesTextChange?) {
+        guard let change else { return }
+        pendingChanges.append(change)
+        // A newer change replaces the chip's reorganize as the thing Undo would revert.
+        if case .applied = reorganizeState, change.kind != .reorganize { reorganizeState = .idle }
+    }
+
     // MARK: configuration
 
     /// The user's "Structure notes" toggle or new server health. Turning it on schedules a pass for what is waiting.
     public func configureStructuring(enabled: Bool, health: Health?) {
         structuringAllowed = .availability(health: health, enabled: enabled)
+        reorganizeSupported = health?.notesReorganize == true && !reorganizeEndpointMissing
         if structuringAllowed.isOff {
             structuring = structuringAllowed
         } else if structuring.isOff {
@@ -186,6 +306,7 @@ public final class NotesRecorder {
         failureStreak = 0
         sawReady = false
         lastPassEnd = nil
+        if lastReorganizeEnd == nil { lastReorganizeEnd = now() }
         if structuring.isOff, !structuringAllowed.isOff { structuring = .idle }
         state = .starting
         document.stampStart(Date())
@@ -229,6 +350,10 @@ public final class NotesRecorder {
         timer?.cancel()
         timer = nil
         pending = false
+        manualReorganize = false
+        dropHeld()
+        if reorganizeState.isRunning { reorganizeState = .idle }
+        passKind = nil
         document.livePartial = ""
         if state.isActive { state = document.isEmpty ? .idle : .stopped }
         if structuring == .running { structuring = structuringAllowed.isOff ? structuringAllowed : .idle }
@@ -241,9 +366,27 @@ public final class NotesRecorder {
     /// New: an empty document (only while not recording).
     public func reset() {
         guard !state.isActive else { return }
+        // A pass still running (a manual reorganize while stopped) belongs to the discarded document.
+        epoch += 1
+        passTask?.cancel()
+        passTask = nil
+        passKind = nil
+        manualReorganize = false
+        timer?.cancel()
+        timer = nil
+        timerDeadline = nil
+        pending = false
         document = NotesDocument()
         router.resetTime()
         failureStreak = 0
+        pendingChanges.removeAll()
+        dropHeld()
+        reorganizeState = .idle
+        reorganizeRetry = false
+        lastReorganizeEnd = nil
+        versionAtReorganizeEnd = nil
+        lastKeystroke = nil
+        lastCommit = nil
         state = .idle
         if !structuringAllowed.isOff { structuring = .idle }
         changed()
@@ -382,6 +525,7 @@ public final class NotesRecorder {
         while let next = results.removeValue(forKey: nextCommit) {
             if let s = next { document.append(s) }
             nextCommit += 1
+            lastCommit = now()
         }
         updateLivePartial()
         schedule()
@@ -394,73 +538,451 @@ public final class NotesRecorder {
         changed()
     }
 
-    // MARK: structuring
+    // MARK: editing
 
-    /// After each final: run a pass unless one is running, a segment is still being corrected, or the last one
-    /// ended less than `minInterval` ago. Otherwise remember it and look again when that changes.
-    private func schedule() {
-        guard !structuring.isOff, state == .recording || state == .starting else { return }
-        guard passTask == nil, finalizingCount == 0 else { pending = true; return }
-        if let last = lastPassEnd, now() - last < Self.minInterval {
-            pending = true
-            armTimer(after: Self.minInterval - (now() - last))
-            return
-        }
-        pending = false
-        document.freezeOverflow()
-        guard let request = document.nextStructureRequest() else { return }
-        run(request)
+    /// The editor changed the text (typing, paste, undo/redo, a task toggle): forwarded to the document. A claim of
+    /// the tail drops a held append (its generation is gone) and may unblock the next pass.
+    public func userEdit(_ range: NSRange, _ replacement: String, kind: NotesTextChange.Kind = .user) {
+        let generation = document.windowGeneration
+        document.userEdit(range, replacement, kind: kind)
+        lastKeystroke = now()
+        if document.windowGeneration != generation { dropHeld() }
+        if case .applied = reorganizeState { reorganizeState = .idle }
+        if held != nil { armHold() }
+        schedule()
+        changed()
     }
 
+    /// Where the editor's caret is: in the tail (with focus) or composing marked text holds appends; leaving releases
+    /// a held one.
+    public func setEditorFocus(inTail: Bool, composing: Bool) {
+        editorInTail = inTail
+        editorComposing = composing
+        if held != nil, !inTail, !composing { releaseHeld() }
+    }
+
+    /// The Reorganize button: runs at the first moment the pass slot is free, whatever the thresholds say.
+    public func reorganizeNow() {
+        guard state != .stopping, !structuring.isOff, reorganizeSupported else { return }
+        manualReorganize = true
+        schedule()
+        changed()
+    }
+
+    /// The user's "Auto-reorganize" toggle.
+    public func setAutoReorganize(_ on: Bool) {
+        autoReorganize = on
+        schedule()
+        changed()
+    }
+
+    /// An append would land under the user's typing: IME is composing, or the caret is in the tail and a key was
+    /// pressed within `holdMax`.
+    private var holdsAppends: Bool { editorComposing || (editorInTail && typedRecently) }
+    private var typedRecently: Bool { lastKeystroke.map { now() - $0 < Self.holdMax } ?? false }
+
+    private func dropHeld() {
+        held = nil
+        holdTask?.cancel()
+        holdTask = nil
+    }
+
+    private func releaseHeld() {
+        guard let h = held else { return }
+        dropHeld()
+        applyAppend(h.request, h.response)
+        schedule()
+        changed()
+    }
+
+    /// Applies the held append once `holdMax` passed without a keystroke (never while IME is composing).
+    private func armHold() {
+        guard held != nil else { return }
+        holdTask?.cancel()
+        // Composing alone re-checks every `holdMax`; the end of composition releases it sooner (`setEditorFocus`).
+        let wait = typedRecently ? Self.holdMax - (now() - (lastKeystroke ?? now())) : Self.holdMax
+        let sleep = self.sleep, myEpoch = epoch
+        holdTask = Task {
+            await sleep(.milliseconds(Int((wait * 1000).rounded(.up))))
+            guard !Task.isCancelled, self.epoch == myEpoch, self.held != nil else { return }
+            self.holdTask = nil
+            if !self.holdsAppends { self.releaseHeld() } else { self.armHold() }
+        }
+    }
+
+    // MARK: passes
+
+    /// The single pass slot, shared by append and reorganize. Nothing runs while a pass is in flight or a segment is
+    /// still finalizing. Then: an append when one is due (fresh notes beat tidy notes), else a manual reorganize,
+    /// else an automatic one once enough was added, enough time passed and the user stopped typing.
+    private func schedule() {
+        guard !structuring.isOff else { return }
+        guard passTask == nil, finalizingCount == 0 else { pending = true; return }
+        pending = false
+        var appendWaiting = false
+        if state.isCapturing {
+            publish(document.freezeOverflow())
+            // A held answer already covers its window: only newer segments are worth another pass.
+            if let next = document.nextStructureRequest(), next.windowEnd > held?.request.windowEnd ?? -1 {
+                if let last = lastPassEnd, now() - last < Self.minInterval {
+                    appendWaiting = true
+                    pending = true
+                    armTimer(after: Self.minInterval - (now() - last))
+                } else if let request = document.nextStructureRequest() {
+                    run(request)
+                    return
+                }
+            }
+        }
+        if manualReorganize, state != .stopping {
+            manualReorganize = false
+            runOrganize()
+            return
+        }
+        // Auto, while recording: only in the quiet stretch right after a segment commit (its append, if due, runs
+        // first), on at most the trailing `recordingReorganizeChars`. When anything else holds it back, the next
+        // commit looks again; no timer.
+        let t = now()
+        guard !appendWaiting, autoReorganize, reorganizeSupported, state == .recording, held == nil,
+              let commit = lastCommit, t - commit <= Self.reorganizeAfterCommit,
+              document.charsSinceReorganize >= Self.reorganizeEveryChars,
+              lastReorganizeEnd.map({ t - $0 >= (reorganizeRetry ? Self.reorganizeRetryAfter : Self.reorganizeMinInterval) }) ?? true,
+              lastKeystroke.map({ t - $0 >= Self.typingIdle }) ?? true,
+              let request = document.reorganizeRequest(final: false, manual: false, maxChars: NotesDocument.recordingReorganizeChars)
+        else { return }
+        runReorganize(request, manual: false)
+    }
+
+    /// The one timer: wakes `schedule()` at the earliest deadline anything is waiting for.
     private func armTimer(after seconds: TimeInterval) {
-        guard timer == nil else { return }
+        let deadline = now() + seconds
+        if timer != nil, let d = timerDeadline, d <= deadline { return }
+        timer?.cancel()
+        timerDeadline = deadline
         let sleep = self.sleep, myEpoch = epoch
         timer = Task {
             await sleep(.milliseconds(Int((seconds * 1000).rounded(.up))))
             guard !Task.isCancelled, self.epoch == myEpoch else { return }
             self.timer = nil
-            if self.pending { self.schedule() }
+            self.timerDeadline = nil
+            if self.pending {
+                self.schedule()
+                self.changed()
+            }
         }
     }
 
     private func run(_ request: NotesStructureRequest) {
         structuring = .running
+        passKind = .append
         changed()
-        let structure = self.structure, myEpoch = epoch
+        let myEpoch = epoch
         passTask = Task {
-            let response: NotesStructureResponse
-            var disable: StructuringOff?
-            do {
-                response = try await structure(request)
-            } catch let error as NotesStructureError {
-                switch error {
-                case .off: disable = .correctionOff
-                case .unsupported: disable = .unsupported
-                default: break
-                }
-                response = .failed(error.code)
-            } catch let error as URLError where error.code == .timedOut {
-                response = .failed("timeout")
-            } catch {
-                response = .failed("http")
-            }
+            let (response, disable) = await self.callStructure(request)
             guard self.epoch == myEpoch else { return }
+            // A rejected window is retried in halves (then quarters) before any of it falls back to raw text.
+            if disable == nil, response.error == "rejected", let (a, b) = NotesDocument.split(request.transcript) {
+                var outcome = PieceOutcome()
+                let first = await self.structurePieces(a, outline: request.outline, final: request.final, depth: 1, outcome: &outcome)
+                let second = await self.structurePieces(b, outline: request.outline + Self.headings(first), final: request.final,
+                                                        depth: 1, outcome: &outcome)
+                guard self.epoch == myEpoch else { return }
+                self.splitFinished(request, first + second, outcome)
+                return
+            }
             self.passFinished(request, response, disable: disable)
         }
     }
 
+    /// One structuring call, with transport errors mapped to a failed answer (and what turns structuring off).
+    private func callStructure(_ request: NotesStructureRequest) async -> (NotesStructureResponse, StructuringOff?) {
+        do {
+            return (try await structure(request), nil)
+        } catch let error as NotesStructureError {
+            switch error {
+            case .off: return (.failed(error.code), .correctionOff)
+            case .unsupported: return (.failed(error.code), .unsupported)
+            default: return (.failed(error.code), nil)
+            }
+        } catch let error as URLError where error.code == .timedOut {
+            return (.failed("timeout"), nil)
+        } catch {
+            return (.failed("http"), nil)
+        }
+    }
+
+    private func callReorganize(_ request: NotesReorganizeRequest) async -> (NotesReorganizeResponse, NotesStructureError?) {
+        do {
+            return (try await reorganize(request), nil)
+        } catch let error as NotesStructureError {
+            return (.failed(error.code), error)
+        } catch let error as URLError where error.code == .timedOut {
+            return (.failed("timeout"), nil)
+        } catch {
+            return (.failed("http"), nil)
+        }
+    }
+
+    /// What structuring parts of a text came to.
+    private struct PieceOutcome {
+        /// The deepest split that produced a result.
+        var depth = 0
+        /// Why each part that stayed raw failed (`rejected: novel_name`).
+        var failures: [String] = []
+        /// A part failed for a reason splitting cannot help (timeout, busy, http): the whole text keeps the normal retry.
+        var transient: String?
+        var disable: StructuringOff?
+
+        var usable: Bool { transient == nil && disable == nil }
+    }
+
+    /// Structures `text` as one or more parts: a text over the window cap is cut first, and a part the server rejects
+    /// is split at a sentence end (halves, then quarters, never under `minSplitChars`). A part that still fails at
+    /// the smallest size comes back as a fallback piece, and only that part.
+    private func structurePieces(_ text: String, outline: [String], final: Bool, depth: Int,
+                                 outcome: inout PieceOutcome) async -> [NotesPiece] {
+        guard outcome.usable else { return [.fallback(text)] }
+        if text.count > NotesDocument.maxWindowChars, let (a, b) = NotesDocument.split(text) {
+            let first = await structurePieces(a, outline: outline, final: final, depth: depth, outcome: &outcome)
+            return first + (await structurePieces(b, outline: outline + Self.headings(first), final: final, depth: depth, outcome: &outcome))
+        }
+        let (response, disable) = await callStructure(NotesStructureRequest(transcript: text, outline: NotesDocument.capOutline(outline),
+                                                                            final: final))
+        if let disable { outcome.disable = disable; return [.fallback(text)] }
+        if response.structured, let md = response.markdown?.trimmingCharacters(in: .whitespacesAndNewlines), !md.isEmpty {
+            outcome.depth = max(outcome.depth, depth)
+            return [.markdown(md)]
+        }
+        guard response.error == "rejected" else {
+            outcome.transient = response.failureLabel
+            return [.fallback(text)]
+        }
+        if depth < Self.maxSplitDepth, let (a, b) = NotesDocument.split(text) {
+            let first = await structurePieces(a, outline: outline, final: final, depth: depth + 1, outcome: &outcome)
+            return first + (await structurePieces(b, outline: outline + Self.headings(first), final: final, depth: depth + 1,
+                                                  outcome: &outcome))
+        }
+        outcome.depth = max(outcome.depth, depth)
+        outcome.failures.append(response.failureLabel)
+        return [.fallback(text)]
+    }
+
+    private static func headings(_ pieces: [NotesPiece]) -> [String] {
+        pieces.flatMap { piece -> [String] in if case .markdown(let md) = piece { NotesMarkdown.headings(md) } else { [] } }
+    }
+
+    /// The parts of a split window: appended in order (a part that kept failing as a fallback block), and the tail
+    /// settles. A transient failure of any part leaves the whole window to the normal retry.
+    private func splitFinished(_ request: NotesStructureRequest, _ pieces: [NotesPiece], _ outcome: PieceOutcome) {
+        if let transient = outcome.transient {
+            passFinished(request, .failed(transient), disable: nil)
+            return
+        }
+        passTask = nil
+        passKind = nil
+        lastPassEnd = now()
+        if let disable = outcome.disable {
+            structuringAllowed = .off(disable)
+            structuring = .off(disable)
+        } else {
+            dropHeld()
+            publish(document.applyPieces(pieces, for: request))
+            if !structuring.isOff { structuring = outcome.failures.first.map { .failed($0) } ?? .idle }
+            onPassEvent?(.split(windowChars: request.transcript.count, depth: outcome.depth, parts: pieces.count,
+                                fallbacks: outcome.failures.count))
+        }
+        if pending || state.isCapturing { schedule() }
+        changed()
+    }
+
     private func passFinished(_ request: NotesStructureRequest, _ response: NotesStructureResponse, disable: StructuringOff?) {
         passTask = nil
+        passKind = nil
         lastPassEnd = now()
         if let disable {
             structuringAllowed = .off(disable)
             structuring = .off(disable)
+        } else if response.structured, holdsAppends, state != .stopping {
+            // The caret is in the tail: keep the newest answer until it leaves (or the user goes quiet).
+            held = (request, response)
+            armHold()
+            structuring = .idle
         } else {
-            document.apply(response, for: request)
-            if !structuring.isOff { structuring = response.structured ? .idle : .failed(response.error ?? "http") }
+            if response.structured { dropHeld() }
+            applyAppend(request, response)
         }
-        if pending { schedule() }
+        if pending || state.isCapturing { schedule() }
         changed()
+    }
+
+    private func applyAppend(_ request: NotesStructureRequest, _ response: NotesStructureResponse) {
+        publish(document.apply(response, for: request))
+        if !structuring.isOff { structuring = response.structured ? .idle : .failed(response.failureLabel) }
+    }
+
+    private func runReorganize(_ request: NotesReorganizeRequest, manual: Bool) {
+        reorganizeState = .running
+        passKind = .reorganize
+        changed()
+        let myEpoch = epoch
+        passTask = Task {
+            let (response, failure) = await self.callReorganize(request)
+            guard self.epoch == myEpoch else { return }
+            self.reorganizeFinished(request, response, manual: manual, failure: failure)
+        }
+    }
+
+    /// Organize (the button): structure what auto-updates left raw — the pending window and every fallback block the
+    /// user has not edited, each replaced in place — then reorganize the scope. Without anything raw it is a plain
+    /// manual reorganize.
+    private func runOrganize() {
+        publish(document.freezeOverflow())
+        let window = state.isCapturing || state == .idle || state == .stopped ? document.nextStructureRequest() : nil
+        let blocks = document.untouchedFallbacks
+        guard window != nil || !blocks.isEmpty else {
+            if let request = document.reorganizeRequest(final: false, manual: true) {
+                runReorganize(request, manual: true)
+            } else {
+                reorganizeState = document.reorganizeTooLong ? .tooLong : .idle
+                changed()
+            }
+            return
+        }
+        let total = (window == nil ? 0 : 1) + blocks.count + 1
+        passKind = .reorganize
+        reorganizeState = .organizing(step: 1, of: total)
+        changed()
+        let myEpoch = epoch
+        passTask = Task {
+            var failures: [String] = []
+            var step = 1
+            @MainActor func advance() {
+                step += 1
+                self.reorganizeState = .organizing(step: min(step, total), of: total)
+                self.changed()
+            }
+            @MainActor func failed(_ outcome: PieceOutcome) {
+                failures.append(outcome.transient ?? outcome.failures.first ?? "rejected")
+            }
+            if let window {
+                var outcome = PieceOutcome()
+                let pieces = await self.structurePieces(window.transcript, outline: window.outline, final: false, depth: 0,
+                                                        outcome: &outcome)
+                guard self.epoch == myEpoch else { return }
+                if outcome.usable, pieces.contains(where: { if case .markdown = $0 { true } else { false } }) {
+                    self.dropHeld()
+                    self.publish(self.document.applyPieces(pieces, for: window))
+                    failures += outcome.failures
+                } else {
+                    failed(outcome)                 // left in the window for the next append
+                }
+                advance()
+            }
+            let version = self.document.version
+            var replacements: [(block: String, pieces: [NotesPiece])] = []
+            for block in blocks {
+                var outcome = PieceOutcome()
+                let pieces = await self.structurePieces(block.body, outline: self.document.outline, final: false, depth: 0,
+                                                        outcome: &outcome)
+                guard self.epoch == myEpoch else { return }
+                if outcome.usable, pieces.contains(where: { if case .markdown = $0 { true } else { false } }) {
+                    replacements.append((block.block, pieces))
+                    failures += outcome.failures
+                } else {
+                    failed(outcome)                 // kept as is
+                }
+                advance()
+            }
+            var conflict = false
+            if !replacements.isEmpty {
+                // Version-checked as one batch: an edit (or a composition) while it ran discards all of it.
+                let changes = self.editorComposing ? [] : self.document.replaceFallbacks(replacements, ifVersion: version)
+                if changes.isEmpty { conflict = true } else { changes.forEach { self.publish($0) } }
+            }
+            if !conflict, self.reorganizeSupported, let request = self.document.reorganizeRequest(final: false, manual: true) {
+                let (response, failure) = await self.callReorganize(request)
+                guard self.epoch == myEpoch else { return }
+                _ = self.applyReorganizeResult(request, response, manual: true, failure: failure)
+                switch self.reorganizeState {
+                case .failed(let label): failures.append(label)
+                case .conflict: conflict = true
+                default: break
+                }
+            }
+            self.passTask = nil
+            self.passKind = nil
+            if conflict {
+                self.reorganizeState = .conflict
+            } else if case .applied = self.reorganizeState, failures.isEmpty {
+                // Organized, with the chip's Undo.
+            } else {
+                self.reorganizeState = .organized(failed: failures.count, reason: failures.first)
+            }
+            self.onPassEvent?(.organize(steps: total, failed: failures.count, conflict: conflict))
+            self.schedule()
+            self.changed()
+        }
+    }
+
+    private func reorganizeFinished(_ request: NotesReorganizeRequest, _ response: NotesReorganizeResponse, manual: Bool,
+                                    failure: NotesStructureError?) {
+        passTask = nil
+        passKind = nil
+        if applyReorganizeResult(request, response, manual: manual, failure: failure) {
+            // Not run: a segment clean-up took the model. No note and no backoff; the next commit tries again (a
+            // manual one stays asked for).
+            lastCommit = nil                       // this quiet stretch is used up
+            schedule()
+            if manual { manualReorganize = true }
+            changed()
+            return
+        }
+        schedule()
+        changed()
+    }
+
+    /// Records a reorganize answer and applies it when the text is still what it was made from. True when the
+    /// server preempted it (it did not run).
+    private func applyReorganizeResult(_ request: NotesReorganizeRequest, _ response: NotesReorganizeResponse, manual: Bool,
+                                       failure: NotesStructureError?) -> Bool {
+        if response.preempted, failure == nil {
+            reorganizeState = .idle
+            return true
+        }
+        lastReorganizeEnd = now()
+        versionAtReorganizeEnd = document.version
+        reorganizeRetry = true
+        switch failure {
+        case .unsupported:
+            // An older server: only Reorganize goes away; appends keep working.
+            reorganizeEndpointMissing = true
+            reorganizeSupported = false
+            reorganizeState = .idle
+        case .off:
+            structuringAllowed = .off(.correctionOff)
+            structuring = .off(.correctionOff)
+            reorganizeState = .idle
+        default:
+            if request.version != document.version || request.documentID != document.id {
+                reorganizeState = manual ? .conflict : .idle
+            } else if editorComposing {
+                // An input method is composing text the model has not seen: never replace under it.
+                reorganizeState = manual ? .conflict : .idle
+            } else if !response.reorganized {
+                reorganizeState = .failed(response.failureLabel)
+            } else {
+                reorganizeRetry = false
+                if let change = document.applyReorganize(response, for: request) {
+                    // A held append was for the tail this just settled.
+                    dropHeld()
+                    publish(change)
+                    reorganizeState = .applied(at: now())
+                } else {
+                    reorganizeState = .idle
+                }
+            }
+        }
+        return false
     }
 
     // MARK: stopping
@@ -468,23 +990,39 @@ public final class NotesRecorder {
     private func finish(error: String?) async {
         guard state.isCapturing else { return }
         let myEpoch = epoch
+        stoppingSince = now()
+        defer { stoppingSince = nil }
         state = .stopping
         timer?.cancel()
         timer = nil
         pending = false
+        manualReorganize = false
         let (old, _) = router.swap(to: nil)
         if let seq = current, let old, segments[seq] != nil { finalize(seq, old) }
         current = nil
         await waitUntil { self.segments.isEmpty && self.passTask == nil }
         guard epoch == myEpoch else { return }
-        document.freezeOverflow()
+        if let h = held {
+            dropHeld()
+            applyAppend(h.request, h.response)
+        }
+        publish(document.freezeOverflow())
         if !structuring.isOff, let request = document.nextStructureRequest(final: true) {
             run(request)
             await waitUntil { self.passTask == nil }
             guard epoch == myEpoch else { return }
         }
-        document.freezeAll(structuring: !structuring.isOff)
+        publish(document.freezeAll(structuring: !structuring.isOff))
         document.livePartial = ""
+        // One final reorganize, unless one just ran on this very text (it would only take time: up to 50 s more).
+        let justTried = versionAtReorganizeEnd == document.version
+            && (lastReorganizeEnd.map { now() - $0 < Self.stopReorganizeSkip } ?? false)
+        if !structuring.isOff, autoReorganize, reorganizeSupported, !justTried, document.version != document.lastReorganizeVersion,
+           let request = document.reorganizeRequest(final: true, manual: false) {
+            runReorganize(request, manual: false)
+            await waitUntil { self.passTask == nil }
+            guard epoch == myEpoch else { return }
+        }
         state = error.map { .error($0) } ?? .stopped
         changed()
     }

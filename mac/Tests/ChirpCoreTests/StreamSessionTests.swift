@@ -24,6 +24,8 @@ final class MockServer: @unchecked Sendable {
         /// Send `correcting` at once on `stop`, then the final after `finalDelay` seconds.
         var correcting = false
         var finalDelay: Double = 0
+        /// The final's text instead of the default one.
+        var finalText: String?
     }
 
     private let listener: NWListener
@@ -144,9 +146,13 @@ final class MockServer: @unchecked Sendable {
                 let i = index[ObjectIdentifier(c)] ?? 0
                 return (i, _sockets[i] ?? Socket())
             }
-            let final = numberedFinals
+            let scripted = socket.finalText.flatMap { text in
+                (try? JSONSerialization.data(withJSONObject: ["type": "final", "text": text, "raw": text, "corrected": true]))
+                    .map { String(decoding: $0, as: UTF8.self) }
+            }
+            let final = scripted ?? (numberedFinals
                 ? #"{"type":"final","text":"Segment \#(i).","raw":"segment \#(i)","corrected":true}"#
-                : #"{"type":"final","text":"Hello, world.","raw":"hello world","corrected":true,"timings_ms":{"audio":200,"first_partial":50,"finalize":30}}"#
+                : #"{"type":"final","text":"Hello, world.","raw":"hello world","corrected":true,"timings_ms":{"audio":200,"first_partial":50,"finalize":30}}"#)
             if socket.correcting {
                 send(c, #"{"type":"correcting","seq":1,"raw":"segment \#(i)","profile":"default"}"#)
             }
