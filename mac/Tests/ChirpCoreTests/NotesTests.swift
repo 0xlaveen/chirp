@@ -411,7 +411,7 @@ final class NotesURLStub: URLProtocol, @unchecked Sendable {
 
 /// Opt-in check against a real server: `CHIRP_LIVE_NOTES_URL=http://127.0.0.1:7899 CHIRP_LIVE_NOTES_TOKEN_FILE=…
 /// ./scripts/test.sh --filter NotesLiveServer`. Skipped otherwise, so CI and the normal run never need a server.
-@Suite struct NotesLiveServerTests {
+@Suite(.serialized) struct NotesLiveServerTests {
     static let url = ProcessInfo.processInfo.environment["CHIRP_LIVE_NOTES_URL"]
 
     @Test(.enabled(if: url != nil)) func structuresASampleThroughTheRealEndpoint() async throws {
@@ -433,5 +433,38 @@ final class NotesURLStub: URLProtocol, @unchecked Sendable {
         #expect(blocks.contains { if case .bullet = $0 { true } else { false } })
         // Prints the timings only, never the notes, like the app's logs.
         print("live notes: structured=\(r.structured) blocks=\(blocks.count) timings=\(r.timingsMs ?? [:])")
+    }
+
+    /// The whole client path: document scope → `reorganizeNotes` on the wire → `applyReorganize`.
+    @Test(.enabled(if: url != nil)) func reorganizesADocumentThroughTheRealEndpoint() async throws {
+        let env = ProcessInfo.processInfo.environment
+        let config = ServerConfig.load(urlString: Self.url, tokenPath: env["CHIRP_LIVE_NOTES_TOKEN_FILE"] ?? ServerConfig.defaultTokenPath)
+        let health = try await config.fetchHealth()
+        #expect(health.notesReorganize == true)
+        let text = """
+            ## Budget
+            - Venue quote is **$4,200** for **2** days
+            - [ ] **Maya** to send the draft budget by **Friday**
+            ## Speakers
+            - Two keynotes confirmed, a third is maybe
+            - We will **not** hire a contractor this quarter
+            - **Decision:** keep the vendor contract
+            ## Budget
+            - venue quote 4,200, deposit due in **June**
+            - [x] Sam booked the demo room
+            ask jo re: invoices
+            """
+        var document = NotesDocument(text: text)
+        let request = try #require(document.reorganizeRequest(final: true, manual: true))
+        let r = try await config.reorganizeNotes(request)
+        #expect(r.reorganized, "reorganized:false error=\(r.error ?? "nil")")
+        if r.changed {
+            let change = document.applyReorganize(r, for: request)
+            #expect(change?.kind == .reorganize && document.text.contains("4,200") && document.text.contains("- [x] "))
+        } else {
+            #expect(r.markdown == request.notes)
+        }
+        // Prints counts and timings only, never the notes, like the app's logs.
+        print("live reorganize: reorganized=\(r.reorganized) changed=\(r.changed) chars=\(request.notes.count) timings=\(r.timingsMs ?? [:])")
     }
 }

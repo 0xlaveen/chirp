@@ -97,6 +97,7 @@ Full protocol details, including every message field, are in [the architecture d
 | `GET /v1/correction/profiles` | bearer | Clean-up profile list with editable prompts (works even when correction is off) |
 | `GET`/`PUT /v1/correction/settings` | bearer | Clean-up `keep_loaded` state (see [keep_loaded](#keep_loaded)) |
 | `POST /v1/notes/structure` | bearer | Live Notes: structure a transcript window into Markdown (see [Notes structuring](#notes-structuring)) |
+| `POST /v1/notes/reorganize` | bearer | Live Notes: reorganize an edited notes document (see [Notes structuring](#notes-structuring)) |
 | `POST /v1/transcribe` | bearer | 16 kHz mono PCM16 WAV body (same limits as streaming); returns the final object |
 | `WS /v1/stream` | bearer | Streaming dictation |
 
@@ -132,7 +133,7 @@ Cancel or disconnect during finalization discards the utterance: no correction r
 | `bad_audio` | Invalid audio or control frame |
 | `bad_request` | Invalid correction prompt/settings body (HTTP 400) |
 | `unsupported` | PUT settings outside managed mode (HTTP 409) |
-| `bad_notes` | Invalid notes-structuring request (HTTP 400) |
+| `bad_notes` | Invalid notes-structuring or reorganize request (HTTP 400) |
 | `notes_off` | Notes structuring needs correction enabled (HTTP 409) |
 | `engine` | Speech engine unavailable |
 
@@ -358,6 +359,26 @@ even with `--debug-retain`.
 
 In managed mode a queued dictation correction is always served before a queued structuring
 request; a running structuring generation (at most 768 tokens) is never interrupted.
+
+`POST /v1/notes/reorganize` regroups the Mac's editable notes document: it merges duplicate
+sections and bullets and moves loose lines under the right heading, without dropping or inventing
+anything. The body is `{"notes":"<Markdown, at most 3500 chars>","outline":["Earlier heading"],
+"final":false}`; the answer is `{"markdown":"…","reorganized":true,"changed":true|false,
+"error":null,"timings_ms":{"reorganize":…}}`, or `"markdown":null,"reorganized":false` with
+`error` of `timeout`, `http` or `rejected`. `changed:false` means the output equalled the input
+apart from whitespace. Its guards reject dropped lines, numbers, dates, tasks, Decisions and
+Questions, changed task states, invented names, numbers, dates, tasks or headings, flipped, added
+or dropped negations and hedges, summaries and padding, and markup the input did not have. It
+shares the one-at-a-time structuring lock (`503 busy`), uses up to 1024 output tokens, and in
+managed mode gives way to any correction that queues while it runs (it then answers `timeout`
+and the client retries). Details are in [the architecture
+doc](../docs/architecture.md#live-notes-reorganize-v1-compatible-addition); benchmarks:
+
+```sh
+uv run python scripts/bench_notes.py --mode reorganize --repetitions 1 --dump /tmp/reorg-out.jsonl
+```
+
+(`--mode structure`, the default, is the structuring bench; `--mode both` runs both.)
 
 Measure it on your Mac with the cached default model (not run in CI):
 
