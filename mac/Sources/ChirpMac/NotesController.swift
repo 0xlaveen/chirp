@@ -12,10 +12,35 @@ final class NotesController {
     private(set) lazy var recorder = NotesRecorder(
         makeSession: { StreamSession(config: settings.serverConfig(), options: $0) },
         structure: { request in try await settings.serverConfig().structureNotes(request, timeout: Self.structureTimeout) },
-        options: settings.notesStartOptions(health: nil), structuring: settings.notesStructureEnabled(health: nil))
+        reorganize: { request in try await Self.reorganize(request) },
+        options: settings.notesStartOptions(health: nil), structuring: settings.notesStructureEnabled(health: nil),
+        autoReorganize: settings.notesAutoReorganize)
 
     /// The server's structure timeout (30 s) plus a margin.
     static let structureTimeout: TimeInterval = 35
+    /// A reorganize pass may take longer (up to 3500 chars in and out).
+    static let reorganizeTimeout: TimeInterval = 50
+
+    /// One reorganize call, logged with counts only.
+    private nonisolated static func reorganize(_ request: NotesReorganizeRequest) async throws -> NotesReorganizeResponse {
+        let start = ContinuousClock.now
+        func log(_ result: String) {
+            let elapsed = (ContinuousClock.now - start).components
+            let ms = Double(elapsed.seconds) * 1000 + Double(elapsed.attoseconds) / 1e15
+            chirpLog.info("notes reorganize chars=\(request.notes.count, privacy: .public) scope=\(request.range.length, privacy: .public) result=\(result, privacy: .public) ms=\(Int(ms), privacy: .public)")
+        }
+        do {
+            let r = try await settings.serverConfig().reorganizeNotes(request, timeout: reorganizeTimeout)
+            log(r.reorganized ? (r.changed ? "changed" : "unchanged") : (r.error ?? "failed"))
+            return r
+        } catch let error as NotesStructureError {
+            log(error.code)
+            throw error
+        } catch {
+            log("http")
+            throw error
+        }
+    }
 
     var health: () -> Health? = { nil }
     var isDictating: () -> Bool = { false }
@@ -31,6 +56,7 @@ final class NotesController {
     private var lastState: NotesRecorderState = .idle
     private var lastRecorderState: NotesRecorderState = .idle
     private var lastHealth: Health?
+    private var lastReorganize: ReorganizeStatus = .idle
     /// The last health this server answered with, kept across a failed poll so one blip never changes what
     /// structuring may do (dropped when the server URL changes).
     private var knownHealth: (url: String, health: Health)?
@@ -49,6 +75,16 @@ final class NotesController {
         model.onRecordToggle = { [weak self] in self?.toggle(fromHotkey: false) }
         model.onStructureToggle = { [weak self] on in self?.setStructure(on) }
         model.onTabChange = { settings.notesTab = $0.rawValue }
+        model.preview = settings.notesPreview
+        model.autoReorganize = settings.notesAutoReorganize
+        model.onPreviewToggle = { settings.notesPreview = $0 }
+        model.onAutoReorganizeToggle = { [weak self] on in
+            settings.notesAutoReorganize = on
+            self?.recorder.setAutoReorganize(on)
+        }
+        model.onUserEdit = { [weak self] range, text, kind in self?.recorder.userEdit(range, text, kind: kind) }
+        model.onReorganize = { [weak self] in self?.recorder.reorganizeNow() }
+        model.onEditorFocus = { [weak self] inTail, composing in self?.recorder.setEditorFocus(inTail: inTail, composing: composing) }
         sync()
     }
 
@@ -214,6 +250,10 @@ final class NotesController {
         model.state = state
         model.document = recorder.document
         model.structuring = recorder.structuring
+        let reorganize = recorder.reorganizeStatus
+        model.reorganizeStatus = reorganize
+        // The editor replays the AI changes right away, onto text that matches `model.document` before them.
+        model.enqueue(recorder.takePendingChanges())
         model.debugRetention = recorder.debugRetention || (resolvedHealth()?.debugRetention ?? false)
         model.elapsed = recorder.elapsed
         model.reduceMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
@@ -221,12 +261,18 @@ final class NotesController {
         let announcement = model.announcement
         if announcement != lastAnnouncement {
             lastAnnouncement = announcement
-            if !announcement.isEmpty {
-                NSAccessibility.post(element: NSApp as Any, notification: .announcementRequested,
-                                     userInfo: [.announcement: announcement, .priority: NSAccessibilityPriorityLevel.high.rawValue])
-            }
+            if !announcement.isEmpty { announce(announcement) }
+        }
+        if reorganize != lastReorganize {
+            if case .applied = reorganize { announce(NotesStatus.reorganized) }
+            lastReorganize = reorganize
         }
         onChange?()
+    }
+
+    private func announce(_ text: String) {
+        NSAccessibility.post(element: NSApp as Any, notification: .announcementRequested,
+                             userInfo: [.announcement: text, .priority: NSAccessibilityPriorityLevel.high.rawValue])
     }
 
     /// The elapsed time in the window and the menu header, once a second while recording.

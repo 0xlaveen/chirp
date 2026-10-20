@@ -133,9 +133,24 @@ final class NotesTextView: NSTextView {
     /// Edit ▸ Reorganize Notes (⌥⌘R), through the responder chain.
     @objc func reorganizeNotes(_ sender: Any?) { coordinator?.model.onReorganize() }
 
+    /// ⌘Z / ⇧⌘Z act on the notes' own undo stack (the window's would be empty).
+    @objc func undo(_ sender: Any?) { coordinator?.undo.undo() }
+    @objc func redo(_ sender: Any?) { coordinator?.undo.redo() }
+
     override func validateUserInterfaceItem(_ item: any NSValidatedUserInterfaceItem) -> Bool {
-        if item.action == #selector(reorganizeNotes(_:)) { return coordinator?.model.canReorganize ?? false }
-        return super.validateUserInterfaceItem(item)
+        guard let undo = coordinator?.undo else { return super.validateUserInterfaceItem(item) }
+        switch item.action {
+        case #selector(reorganizeNotes(_:)):
+            return coordinator?.model.canReorganize ?? false
+        case #selector(undo(_:)):
+            (item as? NSMenuItem)?.title = undo.undoMenuItemTitle
+            return undo.canUndo
+        case #selector(redo(_:)):
+            (item as? NSMenuItem)?.title = undo.redoMenuItemTitle
+            return undo.canRedo
+        default:
+            return super.validateUserInterfaceItem(item)
+        }
     }
 }
 
@@ -184,7 +199,8 @@ final class NotesEditorCoordinator: NSObject, NSTextViewDelegate {
         textView.isHorizontallyResizable = false
         textView.autoresizingMask = [.width]
         textView.textContainer?.widthTracksTextView = true
-        textView.frame = NSRect(x: 0, y: 0, width: 600, height: 400)
+        // Sized by the clip view (autoresizing): a preset width would be added to the clip view's own.
+        textView.frame = NSRect(origin: .zero, size: scrollView.contentSize)
         load()
         model.onPendingChanges = { [weak self] in self?.pendingChangesArrived() }
         model.undoReorganize = { [weak self] in self?.undoReorganize() }

@@ -9,6 +9,7 @@ enum NotesEditorStyle {
     static let body = NSFont.systemFont(ofSize: bodySize)
     /// `[ ]` and `[x]` in a fixed-width face, so a toggle never shifts the text after it.
     static let box = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
+    static let gap = NSFont.systemFont(ofSize: 7)
     static let indentStep: CGFloat = 22
     static let lineSpacing: CGFloat = 3
 
@@ -51,6 +52,13 @@ enum NotesEditorStyle {
         guard target.length > 0 else { return }
         storage.beginEditing()
         storage.setAttributes(typingAttributes, range: target)
+        // A blank line between blocks is a half-height gap, not a full body line.
+        var location = target.location
+        while location < NSMaxRange(target) {
+            let line = ns.lineRange(for: NSRange(location: location, length: 0))
+            if line.length == 1, ns.character(at: line.location) == 10 { storage.addAttribute(.font, value: gap, range: line) }
+            location = NSMaxRange(line)
+        }
         let runs = NotesMarkdown.styleRuns(Substring(ns.substring(with: target)), base: target.location)
         for run in runs { apply(run, to: storage, ns: ns) }
         storage.endEditing()
@@ -64,8 +72,8 @@ enum NotesEditorStyle {
             storage.addAttribute(.font, value: headingFont(level), range: r)
             let p = NSMutableParagraphStyle()
             p.lineSpacing = lineSpacing
-            p.paragraphSpacingBefore = r.location == 0 ? 0 : (level == 1 ? 12 : level == 2 ? 10 : 6)
-            p.paragraphSpacing = 4
+            p.paragraphSpacingBefore = r.location == 0 ? 0 : (level == 1 ? 6 : level == 2 ? 4 : 2)
+            p.paragraphSpacing = 3
             storage.addAttribute(.paragraphStyle, value: p, range: ns.paragraphRange(for: r))
         case .markupDelimiter:
             storage.addAttribute(.foregroundColor, value: NSColor.tertiaryLabelColor, range: r)
