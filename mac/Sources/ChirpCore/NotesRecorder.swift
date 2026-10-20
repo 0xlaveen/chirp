@@ -734,6 +734,7 @@ public final class NotesRecorder {
             // Not run: a segment clean-up took the model. No note and no backoff; the next commit tries again (a
             // manual one stays asked for).
             reorganizeState = .idle
+            lastCommit = nil                       // this quiet stretch is used up
             schedule()
             if manual { manualReorganize = true }
             changed()
