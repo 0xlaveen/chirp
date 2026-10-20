@@ -56,7 +56,7 @@ On first launch the **Set Up Chirp** window opens (reopen it any time from Setti
 | Microphone | capture your voice | dictation refuses to start and opens the Microphone pane |
 | Accessibility | set text in the focused field and send ⌘V | text is only copied to the clipboard ("Copied — press ⌘V") |
 
-The hotkey is a Carbon hot key (`RegisterEventHotKey`, delivering press and release), so **Input Monitoring is not needed**. Settings → Permissions shows the status of both, with a Fix button only for one that is missing. After granting Accessibility you may need to relaunch the app.
+A hotkey with ⌃ or ⌘ is a Carbon hot key (`RegisterEventHotKey`, delivering press and release), so **Input Monitoring is not needed**. A modifier on its own (⌥, Right ⌥, fn…) and ⌥-only combinations such as ⌥Space, which Carbon cannot deliver, come from a session event tap that needs Accessibility; until it is granted the menu says `Ready · hotkey needs Accessibility`, and Chirp registers the hotkey as soon as access is granted. Settings → Permissions shows the status of both, with a Fix button only for one that is missing. After granting Accessibility you may need to relaunch the app.
 
 The Mac mini has no built-in microphone. Chirp follows the system default input (shown in the menu's Microphone row), including when you plug in or unplug a USB mic, unless you pick a device in the Microphone submenu.
 
@@ -64,11 +64,14 @@ The Mac mini has no built-in microphone. Chirp follows the system default input 
 
 ### Hotkey
 
-- **⌃⌥Space** by default; pick ⌃⇧Space or ⌃⌥⌘Space in Settings → General, or press **Record Shortcut…** there and type your own. The hotkey lives only in Settings; the menu just shows it.
-- A press shorter than 300 ms toggles (tap to start, tap to stop). A longer press is push-to-talk: hold, speak, release.
+- **⌃⌥Space** by default; pick **⌥ Option**, **Right ⌥ Option**, ⌃⇧Space or ⌃⌥⌘Space in Settings → General, or press **Record Shortcut…** there and type your own — any key combination, a bare F-key, or a modifier pressed and released on its own (⌥, Right ⌥, ⌘, fn, ⌃⌥…). The hotkey lives only in Settings; the menu just shows it.
+- **Mode** (Settings → General):
+  - **Auto-stop** (default): press once and talk; Chirp stops after a pause (1–5 s of quiet, 2 s by default, judged against the room's noise floor) or when you press again. With nothing said it stops after 10 s.
+  - **Hold to talk**: hold the hotkey while you talk, let go to finish. A press shorter than 300 ms is dropped with a "Hold the hotkey while you talk" hint.
+- A modifier on its own only counts when used alone: with another key or a click (⌥←, ⌥-click) it does nothing, and a dictation that press started is dropped. Hold to talk starts once it has been held alone for 200 ms; auto-stop takes a clean tap under 0.5 s.
 - **Esc** cancels: the server discards the audio and nothing is inserted. Esc is only captured while a dictation is active.
 
-The shortcut recorder (AppKit, no macros, no Input Monitoring) refuses combinations that cannot fire, says why, and keeps listening. Refused: ⌥ or ⌥⇧ with no ⌃/⌘ (since macOS 15 they register but never fire), ⌃Space alone (Raycast's default and the input-source switcher), ⇧ alone or no modifier, Esc, and a few system shortcuts (⌘Space, ⌘Tab, ⌘Q). Esc, or a click elsewhere, gives up. While it listens, the live hotkey is released so pressing it does not start a dictation. A stored custom shortcut is validated again on load.
+The shortcut recorder (AppKit, no macros, no Input Monitoring) refuses combinations that cannot fire or would break typing, says why, and keeps listening. Refused: a typing key with no modifier or with ⇧ alone, ⇧ on its own, ⌃Space alone (Raycast's default and the input-source switcher), Esc, and a few system shortcuts (⌘Space, ⌘Tab, ⌘Q). Recording a single right-hand modifier keeps that side only (Right ⌥). Esc, or a click elsewhere, gives up. While it listens, the live hotkey is released so pressing it does not start a dictation. A stored custom shortcut is validated again on load.
 
 ### HUD
 
@@ -166,7 +169,7 @@ Quit Chirp                                    ⌘Q
 |---|---|
 | Header switch | Pauses and resumes Chirp. Off releases the dictation hotkey (and ⌃⌥Z), ends a dictation under way, disables Start Dictation and dims the menu-bar bird; on registers the hotkey again. Nothing else, including the shortcut recorder or a changed shortcut, brings the hotkey back while paused. The pause is not remembered: a relaunch resumes. |
 | Status line | Under the name, in secondary grey: `Ready · ⌃⌥Space`, `Paused`, `Listening…` (also Connecting…, Polishing…), `Loading model…`, `Server unreachable` (red), the current error (red), or `DEBUG recordings kept` (red) while the server keeps recordings. |
-| Start / Stop Dictation | The same toggle as tapping the hotkey (the combo is shown at the right; not while paused or when another app owns the shortcut). |
+| Start / Stop Dictation | Starts a dictation or finishes the one under way, in either mode (the combo is shown at the right; not while paused or when another app owns the shortcut). |
 | Use Raw for Last Dictation | Appears for 5 s after a cleaned insertion, with ⌃⌥Z when that hotkey is free. |
 | Clean-up | Value: the default style, or Off. Submenu: Clean up Text (checkmark), the styles (checkmark on the default), Show Changes after Clean-up, Edit Styles… A server with clean-up off shows "Unavailable" and one explanatory line. |
 | Microphone | Value: the device in use. Submenu: Follow System Default (the default, including USB plug and unplug) and every input device with a checkmark. A picked device that is unplugged falls back to the default. The choice applies from the next dictation. |
@@ -183,7 +186,7 @@ Settings is a native preferences window with toolbar tabs (`NSTabViewController`
 
 | Tab | Contents |
 |---|---|
-| General | Hotkey (presets and Record Shortcut…), Launch at login, Set Up Chirp… |
+| General | Hotkey (presets and Record Shortcut…), Mode (Auto-stop or Hold to talk) and the auto-stop pause, Launch at login, Set Up Chirp… |
 | Sounds | Cues on/off, pack with ▶ previews, volume, the Custom pack's start and stop files |
 | Clean-up | Clean up dictated text, Keep clean-up model loaded, the default style, the per-style prompt editor, per-app styles with Test, Insert raw immediately, Show changes after clean-up, Offer Use raw for 5 seconds |
 | Server | URL, token location, status, Manage Local Models…, Copy Doctor Command |
@@ -251,7 +254,7 @@ It prints partials, the final text and timings (client-measured stop→final plu
 
 ### Unit tests
 
-`./scripts/test.sh` runs the `ChirpCore` tests (Swift Testing). Under the Command Line Tools SwiftPM doesn't find the Swift Testing macro plugin on its own, so the script passes `-Xswiftc -plugin-path` for it; with Xcode installed it is plain `swift test`. The tests cover: the protocol codec, the dictation state machine, hotkey dispatch and tap/hold timing, insertion strategy including a fake AX that applies late, pasteboard restore and Use raw (fakes), PCM conversion and framing, the silence guard, `StreamSession` against an in-process mock WebSocket server on loopback and against an injected transport that stalls (queue overflow, 120 s cap, ready deadline, prompt cancel), `AudioCapture` against a fake engine (failed start unwinds, retry, idempotent stop, device change), hotkey validation (⌥-only, ⌥⇧, ⌃Space, shift-only, Esc and reserved combinations are rejected with a reason; custom ids round-trip and invalid stored ids fall back), the shortcut recorder's rules, the first-run flow (steps, live satisfaction, `markDone` only on the last step), the sound cues, packs, timing, volume, custom-file import and the generated WAVs (format, peak, fades, pitch direction), the waveform level mapping and HUD sizing, the About text, the preferences (the picked input device persists, clean-up maps to the wire flag, per-app style mapping), the editable style prompts (profiles decoding, caching and offline read-only, edit/reset, per-style limits, which prompt is sent, migration of the old Custom instructions, the editor and the per-app Test summary), the 5 s Use raw window on a fake clock (⌃⌥Z registration, conflict fallback), the `correcting` message, the polishing state (timeout, Esc during polishing), the word diff and the replace-after-insert path (fakes), input-device resolution, the menu model for every state (paused, ready, listening, unreachable, debug, the Use raw window, setup incomplete), its value strings and their truncation, the pause gate (pausing unregisters the hotkey, resuming registers it, nothing else brings it back while paused), the status-icon rules, the menu's custom views, the five Settings tabs and their sizing, the HUD content, and the offscreen snapshot renderer with its committed-set checks.
+`./scripts/test.sh` runs the `ChirpCore` tests (Swift Testing). Under the Command Line Tools SwiftPM doesn't find the Swift Testing macro plugin on its own, so the script passes `-Xswiftc -plugin-path` for it; with Xcode installed it is plain `swift test`. The tests cover: the protocol codec, the dictation state machine, hotkey dispatch and tap/hold timing, insertion strategy including a fake AX that applies late, pasteboard restore and Use raw (fakes), PCM conversion and framing, the silence guard, `StreamSession` against an in-process mock WebSocket server on loopback and against an injected transport that stalls (queue overflow, 120 s cap, ready deadline, prompt cancel), `AudioCapture` against a fake engine (failed start unwinds, retry, idempotent stop, device change), hotkey validation (typing keys without a modifier, ⇧ alone, ⌃Space, Esc and reserved combinations are rejected with a reason; modifier-only and ⌥-only shortcuts go through the event tap; custom ids round-trip and invalid stored ids fall back), the event-tap matcher (modifier alone, sides, chords, swallowed ⌥Space), the auto-stop and hold-to-talk gestures and the auto-stop silence detector, the shortcut recorder's rules, the first-run flow (steps, live satisfaction, `markDone` only on the last step), the sound cues, packs, timing, volume, custom-file import and the generated WAVs (format, peak, fades, pitch direction), the waveform level mapping and HUD sizing, the About text, the preferences (the picked input device persists, clean-up maps to the wire flag, per-app style mapping), the editable style prompts (profiles decoding, caching and offline read-only, edit/reset, per-style limits, which prompt is sent, migration of the old Custom instructions, the editor and the per-app Test summary), the 5 s Use raw window on a fake clock (⌃⌥Z registration, conflict fallback), the `correcting` message, the polishing state (timeout, Esc during polishing), the word diff and the replace-after-insert path (fakes), input-device resolution, the menu model for every state (paused, ready, listening, unreachable, debug, the Use raw window, setup incomplete), its value strings and their truncation, the pause gate (pausing unregisters the hotkey, resuming registers it, nothing else brings it back while paused), the status-icon rules, the menu's custom views, the five Settings tabs and their sizing, the HUD content, and the offscreen snapshot renderer with its committed-set checks.
 
 ### UI snapshots (no app launch)
 
@@ -264,7 +267,7 @@ The menu snapshots are built from the same `MenuHeaderView` and `MenuRowView` th
 ## Layout
 
 ```
-Sources/ChirpCore/    protocol, Preferences, StreamSession (URLSessionWebSocketTask), DictationMachine, HotKey (Carbon) and its validation, onboarding flow, sound cues and packs, audio helpers, input selection, Insertion/
+Sources/ChirpCore/    protocol, Preferences, StreamSession (URLSessionWebSocketTask), DictationMachine, HotKey (Carbon and the event tap) and its validation, Activation (modes, auto-stop), onboarding flow, sound cues and packs, audio helpers, input selection, Insertion/
 Sources/ChirpUI/      HUD view and waveform, menu content, menu views and status-icon rules, settings tabs and form, shortcut recorder, setup and About views, snapshot renderer (no system access)
 Sources/ChirpMac/     app: menu bar, HUD panel, settings, setup and About windows, capture, controller, --selftest
 Tests/ChirpCoreTests/

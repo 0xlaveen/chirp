@@ -17,27 +17,78 @@ import Testing
     }
 
     @Test func holdIsPushToTalk() {
-        var m = DictationMachine()
+        var m = DictationMachine(mode: .holdToTalk)
         m.handle(.hotkeyDown(at: 10))
         m.handle(.serverReady)
         #expect(m.handle(.hotkeyUp(at: 11.2)) == [.finalize])
         #expect(m.state == .finalizing)
     }
 
+    @Test func autoStopIgnoresTheReleaseEvenAfterALongHold() {
+        var m = DictationMachine(mode: .autoStop)
+        m.handle(.hotkeyDown(at: 10))
+        m.handle(.serverReady)
+        #expect(m.handle(.hotkeyUp(at: 12)) == [])
+        #expect(m.state == .listening)
+    }
+
     @Test func holdReleasedBeforeServerReadyStillFinalizes() {
-        var m = DictationMachine()
+        var m = DictationMachine(mode: .holdToTalk)
         m.handle(.hotkeyDown(at: 0))
         #expect(m.handle(.hotkeyUp(at: 2)) == [.finalize])
         #expect(m.state == .finalizing)
     }
 
+    /// Hold to talk: a quick tap was not meant as a dictation; it is dropped with a hint, and the next press works.
     @Test func thresholdBoundary() {
-        var tap = DictationMachine()
+        var tap = DictationMachine(mode: .holdToTalk)
         tap.handle(.hotkeyDown(at: 0))
-        #expect(tap.handle(.hotkeyUp(at: 0.299)) == [])
-        var hold = DictationMachine()
+        #expect(tap.handle(.hotkeyUp(at: 0.299)) == [.abort(DictationMachine.holdHint)])
+        #expect(tap.state == .error(DictationMachine.holdHint))
+        #expect(tap.handle(.hotkeyDown(at: 1)) == [.start])
+        var hold = DictationMachine(mode: .holdToTalk)
         hold.handle(.hotkeyDown(at: 0))
         #expect(hold.handle(.hotkeyUp(at: 0.3)) == [.finalize])
+    }
+
+    @Test func silenceStopsOnlyAnAutoStopDictationThatIsListening() {
+        var auto = DictationMachine(mode: .autoStop)
+        auto.handle(.hotkeyDown(at: 0)); auto.handle(.hotkeyUp(at: 0.1))
+        #expect(auto.handle(.silence) == [])          // still connecting
+        auto.handle(.serverReady)
+        #expect(auto.handle(.silence) == [.finalize])
+        #expect(auto.state == .finalizing)
+        var hold = DictationMachine(mode: .holdToTalk)
+        hold.handle(.hotkeyDown(at: 0)); hold.handle(.serverReady)
+        #expect(hold.handle(.silence) == [])
+        #expect(hold.state == .listening)
+    }
+
+    /// ⌥ as the hotkey, then ⌥← : the dictation that press started is dropped without inserting anything.
+    @Test func aChordCancelsTheDictationItsPressStarted() {
+        var m = DictationMachine(mode: .holdToTalk)
+        m.handle(.hotkeyDown(at: 0)); m.handle(.serverReady)
+        #expect(m.handle(.hotkeyChord) == [.cancel])
+        #expect(m.state == .idle)
+        // A chord after the press was released (toggle-started dictation) leaves it running.
+        var auto = DictationMachine(mode: .autoStop)
+        auto.handle(.hotkeyDown(at: 0)); auto.handle(.hotkeyUp(at: 0.1))
+        #expect(auto.handle(.hotkeyChord) == [])
+        #expect(auto.state == .connecting)
+    }
+
+    /// The menu's Start/Stop works the same in both modes and never counts as a too-short hold.
+    @Test func menuToggleStartsAndStopsInBothModes() {
+        for mode in ActivationMode.allCases {
+            var m = DictationMachine(mode: mode)
+            #expect(m.handle(.toggle) == [.start])
+            m.handle(.serverReady)
+            #expect(m.handle(.toggle) == [.finalize])
+            // Hold to talk: a press during a menu-started dictation finishes it.
+            var n = DictationMachine(mode: mode)
+            n.handle(.toggle)
+            #expect(n.handle(.hotkeyDown(at: 5)) == [.finalize])
+        }
     }
 
     @Test func keyRepeatWhileHeldIsIgnored() {

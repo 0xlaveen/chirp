@@ -14,11 +14,32 @@ import Testing
         return nil
     }
 
-    @Test func optionOnlyAndOptionShiftNeverFireOnMacOS15() {
-        #expect(reject(kVK_Space, optionKey) == .optionOnly)
-        #expect(reject(kVK_Space, optionKey | shiftKey) == .optionOnly)
-        #expect(reject(kVK_ANSI_R, optionKey) == .optionOnly)
-        #expect(HotKeyValidation.Rejection.optionOnly.reason.contains("macOS 15"))
+    /// Carbon never delivers ⌥-only shortcuts since macOS 15, so they are accepted and matched from the event tap.
+    @Test func optionOnlyCombinationsGoThroughTheEventTap() throws {
+        for mods in [optionKey, optionKey | shiftKey] {
+            let combo = try HotKeyValidation.validate(keyCode: UInt32(kVK_Space), modifiers: UInt32(mods)).get()
+            #expect(combo.needsEventTap && !combo.isModifierOnly)
+        }
+        #expect(!KeyCombo.controlOptionSpace.needsEventTap)
+        #expect(KeyCombo.option.needsEventTap && KeyCombo.rightOption.needsEventTap)
+    }
+
+    @Test func aModifierOnItsOwnIsAShortcut() throws {
+        let option = try HotKeyValidation.validate(keyCode: KeyCombo.anyModifierKey, modifiers: UInt32(optionKey)).get()
+        #expect(option == .option && option.isModifierOnly)   // recording ⌥ alone picks the preset
+        let right = try HotKeyValidation.validate(keyCode: UInt32(kVK_RightOption), modifiers: 0).get()
+        #expect(right == .rightOption && right.modifiers == UInt32(optionKey))
+        let rightCommand = try HotKeyValidation.validate(keyCode: UInt32(kVK_RightCommand), modifiers: 0).get()
+        #expect(rightCommand.isCustom && rightCommand.title == "Right ⌘ Command")
+        let fn = try HotKeyValidation.validate(keyCode: UInt32(kVK_Function), modifiers: 0).get()
+        #expect(fn.modifiers == ModifierKeys.fn && fn.title == "fn")
+        let pair = try HotKeyValidation.validate(keyCode: KeyCombo.anyModifierKey, modifiers: UInt32(controlKey | optionKey)).get()
+        #expect(pair.title == "⌃⌥")
+        #expect(reject(Int(KeyCombo.anyModifierKey), shiftKey) == .shiftAlone)
+        #expect(reject(kVK_RightShift, 0) == .shiftAlone)
+        #expect(reject(Int(KeyCombo.anyModifierKey), 0) == .noModifier)
+        #expect(KeyCombo.resolve(id: pair.id) == pair)
+        #expect(KeyCombo.resolve(id: KeyCombo.rightOption.id) == .rightOption)
     }
 
     @Test func controlSpaceAloneBelongsToRaycast() {
@@ -31,8 +52,11 @@ import Testing
 
     @Test func aKeyNeedsAModifierThatCanFire() {
         #expect(reject(kVK_ANSI_R, 0) == .noModifier)
-        #expect(reject(kVK_F5, 0) == .noModifier)
+        #expect(reject(kVK_Space, 0) == .noModifier)
         #expect(reject(kVK_ANSI_R, shiftKey) == .shiftOnly)
+        // F-keys type nothing, so they work alone or with ⇧.
+        #expect(reject(kVK_F5, 0) == nil)
+        #expect(reject(kVK_F13, shiftKey) == nil)
     }
 
     @Test func escapeAndSystemShortcutsAreRefused() {
@@ -44,14 +68,14 @@ import Testing
     }
 
     @Test func everyRejectionExplainsItselfInOneSentence() {
-        let all: [HotKeyValidation.Rejection] = [.noModifier, .shiftOnly, .optionOnly, .controlSpace, .reserved("Spotlight"), .escape]
+        let all: [HotKeyValidation.Rejection] = [.noModifier, .shiftOnly, .shiftAlone, .controlSpace, .reserved("Spotlight"), .escape]
         for why in all { #expect(why.reason.count > 20 && why.reason.hasSuffix(".")) }
         #expect(Set(all.map(\.reason)).count == all.count)
     }
 
     @Test func combinationsThatCanFireAreAccepted() throws {
         for (key, mods) in [(kVK_ANSI_R, controlKey | optionKey), (kVK_Space, optionKey | cmdKey), (kVK_F5, controlKey),
-                            (kVK_ANSI_D, controlKey | optionKey | shiftKey | cmdKey), (kVK_Space, controlKey | shiftKey)] {
+                            (kVK_ANSI_D, controlKey | optionKey | shiftKey | cmdKey), (kVK_Space, controlKey | cmdKey | shiftKey)] {
             let combo = try HotKeyValidation.validate(keyCode: UInt32(key), modifiers: UInt32(mods)).get()
             #expect(combo.keyCode == UInt32(key) && combo.modifiers == UInt32(mods) && combo.isCustom)
         }
@@ -61,8 +85,8 @@ import Testing
         let capsLock = UInt32(alphaLock)
         let combo = try HotKeyValidation.validate(keyCode: UInt32(kVK_ANSI_R), modifiers: UInt32(controlKey) | capsLock).get()
         #expect(combo.modifiers == UInt32(controlKey))
-        // ⌥ plus caps lock is still ⌥ alone.
-        #expect(reject(kVK_Space, optionKey | Int(capsLock)) == .optionOnly)
+        // ⌃ plus caps lock is still ⌃ alone.
+        #expect(reject(kVK_Space, controlKey | Int(capsLock)) == .controlSpace)
     }
 
     @Test func titlesListModifiersInMacOrder() {
@@ -78,7 +102,7 @@ import Testing
         #expect(KeyCombo.resolve(id: "control-shift-space") == .controlShiftSpace)
         #expect(KeyCombo.resolve(id: nil) == .controlOptionSpace)
         // Hand-edited or stale defaults that can never fire, or that are malformed, use the default.
-        #expect(KeyCombo.resolve(id: "custom:\(kVK_Space):\(optionKey)") == .controlOptionSpace)
+        #expect(KeyCombo.resolve(id: "custom:\(kVK_Space):\(shiftKey)") == .controlOptionSpace)
         #expect(KeyCombo.resolve(id: "custom:\(kVK_Space):\(controlKey)") == .controlOptionSpace)
         #expect(KeyCombo.resolve(id: "custom:abc") == .controlOptionSpace)
         #expect(KeyCombo.resolve(id: "custom:1:2:3") == .controlOptionSpace)
@@ -94,7 +118,7 @@ import Testing
         prefs.hotkey = combo
         prefs.soundsEnabled = true
         #expect(Preferences(defaults: defaults).hotkey == combo && Preferences(defaults: defaults).soundsEnabled)
-        defaults.set("custom:\(kVK_Space):\(optionKey)", forKey: "hotkey")
+        defaults.set("custom:\(kVK_Space):\(shiftKey)", forKey: "hotkey")
         #expect(prefs.hotkey == .controlOptionSpace)
     }
 }
@@ -111,7 +135,9 @@ import Testing
 
     @Test func keyPressesBecomeOutcomes() {
         #expect(HotkeyRecording.outcome(keyCode: UInt16(kVK_Escape), flags: []) == .cancelled)
-        #expect(HotkeyRecording.outcome(keyCode: UInt16(kVK_Space), flags: [.option]) == .rejected(.optionOnly))
+        #expect(HotkeyRecording.outcome(keyCode: UInt16(kVK_Space), flags: [.option])
+                == .accepted(.custom(keyCode: UInt32(kVK_Space), modifiers: UInt32(optionKey))))
+        #expect(HotkeyRecording.outcome(keyCode: UInt16(kVK_ANSI_R), flags: [.shift]) == .rejected(.shiftOnly))
         #expect(HotkeyRecording.outcome(keyCode: UInt16(kVK_Space), flags: [.control]) == .rejected(.controlSpace))
         #expect(HotkeyRecording.outcome(keyCode: UInt16(kVK_Escape), flags: [.control, .option]) == .rejected(.escape))
         #expect(HotkeyRecording.outcome(keyCode: UInt16(kVK_ANSI_R), flags: [.control, .option])
@@ -126,8 +152,8 @@ import Testing
         recorder.onCapture = { captured.append($0) }
         recorder.start()
         #expect(recorder.isRecording && changes == [true])
-        recorder.apply(.rejected(.optionOnly))
-        #expect(recorder.isRecording && recorder.status == .rejected(.optionOnly) && captured.isEmpty)
+        recorder.apply(.rejected(.shiftAlone))
+        #expect(recorder.isRecording && recorder.status == .rejected(.shiftAlone) && captured.isEmpty)
         recorder.apply(.accepted(.custom(keyCode: UInt32(kVK_ANSI_R), modifiers: UInt32(controlKey))))
         #expect(!recorder.isRecording && changes == [true, false] && captured.count == 1 && recorder.title == "Record Shortcut…")
     }
@@ -144,10 +170,10 @@ import Testing
 
     @Test func settingsShowsTheReasonUnderTheHotkey() {
         let form = SettingsForm(SettingsState())
-        #expect(form.hotkeyHelp.stringValue.hasPrefix("Tap to start/stop"))
+        #expect(form.hotkeyHelp.stringValue.hasPrefix("Any key combination"))
         form.recorder.start()
-        form.recorder.apply(.rejected(.optionOnly))
-        #expect(form.hotkeyHelp.stringValue == HotKeyValidation.Rejection.optionOnly.reason)
+        form.recorder.apply(.rejected(.shiftAlone))
+        #expect(form.hotkeyHelp.stringValue == HotKeyValidation.Rejection.shiftAlone.reason)
         #expect(form.hotkeyHelp.textColor == .systemRed)
         form.recorder.stop()
         #expect(form.hotkeyHelp.textColor == .secondaryLabelColor)

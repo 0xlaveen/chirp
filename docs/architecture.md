@@ -164,7 +164,7 @@ Version additions preserve existing fields. A breaking change becomes `/v2`.
 
 ## 6. Interaction model (Koi parity)
 
-- **Tap to toggle, hold to talk.** A press shorter than 300 ms starts and stops; a longer press is push-to-talk until release. Esc on Mac, or ✕ on Android, cancels and inserts nothing.
+- **Auto-stop or hold to talk (Mac).** Auto-stop: a press starts, a pause (or the next press) stops. Hold to talk: talk while held, release finishes; a press shorter than 300 ms is dropped. Esc on Mac, or ✕ on Android, cancels and inserts nothing.
 - **Live text while speaking:**
   - Mac: a non-activating floating HUD at the bottom centre of the screen shows the partial text and a level meter.
   - Android: partials are shown as **composing text** (underlined) in the target field, via `setComposingText`. The final replaces them with `commitText`.

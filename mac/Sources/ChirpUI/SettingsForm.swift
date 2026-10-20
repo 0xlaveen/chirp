@@ -4,6 +4,9 @@ import ChirpCore
 /// What the Settings window shows. The window controller reads it from the system; the snapshots pass fixed values.
 public struct SettingsState: Sendable {
     public var hotkey: KeyCombo = .controlOptionSpace
+    public var activationMode: ActivationMode = .autoStop
+    /// Auto-stop: seconds of quiet that end a dictation.
+    public var autoStopSilence = AutoStopDetector.defaultSilence
     public var serverURL = ServerConfig.defaultURL.absoluteString
     public var tokenPresent = true
     public var launch: LaunchState = .off
@@ -96,6 +99,11 @@ public final class SettingsForm {
     public let recorder = HotkeyRecorder()
     /// Under the hotkey: how it works, or why the last recording was refused.
     public let hotkeyHelp = SettingsForm.help("")
+    /// Auto-stop or hold to talk, and (auto-stop only) how long a pause ends the dictation.
+    public let mode = NSPopUpButton(frame: .zero, pullsDown: false)
+    public let silence = NSPopUpButton(frame: .zero, pullsDown: false)
+    private let modeHelp = SettingsForm.help("")
+    private var shownHotkey = KeyCombo.controlOptionSpace
     public let sounds = NSButton(checkboxWithTitle: "Play start and stop sounds", target: nil, action: nil)
     /// Sounds: the pack, ▶ previews, the volume, and (for the Custom pack) the user's files.
     public let soundPack = NSPopUpButton(frame: .zero, pullsDown: false)
@@ -188,6 +196,8 @@ public final class SettingsForm {
         hotkeyRow.spacing = 10
         build(.general, [
             row("Hotkey:", hotkeyRow, help: hotkeyHelp),
+            row("Mode:", mode, help: modeHelp),
+            row("Auto-stop:", silence),
             row("Overlay:", wordWaveform, help: Self.help("Draws each word's audio above it as you speak, so you can see what was heard.")),
             row("Startup:", launch, help: launchHelp),
             row("Setup:", setupButton, help: Self.help("Check the permissions and the server, and try a dictation.")),
@@ -239,6 +249,14 @@ public final class SettingsForm {
             row("Microphone:", micStatus, help: Self.help("Lets Chirp hear you.")),
             row("Accessibility:", accessibilityStatus, help: Self.help("Lets Chirp insert text into other apps and send ⌘V.")),
         ])
+        for m in ActivationMode.allCases {
+            mode.addItem(withTitle: m.title)
+            mode.lastItem?.representedObject = m.rawValue
+        }
+        for seconds in AutoStopDetector.silenceChoices {
+            silence.addItem(withTitle: "After \(seconds.formatted(.number.precision(.fractionLength(0...1)))) s of quiet")
+            silence.lastItem?.representedObject = seconds
+        }
         refreshHotkeyHelp()
         configureSoundControls()
         apply(state, full: true)
@@ -347,6 +365,7 @@ public final class SettingsForm {
     public func apply(_ s: SettingsState, full: Bool = false) {
         if full {
             fillHotkeyMenu(selecting: s.hotkey)
+            showMode(s.activationMode, silence: s.autoStopSilence)
             sounds.state = s.soundsEnabled ? .on : .off
             showPack(s.soundPack)
             setVolume(s.soundVolume)
@@ -422,6 +441,8 @@ public final class SettingsForm {
 
     /// The presets, plus the recorded shortcut when one is in use, with `current` selected.
     public func fillHotkeyMenu(selecting current: KeyCombo) {
+        shownHotkey = current
+        refreshHotkeyHelp()
         hotkey.removeAllItems()
         for combo in KeyCombo.presets + (current.isCustom ? [current] : []) {
             hotkey.addItem(withTitle: combo.isCustom ? "\(combo.title) (custom)" : combo.title)
@@ -453,11 +474,23 @@ public final class SettingsForm {
         styleHelp.stringValue = text
     }
 
+    /// Selects `mode` and the auto-stop pause (the nearest offered one), which only matters in auto-stop.
+    public func showMode(_ m: ActivationMode, silence seconds: TimeInterval) {
+        if let i = mode.itemArray.firstIndex(where: { $0.representedObject as? String == m.rawValue }) { mode.selectItem(at: i) }
+        modeHelp.stringValue = m.help
+        let nearest = AutoStopDetector.silenceChoices.enumerated().min { abs($0.element - seconds) < abs($1.element - seconds) }
+        if let nearest { silence.selectItem(at: nearest.offset) }
+        silence.isEnabled = m == .autoStop
+    }
+
     private func refreshHotkeyHelp() {
         hotkeyHelp.textColor = .secondaryLabelColor
         switch recorder.status {
-        case .idle: hotkeyHelp.stringValue = "Tap to start/stop. Hold to talk, release to finish. Esc cancels."
-        case .recording: hotkeyHelp.stringValue = "Press the shortcut you want. Esc gives up."
+        case .idle:
+            hotkeyHelp.stringValue = shownHotkey.isModifierOnly
+                ? "Only on its own; with another key (\(HotKeyValidation.modifierSymbols(shownHotkey.modifiers))←) it does nothing. Esc cancels."
+                : "Any key combination, or a modifier alone like ⌥. Esc cancels."
+        case .recording: hotkeyHelp.stringValue = "Press the shortcut, or press and release a modifier such as ⌥. Esc gives up."
         case .rejected(let why):
             hotkeyHelp.stringValue = why.reason
             hotkeyHelp.textColor = .systemRed
