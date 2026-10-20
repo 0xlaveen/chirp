@@ -569,7 +569,8 @@ public final class NotesRecorder {
         var appendWaiting = false
         if state.isCapturing {
             publish(document.freezeOverflow())
-            if document.nextStructureRequest() != nil {
+            // A held answer already covers its window: only newer segments are worth another pass.
+            if let next = document.nextStructureRequest(), next.windowEnd > held?.request.windowEnd ?? -1 {
                 if let last = lastPassEnd, now() - last < Self.minInterval {
                     appendWaiting = true
                     pending = true
