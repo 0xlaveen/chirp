@@ -49,8 +49,9 @@ Every request carries `Authorization: Bearer <token>`. WebSocket clients that ca
 
 ### Endpoints
 
-- `GET /v1/health` → `{"ok":true,"engine":"parakeet-mlx:tdt-0.6b-v2","ready":true,"debug_retention":false,"correction":"off|available","correction_mode":"off|managed|endpoint","correction_leaves_machine":false,"correction_host":null,"correction_profiles":[{"id":"default","name":"Default","description":"Conservative transcript cleanup.","rewrites":false},…]}`. The unauthenticated variant returns only `{"ok":true}`. For endpoint correction, `correction_host` is its hostname (no credentials, path or port); otherwise it is `null`. `correction_leaves_machine` is true only for enabled, non-loopback correction.
+- `GET /v1/health` → `{"ok":true,"engine":"parakeet-mlx:tdt-0.6b-v2","ready":true,"debug_retention":false,"correction":"off|available","correction_mode":"off|managed|endpoint","correction_leaves_machine":false,"correction_host":null,"correction_profiles":[{"id":"default","name":"Default","description":"Conservative transcript cleanup.","rewrites":false},…],…,"notes_structure":true}`. The unauthenticated variant returns only `{"ok":true}`. For endpoint correction, `correction_host` is its hostname (no credentials, path or port); otherwise it is `null`. `correction_leaves_machine` is true only for enabled, non-loopback correction.
 - `GET /v1/correction/profiles` (authenticated) → `{"profiles":[{"id":"default","name":"Default","description":"Conservative transcript cleanup.","rewrites":false,"prompt":"<editable default style>","max_prompt_chars":4000},…]}`. Fixed safety rules are excluded; `custom` has an empty built-in prompt. Available even when correction is off. Invalid or missing bearer credentials return HTTP 401 with `WWW-Authenticate: Bearer`.
+- `POST /v1/notes/structure` (authenticated, JSON): stateless Live Notes structuring, specified [below](#live-notes-structuring-v1-compatible-addition). `/v1/stream` is unchanged.
 - `POST /v1/transcribe`: the body is 16 kHz mono PCM16 WAV, capped at 120 s. It returns the same object as a `final` message. Used for tests and as a fallback.
 - `WS /v1/stream`:
   - client → `{"type":"start","sample_rate":16000,"encoding":"pcm_s16le","client":"mac|android|ios","correction":false,"correction_profile":"default","correction_instructions":""}`
@@ -79,6 +80,61 @@ Unknown profile IDs or invalid legacy field types/lengths return `bad_audio` bef
 Old clients ignore unknown message types, including `correcting`, and consume the existing final.
 Authenticated health lists every profile's `id`, `name`, `description` and boolean `rewrites`,
 even when correction is off; it never exposes prompts or client instructions.
+
+### Live Notes structuring (v1-compatible addition)
+
+`POST /v1/notes/structure` turns a window of corrected transcript into Markdown notes. The server
+keeps no notes state: the client sends the window to structure each time.
+
+Request (`Content-Type: application/json`, body at most 64 KiB):
+
+```json
+{"transcript": "corrected text of the open window, segments joined with \n", "outline": ["Project kickoff", "Budget"], "final": false}
+```
+
+- `transcript`: a string of 1-6000 Unicode characters after trimming.
+- `outline`: optional, at most 24 strings of at most 120 characters and 1500 characters in total. These are the headings already written, oldest first, and are context only.
+- `final`: optional bool (default false), a hint that this is the session's last pass. It changes nothing but the log line.
+- Unknown keys are rejected.
+
+Responses:
+
+| Status | Body | When |
+|---|---|---|
+| 200 | `{"markdown":"## …\n- …","structured":true,"error":null,"timings_ms":{"structure":1234.5}}` | The model's output passed the guards |
+| 200 | `{"markdown":null,"structured":false,"error":"timeout\|http\|rejected","timings_ms":{…}}` | Fails closed like `correction_error`: guard rejection, helper failure, timeout or endpoint error. The client keeps its previous block |
+| 400 | `{"type":"error","code":"bad_notes","message":"Invalid notes request"}` | Malformed JSON, wrong types, limits exceeded, unknown keys, body over 64 KiB |
+| 401 | `{"type":"error","code":"auth",…}` with `WWW-Authenticate: Bearer` | Missing or wrong bearer token |
+| 409 | `{"type":"error","code":"notes_off","message":"Notes structuring needs correction enabled on the server"}` | `correction.mode == "off"` |
+| 503 | `{"type":"error","code":"busy",…}` | Another structuring request is already running server-wide (one at a time, never queued) |
+
+Authenticated `GET /v1/health` always carries `"notes_structure": true` on servers that have
+the endpoint, whatever the correction mode, so a client tells an old server (field absent) from
+correction being off (`correction == "off"`).
+
+Structuring uses the configured correction backend (the managed Qwen helper or the endpoint) but
+never takes the engine lease, so it does not block `/v1/stream`. The whole pass is bounded by
+`[correction] structure_timeout` (default 30 s), the output by 768 tokens, and a model output is
+accepted only if it passes `notes_rejected`: no think blocks, code fences, H1 titles, tables, links
+or assistant openers; every line within the allowed Markdown subset (`##`/`###` headings of at most
+6 words, `-` bullets with one nested level, `- [ ]` tasks, plain lines); at least 85 % of its
+content words occur in the transcript (after light stemming, allowing a small glue-word list);
+every digit run is spoken as digits or number words; negations are kept; and the notes are at most
+`max(1.2 x transcript, 300)` characters. Like the correction guards these are heuristics: they catch
+invented content and a dropped "not" but cannot prove semantic equivalence, and they are tuned for
+English. The transcript pane is always one click away in the client.
+
+**Managed helper pipe protocol** (private to `managed_cleanup.py` and `cleanup_worker.py`). The
+request `{"text","system"}` is unchanged. Two optional keys exist for structuring: `"user"`, a
+string that is the *entire* user message and replaces the `Transcript JSON: …` wrapper, and
+`"max_tokens"`, an int in 1-1024 that replaces the 512-token output cap for that request (the
+context check becomes `len(tokens) + max_tokens <= 4096`). Anything else gives `{"ok": false}`.
+The server writes the keys only when set, so correction requests are byte-identical.
+
+**Priority.** The helper serves requests one at a time. A queued correction always runs before a
+queued structuring request (a structuring caller that reaches the helper while corrections wait
+steps back until none are queued). A running structuring generation is never interrupted, so a
+correction waits at most one pass, which `max_tokens` bounds.
 
 ### Built-in profiles and overrides
 
@@ -133,6 +189,7 @@ Version additions preserve existing fields. A breaking change becomes `/v2`.
   - It writes `<session>.wav` plus a `<session>.json` transcript/timings file to `~/Library/Application Support/Chirp/debug/` (mode 0700/0600).
   - Files are purged after `retain_days` (default 3), on start and hourly. `chirp-server debug purge` deletes them all now.
   - `ready` and `health` report `debug_retention: true`. Both clients then show a persistent red "DEBUG: recording kept" indicator, and the server logs a warning banner at start.
+- **Notes structuring is stateless and never retained.** `POST /v1/notes/structure` writes no files, not even with debug retention, and its log line carries only lengths, counts, the error code and timings, never the transcript, outline, prompt or Markdown. Segment audio follows the per-utterance rules above.
 - **Correction is off by default.** When it is enabled with a non-loopback `base_url`, health reports `correction_leaves_machine: true`, and clients label the toggle "sends text to <host>". Audio never leaves the Mac. Only the final text does, and only when correction is on.
 - **Secrets:**
   - Server token: `~/.config/chirp/token`, 0600, generated on first run. `chirp-server pair` prints it as a `chirp://pair?url=…&token=…` QR code and string, shown locally in the terminal only.

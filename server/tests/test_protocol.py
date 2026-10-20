@@ -37,6 +37,7 @@ def test_health_redaction(client):
         "correction_profiles": [profile.metadata() for profile in BUILTINS.values()],
         "correction_keep_loaded": False,
         "correction_loaded": False,
+        "notes_structure": True,
     }
 
 
