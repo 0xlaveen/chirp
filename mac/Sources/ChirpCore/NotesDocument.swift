@@ -78,6 +78,13 @@ public struct NotesDocument: Equatable, Sendable {
 
     public init(startedAt: Date = Date()) { self.startedAt = startedAt }
 
+    /// The first recording of an empty document starts now: the title and the Save… name use this time, not
+    /// when the (empty) document was created.
+    public mutating func stampStart(_ date: Date) {
+        guard segments.isEmpty else { return }
+        startedAt = date
+    }
+
     /// Nothing to show, copy or save.
     public var isEmpty: Bool { !segments.contains { !$0.isGap && !$0.text.isEmpty } }
 
@@ -101,10 +108,13 @@ public struct NotesDocument: Equatable, Sendable {
         return segments[windowStart...].filter { !$0.isGap && !$0.text.isEmpty }
     }
 
-    /// Transcript characters in the open window, up to segment index `end` (all of it when nil).
-    public func windowChars(through end: Int? = nil) -> Int {
-        windowSegments.filter { $0.id <= (end ?? Int.max) }.reduce(0) { $0 + $1.text.count }
+    /// The open window's transcript as a pass sends it (segments joined with newlines), up to segment index `end`.
+    func windowTranscript(through end: Int? = nil) -> String {
+        windowSegments.filter { $0.id <= (end ?? Int.max) }.map(\.text).joined(separator: "\n")
     }
+
+    /// Transcript characters in the open window as sent, up to segment index `end` (all of it when nil).
+    public func windowChars(through end: Int? = nil) -> Int { windowTranscript(through: end).count }
 
     /// The window's text that no pass has structured yet: the notes pane's grey tail.
     public var unstructuredTail: String {
@@ -123,12 +133,14 @@ public struct NotesDocument: Equatable, Sendable {
         return items
     }
 
-    /// The next pass, or nil when the open window has no text a successful pass has not already seen.
+    /// The next pass, or nil when the open window has no text a successful pass has not already seen. Never over
+    /// `maxWindowChars`: an oversize window returns nil until `freezeOverflow()` has frozen it.
     public func nextStructureRequest(final: Bool = false) -> NotesStructureRequest? {
         let window = windowSegments
         guard let last = window.last, last.id > structuredEnd else { return nil }
-        let transcript = window.map(\.text).joined(separator: "\n")
-        guard !transcript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+        let transcript = windowTranscript()
+        guard transcript.count <= Self.maxWindowChars,
+              !transcript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
         return NotesStructureRequest(transcript: transcript, outline: outline, final: final, windowEnd: segments.count - 1)
     }
 
@@ -148,11 +160,16 @@ public struct NotesDocument: Equatable, Sendable {
         freezeOverflow()
     }
 
-    /// Freezes the window as a fallback when it is past `maxWindowChars`, or past `freezeChars` after two failures in a row.
+    /// When the window is past `maxWindowChars`, or past `freezeChars` after two failures in a row: the part the open
+    /// block already covers freezes as notes, and only a remainder that still qualifies on its own freezes as a
+    /// fallback. Text that no pass has been tried on is otherwise left for the next pass.
     public mutating func freezeOverflow() {
-        let chars = windowChars()
-        guard chars > Self.maxWindowChars || (consecutiveFailures >= 2 && chars >= Self.freezeChars) else { return }
+        func qualifies(_ chars: Int) -> Bool {
+            chars > Self.maxWindowChars || (consecutiveFailures >= 2 && chars >= Self.freezeChars)
+        }
+        guard qualifies(windowChars()) else { return }
         freezeOpenBlock()
+        guard qualifies(windowChars()) else { return }
         freezeFallback()
         consecutiveFailures = 0
     }
@@ -228,7 +245,8 @@ public struct NotesDocument: Equatable, Sendable {
     }
 
     public func transcriptMarkdown(raw: Bool = false) -> String {
-        (["## Transcript"] + transcriptLines(raw: raw)).joined(separator: "\n")
+        // A blank line between segments, so Markdown renderers keep one paragraph per segment.
+        (["## Transcript"] + transcriptLines(raw: raw)).joined(separator: "\n\n")
     }
 
     /// Save…'s format: the title, the notes, then the transcript appendix. With structuring unavailable (or no notes

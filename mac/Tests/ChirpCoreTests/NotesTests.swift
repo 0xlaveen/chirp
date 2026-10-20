@@ -169,6 +169,38 @@ private let frame = 0.05
         #expect(d.nextStructureRequest() == nil)
     }
 
+    @Test func overflowFreezesTheStructuredPartAndRetriesTheRest() throws {
+        // A pass covered 1550 chars (under freezeChars); a long segment pushes the window past maxWindowChars.
+        var d = doc([String(repeating: "a", count: 1550)])
+        let r = try #require(d.nextStructureRequest())
+        d.apply(ok("- a"), for: r)
+        #expect(d.frozen.isEmpty)
+        d.append(NotesSegment(id: 1, offset: 30, raw: String(repeating: "b", count: 2100)))
+        d.freezeOverflow()
+        // Only the structured part freezes; the new text gets a pass instead of a fallback.
+        #expect(d.frozen == [NotesBlock(markdown: "- a", segmentRange: 0...0)])
+        #expect(d.nextStructureRequest()?.transcript == String(repeating: "b", count: 2100))
+    }
+
+    @Test func aRequestNeverExceedsTheWindowCap() {
+        var d = doc([String(repeating: "a", count: 2000), String(repeating: "b", count: 2000)])
+        #expect(d.windowChars() > NotesDocument.maxWindowChars)
+        #expect(d.nextStructureRequest() == nil)
+        d.freezeOverflow()
+        #expect(d.frozen.count == 1 && d.frozen[0].isFallback && d.nextStructureRequest() == nil)
+        d.append(NotesSegment(id: 2, offset: 60, raw: "c"))
+        #expect(d.nextStructureRequest()?.transcript == "c")
+    }
+
+    @Test func startIsStampedOnlyWhileEmpty() {
+        var d = NotesDocument(startedAt: Date(timeIntervalSince1970: 0))
+        d.stampStart(Date(timeIntervalSince1970: 100))
+        #expect(d.startedAt == Date(timeIntervalSince1970: 100))
+        d.append(NotesSegment(id: 0, offset: 0, raw: "x"))
+        d.stampStart(Date(timeIntervalSince1970: 200))
+        #expect(d.startedAt == Date(timeIntervalSince1970: 100))
+    }
+
     @Test func staleResponsesAreIgnored() throws {
         var d = doc([String(repeating: "a", count: 2500)])
         let old = try #require(d.nextStructureRequest())
@@ -205,7 +237,9 @@ private let frame = 0.05
             ---
 
             ## Transcript
+
             **[00:00:00]** we kick off
+
             **[00:00:30]** budget talk
 
             """)
@@ -215,7 +249,7 @@ private let frame = 0.05
     @Test func transcriptOnlyWhenStructuringIsOff() {
         let d = doc(["hello"])
         #expect(d.exportMarkdown(includeTranscript: false, structuring: false, timeZone: utc)
-                == "# Notes — 1970-01-01 00:00\n\n## Transcript\n**[00:00:00]** hello\n")
+                == "# Notes — 1970-01-01 00:00\n\n## Transcript\n\n**[00:00:00]** hello\n")
     }
 
     @Test func timestampsGapsAndKeptOriginal() {
@@ -344,16 +378,43 @@ final class NotesURLStub: URLProtocol, @unchecked Sendable {
 }
 
 @Suite struct NotesPreferencesTests {
+    @Test func anOptInAppliesOnlyWhereItWasMade() {
+        let name = "chirp-test-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: name)!
+        defer { defaults.removePersistentDomain(forName: name) }
+        let prefs = Preferences(defaults: defaults)
+        let local = Health(correction: "available", correctionLeavesMachine: false)
+        let remoteA = Health(correction: "available", correctionLeavesMachine: true, correctionHost: "a.example.com")
+        let remoteB = Health(correction: "available", correctionLeavesMachine: true, correctionHost: "b.example.com")
+        // On for this Mac never carries over to an endpoint on another host.
+        prefs.setNotesStructure(true, health: local)
+        #expect(prefs.notesStructureEnabled(health: local) && !prefs.notesStructureEnabled(health: remoteA))
+        // Opting in for host A applies to A only; this Mac falls back to its default (on).
+        prefs.setNotesStructure(true, health: remoteA)
+        #expect(prefs.notesStructureEnabled(health: remoteA) && !prefs.notesStructureEnabled(health: remoteB))
+        #expect(prefs.notesStructureEnabled(health: local))
+        // Off for this Mac stays off here.
+        prefs.setNotesStructure(false, health: local)
+        #expect(!prefs.notesStructureEnabled(health: local) && !prefs.notesStructureEnabled(health: remoteA))
+        // A flip while health is unknown is not recorded.
+        prefs.setNotesStructure(true, health: nil)
+        #expect(!prefs.notesStructureEnabled(health: local))
+    }
+
     @Test func structureDefaultFollowsTheServerUntilTheUserChooses() {
         let name = "chirp-test-\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: name)!
         defer { defaults.removePersistentDomain(forName: name) }
         let prefs = Preferences(defaults: defaults)
-        #expect(prefs.notesStructureEnabled(health: Health(correction: "available", correctionLeavesMachine: false)))
-        #expect(prefs.notesStructureEnabled(health: nil))
+        let local = Health(correction: "available", correctionLeavesMachine: false)
+        let remote = Health(correction: "available", correctionLeavesMachine: true, correctionHost: "llm.example.com")
+        #expect(prefs.notesStructureEnabled(health: local))
+        // Unknown health never enables structuring: nothing says where the text would go.
+        #expect(!prefs.notesStructureEnabled(health: nil))
+        prefs.notesStructure = true                                  // a choice saved before scoping: local only
+        #expect(!prefs.notesStructureEnabled(health: nil))
+        #expect(!prefs.notesStructureEnabled(health: remote))
         #expect(!prefs.notesStructureEnabled(health: Health(correction: "available", correctionLeavesMachine: true)))
-        prefs.notesStructure = true
-        #expect(prefs.notesStructureEnabled(health: Health(correction: "available", correctionLeavesMachine: true)))
         #expect(prefs.notesTab == "notes")
         prefs.notesTab = "split"
         #expect(Preferences(defaults: defaults).notesTab == "split")
@@ -406,6 +467,18 @@ final class NotesURLStub: URLProtocol, @unchecked Sendable {
         #expect(!stopping.canToggle && !stopping.canExport && !stopping.canNew)
         let stopped = model { $0.state = .stopped }
         #expect(stopped.canToggle && stopped.canExport && stopped.canNew)
+    }
+
+    @Test func aStartErrorNeverHidesARunningRecorder() {
+        #expect(NotesModel.displayState(recorder: .idle, startError: "No microphone input device") == .error("No microphone input device"))
+        #expect(NotesModel.displayState(recorder: .stopped, startError: "x") == .error("x"))
+        for running in [NotesRecorderState.starting, .recording, .stopping] {
+            #expect(NotesModel.displayState(recorder: running, startError: "x") == running)
+            #expect(!NotesModel.acceptsStartError(running))
+        }
+        #expect(NotesModel.displayState(recorder: .stopping, startError: nil) == .stopping)
+        #expect(model { $0.structuring = .off(.waiting) }.explanation?.hasPrefix("Waiting for the server") == true)
+        #expect(!model { $0.structuring = .off(.waiting) }.structuringAvailable)
     }
 
     @Test func elapsedReadsAsMinutesThenHours() {

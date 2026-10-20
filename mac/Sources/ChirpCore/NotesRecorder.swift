@@ -18,6 +18,8 @@ public enum StructuringOff: Equatable, Sendable {
     case correctionOff
     /// The server predates `POST /v1/notes/structure` (no `notes_structure` in health, or a 404).
     case unsupported
+    /// The server's health is not known yet, so nothing says where structuring would send text: fail closed.
+    case waiting
 }
 
 public enum StructuringStatus: Equatable, Sendable {
@@ -28,12 +30,12 @@ public enum StructuringStatus: Equatable, Sendable {
 
     public var isOff: Bool { if case .off = self { true } else { false } }
 
-    /// Whether structuring can run against a server with this health, with the user's toggle at `enabled`.
+    /// Whether structuring can run against a server with this health, with the user's toggle at `enabled`. Unknown
+    /// health never allows it: where the text would go (this Mac or another host) is not known yet.
     public static func availability(health: Health?, enabled: Bool) -> StructuringStatus {
-        if let health {
-            if health.correction == "off" { return .off(.correctionOff) }
-            if health.notesStructure != true { return .off(.unsupported) }
-        }
+        guard let health else { return .off(.waiting) }
+        if health.correction == "off" { return .off(.correctionOff) }
+        if health.notesStructure != true { return .off(.unsupported) }
         return enabled ? .idle : .off(.disabled)
     }
 }
@@ -122,6 +124,7 @@ public final class NotesRecorder {
     private var nextSeq = 0
     private var nextCommit = 0
     private var current: Int?
+    private var cutting = false
     private var failureStreak = 0
     private var sawReady = false
 
@@ -154,6 +157,10 @@ public final class NotesRecorder {
     /// Segments whose clean-up is running on the server.
     public var correctingCount: Int { segments.values.filter(\.correcting).count }
 
+    /// Segments cut from capture whose final has not landed: still decoding or being cleaned up. A pass waits for
+    /// them, so their clean-up never queues behind a structuring generation.
+    public var finalizingCount: Int { segments.keys.filter { $0 != current }.count }
+
     public var passInFlight: Bool { passTask != nil }
 
     // MARK: configuration
@@ -181,6 +188,7 @@ public final class NotesRecorder {
         lastPassEnd = nil
         if structuring.isOff, !structuringAllowed.isOff { structuring = .idle }
         state = .starting
+        document.stampStart(Date())
         let seq = nextSeq
         nextSeq += 1
         let session = makeSession(options)
@@ -251,16 +259,21 @@ public final class NotesRecorder {
 
     /// The rolling handoff: open the next socket first, swap capture to it, then finalize the old one in the background.
     func cut() async {
-        guard state == .recording else { return }
+        // One cut at a time (the segmenter and a roll after a dead socket can both ask): a second request is
+        // already served by the swap in flight.
+        guard state == .recording, !cutting else { return }
+        cutting = true
+        defer { cutting = false }
         let myEpoch = epoch
-        let seq = nextSeq
-        nextSeq += 1
         let next = makeSession(options)
         await next.open()
         guard epoch == myEpoch, state == .recording else {
             await next.cancel()
             return
         }
+        // The sequence number is taken at the swap, synchronously, so transcript order is capture order.
+        let seq = nextSeq
+        nextSeq += 1
         let (old, offset) = router.swap(to: next)
         let previous = current
         current = seq
@@ -387,7 +400,7 @@ public final class NotesRecorder {
     /// ended less than `minInterval` ago. Otherwise remember it and look again when that changes.
     private func schedule() {
         guard !structuring.isOff, state == .recording || state == .starting else { return }
-        guard passTask == nil, correctingCount == 0 else { pending = true; return }
+        guard passTask == nil, finalizingCount == 0 else { pending = true; return }
         if let last = lastPassEnd, now() - last < Self.minInterval {
             pending = true
             armTimer(after: Self.minInterval - (now() - last))
@@ -464,6 +477,7 @@ public final class NotesRecorder {
         current = nil
         await waitUntil { self.segments.isEmpty && self.passTask == nil }
         guard epoch == myEpoch else { return }
+        document.freezeOverflow()
         if !structuring.isOff, let request = document.nextStructureRequest(final: true) {
             run(request)
             await waitUntil { self.passTask == nil }

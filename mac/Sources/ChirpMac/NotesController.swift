@@ -29,7 +29,11 @@ final class NotesController {
     private var startError: String?
     private var lastAnnouncement = ""
     private var lastState: NotesRecorderState = .idle
+    private var lastRecorderState: NotesRecorderState = .idle
     private var lastHealth: Health?
+    /// The last health this server answered with, kept across a failed poll so one blip never changes what
+    /// structuring may do (dropped when the server URL changes).
+    private var knownHealth: (url: String, health: Health)?
 
     private(set) lazy var gate = PauseGate(
         register: { [weak self] in
@@ -41,7 +45,7 @@ final class NotesController {
     init() {
         recorder.onChange = { [weak self] in self?.sync() }
         model.tab = NotesTab(rawValue: settings.notesTab) ?? .notes
-        model.structureEnabled = settings.notesStructureEnabled(health: nil)
+        model.structureEnabled = false
         model.onRecordToggle = { [weak self] in self?.toggle(fromHotkey: false) }
         model.onStructureToggle = { [weak self] on in self?.setStructure(on) }
         model.onTabChange = { settings.notesTab = $0.rawValue }
@@ -73,12 +77,12 @@ final class NotesController {
         guard !gate.isPaused, !isActive else { return }
         guard !isDictating() else { NSSound.beep(); return }
         onShowWindow?(focus)
-        let health = health()
+        let health = resolvedHealth()
         startError = nil
         recorder.options = settings.notesStartOptions(health: health)
         recorder.serverHost = settings.serverConfig().host
         applyAvailability(health)
-        if model.structuring.isOff, model.structuring != .off(.disabled), model.tab == .notes, recorder.document.isEmpty {
+        if model.structuring == .off(.correctionOff) || model.structuring == .off(.unsupported), model.tab == .notes, recorder.document.isEmpty {
             model.tab = .transcript   // structuring unavailable: the transcript is the useful view
         }
         chirpLog.info("notes start microphone=\(Permissions.microphone.rawValue, privacy: .public) correction=\(self.recorder.options.correction, privacy: .public) structuring=\(String(describing: self.recorder.structuring), privacy: .public)")
@@ -122,7 +126,8 @@ final class NotesController {
         capture.stop()
         if isRecording {
             await recorder.fail(message)
-        } else {
+        } else if NotesModel.acceptsStartError(recorder.state) {
+            // Only a start that never got going; a race with Stop (the recorder is finishing) is not an error.
             startError = message
             sync()
         }
@@ -155,13 +160,24 @@ final class NotesController {
     // MARK: structuring
 
     private func setStructure(_ on: Bool) {
-        settings.notesStructure = on
-        applyAvailability(health())
+        settings.setNotesStructure(on, health: resolvedHealth())
+        applyAvailability(resolvedHealth())
+    }
+
+    /// The server's health, or the last answer from the same server when a poll just failed.
+    private func resolvedHealth() -> Health? {
+        let url = settings.serverURL
+        if let h = health() {
+            knownHealth = (url, h)
+            return h
+        }
+        guard let known = knownHealth, known.url == url else { return nil }
+        return known.health
     }
 
     /// New server health (or the toggle): what structuring may do, and the privacy line.
     func healthChanged() {
-        let h = health()
+        let h = resolvedHealth()
         guard h != lastHealth else { return }
         lastHealth = h
         if !isActive { recorder.options = settings.notesStartOptions(health: h) }
@@ -184,7 +200,12 @@ final class NotesController {
     // MARK: model
 
     private func sync() {
-        let state = startError.map { NotesRecorderState.error($0) } ?? recorder.state
+        if recorder.state != lastRecorderState {
+            // The recorder moved on: an earlier start error no longer describes it.
+            lastRecorderState = recorder.state
+            startError = nil
+        }
+        let state = NotesModel.displayState(recorder: recorder.state, startError: startError)
         if state != lastState {
             chirpLog.info("notes \(String(describing: self.lastState.logName), privacy: .public) -> \(state.logName, privacy: .public) segments=\(self.recorder.document.segments.count, privacy: .public) frozen=\(self.recorder.document.frozen.count, privacy: .public)")
             lastState = state
@@ -193,7 +214,7 @@ final class NotesController {
         model.state = state
         model.document = recorder.document
         model.structuring = recorder.structuring
-        model.debugRetention = recorder.debugRetention || (health()?.debugRetention ?? false)
+        model.debugRetention = recorder.debugRetention || (resolvedHealth()?.debugRetention ?? false)
         model.elapsed = recorder.elapsed
         model.reduceMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
         setTicking(recorder.state.isCapturing)

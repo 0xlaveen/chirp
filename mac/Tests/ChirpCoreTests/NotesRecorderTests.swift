@@ -299,6 +299,83 @@ final class StructureStub: @unchecked Sendable {
         #expect(stub.requests.count == 1)
     }
 
+    @Test func unknownHealthNeverAllowsStructuring() {
+        #expect(StructuringStatus.availability(health: nil, enabled: true) == .off(.waiting))
+        let r = NotesRecorder(makeSession: { StreamSession(config: ServerConfig(), options: $0) },
+                              structure: { _ in Issue.record("no pass may run"); return .failed("http") },
+                              options: StartOptions(), structuring: true, health: nil)
+        #expect(r.structuring == .off(.waiting))
+        // A session with structuring switched off stays off when a health poll fails.
+        r.configureStructuring(enabled: false, health: Health(correction: "available", notesStructure: true))
+        #expect(r.structuring == .off(.disabled))
+        r.configureStructuring(enabled: true, health: nil)
+        #expect(r.structuring == .off(.waiting))
+    }
+
+    @Test func noPassWhileASegmentIsStillFinalizing() async throws {
+        let (server, port) = try await started(try MockServer())
+        defer { server.stop() }
+        server.script(2, .init(finalDelay: 1.0))          // decoding, not yet `correcting`
+        let stub = StructureStub(), clock = ManualClock()
+        let r = make(server, port: port, stub: stub, clock: clock)
+        r.start()
+        await eventually("ready") { r.state == .recording }
+        send(r, frames: 2)
+        await r.cut()
+        await eventually("first pass") { stub.requests.count == 1 && !r.passInFlight }
+        // Segment 1's final lands inside minInterval: pending, timer armed.
+        send(r, frames: 2)
+        await r.cut()
+        await eventually("segment 1 committed") { r.document.segments.count == 2 }
+        // Segment 2 is cut and still finalizing when the timer fires: no pass may start.
+        send(r, frames: 2)
+        await r.cut()
+        #expect(r.finalizingCount == 1)
+        clock.advance(NotesRecorder.minInterval)
+        try await Task.sleep(for: .milliseconds(150))
+        #expect(stub.requests.count == 1)
+        await eventually("segment 2 committed") { r.document.segments.count == 3 }
+        await eventually("pass after the final") { stub.requests.count == 2 }
+        #expect(stub.requests[1].transcript == "Segment 0.\nSegment 1.\nSegment 2.")
+        await r.stop()
+    }
+
+    @Test func concurrentCutsOpenOneSocketAndKeepOrder() async throws {
+        let (server, port) = try await started(try MockServer())
+        defer { server.stop() }
+        let stub = StructureStub(), clock = ManualClock()
+        let r = make(server, port: port, stub: stub, clock: clock)
+        r.start()
+        await eventually("ready") { r.state == .recording }
+        send(r, frames: 2)
+        async let a: Void = r.cut()
+        async let b: Void = r.cut()
+        _ = await (a, b)
+        send(r, frames: 2)
+        await r.stop()
+        #expect(server.started == 2)
+        #expect(r.document.segments.map(\.text) == ["Segment 0.", "Segment 1."])
+    }
+
+    @Test func theTitleTimeIsTheFirstRecording() async throws {
+        let (server, port) = try await started(try MockServer())
+        defer { server.stop() }
+        let stub = StructureStub(), clock = ManualClock()
+        let r = make(server, port: port, stub: stub, clock: clock)
+        let created = r.document.startedAt
+        try await Task.sleep(for: .milliseconds(50))
+        r.start()
+        let first = r.document.startedAt
+        #expect(first > created)
+        await eventually("ready") { r.state == .recording }
+        send(r, frames: 2)
+        await r.stop()
+        r.start()                                          // continuing the same notes keeps the first time
+        #expect(r.document.startedAt == first)
+        await eventually("ready again") { r.state == .recording }
+        await r.stop()
+    }
+
     @Test func aFailedPassKeepsTheBlockAndReportsTheCode() async throws {
         let (server, port) = try await started(try MockServer())
         defer { server.stop() }

@@ -96,6 +96,8 @@ public final class NotesModel {
                 : "Structured notes need a correction model. Turn on clean-up on the server to get them; the transcript keeps working meanwhile."
         case .off(.unsupported):
             "Structured notes need a newer Chirp server. Update chirp-server; the transcript keeps working meanwhile."
+        case .off(.waiting):
+            "Waiting for the server… Notes are structured once Chirp knows where the structuring model runs; the transcript keeps working meanwhile."
         default: nil
         }
     }
@@ -129,6 +131,16 @@ public final class NotesModel {
 
     /// What Save… writes: the notes with the transcript appendix (the transcript only without notes).
     public var saveText: String { document.exportMarkdown(includeTranscript: true, structuring: structuringAvailable) }
+
+    /// The recorder's state, unless a start failed before the recorder ran: that error shows only while the recorder
+    /// is idle, stopped or in error itself, never over Connecting/Listening/Finishing.
+    public static func displayState(recorder: NotesRecorderState, startError: String?) -> NotesRecorderState {
+        guard let startError, acceptsStartError(recorder) else { return recorder }
+        return .error(startError)
+    }
+
+    /// A start error may be recorded only while the recorder is not starting, recording or finishing.
+    public static func acceptsStartError(_ recorder: NotesRecorderState) -> Bool { !recorder.isActive }
 
     /// The words VoiceOver hears for a status change.
     public var announcement: String {
