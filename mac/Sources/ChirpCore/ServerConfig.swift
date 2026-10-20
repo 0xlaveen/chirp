@@ -34,6 +34,9 @@ public struct ServerConfig: Sendable, Equatable {
 
     public var healthURL: URL { baseURL.appendingPathComponent("v1/health") }
 
+    /// `POST …/v1/notes/structure`, keeping any base path such as `/chirp`.
+    public var notesStructureURL: URL { baseURL.appendingPathComponent("v1/notes/structure") }
+
     public func authorized(_ request: URLRequest) -> URLRequest {
         var r = request
         if let token { r.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization") }
@@ -51,5 +54,22 @@ public struct ServerConfig: Sendable, Equatable {
         let decoder = JSONDecoder()
         decoder.keyDecodingStrategy = .convertFromSnakeCase
         return try decoder.decode(Health.self, from: data)
+    }
+
+    /// One structuring pass. `timeout` is the server's structure timeout plus a margin; a client timeout throws the
+    /// `URLError` and the caller treats it as `error: "timeout"`. Non-200 answers throw `NotesStructureError`.
+    public func structureNotes(_ r: NotesStructureRequest, session: URLSession = .shared,
+                               timeout: TimeInterval = 35) async throws -> NotesStructureResponse {
+        var req = authorized(URLRequest(url: notesStructureURL))
+        req.httpMethod = "POST"
+        req.timeoutInterval = timeout
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = try JSONEncoder().encode(r)
+        let (data, response) = try await session.data(for: req)
+        let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+        guard status == 200 else { throw NotesStructureError.from(status: status) }
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        return try decoder.decode(NotesStructureResponse.self, from: data)
     }
 }

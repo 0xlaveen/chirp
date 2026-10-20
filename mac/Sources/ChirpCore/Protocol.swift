@@ -172,10 +172,13 @@ public struct Health: Decodable, Sendable, Equatable {
     /// Authenticated health only; nil from a server that predates "keep clean-up model loaded".
     public var correctionKeepLoaded: Bool?
     public var correctionLoaded: Bool?
+    /// `POST /v1/notes/structure` exists (authenticated health only); nil from a server that predates Live Notes.
+    public var notesStructure: Bool?
 
     public init(ok: Bool = true, engine: String? = nil, ready: Bool? = nil, debugRetention: Bool? = nil,
                 correction: String? = nil, correctionLeavesMachine: Bool? = nil, correctionHost: String? = nil,
-                correctionProfiles: [CorrectionProfile]? = nil, correctionKeepLoaded: Bool? = nil, correctionLoaded: Bool? = nil) {
+                correctionProfiles: [CorrectionProfile]? = nil, correctionKeepLoaded: Bool? = nil, correctionLoaded: Bool? = nil,
+                notesStructure: Bool? = nil) {
         self.ok = ok
         self.engine = engine
         self.ready = ready
@@ -186,9 +189,94 @@ public struct Health: Decodable, Sendable, Equatable {
         self.correctionProfiles = correctionProfiles
         self.correctionKeepLoaded = correctionKeepLoaded
         self.correctionLoaded = correctionLoaded
+        self.notesStructure = notesStructure
     }
 
     public var correctionAvailable: Bool { correction == "available" }
+}
+
+/// `POST /v1/notes/structure`: the open window's transcript plus the frozen headings for continuity. Only
+/// `transcript`, `outline` and `final` go on the wire; `windowEnd` (the last segment index the window covered) stays
+/// on the client so a late response can be matched to the window it was asked for. Never logged.
+public struct NotesStructureRequest: Encodable, Sendable, Equatable {
+    public var transcript: String
+    public var outline: [String]
+    public var final: Bool
+    public var windowEnd: Int
+
+    public init(transcript: String, outline: [String] = [], final: Bool = false, windowEnd: Int = 0) {
+        self.transcript = transcript
+        self.outline = outline
+        self.final = final
+        self.windowEnd = windowEnd
+    }
+
+    private enum CodingKeys: String, CodingKey { case transcript, outline, final }
+}
+
+/// The structuring answer. `structured:false` fails closed: `markdown` is nil and `error` says why
+/// (`timeout`, `http` or `rejected`); the client keeps its previous block.
+public struct NotesStructureResponse: Decodable, Sendable, Equatable {
+    public var markdown: String?
+    public var structured: Bool
+    public var error: String?
+    public var timingsMs: [String: Double]?
+
+    public init(markdown: String?, structured: Bool, error: String? = nil, timingsMs: [String: Double]? = nil) {
+        self.markdown = markdown
+        self.structured = structured
+        self.error = error
+        self.timingsMs = timingsMs
+    }
+
+    /// A failed pass, as the client records a timeout or transport error of its own.
+    public static func failed(_ code: String) -> NotesStructureResponse { NotesStructureResponse(markdown: nil, structured: false, error: code) }
+
+    private enum CodingKeys: String, CodingKey { case markdown, structured, error, timingsMs }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        markdown = try c.decodeIfPresent(String.self, forKey: .markdown)
+        structured = try c.decodeIfPresent(Bool.self, forKey: .structured) ?? false
+        error = try c.decodeIfPresent(String.self, forKey: .error)
+        timingsMs = try? c.decodeIfPresent([String: Double].self, forKey: .timingsMs)
+        if markdown == nil { structured = false }
+    }
+}
+
+/// Why `structureNotes` got no answer to use.
+public enum NotesStructureError: Error, Equatable, Sendable {
+    /// 409 `notes_off`: correction is off on the server.
+    case off
+    /// The server has no structuring endpoint (404: it predates Live Notes).
+    case unsupported(Int)
+    /// 503 `busy`: another structuring pass is running on the server.
+    case busy
+    /// 401: the token was rejected.
+    case auth
+    /// Any other non-200 status.
+    case http(Int)
+
+    public static func from(status: Int) -> NotesStructureError {
+        switch status {
+        case 401: .auth
+        case 404, 405: .unsupported(status)
+        case 409: .off
+        case 503: .busy
+        default: .http(status)
+        }
+    }
+
+    /// The short code shown in "Couldn't update notes (…)".
+    public var code: String {
+        switch self {
+        case .off: "off"
+        case .unsupported: "unsupported"
+        case .busy: "busy"
+        case .auth: "auth"
+        case .http: "http"
+        }
+    }
 }
 
 /// Splits partial text into the stable prefix and the still-changing tail for the HUD.

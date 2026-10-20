@@ -155,6 +155,47 @@ public final class Preferences: @unchecked Sendable {
     private func setCustomSound(_ sound: CustomSound?, forKey key: String) {
         if let sound, let data = try? JSONEncoder().encode(sound) { defaults.set(data, forKey: key) } else { defaults.removeObject(forKey: key) }
     }
+    /// Live Notes' "Structure notes" toggle; nil until the user flips it, so the default can follow the server
+    /// (on for a local model, off when correction leaves the Mac). A preference, never notes content.
+    public var notesStructure: Bool? {
+        get { defaults.object(forKey: "notesStructure") as? Bool }
+        set { defaults.set(newValue, forKey: "notesStructure") }
+    }
+    /// Where `notesStructure` was chosen: `local`, or `remote:<host>` when correction left the Mac. A choice only
+    /// applies to the same place, so turning it on for this Mac never carries over to another host.
+    public var notesStructureScope: String? {
+        get { defaults.string(forKey: "notesStructureScope") }
+        set { defaults.set(newValue, forKey: "notesStructureScope") }
+    }
+    public static func notesStructureScope(for health: Health) -> String {
+        health.correctionLeavesMachine == true ? "remote:\(health.correctionHost ?? "unknown")" : "local"
+    }
+    /// The user flipped "Structure notes" against a server with this health (ignored while health is unknown).
+    public func setNotesStructure(_ on: Bool, health: Health?) {
+        guard let health else { return }
+        notesStructure = on
+        notesStructureScope = Self.notesStructureScope(for: health)
+    }
+    /// The Notes window's layout (`notes`, `transcript` or `split`).
+    public var notesTab: String {
+        get { defaults.string(forKey: "notesTab") ?? "notes" }
+        set { defaults.set(newValue, forKey: "notesTab") }
+    }
+    /// Whether structuring is on: the user's choice for this server's scope, else on only when correction stays on
+    /// this Mac. Unknown health is always off, since nothing says where the text would go.
+    public func notesStructureEnabled(health: Health?) -> Bool {
+        guard let health else { return false }
+        // A choice saved before scoping was made against a local model.
+        if let choice = notesStructure, (notesStructureScope ?? "local") == Self.notesStructureScope(for: health) { return choice }
+        return health.correctionLeavesMachine != true
+    }
+    /// The `start` options for a Live Notes segment: the clean-up toggle (when the server offers it), always the default
+    /// style with the user's edited default prompt; per-app styles and word timings never apply.
+    public func notesStartOptions(health: Health?) -> StartOptions {
+        StartOptions(client: "mac", correction: correction && (health?.correctionAvailable ?? false),
+                     correctionProfile: CorrectionProfile.defaultID,
+                     correctionPrompt: correctionPrompts[CorrectionProfile.defaultID], wordTimings: false)
+    }
     /// Set only when the first-run window is finished (never on close), so an interrupted setup shows again.
     public var didOnboard: Bool {
         get { defaults.bool(forKey: "didOnboard") }

@@ -13,6 +13,8 @@ public struct KeyCombo: Sendable, Equatable, Identifiable {
     public static let controlShiftSpace = KeyCombo(id: "control-shift-space", title: "⌃⇧Space", keyCode: UInt32(kVK_Space), modifiers: UInt32(controlKey | shiftKey))
     public static let controlOptionCommandSpace = KeyCombo(id: "control-option-command-space", title: "⌃⌥⌘Space", keyCode: UInt32(kVK_Space), modifiers: UInt32(controlKey | optionKey | cmdKey))
     public static let escape = KeyCombo(id: "escape", title: "Esc", keyCode: UInt32(kVK_Escape), modifiers: 0)
+    /// Live Notes' fixed toggle (not one of the dictation presets).
+    public static let controlOptionN = KeyCombo(id: "control-option-n", title: "⌃⌥N", keyCode: UInt32(kVK_ANSI_N), modifiers: UInt32(controlKey | optionKey))
 
     /// Selectable dictation hotkeys; the first is the default. Each includes ⌃ or ⌘: since macOS 15, Carbon hot keys
     /// whose only modifiers are ⌥ (or ⌥⇧) register without error but never fire. ⌃Space alone is Raycast's default

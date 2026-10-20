@@ -15,6 +15,16 @@ final class AuthBox: @unchecked Sendable {
 /// A tiny in-process WebSocket server on loopback that follows the v1 protocol closely enough to test the client.
 final class MockServer: @unchecked Sendable {
     enum Script { case normal, rejectAuth }
+    /// How one socket behaves, by the order its `start` arrived (0 for the first). Unscripted sockets are normal.
+    struct Socket {
+        /// Answer `start` with this error code instead of `ready`.
+        var refuse: String?
+        /// Send this error code on the first audio frame after `ready`.
+        var errorOnAudio: String?
+        /// Send `correcting` at once on `stop`, then the final after `finalDelay` seconds.
+        var correcting = false
+        var finalDelay: Double = 0
+    }
 
     private let listener: NWListener
     private let queue = DispatchQueue(label: "mock-server")
@@ -23,10 +33,21 @@ final class MockServer: @unchecked Sendable {
     private var _bytes = 0
     private let authBox = AuthBox()
     private var connections: [NWConnection] = []
+    private var index: [ObjectIdentifier: Int] = [:]
+    private var _bytesBySocket: [Int: Int] = [:]
+    private var _sockets: [Int: Socket] = [:]
+    private var errored: Set<Int> = []
     let script: Script
+    /// Finals read "Segment N." (raw "segment n") instead of "Hello, world.", N being the socket's index.
+    var numberedFinals = false
 
     var received: [String] { lock.withLock { _received } }
     var audioBytes: Int { lock.withLock { _bytes } }
+    /// Audio bytes per socket, by start order.
+    var bytesBySocket: [Int: Int] { lock.withLock { _bytesBySocket } }
+    /// Sockets that sent `start`.
+    var started: Int { lock.withLock { index.count } }
+    func script(_ socket: Int, _ s: Socket) { lock.withLock { _sockets[socket] = s } }
     var authHeader: String? { authBox.value }
 
     init(script: Script = .normal) throws {
@@ -84,8 +105,17 @@ final class MockServer: @unchecked Sendable {
                     lock.withLock { _received.append(s) }
                     handleText(s, c)
                 case .binary:
-                    let total = lock.withLock { _bytes += data.count; return _bytes }
-                    if total >= 3200 {
+                    let (total, fail) = lock.withLock { () -> (Int, String?) in
+                        _bytes += data.count
+                        guard let i = index[ObjectIdentifier(c)] else { return (_bytes, nil) }
+                        _bytesBySocket[i, default: 0] += data.count
+                        guard let code = _sockets[i]?.errorOnAudio, !errored.contains(i) else { return (_bytes, nil) }
+                        errored.insert(i)
+                        return (_bytes, code)
+                    }
+                    if let fail {
+                        send(c, #"{"type":"error","code":"\#(fail)","message":"scripted"}"#)
+                    } else if total >= 3200 {
                         send(c, #"{"type":"partial","seq":1,"text":"hello wor","stable":"hello"}"#)
                     }
                 default: break
@@ -97,13 +127,34 @@ final class MockServer: @unchecked Sendable {
 
     private func handleText(_ s: String, _ c: NWConnection) {
         if s.contains(#""type":"start""#) {
+            let socket = lock.withLock { () -> Socket? in
+                let i = index.count
+                index[ObjectIdentifier(c)] = i
+                return _sockets[i]
+            }
             if script == .rejectAuth {
                 send(c, #"{"type":"error","code":"auth","message":"Bad token"}"#)
+            } else if let code = socket?.refuse {
+                send(c, #"{"type":"error","code":"\#(code)","message":"scripted"}"#)
             } else {
                 send(c, #"{"type":"ready","session":"s1","engine":"mock","debug_retention":true}"#)
             }
         } else if s.contains(#""type":"stop""#) {
-            send(c, #"{"type":"final","text":"Hello, world.","raw":"hello world","corrected":true,"timings_ms":{"audio":200,"first_partial":50,"finalize":30}}"#)
+            let (i, socket) = lock.withLock { () -> (Int, Socket) in
+                let i = index[ObjectIdentifier(c)] ?? 0
+                return (i, _sockets[i] ?? Socket())
+            }
+            let final = numberedFinals
+                ? #"{"type":"final","text":"Segment \#(i).","raw":"segment \#(i)","corrected":true}"#
+                : #"{"type":"final","text":"Hello, world.","raw":"hello world","corrected":true,"timings_ms":{"audio":200,"first_partial":50,"finalize":30}}"#
+            if socket.correcting {
+                send(c, #"{"type":"correcting","seq":1,"raw":"segment \#(i)","profile":"default"}"#)
+            }
+            if socket.finalDelay > 0 {
+                queue.asyncAfter(deadline: .now() + socket.finalDelay) { [weak self] in self?.send(c, final) }
+            } else {
+                send(c, final)
+            }
         }
     }
 }
