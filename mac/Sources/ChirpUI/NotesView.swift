@@ -108,6 +108,7 @@ private struct NotesHeader: View {
             }
             .padding(.horizontal, 6)
             .frame(height: 24)
+            .fixedSize()
         }
         .buttonStyle(.borderless)
         .disabled(!model.canReorganize)
