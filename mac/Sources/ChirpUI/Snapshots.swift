@@ -385,6 +385,10 @@ public enum Snapshots {
                 $0.state = .error("Microphone access denied — enable it in System Settings")
                 $0.health = local; $0.micGranted = false; $0.inputs = []; $0.defaultInput = nil
             },
+            menu("notes-recording") {
+                $0.health = local; $0.cleanupOn = true
+                $0.notesRecording = true; $0.notesElapsed = "12:34"; $0.notesHasDocument = true
+            },
             menu("use-raw") { $0.health = local; $0.cleanupOn = true; $0.rawOfferOpen = true; $0.rawOfferKey = "⌃⌥Z" },
             menu("long-names") {
                 $0.health = local; $0.chosenInputUID = "long"
@@ -407,6 +411,7 @@ public enum Snapshots {
         "menu-ready", "menu-cleanup-submenu",
         "settings-general-ready", "settings-sounds-pack", "settings-cleanup-custom", "settings-server-ready",
         "settings-permissions-missing", "onboarding-welcome",
+        "notes-recording", "notes-split",
     ]
 
     public static var committedScenarios: [Scenario] {
@@ -451,8 +456,83 @@ public enum Snapshots {
         }
     }
 
+    // MARK: Live Notes
+
+    /// An invented meeting: three structured segments frozen, two more in the open block, a live partial.
+    static func demoNotes(gap: Bool = false) -> NotesDocument {
+        var d = NotesDocument(startedAt: Date(timeIntervalSince1970: 1_792_504_980))
+        let said: [(TimeInterval, String, String)] = [
+            (12, "okay so we're kicking off the lantern project today and the launch target moved to march third",
+             "Okay, so we're kicking off the Lantern project today, and the launch target moved to March third."),
+            (48, "maya will send the draft spec by friday and theo books the design review",
+             "Maya will send the draft spec by Friday, and Theo books the design review."),
+            (95, "on budget we decided to keep the vendor contract but we will not add new headcount this quarter",
+             "On budget, we decided to keep the vendor contract, but we will not add new headcount this quarter."),
+        ]
+        for (i, s) in said.enumerated() { d.append(NotesSegment(id: i, offset: s.0, raw: s.1, text: s.2, corrected: true)) }
+        let first = ["## Project kickoff", "- Launch target moved to **March 3**", "- [ ] Maya to send the draft spec by **Friday**",
+                     "- [ ] Theo to book the design review", "", "## Budget", "- **Decision:** keep the vendor contract",
+                     "- No new headcount this quarter"].joined(separator: "\n")
+        if let r = d.nextStructureRequest() { d.apply(NotesStructureResponse(markdown: first, structured: true), for: r) }
+        d.freezeAll()
+        if gap { d.append(.gap(id: 3, offset: 140, reason: "Server is busy")) }
+        d.append(NotesSegment(id: 4, offset: 151, raw: "open question is who owns qa for the beta",
+                              text: "open question is who owns qa for the beta", keptOriginal: gap))
+        d.append(NotesSegment(id: 5, offset: 176, raw: "the beta itself should start in the second week of april",
+                              text: "The beta itself should start in the second week of April.", corrected: true))
+        let open = ["## Beta", "- **Question:** who owns QA for the beta?", "- Beta starts in the second week of **April**"]
+            .joined(separator: "\n")
+        if let r = d.nextStructureRequest() { d.apply(NotesStructureResponse(markdown: open, structured: true), for: r) }
+        d.livePartial = "and we still need the onboarding emails for the first"
+        return d
+    }
+
+    static func notes(_ name: String, _ configure: @escaping (NotesModel) -> Void) -> Scenario {
+        Scenario(name: "notes-\(name)") {
+            let model = NotesModel()
+            model.state = .recording
+            model.document = demoNotes()
+            model.elapsed = 192
+            model.canManageModels = true
+            configure(model)
+            let size = NotesViewMetrics.defaultSize
+            return NSHostingView(rootView: NotesView(model: model).frame(width: size.width, height: size.height))
+        }
+    }
+
+    public static var notesScenarios: [Scenario] {
+        [
+            notes("recording") { $0.structuring = .running },
+            notes("split") { $0.tab = .split },
+            notes("transcript-raw") { $0.tab = .transcript; $0.showRaw = true; $0.document = demoNotes(gap: true) },
+            notes("transcript") { $0.tab = .transcript; $0.document = demoNotes(gap: true) },
+            notes("structuring-off") {
+                var d = NotesDocument(startedAt: Date(timeIntervalSince1970: 1_792_504_980))
+                for s in demoNotes().segments { d.append(s) }
+                d.livePartial = "and we still need the onboarding emails"
+                $0.document = d
+                $0.structuring = .off(.correctionOff)
+            },
+            notes("structure-failed") {
+                $0.structuring = .failed("timeout")
+                $0.privacyLine = NotesStatus.privacy + " · Structuring sends text to llm.example.com"
+                $0.debugRetention = true
+            },
+            notes("stopped") {
+                $0.state = .stopped
+                var d = demoNotes()
+                d.livePartial = ""
+                d.freezeAll()
+                $0.document = d
+            },
+            notes("empty") { $0.state = .idle; $0.document = NotesDocument(); $0.elapsed = 0 },
+            notes("error") { $0.state = .error("Notes stopped: Server is busy") },
+        ]
+    }
+
     public static var allScenarios: [Scenario] {
         hudScenarios + wordWaveScenarios + settingsScenarios + onboardingScenarios + aboutScenarios + menuScenarios + localModelsScenarios
+            + notesScenarios
     }
 
     // MARK: rendering
@@ -470,7 +550,7 @@ public enum Snapshots {
         host.boxType = .custom
         host.borderWidth = 0
         host.contentViewMargins = .zero
-        let isWindow = ["settings-", "onboarding-", "models-", "about"].contains { scenario.name.hasPrefix($0) }
+        let isWindow = ["settings-", "onboarding-", "models-", "about", "notes-"].contains { scenario.name.hasPrefix($0) }
         host.fillColor = isWindow ? .windowBackgroundColor : .clear
         host.appearance = appearance
         host.contentView = view
