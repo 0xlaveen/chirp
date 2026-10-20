@@ -1,5 +1,6 @@
 import AppKit
 import ChirpCore
+import ChirpSpeakers
 import ChirpUI
 
 /// Live Notes glue: its own microphone capture, the `NotesRecorder`, the ⌃⌥N hotkey and the window's model. Notes and
@@ -61,6 +62,14 @@ final class NotesController {
     var onChange: (() -> Void)?
     /// Show the window; `focus` is false when started from the hotkey (it must not steal focus).
     var onShowWindow: ((_ focus: Bool) -> Void)?
+    /// Asks before the one-time speaker model download (the window shows it as a sheet); `done(true)` downloads.
+    var confirmSpeakerDownload: ((_ message: String, _ done: @escaping (Bool) -> Void) -> Void)?
+    /// The speaker model was downloaded or removed (Settings shows it).
+    var onSpeakerModelChange: (() -> Void)?
+
+    /// Speaker labels: the switch, consent, offline loads, Remove and this document's diarizer.
+    let speakers = SpeakerLabels(store: SortformerModelStore(), enabled: settings.notesSpeakerLabels,
+                                 onPreference: { settings.notesSpeakerLabels = $0 })
 
     private let capture = AudioCapture(engine: SystemCaptureEngine(pickedDevice: { InputDevice.pickedID(uid: settings.inputDeviceUID) }))
     private var tick: Timer?
@@ -107,6 +116,22 @@ final class NotesController {
         model.onUserEdit = { [weak self] range, text, kind in self?.recorder.userEdit(range, text, kind: kind) }
         model.onReorganize = { [weak self] in self?.recorder.reorganizeNow() }
         model.onEditorFocus = { [weak self] inTail, composing in self?.recorder.setEditorFocus(inTail: inTail, composing: composing) }
+        model.onSpeakerLabelsToggle = { [weak self] on in self?.setSpeakerLabels(on) }
+        recorder.onLabels = { [weak self] lag, tentative in
+            guard let self else { return }
+            chirpLog.info("\(SpeakerLog.labels(speakers: self.recorder.document.speakerCount, lag: lag, tentative: tentative), privacy: .public)")
+        }
+        speakers.onChange = { [weak self] in
+            self?.sync()
+            self?.onSpeakerModelChange?()
+        }
+        speakers.confirm = { [weak self] prompt, done in
+            let message = switch prompt {
+            case .download(let size): NotesStatus.speakerDownloadPrompt(size: size)
+            case .redownload(let size): NotesStatus.speakerRedownloadPrompt(size: size)
+            }
+            (self?.confirmSpeakerDownload ?? { _, done in done(false) })(message, done)
+        }
         sync()
     }
 
@@ -135,15 +160,28 @@ final class NotesController {
         guard !gate.isPaused, !isActive else { return }
         guard !isDictating() else { NSSound.beep(); return }
         onShowWindow?(focus)
+        if speakers.needsLoad {
+            // The model loads offline (~0.1 s warm); recording starts as soon as it is ready, or without labels if
+            // it is gone (labels turn off: nothing downloads without the user's Download).
+            guard !speakers.isLoading else { return }
+            Task {
+                _ = await speakers.prepare()
+                self.start(focus: focus)
+            }
+            return
+        }
         let health = resolvedHealth()
         startError = nil
-        recorder.options = settings.notesStartOptions(health: health)
+        let diarizer = speakers.readyDiarizer()
+        let labels = diarizer != nil
+        recorder.speakers = diarizer
+        recorder.options = settings.notesStartOptions(health: health, speakerLabels: labels)
         recorder.serverHost = settings.serverConfig().host
         applyAvailability(health)
         if model.structuring == .off(.correctionOff) || model.structuring == .off(.unsupported), model.tab == .notes, recorder.document.isEmpty {
             model.tab = .transcript   // structuring unavailable: the transcript is the useful view
         }
-        chirpLog.info("notes start microphone=\(Permissions.microphone.rawValue, privacy: .public) correction=\(self.recorder.options.correction, privacy: .public) structuring=\(String(describing: self.recorder.structuring), privacy: .public)")
+        chirpLog.info("notes start microphone=\(Permissions.microphone.rawValue, privacy: .public) correction=\(self.recorder.options.correction, privacy: .public) structuring=\(String(describing: self.recorder.structuring), privacy: .public) speakers=\(labels, privacy: .public)")
         if settings.soundsEnabled { Sounds.play(.start) }
         let micMayOpen = ContinuousClock.now + .seconds(Sounds.startDelay())
         recorder.start()
@@ -211,6 +249,23 @@ final class NotesController {
         guard !isActive else { return }
         startError = nil
         recorder.reset()
+        speakers.reset()
+        recorder.speakers = nil
+    }
+
+    // MARK: speaker labels
+
+    /// The footer's "Label speakers" switch (applies from the next Record).
+    private func setSpeakerLabels(_ on: Bool) {
+        guard !isActive else { return }
+        speakers.setEnabled(on, documentHasLabels: recorder.document.speakerCount > 0)
+        if !speakers.enabled, speakers.diarizer == nil { recorder.speakers = nil }
+    }
+
+    /// Settings › Remove: deletes the model, partial downloads too; refused while recording or loading.
+    func removeSpeakerModel() {
+        guard !isActive, speakers.remove() else { NSSound.beep(); return }
+        recorder.speakers = nil
     }
 
     func markSaved() { recorder.markSaved() }
@@ -272,6 +327,8 @@ final class NotesController {
         model.state = state
         model.document = recorder.document
         model.structuring = recorder.structuring
+        model.speakerLabels = speakers.enabled
+        model.speakerModel = speakers.model
         let reorganize = recorder.reorganizeStatus
         model.reorganizeStatus = reorganize
         // The editor replays the AI changes right away, onto text that matches `model.document` before them.

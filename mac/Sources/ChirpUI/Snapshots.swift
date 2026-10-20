@@ -335,7 +335,7 @@ public enum Snapshots {
     }
 
     public static var aboutScenarios: [Scenario] {
-        [Scenario(name: "about") { AboutView(icon: appIcon, info: AboutInfo(version: "0.1.0", build: "1")) }]
+        [Scenario(name: "about") { AboutView(icon: appIcon, info: AboutInfo(version: "0.1.0", build: "1"), onNotices: {}) }]
     }
 
     private static let boya = AudioInput(uid: "boya", name: "BOYA CM40")
@@ -492,6 +492,39 @@ public enum Snapshots {
         return d
     }
 
+    /// The same meeting with speaker labels: three people, a backchannel, a turn across a segment boundary, an
+    /// approximate segment (no word timings).
+    static func demoSpeakers() -> NotesDocument {
+        var d = NotesDocument(startedAt: Date(timeIntervalSince1970: 1_792_504_980))
+        typealias T = SpeakerAttribution.Turn
+        let said: [(TimeInterval, String, [T])] = [
+            (12, "okay so we're kicking off the lantern project today and the launch target moved to march third yeah march third", [
+                T(slot: 2, start: 12, text: "Okay, so we're kicking off the Lantern project today, and the launch target moved to March third.",
+                  raw: "okay so we're kicking off the lantern project today and the launch target moved to march third"),
+                T(slot: 0, start: 19.4, text: "Yeah, March third.", raw: "yeah march third"),
+            ]),
+            (48, "maya will send the draft spec by friday and theo books the design review", [
+                T(slot: 0, start: 48, text: "Maya will send the draft spec by Friday, and Theo books the design review.",
+                  raw: "maya will send the draft spec by friday and theo books the design review"),
+            ]),
+            (95, "on budget we decided to keep the vendor contract but no new headcount this quarter agreed", [
+                T(slot: 3, start: 95, text: "On budget, we decided to keep the vendor contract, but no new headcount this quarter.",
+                  raw: "on budget we decided to keep the vendor contract but no new headcount this quarter"),
+                T(slot: 2, start: 103.2, text: "Agreed.", raw: "agreed"),
+            ]),
+            (151, "open question is who owns qa for the beta", [
+                T(slot: 0, start: 151, text: "Open question is who owns QA for the beta.", raw: "open question is who owns qa for the beta",
+                  approximate: true),
+            ]),
+        ]
+        for (i, s) in said.enumerated() {
+            d.append(NotesSegment(id: i, offset: s.0, raw: s.1, text: s.2.map(\.text).joined(separator: " "), corrected: true))
+            d.attachSpeakers(s.2, toSegment: i)
+        }
+        d.livePartial = "the beta itself should start in the second week"
+        return d
+    }
+
     /// The demo after a reorganize: the agenda and the kickoff merged, tasks collected at the end.
     static func reorganizedNotes() -> NotesDocument {
         var d = demoNotes()
@@ -541,6 +574,18 @@ public enum Snapshots {
             },
             notes("transcript-raw") { $0.tab = .transcript; $0.showRaw = true; $0.document = demoNotes(gap: true) },
             notes("transcript") { $0.tab = .transcript; $0.document = demoNotes(gap: true) },
+            notes("transcript-speakers") {
+                $0.tab = .transcript; $0.document = demoSpeakers(); $0.speakerLabels = true; $0.speakerModel = .ready
+            },
+            notes("hearing-speakers") {
+                var d = demoSpeakers()
+                d.userEdit(NSRange(location: 0, length: 0), "## Lantern kickoff\n- Launch target moved to **March 3**\n")
+                $0.document = d; $0.speakerLabels = true; $0.speakerModel = .ready
+            },
+            notes("speakers-downloading") {
+                $0.state = .idle; $0.tab = .transcript; $0.speakerModel = .downloading(0.42); $0.elapsed = 0
+                $0.document = NotesDocument()
+            },
             notes("structuring-off-editable") {
                 var d = NotesDocument(startedAt: Date(timeIntervalSince1970: 1_792_504_980))
                 d.userEdit(NSRange(location: 0, length: 0), "## My notes\n- Lantern launch moved to **March 3**\n- Ask Theo about the design review\n- [ ] ")

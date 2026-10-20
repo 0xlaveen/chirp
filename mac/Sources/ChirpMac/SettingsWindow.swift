@@ -1,6 +1,7 @@
 import AppKit
 import UniformTypeIdentifiers
 import ChirpCore
+import ChirpSpeakers
 import ChirpUI
 
 @MainActor
@@ -18,6 +19,7 @@ final class SettingsWindowController: NSObject, NSTextFieldDelegate {
     /// "Set Up Chirp…" in General.
     var onOpenSetup: (() -> Void)?
     var onOpenModels: (() -> Void)?
+    var onRemoveSpeakerModel: (() -> Void)?
     private var testTask: Task<Void, Never>?
     private var window: NSWindow?
     private var tabs: NSTabViewController?
@@ -58,6 +60,7 @@ final class SettingsWindowController: NSObject, NSTextFieldDelegate {
         s.profiles = catalog.source == .unavailable ? CorrectionProfile.offered(by: health) : catalog.profiles
         s.serverOffersStyles = health == nil || health?.correctionProfiles != nil
         s.keepLoaded = keepLoaded
+        s.speakerModelDownloaded = SpeakerModel.hasFiles()
         s.serverHost = KeepLoaded.hostPhrase(ServerConfig(baseURL: URL(string: settings.serverURL) ?? ServerConfig.defaultURL))
         return s
     }
@@ -154,6 +157,8 @@ final class SettingsWindowController: NSObject, NSTextFieldDelegate {
         form.doctorButton.action = #selector(copyDoctor)
         form.modelsButton.target = self
         form.modelsButton.action = #selector(openModels)
+        form.removeSpeakerModel.target = self
+        form.removeSpeakerModel.action = #selector(removeSpeakerModel)
         form.cleanupEnabled.target = self
         form.cleanupEnabled.action = #selector(toggleCleanup(_:))
         form.keepLoaded.target = self
@@ -227,6 +232,10 @@ final class SettingsWindowController: NSObject, NSTextFieldDelegate {
 
     @objc private func openSetup() { onOpenSetup?() }
     @objc private func openModels() { onOpenModels?() }
+    @objc private func removeSpeakerModel() { onRemoveSpeakerModel?() }
+
+    /// The speaker model came or went: refresh the General tab's row.
+    func speakerModelChanged() { form?.apply(state) }
 
     @objc private func copyDoctor() {
         NSPasteboard.general.clearContents()

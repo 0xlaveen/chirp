@@ -86,12 +86,15 @@ final class NotesFrameRouter: @unchecked Sendable {
     private var cutRequested = false
     /// Audio routed in this document, bytes of 16 kHz PCM16 (the segment offsets and the elapsed time).
     private var bytes = 0
+    /// Speaker labels: the diarizer hears exactly the frames the sockets get, stamped on the same clock.
+    private var speakers: SpeakerDiarizing?
 
     /// Sends the frame on; true when the segmenter wants a cut (asked once until the next swap).
     func route(_ frame: Data, level: Level) -> Bool {
         lock.withLock {
             guard let target else { return false }
             target.sendAudio(frame)
+            speakers?.feed(frame, at: Double(bytes) / (PCMConverter.sampleRate * 2))
             bytes += frame.count
             let duration = Double(frame.count / 2) / PCMConverter.sampleRate
             guard !cutRequested, segmenter.feed(level, duration: duration) else { return false }
@@ -113,6 +116,8 @@ final class NotesFrameRouter: @unchecked Sendable {
 
     var seconds: TimeInterval { lock.withLock { Double(bytes) / (PCMConverter.sampleRate * 2) } }
 
+    func setSpeakers(_ diarizer: SpeakerDiarizing?) { lock.withLock { speakers = diarizer } }
+
     func resetTime() { lock.withLock { bytes = 0 } }
 }
 
@@ -132,6 +137,11 @@ public final class NotesRecorder {
     public static let finalTimeout: TimeInterval = 25
     /// Segments in a row that may fail before recording stops.
     public static let maxSegmentFailures = 3
+    /// A segment's speaker labels wait at most this long after its final for the diarizer to settle its audio;
+    /// then they are attached from what it has (marked tentative).
+    public static let labelTimeout: TimeInterval = 3
+    /// How often a waiting label looks at the diarizer again.
+    public static let labelPoll: Duration = .milliseconds(100)
     /// Auto-reorganize waits for this many inserted characters (user or AI) since the last one…
     public static let reorganizeEveryChars = 1200
     /// …this long since the last one ended…
@@ -165,6 +175,12 @@ public final class NotesRecorder {
     /// Shown as "Server unreachable at <host>" when the first segment cannot connect.
     public var serverHost: String
     public var onChange: (() -> Void)?
+    /// Speaker labels for this document: the controller attaches its diarizer before Record (nil: labels off, and
+    /// everything behaves as without the feature). Changing it applies from the next Record.
+    public var speakers: SpeakerDiarizing?
+    /// After each labelled segment (for the log and the bench): how long the labels took after the final, and
+    /// whether they were attached before the diarizer settled. Never carries labels or text.
+    public var onLabels: ((_ lag: TimeInterval, _ tentative: Bool) -> Void)?
     /// Splits and Organize runs, for the log (counts only).
     public var onPassEvent: ((NotesPassEvent) -> Void)?
 
@@ -178,6 +194,8 @@ public final class NotesRecorder {
     private struct Segment {
         let session: StreamSession
         let offset: TimeInterval
+        /// Where its audio ended (set at the cut that finalizes it).
+        var end: TimeInterval?
         var partial = ""
         var correcting = false
         var task: Task<Void, Never>?
@@ -226,6 +244,25 @@ public final class NotesRecorder {
     private var stoppingSince: TimeInterval?
     private var waiters: [(check: () -> Bool, resume: CheckedContinuation<Void, Never>)] = []
 
+    /// A segment waiting for its speaker labels.
+    private struct LabelJob {
+        var segment = -1
+        let offset: TimeInterval
+        let end: TimeInterval
+        let words: [WordTiming]?
+        let raw: String
+        let text: String
+        let received: TimeInterval
+    }
+    /// Finals waiting to be committed, by sequence number; then the committed ones, in document order.
+    private var labelJobs: [Int: LabelJob] = [:]
+    private var labelQueue: [LabelJob] = []
+    private var labelTask: Task<Void, Never>?
+    /// Segments labelled at the timeout, kept to label again once the diarizer has settled their audio.
+    private var tentativeJobs: [LabelJob] = []
+    /// The diarizer the current recording feeds.
+    private var activeSpeakers: SpeakerDiarizing?
+
     public init(makeSession: @escaping (StartOptions) -> StreamSession, structure: @escaping Structure,
                 reorganize: @escaping Reorganize = { _ in throw NotesStructureError.unsupported(404) },
                 now: @escaping () -> TimeInterval = { ProcessInfo.processInfo.systemUptime },
@@ -255,6 +292,9 @@ public final class NotesRecorder {
     public var finalizingCount: Int { segments.keys.filter { $0 != current }.count }
 
     public var passInFlight: Bool { passTask != nil }
+
+    /// Committed segments whose speaker labels have not landed yet. A pass waits for them.
+    public var labellingCount: Int { labelQueue.count }
 
     /// An append result is waiting for the caret to leave the tail.
     public var isHolding: Bool { held != nil }
@@ -310,6 +350,8 @@ public final class NotesRecorder {
         if structuring.isOff, !structuringAllowed.isOff { structuring = .idle }
         state = .starting
         document.stampStart(Date())
+        activeSpeakers = speakers
+        router.setSpeakers(speakers)
         let seq = nextSeq
         nextSeq += 1
         let session = makeSession(options)
@@ -354,6 +396,7 @@ public final class NotesRecorder {
         dropHeld()
         if reorganizeState.isRunning { reorganizeState = .idle }
         passKind = nil
+        dropLabels()
         document.livePartial = ""
         if state.isActive { state = document.isEmpty ? .idle : .stopped }
         if structuring == .running { structuring = structuringAllowed.isOff ? structuringAllowed : .idle }
@@ -378,6 +421,8 @@ public final class NotesRecorder {
         pending = false
         document = NotesDocument()
         router.resetTime()
+        dropLabels()
+        speakers?.reset()
         failureStreak = 0
         pendingChanges.removeAll()
         dropHeld()
@@ -421,6 +466,7 @@ public final class NotesRecorder {
         let previous = current
         current = seq
         track(seq, session: next, offset: offset)
+        if let previous { segments[previous]?.end = offset }
         if let previous, let old { finalize(previous, old) }
     }
 
@@ -472,6 +518,10 @@ public final class NotesRecorder {
             let kept = options.correction && !f.corrected && f.correctionError != nil
             let segment = text.isEmpty ? nil : NotesSegment(id: seq, offset: offset, raw: raw.isEmpty ? text : raw, text: text,
                                                             corrected: f.corrected, keptOriginal: kept)
+            if let segment, activeSpeakers != nil {
+                labelJobs[seq] = LabelJob(offset: offset, end: segments[seq]?.end ?? router.seconds, words: f.words,
+                                          raw: segment.raw, text: segment.text, received: now())
+            }
             failureStreak = 0
             finish(seq, with: segment)
             return true
@@ -523,10 +573,18 @@ public final class NotesRecorder {
         drop(seq)
         results[seq] = .some(segment)
         while let next = results.removeValue(forKey: nextCommit) {
-            if let s = next { document.append(s) }
+            if let s = next {
+                document.append(s)
+                if var job = labelJobs.removeValue(forKey: nextCommit) {
+                    job.segment = document.segments.count - 1
+                    labelQueue.append(job)
+                }
+            }
+            labelJobs[nextCommit] = nil
             nextCommit += 1
             lastCommit = now()
         }
+        drainLabels()
         updateLivePartial()
         schedule()
         changed()
@@ -617,7 +675,8 @@ public final class NotesRecorder {
     /// else an automatic one once enough was added, enough time passed and the user stopped typing.
     private func schedule() {
         guard !structuring.isOff else { return }
-        guard passTask == nil, finalizingCount == 0 else { pending = true; return }
+        guard passTask == nil, finalizingCount == 0, labelQueue.isEmpty else { pending = true; return }
+        relabelSettled()
         pending = false
         var appendWaiting = false
         if state.isCapturing {
@@ -985,6 +1044,61 @@ public final class NotesRecorder {
         return false
     }
 
+    // MARK: speaker labels
+
+    /// Labels committed segments in order: each waits until the diarizer settled its audio, or `labelTimeout` after
+    /// its final, then gets its turns. A pass waiting on them runs once the queue is empty.
+    private func drainLabels() {
+        guard labelTask == nil, !labelQueue.isEmpty, let speakers = activeSpeakers else { return }
+        let sleep = self.sleep
+        labelTask = Task {
+            while let job = self.labelQueue.first {
+                let timeline = speakers.snapshot
+                let settled = timeline.finalizedThrough + 0.001 >= job.end
+                guard settled || self.now() - job.received >= Self.labelTimeout else {
+                    await sleep(Self.labelPoll)
+                    if Task.isCancelled { return }
+                    continue
+                }
+                self.label(job, timeline: timeline, tentative: !settled)
+                self.labelQueue.removeFirst()
+                self.onLabels?(self.now() - job.received, !settled)
+                self.changed()
+            }
+            self.labelTask = nil
+            if self.pending { self.schedule() }
+            self.changed()
+        }
+    }
+
+    private func label(_ job: LabelJob, timeline: SpeakerTimeline, tentative: Bool) {
+        if tentative { tentativeJobs.append(job) }
+        guard let turns = SpeakerAttribution.turns(words: job.words, raw: job.raw, text: job.text, offset: job.offset,
+                                                   end: job.end, spans: timeline.labellingSpans(includeTentative: tentative),
+                                                   previousSlot: document.lastSpeakerSlot) else { return }
+        document.attachSpeakers(turns, toSegment: job.segment, tentative: tentative)
+    }
+
+    /// Labels attached at the timeout are attached again from the settled timeline once it covers them (before a
+    /// pass, so the notes see the better labels).
+    private func relabelSettled() {
+        guard !tentativeJobs.isEmpty, let speakers = activeSpeakers else { return }
+        let timeline = speakers.snapshot
+        let settled = tentativeJobs.filter { timeline.finalizedThrough + 0.001 >= $0.end }
+        guard !settled.isEmpty else { return }
+        tentativeJobs.removeAll { timeline.finalizedThrough + 0.001 >= $0.end }
+        for job in settled { label(job, timeline: timeline, tentative: false) }
+        changed()
+    }
+
+    private func dropLabels() {
+        tentativeJobs.removeAll()
+        labelTask?.cancel()
+        labelTask = nil
+        labelJobs.removeAll()
+        labelQueue.removeAll()
+    }
+
     // MARK: stopping
 
     private func finish(error: String?) async {
@@ -997,10 +1111,17 @@ public final class NotesRecorder {
         timer = nil
         pending = false
         manualReorganize = false
-        let (old, _) = router.swap(to: nil)
+        let (old, end) = router.swap(to: nil)
+        if let seq = current { segments[seq]?.end = end }
         if let seq = current, let old, segments[seq] != nil { finalize(seq, old) }
         current = nil
-        await waitUntil { self.segments.isEmpty && self.passTask == nil }
+        router.setSpeakers(nil)
+        // The tail settles while the last final decodes; the session stays open for the next Record.
+        let flush = activeSpeakers.map { speakers in Task { await speakers.flush() } }
+        await waitUntil { self.segments.isEmpty && self.passTask == nil && self.labelQueue.isEmpty }
+        // Record cannot start before this returns, so the Stop silence is in the model before any new audio.
+        await flush?.value
+        relabelSettled()
         guard epoch == myEpoch else { return }
         if let h = held {
             dropHeld()

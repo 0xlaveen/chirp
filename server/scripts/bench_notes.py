@@ -4,7 +4,9 @@
 1600, 2400 and 4000 characters). `--set messy` uses tests/notes_messy_eval.jsonl, invented
 filler-heavy speech (600-2100 characters), and also runs Live Notes segment correction on
 each transcript cut into segment-sized pieces and on the whole transcript (the old 90 s
-segment), with the `live_notes` style and, for comparison, `default`. Every run also checks
+segment), with the `live_notes` style and, for comparison, `default`. `--set labelled` uses
+tests/notes_labelled_eval.jsonl, invented meetings with speaker labels (`Person 2: ...`).
+Every run also checks
 that the guards reject each case in tests/notes_negatives.jsonl. Reports latency, output
 tokens and guard pass rates. Not run in CI: it needs the model weights.
 
@@ -37,6 +39,8 @@ SETS = {
     "clean": TESTS / "notes_eval.jsonl",
     "messy": TESTS / "notes_messy_eval.jsonl",
     "talk": TESTS / "notes_talk_eval.jsonl",
+    # Mac Live Notes speaker labels (#18): invented meetings, one `Person N:` or name per line.
+    "labelled": TESTS / "notes_labelled_eval.jsonl",
 }
 NEGATIVES = TESTS / "notes_negatives.jsonl"
 REORGANIZE_SET = TESTS / "notes_reorganize_eval.jsonl"
@@ -217,7 +221,7 @@ async def bench(model_id, repetitions, dump, fixtures):
                 transcript, outline = case["transcript"], case.get("outline", [])
                 started = time.perf_counter()
                 text, finish = await corrector.complete(
-                    notes.notes_system_prompt(),
+                    notes.notes_system_prompt(notes.has_speaker_labels(transcript)),
                     notes.notes_user_message(outline, transcript),
                     notes.NOTES_MAX_TOKENS,
                     priority="structure",

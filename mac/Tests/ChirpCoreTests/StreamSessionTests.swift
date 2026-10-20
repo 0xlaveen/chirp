@@ -26,6 +26,8 @@ final class MockServer: @unchecked Sendable {
         var finalDelay: Double = 0
         /// The final's text instead of the default one.
         var finalText: String?
+        /// Send this `final` message (JSON) as it is, instead of the default one.
+        var final: String?
     }
 
     private let listener: NWListener
@@ -150,7 +152,7 @@ final class MockServer: @unchecked Sendable {
                 (try? JSONSerialization.data(withJSONObject: ["type": "final", "text": text, "raw": text, "corrected": true]))
                     .map { String(decoding: $0, as: UTF8.self) }
             }
-            let final = scripted ?? (numberedFinals
+            let final = socket.final ?? scripted ?? (numberedFinals
                 ? #"{"type":"final","text":"Segment \#(i).","raw":"segment \#(i)","corrected":true}"#
                 : #"{"type":"final","text":"Hello, world.","raw":"hello world","corrected":true,"timings_ms":{"audio":200,"first_partial":50,"finalize":30}}"#)
             if socket.correcting {

@@ -828,3 +828,97 @@ uv run python scripts/bench_notes.py --set talk --repetitions 1
 ```
 
 Metrics are in [notes-cleanup-talk.json](bench-data/notes-cleanup-talk.json).
+
+## Speaker labels (Mac Live Notes)
+
+2026-10-20, M5 Pro, macOS 27.0.1, issue #18 M1. `mac/scripts/speaker-bench` drives the **real Live Notes path**:
+50 ms frames from a WAV into `NotesRecorder.handleFrame`, the real `NotesSegmenter` (12–45 s segments), rolling
+`/v1/stream` sockets with `word_timings` to a local chirp-server (Parakeet MLX), and one `SortformerSpeakerDiarizer`
+per document (FluidAudio 0.17.7, Sortformer v2.1 streaming, `fast` config, ~1 s latency). Word attribution uses the
+real Parakeet words of the labelled transcript, aligned by text to the reference words (the clip script, or the AMI
+word-level annotations), each segment only against its own stretch of audio. No audio is committed.
+
+**Choice: the 6-bit palettized model** (106 MB on disk, against 229 MB for fp16). It matched fp16 on AMI and did
+better on the hardest synthetic clip, so the app downloads it. All gate numbers below are the palettized model.
+
+### Gates
+
+| gate | result | |
+|---|---|---|
+| Word attribution ≥ 97 %, synthetic, 2–4 distinct voices | 2–3 voices 99.5–100 %; 4 voices 98.4–100 % on 4 of 5 conversations, **93.5 %** on one | ✗ one clip |
+| Speaker count right on every clip with ≤ 4 speakers | every synthetic clip and every AMI meeting (4 of 4) | ✓ |
+| AMI headset confusion ≤ 3 % | 0.4–2.2 % on 3 meetings, **6.7 %** on IS1009a | ✗ one meeting |
+| AMI far-field confusion ≤ 6 % | 1.4 %, 3.8 %; **6.8 %** (ES2014a), **10.5 %** (IS1009a) | ✗ two meetings |
+| AMI word attribution (report) | headset 89–98 %, far-field 83–97 % of the words the transcript recovered | |
+| Label lag (final → turns) p95 ≤ 2.5 s, live | 0.87–1.34 s; none waited for the 3 s timeout | ✓ |
+| Segment text at final, no added latency | text commits at the final as before; labels attach after | ✓ |
+| Diarizer ≤ 5 % of real time | 3.2–4.4 % of the audio's duration in the model (mostly ANE); the whole bench process 1.9–2.3 % CPU live | ✓ |
+| Added RSS ≤ 300 MB | 47–106 MB steady (the first download and CoreML compile peaks at 487 MB once) | ✓ |
+| 60-min 3-voice session, no identity swap | 99.9 % words, worst 10-minute window 99.6 %, 3 people | ✓ |
+| Record → Stop (10 s) → Record keeps Person numbers | the same 3 people; 96.7 % words (a few words at the restart) | ✓ |
+
+### Synthetic (`say` voices, -40/-45 dBFS noise), live
+
+| clip | min | DER | confusion | people (truth) | words | label lag p50 / p95 s |
+|---|---|---|---|---|---|---|
+| two_distinct | 1.4 | 0.0 | 0.0 | 2 (2) | 99.5 | 0.72 / 0.87 |
+| three_mixed, Record → Stop 10 s → Record | 1.4 | 3.0 | 2.9 | 3 (3) | 96.7 | 0.75 / 1.04 |
+| two_long | 6.6 | 0.0 | 0.0 | 2 (2) | 100.0 | 1.02 / 1.34 |
+| four_distinct (seed 7) | 2.0 | 5.2 | 5.2 | 4 (4) | 93.5 | 0.95 / 1.24 |
+| four_distinct seeds 1 / 2 / 3 (4×) | 2.0 | 0.0 / 0.9 / 0.0 | 0.0 / 0.9 / 0.0 | 4 (4) | 99.7 / 98.4 / 100.0 | |
+| three_60min (6×) | 60.8 | 0.1 | 0.1 | 3 (3) | 99.9 | |
+
+In four_distinct seed 7 two of the four voices speak only a few short turns; fp16 merged the two female and the two
+male voices there (3 people, 64.4 % words), the palettized build keeps 4 apart with some confusion. Sortformer's
+`balanced` config (a 188-frame FIFO, same latency) finds 4 people with fp16 but still 75 % words at 2.5× the model
+time and ~280 MB, so the app keeps `fast`. On the spike's own four_distinct clip this pipeline reproduces the spike
+exactly (DER 0.0, 99.7 % words).
+
+### AMI (CC-BY-4.0), 4 people each, 6× real time
+
+DER % (miss / confusion) and word attribution; `aligned` is the share of reference words the transcript recovered
+at all (overlaps and backchannels are often not transcribed).
+
+| meeting | min | headset DER (miss / conf.) | words | aligned | far-field DER (miss / conf.) | words | aligned |
+|---|---|---|---|---|---|---|---|
+| ES2004a | 17.5 | 25.5 (24.6 / **0.7**) | 95.0 | 78.7 | 32.4 (27.3 / **3.8**) | 91.8 | 66.1 |
+| ES2014a | 19.2 | 34.6 (30.8 / **2.2**) | 97.3 | 82.2 | 41.6 (30.5 / **6.8**) | 90.0 | 74.0 |
+| IS1009a | 14.0 | 25.8 (17.1 / **6.7**) | 89.1 | 75.9 | 30.5 (17.2 / **10.5**) | 82.8 | 72.5 |
+| TS3003a | 25.1 | 34.1 (33.4 / **0.4**) | 98.0 | 80.5 | 36.9 (35.3 / **1.4**) | 96.8 | 65.6 |
+
+fp16 on the same meetings: headset confusion 0.8 / 2.9 / 7.3 / 0.2 % (words 95.2 / 95.3 / 87.5 / 98.2), far-field
+4.1 / 10.8 / 6.2 / 1.6 % (words 93.2 / 82.9 / 89.1 / 96.8): the same picture, within noise of the palettized build.
+Miss is Sortformer's known weakness (overlaps and short backchannels); for labels it costs little, because the words
+it misses still get the nearest settled speaker. IS1009a is the hard meeting for both builds: similar voices merge
+for stretches, which M2's merge/reassign is for.
+
+### Cost and packaging
+
+- Model: first download plus CoreML compile 22.9 s (106 MB, pinned Hugging Face revision `ae9a27ab`); warm load
+  0.09–0.17 s. The app loads it at the first labelled Record and drops it on New.
+- Binary: `ChirpMac` release grows from 4.2 MB to 14.6 MB (2.2 → 8.7 MB stripped), plus FluidAudio's 1.0 MB resource
+  bundle. FluidAudio is linked with no traits, so its prebuilt NeMo text-normalization binary is not linked; it offers
+  no finer switch for the ASR/TTS code we do not use.
+- FluidAudio and `ChirpSpeakers` build with the Command Line Tools only. The full app's CLT-only build was already
+  failing on `main` before this change (`NotesView`'s `@State` needs the SwiftUI macro plugin, which the CLT lack).
+
+### Structuring with labels (server prompt rule)
+
+The structuring prompt gained one rule (attribute owners, decisions, questions and disagreements; never invent a
+name for `Person N`; keep labels as written) and one labelled example. Same Qwen3-4B helper as above:
+
+| set | before (#19) | with the rule | p50 ms |
+|---|---|---|---|
+| clean (`notes_eval.jsonl`) | 15/16 | 15/16 | 4240 (was 4215) |
+| messy (`notes_messy_eval.jsonl`) | 11/11 | 11/11 | 1832 (was 1726) |
+| negatives (must be rejected) | 32/32 | 32/32 | |
+| labelled (`notes_labelled_eval.jsonl`, new, 5 invented meetings) | | 5/5 | 1179 |
+
+On the labelled set, action owners come out as `- [ ] **Person 2** to … by **Friday**` and a renamed `Maya:` keeps
+her name. The model still prefixes every bullet with its speaker in 2 of 5 outputs despite the rule, and once put
+a question's answer under the person who asked it: prompt follow-ups. Guards reject a `Person 7` that never spoke
+(number guard) and an invented name (name guard).
+
+```sh
+uv run python scripts/bench_notes.py --set labelled --repetitions 1 --dump /tmp/notes-labelled.jsonl
+```

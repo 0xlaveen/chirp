@@ -43,7 +43,8 @@ import Testing
         return (r, server, [])
     }
 
-    private func eventually(_ what: String, within seconds: Double = 30, _ condition: () -> Bool) async {
+    /// Generous like the other recorder suites: the snapshot renderer holds the main actor for seconds in a full run.
+    private func eventually(_ what: String, within seconds: Double = 60, _ condition: () -> Bool) async {
         let deadline = Date().addingTimeInterval(seconds)
         while !condition() {
             if Date() > deadline { Issue.record("timed out waiting for \(what)"); return }

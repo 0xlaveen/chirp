@@ -19,6 +19,7 @@ final class NotesWindowController: NSObject, NSWindowDelegate {
         model.onCopy = { [weak self] in self?.copy() }
         model.onSave = { [weak self] in _ = self?.save() }
         model.onNew = { [weak self] in self?.new() }
+        notes.confirmSpeakerDownload = { [weak self] message, done in self?.confirmSpeakerDownload(message, done: done) }
         model.onManageModels = { [weak self] in self?.onOpenModels() }
     }
 
@@ -125,6 +126,21 @@ final class NotesWindowController: NSObject, NSWindowDelegate {
             }
         }
         NSApp.activate()
+        if let window, window.isVisible {
+            alert.beginSheetModal(for: window, completionHandler: handle)
+        } else {
+            handle(alert.runModal())
+        }
+    }
+
+    /// The one-time speaker model download asks first: nothing downloads without "Download".
+    private func confirmSpeakerDownload(_ message: String, done: @escaping (Bool) -> Void) {
+        let alert = NSAlert()
+        alert.messageText = "Download the speaker model?"
+        alert.informativeText = message
+        alert.addButton(withTitle: "Download")
+        alert.addButton(withTitle: "Cancel")
+        let handle: (NSApplication.ModalResponse) -> Void = { done($0 == .alertFirstButtonReturn) }
         if let window, window.isVisible {
             alert.beginSheetModal(for: window, completionHandler: handle)
         } else {

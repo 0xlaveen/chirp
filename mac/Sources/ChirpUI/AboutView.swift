@@ -28,7 +28,11 @@ public struct AboutInfo: Equatable, Sendable {
 public final class AboutView: NSView {
     static let width: CGFloat = 320
 
-    public init(icon: NSImage?, info: AboutInfo) {
+    /// "Third-Party Notices…" (the licences shipped in the app bundle).
+    private var onNotices: (() -> Void)?
+
+    public init(icon: NSImage?, info: AboutInfo, onNotices: (() -> Void)? = nil) {
+        self.onNotices = onNotices
         super.init(frame: .zero)
         let iconView = NSImageView(image: icon ?? NSImage())
         iconView.imageScaling = .scaleProportionallyUpOrDown
@@ -48,13 +52,26 @@ public final class AboutView: NSView {
         blurb.textColor = .secondaryLabelColor
         blurb.alignment = .center
         blurb.preferredMaxLayoutWidth = Self.width - 72
+        let credits = NSTextField(wrappingLabelWithString: "Live Notes speaker labels run on this Mac with FluidAudio (Apache-2.0) and NVIDIA Sortformer (CC-BY-4.0).")
+        credits.font = .systemFont(ofSize: NSFont.smallSystemFontSize)
+        credits.textColor = .tertiaryLabelColor
+        credits.alignment = .center
+        credits.preferredMaxLayoutWidth = Self.width - 72
 
-        let stack = NSStackView(views: [iconView, name, version, blurb])
+        let notices = NSButton(title: "Third-Party Notices…", target: self, action: #selector(openNotices))
+        notices.bezelStyle = .inline
+        notices.controlSize = .small
+        notices.font = .systemFont(ofSize: NSFont.smallSystemFontSize)
+        notices.isHidden = onNotices == nil
+
+        let stack = NSStackView(views: [iconView, name, version, blurb, credits, notices])
         stack.orientation = .vertical
         stack.alignment = .centerX
         stack.spacing = 4
         stack.setCustomSpacing(10, after: iconView)
         stack.setCustomSpacing(14, after: version)
+        stack.setCustomSpacing(10, after: blurb)
+        stack.setCustomSpacing(8, after: credits)
         stack.translatesAutoresizingMaskIntoConstraints = false
         addSubview(stack)
         NSLayoutConstraint.activate([
@@ -66,4 +83,6 @@ public final class AboutView: NSView {
     }
 
     @available(*, unavailable) required init?(coder: NSCoder) { fatalError("not used") }
+
+    @objc private func openNotices() { onNotices?() }
 }
