@@ -121,11 +121,15 @@ separate from the dictation guards, which are unchanged: the output may only del
 order, with free casing and punctuation, and only spoken fillers (um, uh, er, ah, hmm, oh, like,
 yeah, yes, okay, ok, so, well, basically, actually, literally, right, just, anyway, kind of,
 sort of, you know, I mean), the first copy of a phrase of up to four words said twice in a row
-(fillers skipped between copies; never number words), a short restart (up to five words, when
-the speaker starts again with the same word, every dropped word is a grammar word or said again
-right after, and none is a negation or number), a sentence-initial "and", and a restated subject
-after a verb ("the list is, it's nice"). Negations, numbers, names, hedges and every other word
-must survive. The call is bounded by `[correction] notes_timeout` (default 15 s; dictation keeps
+(fillers and filler phrases skipped between copies; never a phrase of only number words), a short
+restart (up to five words, when the speaker starts again with the same word, every dropped word is
+a grammar word or said again right after, and none is a negation or number), a sentence-initial
+"and", a restated subject after a verb ("the list is, it's nice") or repeated within two words
+("it's just, it's not"), an article swapped for another ("a, an"), and up to four words taken back
+with "sorry" plus the marker (never an apology, a number or a negation). Negations, numbers,
+names, hedges and every other word must survive. When the only unlicensed edit is a dropped "I
+think", "I guess" or "I'd say", the hedge is put back where it was and the result must pass the
+same guard. The call is bounded by `[correction] notes_timeout` (default 15 s; dictation keeps
 `timeout`), the output by `64 + len(segment) / 2` tokens.
 
 Structuring uses the configured correction backend (the managed Qwen helper or the endpoint) but
