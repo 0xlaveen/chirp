@@ -1,7 +1,9 @@
 # M5 — Chirp for iPhone and iPad
 
-Status: source integrated and CLT checks passed, 2026-10-18; iOS build and
-simulator/device acceptance blocked on operator Xcode/signing setup. Final
+Status: 2026-10-19 — builds, unit and UI simulator gates pass on iPhone and
+iPad (iOS 27.0 SDK), including the real keyboard extension dictating into an
+app text field ([simulator evidence](../review/ios-simulator.md)); device
+acceptance pending operator signing. 2026-10-18: source integrated and CLT checks passed. Final
 evidence: [iOS integration](../review/ios-integration.md). Integration branch `chirp/ios`, based on
 `main` at `e4d9e6d`. The parent orchestrator reviews and merges; no worker pushes,
 opens a PR, merges main, or installs on physical devices.
@@ -230,6 +232,8 @@ Manual operator checklist for **both** iPhone and iPad:
 - Test iPad split view/Stage Manager widths/rotation and hardware keyboard access;
   VoiceOver, large text, reduce motion, dark/light, battery/thermal cost of session.
 
-Current blocker: full Xcode is absent (`xcode-select` points at CLT). Operator was
+Current blocker: device signing — a `DEVELOPMENT_TEAM` in the untracked
+`ios/Config/Local.xcconfig` and a connected device. (Full Xcode was installed
+by 2026-10-19; the simulator gates pass.) Earlier blocker: full Xcode absent. Operator was
 asked once via Koi for install method/permission, membership/Team ID and device
 models/versions. All runtime/build/device claims stay pending until evidenced.

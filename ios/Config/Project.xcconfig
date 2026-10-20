@@ -1,7 +1,7 @@
 // Override with xcodebuild settings or an untracked Config/Local.xcconfig.
 CHIRP_BUNDLE_ID = dev.chirp.ios
 CHIRP_APP_GROUP = group.dev.chirp.ios
-CHIRP_KEYCHAIN_ACCESS_GROUP = $(AppIdentifierPrefix)dev.chirp.ios.shared
+CHIRP_KEYCHAIN_ACCESS_GROUP = $(AppIdentifierPrefix)$(CHIRP_BUNDLE_ID).shared
 DEVELOPMENT_TEAM =
 CODE_SIGN_STYLE = Automatic
 IPHONEOS_DEPLOYMENT_TARGET = 18.0

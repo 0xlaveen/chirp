@@ -8,25 +8,36 @@ struct ChirpApp: App {
     init() {
         PrivacyController.shared.start()
         #if DEBUG
-        _coordinator = StateObject(wrappedValue: ProcessInfo.processInfo.arguments.contains("--chirp-ui-test") ? SessionCoordinator.synthetic() : .shared)
+        _coordinator = StateObject(wrappedValue: ProcessInfo.processInfo.arguments.contains("--chirp-ui-test") ? SessionCoordinator.synthetic(sharedKeyboard: KeyboardTestMode.enabled) : .shared)
         #else
         _coordinator = StateObject(wrappedValue: .shared)
         #endif
     }
     var body: some Scene {
         WindowGroup {
-            ChirpRootView(model: coordinator)
-                .onChange(of: scenePhase) { _, phase in if phase == .active { coordinator.reconcile() } }
-                .onOpenURL { url in
-                    let c = URLComponents(url: url, resolvingAgainstBaseURL: false)
-                    if c?.scheme == "chirp", c?.host == "pair" {
-                        Task { await coordinator.pair(link: url.absoluteString) }
-                    } else if c?.scheme == "chirp", c?.host == "session", c?.path == "/start", c?.query == nil,
-                              c?.fragment == nil, c?.user == nil, c?.password == nil, c?.port == nil {
-                        Task { do { try await coordinator.armSession() } catch { coordinator.show(error) } }
-                    }
-                }
+            #if DEBUG
+            if KeyboardTestMode.enabled {
+                KeyboardTestHost(model: coordinator)
+            } else {
+                root
+            }
+            #else
+            root
+            #endif
         }
+    }
+    private var root: some View {
+        ChirpRootView(model: coordinator)
+            .onChange(of: scenePhase) { _, phase in if phase == .active { coordinator.reconcile() } }
+            .onOpenURL { url in
+                let c = URLComponents(url: url, resolvingAgainstBaseURL: false)
+                if c?.scheme == "chirp", c?.host == "pair" {
+                    Task { await coordinator.pair(link: url.absoluteString) }
+                } else if c?.scheme == "chirp", c?.host == "session", c?.path == "/start", c?.query == nil,
+                          c?.fragment == nil, c?.user == nil, c?.password == nil, c?.port == nil {
+                    Task { do { try await coordinator.armSession() } catch { coordinator.show(error) } }
+                }
+            }
     }
 }
 
@@ -45,6 +56,7 @@ struct ChirpRootView: View {
                 VStack(spacing: 8) {
                     Label("Microphone active throughout session", systemImage: "mic.fill").font(.footnote)
                     Button("End session", role: .destructive) { model.endSession() }
+                        .accessibilityIdentifier("chirp.session.end")
                         .buttonStyle(.bordered).frame(minHeight: 44).keyboardShortcut("e", modifiers: [.command, .shift])
                 }
                 .frame(maxWidth: .infinity).padding(8).background(.regularMaterial)
@@ -93,11 +105,13 @@ struct DictationView: View {
                 }
                 if active {
                     Button("Stop dictation", systemImage: "stop.fill") { model.stopDictation() }
+                        .accessibilityIdentifier("chirp.dictation.stop")
                         .buttonStyle(.borderedProminent).keyboardShortcut(.space, modifiers: .command).frame(minHeight: 44)
                     Button("Cancel dictation", role: .cancel) { model.cancelDictation() }
                         .buttonStyle(.bordered).keyboardShortcut(.escape, modifiers: []).frame(minHeight: 44)
                 } else {
                     Button("Dictate", systemImage: "mic.fill") { Task { do { try await model.begin() } catch { model.show(error) } } }
+                        .accessibilityIdentifier("chirp.dictation.start")
                         .buttonStyle(.borderedProminent).keyboardShortcut(.space, modifiers: .command)
                         .disabled(!model.paired || model.working).frame(minHeight: 44)
                 }
@@ -124,7 +138,7 @@ struct DictationView: View {
     @ViewBuilder var resultActions: some View {
         Button("Copy", systemImage: "doc.on.doc") { model.copy() }.buttonStyle(.bordered).keyboardShortcut("c", modifiers: [.command, .shift])
         ShareLink(item: model.text) { Label("Share", systemImage: "square.and.arrow.up") }.buttonStyle(.bordered)
-        if model.canUseRaw { Button("Use raw") { model.useRaw() }.buttonStyle(.bordered).keyboardShortcut("z", modifiers: [.command, .shift]) }
+        if model.canUseRaw { Button("Use raw") { model.useRaw() }.accessibilityIdentifier("chirp.dictation.raw").buttonStyle(.bordered).keyboardShortcut("z", modifiers: [.command, .shift]) }
     }
     var status: String {
         switch model.phase {
@@ -143,6 +157,7 @@ struct PairingView: View {
     @ObservedObject var model: SessionCoordinator
     @State private var link = ""
     @State private var scanner = false
+    @FocusState private var linkFocused: Bool
     var body: some View {
         Form {
             Section("Connect your Mac") {
@@ -150,10 +165,10 @@ struct PairingView: View {
                 Button("Scan pairing QR", systemImage: "qrcode.viewfinder") { scanner = true }
                     .disabled(model.armed || model.working).frame(minHeight: 44)
                 SecureField("Secret pairing link", text: $link).textInputAutocapitalization(.never).autocorrectionDisabled()
-                    .accessibilityIdentifier("pairingLink")
+                    .accessibilityIdentifier("pairingLink").focused($linkFocused)
                 PasteButton(payloadType: String.self) { values in link = String((values.first ?? "").prefix(16_384)) }
                 Button("Test connection and save pairing") {
-                    let secret = link; link = ""
+                    let secret = link; link = ""; linkFocused = false
                     Task { await model.pair(link: secret) }
                 }.disabled(link.isEmpty || model.working || model.armed).frame(minHeight: 44)
             }

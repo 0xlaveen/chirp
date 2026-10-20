@@ -2,18 +2,31 @@ import UIKit
 import ChirpIOSCore
 import KeyboardPolicy
 
-/// Keyboard extension entry class. Capture and network remain in the app.
+/// Delete key: reports touch-down/up so the controller can repeat while held. VoiceOver activation
+/// sends neither, so it is mapped to a single press+release.
+private final class HoldRepeatButton: UIButton {
+    var onPress: (() -> Void)?
+    var onRelease: (() -> Void)?
+    override func accessibilityActivate() -> Bool { onPress?(); onRelease?(); return true }
+}
+
+/// Keyboard extension entry class. Capture and network remain in the app. All screen decisions live in
+/// `KeyboardPresenter` (KeyboardPolicy package); this class only gathers inputs and applies the result.
 @MainActor
 final class ChirpKeyboardViewController: UIInputViewController {
     private let status = UILabel()
     private let detail = UILabel()
     private let warning = UILabel()
-    private let mic = UIButton(type: .system)
+    private let primary = UIButton(type: .system)
     private let cancel = UIButton(type: .system)
     private let raw = UIButton(type: .system)
     private let style = UIButton(type: .system)
     private let end = UIButton(type: .system)
     private let globe = UIButton(type: .system)
+    private let space = UIButton(type: .system)
+    private let delete = HoldRepeatButton(type: .system)
+    private let enter = UIButton(type: .system)
+    private let open = UIButton(type: .system)
     private var bridge: KeyboardBridgeClient?
     private var state: BridgeState?
     private var policy = OwnedInsertion()
@@ -25,7 +38,18 @@ final class ChirpKeyboardViewController: UIInputViewController {
     private var startPending = false
     private var pendingUntil: Date?
     private var fallback: String?
+    private var clock = RecordingClock()
+    private var styleItems: [StyleItem] = []
+    private var repeatTimer: Timer?
+    private var repeatCount = 0
+    private lazy var haptic = UIImpactFeedbackGenerator(style: .light)
     private var stack: UIStackView!
+    private var openRow: UIStackView!
+    private var keyHeights: [NSLayoutConstraint] = []
+    private var insets: [NSLayoutConstraint] = []
+    private var primaryHeight: NSLayoutConstraint!
+    private var primaryCap: NSLayoutConstraint!
+    private var appliedMetrics: KeyboardMetrics?
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -38,41 +62,78 @@ final class ChirpKeyboardViewController: UIInputViewController {
             label.adjustsFontForContentSizeCategory = true
             label.numberOfLines = 0
         }
-        configure(mic, title: "Start dictation", symbol: "mic.fill", action: #selector(micTapped))
-        configure(cancel, title: "Cancel", symbol: "xmark", action: #selector(cancelTapped))
-        configure(raw, title: "Use raw", symbol: "arrow.uturn.backward", action: #selector(rawTapped))
-        configure(style, title: "Style", symbol: "sparkles", action: nil)
-        configure(end, title: "End session", symbol: "mic.slash", action: #selector(endTapped))
-        configure(globe, title: "Next keyboard", symbol: "globe", action: nil)
+        status.accessibilityTraits.insert(.updatesFrequently)
+        status.accessibilityIdentifier = "chirp.keyboard.status"
+        detail.accessibilityIdentifier = "chirp.keyboard.detail"
+        configure(primary, title: "Open Chirp to start session", symbol: "arrow.up.forward.app", id: "primary",
+                  action: #selector(primaryTapped), prominent: true)
+        configure(cancel, title: "Cancel", symbol: "xmark", id: "cancel", action: #selector(cancelTapped))
+        configure(raw, title: "Use raw", symbol: "arrow.uturn.backward", id: "raw", action: #selector(rawTapped))
+        configure(style, title: "Style", symbol: "sparkles", id: "style", action: nil)
+        configure(end, title: "End", symbol: "mic.slash", id: "end", action: #selector(endTapped))
+        end.accessibilityLabel = "End session"
+        configure(globe, title: nil, symbol: "globe", id: "globe", action: nil)
+        globe.accessibilityLabel = "Next keyboard"
         globe.addTarget(self, action: #selector(handleInputModeList(from:with:)), for: .allTouchEvents)
-        let space = UIButton(type: .system)
-        let delete = UIButton(type: .system)
-        let enter = UIButton(type: .system)
-        let open = UIButton(type: .system)
-        configure(space, title: "Space", symbol: nil, action: #selector(spaceTapped))
-        configure(delete, title: "Delete", symbol: "delete.left", action: #selector(deleteTapped))
-        configure(enter, title: "Return", symbol: "return", action: #selector(returnTapped))
-        configure(open, title: "Open Chirp", symbol: "arrow.up.forward.app", action: #selector(openTapped))
-        let actions = row([mic, cancel, raw])
-        let options = row([style, end, open])
-        let typing = row([globe, space, delete, enter])
-        stack = UIStackView(arrangedSubviews: [status, detail, warning, actions, options, typing])
+        configure(space, title: "Space", symbol: nil, id: "space", action: #selector(spaceTapped))
+        configure(delete, title: nil, symbol: "delete.left", id: "delete", action: nil)
+        delete.accessibilityLabel = "Delete"
+        delete.accessibilityHint = "Touch and hold to keep deleting."
+        delete.addTarget(self, action: #selector(deleteDown), for: .touchDown)
+        delete.addTarget(self, action: #selector(deleteUp), for: [.touchUpInside, .touchUpOutside, .touchCancel])
+        delete.onPress = { [weak self] in self?.deleteDown() }
+        delete.onRelease = { [weak self] in self?.deleteUp() }
+        configure(enter, title: nil, symbol: "return", id: "return", action: #selector(returnTapped))
+        enter.accessibilityLabel = "Return"
+        configure(open, title: "Open Chirp", symbol: "arrow.up.forward.app", id: "open", action: #selector(openTapped))
+        open.configuration = .plain()
+        open.configuration?.title = "Open Chirp"
+        open.configuration?.image = UIImage(systemName: "arrow.up.forward.app")
+        open.configuration?.imagePadding = 4
+        open.titleLabel?.font = .preferredFont(forTextStyle: .footnote)
+        open.titleLabel?.adjustsFontForContentSizeCategory = true
+        style.showsMenuAsPrimaryAction = true
+
+        let primaryBox = UIView()
+        primary.translatesAutoresizingMaskIntoConstraints = false
+        primaryBox.addSubview(primary)
+        primaryHeight = primary.heightAnchor.constraint(greaterThanOrEqualToConstant: KeyboardMetrics.minimumPrimaryHeight)
+        primaryCap = primary.widthAnchor.constraint(lessThanOrEqualToConstant: 440)
+        let fill = [primary.leadingAnchor.constraint(equalTo: primaryBox.leadingAnchor),
+                    primary.trailingAnchor.constraint(equalTo: primaryBox.trailingAnchor)]
+        fill.forEach { $0.priority = .defaultHigh }
+        NSLayoutConstraint.activate(fill + [
+            primary.centerXAnchor.constraint(equalTo: primaryBox.centerXAnchor),
+            primary.topAnchor.constraint(equalTo: primaryBox.topAnchor),
+            primary.bottomAnchor.constraint(equalTo: primaryBox.bottomAnchor),
+            primaryHeight, primaryCap])
+
+        openRow = UIStackView(arrangedSubviews: [open, UIView()])
+        openRow.isHidden = true
+        let secondary = row([cancel, raw, style])
+        let typing = row([globe, space, delete, enter, end], fill: false)
+        for key in [globe, delete, enter, end] {
+            key.setContentHuggingPriority(.required, for: .horizontal)
+            key.widthAnchor.constraint(greaterThanOrEqualToConstant: 52).isActive = true
+        }
+        space.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        stack = UIStackView(arrangedSubviews: [status, detail, warning, openRow, primaryBox, secondary, typing])
         stack.axis = .vertical
-        stack.spacing = 8
         stack.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(stack)
-        NSLayoutConstraint.activate([
-            stack.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 10),
-            stack.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -10),
-            stack.topAnchor.constraint(equalTo: view.topAnchor, constant: 8),
-            stack.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -8)
-        ])
-        style.showsMenuAsPrimaryAction = true
+        insets = [stack.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+                  stack.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+                  stack.topAnchor.constraint(equalTo: view.topAnchor),
+                  stack.bottomAnchor.constraint(equalTo: view.bottomAnchor)]
+        NSLayoutConstraint.activate(insets)
+        registerForTraitChanges([UITraitVerticalSizeClass.self]) { (self: Self, _) in self.render() }
+        applyMetrics()
     }
 
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
         timer?.invalidate(); timer = nil
+        stopRepeat()
         cancelOwnedActiveUtterance()
         bridge = nil; state = nil
         visible = true
@@ -91,6 +152,7 @@ final class ChirpKeyboardViewController: UIInputViewController {
 
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
+        stopRepeat()
         cancelOwnedActiveUtterance()
         visible = false
         timer?.invalidate(); timer = nil
@@ -100,9 +162,8 @@ final class ChirpKeyboardViewController: UIInputViewController {
 
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
-        globe.isHidden = !needsInputModeSwitchKey
-        // Wider iPad keys preserve the same reading order and large hit targets.
-        stack?.spacing = view.bounds.width >= 600 ? 12 : 8
+        applyMetrics()
+        if globe.isHidden == needsInputModeSwitchKey { render() }
     }
 
     override func textWillChange(_ textInput: (any UITextInput)?) {
@@ -122,35 +183,70 @@ final class ChirpKeyboardViewController: UIInputViewController {
         if !applying { invalidateOwnership(); render() }
     }
 
-    private func configure(_ button: UIButton, title: String, symbol: String?, action: Selector?) {
-        var configuration = UIButton.Configuration.tinted()
+    // MARK: Layout
+
+    private func configure(_ button: UIButton, title: String?, symbol: String?, id: String, action: Selector?,
+                           prominent: Bool = false) {
+        var configuration = prominent ? UIButton.Configuration.filled() : UIButton.Configuration.tinted()
         configuration.title = title
         configuration.image = symbol.flatMap { UIImage(systemName: $0) }
-        configuration.imagePadding = 5
-        configuration.cornerStyle = .medium
+        configuration.imagePadding = 6
+        configuration.cornerStyle = prominent ? .large : .medium
+        configuration.titleLineBreakMode = .byTruncatingTail
+        let textStyle: UIFont.TextStyle = prominent ? .title3 : .body
+        configuration.titleTextAttributesTransformer = UIConfigurationTextAttributesTransformer { attributes in
+            var attributes = attributes
+            let font = UIFont.preferredFont(forTextStyle: textStyle)
+            attributes.font = prominent ? UIFont.systemFont(ofSize: font.pointSize, weight: .semibold) : font
+            return attributes
+        }
         button.configuration = configuration
-        button.titleLabel?.font = .preferredFont(forTextStyle: .body)
         button.titleLabel?.adjustsFontForContentSizeCategory = true
         button.titleLabel?.numberOfLines = 2
         button.accessibilityLabel = title
-        button.heightAnchor.constraint(greaterThanOrEqualToConstant: 48).isActive = true
+        button.accessibilityIdentifier = "chirp.keyboard." + id
+        if !prominent && id != "open" {
+            keyHeights.append(button.heightAnchor.constraint(greaterThanOrEqualToConstant: 48))
+            keyHeights.last?.isActive = true
+        }
         if let action { button.addTarget(self, action: action, for: .touchUpInside) }
     }
 
-    private func row(_ buttons: [UIButton]) -> UIStackView {
+    private func row(_ buttons: [UIButton], fill: Bool = true) -> UIStackView {
         let result = UIStackView(arrangedSubviews: buttons)
-        result.distribution = .fillEqually; result.spacing = 6
+        if fill { result.distribution = .fillEqually }
         return result
     }
+
+    private var compactHeight: Bool { traitCollection.verticalSizeClass == .compact }
+
+    /// iPad: wider spacing, primary capped and centered. Compact height (landscape iPhone): smaller keys.
+    private func applyMetrics() {
+        let metrics = KeyboardMetrics.make(width: Double(view.bounds.width), compactHeight: compactHeight)
+        guard metrics != appliedMetrics else { return }
+        appliedMetrics = metrics
+        ([stack!] + stack.arrangedSubviews.compactMap { $0 as? UIStackView }).forEach { $0.spacing = metrics.spacing }
+        keyHeights.forEach { $0.constant = metrics.keyHeight }
+        primaryHeight.constant = metrics.primaryHeight
+        primaryCap.isActive = metrics.maxPrimaryWidth != nil
+        primaryCap.constant = metrics.maxPrimaryWidth ?? 0
+        insets[0].constant = metrics.inset; insets[1].constant = -metrics.inset
+        insets[2].constant = 8; insets[3].constant = -8
+    }
+
+    // MARK: Ownership
 
     private func context() -> CursorContext {
         let proxy = textDocumentProxy
         return CursorContext(documentID: proxy.documentIdentifier,
                              before: proxy.documentContextBeforeInput,
-                             after: proxy.documentContextAfterInput, selection: proxy.selectedText)
+                             after: proxy.documentContextAfterInput, selection: proxy.selectedText,
+                             hasText: proxy.hasText)
     }
 
     private func invalidateOwnership() {
+        // Losing real ownership also ends a held Delete; the hold's own presses never owned anything.
+        if policy.generation != nil || startPending { stopRepeat() }
         policy.invalidate(); rawUntil = nil; rawRequested = false; startPending = false; pendingUntil = nil
     }
 
@@ -239,13 +335,18 @@ final class ChirpKeyboardViewController: UIInputViewController {
         render()
     }
 
-    @objc private func micTapped() {
+    // MARK: Actions
+
+    /// Light feedback on start/stop. Keyboards without Full Access may not use haptics, so skip them.
+    private func tick() { if hasFullAccess { haptic.impactOccurred() } }
+
+    @objc private func primaryTapped() {
         guard hasFullAccess else { render(); return }
         reconcile()
         guard let state, state.leaseUntil > Date() else { openTapped(); return }
         switch state.phase {
         case .connecting, .listening:
-            send(.stop)
+            tick(); send(.stop)
         case .correcting:
             break
         case .armed, .finished:
@@ -253,6 +354,7 @@ final class ChirpKeyboardViewController: UIInputViewController {
             let utterance = UUID()
             guard policy.begin(generation: state.generation, utteranceID: utterance,
                                context: context(), now: Date()) else { render(); return }
+            stopRepeat(); tick()
             rawUntil = nil; rawRequested = false; startPending = true
             pendingUntil = Date().addingTimeInterval(5)
             send(.start, utteranceID: utterance)
@@ -277,13 +379,13 @@ final class ChirpKeyboardViewController: UIInputViewController {
     }
     @objc private func endTapped() { send(.end); invalidateOwnership() }
     @objc private func spaceTapped() { invalidateOwnership(); textDocumentProxy.insertText(" "); render() }
-    @objc private func deleteTapped() { invalidateOwnership(); textDocumentProxy.deleteBackward(); render() }
     @objc private func returnTapped() { invalidateOwnership(); textDocumentProxy.insertText("\n"); render() }
     @objc private func openTapped() {
         fallback = "Open Chirp manually if iOS refuses. Return here using Back to app or the app switcher."
         render()
         guard let url = URL(string: "chirp://session/start") else { return }
-        extensionContext?.open(url, completionHandler: { [weak self] opened in
+        // The completion's thread is unspecified; @Sendable keeps it free of main-actor isolation checks.
+        extensionContext?.open(url, completionHandler: { @Sendable [weak self] opened in
             Task { @MainActor [weak self] in
                 self?.fallback = opened
                     ? "Set up the session in Chirp, then return using the app switcher."
@@ -293,46 +395,100 @@ final class ChirpKeyboardViewController: UIInputViewController {
         })
     }
 
-    private func render() {
-        let available = hasFullAccess && state != nil && (state?.leaseUntil ?? .distantPast) > Date()
-        let phase = available ? state?.phase : nil
-        let recording = phase == .connecting || phase == .listening
-        mic.configuration?.title = recording ? "Stop dictation" : "Start dictation"
-        mic.configuration?.image = UIImage(systemName: recording ? "stop.fill" : "mic.fill")
-        mic.accessibilityLabel = recording ? "Stop dictation" : "Start dictation"
-        mic.isEnabled = hasFullAccess && phase != .correcting && !startPending
-        cancel.isEnabled = available && !policy.isFinal &&
-            (phase == .connecting || phase == .listening || phase == .correcting || startPending)
-        end.isEnabled = available
-        style.isEnabled = available && !recording && phase != .correcting
-        let titles = ["default": "Default", "chat": "Chat", "email": "Email", "code": "Code", "notes": "Notes", "custom": "Custom"]
-        let availableStyles = state?.availableStyleIDs ?? []
-        style.menu = UIMenu(children: availableStyles.map { id in
-            UIAction(title: titles[id] ?? id, state: id == state?.styleID ? .on : .off) { [weak self] _ in
-                self?.send(.style(id))
-            }
-        })
-        style.isEnabled = style.isEnabled && !availableStyles.isEmpty
-        style.configuration?.title = "Style: " + (titles[state?.styleID ?? "default"] ?? "Custom")
-        raw.isEnabled = available && policy.isFinal && policy.generation != nil &&
-            Date() < (rawUntil ?? .distantPast) && !rawRequested
-        warning.text = state?.debugRetention == true ? "DEBUG recordings kept on the server" : nil
-        warning.isHidden = warning.text == nil
-        if !hasFullAccess {
-            status.text = "Dictation needs Full Access"
-            detail.text = "Enable Chirp Full Access in Settings → General → Keyboard, then open Chirp to set up. Space, delete, return and next keyboard work here."
-        } else if let fallback {
-            status.text = "Open Chirp"
-            detail.text = fallback
-        } else if policy.requiresRecovery {
-            status.text = "Text kept in place"
-            detail.text = "Cursor or text context changed. Recover the dictation in Chirp; automatic replacement is paused."
-        } else if available {
-            status.text = phase == .correcting ? "Polishing…" : recording ? "Dictating…" : "Session armed"
-            detail.text = "Microphone stays active in Chirp. Idle audio is discarded. End session turns it off."
-        } else {
-            status.text = "Start a session in Chirp"
-            detail.text = "Tap the microphone to try opening Chirp, then return to your editor. Handoff and automatic return are not guaranteed."
+    // MARK: Delete press-and-hold
+
+    @objc private func deleteDown() {
+        stopRepeat()
+        invalidateOwnership()
+        deleteOnce()
+        repeatTimer = scheduleRepeat(after: KeyRepeat.initialDelay)
+    }
+    @objc private func deleteUp() { stopRepeat() }
+
+    private func scheduleRepeat(after delay: TimeInterval) -> Timer {
+        let timer = Timer(timeInterval: delay, repeats: false) { [weak self] _ in
+            Task { @MainActor [weak self] in self?.repeatFired() }
         }
+        RunLoop.main.add(timer, forMode: .common)
+        return timer
+    }
+
+    private func repeatFired() {
+        // A hold never edits through an owned utterance: if one appears, stop instead of racing it.
+        guard repeatTimer != nil, policy.generation == nil, !startPending else { stopRepeat(); return }
+        deleteOnce()
+        repeatCount += 1
+        repeatTimer = scheduleRepeat(after: KeyRepeat.interval(afterRepeats: repeatCount))
+    }
+
+    private func deleteOnce() {
+        applying = true
+        textDocumentProxy.deleteBackward()
+        applying = false
+        render()
+    }
+
+    private func stopRepeat() {
+        repeatTimer?.invalidate(); repeatTimer = nil; repeatCount = 0
+    }
+
+    // MARK: Render
+
+    private func inputs() -> KeyboardInputs {
+        let now = Date()
+        var i = KeyboardInputs(now: now)
+        i.hasFullAccess = hasFullAccess
+        if hasFullAccess, let state {
+            i.phase = KeyboardPhase(rawValue: state.phase.rawValue)
+            i.leaseUntil = state.leaseUntil; i.sessionExpiresAt = state.sessionExpiresAt
+            i.styleID = state.styleID; i.availableStyleIDs = state.availableStyleIDs
+            i.debugRetention = state.debugRetention
+            i.errorCode = state.errorCode.flatMap { KeyboardError(rawValue: $0.rawValue) }
+        }
+        i.ownsUtterance = policy.generation != nil
+        i.isFinal = policy.isFinal; i.requiresRecovery = policy.requiresRecovery
+        i.rawUntil = rawUntil; i.rawRequested = rawRequested; i.startPending = startPending
+        i.fallback = fallback
+        let live = hasFullAccess && (state?.leaseUntil ?? .distantPast) > now
+        let owned = state.flatMap { $0.generation == policy.generation && !policy.isFinal ? policy.utteranceID : nil }
+        clock.observe(phase: live ? i.phase : nil, ownedUtterance: live && owned == state?.utteranceID ? owned : nil, now: now)
+        i.recordingStartedAt = clock.startedAt
+        i.needsGlobe = needsInputModeSwitchKey
+        i.compactHeight = compactHeight
+        return i
+    }
+
+    private func render() {
+        let screen = KeyboardPresenter.screen(inputs())
+        status.text = screen.status
+        detail.text = screen.detail; detail.isHidden = !screen.showsDetail
+        warning.text = screen.warning; warning.isHidden = screen.warning == nil
+        let action = screen.primary
+        primary.configuration?.title = action.title
+        primary.configuration?.image = UIImage(systemName: action.symbol)
+        primary.configuration?.baseBackgroundColor = action.kind == .stop ? .systemRed : nil
+        primary.accessibilityLabel = action.title
+        primary.accessibilityHint = action.hint
+        primary.isEnabled = action.isEnabled
+        cancel.isEnabled = screen.cancelEnabled
+        raw.isEnabled = screen.rawEnabled
+        raw.configuration?.title = screen.rawTitle
+        raw.accessibilityLabel = "Use raw"
+        raw.accessibilityValue = screen.rawSecondsLeft.map { "\($0) seconds left" }
+        style.isEnabled = screen.styleEnabled
+        style.configuration?.title = screen.styleTitle
+        style.accessibilityLabel = screen.styleTitle
+        // Rebuilding the menu while it is open would dismiss it, so only replace it when items change.
+        if screen.styleItems != styleItems {
+            styleItems = screen.styleItems
+            style.menu = UIMenu(children: styleItems.map { item in
+                UIAction(title: item.title, state: item.isChecked ? .on : .off) { [weak self] _ in
+                    self?.send(.style(item.id))
+                }
+            })
+        }
+        end.isEnabled = screen.endEnabled
+        openRow.isHidden = !screen.showsOpenChirp
+        globe.isHidden = !screen.showsGlobe
     }
 }

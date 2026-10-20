@@ -120,6 +120,7 @@ struct HistoryView: View {
                 Toggle("Keep encrypted history on this device", isOn: Binding(get: { enabled }, set: { value in
                     if value { change { try $0.setEnabled(true) } } else { disable = true }
                 }))
+                .accessibilityIdentifier("chirp.history.enabled")
                 Text("Off initially. At most 200 nonempty finals. AES-GCM encrypted with a device-only Keychain key, excluded from backup. Disabling deletes history and its key.")
                     .font(.footnote).foregroundStyle(.secondary)
                 if enabled {
