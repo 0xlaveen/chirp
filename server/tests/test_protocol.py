@@ -38,6 +38,7 @@ def test_health_redaction(client):
         "correction_keep_loaded": False,
         "correction_loaded": False,
         "notes_structure": True,
+        "notes_correction": True,
     }
 
 

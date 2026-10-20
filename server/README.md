@@ -173,6 +173,7 @@ mode = "off" # off (default), managed, endpoint
 base_url = "http://127.0.0.1:1234/v1"
 model = "your-loaded-model"
 timeout = 8.0
+# notes_timeout = 15.0
 # structure_timeout = 30.0
 api_key_env = "CHIRP_LLM_API_KEY"
 # keychain_service = "chirp-llm" # security find-generic-password -s SERVICE -w
@@ -191,6 +192,7 @@ retain_days = 3
 | `base_url` | Endpoint-mode server URL |
 | `model` | Endpoint-mode model identifier |
 | `timeout` | Whole-call correction timeout in seconds (default 8.0) |
+| `notes_timeout` | Whole-call timeout for a Live Notes segment's clean-up (`live_notes` style) in seconds (default 15.0); dictation keeps `timeout` |
 | `structure_timeout` | Whole-call Notes structuring timeout in seconds (default 30.0); the same finite, positive validation as `timeout` |
 | `api_key_env` | Environment variable holding the API key (endpoint mode) |
 | `keychain_service` | Read the key from Keychain: `security find-generic-password -s SERVICE -w` |
@@ -344,8 +346,9 @@ curl -s -H "Authorization: Bearer $(cat ~/.config/chirp/token)" -H 'Content-Type
 ```
 
 A success returns `{"markdown":"…","structured":true,"error":null,"timings_ms":{"structure":…}}`.
-When the model fails, times out or its output is rejected by the guards (invented words or numbers,
-a dropped negation, formatting outside the allowed Markdown subset), the answer is HTTP 200 with
+When the model fails, times out or its output is rejected by the guards (invented names, numbers,
+dates or contacts, an unrelated answer, a negated statement flipped to a positive one, formatting
+outside the allowed Markdown subset), the answer is HTTP 200 with
 `"markdown":null,"structured":false` and `error` of `timeout`, `http` or `rejected`, and the client
 keeps its previous notes. Only one structuring request runs at a time (a second gets `503 busy`),
 a request body is capped at 64 KiB, and the transcript at 6000 characters. Request and response

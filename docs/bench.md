@@ -491,3 +491,92 @@ uv run pytest -q -m model tests/test_notes.py
 
 Metrics are in [notes-structuring.json](bench-data/notes-structuring.json). `--dump` writes every
 output (synthetic text) to a file you choose, for inspecting which guard rejected what.
+
+## Live Notes clean-up and guards on messy speech (2026-10-20)
+
+Real Live Notes use showed both passes failing closed on every call: segment clean-up kept every
+"um/like/yeah" (`correction_error: rejected`), and every structuring pass was `rejected`, so no notes
+appeared. The cause was in the guards, not the model. The `default` dictation guard only licenses
+um/uh/er, a leading "so" and narrow "like"/"you know" cases, so long-form speech ("like"
+mid-sentence, "yeah", "okay", "that's that's", restarts) is always rejected. The structuring guard
+required 85 % exact content-word overlap, which real paraphrased notes ("lacks clarity",
+"Suggestion:") miss, and it required every spoken negation to reappear, including incidental ones
+("whether it supports it or not").
+
+The fix adds a hidden `live_notes` correction style with its own deletion-only guard and budget,
+and replaces the structuring guards with checks aimed at hallucination (invented names, numbers,
+dates, contacts, unrelated answers) and at flipped negations. The previous section's set
+`notes_eval.jsonl` is clean written-style text, so a new invented set measures real speech:
+`server/tests/notes_messy_eval.jsonl` has 11 product-feedback and meeting monologues of 628-2035
+characters, written like ASR output with fillers, stutters, restarts and incidental negations.
+`server/tests/notes_negatives.jsonl` has 32 invented bad outputs that must be rejected: 20
+structuring cases (invented name, acronym, number, number word, date, email or domain, six flipped
+negations, answered questions, instruction injection, a link, an opener) and 12 clean-up cases
+(dropped or restarted negation, changed number, inserted word, swapped names, dropped name, content
+word or hedge, summary, answer, injection, paraphrase).
+
+Same machine and model as above (`qwen3-4b-instruct-2507-4bit`, warm, temperature 0, 1-minute
+load about 2-3; cold helper load 1010 ms). One run per entry, greedy, so repeats are identical.
+Segment rows cut each transcript at sentence ends into pieces of at most 675 characters, which is
+about 45 s of speech at 15 characters per second (the new client maximum). Whole rows send the
+entire transcript, about what a 90 s segment produced before.
+
+| Live Notes segment clean-up | Runs | Chars p50 / max | p50 (ms) | p95 (ms) | Guard passed | um/uh left |
+|---|---:|---:|---:|---:|---:|---:|
+| `live_notes`, ≤ 45 s segments | 23 | 612 / 675 | 1530 | 1790 | **22/23 (96 %)** | 0 of 82 |
+| `default` (before), ≤ 45 s segments | 23 | 612 / 675 | 1594 | 1868 | 4/23 (17 %) | — |
+| `live_notes`, whole transcript | 11 | 769 / 2035 | 1902 | 4864 | 8/11 (73 %) | 0 of 61 |
+| `default` (before), whole transcript | 11 | 769 / 2035 | 1986 | 4959 | 0/11 (0 %) | — |
+
+| Structuring | Runs | p50 (ms) | p95 (ms) | Output tokens p50 / p95 | Guards passed (before → after) |
+|---|---:|---:|---:|---:|---:|
+| Messy set | 11 | 1726 | 3148 | 131 / 256 | 4/11 → **11/11** |
+| Clean set (`notes_eval.jsonl`) | 16 | 4215 | 8839 | 362 / 768 | 13/16 → 15/16 |
+| Negatives rejected | 32 | — | — | — | **32/32 (100 %)** |
+
+The messy-set structuring "before" figure is the old guards on the same prompt: 4 pass, 3 rejected
+by `negation`, 4 by `novel`. The one clean-set failure is the 4000-character window that reaches the
+768-token cap (`finish`), which is rejected by design. The client never sends windows that large
+(previous section).
+
+What was tuned, and why:
+
+- **Clean-up guard (`notes_faithful`).** Deletion only, in order, casing and punctuation free.
+  The first version licensed spoken fillers, immediate repeats and short restarts and passed 14/23.
+  The model's remaining edits were of three safe kinds that the guard now also licenses: repeats
+  with a filler between the copies ("which is, yeah, which is"), a sentence-initial "and" ("Oh, and,
+  uh, the login is fine"), and a restated subject ("the list is, uh, it's actually nice"). A prompt
+  rule to keep hedges and short asides then reached 22/23. The remaining rejection is the model
+  dropping "I think" and "the other one", which the guard should reject. Number words are never a
+  stutter ("twenty twenty six"), and a restart can never drop a negation, a number or a content
+  word that is not said again right after.
+- **Segment length and budget.** Clean-up time grows with length: about 1.5 s for a 45 s segment
+  and up to 4.9 s for 2000 characters. The pass rate also falls, from 96 % to 73 %, because a
+  longer output has more chances to drop a word. A clean-up can also wait behind a running
+  structuring pass (p95 5.7 s for a 2400-character window, clean set), so a 90 s segment could
+  exceed the old 8 s budget. The client therefore cuts segments at a pause after 12 s (relaxed
+  pause after 30 s) and always by 45 s. The server gives `live_notes` its own
+  `notes_timeout` of 15 s: a 2 s clean-up plus a full wait behind structuring, still inside the
+  client's 25 s final deadline. Dictation keeps `timeout` (8 s) and its request is unchanged.
+- **Overlap floor 50 %** (stemmed content words outside stopwords and labels). The 27 real
+  outputs above score 83-100 %, and the "answer" and "injection" negatives score 0-15 %. The
+  floor sits between the two with margin on both sides. Hallucination is caught by the specific checks (names, numbers, dates, contacts),
+  not by the floor.
+- **Negation flips, not counts.** A line is a flip only if it restates the negated clause's head
+  (the first content word after the negation, plus the next word for "not sure" or "don't know")
+  and at least 60 % of the clause's content words, makes up at least 60 % of its own content, and
+  has no negation, negative wording ("lacks", "unclear", "instead") or hedge ("whether", "?"). The
+  60 % line share came from a real false positive: "Custom firmware needed for warehouse
+  integration" next to "they can't do the custom firmware". The head rule came from "I didn't
+  really have any problems with sign in" → "Sign in worked".
+
+Reproduce (cached weights only):
+
+```sh
+cd server
+uv run python scripts/bench_notes.py --set messy --repetitions 1 --dump /tmp/notes-messy.jsonl
+uv run python scripts/bench_notes.py --set clean --repetitions 1
+uv run pytest -q -m model tests/test_notes.py tests/test_notes_correction.py
+```
+
+Metrics are in [notes-messy.json](bench-data/notes-messy.json).

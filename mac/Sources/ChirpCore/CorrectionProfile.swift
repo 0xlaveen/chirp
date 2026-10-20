@@ -5,6 +5,9 @@ import Foundation
 public struct CorrectionProfile: Codable, Sendable, Equatable, Identifiable {
     public static let defaultID = "default"
     public static let customID = "custom"
+    /// The hidden Live Notes segment style (fillers, stutters and restarts removed); never listed or picked. Only sent to
+    /// a server whose health has `notes_correction`.
+    public static let liveNotesID = "live_notes"
     /// What the server accepts in `correction_instructions`.
     public static let maxInstructionLength = 2000
     /// What the server accepts in `correction_prompt`, and the limit assumed until it states one.

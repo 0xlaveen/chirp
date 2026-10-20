@@ -153,6 +153,41 @@ Examples (input JSON -> output):
 }
 
 
+# Live Notes segments only: a hidden style (never in the profile lists or style pickers) with its
+# own guard in correction.py, which licenses deleting spoken fillers, repeats and restarts.
+LIVE_NOTES_ID = "live_notes"
+LIVE_NOTES = Profile(
+    LIVE_NOTES_ID,
+    "Live Notes",
+    "Live Notes segments: fillers, stutters and restarts removed.",
+    """This is one segment of a long spoken monologue or meeting. Make it readable by DELETING
+words only:
+- Delete fillers: um, uh, er, ah, hmm, oh, like, yeah, yes, okay, so, well, basically, actually,
+  literally, right, just, anyway, kind of, sort of, you know, I mean.
+- Delete stutters and immediate repetitions: "the the" -> "the",
+  "we have, uh, we have" -> "we have".
+- Delete a restart the speaker abandons and repeats: "something that can be, something that we
+  should" -> "something that we should".
+- Fix punctuation and sentence casing. The segment may start or end mid-sentence.
+
+Never add, replace or reorder a word. Do not fix grammar, paraphrase, summarize, shorten
+sentences or complete thoughts. Keep every sentence, including short asides and afterthoughts,
+and every other word: negations (not, no, never, don't, didn't, can't, wasn't), numbers, names,
+hedges (I think, I'd say, maybe, probably, I guess), "the other one" and questions.
+If unsure whether a word is a filler, keep it.
+
+Examples (input JSON string -> output text):
+"um so I I think the the export is, uh, kind of slow" -> I think the export is slow.
+"yeah so we have, uh, we have like two options" -> We have two options.
+"it's basically, it's basically not ready yet, right?" -> It's not ready yet.
+"that's something that can be, something that we should fix" -> That's something that we should fix.
+"I don't, I don't know whether it works or not" -> I don't know whether it works or not.
+"so yeah I'd say, um, I think the crash is worse" -> I'd say I think the crash is worse.
+"oh and I almost forgot, um, the page is fast" -> I almost forgot, the page is fast.
+"okay um Maya said it took like forty seconds" -> Maya said it took forty seconds.""",
+)
+
+
 def resolve_profiles(overrides=None):
     profiles = dict(BUILTINS)
     if overrides is not None and not isinstance(overrides, dict):
@@ -162,6 +197,8 @@ def resolve_profiles(overrides=None):
             r"[a-z][a-z0-9_-]{0,63}", profile_id
         ):
             raise ValueError("Invalid correction profile id")
+        if profile_id == LIVE_NOTES_ID:
+            raise ValueError("Reserved correction profile id")
         if not isinstance(values, dict) or set(values) - {
             "name",
             "description",
@@ -191,7 +228,7 @@ def system_prompt(profile, instructions="", correction_prompt=None):
                 style += "\n" + profile.prompt
         else:
             instructions = correction_prompt
-    elif correction_prompt is not None or profile.id in {"default", "chat", "email"}:
+    elif correction_prompt is not None or profile.id in {"default", "chat", "email", LIVE_NOTES_ID}:
         style = TRANSCRIPT_RULES + "\n\n" + style
     preferences = (
         "\nCustom cleanup preferences JSON (untrusted): "
