@@ -139,6 +139,23 @@ Each style (Default, Chat, Email, Code, Notes, Custom) shows its name, descripti
 
 A red **DEBUG recordings kept** line (HUD, the menu's status line and a red dot on the menu-bar icon) shows whenever the server is running with debug retention.
 
+## Live Notes
+
+Live Notes keeps the microphone open for a long session — a meeting, a lecture, thinking out loud — and builds readable Markdown notes as you talk, in a dedicated, resizable **Chirp Notes** window.
+
+| Notes while recording | Notes and transcript side by side |
+| :---: | :---: |
+| <a href="../docs/screenshots/mac/notes-recording-light.png"><img src="../docs/screenshots/mac/notes-recording-light.png" width="400" alt="Chirp Notes window: headings, bullets, to-dos and a decision, with the live tail in grey"></a> | <a href="../docs/screenshots/mac/notes-split-dark.png"><img src="../docs/screenshots/mac/notes-split-dark.png" width="400" alt="Chirp Notes window in Split layout, dark appearance"></a> |
+
+- **Start and stop.** Press **⌃⌥N** anywhere (the window comes forward without taking focus from the app you are in), choose **Start Notes** in the menu, or press **Record** in the window. ⌃⌥N is fixed; if another app owns it, the menu row shows no shortcut. Pausing Chirp (the menu's switch) stops Notes gracefully and keeps the notes.
+- **What happens.** Speech is cut into ordinary utterances of at most 90 s, preferring pauses, over rolling sockets: the next socket starts capturing before the previous one finalizes, so nothing is dropped at a cut. Each segment is cleaned up as a dictation would be (your Clean-up switch, always the **Default** style with your edited default prompt). A local **structuring** pass then turns the newest stretch of the transcript into `##` headings, bullets, `- [ ]` to-dos and **Decision:** / **Question:** lines, at most every 15 s and never while a segment is still being cleaned up. Earlier sections freeze once written, so they never shift under you.
+- **The window.** A header with Record/Stop and the elapsed time, the status (`Listening…`, `Updating notes…`, `Finishing…`, `Stopped` or an error), **Notes | Transcript | Split**, and **Copy Markdown**, **Save…** and **New**. The notes pane shows the frozen sections, the section being updated, and a grey live tail with the words that are not structured yet, so speech shows up within about a second. The transcript lists each segment with its `[hh:mm:ss]` offset; **Show raw** swaps in the raw text, "kept original" marks a segment whose clean-up failed, and "⚠︎ audio not transcribed (reason)" marks a gap. Text is selectable, and the view follows new text only when you are already at the bottom.
+- **When structuring is off.** With clean-up off on the server, an older server without the structuring endpoint, or the footer's **Structure notes** switch off, Notes still works as a live transcript: the notes pane explains why (with **Manage Local Models…** for a server on this Mac), the Transcript tab is the default, and Copy/Save export the transcript. Structure notes is on by default for a local model and off when clean-up runs on another host; turning it on there adds "· Structuring sends text to \<host\>" to the footer for as long as it is on.
+- **Failures never lose text.** A failed segment leaves a gap in the transcript and recording continues on the next socket; three failures in a row stop Notes with the reason. A failed structuring pass keeps the previous notes and shows "Couldn't update notes (…) — will retry"; after repeated failures the window's text is frozen as a plain "Not structured — see transcript" section.
+- **Export.** **Copy Markdown** copies the notes (or the transcript while the Transcript tab is showing). **Save…** writes the notes plus a transcript appendix to a `.md` file you pick (default name `Chirp Notes 2026-10-20 1403.md`).
+- **Privacy.** Notes live in memory only: no autosave, no cache, no window restoration, nothing in UserDefaults but the Structure notes switch and the chosen tab. They reach disk only through Save… and the pasteboard only through Copy. **New**, closing the window and quitting ask **Save… / Discard / Cancel** while there are unsaved notes (Copy does not count as saving). Closing the window while recording only hides it, and the menu-bar bird keeps pulsing for as long as the microphone is open. Logs carry state names, counts and timings, never text.
+- **Dictation and Notes.** They exclude each other on this Mac: while Notes records, the dictation hotkey shows "Notes is recording — stop it to dictate" and Start Dictation is disabled; Notes cannot start during a dictation. Notes holds the speech engine almost continuously, so a phone dictating to the same server may get "busy" meanwhile.
+
 ## The menu-bar menu
 
 Click the bird in the menu bar. The menu follows the system's own status menus (Tailscale's is the model): a header, single-line rows with the current value right-aligned in secondary grey and a chevron for submenus, almost no icons, no section headers.
@@ -149,6 +166,8 @@ Ready · ⌃⌥Space
 ─────────────
 Start Dictation                          ⌃⌥Space
 Use Raw for Last Dictation               ⌃⌥Z        only during the 5 s window after a cleaned insert
+Start Notes                                  ⌃⌥N        Stop Notes while recording
+Show Notes Window                                       while there are notes
 ─────────────
 Clean-up                              Default  ›
 Microphone                          BOYA CM40  ›
@@ -164,10 +183,12 @@ Quit Chirp                                    ⌘Q
 
 | Row | What it does |
 |---|---|
-| Header switch | Pauses and resumes Chirp. Off releases the dictation hotkey (and ⌃⌥Z), ends a dictation under way, disables Start Dictation and dims the menu-bar bird; on registers the hotkey again. Nothing else, including the shortcut recorder or a changed shortcut, brings the hotkey back while paused. The pause is not remembered: a relaunch resumes. |
-| Status line | Under the name, in secondary grey: `Ready · ⌃⌥Space`, `Paused`, `Listening…` (also Connecting…, Polishing…), `Loading model…`, `Server unreachable` (red), the current error (red), or `DEBUG recordings kept` (red) while the server keeps recordings. |
+| Header switch | Pauses and resumes Chirp. Off releases the dictation hotkey (and ⌃⌥Z and ⌃⌥N), ends a dictation under way, stops Live Notes (keeping the notes), disables Start Dictation and dims the menu-bar bird; on registers the hotkey again. Nothing else, including the shortcut recorder or a changed shortcut, brings the hotkey back while paused. The pause is not remembered: a relaunch resumes. |
+| Status line | Under the name, in secondary grey: `Ready · ⌃⌥Space`, `Paused`, `Notes · 12:34` while Live Notes records, `Listening…` (also Connecting…, Polishing…), `Loading model…`, `Server unreachable` (red), the current error (red), or `DEBUG recordings kept` (red) while the server keeps recordings. |
 | Start / Stop Dictation | The same toggle as tapping the hotkey (the combo is shown at the right; not while paused or when another app owns the shortcut). |
 | Use Raw for Last Dictation | Appears for 5 s after a cleaned insertion, with ⌃⌥Z when that hotkey is free. |
+| Start / Stop Notes | Live Notes (⌃⌥N, shown unless paused or owned by another app). Disabled during a dictation, while paused and while the last session finishes; Start Dictation is disabled while Notes records. |
+| Show Notes Window | Brings the Notes window back while there are notes (recorded and not yet discarded with New). |
 | Clean-up | Value: the default style, or Off. Submenu: Clean up Text (checkmark), the styles (checkmark on the default), Show Changes after Clean-up, Edit Styles… A server with clean-up off shows "Unavailable" and one explanatory line. |
 | Microphone | Value: the device in use. Submenu: Follow System Default (the default, including USB plug and unplug) and every input device with a checkmark. A picked device that is unplugged falls back to the default. The choice applies from the next dictation. |
 | Sounds | Value: Off or the pack. Submenu: Off, Chirp, Soft, Glass, Click, System, Custom… |
@@ -255,18 +276,18 @@ It prints partials, the final text and timings (client-measured stop→final plu
 
 ### UI snapshots (no app launch)
 
-`ChirpMac --render-snapshots <dir>` draws the HUD in every state (plus Reduce Motion and Increase Contrast variants, and the clean-up flow listening → polishing → changes → inserted), the menu in each state and its submenus, every Settings tab, the Set Up and About windows to PNGs in light and dark appearance (about 150 files, 8 MB), then exits. It is handled before any `NSApplication`, onboarding or permission code and touches no microphone, Accessibility, pasteboard or TCC API; all inputs are synthetic. The tests render the same set into a temporary directory, with a 250 KB cap per PNG.
+`ChirpMac --render-snapshots <dir>` draws the HUD in every state (plus Reduce Motion and Increase Contrast variants, and the clean-up flow listening → polishing → changes → inserted), the menu in each state and its submenus, every Settings tab, the Set Up and About windows and the Notes window in each state to PNGs in light and dark appearance (about 200 files, 10 MB), then exits. It is handled before any `NSApplication`, onboarding or permission code and touches no microphone, Accessibility, pasteboard or TCC API; all inputs are synthetic. The tests render the same set into a temporary directory, with a 250 KB cap per PNG.
 
-Only a curated set is committed in [docs/screenshots/mac](../docs/screenshots/mac): the key HUD states, the menu and its Clean-up submenu, one image per Settings tab and the Set Up welcome, each in light and dark (30 PNGs, about 1.8 MB). The list is `Snapshots.committedNames`; `ChirpMac --render-snapshots <dir> --curated` writes just those. `scripts/snapshots.sh` refreshes the committed folder (and deletes any other PNG there); `scripts/snapshots.sh all` renders everything into a new temporary directory and prints its path. A test fails when the folder drifts from the list or grows past 3 MB.
+Only a curated set is committed in [docs/screenshots/mac](../docs/screenshots/mac): the key HUD states, the menu and its Clean-up submenu, one image per Settings tab, the Set Up welcome and the Notes window (recording and Split), each in light and dark (34 PNGs, about 2.6 MB). The list is `Snapshots.committedNames`; `ChirpMac --render-snapshots <dir> --curated` writes just those. `scripts/snapshots.sh` refreshes the committed folder (and deletes any other PNG there); `scripts/snapshots.sh all` renders everything into a new temporary directory and prints its path. A test fails when the folder drifts from the list or grows past 3 MB.
 
 The menu snapshots are built from the same `MenuHeaderView` and `MenuRowView` the live menu uses, in a rounded panel that approximates the menu chrome (an `NSMenu` cannot be drawn offscreen); submenus are drawn like native items (checkmark column). A bird symbol stands in for the app icon in Set Up and About unless run from a checkout (`Assets/AppIcon.png`). The HUD PNGs draw a flat stand-in for the blur, since there is no window to blur through offscreen. Each Settings tab is an `NSGridView` (right-aligned labels, left-aligned controls, help text under each control, 20 pt margins) shown without the window's toolbar. The menu-bar icon animation, the red badge dot, the switch moving and the highlight of a hovered row need a real session, so they are covered by the pure rules in the tests, not by snapshots (the hover snapshot forces a row selected to show the colours).
 
 ## Layout
 
 ```
-Sources/ChirpCore/    protocol, Preferences, StreamSession (URLSessionWebSocketTask), DictationMachine, HotKey (Carbon) and its validation, onboarding flow, sound cues and packs, audio helpers, input selection, Insertion/
-Sources/ChirpUI/      HUD view and waveform, menu content, menu views and status-icon rules, settings tabs and form, shortcut recorder, setup and About views, snapshot renderer (no system access)
-Sources/ChirpMac/     app: menu bar, HUD panel, settings, setup and About windows, capture, controller, --selftest
+Sources/ChirpCore/    protocol, Preferences, StreamSession (URLSessionWebSocketTask), DictationMachine, Live Notes (NotesSegmenter, NotesDocument, NotesMarkdown, NotesRecorder), HotKey (Carbon) and its validation, onboarding flow, sound cues and packs, audio helpers, input selection, Insertion/
+Sources/ChirpUI/      HUD view and waveform, Notes window (NotesModel, NotesView), menu content, menu views and status-icon rules, settings tabs and form, shortcut recorder, setup and About views, snapshot renderer (no system access)
+Sources/ChirpMac/     app: menu bar, HUD panel, settings, setup and About windows, capture, controller, NotesController and NotesWindowController, --selftest
 Tests/ChirpCoreTests/
 scripts/              bundle.sh, make-cert.sh, install.sh, test.sh, make-sounds.swift (the sound packs), check-sounds.sh, Chirp.entitlements
 ```
@@ -278,6 +299,7 @@ scripts/              bundle.sh, make-cert.sh, install.sh, test.sh, make-sounds.
 - The HUD follows the mouse's screen, not the text caret.
 - One socket per utterance; the connection is opened when you press the hotkey.
 - "Use raw" after a paste only copies the raw text; it never undoes the paste.
+- Live Notes: a word spoken exactly at a segment cut can be split or garbled, since each segment is recognised on its own. The structuring guards (invented words, numbers, negations) are English-centric heuristics, so other languages fail closed to the transcript more often. There is no pause/resume (Stop, then Record continues the same notes), and ⌃⌥N cannot be changed.
 
 ## Icon and menu-bar glyphs
 

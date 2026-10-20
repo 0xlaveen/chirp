@@ -50,6 +50,18 @@ Each step needs the operator's hands or approval. Do them in order.
    - Check that live text appears in the HUD and the final text lands in the field.
    - Try TextEdit, Safari, Slack or VS Code (these paste), and Terminal.
 
+### Mac Live Notes
+
+Run on the reference Mac after installing the build with `./scripts/install-mac.sh` and selecting the default correction model.
+
+1. Press ⌃⌥N and talk for about 3 minutes through a mock meeting with a decision, two to-dos and a "we will **not** …" sentence. Check the headings, the `☐` tasks, the Decision line, and that the negation is kept.
+2. Leave it running for at least 10 minutes with intermittent silence. Check that the menu-bar bird pulses throughout, that segments keep landing in the transcript (each ≤ 90 s, none lost at a cut), and that frozen sections do not change.
+3. Press the dictation hotkey while Notes records → the "Notes is recording — stop it to dictate" toast and no dictation. Stop Notes, then dictate normally.
+4. Stop, Save… to the Desktop, and open the `.md` file (notes, `---`, then the `## Transcript` appendix). Record a little more, then quit Chirp with the unsaved notes → the Save… / Discard / Cancel alert appears.
+5. Touch a marker file, run a session without saving, then `find ~/Library -newer <marker> -path '*Chirp*'` and look in `~/Library/Saved Application State`: no notes content on disk. Check `log show --predicate 'subsystem == "dev.chirp.mac"' --last 15m` and the server log: no spoken words.
+6. Set the server's correction mode to off and restart it → Notes shows the transcript-only explanation and Copy/Save export the transcript.
+7. Hotkey registration without pressing keys: `log show --predicate 'subsystem == "dev.chirp.mac"' --info --last 5m | grep "hotkey register id=4"` shows `combo=control-option-n status=0` after launch.
+
 ### Fold 8
 
 7. **Enable wireless debugging and pair adb:** `adb pair IP:PAIRPORT`, then `adb connect IP:PORT`. See `android/README.md`.

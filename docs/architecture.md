@@ -171,6 +171,11 @@ Version additions preserve existing fields. A breaking change becomes `/v2`.
 - Short start and stop cues, off by default.
 - Silence guard: if peak/RMS stays at zero for 1.5 s, the client shows "No microphone signal" and sends nothing, the same as Koi.
 - Undo: after a corrected final, the Mac HUD offers a 5 s "Use raw". Android shows a chip on the strip.
+- **Live Notes (Mac only).** ⌃⌥N (or the menu) starts a long session with the microphone open the whole time, shown in a Notes window rather than the HUD.
+  - **Rolling segments.** The client cuts the audio into ordinary `/v1/stream` utterances of at most 90 s (never before 20 s; at a 0.6 s pause, 0.3 s after 60 s). At a cut it opens the next socket and routes capture to it first, then sends `stop` on the old one, which finalizes and corrects in the background. No audio is dropped, the protocol is unchanged, and the 120 s cap and 60 s idle timeout never apply to the session as a whole. Each segment uses the `default` style plus the user's edited default prompt.
+  - **Structuring.** After a segment's final (at most every 15 s, one pass at a time, never while a segment of the session is still correcting) the client posts the open window's corrected text and the frozen headings to `POST /v1/notes/structure`. Once a window passes 1600 characters its Markdown freezes and a new window starts, so every pass is bounded and earlier notes never change. A window past 3600 characters, or past 1600 after two failed passes, freezes as plain "Not structured" text. Stop waits for the last final, runs one `final` pass and freezes everything. With correction off or an older server, Notes is a live transcript.
+  - **Mutual exclusion.** Notes holds the engine lease almost continuously, so on the Mac Notes and dictation exclude each other: the dictation hotkey shows "Notes is recording — stop it to dictate" and Start Dictation is disabled while Notes records; Notes cannot start mid-dictation. Phone clients may see `busy` meanwhile. Pausing Chirp stops Notes and keeps the notes.
+  - Notes and transcripts stay in memory until Save… (a user-chosen `.md`) or Copy; see §4.
 
 ## 7. Measurement plan
 

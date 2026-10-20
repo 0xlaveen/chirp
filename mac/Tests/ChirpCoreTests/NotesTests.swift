@@ -1,6 +1,7 @@
 import Foundation
 import Testing
 @testable import ChirpCore
+@testable import ChirpUI
 
 private let speech = Level(peak: 0.5, rms: 0.2)
 private let quiet = Level(peak: 0.01, rms: 0.005)
@@ -371,5 +372,75 @@ final class NotesURLStub: URLProtocol, @unchecked Sendable {
         #expect(o == StartOptions(client: "mac", correction: true, correctionProfile: "default", correctionPrompt: "Keep it tidy.", wordTimings: false))
         #expect(!prefs.notesStartOptions(health: Health(correction: "off")).correction)
         #expect(!prefs.notesStartOptions(health: nil).correction)
+    }
+}
+
+@MainActor
+@Suite struct NotesModelTests {
+    private func model(_ configure: (NotesModel) -> Void = { _ in }) -> NotesModel {
+        let m = NotesModel()
+        var d = NotesDocument(startedAt: Date(timeIntervalSince1970: 0))
+        d.append(NotesSegment(id: 0, offset: 5, raw: "we ship friday"))
+        if let r = d.nextStructureRequest() { d.apply(NotesStructureResponse(markdown: "- Ship Friday", structured: true), for: r) }
+        m.document = d
+        configure(m)
+        return m
+    }
+
+    @Test func statusFollowsTheRecorder() {
+        #expect(model { $0.state = .starting }.statusText == NotesStatus.connecting)
+        #expect(model { $0.state = .recording }.statusText == NotesStatus.listening)
+        #expect(model { $0.state = .recording; $0.structuring = .running }.statusText == NotesStatus.updating)
+        #expect(model { $0.state = .stopping }.statusText == NotesStatus.finishing)
+        #expect(model { $0.state = .stopped }.statusText == NotesStatus.stopped)
+        let failed = model { $0.state = .error("Notes stopped: Server is busy") }
+        #expect(failed.statusText == "Notes stopped: Server is busy" && failed.isError)
+    }
+
+    @Test func controlsFollowTheStateTable() {
+        let empty = NotesModel()
+        #expect(empty.canToggle && !empty.canExport && !empty.canNew)
+        let recording = model { $0.state = .recording }
+        #expect(recording.isRecording && recording.canExport && !recording.canNew)
+        let stopping = model { $0.state = .stopping }
+        #expect(!stopping.canToggle && !stopping.canExport && !stopping.canNew)
+        let stopped = model { $0.state = .stopped }
+        #expect(stopped.canToggle && stopped.canExport && stopped.canNew)
+    }
+
+    @Test func elapsedReadsAsMinutesThenHours() {
+        #expect(model { $0.elapsed = 65 }.elapsedText == "01:05")
+        #expect(model { $0.elapsed = 3725 }.elapsedText == "1:02:05")
+    }
+
+    @Test func copyIsTheNotesOrTheTranscriptByTab() {
+        let notes = model()
+        #expect(notes.copyText.contains("- Ship Friday") && !notes.copyText.contains("## Transcript"))
+        let transcript = model { $0.tab = .transcript }
+        #expect(transcript.copyText.contains("## Transcript") && !transcript.copyText.contains("- Ship Friday"))
+        let off = model { $0.structuring = .off(.correctionOff) }
+        #expect(off.copyText.contains("## Transcript") && !off.copyText.contains("- Ship Friday"))
+        #expect(model().saveText.contains("- Ship Friday") && model().saveText.contains("## Transcript"))
+        #expect(!model { $0.structuring = .off(.unsupported) }.saveText.contains("- Ship Friday"))
+    }
+
+    @Test func explanationsAndRetryNote() {
+        #expect(model().explanation == nil && model().retryNote == nil)
+        #expect(model { $0.structuring = .off(.disabled) }.explanation?.hasPrefix("Structuring is off") == true)
+        let local = model { $0.structuring = .off(.correctionOff); $0.canManageModels = true }
+        #expect(local.explanation?.contains("Models on this Mac") == true && local.offersModels)
+        let remote = model { $0.structuring = .off(.correctionOff) }
+        #expect(remote.explanation != nil && !remote.offersModels)
+        #expect(model { $0.structuring = .off(.unsupported) }.explanation?.contains("newer Chirp server") == true)
+        #expect(model { $0.structuring = .failed("timeout") }.retryNote == "Couldn’t update notes (timeout) — will retry")
+    }
+
+    @Test func tailShowsUnstructuredTextThenThePartial() {
+        let m = model()
+        m.document.append(NotesSegment(id: 1, offset: 30, raw: "budget talk"))
+        m.document.livePartial = "and then"
+        #expect(m.liveTail == "budget talk and then")
+        m.structuring = .off(.disabled)
+        #expect(m.liveTail == "and then")
     }
 }

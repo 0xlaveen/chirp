@@ -50,10 +50,12 @@ public struct NotesBlock: Equatable, Sendable {
 /// open window that the next structuring pass rewrites. Nothing here is persisted or logged; it goes away on New,
 /// a discarded close or quit, and reaches disk only through an explicit Save….
 public struct NotesDocument: Equatable, Sendable {
-    /// The open window freezes once a pass succeeded on at least this many transcript characters.
-    public static let freezeChars = 2400
-    /// The open window never grows past this (the server takes up to 6000): it freezes as a fallback block instead.
-    public static let maxWindowChars = 5000
+    /// The open window freezes once a pass succeeded on at least this many transcript characters (from the M1 bench:
+    /// longer windows lose guard pass rate on the default Qwen).
+    public static let freezeChars = 1600
+    /// The open window never grows past this (the server takes up to 6000, but 4000-char windows hit the 768-token
+    /// output cap): it freezes as a fallback block instead.
+    public static let maxWindowChars = 3600
     public static let maxOutlineItems = 24
     public static let maxOutlineItemChars = 120
     public static let maxOutlineChars = 1500
