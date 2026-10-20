@@ -155,7 +155,7 @@ final class NotesTextView: NSTextView {
 }
 
 /// Keeps the text view and `NotesModel` in step (see the type comment on `NotesEditor`), restyles the paragraphs
-/// each edit touched (typing, paste, undo and redo all arrive through `textDidChange`),
+/// each edit touched (typing and paste arrive through `textDidChange`, undo and redo through the undo manager),
 /// keeps the caret and scroll position across AI changes, and implements the editing affordances.
 @MainActor
 final class NotesEditorCoordinator: NSObject, NSTextViewDelegate {
@@ -204,6 +204,15 @@ final class NotesEditorCoordinator: NSObject, NSTextViewDelegate {
         load()
         model.onPendingChanges = { [weak self] in self?.pendingChangesArrived() }
         model.undoReorganize = { [weak self] in self?.undoReorganize() }
+        // NSTextView's undo and redo change the storage without `shouldChangeText` or `textDidChange`, so they are
+        // reported from here (menu, ⌘Z, the chip's Undo alike).
+        for name in [Notification.Name.NSUndoManagerDidUndoChange, .NSUndoManagerDidRedoChange] {
+            NotificationCenter.default.addObserver(self, selector: #selector(undoneOrRedone), name: name, object: undo)
+        }
+    }
+
+    @objc private func undoneOrRedone(_ notification: Notification) {
+        MainActor.assumeIsolated { reportEdit() }
     }
 
     /// Every flag that matters for privacy and predictability (asserted by a test through `NotesEditorProbe`).
