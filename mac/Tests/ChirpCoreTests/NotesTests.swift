@@ -341,3 +341,35 @@ final class NotesURLStub: URLProtocol, @unchecked Sendable {
         }
     }
 }
+
+@Suite struct NotesPreferencesTests {
+    @Test func structureDefaultFollowsTheServerUntilTheUserChooses() {
+        let name = "chirp-test-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: name)!
+        defer { defaults.removePersistentDomain(forName: name) }
+        let prefs = Preferences(defaults: defaults)
+        #expect(prefs.notesStructureEnabled(health: Health(correction: "available", correctionLeavesMachine: false)))
+        #expect(prefs.notesStructureEnabled(health: nil))
+        #expect(!prefs.notesStructureEnabled(health: Health(correction: "available", correctionLeavesMachine: true)))
+        prefs.notesStructure = true
+        #expect(prefs.notesStructureEnabled(health: Health(correction: "available", correctionLeavesMachine: true)))
+        #expect(prefs.notesTab == "notes")
+        prefs.notesTab = "split"
+        #expect(Preferences(defaults: defaults).notesTab == "split")
+    }
+
+    @Test func segmentsUseTheDefaultStyleAndTheEditedDefaultPrompt() {
+        let name = "chirp-test-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: name)!
+        defer { defaults.removePersistentDomain(forName: name) }
+        let prefs = Preferences(defaults: defaults)
+        prefs.correction = true
+        prefs.correctionProfile = "email"
+        prefs.wordWaveform = true
+        prefs.correctionPrompts = ["default": "Keep it tidy.", "email": "Formal."]
+        let o = prefs.notesStartOptions(health: Health(correction: "available"))
+        #expect(o == StartOptions(client: "mac", correction: true, correctionProfile: "default", correctionPrompt: "Keep it tidy.", wordTimings: false))
+        #expect(!prefs.notesStartOptions(health: Health(correction: "off")).correction)
+        #expect(!prefs.notesStartOptions(health: nil).correction)
+    }
+}

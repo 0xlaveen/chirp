@@ -425,8 +425,9 @@ import Testing
         let names = Snapshots.committedNames
         let all = Set(Snapshots.allScenarios.map(\.name))
         #expect(names.allSatisfy { all.contains($0) } && Set(names).count == names.count)
-        #expect(names.count * 2 <= 30)
-        // The menu in light and dark, one per Settings tab, setup, and the key HUD states.
+        #expect(names.count * 2 <= 34)
+        // The menu in light and dark, one per Settings tab, setup, the key HUD states and the Notes window.
+        #expect(names.contains("notes-recording") && names.contains("notes-split"))
         #expect(names.contains("menu-ready") && names.contains("onboarding-welcome") && names.contains { $0.hasPrefix("hud-") })
         for tab in SettingsTab.allCases { #expect(names.contains { $0.hasPrefix("settings-\(tab.rawValue)-") }, "\(tab.title)") }
         #expect(Snapshots.committedScenarios.map(\.name) == names)

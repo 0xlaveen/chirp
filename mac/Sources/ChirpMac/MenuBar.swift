@@ -23,6 +23,8 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         var showNotes: () -> Void = {}
         /// Live Notes' state for the menu and the icon.
         var notes: () -> NotesMenuState = { NotesMenuState() }
+        /// The menu's switch, for Live Notes (pausing stops it and releases ⌃⌥N).
+        var setRunning: (Bool) -> Void = { _ in }
     }
 
     /// What the menu and the icon need from Live Notes.
@@ -174,6 +176,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         view.onToggle = { [weak self, weak menu] running in
             guard let self else { return }
             self.controller.setRunning(running)
+            self.actions.setRunning(running)
             self.refreshIcon()
             // Let the switch finish its slide, then close the menu on the new state.
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { menu?.cancelTracking() }

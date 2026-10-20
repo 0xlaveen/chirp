@@ -155,6 +155,28 @@ public final class Preferences: @unchecked Sendable {
     private func setCustomSound(_ sound: CustomSound?, forKey key: String) {
         if let sound, let data = try? JSONEncoder().encode(sound) { defaults.set(data, forKey: key) } else { defaults.removeObject(forKey: key) }
     }
+    /// Live Notes' "Structure notes" toggle; nil until the user flips it, so the default can follow the server
+    /// (on for a local model, off when correction leaves the Mac). A preference, never notes content.
+    public var notesStructure: Bool? {
+        get { defaults.object(forKey: "notesStructure") as? Bool }
+        set { defaults.set(newValue, forKey: "notesStructure") }
+    }
+    /// The Notes window's layout (`notes`, `transcript` or `split`).
+    public var notesTab: String {
+        get { defaults.string(forKey: "notesTab") ?? "notes" }
+        set { defaults.set(newValue, forKey: "notesTab") }
+    }
+    /// Whether structuring is on: the user's choice, else on unless the server's correction leaves this Mac.
+    public func notesStructureEnabled(health: Health?) -> Bool {
+        notesStructure ?? (health?.correctionLeavesMachine != true)
+    }
+    /// The `start` options for a Live Notes segment: the clean-up toggle (when the server offers it), always the default
+    /// style with the user's edited default prompt; per-app styles and word timings never apply.
+    public func notesStartOptions(health: Health?) -> StartOptions {
+        StartOptions(client: "mac", correction: correction && (health?.correctionAvailable ?? false),
+                     correctionProfile: CorrectionProfile.defaultID,
+                     correctionPrompt: correctionPrompts[CorrectionProfile.defaultID], wordTimings: false)
+    }
     /// Set only when the first-run window is finished (never on close), so an interrupted setup shows again.
     public var didOnboard: Bool {
         get { defaults.bool(forKey: "didOnboard") }

@@ -459,7 +459,7 @@ public enum Snapshots {
     // MARK: Live Notes
 
     /// An invented meeting: three structured segments frozen, two more in the open block, a live partial.
-    static func demoNotes(gap: Bool = false) -> NotesDocument {
+    static func demoNotes(gap: Bool = false, short: Bool = false) -> NotesDocument {
         var d = NotesDocument(startedAt: Date(timeIntervalSince1970: 1_792_504_980))
         let said: [(TimeInterval, String, String)] = [
             (12, "okay so we're kicking off the lantern project today and the launch target moved to march third",
@@ -475,6 +475,7 @@ public enum Snapshots {
                      "- No new headcount this quarter"].joined(separator: "\n")
         if let r = d.nextStructureRequest() { d.apply(NotesStructureResponse(markdown: first, structured: true), for: r) }
         d.freezeAll()
+        if short { return d }
         if gap { d.append(.gap(id: 3, offset: 140, reason: "Server is busy")) }
         d.append(NotesSegment(id: 4, offset: 151, raw: "open question is who owns qa for the beta",
                               text: "open question is who owns qa for the beta", keptOriginal: gap))
@@ -495,15 +496,20 @@ public enum Snapshots {
             model.elapsed = 192
             model.canManageModels = true
             configure(model)
-            let size = NotesViewMetrics.defaultSize
-            return NSHostingView(rootView: NotesView(model: model).frame(width: size.width, height: size.height))
+            // A little under the default window size, so the committed PNGs stay small.
+            return NSHostingView(rootView: NotesView(model: model).frame(width: 820, height: 560))
         }
     }
 
     public static var notesScenarios: [Scenario] {
         [
             notes("recording") { $0.structuring = .running },
-            notes("split") { $0.tab = .split },
+            notes("split") {
+                $0.tab = .split
+                var d = demoNotes(short: true)
+                d.livePartial = "the beta itself should start in the second"
+                $0.document = d
+            },
             notes("transcript-raw") { $0.tab = .transcript; $0.showRaw = true; $0.document = demoNotes(gap: true) },
             notes("transcript") { $0.tab = .transcript; $0.document = demoNotes(gap: true) },
             notes("structuring-off") {
