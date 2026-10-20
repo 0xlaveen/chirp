@@ -59,7 +59,14 @@ Run on the reference Mac after installing the build with `./scripts/install-mac.
 3. Press the dictation hotkey while Notes records → the "Notes is recording — stop it to dictate" toast and no dictation. Stop Notes, then dictate normally.
 4. Stop, Save… to the Desktop, and open the `.md` file (notes, `---`, then the `## Transcript` appendix). Record a little more, then quit Chirp with the unsaved notes → the Save… / Discard / Cancel alert appears.
 5. Touch a marker file, run a session without saving, then `find ~/Library -newer <marker> -path '*Chirp*'` and look in `~/Library/Saved Application State`: no notes content on disk. Check `log show --predicate 'subsystem == "dev.chirp.mac"' --last 15m` and the server log: no spoken words.
-6. Set the server's correction mode to off and restart it → Notes shows the transcript-only explanation and Copy/Save export the transcript.
+6. Set the server's correction mode to off and restart it → Notes shows the explanation banner above the editor, the editor stays editable, and Copy/Save export your typed notes plus the transcript.
+7. ⌃⌥N, then talk for about 5 minutes through a mock meeting that revisits "budget" twice, with two to-dos, a decision and a "we will **not** …" sentence. While it records, type your own bullet above the AI tail and fix a word inside the tail. Check: the caret never jumps; the tail you edited loses its tint; new AI notes appear after it.
+8. Wait for an auto-reorganize (about 3 minutes, after 15 s without typing). Check: the budget sections merge; the to-dos and the negation survive; the **Reorganized · Undo** chip appears, and **Undo** restores the previous text in one step.
+9. Press Reorganize, then type immediately → "Notes changed while reorganizing — try again", and your typing is intact.
+10. Toggle Preview → the same content, read-only. Click a `[ ]` in the editor → it toggles, and ⌘Z untoggles it.
+11. Turn Auto-reorganize off → for 5 minutes no automatic reorganize, while the button still works. Turn "Structure notes" off → the editor stays editable and the Hearing strip still shows speech.
+12. Stop, then Save… → the `.md` has your edits, the reorganized notes and the transcript appendix.
+13. Privacy recheck as in step 5: no notes on disk without Save, no text in `log show` or the server log. Right-click in the editor → Writing Tools is absent or disabled.
 7. Hotkey registration without pressing keys: `log show --predicate 'subsystem == "dev.chirp.mac"' --info --last 5m | grep "hotkey register id=4"` shows `combo=control-option-n status=0` after launch.
 
 ### Fold 8
