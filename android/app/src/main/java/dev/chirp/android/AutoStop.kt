@@ -3,11 +3,12 @@ package dev.chirp.android
 import kotlin.math.abs
 import kotlin.math.max
 
-/** The server accepts 120 s of audio; capture stops at 119 s and counts down from 105 s. */
+/** The server accepts 120 s of audio per utterance; capture stops 1 s before its limit and counts down over the last 15 s. */
 internal object CaptureLimit {
     const val CAP_SECONDS = 120
-    const val STOP_SECONDS = 119
-    const val COUNTDOWN_FROM_SECONDS = 105
+    const val COUNTDOWN_SECONDS = 15
+    /** A keyboard dictation rolls into new utterances at pauses, up to this long in all. */
+    const val ROLLING_SECONDS = 600
 }
 
 /**
