@@ -63,7 +63,7 @@ internal class ScratchpadModel(
     private val tailscale: TailscaleControl = AndroidTailscale(context.applicationContext),
     private val io: (() -> Unit) -> Unit = HistoryIo::run,
 ) : ViewModel() {
-    private val app = context.applicationContext
+    private val app = context.applicationContext as android.app.Application
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var client: OkHttpClient? = null
     private var session: DictationStream? = null
