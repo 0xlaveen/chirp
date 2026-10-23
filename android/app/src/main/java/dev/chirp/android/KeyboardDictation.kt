@@ -30,6 +30,7 @@ internal class KeyboardDictation(
     private val history: HistoryRecorder? = null,
     private val started: () -> Unit = {},
     private val tailscale: TailscaleControl = AndroidTailscale(host),
+    private val healthCheck: (okhttp3.Call) -> Health = ChirpNetwork::health,
 ) {
     private val handler = Handler(Looper.getMainLooper())
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
@@ -50,6 +51,7 @@ internal class KeyboardDictation(
     private fun prewarm(paired: Pairing) {
         if (active || warmed != null) return
         warmed = transportFactory(client, paired, { warmEvent?.invoke(it) }, {
+            warmed?.failureKind?.takeIf { it.offline }?.let(::noteReach)
             warmed = null; warmFailure?.invoke()
         }).also { it.connect() }
         handler.postDelayed(warmExpiry, 30000)
@@ -101,6 +103,11 @@ internal class KeyboardDictation(
         if (active || message != CONNECTING) return@Runnable
         if (tailscale.connected()) tailscaleChanged() else { notice = false; message = DictationAction.TAILSCALE_STALLED; render() }
     }
+    // The last health/prewarm failure marks the Mac offline for 30 s: the mic shows it before the user speaks.
+    private val offline = OfflineState()
+    private var offlineDismissed = false
+    private var checking = false
+    private val offlineExpiry = Runnable { if (message == ConnectionFailure.OFFLINE) message = IDLE; render() }
     val active get() = session != null
     val ownsComposition get() = active || applying
 
@@ -108,10 +115,11 @@ internal class KeyboardDictation(
         strip = view
         view.mic.setOnClickListener { toggle() }
         view.mic.setOnLongClickListener { if (!active) { quickOptions(); true } else false }
-        view.status.setOnClickListener { action()?.let(::openAction) }
+        view.status.setOnClickListener { val next = action(); if (next != null) openAction(next) else if (message == ConnectionFailure.OFFLINE) start() }
         view.action.setOnClickListener { action()?.let(::openAction) }
         view.cancel.setOnClickListener {
             if (action()?.prompt == true) tailscaleDismissed = true
+            if (message == ConnectionFailure.OFFLINE) offlineDismissed = true
             handler.removeCallbacks(tailscaleTimeout); cancel("Cancelled")
         }
         view.raw.setOnClickListener {
@@ -177,6 +185,35 @@ internal class KeyboardDictation(
         } else if (vpn) { promptTailscale(); render() }
         vpn = now
     }
+    private fun promptOffline() {
+        if (!visible || active || undo || notice || offlineDismissed || !offline.active() || tailscaleStatus() != null) return
+        message = ConnectionFailure.OFFLINE
+    }
+    /** null or a kind that isn't about reachability means the Mac answered, so the offline mark is dropped. */
+    private fun noteReach(kind: ConnectionFailure.Kind?) {
+        if (kind?.offline == true) {
+            offline.failed(kind)
+            handler.removeCallbacks(offlineExpiry); handler.postDelayed(offlineExpiry, offline.remaining())
+            promptOffline()
+        }
+        else {
+            offline.reachable(); offlineDismissed = false; handler.removeCallbacks(offlineExpiry)
+            if (message == ConnectionFailure.OFFLINE) message = IDLE
+        }
+        render()
+    }
+    /** A mic tap while marked offline re-checks health for at most 3 s, then dictates or names the reason. A second tap skips the check. */
+    private fun retry(paired: Pairing): Boolean {
+        if (!offline.active()) return false
+        if (checking) { checking = false; return false }
+        checking = true; notice = true; message = ConnectionFailure.CHECKING; render()
+        reach(paired, quick = true) { kind ->
+            if (!checking) return@reach
+            checking = false
+            if (kind == null) { notice = false; message = IDLE; start() } else showNotice(tailscaleStatus() ?: kind.status)
+        }
+        return true
+    }
     private fun quickOptions() {
         val anchor = strip?.mic ?: return
         android.widget.PopupMenu(anchor.context, anchor).apply {
@@ -229,23 +266,31 @@ internal class KeyboardDictation(
             tailscaleWatch?.close(); tailscaleWatch = tailscale.watch(::tailscaleChanged)
             promptTailscale()
         }
+        promptOffline()
         render()
         if (paired != null) reach(paired)
     }
-    private fun reach(paired: Pairing) {
+    private fun reach(paired: Pairing, quick: Boolean = false, then: ((ConnectionFailure.Kind?) -> Unit)? = null) {
         prewarm(paired)
-        if (!checkHealth) return
+        if (!checkHealth) { if (then != null) { noteReach(null); then(null) }; return }
         val id = ++version
         val call = ChirpNetwork.healthCall(client, paired)
+        if (quick) call.timeout().timeout(3, java.util.concurrent.TimeUnit.SECONDS)
         ChirpNetwork.cancel(healthCall); healthCall = call
         scope.launch {
             try {
-                val health = withContext(Dispatchers.IO) { ChirpNetwork.health(call) }
+                val health = withContext(Dispatchers.IO) { healthCheck(call) }
                 if (!visible || destroyed || version != id) return@launch
-                healthCall = null
+                healthCall = null; noteReach(null)
                 if (tailscaleMessage()) { handler.removeCallbacks(tailscaleTimeout); notice = false; message = IDLE }
                 store.health = health; retained = health.debugRetention; render()
-            } catch (_: Exception) { if (version == id) healthCall = null }
+                then?.invoke(null)
+            } catch (e: Exception) {
+                if (version != id || !visible || destroyed) return@launch
+                healthCall = null
+                val kind = ConnectionFailure.classify(e)
+                noteReach(kind); then?.invoke(kind.takeIf { it.offline || it == ConnectionFailure.Kind.TLS })
+            }
         }
     }
     private fun start() {
@@ -262,6 +307,8 @@ internal class KeyboardDictation(
             showNotice("Dictation unavailable in password fields"); return
         }
         val paired = pairing() ?: run { showNotice("Pair your Mac in Chirp setup"); return }
+        if (retry(paired)) return
+        checking = false
         val connection = host.currentInputConnection ?: return
         forgetUndo(); notice = false; started(); prepare()
         historyInfo = info; historyId = null
@@ -282,7 +329,9 @@ internal class KeyboardDictation(
             captureFactory = captureFactory,
             changed = { status, partial ->
                 // The user just tried to dictate, so a dismissed Tailscale prompt may return as the reason.
-                message = if (status.startsWith("Mac unreachable")) tailscaleStatus() ?: status else status
+                val kind = ConnectionFailure.kind(status)
+                if (kind?.offline == true) noteReach(kind)
+                message = if (kind != null) tailscaleStatus() ?: status else status
                 if (partial != null) {
                     if (firstPartial == null) firstPartial = SystemClock.elapsedRealtime() - pressAt
                     text = partial.text
@@ -293,7 +342,7 @@ internal class KeyboardDictation(
             level = { strip?.level(it) },
             retention = {
                 ++version // a late health response must not overwrite Ready's retention flag
-                retained = it; store.health = store.health?.copy(debugRetention = it); render()
+                noteReach(null); retained = it; store.health = store.health?.copy(debugRetention = it); render()
             },
             final = { land(it) },
             kept = { heard, reason -> land(ServerEvent.Final(heard, heard, false), reason) },
@@ -358,6 +407,7 @@ internal class KeyboardDictation(
     private fun stop() { stopAt = SystemClock.elapsedRealtime(); session?.stop(); haptic(); render() }
     fun beforeEdit() {
         if (active || undo) cancel()
+        else if (message == ConnectionFailure.OFFLINE) { offlineDismissed = true; message = IDLE; render() }
         else if (tailscaleMessage()) {
             // Typing past the prompt means "not now": give the suggestion row back.
             tailscaleDismissed = true; handler.removeCallbacks(tailscaleTimeout)
@@ -391,7 +441,7 @@ internal class KeyboardDictation(
     }
     private fun forgetUndo() { handler.removeCallbacks(expiry); undo = false; composing?.forgetUndo(); if (!active) composing = null }
     fun hidden() {
-        visible = false; ++version; ChirpNetwork.cancel(healthCall); healthCall = null
+        visible = false; ++version; checking = false; ChirpNetwork.cancel(healthCall); healthCall = null
         tailscaleWatch?.close(); tailscaleWatch = null; handler.removeCallbacks(tailscaleTimeout)
         closeWarm(); cancel(); ChirpNetwork.release(client, cancel = true)
     }
@@ -408,10 +458,12 @@ internal class KeyboardDictation(
         val status = if (store.debugOverlay) "$message · first ${firstPartial ?: "—"} ms · final ${finalLatency ?: "—"} ms" else message
         val raw = undo && composing?.rawAvailable == true
         strip?.show(action()?.takeUnless { it.prompt }?.let { "$status · ${it.label}" } ?: status, "", active, session?.stopping == true, raw, retained || store.health?.debugRetention == true,
-            polishing = session?.polishing == true, style = currentStyle.name, notice = notice, undoable = undo)
-        strip?.status?.isClickable = action() != null
+            polishing = session?.polishing == true, style = currentStyle.name, notice = notice, undoable = undo, offline = offline.active())
+        strip?.status?.isClickable = action() != null || message == ConnectionFailure.OFFLINE
         val disclosure = if (retained || store.health?.debugRetention == true) "Debug retention on. " else ""
-        strip?.status?.contentDescription = disclosure + (action()?.let { "$message. ${it.label}" } ?: if (undo) "$status. ${if (raw) "Use raw or Undo" else "Undo"} available for five seconds." else status)
+        strip?.status?.contentDescription = disclosure + (action()?.let { "$message. ${it.label}" }
+            ?: if (message == ConnectionFailure.OFFLINE) ConnectionFailure.OFFLINE_DESCRIPTION
+            else if (undo) "$status. ${if (raw) "Use raw or Undo" else "Undo"} available for five seconds." else status)
     }
     private companion object {
         fun keptStatus(reason: String) = (if (DictationAction.forStatus(reason) == DictationAction.NETWORK ||

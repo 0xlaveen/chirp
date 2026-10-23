@@ -33,7 +33,8 @@ internal class DictationStream(
         private set
     var stopping = false
         private set
-    private val timeout = Runnable { fail(if (stopSent) "Mac took too long to finish — try again" else "Mac unreachable — is Tailscale on?") }
+    private fun unreachable(timedOut: Boolean = false) = ConnectionFailure.status(transport?.failureKind, timedOut)
+    private val timeout = Runnable { fail(if (stopSent) "Mac took too long to finish — try again" else unreachable(true)) }
 
     fun start(correction: Boolean, profile: String = "default", instructions: String = "", prompt: String? = null) {
         check(!live && transport == null)
@@ -41,20 +42,21 @@ internal class DictationStream(
         changed("Connecting to Mac…", null)
         val pending = PreReadyBuffer(send = { transport?.audio(it) == true })
         buffer = pending
-        transport = transportFactory({ if (live) event(it) }, { if (live) fail("Mac unreachable — is Tailscale on?") })
+        transport = transportFactory({ if (live) event(it) }, { if (live) fail(unreachable()) })
         capture = captureFactory(pending::offer, { value -> handler.post { if (live && !stopping) level(value) } }, { error ->
             handler.post {
                 if (live) {
                     capture = null; released = true
-                    if (error != null) fail(error) else {
+                    // A full pre-Ready buffer reports the generic message; before Ready that is a connect timeout.
+                    if (error != null) fail(if (error == ConnectionFailure.Kind.OTHER.status) unreachable(true) else error) else {
                         stopping = true; changed("Finishing…", null); sendStop()
                     }
                 }
             }
         })
-        deadline(18000)
+        deadline(PRE_READY_MS)
         capture?.start()
-        if (transport?.start(correction, profile, instructions, prompt) != true) fail("Mac unreachable — is Tailscale on?")
+        if (transport?.start(correction, profile, instructions, prompt) != true) fail(unreachable())
     }
     fun stop() {
         if (!live || stopping) return
@@ -64,7 +66,7 @@ internal class DictationStream(
     }
     private fun sendStop() {
         if (!live || !ready || !released || stopSent) return
-        if (transport?.stop() != true) { fail("Mac unreachable — is Tailscale on?"); return }
+        if (transport?.stop() != true) { fail(unreachable()); return }
         stopSent = true; deadline(60000)
     }
     private fun event(event: ServerEvent) {
@@ -130,5 +132,9 @@ internal class DictationStream(
         capture?.stop(); capture = null
         buffer?.cancel(); buffer = null
         transport?.close(cancel = cancel, immediate = !cancel); transport = null
+    }
+    private companion object {
+        /** Connect + Ready budget; PreReadyBuffer only holds 5 s of audio, so waiting longer cannot save the utterance. */
+        const val PRE_READY_MS = 7000L
     }
 }

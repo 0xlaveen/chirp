@@ -79,9 +79,10 @@ internal class KeyboardStrip(context: Context) : LinearLayout(context) {
         parent.addView(this, RelativeLayout.LayoutParams(context.dp(IDLE_WIDTH), LayoutParams.MATCH_PARENT).apply { addRule(RelativeLayout.ALIGN_PARENT_END) })
     }
     fun show(message: String, @Suppress("UNUSED_PARAMETER") text: String, active: Boolean, finishing: Boolean, undo: Boolean, retention: Boolean,
-             polishing: Boolean = false, style: String = "", notice: Boolean = false, undoable: Boolean = false) {
+             polishing: Boolean = false, style: String = "", notice: Boolean = false, undoable: Boolean = false, offline: Boolean = false) {
         val recovery = DictationAction.forStatus(message)
-        val error = recovery != null
+        val offlineRow = message == ConnectionFailure.OFFLINE
+        val error = recovery != null || offlineRow
         val full = active || undo || undoable || error || retention || notice
         if (expanded != full) {
             expanded = full
@@ -144,6 +145,7 @@ internal class KeyboardStrip(context: Context) : LinearLayout(context) {
         when {
             polishing -> mic.icon = null
             active -> mic.setIconResource(R.drawable.ic_stop)
+            offline -> mic.setIconResource(R.drawable.ic_mic_off)
             else -> mic.setIconResource(R.drawable.ic_mic)
         }
         mic.backgroundTintList = android.content.res.ColorStateList.valueOf(
@@ -151,7 +153,7 @@ internal class KeyboardStrip(context: Context) : LinearLayout(context) {
         mic.iconTint = android.content.res.ColorStateList.valueOf(if (active) palette.onAccent else palette.ink)
         mic.setTextColor(if (active) palette.onAccent else palette.ink)
         mic.isEnabled = !finishing
-        mic.contentDescription = if (polishing) "Polishing dictation" else if (active) "Stop dictation" else "Microphone: tap to dictate, long press for options"
+        mic.contentDescription = if (polishing) "Polishing dictation" else if (active) "Stop dictation" else if (offline) ConnectionFailure.OFFLINE_DESCRIPTION else "Microphone: tap to dictate, long press for options"
         if (!active || finishing) level(0.0)
     }
     private fun motionAllowed() = android.animation.ValueAnimator.areAnimatorsEnabled() &&

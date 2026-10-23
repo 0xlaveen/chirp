@@ -86,6 +86,7 @@ class ChirpImeServiceTest {
         var closed = false
         var cancelled = false
         var immediate = false
+        override var failureKind = ConnectionFailure.Kind.OTHER
         val frames = mutableListOf<ByteArray>()
         override fun connect() { connected = true }
         override fun start(correction: Boolean): Boolean { correctionRequested = correction; starts++; order += "stream.start"; return !closed }

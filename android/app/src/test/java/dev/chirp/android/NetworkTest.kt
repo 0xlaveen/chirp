@@ -133,6 +133,19 @@ class NetworkTest {
         assertEquals(2, server.requestCount)
         stream.close(true)
     }
+    @Test fun `transport records why the socket failed and an HTTP answer is not unreachable`() = withServer { server, client, pairing ->
+        server.enqueue(MockResponse().setResponseCode(503)); server.enqueue(MockResponse().setResponseCode(503))
+        val answered = CountDownLatch(1)
+        val http = StreamTransport(client, pairing, { it() }, {}, { answered.countDown() })
+        http.connect(); assertTrue(answered.await(5, TimeUnit.SECONDS))
+        assertEquals(ConnectionFailure.Kind.OTHER, http.failureKind)
+        val lookups = java.util.concurrent.atomic.AtomicInteger()
+        val unresolved = client.newBuilder().dns { lookups.incrementAndGet(); throw java.net.UnknownHostException("synthetic") }.build()
+        val missing = CountDownLatch(1)
+        val dns = StreamTransport(unresolved, pairing, { it() }, {}, { missing.countDown() })
+        dns.connect(); assertTrue(missing.await(5, TimeUnit.SECONDS))
+        assertEquals(ConnectionFailure.Kind.DNS, dns.failureKind); assertEquals("one reconnect, then failure", 2, lookups.get())
+    }
     @Test fun `cancel sends discard and suppresses later results`() = withServer { server, client, pairing ->
         val ready = CountDownLatch(1); val cancelled = CountDownLatch(1)
         server.enqueue(MockResponse().withWebSocketUpgrade(object : WebSocketListener() {
