@@ -467,6 +467,8 @@ For `"custom"`, `correction_prompt` takes precedence over legacy `correction_ins
 
 Immediately before cleanup runs, the server sends `{"type":"correcting","seq":n,"raw":"…","profile":"<id>"}`, followed by the existing final. Clients can show the raw transcript while waiting; older clients can ignore this message. Correction off emits no `correcting` message. Cancel during correction cancels the pending helper/request, discards the utterance and keeps the socket available for the next start.
 
+Live Notes segments also send an optional `context` string (at most 500 characters, on `start` or `stop`; a `stop` value wins) with the previous segment's last words. Only the hidden `live_notes` style uses it, for casing and punctuation at the join; its guard still checks against the segment alone. Advertised by authenticated health as `notes_context: true`; invalid values return `bad_request`; never logged.
+
 ### Pointing correction at LM Studio (operator steps)
 
 LM Studio is installed at `/Applications/LM Studio.app`. Chirp never starts it, loads no models in it, and sends nothing until correction is enabled below. The operator does, once:

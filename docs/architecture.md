@@ -51,15 +51,15 @@ The token is either the shared one or a per-device token minted by `chirp-server
 
 ### Endpoints
 
-- `GET /v1/health` → `{"ok":true,"engine":"parakeet-mlx:tdt-0.6b-v2","ready":true,"debug_retention":false,"correction":"off|available","correction_mode":"off|managed|endpoint","correction_leaves_machine":false,"correction_host":null,"correction_profiles":[{"id":"default","name":"Default","description":"Conservative transcript cleanup.","rewrites":false},…],…,"notes_structure":true,"notes_correction":true,"notes_reorganize":true}`. The unauthenticated variant returns only `{"ok":true}`. For endpoint correction, `correction_host` is its hostname (no credentials, path or port); otherwise it is `null`. `correction_leaves_machine` is true only for enabled, non-loopback correction.
+- `GET /v1/health` → `{"ok":true,"engine":"parakeet-mlx:tdt-0.6b-v2","ready":true,"debug_retention":false,"correction":"off|available","correction_mode":"off|managed|endpoint","correction_leaves_machine":false,"correction_host":null,"correction_profiles":[{"id":"default","name":"Default","description":"Conservative transcript cleanup.","rewrites":false},…],…,"notes_structure":true,"notes_correction":true,"notes_reorganize":true,"notes_context":true}`. The unauthenticated variant returns only `{"ok":true}`. For endpoint correction, `correction_host` is its hostname (no credentials, path or port); otherwise it is `null`. `correction_leaves_machine` is true only for enabled, non-loopback correction.
 - `GET /v1/correction/profiles` (authenticated) → `{"profiles":[{"id":"default","name":"Default","description":"Conservative transcript cleanup.","rewrites":false,"prompt":"<editable default style>","max_prompt_chars":4000},…]}`. Fixed safety rules are excluded; `custom` has an empty built-in prompt. Available even when correction is off. Invalid or missing bearer credentials return HTTP 401 with `WWW-Authenticate: Bearer`.
 - `POST /v1/notes/structure` (authenticated, JSON): stateless Live Notes structuring, specified [below](#live-notes-structuring-v1-compatible-addition). `/v1/stream` is unchanged.
 - `POST /v1/notes/reorganize` (authenticated, JSON): stateless reorganize of a whole Live Notes document (or its trailing sections), specified [below](#live-notes-reorganize-v1-compatible-addition). `/v1/stream` and `/v1/notes/structure` are unchanged.
 - `POST /v1/transcribe`: the body is 16 kHz mono PCM16 WAV, capped at 120 s. It returns the same object as a `final` message. Used for tests and as a fallback.
 - `WS /v1/stream`:
-  - client → `{"type":"start","sample_rate":16000,"encoding":"pcm_s16le","client":"mac|android|ios","correction":false,"correction_profile":"default","correction_instructions":""}`
+  - client → `{"type":"start","sample_rate":16000,"encoding":"pcm_s16le","client":"mac|android|ios","correction":false,"correction_profile":"default","correction_instructions":"","context":"…"}` (`correction_prompt`, `word_timings` and `context` are optional)
   - client → binary frames: raw PCM16LE mono at 16 kHz, 20–100 ms per frame
-  - client → `{"type":"stop"}` (finalize) or `{"type":"cancel"}` (discard, no final). The server keeps reading control/disconnect frames during finalization; cancel or disconnect discards the utterance (no correction request — an in-flight one is cancelled, no retained debug files). A cancelled utterance sends no final and no error, and the socket stays usable for the next start; a disconnect has nobody to tell.
+  - client → `{"type":"stop"}` (finalize; may carry the optional `context`, see Live Notes below) or `{"type":"cancel"}` (discard, no final). The server keeps reading control/disconnect frames during finalization; cancel or disconnect discards the utterance (no correction request — an in-flight one is cancelled, no retained debug files). A cancelled utterance sends no final and no error, and the socket stays usable for the next start; a disconnect has nobody to tell.
   - server → `{"type":"ready","session":"<random id>","engine":"…","debug_retention":bool}`
   - server → `{"type":"partial","seq":n,"text":"…","stable":"…"}`. `stable` is the prefix that will not change, which clients may commit early. With `start.word_timings` the message also carries `"words":[{"text":"…","start":s,"end":s,"stable":bool},…]` (see below).
   - server → `{"type":"correcting","seq":n,"raw":"<full raw transcript>","profile":"<id>"}` immediately after full-utterance decode, before cleanup runs and before `final`. It shares the increasing partial sequence counter. Sent only when correction will run (both server and utterance enabled, nonempty raw). Cancel during correction cancels the helper and sends nothing further, including no final or error; the socket remains reusable.
@@ -186,6 +186,21 @@ Request (`Content-Type: application/json`, body at most 64 KiB):
 
 Authenticated health carries `"notes_reorganize": true` on servers with the endpoint (absent on
 older servers; a 404 from an older server means only reorganize is unavailable).
+
+Authenticated health carries `"notes_context": true` on servers that accept `context` (absent on
+older servers, which ignore the unknown field). `context` is an optional string on `start` and on
+`stop`; a value on `stop` replaces the `start` one, because when the Mac opens the next segment's
+socket the previous segment's final has not arrived yet, but by its `stop` it has. It is at most
+500 characters (a non-string or longer value returns `bad_request`, on `start` before engine
+leasing; an empty string means none). The client sends the last 200 characters or fewer of the
+previous segment's final text, only when health has `notes_context`. Only the `live_notes` style
+uses it: the user message becomes `Previous segment JSON (context only, never output it): "…"`
+followed by the usual `Transcript JSON: "…"` line, and the style prompt says to use it only for
+casing and punctuation at the join (a sentence that runs across the cut continues with a
+lowercase first word unless it is a proper noun or "I"). Other profiles ignore it. The
+`notes_faithful` guard is unchanged and checks the output against the segment alone, so a word
+taken from the context is rejected and the segment's raw text is kept (`correction_error` is
+`rejected`). Context is never logged.
 
 Reorganize shares the server-wide structuring lock with `/v1/notes/structure`: one notes generation
 at a time, and a second request of either kind gets `503 busy`. It uses the structuring backend,

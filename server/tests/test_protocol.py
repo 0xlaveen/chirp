@@ -41,6 +41,7 @@ def test_health_redaction(client):
         "notes_structure": True,
         "notes_correction": True,
         "notes_reorganize": True,
+        "notes_context": True,
         **build.info(),
     }
 

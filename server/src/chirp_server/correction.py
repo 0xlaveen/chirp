@@ -549,6 +549,7 @@ class Corrector:
         profile: str = "default",
         instructions: str = "",
         correction_prompt: str | None = None,
+        context: str | None = None,
     ) -> CorrectionResult:
         if not raw or not self.config.enabled:
             return CorrectionResult(raw)
@@ -568,7 +569,7 @@ class Corrector:
             return CorrectionResult(raw, error="rejected")
         prompt = system_prompt(selected, instructions, correction_prompt)
         if selected.id == LIVE_NOTES_ID:
-            return await self._process_notes(raw, prompt, selected)
+            return await self._process_notes(raw, prompt, selected, context)
         try:
             async with asyncio.timeout(self.config.timeout):
                 text, finish = await self.complete(
@@ -587,14 +588,28 @@ class Corrector:
         except (ValueError, KeyError, IndexError, TypeError, AttributeError):
             return CorrectionResult(raw, error="rejected")
 
-    async def _process_notes(self, raw: str, prompt: str, selected) -> CorrectionResult:
-        """A Live Notes segment: its own budget, and an output cap sized to the segment."""
+    async def _process_notes(
+        self, raw: str, prompt: str, selected, context: str | None = None
+    ) -> CorrectionResult:
+        """A Live Notes segment: its own budget, and an output cap sized to the segment.
+
+        `context` (the previous segment's tail) only informs casing at the join; the guard still
+        checks the output against `raw` alone, so a word taken from it is rejected.
+        """
         budget = self.config.notes_timeout
+        user = "Transcript JSON: " + json.dumps(raw, ensure_ascii=False)
+        if isinstance(context, str) and context:
+            user = (
+                "Previous segment JSON (context only, never output it): "
+                + json.dumps(context, ensure_ascii=False)
+                + "\n"
+                + user
+            )
         try:
             async with asyncio.timeout(budget):
                 text, finish = await self.complete(
                     prompt,
-                    "Transcript JSON: " + json.dumps(raw, ensure_ascii=False),
+                    user,
                     notes_max_tokens(raw),
                     timeout=budget,
                 )

@@ -20,6 +20,7 @@ from chirp_server.app import create_app
 from chirp_server.cleanup_models import DEFAULT_MODEL, discover
 from chirp_server.config import CorrectionConfig
 from chirp_server.correction import (
+    CorrectionResult,
     Corrector,
     abandoned_restarts,
     notes_faithful,
@@ -308,6 +309,175 @@ def test_stream_accepts_the_hidden_style(settings):
     assert correcting["type"] == "correcting" and correcting["profile"] == LIVE_NOTES_ID
     assert final["type"] == "final" and final["raw"] == raw
     assert final["text"] == "The launch is in March." and final["corrected"] is True
+
+
+# --- cross-segment context -----------------------------------------------------------------
+
+
+def endpoint_corrector(reply, seen):
+    def handle(request):
+        seen.append(json.loads(request.content))
+        choice = {"message": {"content": reply}, "finish_reason": "stop"}
+        return httpx.Response(200, json={"choices": [choice]})
+
+    config = CorrectionConfig(mode="endpoint", model="m")
+    return Corrector(config, transport=httpx.MockTransport(handle))
+
+
+def test_context_goes_first_in_the_user_message_for_live_notes():
+    seen = []
+    raw = "and um the the export is slow"
+    corrector = endpoint_corrector("and the export is slow", seen)
+    context = "We shipped the new importer last week"
+    result = asyncio.run(corrector.process(raw, LIVE_NOTES_ID, context=context))
+    assert result.text == "and the export is slow" and not result.error
+    assert seen[0]["messages"][1]["content"] == (
+        "Previous segment JSON (context only, never output it): "
+        + json.dumps(context)
+        + "\nTranscript JSON: "
+        + json.dumps(raw)
+    )
+    assert "Never copy words from it" in seen[0]["messages"][0]["content"]
+
+
+@pytest.mark.parametrize("context", [None, ""])
+def test_no_context_keeps_the_notes_message(context):
+    seen = []
+    corrector = endpoint_corrector("The launch is in March.", seen)
+    asyncio.run(corrector.process("the launch is in march", LIVE_NOTES_ID, context=context))
+    assert seen[0]["messages"][1]["content"] == "Transcript JSON: " + json.dumps(
+        "the launch is in march"
+    )
+
+
+def test_other_profiles_ignore_context():
+    seen = []
+    corrector = endpoint_corrector("The launch is in March.", seen)
+    asyncio.run(corrector.process("the launch is in march", "default", context="Earlier text"))
+    assert seen[0]["messages"][1]["content"] == "Transcript JSON: " + json.dumps(
+        "the launch is in march"
+    )
+
+
+def test_managed_request_carries_context():
+    raw = "and the the export is slow"
+    context = "We shipped the importer"
+
+    async def go():
+        corrector = managed("--reply", "and the export is slow")
+        try:
+            return await corrector.process(raw, LIVE_NOTES_ID, context=context)
+        finally:
+            await corrector.close()
+
+    result = asyncio.run(go())
+    assert result.text == "and the export is slow" and result.corrected and not result.error
+
+
+def test_guard_rejects_a_word_taken_from_the_context():
+    seen = []
+    raw = "um the export is slow"
+    corrector = endpoint_corrector("Importer the export is slow", seen)
+    result = asyncio.run(corrector.process(raw, LIVE_NOTES_ID, context="We shipped the importer"))
+    assert result.text == raw and result.error == "rejected" and not result.corrected
+
+
+@pytest.mark.parametrize(
+    "raw,text",
+    [
+        ("and um the export is slow", "and the export is slow"),
+        ("um I think it works", "I think it works"),
+        ("the the Friday release is late", "the Friday release is late"),
+        ("Omar said so", "Omar said so"),
+    ],
+)
+def test_lowercased_continuation_passes_the_guard(raw, text):
+    assert accepted(raw, text)
+
+
+def test_continuation_casing_is_not_licensed_to_change_words():
+    assert not accepted("and the export is slow", "and the exports is slow")
+
+
+def context_client(settings, corrector, raw="um the the export is slow"):
+    settings.correction = CorrectionConfig(mode="endpoint", model="m")
+    return TestClient(create_app(settings, FakeEngine(raw), TOKEN, corrector))
+
+
+class Recorder:
+    enabled = True
+
+    def __init__(self):
+        self.calls = []
+
+    async def process(self, raw, profile="default", instructions="", *args, **kwargs):
+        self.calls.append((profile, args, kwargs))
+        return CorrectionResult(raw)
+
+
+def run_segment(client, start, stop=None, profile=LIVE_NOTES_ID):
+    with client.websocket_connect("/v1/stream", headers=HEADERS) as ws:
+        ws.send_json({**START, "correction": True, "correction_profile": profile, **start})
+        first = ws.receive_json()
+        if first["type"] != "ready":
+            return first
+        ws.send_bytes(PCM)
+        assert ws.receive_json()["type"] == "partial"
+        ws.send_json({"type": "stop", **(stop or {})})
+        message = ws.receive_json()
+        while message["type"] not in {"final", "error"}:
+            message = ws.receive_json()
+        return message
+
+
+@pytest.mark.parametrize(
+    "start,stop,expected",
+    [
+        ({}, {}, None),
+        ({"context": "Earlier tail"}, {}, "Earlier tail"),
+        ({}, {"context": "From stop"}, "From stop"),
+        ({"context": "From start"}, {"context": "From stop"}, "From stop"),
+        ({"context": "From start"}, {"context": ""}, None),
+        ({"context": "é" * 500}, {}, "é" * 500),
+    ],
+)
+def test_stream_context_reaches_live_notes_only(settings, start, stop, expected):
+    recorder = Recorder()
+    with context_client(settings, recorder) as client:
+        assert run_segment(client, start, stop)["type"] == "final"
+        assert run_segment(client, start, stop, profile="default")["type"] == "final"
+    (notes, other) = recorder.calls
+    assert notes == (LIVE_NOTES_ID, (), {"context": expected} if expected else {})
+    assert other == ("default", (), {})
+
+
+@pytest.mark.parametrize("value", [42, None, [], {}, True, "x" * 501])
+def test_stream_rejects_a_bad_context_on_start(settings, value):
+    app = create_app(settings, FakeEngine(), TOKEN)
+    with TestClient(app) as client:
+        message = run_segment(client, {"context": value})
+        assert message["type"] == "error" and message["code"] == "bad_request"
+        assert not app.state.worker.lease.locked()
+
+
+@pytest.mark.parametrize("value", [42, None, [], {}, True, "x" * 501])
+def test_stream_rejects_a_bad_context_on_stop(settings, value):
+    with context_client(settings, Recorder()) as client:
+        message = run_segment(client, {"context": "ok"}, {"context": value})
+    assert message["type"] == "error" and message["code"] == "bad_request"
+
+
+def test_stream_context_is_not_logged(settings, caplog):
+    recorder = Recorder()
+    with caplog.at_level("DEBUG"), context_client(settings, recorder) as client:
+        run_segment(client, {}, {"context": "private earlier words"})
+    assert "private earlier words" not in caplog.text
+
+
+def test_health_advertises_notes_context(settings):
+    with TestClient(create_app(settings, FakeEngine(), TOKEN)) as client:
+        assert client.get("/v1/health", headers=HEADERS).json()["notes_context"] is True
+        assert "notes_context" not in client.get("/v1/health").json()
 
 
 # --- real model (opt-in) -------------------------------------------------------------------
