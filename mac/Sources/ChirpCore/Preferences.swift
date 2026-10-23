@@ -199,6 +199,12 @@ public final class Preferences: @unchecked Sendable {
         get { defaults.object(forKey: "notesAutoReorganize") as? Bool ?? true }
         set { defaults.set(newValue, forKey: "notesAutoReorganize") }
     }
+    /// Live Notes' "Keep a recovery copy until notes are saved" (on by default): the journal under
+    /// `~/Library/Application Support/Chirp/Recovery`, deleted on Save or Discard. A preference, never notes content.
+    public var notesRecoveryCopy: Bool {
+        get { defaults.object(forKey: "notesRecoveryCopy") as? Bool ?? true }
+        set { defaults.set(newValue, forKey: "notesRecoveryCopy") }
+    }
     /// The Notes pane shows the read-only Preview instead of the editor.
     public var notesPreview: Bool {
         get { defaults.bool(forKey: "notesPreview") }

@@ -71,7 +71,7 @@ Phone latency over Tailscale hasn't been measured on a real device yet. The Andr
 - Dictate into any app with ⌃⌥Space or any shortcut you record, including ⌥ or fn on its own. Choose auto-stop when you pause, or hold to talk. Esc cancels.
 - A floating HUD shows the live transcript. Text is typed straight into the field, or pasted, or copied if neither works.
 - Optional clean-up with styles for chat, email, code and notes, per-app styles and editable prompts. **Use raw** puts back the original with one keystroke.
-- **Live Notes** (⌃⌥N) turns a meeting into editable Markdown notes next to the transcript, with automatic organizing and optional on-device speaker labels. Save or copy them; nothing else is kept.
+- **Live Notes** (⌃⌥N) turns a meeting into editable Markdown notes next to the transcript, with automatic organizing and optional on-device speaker labels. Save or copy them; until then a text-only recovery copy stays on this Mac (never audio), so a crash doesn't lose the meeting, and Save or Discard deletes it.
 - A model manager downloads, switches and updates speech and clean-up models. **Pair a Phone** checks Tailscale Serve and shows the pairing QR code.
 
 **Android** — [android/README.md](android/README.md)

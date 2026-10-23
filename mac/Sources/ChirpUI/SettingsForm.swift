@@ -12,6 +12,8 @@ public struct SettingsState: Sendable {
     public var launch: LaunchState = .off
     /// General: the HUD's word waveform (each word's audio above it). Off by default.
     public var wordWaveform = false
+    /// General: Live Notes keeps a recovery copy of unsaved notes (on by default).
+    public var notesRecoveryCopy = true
     public var soundsEnabled = false
     public var soundPack: SoundPack = .default
     /// 0…1.
@@ -138,6 +140,8 @@ public final class SettingsForm {
     public let launch = NSButton(checkboxWithTitle: "Launch Chirp at login", target: nil, action: nil)
     /// General: the HUD's word waveform.
     public let wordWaveform = NSButton(checkboxWithTitle: "Word waveform overlay", target: nil, action: nil)
+    /// General: Live Notes' recovery copy of unsaved notes.
+    public let notesRecoveryCopy = NSButton(checkboxWithTitle: NotesStatus.recoverySwitch, target: nil, action: nil)
     /// General: reopens the setup walk-through.
     public let setupButton = NSButton(title: "Set Up Chirp…", target: nil, action: nil)
     /// Server: puts the chirp-server doctor command on the pasteboard.
@@ -219,6 +223,7 @@ public final class SettingsForm {
             row("Auto-stop:", silence),
             row("Overlay:", wordWaveform, help: Self.help("Draws each word's audio above it as you speak, so you can see what was heard.")),
             row("Startup:", launch, help: launchHelp),
+            row("Notes:", notesRecoveryCopy, help: Self.help(NotesStatus.recoveryHelp)),
             row("Setup:", setupButton, help: Self.help("Check the permissions and the server, and try a dictation.")),
             row("Speakers:", removeSpeakerModel),
         ])
@@ -399,6 +404,7 @@ public final class SettingsForm {
             launch.state = s.launch == .on ? .on : .off
             launch.isEnabled = s.launch != .unavailable
             wordWaveform.state = s.wordWaveform ? .on : .off
+            notesRecoveryCopy.state = s.notesRecoveryCopy ? .on : .off
             launchUnavailable = s.launch == .unavailable
             setLaunchError(nil)
             style.controlSize = .regular

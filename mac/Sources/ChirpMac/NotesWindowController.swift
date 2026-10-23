@@ -4,8 +4,9 @@ import ChirpUI
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// The Live Notes window. It is never restored, never an `NSDocument` and never autosaved: the notes reach disk only
-/// through Save… to a path the user picks, and the pasteboard only through Copy Markdown.
+/// The Live Notes window. It is never restored and never an `NSDocument`: the notes reach disk through Save… to a path
+/// the user picks (kept up to date only if they ask), as the recovery journal until they are saved, and the pasteboard
+/// only through Copy Markdown.
 @MainActor
 final class NotesWindowController: NSObject, NSWindowDelegate {
     private let notes: NotesController
@@ -19,6 +20,9 @@ final class NotesWindowController: NSObject, NSWindowDelegate {
         model.onCopy = { [weak self] in self?.copy() }
         model.onSave = { [weak self] in _ = self?.save() }
         model.onNew = { [weak self] in self?.new() }
+        model.onRecoveryKeep = { [weak self] in self?.keepRecovered() }
+        model.onRecoverySave = { [weak self] in self?.saveRecovered() }
+        model.onRecoveryDiscard = { [weak self] in self?.notes.dropRecovered() }
         notes.confirmSpeakerDownload = { [weak self] message, done in self?.confirmSpeakerDownload(message, done: done) }
         model.onManageModels = { [weak self] in self?.onOpenModels() }
     }
@@ -113,7 +117,7 @@ final class NotesWindowController: NSObject, NSWindowDelegate {
         guard notes.model.document.isDirty else { done(true); return }
         let alert = NSAlert()
         alert.messageText = "Save your notes?"
-        alert.informativeText = "Notes are kept only in memory. If you don’t save them, they’re gone."
+        alert.informativeText = "These notes are not saved yet. If you discard them, they’re gone."
         alert.addButton(withTitle: "Save…")
         alert.addButton(withTitle: "Discard")
         alert.addButton(withTitle: "Cancel")
@@ -121,7 +125,9 @@ final class NotesWindowController: NSObject, NSWindowDelegate {
         let handle: (NSApplication.ModalResponse) -> Void = { [weak self] response in
             switch response {
             case .alertFirstButtonReturn: done(self?.save() ?? false)
-            case .alertSecondButtonReturn: done(true)
+            case .alertSecondButtonReturn:
+                self?.notes.discardJournal()
+                done(true)
             default: done(false)
             }
         }
@@ -155,6 +161,19 @@ final class NotesWindowController: NSObject, NSWindowDelegate {
         confirmDiscard(in: window) { [weak self] ok in if ok { self?.notes.reset() } }
     }
 
+    /// Keep: after the usual question about the notes on screen, the recovered session replaces them.
+    private func keepRecovered() {
+        confirmDiscard(in: window) { [weak self] ok in if ok { self?.notes.keepRecovered() } }
+    }
+
+    /// Save… for the recovered session: it is written without being loaded, then its journal goes.
+    private func saveRecovered() {
+        guard let document = notes.offeredDocument,
+              let (url, _) = choosePath(name: document.suggestedFileName(), offerKeeping: false) else { return }
+        guard write(document.exportMarkdown(includeTranscript: true), to: url) else { return }
+        notes.dropRecovered()
+    }
+
     private func copy() {
         let text = notes.model.copyText
         NSPasteboard.general.clearContents()
@@ -162,25 +181,42 @@ final class NotesWindowController: NSObject, NSWindowDelegate {
         chirpLog.info("notes copy chars=\(text.count, privacy: .public)")
     }
 
+    /// The save panel: a `.md` path, and (for the open document) the check box that keeps the file up to date.
+    private func choosePath(name: String, offerKeeping: Bool) -> (URL, keep: Bool)? {
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [UTType(filenameExtension: "md") ?? .plainText]
+        panel.nameFieldStringValue = name
+        panel.canCreateDirectories = true
+        panel.isExtensionHidden = false
+        if let last = notes.journal.savedFile { panel.directoryURL = last.deletingLastPathComponent() }
+        let keep = NSButton(checkboxWithTitle: NotesStatus.keepSavingCheckbox, target: nil, action: nil)
+        if offerKeeping {
+            keep.state = notes.journal.keepStatus.isSaving ? .on : .off
+            keep.setFrameSize(keep.fittingSize)
+            panel.accessoryView = keep
+        }
+        NSApp.activate()
+        guard panel.runModal() == .OK, let url = panel.url else { return nil }
+        return (url, keep.state == .on)
+    }
+
+    private func write(_ text: String, to url: URL) -> Bool {
+        do {
+            try text.write(to: url, atomically: true, encoding: .utf8)
+            return true
+        } catch {
+            NSAlert(error: error).runModal()
+            return false
+        }
+    }
+
     /// Save…: the notes and the transcript to a `.md` the user picks. Returns whether it was written.
     @discardableResult
     func save() -> Bool {
-        let panel = NSSavePanel()
-        panel.allowedContentTypes = [UTType(filenameExtension: "md") ?? .plainText]
-        panel.nameFieldStringValue = notes.model.document.suggestedFileName()
-        panel.canCreateDirectories = true
-        panel.isExtensionHidden = false
-        NSApp.activate()
-        guard panel.runModal() == .OK, let url = panel.url else { return false }
+        guard let (url, keep) = choosePath(name: notes.model.document.suggestedFileName(), offerKeeping: true) else { return false }
         let text = notes.model.saveText
-        do {
-            try text.write(to: url, atomically: true, encoding: .utf8)
-        } catch {
-            let alert = NSAlert(error: error)
-            alert.runModal()
-            return false
-        }
-        notes.markSaved()
+        guard write(text, to: url) else { return false }
+        notes.didSave(to: url, keep: keep)
         chirpLog.info("notes saved chars=\(text.count, privacy: .public)")
         return true
     }

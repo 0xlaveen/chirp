@@ -1,9 +1,9 @@
 import Foundation
 
 /// Live Notes speaker labels (issue #18): who spoke when, as Person 1, Person 2… Diarization runs on this Mac in the
-/// `ChirpSpeakers` target; this file holds the dependency-free contract and the session roster. Everything here is
-/// memory-only: no timeline, slot, name or label is ever persisted, logged or sent anywhere except as transcript text
-/// in the existing structuring request.
+/// `ChirpSpeakers` target; this file holds the dependency-free contract and the session roster. Nothing here is logged
+/// or sent anywhere except as transcript text in the existing structuring request, and no timeline or audio is stored;
+/// the roster (names, merges, labelled turns) reaches disk only in the Live Notes recovery journal and a Save….
 
 /// One stretch of speech by one diarizer slot, in document seconds (the clock of `NotesSegment.offset`).
 public struct SpeakerSpan: Equatable, Sendable {
@@ -62,7 +62,7 @@ public protocol SpeakerDiarizing: AnyObject, Sendable {
 }
 
 /// One person's stretch of a segment's text.
-public struct SpeakerTurn: Equatable, Sendable {
+public struct SpeakerTurn: Equatable, Sendable, Codable {
     /// The roster id (Person N).
     public var person: Int
     /// Document seconds of the turn's first word.
@@ -91,11 +91,11 @@ public struct SpeakerTurn: Equatable, Sendable {
 
 /// The people of one Notes document, numbered by first appearance: the first diarizer slot that speaks becomes
 /// Person 1. Session-only names and merges live here too (memory only, gone with the document).
-public struct SpeakerRoster: Equatable, Sendable {
+public struct SpeakerRoster: Equatable, Sendable, Codable {
     /// Colours cycle through this many (the palette lives in the UI).
     public static let paletteSize = 8
 
-    public struct Person: Equatable, Sendable {
+    public struct Person: Equatable, Sendable, Codable {
         public var id: Int
         public var name: String?
         /// Set once this person was merged into another.
@@ -161,6 +161,9 @@ public struct SpeakerRoster: Equatable, Sendable {
         people[from - 1].mergedInto = to
         for (slot, person) in slots where resolve(person) == to { slots[slot] = to }
     }
+
+    /// A recovered session has a new diarizer whose slots mean other voices: forget the slot map, keep the people.
+    public mutating func forgetSlots() { slots = [:] }
 
     /// People still standing (not merged away).
     public var activeCount: Int { people.filter { $0.mergedInto == nil }.count }

@@ -1,7 +1,7 @@
 import Foundation
 
 /// One committed segment of a Live Notes recording: an ordinary utterance's final, or a gap where it failed.
-public struct NotesSegment: Equatable, Sendable, Identifiable {
+public struct NotesSegment: Equatable, Sendable, Identifiable, Codable {
     public var id: Int
     /// Seconds from the start of the session to the segment's first audio.
     public var offset: TimeInterval
@@ -68,9 +68,9 @@ public struct NotesTextChange: Equatable, Sendable {
 /// Everything a Live Notes session holds, in memory only: the transcript segments and one Markdown source string, the
 /// notes, written by the user and by structuring passes. The AI owns only a suffix of it, the tail
 /// (`text[tailStart...]`); an append pass only ever replaces the tail, and any user edit that touches the tail hands
-/// it to the user. Nothing here is persisted or logged; it goes away on New, a discarded close or quit, and reaches
-/// disk only through an explicit Save….
-public struct NotesDocument: Equatable, Sendable {
+/// it to the user. Nothing here is logged. It reaches disk through an explicit Save…, and as the recovery journal
+/// (`NotesJournal`, which is deleted on Save, Discard and New); it goes away on New, a discarded close or quit.
+public struct NotesDocument: Equatable, Sendable, Codable {
     /// The tail settles once a pass succeeded on at least this many transcript characters (from the M1 bench:
     /// longer windows lose guard pass rate on the default Qwen).
     public static let freezeChars = 1600
@@ -91,7 +91,7 @@ public struct NotesDocument: Equatable, Sendable {
 
     /// This document, as opposed to one that New or a discarded close replaced: a pass carries it, so a late answer
     /// for a discarded document is never applied to the next one.
-    public let id = UUID()
+    public private(set) var id = UUID()
     public private(set) var segments: [NotesSegment] = []
     /// The notes, Markdown source, user and AI text (without the `# Notes — date` title export adds).
     public private(set) var text = ""
@@ -120,6 +120,12 @@ public struct NotesDocument: Equatable, Sendable {
     public private(set) var startedAt: Date
     /// The people speaker labels found in this document (Person 1, Person 2…).
     public private(set) var roster = SpeakerRoster()
+
+    /// What the recovery journal stores: everything but `livePartial` (display only).
+    private enum CodingKeys: String, CodingKey {
+        case id, segments, text, tailStart, version, windowGeneration, windowStart, structuredEnd, consecutiveFailures
+        case lastReorganizeVersion, charsSinceReorganize, fallbackBlocks, isDirty, startedAt, roster
+    }
 
     public init(startedAt: Date = Date(), text: String = "") {
         self.startedAt = startedAt
@@ -169,6 +175,9 @@ public struct NotesDocument: Equatable, Sendable {
         segments[id].labelsTentative = tentative
         isDirty = true
     }
+
+    /// A recovered document's new diarizer starts with its own slots: keep the people, forget which slot was whom.
+    public mutating func forgetSpeakerSlots() { roster.forgetSlots() }
 
     /// A session-only name for a person (nil or blank: "Person N" again). Later passes and exports use it.
     public mutating func renameSpeaker(_ id: Int, to name: String?) { roster.rename(id, to: name) }
