@@ -10,6 +10,7 @@
   <a href="https://github.com/araa47/chirp/actions/workflows/server.yml"><img src="https://github.com/araa47/chirp/actions/workflows/server.yml/badge.svg" alt="server"></a>
   <a href="https://github.com/araa47/chirp/actions/workflows/android.yml"><img src="https://github.com/araa47/chirp/actions/workflows/android.yml/badge.svg" alt="android"></a>
   <a href="https://github.com/araa47/chirp/actions/workflows/mac.yml"><img src="https://github.com/araa47/chirp/actions/workflows/mac.yml/badge.svg" alt="mac"></a>
+  <a href="https://github.com/araa47/chirp/actions/workflows/ios.yml"><img src="https://github.com/araa47/chirp/actions/workflows/ios.yml/badge.svg" alt="ios"></a>
 </p>
 
 <p align="center">Local-first voice dictation for your Mac, Android and iPhone — speech recognition runs on your own Mac. Your words stay yours.</p>
