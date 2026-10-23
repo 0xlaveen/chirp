@@ -91,6 +91,8 @@ interface ImeTransport {
     fun close(cancel: Boolean = false, immediate: Boolean = false)
     /** Why the last socket attempt failed, classified from exception classes only. */
     val failureKind: ConnectionFailure.Kind get() = ConnectionFailure.Kind.OTHER
+    /** System.nanoTime() in ms when the socket last opened, or -1. */
+    val openedAt: Long get() = -1L
 }
 
 /** Main-thread control; audio() is also called by the capture thread. */
@@ -106,6 +108,8 @@ class StreamTransport(
     @Volatile private var ready = false
     @Volatile private var active = false
     @Volatile override var failureKind = ConnectionFailure.Kind.OTHER
+        private set
+    @Volatile override var openedAt = -1L
         private set
     private var closed = false
     private var connected = false
@@ -127,7 +131,7 @@ class StreamTransport(
             override fun onOpen(webSocket: WebSocket, response: Response) {
                 dispatch {
                     if (closed || attempt != id) { webSocket.cancel(); return@dispatch }
-                    connected = true; failureKind = ConnectionFailure.Kind.OTHER
+                    connected = true; failureKind = ConnectionFailure.Kind.OTHER; openedAt = System.nanoTime() / 1_000_000
                     if (active) sendStart()
                     opened()
                 }

@@ -75,7 +75,17 @@ internal fun ChirpSettingsSection() {
         TextButton({ diagnostics = true }) { Text("Chirp diagnostics") }
         HorizontalDivider()
     }
-    if (diagnostics) AlertDialog(onDismissRequest = { diagnostics = false }, title = { Text("Chirp diagnostics") },
-        text = { Text(CrashLog(context).text(), Modifier.heightIn(max = 420.dp).verticalScroll(rememberScrollState()), style = MaterialTheme.typography.bodySmall) },
-        confirmButton = { TextButton({ diagnostics = false }) { Text("Close") } })
+    if (diagnostics) {
+        var report by remember { mutableStateOf(DiagnosticsReport.text(context)) }
+        AlertDialog(onDismissRequest = { diagnostics = false }, title = { Text("Chirp diagnostics") },
+            text = { Column(Modifier.heightIn(max = 420.dp).verticalScroll(rememberScrollState())) {
+                Text(report, style = MaterialTheme.typography.bodySmall)
+                TextButton({ DiagnosticsReport.clearTimings(context); report = DiagnosticsReport.text(context) }) { Text("Clear timings") }
+            } },
+            confirmButton = { TextButton({
+                context.getSystemService(android.content.ClipboardManager::class.java).setPrimaryClip(
+                    android.content.ClipData.newPlainText("Chirp diagnostics", report))
+            }) { Text("Copy") } },
+            dismissButton = { TextButton({ diagnostics = false }) { Text("Close") } })
+    }
 }

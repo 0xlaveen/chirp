@@ -84,10 +84,11 @@ open class SetupActivity : ComponentActivity() {
                     picker = { awaitingPrerequisite = true; getSystemService(InputMethodManager::class.java).showInputMethodPicker() },
                     grantNetwork = { networkPermission.launch(LOCAL_NETWORK_PERMISSION) },
                     keyboardPreferences = { startActivity(Intent(this, helium314.keyboard.settings.SettingsActivity::class.java)) },
-                    diagnostics = { state.diagnostics = CrashLog(this).text() },
+                    diagnostics = { state.diagnostics = DiagnosticsReport.text(this) },
+                    clearTimings = { DiagnosticsReport.clearTimings(this); state.diagnostics = DiagnosticsReport.text(this) },
                     copyDiagnostics = {
                         getSystemService(android.content.ClipboardManager::class.java).setPrimaryClip(
-                            android.content.ClipData.newPlainText("Chirp diagnostics", CrashLog(this).text()))
+                            android.content.ClipData.newPlainText("Chirp diagnostics", DiagnosticsReport.text(this)))
                     },
                     scan = ::scan, check = { testPairing(save = state.link.isNotBlank()) },
                     forget = {
@@ -159,7 +160,7 @@ open class SetupActivity : ComponentActivity() {
         state.inputEnabled = getSystemService(InputMethodManager::class.java).enabledInputMethodList.any { it.packageName == packageName }
         state.inputSelected = ComponentName.unflattenFromString(Settings.Secure.getString(contentResolver, Settings.Secure.DEFAULT_INPUT_METHOD).orEmpty()) ==
             ComponentName(this, ChirpImeService::class.java)
-        state.diagnostics = CrashLog(this).text()
+        state.diagnostics = DiagnosticsReport.text(this)
         val enabled = Settings.Secure.getString(contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES).orEmpty()
         state.bubbleEnabled = enabled.split(':').any {
             ComponentName.unflattenFromString(it) == ComponentName(this, ChirpAccessibilityService::class.java)
