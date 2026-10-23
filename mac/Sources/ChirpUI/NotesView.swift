@@ -21,6 +21,7 @@ public struct NotesView: View {
         VStack(spacing: 0) {
             NotesHeader(model: model)
             Divider()
+            if let message = model.errorText { ErrorBanner(text: message) }
             if let offer = model.recovery { RecoveryBanner(model: model, offer: offer) }
             if model.showsLongRunNotice { LongRunNotice(model: model) }
             content
@@ -30,6 +31,9 @@ public struct NotesView: View {
         }
         .frame(minWidth: NotesViewMetrics.minimumSize.width, minHeight: NotesViewMetrics.minimumSize.height)
         .background(Color(nsColor: .textBackgroundColor))
+        .sheet(isPresented: Binding(get: { model.reviewing != nil }, set: { if !$0 { model.closeReview() } })) {
+            OrganizeReviewSheet(model: model)
+        }
     }
 
     @ViewBuilder private var content: some View {
@@ -55,32 +59,76 @@ public struct NotesView: View {
 private struct NotesHeader: View {
     @Bindable var model: NotesModel
 
+    private enum Tier { case full, noHint, icons, compact }
+
     var body: some View {
-        HStack(spacing: 12) {
-            RecordButton(model: model).fixedSize()
-            status
-            if let hint = model.hotkeyHint {
-                Text(hint).font(.caption).foregroundStyle(.tertiary).lineLimit(1).layoutPriority(-1)
-            }
-            Spacer(minLength: 8)
-            if model.tab == .notes { EditPreviewPicker(model: model) }
-            Picker("Layout", selection: Binding(get: { model.tab }, set: { model.tab = $0; model.onTabChange($0) })) {
-                ForEach(NotesTab.allCases, id: \.self) { Text($0.title).tag($0) }
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .fixedSize()
-            HStack(spacing: 2) {
-                if model.voiceEditAvailable { VoiceEditButton(model: model) }
-                if !model.reorganizeHidden { reorganizeButton }
-                iconButton("doc.on.doc", label: "Copy Markdown", enabled: model.canExport, action: model.onCopy)
-                iconButton("square.and.arrow.down", label: "Save…", enabled: model.canExport, action: model.onSave)
-                iconButton("square.and.pencil", label: "New", enabled: model.canNew, action: model.onNew)
-            }
+        // The widest layout that fits: the shortcut hint goes first, then the Pause and Organize labels, and at the
+        // narrowest the layout switch becomes a menu and the other actions fold into one. The Record label never wraps.
+        ViewThatFits(in: .horizontal) {
+            row(.full)
+            row(.noHint)
+            row(.icons)
+            row(.compact)
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
         .background(.bar)
+    }
+
+    private func row(_ tier: Tier) -> some View {
+        HStack(spacing: 12) {
+            RecordButton(model: model)
+            if model.state.isLive { PauseButton(model: model, iconOnly: tier == .icons || tier == .compact) }
+            status
+            if tier == .full, let hint = model.hotkeyHint {
+                Text(hint).font(.caption).foregroundStyle(.tertiary).lineLimit(1).layoutPriority(-2)
+            }
+            Spacer(minLength: 8)
+            if tier == .compact {
+                layoutPicker.pickerStyle(.menu).fixedSize()
+                moreMenu
+            } else {
+                if model.tab == .notes { EditPreviewPicker(model: model) }
+                layoutPicker.pickerStyle(.segmented).fixedSize()
+                HStack(spacing: 2) {
+                    if model.voiceEditAvailable { VoiceEditButton(model: model) }
+                    if !model.reorganizeHidden { reorganizeButton(iconOnly: tier == .icons) }
+                    iconButton("doc.on.doc", label: "Copy Markdown", enabled: model.canExport, action: model.onCopy)
+                    iconButton("square.and.arrow.down", label: "Save…", enabled: model.canExport, action: model.onSave)
+                    iconButton("square.and.pencil", label: "New", enabled: model.canNew, action: model.onNew)
+                }
+            }
+        }
+    }
+
+    private var layoutPicker: some View {
+        Picker("Layout", selection: Binding(get: { model.tab }, set: { model.select($0) })) {
+            ForEach(NotesTab.allCases, id: \.self) { Text($0.title).tag($0) }
+        }
+        .labelsHidden()
+    }
+
+    /// The narrow header's other actions.
+    private var moreMenu: some View {
+        Menu {
+            if model.tab != .transcript {
+                Button(model.preview ? "Edit Notes" : "Preview Notes") { model.perform(.togglePreview) }
+            }
+            if model.voiceEditAvailable { Button("Edit Notes by Voice", action: model.onVoiceEdit).disabled(!model.canVoiceEdit) }
+            if !model.reorganizeHidden {
+                Button(NotesStatus.organizeLabel, action: model.onReorganize).disabled(!model.canReorganize)
+            }
+            Button("Copy Markdown", action: model.onCopy).disabled(!model.canExport)
+            Button("Save…", action: model.onSave).disabled(!model.canExport)
+            Button("New", action: model.onNew).disabled(!model.canNew)
+        } label: {
+            Image(systemName: "ellipsis.circle").font(.system(size: 14))
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help("More")
+        .accessibilityLabel("More actions")
     }
 
     private var status: some View {
@@ -92,16 +140,18 @@ private struct NotesHeader: View {
             } else if model.isUpdating || model.isReorganizing || model.isBusy || model.isVoiceEditing || model.state == .starting {
                 ProgressView().controlSize(.small).scaleEffect(0.8)
             }
-            Text(model.statusText)
+            Text(model.headerStatusText)
                 .font(.callout)
                 .foregroundStyle(model.isError ? AnyShapeStyle(Color.red) : AnyShapeStyle(.secondary))
-                .lineLimit(2)
+                .lineLimit(1)
                 .truncationMode(.tail)
+                .help(model.statusText)
             if let lag = model.lagText { LagChip(model: model, text: lag) }
         }
+        .layoutPriority(-1)
     }
 
-    private var reorganizeButton: some View {
+    private func reorganizeButton(iconOnly: Bool) -> some View {
         Button(action: model.onReorganize) {
             HStack(spacing: 5) {
                 Group {
@@ -112,7 +162,7 @@ private struct NotesHeader: View {
                     }
                 }
                 .frame(width: 16, height: 16)
-                Text(NotesStatus.organizeLabel).font(.callout)
+                if !iconOnly { Text(NotesStatus.organizeLabel).font(.callout) }
             }
             .padding(.horizontal, 6)
             .frame(height: 24)
@@ -137,27 +187,37 @@ private struct NotesHeader: View {
     }
 }
 
-/// Record (a red dot) or Stop (a red square) with the elapsed time beside it.
+/// Record (a red dot) or Stop (a red square) with the elapsed time beside it, and the input level while recording.
+/// The label never wraps: the pill keeps its natural width and the status gives way.
 private struct RecordButton: View {
     @Bindable var model: NotesModel
+
+    private var stops: Bool { model.isRecording || model.isPaused }
 
     var body: some View {
         Button(action: model.onRecordToggle) {
             HStack(spacing: 8) {
                 ZStack {
                     Circle().fill(Color.red.opacity(model.isRecording ? 0.18 : 0)).frame(width: 22, height: 22)
-                    if model.isRecording {
+                    if stops {
                         RoundedRectangle(cornerRadius: 2.5).fill(Color.red).frame(width: 10, height: 10)
                     } else {
                         Circle().fill(Color.red).frame(width: 11, height: 11)
                     }
                 }
-                Text(model.isRecording ? "Stop" : "Record").font(.callout.weight(.medium))
+                Text(stops ? NotesStatus.stopRecording : "Record")
+                    .font(.callout.weight(.medium))
+                    .lineLimit(1)
+                    .fixedSize()
+                    .onGeometryChange(for: CGSize.self, of: \.size) { model.probe.recordLabel = $0 }
                 if model.isRecording || model.elapsed > 0 {
                     Text(model.elapsedText)
                         .font(.callout.monospacedDigit())
                         .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .fixedSize()
                 }
+                if model.isRecording { LevelMeter(model: model) }
             }
             .padding(.leading, 4)
             .padding(.trailing, 10)
@@ -167,8 +227,69 @@ private struct RecordButton: View {
         }
         .buttonStyle(.plain)
         .disabled(!model.canToggle)
-        .accessibilityLabel(model.isRecording ? "Stop notes" : "Start notes")
-        .accessibilityValue(model.isRecording ? model.elapsedText : "")
+        .help(model.isPaused ? "Stop and finish the notes" : stops ? "Stop recording (⌘⇧R)" : "Start recording (⌘⇧R)")
+        .accessibilityLabel(stops ? "Stop notes" : "Start notes")
+        .accessibilityValue(model.isRecording || model.isPaused ? model.elapsedText : "")
+    }
+}
+
+/// One bar that rises with the microphone level (the HUD's decibel mapping), so sound arriving is visible.
+private struct LevelMeter: View {
+    let model: NotesModel
+
+    var body: some View {
+        let level = CGFloat(max(0, min(1, model.level)))
+        RoundedRectangle(cornerRadius: 1.5)
+            .fill(Color.red.opacity(0.35 + 0.65 * level))
+            .frame(width: 3, height: 5 + 11 * level)
+            .frame(width: 3, height: 16, alignment: .bottom)
+            .animation(model.reduceMotion ? nil : .easeOut(duration: 0.08), value: level)
+            .accessibilityHidden(true)
+    }
+}
+
+/// Pause (closes the microphone, keeps the notes open) or Resume, beside Record/Stop.
+private struct PauseButton: View {
+    @Bindable var model: NotesModel
+    var iconOnly = false
+
+    var body: some View {
+        Button(action: model.onPauseToggle) {
+            HStack(spacing: 5) {
+                Image(systemName: model.isPaused ? "play.fill" : "pause.fill").font(.system(size: 11))
+                if !iconOnly {
+                    Text(model.isPaused ? NotesStatus.resume : NotesStatus.pause).font(.callout.weight(.medium)).lineLimit(1).fixedSize()
+                }
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 4)
+            .background(Capsule().fill(Color.primary.opacity(0.06)))
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .disabled(!(model.isPaused || model.state == .recording))
+        .help(model.isPaused ? "Resume recording into the same notes (⌘⇧P)" : "Pause: the microphone closes, the notes stay open (⌘⇧P)")
+        .accessibilityLabel(model.isPaused ? "Resume notes" : "Pause notes")
+    }
+}
+
+/// What went wrong, under the header (the header itself only says there is a problem).
+struct ErrorBanner: View {
+    let text: String
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 10) {
+            Image(systemName: "exclamationmark.triangle.fill").font(.system(size: 14)).foregroundStyle(.red).accessibilityHidden(true)
+            Text(text)
+                .font(.callout)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 8)
+        .background(Color.red.opacity(0.08))
+        .overlay(alignment: .bottom) { Divider() }
+        .accessibilityElement(children: .combine)
     }
 }
 
@@ -215,6 +336,9 @@ private struct NotesPane: View {
                 .multilineTextAlignment(.center)
             Text("Or click to type your own notes.")
                 .font(.callout)
+                .foregroundStyle(.tertiary)
+            Text(NotesStatus.shortcutsHint)
+                .font(.caption)
                 .foregroundStyle(.tertiary)
         }
         .padding(32)
@@ -412,6 +536,17 @@ private struct UndoChip: View {
             Image(systemName: "wand.and.stars").font(.caption)
             Text(NotesStatus.organized).font(.caption.weight(.medium))
             Text("·").font(.caption).foregroundStyle(.secondary)
+            if model.snapshots.latest != nil {
+                Button {
+                    model.review()
+                } label: {
+                    Text("Show changes").font(.caption.weight(.semibold))
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(Color.accentColor)
+                .accessibilityLabel("Show what organize changed")
+                Text("·").font(.caption).foregroundStyle(.secondary)
+            }
             Button {
                 model.undoReorganize()
                 model.dismissUndoChip()
@@ -812,67 +947,222 @@ private struct NotesFooter: View {
     @Bindable var model: NotesModel
 
     var body: some View {
-        HStack(spacing: 10) {
-            Image(systemName: "lock.fill")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .accessibilityHidden(true)
-            Text(model.privacyLine)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-                .truncationMode(.middle)
-                .help(model.privacyHelp)
-            if let keep = model.keepSaving.text {
-                Text(keep)
-                    .font(.caption)
-                    .foregroundStyle(model.keepSaving.isSaving ? AnyShapeStyle(.secondary) : AnyShapeStyle(Color.orange))
-                    .lineLimit(1)
-                    .truncationMode(.middle)
+        // Wide: one row. Narrow (the minimum window): the privacy line and the chip above, the switches below, so
+        // nothing needs to be cut short.
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 10) {
+                notices
+                Spacer(minLength: 8)
+                switches
             }
-            if model.debugRetention {
-                Text("DEBUG: recording kept")
-                    .font(.caption.weight(.bold))
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 1)
-                    .background(Capsule().fill(Color.red))
-            }
-            Spacer(minLength: 8)
-            if let status = model.speakerStatus {
-                HStack(spacing: 4) {
-                    if case .downloading = model.speakerModel { ProgressView().controlSize(.mini) }
-                    if case .loading = model.speakerModel { ProgressView().controlSize(.mini) }
-                    Text(status)
-                        .font(.caption)
-                        .foregroundStyle(model.speakerModel.isFailure ? AnyShapeStyle(Color.orange) : AnyShapeStyle(.secondary))
-                        .lineLimit(1)
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 10) {
+                    notices
+                    Spacer(minLength: 0)
+                }
+                HStack(spacing: 10) {
+                    Spacer(minLength: 0)
+                    switches
                 }
             }
-            // On while downloading too, so switching it off cancels the download.
-            Toggle(NotesStatus.speakerLabels, isOn: Binding(get: { model.speakerLabels || model.speakerModel.isDownloading },
-                                                             set: { model.onSpeakerLabelsToggle($0) }))
-                .toggleStyle(.switch)
-                .controlSize(.mini)
-                .font(.caption)
-                .help(NotesStatus.speakerHelp)
-                .disabled(model.isRecording || model.isBusy)
-            Toggle("Structure notes", isOn: Binding(get: { model.structureEnabled },
-                                                    set: { model.structureEnabled = $0; model.onStructureToggle($0) }))
-                .toggleStyle(.switch)
-                .controlSize(.mini)
-                .font(.caption)
-                .disabled(!model.structuringAvailable && model.structuring != .off(.disabled))
-            Toggle("Auto-reorganize", isOn: Binding(get: { model.autoReorganize && model.autoReorganizeAvailable },
-                                                    set: { model.autoReorganize = $0; model.onAutoReorganizeToggle($0) }))
-                .toggleStyle(.switch)
-                .controlSize(.mini)
-                .font(.caption)
-                .disabled(!model.autoReorganizeAvailable)
-                .help(model.reorganizeHidden ? "Needs a newer Chirp server" : "Tidy the notes every few minutes while you record")
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 7)
         .background(.bar)
+    }
+
+    @ViewBuilder private var notices: some View {
+        Image(systemName: "lock.fill")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .accessibilityHidden(true)
+        Text(model.privacyLine)
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .lineLimit(1)
+            .truncationMode(.tail)
+            .help(model.privacyHelp)
+        if let host = model.structuringHost { StructuringChip(model: model, host: host) }
+        if let keep = model.keepSaving.text {
+            Text(keep)
+                .font(.caption)
+                .foregroundStyle(model.keepSaving.isSaving ? AnyShapeStyle(.secondary) : AnyShapeStyle(Color.orange))
+                .lineLimit(1)
+                .truncationMode(.tail)
+        }
+        if model.debugRetention {
+            Text("DEBUG: recording kept")
+                .font(.caption.weight(.bold))
+                .foregroundStyle(.white)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 1)
+                .background(Capsule().fill(Color.red))
+                .fixedSize()
+        }
+    }
+
+    @ViewBuilder private var switches: some View {
+        if let status = model.speakerStatus {
+            HStack(spacing: 4) {
+                if case .downloading = model.speakerModel { ProgressView().controlSize(.mini) }
+                if case .loading = model.speakerModel { ProgressView().controlSize(.mini) }
+                Text(status)
+                    .font(.caption)
+                    .foregroundStyle(model.speakerModel.isFailure ? AnyShapeStyle(Color.orange) : AnyShapeStyle(.secondary))
+                    .lineLimit(1)
+            }
+        }
+        // On while downloading too, so switching it off cancels the download.
+        Toggle(NotesStatus.speakerLabels, isOn: Binding(get: { model.speakerLabels || model.speakerModel.isDownloading },
+                                                         set: { model.onSpeakerLabelsToggle($0) }))
+            .toggleStyle(.switch)
+            .controlSize(.mini)
+            .font(.caption)
+            .help(NotesStatus.speakerHelp)
+            .disabled(model.state.isActive)
+        Toggle("Structure notes", isOn: Binding(get: { model.structureEnabled },
+                                                set: { model.structureEnabled = $0; model.onStructureToggle($0) }))
+            .toggleStyle(.switch)
+            .controlSize(.mini)
+            .font(.caption)
+            .disabled(!model.structuringAvailable && model.structuring != .off(.disabled))
+        Toggle("Auto-reorganize", isOn: Binding(get: { model.autoReorganize && model.autoReorganizeAvailable },
+                                                set: { model.autoReorganize = $0; model.onAutoReorganizeToggle($0) }))
+            .toggleStyle(.switch)
+            .controlSize(.mini)
+            .font(.caption)
+            .disabled(!model.autoReorganizeAvailable)
+            .help(model.reorganizeHidden ? "Needs a newer Chirp server" : "Tidy the notes every few minutes while you record")
+    }
+}
+
+/// "Structuring → llm.example.com": where the text goes when it leaves this Mac. Never truncated: the host is the
+/// part that matters.
+struct StructuringChip: View {
+    let model: NotesModel
+    let host: String
+
+    var body: some View {
+        Label(NotesStatus.structuringChip(host), systemImage: "arrow.up.forward.circle")
+            .labelStyle(.titleAndIcon)
+            .font(.caption.weight(.medium))
+            .foregroundStyle(Color.orange)
+            .lineLimit(1)
+            .fixedSize()
+            .padding(.horizontal, 7)
+            .padding(.vertical, 1)
+            .background(Capsule().fill(Color.orange.opacity(0.12)))
+            .overlay(Capsule().strokeBorder(Color.orange.opacity(0.4)))
+            .onGeometryChange(for: CGSize.self, of: \.size) { model.probe.structuringChip = $0 }
+            .help("Structuring sends the notes text to \(host). Audio stays on the server you chose.")
+    }
+}
+
+// MARK: organize review
+
+/// What Organize changed, as a word diff, with Restore previous and Keep. The same sheet opens from the chip's Show
+/// changes and from Edit ▸ Restore Notes Before Organize…, where the snapshots are listed by time.
+struct OrganizeReviewSheet: View {
+    @Bindable var model: NotesModel
+
+    private static let time: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "HH:mm:ss"
+        return f
+    }()
+
+    var body: some View {
+        let snapshot = model.reviewing.flatMap { model.snapshots.snapshot($0) }
+        VStack(alignment: .leading, spacing: 12) {
+            Text("What Organize changed").font(.headline)
+            if model.snapshots.items.count > 1 {
+                Picker("Before", selection: Binding(get: { model.reviewing ?? -1 }, set: { model.review($0) })) {
+                    ForEach(model.snapshots.items.reversed()) { item in
+                        Text("Before the change at \(Self.time.string(from: item.at))").tag(item.id)
+                    }
+                }
+                .labelsHidden()
+            }
+            if let snapshot { diff(snapshot) }
+            if model.confirmingRestore != nil {
+                Label("Notes you typed since sit among the changed lines. Restoring replaces the notes with the earlier text and loses them.",
+                      systemImage: "exclamationmark.triangle.fill")
+                    .font(.callout)
+                    .foregroundStyle(.orange)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            HStack {
+                Spacer()
+                Button("Keep") { model.closeReview() }.keyboardShortcut(.cancelAction)
+                if let id = model.reviewing {
+                    if model.confirmingRestore == id {
+                        Button("Replace notes (your later edits will be lost)", role: .destructive) { model.onRestoreSnapshot(id, true) }
+                    } else {
+                        Button("Restore previous") { model.onRestoreSnapshot(id, false) }
+                            .keyboardShortcut(.defaultAction)
+                            .disabled(!model.canRestore)
+                    }
+                }
+            }
+        }
+        .padding(18)
+        .frame(width: 520)
+    }
+
+    @ViewBuilder private func diff(_ snapshot: NotesSnapshot) -> some View {
+        ScrollView {
+            Group {
+                if let segments = NotesSnapshots.diff(snapshot) {
+                    OrganizeDiffText(segments: segments)
+                } else {
+                    Text("Too long to compare word by word.").foregroundStyle(.secondary)
+                }
+            }
+            .font(.system(size: 13))
+            .lineSpacing(3)
+            .textSelection(.enabled)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(10)
+        }
+        .frame(height: 220)
+        .background(RoundedRectangle(cornerRadius: 6).fill(Color.primary.opacity(0.04)))
+        .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(Color.primary.opacity(0.1)))
+    }
+}
+
+/// The diff as one text: removed words struck through in red, added words in green.
+struct OrganizeDiffText: View {
+    let segments: [WordDiff.Segment]
+
+    var body: some View {
+        segments.enumerated().reduce(Text("")) { text, item in
+            let (i, seg) = item
+            let word = Text((i == 0 ? "" : " ") + seg.text)
+            switch seg.kind {
+            case .same: return text + word
+            case .removed: return text + word.strikethrough().foregroundColor(.red)
+            case .added: return text + word.foregroundColor(.green).bold()
+            case .changed: return text + word.foregroundColor(.orange)
+            }
+        }
+        .accessibilityLabel(segments.map { seg in
+            switch seg.kind {
+            case .same: seg.text
+            case .removed: "removed: \(seg.text)"
+            case .added: "added: \(seg.text)"
+            case .changed: "changed: \(seg.text)"
+            }
+        }.joined(separator: " "))
+    }
+}
+
+/// The one-time tip about the tinted AI text (shown in a popover by the editor).
+struct NotesTipView: View {
+    var body: some View {
+        Label(NotesStatus.tip, systemImage: "sparkles")
+            .font(.callout)
+            .fixedSize(horizontal: false, vertical: true)
+            .padding(14)
+            .frame(width: 280, alignment: .leading)
     }
 }

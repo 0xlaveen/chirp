@@ -41,6 +41,13 @@ public enum NotesStatus {
     }
     public static let stopped = "Stopped"
     public static let paused = "Paused"
+    public static let pause = "Pause"
+    public static let resume = "Resume"
+    /// The header's one-word status when the details are in the banner under it.
+    public static let problem = "Problem"
+    public static let tip = "Chirp writes here and may still rewrite it. Edit it and it’s yours."
+    public static func structuringChip(_ host: String) -> String { "Structuring → \(host)" }
+    public static let shortcutsHint = "Keyboard shortcuts: ⌘⇧R record · ⌘⇧P pause · ⌘1 ⌘2 ⌘3 layout"
     public static let keepGoing = "Keep going"
     public static let stopRecording = "Stop"
 
@@ -81,6 +88,12 @@ public enum NotesStatus {
     public static func speakerRedownloadPrompt(size: String) -> String {
         "The speaker model on this Mac did not load. Remove it and download it again (\(size))? Audio never leaves this Mac."
     }
+}
+
+/// Sizes the views report about themselves, so a test can tell a wrapped label or a truncated chip.
+public struct NotesLayoutProbe: Equatable {
+    public var recordLabel = CGSize.zero
+    public var structuringChip = CGSize.zero
 }
 
 /// A session the journal found at launch, waiting for Keep, Save… or Discard.
@@ -140,6 +153,15 @@ public final class NotesModel {
     /// The user's "Structure notes" toggle.
     public var structureEnabled = true
     public var privacyLine = NotesStatus.privacy
+    /// Where structuring sends the text when that is off this Mac: its own chip in the footer, never truncated.
+    public var structuringHost: String?
+    /// The input level while recording, on the HUD's bar scale (0…1).
+    public var level: Float = 0
+    /// The one-time tip about the tinted AI text was shown (true until the session reads the preference).
+    public var tipSeen = true
+    @ObservationIgnored public var onTipSeen: () -> Void = {}
+    /// What the layout last measured, for the tests (never read by the views).
+    @ObservationIgnored public var probe = NotesLayoutProbe()
     /// The tooltip that spells out what the recovery copy holds (empty while it is off).
     public var privacyHelp = ""
     /// A recovered session is waiting (the banner above the notes).
@@ -165,6 +187,12 @@ public final class NotesModel {
     /// The user's "Auto-reorganize" toggle.
     public var autoReorganize = true
     public var reorganizeStatus: ReorganizeStatus = .idle
+    /// What the last reorganizes and Organize runs changed, for Show changes and Restore Notes Before Organize….
+    public var snapshots = NotesSnapshots()
+    /// The review sheet is open, on this snapshot.
+    public var reviewing: Int?
+    /// Restoring this snapshot would lose later edits: asks first.
+    public var confirmingRestore: Int?
     /// The "Organized · Undo" chip was dismissed for the reorganize applied at this time.
     public var dismissedChip: TimeInterval?
     /// The editor has keyboard focus (set by the editor).
@@ -191,6 +219,7 @@ public final class NotesModel {
     /// Set by the editor while it is on screen; called whenever changes are queued.
     @ObservationIgnored public var onPendingChanges: (() -> Void)?
 
+    public var onRestoreSnapshot: (_ id: Int, _ confirmed: Bool) -> Void = { _, _ in }
     public var onRecordToggle: () -> Void = {}
     public var onPauseToggle: () -> Void = {}
     public var onCopy: () -> Void = {}
@@ -271,6 +300,11 @@ public final class NotesModel {
         }
     }
 
+    /// The header's status: the error's details live in the banner under the header.
+    public var headerStatusText: String { isError ? NotesStatus.problem : statusText }
+    /// The error banner's message.
+    public var errorText: String? { if case .error(let message) = state { message } else { nil } }
+
     /// An append pass is running on the AI tail.
     public var isUpdating: Bool { structuring == .running }
 
@@ -330,6 +364,21 @@ public final class NotesModel {
 
     public func dismissUndoChip() {
         if case .applied(let at) = reorganizeStatus { dismissedChip = at }
+    }
+
+    /// A snapshot can be restored (not while the last segment finishes).
+    public var canRestore: Bool { !snapshots.items.isEmpty && !isBusy }
+
+    /// Opens the review sheet on `id`, or the newest snapshot.
+    public func review(_ id: Int? = nil) {
+        guard let id = id ?? snapshots.latest?.id, snapshots.snapshot(id) != nil else { return }
+        confirmingRestore = nil
+        reviewing = id
+    }
+
+    public func closeReview() {
+        reviewing = nil
+        confirmingRestore = nil
     }
 
     /// Why the notes pane shows an explanation instead of notes; nil when structuring is available.

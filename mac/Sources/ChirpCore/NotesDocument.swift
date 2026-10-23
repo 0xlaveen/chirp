@@ -58,6 +58,8 @@ public struct NotesTextChange: Equatable, Sendable {
         case rename
         /// A voice edit (#97), one undo group ("Edit by Voice").
         case edit
+        /// Restore Notes Before Organize put an earlier text back (one undo step).
+        case restore
     }
 
     public var range: NSRange

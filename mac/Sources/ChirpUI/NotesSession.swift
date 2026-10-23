@@ -133,11 +133,17 @@ public final class NotesSession {
         }
         model.tab = NotesTab(rawValue: settings.notesTab) ?? .notes
         model.structureEnabled = false
-        model.onRecordToggle = { [weak self] in self?.toggle(fromHotkey: false) }
+        model.onRecordToggle = { [weak self] in
+            guard let self else { return }
+            if isPaused { Task { await stop() } } else { toggle(fromHotkey: false) }
+        }
+        model.onRestoreSnapshot = { [weak self] id, confirmed in self?.restoreSnapshot(id, confirmed: confirmed) }
         model.onPauseToggle = { [weak self] in Task { await self?.togglePause() } }
         model.onStructureToggle = { [weak self] on in self?.setStructure(on) }
         model.onTabChange = { settings.notesTab = $0.rawValue }
         model.preview = settings.notesPreview
+        model.tipSeen = settings.notesTipSeen
+        model.onTipSeen = { settings.notesTipSeen = true }
         model.autoReorganize = settings.notesAutoReorganize
         model.onPreviewToggle = { settings.notesPreview = $0 }
         model.onAutoReorganizeToggle = { [weak self] on in
@@ -248,7 +254,9 @@ public final class NotesSession {
     }
 
     private func openMicrophone() {
-        let sink = NotesCaptureSink(recorder: recorder, silenceGuard: deps.silenceGuard()) { [weak self] in
+        let sink = NotesCaptureSink(recorder: recorder, silenceGuard: deps.silenceGuard(), onLevel: { [weak self] level in
+            Task { @MainActor in if self?.isRecording == true { self?.model.level = UtteranceLevels.normalize(rms: level.rms) } }
+        }) { [weak self] in
             Task { @MainActor in await self?.fail("No microphone signal") }
         }
         do {
@@ -349,8 +357,31 @@ public final class NotesSession {
         recorder.reset()
         speakers.reset()
         recorder.speakers = nil
+        model.snapshots.removeAll()
+        model.closeReview()
         model.longRunAcknowledged = 0
         model.highlightedParagraph = nil
+    }
+
+    // MARK: organize snapshots
+
+    /// Restore Notes Before Organize: the snapshot's text goes back as one undoable change, with the edits typed since
+    /// kept when they sit outside what Organize touched; otherwise it asks first (`confirmed`) and replaces the notes.
+    private func restoreSnapshot(_ id: Int, confirmed: Bool) {
+        guard recorder.state != .stopping, let snapshot = model.snapshots.snapshot(id) else { return }
+        let current = recorder.document.text
+        let target: String
+        switch NotesSnapshots.restore(snapshot, now: current) {
+        case .text(let text): target = text
+        case .replace(let text):
+            guard confirmed else { model.confirmingRestore = id; return }
+            target = text
+        }
+        model.closeReview()
+        model.snapshots.remove(id)
+        guard let change = NotesDocument.diff(current, target, kind: .restore) else { return }
+        recorder.restoreText(change.range, change.replacement)
+        chirpLog.info("notes organize restored chars=\(target.utf16.count, privacy: .public)")
     }
 
     // MARK: speaker labels
@@ -409,6 +440,7 @@ public final class NotesSession {
         journal.discard()
         journal.adopt(record)
         recorder.restore(record.document, elapsed: record.elapsed)
+        model.snapshots.removeAll()
         model.recovery = nil
         chirpLog.info("notes recovery kept segments=\(record.document.segments.count, privacy: .public)")
         sync()
@@ -458,12 +490,9 @@ public final class NotesSession {
         let enabled = settings.notesStructureEnabled(health: health)
         model.structureEnabled = enabled
         recorder.configureStructuring(enabled: enabled, health: health)
-        var line = settings.notesRecoveryCopy ? NotesStatus.privacyRecovery : NotesStatus.privacy
         model.privacyHelp = settings.notesRecoveryCopy ? NotesStatus.privacyRecoveryHelp : ""
-        if enabled, health?.correctionLeavesMachine == true {
-            line += " · Structuring sends text to \(health?.correctionHost ?? settings.serverConfig().host)"
-        }
-        model.privacyLine = line
+        model.structuringHost = enabled && health?.correctionLeavesMachine == true ? health?.correctionHost ?? settings.serverConfig().host : nil
+        model.privacyLine = settings.notesRecoveryCopy ? NotesStatus.privacyRecovery : NotesStatus.privacy
         model.canManageModels = settings.serverConfig().isLoopback
         sync()
     }
@@ -484,6 +513,9 @@ public final class NotesSession {
             if !recorder.state.isCapturing { capture.stop() }
         }
         model.state = state
+        let changes = recorder.takePendingChanges()
+        model.snapshots.record(changes, from: model.document.text, result: recorder.document.text, at: Date())
+        if let open = model.reviewing, model.snapshots.snapshot(open) == nil { model.closeReview() }
         model.document = recorder.document
         model.structuring = recorder.structuring
         model.speakerLabels = speakers.enabled
@@ -497,11 +529,11 @@ public final class NotesSession {
         model.voiceEditAvailable = recorder.canEdit
         model.canVoiceEdit = voiceEdit.status.isListening || voiceEdit.canStart
         // The editor replays the AI changes right away, onto text that matches `model.document` before them.
-        let changes = recorder.takePendingChanges()
         model.enqueue(changes)
         journal.update(recorder.document, elapsed: recorder.elapsed, urgent: !changes.isEmpty || leftCapture)
         model.keepSaving = journal.keepStatus
         model.debugRetention = recorder.debugRetention || (resolvedHealth()?.debugRetention ?? false)
+        if !recorder.state.isCapturing, model.level != 0 { model.level = 0 }
         model.elapsed = recorder.elapsed
         model.pauseReason = recorder.pauseReason
         model.finishingElapsed = recorder.stoppingElapsed
@@ -565,8 +597,12 @@ public final class NotesCaptureSink: @unchecked Sendable {
     private var guardState: SilenceGuard
     private var clock: TimeInterval = 0
 
-    public init(recorder: NotesRecorder, silenceGuard: SilenceGuard = SilenceGuard(), onSilence: @escaping @Sendable () -> Void) {
+    private let onLevel: (@Sendable (Level) -> Void)?
+
+    public init(recorder: NotesRecorder, silenceGuard: SilenceGuard = SilenceGuard(), onLevel: (@Sendable (Level) -> Void)? = nil,
+                onSilence: @escaping @Sendable () -> Void) {
         self.recorder = recorder
+        self.onLevel = onLevel
         self.onSilence = onSilence
         guardState = silenceGuard
     }
@@ -578,6 +614,7 @@ public final class NotesCaptureSink: @unchecked Sendable {
             return guardState.feed(level, at: clock)
         }
         recorder.handleFrame(frame, level: level)
+        onLevel?(level)
         if silent { onSilence() }
     }
 }

@@ -778,6 +778,13 @@ public final class NotesRecorder {
         changed()
     }
 
+    /// Restore Notes Before Organize: an earlier text goes back as a user edit (it claims the tail like a paste), and
+    /// the editor replays it as one undo step.
+    public func restoreText(_ range: NSRange, _ replacement: String) {
+        pendingChanges.append(NotesTextChange(range: range, replacement: replacement, kind: .restore))
+        userEdit(range, replacement, kind: .restore)
+    }
+
     /// Where the editor's caret is: in the tail (with focus) or composing marked text holds appends; leaving releases
     /// a held one.
     public func setEditorFocus(inTail: Bool, composing: Bool) {

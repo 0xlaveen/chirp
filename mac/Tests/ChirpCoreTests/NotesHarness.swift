@@ -604,6 +604,12 @@ final class NotesHarness {
         return self
     }
 
+    /// Resume (a paused session), then waits until the microphone is open again.
+    func resumeForTest() async {
+        await session.resume()
+        await until("microphone open") { self.engine.isTapped && self.recorder.state == .recording }
+    }
+
     /// Stop (the window's button), then waits for Finishing to end.
     @discardableResult
     func stop() async -> Self {

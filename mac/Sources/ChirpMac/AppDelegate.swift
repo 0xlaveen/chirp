@@ -44,8 +44,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let new = NSMenuItem(title: "New Notes", action: #selector(dockNewNotes), keyEquivalent: "")
         new.isEnabled = !notes.isActive
         menu.addItem(new)
-        let record = NSMenuItem(title: notes.isRecording ? "Stop Recording" : "Start Recording", action: #selector(dockToggleRecording), keyEquivalent: "")
-        record.isEnabled = notes.isRecording || (!notes.isActive && !controller.state.isActive)
+        let record = NSMenuItem(title: notes.isRecording ? "Stop Recording" : notes.isPaused ? "Resume Recording" : "Start Recording",
+                                action: #selector(dockToggleRecording), keyEquivalent: "")
+        record.isEnabled = notes.isRecording || notes.isPaused || (!notes.isActive && !controller.state.isActive)
         menu.addItem(record)
         for item in menu.items { item.target = self }
         return menu
