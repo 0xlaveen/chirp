@@ -138,6 +138,7 @@ public final class NotesSession {
         model.onReorganize = { [weak self] in self?.recorder.reorganizeNow() }
         model.onEditorFocus = { [weak self] inTail, composing in self?.recorder.setEditorFocus(inTail: inTail, composing: composing) }
         model.onSpeakerLabelsToggle = { [weak self] on in self?.setSpeakerLabels(on) }
+        model.onSpeakerEdit = { [weak self] edit in self?.editSpeakers(edit) }
         journal.onWrite = { bytes, ms in
             chirpLog.info("notes journal bytes=\(bytes ?? -1, privacy: .public) ms=\(ms, privacy: .public)")
         }

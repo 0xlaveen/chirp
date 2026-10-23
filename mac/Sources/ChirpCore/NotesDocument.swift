@@ -52,7 +52,11 @@ public enum NotesPiece: Equatable, Sendable {
 /// it applied, so the editor can replay exactly that delta onto its text storage.
 public struct NotesTextChange: Equatable, Sendable {
     /// `organize`: Organize re-structured fallback blocks in place (one undo group with the rest of its batch).
-    public enum Kind: Equatable, Sendable { case user, append, reorganize, toggleTask, organize }
+    public enum Kind: Equatable, Sendable {
+        case user, append, reorganize, toggleTask, organize
+        /// A speaker rename replaced the old name in the notes (one undo group, "Rename Speaker").
+        case rename
+    }
 
     public var range: NSRange
     public var replacement: String
@@ -100,11 +104,11 @@ public struct NotesDocument: Equatable, Sendable, Codable {
     /// This document, as opposed to one that New or a discarded close replaced: a pass carries it, so a late answer
     /// for a discarded document is never applied to the next one.
     public private(set) var id = UUID()
-    public private(set) var segments: [NotesSegment] = []
+    public internal(set) var segments: [NotesSegment] = []
     /// The notes, Markdown source, user and AI text (without the `# Notes — date` title export adds).
-    public private(set) var text = ""
+    public internal(set) var text = ""
     /// UTF-16 offset; `text[tailStart...]` is the AI-owned open block.
-    public private(set) var tailStart = 0
+    public internal(set) var tailStart = 0
     /// +1 on every change to `text` (user or AI).
     public private(set) var version = 0
     /// +1 whenever the tail is claimed, settles or a reorganize lands: a pass asked for an earlier generation is stale.
@@ -120,14 +124,14 @@ public struct NotesDocument: Equatable, Sendable, Codable {
     public private(set) var charsSinceReorganize = 0
     /// Every fallback block the client appended, exactly as appended. One still found verbatim in `text` is one the
     /// user has not edited, which Organize may re-structure in place.
-    public private(set) var fallbackBlocks: [String] = []
+    public internal(set) var fallbackBlocks: [String] = []
     /// The current segment's live partial. Display only: never exported.
     public var livePartial = ""
     /// There is content that was not saved with Save… (Copy does not count).
-    public private(set) var isDirty = false
+    public internal(set) var isDirty = false
     public private(set) var startedAt: Date
     /// The people speaker labels found in this document (Person 1, Person 2…).
-    public private(set) var roster = SpeakerRoster()
+    public internal(set) var roster = SpeakerRoster()
     /// +1 whenever a committed segment's labels change; the log keeps the newest (revision, segment) pairs, so the
     /// window rebuilds its transcript only from there.
     public var labelRevision: Int { labelLog?.revision ?? 0 }
@@ -192,14 +196,26 @@ public struct NotesDocument: Equatable, Sendable, Codable {
 
     // MARK: speakers
 
-    /// Labels a committed segment: each turn's diarizer slot becomes a person, numbered by first appearance.
+    /// Labels a committed segment: each turn's diarizer slot becomes a person, numbered by first appearance. Turns
+    /// the user reassigned are never changed: they keep their person, and their segment its turns unless the new
+    /// ones split the text the same way.
     public mutating func attachSpeakers(_ turns: [SpeakerAttribution.Turn], toSegment id: Int, tentative: Bool = false) {
         guard segments.indices.contains(id), !segments[id].isGap, !turns.isEmpty else { return }
-        segments[id].turns = turns.map {
-            SpeakerTurn(person: roster.person(forSlot: $0.slot), start: $0.start, text: $0.text, raw: $0.raw,
+        var labelled = turns.map {
+            SpeakerTurn(person: roster.id(forSlot: $0.slot), start: $0.start, text: $0.text, raw: $0.raw,
                         approximate: $0.approximate, keptOriginal: $0.keptOriginal)
         }
+        if let old = segments[id].turns, old.contains(where: \.manual) {
+            guard old.map(\.text) == labelled.map(\.text) else { return }
+            for i in old.indices where old[i].manual { labelled[i] = old[i] }
+        }
+        segments[id].turns = labelled
         segments[id].labelsTentative = tentative
+        relabelled(id)
+    }
+
+    /// Segment `id`'s turns changed: the window rebuilds its transcript from there.
+    mutating func relabelled(_ id: Int) {
         isDirty = true
         var log = labelLog ?? LabelLog()
         log.revision += 1
@@ -218,9 +234,6 @@ public struct NotesDocument: Equatable, Sendable, Codable {
 
     /// A recovered document's new diarizer starts with its own slots: keep the people, forget which slot was whom.
     public mutating func forgetSpeakerSlots() { roster.forgetSlots() }
-
-    /// A session-only name for a person (nil or blank: "Person N" again). Later passes and exports use it.
-    public mutating func renameSpeaker(_ id: Int, to name: String?) { roster.rename(id, to: name) }
 
     /// The diarizer slot of the last labelled turn, for words the diarizer never placed.
     public var lastSpeakerSlot: Int? {
@@ -283,7 +296,7 @@ public struct NotesDocument: Equatable, Sendable, Codable {
         return userEdit(toggle.range, toggle.replacement, kind: .toggleTask)
     }
 
-    private mutating func changed(inserted: Int) {
+    mutating func changed(inserted: Int) {
         version += 1
         charsSinceReorganize += inserted
         isDirty = true

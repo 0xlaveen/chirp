@@ -321,6 +321,28 @@ private func span(_ slot: Int, _ start: Double, _ end: Double) -> SpeakerSpan { 
         #expect(!r.document.segments[0].labelsTentative)
     }
 
+    /// M2: a turn the user reassigned while its labels were tentative keeps that person when Stop settles them.
+    @Test func aReassignedTurnSurvivesTheSettledRelabel() async throws {
+        let server = try MockServer()
+        let port = try await server.start()
+        defer { server.stop() }
+        server.script(0, .init(final: twoVoices))
+        let stub = StructureStub(), clock = ManualClock()
+        let fake = FakeDiarizer(script: [span(3, 0, 0.5), span(1, 0.55, 1.0)], lag: 10)
+        let r = make(port, stub: stub, clock: clock)
+        r.speakers = fake
+        await record(r, frames: 20)
+        await r.cut()
+        await eventually("committed, labels pending") { r.document.segments.count == 1 && r.labellingCount == 1 }
+        clock.advance(NotesRecorder.labelTimeout + 0.1)
+        await eventually("tentative labels") { r.document.segments[0].turns != nil }
+        r.editSpeakers { $0.reassignTurns([SpeakerTurnRef(segment: 0, index: 1)], to: nil); return [] }
+        #expect(r.document.segments[0].turns?.map(\.person) == [1, 3])
+        await r.stop()
+        #expect(!r.document.segments[0].labelsTentative)
+        #expect(r.document.segments[0].turns?.map(\.person) == [1, 3] && r.document.segments[0].turns?[1].manual == true)
+    }
+
     /// Privacy: a full labelled session (two recordings, labels, a pass, New) writes nothing under Application
     /// Support or Chirp's caches. Labels, names and the timeline live in memory only.
     @Test func aLabelledSessionWritesNoFiles() async throws {
@@ -471,15 +493,15 @@ private func span(_ slot: Int, _ start: Double, _ end: Double) -> SpeakerSpan { 
 @Suite struct SpeakerTranscriptRowTests {
     private func model() -> NotesModel {
         var d = NotesDocument()
-        d.append(NotesSegment(id: 0, offset: 0, raw: "a b c"))
-        d.attachSpeakers([.init(slot: 1, start: 0, text: "a"), .init(slot: 2, start: 5, text: "b"),
-                          .init(slot: 2, start: 30, text: "c")], toSegment: 0)
-        d.append(NotesSegment(id: 1, offset: 40, raw: "d e"))
-        d.attachSpeakers([.init(slot: 2, start: 40, text: "d"), .init(slot: 2, start: 70, text: "e", approximate: true)],
-                         toSegment: 1)
-        d.append(NotesSegment(id: 2, offset: 80, raw: "plain"))
-        d.append(NotesSegment(id: 3, offset: 90, raw: "f"))
-        d.attachSpeakers([.init(slot: 2, start: 90, text: "f")], toSegment: 3)
+        d.append(NotesSegment(id: 0, offset: 0, raw: "a b"))
+        d.attachSpeakers([.init(slot: 1, start: 0, text: "a"), .init(slot: 2, start: 5, text: "b")], toSegment: 0)
+        for (i, (at, text)) in [(30.0, "c"), (40, "d"), (70, "e")].enumerated() {
+            d.append(NotesSegment(id: i + 1, offset: at, raw: text))
+            d.attachSpeakers([.init(slot: 2, start: at, text: text, approximate: text == "e")], toSegment: i + 1)
+        }
+        d.append(NotesSegment(id: 4, offset: 80, raw: "plain"))
+        d.append(NotesSegment(id: 5, offset: 90, raw: "f"))
+        d.attachSpeakers([.init(slot: 2, start: 90, text: "f")], toSegment: 5)
         let m = NotesModel()
         m.document = d
         return m
@@ -487,11 +509,22 @@ private func span(_ slot: Int, _ start: Double, _ end: Double) -> SpeakerSpan { 
 
     @Test func chipsCollapseForOnePersonAcrossSegmentsAndRepeatAfterAMinute() {
         let rows = model().transcriptRows
-        #expect(rows.map(\.id) == ["0.0", "0.1", "0.2", "1.0", "1.1", "2", "3.0"])
+        #expect(rows.map(\.id) == ["0.0", "0.1", "1.0", "2.0", "3.0", "4", "5.0"])
         #expect(rows.map { $0.chip?.name } == ["Person 1", "Person 2", nil, nil, "Person 2", nil, "Person 2"])
         // The repeated chip at 70 s is the approximate turn's, dotted.
         #expect(rows[4].chip?.approximate == true)
         #expect(rows.map(\.offset) == [0, 5, 30, 40, 70, 80, 90])
+    }
+
+    /// After a merge (or a reassign), one person's adjacent turns in a segment read as one paragraph.
+    @Test func samePersonTurnsInASegmentJoin() {
+        var d = NotesDocument()
+        d.append(NotesSegment(id: 0, offset: 0, raw: "a b c"))
+        d.attachSpeakers([.init(slot: 1, start: 0, text: "a"), .init(slot: 2, start: 2, text: "b"), .init(slot: 1, start: 4, text: "c")],
+                         toSegment: 0)
+        d.mergeSpeaker(2, into: 1)
+        #expect(d.transcriptParagraphs.map { $0.text() } == ["a b c"])
+        #expect(d.transcriptLines() == ["**[00:00:00] Person 1:** a b c"])
     }
 
     @Test func footerStatusFollowsTheModelAndTheCount() {

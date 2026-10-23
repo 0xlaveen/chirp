@@ -151,6 +151,10 @@ public final class NotesModel {
     /// The user's "Label speakers" toggle, and the model behind it.
     public var speakerLabels = false
     public var speakerModel: SpeakerModelState = .notDownloaded
+    /// The open rename field and what is typed in it, and the banner after a rename or merge (`SpeakerMenu`).
+    public var renaming: SpeakerRename?
+    public var renameText = ""
+    public var speakerBanner: SpeakerBanner?
     /// The Notes pane shows the read-only Preview instead of the editor.
     public var preview = false
     /// The user's "Auto-reorganize" toggle.
@@ -194,6 +198,7 @@ public final class NotesModel {
     public var onStructureToggle: (Bool) -> Void = { _ in }
     public var onTabChange: (NotesTab) -> Void = { _ in }
     public var onSpeakerLabelsToggle: (Bool) -> Void = { _ in }
+    public var onSpeakerEdit: (SpeakerEdit) -> Void = { _ in }
     /// The editor changed the text: the range (UTF-16, in the old text) and its replacement.
     @ObservationIgnored public var onUserEdit: (NSRange, String, NotesTextChange.Kind) -> Void = { _, _, _ in }
     public var onReorganize: () -> Void = {}

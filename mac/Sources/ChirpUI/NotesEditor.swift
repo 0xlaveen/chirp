@@ -171,6 +171,7 @@ final class NotesEditorCoordinator: NSObject, NSTextViewDelegate {
     static let updateAction = "Update Notes"
     static let reorganizeAction = "Organize Notes"
     static let toggleAction = "Toggle Task"
+    static let renameAction = "Rename Speaker"
 
     let model: NotesModel
     let scrollView: NSScrollView
@@ -432,16 +433,18 @@ final class NotesEditorCoordinator: NSObject, NSTextViewDelegate {
         if pinned, changes.contains(where: { $0.kind == .append }) { textView.scrollToEndOfDocument(nil) }
     }
 
-    /// Replays changes in order; a run of Organize's in-place replacements is one undo group.
+    /// Replays changes in order; a run of Organize's in-place replacements (or of one speaker rename's) is one undo
+    /// group.
     private func applyAll(_ changes: [NotesTextChange]) {
         var i = 0
         while i < changes.count {
             if let run = changes[i].run { applyStep(changes[i], run: run); i += 1; continue }
-            guard changes[i].kind == .organize else { apply(changes[i]); i += 1; continue }
+            let kind = changes[i].kind
+            guard kind == .organize || kind == .rename else { apply(changes[i]); i += 1; continue }
             textView.breakUndoCoalescing()
             undo.beginUndoGrouping()
-            while i < changes.count, changes[i].kind == .organize { apply(changes[i], grouped: true); i += 1 }
-            undo.setActionName(Self.reorganizeAction)
+            while i < changes.count, changes[i].kind == kind { apply(changes[i], grouped: true); i += 1 }
+            undo.setActionName(kind == .rename ? Self.renameAction : Self.reorganizeAction)
             undo.endUndoGrouping()
         }
     }
