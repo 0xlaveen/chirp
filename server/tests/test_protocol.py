@@ -6,6 +6,7 @@ from conftest import HEADERS, PCM, START, TOKEN
 from starlette.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
+from chirp_server import build
 from chirp_server.app import authorized, create_app
 from chirp_server.audio import MAX_FRAME, MAX_PCM
 from chirp_server.engine import FakeEngine
@@ -40,6 +41,7 @@ def test_health_redaction(client):
         "notes_structure": True,
         "notes_correction": True,
         "notes_reorganize": True,
+        **build.info(),
     }
 
 

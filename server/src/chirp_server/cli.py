@@ -138,7 +138,8 @@ def parser():
     launch.add_argument("action", choices=["install", "uninstall"])
     setup = commands.add_parser("setup", help="local Mac setup with JSON progress")
     setup.add_argument(
-        "action", choices=["status", "download", "start", "refresh", "add", "select"]
+        "action",
+        choices=["status", "download", "start", "refresh", "add", "select", "restart", "replace"],
     )
     setup.add_argument("--model", choices=["speech", "cleanup"], default="speech")
     setup.add_argument("--choice", help="catalog id (including its pinned revision)")

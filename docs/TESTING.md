@@ -69,6 +69,15 @@ Each step needs the operator's hands or approval. Do them in order.
    - Check that live text appears in the HUD and the final text lands in the field.
    - Try TextEdit, Safari, Slack or VS Code (these paste), and Terminal.
 
+### Out-of-date server
+
+Use a throwaway server on another port, never the real one on 7821 (the app's port is Settings → Server → URL).
+
+1. Start an older server by hand on 7899 from a checkout before this change, point Settings → Server at `http://127.0.0.1:7899`, and open Live Notes. Settings → Server, the menu's status line and the Notes banner say "out of date" with the sentence about where it started; the button is **Use Chirp's managed server instead** (the process is not a LaunchAgent).
+2. Stop it, start the current server by hand on 7899: no "Out of date" anywhere.
+3. `scripts/install-mac.sh --server-only` with `CHIRP_PORT=7899` while a hand-started server holds 7899 prints the pid and command and the two commands to switch, and restarts nothing.
+4. On the reference Mac, with Chirp's own LaunchAgent running an old checkout, **Restart server** brings it to the current code; Settings → Server shows the restart result.
+
 ### Mac Live Notes
 
 Run on the reference Mac after installing the build with `./scripts/install-mac.sh` and selecting the default correction model.

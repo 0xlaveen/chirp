@@ -113,7 +113,7 @@ For iPhone or iPad, point the agent at [ios/README.md](ios/README.md) → Instal
    ```sh
    ./scripts/install-mac.sh          # server in ~/Library/Application Support/Chirp, Chirp.app in ~/Applications
    ```
-   In **Models on this Mac**, download a speech model (optionally a clean-up model too), then click **Start Local Server**. Grant Microphone and Accessibility in Set Up Chirp, then press **⌃⌥Space** in any text field. The installer doesn't need Nix, dotfiles or Tailscale, and it doesn't download any models until you choose them. Details, including `--server-only`: [mac/README.md](mac/README.md#install) and [server/README.md](server/README.md).
+   In **Models on this Mac**, download a speech model (optionally a clean-up model too), then click **Start Local Server**. Grant Microphone and Accessibility in Set Up Chirp, then press **⌃⌥Space** in any text field. The installer doesn't need Nix, dotfiles or Tailscale, and it doesn't download any models until you choose them. Re-running it updates the server files and then looks at port 7821: if Chirp's own LaunchAgent is running it, the script restarts it so the new code takes effect; if another LaunchAgent or a process you started owns the port, it says exactly what is running and how to switch (`--no-restart` only reports). Details, including `--server-only`: [mac/README.md](mac/README.md#install) and [server/README.md](server/README.md).
 2. **Android.** Build the signed release APK and install the arm64 split:
    ```sh
    android/scripts/setup-toolchain.sh && source ~/.local/share/chirp-android/env.sh

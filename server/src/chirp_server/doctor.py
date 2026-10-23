@@ -203,6 +203,66 @@ def check_port(port: int = 7821) -> Check:
     return Check("port", WARN, "held by a non-chirp process", f"lsof -nP -iTCP:{port} -sTCP:LISTEN")
 
 
+def _listener(port: int) -> tuple[int, int, str] | None:
+    """(pid, seconds since it started, command line) of the process listening on `port`, if any."""
+    try:
+        pids = subprocess.run(
+            ["/usr/sbin/lsof", "-nP", f"-iTCP:{port}", "-sTCP:LISTEN", "-t"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
+        ).stdout.split()
+        pid = int(pids[0])
+        fields = subprocess.run(
+            ["/bin/ps", "-o", "etimes=,command=", "-p", str(pid)],
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
+        ).stdout.split(None, 1)
+        return pid, int(fields[0]), fields[1].strip()
+    except (OSError, subprocess.SubprocessError, ValueError, IndexError):
+        return None
+
+
+def _newest_source(server_dir: Path) -> float:
+    try:
+        return max(p.stat().st_mtime for p in (server_dir / "src/chirp_server").rglob("*.py"))
+    except (OSError, ValueError):
+        return 0.0
+
+
+def check_server_version(port: int = 7821, listener=_listener, newest=_newest_source) -> Check:
+    """Flag a running server that started before the code it runs from was last changed.
+
+    The token is never read, so this uses the process, not the authenticated health: it also covers
+    servers too old to report a version.
+    """
+    if not _listening(port):
+        return Check("server version", OK, f"no server on 127.0.0.1:{port}")
+    found = listener(port)
+    if found is None or "chirp_server" not in found[2]:
+        return Check("server version", OK, "could not identify the process on the port")
+    pid, age, command = found
+    # By the venv marker, not the first word: the managed install's path contains a space.
+    root, marker, _ = command.partition("/.venv/bin/")
+    server_dir = Path(root) if marker and root.startswith("/") else None
+    if server_dir is None or not (server_dir / "src/chirp_server").is_dir():
+        return Check("server version", OK, "running; its source folder is not recognised")
+    home = str(Path.home())
+    where = str(server_dir)
+    where = "~" + where[len(home) :] if where.startswith(home) else where
+    if newest(server_dir) > time.time() - age + 1:
+        return Check(
+            "server version",
+            WARN,
+            f"server pid {pid} started {age // 3600}h ago, before its code in {where} changed",
+            "restart it: uv run chirp-server setup restart (or scripts/install-mac.sh)",
+        )
+    return Check("server version", OK, f"running code from {where} that has not changed since")
+
+
 def check_retention(settings: Settings) -> Check:
     count = size = 0
     if settings.debug_dir.is_dir():
@@ -413,6 +473,7 @@ def doctor(args, tailscale_status: tuple[int, str] | None = None) -> int:
             config_check,
             check_token(settings.config_dir),
             check_port(args.port),
+            check_server_version(args.port),
             check_retention(settings),
             check_correction(settings),
             check_tailscale(tailscale_status),

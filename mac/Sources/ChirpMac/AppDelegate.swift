@@ -9,6 +9,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let localModelsWindow = LocalModelsWindowController()
     private let pairingWindow = PairingWindowController()
     private let notes = NotesController()
+    private let serverWatch = ServerWatch()
     private lazy var notesWindow = NotesWindowController(notes: notes)
     private let dock = DockController()
     private let openNotesHotkey = OpenNotesHotkey()
@@ -61,7 +62,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                            toggleNotes: { [notes] in notes.toggle(fromHotkey: false) },
                            showNotes: { [notesWindow] in notesWindow.show() },
                            notes: { [notes, openNotesHotkey] in var state = notes.menuState; state.openShortcut = openNotesHotkey.title; return state },
-                           setRunning: { [notes, openNotesHotkey] in notes.setRunning($0); openNotesHotkey.setRunning($0) }))
+                           setRunning: { [notes, openNotesHotkey] in notes.setRunning($0); openNotesHotkey.setRunning($0) },
+                           serverNotice: { [serverWatch] in (serverWatch.notice, serverWatch.message) },
+                           fixServer: { [serverWatch] in serverWatch.fix() }))
         settingsWindow.onOpenSetup = { [onboardingWindow] in onboardingWindow.show() }
         settingsWindow.onOpenModels = { [localModelsWindow] in localModelsWindow.show() }
         settingsWindow.onPairPhone = { [pairingWindow] in pairingWindow.show() }
@@ -70,15 +73,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         localModelsWindow.onServerChanged = { [controller] in Task { await controller.refreshHealth() } }
         settingsWindow.serverStatus = { [controller] in MenuContent.serverStatus(health: controller.health, healthError: controller.healthError) }
         settingsWindow.health = { [controller] in controller.health }
+        settingsWindow.serverNotice = { [serverWatch] in (serverWatch.notice, serverWatch.message) }
+        settingsWindow.onFixServer = { [serverWatch] in serverWatch.fix() }
+        notes.model.onFixServer = { [serverWatch] in serverWatch.fix() }
+        serverWatch.onFixed = { [controller] in Task { await controller.refreshHealth() } }
+        serverWatch.onChange = { [weak self] in
+            guard let self else { return }
+            notes.model.serverNotice = serverWatch.notice
+            notes.model.serverFixMessage = serverWatch.message
+        }
         settingsWindow.catalog = { [controller] in controller.styleCatalog }
         settingsWindow.onHotkeyChange = { [controller, notes] in controller.registerHotkey(); notes.model.dictationKey = settings.hotkey.title }
         settingsWindow.onRecordingChanged = { [controller] recording in
             // The live hotkey would start a dictation while the user is typing the new one.
             if recording { controller.suspendHotkey() } else { controller.registerHotkey() }
         }
-        controller.onChange = { [weak self] in
+        controller.onChange = { [weak self, serverWatch, controller] in
             self?.menu?.refreshIcon()
             self?.notes.healthChanged()
+            Task { await serverWatch.update(health: controller.health) }
         }
         controller.isBlocked = { [notes] in notes.isActive }
         notes.health = { [controller] in controller.health }

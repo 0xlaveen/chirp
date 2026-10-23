@@ -130,6 +130,9 @@ public final class NotesModel {
     public var debugRetention = false
     /// The server is on this Mac, so "Manage Local Models…" can open the models window.
     public var canManageModels = false
+    /// The server answered but is older than the app, and what the last attempt to fix it said.
+    public var serverNotice: ServerNotice?
+    public var serverFixMessage: String?
     public var reduceMotion = false
     /// The user's "Label speakers" toggle, and the model behind it.
     public var speakerLabels = false
@@ -164,6 +167,7 @@ public final class NotesModel {
     public var onRecoverySave: () -> Void = {}
     public var onRecoveryDiscard: () -> Void = {}
     public var onManageModels: () -> Void = {}
+    public var onFixServer: () -> Void = {}
     public var onStructureToggle: (Bool) -> Void = { _ in }
     public var onTabChange: (NotesTab) -> Void = { _ in }
     public var onSpeakerLabelsToggle: (Bool) -> Void = { _ in }
@@ -291,7 +295,8 @@ public final class NotesModel {
                 ? "Structured notes need a correction model. Choose one in Models on this Mac, and the transcript is turned into notes as you talk."
                 : "Structured notes need a correction model. Turn on clean-up on the server to get them; the transcript keeps working meanwhile."
         case .off(.unsupported):
-            "Structured notes need a newer Chirp server. Update chirp-server; the transcript keeps working meanwhile."
+            serverNotice.map { [$0.message, serverFixMessage].compactMap { $0 }.joined(separator: " ") + " The transcript keeps working meanwhile." }
+                ?? "Structured notes need a newer Chirp server. Update chirp-server; the transcript keeps working meanwhile."
         case .off(.waiting):
             "Waiting for the server… Notes are structured once Chirp knows where the structuring model runs; the transcript keeps working meanwhile."
         default: nil
@@ -299,6 +304,9 @@ public final class NotesModel {
     }
 
     /// "Manage Local Models…" is offered next to the explanation.
+    /// The button that fixes an out-of-date server, next to the explanation.
+    public var serverFix: ServerFix? { structuring == .off(.unsupported) ? serverNotice?.fix : nil }
+
     public var offersModels: Bool { structuring == .off(.correctionOff) && canManageModels }
 
     /// The small line under the notes after a failed append pass.

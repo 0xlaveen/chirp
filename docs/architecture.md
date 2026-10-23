@@ -111,6 +111,8 @@ Responses:
 | 409 | `{"type":"error","code":"notes_off","message":"Notes structuring needs correction enabled on the server"}` | `correction.mode == "off"` |
 | 503 | `{"type":"error","code":"busy",…}` | Another structuring request is already running server-wide (one at a time, never queued) |
 
+Authenticated `GET /v1/health` also says what the process is, so a client can tell it is older than itself: `"version"` (package version), `"commit"` (short git commit, or `null`), `"api"` (an integer bumped when a client starts needing something older servers lack; currently 2), `"capabilities"` (the `notes_*` feature names that are true), `"started_at"` (Unix seconds), `"pid"` and `"source"` (the server folder it runs from, home shown as `~`). A server that predates these fields has none of them, which clients treat as out of date. None of it is secret or user data, and unauthenticated health still returns only `{"ok":true}`.
+
 Authenticated `GET /v1/health` always carries `"notes_structure": true` on servers that have
 the endpoint, whatever the correction mode, so a client tells an old server (field absent) from
 correction being off (`correction == "off"`).

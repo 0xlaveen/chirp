@@ -31,6 +31,9 @@ public struct SettingsState: Sendable {
     /// The server's state in words ("Connected", "Unreachable", …) and its tone.
     public var serverStatus = "Connected"
     public var serverStatusTone: MenuEntry.Tone = .ok
+    /// The server is older than the app: what to say and the button that fixes it; the last fix attempt's result.
+    public var serverNotice: ServerNotice?
+    public var serverFixMessage: String?
     /// Clean-up: on or off, the default style, the edited style prompts, the raw-first option and the per-app styles.
     public var cleanupEnabled = false
     /// Where clean-up runs, or that the server has it off (under the checkbox), and whether it can be turned on.
@@ -183,6 +186,9 @@ public final class SettingsForm {
     public let notesButton = NSButton(title: "Open Notes Window", target: nil, action: nil)
     /// About: the icon, the version and Third-Party Notices….
     public let about: AboutView
+    /// Server: "Restart server" or "Use Chirp’s managed server instead", shown only for an out-of-date server.
+    public let serverFixButton = NSButton(title: ServerFix.restart.buttonTitle, target: nil, action: nil)
+    private let serverDetail = SettingsForm.help("")
     public let micButton = NSButton(title: "Fix…", target: nil, action: nil)
     public let accessibilityButton = NSButton(title: "Fix…", target: nil, action: nil)
     /// Under the checkbox: what it does, or why the last change failed.
@@ -221,6 +227,14 @@ public final class SettingsForm {
         serverURL.widthAnchor.constraint(equalToConstant: Self.controlWidth).isActive = true
         for button in [micButton, accessibilityButton, removeSpeakerModel] { button.bezelStyle = .rounded; button.controlSize = .small }
         micStatus.accessory = micButton
+        serverFixButton.bezelStyle = .rounded; serverFixButton.controlSize = .small
+        serverFixButton.setAccessibilityLabel("Fix the out-of-date server")
+        serverStatus.accessory = serverFixButton
+        serverDetail.isHidden = true
+        let serverStack = NSStackView(views: [serverStatus, serverDetail])
+        serverStack.orientation = .vertical
+        serverStack.alignment = .leading
+        serverStack.spacing = 4
         accessibilityStatus.accessory = accessibilityButton
         speakerStatus.accessory = removeSpeakerModel
         micButton.setAccessibilityLabel("Fix Microphone access")
@@ -319,7 +333,7 @@ public final class SettingsForm {
         build(.server, [
             row("URL:", serverURL),
             row("Token:", tokenStatus, help: tokenHelp),
-            row("Status:", serverStatus),
+            row("Status:", serverStack),
             row("Clean-up:", keepLoadedStack),
             row("Models:", modelsButton, help: Self.help("Download speech and local Qwen models, see progress, and start this Mac's server.")),
             row("Doctor:", doctorButton, help: Self.help("Copies the command that checks the server, to run in Terminal.")),
@@ -510,7 +524,14 @@ public final class SettingsForm {
                         tone: s.tokenPresent ? .ok : .warning, text: "~/.config/chirp/token")
         tokenHelp.stringValue = s.tokenPresent ? "Chirp sends this token with every request."
                                                : "No token yet — start chirp-server once to create it."
-        serverStatus.set(symbol: "circle.fill", tone: s.serverStatusTone, text: s.serverStatus)
+        serverStatus.set(symbol: "circle.fill", tone: s.serverNotice == nil ? s.serverStatusTone : .warning,
+                         text: s.serverNotice == nil ? s.serverStatus : ServerNotice.statusText)
+        serverFixButton.title = s.serverNotice?.fix?.buttonTitle ?? ServerFix.restart.buttonTitle
+        serverFixButton.isHidden = s.serverNotice?.fix == nil
+        serverFixButton.isEnabled = s.serverFixMessage?.hasSuffix("…") != true
+        let detail = [s.serverNotice?.message, s.serverFixMessage].compactMap { $0 }.joined(separator: "\n")
+        serverDetail.stringValue = detail
+        serverDetail.isHidden = detail.isEmpty
         modelsButton.isEnabled = ServerConfig.load(urlString: s.serverURL).isLoopback
         fillMicrophoneMenu(s.inputs, defaultInput: s.defaultInput, chosen: s.chosenInputUID)
         speakerStatus.set(symbol: s.speakerModelDownloaded ? "checkmark.circle.fill" : "circle", tone: s.speakerModelDownloaded ? .ok : .normal,

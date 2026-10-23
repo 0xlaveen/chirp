@@ -35,7 +35,7 @@ It creates a self-signed "Chirp Local Dev" code-signing certificate in your logi
 
 ### Choose and download local models
 
-For a standalone install use `./scripts/install-mac.sh` from the repository root. It installs the server in Application Support and the app in `~/Applications`; it does not require dotfiles or Nix. The app finds this server without relying on the terminal's PATH. Existing CLI/Nix-managed installations remain supported.
+For a standalone install use `./scripts/install-mac.sh` from the repository root. It installs the server in Application Support and the app in `~/Applications`, then restarts Chirp's own server if it was running (or says what else owns the port; `--no-restart` only reports); it does not require dotfiles or Nix. The app finds this server without relying on the terminal's PATH. Existing CLI/Nix-managed installations remain supported.
 
 Open **Settings → Server → Manage Local Models…**, or **Set Up Models…** on the setup window's server step. Pick a speech model — English Parakeet v2 or multilingual v3 (MLX), or SenseVoice Small for Mandarin, Cantonese, English and mixed speech (CPU; the picker groups them by engine) — and a local correction model (Qwen3 4B Instruct, Qwen3.5 0.8B/2B/4B). Model sizes appear in the picker; details describe the default or alternative. Smaller correction models scored lower in Chirp's evaluations; compatibility alone does not guarantee quality.
 
@@ -239,7 +239,7 @@ Settings is a native preferences window with toolbar tabs (`NSTabViewController`
 | Dictation | Hotkey (presets and Record Shortcut…, plus the fn/🌐 setup note when fn alone is chosen), Mode (Auto-stop or Hold to talk) and the auto-stop pause, Microphone (the menu's picker), Word waveform overlay, Return after inserting (Off, Always, In chat apps only); Sounds: cues on/off, pack with ▶ previews, volume, the Custom pack's start and stop files |
 | Clean-up | Clean up dictated text, the default style, the per-style prompt editor, per-app styles with Test; Insert raw immediately, Show changes after clean-up, Offer Use raw for 5 seconds |
 | Notes | The Live Notes shortcut (⌃⌥N), the Open Notes shortcut, Keep a recovery copy until notes are saved, the speaker model (on this Mac or not, with Remove), Open Notes Window. The switches you change while recording (Structure notes, Auto-reorganize, Label speakers) stay in the Notes window's footer. |
-| Server | URL, token location, status; Keep clean-up model loaded, Manage Local Models…, Copy Doctor Command |
+| Server | URL, token location, status (with **Restart server** when the server is out of date, see [An out-of-date server](#an-out-of-date-server)); Keep clean-up model loaded, Manage Local Models…, Copy Doctor Command |
 | Devices | Pair a Phone… (see [Pair a phone](#pair-a-phone)) |
 | About | The icon, version and Third-Party Notices… |
 
@@ -292,6 +292,19 @@ Settings → General toggles a per-user LaunchAgent, `~/Library/LaunchAgents/dev
 
 The HUD never takes focus, so status changes (Listening, Inserted, Copied, errors) are announced to VoiceOver with `NSAccessibility` announcements, and the partial text is exposed as an updating element. The waveform does not move when Reduce Motion is on.
 
+## An out-of-date server
+
+The server that answers on port 7821 is a long-running process, so reinstalling the app does not update it. The app checks the build the server reports in health (API level and capabilities, see [docs/architecture.md](../docs/architecture.md)); a server that is older than the app, or too old to report one, shows **Server out of date** under the bird in the menu (with the fix as a menu row), **Out of date** in Settings → Server, and in the Live Notes banner, with one sentence: "This Mac's Chirp server is out of date (started Oct 19 from ~/…/chirp)." The state depends on who runs it:
+
+| The server is | What you see |
+|---|---|
+| Chirp's own LaunchAgent (`dev.chirp.server`), even if it runs another checkout | **Restart server** reloads the agent so it runs the code on disk now. If it is still out of date, the sentence names the folder it runs from; run `scripts/install-mac.sh` or `chirp-server service install` from the checkout you want. |
+| Started by hand, or by something that is not a LaunchAgent | **Use Chirp's managed server instead** asks first, stops that process and starts the managed one. |
+| Another LaunchAgent | The sentence names it with the `launchctl bootout` command to stop it (launchd would only restart it, so there is no button). Then Restart server or `chirp-server setup restart` starts the managed one. |
+| On another machine | The sentence names the host; update and restart `chirp-server` there. |
+
+The fix runs `chirp-server setup restart` or `replace`; a `chirp-server` too old to know them says to run `scripts/install-mac.sh`. A current server shows none of this, and unauthenticated health (no token) says nothing about age, so it never shows it either.
+
 ## Troubleshooting
 
 | Symptom | What is happening |
@@ -300,6 +313,7 @@ The HUD never takes focus, so status changes (Listening, Inserted, Copied, error
 | "Inserted? ⌘V if empty" | The AX write was accepted but the readback did not confirm in time; the text waits on a transient pasteboard so it can't be inserted twice. |
 | "Secure field", nothing inserted | A password field has secure input on; Chirp refuses to insert and copies nothing. |
 | "No microphone signal" | The input was digitally silent for 1.5 s and the session was cancelled. Check the Microphone row / system input device. |
+| Status line "Server out of date" (amber), or Notes says the server is out of date | The process on the port is older than the app; see [An out-of-date server](#an-out-of-date-server). |
 | Status line "Server unreachable" (red) | The bird is dimmed; check that `chirp-server` is running (Settings → Server → Copy Doctor Command copies the check). |
 | Status line "DEBUG recordings kept" (red) | The server is running with opt-in debug retention; a red dot also sits on the bird. |
 | `Use raw` after a paste only copies | A pasted insertion can't be verified, so Chirp never posts a blind ⌘Z; it copies the raw text for a manual ⌘V. |
@@ -335,9 +349,9 @@ The menu snapshots are built from the same `MenuHeaderView` and `MenuRowView` th
 ## Layout
 
 ```
-Sources/ChirpCore/    protocol, Preferences, StreamSession (URLSessionWebSocketTask), DictationMachine, Live Notes (NotesSegmenter, NotesDocument, NotesMarkdown, NotesRecorder), HotKey (Carbon and the event tap) and its validation, Activation (modes, auto-stop), onboarding flow, sound cues and packs, audio helpers, input selection, pairing (link, Tailscale Serve parsing, flow and timer), Insertion/
+Sources/ChirpCore/    protocol, Preferences, StreamSession (URLSessionWebSocketTask), DictationMachine, Live Notes (NotesSegmenter, NotesDocument, NotesMarkdown, NotesRecorder), HotKey (Carbon and the event tap) and its validation, Activation (modes, auto-stop), onboarding flow, sound cues and packs, audio helpers, input selection, server version and ownership (ServerVersion), pairing (link, Tailscale Serve parsing, flow and timer), Insertion/
 Sources/ChirpUI/      HUD view and waveform, Notes window (NotesModel, NotesView, NotesEditor and NotesEditorStyle: the NSTextView editor and its live Markdown styling), menu content, menu views and status-icon rules, settings tabs and form, shortcut recorder, setup and About views, Pair a Phone view and QR code, snapshot renderer (no system access)
-Sources/ChirpMac/     app: menu bar, HUD panel, settings (About is its last tab), setup and Pair a Phone windows (and the Tailscale CLI runner), capture, controller, NotesController and NotesWindowController, --selftest
+Sources/ChirpMac/     app: out-of-date-server check and fix (ServerWatch), menu bar, HUD panel, settings (About is its last tab), setup and Pair a Phone windows (and the Tailscale CLI runner), capture, controller, NotesController and NotesWindowController, --selftest
 Tests/ChirpCoreTests/
 scripts/              bundle.sh, make-cert.sh, install.sh, test.sh, make-sounds.swift (the sound packs), check-sounds.sh, Chirp.entitlements
 ```
