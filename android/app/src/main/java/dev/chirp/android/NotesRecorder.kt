@@ -62,6 +62,7 @@ internal class NotesRecorder(
     health: Health?,
     structuringEnabled: Boolean,
     var autoReorganize: Boolean = true,
+    private val editNotes: suspend (NotesEditRequest) -> NotesEditResponse = { throw NotesHttpError(404) },
     private val now: () -> Long = SystemClock::uptimeMillis,
     private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate),
 ) {
@@ -73,7 +74,7 @@ internal class NotesRecorder(
         /** The session holds the microphone service: recording, paused or finishing. */
         val active get() = live || this == STOPPING
     }
-    enum class PassKind { APPEND, REORGANIZE }
+    enum class PassKind { APPEND, REORGANIZE, EDIT }
 
     var state = State.IDLE
         private set(value) { if (field != value) { field = value; changed() } }
@@ -156,6 +157,13 @@ internal class NotesRecorder(
     private var undo: Pair<String, Int>? = null
     private var organizeBase: String? = null
     private val waiters = mutableListOf<Pair<() -> Boolean, CompletableDeferred<Unit>>>()
+    /** Voice edit: the spoken command's socket while capture is diverted to it, the edit waiting for the pass slot, and the undo. */
+    private var diverted: Segment? = null
+    private var editSupported = health?.notesEdit == true
+    private var editMissing = false
+    private var pendingEdit: PendingEdit? = null
+    private var editRun = 0
+    private var editUndo: Pair<String, Int>? = null
 
     init { structuring = allowed }
 
@@ -172,6 +180,11 @@ internal class NotesRecorder(
         else -> reorganizeState
     }
     val canUndo get() = undo?.second == document.version
+    /** The server has `POST /v1/notes/edit` (health), and it did not answer 404 this session. */
+    val canEdit get() = editSupported
+    /** A voice edit is waiting for the pass slot or running. */
+    val isEditing get() = pendingEdit != null
+    val canUndoEdit get() = editUndo?.second == document.version
 
     fun takePendingChanges(): List<NotesChange> = pending.toList().also { pending.clear() }
     val pendingCount get() = pending.size
@@ -186,6 +199,7 @@ internal class NotesRecorder(
     fun configure(enabled: Boolean, health: Health?) {
         allowed = Structuring.availability(health, enabled)
         reorganizeSupported = health?.notesReorganize == true && !reorganizeMissing
+        editSupported = health?.notesEdit == true && !editMissing
         if (allowed is Structuring.Off) structuring = allowed
         else if (structuring is Structuring.Off) {
             structuring = if (passJob == null) Structuring.Idle else Structuring.Running
@@ -280,6 +294,7 @@ internal class NotesRecorder(
     /** Closes the microphone and lets the capturing segment finalize as at a cut. */
     private fun releaseMicrophone() {
         stopCapture()
+        diverted = null
         val (old, end) = router.swap(null)
         current?.let { seq -> segments[seq]?.let { it.end = end; if (it === old) finalize(it) } }
         current = null
@@ -296,7 +311,7 @@ internal class NotesRecorder(
     fun cancel() {
         epoch++
         stopCapture()
-        router.swap(null)
+        router.swap(null); diverted = null
         segments.values.forEach { close(it, cancel = true) }
         segments.clear(); results.clear(); nextCommit = nextSeq; current = null; resuming = false
         passJob?.cancel(); passJob = null
@@ -305,6 +320,7 @@ internal class NotesRecorder(
         dropHeld()
         if (reorganizeState.running) reorganizeState = Reorganizing.Idle
         passKind = null
+        editRun++; failEdit(NotesEditOutcome.Conflict)
         document.livePartial = ""
         if (state.active) state = if (document.isEmpty) State.IDLE else State.STOPPED
         if (structuring == Structuring.Running) structuring = if (allowed is Structuring.Off) allowed else Structuring.Idle
@@ -323,6 +339,7 @@ internal class NotesRecorder(
         failureStreak = 0; pending.clear(); dropHeld()
         reorganizeState = Reorganizing.Idle; reorganizeRetry = false; lastReorganizeEnd = null; versionAtReorganizeEnd = null
         lastKeystroke = null; lastCommit = null; undo = null; error = null
+        editRun++; failEdit(NotesEditOutcome.Conflict); editUndo = null
         state = State.IDLE
         if (allowed !is Structuring.Off) structuring = Structuring.Idle
         changed()
@@ -334,12 +351,14 @@ internal class NotesRecorder(
 
     /** The rolling hand-off: open the next socket, wait for Ready, swap capture to it, then finalize the old one. */
     private suspend fun cut() {
-        if (state != State.RECORDING || cutting) return
+        if (state != State.RECORDING || cutting || diverted != null) return
         cutting = true
         val myEpoch = epoch
         val next = open()
         val started = next.transport.start(options.correction, options.profile, "", options.prompt)
         val ok = started && withTimeoutOrNull(READY_MS) { next.opened.await() } == true
+        // A command took capture meanwhile: the notes come back to a fresh socket when it ends.
+        if (diverted != null) { close(next, cancel = true); cutting = false; return }
         if (epoch != myEpoch || state != State.RECORDING || !ok) {
             close(next, cancel = true); cutting = false
             if (epoch == myEpoch && state == State.RECORDING) {
@@ -507,6 +526,100 @@ internal class NotesRecorder(
         }
     }
 
+    // Voice edit
+
+    /**
+     * Capture goes to a spoken command's socket ([transport] and its [buffer]) instead of the notes, from now until
+     * [endDivert]: the segment before it finalizes as at a pause and nothing the command hears reaches the transcript.
+     * False unless recording.
+     */
+    fun divert(transport: ImeTransport, buffer: PreReadyBuffer): Boolean {
+        if (state != State.RECORDING || diverted != null) return false
+        val command = Segment(transport, buffer).also { diverted = it }
+        val (old, end) = router.swap(command)
+        current?.let { seq -> segments[seq]?.let { it.end = end; if (it === old) finalize(it) } }
+        current = null
+        changed()
+        return true
+    }
+
+    /** Back to the notes after a command: the next segment's socket opens first and capture swaps to it, so nothing is dropped. */
+    suspend fun endDivert() {
+        if (diverted == null) return
+        diverted = null
+        cut()
+    }
+
+    private class PendingEdit(val instruction: String, val selection: Pair<Int, Int>?, val done: (NotesEditOutcome) -> Unit) { var attempts = 0 }
+
+    /**
+     * Applies [instruction] to the selected lines (`[start, end)`), the whole notes or the trailing sections of long ones.
+     * It runs in the pass slot ahead of any other pass, and its answer applies only to the text it was made from, as one
+     * change. One at a time: another request meanwhile gets `busy`.
+     */
+    fun edit(instruction: String, selection: Pair<Int, Int>?, done: (NotesEditOutcome) -> Unit) {
+        if (!editSupported) { done(NotesEditOutcome.Failed("unsupported")); return }
+        if (pendingEdit != null) { done(NotesEditOutcome.Failed("busy")); return }
+        pendingEdit = PendingEdit(instruction, selection, done)
+        schedule(); changed()
+    }
+
+    private fun failEdit(outcome: NotesEditOutcome) { pendingEdit?.let { pendingEdit = null; it.done(outcome) } }
+
+    private fun runEdit() {
+        val e = pendingEdit ?: return
+        val range = when (val scope = document.editScope(e.selection)) {
+            is NotesEditScope.Range -> scope
+            is NotesEditScope.None -> { failEdit(NotesEditOutcome.Skipped(scope.why)); changed(); return }
+        }
+        val request = document.editRequest(e.instruction, range.start, range.end)
+        val run = ++editRun
+        val myEpoch = epoch
+        pass(PassKind.EDIT) {
+            val response = try { editNotes(request) } catch (c: CancellationException) { throw c } catch (x: Exception) { NotesEditResponse.failed(HttpNotesApi.code(x)) }
+            if (epoch == myEpoch && editRun == run) editFinished(request, response)
+        }
+        changed()
+    }
+
+    private fun editFinished(request: NotesEditRequest, response: NotesEditResponse) {
+        endPass()
+        val e = pendingEdit
+        // A segment clean-up took the model: the edit stays first in line and runs again when the slot is free.
+        if (e != null && response.preempted && ++e.attempts < EDIT_ATTEMPTS) { schedule(); changed(); return }
+        if (response.error == "unsupported") { editSupported = false; editMissing = true }
+        val refusal = response.refusal
+        val outcome = when {
+            refusal != null -> NotesEditOutcome.Refused(refusal)
+            !response.edited -> NotesEditOutcome.Failed(if (response.preempted) "busy" else response.failureLabel)
+            !response.changed -> NotesEditOutcome.Unchanged
+            !document.canApplyEdit(request) || editorComposing -> NotesEditOutcome.Conflict
+            else -> {
+                val before = document.text
+                val change = document.applyEdit(response, request)
+                if (change == null) NotesEditOutcome.Unchanged else {
+                    dropHeld(); publish(change)
+                    editUndo = before to document.version
+                    if (reorganizeState is Reorganizing.Applied) reorganizeState = Reorganizing.Idle
+                    NotesEditOutcome.Applied
+                }
+            }
+        }
+        failEdit(outcome)
+        schedule(); changed()
+    }
+
+    /** Restores the text from before the last voice edit, as the user's own edit, while nothing else changed it since. */
+    fun undoEdit() {
+        val (text, version) = editUndo ?: return
+        if (version != document.version) return
+        editUndo = null
+        val change = NotesDocument.diff(document.text, text, NotesChange.Kind.USER) ?: return
+        userEdit(change.start, change.end, change.replacement)
+        pending += change
+        changed()
+    }
+
     // Passes
 
     /**
@@ -515,6 +628,11 @@ internal class NotesRecorder(
      * enough time passed and the user stopped typing.
      */
     private fun schedule() {
+        if (pendingEdit != null) {
+            // A voice edit goes first, once the segment before its command is in (its clean-up would preempt it).
+            if (passJob != null || finalizingCount > 0) waiting = true else { waiting = false; runEdit() }
+            return
+        }
         if (structuring is Structuring.Off) return
         if (passJob != null || finalizingCount > 0) { waiting = true; return }
         waiting = false
@@ -838,6 +956,8 @@ internal class NotesRecorder(
         const val HOLD_MAX_MS = 10000L
         const val REORGANIZE_AFTER_COMMIT_MS = 5000L
         const val STOP_REORGANIZE_SKIP_MS = 30000L
+        /** The edit attempts a segment clean-up may preempt before it gives up. */
+        const val EDIT_ATTEMPTS = 3
 
         fun friendly(code: String) = when (code) {
             "auth" -> "Pairing refused — pair again in Chirp setup"

@@ -134,7 +134,7 @@ class SettingsStore(context: Context) {
                 .put("correction", if (value.correctionAvailable) "available" else "off")
                 .put("correction_leaves_machine", value.correctionLeavesMachine)
                 .put("correction_host", value.correctionHost.orEmpty())
-                .put("notes_structure", value.notesStructure).put("notes_reorganize", value.notesReorganize).put("notes_correction", value.notesCorrection)
+                .put("notes_structure", value.notesStructure).put("notes_reorganize", value.notesReorganize).put("notes_correction", value.notesCorrection).put("notes_edit", value.notesEdit)
                 .put("correction_profiles", org.json.JSONArray().apply {
                     value.correctionProfiles.forEach { profile -> put(JSONObject().put("id", profile.id)
                         .put("name", profile.name).put("description", profile.description).put("rewrites", profile.rewrites)) }

@@ -28,7 +28,8 @@ internal class NotesWire(val event: (ServerEvent) -> Unit, val failure: () -> Un
     override fun close(cancel: Boolean, immediate: Boolean) { closed = true }
     fun ready() { ready = true; event(ServerEvent.Ready(false)) }
     fun partial(text: String) = event(ServerEvent.Partial(1, text, ""))
-    fun final(text: String, raw: String = text) = event(ServerEvent.Final(text, raw, text != raw))
+    var finals = 0
+    fun final(text: String, raw: String = text) { finals++; event(ServerEvent.Final(text, raw, text != raw)) }
     fun error(code: String) = event(ServerEvent.Failure(code))
 }
 
@@ -45,9 +46,11 @@ internal class FakeNotesCalls {
     val reorganizes = mutableListOf<Pair<NotesReorganizeRequest, CompletableDeferred<NotesReorganizeResponse>>>()
     suspend fun structure(r: NotesStructureRequest) = CompletableDeferred<NotesStructureResponse>().also { structures += r to it }.await()
     suspend fun reorganize(r: NotesReorganizeRequest) = CompletableDeferred<NotesReorganizeResponse>().also { reorganizes += r to it }.await()
+    val edits = mutableListOf<Pair<NotesEditRequest, CompletableDeferred<NotesEditResponse>>>()
+    suspend fun edit(r: NotesEditRequest) = CompletableDeferred<NotesEditResponse>().also { edits += r to it }.await()
 }
 
-internal val notesMac = Health(true, false, true, false, null, "synthetic", notesStructure = true, notesReorganize = true, notesCorrection = true)
+internal val notesMac = Health(true, false, true, false, null, "synthetic", notesStructure = true, notesReorganize = true, notesCorrection = true, notesEdit = true)
 
 internal class NotesRig(health: Health? = notesMac) {
     val wires = mutableListOf<NotesWire>()
@@ -55,7 +58,7 @@ internal class NotesRig(health: Health? = notesMac) {
     val calls = FakeNotesCalls()
     val recorder = NotesRecorder({ event, failure -> NotesWire(event, failure).also { wires += it } },
         { frame, _, done -> FakeNotesCapture(frame, done).also { captures += it } },
-        calls::structure, calls::reorganize, NotesRecorder.Options(true, "live_notes"), health, structuringEnabled = true)
+        calls::structure, calls::reorganize, NotesRecorder.Options(true, "live_notes"), health, structuringEnabled = true, editNotes = calls::edit)
     val wire get() = wires.last()
     fun idle(seconds: Long = 0) = shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(seconds))
     /** [seconds] of loud audio (no pause), 40 ms frames, as the capture thread would hand them over. */

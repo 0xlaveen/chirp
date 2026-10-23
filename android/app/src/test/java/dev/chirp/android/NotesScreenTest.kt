@@ -36,6 +36,11 @@ internal class ScriptedNotesApi : NotesApi {
         structures += request; return answers.removeFirstOrNull() ?: NotesStructureResponse.failed("timeout")
     }
     override fun reorganize(request: NotesReorganizeRequest) = NotesReorganizeResponse(request.notes, true, false)
+    val edits = mutableListOf<NotesEditRequest>()
+    val editAnswers = ArrayDeque<NotesEditResponse>()
+    override fun edit(request: NotesEditRequest): NotesEditResponse {
+        edits += request; return editAnswers.removeFirstOrNull() ?: NotesEditResponse.failed("timeout")
+    }
 }
 
 internal class NotesModelRig(context: Context, health: Health? = notesMac, paired: Boolean = true, val keys: SoftwareHistoryKeys = SoftwareHistoryKeys(),
@@ -239,6 +244,17 @@ class NotesRenderTest {
                 rig.wire.partial("Someone should draft the invite email")
             }
             shot("recording")
+            compose.runOnIdle { rig.model.command(); rig.idle(); rig.wire.ready(); rig.wire.partial("remove the question about the waitlist"); rig.idle() }
+            shot("command")
+            compose.runOnIdle {
+                val command = rig.wire
+                val shorter = rig.model.document.text.lines().dropLast(1).joinToString("\n")
+                rig.api.editAnswers += NotesEditResponse(shorter, true)
+                rig.model.command(); rig.idle(); rig.wire.ready(); rig.idle()
+                command.final("remove the question about the waitlist"); rig.idle()
+                rig.wires.filter { it !== command && it.stops > 0 && it.finals == 0 }.forEach { it.final("later words") }; rig.idle()
+            }
+            shot("edited")
             compose.runOnIdle { rig.model.pause(); rig.idle() }
             shot("paused")
             compose.runOnIdle { rig.model.recorder.cancel(); rig.model.clear(); name() }

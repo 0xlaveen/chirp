@@ -11,6 +11,8 @@
     <string name="notes_stop">Stop</string>
     <string name="notes_paused">Chirp Notes is paused</string>
     <string name="notes_pause">Pause</string>
+    <string name="notes_command">Command</string>
+    <string name="notes_command_send">Send</string>
     <string name="notes_resume">Resume</string>
     <string name="notes_saver">Battery saver</string>
     <string name="bubble_name">Chirp floating microphone</string>
