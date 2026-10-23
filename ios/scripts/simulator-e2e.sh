@@ -31,7 +31,8 @@ stop() { kill "$SERVER" "$CLEANUP" 2>/dev/null || true; pkill -P "$SERVER" 2>/de
 trap stop EXIT
 for _ in $(seq 1 120); do curl -s -m 1 "http://127.0.0.1:$PORT/v1/health" >/dev/null 2>&1 && break; sleep 1; done
 [ -s "$WORK/.config/chirp/token" ] || { echo "server did not start; see $WORK/server.log" >&2; exit 1; }
-LINK=$(HOME="$WORK" uv run chirp-server pair --url "http://127.0.0.1:$PORT" | head -1)
+# A per-device pairing, as the README recommends; the app shows its name.
+LINK=$(HOME="$WORK" uv run chirp-server pair --name "Chirp simulator" --url "http://127.0.0.1:$PORT" 2>/dev/null | head -1)
 cd "$ROOT/ios"
 xcrun simctl boot "$device" 2>/dev/null || true
 xcrun simctl bootstatus "$device" -b >/dev/null

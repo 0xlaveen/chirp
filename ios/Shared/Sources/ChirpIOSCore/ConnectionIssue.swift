@@ -69,10 +69,19 @@ public struct ConnectionIssueError: Error, Equatable, Sendable {
     public init(_ issue: ConnectionIssue) { self.issue = issue }
 }
 
+/// Authenticated health plus the name this device was paired under (`chirp-server pair --name`); nil for the
+/// Mac's shared token or an older server.
+public struct CheckedHealth: Sendable {
+    public let health: Health
+    public let device: String?
+}
+
 extension ServerConfig {
+    public func checkHealth(session: URLSession) async throws -> Health { try await checkedHealth(session: session).health }
+
     /// Like `fetchHealth`, but keeps a 401 (the server's answer to a revoked device token) distinct from
     /// other failures, so the app can ask for a re-pair instead of blaming the network.
-    public func checkHealth(session: URLSession) async throws -> Health {
+    public func checkedHealth(session: URLSession) async throws -> CheckedHealth {
         var request = authorized(URLRequest(url: healthURL))
         request.timeoutInterval = 3
         let (data, response) = try await session.data(for: request)
@@ -81,6 +90,12 @@ extension ServerConfig {
         guard status == 200, data.count <= 64 * 1024 else { throw ConnectionIssueError(.other) }
         let decoder = JSONDecoder()
         decoder.keyDecodingStrategy = .convertFromSnakeCase
-        do { return try decoder.decode(Health.self, from: data) } catch { throw ConnectionIssueError(.other) }
+        struct Device: Decodable { let device: String? }
+        let health: Health
+        do { health = try decoder.decode(Health.self, from: data) } catch { throw ConnectionIssueError(.other) }
+        let name = (try? decoder.decode(Device.self, from: data))?.device.map { String($0.prefix(64)) }
+        return CheckedHealth(health: health, device: name.flatMap { n in
+            n.unicodeScalars.allSatisfy { !CharacterSet.controlCharacters.contains($0) } && !n.isEmpty ? n : nil
+        })
     }
 }

@@ -46,6 +46,8 @@ final class SessionCoordinator: ObservableObject {
     @Published private(set) var earlierText = ""
     /// Why the last attempt to reach the Mac failed; nil once it answers.
     @Published private(set) var connectionIssue: ConnectionIssue?
+    /// The name this device was paired under on the Mac; nil for the shared token.
+    @Published private(set) var pairedDevice: String?
     /// Chirp Keyboard has opened with Full Access at least once (see `KeyboardSetupStore`).
     @Published private(set) var keyboardReady = false
     @Published var preferences = IOSPreferences()
@@ -164,9 +166,10 @@ final class SessionCoordinator: ObservableObject {
         do {
             let credentials = try PairingLink.parse(link)
             let checked = try await services.pairing.verifyAndSave(credentials) { [http] config in
-                do { return try await config.checkHealth(session: http) }
+                do { let checked = try await config.checkedHealth(session: http); seen.device = checked.device; return checked.health }
                 catch { seen.issue = ConnectionIssue.classify(error); throw error }
             }
+            pairedDevice = seen.device
             guard ticket == lifecycle else { return }
             config = try services.pairing.load(); paired = config != nil
             reached(checked)
@@ -181,7 +184,7 @@ final class SessionCoordinator: ObservableObject {
 
     func forgetPairing() {
         endSession()
-        do { try services?.pairing.clear(); config = nil; paired = false; health = nil; profiles = [] }
+        do { try services?.pairing.clear(); config = nil; paired = false; health = nil; profiles = []; pairedDevice = nil }
         catch { notice = SessionFailure.storage.localizedDescription }
         preferences.correction = false; preferences.consentHost = nil; savePreferences()
     }
@@ -203,7 +206,8 @@ final class SessionCoordinator: ObservableObject {
     /// view of it) alive with the reason, so the user can retry once the Mac is back.
     private func healthy(_ config: ServerConfig) async throws -> Health {
         let checked: Health
-        do { checked = try await config.checkHealth(session: http) } catch { throw reachFailed(error) }
+        do { let result = try await config.checkedHealth(session: http); checked = result.health; pairedDevice = result.device }
+        catch { throw reachFailed(error) }
         guard checked.ok, checked.ready == true, checked.engine != nil else { throw reachFailed(ConnectionIssueError(.other)) }
         return checked
     }
@@ -756,8 +760,13 @@ final class SessionCoordinator: ObservableObject {
 private final class IssueBox: @unchecked Sendable {
     private let lock = NSLock()
     private var value: ConnectionIssue?
+    private var name: String?
     var issue: ConnectionIssue? {
         get { lock.withLock { value } }
         set { lock.withLock { value = newValue } }
+    }
+    var device: String? {
+        get { lock.withLock { name } }
+        set { lock.withLock { name = newValue } }
     }
 }

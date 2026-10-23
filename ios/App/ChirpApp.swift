@@ -295,7 +295,7 @@ struct PairingView: View {
     var body: some View {
         Form {
             Section("Connect your Mac") {
-                Text("Connect Tailscale on both devices. On your Mac, run chirp-server pair and scan its secret QR here. Chirp verifies the connection before saving your pairing.")
+                Text("Connect Tailscale on both devices. On your Mac, run chirp-server pair --name \"\(UIDevice.current.model)\" and scan its secret QR here. Chirp verifies the connection before saving your pairing.")
                 Button("Scan pairing QR", systemImage: "qrcode.viewfinder") { scanner = true }
                     .disabled(model.armed || model.working).frame(minHeight: 44)
                 SecureField("Secret pairing link", text: $link).textInputAutocapitalization(.never).autocorrectionDisabled()
@@ -310,6 +310,12 @@ struct PairingView: View {
                 Section("Saved pairing") {
                     Label("Mac pairing saved", systemImage: "checkmark.shield")
                     LabeledContent("Mac", value: model.pairedHost)
+                    if let device = model.pairedDevice {
+                        LabeledContent("This device", value: device).accessibilityIdentifier("chirp.pair.device")
+                    } else {
+                        Text("Paired with your Mac's shared token. For a pairing you can revoke on its own, run chirp-server pair --name \"\(UIDevice.current.model)\" on your Mac and pair again.")
+                            .font(.footnote).foregroundStyle(.secondary)
+                    }
                     if let engine = model.health?.engine { LabeledContent("Engine", value: String(engine.prefix(128))) }
                     Button("Check Mac connection") { Task { await model.checkConnection() } }.frame(minHeight: 44)
                     Button("Forget pairing", role: .destructive) { model.forgetPairing() }.frame(minHeight: 44)

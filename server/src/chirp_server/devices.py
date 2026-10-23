@@ -183,7 +183,7 @@ class Credentials:
         self.legacy = encode(legacy)
         self.store = DeviceStore(directory)
         self.signature = None
-        self.devices: list[tuple[bytes, str, bool]] = []
+        self.devices: list[tuple[bytes, str, bool, str]] = []
         self.seen: dict[str, float] = {}
 
     def refresh(self):
@@ -204,7 +204,12 @@ class Credentials:
             log.warning("Device token file unreadable; only the shared token is accepted")
             devices = []
         self.devices = [
-            (bytes.fromhex(device["sha256"]), device["id"], device["revoked"] is not None)
+            (
+                bytes.fromhex(device["sha256"]),
+                device["id"],
+                device["revoked"] is not None,
+                device["name"],
+            )
             for device in devices
         ]
 
@@ -213,10 +218,16 @@ class Credentials:
         self.refresh()
         presented = digest(value)
         found = None
-        for stored, ident, revoked in self.devices:
+        for stored, ident, revoked, _ in self.devices:
             if secrets.compare_digest(stored, presented) and found is None:
                 found = (ident, revoked)
         return found
+
+    def name(self, value) -> str | None:
+        """The name an active device token was paired under; None for anything else."""
+        if not isinstance(value, str) or not (found := self.match(value)) or found[1]:
+            return None
+        return next((name for _, ident, _, name in self.devices if ident == found[0]), None)
 
     def check(self, value) -> bool:
         if not isinstance(value, str):
