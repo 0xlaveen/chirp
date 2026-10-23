@@ -47,6 +47,25 @@ class DictationStreamTest {
         assertEquals(1, h.finals.size); assertEquals(1, h.ended)
         h.transport.final(); assertEquals(1, h.finals.size)
     }
+    @Test fun `pause length reaches the capture and countdown is relayed until stopping`() {
+        val left = mutableListOf<Int>()
+        val order = mutableListOf<String>()
+        lateinit var capture: ChirpImeServiceTest.FakeCapture
+        val session = DictationStream(
+            transportFactory = { event, failure -> ChirpImeServiceTest.FakeTransport(event, failure, order) },
+            captureFactory = { frame, _, done -> ChirpImeServiceTest.FakeCapture(frame, done, order).also { capture = it } },
+            changed = { _, _ -> }, level = {}, retention = {}, final = {}, ended = {},
+            pauseSeconds = 3.0, countdown = { left += it },
+        )
+        session.start(false)
+        assertEquals(3.0, capture.pauseSeconds!!, 0.0)
+        capture.countdown!!(15); capture.countdown!!(14)
+        shadowOf(Looper.getMainLooper()).idle()
+        assertEquals(listOf(15, 14), left)
+        capture.deferRelease = true; session.stop()
+        capture.countdown!!(13); shadowOf(Looper.getMainLooper()).idle()
+        assertEquals(listOf(15, 14), left)
+    }
     @Test fun `partials stay ordered and cancellation fences late callbacks and releases microphone`() {
         val h = Harness(); h.session.start(false); h.transport.ready()
         h.transport.partial(2, "synthetic"); h.transport.partial(1, "stale")

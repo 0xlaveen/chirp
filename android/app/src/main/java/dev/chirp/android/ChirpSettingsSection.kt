@@ -38,6 +38,7 @@ internal fun ChirpSettingsSection() {
         Text("Pairing", style = MaterialTheme.typography.titleSmall)
         TextButton({ open("pair") }) { Text("Pairing & connection") }
         TextButton({ open("settings") }) { Text("Test dictation") }
+        StopDictationSettings()
         Text("Sounds & haptics", style = MaterialTheme.typography.titleSmall)
         Row(Modifier.fillMaxWidth()) {
             Text("Haptic cues", Modifier.weight(1f))

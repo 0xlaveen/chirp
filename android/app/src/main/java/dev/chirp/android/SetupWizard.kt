@@ -137,7 +137,8 @@ internal fun SetupWizard(
                         }
                         TextButton({ state.step = 2 }) { Text(if (state.paired) "Change pairing" else "Pair Mac") }
                         Text("Try a sentence", style = MaterialTheme.typography.titleLarge)
-                        Text("Tap the field below. Type on Chirp Keyboard, then tap its mic to start and ✓ to finish. Long press the mic for quick options. ✕ cancels. The keyboard stays selected after every final.")
+                        Text("Tap the field below. Type on Chirp Keyboard, then tap its mic to start and ✓ to finish (or pause, if you chose When I pause). Long press the mic for quick options. ✕ cancels. The keyboard stays selected after every final.")
+                        StopDictationSettings()
                         // Deliberately a real native editor: exercises the same InputConnection/accessibility path as other apps.
                         val editorInk = MaterialTheme.colorScheme.onSurface.toArgb()
                         val editorHint = MaterialTheme.colorScheme.onSurfaceVariant.toArgb()

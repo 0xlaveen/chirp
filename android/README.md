@@ -52,7 +52,7 @@ Chirp Keyboard's setup has four steps — *Chirp Keyboard, Microphone, Pair Mac,
 1. **Enable Chirp Keyboard**, then **Select it as default**. On Samsung: Settings → General management → Keyboard list and default.
 2. **Allow the microphone.** The mic opens only when you start dictation and is released as soon as you stop.
 3. **Pair your Mac** — see [Pair](#pair). If the phone was already paired, the saved pairing survives the update.
-4. **Try it:** tap the test field, type, then dictate. This step also holds the keyboard-look chooser, swipe-typing setup, history setting and Diagnostics.
+4. **Try it:** tap the test field, type, then dictate. This step also holds the Stop dictation choice, the keyboard-look chooser, swipe-typing setup, history setting and Diagnostics.
 
 HeliBoard's own settings (Keyboard layouts & settings) start with a **Chirp section**: pairing, test field, clean-up and styles (only when the Mac offers them), per-app styles, sounds/haptics, and diagnostics.
 
@@ -98,6 +98,8 @@ Android 17/API 37 needs `ACCESS_LOCAL_NETWORK` for servers reached directly over
 - **Long press the mic** for quick options: **Clean-up: on ✓ / Clean-up: off** (or *Mac has clean-up off*), the styles the Mac advertises (`Style · <name>`, with `· rewrites` where it may restructure, ✓ on the active one), and **Chirp settings**.
 - A configured keyboard **voice key** still supports push-to-talk: press-and-hold to talk, release to finish; a short tap toggles.
 - Haptic cues fire on start, manual stop and successful insertion when haptics are enabled (they follow Android's system setting).
+- **Chirp settings → Stop dictation** (also in setup's *Try it* step): **When I tap** (default) or **When I pause** with a pause of 1, 1.5, 2, 3 or 5 s (2 s default). Pause mode is a port of the Mac's auto-stop: speech is judged against the room's own noise floor, so steady background noise never counts as talking; it never stops before you have spoken, and gives up after 10 s of silence. Tapping stop still works in both modes.
+- **Time limit**: the Mac accepts 120 s per dictation, so Chirp stops at 119 s. From 105 s the status adds **N s left** with one haptic tick (TalkBack hears it only at 15, 10, 5, 3, 2 and 1 s), and the dictation is finished and inserted like a normal stop.
 
 The full keyboard always **stays selected after a final** — including when an old installation had the voice-only keyboard's auto-return enabled. (That auto-return is gone; the old voice-only implementation lives only in test sources and is not registered or shipped, and its historical preference now defaults OFF.) **Use raw** is offered for five seconds after a corrected final; moving the cursor or editing the field invalidates it.
 

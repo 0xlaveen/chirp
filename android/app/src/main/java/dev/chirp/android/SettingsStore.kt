@@ -69,6 +69,14 @@ class SettingsStore(context: Context) {
     var spokenCommands: Boolean
         get() = prefs.getBoolean("spoken_commands", false)
         set(value) { prefs.edit { putBoolean("spoken_commands", value) } }
+    var stopOnPause: Boolean
+        get() = prefs.getBoolean("stop_on_pause", false)
+        set(value) { prefs.edit { putBoolean("stop_on_pause", value) } }
+    var pauseSeconds: Double
+        get() = AutoStopDetector.nearest(prefs.getFloat("pause_seconds", AutoStopDetector.DEFAULT_SILENCE.toFloat()).toDouble())
+        set(value) { prefs.edit { putFloat("pause_seconds", AutoStopDetector.nearest(value).toFloat()) } }
+    /** The pause that ends a dictation on its own, or null when it stops only on tap. */
+    val autoStopSeconds: Double? get() = pauseSeconds.takeIf { stopOnPause }
     var returnToPrevious: Boolean
         get() = prefs.getBoolean("return_to_previous", false)
         set(value) { prefs.edit { putBoolean("return_to_previous", value) } }

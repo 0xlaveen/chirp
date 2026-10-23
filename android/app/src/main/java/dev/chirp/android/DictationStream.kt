@@ -16,6 +16,8 @@ internal class DictationStream(
     private val correcting: (ServerEvent.Correcting) -> Unit = {},
     /** A failure after partials hands over what was heard (text, reason) instead of discarding it. */
     private val kept: ((String, String) -> Unit)? = null,
+    private val pauseSeconds: Double? = null,
+    private val countdown: (Int) -> Unit = {},
 ) {
     private var transport: ImeTransport? = null
     private var capture: Capture? = null
@@ -55,6 +57,7 @@ internal class DictationStream(
             }
         })
         deadline(PRE_READY_MS)
+        capture?.let { it.pauseSeconds = pauseSeconds; it.countdown = { left -> handler.post { if (live && !stopping) countdown(left) } } }
         capture?.start()
         if (transport?.start(correction, profile, instructions, prompt) != true) fail(unreachable())
     }

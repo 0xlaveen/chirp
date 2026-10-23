@@ -69,17 +69,18 @@ class KeyboardRenderTest {
                 // InputView applies this on its first window layout, which a detached render never gets.
                 Settings.getValues().mColors.setBackground(root, ColorType.MAIN_BACKGROUND)
                 var idleHeight = 0
-                for (state in listOf("idle", "listening", "final", "tailscale")) {
-                    strip.show(when(state) { "listening" -> "Listening…"; "final" -> "Inserted · tap mic to dictate again"
+                for (state in listOf("idle", "listening", "countdown", "final", "tailscale")) {
+                    strip.show(when(state) { "listening" -> "Listening…"; "countdown" -> "Listening… · 15 s left"; "final" -> "Inserted · tap mic to dictate again"
                         "tailscale" -> DictationAction.TAILSCALE_OFF; else -> "Tap mic · hold to talk" },
-                        if (state == "listening") "Synthetic example for visual review" else "", state == "listening", false, state == "final", false)
-                    strip.level(if (state == "listening") .45 else 0.0)
+                        if (state == "listening") "Synthetic example for visual review" else "", state == "listening" || state == "countdown", false, state == "final", false)
+                    strip.level(if (state == "listening" || state == "countdown") .45 else 0.0)
                     root.measure(View.MeasureSpec.makeMeasureSpec(411, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(900, View.MeasureSpec.AT_MOST))
                     root.layout(0, 0, 411, root.measuredHeight)
                     assertTrue(root.measuredHeight > strip.measuredHeight)
                     if (state == "idle") idleHeight = root.measuredHeight
                     else assertEquals("Dictation must reuse the suggestion row height", idleHeight, root.measuredHeight)
                     assertFalse("Partial belongs only in the editor", strip.status.text.contains("Synthetic example"))
+                    if (state == "countdown") assertEquals("Listening… · 15 s left", strip.status.text.toString())
                     assertNotNull(KeyboardSwitcher.getInstance().keyboard?.getKey('a'.code))
                     val bitmap = Bitmap.createBitmap(411, root.measuredHeight, Bitmap.Config.ARGB_8888)
                     root.draw(Canvas(bitmap))
