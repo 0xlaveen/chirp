@@ -14,6 +14,9 @@ public struct NotesSessionDependencies {
     /// `POST /v1/notes/edit` (#97); set after init (the default: no server support).
     public var edit: NotesRecorder.Edit = { _ in throw NotesStructureError.unsupported(404) }
     public var speakerStore: SpeakerModelStore
+    /// Voice profiles (opt-in): the embedding model and where remembered voices are kept (the app: the Keychain).
+    public var voiceModelStore: VoiceModelStore = UnavailableVoiceModelStore()
+    public var voiceProfileStore: VoiceProfileStore = MemoryVoiceProfileStore()
     /// Where the crash-recovery journal lives (tests pass a temporary directory).
     public var journalStore: NotesJournalStore
     /// Digital silence for this long shows "Microphone is silent (muted?)" (its `window`; Notes keeps recording).
@@ -83,9 +86,15 @@ public final class NotesSession {
     public var confirmSpeakerDownload: ((_ message: String, _ done: @escaping (Bool) -> Void) -> Void)?
     /// The speaker model was downloaded or removed (Settings shows it).
     public var onSpeakerModelChange: (() -> Void)?
+    /// Voice profiles changed (the switch, the model, the saved voices): Settings shows them.
+    public var onVoicesChange: (() -> Void)?
+    /// "Remember this voice as Maya…": asks for the consent tick; `done(true)` only with it ticked.
+    public var confirmRememberVoice: ((_ name: String, _ done: @escaping (Bool) -> Void) -> Void)?
 
     /// Speaker labels: the switch, consent, offline loads, Remove and this document's diarizer.
     public let speakers: SpeakerLabels
+    /// Voice profiles: the Settings switch, the saved voices, and this document's suggestions (`SpeakerMenu`).
+    public let voices: SpeakerVoices
     /// The crash-recovery journal and the opt-in "keep this file up to date" writes.
     public let journal: NotesJournal
     /// Sessions the journal found at launch, newest first; the first is on offer in the window.
@@ -130,6 +139,8 @@ public final class NotesSession {
             autoReorganize: settings.notesAutoReorganize, keptAudio: deps.keptAudio)
         speakers = SpeakerLabels(store: deps.speakerStore, enabled: settings.notesSpeakerLabels,
                                  onPreference: { settings.notesSpeakerLabels = $0 })
+        voices = SpeakerVoices(modelStore: deps.voiceModelStore, profileStore: deps.voiceProfileStore,
+                               enabled: settings.notesVoiceProfiles, onPreference: { settings.notesVoiceProfiles = $0 })
         journal = NotesJournal(store: deps.journalStore, enabled: settings.notesRecoveryCopy, sleep: deps.sleep)
         voiceEdit = NotesVoiceEdit(recorder: recorder, makeSession: deps.makeSession, now: deps.now, sleep: deps.sleep)
         recorder.onChange = { [weak self] in self?.sync() }
@@ -184,6 +195,7 @@ public final class NotesSession {
             guard let self else { return }
             chirpLog.info("\(SpeakerLog.labels(speakers: self.recorder.document.speakerCount, lag: lag, tentative: tentative), privacy: .public)")
         }
+        voices.onChange = { [weak self] in self?.voicesChanged() }
         speakers.onChange = { [weak self] in
             self?.sync()
             self?.onSpeakerModelChange?()
@@ -237,12 +249,13 @@ public final class NotesSession {
         guard !voiceEdit.status.isListening else { deps.beep(); return }
         guard !isDictating() else { deps.beep(); return }
         onShowWindow?(focus)
-        if speakers.needsLoad {
-            // The model loads offline (~0.1 s warm); recording starts as soon as it is ready, or without labels if
-            // it is gone (labels turn off: nothing downloads without the user's Download).
-            guard !speakers.isLoading else { return }
+        if speakers.needsLoad || (speakers.enabled && voices.needsLoad) {
+            // The models load offline (~0.1 s warm); recording starts as soon as they are ready, or without labels
+            // (or voices) if one is gone (it turns off: nothing downloads without the user's Download).
+            guard !speakers.isLoading, !voices.isLoading else { return }
             Task {
                 _ = await speakers.prepare()
+                if speakers.enabled { _ = await voices.prepare() }
                 self.start(focus: focus)
             }
             return
@@ -251,6 +264,7 @@ public final class NotesSession {
         startError = nil
         let diarizer = speakers.readyDiarizer()
         let labels = diarizer != nil
+        diarizer?.attachEmbedder(voices.readyEmbedder)
         recorder.speakers = diarizer
         recorder.options = settings.notesStartOptions(health: health)
         recorder.serverHost = settings.serverConfig().host
@@ -423,6 +437,7 @@ public final class NotesSession {
         startError = nil
         recorder.reset()
         speakers.reset()
+        voices.reset()
         recorder.speakers = nil
         model.snapshots.removeAll()
         model.closeReview()
@@ -567,7 +582,7 @@ public final class NotesSession {
 
     // MARK: model
 
-    private func sync() {
+    func sync() {
         if recorder.state != lastRecorderState {
             // The recorder moved on: an earlier start error no longer describes it.
             lastRecorderState = recorder.state
@@ -589,6 +604,7 @@ public final class NotesSession {
         model.structuring = recorder.structuring
         model.speakerLabels = speakers.enabled
         model.speakerModel = speakers.model
+        model.voices = voiceState()
         let reorganize = recorder.reorganizeStatus
         model.reorganizeStatus = reorganize
         if voiceEdit.status != model.voiceEdit, case .done(let outcome, _) = voiceEdit.status {

@@ -257,6 +257,12 @@ public final class Preferences: @unchecked Sendable {
         get { defaults.bool(forKey: "notesSpeakerLabels") }
         set { defaults.set(newValue, forKey: "notesSpeakerLabels") }
     }
+    /// Settings › Notes › "Recognize saved voices" (off by default). A preference only: voiceprints live in the
+    /// Keychain, never here.
+    public var notesVoiceProfiles: Bool {
+        get { defaults.bool(forKey: "notesVoiceProfiles") }
+        set { defaults.set(newValue, forKey: "notesVoiceProfiles") }
+    }
     /// Set only when the first-run window is finished (never on close), so an interrupted setup shows again.
     public var didOnboard: Bool {
         get { defaults.bool(forKey: "didOnboard") }

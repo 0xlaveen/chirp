@@ -853,6 +853,9 @@ private struct TranscriptPane: View {
                             .accessibilityLabel("Speaker: \(chip.name)")
                             .accessibilityHint(SpeakerMenuItems.help)
                         }
+                        if r.chip != nil, let person = p.person, let name = model.voices.suggestions[person] {
+                            VoiceSuggestionChip(model: model, person: person, name: name)
+                        }
                         paragraphText(p, hovered: model.hoveredParagraph == p.id)
                             .font(.system(size: 13))
                             .lineSpacing(2)

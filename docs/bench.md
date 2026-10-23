@@ -1222,6 +1222,35 @@ a question's answer under the person who asked it: prompt follow-ups. Guards rej
 uv run python scripts/bench_notes.py --set labelled --repetitions 1 --dump /tmp/notes-labelled.jsonl
 ```
 
+### Voice profiles (saved voices, #18 M3)
+
+2026-10-24, M5 Pro, macOS 27.0.1, shared host. `mac/scripts/speaker-bench` `VoiceBench` runs the shipped path:
+- **Audio:** every pair of 8 neural `say` voices (Samantha, Daniel, Moira, Rishi, Karen, Aman, Tessa, Tara) as one two-voice conversation each, 28 in all, 63–74 s, -45 dBFS noise (`make_voice_clips.py`).
+- **Pipeline:** each conversation goes through `SortformerSpeakerDiarizer` with `WeSpeakerEmbedder` (`wespeaker_v2` at `df2625ac`) attached. The input is faster than live but paced so the 30 s queue never drops audio. Each slot's session voiceprint is read 45 s in and at the end.
+- **Profiles:** each voice is remembered from its first conversation, as "Remember this voice" would (all 8 reached 20 s).
+- **Trials:** 8 rotations, each with 4 voices saved and the other 4 unknown. Every other conversation is scored with `VoiceMatch.suggest`. A trial is a voice with ≥ 10 s of speech.
+- **Rates:** *true* = a saved voice suggested as itself. *false* = any suggestion that is wrong, nearly all of them an unknown voice given a saved name.
+
+| τ (margin 0.10) | true, 45 s in | false, 45 s in | true, end | false, end |
+|---|---|---|---|---|
+| 0.60 | 98.9% (178/180) | 15.0% (54/360) | 98.9% (182/184) | 17.9% (66/368) |
+| 0.65 | 98.9% | 7.2% (26/360) | 98.9% | 8.2% (30/368) |
+| 0.70 | 98.9% | 1.7% (6/360) | 98.9% | 3.3% (12/368) |
+| **0.75 (shipped)** | **98.9%** | **1.7% (6/360)** | **98.9%** | **1.6% (6/368)** |
+| 0.80–0.85 | 98.9% | 1.7% | 98.9% | 1.6% |
+
+- **Gates:** true ≥ 90% and false ≤ 2% hold at τ = 0.75, margin 0.10. The issue's starting point (0.70) misses the false gate at the end of a conversation.
+- **Margin:** 0.05 raises true to 100% and leaves false unchanged. 0.15 changes nothing, so 0.10 stays.
+- **The 6 remaining false suggestions do not fall with τ up to 0.85.** The diarizer merged the two voices of two conversations into one person (Samantha+Karen, Rishi+Aman), so those voiceprints mix two people: the M2 merge/reassign case, not a matcher one.
+- **Caveat:** synthetic voices are more distinct than colleagues around one table. Real-voice accuracy is unmeasured, which is why a match is only ever a suggestion.
+- **Cost:** the 28 conversations (31 min of audio), Sortformer and embeddings together, ran in 1 min 52 s. The model is 8 MB (5 files, SHA-256 pinned) and warm-loads with the speaker model at Record.
+
+```sh
+cd mac/scripts/speaker-bench && B=~/Library/Caches/Chirp/speaker-bench
+uv run --no-project --with numpy python make_voice_clips.py $B/voices
+swift run -c release VoiceBench --clips $B/voices --out $B/out/voices/rates.json
+```
+
 ## Android real-device session timings
 
 Not yet measured. Android keeps content-free per-session timings (Settings → About → Diagnostics); paste the Wi-Fi and LTE summaries from the [real-device checklist](android-device-acceptance.md) here, with the device, Chirp version, engine and `battery-session.sh` rows. Until then every Android latency and battery figure is emulator-only (TBM).

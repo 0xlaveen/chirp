@@ -199,6 +199,8 @@ public final class NotesModel {
     public var renaming: SpeakerRename?
     public var renameText = ""
     public var speakerBanner: SpeakerBanner?
+    /// Voice profiles in this document: suggestions, remembered people (`SpeakerMenu`).
+    public var voices = SpeakerVoiceState()
     /// The Notes pane shows the read-only Preview instead of the editor.
     public var preview = false
     /// The user's "Auto-reorganize" toggle.

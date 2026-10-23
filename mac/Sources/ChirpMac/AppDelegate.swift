@@ -126,6 +126,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         notesWindow.onOpenModels = { [localModelsWindow] in localModelsWindow.show() }
         settingsWindow.onRemoveSpeakerModel = { [notes] in notes.removeSpeakerModel() }
         notes.onSpeakerModelChange = { [settingsWindow] in settingsWindow.speakerModelChanged() }
+        settingsWindow.voices = notes.voices
+        notes.voices.confirm = { [settingsWindow] prompt, done in settingsWindow.confirmVoiceDownload(prompt, done: done) }
+        notes.onVoicesChange = { [settingsWindow] in settingsWindow.voicesChanged() }
         controller.onHotkeyPressed = { [weak self] in self?.onboardingWindow.hotkeyPressed() }
 
         chirpLog.info("launch microphone=\(Permissions.microphone.rawValue, privacy: .public) accessibility=\(Permissions.accessibilityGranted, privacy: .public) hotkey=\(settings.hotkey.id, privacy: .public)")

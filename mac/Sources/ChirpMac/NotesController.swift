@@ -27,6 +27,8 @@ extension NotesSession {
             reorganize: { request in try await Self.reorganize(request) },
             speakerStore: SortformerModelStore(), journalStore: NotesJournalStore())
         deps.edit = { request in try await Self.edit(request) }
+        deps.voiceModelStore = WeSpeakerModelStore()
+        deps.voiceProfileStore = KeychainVoiceProfileStore()
         deps.requestMicrophone = { await Permissions.requestMicrophone() }
         deps.openMicrophoneSettings = { Permissions.openSettings(.microphone) }
         deps.microphoneStatus = { Permissions.microphone.rawValue }

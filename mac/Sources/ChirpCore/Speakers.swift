@@ -78,6 +78,16 @@ public protocol SpeakerDiarizing: AnyObject, Sendable {
     var snapshot: SpeakerTimeline { get }
     /// New: forget every speaker.
     func reset()
+    /// Voice profiles on (M3): the embedder that turns each voice's settled turns into a session voiceprint; nil
+    /// stops it and drops the voiceprints.
+    func attachEmbedder(_ embedder: (any VoiceEmbedder)?)
+    /// Each slot's voiceprint so far (memory only; empty without an embedder).
+    var voiceprints: [Int: Voiceprint] { get }
+}
+
+extension SpeakerDiarizing {
+    public func attachEmbedder(_ embedder: (any VoiceEmbedder)?) {}
+    public var voiceprints: [Int: Voiceprint] { [:] }
 }
 
 /// One person's stretch of a segment's text.
@@ -259,7 +269,14 @@ public final class FakeDiarizer: SpeakerDiarizing, @unchecked Sendable {
         }
     }
 
-    public func reset() { lock.withLock { resets += 1; fedThrough = 0; flushed = 0 } }
+    public func reset() { lock.withLock { resets += 1; fedThrough = 0; flushed = 0; prints = [:] } }
+
+    private var prints: [Int: Voiceprint] = [:]
+    public private(set) var embedder: (any VoiceEmbedder)?
+    public func attachEmbedder(_ embedder: (any VoiceEmbedder)?) { lock.withLock { self.embedder = embedder; if embedder == nil { prints = [:] } } }
+    public var voiceprints: [Int: Voiceprint] { lock.withLock { embedder == nil ? [:] : prints } }
+    /// What it "heard" of each voice (tests of the voice profiles).
+    public func setVoiceprints(_ v: [Int: Voiceprint]) { lock.withLock { prints = v } }
 
     /// Replace what it will "hear" (tests that script a second recording).
     public func setScript(_ spans: [SpeakerSpan]) { lock.withLock { script = spans } }

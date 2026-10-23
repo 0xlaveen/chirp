@@ -516,6 +516,7 @@ final class NotesHarness {
     static let defaultHealth = Health(correction: "available", notesStructure: true, notesCorrection: true)
 
     init(health: Health? = NotesHarness.defaultHealth, silence: TimeInterval = 1.5, speakers: SpeakerModelStore? = nil,
+         voiceModel: VoiceModelStore? = nil, profiles: VoiceProfileStore? = nil,
          journalDirectory: URL? = nil, keptAudio: TimeInterval = NotesRecorder.maxKeptAudio,
          silencePause: TimeInterval = NotesCaptureSink.pauseAfter,
          finalText: @escaping @Sendable (Int) -> String = { "Segment \($0)." }) {
@@ -538,6 +539,8 @@ final class NotesHarness {
             structure: http.structure(config), reorganize: http.reorganize(config), speakerStore: store,
             journalStore: NotesJournalStore(directory: self.journalDirectory))
         deps.edit = http.edit(config)
+        if let voiceModel { deps.voiceModelStore = voiceModel; prefs.notesVoiceProfiles = true }
+        if let profiles { deps.voiceProfileStore = profiles }
         deps.silenceGuard = { SilenceGuard(window: silence) }
         deps.workspaceNotifications = workspace
         deps.keptAudio = keptAudio

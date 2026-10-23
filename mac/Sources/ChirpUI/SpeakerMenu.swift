@@ -16,6 +16,11 @@ public enum SpeakerEdit: Equatable, Sendable {
     /// The banner's Undo (a replace in the notes, or a merge).
     case undo
     case dismiss
+    /// Voice profiles (M3): "Yes, this is Maya", "Not Maya", "Remember this voice…", "Update … saved voice".
+    case acceptVoice(Int)
+    case declineVoice(Int)
+    case rememberVoice(Int)
+    case updateVoice(Int)
 }
 
 /// The banner over the transcript after a rename or a merge, for the document it was made in.
@@ -25,6 +30,8 @@ public struct SpeakerBanner: Equatable, Sendable {
         case offerReplace(old: String, new: String, count: Int)
         case replaced(SpeakerNameReplacement)
         case merged(person: Int, name: String, into: String)
+        /// A voice was saved, updated or could not be.
+        case notice(String)
     }
 
     public var document: UUID
@@ -37,6 +44,7 @@ public struct SpeakerBanner: Equatable, Sendable {
         case .replaced(let r):
             "Replaced “\(r.old)” with “\(r.new)” in the notes (\(r.changes.count == 1 ? "1 place" : "\(r.changes.count) places"))."
         case .merged(_, let name, let into): "Merged \(name) into \(into)."
+        case .notice(let text): text
         }
     }
 }
@@ -109,6 +117,9 @@ extension NotesSession {
             default: break
             }
         case .dismiss: break
+        case .acceptVoice, .declineVoice, .rememberVoice, .updateVoice:
+            editVoices(edit)
+            return
         }
         model.speakerBanner = banner.map { SpeakerBanner(document: recorder.document.id, kind: $0) }
     }
@@ -149,6 +160,7 @@ struct SpeakerMenuItems: View {
                 }
             }
         }
+        VoiceMenuItems(model: model, person: roster.resolve(person))
     }
 }
 

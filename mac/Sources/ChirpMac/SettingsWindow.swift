@@ -25,6 +25,8 @@ final class SettingsWindowController: NSObject, NSTextFieldDelegate {
     var onPairPhone: (() -> Void)?
     var onOpenNotes: (() -> Void)?
     var onRemoveSpeakerModel: (() -> Void)?
+    /// Live Notes voice profiles (Settings › Notes › Voices).
+    var voices: SpeakerVoices?
     var onNotesRecoveryCopyChange: (() -> Void)?
     /// "Open Notes" shortcut changed, the recorder started or stopped listening, "Always show in the Dock" flipped.
     var onOpenNotesHotkeyChange: (() -> Void)?
@@ -84,6 +86,7 @@ final class SettingsWindowController: NSObject, NSTextFieldDelegate {
         s.serverOffersStyles = health == nil || health?.correctionProfiles != nil
         s.keepLoaded = keepLoaded
         s.speakerModelDownloaded = SpeakerModel.hasFiles()
+        s.voices = voicesState
         s.inputs = InputDevice.all().map(\.input)
         s.defaultInput = InputDevice.systemDefault()?.input
         s.chosenInputUID = settings.inputDeviceUID
@@ -243,6 +246,10 @@ final class SettingsWindowController: NSObject, NSTextFieldDelegate {
         form.microphone.action = #selector(microphoneChanged(_:))
         form.removeSpeakerModel.target = self
         form.removeSpeakerModel.action = #selector(removeSpeakerModel)
+        form.voicesView.onToggle = { [weak self] in self?.toggleVoices($0) }
+        form.voicesView.onForget = { [weak self] in self?.confirmForgetVoice($0) }
+        form.voicesView.onForgetAll = { [weak self] in self?.confirmForgetVoice(nil) }
+        form.voicesView.onResize = { [weak self] in self?.tabSizeChanged() }
         form.cleanupEnabled.target = self
         form.cleanupEnabled.action = #selector(toggleCleanup(_:))
         form.keepLoaded.target = self
@@ -348,6 +355,72 @@ final class SettingsWindowController: NSObject, NSTextFieldDelegate {
 
     /// The speaker model came or went: refresh the Notes tab's row.
     func speakerModelChanged() { form?.apply(state) }
+
+    // MARK: voice profiles
+
+    private var voicesState: VoiceProfilesState {
+        var v = VoiceProfilesState()
+        guard let voices else { return v }
+        v.enabled = voices.enabled
+        v.model = voices.model
+        v.profiles = voices.profiles
+        v.modelID = voices.modelID
+        return v
+    }
+
+    /// The voice switch, the model or the saved voices changed.
+    func voicesChanged() { form?.voicesView.apply(voicesState) }
+
+    /// On asks before the one model download (`confirmVoiceDownload`); off with saved voices asks whether to forget them.
+    private func toggleVoices(_ on: Bool) {
+        guard let voices else { return }
+        guard !on else { voices.setEnabled(true); voicesChanged(); return }
+        let count = voices.profiles.count
+        voices.setEnabled(false)
+        guard count > 0, let window else { return }
+        let alert = NSAlert()
+        alert.messageText = VoiceProfilesText.turnOffTitle(count)
+        alert.informativeText = VoiceProfilesText.turnOffDetail
+        alert.addButton(withTitle: "Forget")
+        alert.addButton(withTitle: "Keep")
+        alert.buttons[0].hasDestructiveAction = true
+        alert.beginSheetModal(for: window) { response in
+            if response == .alertFirstButtonReturn { voices.forgetAll() }
+        }
+    }
+
+    /// Forget one saved voice (or all, for nil), after asking.
+    private func confirmForgetVoice(_ profile: VoiceProfile?) {
+        guard let voices, let window else { return }
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = profile.map(VoiceProfilesText.forgetTitle) ?? VoiceProfilesText.forgetAllTitle
+        alert.informativeText = VoiceProfilesText.forgetDetail
+        alert.addButton(withTitle: "Forget")
+        alert.addButton(withTitle: "Cancel")
+        alert.buttons[0].hasDestructiveAction = true
+        alert.beginSheetModal(for: window) { response in
+            guard response == .alertFirstButtonReturn else { return }
+            if let profile { voices.forget(profile.id) } else { voices.forgetAll() }
+        }
+    }
+
+    /// The one-time voice model download asks first: nothing downloads without "Download".
+    func confirmVoiceDownload(_ prompt: SpeakerVoices.Prompt, done: @escaping (Bool) -> Void) {
+        let alert = NSAlert()
+        alert.messageText = "Download the voice model?"
+        switch prompt {
+        case .download(let size): alert.informativeText = VoiceProfilesText.downloadPrompt(size: size)
+        case .redownload(let size): alert.informativeText = VoiceProfilesText.redownloadPrompt(size: size)
+        }
+        alert.addButton(withTitle: "Download")
+        alert.addButton(withTitle: "Cancel")
+        let handle: (NSApplication.ModalResponse) -> Void = { [weak self] in
+            done($0 == .alertFirstButtonReturn)
+            self?.voicesChanged()
+        }
+        if let window, window.isVisible { alert.beginSheetModal(for: window, completionHandler: handle) } else { handle(alert.runModal()) }
+    }
 
     /// The notices shipped in the app bundle (`bundle.sh` copies them); the repository copy for a bare `swift run`.
     private static func openNotices() {

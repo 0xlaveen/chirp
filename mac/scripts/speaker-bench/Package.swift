@@ -12,6 +12,11 @@ let package = Package(
             .product(name: "ChirpCore", package: "mac"),
             .product(name: "ChirpSpeakers", package: "mac"),
         ]),
+        // Voice profiles (issue #18 M3): suggestion rates over real WeSpeaker voiceprints; no server needed.
+        .executableTarget(name: "VoiceBench", dependencies: [
+            .product(name: "ChirpCore", package: "mac"),
+            .product(name: "ChirpSpeakers", package: "mac"),
+        ]),
     ],
     swiftLanguageModes: [.v6]
 )
