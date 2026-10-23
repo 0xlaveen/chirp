@@ -42,9 +42,9 @@ import Testing
         return url
     }
 
+    /// Counts polls, not wall time: a loaded full run can hold the main actor for minutes.
     private func settle(_ session: LocalSetupSession) async throws {
-        let deadline = ContinuousClock.now + .seconds(15)
-        while !session.isIdle, ContinuousClock.now < deadline { try await Task.sleep(for: .milliseconds(20)) }
+        for _ in 0..<3000 where !session.isIdle { try await Task.sleep(for: .milliseconds(20)) }
         #expect(session.isIdle)
     }
 

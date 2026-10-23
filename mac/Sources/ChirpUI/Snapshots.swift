@@ -474,7 +474,7 @@ public enum Snapshots {
                 }
                 if name == "sensevoice" {
                     state.options.append(LocalModelOption(id: "sensevoice-small", kind: .speech, title: "SenseVoice Small · 中文 / 粵語 / English", repository: "csukuangfj/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17", revision: "2365baeacb", sizeBytes: 938_576_997, details: "Mandarin, Cantonese, English and mixed speech · CPU · adds a 12 MB runtime on first download", license: "FunASR model license", ready: true, engine: "sensevoice"))
-                    state.choices[.speech] = "sensevoice-small"
+                    state.choices[.speech] = "sensevoice-small"; state.activeModels["speech"] = "sensevoice-small"
                     state.models[.speech]?.phase = "complete"; state.models[.cleanup]?.phase = "complete"
                     state.restartRequired = true
                     state.message = "Selection saved. Apply and restart the server when you’re ready."
