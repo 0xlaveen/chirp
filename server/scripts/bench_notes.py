@@ -15,6 +15,10 @@ messy notes of about 1000, 2000, 3000 and 3500 characters) through the reorganiz
 guards, checks tests/notes_reorganize_negatives.jsonl, and measures a dictation correction and a
 Live Notes segment correction that arrive while a reorganize is running. `--mode both` runs both
 and prints `{"structure": ..., "reorganize": ...}`.
+
+`--mode edit` sends each (notes, instruction) case in tests/notes_edit_eval.jsonl through the
+edit prompt and guards (`POST /v1/notes/edit`): edits must apply what was asked and keep the
+rest, requests for new content must be refused. It also checks tests/notes_edit_negatives.jsonl.
 """
 
 import argparse
@@ -28,7 +32,7 @@ import time
 from collections import Counter
 from pathlib import Path
 
-from chirp_server import correction, notes
+from chirp_server import correction, notes, notes_edit
 from chirp_server.cleanup_models import DEFAULT_MODEL, MODELS, discover
 from chirp_server.config import CorrectionConfig
 from chirp_server.correction import HESITATIONS, WORD, Corrector, notes_max_tokens, rejected
@@ -45,6 +49,8 @@ SETS = {
 NEGATIVES = TESTS / "notes_negatives.jsonl"
 REORGANIZE_SET = TESTS / "notes_reorganize_eval.jsonl"
 REORGANIZE_NEGATIVES = TESTS / "notes_reorganize_negatives.jsonl"
+EDIT_SET = TESTS / "notes_edit_eval.jsonl"
+EDIT_NEGATIVES = TESTS / "notes_edit_negatives.jsonl"
 CONTEXT = 4096
 # Invented dictation and Live Notes segment sent while a reorganize runs (priority check).
 DICTATION = "um can you send the updated schedule to the team before friday"
@@ -527,6 +533,120 @@ async def bench_reorganize(
     }
 
 
+def edit_negatives():
+    rows = [
+        {
+            "id": case["id"],
+            "rejected_by": notes_edit.edit_rejection_reason(
+                case["notes"], case["instruction"], case["output"], "stop"
+            ),
+        }
+        for case in read_jsonl(EDIT_NEGATIVES)
+    ]
+    return {
+        "cases": len(rows),
+        "rejected": sum(row["rejected_by"] is not None for row in rows),
+        "missed": [row["id"] for row in rows if row["rejected_by"] is None],
+        "rejected_by": dict(Counter(row["rejected_by"] for row in rows)),
+    }
+
+
+def edit_outcome(case, result):
+    """(outcome, passed): an edit case passes when it applied and kept what it should, a
+    refusal case when nothing was changed (refused, or rejected by the guards)."""
+    if result.error == "refused":
+        outcome = "refused:" + str(result.reason)
+    elif result.error:
+        outcome = f"{result.error}:{result.reason}"
+    else:
+        outcome = "edited" if result.changed else "unchanged"
+    if case["expect"] == "refuse":
+        return outcome, result.error in {"refused", "rejected"} or not result.changed
+    if not result.changed:
+        return outcome, False
+    lowered = result.markdown.lower()
+    gone = all(word.lower() not in lowered for word in case["expect_gone"])
+    kept = all(word.lower() in lowered for word in case["expect_kept"])
+    return outcome if gone and kept else outcome + " (expectations)", gone and kept
+
+
+class Recording:
+    """The corrector as `notes_edit.edit` sees it, keeping the raw output and finish reason."""
+
+    def __init__(self, corrector):
+        self.corrector, self.config, self.seen = corrector, corrector.config, {}
+
+    async def complete(self, *args, **kwargs):
+        self.seen["text"], self.seen["finish"] = await self.corrector.complete(*args, **kwargs)
+        return self.seen["text"], self.seen["finish"]
+
+
+async def bench_edit(model_id, repetitions, dump):
+    config = CorrectionConfig(mode="managed", model=model_id, reorganize_timeout=120)
+    corrector = Corrector(config)
+    count, counted = token_counter(model_id)
+    prompt_tokens = prompt_counter(model_id)
+    system = notes_edit.edit_system_prompt()
+    rows, outputs = [], []
+    try:
+        await corrector.complete(
+            "Reply with OK.", "Edit JSON: {}", 8, priority="structure", timeout=120
+        )
+        for _ in range(repetitions):
+            for case in read_jsonl(EDIT_SET):
+                request = notes_edit.EditRequest(case["notes"], case["instruction"])
+                recording = Recording(corrector)
+                started = time.perf_counter()
+                result = await notes_edit.edit(recording, request)
+                ms = (time.perf_counter() - started) * 1000
+                outcome, passed = edit_outcome(case, result)
+                user = notes_edit.edit_user_message(case["instruction"], case["notes"])
+                rows.append(
+                    {
+                        "id": case["id"],
+                        "expect": case["expect"],
+                        "chars": len(case["notes"]),
+                        "ms": round(ms),
+                        "prompt_tokens": prompt_tokens(system, user) if prompt_tokens else None,
+                        "tokens": count(recording.seen.get("text", "")),
+                        "finish": recording.seen.get("finish"),
+                        "outcome": outcome,
+                        "passed": passed,
+                    }
+                )
+                outputs.append(
+                    {"id": case["id"], "outcome": outcome, "output": recording.seen.get("text")}
+                )
+    finally:
+        await corrector.close()
+    if dump:
+        write_dump(dump, outputs)
+    modelled = [row for row in rows if row["finish"] is not None]
+    latency = [row["ms"] for row in modelled]
+    groups = {
+        expect: [row for row in rows if row["expect"] == expect] for expect in ("edit", "refuse")
+    }
+    return {
+        "model": model_id,
+        "set": "edit",
+        "token_count": counted,
+        "max_tokens": notes_edit.EDIT_MAX_TOKENS,
+        "system_prompt_chars": len(system),
+        "system_prompt_tokens": prompt_tokens(system, "") if prompt_tokens else None,
+        "p50_ms": round(statistics.median(latency)) if latency else None,
+        "p95_ms": round(percentile(latency, 0.95)) if latency else None,
+        "tokens_max": max((row["tokens"] for row in modelled), default=0),
+        "prompt_tokens_max": max((row["prompt_tokens"] or 0 for row in rows), default=0),
+        "passed": {
+            expect: f"{sum(row['passed'] for row in group)}/{len(group)}"
+            for expect, group in groups.items()
+        },
+        "outcomes": dict(Counter(row["outcome"] for row in rows)),
+        "rows": rows,
+        "negatives": edit_negatives(),
+    }
+
+
 def cleanup_cause(raw, text, finish):
     """Why `live_notes` clean-up rejected `text` (None when accepted): the first failing
     precondition, else the first edit `notes_faithful` cannot license, by kind."""
@@ -654,7 +774,9 @@ async def main():
     parser.add_argument("--repetitions", type=int, default=3)
     parser.add_argument("--dump", help="write every output (synthetic text) to this JSONL file")
     parser.add_argument(
-        "--mode", choices=["structure", "reorganize", "both", "cleanup"], default="structure"
+        "--mode",
+        choices=["structure", "reorganize", "both", "cleanup", "edit"],
+        default="structure",
     )
     parser.add_argument(
         "--no-priority",
@@ -676,6 +798,10 @@ async def main():
         ) from None
     if arguments.mode == "cleanup":
         print(json.dumps(await bench_cleanup(arguments.model, arguments.dump), indent=2))
+        return
+    if arguments.mode == "edit":
+        result = await bench_edit(arguments.model, arguments.repetitions, arguments.dump)
+        print(json.dumps(result, indent=2))
         return
     if arguments.mode == "reorganize":
         result = await bench_reorganize(

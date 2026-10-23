@@ -1,0 +1,267 @@
+{
+  "model": "qwen3-4b-instruct-2507-4bit",
+  "set": "edit",
+  "token_count": "tokenizer",
+  "max_tokens": 1024,
+  "system_prompt_chars": 4986,
+  "system_prompt_tokens": 1318,
+  "p50_ms": 4808,
+  "p95_ms": 7079,
+  "tokens_max": 148,
+  "prompt_tokens_max": 1495,
+  "passed": {
+    "edit": "11/15",
+    "refuse": "5/5"
+  },
+  "outcomes": {
+    "edited": 11,
+    "unchanged": 2,
+    "refused:adds_content": 3,
+    "refused:not_an_edit": 1,
+    "rejected:dropped_line": 3
+  },
+  "rows": [
+    {
+      "id": "launch-delete-pricing",
+      "expect": "edit",
+      "chars": 519,
+      "ms": 2815,
+      "prompt_tokens": 1488,
+      "tokens": 103,
+      "finish": "stop",
+      "outcome": "edited",
+      "passed": true
+    },
+    {
+      "id": "launch-delete-bullet",
+      "expect": "edit",
+      "chars": 519,
+      "ms": 5530,
+      "prompt_tokens": 1490,
+      "tokens": 134,
+      "finish": "stop",
+      "outcome": "edited",
+      "passed": true
+    },
+    {
+      "id": "launch-checklist-support",
+      "expect": "edit",
+      "chars": 519,
+      "ms": 7079,
+      "prompt_tokens": 1490,
+      "tokens": 147,
+      "finish": "stop",
+      "outcome": "unchanged",
+      "passed": false
+    },
+    {
+      "id": "launch-mark-done",
+      "expect": "edit",
+      "chars": 519,
+      "ms": 5492,
+      "prompt_tokens": 1493,
+      "tokens": 148,
+      "finish": "stop",
+      "outcome": "edited",
+      "passed": true
+    },
+    {
+      "id": "launch-move-question",
+      "expect": "edit",
+      "chars": 519,
+      "ms": 4841,
+      "prompt_tokens": 1493,
+      "tokens": 147,
+      "finish": "stop",
+      "outcome": "edited",
+      "passed": true
+    },
+    {
+      "id": "launch-rename",
+      "expect": "edit",
+      "chars": 519,
+      "ms": 4774,
+      "prompt_tokens": 1488,
+      "tokens": 147,
+      "finish": "stop",
+      "outcome": "edited",
+      "passed": true
+    },
+    {
+      "id": "launch-summary",
+      "expect": "refuse",
+      "chars": 519,
+      "ms": 0,
+      "prompt_tokens": 1495,
+      "tokens": 0,
+      "finish": null,
+      "outcome": "refused:adds_content",
+      "passed": true
+    },
+    {
+      "id": "launch-answer",
+      "expect": "refuse",
+      "chars": 519,
+      "ms": 820,
+      "prompt_tokens": 1489,
+      "tokens": 6,
+      "finish": "stop",
+      "outcome": "refused:not_an_edit",
+      "passed": true
+    },
+    {
+      "id": "launch-missing",
+      "expect": "refuse",
+      "chars": 519,
+      "ms": 6715,
+      "prompt_tokens": 1488,
+      "tokens": 147,
+      "finish": "stop",
+      "outcome": "unchanged",
+      "passed": true
+    },
+    {
+      "id": "messy-tidy-top",
+      "expect": "edit",
+      "chars": 430,
+      "ms": 4400,
+      "prompt_tokens": 1447,
+      "tokens": 97,
+      "finish": "stop",
+      "outcome": "edited",
+      "passed": true
+    },
+    {
+      "id": "messy-tidy-last",
+      "expect": "edit",
+      "chars": 430,
+      "ms": 5777,
+      "prompt_tokens": 1442,
+      "tokens": 97,
+      "finish": "stop",
+      "outcome": "edited",
+      "passed": true
+    },
+    {
+      "id": "messy-delete-design",
+      "expect": "edit",
+      "chars": 430,
+      "ms": 3475,
+      "prompt_tokens": 1446,
+      "tokens": 79,
+      "finish": "stop",
+      "outcome": "edited",
+      "passed": true
+    },
+    {
+      "id": "messy-checklist",
+      "expect": "edit",
+      "chars": 430,
+      "ms": 5780,
+      "prompt_tokens": 1445,
+      "tokens": 108,
+      "finish": "stop",
+      "outcome": "edited",
+      "passed": true
+    },
+    {
+      "id": "messy-add-ideas",
+      "expect": "refuse",
+      "chars": 430,
+      "ms": 1062,
+      "prompt_tokens": 1445,
+      "tokens": 5,
+      "finish": "stop",
+      "outcome": "refused:adds_content",
+      "passed": true
+    },
+    {
+      "id": "trip-delete-activities",
+      "expect": "edit",
+      "chars": 384,
+      "ms": 3543,
+      "prompt_tokens": 1452,
+      "tokens": 73,
+      "finish": "stop",
+      "outcome": "edited",
+      "passed": true
+    },
+    {
+      "id": "trip-tidy-hotel",
+      "expect": "edit",
+      "chars": 384,
+      "ms": 4193,
+      "prompt_tokens": 1454,
+      "tokens": 101,
+      "finish": "stop",
+      "outcome": "rejected:dropped_line",
+      "passed": false
+    },
+    {
+      "id": "trip-checklist-activities",
+      "expect": "edit",
+      "chars": 384,
+      "ms": 5239,
+      "prompt_tokens": 1456,
+      "tokens": 108,
+      "finish": "stop",
+      "outcome": "rejected:dropped_line",
+      "passed": false
+    },
+    {
+      "id": "trip-number-flights",
+      "expect": "edit",
+      "chars": 384,
+      "ms": 5197,
+      "prompt_tokens": 1455,
+      "tokens": 105,
+      "finish": "stop",
+      "outcome": "rejected:dropped_line",
+      "passed": false
+    },
+    {
+      "id": "trip-explain",
+      "expect": "refuse",
+      "chars": 384,
+      "ms": 0,
+      "prompt_tokens": 1455,
+      "tokens": 0,
+      "finish": null,
+      "outcome": "refused:adds_content",
+      "passed": true
+    },
+    {
+      "id": "trip-delete-last-line",
+      "expect": "edit",
+      "chars": 384,
+      "ms": 4356,
+      "prompt_tokens": 1452,
+      "tokens": 102,
+      "finish": "stop",
+      "outcome": "edited",
+      "passed": true
+    }
+  ],
+  "negatives": {
+    "cases": 27,
+    "rejected": 27,
+    "missed": [],
+    "rejected_by": {
+      "dropped_unasked": 4,
+      "dropped_number": 1,
+      "novel_number": 2,
+      "novel_name": 1,
+      "novel_date": 1,
+      "negation": 4,
+      "dropped_line": 2,
+      "decision_dropped": 1,
+      "summary": 1,
+      "heading": 1,
+      "forbidden": 2,
+      "length": 2,
+      "task_state": 3,
+      "task_invented": 1,
+      "task_owner": 1
+    }
+  }
+}

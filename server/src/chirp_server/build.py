@@ -14,7 +14,13 @@ from pathlib import Path
 # Bump when a client starts needing something an older server lacks (the Mac app compares it).
 API_LEVEL = 2
 # Authenticated-health feature flags a client may require (each also stays a boolean `notes_*` key).
-CAPABILITIES = ("notes_structure", "notes_correction", "notes_reorganize", "notes_context")
+CAPABILITIES = (
+    "notes_structure",
+    "notes_correction",
+    "notes_reorganize",
+    "notes_context",
+    "notes_edit",
+)
 # Written next to the code by scripts/install-mac.sh, whose copy has no .git to ask.
 COMMIT_FILE = "BUILD_COMMIT"
 

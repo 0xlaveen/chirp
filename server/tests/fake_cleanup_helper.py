@@ -28,18 +28,23 @@ for line in sys.stdin:
     if notes_correction:
         text = json.loads(user.split("Transcript JSON: ", 1)[1])
     structure = "user" in request and not notes_correction
-    # Reorganize sends `Notes JSON: {"outline": ..., "notes": ...}`; structure has "transcript".
+    # Reorganize sends `Notes JSON: {"outline": ..., "notes": ...}`; structure has "transcript";
+    # an edit sends `Edit JSON: {"instruction": ..., "notes": ...}`.
+    edit = structure and str(request["user"]).startswith("Edit JSON: ")
+    prefix = "Edit JSON: " if edit else "Notes JSON: "
     try:
-        payload = json.loads(request["user"].removeprefix("Notes JSON: ")) if structure else {}
+        payload = json.loads(request["user"].removeprefix(prefix)) if structure else {}
     except ValueError:
         payload = {}
-    reorganize = isinstance(payload, dict) and "notes" in payload
-    trigger = "notes" if reorganize else "transcript"
+    reorganize = not edit and isinstance(payload, dict) and "notes" in payload
+    trigger = "notes" if reorganize or edit else "transcript"
     if option("--log"):
         # Synthetic request log for tests: which kind arrived, with the notes keys echoed.
         with open(option("--log"), "a") as log:
             entry = {
-                "kind": "reorganize"
+                "kind": "edit"
+                if edit
+                else "reorganize"
                 if reorganize
                 else "structure"
                 if structure
@@ -66,7 +71,9 @@ for line in sys.stdin:
             continue
         if option("--slow-structure"):
             time.sleep(float(option("--slow-structure")))
-        if reorganize:
+        if edit:
+            reply = option("--reply-edit") or "## Notes\n- Done"
+        elif reorganize:
             reply = option("--reply-reorganize") or "## Notes\n- Done"
         else:
             reply = option("--reply-structure") or "## Notes\n- Done"

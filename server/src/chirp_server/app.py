@@ -16,7 +16,7 @@ from starlette.responses import JSONResponse
 from starlette.routing import Route, WebSocketRoute
 from starlette.websockets import WebSocket, WebSocketDisconnect
 
-from . import build, notes
+from . import build, notes, notes_edit
 from .audio import MAX_FRAME, MAX_PCM, AudioError, decode_wav, levels, samples, silent
 from .cleanup_models import DEFAULT_MODEL, model_spec
 from .config import Settings, load_token, persist_keep_loaded, read_keep_loaded
@@ -474,6 +474,7 @@ def create_app(settings=None, engine=None, token=None, corrector=None):
                 "notes_reorganize": True,
                 # `start`/`stop` may carry `context`, the previous segment's tail, for notes.
                 "notes_context": True,
+                "notes_edit": True,
                 **build.info(),
             }
         )
@@ -638,6 +639,39 @@ def create_app(settings=None, engine=None, token=None, corrector=None):
             request,
             notes.validate_reorganize_request,
             lambda text, outline: notes.reorganize(corrector, text, outline),
+            respond,
+        )
+
+    async def notes_edit_route(request: Request):
+        """Lengths-only logging; the notes, instruction and Markdown never reach the log."""
+
+        def respond(fields, result, elapsed):
+            (edit,) = fields
+            log.info(
+                "notes_edit chars=%d instruction=%d selection=%s edited=%s changed=%s error=%s "
+                "reason=%s ms=%.1f",
+                len(edit.text),
+                len(edit.instruction),
+                edit.selection is not None,
+                result.edited,
+                result.changed,
+                result.error,
+                result.reason,
+                elapsed,
+            )
+            body = {
+                "markdown": result.markdown,
+                "edited": result.edited,
+                "changed": result.changed,
+                "error": result.error,
+                "timings_ms": {"edit": elapsed},
+            }
+            return JSONResponse(body if result.edited else body | {"reason": result.reason})
+
+        return await notes_pass(
+            request,
+            lambda body: (notes_edit.validate_edit_request(body),),
+            lambda edit: notes_edit.edit(corrector, edit),
             respond,
         )
 
@@ -815,6 +849,7 @@ def create_app(settings=None, engine=None, token=None, corrector=None):
             Route("/v1/transcribe", transcribe, methods=["POST"]),
             Route("/v1/notes/structure", notes_structure, methods=["POST"]),
             Route("/v1/notes/reorganize", notes_reorganize, methods=["POST"]),
+            Route("/v1/notes/edit", notes_edit_route, methods=["POST"]),
             WebSocketRoute("/v1/stream", stream),
         ],
         lifespan=lifespan,
