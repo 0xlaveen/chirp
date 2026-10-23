@@ -37,6 +37,12 @@ final class ChirpUITests: XCTestCase {
         XCTAssertEqual(app.staticTexts["transcript"].label, "Synthetic words.")
         app.buttons["chirp.dictation.raw"].tap()
         XCTAssertEqual(app.staticTexts["transcript"].label, "synthetic words")
+        // Regression: the armed session bar covered iOS 27's tab bar, so a tab tap ended the session.
+        selectTab("History", symbol: "clock", in: app)
+        XCTAssertTrue(app.descendants(matching: .any).matching(identifier: "chirp.history.enabled").firstMatch.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["chirp.session.end"].exists, "Switching tabs must not end the session")
+        selectTab("Dictate", symbol: "mic", in: app)
+        XCTAssertTrue(app.staticTexts["Finished · microphone still active"].exists)
         app.buttons["chirp.session.end"].tap()
         XCTAssertTrue(app.staticTexts["Microphone off"].waitForExistence(timeout: 5))
         XCTAssertFalse(app.staticTexts["transcript"].exists)

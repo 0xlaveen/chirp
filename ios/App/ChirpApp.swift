@@ -78,14 +78,35 @@ struct ChirpRootView: View {
     @ObservedObject var model: SessionCoordinator
     @State private var tab = ChirpTab.dictate
     var body: some View {
+        // The session bar goes inside each tab: inset on the TabView itself, it covered iOS 27's floating
+        // tab bar, so tapping a tab while armed hit End session instead.
         TabView(selection: $tab) {
-            NavigationStack { DictationView(model: model, tab: $tab) }.tabItem { Label("Dictate", systemImage: "mic") }.tag(ChirpTab.dictate)
-            NavigationStack { PairingView(model: model) }.tabItem { Label("Pair Mac", systemImage: "qrcode.viewfinder") }.tag(ChirpTab.pair)
-            NavigationStack { StylesView(model: model) }.tabItem { Label("Styles", systemImage: "sparkles") }.tag(ChirpTab.styles)
-            NavigationStack { HistoryView(model: model) }.tabItem { Label("History", systemImage: "clock") }.tag(ChirpTab.history)
-            NavigationStack { SessionSettingsView(model: model) }.tabItem { Label("Settings", systemImage: "gear") }.tag(ChirpTab.settings)
+            NavigationStack { DictationView(model: model, tab: $tab) }.modifier(SessionBar(model: model))
+                .tabItem { Label("Dictate", systemImage: "mic") }.tag(ChirpTab.dictate)
+            NavigationStack { PairingView(model: model) }.modifier(SessionBar(model: model))
+                .tabItem { Label("Pair Mac", systemImage: "qrcode.viewfinder") }.tag(ChirpTab.pair)
+            NavigationStack { StylesView(model: model) }.modifier(SessionBar(model: model))
+                .tabItem { Label("Styles", systemImage: "sparkles") }.tag(ChirpTab.styles)
+            NavigationStack { HistoryView(model: model) }.modifier(SessionBar(model: model))
+                .tabItem { Label("History", systemImage: "clock") }.tag(ChirpTab.history)
+            NavigationStack { SessionSettingsView(model: model) }.modifier(SessionBar(model: model))
+                .tabItem { Label("Settings", systemImage: "gear") }.tag(ChirpTab.settings)
         }
-        .safeAreaInset(edge: .bottom) {
+        .overlay(alignment: .top) {
+            if model.debugRetention {
+                Text("DEBUG: Mac keeps recordings").font(.headline).foregroundStyle(.white)
+                    .frame(maxWidth: .infinity).padding(8).background(.red)
+                    .accessibilityAddTraits(.isHeader).allowsHitTesting(false)
+            }
+        }
+        .modifier(PrivacyShield())
+    }
+}
+
+struct SessionBar: ViewModifier {
+    @ObservedObject var model: SessionCoordinator
+    func body(content: Content) -> some View {
+        content.safeAreaInset(edge: .bottom) {
             if model.armed {
                 VStack(spacing: 8) {
                     Label("Microphone active throughout session", systemImage: "mic.fill").font(.footnote)
@@ -96,14 +117,6 @@ struct ChirpRootView: View {
                 .frame(maxWidth: .infinity).padding(8).background(.regularMaterial)
             }
         }
-        .overlay(alignment: .top) {
-            if model.debugRetention {
-                Text("DEBUG: Mac keeps recordings").font(.headline).foregroundStyle(.white)
-                    .frame(maxWidth: .infinity).padding(8).background(.red)
-                    .accessibilityAddTraits(.isHeader).allowsHitTesting(false)
-            }
-        }
-        .modifier(PrivacyShield())
     }
 }
 

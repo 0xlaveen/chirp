@@ -26,6 +26,8 @@
   ],
   "ChirpIOSUITests": [
     "UITests/ChirpKeyboardUITests.swift",
-    "UITests/ChirpUITests.swift"
+    "UITests/ChirpLiveServerUITests.swift",
+    "UITests/ChirpUITests.swift",
+    "UITests/KeyboardSetup.swift"
   ]
 }

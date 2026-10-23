@@ -13,6 +13,7 @@ struct StylesView: View {
                 Toggle("Clean up final text", isOn: Binding(get: { model.preferences.correction }, set: { enabled in
                     if enabled { consent = true } else { model.setCleanup(false) }
                 })).disabled(!model.cleanupCanEnable || model.phase == .correcting)
+                    .accessibilityIdentifier("chirp.cleanup.enabled")
                 Text("Starts off. Audio is recognized on your Mac. Clean-up only receives the final transcript after you stop.")
                     .font(.footnote).foregroundStyle(.secondary)
             }

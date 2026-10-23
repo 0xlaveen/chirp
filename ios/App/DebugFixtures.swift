@@ -1,4 +1,5 @@
 #if DEBUG
+import AVFoundation
 import ChirpCore
 import ChirpIOSCore
 import Foundation
@@ -88,6 +89,74 @@ extension SessionCoordinator {
             model.show(error)
             return model
         }
+    }
+}
+
+/// Simulator-only speech source for end-to-end runs against a real local server: `--chirp-sim-audio <file>`
+/// plays an audio file (from the app's data container) through the real `CaptureSink` at real-time pace
+/// for each utterance, then silence until stop. The simulator's microphone input can hang in AudioToolbox
+/// (RPC timeout abort), so instead of arming it, looping silent output keeps the app running in the
+/// background during the session as the armed microphone does on a device.
+@MainActor
+final class SimulatorFileAudio: SessionAudio {
+    private let url: URL
+    private let keepAlive = AVAudioEngine()
+    private let player = AVAudioPlayerNode()
+    private let sink = CaptureSink()
+    private var feeder: Task<Void, Never>?
+    init(url: URL) { self.url = url }
+    static func fromArguments() -> SimulatorFileAudio? {
+        #if targetEnvironment(simulator)
+        let args = ProcessInfo.processInfo.arguments
+        guard let i = args.firstIndex(of: "--chirp-sim-audio"), i + 1 < args.count else { return nil }
+        let path = args[i + 1]
+        let url = path.hasPrefix("/") ? URL(fileURLWithPath: path)
+            : FileManager.default.temporaryDirectory.appendingPathComponent(path)
+        return SimulatorFileAudio(url: url)
+        #else
+        return nil
+        #endif
+    }
+    func arm(onInterruption: @escaping @Sendable () -> Void) throws {
+        guard let file = try? AVAudioFile(forReading: url) else { throw SessionFailure.audio }
+        sink.configure(format: file.processingFormat)
+        do {
+            try AVAudioSession.sharedInstance().setCategory(.playback, options: .mixWithOthers)
+            try AVAudioSession.sharedInstance().setActive(true)
+            let format = keepAlive.mainMixerNode.outputFormat(forBus: 0)
+            guard let silence = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(format.sampleRate)) else { throw SessionFailure.audio }
+            silence.frameLength = silence.frameCapacity
+            keepAlive.attach(player)
+            keepAlive.connect(player, to: keepAlive.mainMixerNode, format: format)
+            player.scheduleBuffer(silence, at: nil, options: .loops)
+            try keepAlive.start()
+            player.play()
+        } catch { disarm(); throw SessionFailure.audio }
+    }
+    func begin(stream: StreamSession, onFailure: @escaping @Sendable () -> Void, onLimit: @escaping @Sendable () -> Void) throws {
+        try sink.begin(stream, onFailure: onFailure, onLimit: onLimit)
+        feeder?.cancel()
+        feeder = Task.detached { [url, sink] in
+            guard let file = try? AVAudioFile(forReading: url) else { return }
+            let chunk = AVAudioFrameCount(file.processingFormat.sampleRate / 10)
+            while !Task.isCancelled {
+                guard let buffer = AVAudioPCMBuffer(pcmFormat: file.processingFormat, frameCapacity: chunk) else { return }
+                if (try? file.read(into: buffer, frameCount: chunk)) == nil || buffer.frameLength == 0 {
+                    buffer.frameLength = chunk // silence after the file ends
+                    for c in 0..<Int(buffer.format.channelCount) { buffer.floatChannelData?[c].update(repeating: 0, count: Int(chunk)) }
+                }
+                sink.receive(buffer)
+                try? await Task.sleep(for: .milliseconds(100))
+            }
+        }
+    }
+    func ready() { sink.ready() }
+    func finish() { feeder?.cancel(); feeder = nil; sink.finish() }
+    func discard() { feeder?.cancel(); feeder = nil; sink.discard() }
+    func disarm() {
+        discard(); player.stop(); keepAlive.stop()
+        if player.engine != nil { keepAlive.detach(player) }
+        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
     }
 }
 
