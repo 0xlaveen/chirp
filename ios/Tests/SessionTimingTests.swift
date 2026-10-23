@@ -26,18 +26,23 @@ extension SessionCoordinatorTests {
         #expect(try f.stores.timings.entries().isEmpty && f.model.timingSummary == "No dictations recorded")
     }
 
-    @Test func cancelledAndLongDictationsAreCounted() async throws {
+    @Test func aCancelledDictationIsCounted() async throws {
         let f = try await fixture(); defer { f.clean() }
         try await f.model.begin()
         try await ready(f)
         f.model.cancelDictation()
+        #expect(try f.stores.timings.entries().map(\.outcome) == [.cancelled])
+    }
+
+    @Test func aLongDictationCountsItsSegments() async throws {
+        let f = try await fixture(); defer { f.clean() }
         try await rolled(f)
         f.model.stopDictation()
         push(f, 0, #"{"type":"final","text":"One."}"#)
         push(f, 1, #"{"type":"final","text":"Two."}"#)
         try await eventually { f.model.phase == .finished }
         let entries = try f.stores.timings.entries()
-        #expect(entries.map(\.outcome) == [.cancelled, .final])
+        #expect(entries.map(\.outcome) == [.final])
         #expect(entries.last?.segments == 2 && entries.last?.source == .keyboard)
     }
 }
