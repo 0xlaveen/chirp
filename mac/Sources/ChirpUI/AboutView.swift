@@ -23,7 +23,7 @@ public struct AboutInfo: Equatable, Sendable {
     }
 }
 
-/// The About window's content: the app icon, the name, the version and one line on what Chirp does.
+/// Settings › About: the app icon, the name, the version and one line on what Chirp does.
 @MainActor
 public final class AboutView: NSView {
     static let width: CGFloat = 320

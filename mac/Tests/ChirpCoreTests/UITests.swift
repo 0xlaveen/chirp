@@ -161,24 +161,28 @@ import Testing
 
     // MARK: tabs
 
-    @Test func hasSixTabsInTheTargetOrder() {
-        #expect(SettingsTab.allCases.map(\.title) == ["General", "Sounds", "Clean-up", "Server", "Devices", "Permissions"])
+    @Test func hasSevenTabsInTheTargetOrder() {
+        #expect(SettingsTab.allCases.map(\.title) == ["General", "Dictation", "Clean-up", "Notes", "Server", "Devices", "About"])
         #expect(SettingsTab.allCases.allSatisfy { NSImage(systemSymbolName: $0.symbol, accessibilityDescription: nil) != nil })
     }
 
     @Test func eachControlLivesOnItsOwnTab() {
         let form = SettingsForm(SettingsState())
         func has(_ control: NSView, _ tab: SettingsTab) -> Bool { control.isDescendant(of: form.view(for: tab)) }
-        #expect(has(form.hotkey, .general) && has(form.recorder, .general) && has(form.launch, .general) && has(form.setupButton, .general))
-        #expect(has(form.wordWaveform, .general) && !has(form.wordWaveform, .cleanup))
-        #expect(has(form.notesRecoveryCopy, .general) && !has(form.notesRecoveryCopy, .cleanup))
-        #expect(has(form.sounds, .sounds) && has(form.soundPack, .sounds) && has(form.volume, .sounds) && has(form.chooseStart, .sounds))
+        #expect(has(form.launch, .general) && has(form.setupButton, .general) && has(form.micButton, .general) && has(form.accessibilityButton, .general))
+        #expect(has(form.hotkey, .dictation) && has(form.recorder, .dictation) && has(form.mode, .dictation) && has(form.silence, .dictation))
+        #expect(has(form.microphone, .dictation) && has(form.wordWaveform, .dictation) && has(form.autoEnter, .dictation))
+        #expect(has(form.sounds, .dictation) && has(form.soundPack, .dictation) && has(form.volume, .dictation) && has(form.chooseStart, .dictation))
         #expect(has(form.cleanupEnabled, .cleanup) && has(form.style, .cleanup) && has(form.prompts.view, .cleanup))
         #expect(has(form.appStyles.view, .cleanup) && has(form.showChanges, .cleanup) && has(form.insertRawFirst, .cleanup))
-        #expect(has(form.serverURL, .server) && has(form.doctorButton, .server))
-        #expect(has(form.micButton, .permissions) && has(form.accessibilityButton, .permissions))
+        #expect(has(form.removeSpeakerModel, .notes) && has(form.notesButton, .notes) && has(form.notesRecoveryCopy, .notes))
+        #expect(has(form.serverURL, .server) && has(form.doctorButton, .server) && has(form.modelsButton, .server) && has(form.keepLoaded, .server))
+        #expect(has(form.pairButton, .devices) && has(form.about, .about))
         // and on no other
-        #expect(!has(form.launch, .server) && !has(form.serverURL, .general) && !has(form.hotkey, .sounds) && !has(form.micButton, .general))
+        for control in [form.launch, form.hotkey, form.sounds, form.cleanupEnabled, form.removeSpeakerModel, form.notesRecoveryCopy, form.serverURL, form.keepLoaded,
+                        form.pairButton, form.micButton, form.about] {
+            #expect(SettingsTab.allCases.filter { has(control, $0) }.count == 1)
+        }
     }
 
     @Test func cleanupTabCarriesEveryCleanupOption() {
@@ -200,33 +204,71 @@ import Testing
         #expect(SettingsForm.cleanupDetail(health: nil).available)
     }
 
-    @Test func everyTabIsSizedToItsContent() {
+    @Test func everyTabSharesOneWidthAndIsAsTallAsItsContent() {
         let form = SettingsForm(SettingsState())
         let sizes = SettingsTab.allCases.map { form.fittingSize(for: $0) }
-        #expect(sizes.allSatisfy { $0.width > 300 && $0.height > 80 })
-        // Not one tall form any more: only Clean-up (the prompt editor) is tall.
+        // One width, so the window never jumps sideways and the seven toolbar tabs always fit.
+        #expect(Set(sizes.map(\.width)).count == 1 && sizes[0].width >= SettingsForm.minimumWidth && sizes[0].width < 560)
+        #expect(SettingsTab.allCases.allSatisfy { form.view(for: $0).fittingSize.width == sizes[0].width })
+        // Not one tall form: only Clean-up (the prompt editor) is tall.
         let heights = Dictionary(uniqueKeysWithValues: zip(SettingsTab.allCases, sizes.map(\.height)))
-        #expect(heights[.general]! < 500 && heights[.permissions]! < 200 && heights[.server]! < 300 && heights[.sounds]! < 360, "\(heights)")
-        #expect(heights[.cleanup]! > heights[.general]! * 3 / 2)
-        // Each is fitted on its own: the sizes differ.
-        #expect(Set(sizes.map(\.height)).count == sizes.count)
+        #expect(heights[.general]! < 260 && heights[.devices]! < 140 && heights[.notes]! < 360 && heights[.server]! < 380, "\(heights)")
+        #expect(heights[.dictation]! < 560, "\(heights)")
+        #expect(heights[.cleanup]! > heights[.dictation]! * 1.25)
     }
 
-    @Test func contentKeepsItsMarginOnEverySide() {
+    @Test func contentIsCentredWithItsMargin() {
         let form = SettingsForm(SettingsState())
+        let widest = SettingsTab.allCases.max { form.view(for: $0).subviews[0].fittingSize.width < form.view(for: $1).subviews[0].fittingSize.width }!
         for tab in SettingsTab.allCases {
             let view = form.view(for: tab)
             let size = form.fittingSize(for: tab)
-            let grid = view.subviews[0]
+            let body = view.subviews[0]
             view.setFrameSize(size)
             view.layoutSubtreeIfNeeded()
-            #expect(abs(grid.frame.minX - 20) < 0.5 && abs(grid.frame.minY - 20) < 0.5, "\(tab.title)")
-            #expect(abs(size.width - grid.frame.maxX - 20) < 0.5 && abs(size.height - grid.frame.maxY - 20) < 0.5, "\(tab.title)")
+            #expect(body.frame.minX >= 19.5 && abs(body.frame.minY - 20) < 0.5 && abs(size.height - body.frame.maxY - 20) < 0.5, "\(tab.title)")
+            #expect(abs(body.frame.midX - size.width / 2) < 0.5, "\(tab.title)")
+            if tab == widest { #expect(abs(body.frame.minX - 20) < 0.5 && abs(size.width - body.frame.maxX - 20) < 0.5) }
         }
     }
 
-    @Test(arguments: [(SettingsTab.general, SoundPack.chirp, 9), (.sounds, .chirp, 3), (.sounds, .custom, 5), (.cleanup, .chirp, 8),
-                      (.server, .chirp, 5), (.devices, .chirp, 1), (.permissions, .chirp, 2)])
+    @Test func groupsStartWithExtraSpace() throws {
+        let form = SettingsForm(SettingsState())
+        let grid = try #require(form.view(for: .dictation).subviews[0] as? NSGridView)
+        #expect(grid.row(at: 4).topPadding == SettingsForm.groupSpacing && grid.row(at: 7).topPadding == SettingsForm.groupSpacing)
+        #expect(grid.row(at: 2).topPadding == 0)
+    }
+
+    @Test func microphonePickerFollowsTheMenuRules() {
+        let boya = AudioInput(uid: "boya", name: "BOYA CM40"), studio = AudioInput(uid: "studio", name: "Studio")
+        var s = SettingsState()
+        s.inputs = [boya, studio, AudioInput(uid: "studio2", name: "Studio")]; s.defaultInput = boya
+        let form = SettingsForm(s)
+        #expect(form.microphone.itemArray.filter { !$0.isSeparatorItem }.map(\.title) == ["Follow System Default (BOYA CM40)", "BOYA CM40", "Studio", "Studio"])
+        #expect(form.microphone.indexOfSelectedItem == 0)
+        s.chosenInputUID = "studio2"
+        form.apply(s)
+        #expect(form.microphone.selectedItem?.representedObject as? String == "studio2")
+        // Unplugged: shows the default, as the menu does.
+        s.inputs = [boya]
+        form.apply(s)
+        #expect(form.microphone.indexOfSelectedItem == 0 && form.microphone.numberOfItems == 3)
+        s.inputs = []; s.defaultInput = nil
+        form.apply(s)
+        #expect(!form.microphone.isEnabled)
+    }
+
+    @Test func speakerModelShowsItsStateAndRemoveOnlyWhileDownloaded() {
+        var s = SettingsState()
+        let form = SettingsForm(s)
+        #expect(form.removeSpeakerModel.isHidden)
+        s.speakerModelDownloaded = true
+        form.apply(s)
+        #expect(!form.removeSpeakerModel.isHidden && form.removeSpeakerModel.accessibilityLabel() == "Remove the speaker model")
+    }
+
+    @Test(arguments: [(SettingsTab.general, SoundPack.chirp, 3), (.dictation, .chirp, 9), (.dictation, .custom, 11), (.cleanup, .chirp, 7),
+                      (.notes, .chirp, 4), (.server, .chirp, 6), (.devices, .chirp, 1)])
     func labelsShareARightEdgeAndControlsALeftEdge(tab: SettingsTab, pack: SoundPack, expectedLabels: Int) throws {
         var state = SettingsState()
         state.soundPack = pack
@@ -242,12 +284,13 @@ import Testing
         let edges = rowLabels.map { view.convert($0.bounds, from: $0).maxX }
         #expect(edges.allSatisfy { abs($0 - edges[0]) < 0.5 })
         let leading: [NSView] = switch tab {
-        case .general: [form.hotkey, form.mode, form.silence, form.autoEnter, form.wordWaveform, form.launch, form.notesRecoveryCopy, form.setupButton]
-        case .sounds: [form.sounds, form.soundPack, form.volume]
+        case .general: [form.launch, form.setupButton]
+        case .dictation: [form.hotkey, form.mode, form.silence, form.microphone, form.wordWaveform, form.autoEnter, form.sounds, form.soundPack, form.volume]
         case .cleanup: [form.cleanupEnabled, form.style, form.insertRawFirst, form.appStyles.scroll, form.showChanges, form.offerRaw]
-        case .server: [form.serverURL, form.doctorButton, form.modelsButton]
+        case .notes: [form.notesRecoveryCopy, form.notesButton]
+        case .server: [form.serverURL, form.keepLoaded, form.doctorButton, form.modelsButton]
         case .devices: [form.pairButton]
-        case .permissions: []
+        case .about: []
         }
         let controlEdges = leading.map { view.convert($0.bounds, from: $0).minX }
         #expect(controlEdges.allSatisfy { abs($0 - controlEdges[0]) < 0.5 && $0 > edges[0] })
@@ -290,10 +333,10 @@ import Testing
         #expect(!(window.firstResponder is NSText) && form.serverURL.currentEditor() == nil)
     }
 
-    @Test func customSoundRowsChangeOnlyTheSoundsTab() throws {
+    @Test func customSoundRowsChangeOnlyTheDictationTab() throws {
         let form = SettingsForm(SettingsState())
         let controller = SettingsTabs.makeController(form: form)
-        let sounds = try #require(controller.tabViewItems[1].viewController as? SettingsTabController)
+        let sounds = try #require(controller.tabViewItems[SettingsTab.allCases.firstIndex(of: .dictation)!].viewController as? SettingsTabController)
         _ = sounds.view
         let before = sounds.preferredContentSize.height
         form.showPack(.custom)
@@ -311,9 +354,9 @@ import Testing
 @MainActor
 @Suite struct MenuViewTests {
     private func row(_ title: String, value: String? = nil, shortcut: String? = nil, submenu: Bool = false,
-                     action: MenuAction? = .showAbout) -> MenuRowView {
+                     action: MenuAction? = .showSettings) -> MenuRowView {
         MenuRowView(entry: MenuEntry(title: title, value: value, shortcut: shortcut, action: action,
-                                     submenu: submenu ? [MenuEntry(title: "x", action: .showAbout)] : nil))
+                                     submenu: submenu ? [MenuEntry(title: "x", action: .showSettings)] : nil))
     }
 
     @Test func rowsAreTwentyFourPointsHighAndAtLeastTheMenuMinimumWide() {
@@ -333,7 +376,7 @@ import Testing
 
     @Test func rowsAreMenuItemsForVoiceOverWithTheFullLabel() {
         let r = MenuRowView(entry: MenuEntry(title: "Microphone", value: "Studio Display Micro…", fullValue: "Studio Display Microphone (USB)",
-                                             submenu: [MenuEntry(title: "x", action: .showAbout)]))
+                                             submenu: [MenuEntry(title: "x", action: .showSettings)]))
         #expect(r.isAccessibilityElement() && r.accessibilityRole() == .menuItem)
         #expect(r.accessibilityLabel() == "Microphone, Studio Display Microphone (USB)")
         #expect(r.accessibilityHelp() == "Opens a submenu")
@@ -384,7 +427,7 @@ import Testing
         for state in ["paused", "listening", "unreachable", "debug", "use-raw", "permissions-missing", "long-names"] {
             #expect(names.contains("menu-\(state)-light.png") && names.contains("menu-\(state)-dark.png"))
         }
-        for name in ["onboarding-welcome", "onboarding-try-it-success", "onboarding-microphone-blocked", "about", "settings-general-custom-hotkey"] {
+        for name in ["onboarding-welcome", "onboarding-try-it-success", "onboarding-microphone-blocked", "settings-about-ready", "settings-dictation-custom-hotkey"] {
             #expect(names.contains("\(name)-light.png") && names.contains("\(name)-dark.png"))
         }
         for url in files {
@@ -427,7 +470,7 @@ import Testing
         let names = Snapshots.committedNames
         let all = Set(Snapshots.allScenarios.map(\.name))
         #expect(names.allSatisfy { all.contains($0) } && Set(names).count == names.count)
-        #expect(names.count * 2 <= 36)
+        #expect(names.count * 2 <= 38)
         // The menu in light and dark, one per Settings tab, setup, the key HUD states and the Notes window.
         #expect(names.contains("notes-editing") && names.contains("notes-split"))
         #expect(names.contains("menu-ready") && names.contains("onboarding-welcome") && names.contains { $0.hasPrefix("hud-") })
@@ -435,7 +478,7 @@ import Testing
         #expect(Snapshots.committedScenarios.map(\.name) == names)
     }
 
-    @Test func theCommittedFilesAreExactlyTheCuratedSetUnderThreeMegabytes() throws {
+    @Test func theCommittedFilesAreExactlyTheCuratedSetUnderThreePointThreeMegabytes() throws {
         let dir = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
             .deletingLastPathComponent().appendingPathComponent("docs/screenshots/mac")
         guard FileManager.default.fileExists(atPath: dir.path) else { return }   // not a full checkout
@@ -443,7 +486,7 @@ import Testing
         let expected = Snapshots.committedNames.flatMap { ["\($0)-dark.png", "\($0)-light.png"] }.sorted()
         #expect(files == expected, "docs/screenshots/mac is out of date: run mac/scripts/snapshots.sh")
         let total = try files.reduce(0) { $0 + (try FileManager.default.attributesOfItem(atPath: dir.appendingPathComponent($1).path)[.size] as? Int ?? 0) }
-        #expect(total < 3_000_000, "\(total) bytes")
+        #expect(total < 3_300_000, "\(total) bytes")
     }
 
     @Test func curatedRenderingWritesOnlyTheCommittedNames() throws {

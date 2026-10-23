@@ -6,7 +6,6 @@ import ChirpUI
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private let controller = DictationController()
     private let settingsWindow = SettingsWindowController()
-    private let aboutWindow = AboutWindowController()
     private let localModelsWindow = LocalModelsWindowController()
     private let pairingWindow = PairingWindowController()
     private let notes = NotesController()
@@ -34,7 +33,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             controller: controller,
             actions: .init(openSettings: { [settingsWindow] in settingsWindow.show(tab: $0) },
                            openSetup: { [onboardingWindow] in onboardingWindow.show() },
-                           openAbout: { [aboutWindow] in aboutWindow.show() },
                            toggleNotes: { [notes] in notes.toggle(fromHotkey: false) },
                            showNotes: { [notesWindow] in notesWindow.show() },
                            notes: { [notes] in notes.menuState },
@@ -42,6 +40,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         settingsWindow.onOpenSetup = { [onboardingWindow] in onboardingWindow.show() }
         settingsWindow.onOpenModels = { [localModelsWindow] in localModelsWindow.show() }
         settingsWindow.onPairPhone = { [pairingWindow] in pairingWindow.show() }
+        settingsWindow.onOpenNotes = { [notesWindow] in notesWindow.show() }
         onboardingWindow.onOpenModels = { [localModelsWindow] in localModelsWindow.show() }
         localModelsWindow.onServerChanged = { [controller] in Task { await controller.refreshHealth() } }
         settingsWindow.serverStatus = { [controller] in MenuContent.serverStatus(health: controller.health, healthError: controller.healthError) }

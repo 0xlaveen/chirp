@@ -8,15 +8,14 @@ public enum LaunchState: Equatable, Sendable {
 }
 
 public enum MenuAction: Equatable, Sendable {
-    case toggleDictation, toggleNotes, showNotes, useRaw, pickInput(String?), toggleCleanup, toggleShowChanges, pickStyle(String), pickSound(String)
-    case copyDoctor, showSettings, editStyles, showSetup, showAbout, quit
+    case toggleDictation, toggleNotes, showNotes, useRaw, pickInput(String?), toggleCleanup, toggleShowChanges, pickStyle(String)
+    case showSettings, editStyles, showSetup, quit
 
     /// What the AppKit item carries to its action method.
     public var payload: String? {
         switch self {
         case .pickInput(let uid): uid
         case .pickStyle(let id): id
-        case .pickSound(let id): id
         default: nil
         }
     }
@@ -87,9 +86,6 @@ public struct MenuInputs: Sendable {
     /// The default clean-up style (a profile id); a per-app rule can override it for one dictation.
     public var styleID = CorrectionProfile.defaultID
     public var hotkey: KeyCombo = .controlOptionSpace
-    public var soundsEnabled = false
-    public var soundPack: SoundPack = .default
-    public var serverURL = ServerConfig.defaultURL.absoluteString
     public var micGranted = true
     public var accessibilityGranted = true
     /// Live Notes is recording (starting or listening); `notesElapsed` is its `mm:ss`.
@@ -154,7 +150,9 @@ public enum MenuContent {
         return ("Ready · \(m.activationMode == .holdToTalk ? "hold " : "")\(m.hotkey.title)", .normal)
     }
 
-    /// The rows below the header.
+    /// The rows below the header: what to do now (dictate, take notes), the last result's Use raw while it is on
+    /// offer, the two choices people change between dictations, then Settings and Quit. Set-once preferences (sounds,
+    /// the server, About) live in Settings.
     public static func entries(_ m: MenuInputs) -> [MenuEntry] {
         var out: [MenuEntry] = [.separator]
 
@@ -170,21 +168,19 @@ public enum MenuContent {
         case .finalizing, .correcting, .inserting:
             out.append(MenuEntry(title: "Start Dictation", shortcut: shortcut))
         }
-        if m.rawOfferOpen {
-            out.append(MenuEntry(title: "Use Raw for Last Dictation", shortcut: m.rawOfferKey, action: .useRaw))
-        }
         out += notesRows(m)
         out.append(.separator)
+        if m.rawOfferOpen {
+            out.append(MenuEntry(title: "Use Raw for Last Dictation", shortcut: m.rawOfferKey, action: .useRaw))
+            out.append(.separator)
+        }
 
         out.append(cleanupMenu(m))
         out.append(microphoneMenu(m))
-        out.append(soundsMenu(m))
-        out.append(serverMenu(m))
         out.append(.separator)
 
         if m.setupIncomplete { out.append(MenuEntry(title: "Set Up Chirp…", action: .showSetup)) }
         out.append(MenuEntry(title: "Settings…", shortcut: "⌘,", action: .showSettings, keyEquivalent: ","))
-        out.append(MenuEntry(title: "About Chirp", action: .showAbout))
         out.append(.separator)
         out.append(MenuEntry(title: "Quit Chirp", shortcut: "⌘Q", action: .quit, keyEquivalent: "q"))
         return out
@@ -254,58 +250,14 @@ public enum MenuContent {
         return row("Microphone", value: value, submenu: sub)
     }
 
-    // MARK: sounds
-
-    /// "Sounds": Off, the packs, Custom… (which asks for files in Settings until there are some).
-    static func soundsMenu(_ m: MenuInputs) -> MenuEntry {
-        let current = SoundChoice.current(enabled: m.soundsEnabled, pack: m.soundPack)
-        var sub: [MenuEntry] = []
-        for choice in SoundChoice.menuOrder {
-            if choice == .pack(.custom) { sub.append(.separator) }
-            let title: String
-            switch choice {
-            case .off: title = "Off"
-            case .pack(let p): title = p.title
-            }
-            sub.append(MenuEntry(title: title, action: .pickSound(choice.id), mark: choice == current ? .on : .off))
-            if choice == .off { sub.append(.separator) }
-        }
-        var value = "Off"
-        if m.soundsEnabled { value = m.soundPack == .custom ? "Custom" : m.soundPack.title }
-        return row("Sounds", value: value, submenu: sub)
-    }
-
     // MARK: server
 
-    /// "This Mac" for a server on loopback, else its host name.
-    public static func serverLocation(_ urlString: String) -> String {
-        let config = ServerConfig.load(urlString: urlString)
-        return config.isLoopback ? "This Mac" : config.host
-    }
-
-    /// The server's state in words and tone, for the menu and the Settings window.
+    /// The server's state in words and tone, for the Settings window.
     public static func serverStatus(health: Health?, healthError: String?) -> (text: String, tone: MenuEntry.Tone) {
         switch health {
         case nil: healthError == nil ? ("Checking…", .warning) : ("Unreachable", .error)
         case let h? where h.ready == false: ("Loading model…", .warning)
         case let h?: (h.engine ?? "Connected", .ok)
         }
-    }
-
-    /// "Server": where it is, then its URL, engine and status as disabled lines, and the doctor command.
-    static func serverMenu(_ m: MenuInputs) -> MenuEntry {
-        let status = serverStatus(health: m.health, healthError: m.healthError)
-        let state: String
-        switch m.health {
-        case nil: state = m.healthError == nil ? "Checking…" : "Unreachable"
-        case let h? where h.ready == false: state = "Loading model…"
-        default: state = "Ready"
-        }
-        var sub = [MenuEntry(title: m.serverURL)]
-        if let engine = m.health?.engine { sub.append(MenuEntry(title: "Engine: \(engine)")) }
-        sub.append(MenuEntry(title: "Status: \(state)", tone: status.tone == .error ? .error : .normal))
-        sub.append(.separator)
-        sub.append(MenuEntry(title: "Copy Doctor Command", action: .copyDoctor))
-        return row("Server", value: serverLocation(m.serverURL), tone: status.tone == .error ? .error : .normal, submenu: sub)
     }
 }

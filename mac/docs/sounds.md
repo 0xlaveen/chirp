@@ -1,6 +1,6 @@
 # Chirp's sounds
 
-Chirp can play a short cue when dictation starts and another when capture stops (Settings → Sounds, or the menu's **Sounds** submenu). They are off by default; **Chirp** is the pack used when you switch them on.
+Chirp can play a short cue when dictation starts and another when capture stops (Settings → Dictation, under Sounds). They are off by default; **Chirp** is the pack used when you switch them on.
 
 ## Packs
 
@@ -48,4 +48,4 @@ The start cue must be over before the microphone opens, or the USB mic would rec
 
 ## Playback and volume
 
-Each cue is an `AVAudioPlayer`, loaded and prepared ahead of time, so there is no decode or disk wait. It plays through the default output and does not duck or pause other audio. The volume slider is 0–100 % (default 60 %); the gain is `volume^1.5` (60 % → 0.46, i.e. about −6.7 dB), and 0 % is silent. Previews (▶ Start, ▶ Stop in Settings, and picking a pack from the menu) play at the same volume.
+Each cue is an `AVAudioPlayer`, loaded and prepared ahead of time, so there is no decode or disk wait. It plays through the default output and does not duck or pause other audio. The volume slider is 0–100 % (default 60 %); the gain is `volume^1.5` (60 % → 0.46, i.e. about −6.7 dB), and 0 % is silent. Previews (▶ Start and ▶ Stop in Settings, and letting go of the volume slider) play at the same volume.
