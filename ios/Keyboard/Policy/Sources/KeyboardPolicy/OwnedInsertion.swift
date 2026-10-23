@@ -53,6 +53,15 @@ public struct EditPlan: Equatable, Sendable {
     public let ownedText: String
     public let replacement: String
 
+    /// Leading characters (of the replacement) that the owned text already shows. They stay in the editor, so a
+    /// growing partial only rewrites its changed tail instead of deleting and retyping the whole utterance.
+    public var keptPrefix: String {
+        String(replacement.prefix(zip(ownedText, replacement).prefix { $0 == $1 }.count))
+    }
+    /// The owned characters to delete (after `keptPrefix`) and the characters to insert in their place.
+    public var deletedText: String { String(ownedText.dropFirst(keptPrefix.count)) }
+    public var insertedText: String { String(replacement.dropFirst(keptPrefix.count)) }
+
     /// Revalidate immediately before EACH deletion. Never issue a stored length's
     /// worth of deleteBackward calls against an unchecked text proxy.
     public func permitsDeletion(context: CursorContext, remaining: String) -> Bool {
@@ -60,18 +69,19 @@ public struct EditPlan: Equatable, Sendable {
               context.after == expected.after, let initial = expected.before,
               initial.hasSuffix(ownedText) else { return false }
         let anchor = String(initial.dropLast(ownedText.count))
-        return context.before == anchor + remaining && !remaining.isEmpty
+        return context.before == anchor + keptPrefix + remaining && !remaining.isEmpty
     }
 
+    /// The editor once the changed tail is deleted: everything up to and including `keptPrefix`.
     public var insertionContext: CursorContext {
         var result = expected
-        result.before = String((expected.before ?? "").dropLast(ownedText.count))
+        result.before = String((expected.before ?? "").dropLast(ownedText.count)) + keptPrefix
         return result
     }
 
     public var resultingContext: CursorContext {
         var result = insertionContext
-        result.before = (result.before ?? "") + replacement
+        result.before = (result.before ?? "") + insertedText
         return result
     }
 }

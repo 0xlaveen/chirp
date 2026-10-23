@@ -188,3 +188,41 @@ func actualContextWindowTruncationRefusesLongReplacement(_ truncateDuringInserti
     #expect(proxy.inserts == 1)
     #expect(proxy.cursor == preserved)
 }
+
+/// Partials mostly grow at the end: only the changed tail is rewritten, so long utterances stay cheap and a
+/// host with asynchronous context sees a few edits per update instead of hundreds.
+@MainActor
+@Test func growingPartialRewritesOnlyItsChangedTail() {
+    let proxy = FakeProxy()
+    proxy.cursor.before = "user: " + "word " + "the plan"
+    let grow = EditPlan(expected: proxy.cursor, ownedText: "word the plan", replacement: "word the plan for next quarter")
+    #expect(grow.keptPrefix == "word the plan" && grow.deletedText.isEmpty)
+    #expect(proxy.apply(grow) && proxy.deletes == 0 && proxy.inserts == 1)
+    #expect(proxy.cursor.before == "user: word the plan for next quarter" && proxy.cursor.after == " suffix")
+
+    let revise = EditPlan(expected: proxy.cursor, ownedText: "word the plan for next quarter",
+                          replacement: "word the plans for next quarter.")
+    #expect(revise.keptPrefix == "word the plan" && revise.deletedText == " for next quarter")
+    #expect(proxy.apply(revise) && proxy.deletes == " for next quarter".count)
+    #expect(proxy.cursor.before == "user: word the plans for next quarter.")
+}
+
+@MainActor
+@Test func tailRewriteStillStopsWhenTheHostDisagrees() {
+    let proxy = FakeProxy()
+    proxy.cursor.before = "user: hello world"
+    let plan = EditPlan(expected: proxy.cursor, ownedText: "hello world", replacement: "hello there")
+    proxy.afterDelete = { p in if p.deletes == 2 { p.cursor.before = (p.cursor.before ?? "") + "x" } }
+    #expect(!proxy.apply(plan))
+    #expect(proxy.deletes == 2, "Never deletes past the first unexpected context")
+    #expect(proxy.inserts == 0)
+}
+
+@MainActor
+@Test func cancelAndUndoStillRemoveEverythingOwned() {
+    let proxy = FakeProxy()
+    proxy.cursor.before = "user: mine"
+    let plan = EditPlan(expected: proxy.cursor, ownedText: "mine", replacement: "")
+    #expect(plan.keptPrefix.isEmpty && plan.deletedText == "mine")
+    #expect(proxy.apply(plan) && proxy.cursor.before == "user: ")
+}

@@ -5,7 +5,7 @@ public enum VerifiedEditor {
     public static func apply(_ plan: EditPlan, context: () -> CursorContext,
                              deleteBackward: () -> Void, insertText: (String) -> Void) -> Bool {
         guard context() == plan.expected else { return false }
-        var remaining = plan.ownedText
+        var remaining = plan.deletedText
         while !remaining.isEmpty {
             guard plan.permitsDeletion(context: context(), remaining: remaining) else { return false }
             deleteBackward()
@@ -15,7 +15,7 @@ public enum VerifiedEditor {
             guard context() == expected else { return false }
         }
         guard context() == plan.insertionContext else { return false }
-        if !plan.replacement.isEmpty { insertText(plan.replacement) }
+        if !plan.insertedText.isEmpty { insertText(plan.insertedText) }
         return context() == plan.resultingContext
     }
 }
