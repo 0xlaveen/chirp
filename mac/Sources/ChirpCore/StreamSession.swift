@@ -61,7 +61,41 @@ final class AudioGate: @unchecked Sendable {
         }
     }
 
-    func written(_ bytes: Int) { lock.withLock { queued = max(0, queued - bytes) } }
+    func written(_ bytes: Int) {
+        let resume = lock.withLock { () -> CheckedContinuation<Void, Never>? in
+            queued = max(0, queued - bytes)
+            guard let w = roomWaiter, queued + w.bytes <= limits.maxQueuedBytes else { return nil }
+            roomWaiter = nil
+            return w.resume
+        }
+        resume?.resume()
+    }
+
+    private var roomWaiter: (bytes: Int, resume: CheckedContinuation<Void, Never>)?
+    private var shut = false
+    var isShut: Bool { lock.withLock { shut } }
+
+    /// Waits until `bytes` more fit in the queue (or the session ended), so buffered audio never trips the bound.
+    func room(for bytes: Int) async {
+        await withCheckedContinuation { (c: CheckedContinuation<Void, Never>) in
+            let now = lock.withLock { () -> Bool in
+                if shut || tripped || queued + bytes <= limits.maxQueuedBytes { return true }
+                roomWaiter = (bytes, c)
+                return false
+            }
+            if now { c.resume() }
+        }
+    }
+
+    /// The session ended: nothing more is written, so a waiter for room goes on (and its send is refused).
+    func close() {
+        let resume = lock.withLock { () -> CheckedContinuation<Void, Never>? in
+            shut = true
+            defer { roomWaiter = nil }
+            return roomWaiter?.resume
+        }
+        resume?.resume()
+    }
 }
 
 /// One utterance over `WS /v1/stream`. Audio goes through an ordered, bounded queue, so `stop`
@@ -164,6 +198,16 @@ public actor StreamSession {
         return accepted
     }
 
+    /// Queues recorded audio (a Live Notes replay) as fast as the socket takes it, never over `maxQueuedBytes`.
+    /// Returns false when the session refused it (closed, or past the utterance cap).
+    public nonisolated func sendBuffered(_ frames: [Data]) async -> Bool {
+        for frame in frames {
+            await gate.room(for: frame.count)
+            guard !gate.isShut, sendAudio(frame) else { return false }
+        }
+        return true
+    }
+
     /// Finalize: flush queued audio, then ask for the final transcript (with Live Notes' clean-up `context`).
     public func stop(context: String? = nil) async {
         audioIn.finish()
@@ -188,6 +232,7 @@ public actor StreamSession {
         guard !closing else { return }
         closing = true
         audioIn.finish()
+        gate.close()
         pump?.cancel()
         readyDeadline?.cancel()
         transport.cancel(with: .normalClosure)
@@ -205,6 +250,7 @@ public actor StreamSession {
         guard !closing else { return }
         closing = true
         audioIn.finish()
+        gate.close()
         pump?.cancel()
         receiver?.cancel()
         readyDeadline?.cancel()

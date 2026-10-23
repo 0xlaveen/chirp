@@ -356,12 +356,12 @@ private struct NotesStatusLines: View {
     let model: NotesModel
 
     var body: some View {
-        let notes = [model.retryNote, model.reorganizeNote, model.voiceEditNote].compactMap { $0 }
+        let notes = [model.micNote, model.retryNote, model.reorganizeNote, model.voiceEditNote].compactMap { $0 }
         if !notes.isEmpty {
             VStack(alignment: .leading, spacing: 4) {
                 ForEach(notes, id: \.self) { note in
                     let success = note == model.reorganizeNote && model.reorganizeNoteIsSuccess
-                    Label(note, systemImage: success ? "checkmark.circle" : "arrow.clockwise")
+                    Label(note, systemImage: success ? "checkmark.circle" : note == model.micNote ? "mic.slash" : "arrow.clockwise")
                         .font(.caption)
                         .foregroundStyle(success ? AnyShapeStyle(.secondary) : AnyShapeStyle(Color.orange))
                 }

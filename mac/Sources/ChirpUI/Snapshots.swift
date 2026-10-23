@@ -705,6 +705,11 @@ public enum Snapshots {
                 $0.privacyLine = NotesStatus.privacyRecovery
                 $0.keepSaving = .stopped(KeepSavingStatus.moved)
             },
+            notes("offline") { $0.connection = .offline(kept: 252) },
+            notes("catching-up") { $0.connection = .catchingUp(segments: 3) },
+            notes("mic-silent") { $0.micNotice = .silent },
+            notes("mic-switched") { $0.micNotice = .switched("MacBook Pro Microphone") },
+            notes("paused-slept") { $0.state = .paused; $0.pauseReason = NotesStatus.sleptPause },
             notes("transcript-raw") { $0.tab = .transcript; $0.showRaw = true; $0.document = demoNotes(gap: true) },
             notes("transcript") { $0.tab = .transcript; $0.document = demoNotes(gap: true) },
             notes("transcript-speakers") {

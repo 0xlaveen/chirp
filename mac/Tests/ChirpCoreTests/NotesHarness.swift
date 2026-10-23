@@ -386,6 +386,9 @@ final class SyntheticEngine: CaptureEngine, @unchecked Sendable {
     private var buffers: [String: AVAudioPCMBuffer] = [:]
     var startError: Error?
     private(set) var starts = 0
+    /// The inputs `fallBack` moves to, in order (a lost device with none left waits for one).
+    var fallbacks: [String] = []
+    private(set) var inputName: String? = "USB Microphone"
 
     var inputFormat: AVAudioFormat? { lock.withLock { _format } }
     var isTapped: Bool { lock.withLock { block != nil } }
@@ -399,6 +402,15 @@ final class SyntheticEngine: CaptureEngine, @unchecked Sendable {
     }
     func stop() {}
     func setConfigurationChangeHandler(_ handler: (@Sendable () -> Void)?) { lock.withLock { onChange = handler } }
+    func fallBack() -> Bool {
+        lock.withLock {
+            guard !fallbacks.isEmpty else { return false }
+            inputName = fallbacks.removeFirst()
+            _format = AVAudioFormat(standardFormatWithSampleRate: 48_000, channels: 1)!
+            buffers.removeAll()
+            return true
+        }
+    }
 
     /// Plays `seconds` of `sound` through the tap, one `buffer`-long capture buffer at a time (50 ms, as a microphone
     /// delivers; the soak uses longer ones), on the caller's thread. The socket still gets 50 ms frames.
@@ -412,9 +424,10 @@ final class SyntheticEngine: CaptureEngine, @unchecked Sendable {
     }
 
     /// The input device goes away; with `replacement` another one takes its place, else none is left.
-    func changeDevice(replacement: Bool) {
+    func changeDevice(replacement: Bool, name: String = "Studio Microphone") {
         let handler = lock.withLock { () -> (@Sendable () -> Void)? in
             _format = replacement ? AVAudioFormat(standardFormatWithSampleRate: 48_000, channels: 1)! : nil
+            inputName = replacement ? name : nil
             buffers.removeAll()
             return onChange
         }
@@ -454,6 +467,8 @@ final class NotesHarness {
     let streams: ScriptedStreams
     let http = NotesHTTP()
     let engine = SyntheticEngine()
+    /// Where the session hears about system sleep and wake.
+    let workspace = NotificationCenter()
     let store: SpeakerModelStore
     let prefs: Preferences
     private let suite: String
@@ -501,7 +516,8 @@ final class NotesHarness {
     static let defaultHealth = Health(correction: "available", notesStructure: true, notesCorrection: true)
 
     init(health: Health? = NotesHarness.defaultHealth, silence: TimeInterval = 1.5, speakers: SpeakerModelStore? = nil,
-         journalDirectory: URL? = nil,
+         journalDirectory: URL? = nil, keptAudio: TimeInterval = NotesRecorder.maxKeptAudio,
+         silencePause: TimeInterval = NotesCaptureSink.pauseAfter,
          finalText: @escaping @Sendable (Int) -> String = { "Segment \($0)." }) {
         let clock = self.clock, edges = self.edges
         let streams = ScriptedStreams(sleep: { await clock.sleep($0) }, finalText: finalText)
@@ -523,6 +539,9 @@ final class NotesHarness {
             journalStore: NotesJournalStore(directory: self.journalDirectory))
         deps.edit = http.edit(config)
         deps.silenceGuard = { SilenceGuard(window: silence) }
+        deps.workspaceNotifications = workspace
+        deps.keptAudio = keptAudio
+        deps.silencePause = silencePause
         deps.now = { clock.now }
         deps.sleep = { await clock.sleep($0) }
         deps.startTicker = { tick in edges.tick = tick; return { edges.tick = nil } }

@@ -40,6 +40,17 @@ public enum NotesStatus {
         paused ? "\(key) to resume" : "\(key) to record · \(key) again to \(pause ? "pause" : "stop")"
     }
     public static let stopped = "Stopped"
+    /// "Server offline — keeping audio (4:12) · retrying": segments wait in memory for the server.
+    public static func offline(kept: TimeInterval?) -> String {
+        "Server offline — keeping audio" + (kept.map { " (\(clock($0)))" } ?? "") + " · retrying"
+    }
+    public static func catchingUp(_ segments: Int) -> String { "Catching up \(segments) segment\(segments == 1 ? "" : "s")…" }
+    public static let finishingOffline = "Finishing — waiting for the server"
+    public static let micSilent = "Microphone is silent (muted?)"
+    public static func switchedMic(_ name: String) -> String { "Switched to \(name)" }
+    public static let noMic = "No microphone — plug one in"
+    public static let sleptPause = "Paused while the Mac slept"
+    public static let silencePause = "Paused — the microphone was silent for 15 min"
     public static let paused = "Paused"
     public static let pause = "Pause"
     public static let resume = "Resume"
@@ -52,10 +63,12 @@ public enum NotesStatus {
     public static let stopRecording = "Stop"
 
     /// "Notes 1:20 behind": committed speech the notes have not caught up with.
-    public static func behind(_ seconds: TimeInterval) -> String {
+    public static func behind(_ seconds: TimeInterval) -> String { "Notes \(clock(seconds)) behind" }
+
+    /// "1:20", or "1:02:03" past an hour.
+    static func clock(_ seconds: TimeInterval) -> String {
         let s = Int(seconds)
-        return "Notes " + (s >= 3600 ? String(format: "%d:%02d:%02d", s / 3600, s / 60 % 60, s % 60) : String(format: "%d:%02d", s / 60, s % 60))
-            + " behind"
+        return s >= 3600 ? String(format: "%d:%02d:%02d", s / 3600, s / 60 % 60, s % 60) : String(format: "%d:%02d", s / 60, s % 60)
     }
 
     /// The reminder every `NotesModel.longRunEvery` of recording.
@@ -144,6 +157,10 @@ public final class NotesModel {
     public var elapsed: TimeInterval = 0
     /// Why the session is paused when the user did not pause it ("Paused while the Mac slept").
     public var pauseReason: String?
+    /// Whether segments reach the server (offline, they wait in memory).
+    public var connection: NotesConnection = .online
+    /// What the microphone is doing, when Notes should say so.
+    public var micNotice: NotesMicNotice?
     public var tab: NotesTab = .notes
     /// The transcript shows each segment's raw text.
     public var showRaw = false
@@ -291,8 +308,9 @@ public final class NotesModel {
         case .idle: ""
         case .starting: NotesStatus.connecting
         case .recording:
-            isReorganizing ? reorganizingText : structuring == .running ? NotesStatus.updating : NotesStatus.listening
-        case .stopping: (isReorganizing ? reorganizingText : NotesStatus.finishing) + finishingSuffix
+            recordingNotice(clock: true) ?? (isReorganizing ? reorganizingText : structuring == .running ? NotesStatus.updating : NotesStatus.listening)
+        case .stopping:
+            (isReorganizing ? reorganizingText : connection.isOffline ? NotesStatus.finishingOffline : NotesStatus.finishing) + finishingSuffix
         case .stopped where isReorganizing, .idle where isReorganizing: reorganizingText
         case .paused: "\(pauseReason ?? NotesStatus.paused) · \(elapsedText)"
         case .stopped: NotesStatus.stopped
@@ -304,6 +322,32 @@ public final class NotesModel {
     public var headerStatusText: String { isError ? NotesStatus.problem : statusText }
     /// The error banner's message.
     public var errorText: String? { if case .error(let message) = state { message } else { nil } }
+
+    /// What keeps recording from being ordinary, most urgent first: no input, the server offline or catching up, a
+    /// silent microphone, a switched one. Without `clock`, the offline line leaves out the kept time (announcements).
+    func recordingNotice(clock: Bool) -> String? {
+        if micNotice == .missing { return NotesStatus.noMic }
+        switch connection {
+        case .offline(let kept): return NotesStatus.offline(kept: clock ? kept : nil)
+        case .catchingUp(let n): return NotesStatus.catchingUp(n)
+        case .online: break
+        }
+        switch micNotice {
+        case .silent: return NotesStatus.micSilent
+        case .switched(let name): return NotesStatus.switchedMic(name)
+        case .missing, nil: return nil
+        }
+    }
+
+    /// The warning over the Hearing strip while recording: a silent or missing microphone.
+    public var micNote: String? {
+        guard state == .recording else { return nil }
+        switch micNotice {
+        case .silent: return NotesStatus.micSilent
+        case .missing: return NotesStatus.noMic
+        default: return nil
+        }
+    }
 
     /// An append pass is running on the AI tail.
     public var isUpdating: Bool { structuring == .running }
@@ -558,6 +602,21 @@ public final class NotesModel {
 
     /// The words VoiceOver hears for a status change.
     public var announcement: String {
-        isError ? statusText : statusText.isEmpty ? "" : "Notes: \(statusText)"
+        let text = state == .recording ? recordingNotice(clock: false) ?? statusText : statusText
+        return isError ? text : text.isEmpty ? "" : "Notes: \(text)"
     }
+}
+
+/// What the microphone is doing, when Live Notes should say so.
+public enum NotesMicNotice: Equatable, Sendable {
+    /// Digital zeros (a hardware mute): recording goes on.
+    case silent
+    /// The input went away and capture went on with this one.
+    case switched(String)
+    /// No input is left: recording waits for one.
+    case missing
+}
+
+extension NotesConnection {
+    public var isOffline: Bool { if case .offline = self { true } else { false } }
 }

@@ -12,19 +12,41 @@ final class SystemCaptureEngine: CaptureEngine, @unchecked Sendable {
     private let pickedDevice: @Sendable () -> AudioObjectID?
     /// The device the input unit is pinned to; nil while it follows the system default.
     private var pinned: AudioObjectID?
+    /// After a failed rebuild: 1 follows the system default even if the picked device is back, 2 pins the
+    /// built-in microphone. Reset when capture ends.
+    private var fallbackStep = 0
+    private(set) var inputName: String?
 
-    init(pickedDevice: @escaping @Sendable () -> AudioObjectID? = { nil }) { self.pickedDevice = pickedDevice }
+    init(pickedDevice: @escaping @Sendable () -> AudioObjectID? = { nil }) {
+        self.pickedDevice = pickedDevice
+        // A device that appears while capture waits for one (every input was gone) restarts it.
+        InputDevice.observeChanges { [weak self] in
+            guard let self, let handler = self.onConfigurationChange, !self.engine.isRunning else { return }
+            handler()
+        }
+    }
 
     var inputFormat: AVAudioFormat? {
         applyPickedDevice()
+        inputName = pinned.flatMap(InputDevice.name) ?? InputDevice.systemDefault()?.input.name
         let format = engine.inputNode.outputFormat(forBus: 0)
         return format.sampleRate > 0 && format.channelCount > 0 ? format : nil
+    }
+
+    func fallBack() -> Bool {
+        if fallbackStep == 0, pinned != nil || pickedDevice() != nil {
+            fallbackStep = 1
+            return true
+        }
+        guard fallbackStep < 2, let builtIn = InputDevice.builtIn(), builtIn.id != pinned else { return false }
+        fallbackStep = 2
+        return true
     }
 
     /// Pins the input unit to the picked device. Going back to the default needs a fresh engine, because a unit
     /// bound to a device no longer follows the system default.
     private func applyPickedDevice() {
-        let wanted = pickedDevice()
+        let wanted = fallbackStep == 2 ? InputDevice.builtIn()?.id : fallbackStep == 1 ? nil : pickedDevice()
         guard wanted != pinned else { return }
         if let wanted {
             do { try engine.inputNode.auAudioUnit.setDeviceID(wanted) } catch {
@@ -50,6 +72,7 @@ final class SystemCaptureEngine: CaptureEngine, @unchecked Sendable {
 
     func setConfigurationChangeHandler(_ handler: (@Sendable () -> Void)?) {
         onConfigurationChange = handler
+        if handler == nil { fallbackStep = 0 }
         observe()
     }
 
