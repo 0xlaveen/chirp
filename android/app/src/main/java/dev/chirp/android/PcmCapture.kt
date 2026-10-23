@@ -28,7 +28,7 @@ internal interface PcmInput {
     fun stop()
     fun close()
 }
-private class MicrophoneInput : PcmInput {
+internal class MicrophoneInput : PcmInput {
     private var recorder: AudioRecord? = null
     @SuppressLint("MissingPermission") // Host checks permission before capture; failed/revoked grants are handled below.
     override fun start() {

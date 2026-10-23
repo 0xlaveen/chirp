@@ -4,6 +4,11 @@
     <string name="history_title">Dictation history</string>
     <string name="scratchpad_name">Chirp Scratchpad</string>
     <string name="scratchpad_short">Scratchpad</string>
+    <string name="notes_name">Chirp Notes</string>
+    <string name="notes_short">Notes</string>
+    <string name="notes_channel">Notes recording</string>
+    <string name="notes_recording">Chirp Notes is recording</string>
+    <string name="notes_stop">Stop</string>
     <string name="bubble_name">Chirp floating microphone</string>
     <string name="accessibility_description">Optional microphone beside the focused text field. Chirp reads only that field’s text and selection to insert dictation safely. Field contents stay on this phone. No screen history, clipboard, or text logs. Microphone and network run only during dictation. Keep your existing keyboard.</string>
 <string name="clipboard_provider_authority">dev.chirp.android.clipboard</string>

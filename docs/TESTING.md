@@ -86,8 +86,16 @@ Run on the reference Mac after installing the build with `./scripts/install-mac.
     - Live text appears underlined in the field, and the final text replaces it.
     - Check these cases from `android/README.md`: hold-to-talk, ✕ cancel, fold/unfold mid-utterance, hiding the keyboard, and Wi-Fi vs LTE.
     - With a Bluetooth keyboard: Ctrl+Alt+Space starts and stops, Esc cancels; with TalkBack on, one "Inserted, N words" per final and nothing while listening.
-12. **Battery:** run `android/scripts/battery-session.sh`, which resets batterystats, runs a scripted session and dumps the results. Record the result in `docs/bench.md`.
-13. **Full acceptance pass:** follow [android-device-acceptance.md](android-device-acceptance.md) (battery, Perfetto, stop matrix, session timings from Diagnostics).
+12. **Notes** (long-press the launcher icon → **Notes**):
+    - Record a 5-minute mock meeting with a decision, two to-dos and a "we will **not** …" sentence. Check that notes appear under the AI tail after each segment, that the transcript has one line per segment (none longer than 45 s, nothing lost at a cut) and that the negation is kept.
+    - While recording, type a line above the notes and fix a word inside them: the caret never jumps and new notes appear after your edit.
+    - Turn the screen off for 2 minutes, then on: the **Chirp Notes is recording** notification stayed (no notes text in it), and the transcript kept growing. **Stop** in the notification finishes the notes.
+    - Fold and unfold: notes and transcript sit side by side on the inner screen and as tabs on the cover screen, with nothing lost.
+    - Press **Organize**, then type at once → "Notes changed while organizing — try again", typing intact. Organize again, then **Undo organize** restores the text.
+    - Stop the Mac server for 30 s mid-recording: failed segments show `⚠︎ audio not transcribed`, and three in a row stop the recording with the notes kept.
+    - **Copy** and paste into a note app: title, notes, `---`, `## Transcript`. Back asks before discarding; afterwards `adb shell run-as dev.chirp.android ls -R files shared_prefs` holds no notes text.
+13. **Battery:** run `android/scripts/battery-session.sh`, which resets batterystats, runs a scripted session and dumps the results. Record the result in `docs/bench.md`.
+14. **Full acceptance pass:** follow [android-device-acceptance.md](android-device-acceptance.md) (battery, Perfetto, stop matrix, session timings from Diagnostics).
 
 ## 3. Privacy checks
 

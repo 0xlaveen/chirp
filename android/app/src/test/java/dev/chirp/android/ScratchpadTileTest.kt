@@ -62,16 +62,17 @@ class ScratchpadTileTest {
         assertEquals(R.xml.shortcuts, meta.getInt("android.app.shortcuts"))
         val xml = app.resources.getXml(R.xml.shortcuts)
         val android = "http://schemas.android.com/apk/res/android"
-        var id: String? = null; var target: String? = null; var pkg: String? = null; var action: String? = null
+        var id: String? = null
+        val shortcuts = mutableMapOf<String, Triple<String?, String?, String?>>()
         while (xml.next() != org.xmlpull.v1.XmlPullParser.END_DOCUMENT) {
             if (xml.eventType != org.xmlpull.v1.XmlPullParser.START_TAG) continue
             when (xml.name) {
                 "shortcut" -> id = xml.getAttributeValue(android, "shortcutId")
-                "intent" -> { target = xml.getAttributeValue(android, "targetClass"); pkg = xml.getAttributeValue(android, "targetPackage")
-                    action = xml.getAttributeValue(android, "action") }
+                "intent" -> shortcuts[id!!] = Triple(xml.getAttributeValue(android, "targetClass"),
+                    xml.getAttributeValue(android, "targetPackage"), xml.getAttributeValue(android, "action"))
             }
         }
-        assertEquals("scratchpad", id); assertEquals(ScratchpadActivity::class.java.name, target)
-        assertEquals(app.packageName, pkg); assertEquals(Intent.ACTION_VIEW, action)
+        assertEquals(mapOf("scratchpad" to Triple(ScratchpadActivity::class.java.name, app.packageName, Intent.ACTION_VIEW),
+            "notes" to Triple(NotesActivity::class.java.name, app.packageName, Intent.ACTION_VIEW)), shortcuts)
     }
 }
