@@ -72,6 +72,9 @@ class SettingsStore(context: Context) {
     var stopOnPause: Boolean
         get() = prefs.getBoolean("stop_on_pause", false)
         set(value) { prefs.edit { putBoolean("stop_on_pause", value) } }
+    var autoEnter: AutoEnterMode
+        get() = AutoEnterMode.of(prefs.getString("auto_enter", null))
+        set(value) { prefs.edit { putString("auto_enter", value.key) } }
     var pauseSeconds: Double
         get() = AutoStopDetector.nearest(prefs.getFloat("pause_seconds", AutoStopDetector.DEFAULT_SILENCE.toFloat()).toDouble())
         set(value) { prefs.edit { putFloat("pause_seconds", AutoStopDetector.nearest(value).toFloat()) } }

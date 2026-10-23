@@ -426,6 +426,8 @@ internal class KeyboardDictation(
         applying = true
         val inserted = try { target?.final(result, awayStart, selectionEnd) == true } finally { applying = false }
         if (inserted && target != null && target.selectionStart >= 0) { selectionStart = target.selectionStart; selectionEnd = target.selectionEnd }
+        // Only after the last segment of a long dictation, never after a kept/partial result or once the caret left.
+        val sent = inserted && reason == null && !moved && session?.landingLast != false && pressEnter(result.text)
         // A long dictation announces its words once, after the last segment, and stays quiet between segments.
         notice = inserted; words = if (inserted && reason == null) words + result.text.trim().split(Regex("\\s+")).size else 0
         historyId = if (inserted) history?.record(result.text, result.raw.takeIf { result.corrected }, historyInfo, partial = reason != null) else null
@@ -435,10 +437,18 @@ internal class KeyboardDictation(
             else if (result.correctionError != null) "kept original"
             else if (result.corrected) "cleaned"
             else "Inserted · tap mic to dictate again"
+        if (sent) message += " · ${AutoEnter.SENT}"
         text = ""; finalLatency = stopAt?.let { SystemClock.elapsedRealtime() - it }
-        undo = inserted && (target?.spanEnd ?: -1) >= 0
+        undo = inserted && !sent && (target?.spanEnd ?: -1) >= 0
         if (notice) handler.postDelayed(expiry, 5000)
         if (!undo) { composing?.forgetUndo(); composing = null }
+    }
+    /** "Press Send after dictating": the field's Send/Go/Done or Enter, once the text is in. False when not asked for or refused. */
+    private fun pressEnter(landed: String): Boolean {
+        val mode = store.autoEnter
+        if (mode == AutoEnterMode.OFF || landed.isBlank()) return false
+        val press = AutoEnter.press(host.currentInputEditorInfo, mode, store.appStyles[targetPackage] == "chat") ?: return false
+        return AutoEnter.send(host.currentInputConnection, press)
     }
     /** Reinserts a history entry through the same boundary/selection path as a dictated final. */
     fun insertText(value: String): Boolean {

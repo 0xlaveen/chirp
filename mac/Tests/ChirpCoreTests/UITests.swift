@@ -206,7 +206,7 @@ import Testing
         #expect(sizes.allSatisfy { $0.width > 300 && $0.height > 80 })
         // Not one tall form any more: only Clean-up (the prompt editor) is tall.
         let heights = Dictionary(uniqueKeysWithValues: zip(SettingsTab.allCases, sizes.map(\.height)))
-        #expect(heights[.general]! < 440 && heights[.permissions]! < 200 && heights[.server]! < 300 && heights[.sounds]! < 360, "\(heights)")
+        #expect(heights[.general]! < 500 && heights[.permissions]! < 200 && heights[.server]! < 300 && heights[.sounds]! < 360, "\(heights)")
         #expect(heights[.cleanup]! > heights[.general]! * 3 / 2)
         // Each is fitted on its own: the sizes differ.
         #expect(Set(sizes.map(\.height)).count == sizes.count)
@@ -225,7 +225,7 @@ import Testing
         }
     }
 
-    @Test(arguments: [(SettingsTab.general, SoundPack.chirp, 8), (.sounds, .chirp, 3), (.sounds, .custom, 5), (.cleanup, .chirp, 8),
+    @Test(arguments: [(SettingsTab.general, SoundPack.chirp, 9), (.sounds, .chirp, 3), (.sounds, .custom, 5), (.cleanup, .chirp, 8),
                       (.server, .chirp, 5), (.devices, .chirp, 1), (.permissions, .chirp, 2)])
     func labelsShareARightEdgeAndControlsALeftEdge(tab: SettingsTab, pack: SoundPack, expectedLabels: Int) throws {
         var state = SettingsState()
@@ -242,7 +242,7 @@ import Testing
         let edges = rowLabels.map { view.convert($0.bounds, from: $0).maxX }
         #expect(edges.allSatisfy { abs($0 - edges[0]) < 0.5 })
         let leading: [NSView] = switch tab {
-        case .general: [form.hotkey, form.mode, form.silence, form.wordWaveform, form.launch, form.notesRecoveryCopy, form.setupButton]
+        case .general: [form.hotkey, form.mode, form.silence, form.autoEnter, form.wordWaveform, form.launch, form.notesRecoveryCopy, form.setupButton]
         case .sounds: [form.sounds, form.soundPack, form.volume]
         case .cleanup: [form.cleanupEnabled, form.style, form.insertRawFirst, form.appStyles.scroll, form.showChanges, form.offerRaw]
         case .server: [form.serverURL, form.doctorButton, form.modelsButton]

@@ -28,6 +28,8 @@ public enum HUDStatus {
     public static let polished = "Polished"
     public static let inserting = "Inserting…"
     public static let noSpeech = "No speech detected"
+    /// Appended to the outcome when auto-Return pressed Return.
+    public static let returnSent = " · ↵ sent"
 }
 
 @MainActor @Observable

@@ -17,6 +17,13 @@ public enum SystemInsertion {
         )
     }
 
+    /// The auto-Return's calls: the Return goes to the frontmost app.
+    public static func autoEnterEnvironment() -> AutoEnterEnvironment {
+        AutoEnterEnvironment(secureInputEnabled: { IsSecureEventInputEnabled() },
+                             frontmostBundleID: { NSWorkspace.shared.frontmostApplication?.bundleIdentifier },
+                             postReturn: { postKey(CGKeyCode(kVK_Return)) })
+    }
+
     // MARK: AX
 
     private static func copy(_ element: AXUIElement, _ attribute: String) -> CFTypeRef? {
@@ -93,6 +100,18 @@ public enum SystemInsertion {
               let up = CGEvent(keyboardEventSource: source, virtualKey: key, keyDown: false) else { return false }
         down.flags = .maskCommand
         up.flags = .maskCommand
+        down.post(tap: .cghidEventTap)
+        up.post(tap: .cghidEventTap)
+        return true
+    }
+
+    /// Posts one key press with no modifiers, on a private source so a still-held hotkey modifier is not merged in.
+    static func postKey(_ key: CGKeyCode) -> Bool {
+        guard let source = CGEventSource(stateID: .privateState),
+              let down = CGEvent(keyboardEventSource: source, virtualKey: key, keyDown: true),
+              let up = CGEvent(keyboardEventSource: source, virtualKey: key, keyDown: false) else { return false }
+        down.flags = []
+        up.flags = []
         down.post(tap: .cghidEventTap)
         up.post(tap: .cghidEventTap)
         return true

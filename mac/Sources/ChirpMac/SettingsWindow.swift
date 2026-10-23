@@ -35,6 +35,7 @@ final class SettingsWindowController: NSObject, NSTextFieldDelegate {
         var s = SettingsState()
         s.hotkey = settings.hotkey
         s.activationMode = settings.activationMode
+        s.autoEnter = settings.autoEnter
         s.autoStopSilence = settings.autoStopSilence
         s.serverURL = settings.serverURL
         s.tokenPresent = ServerConfig.readToken() != nil
@@ -197,6 +198,8 @@ final class SettingsWindowController: NSObject, NSTextFieldDelegate {
             button.target = self
             button.action = action
         }
+        form.autoEnter.target = self
+        form.autoEnter.action = #selector(autoEnterChanged(_:))
         form.style.target = self
         form.style.action = #selector(styleChanged(_:))
         form.prompts.onEdit = { [weak self] id, text in
@@ -280,6 +283,10 @@ final class SettingsWindowController: NSObject, NSTextFieldDelegate {
     @objc private func silenceChanged(_ sender: NSPopUpButton) {
         guard let seconds = sender.selectedItem?.representedObject as? Double else { return }
         settings.autoStopSilence = seconds
+    }
+
+    @objc private func autoEnterChanged(_ sender: NSPopUpButton) {
+        settings.autoEnter = (sender.selectedItem?.representedObject as? String).flatMap(AutoEnter.init(rawValue:)) ?? .off
     }
 
     @objc private func styleChanged(_ sender: NSPopUpButton) {

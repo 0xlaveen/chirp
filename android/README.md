@@ -130,6 +130,15 @@ Android 17/API 37 needs `ACCESS_LOCAL_NETWORK` for servers reached directly over
 
 The full keyboard always **stays selected after a final** — including when an old installation had the voice-only keyboard's auto-return enabled. (That auto-return is gone; the old voice-only implementation lives only in test sources and is not registered or shipped, and its historical preference now defaults OFF.) **Use raw** is offered for five seconds after a corrected final; moving the cursor or editing the field invalidates it.
 
+### Press Send after dictating
+
+**Chirp settings → Press Send after dictating** (off by default): **Off**, **Always**, or **In chat apps only** (apps whose rule is the Chat style, editable under Per-app styles). Once the last words of a dictation have landed, Chirp performs the field's own editor action (`IME_ACTION_SEND`, `GO` or `DONE`), or sends an Enter key when the field has no action. The strip adds "· ↵ sent" to the status.
+
+- Never in a password field, and never after a result that only kept what was heard, after the caret was moved away, or after an empty result.
+- NEXT/PREVIOUS (they would move focus) and SEARCH are left alone.
+- A multi-line field whose app says "no action" would take Enter as a newline, so only **Always** presses it there.
+- A long dictation presses once, after its last segment. Undo is not offered after a send, since the field has already submitted the text.
+
 ### Mid-sentence casing and spoken commands
 
 Finals (never partials) get a small local pass before they are inserted. When the text before the cursor shows a sentence under way (a word, digit, comma or semicolon, even behind a closing quote), the first word is lower-cased, so dictating *"And then we went"* after *"I woke up"* inserts `and then we went`. Field start, a new line, `. ! ?` and similar terminals, opening quotes/brackets, colons and list markers keep the capital. It is deliberately conservative: only common sentence starters (*and, but, so, we, the, it's, don't, …*) are lowered; "I" and its contractions, acronyms and mixed-case words (`NASA`, `GitHub`), and anything that could be a name (*Paris, Monday, Will*) are left as the Mac sent them. Other languages are left alone, and nothing changes if the editor can't show the text before the cursor.

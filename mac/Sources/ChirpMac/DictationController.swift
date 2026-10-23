@@ -1,4 +1,5 @@
 import AppKit
+import Carbon.HIToolbox
 import ChirpCore
 import ChirpUI
 
@@ -20,6 +21,9 @@ final class DictationController {
     let hud = HUDController()
     private let capture = AudioCapture(engine: SystemCaptureEngine(pickedDevice: { InputDevice.pickedID(uid: settings.inputDeviceUID) }))
     private let inserter = TextInserter(env: SystemInsertion.environment(), pasteboard: SystemPasteboard())
+    private let autoEnter = AutoEnterSender(env: SystemInsertion.autoEnterEnvironment())
+    /// ⇧ was held when this dictation stopped: no Return after it (unless the hotkey itself uses ⇧).
+    private var autoEnterSkipped = false
 
     private var session: StreamSession?
     private var eventTask: Task<Void, Never>?
@@ -221,6 +225,7 @@ final class DictationController {
         pendingFinal = nil
         polishingRaw = nil
         rawInsertTask = nil
+        autoEnterSkipped = false
         inserter.forgetUndo()
         rawOffer.close()
         hud.cancelHide()
@@ -365,6 +370,7 @@ final class DictationController {
     }
 
     private func finalize() {
+        autoEnterSkipped = NSEvent.modifierFlags.contains(.shift) && Int(settings.hotkey.modifiers) & shiftKey == 0
         stopCapture()
         hud.model.silence()
         let session = self.session, myEpoch = epoch
@@ -434,6 +440,7 @@ final class DictationController {
                 hud.model.indicator = .waveform
                 let outcome = await inserter.insert(text, undoRaw: final.canUseRaw && settings.showRawAfterCleanup ? final.raw : nil)
                 show(outcome, final: final)
+                await pressReturn(after: outcome)
             }
             send(.insertionFinished)
         }
@@ -448,6 +455,7 @@ final class DictationController {
             else { hud.model.settle(on: text) }
             if await inserter.replaceInserted(with: text) {
                 show(early, final: final)
+                await pressReturn(after: early)
                 return
             }
             hud.model.settle(on: final.raw)
@@ -459,6 +467,19 @@ final class DictationController {
             else { shown.text = final.raw }
         }
         show(early, final: shown)
+        await pressReturn(after: early)
+    }
+
+    /// "Press Return after inserting": one Return once the text is in, then a small "↵ sent" on the HUD.
+    private func pressReturn(after outcome: InsertionOutcome) async {
+        let mode = settings.autoEnter
+        guard mode != .off else { return }
+        let skipped = autoEnterSkipped
+        guard await autoEnter.send(after: outcome, mode: mode, rules: settings.appStyles, skipped: skipped) else { return }
+        hud.model.status += HUDStatus.returnSent
+        hud.show()
+        hud.hide(after: 1.2)
+        hud.announce(hud.model.status)
     }
 
     private func show(_ outcome: InsertionOutcome, final: FinalResult) {
