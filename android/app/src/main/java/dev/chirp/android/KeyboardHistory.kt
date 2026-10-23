@@ -18,7 +18,6 @@ import android.view.ViewGroup
 import android.view.inputmethod.EditorInfo
 import android.widget.FrameLayout
 import android.widget.LinearLayout
-import android.widget.PopupMenu
 import android.widget.ScrollView
 import android.widget.TextView
 import androidx.core.view.AccessibilityDelegateCompat
@@ -293,10 +292,10 @@ internal class HistoryPanel(context: Context) : LinearLayout(context) {
         list.addView(row, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
     }
     private fun menu(anchor: View, entry: HistoryEntry, owner: KeyboardHistory) {
-        PopupMenu(anchor.context, anchor).apply {
-            menu.add("Copy").setOnMenuItemClickListener { owner.copy(entry); true }
-            if (entry.raw != null) menu.add("Insert raw").setOnMenuItemClickListener { owner.insertEntry(entry, raw = true); true }
-            menu.add("Delete").setOnMenuItemClickListener { owner.delete(entry); true }
+        StripMenu(anchor).apply {
+            item(R.drawable.ic_copy, "Copy") { owner.copy(entry) }
+            if (entry.raw != null) item(R.drawable.ic_undo, "Insert raw") { owner.insertEntry(entry, raw = true) }
+            item(R.drawable.ic_delete, "Delete") { owner.delete(entry) }
             show()
         }
     }

@@ -3,9 +3,13 @@
 All displayed speech is a generated synthetic fixture. No user speech, real pairing
 credential or personal text is included.
 
-- `keyboard-{idle,listening,final,tailscale}-{light,dark}.png`: Robolectric native graphics on
-  API 37, actual HeliBoard QWERTY keys with Chirp's production strip at 411 px width.
-  Final fixtures show the five-second raw chip; `tailscale` shows the *Tailscale is off · Turn on* prompt. These render deterministic UI states.
+- `keyboard-{idle,connecting,listening,countdown,polishing,final,tailscale,offline,phone,retention}-{light,dark}.png`:
+  Robolectric native graphics on API 37, actual HeliBoard QWERTY keys with Chirp's production strip at 411 px
+  width (Gboard-like look, cover screen), settled with animator scale 0. `final` shows the Undo / Use raw chips,
+  `tailscale` the *Tailscale is off · Turn on* prompt, `offline` *Mac offline*, `phone` the phone-recogniser chip,
+  `retention` the debug banner. The same states are rendered for the other looks and the 673 px inner screen as
+  `keyboard-{gboard,samsung}-{cover,inner}-<state>-{light,dark}.png` (the default combination keeps the short names).
+  `KeyboardRenderTest` also asserts the strip and key-area height is identical in every state.
 - `emulator-keyboard-{idle,listening,final}-{light,dark}.png`: the authorized Android
   17 fold emulator (`emulator-5580`), actual IME window over the setup test field.
   A throwaway real Parakeet server receives say-generated speech through PcmCapture

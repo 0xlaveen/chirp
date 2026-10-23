@@ -226,20 +226,17 @@ internal class KeyboardDictation(
     }
     private fun quickOptions() {
         val anchor = strip?.mic ?: return
-        android.widget.PopupMenu(anchor.context, anchor).apply {
-            if (store.health.cleanupAvailable()) menu.add(if (store.correction) "Clean-up: on ✓" else "Clean-up: off").setOnMenuItemClickListener {
-                store.correction = !store.correction; true
-            } else menu.add("Mac has clean-up off").isEnabled = false
+        StripMenu(anchor).apply {
             if (store.health.cleanupAvailable()) {
+                toggle("Clean-up", correctionLabel(store.health), store.correction) { store.correction = it }
+                section("Style")
                 val selected = styleOverride ?: store.style(targetPackage).id
                 CleanupStyles.profiles(store.health).forEach { profile ->
-                    menu.add("Style · ${profile.name}" + (if (profile.rewrites) " · rewrites" else "") +
-                        if (selected == profile.id) " ✓" else "").setOnMenuItemClickListener {
-                        styleOverride = profile.id; currentStyle = profile; render(); true
-                    }
+                    radio(profile.name, if (profile.rewrites) "rewrites" else null, selected == profile.id) { styleOverride = profile.id; currentStyle = profile; render() }
                 }
-            }
-            menu.add("Chirp settings").setOnMenuItemClickListener { setup(); true }
+            } else note("Mac has clean-up off")
+            section("Chirp")
+            item(R.drawable.ic_settings, "Chirp settings") { setup() }
             show()
         }
     }
@@ -416,7 +413,7 @@ internal class KeyboardDictation(
         if (!landed) { applying = true; try { composing?.cancel(awayStart, selectionEnd) } finally { applying = false } }
         if (landed) insertionStart = minOf(selectionStart, selectionEnd)
         handoff = insertionStart to (if (landed) maxOf(selectionStart, selectionEnd) else insertionStart)
-        forgetUndo(); notice = false; text = ""
+        forgetUndo(); notice = false; text = ""; strip?.nextSegment()
         composing = compose(host.currentInputConnection ?: connection)
     }
     /** Commits a final, or what was heard before a failure ([reason]), and offers Undo for five seconds. */
