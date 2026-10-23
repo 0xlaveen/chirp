@@ -2,7 +2,7 @@
 # The full UI scheme, including the live end-to-end suite, on one simulator against a throwaway local chirp-server: temporary HOME (its own
 # token), port 7899 (CHIRP_E2E_PORT), cached model, no LaunchAgent, a deterministic local clean-up stand-in and a
 # synthetic `say` sentence. Debug simulator builds pair with http://127.0.0.1:PORT; nothing else changes.
-# Usage: ios/scripts/simulator-e2e.sh SIMULATOR-UUID [extra xcodebuild args, e.g. -only-testing:…]
+# Usage: [CHIRP_E2E_APPEARANCE=dark] ios/scripts/simulator-e2e.sh SIMULATOR-UUID [extra xcodebuild args, e.g. -only-testing:…]
 set -eu
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
 device="${1:-}"; [ -n "$device" ] || { echo 'Usage: simulator-e2e.sh SIMULATOR-UUID [xcodebuild args]' >&2; exit 2; }
@@ -31,6 +31,7 @@ LINK=$(HOME="$WORK" uv run chirp-server pair --url "http://127.0.0.1:$PORT" | he
 cd "$ROOT/ios"
 xcrun simctl boot "$device" 2>/dev/null || true
 xcrun simctl bootstatus "$device" -b >/dev/null
+xcrun simctl ui "$device" appearance "${CHIRP_E2E_APPEARANCE:-light}" # light or dark, for screenshots
 xcrun simctl privacy "$device" grant microphone "${CHIRP_BUNDLE_ID:-dev.chirp.ios}" 2>/dev/null || true
 status=0
 TEST_RUNNER_CHIRP_LIVE_LINK="$LINK" TEST_RUNNER_CHIRP_LIVE_AUDIO="$WORK/s.wav" \
