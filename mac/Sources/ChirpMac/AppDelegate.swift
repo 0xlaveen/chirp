@@ -93,7 +93,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         notes.onShowWindow = { [weak self] focus in self?.notesWindow.show(focus: focus) }
         settingsWindow.onNotesRecoveryCopyChange = { [notes] in notes.recoveryCopyChanged() }
         notesWindow.dock = dock
-        NotesWindowController.onAbout = { [aboutWindow] in aboutWindow.show() }
+        NotesWindowController.onAbout = { [settingsWindow] in settingsWindow.show(tab: .about) }
         NotesWindowController.onSettings = { [settingsWindow] in settingsWindow.show(tab: .general) }
         NotesWindowController.installEditMenu()
         dock.apply()
