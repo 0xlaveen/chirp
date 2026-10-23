@@ -288,7 +288,7 @@ import Testing
         case .general: [form.launch, form.openNotes.alwaysInDock, form.setupButton]
         case .dictation: [form.hotkey, form.mode, form.silence, form.microphone, form.wordWaveform, form.autoEnter, form.sounds, form.soundPack, form.volume]
         case .cleanup: [form.cleanupEnabled, form.style, form.insertRawFirst, form.appStyles.scroll, form.showChanges, form.offerRaw]
-        case .notes: [form.notesRecoveryCopy, form.notesButton, form.openNotes.recorder]
+        case .notes: [form.notesRecoveryCopy, form.notesButton, form.openNotes.shortcutView]
         case .server: [form.serverURL, form.keepLoaded, form.doctorButton, form.modelsButton]
         case .devices: [form.pairButton]
         case .about: []
