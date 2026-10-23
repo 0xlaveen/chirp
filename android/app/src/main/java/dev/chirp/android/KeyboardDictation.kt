@@ -29,6 +29,7 @@ internal class KeyboardDictation(
     private val checkHealth: Boolean = true,
     private val history: HistoryRecorder? = null,
     private val started: () -> Unit = {},
+    private val tailscale: TailscaleControl = AndroidTailscale(host),
 ) {
     private val handler = Handler(Looper.getMainLooper())
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
@@ -89,6 +90,16 @@ internal class KeyboardDictation(
     private var historyInfo: EditorInfo? = null
     private var historyId: String? = null
     private val expiry = Runnable { forgetUndo(); notice = false; message = "Tap mic · hold to talk"; render() }
+    // Tailscale is checked only for tailnet pairings, locally and without DNS. Ignoring or dismissing
+    // the prompt keeps it away for this keyboard process until Tailscale is next seen connected.
+    private var tailnet = false
+    private var vpn = false
+    private var tailscaleDismissed = false
+    private var tailscaleWatch: AutoCloseable? = null
+    private val tailscaleTimeout = Runnable {
+        if (active || message != CONNECTING) return@Runnable
+        if (tailscale.connected()) tailscaleChanged() else { notice = false; message = DictationAction.TAILSCALE_STALLED; render() }
+    }
     val active get() = session != null
     val ownsComposition get() = active || applying
 
@@ -97,7 +108,11 @@ internal class KeyboardDictation(
         view.mic.setOnClickListener { toggle() }
         view.mic.setOnLongClickListener { if (!active) { quickOptions(); true } else false }
         view.status.setOnClickListener { action()?.let(::openAction) }
-        view.cancel.setOnClickListener { cancel("Cancelled") }
+        view.action.setOnClickListener { action()?.let(::openAction) }
+        view.cancel.setOnClickListener {
+            if (action()?.prompt == true) tailscaleDismissed = true
+            handler.removeCallbacks(tailscaleTimeout); cancel("Cancelled")
+        }
         view.raw.setOnClickListener {
             val target = composing ?: return@setOnClickListener
             val previousLength = target.committedLength
@@ -125,11 +140,36 @@ internal class KeyboardDictation(
             DictationAction.PAIR -> setup("pair")
             DictationAction.MICROPHONE -> host.startActivity(android.content.Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
                 android.net.Uri.fromParts("package", host.packageName, null)).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK))
-            DictationAction.NETWORK -> {
-                val tailscale = host.packageManager.getLaunchIntentForPackage("com.tailscale.ipn")
-                if (tailscale != null) host.startActivity(tailscale.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)) else setup("network")
-            }
+            DictationAction.NETWORK, DictationAction.TAILSCALE_OPEN -> if (!tailscale.open()) setup("network")
+            DictationAction.TAILSCALE_SETUP -> setup("network")
+            // One tap asks Tailscale to connect with consent it already holds; it cannot grant VPN consent.
+            DictationAction.TAILSCALE_ON -> if (tailscale.connect()) {
+                handler.removeCallbacks(expiry); handler.removeCallbacks(tailscaleTimeout)
+                message = CONNECTING; notice = true; render()
+                handler.postDelayed(tailscaleTimeout, 10000)
+            } else if (!tailscale.open()) setup("network")
         }
+    }
+    private fun tailscaleStatus(): String? = when {
+        !tailnet -> null
+        !tailscale.installed() -> DictationAction.TAILSCALE_MISSING
+        !tailscale.connected() -> DictationAction.TAILSCALE_OFF
+        else -> null
+    }
+    private fun tailscaleMessage() = action()?.prompt == true || message == CONNECTING
+    private fun promptTailscale() {
+        if (active || undo || notice || tailscaleDismissed) return
+        tailscaleStatus()?.let { message = it }
+    }
+    private fun tailscaleChanged() {
+        if (!visible || destroyed) return
+        val now = tailscale.connected()
+        if (now) {
+            handler.removeCallbacks(tailscaleTimeout); tailscaleDismissed = false
+            if (tailscaleMessage()) showNotice(CONNECTED)
+            if (!vpn) pairing()?.let { closeWarm(); reach(it) }
+        } else if (vpn) { promptTailscale(); render() }
+        vpn = now
     }
     private fun quickOptions() {
         val anchor = strip?.mic ?: return
@@ -175,8 +215,18 @@ internal class KeyboardDictation(
     }
     fun shown() {
         if (destroyed) return
-        visible = true; render()
-        val paired = pairing() ?: return
+        visible = true
+        val paired = pairing()
+        tailnet = paired != null && TailscaleControl.routes(paired.base)
+        if (tailnet) {
+            vpn = tailscale.connected()
+            tailscaleWatch?.close(); tailscaleWatch = tailscale.watch(::tailscaleChanged)
+            promptTailscale()
+        }
+        render()
+        if (paired != null) reach(paired)
+    }
+    private fun reach(paired: Pairing) {
         prewarm(paired)
         if (!checkHealth) return
         val id = ++version
@@ -187,6 +237,7 @@ internal class KeyboardDictation(
                 val health = withContext(Dispatchers.IO) { ChirpNetwork.health(call) }
                 if (!visible || destroyed || version != id) return@launch
                 healthCall = null
+                if (tailscaleMessage()) { handler.removeCallbacks(tailscaleTimeout); notice = false; message = IDLE }
                 store.health = health; retained = health.debugRetention; render()
             } catch (_: Exception) { if (version == id) healthCall = null }
         }
@@ -223,7 +274,8 @@ internal class KeyboardDictation(
             transportFactory = { event, failed -> takeTransport(paired, event, failed) },
             captureFactory = captureFactory,
             changed = { status, partial ->
-                message = status
+                // The user just tried to dictate, so a dismissed Tailscale prompt may return as the reason.
+                message = if (status.startsWith("Mac unreachable")) tailscaleStatus() ?: status else status
                 if (partial != null) {
                     if (firstPartial == null) firstPartial = SystemClock.elapsedRealtime() - pressAt
                     text = partial.text
@@ -297,7 +349,14 @@ internal class KeyboardDictation(
         return inserted
     }
     private fun stop() { stopAt = SystemClock.elapsedRealtime(); session?.stop(); haptic(); render() }
-    fun beforeEdit() { if (active || undo) cancel() }
+    fun beforeEdit() {
+        if (active || undo) cancel()
+        else if (tailscaleMessage()) {
+            // Typing past the prompt means "not now": give the suggestion row back.
+            tailscaleDismissed = true; handler.removeCallbacks(tailscaleTimeout)
+            notice = false; message = IDLE; render()
+        }
+    }
     fun selection(oldStart: Int, oldEnd: Int, start: Int, end: Int, composingStart: Int, composingEnd: Int) {
         selectionStart = start; selectionEnd = end
         if (applying) return
@@ -321,6 +380,7 @@ internal class KeyboardDictation(
     private fun forgetUndo() { handler.removeCallbacks(expiry); undo = false; composing?.forgetUndo(); if (!active) composing = null }
     fun hidden() {
         visible = false; ++version; ChirpNetwork.cancel(healthCall); healthCall = null
+        tailscaleWatch?.close(); tailscaleWatch = null; handler.removeCallbacks(tailscaleTimeout)
         closeWarm(); cancel(); ChirpNetwork.release(client, cancel = true)
     }
     fun destroy() {
@@ -334,10 +394,15 @@ internal class KeyboardDictation(
     private fun haptic() { if (store.haptics) strip?.mic?.performHapticFeedback(HapticFeedbackConstants.CONFIRM) }
     private fun render() {
         val status = if (store.debugOverlay) "$message · first ${firstPartial ?: "—"} ms · final ${finalLatency ?: "—"} ms" else message
-        strip?.show(action()?.let { "$status · ${it.label}" } ?: status, "", active, session?.stopping == true, undo, retained || store.health?.debugRetention == true,
+        strip?.show(action()?.takeUnless { it.prompt }?.let { "$status · ${it.label}" } ?: status, "", active, session?.stopping == true, undo, retained || store.health?.debugRetention == true,
             polishing = session?.polishing == true, style = currentStyle.name, notice = notice)
         strip?.status?.isClickable = action() != null
         val disclosure = if (retained || store.health?.debugRetention == true) "Debug retention on. " else ""
         strip?.status?.contentDescription = disclosure + (action()?.let { "$message. ${it.label}" } ?: if (undo) "$status. Use raw available for five seconds." else status)
+    }
+    private companion object {
+        const val IDLE = "Tap mic · hold to talk"
+        const val CONNECTING = "Connecting Tailscale…"
+        const val CONNECTED = "Tailscale connected"
     }
 }

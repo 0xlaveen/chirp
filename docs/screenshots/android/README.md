@@ -3,9 +3,9 @@
 All displayed speech is a generated synthetic fixture. No user speech, real pairing
 credential or personal text is included.
 
-- `keyboard-{idle,listening,final}-{light,dark}.png`: Robolectric native graphics on
+- `keyboard-{idle,listening,final,tailscale}-{light,dark}.png`: Robolectric native graphics on
   API 37, actual HeliBoard QWERTY keys with Chirp's production strip at 411 px width.
-  Final fixtures show the five-second raw chip. These render deterministic UI states.
+  Final fixtures show the five-second raw chip; `tailscale` shows the *Tailscale is off · Turn on* prompt. These render deterministic UI states.
 - `emulator-keyboard-{idle,listening,final}-{light,dark}.png`: the authorized Android
   17 fold emulator (`emulator-5580`), actual IME window over the setup test field.
   A throwaway real Parakeet server receives say-generated speech through PcmCapture

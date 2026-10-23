@@ -24,6 +24,8 @@ internal class KeyboardStrip(context: Context) : LinearLayout(context) {
     val cancel = control("Cancel dictation").apply { text = "✕" }
     val raw = control("Use raw dictation").apply { text = "Use raw"; visibility = GONE
         accessibilityLiveRegion = View.ACCESSIBILITY_LIVE_REGION_POLITE }
+    /** The button for prompt actions such as turning on Tailscale; the status keeps the explanation. */
+    val action = control("").apply { visibility = GONE; setPadding(context.dp(12), 0, context.dp(12), 0) }
     val style = context.label("", 12f).apply {
         maxLines = 1; ellipsize = TextUtils.TruncateAt.END
         setPadding(context.dp(8), 0, context.dp(8), 0)
@@ -45,8 +47,9 @@ internal class KeyboardStrip(context: Context) : LinearLayout(context) {
         val clear = android.content.res.ColorStateList.valueOf(android.graphics.Color.TRANSPARENT)
         cancel.backgroundTintList = clear; cancel.setTextColor(palette.ink)
         raw.backgroundTintList = android.content.res.ColorStateList.valueOf(palette.chip); raw.setTextColor(palette.ink)
+        action.backgroundTintList = android.content.res.ColorStateList.valueOf(palette.accent); action.setTextColor(palette.onAccent)
         this.style.setTextColor(palette.ink)
-        for (button in listOf(mic, cancel, raw)) {
+        for (button in listOf(mic, cancel, raw, action)) {
             button.cornerRadius = context.dp(20)
             button.rippleColor = android.content.res.ColorStateList.valueOf(palette.ink and 0x00ffffff or 0x22000000)
         }
@@ -55,6 +58,7 @@ internal class KeyboardStrip(context: Context) : LinearLayout(context) {
         addView(status, LayoutParams(0, LayoutParams.MATCH_PARENT, 1f).apply { status.gravity = Gravity.CENTER_VERTICAL })
         addView(style, LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT))
         addView(raw, LayoutParams(context.dp(88), LayoutParams.MATCH_PARENT))
+        addView(action, LayoutParams(LayoutParams.WRAP_CONTENT, context.dp(36)).apply { marginEnd = context.dp(4) })
         addView(history, LayoutParams(context.dp(48), LayoutParams.MATCH_PARENT))
         addView(mic, LayoutParams(context.dp(48), LayoutParams.MATCH_PARENT))
         show("Tap mic", "", false, false, false, false)
@@ -73,7 +77,8 @@ internal class KeyboardStrip(context: Context) : LinearLayout(context) {
     }
     fun show(message: String, @Suppress("UNUSED_PARAMETER") text: String, active: Boolean, finishing: Boolean, undo: Boolean, retention: Boolean,
              polishing: Boolean = false, style: String = "", notice: Boolean = false) {
-        val error = DictationAction.forStatus(message) != null
+        val recovery = DictationAction.forStatus(message)
+        val error = recovery != null
         val full = active || undo || error || retention || notice
         if (expanded != full) {
             expanded = full
@@ -91,7 +96,7 @@ internal class KeyboardStrip(context: Context) : LinearLayout(context) {
             } else { status.alpha = 1f; status.translationY = 0f }
             stage = nextStage
         }
-        status.text = if (retention) "Debug retention on · $message" else DictationAction.forStatus(message)?.label ?: message
+        status.text = if (retention) "Debug retention on · $message" else recovery?.takeUnless { it.prompt }?.label ?: message
         status.visibility = if (full) VISIBLE else GONE
         status.setTextColor(if (retention) android.graphics.Color.WHITE else palette.ink)
         status.setBackgroundColor(if (retention) android.graphics.Color.rgb(164, 24, 24) else android.graphics.Color.TRANSPARENT)
@@ -102,6 +107,9 @@ internal class KeyboardStrip(context: Context) : LinearLayout(context) {
         cancel.isEnabled = active || undo || error
         meter.visibility = if (active && !finishing) VISIBLE else GONE
         raw.visibility = if (undo) VISIBLE else GONE
+        action.visibility = if (recovery?.prompt == true && !active) VISIBLE else GONE
+        action.text = recovery?.label ?: ""
+        action.contentDescription = recovery?.label ?: ""
         this.style.text = style
         this.style.contentDescription = "Clean-up style: $style"
         this.style.visibility = if (polishing) VISIBLE else GONE

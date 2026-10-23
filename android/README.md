@@ -72,6 +72,17 @@ On the phone, setup step 3 (*Connect your Mac*) — with Tailscale on, on both d
 
 The token is stored encrypted (AES-GCM) under the Android Keystore alias `chirp_pairing_v1`; pairing links are parsed strictly (`chirp://pair?url=…&token=…`, HTTPS only) and never rendered into logs. Recoverable connection problems offer **Pair Mac**, **Open mic settings** or **Check Tailscale** (which opens the Tailscale app when it is installed).
 
+### Tailscale off when the keyboard opens
+
+When the pairing points at a tailnet host (`*.ts.net`, `100.64.0.0/10` or `fd7a:115c:a1e0::/48`) and no VPN is applied to Chirp, the suggestion row shows **Tailscale is off** with a **Turn on** button. This check is local only, with no DNS lookup or network call. LAN or other pairings are never prompted.
+
+- **Turn on** sends an explicit broadcast to the Tailscale app (`com.tailscale.ipn.CONNECT_VPN` to its exported `IPNReceiver`, the same hook Tasker-style automation uses). Tailscale connects only if you have already granted it Android's VPN permission and signed in. Chirp can't grant that permission or skip Android's consent dialog. Without it, Tailscale posts its own "open Tailscale" notification.
+- The row says **Connecting Tailscale…**. When a VPN network appears it says **Tailscale connected** and reconnects to the Mac. If nothing connects within 10 seconds it offers **Open Tailscale**, so you can finish in the app.
+- If Tailscale isn't installed, the row offers **Set up**, which opens Chirp setup's connection step.
+- ✕, or typing past the prompt, hides it until Tailscale is next seen connected. Tapping the mic while Tailscale is off shows the prompt again instead of a generic *Mac unreachable* error.
+
+Detection is conservative. It only knows whether *some* VPN applies to Chirp, because Android doesn't say which app owns another app's VPN. If a different VPN is active, Chirp shows no prompt, and a failed dictation still offers **Check Tailscale**. A successful Mac health check clears the prompt.
+
 ### Servers on your Wi-Fi (Android 17)
 
 Android 17/API 37 needs `ACCESS_LOCAL_NETWORK` for servers reached directly over Wi-Fi/Ethernet. Chirp checks the paired server's resolved addresses and matching VPN routes in its network workers, never on the microphone press path. Setup requests permission only after a connection targets a local address outside a VPN. This includes RFC1918, link-local and local CGNAT/IPv6 addresses. Loopback JVM test servers are exempt.
@@ -209,7 +220,7 @@ Setup → **Diagnostics** copies the bounded crash log (see [Privacy](#privacy))
 | "kept original" after Polishing… | Clean-up failed, timed out (12 s) or the socket dropped | Raw text was inserted; edit the style or check the Mac |
 | "Unlock your phone to see dictation history." | History store is credential-encrypted | Unlock the device |
 
-Recoverable errors also offer **Pair Mac**, **Open mic settings** and **Check Tailscale** actions. A historical note: a reproducible 0.5.1-era crash (`NetworkOnMainThreadException` during TLS teardown on stop/keyboard-hide) was fixed by moving all HTTP cancellation, pool eviction and dispatcher shutdown to one process-wide background queue — see the [validation record](#051-stop-crash-fix-2026-10-17). If an editor disconnected during the raw composing-region replacement, older builds could crash; all editor calls in `ComposingSession` now fail safely without exposing editor exceptions, losing the corrected text on a rejected replacement, or allowing late callbacks to insert into another field (lifecycle coverage: final, repeated utterances, hide/unbind/destroy, stale capture/transport callbacks, cancel and raw expiry). The first regression test for that crash failed before the fix; the original installed emulator crash buffer was empty, which does **not** establish that the operator's phone hit that same exception.
+Recoverable errors also offer **Pair Mac**, **Open mic settings** and **Check Tailscale** actions. With a tailnet pairing and no VPN up, the row shows **Tailscale is off** with **Turn on** instead (see [Tailscale off when the keyboard opens](#tailscale-off-when-the-keyboard-opens)). A historical note: a reproducible 0.5.1-era crash (`NetworkOnMainThreadException` during TLS teardown on stop/keyboard-hide) was fixed by moving all HTTP cancellation, pool eviction and dispatcher shutdown to one process-wide background queue — see the [validation record](#051-stop-crash-fix-2026-10-17). If an editor disconnected during the raw composing-region replacement, older builds could crash; all editor calls in `ComposingSession` now fail safely without exposing editor exceptions, losing the corrected text on a rejected replacement, or allowing late callbacks to insert into another field (lifecycle coverage: final, repeated utterances, hide/unbind/destroy, stale capture/transport callbacks, cancel and raw expiry). The first regression test for that crash failed before the fix; the original installed emulator crash buffer was empty, which does **not** establish that the operator's phone hit that same exception.
 
 ## Develop and test
 
