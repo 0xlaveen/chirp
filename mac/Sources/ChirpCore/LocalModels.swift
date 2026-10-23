@@ -42,7 +42,7 @@ public struct LocalModelProgress: Equatable, Sendable {
     public var message: String?
     public init() {}
     public var ready: Bool { phase == "complete" }
-    public var busy: Bool { ["preparing", "downloading", "verifying", "cancelling"].contains(phase) }
+    public var busy: Bool { ["preparing", "installing", "downloading", "verifying", "cancelling"].contains(phase) }
     public var fraction: Double? {
         guard total > 0 else { return nil }
         return min(1, max(0, Double(completed) / Double(total)))
@@ -51,6 +51,7 @@ public struct LocalModelProgress: Equatable, Sendable {
         switch phase {
         case "complete": return "Downloaded · Ready for offline use"
         case "preparing": return "Preparing download…"
+        case "installing": return "Installing the SenseVoice runtime (about 12 MB)…"
         case "verifying": return "Checking that this model loads on your Mac…"
         case "downloading":
             guard let fraction else { return "Downloading…" }
@@ -169,11 +170,21 @@ public struct LocalModelOption: Decodable, Sendable, Equatable {
     public let ready: Bool
     public let active: Bool
     public let latest: Bool?
+    /// Speech only: "mlx" or "sensevoice". Older helpers send none (MLX).
+    public let engine: String?
 
     public init(id: String, kind: LocalModel, title: String, repository: String, revision: String,
-                sizeBytes: Int64 = 0, details: String = "", license: String = "", ready: Bool = false, active: Bool = false, latest: Bool = false) {
+                sizeBytes: Int64 = 0, details: String = "", license: String = "", ready: Bool = false, active: Bool = false,
+                latest: Bool = false, engine: String? = nil) {
         self.id = id; self.kind = kind; self.title = title; self.repository = repository; self.revision = revision
-        self.sizeBytes = sizeBytes; self.details = details; self.license = license; self.ready = ready; self.active = active; self.latest = latest
+        self.sizeBytes = sizeBytes; self.details = details; self.license = license; self.ready = ready; self.active = active
+        self.latest = latest; self.engine = engine
+    }
+
+    /// The picker's section for this model; nil for correction models.
+    public var engineSection: String? {
+        guard kind == .speech else { return nil }
+        return engine == "sensevoice" ? "SenseVoice · CPU" : "Parakeet · MLX on Apple silicon"
     }
 
     public var label: String {

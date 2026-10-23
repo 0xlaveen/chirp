@@ -447,14 +447,14 @@ public enum Snapshots {
     }
 
     public static var localModelsScenarios: [Scenario] {
-        ["missing", "downloading", "paused", "error", "ready", "stale"].map { name in
+        ["missing", "downloading", "paused", "error", "ready", "stale", "sensevoice"].map { name in
             Scenario(name: "models-" + name) {
                 var state = LocalModelsState()
                 state.correctionMode = "managed"
                 state.correctionEnabled = true
                 state.options = [
-                    LocalModelOption(id: "v2", kind: .speech, title: "Parakeet TDT v2 · English", repository: "mlx-community/parakeet-tdt-0.6b-v2", revision: "8ae155301e", sizeBytes: 2_472_000_000, details: "English · existing default", license: "cc-by-4.0", ready: name == "ready", active: true),
-                    LocalModelOption(id: "v3", kind: .speech, title: "Parakeet TDT v3 · Multilingual", repository: "mlx-community/parakeet-tdt-0.6b-v3", revision: "ed2b7e8c15", sizeBytes: 2_509_000_000, details: "25 languages"),
+                    LocalModelOption(id: "v2", kind: .speech, title: "Parakeet TDT v2 · English", repository: "mlx-community/parakeet-tdt-0.6b-v2", revision: "8ae155301e", sizeBytes: 2_472_000_000, details: "English · existing default", license: "cc-by-4.0", ready: name == "ready", active: true, engine: "mlx"),
+                    LocalModelOption(id: "v3", kind: .speech, title: "Parakeet TDT v3 · Multilingual", repository: "mlx-community/parakeet-tdt-0.6b-v3", revision: "ed2b7e8c15", sizeBytes: 2_509_000_000, details: "25 languages", engine: "mlx"),
                     LocalModelOption(id: "qwen", kind: .cleanup, title: "Qwen3 4B Instruct · 4-bit", repository: "mlx-community/Qwen3-4B-Instruct-2507-4bit", revision: "50d427756c", sizeBytes: 2_263_000_000, details: "Local text correction", ready: name == "ready", active: true),
                 ]
                 state.choices = [.speech: "v2", .cleanup: "qwen"]
@@ -471,6 +471,13 @@ public enum Snapshots {
                     state.models[model]?.completed = 850_000_000
                     state.models[model]?.total = 2_470_000_000
                     state.models[model]?.message = "Connection interrupted. Retry to continue."
+                }
+                if name == "sensevoice" {
+                    state.options.append(LocalModelOption(id: "sensevoice-small", kind: .speech, title: "SenseVoice Small · 中文 / 粵語 / English", repository: "csukuangfj/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17", revision: "2365baeacb", sizeBytes: 938_576_997, details: "Mandarin, Cantonese, English and mixed speech · CPU · adds a 12 MB runtime on first download", license: "FunASR model license", ready: true, engine: "sensevoice"))
+                    state.choices[.speech] = "sensevoice-small"; state.activeModels["speech"] = "sensevoice-small"
+                    state.models[.speech]?.phase = "complete"; state.models[.cleanup]?.phase = "complete"
+                    state.restartRequired = true
+                    state.message = "Selection saved. Apply and restart the server when you’re ready."
                 }
                 if name == "stale" { state.finish("download", model: .speech, code: 2, sawEvent: false, interrupted: false) }
                 if name == "ready" {
