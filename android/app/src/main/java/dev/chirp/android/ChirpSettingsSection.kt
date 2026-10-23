@@ -19,6 +19,9 @@ internal fun ChirpSettingsSection() {
     var cleanup by remember { mutableStateOf(store.correction) }
     var haptics by remember { mutableStateOf(store.haptics) }
     var commands by remember { mutableStateOf(store.spokenCommands) }
+    var soundCues by remember { mutableStateOf(store.soundCues) }
+    var shortcut by remember { mutableStateOf(store.hardwareShortcut) }
+    var largerMic by remember { mutableStateOf(store.largerMic) }
     var diagnostics by remember { mutableStateOf(false) }
     fun open(section: String) { context.startActivity(Intent(context, SetupActivity::class.java).putExtra("section", section)) }
     Column(Modifier.fillMaxWidth().padding(20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -44,7 +47,21 @@ internal fun ChirpSettingsSection() {
             Text("Haptic cues", Modifier.weight(1f))
             Switch(haptics, { haptics = it; store.haptics = it }, modifier = Modifier.semantics { contentDescription = "Haptic cues" })
         }
-        Text("Voice cues use haptics. Keyboard sound controls are below.", style = MaterialTheme.typography.bodySmall)
+        Row(Modifier.fillMaxWidth()) {
+            Text("Sound cues", Modifier.weight(1f))
+            Switch(soundCues, { soundCues = it; store.soundCues = it }, modifier = Modifier.semantics { contentDescription = "Sound cues" })
+        }
+        Text("Short tones for start, stop, inserted and error. Silent when the phone is on vibrate or mute. Keyboard key sounds are below.", style = MaterialTheme.typography.bodySmall)
+        Text("Keyboard access", style = MaterialTheme.typography.titleSmall)
+        Row(Modifier.fillMaxWidth()) {
+            Text("Hardware keyboard shortcut", Modifier.weight(1f))
+            Switch(shortcut, { shortcut = it; store.hardwareShortcut = it }, modifier = Modifier.semantics { contentDescription = "Hardware keyboard shortcut" })
+        }
+        Text("Ctrl+Alt+Space starts and stops dictation; Esc cancels while listening.", style = MaterialTheme.typography.bodySmall)
+        Row(Modifier.fillMaxWidth()) {
+            Text("Larger mic on the inner screen", Modifier.weight(1f))
+            Switch(largerMic, { largerMic = it; store.largerMic = it }, modifier = Modifier.semantics { contentDescription = "Larger mic on the inner screen" })
+        }
         Text("Spoken commands", style = MaterialTheme.typography.titleSmall)
         Row(Modifier.fillMaxWidth()) {
             Text("Say \"new line\" or \"new paragraph\"", Modifier.weight(1f))

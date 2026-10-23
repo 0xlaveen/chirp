@@ -121,6 +121,9 @@ Android 17/API 37 needs `ACCESS_LOCAL_NETWORK` for servers reached directly over
 - Haptic cues fire on start, manual stop and successful insertion when haptics are enabled (they follow Android's system setting).
 - **Chirp settings → Stop dictation** (also in setup's *Try it* step): **When I tap** (default) or **When I pause** with a pause of 1, 1.5, 2, 3 or 5 s (2 s default). Pause mode is a port of the Mac's auto-stop: speech is judged against the room's own noise floor, so steady background noise never counts as talking; it never stops before you have spoken, and gives up after 10 s of silence. Tapping stop still works in both modes.
 - **Time limit**: the Mac accepts 120 s per dictation, so Chirp stops at 119 s. From 105 s the status adds **N s left** with one haptic tick (TalkBack hears it only at 15, 10, 5, 3, 2 and 1 s), and the dictation is finished and inserted like a normal stop.
+- **Hardware keyboard** (Bluetooth or DeX): **Ctrl+Alt+Space** starts and stops dictation and **Esc** cancels while listening. Ctrl+Space is left to language switching. The keys are ignored in password fields and can be turned off in Chirp settings → *Keyboard access → Hardware keyboard shortcut* (on by default). If a hardware keyboard has hidden the on-screen keyboard, the chord shows it so the status row and ✕ stay available.
+- **Sound cues** (off by default; Chirp settings → *Sound cues*): short generated tones for start, stop, inserted and error, played as touch-feedback-class audio and silent when the ringer is on vibrate or mute. They are separate from haptics and from the keyboard's key sounds. The start tone can be faintly audible in the first few milliseconds of a dictation.
+- **TalkBack:** the status row is silent while listening, finishing and polishing. Each final is announced once — "Inserted, N words", or "Cleaned, Use raw available" while Use raw is offered — and the Use raw and Undo buttons do not announce a second time. A final that keeps only what was heard reads its own status instead.
 
 The full keyboard always **stays selected after a final** — including when an old installation had the voice-only keyboard's auto-return enabled. (That auto-return is gone; the old voice-only implementation lives only in test sources and is not registered or shipped, and its historical preference now defaults OFF.) **Use raw** is offered for five seconds after a corrected final; moving the cursor or editing the field invalidates it.
 
@@ -194,6 +197,8 @@ The Chirp row takes its colours from the active HeliBoard theme instead of a fix
 ### Fold inner/cover layout
 
 Unfolding keeps the cover keyboard's function-key arrangement in both looks: **Shift starts the third letter row, Backspace ends it, and Enter sits after the period at bottom-right** — instead of HeliBoard's tablet arrangement. Chirp seeds HeliBoard's phone functional layout once (migration `chirp_functional_layout_v1`); explicitly chosen global or per-language functional layouts remain yours. The number row defaults on at inner-screen widths (600 dp and wider; an explicit choice wins). Unfolded landscape defaults to split; cover layouts stay compact. See [Fold layout details](keyboard/UPSTREAM.md#fold-function-key-arrangement-2026-10-18) and the `fold-layout-*.png` before/after emulator captures in [docs/screenshots/android](../docs/screenshots/android).
+
+**Larger mic** (Chirp settings → *Larger mic on the inner screen*, off by default): on screens ≥ 600 dp wide the suggestion row grows to 48 dp and the mic key widens to 56 dp. Without it the controls are at least 48 dp wide and as tall as HeliBoard's suggestion row (36–44 dp); all sizes are in dp, so large font scales do not shrink them.
 
 ### Swipe typing
 

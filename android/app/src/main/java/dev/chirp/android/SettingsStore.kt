@@ -77,6 +77,15 @@ class SettingsStore(context: Context) {
         set(value) { prefs.edit { putFloat("pause_seconds", AutoStopDetector.nearest(value).toFloat()) } }
     /** The pause that ends a dictation on its own, or null when it stops only on tap. */
     val autoStopSeconds: Double? get() = pauseSeconds.takeIf { stopOnPause }
+    var hardwareShortcut: Boolean
+        get() = prefs.getBoolean("hardware_shortcut", true)
+        set(value) { prefs.edit { putBoolean("hardware_shortcut", value) } }
+    var soundCues: Boolean
+        get() = prefs.getBoolean("sound_cues", false)
+        set(value) { prefs.edit { putBoolean("sound_cues", value) } }
+    var largerMic: Boolean
+        get() = prefs.getBoolean("larger_mic", false)
+        set(value) { prefs.edit { putBoolean("larger_mic", value) } }
     var returnToPrevious: Boolean
         get() = prefs.getBoolean("return_to_previous", false)
         set(value) { prefs.edit { putBoolean("return_to_previous", value) } }
