@@ -87,6 +87,7 @@ Run on the reference Mac after installing the build with `./scripts/install-mac.
     - Check these cases from `android/README.md`: hold-to-talk, ✕ cancel, fold/unfold mid-utterance, hiding the keyboard, and Wi-Fi vs LTE.
     - With a Bluetooth keyboard: Ctrl+Alt+Space starts and stops, Esc cancels; with TalkBack on, one "Inserted, N words" per final and nothing while listening.
 12. **Battery:** run `android/scripts/battery-session.sh`, which resets batterystats, runs a scripted session and dumps the results. Record the result in `docs/bench.md`.
+13. **Full acceptance pass:** follow [android-device-acceptance.md](android-device-acceptance.md) (battery, Perfetto, stop matrix, session timings from Diagnostics).
 
 ## 3. Privacy checks
 

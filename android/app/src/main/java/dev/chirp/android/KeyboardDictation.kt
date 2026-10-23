@@ -333,8 +333,9 @@ internal class KeyboardDictation(
         composing?.shapeFinal(store.spokenCommands)
         secondsLeft = null; spokenLeft = null
         text = ""; pressAt = SystemClock.elapsedRealtime(); firstPartial = null; stopAt = null; finalLatency = null
+        val timer = SessionTimer(TimingLog(host), { TimingNetworks.current(host) })
         val stream = DictationStream(
-            transportFactory = { event, failed -> takeTransport(paired, event, failed) },
+            transportFactory = { event, failed -> val warm = warmed != null; takeTransport(paired, event, failed).also { timer.attach(it, warm) } },
             captureFactory = captureFactory,
             changed = { status, partial ->
                 // The user just tried to dictate, so a dismissed Tailscale prompt may return as the reason.
@@ -363,7 +364,7 @@ internal class KeyboardDictation(
                 applying = true
                 try { if (!moved) composing?.partial(ServerEvent.Partial(event.seq, event.raw, "")) } finally { applying = false }
             },
-            pauseSeconds = store.autoStopSeconds, countdown = ::countdown,
+            pauseSeconds = store.autoStopSeconds, countdown = ::countdown, timing = timer,
             ended = {
                 session = null; secondsLeft = null; spokenLeft = null
                 warmEvent = null; warmFailure = null

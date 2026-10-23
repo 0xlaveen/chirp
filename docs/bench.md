@@ -922,3 +922,7 @@ a question's answer under the person who asked it: prompt follow-ups. Guards rej
 ```sh
 uv run python scripts/bench_notes.py --set labelled --repetitions 1 --dump /tmp/notes-labelled.jsonl
 ```
+
+## Android real-device session timings
+
+Not yet measured. Android keeps content-free per-session timings (Setup → Diagnostics); paste the Wi-Fi and LTE summaries from the [real-device checklist](android-device-acceptance.md) here, with the device, Chirp version, engine and `battery-session.sh` rows. Until then every Android latency and battery figure is emulator-only (TBM).

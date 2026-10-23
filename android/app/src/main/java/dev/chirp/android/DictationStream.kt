@@ -18,6 +18,7 @@ internal class DictationStream(
     private val kept: ((String, String) -> Unit)? = null,
     private val pauseSeconds: Double? = null,
     private val countdown: (Int) -> Unit = {},
+    private val timing: SessionTimer? = null,
 ) {
     private var transport: ImeTransport? = null
     private var capture: Capture? = null
@@ -51,7 +52,7 @@ internal class DictationStream(
                     capture = null; released = true
                     // A full pre-Ready buffer reports the generic message; before Ready that is a connect timeout.
                     if (error != null) fail(if (error == ConnectionFailure.Kind.OTHER.status) unreachable(true) else error) else {
-                        stopping = true; changed("Finishing…", null); sendStop()
+                        stopping = true; timing?.stopped(); changed("Finishing…", null); sendStop()
                     }
                 }
             }
@@ -63,7 +64,7 @@ internal class DictationStream(
     }
     fun stop() {
         if (!live || stopping) return
-        stopping = true
+        stopping = true; timing?.stopped()
         changed("Finishing…", null)
         capture?.stop()
     }
@@ -76,23 +77,23 @@ internal class DictationStream(
         when (event) {
             is ServerEvent.Ready -> {
                 if (ready) { fail("Unexpected server response"); return }
-                ready = true; retention(event.debugRetention)
+                ready = true; timing?.ready(); retention(event.debugRetention)
                 if (buffer?.ready() != true) { fail("Mac connection is too slow — try again"); return }
                 handler.removeCallbacks(timeout)
                 if (!stopping) changed("Listening…", null)
                 if (released) sendStop() else deadline(125000)
             }
             is ServerEvent.Partial -> if (ready && !polishing && event.seq > sequence) {
-                sequence = event.seq; heard = event.text; changed(if (stopping) "Finishing…" else "Listening…", event)
+                sequence = event.seq; heard = event.text; timing?.partial(); changed(if (stopping) "Finishing…" else "Listening…", event)
             }
             is ServerEvent.Correcting -> if (stopSent && !polishing && event.seq > sequence && event.raw.isNotEmpty()) {
-                sequence = event.seq; raw = event.raw; polishing = true; polishingAt = android.os.SystemClock.uptimeMillis()
+                sequence = event.seq; raw = event.raw; polishing = true; polishingAt = android.os.SystemClock.uptimeMillis(); timing?.polishing()
                 correcting(event); changed("Polishing…", null); deadline(12000)
             }
             is ServerEvent.Final -> {
                 if (!stopSent) { fail("Unexpected server response"); return }
                 if (pendingFinal != null) return
-                handler.removeCallbacks(timeout)
+                handler.removeCallbacks(timeout); timing?.final(event.text.isBlank())
                 val finish = Runnable {
                     if (live) {
                         close(false)
@@ -104,7 +105,7 @@ internal class DictationStream(
                 val remaining = if (polishing) (450 - (android.os.SystemClock.uptimeMillis() - polishingAt)).coerceAtLeast(0) else 0
                 if (remaining > 0) { pendingFinal = finish; handler.postDelayed(finish, remaining) } else finish.run()
             }
-            is ServerEvent.Failure -> fail(when (event.code) {
+            is ServerEvent.Failure -> { timing?.code(event.code); fail(when (event.code) {
                 "auth" -> "Pairing refused — pair again in Chirp setup"
                 "bad_audio" -> "Didn't catch that"
                 "engine" -> "Speech engine hiccup"
@@ -112,7 +113,7 @@ internal class DictationStream(
                 "too_long" -> "Dictation limit is 120 seconds"
                 "bad_request" -> "Clean-up prompt too long — shorten it in Chirp settings"
                 else -> "Mac speech engine unavailable — try again"
-            })
+            }) }
             ServerEvent.Unknown -> Unit
         }
     }
@@ -120,6 +121,7 @@ internal class DictationStream(
     fun fail(message: String) {
         if (!live || pendingFinal != null) return
         val original = raw; val partial = heard?.takeIf { it.isNotBlank() }
+        timing?.failed(original != null || (partial != null && kept != null))
         close(true)
         try {
             if (original != null) final(ServerEvent.Final(original, original, false, "unavailable"))
@@ -127,7 +129,7 @@ internal class DictationStream(
             else changed(message, null)
         } finally { ended() }
     }
-    fun cancel() { if (live) { close(true); ended() } }
+    fun cancel() { if (live) { timing?.cancelled(); close(true); ended() } }
     private fun close(cancel: Boolean) {
         live = false; raw = null; heard = null
         pendingFinal?.let(handler::removeCallbacks); pendingFinal = null

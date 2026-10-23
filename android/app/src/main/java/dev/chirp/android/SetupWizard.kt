@@ -62,6 +62,7 @@ internal fun SetupWizard(
     forget: () -> Unit = {}, preferences: () -> Unit = {},
     correctionChanged: (Boolean) -> Unit = {},
     grantNetwork: () -> Unit = {}, keyboardPreferences: () -> Unit = {}, diagnostics: () -> Unit = {}, copyDiagnostics: () -> Unit = {},
+    clearTimings: () -> Unit = {},
 ) {
     var showDiagnostics by remember { mutableStateOf(false) }
     var paste by remember { mutableStateOf(false) }
@@ -70,8 +71,9 @@ internal fun SetupWizard(
     if (showDiagnostics) AlertDialog(onDismissRequest = { showDiagnostics = false },
         title = { Text("Diagnostics") },
         text = { Column(Modifier.heightIn(max = 420.dp).verticalScroll(rememberScrollState())) {
-            Text("Last 5 local crashes. Exception class, stack frames, app version and time only. No messages, text, audio or tokens.")
+            Text("Timings of the last 50 sessions (numbers only) and the last 5 local crashes (exception class, stack frames, app version and time). No messages, text, audio, hosts or tokens.")
             SelectionContainer { Text(state.diagnostics, style = MaterialTheme.typography.bodySmall) }
+            TextButton(clearTimings) { Text("Clear timings") }
         } },
         confirmButton = { TextButton(copyDiagnostics) { Text("Copy diagnostics") } },
         dismissButton = { TextButton({ showDiagnostics = false }) { Text("Close") } })

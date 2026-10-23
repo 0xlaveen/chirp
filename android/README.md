@@ -252,12 +252,13 @@ A small pre-existing fix shipped with it: moving the cursor after a cleaned fina
 - **The mic opens only when you start dictation** and is released as soon as you stop. The optional floating mic declares the same rules in its accessibility description.
 - **History is opt-in and on-device.** Entries never leave the phone, are AES-GCM encrypted under a Keystore key, and are excluded from backup and device transfer.
 - **Pairing secrets are encrypted at rest** (Android Keystore) and redacted from any `toString`. Pairing links are treated as secrets; they are parsed strictly and never logged.
+- **Session timings are numbers only.** Each dictation on the keyboard records connect, ready, first-partial, stop → final and polishing milliseconds, audio length, outcome and error code, network type (Wi-Fi, cellular, Ethernet), whether a VPN was up and whether the prewarmed socket was used. The last 50 stay in a private, backup- and transfer-excluded file; Setup → Diagnostics shows p50/p90 per metric and counts per outcome, with **Copy diagnostics** and **Clear timings**. Nothing else is stored: no text, audio, URLs, hosts, tokens or app names, and the serialized form holds only numbers, booleans and fixed enum names.
 - **Crash diagnostics are bounded.** Setup → Diagnostics shows/copies the last five local uncaught crashes: time, app version, exception class and at most 48 message-free class/method/line frames. The handler writes synchronously before delegating termination. It does not store exception messages, cause messages, filenames, thread names, text, audio, URLs or tokens. The private, backup-excluded log survives an app restart/update. HeliBoard's original crash handler and keyboard logger are disabled so they cannot retain a second content log.
 - **Clean-up disclosure.** Styles stay hidden when clean-up is unavailable, including an undisclosed external correction destination; external correction always requires explicit opt-in and shows its host.
 
 ## Troubleshoot
 
-Setup → **Diagnostics** copies the bounded crash log (see [Privacy](#privacy)). Common messages on the suggestion-row status bar:
+Setup → **Diagnostics** shows the session timings and the bounded crash log, and **Copy diagnostics** copies both (see [Privacy](#privacy)). The real-device checklist is [docs/android-device-acceptance.md](../docs/android-device-acceptance.md). Common messages on the suggestion-row status bar:
 
 | Bar message | What it means | What to do |
 |---|---|---|
