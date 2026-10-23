@@ -2,9 +2,7 @@ package dev.chirp.android
 
 import android.content.Context
 import androidx.core.content.edit
-import androidx.compose.foundation.layout.Row
-import androidx.compose.material3.Switch
-import androidx.compose.material3.Text
+import dev.chirp.android.ui.SwitchRow
 import androidx.compose.runtime.*
 import androidx.compose.ui.platform.LocalContext
 import okhttp3.HttpUrl
@@ -51,10 +49,7 @@ private class SyntheticPcmInput(private val context: Context) : PcmInput {
     val context = LocalContext.current
     val prefs = remember { context.getSharedPreferences("debug_capture", 0) }
     var checked by remember { mutableStateOf(prefs.getBoolean("synthetic", false)) }
-    Row {
-        Text("Debug: synthetic speech (no microphone)")
-        Switch(checked, { checked = it; prefs.edit { putBoolean("synthetic", it) } })
-    }
+    SwitchRow("Debug: synthetic speech (no microphone)", checked, { checked = it; prefs.edit { putBoolean("synthetic", it) } })
 }
 
 internal fun recordDebugNetworkFailure(context: Context, error: Exception) {

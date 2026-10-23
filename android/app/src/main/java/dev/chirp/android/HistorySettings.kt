@@ -15,12 +15,16 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import dev.chirp.android.ui.ActionRow
+import dev.chirp.android.ui.ChoiceChips
+import dev.chirp.android.ui.NavRow
+import dev.chirp.android.ui.SettingsGroup
+import dev.chirp.android.ui.SettingsItem
+import dev.chirp.android.ui.SwitchRow
 
 /** Opt-in switch, retention and clear. Turning history off deletes it after confirmation. */
 @Composable
@@ -32,28 +36,21 @@ internal fun HistorySettings(showOpen: Boolean = true, store: DictationHistory? 
     var retention by remember { mutableStateOf(history.retention) }
     var confirmOff by remember { mutableStateOf(false) }
     var confirmClear by remember { mutableStateOf(false) }
-    Text("Dictation history", style = MaterialTheme.typography.titleSmall)
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        Text("Keep dictation history on this phone", Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
-        Switch(enabled, { on ->
+    SettingsGroup("Dictation history") {
+        SwitchRow("Keep dictation history on this phone", enabled, { on ->
             if (on) { history.enable(); enabled = true; changed() } else confirmOff = true
-        }, modifier = Modifier.semantics { contentDescription = "Dictation history" })
-    }
-    Text("Off by default. Saves recent dictations encrypted on this phone only, so you can reinsert them from the keyboard's clock button. " +
-        "Never sent to your Mac, backed up or logged. Password and incognito fields are never saved.", style = MaterialTheme.typography.bodySmall)
-    if (enabled) {
-        Text("Keep for", style = MaterialTheme.typography.bodyMedium)
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            HistoryRetention.entries.forEach { option ->
-                FilterChip(retention == option, {
+        }, summary = "Off by default. Saves recent dictations encrypted on this phone only, so you can reinsert them from the keyboard's clock button. " +
+            "Never sent to your Mac, backed up or logged. Password and incognito fields are never saved.")
+        if (enabled) {
+            SettingsItem {
+                Text("Keep for", style = MaterialTheme.typography.bodyMedium)
+                ChoiceChips(HistoryRetention.entries, retention, { it.label }) { option ->
                     retention = option
                     scope.launch { withContext(Dispatchers.IO) { history.retention = option }; changed() }
-                }, label = { Text(option.label) })
+                }
             }
-        }
-        Row {
-            if (showOpen) TextButton({ context.startActivity(Intent(context, HistoryActivity::class.java)) }) { Text("Open history") }
-            TextButton({ confirmClear = true }) { Text("Clear history") }
+            if (showOpen) NavRow("Open history", { context.startActivity(Intent(context, HistoryActivity::class.java)) })
+            ActionRow("Clear history", { confirmClear = true }, destructive = true)
         }
     }
     if (confirmOff) AlertDialog(onDismissRequest = { confirmOff = false },

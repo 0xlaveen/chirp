@@ -36,8 +36,8 @@ class HistoryScreenTest {
         compose.onNodeWithText("Search history").performTextInput("pier")
         reveal("Meet at the pier at noon")
         compose.onNodeWithText("Draft the quarterly summary").assertDoesNotExist()
-        compose.onNode(hasScrollAction()).performScrollToNode(hasContentDescription("Dictation history"))
-        compose.onNodeWithContentDescription("Dictation history").performClick()
+        compose.onNode(hasScrollAction()).performScrollToNode(hasText("Keep dictation history on this phone"))
+        compose.onNodeWithText("Keep dictation history on this phone").performClick()
         compose.onNodeWithText("Turn off dictation history?").assertExists()
         compose.onNodeWithText("Turn off and delete").performClick()
         compose.waitUntil(5000) { !store.enabled && !File(context.filesDir, DictationHistory.FILE_NAME).exists() }
@@ -47,7 +47,7 @@ class HistoryScreenTest {
     @Test fun `settings switch is off by default and turning on offers retention`() {
         store.disable()
         compose.setContent { ChirpTheme { androidx.compose.foundation.layout.Column { HistorySettings(store = store) } } }
-        compose.onNodeWithContentDescription("Dictation history").assertIsOff().performClick()
+        compose.onNodeWithText("Keep dictation history on this phone").assertIsOff().performClick()
         assertTrue(store.enabled)
         compose.onNodeWithText("7 days").assertIsSelected()
         compose.onNodeWithText("24 hours").performClick()

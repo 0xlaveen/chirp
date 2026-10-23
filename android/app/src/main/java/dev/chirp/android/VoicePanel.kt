@@ -3,6 +3,7 @@ package dev.chirp.android
 import android.animation.ValueAnimator
 import android.annotation.SuppressLint
 import android.content.Context
+import android.content.res.ColorStateList
 import android.content.res.Configuration
 import android.graphics.Canvas
 import android.graphics.Color
@@ -16,15 +17,31 @@ import android.view.View
 import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.TextView
+import androidx.compose.ui.graphics.toArgb
 import com.google.android.material.button.MaterialButton
+import dev.chirp.android.ui.chirpColorScheme
 import kotlin.math.max
 
-internal data class VoicePalette(val background: Int, val surface: Int, val ink: Int, val muted: Int, val accent: Int) {
+internal data class VoicePalette(val background: Int, val surface: Int, val ink: Int, val muted: Int, val accent: Int, val onAccent: Int) {
     companion object {
-        fun of(context: Context): VoicePalette = if (context.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK == Configuration.UI_MODE_NIGHT_YES)
-            VoicePalette(Color.rgb(18, 23, 21), Color.rgb(32, 42, 37), Color.rgb(227, 235, 229), Color.rgb(164, 184, 172), Color.rgb(159, 211, 185))
-        else VoicePalette(Color.rgb(246, 250, 246), Color.rgb(230, 239, 232), Color.rgb(24, 45, 37), Color.rgb(83, 105, 92), Color.rgb(56, 106, 88))
+        /** The app's colours: wallpaper dynamic colour unless "App colours" is Chirp green (also before first unlock). */
+        fun of(context: Context): VoicePalette {
+            val night = context.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK == Configuration.UI_MODE_NIGHT_YES
+            if (runCatching { SettingsStore(context).dynamicColor }.getOrDefault(false)) return chirpColorScheme(context, night, true).run {
+                VoicePalette(surface.toArgb(), surfaceContainer.toArgb(), onSurface.toArgb(), onSurfaceVariant.toArgb(), primary.toArgb(), onPrimary.toArgb())
+            }
+            return if (night) VoicePalette(Color.rgb(18, 23, 21), Color.rgb(32, 42, 37), Color.rgb(227, 235, 229), Color.rgb(164, 184, 172), Color.rgb(159, 211, 185), Color.rgb(18, 56, 42))
+            else VoicePalette(Color.rgb(246, 250, 246), Color.rgb(230, 239, 232), Color.rgb(24, 45, 37), Color.rgb(83, 105, 92), Color.rgb(56, 106, 88), Color.WHITE)
+        }
     }
+}
+
+/** Fills or outlines a button in the palette accent instead of the theme's fixed colorPrimary, with Material's disabled alphas. */
+internal fun MaterialButton.accent(colors: VoicePalette, filled: Boolean) {
+    fun states(on: Int, off: Int) = ColorStateList(arrayOf(intArrayOf(-android.R.attr.state_enabled), intArrayOf()), intArrayOf(off, on))
+    val content = states(if (filled) colors.onAccent else colors.accent, colors.ink and 0x00ffffff or 0x61000000)
+    if (filled) backgroundTintList = states(colors.accent, colors.ink and 0x00ffffff or 0x1F000000)
+    setTextColor(content); iconTint = content
 }
 
 /** Native Material 3 surface usable from both IME and non-focusable accessibility windows. */
@@ -37,8 +54,9 @@ internal class VoicePanel(context: Context) : LinearLayout(context) {
     val mic = MaterialButton(context).apply {
         text = "Tap to dictate"; setIconResource(R.drawable.ic_mic); minHeight = context.dp(72)
         contentDescription = "Microphone: tap to toggle, hold to talk"
+        accent(colors, filled = true)
     }
-    val raw = MaterialButton(context).apply { text = "Use raw"; visibility = GONE }
+    val raw = MaterialButton(context).apply { text = "Use raw"; visibility = GONE; accent(colors, filled = true) }
     val controls = LinearLayout(context).apply { gravity = Gravity.CENTER }
     val extras = LinearLayout(context).apply { orientation = VERTICAL }
     private val ring = LevelRing(context)
@@ -68,7 +86,7 @@ internal class VoicePanel(context: Context) : LinearLayout(context) {
     fun control(text: String, description: String, action: () -> Unit): MaterialButton = MaterialButton(context,
         null, com.google.android.material.R.attr.materialButtonOutlinedStyle).apply {
         this.text = text; contentDescription = description; minWidth = 0; minimumWidth = 0
-        setPadding(0, 0, 0, 0); insetLeft = 0; insetRight = 0
+        setPadding(0, 0, 0, 0); insetLeft = 0; insetRight = 0; accent(colors, filled = false)
         controls.addView(this, LayoutParams(0, context.dp(48), 1f))
         setOnClickListener { action() }
     }

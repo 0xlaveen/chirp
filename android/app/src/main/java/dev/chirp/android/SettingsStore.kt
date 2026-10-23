@@ -14,7 +14,7 @@ import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
 
 class SettingsStore(context: Context) {
-    private val prefs = context.getSharedPreferences("chirp", Context.MODE_PRIVATE)
+    private val prefs = context.getSharedPreferences(FILE, Context.MODE_PRIVATE)
     var correction: Boolean
         get() {
             val current = health
@@ -89,6 +89,10 @@ class SettingsStore(context: Context) {
     var returnToPrevious: Boolean
         get() = prefs.getBoolean("return_to_previous", false)
         set(value) { prefs.edit { putBoolean("return_to_previous", value) } }
+    /** "App colours": wallpaper dynamic colour (default) or Chirp green, for the app and the floating mic. */
+    var dynamicColor: Boolean
+        get() = prefs.getBoolean("dynamic_color", true)
+        set(value) { prefs.edit { putBoolean("dynamic_color", value) } }
     var debugOverlay: Boolean
         get() = prefs.getBoolean("overlay", false)
         set(value) { prefs.edit { putBoolean("overlay", value) } }
@@ -151,5 +155,8 @@ class SettingsStore(context: Context) {
                 .setKeySize(256).build())
         }.generateKey()
     }
-    companion object { private const val KEY_ALIAS = "chirp_pairing_v1" }
+    companion object {
+        internal const val FILE = "chirp"
+        private const val KEY_ALIAS = "chirp_pairing_v1"
+    }
 }

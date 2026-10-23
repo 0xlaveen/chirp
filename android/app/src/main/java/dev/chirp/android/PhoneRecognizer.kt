@@ -11,20 +11,14 @@ import android.os.Looper
 import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Switch
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
+import dev.chirp.android.ui.SettingsGroup
+import dev.chirp.android.ui.SwitchRow
 
 /** One live dictation as the keyboard sees it, whichever engine hears it. */
 internal interface Utterance {
@@ -188,14 +182,10 @@ internal fun PhoneFallbackSettings() {
     val available = remember { AndroidPhoneRecognizer.available(context) }
     val provider = remember { PhoneFallback.provider(context) }
     var enabled by remember { mutableStateOf(store.phoneFallback) }
-    Text("When your Mac is unavailable", style = MaterialTheme.typography.titleSmall)
-    Row(Modifier.fillMaxWidth()) {
-        Text("Use this phone's recogniser", Modifier.weight(1f))
-        Switch(enabled && available, { enabled = it; store.phoneFallback = it }, enabled = available,
-            modifier = Modifier.semantics { contentDescription = "Use this phone's recogniser when your Mac is unavailable" })
+    SettingsGroup("When your Mac is unavailable") {
+        SwitchRow("Use this phone's recogniser", enabled && available, { enabled = it; store.phoneFallback = it }, enabled = available,
+            summary = if (!available) "This phone has no on-device speech recogniser." else
+                "Off by default. When the Mac can't be reached, dictation is recognised on this phone by ${provider ?: "the phone's own speech service (from Google or the phone maker)"}" +
+                    " — not by Chirp's engine on your Mac. Android runs it on-device; that service's own terms apply. No clean-up; the row shows \"on phone\".")
     }
-    Text(if (!available) "This phone has no on-device speech recogniser." else
-        "Off by default. When the Mac can't be reached, dictation is recognised on this phone by ${provider ?: "the phone's own speech service (from Google or the phone maker)"}" +
-            " — not by Chirp's engine on your Mac. Android runs it on-device; that service's own terms apply. No clean-up; the row shows \"on phone\".",
-        style = MaterialTheme.typography.bodySmall)
 }

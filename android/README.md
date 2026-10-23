@@ -75,7 +75,7 @@ Chirp Keyboard's setup has four steps — *Chirp Keyboard, Microphone, Pair Mac,
 1. **Enable Chirp Keyboard**, then **Select it as default**. On Samsung: Settings → General management → Keyboard list and default.
 2. **Allow the microphone.** The mic opens only when you start dictation and is released as soon as you stop.
 3. **Pair your Mac** — see [Pair](#pair). If the phone was already paired, the saved pairing survives the update.
-4. **Try it:** tap the test field, type, then dictate. This step also holds the Stop dictation choice, the keyboard-look chooser, swipe-typing setup, history setting and Diagnostics.
+4. **Try it:** tap the test field, type, then dictate. This step also holds the Stop dictation choice, App colours, the keyboard-look chooser, swipe-typing setup, history setting and Diagnostics.
 
 HeliBoard's own settings (Keyboard layouts & settings) start with a **Chirp section**: pairing, test field, clean-up and styles (only when the Mac offers them), per-app styles, sounds/haptics, and diagnostics.
 
@@ -202,6 +202,10 @@ Every look is applied only through HeliBoard's existing theme preferences (`them
 The migration `chirp_keyboard_look_v1` runs once in `ChirpApplication`, next to the existing `chirp_keyboard_defaults_v1` / typing defaults. An install with no theme preference at all (fresh, or 0.5.x that never opened Appearance) switches to the Gboard-like look; any theme preference already written was chosen explicitly and is kept. Later choices are never overwritten.
 
 The Chirp row takes its colours from the active HeliBoard theme instead of a fixed green palette. Its background is transparent, so HeliBoard's own suggestion-row colour (or a background image) shows through. The idle mic uses the key text colour like Gboard's toolbar icons; while listening it becomes an accent pill with a contrasting icon. The waveform and Polishing… shimmer use the accent, darkened or lightened until it reaches 3:1 contrast against the row. **Use raw** and the style chip use a translucent accent chip. The red debug-retention banner is unchanged.
+
+### App colours
+
+The setup app follows the wallpaper through Android's dynamic colours by default, so it matches the Gboard-like keyboard. **App colours** in the last setup step switches it to **Chirp green**. The same choice colours the optional floating mic panel and the in-keyboard history panel and toggle. Nothing else changes, and the keyboard keys always follow the **Keyboard look** above.
 
 ### Fold inner/cover layout
 

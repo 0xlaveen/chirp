@@ -9,6 +9,9 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.net.toUri
+import dev.chirp.android.ui.ActionRow
+import dev.chirp.android.ui.SettingsGroup
+import dev.chirp.android.ui.SettingsItem
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -87,25 +90,28 @@ internal fun UpdateSettings(controller: UpdateController? = null) {
     val updates = controller ?: remember { UpdateController(context, scope, client) }
     LaunchedEffect(updates) { updates.check(manual = false) }
     val status = updates.status
-    Text("Updates", style = MaterialTheme.typography.titleSmall)
-    Text("Chirp checks only your paired Mac, over Tailscale, for a newer signed build. Nothing is installed without your tap and Android's confirmation.",
-        style = MaterialTheme.typography.bodySmall)
-    when (status) {
-        UpdateStatus.Idle -> {}
-        UpdateStatus.Checking -> Text("Checking your Mac…")
-        UpdateStatus.Current -> Text("Chirp is up to date.")
-        UpdateStatus.Downloading -> Text("Downloading update…")
-        UpdateStatus.Installing -> Text("Confirm the install in Android's dialog. Chirp restarts when it finishes.")
-        UpdateStatus.NeedsPermission -> {
-            Text("Allow Chirp to install updates, then tap Install again.")
-            OutlinedButton(updates::allowInstalls, Modifier.fillMaxWidth()) { Text("Allow installing updates") }
-        }
-        is UpdateStatus.Available -> {
-            Text("Chirp ${status.info.versionName} is available.")
-            Button({ updates.install(status.info) }, Modifier.fillMaxWidth()) { Text("Download and install") }
-        }
-        is UpdateStatus.Failed -> Text(status.message)
-    }
     val working = status == UpdateStatus.Checking || status == UpdateStatus.Downloading
-    TextButton({ updates.check() }, enabled = !working) { Text("Check for updates") }
+    SettingsGroup("Updates") {
+        SettingsItem {
+            Text("Chirp checks only your paired Mac, over Tailscale, for a newer signed build. Nothing is installed without your tap and Android's confirmation.",
+                style = MaterialTheme.typography.bodySmall)
+            when (status) {
+                UpdateStatus.Idle -> {}
+                UpdateStatus.Checking -> Text("Checking your Mac…")
+                UpdateStatus.Current -> Text("Chirp is up to date.")
+                UpdateStatus.Downloading -> Text("Downloading update…")
+                UpdateStatus.Installing -> Text("Confirm the install in Android's dialog. Chirp restarts when it finishes.")
+                UpdateStatus.NeedsPermission -> {
+                    Text("Allow Chirp to install updates, then tap Install again.")
+                    OutlinedButton(updates::allowInstalls, Modifier.fillMaxWidth()) { Text("Allow installing updates") }
+                }
+                is UpdateStatus.Available -> {
+                    Text("Chirp ${status.info.versionName} is available.")
+                    Button({ updates.install(status.info) }, Modifier.fillMaxWidth()) { Text("Download and install") }
+                }
+                is UpdateStatus.Failed -> Text(status.message)
+            }
+        }
+        ActionRow("Check for updates", { updates.check() }, enabled = !working)
+    }
 }

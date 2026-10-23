@@ -34,6 +34,15 @@ These are review artifacts, not pixel-golden assertions or Galaxy hardware batte
 latency or microphone measurements. Samsung editor quirks and folding still need
 operator acceptance on the phone.
 
+## Design components
+
+- `components-{light,dark}.png`: the shared settings components (`ui/ChirpComponents.kt`) in Chirp green:
+  `SettingsGroup` with `SwitchRow`, `NavRow` and a destructive `ActionRow`, `ChoiceChips`, the four
+  `StatusBanner` kinds and the `InfoSheet` body. `components-dynamic-{light,dark}.png` show the
+  default wallpaper colours (Robolectric's stock dynamic palette), and `components-font-200.png`
+  is the same gallery at 200% font. The test also checks that no label is clipped and every row
+  is at least 48 dp tall. Regenerate with `./gradlew testDebugUnitTest --tests '*ChirpComponentsTest*'`.
+
 ## Keyboard looks
 
 - `keyboard-look-{gboard,samsung}-{idle,listening}-{light,dark}.png`: Robolectric
