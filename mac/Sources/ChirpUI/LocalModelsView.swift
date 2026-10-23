@@ -110,10 +110,11 @@ public final class LocalModelsView: NSView {
             // Avoid replacing an open native popup on every progress event.
             if picker.itemArray.compactMap({ $0.representedObject as? String }) != options.map(\.id) || picker.itemTitles != options.map(\.label) {
                 picker.removeAllItems()
-                for option in options {
-                    picker.addItem(withTitle: option.label)
-                    picker.lastItem?.toolTip = option.repository + "\nRevision: " + option.revision
-                    picker.lastItem?.representedObject = option.id
+                for option in options { // addItem(withTitle:) drops an earlier item with the same title.
+                    let item = NSMenuItem(title: option.label, action: nil, keyEquivalent: "")
+                    item.toolTip = option.repository + "\nRevision: " + option.revision
+                    item.representedObject = option.id
+                    picker.menu?.addItem(item)
                 }
             }
             if let id = state.choices[model], let index = options.firstIndex(where: { $0.id == id }) { picker.selectItem(at: index) }
