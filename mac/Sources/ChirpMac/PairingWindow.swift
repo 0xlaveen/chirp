@@ -13,8 +13,12 @@ final class PairingWindowController: NSObject, NSWindowDelegate {
     private var observers: [NSObjectProtocol] = []
     private var checkTask: Task<Void, Never>?
     private var clipboardTask: Task<Void, Never>?
+    /// A token was minted for a new phone: Settings → Devices lists it.
+    var onPaired: (() -> Void)?
     private lazy var flow: PairingFlow = {
-        let flow = PairingFlow(serverURL: { settings.serverConfig().baseURL }, run: TailscaleCLI.run)
+        let flow = PairingFlow(serverURL: { settings.serverConfig().baseURL }, run: TailscaleCLI.run,
+                               deviceLinks: { DeviceTokenPairing(name: $0, store: PairedDevices.store) },
+                               suggestedName: { DeviceName.suggested(macName: Host.current().localizedName) })
         flow.onChange = { [weak self] in self?.stepChanged() }
         return flow
     }()
@@ -26,6 +30,8 @@ final class PairingWindowController: NSObject, NSWindowDelegate {
             v.action.action = #selector(actionPressed)
             v.copyLink.target = self
             v.copyLink.action = #selector(copyPressed)
+            v.nameField.target = self
+            v.nameField.action = #selector(actionPressed)
             let w = NSWindow(contentRect: .zero, styleMask: [.titled, .closable], backing: .buffered, defer: false)
             w.title = "Pair a Phone"
             w.isReleasedWhenClosed = false
@@ -59,12 +65,12 @@ final class PairingWindowController: NSObject, NSWindowDelegate {
 
     private func check() {
         checkTask?.cancel()
-        checkTask = Task { [flow] in await flow.check() }
+        checkTask = Task { [flow] in await flow.begin() }
     }
 
     private func stepChanged() {
         if case .ready = flow.step {
-            if !timer.isRunning { timer.start() }
+            if !timer.isRunning { timer.start(); onPaired?() }
         } else {
             timer.cancel()
         }
@@ -89,6 +95,13 @@ final class PairingWindowController: NSObject, NSWindowDelegate {
     @objc private func actionPressed() {
         switch flow.step {
         case .notServed(let command), .publishFailed(let command, _): confirmPublish(command)
+        case .naming:
+            let name = view?.nameField.stringValue ?? ""
+            checkTask?.cancel()
+            checkTask = Task { [flow] in await flow.pair(named: name) }
+        case .cannotMint, .noToken, .failed:
+            checkTask?.cancel()
+            checkTask = Task { [flow] in await flow.check() }
         default: check()
         }
     }

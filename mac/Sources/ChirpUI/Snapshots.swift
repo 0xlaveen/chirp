@@ -234,8 +234,27 @@ public enum Snapshots {
             $0.keepLoaded = KeepLoadedState(settings: CleanupModelSettings(keepLoaded: true, loaded: true, model: "qwen3-4b", memoryMB: 2662),
                                             availability: .available)
         }
+        /// Settings → Devices with a fixed clock and zone, so the snapshot never changes with the day it is drawn.
+        func devicesForm(_ name: String, _ phase: DevicesPhase, revoking: String? = nil, problem: String? = nil) -> Scenario {
+            Scenario(name: "settings-devices-\(name)") {
+                var state = SettingsState()
+                state.about = AboutInfo(version: "0.1.0", build: "1")
+                let form = SettingsForm(state, icon: appIcon, onNotices: {})
+                form.devicesView.apply(phase, revoking: revoking, problem: problem, now: sampleNow,
+                                       locale: Locale(identifier: "en_US"), timeZone: TimeZone(identifier: "UTC")!)
+                let view = form.view(for: .devices)
+                view.setFrameSize(form.fittingSize(for: .devices))
+                return view
+            }
+        }
         let warmOff = CleanupModelSettings(keepLoaded: false, model: "qwen3-4b", memoryMB: 2662, memoryEstimated: true)
         return [
+            devicesForm("ready", .loaded(samplePhones)),
+            devicesForm("revoking", .loaded(samplePhones), revoking: "9f3a1c52"),
+            devicesForm("empty", .loaded([])),
+            devicesForm("unavailable", .unavailable(DevicesError.outdated.message)),
+            devicesForm("revoke-failed", .loaded(samplePhones), problem: DevicesError.failed.message),
+            devicesForm("remote", .remote("studio.example-tailnet.ts.net")),
             form("ready", .general) { _ in },
             form("login-unavailable", .general) { $0.launch = .unavailable },
             form("missing", .general) { $0.micGranted = false; $0.accessibilityGranted = false },
@@ -310,7 +329,6 @@ public enum Snapshots {
             },
             form("warm-old-server", .server) { styled(&$0); $0.keepLoaded = KeepLoadedState(availability: .unavailable(.serverTooOld)) },
             form("warm-remote-model", .server) { styled(&$0); $0.keepLoaded = KeepLoadedState(availability: .unavailable(.remoteModel)) },
-            form("ready", .devices) { _ in },
             form("ready", .about) { _ in },
         ]
     }
@@ -346,6 +364,13 @@ public enum Snapshots {
     static let sampleLink = try! PairingLink(serverURL: TailscaleServe.pairingURL(host: "my-mac.example-tailnet.ts.net"),
                                              token: "snapshot-sample-not-a-real-token-0123456789")
 
+    static let sampleNow = Date(timeIntervalSince1970: 1_792_000_000)   // 2026-10-14 17:46 UTC
+    static let samplePhones = [
+        PairedDevice(id: "9f3a1c52", name: "Pixel 9", created: sampleNow.addingTimeInterval(-9 * 86_400), lastSeen: sampleNow.addingTimeInterval(-40)),
+        PairedDevice(id: "04be77d1", name: "iPad", created: sampleNow.addingTimeInterval(-40 * 86_400), lastSeen: sampleNow.addingTimeInterval(-3 * 3_600)),
+        PairedDevice(id: "c81d20aa", name: "Akshay’s phone", created: sampleNow.addingTimeInterval(-3_600)),
+    ]
+
     public static var pairingScenarios: [Scenario] {
         func pairing(_ name: String, _ step: PairingStep, remaining: Int = 107, concealed: Bool = false) -> Scenario {
             Scenario(name: "pairing-\(name)") {
@@ -357,6 +382,9 @@ public enum Snapshots {
         let command = TailscaleServe.publishCommand(port: 7821)
         return [
             pairing("checking", .checking),
+            pairing("naming", .naming(suggested: "Akshay’s phone", problem: nil)),
+            pairing("naming-taken", .naming(suggested: "Pixel 9", problem: "A device with that name is already paired; revoke it first")),
+            pairing("cannot-mint", .cannotMint(DevicesError.outdated.message)),
             pairing("ready", .ready(sampleLink)),
             pairing("concealed", .ready(sampleLink), concealed: true),
             pairing("not-served", .notServed(command: command)),

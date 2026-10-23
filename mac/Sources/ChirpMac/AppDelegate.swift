@@ -68,6 +68,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         settingsWindow.onOpenSetup = { [onboardingWindow] in onboardingWindow.show() }
         settingsWindow.onOpenModels = { [localModelsWindow] in localModelsWindow.show() }
         settingsWindow.onPairPhone = { [pairingWindow] in pairingWindow.show() }
+        pairingWindow.onPaired = { [settingsWindow] in settingsWindow.refreshDevices() }
         settingsWindow.onOpenNotes = { [notesWindow] in notesWindow.show() }
         onboardingWindow.onOpenModels = { [localModelsWindow] in localModelsWindow.show() }
         localModelsWindow.onServerChanged = { [controller] in Task { await controller.refreshHealth() } }

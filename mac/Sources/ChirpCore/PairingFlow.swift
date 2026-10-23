@@ -2,6 +2,8 @@ import Foundation
 
 /// Where "Pair a Phone…" is: checking, a reason it cannot pair yet (with what to do), or ready with the link.
 public enum PairingStep: Equatable, Sendable {
+    /// Name the phone first: each pairing mints its own device token. `problem` is why the last name was refused.
+    case naming(suggested: String, problem: String?)
     case checking
     /// Chirp uses a server on another machine (its host): pair from there.
     case remoteServer(String)
@@ -17,6 +19,8 @@ public enum PairingStep: Equatable, Sendable {
     case funnel
     case failed(String)
     case noToken
+    /// The device token could not be made (why); trying again mints it again.
+    case cannotMint(String)
     /// The link and the tailnet URL it points at.
     case ready(PairingLink)
 }
@@ -45,15 +49,45 @@ public final class PairingFlow {
     private let serverURL: () -> URL
     private let cli: () -> URL?
     private let run: CommandRunner
-    private let links: PairingLinkMaker
+    private var links: PairingLinkMaker
+    private let deviceLinks: ((String) -> PairingLinkMaker)?
+    private let suggestedName: () -> String
+    /// The link minted for this pairing, so a second check (after publishing, or Check Again) never mints another device.
+    private var minted: PairingLink?
+    private var chosenName = ""
     private var generation = 0
 
+    /// With `deviceLinks` (name → maker) each pairing asks for a name and mints a per-device token; without it the shared
+    /// token from `links` is used and `begin()` goes straight to the checks.
     public init(serverURL: @escaping () -> URL, cli: @escaping () -> URL? = { TailscaleServe.findCLI() },
-                run: @escaping CommandRunner, links: PairingLinkMaker = SharedTokenPairing()) {
+                run: @escaping CommandRunner, links: PairingLinkMaker = SharedTokenPairing(),
+                deviceLinks: ((String) -> PairingLinkMaker)? = nil, suggestedName: @escaping () -> String = { "My phone" }) {
         self.serverURL = serverURL
         self.cli = cli
         self.run = run
         self.links = links
+        self.deviceLinks = deviceLinks
+        self.suggestedName = suggestedName
+    }
+
+    /// Starts a pairing: asks for the phone's name, or just checks when there are no device tokens.
+    public func begin() async {
+        generation += 1
+        minted = nil
+        if deviceLinks == nil { await check() } else { step = .naming(suggested: suggestedName(), problem: nil) }
+    }
+
+    /// The name was chosen: validates it, then checks Tailscale and mints the token once the link is needed.
+    public func pair(named raw: String) async {
+        guard let deviceLinks else { return }
+        guard let name = DeviceName.clean(raw) else {
+            step = .naming(suggested: raw, problem: DeviceName.rule)
+            return
+        }
+        chosenName = name
+        links = deviceLinks(name)
+        minted = nil
+        await check()
     }
 
     /// The loopback port of this Mac's server, or nil when Chirp points elsewhere.
@@ -77,11 +111,19 @@ public final class PairingFlow {
         switch TailscaleServe.status(serveJSON: serve.output, host: host, port: port) {
         case .served:
             do {
-                let link = try await links.link(serverURL: TailscaleServe.pairingURL(host: host))
+                let url = TailscaleServe.pairingURL(host: host)
+                let link: PairingLink
+                if let minted, minted.serverURL == url { link = minted } else { link = try await links.link(serverURL: url) }
                 guard g == generation else { return }
+                minted = link
                 step = .ready(link)
             } catch PairingError.noToken {
                 if g == generation { step = .noToken }
+            } catch DevicesError.rejected(let why) where deviceLinks != nil {
+                // A name the server refused (already paired): back to the name.
+                if g == generation { step = .naming(suggested: chosenName, problem: why) }
+            } catch let error as DevicesError {
+                if g == generation { step = .cannotMint(error.message) }
             } catch {
                 if g == generation { step = .failed("Couldn’t make the pairing link.") }
             }
@@ -116,6 +158,7 @@ public final class PairingFlow {
     /// Forgets the link (the window hid or closed); a late answer from a check still running is dropped.
     public func reset() {
         generation += 1
+        minted = nil
         step = .checking
     }
 
