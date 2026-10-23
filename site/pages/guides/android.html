@@ -1,0 +1,103 @@
+<!--
+title: Use Chirp on Android — Chirp
+description: A beginner's guide to building Chirp Keyboard, pairing it with your Mac over Tailscale and dictating in any Android app.
+section: guides
+-->
+<div class="narrow guide-hero">
+  <p class="crumbs"><a href="index.html">Guides</a> / 02</p>
+  <h1>Use Chirp on Android</h1>
+  <p class="lede">Chirp Keyboard is a full Android keyboard with a mic key. It sends your voice to the Chirp server on your Mac and types what comes back — in any app.</p>
+  <div class="meta-row"><span>Needs: Chirp on your Mac, Tailscale on both devices</span><span>Tuned for: Galaxy Z Fold</span></div>
+</div>
+<article class="narrow prose">
+  <nav class="toc" aria-label="On this page"><b>On this page</b>
+    <ol><li><a href="#before">Before you start</a></li><li><a href="#tailscale">Connect with Tailscale</a></li><li><a href="#build">Build the keyboard</a></li><li><a href="#install">Install it</a></li><li><a href="#pair">Pair with your Mac</a></li><li><a href="#dictate">Dictate</a></li><li><a href="#scratchpad">Scratchpad</a></li><li><a href="#trouble">If something's off</a></li></ol>
+  </nav>
+
+  <h2 id="before">Before you start</h2>
+  <ul>
+    <li>Chirp is working on your Mac — see <a href="mac.html">Set up Chirp on your Mac</a>. The Mac needs to be awake when you dictate from the phone.</li>
+    <li>An Android phone and a USB cable (or wireless debugging). Chirp is tuned for the Galaxy Z Fold but works as a regular keyboard elsewhere.</li>
+  </ul>
+
+  <h2 id="tailscale">Connect your phone and Mac with Tailscale</h2>
+  <p>Your phone reaches the Mac through <a href="https://tailscale.com/">Tailscale</a>, a private network between your own devices (a “tailnet”). Nothing is exposed to the public internet.</p>
+  <ol class="steps">
+    <li><strong>Install Tailscale on both</strong><p>Install it on the Mac and the phone and sign in with the same account. Both should show as connected.</p></li>
+    <li><strong>Allow HTTPS on your tailnet</strong><p>Chirp publishes the Mac's server to your tailnet with Tailscale Serve, which needs <strong>MagicDNS</strong> and <strong>HTTPS certificates</strong> turned on (admin console → DNS). If they're off, Tailscale tells you when you pair, with a link to fix it.</p></li>
+  </ol>
+
+  <h2 id="build">Build the keyboard</h2>
+  <p>On the Mac, in the <code>chirp</code> folder from the Mac guide. The first command installs a Java and Android toolchain just for your user — no admin password, no emulator images:</p>
+<pre data-copy="Copy commands"><code>android/scripts/setup-toolchain.sh
+source ~/.local/share/chirp-android/env.sh
+android/scripts/make-keystore.sh
+cd android
+./gradlew assembleRelease</code></pre>
+  <p><code>make-keystore.sh</code> creates your signing key once. Keep it: later updates must be signed with the same key, or Android will refuse them.</p>
+  <p>The phone's app ends up at <code>android/app/build/outputs/apk/release/app-arm64-v8a-release.apk</code>.</p>
+
+  <h2 id="install">Install it on the phone</h2>
+  <p>Pick one:</p>
+  <ul>
+    <li><strong>Taildrop</strong> (no cable): <code>tailscale file cp app/build/outputs/apk/release/app-arm64-v8a-release.apk &lt;your-phone&gt;:</code> — then tap the file in the phone's Tailscale notification.</li>
+    <li><strong>USB</strong>: turn on USB debugging in the phone's Developer options, plug it in and run <code>adb install -r app/build/outputs/apk/release/app-arm64-v8a-release.apk</code>.</li>
+  </ul>
+  <div class="callout warn"><b>Play Protect may warn you.</b><p>It flags any app that doesn't come from the Play Store. Choose <strong>More details → Install anyway</strong>.</p></div>
+  <p>Open <strong>Chirp</strong>. Setup has four steps and always opens on the first one you haven't finished:</p>
+  <ol class="steps">
+    <li><strong>Enable Chirp Keyboard</strong><p>Turn it on, then select it as your default. On Samsung: Settings → General management → Keyboard list and default.</p></li>
+    <li><strong>Allow the microphone</strong><p>It's only open while you dictate.</p></li>
+    <li><strong>Pair your Mac</strong><p>See the next section.</p></li>
+    <li><strong>Try it</strong><p>A test field, plus the keyboard look and when dictation should stop.</p></li>
+  </ol>
+  <div class="shot-row">
+    <figure><div class="frame"><!--shot:android/setup-1|Setup step 1: enable and select Chirp Keyboard--></div><figcaption>Step 1</figcaption></figure>
+    <figure><div class="frame"><!--shot:android/setup-3|Setup step 3: Connect your Mac--></div><figcaption>Step 3</figcaption></figure>
+  </div>
+
+  <h2 id="pair">Pair with your Mac</h2>
+  <ol class="steps">
+    <li><strong>Show the pairing code on the Mac</strong><p>In Chirp for Mac open <strong>Settings → Devices → Pair a Phone…</strong> If your tailnet isn't serving Chirp yet, it shows the exact Tailscale command and runs it only after you confirm. Then it shows a QR code.</p></li>
+    <li><strong>Scan it on the phone</strong><p>In setup step 3 tap <strong>Scan pairing QR</strong>, then <strong>Test connection &amp; save pairing</strong>. Nothing is saved until the connection works.</p></li>
+  </ol>
+  <figure class="shot"><div class="frame"><!--shot:mac/settings-devices-ready|Settings, Devices: Pair a Phone button, noting the phone reaches this Mac over your tailnet only--></div></figure>
+  <div class="callout"><b>The QR code is a secret.</b><p>It contains the key to your Mac's speech server. The Mac hides the window from screenshots and screen sharing and closes it after two minutes. Don't post it anywhere.</p></div>
+
+  <h2 id="dictate">Dictate</h2>
+  <ol class="steps">
+    <li><strong>Tap the mic</strong><p>It's in the row above the keys. Your words appear underlined in the field as you speak.</p></li>
+    <li><strong>Tap stop to insert</strong><p>The final text replaces the underlined preview. <strong>✕</strong> throws it away.</p></li>
+    <li><strong>Undo or Use raw</strong><p>For five seconds afterwards, <strong>Undo</strong> removes exactly what was inserted, and <strong>Use raw</strong> swaps clean-up's version for what you actually said.</p></li>
+  </ol>
+  <div class="shot-row">
+    <figure><div class="frame"><!--shot:android/keyboard-look-gboard-listening|The keyboard listening, with a waveform and a stop button--></div><figcaption>Listening</figcaption></figure>
+    <figure><div class="frame"><!--shot:android/keyboard-final|The keyboard after a dictation, offering Use raw--></div><figcaption>Done, with Use raw</figcaption></figure>
+  </div>
+  <ul>
+    <li><strong>Long-press the mic</strong> to turn clean-up on or off and choose a style.</li>
+    <li><strong>Stop when I pause:</strong> Chirp settings → Stop dictation → <strong>When I pause</strong>.</li>
+    <li><strong>Long dictations</strong> work up to 10 minutes; Chirp splits them quietly so nothing is dropped.</li>
+    <li><strong>Lost connection?</strong> What was heard so far is kept, never thrown away.</li>
+    <li><strong>History</strong> is off by default. Turn it on to keep recent dictations, encrypted, on the phone only.</li>
+  </ul>
+
+  <h2 id="scratchpad">Scratchpad for longer text</h2>
+  <p>Long-press the Chirp icon and choose <strong>Scratchpad</strong>, or add the <strong>Scratchpad</strong> tile to Quick Settings. Dictate, edit, then <strong>Copy</strong> or <strong>Share</strong>. The text is gone when you leave — nothing is saved.</p>
+  <div class="shot-row">
+    <figure><div class="frame"><!--shot:android/scratchpad-idle|The empty Scratchpad--></div></figure>
+    <figure><div class="frame"><!--shot:android/scratchpad-text|The Scratchpad with text and Copy and Share buttons--></div></figure>
+  </div>
+
+  <p>For meetings, long-press the Chirp icon and choose <strong>Notes</strong> instead: <a href="live-notes.html#android">Live Notes on Android</a>.</p>
+
+  <h2 id="trouble">If something's off</h2>
+  <ul>
+    <li><strong>“Tailscale is off”</strong> in the keyboard: tap <strong>Turn on</strong>, or open the Tailscale app.</li>
+    <li><strong>Mac unreachable:</strong> is the Mac awake, with Chirp running and Tailscale connected? Setup's <strong>Check Mac connection</strong> tests it.</li>
+    <li><strong>Updates:</strong> install new builds over the old one — don't uninstall first, or you'll lose your pairing.</li>
+  </ul>
+  <p>All the details are in the <a href="{{repo}}/blob/main/android/README.md">Android README</a>.</p>
+
+  <div class="next"><a href="mac.html">← Set up on your Mac</a><a href="iphone.html">Next: iPhone and iPad →</a></div>
+</article>

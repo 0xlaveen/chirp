@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{title}}</title>
+<meta name="description" content="{{description}}">
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" content="#f6f2e8" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0a1120" media="(prefers-color-scheme: dark)">
+<meta name="referrer" content="no-referrer">
+<meta property="og:title" content="{{title}}">
+<meta property="og:description" content="{{description}}">
+<meta property="og:type" content="website">
+<link rel="icon" type="image/png" href="{{root}}assets/chirp-icon.png">
+<link rel="apple-touch-icon" href="{{root}}assets/chirp-icon.png">
+<link rel="stylesheet" href="{{root}}assets/style.css">
+<script>try{var t=localStorage.getItem("chirp-theme");if(t==="light"||t==="dark")document.documentElement.dataset.theme=t}catch(e){}</script>
+<script src="{{root}}assets/site.js" defer></script>
+</head>
+<body class="{{body_class}}">
+<a class="skip" href="#main">Skip to content</a>
+<header class="topbar">
+  <nav class="wrap nav" aria-label="Main">
+    <a class="brand" href="{{root}}index.html"{{current_home}}><img src="{{root}}assets/chirp-icon.png" alt="" width="32" height="32"><span>Chirp</span></a>
+    <ul class="nav-links">
+      <li class="hide-sm"><a href="{{root}}index.html#how">How it works</a></li>
+      <li class="hide-sm"><a href="{{root}}index.html#privacy">Privacy</a></li>
+      <li><a href="{{root}}guides/index.html"{{current_guides}}>Guides</a></li>
+      <li><a href="{{repo}}" rel="noopener">GitHub</a></li>
+      <li><button class="theme-toggle" type="button" aria-label="Colour theme: system" data-theme-toggle><svg viewBox="0 0 24 24" aria-hidden="true" width="20" height="20"><circle cx="12" cy="12" r="4.2"/><path class="sun-rays" d="M12 2.5v2.2M12 19.3v2.2M2.5 12h2.2M19.3 12h2.2M5.3 5.3l1.6 1.6M17.1 17.1l1.6 1.6M5.3 18.7l1.6-1.6M17.1 6.9l1.6-1.6"/></svg></button></li>
+    </ul>
+  </nav>
+</header>
+<main id="main">
+{{content}}
+</main>
+<footer class="footer">
+  <div class="wrap footer-grid">
+    <div>
+      <p class="brand"><img src="{{root}}assets/chirp-icon.png" alt="" width="28" height="28"><span>Chirp</span></p>
+      <p class="muted">Local-first voice dictation. Your Mac does the listening.</p>
+    </div>
+    <ul class="footer-links">
+      <li><a href="{{root}}guides/index.html">Guides</a></li>
+      <li><a href="{{repo}}">Source on GitHub</a></li>
+      <li><a href="{{repo}}/blob/main/docs/bench.md">Benchmarks</a></li>
+      <li><a href="{{repo}}/blob/main/docs/architecture.md">Architecture</a></li>
+      <li><a href="{{repo}}/issues">Issues</a></li>
+    </ul>
+    <p class="muted small">This site has no analytics, cookies or third-party requests. Screenshots are the project's own captures, made with synthetic speech. Chirp is a personal-use project; the Android keyboard is based on HeliBoard (GPL-3.0).</p>
+  </div>
+</footer>
+</body>
+</html>

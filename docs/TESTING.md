@@ -9,6 +9,7 @@ Run from the repo root:
 (cd mac && ./scripts/test.sh)
 (source ~/.local/share/chirp-android/env.sh && cd android && ./gradlew lint testDebugUnitTest assembleDebug)
 ./scripts/e2e-local.sh
+python3 site/build.py   # website: links, anchors, no external requests, no host names/tokens/paths
 ```
 
 `scripts/e2e-local.sh` starts a real `chirp-server` on 127.0.0.1:7899 with a throwaway HOME, so it uses its own token. It then streams a synthetic `say` sentence through three clients:

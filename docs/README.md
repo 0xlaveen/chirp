@@ -19,8 +19,11 @@ Index of everything under `docs/`. Start with the architecture doc; everything e
 | [review/ios-integration.md](review/ios-integration.md) | Integrated branch handoff, final CLT test evidence and remaining Xcode/signing/device gates |
 | [review/round2.md](review/round2.md) | Independent review, round 2 (findings and evidence) |
 | [review/word-waveform.md](review/word-waveform.md) | Design notes for the Mac word-waveform HUD overlay: shipped variant, rejected alternatives, protocol and latency benchmarks |
+| [review/site/](review/site/) | Website review captures (phone 390 px and desktop 1440 px, light and dark) from the local build of [site/](../site/README.md) |
 | [screenshots/](screenshots/) | UI captures: [mac](screenshots/mac/) (curated light/dark snapshots) and [android](screenshots/android/) (described in its [README](screenshots/android/README.md)) |
 | [bench-data/](bench-data/) | Committed numeric benchmark results (no audio or transcripts) |
 | [assets/](assets/) | Resized artwork used by the top-level README and the project website |
 
 Component READMEs live with their code: [server/README.md](../server/README.md), [mac/README.md](../mac/README.md), [android/README.md](../android/README.md) and [ios/README.md](../ios/README.md) (install, usage, privacy and current blockers for the iPhone/iPad client). The cross-component end-to-end check is [scripts/e2e-local.sh](../scripts/e2e-local.sh) (see [TESTING.md](TESTING.md)).
+
+The public website, [araa47.github.io/chirp](https://araa47.github.io/chirp/), is built from [site/](../site/README.md) with only the committed screenshots and the numbers in [bench.md](bench.md).
