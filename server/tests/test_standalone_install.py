@@ -28,6 +28,7 @@ def test_server_install_requires_no_dotfiles_and_preserves_configuration(tmp_pat
             **os.environ,
             "HOME": str(home),
             "TRACE": str(trace),
+            "CHIRP_PORT": "1",  # never look at, or restart, the real server on 7821
             "PATH": str(fake_bin) + ":" + os.environ["PATH"],
         },
     )

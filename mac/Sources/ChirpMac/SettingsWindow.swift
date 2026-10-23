@@ -14,6 +14,9 @@ final class SettingsWindowController: NSObject, NSTextFieldDelegate {
     var serverStatus: () -> (text: String, tone: MenuEntry.Tone) = { ("Checking…", .warning) }
     /// The server's last health, for the styles it offers.
     var health: () -> Health? = { nil }
+    /// A server older than the app, and what the last fix said; `onFixServer` runs the fix.
+    var serverNotice: () -> (notice: ServerNotice?, message: String?) = { (nil, nil) }
+    var onFixServer: (() -> Void)?
     /// The styles with their default prompts (live, or the last-known copy).
     var catalog: () -> StyleCatalog = { .unavailable }
     /// "Set Up Chirp…" in General.
@@ -57,6 +60,7 @@ final class SettingsWindowController: NSObject, NSTextFieldDelegate {
         s.micGranted = Permissions.microphoneGranted
         s.accessibilityGranted = Permissions.accessibilityGranted
         (s.serverStatus, s.serverStatusTone) = serverStatus()
+        (s.serverNotice, s.serverFixMessage) = serverNotice()
         s.cleanupStyle = settings.correctionProfile
         s.stylePrompts = settings.correctionPrompts
         s.cleanupEnabled = settings.correction
@@ -170,6 +174,8 @@ final class SettingsWindowController: NSObject, NSTextFieldDelegate {
         form.setupButton.action = #selector(openSetup)
         form.doctorButton.target = self
         form.doctorButton.action = #selector(copyDoctor)
+        form.serverFixButton.target = self
+        form.serverFixButton.action = #selector(fixServer)
         form.modelsButton.target = self
         form.modelsButton.action = #selector(openModels)
         form.pairButton.target = self
@@ -273,6 +279,7 @@ final class SettingsWindowController: NSObject, NSTextFieldDelegate {
 
     @objc private func openSetup() { onOpenSetup?() }
     @objc private func openModels() { onOpenModels?() }
+    @objc private func fixServer() { onFixServer?() }
     @objc private func pairPhone() { onPairPhone?() }
     @objc private func openNotes() { onOpenNotes?() }
     @objc private func microphoneChanged(_ sender: NSPopUpButton) { settings.inputDeviceUID = sender.selectedItem?.representedObject as? String }

@@ -16,7 +16,7 @@ from starlette.responses import JSONResponse
 from starlette.routing import Route, WebSocketRoute
 from starlette.websockets import WebSocket, WebSocketDisconnect
 
-from . import notes
+from . import build, notes
 from .audio import MAX_FRAME, MAX_PCM, AudioError, decode_wav, levels, samples, silent
 from .cleanup_models import DEFAULT_MODEL, model_spec
 from .config import Settings, load_token, persist_keep_loaded, read_keep_loaded
@@ -458,6 +458,7 @@ def create_app(settings=None, engine=None, token=None, corrector=None):
                 # The hidden `live_notes` style for Live Notes segments exists.
                 "notes_correction": True,
                 "notes_reorganize": True,
+                **build.info(),
             }
         )
 

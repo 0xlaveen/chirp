@@ -564,6 +564,7 @@ Read-only diagnostics: one `[OK]/[WARN]/[FAIL]` line per check, with a remediati
 - The effective cleanup keep_loaded state (persisted override or server.toml) with the loaded-helper memory estimate
 - `tailscale serve status --json` parsed read-only, to report whether `/chirp` is published and tailnet-only (doctor never changes Tailscale)
 - Whether the optional LaunchAgent is installed
+- Whether a server on the port started before the code it runs from last changed ("server version"). This reads the process (`lsof`, `ps`), never the token, so it also covers servers too old to report a version. The fix it prints is `chirp-server setup restart`.
 
 The exit code is 1 only when a check FAILs. Doctor creates no files and starts no services.
 
@@ -590,6 +591,17 @@ A reference plist is in `launchd/dev.chirp.server.plist`. Only when the operator
 uv run chirp-server --root-path /chirp service install   # flags before "service" are kept in the LaunchAgent
 uv run chirp-server service uninstall
 ```
+
+### An out-of-date server
+
+A server keeps running the code it started with, so updating the files (or reinstalling the Mac app) does not change what answers on the port. Authenticated `/v1/health` reports `version`, `commit`, `api`, `capabilities`, `started_at`, `pid` and `source` so the Mac app can compare them with what it needs (see [docs/architecture.md](../docs/architecture.md)); the install script writes the commit into the installed copy, and a checkout is asked via git.
+
+```sh
+uv run chirp-server --port 7821 setup restart   # reload the LaunchAgent (dev.chirp.server) so it runs the code on disk now
+uv run chirp-server --port 7821 setup replace   # same, after stopping a server on the port that the agent does not own
+```
+
+Both print JSON events (`stopping`, `starting`, `restarted`, or `error` with a `reason`). `replace` stops only a process that no launchd job owns; if another LaunchAgent runs the server it refuses and prints the `launchctl bootout` command, since launchd would just start that one again. The Mac app's **Restart server** and **Use Chirp's managed server instead** buttons run these.
 
 Install renders the current virtual environment's absolute Python path and bootstraps a user LaunchAgent. Keep this checkout and virtual environment in place while installed. Output goes to `/dev/null`; run in a terminal for metadata diagnostics or visible debug warnings. Debug retention is also always visible in the health/ready flags. Installation has **not** been run. Tailnet publication is managed by integration; this package does not change Tailscale settings.
 

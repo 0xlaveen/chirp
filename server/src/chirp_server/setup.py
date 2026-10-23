@@ -320,6 +320,10 @@ def run(action, model, config, port, choice=None, repository=None):
                 )
                 return 1
             emit("catalog_progress", message="Models are up to date. Choose a model to download.")
+        elif action in {"restart", "replace"}:
+            from .restart import run as restart
+
+            return restart(port, replace=action == "replace")
         else:
             start_server(port, settings.model_dir, settings.engine)
         return 0

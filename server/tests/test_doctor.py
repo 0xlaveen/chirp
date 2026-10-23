@@ -3,6 +3,7 @@
 import asyncio
 import json
 import socket
+import time
 from types import SimpleNamespace
 
 import pytest
@@ -269,13 +270,14 @@ def test_doctor_quick_reports_every_check(monkeypatch, tmp_path, capsys):
         "config",
         "token",
         "port",
+        "server version",
         "debug retention",
         "correction",
         "tailscale",
         "launchagent",
     ):
         assert f"{name}:" in out
-    assert "10 checks: 10 OK, 0 WARN, 0 FAIL" in out
+    assert "11 checks: 11 OK, 0 WARN, 0 FAIL" in out
 
 
 def test_doctor_exits_1_only_on_fail(monkeypatch, tmp_path, capsys):
@@ -286,3 +288,51 @@ def test_doctor_exits_1_only_on_fail(monkeypatch, tmp_path, capsys):
     args = SimpleNamespace(quick=True, config=None, model_dir=None, port=0)
     assert doctor.doctor(args, tailscale_status=(0, "{}")) == 1
     assert "[FAIL]" in capsys.readouterr().out
+
+
+def _server_tree(tmp_path):
+    package = tmp_path / "server/src/chirp_server"
+    package.mkdir(parents=True)
+    (package / "app.py").write_text("")
+    return tmp_path / "server"
+
+
+def test_server_version_flags_server_older_than_its_code(monkeypatch, tmp_path):
+    monkeypatch.setattr(doctor, "_listening", lambda port: True)
+    server = _server_tree(tmp_path)
+    command = f"{server}/.venv/bin/python -m chirp_server"
+    check = doctor.check_server_version(
+        7821, listener=lambda port: (42, 3 * 86400, command), newest=lambda path: time.time()
+    )
+    assert (
+        check.status == WARN and "before its code" in check.detail and "setup restart" in check.fix
+    )
+
+
+def test_server_version_handles_a_path_with_a_space(monkeypatch, tmp_path):
+    monkeypatch.setattr(doctor, "_listening", lambda port: True)
+    server = _server_tree(tmp_path / "Application Support")
+    command = f"{server}/.venv/bin/python -m chirp_server"
+    check = doctor.check_server_version(
+        7821, listener=lambda port: (42, 86400, command), newest=lambda path: time.time()
+    )
+    assert check.status == WARN and "Application Support" in check.detail
+
+
+def test_server_version_ok_when_code_unchanged_since_start(monkeypatch, tmp_path):
+    monkeypatch.setattr(doctor, "_listening", lambda port: True)
+    server = _server_tree(tmp_path)
+    command = f"{server}/.venv/bin/python -m chirp_server"
+    check = doctor.check_server_version(
+        7821, listener=lambda port: (42, 60, command), newest=lambda path: time.time() - 3600
+    )
+    assert check.status == OK and not check.fix
+
+
+def test_server_version_ignores_missing_port_and_foreign_process(monkeypatch):
+    monkeypatch.setattr(doctor, "_listening", lambda port: False)
+    assert doctor.check_server_version(7821).status == OK
+    monkeypatch.setattr(doctor, "_listening", lambda port: True)
+    other = doctor.check_server_version(7821, listener=lambda port: (1, 5, "/bin/nginx -g x"))
+    assert other.status == OK and "could not identify" in other.detail
+    assert doctor.check_server_version(7821, listener=lambda port: None).status == OK

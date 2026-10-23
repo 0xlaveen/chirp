@@ -473,6 +473,11 @@ private struct ExplanationBanner: View {
                 Button("Manage Local Models…", action: model.onManageModels)
                     .controlSize(.small)
             }
+            if let fix = model.serverFix {
+                Button(fix.buttonTitle, action: model.onFixServer)
+                    .controlSize(.small)
+                    .disabled(model.serverFixMessage?.hasSuffix("…") == true)
+            }
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)

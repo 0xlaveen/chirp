@@ -9,7 +9,7 @@ public enum LaunchState: Equatable, Sendable {
 
 public enum MenuAction: Equatable, Sendable {
     case toggleDictation, toggleNotes, showNotes, useRaw, pickInput(String?), toggleCleanup, toggleShowChanges, pickStyle(String)
-    case showSettings, editStyles, showSetup, quit
+    case fixServer, showSettings, editStyles, showSetup, quit
 
     /// What the AppKit item carries to its action method.
     public var payload: String? {
@@ -68,6 +68,9 @@ public struct MenuInputs: Sendable {
     public var state: DictationState = .idle
     public var health: Health?
     public var healthError: String?
+    /// The server answered but is older than the app (see `ServerNotice`), and what the last fix attempt said.
+    public var serverNotice: ServerNotice?
+    public var serverFixMessage: String?
     public var debugRetention = false
     /// The menu's switch is off: the hotkey is released and the bird is dimmed.
     public var paused = false
@@ -143,6 +146,7 @@ public enum MenuContent {
             return m.healthError == nil ? ("Checking server…", .warning) : ("Server unreachable", .error)
         }
         if h.ready == false { return ("Loading model…", .warning) }
+        if m.serverNotice != nil { return ("Server out of date", .warning) }
         if m.debugRetention { return ("DEBUG recordings kept", .error) }
         if !m.hotkeyRegistered {
             // A tap-matched shortcut (⌥ on its own) fails only without Accessibility; a Carbon one, when another app owns it.
@@ -181,6 +185,7 @@ public enum MenuContent {
         out.append(microphoneMenu(m))
         out.append(.separator)
 
+        if let fix = m.serverNotice?.fix { out.append(MenuEntry(title: fix.buttonTitle, action: .fixServer)) }
         if m.setupIncomplete { out.append(MenuEntry(title: "Set Up Chirp…", action: .showSetup)) }
         out.append(MenuEntry(title: "Settings…", shortcut: "⌘,", action: .showSettings, keyEquivalent: ","))
         out.append(.separator)
@@ -253,11 +258,12 @@ public enum MenuContent {
     // MARK: server
 
     /// The server's state in words and tone, for the Settings window.
-    public static func serverStatus(health: Health?, healthError: String?) -> (text: String, tone: MenuEntry.Tone) {
+    public static func serverStatus(health: Health?, healthError: String?, notice: ServerNotice? = nil) -> (text: String, tone: MenuEntry.Tone) {
+        if notice != nil { return (ServerNotice.statusText, .warning) }
         switch health {
-        case nil: healthError == nil ? ("Checking…", .warning) : ("Unreachable", .error)
-        case let h? where h.ready == false: ("Loading model…", .warning)
-        case let h?: (h.engine ?? "Connected", .ok)
+        case nil: return healthError == nil ? ("Checking…", .warning) : ("Unreachable", .error)
+        case let h? where h.ready == false: return ("Loading model…", .warning)
+        case let h?: return (h.engine ?? "Connected", .ok)
         }
     }
 }

@@ -178,11 +178,21 @@ public struct Health: Decodable, Sendable, Equatable {
     public var notesReorganize: Bool?
     /// The hidden `live_notes` style exists (authenticated health only); nil from an older server, which gets `default`.
     public var notesCorrection: Bool?
+    /// Build, API level and capabilities (authenticated health only); nil from a server that predates them.
+    public var version: String?
+    public var commit: String?
+    public var api: Int?
+    public var capabilities: [String]?
+    /// Unix seconds the server process started, and the folder it runs from (home shown as ~).
+    public var startedAt: Double?
+    public var source: String?
 
     public init(ok: Bool = true, engine: String? = nil, ready: Bool? = nil, debugRetention: Bool? = nil,
                 correction: String? = nil, correctionLeavesMachine: Bool? = nil, correctionHost: String? = nil,
                 correctionProfiles: [CorrectionProfile]? = nil, correctionKeepLoaded: Bool? = nil, correctionLoaded: Bool? = nil,
-                notesStructure: Bool? = nil, notesCorrection: Bool? = nil, notesReorganize: Bool? = nil) {
+                notesStructure: Bool? = nil, notesCorrection: Bool? = nil, notesReorganize: Bool? = nil,
+                version: String? = nil, commit: String? = nil, api: Int? = nil, capabilities: [String]? = nil,
+                startedAt: Double? = nil, source: String? = nil) {
         self.ok = ok
         self.engine = engine
         self.ready = ready
@@ -196,6 +206,12 @@ public struct Health: Decodable, Sendable, Equatable {
         self.notesStructure = notesStructure
         self.notesCorrection = notesCorrection
         self.notesReorganize = notesReorganize
+        self.version = version
+        self.commit = commit
+        self.api = api
+        self.capabilities = capabilities
+        self.startedAt = startedAt
+        self.source = source
     }
 
     public var correctionAvailable: Bool { correction == "available" }

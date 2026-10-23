@@ -24,6 +24,9 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         var notes: () -> NotesMenuState = { NotesMenuState() }
         /// The menu's switch, for Live Notes (pausing stops it and releases ⌃⌥N).
         var setRunning: (Bool) -> Void = { _ in }
+        /// A server older than the app, what the last fix said, and the fix.
+        var serverNotice: () -> (notice: ServerNotice?, message: String?) = { (nil, nil) }
+        var fixServer: () -> Void = {}
     }
 
     /// What the menu and the icon need from Live Notes.
@@ -141,6 +144,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         inputs.state = controller.state
         inputs.health = controller.health
         inputs.healthError = controller.healthError
+        (inputs.serverNotice, inputs.serverFixMessage) = actions.serverNotice()
         inputs.debugRetention = controller.debugRetention
         inputs.paused = controller.isPaused
         inputs.hotkeyRegistered = controller.gate.hotkeyRegistered
@@ -225,6 +229,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         case .toggleCleanup: #selector(toggleCleanup)
         case .toggleShowChanges: #selector(toggleShowChanges)
         case .pickStyle: #selector(pickStyle(_:))
+        case .fixServer: #selector(fixServer)
         case .showSettings: #selector(showSettings)
         case .editStyles: #selector(editStyles)
         case .showSetup: #selector(showSetup)
@@ -245,6 +250,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         // Custom needs instructions: open the style editor, where they are written.
         if id == CorrectionProfile.customID { actions.openSettings(.cleanup) }
     }
+    @objc private func fixServer() { actions.fixServer() }
     @objc private func showSettings() { actions.openSettings(nil) }
     @objc private func editStyles() { actions.openSettings(.cleanup) }
     @objc private func showSetup() { actions.openSetup() }
