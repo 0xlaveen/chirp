@@ -8,7 +8,6 @@ import android.content.res.ColorStateList
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
-import android.graphics.drawable.ColorDrawable
 import android.graphics.drawable.GradientDrawable
 import android.os.Handler
 import android.os.Looper
@@ -21,10 +20,11 @@ import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.RelativeLayout
 import androidx.core.graphics.ColorUtils
+import androidx.core.graphics.drawable.toDrawable
 import com.google.android.material.button.MaterialButton
 
 /** Shares HeliBoard's suggestion row: idle mic at the end, status replaces suggestions. */
-@SuppressLint("SetTextI18n")
+@SuppressLint("SetTextI18n", "ViewConstructor")
 internal class KeyboardStrip(context: Context, private val now: () -> Long = SystemClock::elapsedRealtime) : LinearLayout(context) {
     private val palette = StripColors.of(context)
     private val tints = palette.tints
@@ -64,7 +64,7 @@ internal class KeyboardStrip(context: Context, private val now: () -> Long = Sys
     private val busy = ImageView(context).apply { importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_NO; visibility = GONE }
     private val busyShape = LoadingDrawable(context.dp(24), palette.highlight).also { busy.setImageDrawable(it) }
     private val micShape = LoadingDrawable(context.dp(24), palette.onAccent)
-    private val rowTint = ColorDrawable(Color.TRANSPARENT)
+    private val rowTint = Color.TRANSPARENT.toDrawable()
     private var rowFill = Color.TRANSPARENT
     private var stopShape = 0f
     private var morph: ValueAnimator? = null
@@ -147,11 +147,11 @@ internal class KeyboardStrip(context: Context, private val now: () -> Long = Sys
             stage = nextStage
         }
         // The final's "tap mic to dictate again" hint is gone: the chips are the actions that matter.
-        status.text = if (retention) "Debug retention on · $message" else recovery?.takeUnless { it.prompt }?.label ?: message.substringBefore(HINT)
+        status.text = if (retention) "Debug retention on · $message" else recovery?.takeUnless { it.prompt }?.label ?: message.replace(HINT, "")
         status.visibility = if (full) VISIBLE else GONE
         val ink = if (retention) tints.solidError.text else tint?.text ?: palette.ink
         status.setTextColor(ink)
-        status.background = if (retention) ColorDrawable(tints.solidError.fill) else null
+        status.background = if (retention) tints.solidError.fill.toDrawable() else null
         status.contentDescription = status.text
         lead(when {
             kind == StripKind.POLISHING -> R.drawable.ic_sparkle
@@ -314,7 +314,7 @@ internal class KeyboardStrip(context: Context, private val now: () -> Long = Sys
     private fun idleWidth() = context.dp(48) + micWidth
     private companion object {
         const val CONNECTING = "Connecting"
-        const val HINT = " · tap mic"
+        const val HINT = " · tap mic to dictate again"
         val POSITIVE = listOf("Inserted", "cleaned", "Used raw", "Dictation removed", "Tailscale connected")
     }
 }

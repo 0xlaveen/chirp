@@ -140,7 +140,7 @@ class AutoEnterTest {
     @Test fun `always performs the send action once after the final and says so`() {
         configure(AutoEnterMode.ALWAYS); dictate()
         assertEquals("Hello.", editor.text); assertEquals(listOf(EditorInfo.IME_ACTION_SEND), editor.actions); assertTrue(editor.keys.isEmpty())
-        assertEquals("Inserted · tap mic to dictate again · ↵ sent", strip.status.text.toString())
+        assertEquals("Inserted · ↵ sent", strip.status.text.toString())
         assertEquals(View.GONE, strip.revert.visibility) // the field is gone with the message: nothing to undo
     }
     @Test fun `a field without an action gets an Enter key`() {

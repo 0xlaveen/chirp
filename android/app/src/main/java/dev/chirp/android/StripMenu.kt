@@ -7,7 +7,6 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.Typeface
-import android.graphics.drawable.ColorDrawable
 import android.graphics.drawable.GradientDrawable
 import android.text.TextUtils
 import android.view.ContextThemeWrapper
@@ -21,6 +20,7 @@ import android.widget.PopupWindow
 import android.widget.ScrollView
 import android.widget.TextView
 import androidx.core.graphics.ColorUtils
+import androidx.core.graphics.drawable.toDrawable
 import androidx.core.view.AccessibilityDelegateCompat
 import androidx.core.view.ViewCompat
 import androidx.core.view.accessibility.AccessibilityNodeInfoCompat
@@ -137,7 +137,7 @@ internal class StripMenu(private val anchor: View) {
         val up = above >= content.measuredHeight || above > below
         val height = minOf(content.measuredHeight, if (up) above else below)
         popup = PopupWindow(content, width, height, true).apply {
-            setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT)); isOutsideTouchable = true; elevation = context.dp(8).toFloat()
+            setBackgroundDrawable(Color.TRANSPARENT.toDrawable()); isOutsideTouchable = true; elevation = context.dp(8).toFloat()
         }
         try { popup?.showAsDropDown(anchor, anchor.width - width, if (up) -(anchor.height + height) else 0) } catch (_: RuntimeException) { popup = null }
     }
@@ -145,6 +145,7 @@ internal class StripMenu(private val anchor: View) {
 }
 
 /** A radio indicator: ring, with a filled dot when selected. */
+@SuppressLint("ViewConstructor")
 private class Dot(context: Context, private val selected: Boolean, private val accent: Int, private val idle: Int) : View(context) {
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
     init { importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_NO }
