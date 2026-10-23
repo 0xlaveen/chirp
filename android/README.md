@@ -17,7 +17,7 @@ The application ID and IME component stay `dev.chirp.android` / `dev.chirp.andro
 **Contents**
 
 - [Install](#install) — build the APK, put it on the phone, enable the keyboard · [Pair](#pair) — QR, paste, Wi-Fi servers
-- [Dictate](#dictate) — start/stop/cancel, quick options, clean-up, styles, Use raw
+- [Dictate](#dictate) — start/stop/cancel, quick options, clean-up, styles, Undo, Use raw
 - [Keyboard](#keyboard) — typing, looks, Fold layout, swipe typing, floating mic
 - [Dictation history](#dictation-history) · [Privacy](#privacy) · [Troubleshoot](#troubleshoot)
 - [Develop and test](#develop-and-test) — toolchain, gradle, emulator harnesses
@@ -106,6 +106,12 @@ The full keyboard always **stays selected after a final** — including when an 
 Finals (never partials) get a small local pass before they are inserted. When the text before the cursor shows a sentence under way (a word, digit, comma or semicolon, even behind a closing quote), the first word is lower-cased, so dictating *"And then we went"* after *"I woke up"* inserts `and then we went`. Field start, a new line, `. ! ?` and similar terminals, opening quotes/brackets, colons and list markers keep the capital. It is deliberately conservative: only common sentence starters (*and, but, so, we, the, it's, don't, …*) are lowered; "I" and its contractions, acronyms and mixed-case words (`NASA`, `GitHub`), and anything that could be a name (*Paris, Monday, Will*) are left as the Mac sent them. Other languages are left alone, and nothing changes if the editor can't show the text before the cursor.
 
 **Spoken commands** are off by default (Chirp settings → *Spoken commands*). When on, a final that is exactly, or ends with, *new line* or *new paragraph* (any case, optional trailing punctuation) inserts one or two line breaks in place of those words, e.g. *"Okay, new line."* → `Okay,` + ⏎. The match is exact, so *new lines* or *a new line of work* are untouched, but a dictation that merely ends in the words does become a break. This runs on the phone after clean-up, so the Mac never sees the commands as text to polish. **Use raw** and dictation history keep the unmodified text the Mac returned.
+
+### Dictated text is never lost
+
+- **Undo** sits in the row for five seconds after every final, cleaned or not. It removes exactly what the dictation inserted, including the space Chirp added before it, and puts back any selection the dictation replaced. Typing, moving the cursor or starting another dictation ends the offer, like **Use raw**.
+- **Failures keep what was heard.** If the connection drops, the Mac reports an error (engine, busy, 120-second limit…) or a deadline passes after at least one live partial, the last partial is committed as plain text (no clean-up) and the row shows **Connection lost — kept what I heard** (or the reason, e.g. **Dictation limit is 120 seconds — kept what I heard**) with **Undo**. With history on, the entry is marked **partial**. **✕**, typing over a live dictation, hiding the keyboard and switching to another field still discard it.
+- **Moving the cursor stops instead of cancelling.** Tapping elsewhere in the field while listening sends stop; later partials no longer touch the field, and the final replaces the underlined text where you spoke it while your cursor stays where you put it. If the app dropped the underlined text, the final is inserted at your new cursor instead.
 
 ### What you see while you speak
 
@@ -223,6 +229,7 @@ Setup → **Diagnostics** copies the bounded crash log (see [Privacy](#privacy))
 | "Mac speech engine unavailable — try again" | Unknown server error | Retry; check the server |
 | "Mac took too long to finish — try again" | Final timed out locally | Retry; check the Mac's load |
 | "Mac connection is too slow — try again" | Transport stalled | Check Tailscale (**Check Tailscale**) |
+| "Connection lost — kept what I heard" (or another reason) | The socket dropped, the Mac errored or timed out after partials arrived | The last partial was inserted as plain text; tap **Undo** to remove it |
 | "kept original" after Polishing… | Clean-up failed, timed out (12 s) or the socket dropped | Raw text was inserted; edit the style or check the Mac |
 | "Unlock your phone to see dictation history." | History store is credential-encrypted | Unlock the device |
 

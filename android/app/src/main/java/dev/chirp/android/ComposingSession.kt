@@ -9,13 +9,12 @@ class ComposingSession(private val connection: InputConnection, private val anch
     private var replacedSelection = editor("") { connection.getSelectedText(0)?.toString().orEmpty() }
     // Snapshot the boundary before any partial moves the cursor into our composing span.
     // Retain only the decision, not surrounding editor text.
-    private val needsSpace = editor(false) {
-        connection.getTextBeforeCursor(1, 0)?.lastOrNull()?.let { previous ->
-            !previous.isWhitespace() && previous != '\'' && previous != '"' &&
-                Character.getType(previous) != Character.START_PUNCTUATION.toInt() &&
-                Character.getType(previous) != Character.INITIAL_QUOTE_PUNCTUATION.toInt()
-        } ?: false
-    }
+    private val needsSpace = editor(false) { spaceBefore() }
+    private fun spaceBefore() = connection.getTextBeforeCursor(1, 0)?.lastOrNull()?.let { previous ->
+        !previous.isWhitespace() && previous != '\'' && previous != '"' &&
+            Character.getType(previous) != Character.START_PUNCTUATION.toInt() &&
+            Character.getType(previous) != Character.INITIAL_QUOTE_PUNCTUATION.toInt()
+    } ?: false
     private var shaping = false
     private var midSentence = false
     private var commands = false
@@ -25,8 +24,17 @@ class ComposingSession(private val connection: InputConnection, private val anch
     private var regionOwned = false
     private var finalText: String? = null
     private var rawText: String? = null
+    private var restore = ""
     var committedLength = 0
         private set
+    /** After a final: where the committed text ends and the selection left behind (-1 when unknown), for Undo and Use raw. */
+    var spanEnd = -1
+        private set
+    var selectionStart = -1
+        private set
+    var selectionEnd = -1
+        private set
+    val rawAvailable get() = rawText != null
 
     /** Opt this utterance's final into mid-sentence casing (and spoken commands). Call before the first partial. */
     fun shapeFinal(spokenCommands: Boolean) {
@@ -34,8 +42,8 @@ class ComposingSession(private val connection: InputConnection, private val anch
         midSentence = editor(false) { FinalCasing.midSentence(connection.getTextBeforeCursor(FinalCasing.LOOKBEHIND, 0)) }
     }
 
-    private fun atBoundary(text: String): String =
-        if (needsSpace && text.isNotEmpty() && !text.first().isWhitespace()) " $text" else text
+    private fun atBoundary(text: String, space: Boolean = needsSpace): String =
+        if (space && text.isNotEmpty() && !text.first().isWhitespace()) " $text" else text
 
     fun partial(event: ServerEvent.Partial): Boolean {
         if (!live || event.seq <= seq) return true
@@ -70,29 +78,61 @@ class ComposingSession(private val connection: InputConnection, private val anch
         if (composing && regionOwned && anchor >= 0) editor(false) { connection.setComposingRegion(anchor, anchor + rendered.length) }
     }
 
-    fun final(event: ServerEvent.Final): Boolean {
+    /** A selection (selStart >= 0) means the user moved the caret away: replace the span where it was and keep their caret. */
+    fun final(event: ServerEvent.Final, selStart: Int = -1, selEnd: Int = selStart): Boolean {
         if (!live) return false
-        if (event.text.isBlank()) { cancel(); return false }
+        if (event.text.isBlank()) { cancel(selStart, selEnd); return false }
+        // Without a known anchor the composing region is replaced wherever it is; the caret follows it.
+        if (selStart >= 0 && anchor >= 0) return away(event, minOf(selStart, selEnd), maxOf(selStart, selEnd))
         live = false
-        val text = atBoundary(if (shaping) FinalCasing.shape(event.text, midSentence, commands) else event.text)
+        val text = atBoundary(shaped(event.text, midSentence))
         wholeRegion()
         val inserted = editor(false) { connection.commitText(text, 1) }
-        if (inserted) committedLength = text.length
         if (!inserted && composing) editor(false) { connection.setComposingText(replacedSelection, 1) }
         editor(false) { connection.finishComposingText() }
+        if (inserted) { restore = replacedSelection; landed(text, rawOf(event, needsSpace), if (anchor >= 0) anchor + text.length else -1) }
         replacedSelection = ""
         composing = false; rendered = ""; regionOwned = false
-        if (inserted && event.corrected && event.raw != event.text) {
-            finalText = text
-            rawText = atBoundary(event.raw)
-        }
         return inserted
     }
-    fun cancel() {
+    private fun away(event: ServerEvent.Final, selStart: Int, selEnd: Int): Boolean {
+        live = false
+        val previous = rendered.takeIf { composing }.orEmpty()
+        composing = false; rendered = ""; regionOwned = false
+        if (previous.isNotEmpty() && editor(null) { connection.textAt(anchor, previous.length, selStart, selEnd) } == previous) {
+            val text = atBoundary(shaped(event.text, midSentence))
+            val selection = editor(null) { connection.replaceAt(anchor, previous.length, text, selStart, selEnd) } ?: return false
+            restore = replacedSelection; replacedSelection = ""
+            landed(text, rawOf(event, needsSpace), anchor + text.length, selection)
+            return true
+        }
+        // Our span is gone (the editor dropped it): the text lands at the user's caret instead.
+        replacedSelection = ""
+        editor(false) { connection.finishComposingText() }
+        val space = editor(false) { spaceBefore() }
+        val text = atBoundary(shaped(event.text, editor(false) { FinalCasing.midSentence(connection.getTextBeforeCursor(FinalCasing.LOOKBEHIND, 0)) }), space)
+        val replaced = editor("") { connection.getSelectedText(0)?.toString().orEmpty() }
+        if (!editor(false) { connection.commitText(text, 1) }) return false
+        restore = replaced; landed(text, rawOf(event, space), selStart + text.length)
+        return true
+    }
+    private fun shaped(text: String, sentence: Boolean) = if (shaping) FinalCasing.shape(text, sentence, commands) else text
+    private fun rawOf(event: ServerEvent.Final, space: Boolean) = if (event.corrected && event.raw != event.text) atBoundary(event.raw, space) else null
+    private fun landed(text: String, raw: String?, end: Int, selection: IntArray = intArrayOf(end, end)) {
+        committedLength = text.length; finalText = text; rawText = raw
+        spanEnd = end; selectionStart = selection[0]; selectionEnd = selection[1]
+    }
+    /** A selection (selStart >= 0) removes the span where it was without moving the user's caret. */
+    fun cancel(selStart: Int = -1, selEnd: Int = selStart) {
         if (live && composing) {
-            wholeRegion()
-            editor(false) { connection.setComposingText(replacedSelection, 1) }
-            editor(false) { connection.finishComposingText() }
+            val first = minOf(selStart, selEnd); val last = maxOf(selStart, selEnd)
+            if (selStart < 0 || anchor < 0) {
+                wholeRegion()
+                editor(false) { connection.setComposingText(replacedSelection, 1) }
+                editor(false) { connection.finishComposingText() }
+            } else if (editor(null) { connection.textAt(anchor, rendered.length, first, last) } == rendered) {
+                editor(null) { connection.replaceAt(anchor, rendered.length, replacedSelection, first, last) }
+            } else editor(false) { connection.finishComposingText() }
         }
         live = false
         replacedSelection = ""
@@ -103,22 +143,24 @@ class ComposingSession(private val connection: InputConnection, private val anch
     // app close or fold). No editor exception may escape onto the IME's main thread.
     private fun <T> editor(fallback: T, action: () -> T): T = try { action() } catch (_: RuntimeException) { fallback }
 
-    fun forgetUndo() { finalText = null; rawText = null }
-    fun useRaw(cursor: Int): Boolean {
+    fun forgetUndo() { finalText = null; rawText = null; restore = "" }
+    /** Removes exactly the committed text (separator included) and restores any selection it replaced. */
+    fun undo(selStart: Int, selEnd: Int): Boolean = swap(restore, spanEnd, selStart, selEnd)
+    fun useRaw(selStart: Int, selEnd: Int): Boolean = swap(rawText ?: return false, spanEnd, selStart, selEnd)
+    fun useRaw(cursor: Int): Boolean = swap(rawText ?: return false, cursor, cursor, cursor)
+    private fun swap(replacement: String, end: Int, selStart: Int, selEnd: Int): Boolean {
         val text = finalText ?: return false
-        val raw = rawText ?: return false
-        // Refuse if cursor/text changed after commit. The service also invalidates on selection changes.
-        if (cursor < text.length || editor<String?>(null) { connection.getTextBeforeCursor(text.length, 0)?.toString() } != text) {
+        val first = minOf(selStart, selEnd); val last = maxOf(selStart, selEnd)
+        // Refuse if the text changed after commit. The service also invalidates on selection changes.
+        if (end < text.length || editor<String?>(null) { connection.textAt(end - text.length, text.length, first, last) } != text) {
             forgetUndo(); return false
         }
-        editor(false) { connection.beginBatchEdit() }
-        return try {
-            // Mark the verified final for a single replacement. Never delete it first:
-            // a rejected commit must leave the corrected text in the editor.
-            if (!editor(false) { connection.setComposingRegion(cursor - text.length, cursor) }) return false
-            editor(false) { connection.commitText(raw, 1) }.also {
-                if (it) { committedLength = raw.length; forgetUndo() }
-            }
-        } finally { editor(false) { connection.finishComposingText() }; editor(false) { connection.endBatchEdit() } }
+        // Mark the verified final for a single replacement. Never delete it first:
+        // a rejected commit must leave the final text in the editor.
+        val selection = editor(null) { connection.replaceAt(end - text.length, text.length, replacement, first, last) } ?: return false
+        forgetUndo()
+        committedLength = replacement.length; spanEnd = end - text.length + replacement.length
+        selectionStart = selection[0]; selectionEnd = selection[1]
+        return true
     }
 }

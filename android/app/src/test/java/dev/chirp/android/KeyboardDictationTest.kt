@@ -120,12 +120,14 @@ class KeyboardDictationTest {
         assertEquals(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS, intent.action)
         assertEquals("package:dev.chirp.android", intent.dataString)
     }
-    @Test fun `connection failure offers Tailscale recovery without retaining partial text`() {
+    @Test fun `connection failure keeps heard text without rendering it in the status`() {
         start(); stream.partial(); advance(16); stream.failure()
         assertFalse(voice.active)
-        assertEquals("", host.editor.composing)
+        assertEquals("", host.editor.composing); assertEquals("synthetic", host.editor.committed)
+        assertEquals("Connection lost — kept what I heard", strip.status.text.toString())
+        assertFalse(strip.status.contentDescription.contains("synthetic"))
+        start(); stream.failure()
         assertEquals("Check Tailscale", strip.status.text.toString())
-        assertFalse(strip.status.text.contains("synthetic"))
     }
     @Test fun `dictated spelling bypasses keyboard autocorrection and learning`() {
         start(); stream.event(ServerEvent.Partial(1, "teh im", "")); advance(16)
@@ -186,7 +188,7 @@ class KeyboardDictationTest {
             "auth" to "Pairing refused — pair again in Chirp setup",
             "bad_request" to "Clean-up prompt too long — shorten it in Chirp settings",
             "unknown" to "Mac speech engine unavailable — try again")) {
-            start(); stream.partial(); advance(16); tap(); tap(); advance(0)
+            start(); tap(); tap(); advance(0) // No partial: nothing heard, nothing kept.
             val old = stream
             stream.event(ServerEvent.Failure(code))
             assertFalse(voice.active); assertEquals("", host.editor.committed)

@@ -24,6 +24,8 @@ internal class KeyboardStrip(context: Context) : LinearLayout(context) {
     val cancel = control("Cancel dictation").apply { text = "✕" }
     val raw = control("Use raw dictation").apply { text = "Use raw"; visibility = GONE
         accessibilityLiveRegion = View.ACCESSIBILITY_LIVE_REGION_POLITE }
+    val revert = control("Undo last dictation").apply { text = "Undo"; visibility = GONE
+        accessibilityLiveRegion = View.ACCESSIBILITY_LIVE_REGION_POLITE }
     /** The button for prompt actions such as turning on Tailscale; the status keeps the explanation. */
     val action = control("").apply { visibility = GONE; setPadding(context.dp(12), 0, context.dp(12), 0) }
     val style = context.label("", 12f).apply {
@@ -46,10 +48,10 @@ internal class KeyboardStrip(context: Context) : LinearLayout(context) {
         setBackgroundColor(android.graphics.Color.TRANSPARENT)
         val clear = android.content.res.ColorStateList.valueOf(android.graphics.Color.TRANSPARENT)
         cancel.backgroundTintList = clear; cancel.setTextColor(palette.ink)
-        raw.backgroundTintList = android.content.res.ColorStateList.valueOf(palette.chip); raw.setTextColor(palette.ink)
+        for (chip in listOf(raw, revert)) { chip.backgroundTintList = android.content.res.ColorStateList.valueOf(palette.chip); chip.setTextColor(palette.ink) }
         action.backgroundTintList = android.content.res.ColorStateList.valueOf(palette.accent); action.setTextColor(palette.onAccent)
         this.style.setTextColor(palette.ink)
-        for (button in listOf(mic, cancel, raw, action)) {
+        for (button in listOf(mic, cancel, raw, revert, action)) {
             button.cornerRadius = context.dp(20)
             button.rippleColor = android.content.res.ColorStateList.valueOf(palette.ink and 0x00ffffff or 0x22000000)
         }
@@ -58,6 +60,7 @@ internal class KeyboardStrip(context: Context) : LinearLayout(context) {
         addView(status, LayoutParams(0, LayoutParams.MATCH_PARENT, 1f).apply { status.gravity = Gravity.CENTER_VERTICAL })
         addView(style, LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT))
         addView(raw, LayoutParams(context.dp(88), LayoutParams.MATCH_PARENT))
+        addView(revert, LayoutParams(context.dp(72), LayoutParams.MATCH_PARENT).apply { marginStart = context.dp(4) })
         addView(action, LayoutParams(LayoutParams.WRAP_CONTENT, context.dp(36)).apply { marginEnd = context.dp(4) })
         addView(history, LayoutParams(context.dp(48), LayoutParams.MATCH_PARENT))
         addView(mic, LayoutParams(context.dp(48), LayoutParams.MATCH_PARENT))
@@ -76,10 +79,10 @@ internal class KeyboardStrip(context: Context) : LinearLayout(context) {
         parent.addView(this, RelativeLayout.LayoutParams(context.dp(IDLE_WIDTH), LayoutParams.MATCH_PARENT).apply { addRule(RelativeLayout.ALIGN_PARENT_END) })
     }
     fun show(message: String, @Suppress("UNUSED_PARAMETER") text: String, active: Boolean, finishing: Boolean, undo: Boolean, retention: Boolean,
-             polishing: Boolean = false, style: String = "", notice: Boolean = false) {
+             polishing: Boolean = false, style: String = "", notice: Boolean = false, undoable: Boolean = false) {
         val recovery = DictationAction.forStatus(message)
         val error = recovery != null
-        val full = active || undo || error || retention || notice
+        val full = active || undo || undoable || error || retention || notice
         if (expanded != full) {
             expanded = full
             (layoutParams as? RelativeLayout.LayoutParams)?.let { it.width = if (full) LayoutParams.MATCH_PARENT else context.dp(IDLE_WIDTH); layoutParams = it }
@@ -104,9 +107,10 @@ internal class KeyboardStrip(context: Context) : LinearLayout(context) {
         cancel.visibility = if (full) VISIBLE else GONE
         // INVISIBLE, not GONE: the mic must never slide into the history slot mid-transition.
         history.visibility = if (full) INVISIBLE else VISIBLE
-        cancel.isEnabled = active || undo || error
+        cancel.isEnabled = active || undo || undoable || error
         meter.visibility = if (active && !finishing) VISIBLE else GONE
         raw.visibility = if (undo) VISIBLE else GONE
+        revert.visibility = if (undoable && !active) VISIBLE else GONE
         action.visibility = if (recovery?.prompt == true && !active) VISIBLE else GONE
         action.text = recovery?.label ?: ""
         action.contentDescription = recovery?.label ?: ""

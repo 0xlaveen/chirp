@@ -32,7 +32,7 @@ import java.util.concurrent.Executors
 
 /** Records finals; implemented by the keyboard history so dictation stays unaware of storage. */
 internal interface HistoryRecorder {
-    fun record(text: String, raw: String?, info: EditorInfo?): String?
+    fun record(text: String, raw: String?, info: EditorInfo?, partial: Boolean = false): String?
     fun usedRaw(id: String)
 }
 
@@ -151,13 +151,13 @@ internal class KeyboardHistory(
         }
     }
 
-    override fun record(text: String, raw: String?, info: EditorInfo?): String? {
+    override fun record(text: String, raw: String?, info: EditorInfo?, partial: Boolean): String? {
         val source = info ?: return null
         if (!store.enabled || !DictationHistory.allowed(source)) return null
         val editor = EditorInfo().apply { inputType = source.inputType; imeOptions = source.imeOptions }
         val target = source.packageName
         val id = UUID.randomUUID().toString()
-        io { store.record(text, raw, label(target), editor, id) }
+        io { store.record(text, raw, label(target), editor, id, partial) }
         return id
     }
 
@@ -264,7 +264,7 @@ internal class HistoryPanel(context: Context) : LinearLayout(context) {
     }
     fun row(entry: HistoryEntry, now: Long, owner: KeyboardHistory) {
         val (age, spokenAge) = historyAge(now, entry.time)
-        val meta = listOfNotNull(age, entry.app, if (entry.raw != null) "cleaned" else null).joinToString(" · ")
+        val meta = listOfNotNull(age, entry.app, if (entry.raw != null) "cleaned" else null, if (entry.partial) "partial" else null).joinToString(" · ")
         val ripple = TypedValue().also { context.theme.resolveAttribute(android.R.attr.selectableItemBackground, it, true) }
         val row = LinearLayout(context).apply {
             orientation = VERTICAL; minimumHeight = context.dp(56)
@@ -275,7 +275,7 @@ internal class HistoryPanel(context: Context) : LinearLayout(context) {
             })
             addView(context.label(meta, 12f).apply { setTextColor(colors.muted); setPadding(0, context.dp(2), 0, 0) })
             contentDescription = entry.text + ". " + spokenAge + (entry.app?.let { " in $it" } ?: "") +
-                if (entry.raw != null) ". Cleaned" else ""
+                (if (entry.raw != null) ". Cleaned" else "") + if (entry.partial) ". Partial" else ""
             setOnClickListener { owner.insertEntry(entry) }
             setOnLongClickListener { menu(this, entry, owner); true }
         }

@@ -64,7 +64,7 @@ internal class KeyboardDictation(
     private var composing: ComposingSession? = null
     private val partialFrames = PartialFrames({ partial ->
         applying = true
-        try { composing?.partial(partial) } finally { applying = false }
+        try { if (!moved) composing?.partial(partial) } finally { applying = false }
     })
     private var visible = false
     private var destroyed = false
@@ -82,7 +82,8 @@ internal class KeyboardDictation(
     private var selectionStart = -1
     private var selectionEnd = -1
     private var insertionStart = -1
-    private var expectedCursor = -1
+    // The caret left the utterance: stop, stop touching the editor's caret, land the final where it was spoken.
+    private var moved = false
     private var pressAt = 0L
     private var firstPartial: Long? = null
     private var stopAt: Long? = null
@@ -115,16 +116,21 @@ internal class KeyboardDictation(
         }
         view.raw.setOnClickListener {
             val target = composing ?: return@setOnClickListener
-            val previousLength = target.committedLength
             applying = true
-            val changed = try { target.useRaw(expectedCursor) } finally { applying = false }
+            val changed = try { target.useRaw(selectionStart, selectionEnd) } finally { applying = false }
             if (changed) {
-                expectedCursor += target.committedLength - previousLength
-                selectionStart = expectedCursor; selectionEnd = expectedCursor
+                selectionStart = target.selectionStart; selectionEnd = target.selectionEnd
                 historyId?.let { history?.usedRaw(it) }
                 forgetUndo(); message = "Used raw"; handler.postDelayed(expiry, 5000); resync(selectionStart, selectionEnd)
             }
             render()
+        }
+        view.revert.setOnClickListener {
+            val target = composing ?: return@setOnClickListener
+            applying = true
+            val changed = try { target.undo(selectionStart, selectionEnd) } finally { applying = false }
+            if (changed) { selectionStart = target.selectionStart; selectionEnd = target.selectionEnd; resync(selectionStart, selectionEnd) }
+            forgetUndo(); showNotice(if (changed) "Dictation removed" else "Text changed — nothing to undo")
         }
         render()
     }
@@ -261,7 +267,7 @@ internal class KeyboardDictation(
         historyInfo = info; historyId = null
         currentStyle = CleanupStyles.profiles(store.health).firstOrNull { it.id == styleOverride } ?: store.style(targetPackage)
         insertionStart = minOf(selectionStart, selectionEnd).takeIf { it >= 0 } ?: minOf(info.initialSelStart, info.initialSelEnd)
-        expectedCursor = insertionStart
+        moved = false
         composing = ComposingSession(connection, insertionStart) { value ->
             android.text.SpannableString(value).apply {
                 setSpan(android.text.style.UnderlineSpan(), 0, length, android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
@@ -289,38 +295,20 @@ internal class KeyboardDictation(
                 ++version // a late health response must not overwrite Ready's retention flag
                 retained = it; store.health = store.health?.copy(debugRetention = it); render()
             },
-            final = { result ->
-                partialFrames.clear()
-                applying = true
-                val inserted = try { composing?.final(result) == true } finally { applying = false }
-                if (inserted) {
-                    expectedCursor = insertionStart + (composing?.committedLength ?: 0)
-                    selectionStart = expectedCursor; selectionEnd = expectedCursor
-                }
-                notice = inserted
-                historyId = if (inserted) history?.record(result.text, result.raw.takeIf { result.corrected }, historyInfo) else null
-                if (inserted) haptic()
-                message = if (!inserted) "Text field unavailable — try again"
-                    else if (result.correctionError != null) "kept original"
-                    else if (result.corrected) "cleaned"
-                    else "Inserted · tap mic to dictate again"
-                text = ""; finalLatency = stopAt?.let { SystemClock.elapsedRealtime() - it }
-                undo = inserted && result.corrected && result.raw != result.text
-                if (notice) handler.postDelayed(expiry, 5000)
-                if (!undo) { composing?.forgetUndo(); composing = null }
-            },
+            final = { land(it) },
+            kept = { heard, reason -> land(ServerEvent.Final(heard, heard, false), reason) },
             correcting = { event ->
                 partialFrames.clear()
                 text = event.raw
                 currentStyle = CleanupStyles.profiles(store.health).firstOrNull { it.id == event.profile } ?: currentStyle
                 applying = true
-                try { composing?.partial(ServerEvent.Partial(event.seq, event.raw, "")) } finally { applying = false }
+                try { if (!moved) composing?.partial(ServerEvent.Partial(event.seq, event.raw, "")) } finally { applying = false }
             },
             ended = {
                 session = null
                 warmEvent = null; warmFailure = null
                 if (!notice && visible) { notice = true; handler.postDelayed(expiry, 5000) }
-                if (!undo) { composing?.cancel(); composing = null }
+                if (!undo) { composing?.cancel(awayStart, selectionEnd); composing = null }
                 text = ""; resync(selectionStart, selectionEnd)
                 ChirpNetwork.release(client); render()
             },
@@ -329,6 +317,27 @@ internal class KeyboardDictation(
         stream.start(store.correction && store.health.cleanupAvailable(), currentStyle.id,
             instructions = "", prompt = store.promptEdits[currentStyle.id])
         haptic()
+    }
+    private val awayStart get() = if (moved) selectionStart else -1
+    /** Commits a final, or what was heard before a failure ([reason]), and offers Undo for five seconds. */
+    private fun land(result: ServerEvent.Final, reason: String? = null) {
+        partialFrames.clear()
+        val target = composing
+        applying = true
+        val inserted = try { target?.final(result, awayStart, selectionEnd) == true } finally { applying = false }
+        if (inserted && target != null && target.selectionStart >= 0) { selectionStart = target.selectionStart; selectionEnd = target.selectionEnd }
+        notice = inserted
+        historyId = if (inserted) history?.record(result.text, result.raw.takeIf { result.corrected }, historyInfo, partial = reason != null) else null
+        if (inserted) haptic()
+        message = if (!inserted) reason ?: "Text field unavailable — try again"
+            else if (reason != null) keptStatus(reason)
+            else if (result.correctionError != null) "kept original"
+            else if (result.corrected) "cleaned"
+            else "Inserted · tap mic to dictate again"
+        text = ""; finalLatency = stopAt?.let { SystemClock.elapsedRealtime() - it }
+        undo = inserted && (target?.spanEnd ?: -1) >= 0
+        if (notice) handler.postDelayed(expiry, 5000)
+        if (!undo) { composing?.forgetUndo(); composing = null }
     }
     /** Reinserts a history entry through the same boundary/selection path as a dictated final. */
     fun insertText(value: String): Boolean {
@@ -341,10 +350,7 @@ internal class KeyboardDictation(
         val insertion = ComposingSession(connection, anchor)
         applying = true
         val inserted = try { insertion.final(ServerEvent.Final(value, value, false)) } finally { applying = false }
-        if (inserted && anchor >= 0) {
-            expectedCursor = anchor + insertion.committedLength
-            selectionStart = expectedCursor; selectionEnd = expectedCursor
-        }
+        if (inserted && anchor >= 0) { selectionStart = insertion.selectionStart; selectionEnd = insertion.selectionEnd }
         resync(selectionStart, selectionEnd)
         if (inserted) haptic() else showNotice("Text field unavailable — try again")
         return inserted
@@ -363,17 +369,22 @@ internal class KeyboardDictation(
         if (applying) return
         if (active) {
             if (composingStart >= 0 && start == composingEnd && end == composingEnd) insertionStart = composingStart
-            else if (start != oldStart || end != oldEnd) cancel("Text field changed — start again")
-        } else if (undo && (start != expectedCursor || end != expectedCursor)) {
+            else if (start != oldStart || end != oldEnd) moveAway()
+        } else if (undo && (start != composing?.selectionStart || end != composing?.selectionEnd)) {
             // forgetUndo cancels the expiry; keep the "cleaned" notice from pinning the row open.
             forgetUndo(); if (notice) handler.postDelayed(expiry, 5000); render()
         }
+    }
+    private fun moveAway() {
+        moved = true; gesture.cancel(); partialFrames.clear()
+        if (session?.stopping != true) { stopAt = SystemClock.elapsedRealtime(); session?.stop() }
+        render()
     }
     fun cancel(status: String = "Tap mic · hold to talk") {
         gesture.cancel(); partialFrames.clear()
         // Clear editor composition before notifying HeliBoard that it can resume typing.
         applying = true
-        try { composing?.cancel() } finally { applying = false }
+        try { composing?.cancel(awayStart, selectionEnd) } finally { applying = false }
         composing = null; forgetUndo()
         val old = session; session = null; old?.cancel()
         notice = false; message = status; text = ""; render()
@@ -395,13 +406,16 @@ internal class KeyboardDictation(
     private fun haptic() { if (store.haptics) strip?.mic?.performHapticFeedback(HapticFeedbackConstants.CONFIRM) }
     private fun render() {
         val status = if (store.debugOverlay) "$message · first ${firstPartial ?: "—"} ms · final ${finalLatency ?: "—"} ms" else message
-        strip?.show(action()?.takeUnless { it.prompt }?.let { "$status · ${it.label}" } ?: status, "", active, session?.stopping == true, undo, retained || store.health?.debugRetention == true,
-            polishing = session?.polishing == true, style = currentStyle.name, notice = notice)
+        val raw = undo && composing?.rawAvailable == true
+        strip?.show(action()?.takeUnless { it.prompt }?.let { "$status · ${it.label}" } ?: status, "", active, session?.stopping == true, raw, retained || store.health?.debugRetention == true,
+            polishing = session?.polishing == true, style = currentStyle.name, notice = notice, undoable = undo)
         strip?.status?.isClickable = action() != null
         val disclosure = if (retained || store.health?.debugRetention == true) "Debug retention on. " else ""
-        strip?.status?.contentDescription = disclosure + (action()?.let { "$message. ${it.label}" } ?: if (undo) "$status. Use raw available for five seconds." else status)
+        strip?.status?.contentDescription = disclosure + (action()?.let { "$message. ${it.label}" } ?: if (undo) "$status. ${if (raw) "Use raw or Undo" else "Undo"} available for five seconds." else status)
     }
     private companion object {
+        fun keptStatus(reason: String) = (if (DictationAction.forStatus(reason) == DictationAction.NETWORK ||
+            reason.startsWith("Mac took too long")) "Connection lost" else reason.substringBefore(" — ")) + " — kept what I heard"
         const val IDLE = "Tap mic · hold to talk"
         const val CONNECTING = "Connecting Tailscale…"
         const val CONNECTED = "Tailscale connected"
