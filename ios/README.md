@@ -4,8 +4,9 @@ A native SwiftUI app plus a dictation-first custom keyboard for iOS/iPadOS 18.
 Recognition and optional clean-up run on your existing Mac speech server — the
 iPhone or iPad only captures audio, streams it over your tailnet, and inserts
 text. Same trust model as the Android keyboard: nothing persistent is kept by
-default (the only on-device dictation text is the encrypted transient
-app↔keyboard mailbox and opt-in encrypted history), pairing is a secret QR
+default (the only on-device text is the encrypted transient app↔keyboard
+mailbox, opt-in encrypted history and the encrypted Live Notes recovery copy
+while notes are unsaved), pairing is a secret QR
 shown locally on the Mac, the iOS client's pairing accepts only tailnet
 `.ts.net` hosts, and the server itself binds to loopback — a public host is
 never used.
@@ -281,6 +282,64 @@ part, and a part that fails keeps what it heard. A dictation stops just under
 If the server runs with `--debug-retain`, a persistent red banner "DEBUG: Mac
 keeps recordings" stays on screen in the app, keyboard and Live Activity.
 
+## Live Notes
+
+Long-form notes from speech: talk through a meeting, a lecture or a walk, and
+Chirp keeps a transcript and turns it into Markdown notes as you go. On iPad
+Live Notes has its own **Notes** tab with notes and transcript side by side; on
+iPhone open it with **Live Notes** at the top of the Dictate tab (a picker
+switches between Notes and Transcript). It uses the same Mac server as
+dictation and needs no keyboard session — the two never hold the microphone at
+the same time (end the keyboard session first, and a keyboard session cannot
+start while notes record).
+
+- **Record** opens the microphone. Speech goes to your Mac in rolling segments
+  of at most 45 seconds (cut at pauses, ordinary `/v1/stream` utterances), and
+  the live partial shows under the notes. Clean-up applies when you turned it
+  on in Styles, using the Mac's notes style.
+- **Structuring** runs on your Mac (`/v1/notes/structure`): finished segments
+  become headings, bullets, tasks, decisions and questions. It is on when
+  clean-up stays on your Mac; if your Mac's clean-up sends text elsewhere,
+  Notes settings shows the destination and structuring stays off until you turn
+  it on for that host. With clean-up off on the Mac, or an older server, notes
+  stay a transcript. Type anywhere in the notes to add your own; while you type,
+  new structure waits for you (up to 10 seconds after the last keystroke).
+- **Organize** regroups the whole notes (`/v1/notes/reorganize`) and
+  **Undo Organize** puts them back (asking first if you edited since).
+  "Organize automatically" (Notes settings) runs it now and then on its own.
+- **Transcript** lists the segments with their times; **Show raw** shows them
+  before clean-up.
+- **Pause** closes the microphone and finishes the current segment; **Resume**
+  continues the same notes and clock. A call or Siri pauses Live Notes, and it
+  resumes when iOS says recording may continue. **Stop** finishes the last
+  segment and the final structuring pass; the notes stay until **New notes**
+  (which asks first when they are not saved). **Record more** continues them.
+- **Export** menu: **Copy**, **Share…** and **Save to Files…** — all give
+  Markdown with the notes and the timed transcript. Saving counts as saved.
+- If the Mac is unreachable mid-recording, recording goes on: up to 10 minutes of
+  audio waits in memory and is sent when the Mac answers again.
+
+**Locked screen and background.** Recording continues with the screen locked
+or Chirp in the background (the audio background mode). A Live Activity on the
+lock screen and in the Dynamic Island shows the state and the elapsed time with
+**Pause/Resume** and **Stop** — never any text. With Live Activities off for
+Chirp, recording still works; the lock screen just has no controls. **Battery
+saver while locked** (on by default) skips all screen updates while Chirp is in
+the background; recording, the Mac's structuring and the Live Activity's own
+timer go on, and the notes catch up when you return. iOS may suspend Chirp
+while Live Notes is paused in the background; Resume from the Live Activity or
+reopen Chirp. Shortcuts actions: **Start Chirp Live Notes**, **Pause or resume
+Chirp Live Notes**, **Stop Chirp Live Notes**.
+
+**Recovery copy.** Until you save or start new notes, Chirp keeps the notes and
+transcript in an AES-GCM-encrypted file (key in this device's Keychain, never
+synced; folder excluded from backups and file-protected) so a crash or a
+force-quit loses nothing. Next launch offers **Keep** or **Discard**. Never
+audio. "Keep an encrypted recovery copy" in Notes settings turns it off, which
+deletes the file and its key.
+
+Hardware keyboard (iPad): ⌘⇧R record/stop, ⌘⇧P pause/resume.
+
 ## Dictate from any app (keyboard)
 
 Chirp Keyboard is voice-first: keep Apple's keyboard for typing and switch to
@@ -416,10 +475,12 @@ when it matters; surrounding editor text is never collected.
 ## Privacy & security
 
 - **Nothing persistent by default.** No audio is ever written to disk, and
-  there is no persistent transcript storage by default — with one transient
-  exception: the app↔keyboard mailbox holds AES-GCM-encrypted text on disk
+  there is no persistent transcript storage by default — with two transient
+  exceptions: the app↔keyboard mailbox holds AES-GCM-encrypted text on disk
   until it is consumed or expires, deleted opportunistically on the next
-  access (there is no background purge daemon). Opt-in encrypted history is
+  access (there is no background purge daemon), and the Live Notes recovery
+  copy holds AES-GCM-encrypted notes until they are saved, discarded or
+  replaced (Notes settings turns it off). Opt-in encrypted history is
   separate and always ciphertext. The server's opt-in debug retention is
   bannered in red on every surface, and idle audio is discarded on device,
   never streamed.
@@ -531,7 +592,8 @@ API contract in [Shared/README.md](Shared/README.md).
 
 ```
 ios/
-  App/        SwiftUI app: session coordinator, microphone capture, pairing scanner, views
+  App/        SwiftUI app: session coordinator, microphone capture, pairing scanner, views,
+              Live Notes (LiveNotes*.swift: controller, capture, views, Live Activity)
   Keyboard/   Keyboard extension + Keyboard/Policy (verified-insertion logic under test)
   Intents/    App Intents, App Shortcuts, Live Activity (app-process execution)
   Widgets/    WidgetKit bundle: Live Activity UI, Control Center controls
@@ -545,6 +607,10 @@ ios/
 
 ## Known limits
 
+- **Live Notes on a device is unverified.** Background recording with the screen
+  locked, the Live Activity and Dynamic Island buttons, call interruptions and
+  battery use need an operator check on an iPhone and an iPad; the simulator
+  covers the flows with synthetic and file audio only.
 - **Not yet run on a device.** Simulator build, unit, UI and live-server gates
   pass on iPhone and iPad; signing, provisioning, the real microphone and every
   on-device check are still operator steps.

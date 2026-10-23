@@ -25,12 +25,27 @@ public struct NotesJournalRecord: Codable, Equatable, Sendable {
     }
 }
 
+/// Seals a journal file's bytes before they reach the disk and opens them again (iOS: AES-GCM with a Keychain key).
+public struct NotesJournalCodec: Sendable {
+    public var seal: @Sendable (Data) throws -> Data
+    public var open: @Sendable (Data) throws -> Data
+
+    public init(seal: @escaping @Sendable (Data) throws -> Data, open: @escaping @Sendable (Data) throws -> Data) {
+        self.seal = seal
+        self.open = open
+    }
+}
+
 /// The journal folder: `<session-id>.json` per session, written atomically (a temp file, then a rename) so a torn
-/// write never shadows the good file. Safe to call from any thread.
+/// write never shadows the good file. Safe to call from any thread. With a `codec` every file is sealed by it.
 public struct NotesJournalStore: Sendable {
     public let directory: URL
+    public let codec: NotesJournalCodec?
 
-    public init(directory: URL = Self.defaultDirectory) { self.directory = directory }
+    public init(directory: URL = Self.defaultDirectory, codec: NotesJournalCodec? = nil) {
+        self.directory = directory
+        self.codec = codec
+    }
 
     /// `~/Library/Application Support/Chirp/Recovery`.
     public static var defaultDirectory: URL {
@@ -43,7 +58,8 @@ public struct NotesJournalStore: Sendable {
     /// Writes the record (folder `0700`, file `0600`, flushed to the drive before the rename). Returns its size.
     @discardableResult
     public func write(_ record: NotesJournalRecord) throws -> Int {
-        let data = try JSONEncoder().encode(record)
+        let json = try JSONEncoder().encode(record)
+        let data = try codec?.seal(json) ?? json
         let fm = FileManager.default
         try fm.createDirectory(at: directory.deletingLastPathComponent(), withIntermediateDirectories: true)
         try fm.createDirectory(at: directory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
@@ -79,7 +95,11 @@ public struct NotesJournalStore: Sendable {
         for name in names {
             let url = directory.appendingPathComponent(name)
             if name.hasSuffix(".json.tmp") { try? fm.removeItem(at: url); continue }
-            guard name.hasSuffix(".json"), let data = try? Data(contentsOf: url) else { continue }
+            guard name.hasSuffix(".json"), let stored = try? Data(contentsOf: url) else { continue }
+            guard let data = codec == nil ? stored : try? codec?.open(stored) else {
+                chirpLog.info("notes journal unreadable bytes=\(stored.count, privacy: .public)")
+                continue
+            }
             let decoder = JSONDecoder()
             if let header = try? decoder.decode(Header.self, from: data), header.schema > NotesJournalRecord.schema {
                 chirpLog.info("notes journal ignored schema=\(header.schema, privacy: .public) supported=\(NotesJournalRecord.schema, privacy: .public)")

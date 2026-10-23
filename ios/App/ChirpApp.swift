@@ -80,7 +80,7 @@ struct DictationCommands: Commands {
     }
 }
 
-enum ChirpTab: Hashable { case dictate, pair, styles, history, settings }
+enum ChirpTab: Hashable { case dictate, notes, pair, styles, history, settings }
 
 struct ChirpRootView: View {
     @ObservedObject var model: SessionCoordinator
@@ -89,8 +89,13 @@ struct ChirpRootView: View {
         // The session bar goes inside each tab: inset on the TabView itself, it covered iOS 27's floating
         // tab bar, so tapping a tab while armed hit End session instead.
         TabView(selection: $tab) {
-            NavigationStack { DictationView(model: model, tab: $tab) }.modifier(SessionBar(model: model))
+            NavigationStack { DictationView(model: model, tab: $tab).modifier(LiveNotesEntry(notes: .current(for: model), session: model)) }
+                .modifier(SessionBar(model: model))
                 .tabItem { Label("Dictate", systemImage: "mic") }.tag(ChirpTab.dictate)
+            if LiveNotesEntry.asTab {
+                NavigationStack { LiveNotesView(notes: .current(for: model), session: model) }
+                    .tabItem { Label("Notes", systemImage: "note.text") }.tag(ChirpTab.notes)
+            }
             NavigationStack { PairingView(model: model) }.modifier(SessionBar(model: model))
                 .tabItem { Label("Pair Mac", systemImage: "qrcode.viewfinder") }.tag(ChirpTab.pair)
             NavigationStack { StylesView(model: model) }.modifier(SessionBar(model: model))

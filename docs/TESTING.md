@@ -110,6 +110,18 @@ Run on the reference Mac after installing the build with `./scripts/install-mac.
 20. Saved voices: Settings › Notes › Recognize saved voices → the download prompt (8 MB), Download. In a two-person session, name Person 2 "Maya"; once she has spoken 20 s, her chip menu offers Remember This Voice as “Maya”…, whose Remember button stays disabled until the consent box is ticked. Keychain Access shows one "Chirp Voice Profile" item (not iCloud). New, record her again: a dotted "Maya?" appears beside her chip after about 10 s, and nothing is renamed until you click it. Not Maya hides it. Settings lists Maya with Forget…; turning the switch off asks whether to forget 1 saved voice. `log show … | grep "notes voices"` shows counts only.
 7. Hotkey registration without pressing keys: `log show --predicate 'subsystem == "dev.chirp.mac"' --info --last 5m | grep "hotkey register id=4"` shows `combo=control-option-n status=0` after launch; `hotkey register id=5` shows `combo=control-option-shift-n status=0`.
 
+### iPhone/iPad Live Notes (device)
+
+The simulator gates (`ios/scripts/simulator.sh test` and `ios/scripts/simulator-e2e.sh` on an iPhone and an iPad simulator) run Live Notes with synthetic sockets and with a spoken file against a throwaway server. On your own device:
+
+1. Pair, open Live Notes (iPad: the Notes tab; iPhone: **Live Notes** in the Dictate tab), Record and talk for a few minutes. Segments land in the transcript about every 45 s or at pauses, and structured bullets appear in the notes.
+2. Lock the phone and keep talking for 5+ minutes. The lock screen and Dynamic Island show "Live Notes · recording" with a running timer and Pause/Stop, and no text. Pause and Resume from the lock screen, then unlock: the notes caught up with what was said while locked.
+3. Take a call (or invoke Siri) while recording → "Paused · another app or a call took the microphone"; after the call it resumes. Unplug or connect a headset mid-recording → recording continues.
+4. Turn Wi-Fi off for a minute while recording → "Mac offline · keeping …"; back on → the offline segments arrive.
+5. Organize, then Undo Organize; Export → Save to Files… and open the `.md` in Files.
+6. Record, then force-quit Chirp from the app switcher. Reopen → "Unsaved notes from an earlier session" with Keep/Discard. Keep restores the notes.
+7. Settings → Battery: compare an hour locked with Battery saver on and off.
+
 ### Fold 8
 
 7. **Enable wireless debugging and pair adb:** `adb pair IP:PAIRPORT`, then `adb connect IP:PORT`. See `android/README.md`.

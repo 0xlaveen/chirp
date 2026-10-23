@@ -55,7 +55,8 @@ for extension in ('ChirpKeyboard','ChirpWidgets'):
     assert not any('CHIRP_APP' in s.get('SWIFT_ACTIVE_COMPILATION_CONDITIONS','') for s in settings(extension))
 assert 'Intents/ChirpLiveActivity.swift' in members('ChirpIOS')
 assert 'Intents/ChirpLiveActivity.swift' not in members('ChirpWidgets')
-assert members('ChirpWidgets') == {'Widgets/ChirpWidgets.swift','Intents/SessionIntents.swift','Intents/ChirpActivityAttributes.swift'}
+assert members('ChirpWidgets') == {'Widgets/ChirpWidgets.swift','Widgets/NotesActivityWidget.swift','Intents/SessionIntents.swift',
+                                  'Intents/ChirpActivityAttributes.swift','Intents/NotesIntents.swift','Intents/NotesActivityAttributes.swift'}
 assert members('ChirpKeyboard') == {'Keyboard/ChirpKeyboardViewController.swift','Keyboard/KeyboardBridgeClient.swift'}
 for target in ('ChirpKeyboard','ChirpWidgets'):
     assert not any(p.startswith('App/') for p in members(target))
