@@ -1,5 +1,6 @@
 package dev.chirp.android
 
+import android.content.Intent
 import android.content.res.ColorStateList
 import android.text.InputType
 import android.view.View
@@ -20,6 +21,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.*
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -160,6 +162,8 @@ internal fun SetupWizard(
                         KeyboardLookChooser()
                         SwipeTypingSettings()
                         TextButton(picker) { Text("Choose keyboard") }
+                        val context = LocalContext.current
+                        TextButton({ context.startActivity(Intent(context, ScratchpadActivity::class.java)) }) { Text("Open Scratchpad") }
                         OutlinedButton(check, Modifier.fillMaxWidth(), enabled = !state.checking) { Text("Check Mac connection") }
                         if (state.status.startsWith("Mac unreachable") || state.status.startsWith("Check Tailscale")) {
                             Text("Check Tailscale is connected on both devices. Wake the Mac and start Chirp, then check the connection again.")

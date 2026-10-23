@@ -19,6 +19,7 @@ The application ID and IME component stay `dev.chirp.android` / `dev.chirp.andro
 - [Install](#install) — build the APK, put it on the phone, update over Tailscale, enable the keyboard · [Pair](#pair) — QR, paste, Wi-Fi servers
 - [Dictate](#dictate) — start/stop/cancel, quick options, clean-up, styles, Undo, Use raw
 - [Keyboard](#keyboard) — typing, looks, Fold layout, swipe typing, floating mic
+- [Scratchpad](#scratchpad) — dictate long text, edit, copy or share; Quick Settings tile and launcher shortcut
 - [Dictation history](#dictation-history) · [Privacy](#privacy) · [Troubleshoot](#troubleshoot)
 - [Develop and test](#develop-and-test) — toolchain, gradle, emulator harnesses
 - [Upstream](#upstream) — HeliBoard, patches, dictionaries, license
@@ -224,6 +225,18 @@ The card warns that the library runs inside Chirp with Chirp's permissions, incl
 
 The floating accessibility mic is **optional and off by default**; keyboard dictation needs no Accessibility permission. Enable it only if you choose to use another keyboard — it reads the focused field locally to insert safely, runs as a microphone foreground service with a notification, and field contents stay on the phone. For sideload restrictions: Apps → Chirp Keyboard → ⋮ → Allow restricted settings, then Accessibility → Installed apps. An already-enabled optional service remains under your Android setting; the app does not enable it on update. Design notes on this and the other input paths considered are in [docs/android-input-options.md](../docs/android-input-options.md).
 
+## Scratchpad
+
+A place to dictate long-form text outside any text field, edit it, then **Copy** or **Share** it. It uses the same streaming client, pairing and clean-up as the keyboard (`DictationStream`, `StreamTransport`, `PcmCapture`), so dictation behaves identically: tap the big mic to start, tap again to finish, and errors offer the same **Pair Mac**, **Open mic settings** and **Check Tailscale** actions.
+
+![Scratchpad idle](../docs/screenshots/android/scratchpad-idle-light.png) ![Listening](../docs/screenshots/android/scratchpad-listening-light.png) ![With text (dark)](../docs/screenshots/android/scratchpad-text-dark.png)
+
+- **Open it** from the launcher icon's long-press shortcut **Scratchpad**, from a **Quick Settings tile**, or from **Open Scratchpad** in Chirp setup. Add the tile once: swipe down twice, tap the pencil/Edit button, and drag **Scratchpad** into the panel. Tapping it collapses the shade and opens the Scratchpad (on a locked phone it asks for your screen lock first, because the pairing needs the unlocked phone).
+- **Dictate:** each final is placed at the cursor, or replaces the selection, with a space where needed and a lower-cased first word when it continues a sentence. The opt-in **spoken commands** setting ("new line", "new paragraph") applies here too. The text is read-only while you dictate; edit freely otherwise.
+- **Style picker:** **Raw** or any clean-up style the Mac offers. It applies to this screen only and never changes the keyboard's own setting; it is hidden when the Mac has clean-up off.
+- **Memory only.** The text lives in the screen's view model: it survives rotation and folding, and is gone when you leave the Scratchpad (back, swipe away or the system closes it). Nothing is written to preferences or files, the Recents thumbnail is blank, and the clipboard copy is marked sensitive where Android supports it. Only if you turned on [Dictation history](#dictation-history) is each dictation (not the text in the box) also saved, encrypted, exactly like keyboard dictations; the screen says so while it is on.
+- Switching apps mid-dictation discards that utterance; one you already stopped keeps finishing and its text is still added. Live Notes is not part of the Android Scratchpad yet.
+
 ## Dictation history
 
 Dictation history is **off by default**. When enabled, committed finals (plus the raw text when on-Mac clean-up rewrote them) are stored **on the phone only**, encrypted with AES-GCM under a dedicated Android Keystore alias (`chirp_history_v1`) in credential-encrypted storage — never sent to the Mac, never logged, and excluded from backup and device transfer (`data_extraction_rules.xml` excludes the root, file and sharedpref domains). The store keeps at most **200 entries** and prunes by age: **24 hours, 7 days (default) or 30 days**. Password and incognito fields (`TYPE_TEXT_VARIATION_PASSWORD` variants and `IME_FLAG_NO_PERSONALIZED_LEARNING`) are never recorded, and cancelled dictations leave no entry. While the device is locked the store is unavailable and the panel says so ("Unlock your phone to see dictation history.").
@@ -291,7 +304,7 @@ cd android
 
 Use the **existing** `keystore/local-debug.keystore` to sign updates; never generate a replacement key for an already-installed app. The keyboard module builds both ABIs, but the app splits packaging (`splits.abi`, no universal APK): every build yields an `app-arm64-v8a-<build>.apk` for phones and an `app-x86_64-<build>.apk` for x86_64 emulator validation, under `app/build/outputs/apk/{debug,release}/`. Release smoke installs whichever split matches the connected emulator's ABI (the local `chirp-fold` AVD reports `arm64-v8a` on Apple Silicon). Each assemble also runs `check<Build>Native16kAlignment` (`scripts/check-native-alignment.py`): every packaged `.so` must have only 16 KB-aligned ELF `PT_LOAD` segments and the APK zip layout must satisfy `zipalign -P 16`, because Android 15+ devices may use 16 KB memory pages. The host and library use NDK 28.0.13004108 (NDK r28 aligns by default); the app setting is needed to strip JNI symbols. App lint remains strict (warnings as errors); only the vendored keyboard's `lint*Analyze*` tasks are disabled (upstream lint crash — see [Upstream](#upstream)). See [keyboard/UPSTREAM.md](keyboard/UPSTREAM.md) for the pinned source, license, adapter, upstream patch and vendor-only lint workaround.
 
-Robolectric runs on API 31 and 37 with fake input connections, transport and capture. The integrated keyboard renders actual HeliBoard keys and the production Chirp row in idle/listening/final states, light/dark, under `../docs/screenshots/android/`. Existing transport tests use isolated TLS loopback servers. LiveServerTest stays opt-in (`-Pchirp.live.url` …); no production Chirp server or port 7821 is used by the default check.
+Robolectric runs on API 31 and 37 with fake input connections, transport and capture. `ScratchpadTest`, `ScratchpadTileTest` and `ScratchpadRenderTest` cover the Scratchpad states, share/copy intents, tile and shortcut wiring, and assert that no file or preference holds dictated text (the `scratchpad-*.png` screenshots come from the render test). The integrated keyboard renders actual HeliBoard keys and the production Chirp row in idle/listening/final states, light/dark, under `../docs/screenshots/android/`. Existing transport tests use isolated TLS loopback servers. LiveServerTest stays opt-in (`-Pchirp.live.url` …); no production Chirp server or port 7821 is used by the default check.
 
 ### Mandatory release smoke
 

@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut android:shortcutId="scratchpad" android:enabled="true" android:icon="@drawable/ic_scratchpad"
+        android:shortcutShortLabel="@string/scratchpad_short" android:shortcutLongLabel="@string/scratchpad_name">
+        <intent android:action="android.intent.action.VIEW" android:targetPackage="dev.chirp.android"
+            android:targetClass="dev.chirp.android.ScratchpadActivity" />
+    </shortcut>
+</shortcuts>

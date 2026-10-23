@@ -24,7 +24,14 @@
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="chirp" android:host="pair" />
             </intent-filter>
+            <meta-data android:name="android.app.shortcuts" android:resource="@xml/shortcuts" />
         </activity>
+        <activity android:name=".ScratchpadActivity" android:exported="false" android:label="@string/scratchpad_name"
+            android:windowSoftInputMode="adjustResize" />
+        <service android:name=".ScratchpadTileService" android:label="@string/scratchpad_short" android:icon="@drawable/ic_mic"
+            android:exported="true" android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter><action android:name="android.service.quicksettings.action.QS_TILE" /></intent-filter>
+        </service>
         <activity android:name=".HistoryActivity" android:exported="false" android:label="@string/history_title"
             android:windowSoftInputMode="adjustResize" />
         <receiver android:name=".UpdateInstallReceiver" android:exported="false" />
