@@ -62,7 +62,7 @@ scripts/make-update-manifest.sh                       # → build/chirp-apk/chir
 
 `latest.json` holds `version_code`, `version_name`, `file` (a plain `*.apk` name in that folder), `sha256` and `size`. The script refuses an unsigned APK or one that isn't `dev.chirp.android`, and writes the manifest last.
 
-On the phone, setup step 4 → **Updates** checks `https://<paired host>/chirp-apk/latest.json` when it opens, and **Check for updates** checks on demand. **Download and install** fetches the file, verifies its size and SHA-256 and that it is this app at the announced version, then hands it to Android's installer. Android shows its own confirmation and accepts the update only if it is signed with the installed key, so pairing is kept. The first time, Android asks you to allow Chirp to install updates.
+On the phone, Chirp settings → **About → Updates** checks `https://<paired host>/chirp-apk/latest.json` when it opens, and **Check for updates** checks on demand. **Download and install** fetches the file, verifies its size and SHA-256 and that it is this app at the announced version, then hands it to Android's installer. Android shows its own confirmation and accepts the update only if it is signed with the installed key, so pairing is kept. The first time, Android asks you to allow Chirp to install updates.
 
 - Only a pairing on a tailnet host (`*.ts.net` or a Tailscale address) gets update checks; the host is always the pairing's own, and the manifest can name only a file in that folder, never another URL. Redirects are not followed.
 - The pairing token is never sent to the update path. Nothing about your text or audio is involved; the only request is the version file, and only when you open setup or tap check.
@@ -75,9 +75,23 @@ Chirp Keyboard's setup has four steps — *Chirp Keyboard, Microphone, Pair Mac,
 1. **Enable Chirp Keyboard**, then **Select it as default**. On Samsung: Settings → General management → Keyboard list and default.
 2. **Allow the microphone.** The mic opens only when you start dictation and is released as soon as you stop.
 3. **Pair your Mac** — see [Pair](#pair). If the phone was already paired, the saved pairing survives the update.
-4. **Try it:** tap the test field, type, then dictate. This step also holds the Stop dictation choice, App colours, the keyboard-look chooser, swipe-typing setup, history setting and Diagnostics.
+4. **Try it:** tap the test field, type, then dictate. The step holds only that field, **Open settings**, **Choose keyboard** and the Scratchpad and Notes links; every setting lives in Chirp settings.
 
-HeliBoard's own settings (Keyboard layouts & settings) start with a **Chirp section**: pairing, test field, clean-up and styles (only when the Mac offers them), per-app styles, sounds/haptics, and diagnostics.
+### Chirp settings
+
+One screen, **Chirp settings**, holds every setting. Open it from setup (**Open settings**), from HeliBoard → Keyboard layouts & settings (the Chirp section at the top is a summary: the connection row, the clean-up switch and **Open Chirp settings**), or from the keyboard's long-press **Chirp settings**. The top level is a list of groups; a row either toggles a switch in place or opens a page:
+
+| Group | Contents |
+|---|---|
+| Mac connection | A status row (*Connected · host*, *Mac unreachable · host*, *Not paired*) opening the connection page: **Check connection**, **Change pairing**, **Allow Wi-Fi server access** (only when needed), **Forget pairing** (asks first: *You'll need the QR code to pair again*), and **When your Mac is unavailable** (the phone-local recogniser) |
+| Dictation | **Clean-up** (only when the Mac offers it), **Styles** (default and per-app styles, prompt editing), **Stop dictation** (when I tap / when I pause), **Spoken commands**, **Press Send after dictating** |
+| Keyboard | **Look** (keyboard look and App colours), **Swipe typing**, **Hardware keyboard shortcut**, **Larger mic on the inner screen**, **Layouts, languages & typing** (HeliBoard's own settings) |
+| Feedback | **Haptic cues**, **Sound cues** |
+| Privacy & history | **Dictation history** (switch, retention, open, clear) |
+| Other ways to dictate | **Floating mic** (Accessibility) |
+| About | **Updates**, **Diagnostics** (debug overlay, the report, **Copy diagnostics**, **Clear timings**) |
+
+Back from a page returns to the list (predictive back); back from the list leaves the screen. From 600 dp wide (the Fold's inner screen) the list stays on the left and the page opens on the right. Long explanations sit behind **Learn more**. Existing settings keep their stored values; nothing migrates. Renders: `docs/screenshots/android/settings-*.png`.
 
 ## Pair
 
@@ -121,18 +135,18 @@ Android 17/API 37 needs `ACCESS_LOCAL_NETWORK` for servers reached directly over
 - **Long press the mic** for quick options: **Clean-up: on ✓ / Clean-up: off** (or *Mac has clean-up off*), the styles the Mac advertises (`Style · <name>`, with `· rewrites` where it may restructure, ✓ on the active one), and **Chirp settings**.
 - A configured keyboard **voice key** still supports push-to-talk: press-and-hold to talk, release to finish; a short tap toggles.
 - Haptic cues fire on start, manual stop and successful insertion when haptics are enabled (they follow Android's system setting).
-- **Chirp settings → Stop dictation** (also in setup's *Try it* step): **When I tap** (default) or **When I pause** with a pause of 1, 1.5, 2, 3 or 5 s (2 s default). Pause mode is a port of the Mac's auto-stop: speech is judged against the room's own noise floor, so steady background noise never counts as talking; it never stops before you have spoken, and gives up after 10 s of silence. Tapping stop still works in both modes.
+- **Chirp settings → Dictation → Stop dictation**: **When I tap** (default) or **When I pause** with a pause of 1, 1.5, 2, 3 or 5 s (2 s default). Pause mode is a port of the Mac's auto-stop: speech is judged against the room's own noise floor, so steady background noise never counts as talking; it never stops before you have spoken, and gives up after 10 s of silence. Tapping stop still works in both modes.
 - **Long dictation**: the Mac accepts 120 s per utterance, so a keyboard dictation is cut into segments of at most 90 s, the way the Mac's Live Notes does it. A dictation shorter than 45 s is never cut. After 45 s the cut comes at the first 0.6 s pause (0.3 s after 70 s), and at 90 s the cut happens whatever you are saying. At a cut the microphone stays open and the next segment takes over at once, buffering until its own socket is ready, so no audio is dropped. The previous segment finishes in the background. Its final, cleaned on its own, is committed at the caret, and the next segment's live text continues right after it. Each segment lands in order, even if a later one finishes first. The live text pauses for a moment after a cut until the earlier segment lands. Each segment is its own history entry. There are no haptics, sound or TalkBack between segments; the word count is announced once at the end.
 - **Time limit**: a dictation stops at 10 minutes. In the last 15 s the status adds **N s left** with one haptic tick (TalkBack hears it only at 15, 10, 5, 3, 2 and 1 s), and the dictation is finished and inserted like a normal stop.
-- **Hardware keyboard** (Bluetooth or DeX): **Ctrl+Alt+Space** starts and stops dictation and **Esc** cancels while listening. Ctrl+Space is left to language switching. The keys are ignored in password fields and can be turned off in Chirp settings → *Keyboard access → Hardware keyboard shortcut* (on by default). If a hardware keyboard has hidden the on-screen keyboard, the chord shows it so the status row and ✕ stay available.
-- **Sound cues** (off by default; Chirp settings → *Sound cues*): short generated tones for start, stop, inserted and error, played as touch-feedback-class audio and silent when the ringer is on vibrate or mute. They are separate from haptics and from the keyboard's key sounds. The start tone can be faintly audible in the first few milliseconds of a dictation.
+- **Hardware keyboard** (Bluetooth or DeX): **Ctrl+Alt+Space** starts and stops dictation and **Esc** cancels while listening. Ctrl+Space is left to language switching. The keys are ignored in password fields and can be turned off in Chirp settings → *Keyboard → Hardware keyboard shortcut* (on by default). If a hardware keyboard has hidden the on-screen keyboard, the chord shows it so the status row and ✕ stay available.
+- **Sound cues** (off by default; Chirp settings → *Feedback → Sound cues*): short generated tones for start, stop, inserted and error, played as touch-feedback-class audio and silent when the ringer is on vibrate or mute. They are separate from haptics and from the keyboard's key sounds. The start tone can be faintly audible in the first few milliseconds of a dictation.
 - **TalkBack:** the status row is silent while listening, finishing and polishing. Each final is announced once — "Inserted, N words", or "Cleaned, Use raw available" while Use raw is offered — and the Use raw and Undo buttons do not announce a second time. A final that keeps only what was heard reads its own status instead.
 
 The full keyboard always **stays selected after a final** — including when an old installation had the voice-only keyboard's auto-return enabled. (That auto-return is gone; the old voice-only implementation lives only in test sources and is not registered or shipped, and its historical preference now defaults OFF.) **Use raw** is offered for five seconds after a corrected final; moving the cursor or editing the field invalidates it.
 
 ### Press Send after dictating
 
-**Chirp settings → Press Send after dictating** (off by default): **Off**, **Always**, or **In chat apps only** (apps whose rule is the Chat style, editable under Per-app styles). Once the last words of a dictation have landed, Chirp performs the field's own editor action (`IME_ACTION_SEND`, `GO` or `DONE`), or sends an Enter key when the field has no action. The strip adds "· ↵ sent" to the status.
+**Chirp settings → Dictation → Press Send after dictating** (off by default): **Off**, **Always**, or **In chat apps only** (apps whose rule is the Chat style, editable under Per-app styles). Once the last words of a dictation have landed, Chirp performs the field's own editor action (`IME_ACTION_SEND`, `GO` or `DONE`), or sends an Enter key when the field has no action. The strip adds "· ↵ sent" to the status.
 
 - Never in a password field, and never after a result that only kept what was heard, after the caret was moved away, or after an empty result.
 - NEXT/PREVIOUS (they would move focus) and SEARCH are left alone.
@@ -161,7 +175,7 @@ The status reads **Listening on phone…** and an **on phone** chip stays visibl
 
 Partials appear only in the text field, underlined with a slightly dimmed tail (supplied as spans when the editor supports them); the suggestion row is replaced by the waveform, status, ✕ and stop. Partials are coalesced to one editor update per 16 ms (latest sequence wins). Editors that can verify their composing text receive only the changed suffix; UTF-16 surrogate pairs stay intact. A server `stable` prefix becomes normal committed text while the remaining tail composes. A final or cancel re-marks the whole utterance so clean-up replaces it atomically and cancel restores the selection.
 
-Showing the keyboard prewarms the bearer-authenticated socket without sending `start` or capturing sound — but only when you are likely to dictate: you dictated in the last 10 minutes, or into this field's app in the last 24 hours. Otherwise the socket opens on press, and typing-only use pays no handshake. The policy (`PrewarmPolicy`) keeps timestamps for at most 16 app packages in memory only: nothing is written to disk, and no text, audio or app names reach logs or diagnostics. The health check on show runs at most once a minute (a failed check, a Tailscale reconnect or a tap on an offline mic still check at once). An unused warm socket closes after 30 seconds or when the keyboard hides. Capture still starts on press, before the server's `ready`, through a bounded buffer, so a cold press loses no speech; Setup → Diagnostics shows `ready, warm` and `ready, cold` p50/p90 side by side. Reduced-motion settings disable the pulse, shimmer and transition animations.
+Showing the keyboard prewarms the bearer-authenticated socket without sending `start` or capturing sound — but only when you are likely to dictate: you dictated in the last 10 minutes, or into this field's app in the last 24 hours. Otherwise the socket opens on press, and typing-only use pays no handshake. The policy (`PrewarmPolicy`) keeps timestamps for at most 16 app packages in memory only: nothing is written to disk, and no text, audio or app names reach logs or diagnostics. The health check on show runs at most once a minute (a failed check, a Tailscale reconnect or a tap on an offline mic still check at once). An unused warm socket closes after 30 seconds or when the keyboard hides. Capture still starts on press, before the server's `ready`, through a bounded buffer, so a cold press loses no speech; Chirp settings → About → Diagnostics shows `ready, warm` and `ready, cold` p50/p90 side by side. Reduced-motion settings disable the pulse, shimmer and transition animations.
 
 ### Clean-up
 
@@ -196,7 +210,7 @@ One-handed, split, clipboard history and emoji are reachable from the expandable
 
 ### Keyboard look
 
-Chirp settings (the Chirp section at the top of Keyboard layouts & settings) and the last setup step have a **Keyboard look** chooser with a small preview of each option:
+Chirp settings → **Keyboard → Look** has a **Keyboard look** chooser with a small preview of each option:
 
 | Look | HeliBoard settings it writes |
 | --- | --- |
@@ -214,17 +228,17 @@ The Chirp row takes its colours from the active HeliBoard theme instead of a fix
 
 ### App colours
 
-The setup app follows the wallpaper through Android's dynamic colours by default, so it matches the Gboard-like keyboard. **App colours** in the last setup step switches it to **Chirp green**. The same choice colours the optional floating mic panel and the in-keyboard history panel and toggle. Nothing else changes, and the keyboard keys always follow the **Keyboard look** above.
+The setup app follows the wallpaper through Android's dynamic colours by default, so it matches the Gboard-like keyboard. **App colours** (Chirp settings → Keyboard → Look) switches it to **Chirp green**. The same choice colours the optional floating mic panel and the in-keyboard history panel and toggle. Nothing else changes, and the keyboard keys always follow the **Keyboard look** above.
 
 ### Fold inner/cover layout
 
 Unfolding keeps the cover keyboard's function-key arrangement in both looks: **Shift starts the third letter row, Backspace ends it, and Enter sits after the period at bottom-right** — instead of HeliBoard's tablet arrangement. Chirp seeds HeliBoard's phone functional layout once (migration `chirp_functional_layout_v1`); explicitly chosen global or per-language functional layouts remain yours. The number row defaults on at inner-screen widths (600 dp and wider; an explicit choice wins). Unfolded landscape defaults to split; cover layouts stay compact. See [Fold layout details](keyboard/UPSTREAM.md#fold-function-key-arrangement-2026-10-18) and the `fold-layout-*.png` before/after emulator captures in [docs/screenshots/android](../docs/screenshots/android).
 
-**Larger mic** (Chirp settings → *Larger mic on the inner screen*, off by default): on screens ≥ 600 dp wide the suggestion row grows to 48 dp and the mic key widens to 56 dp. Without it the controls are at least 48 dp wide and as tall as HeliBoard's suggestion row (36–44 dp); all sizes are in dp, so large font scales do not shrink them.
+**Larger mic** (Chirp settings → *Keyboard → Larger mic on the inner screen*, off by default): on screens ≥ 600 dp wide the suggestion row grows to 48 dp and the mic key widens to 56 dp. Without it the controls are at least 48 dp wide and as tall as HeliBoard's suggestion row (36–44 dp); all sizes are in dp, so large font scales do not shrink them.
 
 ### Swipe typing
 
-HeliBoard's gesture typing needs a native decoder, and HeliBoard 4.2 ships none. It supports `System.load` of a user-supplied library (`JniUtils`, `LoadGestureLibPreference`), normally Google's proprietary `libjni_latinimegoogle.so`, with a SHA-256 check against a known release for each ABI. **Chirp must not bundle or download that file**, so no gesture library is bundled — but setup and Chirp settings can load one you supply. Options reviewed (2026-10-18):
+HeliBoard's gesture typing needs a native decoder, and HeliBoard 4.2 ships none. It supports `System.load` of a user-supplied library (`JniUtils`, `LoadGestureLibPreference`), normally Google's proprietary `libjni_latinimegoogle.so`, with a SHA-256 check against a known release for each ABI. **Chirp must not bundle or download that file**, so no gesture library is bundled — but Chirp settings can load one you supply. Options reviewed (2026-10-18):
 
 - **User-supplied library through HeliBoard's loader (implemented).** Same mechanism and checksums as HeliBoard's *Load gesture typing library*. You obtain the file and choose it; Chirp does not distribute, download or link to it. Quality matches Gboard's decoder, because it is that decoder.
 - **HeliBoard's own open-source decoder** ([NLnet GestureTyping](https://nlnet.nl/project/GestureTyping/)): planned as a GPL drop-in for the same JNI interface. Gesture data gathering runs until November 2026; no release exists yet. Preferred future option — it would need no Chirp UI change beyond bundling it.
@@ -232,7 +246,7 @@ HeliBoard's gesture typing needs a native decoder, and HeliBoard 4.2 ships none.
 - **FlorisBoard `StatisticalGlideTypingClassifier`** (Apache-2.0, GPL-3.0 compatible): small and pure Kotlin, but FlorisBoard labels glide typing alpha, disabled by default; its quality does not justify replacing the option above.
 - **AnySoftKeyboard** (Apache-2.0): separate architecture with widely reported accuracy problems. **FUTO Keyboard**'s decoder uses the Source First licence, which is not open-source compatible — rejected.
 
-**Enable swipe typing** (setup → last step, or Chirp settings):
+**Enable swipe typing** (Chirp settings → Keyboard → Swipe typing):
 
 1. The card explains that Chirp has no built-in swipe typing, that a compatible library is usually Google's `libjni_latinimegoogle.so` from a GApps package, that Chirp never downloads or includes it, and that using it is your choice under that library's own licence. It names the ABI the phone needs (`arm64-v8a` on the Fold).
 2. **Add gesture library…** opens the system file picker. The file is copied privately (64 MB limit) and checked: an ELF shared object for this ABI, then SHA-256.
@@ -279,7 +293,7 @@ Live Notes on the phone: tap **Record**, talk for as long as the meeting lasts, 
 Dictation history is **off by default**. When enabled, committed finals (plus the raw text when on-Mac clean-up rewrote them) are stored **on the phone only**, encrypted with AES-GCM under a dedicated Android Keystore alias (`chirp_history_v1`) in credential-encrypted storage — never sent to the Mac, never logged, and excluded from backup and device transfer (`data_extraction_rules.xml` excludes the root, file and sharedpref domains). The store keeps at most **200 entries** and prunes by age: **24 hours, 7 days (default) or 30 days**. Password and incognito fields (`TYPE_TEXT_VARIATION_PASSWORD` variants and `IME_FLAG_NO_PERSONALIZED_LEARNING`) are never recorded, and cancelled dictations leave no entry. While the device is locked the store is unavailable and the panel says so ("Unlock your phone to see dictation history.").
 
 - **Keyboard**: a clock button sits next to the mic in the Chirp row. It opens an in-keyboard panel (over the key area, like HeliBoard's clipboard panel, so height and insets are unchanged). First use offers one-tap **Keep history on this phone** — nothing is written before that. Tapping an entry reinserts it through the same boundary and selection path as a dictated final; long-press offers **Copy**, **Insert raw** (when the entry was cleaned) and **Delete**. **Use raw** after a cleaned dictation updates the stored entry. Back or the keyboard button closes the panel; plaintext stays in memory only while the panel is open, and the keys are hidden from accessibility while it is up.
-- **Settings**: the Chirp section has a **Keep dictation history on this phone** switch, the retention chooser, **Open history** (a full screen with search, copy, copy-raw and per-entry delete, excluded from recents thumbnails) and **Clear history**. Turning the feature off asks first and then deletes the file and the Keystore key.
+- **Settings**: Chirp settings → **Privacy & history → Dictation history** has a **Keep dictation history on this phone** switch, the retention chooser, **Open history** (a full screen with search, copy, copy-raw and per-entry delete, excluded from recents thumbnails) and **Clear history**. Turning the feature off asks first and then deletes the file and the Keystore key.
 
 A small pre-existing fix shipped with it: moving the cursor after a cleaned final used to dismiss the raw-undo chip but leave the "cleaned" notice pinned open forever, hiding the row's idle buttons. The notice now expires on its five-second timer.
 
@@ -290,13 +304,13 @@ A small pre-existing fix shipped with it: moving the cursor after a cleaned fina
 - **The phone's recogniser is opt-in and disclosed.** With *Use this phone's recogniser* on, an utterance dictated while the Mac is unavailable goes to Android's on-device speech service, which belongs to Google or the phone maker. Android documents it as recognising on the device, but its own terms apply and Chirp cannot audit it. The **on phone** chip shows each time. Chirp adds no session timing for these utterances and logs no text or audio.
 - **History is opt-in and on-device.** Entries never leave the phone, are AES-GCM encrypted under a Keystore key, and are excluded from backup and device transfer.
 - **Pairing secrets are encrypted at rest** (Android Keystore) and redacted from any `toString`. Pairing links are treated as secrets; they are parsed strictly and never logged.
-- **Session timings are numbers only.** Each dictation on the keyboard records connect, ready, first-partial, stop → final and polishing milliseconds, audio length, outcome and error code, network type (Wi-Fi, cellular, Ethernet), whether a VPN was up and whether the prewarmed socket was used (ready latency is also split into warm and cold). The last 50 stay in a private, backup- and transfer-excluded file; Setup → Diagnostics shows p50/p90 per metric and counts per outcome, with **Copy diagnostics** and **Clear timings**. Nothing else is stored: no text, audio, URLs, hosts, tokens or app names, and the serialized form holds only numbers, booleans and fixed enum names.
-- **Crash diagnostics are bounded.** Setup → Diagnostics shows/copies the last five local uncaught crashes: time, app version, exception class and at most 48 message-free class/method/line frames. The handler writes synchronously before delegating termination. It does not store exception messages, cause messages, filenames, thread names, text, audio, URLs or tokens. The private, backup-excluded log survives an app restart/update. HeliBoard's original crash handler and keyboard logger are disabled so they cannot retain a second content log.
+- **Session timings are numbers only.** Each dictation on the keyboard records connect, ready, first-partial, stop → final and polishing milliseconds, audio length, outcome and error code, network type (Wi-Fi, cellular, Ethernet), whether a VPN was up and whether the prewarmed socket was used (ready latency is also split into warm and cold). The last 50 stay in a private, backup- and transfer-excluded file; Chirp settings → About → Diagnostics shows p50/p90 per metric and counts per outcome, with **Copy diagnostics** and **Clear timings**. Nothing else is stored: no text, audio, URLs, hosts, tokens or app names, and the serialized form holds only numbers, booleans and fixed enum names.
+- **Crash diagnostics are bounded.** Chirp settings → About → Diagnostics shows/copies the last five local uncaught crashes: time, app version, exception class and at most 48 message-free class/method/line frames. The handler writes synchronously before delegating termination. It does not store exception messages, cause messages, filenames, thread names, text, audio, URLs or tokens. The private, backup-excluded log survives an app restart/update. HeliBoard's original crash handler and keyboard logger are disabled so they cannot retain a second content log.
 - **Clean-up disclosure.** Styles stay hidden when clean-up is unavailable, including an undisclosed external correction destination; external correction always requires explicit opt-in and shows its host.
 
 ## Troubleshoot
 
-Setup → **Diagnostics** shows the session timings and the bounded crash log, and **Copy diagnostics** copies both (see [Privacy](#privacy)). The real-device checklist is [docs/android-device-acceptance.md](../docs/android-device-acceptance.md). Common messages on the suggestion-row status bar:
+Chirp settings → About → **Diagnostics** shows the session timings and the bounded crash log, and **Copy diagnostics** copies both (see [Privacy](#privacy)). The real-device checklist is [docs/android-device-acceptance.md](../docs/android-device-acceptance.md). Common messages on the suggestion-row status bar:
 
 | Bar message | What it means | What to do |
 |---|---|---|

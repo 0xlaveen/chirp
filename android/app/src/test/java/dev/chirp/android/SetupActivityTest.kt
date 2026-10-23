@@ -4,6 +4,7 @@ import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
+import dev.chirp.android.settings.SettingsPage
 import org.junit.After
 import org.junit.Assert.*
 import org.junit.Before
@@ -73,12 +74,21 @@ class SetupActivityTest {
         assertNull(invalid.data); assertTrue(shows("Invalid Chirp pairing link"))
         assertEquals(syntheticLink, activity.state.link)
     }
-    @Test fun `pairing action returns existing setup activity to pairing step`() {
+    @Test fun `section intents open the pairing step, the settings tree or its connection page`() {
         activity.state.step = 3
-        controller.newIntent(Intent().putExtra("section", "pair"))
-        assertEquals(2, activity.state.step)
         controller.newIntent(Intent().putExtra("section", "settings"))
-        assertEquals(3, activity.state.step)
+        assertTrue(activity.state.settingsOpen); assertNull(activity.state.settingsPage)
+        controller.newIntent(Intent().putExtra("section", "pair"))
+        assertFalse(activity.state.settingsOpen); assertEquals(2, activity.state.step)
+        controller.newIntent(Intent().putExtra("section", "connection"))
+        assertTrue(activity.state.settingsOpen); assertEquals(SettingsPage.Connection, activity.state.settingsPage)
+        controller.newIntent(Intent().putExtra("section", "network"))
+        assertEquals(SettingsPage.Connection, activity.state.settingsPage); assertEquals(false, activity.state.reachable)
+    }
+    @Test fun `a pairing link closes settings and goes to the pairing step`() {
+        controller.newIntent(Intent().putExtra("section", "settings"))
+        controller.newIntent(Intent(Intent.ACTION_VIEW, Uri.parse(syntheticLink)))
+        assertFalse(activity.state.settingsOpen); assertEquals(2, activity.state.step)
     }
     @Test fun `late scan result cannot feed a destroyed activity`() {
         scan()

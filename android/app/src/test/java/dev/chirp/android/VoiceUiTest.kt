@@ -94,25 +94,4 @@ class VoiceUiTest {
             assertTrue(output.listFiles()!!.filter { it.extension == "png" && it.name.startsWith("panel-") }.sumOf { it.length() } < 2_000_000)
         } finally { controller.pause().stop().destroy() }
     }
-    @Test fun `paired clean-up appears near the top and only its toggle records an explicit choice`() {
-        val context = org.robolectric.RuntimeEnvironment.getApplication()
-        val store = SettingsStore(context)
-        store.health = Health(true, false, true, false, null)
-        val state = SetupState().apply { step = 3; paired = true; health = store.health; correction = store.correction }
-        compose.setContent { ChirpTheme { SetupWizard(state,
-            preferences = { store.haptics = state.haptics }, correctionChanged = { store.correction = it }) } }
-        compose.onNodeWithText("Clean-up · Correction on Mac").assertIsDisplayed().assertIsOn()
-        compose.onNodeWithText("Polishes punctuation and filler words on your Mac; text never leaves it").assertIsDisplayed()
-        compose.onNodeWithText("Haptic cues").performScrollTo().performClick()
-        compose.runOnIdle { assertFalse(context.getSharedPreferences("chirp", 0).contains("correction_explicit")) }
-        compose.onNodeWithText("Clean-up · Correction on Mac").performScrollTo().performClick()
-        compose.runOnIdle { assertFalse(store.correction); assertTrue(context.getSharedPreferences("chirp", 0).getBoolean("correction_explicit", false)) }
-    }
-    @Test fun `paired server with clean-up off explains it instead of hiding the feature`() {
-        val state = SetupState().apply { step = 3; paired = true; health = Health(true, false, false, false, null) }
-        compose.setContent { ChirpTheme { SetupWizard(state) } }
-        compose.onNodeWithText("Mac has clean-up off").assertIsDisplayed()
-        compose.onNodeWithText("Clean-up · Correction on Mac").assertDoesNotExist()
-    }
-
 }
