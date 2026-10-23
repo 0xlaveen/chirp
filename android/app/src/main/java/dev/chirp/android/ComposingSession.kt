@@ -16,6 +16,9 @@ class ComposingSession(private val connection: InputConnection, private val anch
                 Character.getType(previous) != Character.INITIAL_QUOTE_PUNCTUATION.toInt()
         } ?: false
     }
+    private var shaping = false
+    private var midSentence = false
+    private var commands = false
     private var seq = -1L
     private var composing = false
     private var rendered = ""
@@ -24,6 +27,12 @@ class ComposingSession(private val connection: InputConnection, private val anch
     private var rawText: String? = null
     var committedLength = 0
         private set
+
+    /** Opt this utterance's final into mid-sentence casing (and spoken commands). Call before the first partial. */
+    fun shapeFinal(spokenCommands: Boolean) {
+        shaping = true; commands = spokenCommands
+        midSentence = editor(false) { FinalCasing.midSentence(connection.getTextBeforeCursor(FinalCasing.LOOKBEHIND, 0)) }
+    }
 
     private fun atBoundary(text: String): String =
         if (needsSpace && text.isNotEmpty() && !text.first().isWhitespace()) " $text" else text
@@ -65,7 +74,7 @@ class ComposingSession(private val connection: InputConnection, private val anch
         if (!live) return false
         if (event.text.isBlank()) { cancel(); return false }
         live = false
-        val text = atBoundary(event.text)
+        val text = atBoundary(if (shaping) FinalCasing.shape(event.text, midSentence, commands) else event.text)
         wholeRegion()
         val inserted = editor(false) { connection.commitText(text, 1) }
         if (inserted) committedLength = text.length

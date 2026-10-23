@@ -193,4 +193,80 @@ class ComposingSessionTest {
         assertEquals(0, commits); assertEquals(0, session.committedLength)
     }
 
+
+    private fun shaped(before: String, final: ServerEvent.Final, commands: Boolean = false, partial: String? = null): Editor {
+        val editor = Editor().apply { committed = before }
+        val session = ComposingSession(editor.connection)
+        session.shapeFinal(commands)
+        if (partial != null) { assertTrue(session.partial(ServerEvent.Partial(1, partial, ""))); assertEquals(partial, editor.composing) }
+        assertTrue(session.final(final))
+        return editor
+    }
+    private fun raw(text: String) = ServerEvent.Final(text, text, false)
+    @Test fun `mid-sentence final lower-cases its first word and partials stay as sent`() {
+        assertEquals("prefix and then We went.", shaped("prefix ", raw("And then We went."), partial = "And then").committed)
+        assertEquals("prefix and then", shaped("prefix", raw("And then")).committed)
+    }
+    @Test fun `sentence starts, field start and I keep their capital`() {
+        assertEquals("Done. And then", shaped("Done. ", raw("And then")).committed)
+        assertEquals("Done.\nAnd then", shaped("Done.\n", raw("And then")).committed)
+        assertEquals("And then", shaped("", raw("And then")).committed)
+        assertEquals("prefix I think so", shaped("prefix ", raw("I think so")).committed)
+        assertEquals("prefix NASA agrees", shaped("prefix ", raw("NASA agrees")).committed)
+        assertEquals("prefix Paris is nice", shaped("prefix ", raw("Paris is nice")).committed)
+    }
+    @Test fun `finals are untouched unless the session opts in`() {
+        val editor = Editor(); val session = ComposingSession(editor.connection)
+        assertTrue(session.final(raw("And then new line.")))
+        assertEquals("prefix And then new line.", editor.committed)
+    }
+    @Test fun `casing context is read before partials move the cursor`() {
+        val editor = Editor().apply { committed = "Done. " }
+        val session = ComposingSession(editor.connection, 6); session.shapeFinal(false)
+        assertTrue(session.partial(ServerEvent.Partial(1, "And then", "")))
+        assertTrue(session.final(raw("And then")))
+        assertEquals("Done. And then", editor.committed)
+    }
+    @Test fun `unreadable editor context leaves the final alone`() {
+        var committed = ""
+        val connection = Proxy.newProxyInstance(InputConnection::class.java.classLoader,
+            arrayOf(InputConnection::class.java)) { _, method, args ->
+            when (method.name) {
+                "getTextBeforeCursor" -> null
+                "getSelectedText" -> ""
+                "commitText" -> { committed = args!![0].toString(); true }
+                else -> true
+            }
+        } as InputConnection
+        val session = ComposingSession(connection); session.shapeFinal(false)
+        assertTrue(session.final(raw("And then")))
+        assertEquals("And then", committed)
+    }
+    @Test fun `use raw restores the unmodified raw text`() {
+        val editor = Editor(); val session = ComposingSession(editor.connection); session.shapeFinal(false)
+        assertTrue(session.final(ServerEvent.Final("And then We went.", "And then we went", true)))
+        assertEquals("prefix and then We went.", editor.committed)
+        assertTrue(session.useRaw(editor.committed.length))
+        assertEquals("prefix And then we went", editor.committed)
+    }
+    @Test fun `spoken commands become line breaks only when enabled`() {
+        assertEquals("prefix okay,\n", shaped("prefix ", raw("Okay, new line."), commands = true).committed)
+        assertEquals("prefix \n\n", shaped("prefix ", raw("New paragraph."), commands = true).committed)
+        assertEquals("prefix okay, new line.", shaped("prefix ", raw("Okay, new line.")).committed)
+        assertEquals("prefix New paragraph.", shaped("prefix ", raw("New paragraph.")).committed)
+        assertEquals("prefix and then\n", shaped("prefix ", raw("And then new line"), commands = true).committed)
+    }
+    @Test fun `command final reports the inserted length and bypasses the separator`() {
+        val editor = Editor().apply { committed = "word" }
+        val session = ComposingSession(editor.connection); session.shapeFinal(true)
+        assertTrue(session.final(raw("New line")))
+        assertEquals("word\n", editor.committed); assertEquals(1, session.committedLength)
+    }
+    @Test fun `corrected command text is still shaped and raw keeps the spoken words`() {
+        val editor = Editor(); val session = ComposingSession(editor.connection); session.shapeFinal(true)
+        assertTrue(session.final(ServerEvent.Final("Okay, new line.", "okay new line", true)))
+        assertEquals("prefix okay,\n", editor.committed)
+        assertTrue(session.useRaw(editor.committed.length))
+        assertEquals("prefix okay new line", editor.committed)
+    }
 }

@@ -66,6 +66,9 @@ class SettingsStore(context: Context) {
     var haptics: Boolean
         get() = prefs.getBoolean("haptics", true)
         set(value) { prefs.edit { putBoolean("haptics", value) } }
+    var spokenCommands: Boolean
+        get() = prefs.getBoolean("spoken_commands", false)
+        set(value) { prefs.edit { putBoolean("spoken_commands", value) } }
     var returnToPrevious: Boolean
         get() = prefs.getBoolean("return_to_previous", false)
         set(value) { prefs.edit { putBoolean("return_to_previous", value) } }
