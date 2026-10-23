@@ -45,11 +45,7 @@ import Testing
 
     /// Generous like the other recorder suites: the snapshot renderer holds the main actor for seconds in a full run.
     private func eventually(_ what: String, within seconds: Double = 60, _ condition: () -> Bool) async {
-        let deadline = Date().addingTimeInterval(seconds)
-        while !condition() {
-            if Date() > deadline { Issue.record("timed out waiting for \(what)"); return }
-            try? await Task.sleep(for: .milliseconds(10))
-        }
+        if !(await pollUntil(within: seconds, condition)) { Issue.record("timed out waiting for \(what)") }
     }
 
     private func segment(_ r: NotesRecorder) async {

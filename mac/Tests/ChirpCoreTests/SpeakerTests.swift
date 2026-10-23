@@ -264,11 +264,7 @@ private func span(_ slot: Int, _ start: Double, _ end: Double) -> SpeakerSpan { 
     }
 
     private func eventually(_ what: String, _ condition: () -> Bool) async {
-        let deadline = Date().addingTimeInterval(60)
-        while !condition() {
-            if Date() > deadline { Issue.record("timed out waiting for \(what)"); return }
-            try? await Task.sleep(for: .milliseconds(10))
-        }
+        if !(await pollUntil(within: 60, condition)) { Issue.record("timed out waiting for \(what)") }
     }
 
     private func record(_ r: NotesRecorder, frames: Int) async {

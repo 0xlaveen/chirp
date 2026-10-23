@@ -626,14 +626,7 @@ final class NotesHarness {
     /// (the snapshot renderer) can hold the main actor for minutes; a gap between polls counts as one short poll, so
     /// starvation makes the wait longer instead of failing it.
     func until(_ what: String, within seconds: Double = 120, _ condition: () -> Bool) async {
-        var waited = 0.0, last = ContinuousClock.now
-        while !condition() {
-            if waited > seconds { Issue.record("timed out waiting for \(what)"); return }
-            try? await Task.sleep(for: .milliseconds(5))
-            let now = ContinuousClock.now
-            waited += min((now - last).inSeconds, 0.05)
-            last = now
-        }
+        if !(await pollUntil(within: seconds, every: .milliseconds(5), condition)) { Issue.record("timed out waiting for \(what)") }
         editor.update()
     }
 
@@ -664,4 +657,20 @@ func removeTestDefaults(_ suite: String) {
 
 extension Duration {
     var inSeconds: Double { Double(components.seconds) + Double(components.attoseconds) / 1e18 }
+}
+
+/// Polls `condition` until it holds (true) or `seconds` of time the caller got to run have passed (false). In a full
+/// run another suite (the snapshot renderer) can hold the main actor for minutes; a gap between polls counts as one
+/// short poll, so starvation makes the wait longer instead of failing it.
+func pollUntil(within seconds: Double, every interval: Duration = .milliseconds(10),
+               isolation: isolated (any Actor)? = #isolation, _ condition: () -> Bool) async -> Bool {
+    var waited = 0.0, last = ContinuousClock.now
+    while !condition() {
+        if waited > seconds { return false }
+        try? await Task.sleep(for: interval)
+        let now = ContinuousClock.now
+        waited += min((now - last).inSeconds, 0.05)
+        last = now
+    }
+    return true
 }

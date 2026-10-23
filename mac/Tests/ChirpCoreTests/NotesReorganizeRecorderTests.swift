@@ -85,11 +85,7 @@ final class Counter: @unchecked Sendable {
     }
 
     private func eventually(_ what: String, within seconds: Double = 60, _ condition: () -> Bool) async {
-        let deadline = Date().addingTimeInterval(seconds)
-        while !condition() {
-            if Date() > deadline { Issue.record("timed out waiting for \(what)"); return }
-            try? await Task.sleep(for: .milliseconds(10))
-        }
+        if !(await pollUntil(within: seconds, condition)) { Issue.record("timed out waiting for \(what)") }
     }
 
     /// Lets timers and tasks that were just started reach their `sleep`, so a clock advance finds them.
