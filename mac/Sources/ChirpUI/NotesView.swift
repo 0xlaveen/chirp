@@ -22,6 +22,7 @@ public struct NotesView: View {
             NotesHeader(model: model)
             Divider()
             if let offer = model.recovery { RecoveryBanner(model: model, offer: offer) }
+            if model.showsLongRunNotice { LongRunNotice(model: model) }
             content
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             Divider()
@@ -93,8 +94,8 @@ private struct NotesHeader: View {
                 .foregroundStyle(model.isError ? AnyShapeStyle(Color.red) : AnyShapeStyle(.secondary))
                 .lineLimit(2)
                 .truncationMode(.tail)
+            if let lag = model.lagText { LagChip(model: model, text: lag) }
         }
-        .accessibilityElement(children: .combine)
     }
 
     private var reorganizeButton: some View {
@@ -289,6 +290,59 @@ private struct HearingStrip: View {
     }
 }
 
+/// "Notes 1:20 behind": the notes lag the speech; a click shows what they have not caught up with yet.
+private struct LagChip: View {
+    @Bindable var model: NotesModel
+    let text: String
+
+    var body: some View {
+        Button { model.showsBacklog.toggle() } label: {
+            Label(text, systemImage: "hourglass")
+                .font(.caption.weight(.medium).monospacedDigit())
+                .padding(.horizontal, 8)
+                .padding(.vertical, 2)
+                .background(Capsule().fill(Color.orange.opacity(0.14)))
+                .overlay(Capsule().strokeBorder(Color.orange.opacity(0.45)))
+                .foregroundStyle(.orange)
+        }
+        .buttonStyle(.plain)
+        .fixedSize()
+        .help("Speech the notes have not caught up with yet")
+        .accessibilityHint("Shows the speech that is not in the notes yet")
+        .popover(isPresented: $model.showsBacklog, arrowEdge: .bottom) {
+            ScrollView {
+                Text(model.hearingText)
+                    .font(.system(size: 13))
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(14)
+            }
+            .frame(width: 380, height: 240)
+        }
+    }
+}
+
+/// After every 2 h of recording, once: a reminder that the microphone is still open. It never stops anything itself.
+private struct LongRunNotice: View {
+    let model: NotesModel
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "clock.badge.exclamationmark").foregroundStyle(.orange).accessibilityHidden(true)
+            Text(NotesStatus.longRun(hours: model.longRunHours) + " — the microphone is still open.")
+                .font(.callout)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            Button(NotesStatus.stopRecording, action: model.onRecordToggle).controlSize(.small)
+            Button(NotesStatus.keepGoing) { model.keepGoing() }.controlSize(.small).keyboardShortcut(.defaultAction)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 8)
+        .background(Color.orange.opacity(0.08))
+        .overlay(alignment: .bottom) { Divider() }
+        .accessibilityElement(children: .contain)
+    }
+}
+
 /// "Organized · Undo", for 20 s after a reorganize (or until the next edit or append).
 private struct UndoChip: View {
     let model: NotesModel
@@ -326,7 +380,8 @@ struct NotesPreview: View {
 
     var body: some View {
         ScrollView {
-            BlockView(markdown: model.document.text, leading: true)
+            BlockView(markdown: model.document.text, leading: true, sectionOffset: { model.document.sectionOffset($0) },
+                      jump: { model.jumpToTranscript(at: $0) })
                 .textSelection(.enabled)
                 .frame(maxWidth: NotesViewMetrics.readingWidth, alignment: .leading)
                 .padding(.horizontal, 28)
@@ -341,6 +396,9 @@ private struct BlockView: View {
     let markdown: String
     /// The first block in the pane: no space above its first heading.
     var leading = false
+    /// When a heading's section was said (from speech), and the jump to it in the transcript.
+    var sectionOffset: (String) -> TimeInterval? = { _ in nil }
+    var jump: (TimeInterval) -> Void = { _ in }
 
     var body: some View {
         let blocks = NotesMarkdown.blocks(markdown)
@@ -355,11 +413,21 @@ private struct BlockView: View {
     @ViewBuilder private func line(_ block: NotesMarkdownBlock, first: Bool) -> some View {
         switch block {
         case .heading(let level, let text):
-            Text(NotesMarkdown.inline(text))
-                .font(level == 1 ? .system(size: 22, weight: .bold) : level == 2 ? .title3.bold() : .headline)
-                .padding(.top, first && leading ? 0 : level == 3 ? 8 : 18)
-                .padding(.bottom, 2)
-                .accessibilityAddTraits(.isHeader)
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text(NotesMarkdown.inline(text))
+                    .font(level == 1 ? .system(size: 22, weight: .bold) : level == 2 ? .title3.bold() : .headline)
+                    .accessibilityAddTraits(.isHeader)
+                if level == 2, let offset = sectionOffset(text) {
+                    Button("[\(NotesDocument.timestamp(offset))]") { jump(offset) }
+                        .buttonStyle(.plain)
+                        .font(.caption.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                        .help("Show in the transcript")
+                        .accessibilityLabel("Show in the transcript, at \(NotesDocument.timestamp(offset))")
+                }
+            }
+            .padding(.top, first && leading ? 0 : level == 3 ? 8 : 18)
+            .padding(.bottom, 2)
         case .bullet(let indent, let text, let task, let checked):
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 marker(text: text, task: task, checked: checked, nested: indent > 0)
@@ -544,7 +612,17 @@ private struct TranscriptPane: View {
                     g.contentOffset.y + g.containerSize.height >= g.contentSize.height - 40
                 } action: { _, bottom in model.transcriptAtBottom = bottom }
                 .onChange(of: model.document) {
-                    if model.transcriptAtBottom { proxy.scrollTo("bottom", anchor: .bottom) }
+                    if model.transcriptAtBottom, model.highlightedParagraph == nil { proxy.scrollTo("bottom", anchor: .bottom) }
+                }
+                .onChange(of: model.transcriptJump) {
+                    guard let id = model.highlightedParagraph else { return }
+                    proxy.scrollTo(id, anchor: .top)
+                }
+                .onAppear { if let id = model.highlightedParagraph { proxy.scrollTo(id, anchor: .top) } }
+                .task(id: model.transcriptJump) {
+                    guard model.highlightedParagraph != nil else { return }
+                    try? await Task.sleep(for: .seconds(3))
+                    if !Task.isCancelled { model.highlightedParagraph = nil }
                 }
             }
         }
@@ -557,32 +635,42 @@ private struct TranscriptPane: View {
     }
 
     @ViewBuilder private func row(_ r: TranscriptRow) -> some View {
-        let s = r.segment
+        let p = r.paragraph
         HStack(alignment: .firstTextBaseline, spacing: 12) {
             stamp(r.offset)
             VStack(alignment: .leading, spacing: 3) {
-                if let turn = r.turn {
-                    HStack(alignment: .firstTextBaseline, spacing: 8) {
-                        if let chip = r.chip { SpeakerChip(name: chip.name, color: chip.color, approximate: chip.approximate) }
-                        Text(model.showRaw ? turn.raw : turn.text)
-                            .font(.system(size: 13))
-                            .lineSpacing(2)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                    if (turn.keptOriginal || s.keptOriginal) && !model.showRaw { keptOriginal }
-                } else if let failure = s.failure {
+                if let failure = p.failure {
                     Text("⚠︎ audio not transcribed (\(failure))")
                         .font(.system(size: 13))
                         .foregroundStyle(.orange)
                 } else {
-                    Text(model.showRaw ? s.raw : s.text)
-                        .font(.system(size: 13))
-                        .lineSpacing(2)
-                        .fixedSize(horizontal: false, vertical: true)
-                    if s.keptOriginal && !model.showRaw { keptOriginal }
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        if let chip = r.chip { SpeakerChip(name: chip.name, color: chip.color, approximate: chip.approximate) }
+                        paragraphText(p, hovered: model.hoveredParagraph == p.id)
+                            .font(.system(size: 13))
+                            .lineSpacing(2)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    if p.parts.contains(where: \.keptOriginal) && !model.showRaw { keptOriginal }
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(.vertical, 2)
+        .background(RoundedRectangle(cornerRadius: 4).fill(Color.accentColor.opacity(model.highlightedParagraph == p.id ? 0.12 : 0)))
+        .id(p.id)
+        .onHover { inside in
+            if inside { model.hoveredParagraph = p.id } else if model.hoveredParagraph == p.id { model.hoveredParagraph = nil }
+        }
+    }
+
+    /// The paragraph's segments as one text; while hovered, each later segment shows its own `[hh:mm:ss]` in place.
+    private func paragraphText(_ p: TranscriptParagraph, hovered: Bool) -> Text {
+        p.parts.enumerated().reduce(Text("")) { text, item in
+            let (i, part) = item
+            let body = Text((i == 0 ? "" : " ") + part.text(model.showRaw))
+            guard hovered, i > 0 else { return text + body }
+            return text + Text(" [\(NotesDocument.timestamp(part.offset))]").font(.caption2.monospacedDigit()).foregroundColor(.secondary) + body
         }
     }
 

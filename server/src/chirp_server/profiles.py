@@ -187,6 +187,9 @@ words only:
 - Delete a restart the speaker abandons and repeats: "something that can be, something that we
   should" -> "something that we should".
 - Fix punctuation and sentence casing. The segment may start or end mid-sentence.
+- When a previous segment is given, use it only to decide casing and punctuation at the start of
+  this segment: continue a sentence that runs across (lowercase the first word unless it is a
+  proper noun or "I"). Never copy words from it.
 
 Never add, replace or reorder a word. Do not fix grammar, paraphrase, summarize, shorten
 sentences or complete thoughts. Keep every sentence, including short asides and afterthoughts,

@@ -241,7 +241,7 @@ final class NotesURLStub: URLProtocol, @unchecked Sendable {
         prefs.wordWaveform = true
         prefs.correctionPrompts = ["default": "Keep it tidy.", "email": "Formal."]
         let o = prefs.notesStartOptions(health: Health(correction: "available"))
-        #expect(o == StartOptions(client: "mac", correction: true, correctionProfile: "default", correctionPrompt: "Keep it tidy.", wordTimings: false))
+        #expect(o == StartOptions(client: "mac", correction: true, correctionProfile: "default", correctionPrompt: "Keep it tidy.", wordTimings: true))
         #expect(!prefs.notesStartOptions(health: Health(correction: "off")).correction)
         #expect(!prefs.notesStartOptions(health: nil).correction)
     }
@@ -255,7 +255,7 @@ final class NotesURLStub: URLProtocol, @unchecked Sendable {
         prefs.correctionPrompts = ["default": "Keep it tidy."]
         let o = prefs.notesStartOptions(health: Health(correction: "available", notesCorrection: true))
         // The edited dictation prompt never replaces the notes style, whose prompt matches its guard.
-        #expect(o == StartOptions(client: "mac", correction: true, correctionProfile: "live_notes", wordTimings: false))
+        #expect(o == StartOptions(client: "mac", correction: true, correctionProfile: "live_notes", wordTimings: true))
         #expect(ClientMessage.start(o).contains("\"correction_profile\":\"live_notes\""))
         #expect(!ClientMessage.start(o).contains("correction_prompt"))
         #expect(!prefs.notesStartOptions(health: Health(correction: "off", notesCorrection: true)).correction)

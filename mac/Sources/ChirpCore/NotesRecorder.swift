@@ -78,12 +78,28 @@ public enum NotesPassEvent: Equatable, Sendable {
 }
 
 /// Routes capture frames to the current segment's socket and runs the segmenter, on the audio thread. The swap at a
-/// cut is atomic under the lock, so every frame lands on exactly one socket, in order.
+/// cut is atomic under the lock, so every frame lands on exactly one socket, in order, except at a hard cut: the
+/// last `NotesSegmenter.overlap` of audio the old socket got is sent again as the start of the new one.
 final class NotesFrameRouter: @unchecked Sendable {
+    /// What a swap did: the old target, the document time of the switch, how much audio (seconds) was sent again to
+    /// the new target, and the quiet before the old segment's first speech (across the join before it).
+    struct Swap {
+        var old: StreamSession?
+        var offset: TimeInterval
+        var overlap: TimeInterval = 0
+        var pause: TimeInterval = 0
+    }
+
     private let lock = NSLock()
     private var target: StreamSession?
     private var segmenter = NotesSegmenter()
     private var cutRequested = false
+    /// The requested cut is a hard one: the next swap overlaps.
+    private var overlapNext = false
+    private var recent = PCMRing(seconds: NotesSegmenter.overlap)
+    /// Quiet in a row so far (it runs on across a swap), and what it was at the current segment's first speech.
+    private var quietRun: TimeInterval = 0
+    private var pauseAtStart: TimeInterval?
     /// Audio routed in this document, bytes of 16 kHz PCM16 (the segment offsets and the elapsed time).
     private var bytes = 0
     /// Speaker labels: the diarizer hears exactly the frames the sockets get, stamped on the same clock.
@@ -94,23 +110,41 @@ final class NotesFrameRouter: @unchecked Sendable {
         lock.withLock {
             guard let target else { return false }
             target.sendAudio(frame)
+            recent.append(frame)
             speakers?.feed(frame, at: Double(bytes) / (PCMConverter.sampleRate * 2))
             bytes += frame.count
             let duration = Double(frame.count / 2) / PCMConverter.sampleRate
+            if level.rms < NotesSegmenter.quietRMS {
+                quietRun += duration
+            } else {
+                if pauseAtStart == nil { pauseAtStart = quietRun }
+                quietRun = 0
+            }
             guard !cutRequested, segmenter.feed(level, duration: duration) else { return false }
             cutRequested = true
+            overlapNext = segmenter.hardCut
             return true
         }
     }
 
-    /// Points capture at `next` (nil stops routing). Returns the old target and the audio offset of the switch.
-    func swap(to next: StreamSession?) -> (old: StreamSession?, offset: TimeInterval) {
+    /// Points capture at `next` (nil stops routing).
+    func swap(to next: StreamSession?) -> Swap {
         lock.withLock {
-            let old = target
+            var result = Swap(old: target, offset: Double(bytes) / (PCMConverter.sampleRate * 2), pause: pauseAtStart ?? quietRun)
             target = next
+            if overlapNext, let next, result.old != nil {
+                for frame in recent.contents { next.sendAudio(frame) }
+                result.overlap = recent.seconds
+            }
+            if next == nil {
+                recent.removeAll()
+                quietRun = 0
+            }
+            pauseAtStart = nil
             segmenter.reset()
             cutRequested = false
-            return (old, Double(bytes) / (PCMConverter.sampleRate * 2))
+            overlapNext = false
+            return result
         }
     }
 
@@ -162,6 +196,9 @@ public final class NotesRecorder {
     public static let reorganizeAfterCommit: TimeInterval = 5
     /// Stop skips its reorganize when one ended this recently on the same text.
     public static let stopReorganizeSkip: TimeInterval = 30
+    /// A step of a whole-document Organize that a segment clean-up preempted is tried again this often, this long apart.
+    public static let stepRetries = 2
+    public static let stepRetryAfter: Duration = .seconds(2)
 
     public private(set) var state: NotesRecorderState = .idle { didSet { if state != oldValue { changed() } } }
     public private(set) var document = NotesDocument()
@@ -199,6 +236,14 @@ public final class NotesRecorder {
         let offset: TimeInterval
         /// Where its audio ended (set at the cut that finalizes it).
         var end: TimeInterval?
+        /// It follows the previous segment without a break (a cut, not Record), so its final may take that one's
+        /// end as clean-up context and the transcript may join them.
+        var joins = false
+        /// Seconds of audio at its start that the previous segment also got, and at its end that the next one got.
+        var leading: TimeInterval = 0
+        var trailing: TimeInterval = 0
+        /// Quiet before its first speech, across the join (set at its cut).
+        var pause: TimeInterval?
         var partial = ""
         var correcting = false
         var task: Task<Void, Never>?
@@ -214,6 +259,10 @@ public final class NotesRecorder {
     private var cutting = false
     private var failureStreak = 0
     private var sawReady = false
+    /// The newest final (trimmed), for the next segment's context and dedupe.
+    private var lastFinal: (seq: Int, text: String)?
+    /// The server takes `stop.context` (health `notes_context`).
+    private var contextSupported = false
 
     private var passTask: Task<Void, Never>?
     private var pending = false
@@ -246,6 +295,8 @@ public final class NotesRecorder {
     /// When Stop began, for the elapsed time on "Finishing…".
     private var stoppingSince: TimeInterval?
     private var waiters: [(check: () -> Bool, resume: CheckedContinuation<Void, Never>)] = []
+    /// Numbers whole-document Organize runs, so the editor makes each one undo step.
+    private var organizeRuns = 0
 
     /// A segment waiting for its speaker labels.
     private struct LabelJob {
@@ -276,6 +327,7 @@ public final class NotesRecorder {
         self.reorganize = reorganize
         self.autoReorganize = autoReorganize
         reorganizeSupported = health?.notesReorganize == true
+        contextSupported = health?.notesContext == true
         self.now = now
         self.sleep = sleep
         self.options = options
@@ -331,6 +383,7 @@ public final class NotesRecorder {
     public func configureStructuring(enabled: Bool, health: Health?) {
         structuringAllowed = .availability(health: health, enabled: enabled)
         reorganizeSupported = health?.notesReorganize == true && !reorganizeEndpointMissing
+        contextSupported = health?.notesContext == true
         if structuringAllowed.isOff {
             structuring = structuringAllowed
         } else if structuring.isOff {
@@ -358,9 +411,10 @@ public final class NotesRecorder {
         let seq = nextSeq
         nextSeq += 1
         let session = makeSession(options)
-        let (_, offset) = router.swap(to: session)
+        let swap = router.swap(to: session)
         current = seq
-        track(seq, session: session, offset: offset)
+        lastFinal = nil
+        track(seq, session: session, offset: swap.offset)
         Task { await session.open() }
     }
 
@@ -477,16 +531,22 @@ public final class NotesRecorder {
         // The sequence number is taken at the swap, synchronously, so transcript order is capture order.
         let seq = nextSeq
         nextSeq += 1
-        let (old, offset) = router.swap(to: next)
+        let swap = router.swap(to: next)
         let previous = current
         current = seq
-        track(seq, session: next, offset: offset)
-        if let previous { segments[previous]?.end = offset }
-        if let previous, let old { finalize(previous, old) }
+        track(seq, session: next, offset: swap.offset - swap.overlap, joins: true, leading: swap.overlap)
+        if let previous {
+            segments[previous]?.end = swap.offset
+            segments[previous]?.trailing = swap.overlap
+            let joins = segments[previous]?.joins == true
+            segments[previous]?.pause = joins ? swap.pause : nil
+        }
+        if let previous, let old = swap.old { finalize(previous, old) }
     }
 
-    private func track(_ seq: Int, session: StreamSession, offset: TimeInterval) {
-        var segment = Segment(session: session, offset: offset)
+    private func track(_ seq: Int, session: StreamSession, offset: TimeInterval, joins: Bool = false,
+                       leading: TimeInterval = 0) {
+        var segment = Segment(session: session, offset: offset, joins: joins, leading: leading)
         let myEpoch = epoch
         segment.task = Task {
             for await event in session.events {
@@ -499,9 +559,12 @@ public final class NotesRecorder {
         segments[seq] = segment
     }
 
-    /// Ask the old segment for its final, with a deadline.
+    /// Ask the old segment for its final, with a deadline. With clean-up on the `live_notes` style and a server that
+    /// takes it, the previous segment's end goes along as context (known by now: that final came while this one ran).
     private func finalize(_ seq: Int, _ session: StreamSession) {
-        Task { await session.stop() }
+        let context = contextSupported && options.correction && options.correctionProfile == CorrectionProfile.liveNotesID
+            && segments[seq]?.joins == true && lastFinal?.seq == seq - 1 ? lastFinal.flatMap { NotesJoin.context($0.text) } : nil
+        Task { await session.stop(context: context) }
         let sleep = self.sleep, myEpoch = epoch
         segments[seq]?.timeout = Task {
             await sleep(.seconds(Self.finalTimeout))
@@ -527,14 +590,19 @@ public final class NotesRecorder {
             segments[seq]?.correcting = true
             updateLivePartial()
         case .message(.final(let f)):
-            let text = f.text.trimmingCharacters(in: .whitespacesAndNewlines)
-            let raw = f.raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            let joined = joinTrimmed(f, seq: seq)
+            let text = joined.text.trimmingCharacters(in: .whitespacesAndNewlines)
+            let raw = joined.raw.trimmingCharacters(in: .whitespacesAndNewlines)
             let offset = segments[seq]?.offset ?? 0
+            let end = segments[seq]?.end ?? router.seconds
             let kept = options.correction && !f.corrected && f.correctionError != nil
-            let segment = text.isEmpty ? nil : NotesSegment(id: seq, offset: offset, raw: raw.isEmpty ? text : raw, text: text,
+            var segment = text.isEmpty ? nil : NotesSegment(id: seq, offset: offset, raw: raw.isEmpty ? text : raw, text: text,
                                                             corrected: f.corrected, keptOriginal: kept)
+            segment?.end = end
+            segment?.pauseBefore = segments[seq]?.pause
+            if !text.isEmpty { lastFinal = (seq, text) }
             if let segment, activeSpeakers != nil {
-                labelJobs[seq] = LabelJob(offset: offset, end: segments[seq]?.end ?? router.seconds, words: f.words,
+                labelJobs[seq] = LabelJob(offset: offset, end: end, words: joined.words,
                                           raw: segment.raw, text: segment.text, received: now())
             }
             failureStreak = 0
@@ -550,6 +618,19 @@ public final class NotesRecorder {
             return true
         }
         return false
+    }
+
+    /// The final without the words that belong to a neighbour across an overlapped cut: trimmed by word timings,
+    /// then a first word or pair that still repeats the previous final's end is dropped (both together are the only
+    /// variant no worse than no overlap on every clip of the boundary bench, docs/bench.md).
+    private func joinTrimmed(_ f: FinalResult, seq: Int) -> NotesJoin.Final {
+        var final = NotesJoin.Final(raw: f.raw, text: f.text, words: f.words)
+        guard let s = segments[seq], s.leading > 0 || s.trailing > 0 else { return final }
+        if f.words?.isEmpty == false {
+            final = NotesJoin.trim(final, leading: s.leading, trailing: s.trailing, duration: (s.end ?? router.seconds) - s.offset)
+        }
+        guard s.leading > 0, let previous = lastFinal, previous.seq == seq - 1 else { return final }
+        return NotesJoin.dedupe(final, after: previous.text)
     }
 
     private func segmentFailed(_ seq: Int, reason: String) {
@@ -913,7 +994,7 @@ public final class NotesRecorder {
         publish(document.freezeOverflow())
         let window = state.isCapturing || state == .idle || state == .stopped ? document.nextStructureRequest() : nil
         let blocks = document.untouchedFallbacks
-        guard window != nil || !blocks.isEmpty else {
+        guard window != nil || !blocks.isEmpty || document.organizesInSteps else {
             if let request = document.reorganizeRequest(final: false, manual: true) {
                 runReorganize(request, manual: true)
             } else {
@@ -922,7 +1003,7 @@ public final class NotesRecorder {
             }
             return
         }
-        let total = (window == nil ? 0 : 1) + blocks.count + 1
+        var total = (window == nil ? 0 : 1) + blocks.count + (document.organizesInSteps ? document.organizeGroupCount() + 1 : 1)
         passKind = .reorganize
         reorganizeState = .organizing(step: 1, of: total)
         changed()
@@ -973,7 +1054,14 @@ public final class NotesRecorder {
                 let changes = self.editorComposing ? [] : self.document.replaceFallbacks(replacements, ifVersion: version)
                 if changes.isEmpty { conflict = true } else { changes.forEach { self.publish($0) } }
             }
-            if !conflict, self.reorganizeSupported, let request = self.document.reorganizeRequest(final: false, manual: true) {
+            if !conflict, self.reorganizeSupported, self.document.organizesInSteps {
+                total = step - 1 + self.document.organizeGroupCount() + 1
+                self.reorganizeState = .organizing(step: min(step, total), of: total)
+                guard let result = await self.reorganizeInSteps(final: false, advance: advance) else { return }
+                failures += result.failures
+                conflict = result.conflict
+                if result.applied, failures.isEmpty, !conflict { self.reorganizeState = .applied(at: self.now()) }
+            } else if !conflict, self.reorganizeSupported, let request = self.document.reorganizeRequest(final: false, manual: true) {
                 let (response, failure) = await self.callReorganize(request)
                 guard self.epoch == myEpoch else { return }
                 _ = self.applyReorganizeResult(request, response, manual: true, failure: failure)
@@ -1059,6 +1147,86 @@ public final class NotesRecorder {
         return false
     }
 
+    /// Whole-document reorganize (`NotesOrganize`): each group of sections oldest first, then the merge pass. Each
+    /// step applies only to the text it was made from: an edit (or a composition) while one runs ends the run as a
+    /// conflict and keeps the steps already applied. All its changes share one run number, so they undo as one step.
+    /// Nil when the document was replaced meanwhile.
+    private func reorganizeInSteps(final: Bool, advance: () -> Void) async -> (failures: [String], conflict: Bool, applied: Bool)? {
+        let myEpoch = epoch
+        organizeRuns += 1
+        let run = organizeRuns
+        var failures: [String] = [], applied = false, cursor = 0
+        enum Step { case applied([NotesTextChange]), unchanged, failed(String), conflict, stop }
+        func call(_ request: NotesReorganizeRequest, apply: (NotesReorganizeResponse) -> [NotesTextChange]) async -> Step? {
+            var attempt = 0
+            while true {
+                let (response, failure) = await callReorganize(request)
+                guard epoch == myEpoch else { return nil }
+                if response.preempted, failure == nil {
+                    guard attempt < Self.stepRetries else { return .failed("busy") }
+                    attempt += 1
+                    await sleep(Self.stepRetryAfter)
+                    guard epoch == myEpoch else { return nil }
+                    continue
+                }
+                lastReorganizeEnd = now()
+                switch failure {
+                case .unsupported:
+                    reorganizeEndpointMissing = true
+                    reorganizeSupported = false
+                    return .stop
+                case .off:
+                    structuringAllowed = .off(.correctionOff)
+                    structuring = .off(.correctionOff)
+                    return .stop
+                default: break
+                }
+                if request.version != document.version || request.documentID != document.id || editorComposing { return .conflict }
+                guard response.reorganized else { return .failed(response.failureLabel) }
+                let changes = apply(response)
+                return changes.isEmpty ? .unchanged : .applied(changes)
+            }
+        }
+        func record(_ step: Step) -> Bool {
+            switch step {
+            case .applied(let changes):
+                dropHeld()
+                changes.forEach { publish($0) }
+                applied = true
+            case .unchanged: break
+            case .failed(let label): failures.append(label)
+            case .conflict, .stop: return false
+            }
+            return true
+        }
+        var conflict = false
+        while let request = document.organizeStep(from: cursor, final: final) {
+            guard let step = await call(request, apply: { response in
+                guard var change = self.document.applyReorganize(response, for: request) else { return [] }
+                change.run = run
+                return [change]
+            }) else { return nil }
+            if case .applied(let changes) = step {
+                cursor = request.range.location + changes[0].replacement.utf16.count
+            } else {
+                cursor = NSMaxRange(request.range)
+            }
+            guard record(step) else {
+                if case .conflict = step { conflict = true }
+                break
+            }
+            advance()
+        }
+        if !conflict, reorganizeSupported, !structuring.isOff, let request = document.organizeMergeRequest(final: final) {
+            guard let step = await call(request, apply: { self.document.applyMerge($0, for: request, run: run) }) else { return nil }
+            if !record(step), case .conflict = step { conflict = true }
+            advance()
+        }
+        versionAtReorganizeEnd = document.version
+        reorganizeRetry = conflict || !failures.isEmpty
+        return (failures, conflict, applied)
+    }
+
     // MARK: speaker labels
 
     /// Labels committed segments in order: each waits until the diarizer settled its audio, or `labelTimeout` after
@@ -1089,7 +1257,8 @@ public final class NotesRecorder {
     private func label(_ job: LabelJob, timeline: SpeakerTimeline, tentative: Bool) {
         if tentative { tentativeJobs.append(job) }
         guard let turns = SpeakerAttribution.turns(words: job.words, raw: job.raw, text: job.text, offset: job.offset,
-                                                   end: job.end, spans: timeline.labellingSpans(includeTentative: tentative),
+                                                   end: job.end,
+                                                   spans: timeline.labellingSpans(includeTentative: tentative, near: job.offset...max(job.end, job.offset)),
                                                    previousSlot: document.lastSpeakerSlot) else { return }
         document.attachSpeakers(turns, toSegment: job.segment, tentative: tentative)
     }
@@ -1126,9 +1295,13 @@ public final class NotesRecorder {
         timer = nil
         pending = false
         manualReorganize = false
-        let (old, end) = router.swap(to: nil)
-        if let seq = current { segments[seq]?.end = end }
-        if let seq = current, let old, segments[seq] != nil { finalize(seq, old) }
+        let swap = router.swap(to: nil)
+        if let seq = current {
+            segments[seq]?.end = swap.offset
+            let joins = segments[seq]?.joins == true
+            segments[seq]?.pause = joins ? swap.pause : nil
+        }
+        if let seq = current, let old = swap.old, segments[seq] != nil { finalize(seq, old) }
         current = nil
         router.setSpeakers(nil)
         // The tail settles while the last final decodes; the session stays open for the next Record.
@@ -1154,6 +1327,24 @@ public final class NotesRecorder {
         let justTried = versionAtReorganizeEnd == document.version
             && (lastReorganizeEnd.map { now() - $0 < Self.stopReorganizeSkip } ?? false)
         if !structuring.isOff, autoReorganize, reorganizeSupported, !justTried, document.version != document.lastReorganizeVersion,
+           document.organizesInSteps {
+            // A long document is organized whole at Stop, in steps, so its start is merged with its end too.
+            let total = document.organizeGroupCount() + 1
+            var step = 1
+            passKind = .reorganize
+            reorganizeState = .organizing(step: 1, of: total)
+            changed()
+            let result = await reorganizeInSteps(final: true) {
+                step += 1
+                self.reorganizeState = .organizing(step: min(step, total), of: total)
+                self.changed()
+            }
+            guard epoch == myEpoch, let result else { return }
+            passKind = nil
+            reorganizeState = result.conflict ? .idle : result.applied && result.failures.isEmpty ? .applied(at: now())
+                : result.failures.isEmpty ? .idle : .failed(result.failures[0])
+            onPassEvent?(.organize(steps: total, failed: result.failures.count, conflict: result.conflict))
+        } else if !structuring.isOff, autoReorganize, reorganizeSupported, !justTried, document.version != document.lastReorganizeVersion,
            let request = document.reorganizeRequest(final: true, manual: false) {
             runReorganize(request, manual: false)
             await waitUntil { self.passTask == nil }

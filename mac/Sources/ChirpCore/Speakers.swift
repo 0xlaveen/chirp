@@ -30,7 +30,11 @@ public struct SpeakerTimeline: Equatable, Sendable {
     /// Open spans (a voice still talking at the frontier) and the preview past it; replaced on every update.
     public var tentative: [SpeakerSpan]
 
-    public init(spans: [SpeakerSpan] = [], finalizedThrough: TimeInterval = 0, tentative: [SpeakerSpan] = []) {
+    /// Closed spans kept behind the settled frontier: a label never looks further back (a timed-out segment is
+    /// labelled again within seconds), so the timeline, and each snapshot of it, stays small over hours.
+    public static let retained: TimeInterval = 600
+
+        public init(spans: [SpeakerSpan] = [], finalizedThrough: TimeInterval = 0, tentative: [SpeakerSpan] = []) {
         self.spans = spans
         self.finalizedThrough = finalizedThrough
         self.tentative = tentative
@@ -45,6 +49,21 @@ public struct SpeakerTimeline: Equatable, Sendable {
             return SpeakerSpan(slot: s.slot, start: s.start, end: min(s.end, finalizedThrough))
         }
         return spans + open
+    }
+
+    /// `labellingSpans` limited to those near `range` (a segment's audio, give or take the attribution's reach).
+    public func labellingSpans(includeTentative: Bool = false, near range: ClosedRange<TimeInterval>) -> [SpeakerSpan] {
+        let lo = range.lowerBound - Self.reach, hi = range.upperBound + Self.reach
+        return labellingSpans(includeTentative: includeTentative).filter { $0.end > lo && $0.start < hi }
+    }
+
+    /// How far from a segment a span can still matter: the nearest-span rule and the smoothing look this far.
+    static let reach: TimeInterval = 2
+
+    /// Drops closed spans that ended more than `retained` before the frontier.
+    public mutating func prune() {
+        let horizon = finalizedThrough - Self.retained
+        if let first = spans.first, first.end < horizon { spans.removeAll { $0.end < horizon } }
     }
 }
 

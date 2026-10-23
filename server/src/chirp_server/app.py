@@ -24,10 +24,11 @@ from .correction import CorrectionResult, Corrector
 from .devices import Credentials
 from .engine import EngineWorker
 from .managed_cleanup import ManagedCleanup
-from .profiles import MAX_PROMPT_CHARS
+from .profiles import LIVE_NOTES_ID, MAX_PROMPT_CHARS
 from .retention import Retention
 
 log = logging.getLogger("chirp")
+MAX_CONTEXT_CHARS = 500
 MESSAGES = {
     "auth": "Authentication required",
     "busy": "Speech engine busy; retry shortly",
@@ -76,6 +77,7 @@ class Utterance:
         self.profile = "default"
         self.instructions = ""
         self.correction_prompt = None
+        self.context = None
         self.leased = False
         self.failure = False
         self.aborted = False
@@ -91,6 +93,7 @@ class Utterance:
             if not isinstance(prompt, str) or len(prompt) > MAX_PROMPT_CHARS:
                 raise AudioError("bad_request")
             self.correction_prompt = prompt
+        self.set_context(control)
         profile = control.get("correction_profile", "default")
         instructions = control.get("correction_instructions", "")
         if (
@@ -131,6 +134,14 @@ class Utterance:
             }
         )
         self.task = asyncio.create_task(self.partials())
+
+    def set_context(self, control):
+        # Optional previous Live Notes segment tail; a value on `stop` replaces the `start` one.
+        if "context" in control:
+            context = control["context"]
+            if not isinstance(context, str) or len(context) > MAX_CONTEXT_CHARS:
+                raise AudioError("bad_request")
+            self.context = context or None
 
     def add(self, chunk):
         if len(chunk) >= MAX_FRAME or not chunk or len(chunk) % 2:
@@ -271,6 +282,7 @@ class Utterance:
                 self.instructions,
                 self.correction_prompt,
                 words=words,
+                context=self.context,
             )
         )
         try:
@@ -326,15 +338,17 @@ async def make_final(
     instructions="",
     correction_prompt=None,
     words=None,
+    context=None,
 ):
     finalized = (time.perf_counter() - started) * 1000
     correction_started = time.perf_counter()
     if enabled:
         args = (raw, profile, instructions)
+        extra = {"context": context} if context and profile == LIVE_NOTES_ID else {}
         result = (
-            await corrector.process(*args, correction_prompt)
+            await corrector.process(*args, correction_prompt, **extra)
             if correction_prompt is not None
-            else await corrector.process(*args)
+            else await corrector.process(*args, **extra)
         )
     else:
         result = CorrectionResult(raw)
@@ -458,6 +472,8 @@ def create_app(settings=None, engine=None, token=None, corrector=None):
                 # The hidden `live_notes` style for Live Notes segments exists.
                 "notes_correction": True,
                 "notes_reorganize": True,
+                # `start`/`stop` may carry `context`, the previous segment's tail, for notes.
+                "notes_context": True,
                 **build.info(),
             }
         )
@@ -762,6 +778,7 @@ def create_app(settings=None, engine=None, token=None, corrector=None):
                     await utterance.close()
                     utterance = None
                 elif kind == "stop" and utterance:
+                    utterance.set_context(message)
                     final, raced = await finalize(ws, utterance)
                     # A cancelled utterance sends nothing: no final, no error; the
                     # socket stays usable for the next start.

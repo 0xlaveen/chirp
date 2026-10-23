@@ -22,9 +22,11 @@ for line in sys.stdin:
     request = json.loads(line)
     text = request["text"]
     # Live Notes segment correction sends its own `Transcript JSON:` user message.
-    notes_correction = str(request.get("user", "")).startswith("Transcript JSON: ")
+    # A `Previous segment JSON (context only...)` line may come first.
+    user = str(request.get("user", ""))
+    notes_correction = user.startswith(("Transcript JSON: ", "Previous segment JSON"))
     if notes_correction:
-        text = json.loads(request["user"].removeprefix("Transcript JSON: "))
+        text = json.loads(user.split("Transcript JSON: ", 1)[1])
     structure = "user" in request and not notes_correction
     # Reorganize sends `Notes JSON: {"outline": ..., "notes": ...}`; structure has "transcript".
     try:

@@ -587,6 +587,38 @@ public enum Snapshots {
         return d
     }
 
+    /// Forty minutes into a long session: segments that run on without a pause read as one paragraph, sections
+    /// remember when they were said, and 1:30 of speech waits for the notes.
+    static func demoLong() -> NotesDocument {
+        var d = NotesDocument(startedAt: Date(timeIntervalSince1970: 1_792_504_980))
+        let said: [(TimeInterval, String, TimeInterval?)] = [
+            (2412, "So the launch target moved to March third, which gives us about six weeks for the beta, and", nil),
+            (2457, "most of that goes to the onboarding flow. Maya will send the draft spec by Friday.", 0.3),
+            (2502, "Theo books the design review for the week after, once the spec is in.", 0.2),
+            (2547, "On budget, we decided to keep the vendor contract, but we will not add new headcount this quarter.", 3.1),
+            (2592, "Open question is who owns QA for the beta, and whether", nil),
+            (2637, "support should join the first two weeks of it.", 0.4),
+        ]
+        func add(_ i: Int) {
+            var s = NotesSegment(id: i, offset: said[i].0, raw: said[i].1.lowercased(), text: said[i].1, corrected: true)
+            s.end = said[i].0 + 45
+            s.pauseBefore = said[i].2
+            d.append(s)
+        }
+        for i in 0..<3 { add(i) }
+        let first = ["## Launch plan", "- Launch target moved to **March 3**: about six weeks of beta",
+                     "- [ ] Maya to send the draft spec by **Friday**", "- [ ] Theo to book the design review"].joined(separator: "\n")
+        if let r = d.nextStructureRequest() { d.apply(NotesStructureResponse(markdown: first, structured: true), for: r) }
+        d.freezeAll()
+        add(3)
+        let budget = ["## Budget", "- **Decision:** keep the vendor contract", "- _No_ new headcount this quarter"].joined(separator: "\n")
+        if let r = d.nextStructureRequest() { d.apply(NotesStructureResponse(markdown: budget, structured: true), for: r) }
+        d.freezeAll()
+        for i in 4..<6 { add(i) }
+        d.livePartial = "and the onboarding emails for the first"
+        return d
+    }
+
     /// The demo after a reorganize: the agenda and the kickoff merged, tasks collected at the end.
     static func reorganizedNotes() -> NotesDocument {
         var d = demoNotes()
@@ -683,6 +715,12 @@ public enum Snapshots {
                 $0.document = d
             },
             notes("empty") { $0.state = .idle; $0.document = NotesDocument(); $0.elapsed = 0 },
+            notes("long-lag") { $0.document = demoLong(); $0.elapsed = 2690 },
+            notes("long-transcript") {
+                $0.tab = .transcript; $0.document = demoLong(); $0.elapsed = 2690; $0.hoveredParagraph = "0"
+            },
+            notes("long-preview") { $0.document = demoLong(); $0.elapsed = 2690; $0.preview = true; $0.structuring = .idle },
+            notes("long-run") { $0.document = demoLong(); $0.elapsed = 7262 },
             notes("error") { $0.state = .error("Notes stopped: Server is busy") },
         ]
     }
