@@ -31,7 +31,7 @@ struct LiveNotesView: View {
                     notesPane.frame(maxWidth: .infinity)
                     Divider()
                     transcriptPane.frame(maxWidth: .infinity)
-                }.accessibilityIdentifier("chirp.notes.split")
+                }.accessibilityElement(children: .contain).accessibilityIdentifier("chirp.notes.split")
             } else {
                 Picker("Show", selection: $pane) {
                     Text("Notes").tag(NotesPane.notes)
