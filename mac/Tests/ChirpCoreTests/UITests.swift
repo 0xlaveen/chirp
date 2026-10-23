@@ -177,10 +177,10 @@ import Testing
         #expect(has(form.appStyles.view, .cleanup) && has(form.showChanges, .cleanup) && has(form.insertRawFirst, .cleanup))
         #expect(has(form.removeSpeakerModel, .notes) && has(form.notesButton, .notes) && has(form.notesRecoveryCopy, .notes))
         #expect(has(form.serverURL, .server) && has(form.doctorButton, .server) && has(form.modelsButton, .server) && has(form.keepLoaded, .server))
-        #expect(has(form.pairButton, .devices) && has(form.about, .about))
+        #expect(has(form.pairButton, .devices) && has(form.devicesView, .devices) && has(form.rotateButton, .devices) && has(form.about, .about))
         // and on no other
         for control in [form.launch, form.hotkey, form.sounds, form.cleanupEnabled, form.removeSpeakerModel, form.notesRecoveryCopy, form.serverURL, form.keepLoaded,
-                        form.pairButton, form.micButton, form.about] {
+                        form.pairButton, form.devicesView, form.rotateButton, form.micButton, form.about] {
             #expect(SettingsTab.allCases.filter { has(control, $0) }.count == 1)
         }
     }
@@ -212,7 +212,7 @@ import Testing
         #expect(SettingsTab.allCases.allSatisfy { form.view(for: $0).fittingSize.width == sizes[0].width })
         // Not one tall form: only Clean-up (the prompt editor) is tall.
         let heights = Dictionary(uniqueKeysWithValues: zip(SettingsTab.allCases, sizes.map(\.height)))
-        #expect(heights[.general]! < 260 && heights[.devices]! < 140 && heights[.notes]! < 360 && heights[.server]! < 380, "\(heights)")
+        #expect(heights[.general]! < 260 && heights[.devices]! < 260 && heights[.notes]! < 360 && heights[.server]! < 380, "\(heights)")
         #expect(heights[.dictation]! < 560, "\(heights)")
         #expect(heights[.cleanup]! > heights[.dictation]! * 1.25)
     }
@@ -269,7 +269,7 @@ import Testing
     }
 
     @Test(arguments: [(SettingsTab.general, SoundPack.chirp, 4), (.dictation, .chirp, 9), (.dictation, .custom, 11), (.cleanup, .chirp, 7),
-                      (.notes, .chirp, 5), (.server, .chirp, 6), (.devices, .chirp, 1)])
+                      (.notes, .chirp, 5), (.server, .chirp, 6), (.devices, .chirp, 3)])
     func labelsShareARightEdgeAndControlsALeftEdge(tab: SettingsTab, pack: SoundPack, expectedLabels: Int) throws {
         var state = SettingsState()
         state.soundPack = pack
@@ -290,7 +290,7 @@ import Testing
         case .cleanup: [form.cleanupEnabled, form.style, form.insertRawFirst, form.appStyles.scroll, form.showChanges, form.offerRaw]
         case .notes: [form.notesRecoveryCopy, form.notesButton, form.openNotes.shortcutView]
         case .server: [form.serverURL, form.keepLoaded, form.doctorButton, form.modelsButton]
-        case .devices: [form.pairButton]
+        case .devices: [form.pairButton, form.devicesView, form.rotateButton]
         case .about: []
         }
         let controlEdges = leading.map { view.convert($0.bounds, from: $0).minX }
@@ -479,7 +479,7 @@ import Testing
         #expect(Snapshots.committedScenarios.map(\.name) == names)
     }
 
-    @Test func theCommittedFilesAreExactlyTheCuratedSetUnderThreePointThreeMegabytes() throws {
+    @Test func theCommittedFilesAreExactlyTheCuratedSetUnderThreePointFiveMegabytes() throws {
         let dir = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
             .deletingLastPathComponent().appendingPathComponent("docs/screenshots/mac")
         guard FileManager.default.fileExists(atPath: dir.path) else { return }   // not a full checkout
@@ -487,7 +487,7 @@ import Testing
         let expected = Snapshots.committedNames.flatMap { ["\($0)-dark.png", "\($0)-light.png"] }.sorted()
         #expect(files == expected, "docs/screenshots/mac is out of date: run mac/scripts/snapshots.sh")
         let total = try files.reduce(0) { $0 + (try FileManager.default.attributesOfItem(atPath: dir.appendingPathComponent($1).path)[.size] as? Int ?? 0) }
-        #expect(total < 3_300_000, "\(total) bytes")
+        #expect(total < 3_500_000, "\(total) bytes")
     }
 
     @Test func curatedRenderingWritesOnlyTheCommittedNames() throws {

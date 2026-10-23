@@ -45,9 +45,17 @@ public struct PairingPresentation: Equatable, Sendable {
     /// The button under it: "Run Command…" or "Check Again", or none while busy.
     public var action: String?
     public var showsCode = false
+    /// The name field shows, filled with this.
+    public var asksName: String?
 
     public init(_ step: PairingStep) {
         switch step {
+        case .naming(let suggested, let problem):
+            headline = "Name this phone"
+            detail = problem ?? "Each phone gets its own pairing token, so you can cut one off later in Settings → Devices without re-pairing the others."
+            if problem != nil { tone = .warning }
+            asksName = suggested
+            action = "Continue"
         case .checking:
             headline = "Checking Tailscale…"
             detail = "Looking for this Mac’s tailnet name and whether Chirp is published on it."
@@ -100,6 +108,11 @@ public struct PairingPresentation: Equatable, Sendable {
             detail = "Start chirp-server once to create ~/.config/chirp/token, then check again."
             tone = .warning
             action = "Check Again"
+        case .cannotMint(let reason):
+            headline = "Couldn’t create the phone’s token"
+            detail = reason
+            tone = .warning
+            action = "Try Again"
         case .ready(let link):
             headline = "Scan with Chirp on your phone"
             detail = "In Chirp on Android or iPhone, tap Scan pairing QR. The phone connects to \(link.serverURL.absoluteString) over your tailnet."
@@ -118,6 +131,8 @@ public final class PairingView: NSView {
 
     public let action = NSButton(title: "", target: nil, action: nil)
     public let copyLink = NSButton(title: "Copy Pairing Link…", target: nil, action: nil)
+    /// The phone's name; Return in it presses `action`.
+    public let nameField = NSTextField(string: "")
     private let icon = NSImageView()
     private let headline = NSTextField(labelWithString: "")
     private let detail = NSTextField(wrappingLabelWithString: "")
@@ -171,6 +186,10 @@ public final class PairingView: NSView {
             concealedLabel.centerXAnchor.constraint(equalTo: code.centerXAnchor), concealedLabel.centerYAnchor.constraint(equalTo: code.centerYAnchor),
         ])
 
+        nameField.placeholderString = "Phone name"
+        nameField.setAccessibilityLabel("Phone name")
+        nameField.cell?.sendsActionOnEndEditing = false
+
         countdown.font = .monospacedDigitSystemFont(ofSize: NSFont.smallSystemFontSize, weight: .regular)
         countdown.textColor = .secondaryLabelColor
         for b in [action, copyLink] { b.bezelStyle = .rounded }
@@ -185,7 +204,7 @@ public final class PairingView: NSView {
         let footer = NSStackView(views: [countdown, NSView(), copyLink])
         footer.orientation = .horizontal
         footer.alignment = .centerY
-        let stack = NSStackView(views: [titleRow, detail, commandBox, action, codeRow, warning, footer])
+        let stack = NSStackView(views: [titleRow, detail, nameField, commandBox, action, codeRow, warning, footer])
         stack.orientation = .vertical
         stack.alignment = .leading
         stack.spacing = 10
@@ -203,6 +222,7 @@ public final class PairingView: NSView {
             codeRow.widthAnchor.constraint(equalTo: stack.widthAnchor),
             footer.widthAnchor.constraint(equalTo: stack.widthAnchor),
             commandBox.widthAnchor.constraint(equalTo: stack.widthAnchor),
+            nameField.widthAnchor.constraint(equalTo: stack.widthAnchor),
         ])
         apply(.checking)
     }
@@ -220,6 +240,11 @@ public final class PairingView: NSView {
         default: p.showsCode ? "qrcode" : "iphone.and.arrow.forward"
         }
         icon.image = MenuStyle.symbol(symbol, tone: p.tone)
+        if let suggested = p.asksName {
+            // Keep what the user typed while the step stays the same; a new naming step starts from its suggestion.
+            if nameField.isHidden || nameField.stringValue.isEmpty { nameField.stringValue = suggested }
+        }
+        nameField.isHidden = p.asksName == nil
         command.stringValue = p.command ?? ""
         commandBox.isHidden = p.command == nil
         action.title = p.action ?? ""
@@ -241,6 +266,7 @@ public final class PairingView: NSView {
 
     /// The link left the window (hidden or closed): drop the images that encode it.
     public func forget() {
+        nameField.stringValue = ""
         apply(.checking)
     }
 }

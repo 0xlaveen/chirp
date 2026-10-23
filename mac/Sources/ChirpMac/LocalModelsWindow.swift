@@ -63,7 +63,7 @@ final class LocalModelsWindowController: NSObject {
         session.refresh()
     }
 
-    private static func executable() -> URL? {
+    nonisolated static func executable() -> URL? {
         if let path = ProcessInfo.processInfo.environment["CHIRP_SERVER_EXECUTABLE"],
            path.hasPrefix("/"), FileManager.default.isExecutableFile(atPath: path) {
             return URL(fileURLWithPath: path)

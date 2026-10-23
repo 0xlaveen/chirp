@@ -30,6 +30,14 @@ final class SettingsWindowController: NSObject, NSTextFieldDelegate {
     var onOpenNotesHotkeyChange: (() -> Void)?
     var onOpenNotesRecordingChanged: ((Bool) -> Void)?
     var onAlwaysShowInDockChange: ((Bool) -> Void)?
+    private lazy var devices: DevicesModel = {
+        let model = DevicesModel(store: PairedDevices.store, remoteHost: {
+            let config = settings.serverConfig()
+            return config.isLoopback ? nil : config.host
+        })
+        model.onChange = { [weak self] in self?.showDevices() }
+        return model
+    }()
     private var testTask: Task<Void, Never>?
     private var window: NSWindow?
     private var tabs: NSTabViewController?
@@ -100,6 +108,51 @@ final class SettingsWindowController: NSObject, NSTextFieldDelegate {
             window.makeFirstResponder(current)
         }
         if SettingsTab.allCases[tabs?.selectedTabViewItemIndex ?? 0] == .server { refreshKeepLoaded() }
+        if SettingsTab.allCases[tabs?.selectedTabViewItemIndex ?? 0] == .devices { refreshDevices() }
+    }
+
+    // MARK: paired devices
+
+    /// Asks the server for its devices again (opening the tab, after a pairing or a revoke).
+    func refreshDevices() {
+        guard form != nil else { return }
+        Task { await devices.refresh() }
+    }
+
+    private func showDevices() {
+        form?.devicesView.apply(devices.phase, revoking: devices.revoking, problem: devices.problem)
+    }
+
+    private func confirmRevoke(_ device: PairedDevice) {
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = DevicesText.revokeTitle(device)
+        alert.informativeText = DevicesText.revokeDetail
+        alert.addButton(withTitle: "Revoke")
+        alert.addButton(withTitle: "Cancel")
+        alert.buttons[0].hasDestructiveAction = true
+        guard let window else { return }
+        alert.beginSheetModal(for: window) { [weak self] response in
+            guard response == .alertFirstButtonReturn, let self else { return }
+            Task { await self.devices.revoke(device) }
+        }
+    }
+
+    /// The shared token is replaced where the server runs, so this explains and copies the commands rather than
+    /// restarting a server Chirp did not start.
+    @objc private func rotateSharedToken() {
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = "Rotate the shared token?"
+        alert.informativeText = SharedTokenRotation.warning + "\n\nChirp copies the commands to run in Terminal; nothing changes until you run them."
+        alert.addButton(withTitle: "Copy Commands")
+        alert.addButton(withTitle: "Cancel")
+        guard let window else { return }
+        alert.beginSheetModal(for: window) { response in
+            guard response == .alertFirstButtonReturn else { return }
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(SharedTokenRotation.commands, forType: .string)
+        }
     }
 
     // MARK: keep clean-up model loaded
@@ -180,6 +233,10 @@ final class SettingsWindowController: NSObject, NSTextFieldDelegate {
         form.modelsButton.action = #selector(openModels)
         form.pairButton.target = self
         form.pairButton.action = #selector(pairPhone)
+        form.rotateButton.target = self
+        form.rotateButton.action = #selector(rotateSharedToken)
+        form.devicesView.onRevoke = { [weak self] in self?.confirmRevoke($0) }
+        form.devicesView.onResize = { [weak self] in self?.tabSizeChanged() }
         form.notesButton.target = self
         form.notesButton.action = #selector(openNotes)
         form.microphone.target = self
@@ -264,6 +321,7 @@ final class SettingsWindowController: NSObject, NSTextFieldDelegate {
 
         let tabs = SettingsTabs.makeController(form: form) { [weak self] tab in
             if tab == .server { self?.refreshKeepLoaded() }
+            if tab == .devices { self?.refreshDevices() }
         }
         self.tabs = tabs
         let w = NSWindow(contentViewController: tabs)

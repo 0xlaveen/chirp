@@ -178,6 +178,9 @@ public final class SettingsForm {
     public let modelsButton = NSButton(title: "Manage Local Models…", target: nil, action: nil)
     /// Devices: opens the pairing window (Tailscale check and QR code).
     public let pairButton = NSButton(title: "Pair a Phone…", target: nil, action: nil)
+    /// Devices: the phones paired with their own token, each with Revoke; and the advanced shared-token rotation.
+    public let devicesView = DevicesView()
+    public let rotateButton = NSButton(title: "Rotate Shared Token…", target: nil, action: nil)
     /// Notes: deletes Live Notes' on-device speaker model (shown beside its status while it is on this Mac).
     public let removeSpeakerModel = NSButton(title: "Remove", target: nil, action: nil)
     private let speakerStatus = StatusLine()
@@ -245,7 +248,7 @@ public final class SettingsForm {
         (microphone.cell as? NSPopUpButtonCell)?.lineBreakMode = .byTruncatingTail
         microphone.widthAnchor.constraint(lessThanOrEqualToConstant: Self.controlWidth).isActive = true
 
-        for button in [setupButton, doctorButton, modelsButton, pairButton, notesButton] { button.bezelStyle = .rounded }
+        for button in [setupButton, doctorButton, modelsButton, pairButton, rotateButton, notesButton] { button.bezelStyle = .rounded }
         setupButton.setAccessibilityLabel("Set up Chirp")
         keyboardSettingsButton.bezelStyle = .rounded
         keyboardSettingsButton.controlSize = .small
@@ -340,8 +343,10 @@ public final class SettingsForm {
         ], groups: [3])
 
         build(.devices, [
-            row("Phone:", pairButton, help: Self.help("Shows a QR code for Chirp on Android or iPhone. The phone reaches this Mac’s server over your tailnet only.")),
-        ])
+            row("Phone:", pairButton, help: Self.help("Shows a QR code for Chirp on Android or iPhone. The phone reaches this Mac’s server over your tailnet only. Each phone gets its own token.")),
+            row("Paired:", devicesView, help: Self.help(DevicesText.sharedNote)),
+            row("Advanced:", rotateButton, help: Self.help(DevicesText.rotateHelp)),
+        ], groups: [2])
 
         place(.about, about)
         for m in ActivationMode.allCases {
