@@ -34,6 +34,11 @@ public final class Preferences: @unchecked Sendable {
         }
         set { defaults.set(newValue.isFinite ? min(max(newValue, 0.5), 10) : AutoStopDetector.defaultSilence, forKey: "autoStopSilence") }
     }
+    /// Press Return after a successful insertion: off (the default), always, or only in apps with a Chat style rule.
+    public var autoEnter: AutoEnter {
+        get { defaults.string(forKey: "autoEnter").flatMap(AutoEnter.init(rawValue:)) ?? .off }
+        set { defaults.set(newValue.rawValue, forKey: "autoEnter") }
+    }
     /// Clean-up (the server's `correction` flag). Off by default.
     public var correction: Bool {
         get { defaults.bool(forKey: "correction") }

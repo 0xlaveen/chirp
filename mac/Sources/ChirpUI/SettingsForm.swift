@@ -5,6 +5,8 @@ import ChirpCore
 public struct SettingsState: Sendable {
     public var hotkey: KeyCombo = .controlOptionSpace
     public var activationMode: ActivationMode = .autoStop
+    /// General: press Return after inserting (off by default).
+    public var autoEnter: AutoEnter = .off
     /// Auto-stop: seconds of quiet that end a dictation.
     public var autoStopSilence = AutoStopDetector.defaultSilence
     public var serverURL = ServerConfig.defaultURL.absoluteString
@@ -112,6 +114,8 @@ public final class SettingsForm {
     /// Auto-stop or hold to talk, and (auto-stop only) how long a pause ends the dictation.
     public let mode = NSPopUpButton(frame: .zero, pullsDown: false)
     public let silence = NSPopUpButton(frame: .zero, pullsDown: false)
+    /// Press Return after inserting: Off, Always, or in chat apps only.
+    public let autoEnter = NSPopUpButton(frame: .zero, pullsDown: false)
     private let modeHelp = SettingsForm.help("")
     private var shownHotkey = KeyCombo.controlOptionSpace
     public let sounds = NSButton(checkboxWithTitle: "Play start and stop sounds", target: nil, action: nil)
@@ -221,6 +225,7 @@ public final class SettingsForm {
             row("", fnKeySetup),
             row("Mode:", mode, help: modeHelp),
             row("Auto-stop:", silence),
+            row("Return:", autoEnter, help: Self.help("Sends a chat message after inserting. Hold ⇧ when you stop to skip it. Chat apps are those set to the Chat style.")),
             row("Overlay:", wordWaveform, help: Self.help("Draws each word's audio above it as you speak, so you can see what was heard.")),
             row("Startup:", launch, help: launchHelp),
             row("Notes:", notesRecoveryCopy, help: Self.help(NotesStatus.recoveryHelp)),
@@ -282,6 +287,10 @@ public final class SettingsForm {
         for m in ActivationMode.allCases {
             mode.addItem(withTitle: m.title)
             mode.lastItem?.representedObject = m.rawValue
+        }
+        for m in AutoEnter.allCases {
+            autoEnter.addItem(withTitle: m.title)
+            autoEnter.lastItem?.representedObject = m.rawValue
         }
         for seconds in AutoStopDetector.silenceChoices {
             silence.addItem(withTitle: "After \(seconds.formatted(.number.precision(.fractionLength(0...1)))) s of quiet")
@@ -396,6 +405,7 @@ public final class SettingsForm {
         if full {
             fillHotkeyMenu(selecting: s.hotkey)
             showMode(s.activationMode, silence: s.autoStopSilence)
+            autoEnter.selectItem(at: AutoEnter.allCases.firstIndex(of: s.autoEnter) ?? 0)
             sounds.state = s.soundsEnabled ? .on : .off
             showPack(s.soundPack)
             setVolume(s.soundVolume)

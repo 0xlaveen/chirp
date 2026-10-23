@@ -41,6 +41,7 @@ internal fun ChirpSettingsSection() {
         }
         StopDictationSettings()
         PhoneFallbackSettings()
+        AutoEnterSettings()
         SettingsGroup("Sounds & haptics") {
             SwitchRow("Haptic cues", haptics, { haptics = it; store.haptics = it })
             SwitchRow("Sound cues", soundCues, { soundCues = it; store.soundCues = it },
