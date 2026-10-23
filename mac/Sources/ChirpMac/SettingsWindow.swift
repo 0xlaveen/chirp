@@ -19,6 +19,7 @@ final class SettingsWindowController: NSObject, NSTextFieldDelegate {
     /// "Set Up Chirp…" in General.
     var onOpenSetup: (() -> Void)?
     var onOpenModels: (() -> Void)?
+    var onPairPhone: (() -> Void)?
     var onRemoveSpeakerModel: (() -> Void)?
     private var testTask: Task<Void, Never>?
     private var window: NSWindow?
@@ -157,6 +158,8 @@ final class SettingsWindowController: NSObject, NSTextFieldDelegate {
         form.doctorButton.action = #selector(copyDoctor)
         form.modelsButton.target = self
         form.modelsButton.action = #selector(openModels)
+        form.pairButton.target = self
+        form.pairButton.action = #selector(pairPhone)
         form.removeSpeakerModel.target = self
         form.removeSpeakerModel.action = #selector(removeSpeakerModel)
         form.cleanupEnabled.target = self
@@ -235,6 +238,7 @@ final class SettingsWindowController: NSObject, NSTextFieldDelegate {
 
     @objc private func openSetup() { onOpenSetup?() }
     @objc private func openModels() { onOpenModels?() }
+    @objc private func pairPhone() { onPairPhone?() }
     @objc private func openKeyboardSettings() {
         NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.Keyboard-Settings.extension")!)
     }

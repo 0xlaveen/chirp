@@ -8,6 +8,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let settingsWindow = SettingsWindowController()
     private let aboutWindow = AboutWindowController()
     private let localModelsWindow = LocalModelsWindowController()
+    private let pairingWindow = PairingWindowController()
     private let notes = NotesController()
     private lazy var notesWindow = NotesWindowController(notes: notes)
     private lazy var onboardingWindow = OnboardingWindowController(controller: controller)
@@ -40,6 +41,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                            setRunning: { [notes] in notes.setRunning($0) }))
         settingsWindow.onOpenSetup = { [onboardingWindow] in onboardingWindow.show() }
         settingsWindow.onOpenModels = { [localModelsWindow] in localModelsWindow.show() }
+        settingsWindow.onPairPhone = { [pairingWindow] in pairingWindow.show() }
         onboardingWindow.onOpenModels = { [localModelsWindow] in localModelsWindow.show() }
         localModelsWindow.onServerChanged = { [controller] in Task { await controller.refreshHealth() } }
         settingsWindow.serverStatus = { [controller] in MenuContent.serverStatus(health: controller.health, healthError: controller.healthError) }
