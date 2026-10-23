@@ -10,6 +10,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let pairingWindow = PairingWindowController()
     private let notes = NotesController()
     private lazy var notesWindow = NotesWindowController(notes: notes)
+    private let dock = DockController()
+    private let openNotesHotkey = OpenNotesHotkey()
     private lazy var onboardingWindow = OnboardingWindowController(controller: controller)
     private var menu: MenuBarController?
     private var healthTimer: Timer?
@@ -28,6 +30,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return .terminateLater
     }
 
+    /// A click on the Dock icon (or opening Chirp again) brings the Notes window back.
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        notesWindow.show()
+        return false
+    }
+
+    /// Dock menu: Open Notes, New Notes, Start/Stop Recording (the window list is AppKit's).
+    func applicationDockMenu(_ sender: NSApplication) -> NSMenu? {
+        let menu = NSMenu()
+        menu.addItem(NSMenuItem(title: "Open Notes", action: #selector(dockOpenNotes), keyEquivalent: ""))
+        let new = NSMenuItem(title: "New Notes", action: #selector(dockNewNotes), keyEquivalent: "")
+        new.isEnabled = !notes.isActive
+        menu.addItem(new)
+        let record = NSMenuItem(title: notes.isRecording ? "Stop Recording" : "Start Recording", action: #selector(dockToggleRecording), keyEquivalent: "")
+        record.isEnabled = notes.isRecording || (!notes.isActive && !controller.state.isActive)
+        menu.addItem(record)
+        for item in menu.items { item.target = self }
+        return menu
+    }
+    @objc private func dockOpenNotes() { notesWindow.show() }
+    @objc private func dockNewNotes() { notesWindow.newNotes() }
+    @objc private func dockToggleRecording() { notes.toggle(fromHotkey: false) }
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         menu = MenuBarController(
             controller: controller,
@@ -35,8 +60,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                            openSetup: { [onboardingWindow] in onboardingWindow.show() },
                            toggleNotes: { [notes] in notes.toggle(fromHotkey: false) },
                            showNotes: { [notesWindow] in notesWindow.show() },
-                           notes: { [notes] in notes.menuState },
-                           setRunning: { [notes] in notes.setRunning($0) }))
+                           notes: { [notes, openNotesHotkey] in var state = notes.menuState; state.openShortcut = openNotesHotkey.title; return state },
+                           setRunning: { [notes, openNotesHotkey] in notes.setRunning($0); openNotesHotkey.setRunning($0) }))
         settingsWindow.onOpenSetup = { [onboardingWindow] in onboardingWindow.show() }
         settingsWindow.onOpenModels = { [localModelsWindow] in localModelsWindow.show() }
         settingsWindow.onPairPhone = { [pairingWindow] in pairingWindow.show() }
@@ -46,7 +71,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         settingsWindow.serverStatus = { [controller] in MenuContent.serverStatus(health: controller.health, healthError: controller.healthError) }
         settingsWindow.health = { [controller] in controller.health }
         settingsWindow.catalog = { [controller] in controller.styleCatalog }
-        settingsWindow.onHotkeyChange = { [controller] in controller.registerHotkey() }
+        settingsWindow.onHotkeyChange = { [controller, notes] in controller.registerHotkey(); notes.model.dictationKey = settings.hotkey.title }
         settingsWindow.onRecordingChanged = { [controller] recording in
             // The live hotkey would start a dictation while the user is typing the new one.
             if recording { controller.suspendHotkey() } else { controller.registerHotkey() }
@@ -58,9 +83,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         controller.isBlocked = { [notes] in notes.isActive }
         notes.health = { [controller] in controller.health }
         notes.isDictating = { [controller] in controller.state.isActive }
-        notes.onChange = { [weak self] in self?.menu?.refreshIcon() }
+        notes.onChange = { [weak self] in
+            guard let self else { return }
+            self.menu?.refreshIcon()
+            // Recording behind a closed window keeps the Dock icon, so the window can be found again.
+            let active = self.notes.isActive
+            if self.dock.presence.recording != active { self.dock.update { $0.recordingChanged(active) } }
+        }
         notes.onShowWindow = { [weak self] focus in self?.notesWindow.show(focus: focus) }
         settingsWindow.onNotesRecoveryCopyChange = { [notes] in notes.recoveryCopyChanged() }
+        notesWindow.dock = dock
+        NotesWindowController.onAbout = { [aboutWindow] in aboutWindow.show() }
+        NotesWindowController.onSettings = { [settingsWindow] in settingsWindow.show(tab: .general) }
+        NotesWindowController.installEditMenu()
+        dock.apply()
+        settingsWindow.onAlwaysShowInDockChange = { [weak self] on in self?.dock.update { $0.alwaysShow = on } }
+        settingsWindow.onOpenNotesHotkeyChange = { [openNotesHotkey] in openNotesHotkey.register() }
+        settingsWindow.onOpenNotesRecordingChanged = { [openNotesHotkey] recording in
+            if recording { openNotesHotkey.suspend() } else { openNotesHotkey.register() }
+        }
+        openNotesHotkey.open = { [notesWindow] in notesWindow.show() }
+        openNotesHotkey.onChange = { [weak self] in self?.menu?.refreshIcon() }
+        controller.routeToNotes = { [weak self] dictating in
+            guard let self else { return false }
+            return self.notes.takeDictationHotkey(notesFrontmost: self.notesWindow.isFrontmost, dictationActive: dictating)
+        }
         notesWindow.onOpenModels = { [localModelsWindow] in localModelsWindow.show() }
         settingsWindow.onRemoveSpeakerModel = { [notes] in notes.removeSpeakerModel() }
         notes.onSpeakerModelChange = { [settingsWindow] in settingsWindow.speakerModelChanged() }
@@ -73,6 +120,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         if !notes.registerHotkey() {
             NSLog("Chirp: could not register the Live Notes hotkey ⌃⌥N; it may be in use by another app")
+        }
+        if !openNotesHotkey.register() {
+            NSLog("Chirp: could not register the Open Notes hotkey \(settings.openNotesHotkey.title); it may be in use by another app")
         }
 
         Sounds.prepare()   // decode the cues now so the first start sound has no wait

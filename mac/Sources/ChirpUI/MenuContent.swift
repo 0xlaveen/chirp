@@ -97,6 +97,8 @@ public struct MenuInputs: Sendable {
     public var notesHasDocument = false
     /// ⌃⌥N is registered (not while paused, or when another app owns it).
     public var notesHotkeyRegistered = true
+    /// The "Open Notes" shortcut's keys, nil while it is not registered (paused, or another app owns it).
+    public var openNotesShortcut: String?
 
     public init() {}
 
@@ -197,9 +199,7 @@ public enum MenuContent {
             let canStart = !m.paused && !m.state.isActive && !m.notesFinishing
             rows = [MenuEntry(title: "Start Notes", shortcut: shortcut, action: canStart ? .toggleNotes : nil)]
         }
-        if m.notesHasDocument || m.notesRecording || m.notesFinishing {
-            rows.append(MenuEntry(title: "Show Notes Window", action: .showNotes))
-        }
+        rows.append(MenuEntry(title: "Open Notes", shortcut: m.paused ? nil : m.openNotesShortcut, action: .showNotes))
         return rows
     }
 

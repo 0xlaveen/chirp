@@ -16,6 +16,8 @@ final class DictationController {
     var onHotkeyPressed: (() -> Void)?
     /// Live Notes is recording and holds the engine: a new dictation shows a toast instead of starting.
     var isBlocked: () -> Bool = { false }
+    /// Asked before each press reaches the machine: true when Notes took it (its window is frontmost).
+    var routeToNotes: (_ dictationActive: Bool) -> Bool = { _ in false }
     static let blockedMessage = "Notes is recording — stop it to dictate"
 
     let hud = HUDController()
@@ -124,6 +126,7 @@ final class DictationController {
     private func deliver(_ events: [DictationEvent]) {
         for event in events {
             if case .hotkeyDown = event {
+                if routeToNotes(machine.state.isActive) { return }
                 onHotkeyPressed?()
                 if showBlockedToast() { return }
             }

@@ -576,6 +576,7 @@ public enum Snapshots {
     static func notes(_ name: String, _ configure: @escaping (NotesModel) -> Void) -> Scenario {
         Scenario(name: "notes-\(name)") {
             let model = NotesModel()
+            model.dictationKey = "⌥"
             model.state = .recording
             model.document = demoNotes()
             model.elapsed = 192

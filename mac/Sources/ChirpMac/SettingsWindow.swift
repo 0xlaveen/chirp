@@ -23,6 +23,10 @@ final class SettingsWindowController: NSObject, NSTextFieldDelegate {
     var onOpenNotes: (() -> Void)?
     var onRemoveSpeakerModel: (() -> Void)?
     var onNotesRecoveryCopyChange: (() -> Void)?
+    /// "Open Notes" shortcut changed, the recorder started or stopped listening, "Always show in the Dock" flipped.
+    var onOpenNotesHotkeyChange: (() -> Void)?
+    var onOpenNotesRecordingChanged: ((Bool) -> Void)?
+    var onAlwaysShowInDockChange: ((Bool) -> Void)?
     private var testTask: Task<Void, Never>?
     private var window: NSWindow?
     private var tabs: NSTabViewController?
@@ -35,6 +39,8 @@ final class SettingsWindowController: NSObject, NSTextFieldDelegate {
     private var state: SettingsState {
         var s = SettingsState()
         s.hotkey = settings.hotkey
+        s.openNotesHotkey = settings.openNotesHotkey
+        s.alwaysShowInDock = settings.alwaysShowInDock
         s.activationMode = settings.activationMode
         s.autoEnter = settings.autoEnter
         s.autoStopSilence = settings.autoStopSilence
@@ -191,6 +197,19 @@ final class SettingsWindowController: NSObject, NSTextFieldDelegate {
             self?.onHotkeyChange?()
         }
         form.recorder.onRecordingChanged = { [weak self] recording in self?.onRecordingChanged?(recording) }
+        form.recorder.conflict = { HotKeyValidation.conflict($0, with: Self.notesShortcuts()) }
+        let openNotes = form.openNotes
+        openNotes.recorder.conflict = { HotKeyValidation.conflict($0, with: [("dictation", settings.hotkey)] + Self.notesShortcuts(except: "Open Notes")) }
+        openNotes.recorder.onCapture = { [weak self] combo in
+            settings.openNotesHotkey = combo
+            self?.form?.openNotes.show(combo, alwaysInDock: settings.alwaysShowInDock)
+            self?.onOpenNotesHotkeyChange?()
+        }
+        openNotes.recorder.onRecordingChanged = { [weak self] in self?.onOpenNotesRecordingChanged?($0) }
+        openNotes.reset.target = self
+        openNotes.reset.action = #selector(resetOpenNotesHotkey)
+        openNotes.alwaysInDock.target = self
+        openNotes.alwaysInDock.action = #selector(toggleAlwaysInDock(_:))
         form.mode.target = self
         form.mode.action = #selector(modeChanged(_:))
         form.silence.target = self
@@ -281,6 +300,19 @@ final class SettingsWindowController: NSObject, NSTextFieldDelegate {
     @objc private func toggleNotesRecoveryCopy(_ sender: NSButton) {
         settings.notesRecoveryCopy = sender.state == .on
         onNotesRecoveryCopyChange?()
+    }
+    /// The fixed Chirp shortcuts a recorded one must not reuse.
+    private static func notesShortcuts(except owner: String? = nil) -> [(owner: String, combo: KeyCombo)] {
+        [("Open Notes", settings.openNotesHotkey), ("Start/Stop Notes", .controlOptionN), ("Use raw", RawOffer.combo)].filter { $0.0 != owner }
+    }
+    @objc private func resetOpenNotesHotkey() {
+        settings.openNotesHotkey = .controlOptionShiftN
+        form?.openNotes.show(.controlOptionShiftN, alwaysInDock: settings.alwaysShowInDock)
+        onOpenNotesHotkeyChange?()
+    }
+    @objc private func toggleAlwaysInDock(_ sender: NSButton) {
+        settings.alwaysShowInDock = sender.state == .on
+        onAlwaysShowInDockChange?(sender.state == .on)
     }
     @objc private func toggleWordWaveform(_ sender: NSButton) { settings.wordWaveform = sender.state == .on }
     @objc private func toggleOfferRaw(_ sender: NSButton) { settings.showRawAfterCleanup = sender.state == .on }

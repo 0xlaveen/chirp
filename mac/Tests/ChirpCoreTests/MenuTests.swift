@@ -93,7 +93,7 @@ import Testing
     // MARK: the structure
 
     @Test func readyMenuHasTheTargetStructure() {
-        #expect(groups(inputs()) == [["Start Dictation", "Start Notes"], ["Clean-up", "Microphone"], ["Settings…"], ["Quit Chirp"]])
+        #expect(groups(inputs()) == [["Start Dictation", "Start Notes", "Open Notes"], ["Clean-up", "Microphone"], ["Settings…"], ["Quit Chirp"]])
         #expect(MenuContent.header(inputs()).title == "Chirp")
     }
 
@@ -116,7 +116,7 @@ import Testing
 
     @Test func useRawIsItsOwnGroupUnderTheStartRows() {
         let m = inputs { $0.rawOfferOpen = true; $0.rawOfferKey = "⌃⌥Z" }
-        #expect(groups(m) == [["Start Dictation", "Start Notes"], ["Use Raw for Last Dictation"], ["Clean-up", "Microphone"],
+        #expect(groups(m) == [["Start Dictation", "Start Notes", "Open Notes"], ["Use Raw for Last Dictation"], ["Clean-up", "Microphone"],
                               ["Settings…"], ["Quit Chirp"]])
     }
 
@@ -358,9 +358,11 @@ import Testing
     @Test func notesRowsSitUnderDictationWithTheirShortcut() throws {
         let start = try #require(entry(inputs(), .toggleNotes))
         #expect(start.title == "Start Notes" && start.shortcut == "⌃⌥N")
-        #expect(entry(inputs(), "Show Notes Window") == nil)
-        #expect(groups(inputs { $0.notesHasDocument = true })[0] == ["Start Dictation", "Start Notes", "Show Notes Window"])
-        #expect(entry(inputs { $0.notesHasDocument = true }, "Show Notes Window")?.action == .showNotes)
+        // Open Notes is always there, with its own shortcut while that is registered; it never starts recording.
+        #expect(groups(inputs())[0] == ["Start Dictation", "Start Notes", "Open Notes"])
+        #expect(entry(inputs(), "Open Notes")?.action == .showNotes && entry(inputs(), "Open Notes")?.shortcut == nil)
+        #expect(entry(inputs { $0.openNotesShortcut = "⌃⌥⇧N" }, "Open Notes")?.shortcut == "⌃⌥⇧N")
+        #expect(entry(inputs { $0.openNotesShortcut = "⌃⌥⇧N"; $0.paused = true }, "Open Notes")?.shortcut == nil)
         #expect(entry(inputs { $0.notesHotkeyRegistered = false }, .toggleNotes)?.shortcut == nil)
     }
 
@@ -375,7 +377,7 @@ import Testing
         let recording = inputs { $0.notesRecording = true; $0.notesElapsed = "01:05" }
         #expect(entry(recording, "Start Dictation")?.isEnabled == false)
         #expect(entry(recording, "Stop Notes")?.action == .toggleNotes)
-        #expect(entry(recording, "Show Notes Window") != nil)
+        #expect(entry(recording, "Open Notes") != nil)
         // Finishing: nothing starts until the last pass is done.
         let finishing = inputs { $0.notesFinishing = true }
         #expect(entry(finishing, "Start Notes")?.isEnabled == false && entry(finishing, "Start Dictation")?.isEnabled == false)

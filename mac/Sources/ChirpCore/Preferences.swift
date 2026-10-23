@@ -20,7 +20,17 @@ public final class Preferences: @unchecked Sendable {
         get { KeyCombo.resolve(id: defaults.string(forKey: "hotkey")) }
         set { defaults.set(newValue.id, forKey: "hotkey") }
     }
+    /// The "Open Notes" shortcut (⌃⌥⇧N by default): a recorded one that passed `HotKeyValidation`, else the default.
+    public var openNotesHotkey: KeyCombo {
+        get { KeyCombo.resolve(id: defaults.string(forKey: "openNotesHotkey"), fallback: .controlOptionShiftN) }
+        set { defaults.set(newValue.id, forKey: "openNotesHotkey") }
+    }
     #endif
+    /// Show Chirp in the Dock and ⌘-Tab even with no Notes window open. Off by default.
+    public var alwaysShowInDock: Bool {
+        get { defaults.bool(forKey: "alwaysShowInDock") }
+        set { defaults.set(newValue, forKey: "alwaysShowInDock") }
+    }
     /// Auto-stop (the default) or hold to talk. An unknown stored value falls back to auto-stop.
     public var activationMode: ActivationMode {
         get { defaults.string(forKey: "activationMode").flatMap(ActivationMode.init(rawValue:)) ?? .autoStop }

@@ -4,6 +4,9 @@ import ChirpCore
 /// What the Settings window shows. The window controller reads it from the system; the snapshots pass fixed values.
 public struct SettingsState: Sendable {
     public var hotkey: KeyCombo = .controlOptionSpace
+    /// "Open Notes" shortcut and "Always show Chirp in the Dock".
+    public var openNotesHotkey: KeyCombo = .controlOptionShiftN
+    public var alwaysShowInDock = false
     public var activationMode: ActivationMode = .autoStop
     /// Dictation: press Return after inserting (off by default).
     public var autoEnter: AutoEnter = .off
@@ -120,6 +123,7 @@ public final class SettingsForm {
     private var bodies: [SettingsTab: NSView] = [:]
     public let hotkey = NSPopUpButton(frame: .zero, pullsDown: false)
     public let recorder = HotkeyRecorder()
+    public let openNotes = NotesShortcutControls()
     /// Under the hotkey: how it works, or why the last recording was refused.
     public let hotkeyHelp = SettingsForm.help("")
     /// Fn/Globe has a separate macOS action that the user must turn off in Keyboard settings.
@@ -254,10 +258,11 @@ public final class SettingsForm {
 
         build(.general, [
             row("Startup:", launch, help: launchHelp),
+            row("Dock:", openNotes.alwaysInDock),
             row("Permissions:", stack([micStatus, accessibilityStatus]),
                 help: Self.help("The microphone lets Chirp hear you; Accessibility lets it insert text into other apps and send ⌘V.")),
             row("Setup:", setupButton, help: Self.help("Check the permissions and the server, and try a dictation.")),
-        ], groups: [1])
+        ], groups: [2])
 
         let hotkeyRow = NSStackView(views: [hotkey, recorder])
         hotkeyRow.orientation = .horizontal
@@ -300,11 +305,12 @@ public final class SettingsForm {
         build(.notes, [
             row("Shortcut:", notesShortcut,
                 help: Self.help("Starts and stops Live Notes from any app. It is fixed; if another app owns it, use Start Notes in the menu.")),
+            row("Open Notes:", openNotes.shortcutView),
             row("Recovery:", notesRecoveryCopy, help: Self.help(NotesStatus.recoveryHelp)),
             row("Speakers:", stack([speakerStatus, speakerHelp])),
             row("Window:", notesButton,
                 help: Self.help("Structure notes, Auto-reorganize and Label speakers are switches in the window's footer, so you can change them while you record.")),
-        ], groups: [1])
+        ], groups: [2])
 
         let keepLoadedStack = stack([keepLoaded, keepLoadedStatus, keepLoadedHelp, keepLoadedError])
         keepLoadedError.textColor = .systemRed
@@ -461,6 +467,7 @@ public final class SettingsForm {
     public func apply(_ s: SettingsState, full: Bool = false) {
         if full {
             fillHotkeyMenu(selecting: s.hotkey)
+            openNotes.show(s.openNotesHotkey, alwaysInDock: s.alwaysShowInDock)
             showMode(s.activationMode, silence: s.autoStopSilence)
             autoEnter.selectItem(at: AutoEnter.allCases.firstIndex(of: s.autoEnter) ?? 0)
             sounds.state = s.soundsEnabled ? .on : .off

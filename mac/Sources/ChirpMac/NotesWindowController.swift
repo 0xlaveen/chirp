@@ -12,6 +12,11 @@ final class NotesWindowController: NSObject, NSWindowDelegate {
     private let notes: NotesController
     private var window: NSWindow?
     var onOpenModels: () -> Void = {}
+    /// Where the window is in the Dock's eyes: on screen (or minimised), hidden while Notes records, or gone.
+    var dock: DockController?
+    private enum Presence { case closed, shown, hidden }
+    private var presence = Presence.closed
+    static let frameName = "ChirpNotes"
 
     init(notes: NotesController) {
         self.notes = notes
@@ -28,11 +33,15 @@ final class NotesWindowController: NSObject, NSWindowDelegate {
     }
 
     var isVisible: Bool { window?.isVisible ?? false }
+    /// Chirp is the active app and the Notes window is its key window: the dictation hotkey drives Notes.
+    var isFrontmost: Bool { NSApp.isActive && window?.isKeyWindow == true }
 
     /// Shows the window. From the hotkey it comes forward without becoming key, so the app in use keeps focus.
     func show(focus: Bool = true) {
         let w = window ?? makeWindow()
         window = w
+        setPresence(.shown)
+        notes.model.dictationKey = settings.hotkey.title
         if focus {
             NSApp.activate()
             w.makeKeyAndOrderFront(nil)
@@ -54,17 +63,49 @@ final class NotesWindowController: NSObject, NSWindowDelegate {
         w.isRestorable = false
         w.tabbingMode = .disallowed
         w.delegate = self
-        w.center()
+        // Size and position only, never content; a first run centres it.
+        if !w.setFrameUsingName(Self.frameName) { w.center() }
+        w.setFrameAutosaveName(Self.frameName)
         return w
     }
 
-    /// Chirp is a menu-bar app with no visible main menu; this hidden one gives the Notes editor the standard
-    /// Undo/Redo, clipboard and Find key equivalents, plus Edit ▸ Organize Notes (⌥⌘R). Every item goes through the
-    /// responder chain, so it only acts while the Notes editor (or another text field) is first responder.
+    private func setPresence(_ next: Presence) {
+        guard next != presence else { return }
+        let before = presence
+        presence = next
+        dock?.update { dock in
+            switch (before, next) {
+            case (.closed, .shown), (.hidden, .shown): dock.windowShown()
+            case (.shown, .hidden): dock.windowHidden()
+            case (.shown, .closed): dock.windowClosed()
+            case (.hidden, .closed): dock.windowClosed(wasHidden: true)
+            default: break
+            }
+        }
+    }
+
+    /// New Notes from the Dock menu: the window, then the usual keep-or-discard question.
+    func newNotes() {
+        show()
+        new()
+    }
+
+    func windowWillClose(_ notification: Notification) { setPresence(.closed) }
+
+    /// The app menu's About and Settings…, which the delegate wires (the menu is only seen while Chirp is in the Dock).
+    static var onAbout: () -> Void = {}
+    static var onSettings: () -> Void = {}
+    @objc private static func about() { onAbout() }
+    @objc private static func settingsItem() { onSettings() }
+
+    /// The main menu, seen only while Chirp is in the Dock (a Notes window is open): Chirp (About, Settings…, Hide,
+    /// Quit), Edit and Window (which lists the Notes window). Edit gives the Notes editor the standard Undo/Redo,
+    /// clipboard and Find key equivalents, plus Organize Notes (⌥⌘R). Every Edit item goes through the responder chain,
+    /// so it only acts while the Notes editor (or another text field) is first responder.
     static func installEditMenu() {
         guard NSApp.mainMenu?.item(withTitle: "Edit") == nil else { return }
         let main = NSApp.mainMenu ?? NSMenu()
-        if main.items.isEmpty { main.addItem(NSMenuItem(title: "Chirp", action: nil, keyEquivalent: "")) }
+        if main.items.isEmpty { main.addItem(appMenuItem()) }
         let edit = NSMenu(title: "Edit")
         func add(_ menu: NSMenu, _ title: String, _ action: Selector, _ key: String, _ mods: NSEvent.ModifierFlags = .command, tag: Int = 0) {
             let item = NSMenuItem(title: title, action: action, keyEquivalent: key)
@@ -94,14 +135,50 @@ final class NotesWindowController: NSObject, NSWindowDelegate {
         let editItem = NSMenuItem(title: "Edit", action: nil, keyEquivalent: "")
         editItem.submenu = edit
         main.addItem(editItem)
+        main.addItem(windowMenuItem())
         NSApp.mainMenu = main
+    }
+
+    private static func appMenuItem() -> NSMenuItem {
+        let menu = NSMenu(title: "Chirp")
+        func add(_ title: String, _ action: Selector, _ key: String = "", _ mods: NSEvent.ModifierFlags = .command, target: AnyObject? = nil) {
+            let item = NSMenuItem(title: title, action: action, keyEquivalent: key)
+            item.keyEquivalentModifierMask = mods
+            item.target = target
+            menu.addItem(item)
+        }
+        add("About Chirp", #selector(about), target: self)
+        menu.addItem(.separator())
+        add("Settings…", #selector(settingsItem), ",", target: self)
+        menu.addItem(.separator())
+        add("Hide Chirp", #selector(NSApplication.hide(_:)), "h")
+        add("Hide Others", #selector(NSApplication.hideOtherApplications(_:)), "h", [.command, .option])
+        add("Show All", #selector(NSApplication.unhideAllApplications(_:)))
+        menu.addItem(.separator())
+        add("Quit Chirp", #selector(NSApplication.terminate(_:)), "q")
+        let item = NSMenuItem(title: "Chirp", action: nil, keyEquivalent: "")
+        item.submenu = menu
+        return item
+    }
+
+    /// AppKit lists the open windows at the bottom of the menu `NSApp.windowsMenu` points to.
+    private static func windowMenuItem() -> NSMenuItem {
+        let menu = NSMenu(title: "Window")
+        menu.addItem(NSMenuItem(title: "Minimize", action: #selector(NSWindow.performMiniaturize(_:)), keyEquivalent: "m"))
+        menu.addItem(NSMenuItem(title: "Zoom", action: #selector(NSWindow.performZoom(_:)), keyEquivalent: ""))
+        menu.addItem(.separator())
+        menu.addItem(NSMenuItem(title: "Bring All to Front", action: #selector(NSApplication.arrangeInFront(_:)), keyEquivalent: ""))
+        let item = NSMenuItem(title: "Window", action: nil, keyEquivalent: "")
+        item.submenu = menu
+        NSApp.windowsMenu = menu
+        return item
     }
 
     // MARK: closing and the dirty guard
 
     func windowShouldClose(_ sender: NSWindow) -> Bool {
         // While recording, closing only hides the window; the menu icon keeps showing the open microphone.
-        if notes.isActive { sender.orderOut(nil); return false }
+        if notes.isActive { sender.orderOut(nil); setPresence(.hidden); return false }
         guard notes.model.document.isDirty else { return true }
         confirmDiscard(in: sender) { [weak self] discard in
             guard discard else { return }

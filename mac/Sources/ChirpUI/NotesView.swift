@@ -58,6 +58,9 @@ private struct NotesHeader: View {
         HStack(spacing: 12) {
             RecordButton(model: model)
             status
+            if let hint = model.hotkeyHint {
+                Text(hint).font(.caption).foregroundStyle(.tertiary).lineLimit(1).layoutPriority(-1)
+            }
             Spacer(minLength: 8)
             if model.tab == .notes { EditPreviewPicker(model: model) }
             Picker("Layout", selection: Binding(get: { model.tab }, set: { model.tab = $0; model.onTabChange($0) })) {
