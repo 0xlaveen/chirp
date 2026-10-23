@@ -1,11 +1,11 @@
 #!/bin/bash
-# Stages a signed release APK and its update manifest for hosting at https://<mac>.<tailnet>.ts.net/chirp-apk/.
+# Stages the signed arm64 release APK (the phone split) and its update manifest for hosting at https://<mac>.<tailnet>.ts.net/chirp-apk/.
 # Writes <out>/chirp-<versionName>.apk and <out>/latest.json (APK first, manifest last, so a reader never sees a
 # manifest without its file). It hosts nothing: point your static file server / `tailscale serve` at <out>.
-#   usage: scripts/make-update-manifest.sh [app-release.apk] [out-dir]
+#   usage: scripts/make-update-manifest.sh [app-arm64-v8a-release.apk] [out-dir]
 set -euo pipefail
 cd "$(dirname "$0")/.."
-apk="${1:-app/build/outputs/apk/release/app-release.apk}"
+apk="${1:-app/build/outputs/apk/release/app-arm64-v8a-release.apk}"
 out="${2:-build/chirp-apk}"
 [ -f "$apk" ] || { echo "no APK at $apk (run ./gradlew assembleRelease)" >&2; exit 1; }
 aapt2="$(ls -d "${ANDROID_HOME:-$HOME/Library/Android/sdk}"/build-tools/*/aapt2 2>/dev/null | sort -V | tail -1 || true)"
