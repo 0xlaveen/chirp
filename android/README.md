@@ -16,7 +16,7 @@ The application ID and IME component stay `dev.chirp.android` / `dev.chirp.andro
 
 **Contents**
 
-- [Install](#install) — build the APK, put it on the phone, enable the keyboard · [Pair](#pair) — QR, paste, Wi-Fi servers
+- [Install](#install) — build the APK, put it on the phone, update over Tailscale, enable the keyboard · [Pair](#pair) — QR, paste, Wi-Fi servers
 - [Dictate](#dictate) — start/stop/cancel, quick options, clean-up, styles, Undo, Use raw
 - [Keyboard](#keyboard) — typing, looks, Fold layout, swipe typing, floating mic
 - [Dictation history](#dictation-history) · [Privacy](#privacy) · [Troubleshoot](#troubleshoot)
@@ -43,7 +43,28 @@ Install **as an update, without uninstalling Chirp** — that is what keeps the 
 - **Over Tailscale (Taildrop):** from the Mac, `tailscale file cp app/build/outputs/apk/release/app-arm64-v8a-release.apk <phone>:` — the file arrives as a notification in the phone's Tailscale app. Tap it to open the installer.
 - **adb:** `adb install -r app/build/outputs/apk/release/app-arm64-v8a-release.apk` over USB or wireless debugging.
 
+- **From your Mac, in the app (updates):** see [Update over Tailscale](#update-over-tailscale).
+
 Opening a sideloaded APK can trigger a **Play Protect** screen warning about an unknown developer. Choose **More details → Install anyway** to continue. (A separate, optional sideload restriction can affect the floating microphone only — see [Optional floating microphone](#optional-floating-microphone).)
+
+### Update over Tailscale
+
+Once the first install is on the phone, later builds can update it in place from the paired Mac.
+
+On the Mac, stage the signed release APK and its manifest, then host that folder yourself at `/chirp-apk/` on the same tailnet host as the pairing (for example with your existing static file server behind `tailscale serve`; this script hosts and publishes nothing):
+
+```sh
+./gradlew assembleRelease
+scripts/make-update-manifest.sh                       # → build/chirp-apk/chirp-<version>.apk + latest.json
+```
+
+`latest.json` holds `version_code`, `version_name`, `file` (a plain `*.apk` name in that folder), `sha256` and `size`. The script refuses an unsigned APK or one that isn't `dev.chirp.android`, and writes the manifest last.
+
+On the phone, setup step 4 → **Updates** checks `https://<paired host>/chirp-apk/latest.json` when it opens, and **Check for updates** checks on demand. **Download and install** fetches the file, verifies its size and SHA-256 and that it is this app at the announced version, then hands it to Android's installer. Android shows its own confirmation and accepts the update only if it is signed with the installed key, so pairing is kept. The first time, Android asks you to allow Chirp to install updates.
+
+- Only a pairing on a tailnet host (`*.ts.net` or a Tailscale address) gets update checks; the host is always the pairing's own, and the manifest can name only a file in that folder, never another URL. Redirects are not followed.
+- The pairing token is never sent to the update path. Nothing about your text or audio is involved; the only request is the version file, and only when you open setup or tap check.
+- Update logs, URLs and versions are not written to diagnostics.
 
 ### First launch
 

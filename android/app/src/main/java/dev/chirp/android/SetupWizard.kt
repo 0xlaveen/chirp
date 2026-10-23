@@ -167,6 +167,7 @@ internal fun SetupWizard(
                         Preference("Haptic cues", state.haptics) { state.haptics = it; preferences() }
                         Preference("Debug overlay (timings only)", state.debug) { state.debug = it; preferences() }
                         HistorySettings()
+                        UpdateSettings()
                         TextButton(keyboardPreferences) { Text("Keyboard layouts & settings") }
                         BuildSetupOptions()
                         HorizontalDivider()

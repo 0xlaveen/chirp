@@ -1,0 +1,111 @@
+package dev.chirp.android
+
+import android.content.Context
+import android.content.Intent
+import android.provider.Settings
+import androidx.compose.foundation.layout.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.core.net.toUri
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import okhttp3.OkHttpClient
+
+internal sealed interface UpdateStatus {
+    data object Idle : UpdateStatus
+    data object Checking : UpdateStatus
+    data object Current : UpdateStatus
+    data object Downloading : UpdateStatus
+    data object Installing : UpdateStatus
+    data object NeedsPermission : UpdateStatus
+    class Available(val info: UpdateInfo) : UpdateStatus
+    class Failed(val message: String) : UpdateStatus
+}
+
+/** Check, download and hand off an update from the paired Mac; only tailnet pairings qualify (see [AppUpdates.base]). */
+internal class UpdateController(
+    private val context: Context,
+    private val scope: CoroutineScope,
+    private val client: OkHttpClient,
+    private val pairing: () -> Pairing? = { SettingsStore(context).pairing() },
+    private val installed: () -> Long = { context.packageManager.getPackageInfo(context.packageName, 0).longVersionCode },
+) {
+    var status by mutableStateOf<UpdateStatus>(UpdateStatus.Idle); private set
+    private var busy = false
+
+    /** [manual] false (automatic on opening settings): stay silent unless there is an update. */
+    fun check(manual: Boolean = true) {
+        if (busy) return
+        busy = true
+        if (manual) status = UpdateStatus.Checking
+        scope.launch {
+            val result: UpdateStatus = try {
+                withContext(Dispatchers.IO) {
+                    val base = pairing()?.let(AppUpdates::base) ?: return@withContext UpdateStatus.Failed("Updates need a Mac paired over Tailscale")
+                    AppUpdates.check(client, base, installed())?.let { UpdateStatus.Available(it) } ?: UpdateStatus.Current
+                }
+            } catch (_: Exception) { UpdateStatus.Failed("Couldn't reach your Mac — is Tailscale on, and is the update folder hosted?") }
+            busy = false
+            if (manual || result is UpdateStatus.Available) status = result
+        }
+    }
+
+    fun install(info: UpdateInfo) {
+        if (busy) return
+        if (!UpdateInstaller.canInstall(context)) { status = UpdateStatus.NeedsPermission; return }
+        busy = true; status = UpdateStatus.Downloading
+        scope.launch {
+            val error = try {
+                withContext(Dispatchers.IO) {
+                    val dir = UpdateInstaller.directory(context).apply { deleteRecursively() }
+                    val apk = java.io.File(dir, "update.apk")
+                    AppUpdates.download(client.newBuilder().callTimeout(0, java.util.concurrent.TimeUnit.SECONDS).build(), info, apk)
+                    UpdateInstaller.install(context, apk, info)
+                }
+            } catch (_: Exception) { "Download failed — check Tailscale and try again" }
+            busy = false
+            status = if (error == null) UpdateStatus.Installing else UpdateStatus.Failed(error)
+        }
+    }
+
+    fun allowInstalls() {
+        context.startActivity(Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, "package:${context.packageName}".toUri()).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+    }
+}
+
+/** Updates section of Chirp setup. Checks once when shown; installs only after a tap and Android's own confirmation. */
+@Composable
+internal fun UpdateSettings(controller: UpdateController? = null) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val client = remember { ChirpNetwork.client(context) }
+    DisposableEffect(client) { onDispose { ChirpNetwork.dispose(client) } }
+    val updates = controller ?: remember { UpdateController(context, scope, client) }
+    LaunchedEffect(updates) { updates.check(manual = false) }
+    val status = updates.status
+    Text("Updates", style = MaterialTheme.typography.titleSmall)
+    Text("Chirp checks only your paired Mac, over Tailscale, for a newer signed build. Nothing is installed without your tap and Android's confirmation.",
+        style = MaterialTheme.typography.bodySmall)
+    when (status) {
+        UpdateStatus.Idle -> {}
+        UpdateStatus.Checking -> Text("Checking your Mac…")
+        UpdateStatus.Current -> Text("Chirp is up to date.")
+        UpdateStatus.Downloading -> Text("Downloading update…")
+        UpdateStatus.Installing -> Text("Confirm the install in Android's dialog. Chirp restarts when it finishes.")
+        UpdateStatus.NeedsPermission -> {
+            Text("Allow Chirp to install updates, then tap Install again.")
+            OutlinedButton(updates::allowInstalls, Modifier.fillMaxWidth()) { Text("Allow installing updates") }
+        }
+        is UpdateStatus.Available -> {
+            Text("Chirp ${status.info.versionName} is available.")
+            Button({ updates.install(status.info) }, Modifier.fillMaxWidth()) { Text("Download and install") }
+        }
+        is UpdateStatus.Failed -> Text(status.message)
+    }
+    val working = status == UpdateStatus.Checking || status == UpdateStatus.Downloading
+    TextButton({ updates.check() }, enabled = !working) { Text("Check for updates") }
+}
