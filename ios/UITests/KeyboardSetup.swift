@@ -56,22 +56,32 @@ extension XCTestCase {
     }
 
     @MainActor func selectChirpKeyboard(in app: XCUIApplication) throws {
-        // The previous test may have left Chirp selected; it can take a moment to appear.
-        if app.staticTexts["chirp.keyboard.status"].waitForExistence(timeout: 3) { return }
         // Only system keyboard labels are used here. Extension queries use IDs.
+        let status = app.staticTexts["chirp.keyboard.status"]
         let globe = app.buttons.matching(NSPredicate(format: "identifier == 'Next keyboard' OR label == 'Next keyboard' OR identifier == 'Change Keyboard' OR label == 'Change Keyboard'")).firstMatch
-        guard globe.waitForExistence(timeout: 5), globe.isHittable else {
+        // Whichever keyboard is up (a previous test may have left Chirp selected) can take a while to load.
+        let loaded = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in status.exists || globe.exists }, object: nil)
+        _ = XCTWaiter.wait(for: [loaded], timeout: 10)
+        if status.exists { return }
+        guard globe.exists, globe.isHittable else {
             throw XCTSkip("Simulator has no system globe/input-mode button; disable Connect Hardware Keyboard and retry.")
         }
         // iOS 27.0's input-mode list shows third-party keyboards as unlabeled rows; tapping the globe key
-        // cycles through every enabled keyboard, as a user would.
+        // cycles through every enabled keyboard, as a user would. iPad's Emoji keyboard has no globe key,
+        // only "letters", so cycling stops there and the long-press list is used instead.
         for _ in 0..<4 {
+            guard globe.exists, globe.isHittable else { break }
             globe.tap()
             if app.staticTexts["chirp.keyboard.status"].waitForExistence(timeout: 3) { return }
         }
+        let letters = app.buttons["letters"]
+        if !globe.exists, letters.exists { letters.tap() }
+        guard globe.waitForExistence(timeout: 5) else { throw XCTSkip("System keyboard lost its globe key.") }
         globe.press(forDuration: 1)
-        let mode = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS[c] 'Chirp'")).firstMatch
-        guard mode.waitForExistence(timeout: 5), mode.isHittable else {
+        let named = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS[c] 'Chirp'")).firstMatch
+        let unlabeled = app.tables["InputSwitcherTable"].cells.matching(NSPredicate(format: "label == ''")).firstMatch
+        let mode = named.waitForExistence(timeout: 3) ? named : unlabeled
+        guard mode.waitForExistence(timeout: 3), mode.isHittable else {
             let attachment = XCTAttachment(string: app.debugDescription)
             attachment.name = "Input-mode list without Chirp"
             attachment.lifetime = .keepAlways
