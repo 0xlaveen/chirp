@@ -29,10 +29,14 @@ class SettingsStore(context: Context) {
             putBoolean("correction_explicit", true)
             putBoolean("correction_suspended", false)
         } }
-    /** The first-run "Try it" card on Chirp settings was dismissed. */
+    /** The first-run "Try it" card on Home was dismissed. */
     var tryItDismissed: Boolean
         get() = prefs.getBoolean("try_it_dismissed", false)
         set(value) { prefs.edit { putBoolean("try_it_dismissed", value) } }
+    /** Onboarding finished once: the launcher opens the app shell from then on, even if a requirement later lapses. */
+    var onboarded: Boolean
+        get() = prefs.getBoolean("onboarded", false)
+        set(value) { prefs.edit { putBoolean("onboarded", value) } }
     var defaultStyle: String
         get() = prefs.getString("default_style", "default") ?: "default"
         set(value) { require(CleanupStyles.validId(value)); prefs.edit { putString("default_style", value) } }

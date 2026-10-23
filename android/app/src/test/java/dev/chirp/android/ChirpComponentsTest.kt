@@ -135,7 +135,7 @@ class ChirpComponentsTest {
         val history = DictationHistory(context, SoftwareHistoryKeys()).apply { enable() }
         val state = SetupState().apply { step = 3; paired = true; host = "mac.example.test"; health = store.health }
         val screen = mutableIntStateOf(0)
-        compose.setContent { ChirpTheme { when (screen.intValue) { 0 -> SettingsScreen(state); 1 -> ChirpSettingsSection(); else -> HistoryScreen(history) } } }
+        compose.setContent { ChirpTheme { when (screen.intValue) { 0 -> SettingsScreen(state); 1 -> ChirpSettingsSection(); else -> androidx.compose.foundation.layout.Column { HistorySettings(store = history) } } } }
         for (index in 0..2) {
             compose.runOnIdle { screen.intValue = index }
             compose.waitForIdle()

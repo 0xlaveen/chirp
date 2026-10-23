@@ -6,6 +6,7 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Looper
 import dev.chirp.android.settings.SettingsPage
+import dev.chirp.android.shell.ShellTab
 import org.junit.After
 import org.junit.Assert.*
 import org.junit.Before
@@ -51,7 +52,7 @@ class SetupActivityTest {
 
     @Test fun `first run opens on the welcome page`() {
         assertEquals(PAGE_WELCOME, activity.state.step); assertEquals(PAGE_WELCOME, activity.state.entryStep)
-        assertFalse(activity.state.settingsOpen); assertFalse(activity.state.connected)
+        assertFalse(activity.state.shellOpen); assertFalse(activity.state.connected)
     }
     @Test fun `a scanned code is tested and saved without another tap, and only after the Mac answers`() {
         scan(); assertEquals(1, activity.scans); assertTrue(activity.state.scanning)
@@ -108,34 +109,40 @@ class SetupActivityTest {
         controller.newIntent(invalid)
         assertNull(invalid.data); assertTrue(shows("Invalid Chirp pairing link"))
     }
-    @Test fun `section intents open the pairing page, the settings tree or its connection page`() {
+    @Test fun `section intents open the pairing page, the settings tab or its connection page, and History`() {
         activity.state.step = PAGE_MIC
         controller.newIntent(Intent().putExtra("section", "settings"))
-        assertTrue(activity.state.settingsOpen); assertNull(activity.state.settingsPage)
+        assertTrue(activity.state.shellOpen); assertEquals(ShellTab.Settings, activity.state.tab); assertNull(activity.state.settingsPage)
+        assertTrue("opened from outside: back returns there", activity.state.exitOnBack)
         controller.newIntent(Intent().putExtra("section", "pair"))
-        assertFalse(activity.state.settingsOpen); assertEquals(PAGE_PAIR, activity.state.step)
-        assertEquals("back from a pair-only page leaves the app", PAGE_PAIR, activity.state.entryStep)
+        assertFalse(activity.state.shellOpen); assertEquals(PAGE_PAIR, activity.state.step)
+        assertEquals("back from a pair-only page leaves it", PAGE_PAIR, activity.state.entryStep); assertTrue(activity.state.pairFromShell)
         controller.newIntent(Intent().putExtra("section", "connection"))
-        assertTrue(activity.state.settingsOpen); assertEquals(SettingsPage.Connection, activity.state.settingsPage)
-        controller.newIntent(Intent().putExtra("section", "try")); assertTrue(activity.state.tryIt); assertNull(activity.state.settingsPage)
+        assertTrue(activity.state.shellOpen); assertEquals(SettingsPage.Connection, activity.state.settingsPage)
+        controller.newIntent(Intent().putExtra("section", "try"))
+        assertTrue(activity.state.tryIt); assertEquals(ShellTab.Home, activity.state.tab); assertFalse(activity.state.exitOnBack)
         controller.newIntent(Intent().putExtra("section", "network"))
         assertEquals(SettingsPage.Connection, activity.state.settingsPage); assertEquals(false, activity.state.reachable)
+        controller.newIntent(Intent().putExtra("section", "history"))
+        assertEquals(ShellTab.History, activity.state.tab); assertTrue(activity.state.exitOnBack)
     }
-    @Test fun `a pairing link closes settings and goes to the pair page`() {
+    @Test fun `a pairing link closes the shell and goes to the pair page`() {
         controller.newIntent(Intent().putExtra("section", "settings"))
         controller.newIntent(Intent(Intent.ACTION_VIEW, Uri.parse(syntheticLink)))
-        assertFalse(activity.state.settingsOpen); assertEquals(PAGE_PAIR, activity.state.step)
+        assertFalse(activity.state.shellOpen); assertEquals(PAGE_PAIR, activity.state.step)
     }
-    @Test fun `advancing goes to the first unmet page and finishing opens settings with the Try it card until dismissed`() {
+    @Test fun `advancing goes to the first unmet page and finishing opens Home with the Try it card until dismissed`() {
         val state = activity.state
         state.step = PAGE_KEYBOARD; state.inputEnabled = true; state.inputSelected = true
-        activity.advance(); assertEquals(PAGE_MIC, state.step); assertFalse(state.settingsOpen)
+        activity.advance(); assertEquals(PAGE_MIC, state.step); assertFalse(state.shellOpen)
         state.mic = true; activity.advance(); assertEquals(PAGE_PAIR, state.step)
+        assertFalse(SettingsStore(activity).onboarded)
         state.paired = true; activity.advance()
-        assertTrue(state.settingsOpen); assertNull(state.settingsPage); assertTrue(state.tryIt)
-        state.settingsOpen = false; state.tryIt = false
+        assertTrue(state.shellOpen); assertEquals(ShellTab.Home, state.tab); assertNull(state.settingsPage); assertTrue(state.tryIt)
+        assertTrue("the launcher opens Home from now on", SettingsStore(activity).onboarded)
+        state.shellOpen = false; state.tryIt = false
         SettingsStore(activity).tryItDismissed = true
-        activity.advance(); assertTrue(state.settingsOpen); assertFalse(state.tryIt)
+        activity.advance(); assertTrue(state.shellOpen); assertFalse(state.tryIt)
     }
     @Test fun `late scan result cannot feed a destroyed activity`() {
         scan()

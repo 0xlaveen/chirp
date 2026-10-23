@@ -43,7 +43,7 @@
             <meta-data android:name="android.service.quicksettings.TOGGLEABLE_TILE" android:value="true" />
         </service>
         <activity android:name=".HistoryActivity" android:exported="false" android:label="@string/history_title"
-            android:windowSoftInputMode="adjustResize" />
+            android:theme="@android:style/Theme.NoDisplay" />
         <receiver android:name=".UpdateInstallReceiver" android:exported="false" />
         <service android:name=".ChirpAccessibilityService" android:label="@string/bubble_name"
             android:exported="true" android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"

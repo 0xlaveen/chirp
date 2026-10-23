@@ -27,7 +27,6 @@ internal fun SettingsHome(state: SetupState, actions: SettingsActions, history: 
     val connection = connectionSummary(state.paired, state.host, state.reachable, state.checking, state.health)
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
         Text("Settings", Modifier.semantics { heading() }, style = MaterialTheme.typography.headlineMedium)
-        if (state.tryIt) TryItCard(store) { state.tryIt = false }
         if (state.health?.debugRetention == true) StatusBanner(StatusKind.Error, "DEBUG RETENTION IS ON — the Mac may retain audio and text")
         SettingsGroup { NavRow(connection.title, { open(SettingsPage.Connection) }, summary = connection.summary, icon = connection.kind.icon) }
         SettingsGroup("Dictation") {

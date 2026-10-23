@@ -9,14 +9,24 @@ import android.os.Bundle
 import android.provider.Settings
 import android.view.inputmethod.InputMethodManager
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.compose.LifecycleStartEffect
 import androidx.lifecycle.lifecycleScope
+import dev.chirp.android.shell.AppShell
+import dev.chirp.android.shell.HistoryScreen
+import dev.chirp.android.shell.HomeActions
+import dev.chirp.android.shell.HomeFix
+import dev.chirp.android.shell.HomeScreen
+import dev.chirp.android.shell.ShellTab
 import dev.chirp.android.settings.SettingsActions
 import dev.chirp.android.settings.SettingsPage
 import dev.chirp.android.settings.SettingsScreen
@@ -36,7 +46,7 @@ internal class SetupState {
     /** A pairing was tested and saved in this onboarding run; the pair page shows it instead of the scanner. */
     var connected by mutableStateOf(false)
     var pairIssue by mutableStateOf<PairIssue?>(null)
-    /** Settings opens with the first-run "Try it" card on top. */
+    /** Home opens with the first-run "Try it" card on top. */
     var tryIt by mutableStateOf(false)
     var wifiPermissionNeeded by mutableStateOf(false)
     var localNetwork by mutableStateOf(android.os.Build.VERSION.SDK_INT < 37)
@@ -54,8 +64,22 @@ internal class SetupState {
     var health by mutableStateOf<Health?>(null)
     /** Result of the last Mac check: null until one finishes. */
     var reachable by mutableStateOf<Boolean?>(null)
-    var settingsOpen by mutableStateOf(false)
+    /** Classification of the last failed Mac check, as the keyboard words it. */
+    var failure by mutableStateOf<ConnectionFailure.Kind?>(null)
+    /** Paired over the tailnet while no VPN is up: the Mac can't be reached until Tailscale is on. */
+    var tailscaleOff by mutableStateOf(false)
+    /** The app shell (Home · Notes · History · Settings) is showing; otherwise onboarding. */
+    var shellOpen by mutableStateOf(false)
+    var tab by mutableStateOf(ShellTab.Home)
+    /** The shell was opened from outside (the keyboard, a recovery link): Back returns there rather than to Home. */
+    var exitOnBack by mutableStateOf(false)
+    /** The pair page was opened from the shell: Back returns to it. */
+    var pairFromShell by mutableStateOf(false)
     var settingsPage by mutableStateOf<SettingsPage?>(null)
+    /** Bumped to make the Settings tab open [settingsPage] even if it was showing another page. */
+    var settingsRequest by mutableIntStateOf(0)
+    /** The History entry open in its detail sheet or pane. */
+    var historyEntry by mutableStateOf<String?>(null)
 }
 
 open class SetupActivity : ComponentActivity() {
@@ -66,8 +90,11 @@ open class SetupActivity : ComponentActivity() {
     private var pendingHealth: okhttp3.Call? = null
     private val client by lazy { ChirpNetwork.client(this) }
     private var pendingNetworkTest: Boolean? = null
-    /** Settings opened by an intent (HeliBoard, the keyboard, a recovery link) rather than from setup: back leaves the app instead of returning to setup. */
-    private var settingsStandalone = false
+    internal open val tailscale: TailscaleControl by lazy { AndroidTailscale(this) }
+    private var vpnWatch: AutoCloseable? = null
+    /** The Notes tab's session, shared with [NotesActivity]; created the first time the tab shows. */
+    private val notes by lazy { NotesSessionHolder.model(this) { NotesModel(applicationContext) } }
+    private val notesHost = NotesHost(this, { tailscale }, { notes })
     private val networkPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         state.localNetwork = granted
         val pending = pendingNetworkTest; pendingNetworkTest = null
@@ -76,85 +103,126 @@ open class SetupActivity : ComponentActivity() {
     }
     private val micPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) {
         state.mic = it; state.micDenied = !it
-        if (it) advance()
+        if (it && !state.shellOpen) advance()
         state.status = if (it) "Microphone permission granted" else "Microphone permission is needed to dictate — open app permissions to allow it"
     }
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         store = SettingsStore(this)
+        // Keep dictated text, history and notes out of the Recents thumbnail.
+        if (android.os.Build.VERSION.SDK_INT >= 33) setRecentsScreenshotEnabled(false)
         state.step = savedInstanceState?.getInt("step", 0)?.coerceIn(PAGE_WELCOME, PAGE_PAIR) ?: PAGE_WELCOME
         savedInstanceState?.let {
             state.entryStep = it.getInt("entry", 0).coerceIn(PAGE_WELCOME, PAGE_PAIR); state.connected = it.getBoolean("connected"); state.tryIt = it.getBoolean("try_it")
-            state.settingsOpen = it.getBoolean("settings"); settingsStandalone = it.getBoolean("standalone")
+            state.shellOpen = it.getBoolean("shell"); state.exitOnBack = it.getBoolean("exit_on_back"); state.pairFromShell = it.getBoolean("pair_from_shell")
+            state.tab = ShellTab.entries.firstOrNull { tab -> tab.name == it.getString("tab") } ?: ShellTab.Home
             state.settingsPage = it.getString("settings_page")?.let { name -> SettingsPage.entries.firstOrNull { page -> page.name == name } }
         }
         refresh()
         if (savedInstanceState == null) {
             val first = setupStep(state.inputEnabled, state.inputSelected, state.mic, state.paired, welcomed = false)
-            if (first == ONBOARDING_DONE) finishOnboarding() else { state.step = first; state.entryStep = first }
+            if (store.onboarded || first == ONBOARDING_DONE) finishOnboarding() else { state.step = first; state.entryStep = first }
         }
         consumeSection(intent)
         setContent {
             ChirpTheme {
-                if (state.settingsOpen) SettingsScreen(state, SettingsActions(
-                    checkConnection = { testPairing(save = false) },
-                    changePairing = ::openPairing,
-                    forgetPairing = ::forgetPairing,
-                    allowWifi = { networkPermission.launch(LOCAL_NETWORK_PERMISSION) },
-                    floatingMicSettings = { startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) },
-                    keyboardPreferences = ::openKeyboardPreferences,
-                ), initialPage = state.settingsPage, onExit = if (settingsStandalone) null else ({ state.settingsOpen = false }))
-                else Onboarding(state, OnboardingActions(
-                    grantMic = {
-                        if (state.mic) state.status = "Microphone permission already granted"
-                        else micPermission.launch(Manifest.permission.RECORD_AUDIO)
-                    },
-                    keyboardSettings = { awaitingPrerequisite = true; startActivity(Intent(Settings.ACTION_INPUT_METHOD_SETTINGS)) },
-                    appSettings = { awaitingPrerequisite = true; startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, "package:$packageName".toUri())) },
-                    picker = { awaitingPrerequisite = true; getSystemService(InputMethodManager::class.java).showInputMethodPicker() },
-                    grantNetwork = { networkPermission.launch(LOCAL_NETWORK_PERMISSION) },
-                    scan = ::scan, pasteLink = ::editLink, retry = { if (state.link.isBlank()) scan() else testPairing(save = true) },
-                    openTailscale = { AndroidTailscale(this).open() }, finish = ::advance,
-                ))
+                if (state.shellOpen) Shell()
+                else {
+                    BackHandler(enabled = state.pairFromShell) { state.pairFromShell = false; state.shellOpen = true }
+                    Onboarding(state, OnboardingActions(
+                        grantMic = {
+                            if (state.mic) state.status = "Microphone permission already granted"
+                            else micPermission.launch(Manifest.permission.RECORD_AUDIO)
+                        },
+                        keyboardSettings = { awaitingPrerequisite = true; startActivity(Intent(Settings.ACTION_INPUT_METHOD_SETTINGS)) },
+                        appSettings = ::openAppSettings,
+                        picker = { awaitingPrerequisite = true; getSystemService(InputMethodManager::class.java).showInputMethodPicker() },
+                        grantNetwork = { networkPermission.launch(LOCAL_NETWORK_PERMISSION) },
+                        scan = ::scan, pasteLink = ::editLink, retry = { if (state.link.isBlank()) scan() else testPairing(save = true) },
+                        openTailscale = { tailscale.open() }, finish = ::advance,
+                    ))
+                }
             }
         }
         consumePairingIntent(intent)
     }
     override fun onNewIntent(intent: Intent) { super.onNewIntent(intent); consumeSection(intent); consumePairingIntent(intent) }
+
+    @Composable
+    private fun Shell() {
+        AppShell(state.tab, ::selectTab, state.exitOnBack) { tab ->
+            when (tab) {
+                ShellTab.Home -> HomeScreen(state, HomeActions(fix = ::fix, dictate = { startActivity(Intent(this, ScratchpadActivity::class.java)) },
+                    notes = { selectTab(ShellTab.Notes) }, history = { id -> state.historyEntry = id; selectTab(ShellTab.History) },
+                    historySettings = { openSettings(SettingsPage.History, outside = false) }), notesLive = NotesSessionHolder.current?.state?.active == true)
+                ShellTab.Notes -> {
+                    LifecycleStartEffect(notes) { NotesSessionHolder.visible(notes, this@SetupActivity, true); notes.refresh()
+                        onStopOrDispose { NotesSessionHolder.visible(notes, this@SetupActivity, false) } }
+                    NotesScreen(notes, record = notesHost::record, copy = notesHost::copy, share = notesHost::share, act = notesHost::act,
+                        leave = { }, save = notesHost::save, handleBack = false)
+                }
+                ShellTab.History -> HistoryScreen(selected = state.historyEntry, select = { state.historyEntry = it })
+                ShellTab.Settings -> key(state.settingsRequest) {
+                    SettingsScreen(state, SettingsActions(
+                        checkConnection = { testPairing(save = false) },
+                        changePairing = ::openPairing,
+                        forgetPairing = ::forgetPairing,
+                        allowWifi = { networkPermission.launch(LOCAL_NETWORK_PERMISSION) },
+                        floatingMicSettings = { startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) },
+                        keyboardPreferences = ::openKeyboardPreferences,
+                    ), initialPage = state.settingsPage)
+                }
+            }
+        }
+    }
+    /** A tab picked in the bar or rail, or from Home: from here Back goes Home as usual. */
+    private fun selectTab(tab: ShellTab) { state.exitOnBack = false; state.tab = tab }
+    /** Home's connection card: the one fix for what it shows. */
+    internal fun fix(fix: HomeFix) {
+        when (fix) {
+            HomeFix.Pair -> openPairing()
+            HomeFix.Microphone -> if (state.micDenied) openAppSettings() else micPermission.launch(Manifest.permission.RECORD_AUDIO)
+            HomeFix.TailscaleOn -> if (tailscale.connect()) state.status = "Connecting Tailscale…" else if (!tailscale.open()) openSettings(SettingsPage.Connection, outside = false)
+            HomeFix.Retry -> testPairing(save = false)
+        }
+    }
+    private fun openAppSettings() { awaitingPrerequisite = true; startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, "package:$packageName".toUri())) }
     private fun openKeyboardPreferences() = startActivity(Intent(this, helium314.keyboard.settings.SettingsActivity::class.java))
     private fun forgetPairing() {
         ++pairingGeneration; ChirpNetwork.cancel(pendingHealth); pendingHealth = null
-        store.forget(); state.link = ""; state.status = "Pairing removed"; state.checking = false; state.reachable = null; state.connected = false; refresh()
+        store.forget(); state.link = ""; state.status = "Pairing removed"; state.checking = false; state.reachable = null; state.failure = null; state.connected = false; refresh()
     }
-    /** Onboarding is complete: hand over to Chirp settings, with the first-run "Try it" card until it's dismissed. */
+    /** Onboarding is complete (now or on an earlier run): open Home, with the first-run "Try it" card until it's dismissed. */
     private fun finishOnboarding() {
-        state.tryIt = !store.tryItDismissed; state.settingsPage = null; settingsStandalone = true; state.settingsOpen = true
+        store.onboarded = true; state.tryIt = !store.tryItDismissed; state.settingsPage = null; open(ShellTab.Home, outside = false)
     }
     /** Moves to the first page whose requirement isn't met, or finishes. Never back to the welcome page once past it. */
     internal fun advance() {
         val next = setupStep(state.inputEnabled, state.inputSelected, state.mic, state.paired, welcomed = state.step > PAGE_WELCOME)
         if (next == ONBOARDING_DONE) finishOnboarding() else state.step = next
     }
-    /** Opens the pair page on its own: from settings (Change pairing), a pairing link or a recovery action. Back leaves it. */
+    /** Opens the pair page on its own: from the shell (Pair Mac, Change pairing), a pairing link or a recovery action. Back leaves it. */
     private fun openPairing() {
-        if (state.settingsOpen) state.entryStep = PAGE_PAIR
-        state.settingsOpen = false; state.step = PAGE_PAIR; state.connected = false; state.pairIssue = null
+        if (state.shellOpen) { state.entryStep = PAGE_PAIR; state.pairFromShell = true }
+        state.shellOpen = false; state.step = PAGE_PAIR; state.connected = false; state.pairIssue = null
     }
-    private fun openSettings(page: SettingsPage?) { state.settingsPage = page; settingsStandalone = true; state.settingsOpen = true }
+    private fun open(tab: ShellTab, outside: Boolean) { state.tab = tab; state.exitOnBack = outside; state.pairFromShell = false; state.shellOpen = true }
+    private fun openSettings(page: SettingsPage?, outside: Boolean = true) { state.settingsPage = page; state.settingsRequest++; open(ShellTab.Settings, outside) }
     private fun consumeSection(source: Intent) {
         when (source.getStringExtra("section")) {
             "pair" -> openPairing()
             "settings" -> openSettings(null)
-            "try" -> { state.tryIt = true; openSettings(null) }
+            "try" -> { state.tryIt = true; open(ShellTab.Home, outside = false) }
             "connection" -> openSettings(SettingsPage.Connection)
             "network" -> { state.reachable = false; openSettings(SettingsPage.Connection) }
+            "history" -> { state.historyEntry = null; open(ShellTab.History, outside = true) }
         }
     }
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
         if (hasFocus && awaitingPrerequisite && ::store.isInitialized) {
             refresh()
-            if (!state.settingsOpen) advance()
+            if (!state.shellOpen) advance()
             awaitingPrerequisite = false
         }
     }
@@ -199,7 +267,8 @@ open class SetupActivity : ComponentActivity() {
     }
     override fun onSaveInstanceState(outState: Bundle) {
         outState.putInt("step", state.step); outState.putInt("entry", state.entryStep); outState.putBoolean("connected", state.connected)
-        outState.putBoolean("try_it", state.tryIt); outState.putBoolean("settings", state.settingsOpen); outState.putBoolean("standalone", settingsStandalone)
+        outState.putBoolean("try_it", state.tryIt); outState.putBoolean("shell", state.shellOpen); outState.putBoolean("exit_on_back", state.exitOnBack)
+        outState.putBoolean("pair_from_shell", state.pairFromShell); outState.putString("tab", state.tab.name)
         outState.putString("settings_page", state.settingsPage?.name)
         super.onSaveInstanceState(outState)
     }
@@ -217,6 +286,7 @@ open class SetupActivity : ComponentActivity() {
         val pairing = store.pairing()
         state.paired = pairing != null
         state.host = pairing?.base?.host.orEmpty()
+        state.tailscaleOff = pairing != null && TailscaleControl.routes(pairing.base) && !tailscale.connected()
         state.health = store.health
     }
     internal fun testPairing(save: Boolean, requestPermission: Boolean = true) {
@@ -237,7 +307,7 @@ open class SetupActivity : ComponentActivity() {
                 else {
                     store.health = health
                 }
-                state.reachable = true
+                state.reachable = true; state.failure = null
                 state.status = if (health.ready) "Mac ready" else "Paired · Mac is loading its speech model"
                 refresh()
                 if (save) state.connected = true
@@ -250,7 +320,8 @@ open class SetupActivity : ComponentActivity() {
                     return@launch
                 }
                 if (pairingGeneration == id) {
-                    pendingHealth = null; state.checking = false; state.reachable = false; if (save) state.pairIssue = PairIssue.Unreachable
+                    pendingHealth = null; state.checking = false; state.reachable = false; state.failure = ConnectionFailure.classify(error)
+                    if (save) state.pairIssue = PairIssue.Unreachable
                     state.status = "Mac unreachable — is Tailscale on? Check the Mac is awake, Chirp is running, and the pairing link is current."
                 }
             }
@@ -258,7 +329,16 @@ open class SetupActivity : ComponentActivity() {
     }
     protected open suspend fun checkMac(call: okhttp3.Call): Health = withContext(Dispatchers.IO) { ChirpNetwork.health(call) }
     protected open fun savePairing(pairing: Pairing, health: Health) = store.save(pairing, health)
+    override fun onStart() {
+        super.onStart()
+        // Tailscale switched on or off while Chirp is open: the card follows, and a Mac that was out of reach is checked again.
+        vpnWatch = tailscale.watch {
+            val wasOff = state.tailscaleOff; refresh()
+            if (wasOff && !state.tailscaleOff && state.paired) testPairing(save = false, requestPermission = false)
+        }
+    }
     override fun onStop() {
+        vpnWatch?.close(); vpnWatch = null
         ++pairingGeneration; ChirpNetwork.cancel(pendingHealth); pendingHealth = null; state.checking = false
         super.onStop()
     }

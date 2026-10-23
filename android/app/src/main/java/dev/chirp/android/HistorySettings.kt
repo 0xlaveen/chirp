@@ -1,19 +1,10 @@
 package dev.chirp.android
 
-import android.content.ClipData
-import android.content.ClipboardManager
 import android.content.Intent
-import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
-import androidx.activity.compose.setContent
-import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
@@ -71,68 +62,12 @@ internal fun HistorySettings(showOpen: Boolean = true, store: DictationHistory? 
         dismissButton = { TextButton({ confirmClear = false }) { Text("Cancel") } })
 }
 
+/** The keyboard's "open history" link and older shortcuts: a thin deep link into the app shell's History tab. */
 class HistoryActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        // Keep dictated text out of the Recents thumbnail.
-        if (Build.VERSION.SDK_INT >= 33) setRecentsScreenshotEnabled(false)
-        setContent { ChirpTheme { HistoryScreen() } }
-    }
-}
-
-@Composable
-internal fun HistoryScreen(store: DictationHistory? = null, now: () -> Long = System::currentTimeMillis) {
-    val context = LocalContext.current
-    val history = store ?: remember { DictationHistory(context) }
-    val scope = rememberCoroutineScope()
-    var enabled by remember { mutableStateOf(history.enabled) }
-    var entries by remember { mutableStateOf<List<HistoryEntry>?>(null) }
-    var reload by remember { mutableIntStateOf(0) }
-    var query by remember { mutableStateOf("") }
-    LaunchedEffect(reload, enabled) { entries = withContext(Dispatchers.IO) { history.entries() } }
-    fun copy(value: String) = context.getSystemService(ClipboardManager::class.java)
-        ?.setPrimaryClip(ClipData.newPlainText("Chirp dictation", value))
-    val shown = entries.orEmpty().filter { entry ->
-        query.isBlank() || listOfNotNull(entry.text, entry.raw, entry.app).any { it.contains(query.trim(), ignoreCase = true) }
-    }
-    Surface(Modifier.fillMaxSize()) {
-        Box(Modifier.fillMaxSize().safeDrawingPadding(), contentAlignment = Alignment.TopCenter) {
-            LazyColumn(Modifier.widthIn(max = 600.dp).fillMaxWidth(), contentPadding = PaddingValues(24.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                item {
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text("CHIRP  /  HISTORY", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
-                        Text("Dictation history", style = MaterialTheme.typography.headlineMedium)
-                        HistorySettings(showOpen = false, store = history) { enabled = history.enabled; reload++ }
-                        if (enabled) OutlinedTextField(query, { query = it }, Modifier.fillMaxWidth(),
-                            label = { Text("Search history") }, singleLine = true)
-                    }
-                }
-                if (enabled) {
-                    if (entries != null && shown.isEmpty()) item {
-                        Text(if (query.isBlank()) "No dictations yet. New dictations stay here for ${history.retention.label}." else "No matches",
-                            style = MaterialTheme.typography.bodyMedium)
-                    }
-                    items(shown, key = { it.id }) { entry ->
-                        Card(Modifier.fillMaxWidth()) {
-                            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                Text(entry.text, style = MaterialTheme.typography.bodyLarge)
-                                entry.raw?.let { Text("Before clean-up: $it", style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant) }
-                                Text(listOfNotNull(historyAge(now(), entry.time).first, entry.app, if (entry.partial) "partial" else null).joinToString(" · "),
-                                    style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                Row {
-                                    TextButton({ copy(entry.text) }) { Text("Copy") }
-                                    entry.raw?.let { raw -> TextButton({ copy(raw) }) { Text("Copy raw") } }
-                                    TextButton({
-                                        scope.launch { withContext(Dispatchers.IO) { history.delete(entry.id) }; reload++ }
-                                    }) { Text("Delete") }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
+        startActivity(Intent(this, SetupActivity::class.java).putExtra("section", "history")
+            .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP))
+        finish()
     }
 }
