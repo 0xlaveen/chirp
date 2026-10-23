@@ -40,7 +40,8 @@ internal fun CleanupStyleSettings(health: Health?, appsOnly: Boolean = false) {
     var selecting by remember { mutableStateOf(false) }
     var editingApp by remember { mutableStateOf<String?>(null) }
     var packageName by remember { mutableStateOf("") }
-    NavRow(if (appsOnly) "Per-app styles" else "Clean-up styles", { open = true })
+    NavRow(if (appsOnly) "Per-app styles" else "Styles", { open = true }, summary = (profiles.firstOrNull { it.id == default }?.name ?: "Default") +
+        if (apps.isEmpty()) "" else " · ${apps.size} app${if (apps.size == 1) "" else "s"}")
     if (open) AlertDialog(onDismissRequest = { open = false }, title = { Text(if (appsOnly) "Per-app styles" else "Clean-up styles") },
         text = {
             Column(Modifier.fillMaxWidth().heightIn(max = 480.dp).verticalScroll(rememberScrollState()),

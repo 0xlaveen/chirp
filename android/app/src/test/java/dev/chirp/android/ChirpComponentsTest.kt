@@ -21,6 +21,7 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
+import dev.chirp.android.settings.SettingsScreen
 import dev.chirp.android.ui.*
 import dev.chirp.android.ui.ChirpTheme
 import java.io.File
@@ -128,18 +129,18 @@ class ChirpComponentsTest {
         row.assertIsOn(); assertTrue(checked)
     }
 
-    @Test fun `every switch in setup, HeliBoard's Chirp section and history is a full-row SwitchRow`() {
+    @Test fun `every switch in settings, HeliBoard's Chirp section and history is a full-row SwitchRow`() {
         val store = SettingsStore(context)
         store.health = Health(true, false, true, false, null)
         val history = DictationHistory(context, SoftwareHistoryKeys()).apply { enable() }
-        val state = SetupState().apply { step = 3; paired = true; health = store.health; correction = store.correction }
+        val state = SetupState().apply { step = 3; paired = true; host = "mac.example.test"; health = store.health }
         val screen = mutableIntStateOf(0)
-        compose.setContent { ChirpTheme { when (screen.intValue) { 0 -> SetupWizard(state); 1 -> ChirpSettingsSection(); else -> HistoryScreen(history) } } }
+        compose.setContent { ChirpTheme { when (screen.intValue) { 0 -> SettingsScreen(state); 1 -> ChirpSettingsSection(); else -> HistoryScreen(history) } } }
         for (index in 0..2) {
             compose.runOnIdle { screen.intValue = index }
             compose.waitForIdle()
             val switches = compose.onAllNodes(isToggleable()).fetchSemanticsNodes()
-            assertTrue(switches.size >= if (index == 2) 1 else 4)
+            assertTrue(switches.size >= if (index == 0) 4 else 1)
             assertEquals("No switch nested inside another toggle", switches.size, compose.onAllNodes(isToggleable(), useUnmergedTree = true).fetchSemanticsNodes().size)
             switches.forEach { node ->
                 val label = node.config.getOrNull(SemanticsProperties.Text)

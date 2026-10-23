@@ -17,6 +17,10 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
+import dev.chirp.android.settings.SettingsActions
+import dev.chirp.android.settings.SettingsPage
+import dev.chirp.android.settings.SettingsScreen
+import dev.chirp.android.settings.copyDiagnostics
 import com.google.mlkit.vision.barcode.common.Barcode
 import com.google.mlkit.vision.codescanner.GmsBarcodeScannerOptions
 import com.google.mlkit.vision.codescanner.GmsBarcodeScanning
@@ -40,9 +44,10 @@ internal class SetupState {
     var link by mutableStateOf("")
     var host by mutableStateOf("")
     var health by mutableStateOf<Health?>(null)
-    var correction by mutableStateOf(false)
-    var haptics by mutableStateOf(true)
-    var debug by mutableStateOf(false)
+    /** Result of the last Mac check: null until one finishes. */
+    var reachable by mutableStateOf<Boolean?>(null)
+    var settingsOpen by mutableStateOf(false)
+    var settingsPage by mutableStateOf<SettingsPage?>(null)
 }
 
 open class SetupActivity : ComponentActivity() {
@@ -53,6 +58,8 @@ open class SetupActivity : ComponentActivity() {
     private var pendingHealth: okhttp3.Call? = null
     private val client by lazy { ChirpNetwork.client(this) }
     private var pendingNetworkTest: Boolean? = null
+    /** Settings opened by an intent (HeliBoard, the keyboard, a recovery link) rather than from setup: back leaves the app instead of returning to setup. */
+    private var settingsStandalone = false
     private val networkPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         state.localNetwork = granted
         val pending = pendingNetworkTest; pendingNetworkTest = null
@@ -68,12 +75,24 @@ open class SetupActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         store = SettingsStore(this)
         state.step = savedInstanceState?.getInt("step", 0)?.coerceIn(0, 3) ?: 0
+        savedInstanceState?.let {
+            state.settingsOpen = it.getBoolean("settings"); settingsStandalone = it.getBoolean("standalone")
+            state.settingsPage = it.getString("settings_page")?.let { name -> SettingsPage.entries.firstOrNull { page -> page.name == name } }
+        }
         refresh()
         if (savedInstanceState == null) state.step = setupStep(state.inputEnabled, state.inputSelected, state.mic, state.paired)
         consumeSection(intent)
         setContent {
             ChirpTheme {
-                SetupWizard(state,
+                if (state.settingsOpen) SettingsScreen(state, SettingsActions(
+                    checkConnection = { testPairing(save = false) },
+                    changePairing = { state.settingsOpen = false; state.step = 2 },
+                    forgetPairing = ::forgetPairing,
+                    allowWifi = { networkPermission.launch(LOCAL_NETWORK_PERMISSION) },
+                    floatingMicSettings = { startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) },
+                    keyboardPreferences = ::openKeyboardPreferences,
+                ), initialPage = state.settingsPage, onExit = if (settingsStandalone) null else ({ state.settingsOpen = false }))
+                else SetupWizard(state,
                     grantMic = {
                         if (state.mic) state.status = "Microphone permission already granted"
                         else micPermission.launch(Manifest.permission.RECORD_AUDIO)
@@ -83,34 +102,30 @@ open class SetupActivity : ComponentActivity() {
                     appSettings = { awaitingPrerequisite = true; startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, "package:$packageName".toUri())) },
                     picker = { awaitingPrerequisite = true; getSystemService(InputMethodManager::class.java).showInputMethodPicker() },
                     grantNetwork = { networkPermission.launch(LOCAL_NETWORK_PERMISSION) },
-                    keyboardPreferences = { startActivity(Intent(this, helium314.keyboard.settings.SettingsActivity::class.java)) },
+                    keyboardPreferences = ::openKeyboardPreferences,
                     diagnostics = { state.diagnostics = DiagnosticsReport.text(this) },
                     clearTimings = { DiagnosticsReport.clearTimings(this); state.diagnostics = DiagnosticsReport.text(this) },
-                    copyDiagnostics = {
-                        getSystemService(android.content.ClipboardManager::class.java).setPrimaryClip(
-                            android.content.ClipData.newPlainText("Chirp diagnostics", DiagnosticsReport.text(this)))
-                    },
+                    copyDiagnostics = { copyDiagnostics(this, DiagnosticsReport.text(this)) },
                     scan = ::scan, check = { testPairing(save = state.link.isNotBlank()) },
-                    forget = {
-                        ++pairingGeneration; ChirpNetwork.cancel(pendingHealth); pendingHealth = null
-                        store.forget(); state.link = ""; state.status = "Pairing removed"; state.checking = false; refresh()
-                    },
-                    correctionChanged = { store.correction = it },
-                    preferences = {
-                        store.haptics = state.haptics
-                        store.debugOverlay = state.debug
-                    },
+                    openSettings = { state.settingsPage = null; settingsStandalone = false; state.settingsOpen = true },
                 )
             }
         }
         consumePairingIntent(intent)
     }
     override fun onNewIntent(intent: Intent) { super.onNewIntent(intent); consumeSection(intent); consumePairingIntent(intent) }
+    private fun openKeyboardPreferences() = startActivity(Intent(this, helium314.keyboard.settings.SettingsActivity::class.java))
+    private fun forgetPairing() {
+        ++pairingGeneration; ChirpNetwork.cancel(pendingHealth); pendingHealth = null
+        store.forget(); state.link = ""; state.status = "Pairing removed"; state.checking = false; state.reachable = null; refresh()
+    }
+    private fun openSettings(page: SettingsPage?) { state.settingsPage = page; settingsStandalone = true; state.settingsOpen = true }
     private fun consumeSection(source: Intent) {
         when (source.getStringExtra("section")) {
-            "pair" -> state.step = 2
-            "settings" -> state.step = 3
-            "network" -> { state.step = 3; state.status = "Check Tailscale is connected on both devices, wake your Mac, and start Chirp on the Mac." }
+            "pair" -> { state.settingsOpen = false; state.step = 2 }
+            "settings" -> openSettings(null)
+            "connection" -> openSettings(SettingsPage.Connection)
+            "network" -> { state.reachable = false; openSettings(SettingsPage.Connection) }
         }
     }
     override fun onWindowFocusChanged(hasFocus: Boolean) {
@@ -130,7 +145,7 @@ open class SetupActivity : ComponentActivity() {
         try {
             Pairing.parse(value ?: error("Missing pairing link"))
             ++pairingGeneration; ChirpNetwork.cancel(pendingHealth); pendingHealth = null; state.checking = false
-            state.link = value.orEmpty(); state.step = 2
+            state.link = value.orEmpty(); state.settingsOpen = false; state.step = 2
             state.status = "Pairing link received — test to save"
         } catch (_: Exception) { state.status = "Invalid Chirp pairing link" }
     }
@@ -153,7 +168,11 @@ open class SetupActivity : ComponentActivity() {
         super.onResume()
         if (::store.isInitialized) { refresh(); if (state.paired && state.link.isBlank()) testPairing(save = false, requestPermission = false) }
     }
-    override fun onSaveInstanceState(outState: Bundle) { outState.putInt("step", state.step); super.onSaveInstanceState(outState) }
+    override fun onSaveInstanceState(outState: Bundle) {
+        outState.putInt("step", state.step); outState.putBoolean("settings", state.settingsOpen); outState.putBoolean("standalone", settingsStandalone)
+        outState.putString("settings_page", state.settingsPage?.name)
+        super.onSaveInstanceState(outState)
+    }
     private fun refresh() {
         state.localNetwork = hasLocalNetworkAccess()
         state.mic = ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
@@ -169,8 +188,6 @@ open class SetupActivity : ComponentActivity() {
         state.paired = pairing != null
         state.host = pairing?.base?.host.orEmpty()
         state.health = store.health
-        state.correction = store.correction
-        state.haptics = store.haptics; state.debug = store.debugOverlay
     }
     internal fun testPairing(save: Boolean, requestPermission: Boolean = true) {
         val pairing = try {
@@ -190,6 +207,7 @@ open class SetupActivity : ComponentActivity() {
                 else {
                     store.health = health
                 }
+                state.reachable = true
                 state.status = if (health.ready) "Mac ready" else "Paired · Mac is loading its speech model"
                 refresh()
                 if (save) state.step = 3
@@ -202,7 +220,7 @@ open class SetupActivity : ComponentActivity() {
                     return@launch
                 }
                 if (pairingGeneration == id) {
-                    pendingHealth = null; state.checking = false
+                    pendingHealth = null; state.checking = false; state.reachable = false
                     state.status = "Mac unreachable — is Tailscale on? Check the Mac is awake, Chirp is running, and the pairing link is current."
                 }
             }

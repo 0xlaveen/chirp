@@ -69,7 +69,7 @@ Measured on an Apple M5 Pro (64 GB, macOS 27) through the real WebSocket path wi
 | Clean-up, first use after idle | **~1.7 s** median on a busy host, because the model starts loading while you're still talking |
 | Live Notes update | **2.2 s** median for ~800 characters of transcript, **5.2 s** for ~2,400 |
 
-Phone latency over Tailscale hasn't been measured on a real device yet. The Android keyboard keeps content-free per-session timings in Setup → Diagnostics, and [docs/android-device-acceptance.md](docs/android-device-acceptance.md) is the checklist for recording them.
+Phone latency over Tailscale hasn't been measured on a real device yet. The Android keyboard keeps content-free per-session timings in Settings → About → Diagnostics, and [docs/android-device-acceptance.md](docs/android-device-acceptance.md) is the checklist for recording them.
 
 ## Features
 

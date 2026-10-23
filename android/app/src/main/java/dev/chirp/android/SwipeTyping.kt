@@ -15,6 +15,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.edit
 import dev.chirp.android.ui.ActionRow
 import dev.chirp.android.ui.SettingsGroup
+import dev.chirp.android.ui.LearnMore
 import dev.chirp.android.ui.SettingsItem
 import dev.chirp.android.ui.SwitchRow
 import helium314.keyboard.latin.settings.Defaults
@@ -119,7 +120,7 @@ internal fun restartChirp(activity: Activity) {
 internal fun swipeTypingSummary(context: Context) = when (GestureLibrary.status(context)) {
     GestureLibrary.Status.ACTIVE -> "Swipe typing: on, using the gesture library you added"
     GestureLibrary.Status.NOT_LOADED -> "Swipe typing: the added library did not load"
-    GestureLibrary.Status.NONE -> "Swipe typing: optional. Add a gesture library in the last setup step or Chirp settings"
+    GestureLibrary.Status.NONE -> "Swipe typing: optional. Add a gesture library in Chirp settings → Keyboard → Swipe typing"
 }
 
 @Composable
@@ -160,14 +161,14 @@ internal fun SwipeTypingSettings() {
                 ActionRow("Remove gesture library", { confirmRemove = true }, destructive = true)
             }
             GestureLibrary.Status.NONE -> SettingsItem {
-                Text("Chirp has no built-in swipe typing. Like HeliBoard, it can use a compatible gesture library " +
+                Text("Chirp has no built-in swipe typing. You can add a compatible gesture library yourself.", style = MaterialTheme.typography.bodyMedium)
+                LearnMore("Swipe typing", "Like HeliBoard, Chirp can use a compatible gesture library " +
                     "that you add yourself, usually Google's libjni_latinimegoogle.so taken from a Google Apps (GApps) package. " +
-                    "Chirp never downloads or includes it. Using it is your choice and is subject to that library's own licence.",
-                    style = MaterialTheme.typography.bodySmall)
-                Text("This phone needs the $abi version. Chirp checks the file's SHA-256 against the known release and warns " +
+                    "Chirp never downloads or includes it. Using it is your choice and is subject to that library's own licence.\n\n" +
+                    "This phone needs the $abi version. Chirp checks the file's SHA-256 against the known release and warns " +
                     "about anything else. A library not built for 16 KB memory pages may fail to load on Android 15+ phones " +
                     "that use them. The library runs inside Chirp with Chirp's permissions, including network access, " +
-                    "so use only a file from a source you trust.", style = MaterialTheme.typography.bodySmall)
+                    "so use only a file from a source you trust.")
                 OutlinedButton({ picker.launch(arrayOf("*/*")) }, Modifier.fillMaxWidth(), enabled = !busy) {
                     Text(if (busy) "Checking…" else "Add gesture library…")
                 }

@@ -45,7 +45,7 @@ Dictate about 5 s of synthetic speech each time and confirm no crash, the field 
 | 7 | Focus | Speak, tap another field | Dictation discarded in the old field |
 | 8 | Unbind | Speak, switch to another keyboard | Mic released, no crash |
 
-Also try: hold-to-talk, ✕ cancel, fold/unfold mid-utterance, Wi-Fi vs LTE, Tailscale off then **Turn on**, and the 105 s countdown. Check **Setup → Diagnostics → Crashes** is empty at the end.
+Also try: hold-to-talk, ✕ cancel, fold/unfold mid-utterance, Wi-Fi vs LTE, Tailscale off then **Turn on**, and the countdown in the last 15 s before the 10-minute limit. Check **Settings → About → Diagnostics → Crashes** is empty at the end.
 
 ## 5. Collect the timings
 

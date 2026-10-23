@@ -13,7 +13,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.*
-import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.relocation.BringIntoViewRequester
 import androidx.compose.foundation.relocation.bringIntoViewRequester
 import kotlinx.coroutines.launch
@@ -27,7 +26,7 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import dev.chirp.android.ui.ActionRow
-import dev.chirp.android.ui.AppColoursSettings
+import dev.chirp.android.settings.DiagnosticsBody
 import dev.chirp.android.ui.NavRow
 import dev.chirp.android.ui.SettingsGroup
 import dev.chirp.android.ui.SettingsItem
@@ -45,10 +44,8 @@ internal fun SetupWizard(
     state: SetupState,
     grantMic: () -> Unit = {}, keyboardSettings: () -> Unit = {}, accessibilitySettings: () -> Unit = {},
     appSettings: () -> Unit = {}, picker: () -> Unit = {}, scan: () -> Unit = {}, check: () -> Unit = {},
-    forget: () -> Unit = {}, preferences: () -> Unit = {},
-    correctionChanged: (Boolean) -> Unit = {},
     grantNetwork: () -> Unit = {}, keyboardPreferences: () -> Unit = {}, diagnostics: () -> Unit = {}, copyDiagnostics: () -> Unit = {},
-    clearTimings: () -> Unit = {},
+    clearTimings: () -> Unit = {}, openSettings: () -> Unit = {},
 ) {
     var showDiagnostics by remember { mutableStateOf(false) }
     var paste by remember { mutableStateOf(false) }
@@ -57,8 +54,7 @@ internal fun SetupWizard(
     if (showDiagnostics) AlertDialog(onDismissRequest = { showDiagnostics = false },
         title = { Text("Diagnostics") },
         text = { Column(Modifier.heightIn(max = 420.dp).verticalScroll(rememberScrollState())) {
-            Text("Timings of the last 50 sessions (numbers only) and the last 5 local crashes (exception class, stack frames, app version and time). No messages, text, audio, hosts or tokens.")
-            SelectionContainer { Text(state.diagnostics, style = MaterialTheme.typography.bodySmall) }
+            DiagnosticsBody(state.diagnostics)
             TextButton(clearTimings) { Text("Clear timings") }
         } },
         confirmButton = { TextButton(copyDiagnostics) { Text("Copy diagnostics") } },
@@ -67,7 +63,7 @@ internal fun SetupWizard(
         Box(Modifier.fillMaxSize().safeDrawingPadding(), contentAlignment = Alignment.TopCenter) {
             Column(Modifier.widthIn(max = 600.dp).fillMaxWidth().verticalScroll(pageScroll).padding(24.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                Text(if (state.step == 3) "CHIRP  /  SETTINGS" else "CHIRP  /  SETUP", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+                Text("CHIRP  /  SETUP", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
                 Text(if (state.step == 3) "Ready to dictate" else "Your voice. Your keyboard.", style = MaterialTheme.typography.headlineMedium)
                 Text("Speak on your phone. Your Mac transcribes over Tailscale.", style = MaterialTheme.typography.bodyLarge)
                 LinearProgressIndicator(progress = { (state.step + 1) / 4f }, modifier = Modifier.fillMaxWidth().semantics { contentDescription = "Setup progress" })
@@ -107,21 +103,8 @@ internal fun SetupWizard(
                         Button(check, Modifier.fillMaxWidth(), enabled = !state.checking) { Text("Test connection & save pairing") }
                     }
                     3 -> {
-                        if (state.paired) {
-                            Text("Paired with ${state.host}", style = MaterialTheme.typography.titleMedium)
-                            Text("Engine: ${state.health?.engine ?: "Not reported by Mac"}")
-                            if (state.health.cleanupAvailable()) SettingsGroup {
-                                SwitchRow("Clean-up · ${correctionLabel(state.health)}", state.correction, {
-                                    state.correction = it; correctionChanged(it)
-                                }, summary = cleanupDescription(state.health))
-                                CleanupStyleSettings(state.health)
-                            } else Text("Mac has clean-up off", style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                        SettingsGroup { NavRow(if (state.paired) "Change pairing" else "Pair Mac", { state.step = 2 }) }
                         Text("Try a sentence", style = MaterialTheme.typography.titleLarge)
                         Text("Tap the field below. Type on Chirp Keyboard, then tap its mic to start and ✓ to finish (or pause, if you chose When I pause). Long press the mic for quick options. ✕ cancels. The keyboard stays selected after every final.")
-                        StopDictationSettings()
                         // Deliberately a real native editor: exercises the same InputConnection/accessibility path as other apps.
                         val editorInk = MaterialTheme.colorScheme.onSurface.toArgb()
                         val editorHint = MaterialTheme.colorScheme.onSurfaceVariant.toArgb()
@@ -140,35 +123,13 @@ internal fun SetupWizard(
                             editor.backgroundTintList = ColorStateList.valueOf(editorAccent)
                         }, modifier = Modifier.fillMaxWidth().bringIntoViewRequester(bringEditor))
                         Text("Typing suggestions learn on this device.", style = MaterialTheme.typography.bodySmall)
-                        AppColoursSettings()
-                        KeyboardLookChooser()
-                        SwipeTypingSettings()
                         val context = LocalContext.current
                         SettingsGroup {
+                            NavRow("Open settings", openSettings)
                             NavRow("Choose keyboard", picker)
                             NavRow("Open Scratchpad", { context.startActivity(Intent(context, ScratchpadActivity::class.java)) })
                             NavRow("Open Notes", { context.startActivity(Intent(context, NotesActivity::class.java)) })
                         }
-                        OutlinedButton(check, Modifier.fillMaxWidth(), enabled = !state.checking) { Text("Check Mac connection") }
-                        if (state.status.startsWith("Mac unreachable") || state.status.startsWith("Check Tailscale")) {
-                            Text("Check Tailscale is connected on both devices. Wake the Mac and start Chirp, then check the connection again.")
-                        }
-                        SettingsGroup {
-                            SwitchRow("Haptic cues", state.haptics, { state.haptics = it; preferences() })
-                            SwitchRow("Debug overlay (timings only)", state.debug, { state.debug = it; preferences() })
-                        }
-                        HistorySettings()
-                        UpdateSettings()
-                        SettingsGroup {
-                            NavRow("Keyboard layouts & settings", keyboardPreferences)
-                            BuildSetupOptions()
-                        }
-                        SettingsGroup("Optional floating microphone") {
-                            SettingsItem { Text("Off by default. Enable only if you want a floating mic with another keyboard. Chirp reads the focused field locally to insert safely. Keyboard dictation works without Accessibility.") }
-                            NavRow(if (state.bubbleEnabled) "Floating mic enabled ✓" else "Enable optional floating mic", accessibilitySettings,
-                                summary = "Settings → Accessibility → Installed apps. If sideloading blocks this optional feature: Apps → Chirp Keyboard → ⋮ → Allow restricted settings.")
-                        }
-                        SettingsGroup { ActionRow("Forget pairing", forget, destructive = true) }
                     }
                 }
                 TextButton({ diagnostics(); showDiagnostics = true }) { Text("Diagnostics") }
