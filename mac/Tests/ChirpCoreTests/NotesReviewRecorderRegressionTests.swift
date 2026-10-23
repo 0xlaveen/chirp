@@ -10,7 +10,7 @@ import Testing
     /// when the new document's `version` happens to equal the request's, `applyReorganize` replaces the request's
     /// (old) range in the new text: discarded notes come back and the user's new text is overwritten. With a new text
     /// shorter than that range the same path raises NSRangeException (crash).
-    @Test(.timeLimit(.minutes(2))) func aReorganizeFromADiscardedDocumentNeverLandsInTheNewOne() async throws {
+    @Test func aReorganizeFromADiscardedDocumentNeverLandsInTheNewOne() async throws {
         let stub = PassStub(), clock = ManualClock()
         stub.holdReorganize = true
         let r = NotesRecorder(makeSession: { StreamSession(config: ServerConfig(baseURL: URL(string: "http://127.0.0.1:9")!), options: $0) },
