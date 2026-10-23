@@ -226,3 +226,52 @@ func actualContextWindowTruncationRefusesLongReplacement(_ truncateDuringInserti
     #expect(plan.keptPrefix.isEmpty && plan.deletedText == "mine")
     #expect(proxy.apply(plan) && proxy.cursor.before == "user: ")
 }
+
+/// Messages exposes about 1,000 characters before the caret. A long dictation keeps ownership through such a
+/// window because each check sees an exact suffix of the expected text, including every character it deletes.
+@MainActor
+@Test func longDictationKeepsOwnershipThroughABoundedHostWindow() throws {
+    let proxy = FakeProxy()
+    proxy.contextWindow = 1_000
+    let now = Date(timeIntervalSince1970: 100), generation = UUID(), utterance = UUID()
+    var policy = OwnedInsertion()
+    let began = policy.begin(generation: generation, utteranceID: utterance, context: proxy.cursor, now: now)
+    #expect(began)
+    var spoken = ""
+    for i in 0..<60 {
+        spoken += "sentence \(i) of the plan. "
+        let event = TextEvent(generation: generation, utteranceID: utterance, kind: .partial, text: spoken, sequence: i,
+                              createdAt: now, expiresAt: now.addingTimeInterval(30))
+        let proposed = policy.plan(event, context: proxy.cursor, now: now, leaseUntil: event.expiresAt)
+        let plan = try #require(proposed, "partial \(i)")
+        let applied = proxy.apply(plan)
+        let confirmed = policy.didApply(plan, observed: proxy.cursor, now: now)
+        #expect(applied && confirmed, "partial \(i)")
+    }
+    #expect(spoken.count > 1_400 && proxy.cursor.before?.count == 1_000, "The dictation outgrew the window")
+    #expect(proxy.deletes == 0, "Growing partials never delete")
+    let final = TextEvent(generation: generation, utteranceID: utterance, kind: .final, text: spoken + "Done.", sequence: 99,
+                          createdAt: now, expiresAt: now.addingTimeInterval(30))
+    let proposed = policy.plan(final, context: proxy.cursor, now: now, leaseUntil: final.expiresAt)
+    let plan = try #require(proposed)
+    let applied = proxy.apply(plan)
+    let confirmed = policy.didApply(plan, observed: proxy.cursor, now: now)
+    #expect(applied && confirmed && !policy.requiresRecovery)
+    #expect(proxy.cursor.before?.hasSuffix("of the plan. Done.") == true)
+}
+
+@MainActor
+@Test(arguments: [0, 1, 2])
+func boundedWindowsMustBeExactLongEnoughSuffixes(_ mode: Int) {
+    let long = String(repeating: "abcdefghij", count: 100)
+    let expected = CursorContext(documentID: UUID(), before: "user: " + long + "mine", after: "")
+    var seen = expected
+    switch mode {
+    case 0: seen.before = String((expected.before ?? "").suffix(255)) // too short to trust
+    case 1: seen.before = "X" + String((expected.before ?? "").suffix(600)) // shifted: not a suffix
+    default: seen.after = "typed after" // the other side changed
+    }
+    #expect(!seen.matches(expected))
+    var window = expected; window.before = String((expected.before ?? "").suffix(256))
+    #expect(window.matches(expected) && expected.matches(expected))
+}

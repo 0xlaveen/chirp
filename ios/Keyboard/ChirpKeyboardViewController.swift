@@ -326,7 +326,7 @@ final class ChirpKeyboardViewController: UIInputViewController {
     /// UIKit edits are synchronous requests, but hosts may apply them differently.
     /// Verify every intermediate context and stop immediately if one disagrees.
     private func execute(_ plan: EditPlan) -> Bool {
-        guard context() == plan.expected else { return false }
+        guard context().matches(plan.expected) else { return false }
         applying = true
         defer { applying = false }
         return VerifiedEditor.apply(plan, context: { self.context() },

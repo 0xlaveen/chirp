@@ -8,9 +8,12 @@ public enum InsertionLimits {
     public static let maximumContextUTF16 = 16_384
 }
 
-/// UIKit does not report whether its context is complete. A moving/truncated
-/// window therefore loses ownership even when it is below the resource bounds.
+/// UIKit does not report whether its context is complete. Hosts expose a bounded window around the caret
+/// (Messages about 1,000 characters before it), so a context is compared with `matches(_:)`: a window still
+/// describes the expected text when it is an exact suffix (before) or prefix (after) of it and at least
+/// `minimumWindowUTF16` long. Shorter or shifted windows lose ownership.
 public struct CursorContext: Equatable, Sendable {
+    public static let minimumWindowUTF16 = 256
     public var documentID: UUID
     public var before: String?
     public var after: String?
@@ -39,6 +42,21 @@ public struct CursorContext: Equatable, Sendable {
         self.uncertain = uncertain
     }
 
+    /// Same document, selection and certainty; each side either identical or an exact, long enough window onto
+    /// the expected text. Only characters visible in the window are ever deleted.
+    public func matches(_ expected: CursorContext) -> Bool {
+        guard documentID == expected.documentID, selection == expected.selection, uncertain == expected.uncertain else {
+            return false
+        }
+        return Self.window(before, onto: expected.before, fromEnd: true) && Self.window(after, onto: expected.after, fromEnd: false)
+    }
+    private static func window(_ seen: String?, onto full: String?, fromEnd: Bool) -> Bool {
+        guard let seen, let full else { return seen == full }
+        if seen == full { return true }
+        guard seen.utf16.count >= minimumWindowUTF16, seen.utf16.count < full.utf16.count else { return false }
+        return fromEnd ? full.hasSuffix(seen) : full.hasPrefix(seen)
+    }
+
     public var isUsable: Bool {
         guard !uncertain, let before, let after else { return false }
         return (selection ?? "").isEmpty &&
@@ -65,11 +83,10 @@ public struct EditPlan: Equatable, Sendable {
     /// Revalidate immediately before EACH deletion. Never issue a stored length's
     /// worth of deleteBackward calls against an unchecked text proxy.
     public func permitsDeletion(context: CursorContext, remaining: String) -> Bool {
-        guard context.isUsable, context.documentID == expected.documentID,
-              context.after == expected.after, let initial = expected.before,
-              initial.hasSuffix(ownedText) else { return false }
-        let anchor = String(initial.dropLast(ownedText.count))
-        return context.before == anchor + keptPrefix + remaining && !remaining.isEmpty
+        guard context.isUsable, let initial = expected.before, initial.hasSuffix(ownedText) else { return false }
+        var deleting = expected
+        deleting.before = String(initial.dropLast(ownedText.count)) + keptPrefix + remaining
+        return context.matches(deleting) && !remaining.isEmpty
     }
 
     /// The editor once the changed tail is deleted: everything up to and including `keptPrefix`.
@@ -152,7 +169,7 @@ public struct OwnedInsertion: Sendable {
         if event.segment > segment {
             // The previous segment landed; the next one starts right after it and owns nothing yet. Only hand
             // over where we left the editor, so landed text is never touched again.
-            guard isFinal, event.segment == segment + 1, event.kind != .raw, let expected, context == expected else {
+            guard isFinal, event.segment == segment + 1, event.kind != .raw, let expected, context.matches(expected) else {
                 invalidate(); return nil
             }
             segment = event.segment; ownedText = ""; isFinal = false; rawDeadline = nil; undoDeadline = nil
@@ -161,7 +178,7 @@ public struct OwnedInsertion: Sendable {
             return nil
         }
         guard event.kind != .raw || (isFinal && rawRequested), context.isUsable,
-              let expected, context == expected,
+              let expected, context.matches(expected),
               event.text.utf16.count <= InsertionLimits.maximumResultUTF16,
               event.text.utf8.count <= InsertionLimits.maximumResultUTF8,
               ((expected.before ?? "").utf16.count - ownedText.utf16.count + event.text.utf16.count)
@@ -182,10 +199,11 @@ public struct OwnedInsertion: Sendable {
 
     /// Ownership transfers only after the host actually exposes the exact result.
     public mutating func didApply(_ plan: EditPlan, observed: CursorContext, now: Date) -> Bool {
-        guard let event = pendingEvent, observed == plan.resultingContext, observed.isUsable else {
+        guard let event = pendingEvent, observed.matches(plan.resultingContext), observed.isUsable else {
             invalidate(); return false
         }
-        expected = observed; ownedText = plan.replacement; pendingEvent = nil
+        // Keep the full expected text: later windows are checked against it, not against this one.
+        expected = plan.resultingContext; ownedText = plan.replacement; pendingEvent = nil
         if event.kind == .final { isFinal = true; rawDeadline = now.addingTimeInterval(5); undoDeadline = rawDeadline }
         if event.kind == .raw { rawDeadline = nil }
         return true
@@ -197,7 +215,7 @@ public struct OwnedInsertion: Sendable {
     /// Removes exactly the landed dictation, only while the editor still shows it as we left it. After
     /// applying the plan, call `release()`; there is nothing left to own.
     public func undo(context: CursorContext, now: Date) -> EditPlan? {
-        guard canUndo(now: now), context.isUsable, let expected, expected == context, !ownedText.isEmpty else { return nil }
+        guard canUndo(now: now), context.isUsable, let expected, context.matches(expected), !ownedText.isEmpty else { return nil }
         return EditPlan(expected: expected, ownedText: ownedText, replacement: "")
     }
 
@@ -207,7 +225,7 @@ public struct OwnedInsertion: Sendable {
     /// Cancel retracts only text still proven to be ours. It never accepts finals afterward.
     public mutating func cancel(context: CursorContext) -> EditPlan? {
         defer { invalidate() }
-        guard !isFinal, context.isUsable, let expected, expected == context else { return nil }
+        guard !isFinal, context.isUsable, let expected, context.matches(expected) else { return nil }
         return EditPlan(expected: expected, ownedText: ownedText, replacement: "")
     }
 }
