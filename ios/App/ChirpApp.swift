@@ -3,29 +3,37 @@ import SwiftUI
 
 @main
 struct ChirpApp: App {
-    @StateObject private var coordinator: SessionCoordinator
-    @Environment(\.scenePhase) private var scenePhase
+    // Not observed here: the views and commands observe it. Observing it in the App re-ran this body on
+    // every published change, and SwiftUI may evaluate the new window closure on its async render thread
+    // (seen while rotating during dictation), where the main-actor closure trapped.
+    private let coordinator: SessionCoordinator
     init() {
         PrivacyController.shared.start()
         #if DEBUG
-        _coordinator = StateObject(wrappedValue: ProcessInfo.processInfo.arguments.contains("--chirp-ui-test") ? SessionCoordinator.synthetic(sharedKeyboard: KeyboardTestMode.enabled) : .shared)
+        coordinator = ProcessInfo.processInfo.arguments.contains("--chirp-ui-test") ? SessionCoordinator.synthetic(sharedKeyboard: KeyboardTestMode.enabled) : .shared
         #else
-        _coordinator = StateObject(wrappedValue: .shared)
+        coordinator = .shared
         #endif
     }
     var body: some Scene {
-        WindowGroup {
-            #if DEBUG
-            if KeyboardTestMode.enabled {
-                KeyboardTestHost(model: coordinator)
-            } else {
-                root
-            }
-            #else
+        WindowGroup { ChirpScene(coordinator: coordinator) }
+            .commands { DictationCommands(model: coordinator) }
+    }
+}
+
+struct ChirpScene: View {
+    let coordinator: SessionCoordinator
+    @Environment(\.scenePhase) private var scenePhase
+    var body: some View {
+        #if DEBUG
+        if KeyboardTestMode.enabled {
+            KeyboardTestHost(model: coordinator)
+        } else {
             root
-            #endif
         }
-        .commands { DictationCommands(model: coordinator) }
+        #else
+        root
+        #endif
     }
     private var root: some View {
         ChirpRootView(model: coordinator)
@@ -254,7 +262,9 @@ struct OtherAppsGuide: View {
                   systemImage: "hand.tap")
             Label("With a hardware keyboard: iPadOS hides on-screen keyboards. Press the globe key (or Control-Space) until Chirp is chosen, then use the small keyboard bar at the bottom of the screen to show it.",
                   systemImage: "keyboard")
-            Label("Shortcut key from any app: in the Shortcuts app, make a shortcut with Chirp's Toggle dictation action. Then go to Settings → Accessibility → Keyboards → Full Keyboard Access, turn it on, open Commands and give that shortcut a key combination. With a session running, press it to start; press it again to stop. The text is copied, so press ⌘V to paste.",
+            Label("From any app with a hardware keyboard: start a session here, then press ⌘Space, type Toggle dictation and press Return. Do it again to stop. The text is copied, so press ⌘V to paste.",
+                  systemImage: "magnifyingglass")
+            Label("One key for it: in the Shortcuts app, make a shortcut with Chirp's Toggle Chirp dictation action. Then go to Settings → Accessibility → Keyboards & Typing → Full Keyboard Access, turn it on, open Commands and give that shortcut a key combination.",
                   systemImage: "command")
             Label("Inside Chirp: ⌘Return starts or stops dictation, ⌘. cancels, ⌘⇧K starts a keyboard session and ⌘⇧E ends it. Hold ⌘ to see every shortcut.",
                   systemImage: "keyboard.badge.ellipsis")
