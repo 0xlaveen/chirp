@@ -21,15 +21,18 @@ struct SessionCoordinatorTests {
         let audio: SyntheticAudio
         let values: Values
         let stores: AppServices
+        let secrets: MemorySecretStore
         let root: URL
         func clean() { model.endSession(); try? FileManager.default.removeItem(at: root) }
     }
     func fixture(permission: Bool = true) async throws -> Fixture {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("chirp-unit-" + UUID().uuidString)
-        let stores = try AppServices(root: root, secrets: MemorySecretStore())
+        let secrets = MemorySecretStore()
+        let stores = try AppServices(root: root, secrets: secrets)
         let credentials = try PairingLink.parse("chirp://pair?url=https%3A%2F%2Fsynthetic.test.ts.net%2Fchirp&token=synthetic-only")
         try await stores.pairing.verifyAndSave(credentials, health: { _ in Health(engine: "synthetic", ready: true) })
-        let http = URLSessionConfiguration.ephemeral; http.protocolClasses = [SyntheticHTTP.self]
+        FlakyHTTP.failure = nil
+        let http = URLSessionConfiguration.ephemeral; http.protocolClasses = [FlakyHTTP.self]
         let transport = SyntheticTransport(), audio = SyntheticAudio(), values = Values()
         let model = SessionCoordinator(services: stores, audio: audio, http: URLSession(configuration: http),
             makeStream: { _, options, _ in
@@ -40,7 +43,7 @@ struct SessionCoordinatorTests {
             requestPermission: { permission }, permissionGranted: { permission }, activityBegin: { _ in }, activityActive: { values.activity },
             activityUpdate: { _, _ in }, activityEnd: {}, copyText: { values.copied.append($0) },
             appActive: { values.active }, now: { values.date }, production: false)
-        return Fixture(model: model, transport: transport, audio: audio, values: values, stores: stores, root: root)
+        return Fixture(model: model, transport: transport, audio: audio, values: values, stores: stores, secrets: secrets, root: root)
     }
     func eventually(_ check: () -> Bool) async throws {
         for _ in 0..<200 {
@@ -52,6 +55,62 @@ struct SessionCoordinatorTests {
     func ready(_ f: Fixture, index: Int = 0) async throws {
         f.values.transports[index].push(#"{"type":"ready","session":"synthetic","debug_retention":false}"#)
         try await eventually { f.model.phase == .listening }
+    }
+
+    func keyboardView(_ f: Fixture) throws -> SharedBridge { try SharedBridge(root: f.root, secrets: f.secrets, role: .keyboard) }
+
+    @Test func droppedConnectionKeepsWhatWasHeardAndLeavesTheSessionArmed() async throws {
+        let f = try await fixture(); defer { f.clean() }
+        try await f.model.begin(source: .keyboard)
+        try await ready(f)
+        f.transport.push(#"{"type":"partial","seq":1,"text":"heard so far","stable":""}"#)
+        try await eventually { f.model.text == "heard so far" }
+        let id = try #require(try keyboardView(f).state()?.utteranceID)
+        f.transport.drop()
+        try await eventually { f.model.phase == .finished }
+        #expect(f.model.armed && f.model.text == "heard so far" && !f.model.canUseRaw)
+        #expect(f.model.notice == "Connection lost. Kept what was heard.")
+        let keyboard = try keyboardView(f)
+        let state = try #require(try keyboard.state())
+        #expect(state.errorCode == .unreachable && state.phase == .finished)
+        let final = try #require(try keyboard.takeResults(generation: state.generation, utteranceID: id).last)
+        #expect(final.kind == .final && final.text == "heard so far" && final.kept == true)
+        #expect(f.values.copied.isEmpty)
+    }
+
+    @Test func droppedConnectionWithNothingHeardOnlyExplains() async throws {
+        let f = try await fixture(); defer { f.clean() }
+        try await f.model.begin(source: .keyboard)
+        f.transport.drop()
+        try await eventually { f.model.phase == .armed }
+        #expect(f.model.armed && f.model.text.isEmpty && f.model.notice == "Connection lost.")
+        #expect(try keyboardView(f).state()?.errorCode == .unreachable)
+    }
+
+    @Test func serverErrorKeepsWhatWasHeardAndNamesTheError() async throws {
+        let f = try await fixture(); defer { f.clean() }
+        try await f.model.begin()
+        try await ready(f)
+        f.transport.push(#"{"type":"partial","seq":1,"text":"almost done","stable":""}"#)
+        try await eventually { f.model.text == "almost done" }
+        f.transport.push(#"{"type":"error","code":"busy","message":"synthetic"}"#)
+        try await eventually { f.model.phase == .finished }
+        #expect(f.model.notice == "Your Mac is busy. Try again in a moment. Kept what was heard.")
+        #expect(f.model.armed && f.model.diagnostics.last?.code == .busy)
+    }
+
+    @Test func unreachableMacKeepsAnArmedSessionAndNamesTheCause() async throws {
+        let f = try await fixture(); defer { f.clean() }
+        try await f.model.armSession()
+        FlakyHTTP.failure = .cannotFindHost
+        await #expect(throws: SessionFailure.mac(.notFound)) { try await f.model.begin(source: .keyboard) }
+        #expect(f.model.armed && f.model.connectionIssue == .notFound)
+        #expect(f.model.notice == ConnectionIssue.notFound.message)
+        #expect(try keyboardView(f).state()?.errorCode == .notFound)
+        FlakyHTTP.failure = nil
+        await f.model.checkConnection()
+        #expect(f.model.connectionIssue == nil && f.model.notice == "Mac connection verified.")
+        #expect(try keyboardView(f).state()?.errorCode == nil)
     }
 
     @Test func normalFinalNeverCopiesAndHistoryStartsOff() async throws {
@@ -270,4 +329,19 @@ struct SessionCoordinatorTests {
         #expect(preferences.permitsCorrection(health: external))
         #expect(!preferences.permitsCorrection(health: Health(correction: "available", correctionLeavesMachine: true)))
     }
+}
+
+/// Synthetic health that can fail with a chosen URL error, as an unreachable Mac would.
+final class FlakyHTTP: URLProtocol, @unchecked Sendable {
+    nonisolated(unsafe) static var failure: URLError.Code?
+    private var inner: SyntheticHTTP?
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+    override func startLoading() {
+        if let failure = Self.failure { client?.urlProtocol(self, didFailWithError: URLError(failure)); return }
+        let inner = SyntheticHTTP(request: request, cachedResponse: nil, client: client)
+        self.inner = inner
+        inner.startLoading()
+    }
+    override func stopLoading() {}
 }

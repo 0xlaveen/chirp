@@ -18,6 +18,12 @@ public struct KeyboardInputs: Equatable, Sendable {
     public var isFinal = false
     public var requiresRecovery = false
     public var rawUntil: Date?
+    /// The policy still allows Undo of the landed final (see `OwnedInsertion.canUndo`).
+    public var undoAvailable = false
+    /// The last final is only what was heard before a failure.
+    public var kept = false
+    /// A short result of the user's last action, such as "Dictation removed".
+    public var notice: String?
     public var rawRequested = false
     public var startPending = false
     public var fallback: String?
@@ -56,6 +62,8 @@ public struct KeyboardScreen: Equatable, Sendable {
     public var warning: String?
     public var primary: PrimaryAction
     public var cancelEnabled: Bool
+    /// The Cancel slot shows Undo instead: Cancel only applies while recording, Undo only after a final.
+    public var showsUndo: Bool
     public var rawEnabled: Bool
     public var rawTitle: String
     public var rawSecondsLeft: Int?
@@ -81,14 +89,16 @@ public enum KeyboardPresenter {
         let elapsed = recording ? i.recordingStartedAt.map { ClockText.format(i.now.timeIntervalSince($0)) } : nil
         let remaining = live ? i.sessionExpiresAt.map { ClockText.format(ceil($0.timeIntervalSince(i.now))) + " left" } : nil
         let rawLeft = rawSeconds(i)
+        let showsUndo = live && !busy && i.isFinal && i.ownsUtterance && i.undoAvailable
         let items = i.availableStyleIDs.map { StyleItem(id: $0, title: styleTitles[$0] ?? $0, isChecked: $0 == i.styleID) }
         return KeyboardScreen(
-            status: ([phaseText] + [elapsed, remaining].compactMap { $0 }).joined(separator: " · "),
-            phaseText: phaseText, elapsed: elapsed, remaining: remaining,
+            status: ([live ? i.notice ?? phaseText : phaseText] + [elapsed, remaining].compactMap { $0 }).joined(separator: " · "),
+            phaseText: live ? i.notice ?? phaseText : phaseText, elapsed: elapsed, remaining: remaining,
             detail: detail, showsDetail: detail != nil && !i.compactHeight,
             warning: i.debugRetention ? "DEBUG recordings kept on the server" : nil,
             primary: primary(i, live: live, phase: phase),
-            cancelEnabled: live && !i.isFinal && (busy || i.startPending),
+            cancelEnabled: live && (showsUndo || (!i.isFinal && (busy || i.startPending))),
+            showsUndo: showsUndo,
             rawEnabled: live && rawLeft != nil && i.isFinal && i.ownsUtterance && !i.rawRequested,
             rawTitle: rawLeft.map { "Use raw (\($0)s)" } ?? "Use raw", rawSecondsLeft: rawLeft,
             styleEnabled: live && !busy && !items.isEmpty,
@@ -147,7 +157,7 @@ public enum KeyboardPresenter {
         case .listening: return ("Listening…", "Tap Stop when you are done.")
         case .correcting: return ("Polishing…", "Chirp is cleaning up the text.")
         case .armed: return ("Session armed", i.errorCode?.guidance ?? idle)
-        case .finished: return ("Finished", i.errorCode?.guidance ?? idle)
+        case .finished: return (i.kept ? "Kept what was heard" : "Finished", i.errorCode?.guidance ?? idle)
         case .idle: return ("Session idle", i.errorCode?.guidance ?? "Open Chirp to start the session again.")
         case .failed: return ("Dictation failed", (i.errorCode ?? .unknown).guidance)
         }

@@ -237,3 +237,25 @@ func resultBoundsAcceptBoundaryAndRefuseUnicodeOverflowBeforeAnyEdit(_ unit: Str
     #expect(f.cursor.before == "A: ")
     #expect(f.policy.requiresRecovery)
 }
+
+@Test func undoRemovesExactlyTheLandedFinalWithinFiveSeconds() {
+    var f = Fixture()
+    #expect(f.apply(f.event("hello")) != nil)
+    #expect(!f.policy.canUndo(now: f.now), "No Undo before the final lands")
+    #expect(f.apply(f.event("Hello there.", kind: .final, sequence: 1)) != nil)
+    #expect(f.policy.canUndo(now: f.now.addingTimeInterval(4.9)))
+    let plan = try! #require(f.policy.undo(context: f.cursor, now: f.now.addingTimeInterval(1)))
+    #expect(plan.ownedText == "Hello there." && plan.replacement.isEmpty)
+    #expect(plan.resultingContext.before == "A: " && plan.resultingContext.after == " tail")
+    f.policy.release()
+    #expect(!f.policy.requiresRecovery && f.policy.generation == nil)
+}
+
+@Test func undoRefusesAfterTheWindowOrWhenTheTextChanged() {
+    var f = Fixture()
+    #expect(f.apply(f.event("Done.", kind: .final)) != nil)
+    #expect(f.policy.undo(context: f.cursor, now: f.now.addingTimeInterval(5)) == nil)
+    var typed = f.cursor; typed.before = (typed.before ?? "") + "x"
+    #expect(f.policy.undo(context: typed, now: f.now.addingTimeInterval(1)) == nil)
+    #expect(f.policy.undo(context: f.cursor, now: f.now.addingTimeInterval(1)) != nil)
+}

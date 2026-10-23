@@ -105,6 +105,7 @@ public struct OwnedInsertion: Sendable {
     private var lastSequence = -1
     private var seen = Set<UUID>()
     private var rawDeadline: Date?
+    private var undoDeadline: Date?
     private var pendingEvent: TextEvent?
 
     public init() {}
@@ -162,10 +163,23 @@ public struct OwnedInsertion: Sendable {
             invalidate(); return false
         }
         expected = observed; ownedText = plan.replacement; pendingEvent = nil
-        if event.kind == .final { isFinal = true; rawDeadline = now.addingTimeInterval(5) }
+        if event.kind == .final { isFinal = true; rawDeadline = now.addingTimeInterval(5); undoDeadline = rawDeadline }
         if event.kind == .raw { rawDeadline = nil }
         return true
     }
+
+    /// Undo is offered for 5 seconds after a final lands (Android's window).
+    public func canUndo(now: Date) -> Bool { isFinal && generation != nil && now < (undoDeadline ?? .distantPast) }
+
+    /// Removes exactly the landed dictation, only while the editor still shows it as we left it. After
+    /// applying the plan, call `release()`; there is nothing left to own.
+    public func undo(context: CursorContext, now: Date) -> EditPlan? {
+        guard canUndo(now: now), context.isUsable, let expected, expected == context, !ownedText.isEmpty else { return nil }
+        return EditPlan(expected: expected, ownedText: ownedText, replacement: "")
+    }
+
+    /// Forgets the utterance without asking for recovery: the dictation was undone or deliberately let go.
+    public mutating func release() { self = Self() }
 
     /// Cancel retracts only text still proven to be ours. It never accepts finals afterward.
     public mutating func cancel(context: CursorContext) -> EditPlan? {

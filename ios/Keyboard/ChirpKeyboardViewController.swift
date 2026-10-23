@@ -34,6 +34,9 @@ final class ChirpKeyboardViewController: UIInputViewController {
     private var applying = false
     private var visible = false
     private var rawUntil: Date?
+    private var kept = false
+    private var notice: String?
+    private var noticeUntil: Date?
     private var rawRequested = false
     private var startPending = false
     private var pendingUntil: Date?
@@ -249,7 +252,7 @@ final class ChirpKeyboardViewController: UIInputViewController {
     private func invalidateOwnership() {
         // Losing real ownership also ends a held Delete; the hold's own presses never owned anything.
         if policy.generation != nil || startPending { stopRepeat() }
-        policy.invalidate(); rawUntil = nil; rawRequested = false; startPending = false; pendingUntil = nil
+        policy.invalidate(); rawUntil = nil; rawRequested = false; startPending = false; pendingUntil = nil; kept = false
     }
 
     private func cancelOwnedActiveUtterance() {
@@ -313,6 +316,7 @@ final class ChirpKeyboardViewController: UIInputViewController {
         guard execute(plan), policy.didApply(plan, observed: context(), now: Date()) else {
             invalidateOwnership(); return
         }
+        if kind == .final { kept = result.kept == true }
         if kind == .final, let original = result.raw, original != result.text {
             rawUntil = Date().addingTimeInterval(5)
         }
@@ -366,6 +370,7 @@ final class ChirpKeyboardViewController: UIInputViewController {
     }
 
     @objc private func cancelTapped() {
+        if policy.canUndo(now: Date()) { undo(); return }
         guard !policy.isFinal else { return }
         let utterance = policy.utteranceID ?? state?.utteranceID
         if let plan = policy.cancel(context: context()) {
@@ -374,6 +379,14 @@ final class ChirpKeyboardViewController: UIInputViewController {
         rawUntil = nil; rawRequested = false; startPending = false; pendingUntil = nil
         send(.cancel, utteranceID: utterance)
     }
+    /// Removes the dictation that just landed, only if the editor still shows exactly what we inserted.
+    private func undo() {
+        if let plan = policy.undo(context: context(), now: Date()), execute(plan) { show("Dictation removed") }
+        else { show("Text changed — nothing to undo") }
+        policy.release(); rawUntil = nil; rawRequested = false; kept = false
+        render()
+    }
+    private func show(_ text: String) { notice = text; noticeUntil = Date().addingTimeInterval(3) }
     @objc private func rawTapped() {
         guard let rawUntil, Date() < rawUntil, policy.isFinal, !rawRequested else { return }
         rawRequested = true
@@ -450,6 +463,8 @@ final class ChirpKeyboardViewController: UIInputViewController {
         i.ownsUtterance = policy.generation != nil
         i.isFinal = policy.isFinal; i.requiresRecovery = policy.requiresRecovery
         i.rawUntil = rawUntil; i.rawRequested = rawRequested; i.startPending = startPending
+        i.undoAvailable = policy.canUndo(now: now); i.kept = kept
+        i.notice = now < (noticeUntil ?? .distantPast) ? notice : nil
         i.fallback = fallback
         let live = hasFullAccess && (state?.leaseUntil ?? .distantPast) > now
         let owned = state.flatMap { $0.generation == policy.generation && !policy.isFinal ? policy.utteranceID : nil }
@@ -473,6 +488,10 @@ final class ChirpKeyboardViewController: UIInputViewController {
         primary.accessibilityHint = action.hint
         primary.isEnabled = action.isEnabled
         cancel.isEnabled = screen.cancelEnabled
+        cancel.configuration?.title = screen.showsUndo ? "Undo" : "Cancel"
+        cancel.configuration?.image = UIImage(systemName: screen.showsUndo ? "arrow.uturn.backward" : "xmark")
+        cancel.accessibilityIdentifier = screen.showsUndo ? "chirp.keyboard.undo" : "chirp.keyboard.cancel"
+        cancel.accessibilityLabel = screen.showsUndo ? "Undo last dictation" : "Cancel"
         raw.isEnabled = screen.rawEnabled
         raw.configuration?.title = screen.rawTitle
         raw.accessibilityLabel = "Use raw"

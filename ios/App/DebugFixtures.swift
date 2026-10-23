@@ -55,6 +55,8 @@ final class SyntheticTransport: StreamTransport, @unchecked Sendable {
     }
     func cancel(with code: URLSessionWebSocketTask.CloseCode) { continuation.finish() }
     func push(_ value: String) { continuation.yield(.string(value)) }
+    /// The socket fails: the next receive throws, as when the connection drops mid-utterance.
+    func drop() { continuation.finish() }
 }
 
 @MainActor

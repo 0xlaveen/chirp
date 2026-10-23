@@ -240,9 +240,20 @@ Session length (Settings tab): **5 minutes (default), 15 minutes, 1 hour,
 Never**. Never lasts until ended, interrupted, terminated or revoked — iOS may
 still suspend the app; indefinite background execution is not guaranteed.
 Interruptions (calls, Siri, route changes) and expiry end the session safely.
-A transport failure during clean-up keeps the raw transcript and leaves the
-session armed; other transport failures end the session. The notice tells you
-when to reopen Chirp.
+When dictation fails partway — the connection drops, the Mac answers with an
+error, or it doesn't finish in time — Chirp **keeps what was heard**. The last
+live text lands as plain text, with no clean-up, and the notice says why
+(e.g. "Connection lost. Kept what was heard."). If nothing had been heard yet,
+only the reason is shown. A failure during clean-up keeps the original
+transcript. Connection failures leave the session armed, so you can try again
+once the Mac answers. Only interruptions, expiry and End session turn the
+microphone off.
+
+Connection problems are named by cause: this device is offline, the Mac
+can't be found on the tailnet, the Mac may be asleep or Chirp isn't running on
+it, a secure connection failed, or the Mac refused this device (for example a
+revoked device pairing; pair again). While nothing answers, the Dictate tab
+shows **Mac offline** with **Check again**.
 
 While dictating: **Stop dictation** finalizes. After the final you get
 explicit **Copy**, **Share** and — when clean-up changed the text — **Use raw**
@@ -283,8 +294,11 @@ Layout, top to bottom:
   readable width and centered on iPad) whose role follows state: *Open Chirp
   to start session* → *Start dictation* → *Stop dictation* → disabled
   *Polishing…*. A small *Open Chirp* link appears only in fallback states.
-- **Secondary row** — **Cancel**, **Use raw** (shows the seconds left in its
-  5 s window) and the **Style** menu.
+- **Secondary row** — **Cancel** (while recording), which becomes **Undo** for
+  5 s after the text lands; **Use raw** (shows the seconds left in its 5 s
+  window); and the **Style** menu. Undo removes exactly the dictation that just
+  landed, and only if the field still shows it as Chirp left it. Otherwise it
+  says "Text changed — nothing to undo".
 - **Bottom row** — globe (only when iOS asks for it), **Space**, **Delete**
   (press and hold repeats, accelerating; it stops on release and if the
   keyboard takes ownership of an utterance), **Return** and **End session**.
@@ -416,6 +430,10 @@ when it matters; surrounding editor text is never collected.
 | "Text kept in place" | The editor's context changed or is unreliable; recover the dictation in the app. Your text is never auto-deleted. |
 | "Protected storage unavailable. Unlock and reopen Chirp." | Keychain/App Group not accessible (device locked or missing capability). Check the provisioning profile includes the App Group and keychain access group. |
 | "Connection failed. Check Tailscale and your Mac." | Tailnet down or server not running the updated source; use Check Mac connection after fixing. |
+| "Can't find your Mac on the tailnet…" | The Mac's tailnet name didn't resolve: the Mac is off the tailnet, or Tailscale is off on this device. |
+| "Your Mac may be asleep, or Chirp isn't running on it." | Nothing answered at the Mac's address. Wake the Mac, check chirp-server, then tap Check again. |
+| "Your Mac refused this device. Pair again in Chirp." | The pairing was revoked or replaced (`chirp-server devices revoke`). Pair again from the Pair Mac tab. |
+| "Kept what was heard" | Dictation failed partway; the text heard so far was inserted without clean-up. Undo removes it for 5 s. |
 | "The Mac did not finish in time." | Finalization/clean-up deadline hit; raw text is kept when possible. |
 | Arming fails or the session ends immediately | Check microphone permission, that Live Activities are enabled for Chirp, and Tailscale; the Dictate tab shows the local error. |
 
