@@ -85,15 +85,11 @@ final class StructureStub: @unchecked Sendable {
                              options: StartOptions(client: "mac", correction: true), structuring: true, health: health)
     }
 
-    /// Polls until `condition` holds. The limit is generous because other suites (the snapshot renderer) can hold
-    /// the main actor for seconds in a full run; a passing check returns as soon as the condition is true.
+    /// Polls until `condition` holds, for at most `seconds` of time this test got to run (`pollUntil`), so another
+    /// suite holding the main actor in a full run makes the wait longer instead of failing it.
     private func eventually(_ what: String = "condition", within seconds: Double = 60,
                             _ condition: () -> Bool) async {
-        let deadline = Date().addingTimeInterval(seconds)
-        while !condition() {
-            if Date() > deadline { Issue.record("timed out waiting for \(what)"); return }
-            try? await Task.sleep(for: .milliseconds(10))
-        }
+        if !(await pollUntil(within: seconds, condition)) { Issue.record("timed out waiting for \(what)") }
     }
 
     private func send(_ r: NotesRecorder, frames n: Int) {
@@ -119,7 +115,7 @@ final class StructureStub: @unchecked Sendable {
         await r.stop()
         #expect(server.bytesBySocket == [0: 4 * 1600, 1: 6 * 1600])
         #expect(r.document.segments.map(\.text) == ["Segment 0.", "Segment 1."])
-        #expect(r.document.segments[1].offset == 0.2)                    // 4 × 50 ms before the cut
+        #expect(r.document.segments.dropFirst().first?.offset == 0.2)    // 4 × 50 ms before the cut
         #expect(r.state == .stopped && r.elapsed == 0.5)
     }
 

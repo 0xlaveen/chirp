@@ -1225,3 +1225,26 @@ uv run python scripts/bench_notes.py --set labelled --repetitions 1 --dump /tmp/
 ## Android real-device session timings
 
 Not yet measured. Android keeps content-free per-session timings (Settings → About → Diagnostics); paste the Wi-Fi and LTE summaries from the [real-device checklist](android-device-acceptance.md) here, with the device, Chirp version, engine and `battery-session.sh` rows. Until then every Android latency and battery figure is emulator-only (TBM).
+
+## Live Notes session soak (#66)
+
+2026-10-24, M5 Pro, macOS 27.0.1, the debug build `mac/scripts/test.sh` runs, on a shared host (load average 40–70). `NotesSoakTests.aTwoHourSessionStaysWithinBudget` runs two hours of Live Notes on the fake clock through the whole `NotesSession`:
+
+- 160 segments of 44 s speech and a 0.6 s pause, each final about 610 characters (97 600 transcript characters in all)
+- scripted speakers (three people, a turn every 20 s), structuring after each commit and auto-reorganize
+- a typed line every ten segments, and the offscreen editor replaying every change
+
+The budgets in the test are 2× the worst of six runs:
+
+| Measure | Baseline (worst of 6) | Budget |
+|---|---|---|
+| Session changes published per segment (SwiftUI updates of the window) | 7.35–7.48 | < 15 |
+| Structure passes per segment | 1.05–1.07 | < 2.2 |
+| Median editor update that takes a new version (the replay and its restyle) | 4.9–10.0 ms | < 20 ms |
+| `transcriptRows` at 161 segments | 0.15–0.45 ms | < 0.9 ms |
+| `hearingParts` at the end | 0.005–0.022 ms | < 0.045 ms |
+| Physical footprint growth over the run (`task_vm_info`) | 6.9–15.4 MB | < 32 MB, asserted only with `CHIRP_SOAK=1` (other suites share the process) |
+
+The test takes 31–82 s here (its limit is 2 minutes). Most of the time was the per-frame `Level(pcm16:)` loop, which runs as unspecialized generic code in a debug build: 70 % of the main thread, 131 s for the run. It now uses vDSP in `Double`, which is exact for PCM16 and matches the old loop bit for bit (`AudioTests.levelMatchesAPerSampleLoopExactly`).
+
+The longest single editor update was 108–280 ms, the restyle of a large reorganize on a loaded host, so it is reported but not asserted. The recorder-level budgets for long sessions (restyle at 30 000 characters, speaker lookups) are #64's, in their own section.

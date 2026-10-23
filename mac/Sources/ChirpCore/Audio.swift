@@ -1,3 +1,4 @@
+import Accelerate
 import AVFoundation
 import Foundation
 
@@ -77,21 +78,21 @@ public struct Level: Sendable, Equatable {
         self.rms = rms
     }
 
-    /// Peak/RMS of little-endian PCM16 mono.
+    /// Peak/RMS of little-endian PCM16 mono. vDSP in Double: every square and sum of PCM16 samples is exact there, so
+    /// this matches a per-sample loop bit for bit, without that loop's cost in debug builds (it runs for every frame).
     public init(pcm16 data: Data) {
-        var peak: Int32 = 0
-        var sum: Double = 0
         let n = data.count / 2
+        guard n > 0 else { self = .zero; return }
+        var peak = 0.0, sum = 0.0
         data.withUnsafeBytes { raw in
-            let s = raw.bindMemory(to: Int16.self)
-            for i in 0..<n {
-                let v = Int32(Int16(littleEndian: s[i]))
-                peak = max(peak, abs(v))
-                sum += Double(v) * Double(v)
+            withUnsafeTemporaryAllocation(of: Double.self, capacity: n) { d in
+                vDSP_vflt16D(raw.baseAddress!.assumingMemoryBound(to: Int16.self), 1, d.baseAddress!, 1, vDSP_Length(n))
+                vDSP_maxmgvD(d.baseAddress!, 1, &peak, vDSP_Length(n))
+                vDSP_svesqD(d.baseAddress!, 1, &sum, vDSP_Length(n))
             }
         }
         self.peak = Float(peak) / 32768
-        self.rms = n == 0 ? 0 : Float((sum / Double(n)).squareRoot() / 32768)
+        self.rms = Float((sum / Double(n)).squareRoot() / 32768)
     }
 }
 

@@ -2,13 +2,13 @@
 # CI entry point for the unit tests on GitHub's hosted macOS runners (Xcode 26.x, Swift 6.2/6.3).
 # - The stream/recorder suites below abort the whole test process there ("freed pointer was not the last
 #   allocation") when their tests share a process, yet every test passes alone and on Swift 6.4. They run
-#   one test per process.
+#   one test per process, as does the Live Notes soak (its 2-minute limit is for the soak alone).
 # - GeneratedSoundTests shells out to `swift make-sounds.swift`, which does not run on the runner, and
 #   SnapshotTests renders PNGs a few KB over the committed-size cap with the runner's fonts. Both pass on the
 #   reference Mac (`scripts/test.sh`).
 set -eu
 cd "$(dirname "$0")/.."
-ISOLATED="NotesBudgetTests NotesLongRecorderTests NotesLongSessionTests NotesOverlapRouterTests NotesOrganizeRecorderTests NotesRecorderTests NotesReorganizeRecorderTests SpeakerRecorderTests StreamBoundsTests StreamSessionTests"
+ISOLATED="NotesBudgetTests NotesLongRecorderTests NotesLongSessionTests NotesOrganizeRecorderTests NotesOverlapRouterTests NotesRecorderTests NotesReorganizeRecorderTests NotesSoakTests SpeakerRecorderTests StreamBoundsTests StreamSessionTests"
 SKIPPED="GeneratedSoundTests SnapshotTests"
 re() { echo "$*" | tr ' ' '\n' | paste -sd'|' -; }
 swift build --build-tests >/dev/null

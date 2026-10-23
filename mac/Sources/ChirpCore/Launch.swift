@@ -4,6 +4,8 @@ import Foundation
 public enum LaunchMode: Equatable, Sendable {
     case app
     case selftest
+    /// A WAV through the real Live Notes session (no microphone, window or TCC).
+    case notesSelftest
     /// Draw the UI to PNGs in a directory and exit, without starting the app (no onboarding, no TCC prompt).
     /// `curated` draws only the set committed under `docs/screenshots/mac`.
     case renderSnapshots(directory: String, curated: Bool = false)
@@ -13,11 +15,13 @@ public enum LaunchMode: Equatable, Sendable {
         usage: ChirpMac                         launch the menu-bar app
                ChirpMac --models                open local model setup
                ChirpMac --selftest <audio> [--url URL] [--token-file PATH] [--expect WORD] [--fast]
+               ChirpMac --notes-selftest <audio> [--url URL] [--token-file PATH] [--expect WORD] [--fault drop@30,down@60-90] [--fast]
                ChirpMac --render-snapshots <dir> [--curated]   draw the HUD, Settings and menu to PNGs (light and dark)
         """
 
     /// `arguments` excludes the executable path. Launch Services may pass `-psn_*`; it is not a CLI flag.
     public static func parse(_ arguments: [String]) -> LaunchMode {
+        if arguments.contains("--notes-selftest") { return .notesSelftest }
         if arguments.contains("--selftest") { return .selftest }
         if let i = arguments.firstIndex(of: "--render-snapshots") {
             guard i + 1 < arguments.count, !arguments[i + 1].hasPrefix("-") else { return .usage(exitCode: 64) }

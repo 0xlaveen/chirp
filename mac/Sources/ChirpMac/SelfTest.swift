@@ -96,7 +96,7 @@ enum SelfTest {
     }
 
     /// Any audio file AVFoundation reads → 16 kHz mono PCM16, cut into 50 ms frames.
-    private static func loadFrames(_ path: String) throws -> [Data] {
+    static func loadFrames(_ path: String) throws -> [Data] {
         let file = try AVAudioFile(forReading: URL(fileURLWithPath: path))
         guard let buffer = AVAudioPCMBuffer(pcmFormat: file.processingFormat, frameCapacity: AVAudioFrameCount(file.length)) else {
             throw CaptureError.converter
