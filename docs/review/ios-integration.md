@@ -33,7 +33,7 @@ app merge `59d208a`; subsequent changes were tests and documentation.
 ## Integrated validation
 
 Detached Koi job `/tmp/chirp-ios-verify.sh` exited **0** after **2m22s**.
-Log: `/Users/rex/.koi/run-logs/a23a9a66-3474-4dcf-b157-ea8216d0bfb6-20261018T060915-50085.log`.
+Log: `~/.koi/run-logs/a23a9a66-3474-4dcf-b157-ea8216d0bfb6-20261018T060915-50085.log`.
 Portable suites ran on the integrated shipping sources; the test-only follow-up
 and docs landed during the job. Final per-target syntax checks include the app
 test files. The working tree was clean after the job.

@@ -1,6 +1,6 @@
 # M3: Android voice IME (`chirp/android`)
 
-Goal: `android/` is a Gradle project producing **Chirp Voice**, a minimal Kotlin voice-only input method for the Samsung Galaxy Z Fold 8. It streams mic audio to the Mac's `chirp-server` over Tailscale (`wss://mainframe.tail676ff2.ts.net/chirp/v1/stream`). Partials appear live as composing text in the focused field; the final is committed. The interaction mirrors Koi's dictation ([architecture §6](../architecture.md)). Battery use must be minimal: no mic, socket or CPU work unless the user is dictating.
+Goal: `android/` is a Gradle project producing **Chirp Voice**, a minimal Kotlin voice-only input method for the Samsung Galaxy Z Fold 8. It streams mic audio to the Mac's `chirp-server` over Tailscale (`wss://<your-mac>.<tailnet>.ts.net/chirp/v1/stream`). Partials appear live as composing text in the focused field; the final is committed. The interaction mirrors Koi's dictation ([architecture §6](../architecture.md)). Battery use must be minimal: no mic, socket or CPU work unless the user is dictating.
 
 ## Constraints and toolchain
 

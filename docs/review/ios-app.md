@@ -158,7 +158,7 @@ not rerun those unchanged suites.
 Final successful source/compiler job: Koi run 2026-10-18T06:06:39Z, exit 0
 in 6 seconds; 18 memberships (app10/keyboard2/widget3/unit2/UI1), all structural,
 plist, parse and focused Catalyst checks passed. Log:
-`/Users/rex/.koi/run-logs/416b5f88-d92d-4f5f-ba2e-33d2b3464dce-20261018T060639-43332.log`.
+`~/.koi/run-logs/416b5f88-d92d-4f5f-ba2e-33d2b3464dce-20261018T060639-43332.log`.
 No runtime test count is attributed to that job. Privacy covers are explicitly
 sized from each UIWindowScene coordinate space, without UIScreen.main.
 

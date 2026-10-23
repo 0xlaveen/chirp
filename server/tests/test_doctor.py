@@ -16,7 +16,7 @@ from chirp_server.doctor import FAIL, OK, WARN, Check
 PUBLISHED_JSON = {
     "TCP": {"443": {"HTTPS": True}},
     "Web": {
-        "mainframe.tail676ff2.ts.net:443": {
+        "mac.example.ts.net:443": {
             "Handlers": {
                 "/koi": {"Proxy": "http://127.0.0.1:7710"},
                 "/chirp": {"Proxy": "http://127.0.0.1:7821"},
@@ -139,21 +139,19 @@ def test_config_invalid_without_quoting_content(tmp_path):
 def test_tailscale_published_tailnet_only():
     check = doctor.check_tailscale((0, json.dumps(PUBLISHED_JSON)))
     assert check.status == OK
-    assert "tailnet-only" in check.detail and "mainframe.tail676ff2.ts.net" in check.detail
+    assert "tailnet-only" in check.detail and "mac.example.ts.net" in check.detail
 
 
 def test_tailscale_funnel_warns():
     data = json.loads(json.dumps(PUBLISHED_JSON))
-    data["Web"]["mainframe.tail676ff2.ts.net:443"]["Funnel"] = True
+    data["Web"]["mac.example.ts.net:443"]["Funnel"] = True
     check = doctor.check_tailscale((0, json.dumps(data)))
     assert check.status == WARN and "Funnel" in check.detail
 
 
 def test_tailscale_wrong_proxy_warns():
     data = json.loads(json.dumps(PUBLISHED_JSON))
-    data["Web"]["mainframe.tail676ff2.ts.net:443"]["Handlers"]["/chirp"] = {
-        "Proxy": "http://127.0.0.1:9999"
-    }
+    data["Web"]["mac.example.ts.net:443"]["Handlers"]["/chirp"] = {"Proxy": "http://127.0.0.1:9999"}
     check = doctor.check_tailscale((0, json.dumps(data)))
     assert check.status == WARN and "127.0.0.1:9999" in check.detail
 

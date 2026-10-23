@@ -13,7 +13,7 @@ M1, M2 and M3 run in parallel against the frozen protocol in [architecture §3](
 ## Rules for every worker
 
 - Read `docs/architecture.md` first. It holds the decisions, the protocol and the privacy rules, and none of them is optional.
-- Reuse before writing. Koi's installed voice stack is the reference implementation: `~/.local/bin/.koi-upgrades/generation-*/tools/koi/lib/python3.13/site-packages/koi/voice/`, `koi/ui/routes_voice.py` and `koi/tailscale*.py`, plus the browser capture code in `nansen-ai/koi:ui/src/studio/chat/voiceRecorder.ts` (read it with `gh api`). Adapt patterns and code. Do not add Koi as a dependency.
+- Reuse before writing. Koi's installed voice stack is the reference implementation: `~/.local/bin/.koi-upgrades/generation-*/tools/koi/lib/python3.13/site-packages/koi/voice/`, `koi/ui/routes_voice.py` and `koi/tailscale*.py`, plus Koi's browser capture code (`voiceRecorder.ts`). Adapt patterns and code. Do not add Koi as a dependency.
 - Prefer maintained libraries and system APIs. Use the latest stable versions. Before writing glue code, check whether a library already does the job.
 - Privacy:
   - Never write audio or transcripts to disk or logs outside the opt-in debug-retention path.
