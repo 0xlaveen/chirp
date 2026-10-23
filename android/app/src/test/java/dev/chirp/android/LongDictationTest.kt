@@ -78,11 +78,14 @@ class LongDictationTest {
         assertEquals("Hello. One.", editor.text)
     }
     @Test fun `a later segment that finishes first waits and both land in order`() {
+        TimingLog(host).clear()
         twoSegments(); voice.toggle(); advance(0)
         final(streams[1], "Two.")
         assertEquals("Hello. one", editor.text); assertTrue(voice.active)
         final(streams[0], "One.")
         assertEquals("Hello. One. Two.", editor.text); assertFalse(voice.active)
+        // Each utterance logs its own content-free timings.
+        assertEquals(listOf(TimingOutcome.FINAL, TimingOutcome.FINAL), TimingLog(host).entries().map { it.outcome })
     }
     @Test fun `cancel discards only what has not landed`() {
         twoSegments(); final(streams[0], "One.")
