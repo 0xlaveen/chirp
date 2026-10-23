@@ -9,6 +9,7 @@ Index of everything under `docs/`. Start with the architecture doc; everything e
 | [TESTING.md](TESTING.md) | How Chirp is tested: automated checks, operator acceptance steps, privacy checks |
 | [android-input-options.md](android-input-options.md) | Research record: Android input paths considered (voice IME, RecognitionService, accessibility overlay) and what ships |
 | [android-keyboard-validation.md](android-keyboard-validation.md) | Chirp Keyboard 0.3.0 validation record |
+| [research/android-ux.md](research/android-ux.md) | Android UX audit, modern references and the target app structure (Home · Notes · History · Settings), split into issues #68–#72 |
 | [milestones/](milestones/README.md) | M1 server, M2 macOS client, M3 Android IME, M4 integration, M5 iOS — specs and worker rules |
 | [review/ios-foundation.md](review/ios-foundation.md) | iOS foundation evidence: portable ChirpCore + shared package, macOS-CLT test results, pending Xcode/device gates |
 | [review/ios-keyboard.md](review/ios-keyboard.md) | iOS keyboard, intents and Live Activity evidence: insertion-safety tests, fake-host validation, pending simulator/runtime acceptance |
