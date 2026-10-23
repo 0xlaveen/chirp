@@ -140,6 +140,21 @@ public struct LocalModelsState: Sendable {
             models[model] = row
         }
     }
+
+    /// A setup job exited. A helper that printed no events is too old for in-app setup (or rejected the arguments).
+    public mutating func finish(_ action: String, model: LocalModel?, code: Int32, sawEvent: Bool, interrupted: Bool) {
+        if action == "start" { starting = false }
+        if ["refresh", "add"].contains(action) { catalogBusy = false }
+        if !sawEvent {
+            message = "Update chirp-server to use in-app model setup, then retry."
+            if action != "status" { errorMessage = message }
+        }
+        guard ["download", "select"].contains(action), let model, models[model]?.ready != true else { return }
+        var row = models[model] ?? LocalModelProgress()
+        if code == 130 || interrupted { row.phase = "cancelled" }
+        else if row.phase != "error" { row.phase = "error"; row.message = sawEvent ? "Download stopped. Retry to continue." : message }
+        models[model] = row
+    }
 }
 
 public struct LocalModelOption: Decodable, Sendable, Equatable {

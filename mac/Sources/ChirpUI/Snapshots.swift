@@ -447,7 +447,7 @@ public enum Snapshots {
     }
 
     public static var localModelsScenarios: [Scenario] {
-        ["missing", "downloading", "paused", "error", "ready"].map { name in
+        ["missing", "downloading", "paused", "error", "ready", "stale"].map { name in
             Scenario(name: "models-" + name) {
                 var state = LocalModelsState()
                 state.correctionMode = "managed"
@@ -472,6 +472,7 @@ public enum Snapshots {
                     state.models[model]?.total = 2_470_000_000
                     state.models[model]?.message = "Connection interrupted. Retry to continue."
                 }
+                if name == "stale" { state.finish("download", model: .speech, code: 2, sawEvent: false, interrupted: false) }
                 if name == "ready" {
                     state.serverRunning = true
                     state.message = "Server running · Ready to dictate"
