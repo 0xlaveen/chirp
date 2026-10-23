@@ -20,6 +20,8 @@ python3 site/build.py   # website: links, anchors, no external requests, no host
 
 It then checks that a wrong token is refused, that the server log contains no transcript, and that no unexpected files were written. It prints the work directory and leaves it for you to delete.
 
+For iPhone/iPad, `ios/scripts/simulator-e2e.sh SIMULATOR-UUID` does the same with the iOS app on a simulator: throwaway server on 127.0.0.1:7899, a local clean-up stand-in, the full UI scheme including the live-server suite and the real Chirp Keyboard. It then checks that the server log contains no transcript. See [ios/README.md](../ios/README.md#develop-and-test).
+
 Latency figures from these runs are observations on a shared, loaded host, not targets. Measured engine numbers are in [bench.md](bench.md).
 
 ### CI
