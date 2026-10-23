@@ -221,6 +221,11 @@ public final class Preferences: @unchecked Sendable {
         set { defaults.set(newValue, forKey: "notesRecoveryCopy") }
     }
     /// The Notes pane shows the read-only Preview instead of the editor.
+    /// The one-time "Chirp writes here and may still rewrite it" tip was shown (a boolean, nothing else).
+    public var notesTipSeen: Bool {
+        get { defaults.bool(forKey: "notesTipSeen") }
+        set { defaults.set(newValue, forKey: "notesTipSeen") }
+    }
     public var notesPreview: Bool {
         get { defaults.bool(forKey: "notesPreview") }
         set { defaults.set(newValue, forKey: "notesPreview") }

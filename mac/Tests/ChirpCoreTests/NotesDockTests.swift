@@ -85,11 +85,13 @@ import Testing
         }
     }
 
-    @Test func aLaterPressStopsUntilPauseExistsThenPauses() {
+    @Test func aLaterPressStopsWithoutPauseAndPausesOrResumesWithIt() {
         #expect(route(front: true, .recording) == .notes(.stop))
         #expect(route(front: true, .starting) == .notes(.stop))
         #expect(route(front: true, .recording, pause: true) == .notes(.togglePause))
-        #expect(!NotesHotkeyRouter.pauseAvailable)   // flip with Pause/Resume (#65)
+        #expect(route(front: true, .paused, pause: true) == .notes(.togglePause))
+        #expect(route(front: true, .starting, pause: true) == .notes(.ignore))
+        #expect(NotesHotkeyRouter.pauseAvailable)
     }
 
     @Test func finishingSwallowsThePressRatherThanDictating() {

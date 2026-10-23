@@ -21,14 +21,14 @@ import Testing
         let old = "## Secret\n" + String(repeating: "- discarded point\n", count: 8)
         r.userEdit(NSRange(location: 0, length: 0), old)                       // version 1
         r.reorganizeNow()
-        let deadline = Date().addingTimeInterval(10)
-        while stub.waiting == 0, Date() < deadline { try? await Task.sleep(for: .milliseconds(10)) }
+        await stub.waitUntilHeld()                                              // the call arrived, however loaded the machine is
         try #require(stub.waiting == 1)
         r.reset()                                                               // New → Discard
         let fresh = String(repeating: "my new notes after New. ", count: 20)
         r.userEdit(NSRange(location: 0, length: 0), fresh)                     // version 1 again
         stub.release()
-        try? await Task.sleep(for: .milliseconds(300))
+        _ = await pollUntil(within: 10) { !r.passInFlight }                     // the late answer has been dealt with
+        try? await Task.sleep(for: .milliseconds(50))
         #expect(!r.document.text.contains("discarded point"))
         #expect(r.document.text == fresh)
     }

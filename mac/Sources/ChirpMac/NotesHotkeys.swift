@@ -39,7 +39,6 @@ extension NotesController {
         return true
     }
 
-    /// Seam for Pause/Resume (#65): while recording the hotkey pauses, while paused it resumes. Not built yet;
-    /// `NotesHotkeyRouter.pauseAvailable` stays false (the hotkey stops) until this does something.
-    func togglePauseFromHotkey() {}
+    /// While recording the hotkey pauses, while paused it resumes.
+    func togglePauseFromHotkey() { Task { await togglePause() } }
 }

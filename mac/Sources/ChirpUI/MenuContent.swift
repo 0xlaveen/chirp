@@ -94,6 +94,8 @@ public struct MenuInputs: Sendable {
     /// Live Notes is recording (starting or listening); `notesElapsed` is its `mm:ss`.
     public var notesRecording = false
     public var notesElapsed: String?
+    /// Live Notes is paused (the microphone is closed, Resume continues the same notes).
+    public var notesPaused = false
     /// Live Notes is finishing its last segment and pass.
     public var notesFinishing = false
     /// A notes document exists (recorded, not yet discarded with New).
@@ -133,6 +135,7 @@ public enum MenuContent {
         if m.paused { return ("Paused", .normal) }
         if m.notesRecording { return ("Notes · \(m.notesElapsed ?? "00:00")", .active) }
         if m.notesFinishing { return ("Notes · Finishing…", .active) }
+        if m.notesPaused { return ("Notes · Paused \(m.notesElapsed ?? "00:00")", .normal) }
         switch m.state {
         case .connecting: return ("Connecting…", .active)
         case .listening: return ("Listening…", .active)
@@ -165,7 +168,7 @@ public enum MenuContent {
         // Dictation: the same toggle as the hotkey. Off while paused or while a dictation is wrapping up.
         // Notes holds the engine: dictation cannot start while it records (the hotkey shows a toast instead).
         let shortcut = m.paused || !m.hotkeyRegistered ? nil : m.hotkey.title
-        let notesBusy = m.notesRecording || m.notesFinishing
+        let notesBusy = m.notesRecording || m.notesFinishing || m.notesPaused
         switch m.state {
         case .idle, .error:
             out.append(MenuEntry(title: "Start Dictation", shortcut: shortcut, action: m.paused || notesBusy ? nil : .toggleDictation))
@@ -200,6 +203,8 @@ public enum MenuContent {
         var rows: [MenuEntry]
         if m.notesRecording {
             rows = [MenuEntry(title: "Stop Notes", shortcut: shortcut, action: .toggleNotes)]
+        } else if m.notesPaused {
+            rows = [MenuEntry(title: "Resume Notes", shortcut: shortcut, action: m.paused || m.state.isActive ? nil : .toggleNotes)]
         } else {
             let canStart = !m.paused && !m.state.isActive && !m.notesFinishing
             rows = [MenuEntry(title: "Start Notes", shortcut: shortcut, action: canStart ? .toggleNotes : nil)]

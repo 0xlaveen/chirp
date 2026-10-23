@@ -467,7 +467,7 @@ public enum Snapshots {
         "menu-ready", "menu-cleanup-submenu",
         "settings-general-missing", "settings-dictation-sounds", "settings-cleanup-custom", "settings-notes-downloaded",
         "settings-server-ready", "settings-devices-ready", "settings-about-ready", "onboarding-welcome",
-        "notes-editing", "notes-split",
+        "notes-editing", "notes-split", "notes-paused", "notes-review-sheet", "notes-tip",
     ]
 
     public static var committedScenarios: [Scenario] {
@@ -634,7 +634,18 @@ public enum Snapshots {
         return d
     }
 
-    static func notes(_ name: String, _ configure: @escaping (NotesModel) -> Void) -> Scenario {
+    /// One organize that regrouped the demo notes, as the review sheet and the chip show it.
+    static func demoSnapshots() -> NotesSnapshots {
+        let before = demoNotes().text
+        let after = reorganizedNotes().text
+        var snapshots = NotesSnapshots()
+        if let change = NotesDocument.diff(before, after, kind: .reorganize) {
+            snapshots.record([change], from: before, result: after, at: Date(timeIntervalSince1970: 1_700_000_000))
+        }
+        return snapshots
+    }
+
+    static func notes(_ name: String, width: CGFloat = 820, _ configure: @escaping (NotesModel) -> Void) -> Scenario {
         Scenario(name: "notes-\(name)") {
             let model = NotesModel()
             model.dictationKey = "⌥"
@@ -644,7 +655,7 @@ public enum Snapshots {
             model.canManageModels = true
             configure(model)
             // A little under the default window size, so the committed PNGs stay small.
-            return NSHostingView(rootView: NotesView(model: model).frame(width: 820, height: 560))
+            return NSHostingView(rootView: NotesView(model: model).frame(width: width, height: 560))
         }
     }
 
@@ -726,7 +737,7 @@ public enum Snapshots {
             notes("structure-failed") {
                 $0.structuring = .failed("timeout")
                 $0.reorganizeStatus = .failed("rejected")
-                $0.privacyLine = NotesStatus.privacy + " · Structuring sends text to llm.example.com"
+                $0.structuringHost = "llm.example.com"
                 $0.debugRetention = true
             },
             notes("old-server") { $0.reorganizeStatus = .unavailable(.unsupported) },
@@ -745,6 +756,35 @@ public enum Snapshots {
             notes("long-preview") { $0.document = demoLong(); $0.elapsed = 2690; $0.preview = true; $0.structuring = .idle },
             notes("long-run") { $0.document = demoLong(); $0.elapsed = 7262 },
             notes("error") { $0.state = .error("Notes stopped: Server is busy") },
+            notes("paused") { $0.state = .paused; $0.elapsed = 754; var d = demoNotes(); d.livePartial = ""; $0.document = d },
+            notes("paused-asleep") { $0.state = .paused; $0.pauseReason = "Paused while the Mac slept"; $0.elapsed = 754 },
+            notes("level") { $0.level = 0.8; $0.structuring = .idle },
+            notes("min-width", width: NotesViewMetrics.minimumSize.width) {
+                $0.structuringHost = "llm.example.com"
+                $0.structuring = .running
+            },
+            notes("structuring-host") { $0.structuringHost = "llm.example.com" },
+            notes("reorganized-changes") {
+                $0.document = reorganizedNotes()
+                $0.reorganizeStatus = .applied(at: 1)
+                $0.snapshots = demoSnapshots()
+            },
+            Scenario(name: "notes-review-sheet") {
+                let model = NotesModel()
+                model.snapshots = demoSnapshots()
+                model.review()
+                return NSHostingView(rootView: OrganizeReviewSheet(model: model).background(Color(nsColor: .windowBackgroundColor)))
+            },
+            Scenario(name: "notes-review-confirm") {
+                let model = NotesModel()
+                model.snapshots = demoSnapshots()
+                model.review()
+                model.confirmingRestore = model.reviewing
+                return NSHostingView(rootView: OrganizeReviewSheet(model: model).background(Color(nsColor: .windowBackgroundColor)))
+            },
+            Scenario(name: "notes-tip") {
+                NSHostingView(rootView: NotesTipView().background(Color(nsColor: .windowBackgroundColor)))
+            },
         ]
     }
 

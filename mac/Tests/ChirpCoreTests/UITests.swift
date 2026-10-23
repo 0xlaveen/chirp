@@ -471,7 +471,7 @@ import Testing
         let names = Snapshots.committedNames
         let all = Set(Snapshots.allScenarios.map(\.name))
         #expect(names.allSatisfy { all.contains($0) } && Set(names).count == names.count)
-        #expect(names.count * 2 <= 38)
+        #expect(names.count * 2 <= 44)
         // The menu in light and dark, one per Settings tab, setup, the key HUD states and the Notes window.
         #expect(names.contains("notes-editing") && names.contains("notes-split"))
         #expect(names.contains("menu-ready") && names.contains("onboarding-welcome") && names.contains { $0.hasPrefix("hud-") })
@@ -479,7 +479,7 @@ import Testing
         #expect(Snapshots.committedScenarios.map(\.name) == names)
     }
 
-    @Test func theCommittedFilesAreExactlyTheCuratedSetUnderThreePointFiveMegabytes() throws {
+    @Test func theCommittedFilesAreExactlyTheCuratedSetUnderFourPointFiveMegabytes() throws {
         let dir = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
             .deletingLastPathComponent().appendingPathComponent("docs/screenshots/mac")
         guard FileManager.default.fileExists(atPath: dir.path) else { return }   // not a full checkout
@@ -487,7 +487,7 @@ import Testing
         let expected = Snapshots.committedNames.flatMap { ["\($0)-dark.png", "\($0)-light.png"] }.sorted()
         #expect(files == expected, "docs/screenshots/mac is out of date: run mac/scripts/snapshots.sh")
         let total = try files.reduce(0) { $0 + (try FileManager.default.attributesOfItem(atPath: dir.appendingPathComponent($1).path)[.size] as? Int ?? 0) }
-        #expect(total < 3_500_000, "\(total) bytes")
+        #expect(total < 4_500_000, "\(total) bytes")
     }
 
     @Test func curatedRenderingWritesOnlyTheCommittedNames() throws {

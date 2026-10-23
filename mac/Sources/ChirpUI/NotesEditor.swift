@@ -183,6 +183,7 @@ final class NotesEditorCoordinator: NSObject, NSTextViewDelegate {
     static let editAction = "Edit by Voice"
     static let toggleAction = "Toggle Task"
     static let renameAction = "Rename Speaker"
+    static let restoreAction = "Restore Notes"
 
     let model: NotesModel
     let scrollView: NSScrollView
@@ -515,7 +516,7 @@ final class NotesEditorCoordinator: NSObject, NSTextViewDelegate {
             textView.didChangeText()
         }
         if !grouped {
-            undo.setActionName(change.kind == .edit ? Self.editAction : reorganize ? Self.reorganizeAction : Self.updateAction)
+            undo.setActionName(change.kind == .edit ? Self.editAction : change.kind == .restore ? Self.restoreAction : reorganize ? Self.reorganizeAction : Self.updateAction)
             undo.endUndoGrouping()
         }
         // Only the paragraphs it replaced: a reorganize late in a long document leaves the rest alone.
@@ -620,6 +621,22 @@ final class NotesEditorCoordinator: NSObject, NSTextViewDelegate {
         while start < ns.length, ns.character(at: start) == 10 { start += 1 }
         let tint = textView.string == model.document.text ? NSRange(location: start, length: ns.length - start) : NSRange()
         textView.tint = tint
+        showTipIfNeeded()
+    }
+
+    private var tip: NSPopover?
+
+    /// The first time AI text shows in the tail: a one-time popover on the tint that says it may still be rewritten and
+    /// that editing it makes it the user's. Remembered as a boolean only.
+    private func showTipIfNeeded() {
+        guard !model.tipSeen, textView.window != nil, let frame = textView.tintFrame() else { return }
+        model.tipSeen = true
+        model.onTipSeen()
+        let popover = NSPopover()
+        popover.behavior = .transient
+        popover.contentViewController = NSHostingController(rootView: NotesTipView())
+        popover.show(relativeTo: NSRect(x: frame.minX, y: frame.minY, width: 24, height: min(frame.height, 28)), of: textView, preferredEdge: .maxY)
+        tip = popover
     }
 
     // MARK: affordances

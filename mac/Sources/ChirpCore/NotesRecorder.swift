@@ -2,12 +2,16 @@ import Foundation
 
 public enum NotesRecorderState: Equatable, Sendable {
     case idle, starting, recording, stopping, stopped
+    /// Capture is closed but the session goes on: Resume continues the same tail, Stop finishes it.
+    case paused
     case error(String)
 
     /// The microphone is (or is about to be) open.
     public var isCapturing: Bool { self == .starting || self == .recording }
-    /// Starting, recording or finishing: Record/Stop is busy and the document cannot be replaced.
-    public var isActive: Bool { isCapturing || self == .stopping }
+    /// Starting, recording, paused or finishing: Record/Stop is busy and the document cannot be replaced.
+    public var isActive: Bool { isCapturing || self == .paused || self == .stopping }
+    /// Segments keep being appended to the notes: recording, or paused with the tail still open.
+    public var isLive: Bool { isCapturing || self == .paused }
 }
 
 /// Why the structuring pass does not run.
@@ -205,6 +209,8 @@ public final class NotesRecorder {
     public private(set) var document = NotesDocument()
     public private(set) var structuring: StructuringStatus
     public private(set) var debugRetention = false
+    /// Why the session is paused when it was not the user (shown instead of "Paused").
+    public private(set) var pauseReason: String?
     /// AI changes to `document.text` the editor has not replayed yet, oldest first.
     public private(set) var pendingChanges: [NotesTextChange] = []
     /// The user's "Auto-reorganize" toggle.
@@ -259,6 +265,7 @@ public final class NotesRecorder {
     private var nextCommit = 0
     private var current: Int?
     private var cutting = false
+    private var speakerFlush: Task<Void, Never>?
     private var failureStreak = 0
     private var sawReady = false
     /// The newest final (trimmed), for the next segment's context and dedupe.
@@ -401,7 +408,7 @@ public final class NotesRecorder {
             structuring = structuringAllowed
         } else if structuring.isOff {
             structuring = passTask == nil ? .idle : .running
-            if state.isCapturing { schedule() }
+            if state.isLive { schedule() }
         }
         changed()
     }
@@ -440,6 +447,52 @@ public final class NotesRecorder {
 
     /// Stop: the last segment finalizes, one `final` pass runs, and the notes freeze.
     public func stop() async { await finish(error: nil) }
+
+    /// Pause: the current segment is cut and finalizes like at any cut, capture stops routing, and nothing else ends:
+    /// no final pass, no freeze, no new start stamp. `reason` replaces the plain "Paused" in the status.
+    public func pause(reason: String? = nil) async {
+        guard state == .recording else { return }
+        pauseReason = reason
+        state = .paused
+        let swap = router.swap(to: nil)
+        if let seq = current {
+            let joins = segments[seq]?.joins == true
+            segments[seq]?.end = swap.offset
+            segments[seq]?.pause = joins ? swap.pause : nil
+            if let old = swap.old, segments[seq] != nil { finalize(seq, old) }
+        }
+        current = nil
+        router.setSpeakers(nil)
+        // The diarizer settles the tail while the last final decodes; Resume waits for it.
+        speakerFlush = activeSpeakers.map { speakers in Task { await speakers.flush() } }
+        changed()
+    }
+
+    /// Resume: a fresh socket continues into the same tail and the same clock.
+    public func resume() async {
+        guard state == .paused else { return }
+        await speakerFlush?.value
+        speakerFlush = nil
+        guard state == .paused else { return }
+        failureStreak = 0
+        pauseReason = nil
+        router.setSpeakers(activeSpeakers)
+        let session = openCurrent()
+        state = .recording
+        Task { await session.open() }
+    }
+
+    /// The new current segment after a pause: a fresh socket that capture is pointed at, with no join to the one before.
+    private func openCurrent() -> StreamSession {
+        let seq = nextSeq
+        nextSeq += 1
+        let session = makeSession(options)
+        let swap = router.swap(to: session)
+        current = seq
+        lastFinal = nil
+        track(seq, session: session, offset: swap.offset)
+        return session
+    }
 
     /// Ends recording with an error (lost microphone, no signal…): finishes like Stop and keeps the content.
     public func fail(_ reason: String) async { await finish(error: reason) }
@@ -725,6 +778,13 @@ public final class NotesRecorder {
         changed()
     }
 
+    /// Restore Notes Before Organize: an earlier text goes back as a user edit (it claims the tail like a paste), and
+    /// the editor replays it as one undo step.
+    public func restoreText(_ range: NSRange, _ replacement: String) {
+        pendingChanges.append(NotesTextChange(range: range, replacement: replacement, kind: .restore))
+        userEdit(range, replacement, kind: .restore)
+    }
+
     /// Where the editor's caret is: in the tail (with focus) or composing marked text holds appends; leaving releases
     /// a held one.
     public func setEditorFocus(inTail: Bool, composing: Bool) {
@@ -942,7 +1002,7 @@ public final class NotesRecorder {
         relabelSettled()
         pending = false
         var appendWaiting = false
-        if state.isCapturing {
+        if state.isLive {
             publish(document.freezeOverflow())
             // A held answer already covers its window: only newer segments are worth another pass.
             if let next = document.nextStructureRequest(), next.windowEnd > held?.request.windowEnd ?? -1 {
@@ -1113,7 +1173,7 @@ public final class NotesRecorder {
             onPassEvent?(.split(windowChars: request.transcript.count, depth: outcome.depth, parts: pieces.count,
                                 fallbacks: outcome.failures.count))
         }
-        if pending || state.isCapturing { schedule() }
+        if pending || state.isLive { schedule() }
         changed()
     }
 
@@ -1133,7 +1193,7 @@ public final class NotesRecorder {
             if response.structured { dropHeld() }
             applyAppend(request, response)
         }
-        if pending || state.isCapturing { schedule() }
+        if pending || state.isLive { schedule() }
         changed()
     }
 
@@ -1159,7 +1219,7 @@ public final class NotesRecorder {
     /// manual reorganize.
     private func runOrganize() {
         publish(document.freezeOverflow())
-        let window = state.isCapturing || state == .idle || state == .stopped ? document.nextStructureRequest() : nil
+        let window = state.isLive || state == .idle || state == .stopped ? document.nextStructureRequest() : nil
         let blocks = document.untouchedFallbacks
         guard window != nil || !blocks.isEmpty || document.organizesInSteps else {
             if let request = document.reorganizeRequest(final: false, manual: true) {
@@ -1460,7 +1520,7 @@ public final class NotesRecorder {
     // MARK: stopping
 
     private func finish(error: String?) async {
-        guard state.isCapturing else { return }
+        guard state.isLive else { return }
         let myEpoch = epoch
         stoppingSince = now()
         defer { stoppingSince = nil }

@@ -30,6 +30,8 @@ final class NotesWindowController: NSObject, NSWindowDelegate {
         model.onRecoveryDiscard = { [weak self] in self?.notes.dropRecovered() }
         notes.confirmSpeakerDownload = { [weak self] message, done in self?.confirmSpeakerDownload(message, done: done) }
         model.onManageModels = { [weak self] in self?.onOpenModels() }
+        NotesMenuTarget.shared.model = model
+        NotesMenuTarget.shared.windowIsKey = { [weak self] in NSApp.isActive && self?.window?.isKeyWindow == true }
     }
 
     var isVisible: Bool { window?.isVisible ?? false }
@@ -100,7 +102,8 @@ final class NotesWindowController: NSObject, NSWindowDelegate {
 
     /// The main menu, seen only while Chirp is in the Dock (a Notes window is open): Chirp (About, Settings…, Hide,
     /// Quit), Edit and Window (which lists the Notes window). Edit gives the Notes editor the standard Undo/Redo,
-    /// clipboard and Find key equivalents, plus Organize Notes (⌥⌘R). Every Edit item goes through the responder chain,
+    /// clipboard and Find key equivalents, plus Organize Notes (⌥⌘R) and Restore Notes Before Organize…; Notes holds the
+    /// window's own shortcuts (`NotesMenuTarget`). Every Edit item goes through the responder chain,
     /// so it only acts while the Notes editor (or another text field) is first responder.
     static func installEditMenu() {
         guard NSApp.mainMenu?.item(withTitle: "Edit") == nil else { return }
@@ -133,9 +136,11 @@ final class NotesWindowController: NSObject, NSWindowDelegate {
         edit.addItem(.separator())
         add(edit, "Organize Notes", NSSelectorFromString("reorganizeNotes:"), "r", [.command, .option])
         add(edit, "Edit Notes by Voice", NSSelectorFromString("editNotesByVoice:"), "e", [.command, .shift])
+        edit.addItem(NotesMenuTarget.shared.restoreItem())
         let editItem = NSMenuItem(title: "Edit", action: nil, keyEquivalent: "")
         editItem.submenu = edit
         main.addItem(editItem)
+        main.addItem(NotesMenuTarget.shared.menuItem())
         main.addItem(windowMenuItem())
         NSApp.mainMenu = main
     }
