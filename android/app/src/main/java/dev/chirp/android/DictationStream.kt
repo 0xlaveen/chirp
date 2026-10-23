@@ -14,6 +14,8 @@ internal class DictationStream(
     private val ended: () -> Unit,
     private val handler: Handler = Handler(Looper.getMainLooper()),
     private val correcting: (ServerEvent.Correcting) -> Unit = {},
+    /** A failure after partials hands over what was heard (text, reason) instead of discarding it. */
+    private val kept: ((String, String) -> Unit)? = null,
 ) {
     private var transport: ImeTransport? = null
     private var capture: Capture? = null
@@ -24,6 +26,7 @@ internal class DictationStream(
     private var stopSent = false
     private var sequence = -1L
     private var raw: String? = null
+    private var heard: String? = null
     private var polishingAt = 0L
     private var pendingFinal: Runnable? = null
     var polishing = false
@@ -75,7 +78,7 @@ internal class DictationStream(
                 if (released) sendStop() else deadline(125000)
             }
             is ServerEvent.Partial -> if (ready && !polishing && event.seq > sequence) {
-                sequence = event.seq; changed(if (stopping) "Finishing…" else "Listening…", event)
+                sequence = event.seq; heard = event.text; changed(if (stopping) "Finishing…" else "Listening…", event)
             }
             is ServerEvent.Correcting -> if (stopSent && !polishing && event.seq > sequence && event.raw.isNotEmpty()) {
                 sequence = event.seq; raw = event.raw; polishing = true; polishingAt = android.os.SystemClock.uptimeMillis()
@@ -111,16 +114,17 @@ internal class DictationStream(
     private fun deadline(ms: Long) { handler.removeCallbacks(timeout); handler.postDelayed(timeout, ms) }
     fun fail(message: String) {
         if (!live || pendingFinal != null) return
-        val original = raw
+        val original = raw; val partial = heard?.takeIf { it.isNotBlank() }
         close(true)
         try {
             if (original != null) final(ServerEvent.Final(original, original, false, "unavailable"))
+            else if (partial != null && kept != null) kept(partial, message)
             else changed(message, null)
         } finally { ended() }
     }
     fun cancel() { if (live) { close(true); ended() } }
     private fun close(cancel: Boolean) {
-        live = false; raw = null
+        live = false; raw = null; heard = null
         pendingFinal?.let(handler::removeCallbacks); pendingFinal = null
         handler.removeCallbacks(timeout)
         capture?.stop(); capture = null

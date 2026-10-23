@@ -122,7 +122,7 @@ internal fun HistoryScreen(store: DictationHistory? = null, now: () -> Long = Sy
                                 Text(entry.text, style = MaterialTheme.typography.bodyLarge)
                                 entry.raw?.let { Text("Before clean-up: $it", style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant) }
-                                Text(listOfNotNull(historyAge(now(), entry.time).first, entry.app).joinToString(" · "),
+                                Text(listOfNotNull(historyAge(now(), entry.time).first, entry.app, if (entry.partial) "partial" else null).joinToString(" · "),
                                     style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 Row {
                                     TextButton({ copy(entry.text) }) { Text("Copy") }

@@ -19,8 +19,9 @@ import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
 
 /** Deliberately not a data class: toString must never expose dictated text. */
-internal class HistoryEntry(val id: String, val time: Long, val text: String, val raw: String?, val app: String?) {
-    fun copy(text: String = this.text, raw: String? = this.raw) = HistoryEntry(id, time, text, raw, app)
+internal class HistoryEntry(val id: String, val time: Long, val text: String, val raw: String?, val app: String?,
+                            /** Kept from partials after a failure, never finalised by the Mac. */ val partial: Boolean = false) {
+    fun copy(text: String = this.text, raw: String? = this.raw) = HistoryEntry(id, time, text, raw, app, partial)
     override fun toString() = "HistoryEntry(<redacted>)"
 }
 
@@ -74,12 +75,13 @@ internal class DictationHistory(
     }
 
     /** Returns the stored entry, or null when history is off, unavailable or the editor is excluded. */
-    fun record(text: String, raw: String?, appLabel: String?, info: EditorInfo?, id: String = UUID.randomUUID().toString()): HistoryEntry? {
+    fun record(text: String, raw: String?, appLabel: String?, info: EditorInfo?, id: String = UUID.randomUUID().toString(),
+               partial: Boolean = false): HistoryEntry? {
         if (!enabled || !available || !allowed(info)) return null
         val inserted = text.trim()
         if (inserted.isEmpty() || inserted.length > MAX_CHARS) return null
         val original = raw?.trim()?.takeIf { it.isNotEmpty() && it != inserted && it.length <= MAX_CHARS }
-        val entry = HistoryEntry(id, clock(), inserted, original, appLabel?.trim()?.take(80)?.takeIf { it.isNotEmpty() })
+        val entry = HistoryEntry(id, clock(), inserted, original, appLabel?.trim()?.take(80)?.takeIf { it.isNotEmpty() }, partial)
         synchronized(LOCK) {
             if (!enabled) return null // Turned off while this write was queued.
             save(load() + entry)
@@ -131,7 +133,7 @@ internal class DictationHistory(
             (0 until json.length()).map { index ->
                 val item = json.getJSONObject(index)
                 HistoryEntry(item.getString("id"), item.getLong("time"), item.getString("text"),
-                    item.optString("raw").takeIf { item.has("raw") }, item.optString("app").takeIf { item.has("app") })
+                    item.optString("raw").takeIf { item.has("raw") }, item.optString("app").takeIf { item.has("app") }, item.optBoolean("partial"))
             }.sortedBy { it.time }
         } catch (_: Exception) {
             // Lost key (reinstall/restore) or damaged file: unreadable history is discarded, never repaired.
@@ -146,7 +148,7 @@ internal class DictationHistory(
         val json = JSONArray()
         entries.forEach { entry ->
             json.put(JSONObject().put("id", entry.id).put("time", entry.time).put("text", entry.text).apply {
-                entry.raw?.let { put("raw", it) }; entry.app?.let { put("app", it) }
+                entry.raw?.let { put("raw", it) }; entry.app?.let { put("app", it) }; if (entry.partial) put("partial", true)
             })
         }
         val cipher = Cipher.getInstance(TRANSFORMATION)

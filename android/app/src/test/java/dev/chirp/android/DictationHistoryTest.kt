@@ -61,6 +61,14 @@ class DictationHistoryTest {
         assertEquals(entry.id, history.entries().single().id)
     }
 
+    @Test fun `text kept after a failure stays marked partial across reads and Use raw`() {
+        history.enable()
+        val kept = history.record("heard so far", null, null, text, partial = true)!!
+        history.record("Finished.", "finished", null, text)
+        assertEquals(listOf(false, true), history.entries().map { it.partial })
+        history.usedRaw(kept.id)
+        assertTrue(history.entries().first { it.id == kept.id }.partial)
+    }
     @Test fun `a lost or different key discards unreadable history instead of crashing`() {
         history.enable(); history.record("Private words", null, null, text)
         keys.key = KeyGenerator.getInstance("AES").apply { init(256) }.generateKey()
