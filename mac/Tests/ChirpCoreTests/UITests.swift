@@ -161,8 +161,8 @@ import Testing
 
     // MARK: tabs
 
-    @Test func hasFiveTabsInTheTargetOrder() {
-        #expect(SettingsTab.allCases.map(\.title) == ["General", "Sounds", "Clean-up", "Server", "Permissions"])
+    @Test func hasSixTabsInTheTargetOrder() {
+        #expect(SettingsTab.allCases.map(\.title) == ["General", "Sounds", "Clean-up", "Server", "Devices", "Permissions"])
         #expect(SettingsTab.allCases.allSatisfy { NSImage(systemSymbolName: $0.symbol, accessibilityDescription: nil) != nil })
     }
 
@@ -225,7 +225,7 @@ import Testing
     }
 
     @Test(arguments: [(SettingsTab.general, SoundPack.chirp, 7), (.sounds, .chirp, 3), (.sounds, .custom, 5), (.cleanup, .chirp, 8),
-                      (.server, .chirp, 5), (.permissions, .chirp, 2)])
+                      (.server, .chirp, 5), (.devices, .chirp, 1), (.permissions, .chirp, 2)])
     func labelsShareARightEdgeAndControlsALeftEdge(tab: SettingsTab, pack: SoundPack, expectedLabels: Int) throws {
         var state = SettingsState()
         state.soundPack = pack
@@ -245,6 +245,7 @@ import Testing
         case .sounds: [form.sounds, form.soundPack, form.volume]
         case .cleanup: [form.cleanupEnabled, form.style, form.insertRawFirst, form.appStyles.scroll, form.showChanges, form.offerRaw]
         case .server: [form.serverURL, form.doctorButton, form.modelsButton]
+        case .devices: [form.pairButton]
         case .permissions: []
         }
         let controlEdges = leading.map { view.convert($0.bounds, from: $0).minX }
@@ -425,7 +426,7 @@ import Testing
         let names = Snapshots.committedNames
         let all = Set(Snapshots.allScenarios.map(\.name))
         #expect(names.allSatisfy { all.contains($0) } && Set(names).count == names.count)
-        #expect(names.count * 2 <= 34)
+        #expect(names.count * 2 <= 36)
         // The menu in light and dark, one per Settings tab, setup, the key HUD states and the Notes window.
         #expect(names.contains("notes-editing") && names.contains("notes-split"))
         #expect(names.contains("menu-ready") && names.contains("onboarding-welcome") && names.contains { $0.hasPrefix("hud-") })

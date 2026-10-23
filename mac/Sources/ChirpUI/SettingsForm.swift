@@ -56,7 +56,7 @@ public struct SettingsState: Sendable {
 
 /// The preferences window's toolbar tabs, in order.
 public enum SettingsTab: String, CaseIterable, Sendable {
-    case general, sounds, cleanup, server, permissions
+    case general, sounds, cleanup, server, devices, permissions
 
     public var title: String {
         switch self {
@@ -64,6 +64,7 @@ public enum SettingsTab: String, CaseIterable, Sendable {
         case .sounds: "Sounds"
         case .cleanup: "Clean-up"
         case .server: "Server"
+        case .devices: "Devices"
         case .permissions: "Permissions"
         }
     }
@@ -75,6 +76,7 @@ public enum SettingsTab: String, CaseIterable, Sendable {
         case .sounds: "speaker.wave.2"
         case .cleanup: "sparkles"
         case .server: "server.rack"
+        case .devices: "iphone"
         case .permissions: "hand.raised"
         }
     }
@@ -141,6 +143,8 @@ public final class SettingsForm {
     /// Server: puts the chirp-server doctor command on the pasteboard.
     public let doctorButton = NSButton(title: "Copy Doctor Command", target: nil, action: nil)
     public let modelsButton = NSButton(title: "Manage Local Models…", target: nil, action: nil)
+    /// Devices: opens the pairing window (Tailscale check and QR code).
+    public let pairButton = NSButton(title: "Pair a Phone…", target: nil, action: nil)
     /// General: deletes Live Notes' on-device speaker model.
     public let removeSpeakerModel = NSButton(title: "Remove Speaker Model", target: nil, action: nil)
     public let micButton = NSButton(title: "Fix…", target: nil, action: nil)
@@ -184,7 +188,7 @@ public final class SettingsForm {
         micButton.setAccessibilityLabel("Fix Microphone access")
         accessibilityButton.setAccessibilityLabel("Fix Accessibility access")
 
-        for button in [setupButton, doctorButton, modelsButton, removeSpeakerModel] { button.bezelStyle = .rounded }
+        for button in [setupButton, doctorButton, modelsButton, removeSpeakerModel, pairButton] { button.bezelStyle = .rounded }
         setupButton.setAccessibilityLabel("Set up Chirp")
         keyboardSettingsButton.bezelStyle = .rounded
         keyboardSettingsButton.controlSize = .small
@@ -260,6 +264,10 @@ public final class SettingsForm {
             row("Status:", serverStatus),
             row("Doctor:", doctorButton, help: Self.help("Copies the command that checks the server, to run in Terminal.")),
             row("Models:", modelsButton, help: Self.help("Download speech and local Qwen models, see progress, and start this Mac's server.")),
+        ])
+
+        build(.devices, [
+            row("Phone:", pairButton, help: Self.help("Shows a QR code for Chirp on Android or iPhone. The phone reaches this Mac’s server over your tailnet only.")),
         ])
 
         build(.permissions, [

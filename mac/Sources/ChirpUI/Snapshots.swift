@@ -246,6 +246,7 @@ public enum Snapshots {
                 view.setFrameSize(form.fittingSize(for: .general))
                 return view
             },
+            form("ready", .devices) { _ in },
             form("off", .sounds) { _ in },
             form("pack", .sounds) { $0.soundsEnabled = true; $0.soundPack = .chirp; $0.soundVolume = 0.6 },
             form("custom", .sounds) {
@@ -334,6 +335,31 @@ public enum Snapshots {
         ]
     }
 
+    /// A made-up link: the snapshots never read the real token.
+    static let sampleLink = try! PairingLink(serverURL: TailscaleServe.pairingURL(host: "my-mac.example-tailnet.ts.net"),
+                                             token: "snapshot-sample-not-a-real-token-0123456789")
+
+    public static var pairingScenarios: [Scenario] {
+        func pairing(_ name: String, _ step: PairingStep, remaining: Int = 107, concealed: Bool = false) -> Scenario {
+            Scenario(name: "pairing-\(name)") {
+                let view = PairingView()
+                view.apply(step, remaining: remaining, concealed: concealed)
+                return view
+            }
+        }
+        let command = TailscaleServe.publishCommand(port: 7821)
+        return [
+            pairing("checking", .checking),
+            pairing("ready", .ready(sampleLink)),
+            pairing("concealed", .ready(sampleLink), concealed: true),
+            pairing("not-served", .notServed(command: command)),
+            pairing("publish-failed", .publishFailed(command: command, reason: "Serve is not enabled on your tailnet.\nTo enable, visit the Tailscale admin console.")),
+            pairing("no-tailscale", .noTailscale),
+            pairing("funnel", .funnel),
+            pairing("conflict", .conflict("http://127.0.0.1:9000")),
+        ]
+    }
+
     public static var aboutScenarios: [Scenario] {
         [Scenario(name: "about") { AboutView(icon: appIcon, info: AboutInfo(version: "0.1.0", build: "1"), onNotices: {}) }]
     }
@@ -411,7 +437,7 @@ public enum Snapshots {
         "hud-wordwave-listening", "hud-wordwave-long", "hud-wordwave-polishing",
         "menu-ready", "menu-cleanup-submenu",
         "settings-general-ready", "settings-sounds-pack", "settings-cleanup-custom", "settings-server-ready",
-        "settings-permissions-missing", "onboarding-welcome",
+        "settings-devices-ready", "settings-permissions-missing", "onboarding-welcome",
         "notes-editing", "notes-split",
     ]
 
@@ -616,7 +642,7 @@ public enum Snapshots {
 
     public static var allScenarios: [Scenario] {
         hudScenarios + wordWaveScenarios + settingsScenarios + onboardingScenarios + aboutScenarios + menuScenarios + localModelsScenarios
-            + notesScenarios
+            + notesScenarios + pairingScenarios
     }
 
     // MARK: rendering
@@ -634,7 +660,7 @@ public enum Snapshots {
         host.boxType = .custom
         host.borderWidth = 0
         host.contentViewMargins = .zero
-        let isWindow = ["settings-", "onboarding-", "models-", "about", "notes-"].contains { scenario.name.hasPrefix($0) }
+        let isWindow = ["settings-", "onboarding-", "models-", "about", "notes-", "pairing-"].contains { scenario.name.hasPrefix($0) }
         host.fillColor = isWindow ? .windowBackgroundColor : .clear
         host.appearance = appearance
         host.contentView = view

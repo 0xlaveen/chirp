@@ -61,7 +61,7 @@ public final class SettingsTabController: NSViewController {
     }
 }
 
-/// The preferences window's contents: the five tabs as toolbar buttons, like System Settings' older panes. The
+/// The preferences window's contents: the tabs as toolbar buttons, like System Settings' older panes. The
 /// window takes the selected tab's title and size.
 @MainActor
 public enum SettingsTabs {

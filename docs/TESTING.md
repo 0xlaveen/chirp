@@ -77,7 +77,7 @@ Run on the reference Mac after installing the build with `./scripts/install-mac.
    - Or install the debug APK.
 9. **Set up on the phone:** open **Chirp Keyboard**, grant the microphone, and enable the keyboard (Settings → General management → Keyboard list and default). Keep Samsung Keyboard on.
 10. **Pair:**
-    - On the Mac, run `cd server && uv run chirp-server pair --url https://mainframe.tail676ff2.ts.net/chirp`. It prints a secret link and a terminal QR code.
+    - On the Mac, open Chirp → Settings → Devices → **Pair a Phone…** (it checks Tailscale Serve and shows the QR code), or run `cd server && uv run chirp-server pair --url https://mainframe.tail676ff2.ts.net/chirp`, which prints a secret link and a terminal QR code.
     - Tap **Scan pairing QR** in Chirp Setup. Google Play services owns the scanner UI and camera access; Chirp needs no camera permission. The Fold 8 has Play services; the scanner module may download on first use. Scanning fills the masked pairing field after validating the link. Paste remains available if scanning is unavailable or cancelled. The real scanner still needs device acceptance.
     - Never put the link in chat, shell history or screenshots.
     - Tap **Test connection & save pairing**.
