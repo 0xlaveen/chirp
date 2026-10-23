@@ -7,6 +7,7 @@ import WidgetKit
 struct ChirpWidgetsBundle: WidgetBundle {
     var body: some Widget {
         ChirpSessionActivity()
+        ChirpNotesActivity()
         ChirpStartControl()
         ChirpEndControl()
     }

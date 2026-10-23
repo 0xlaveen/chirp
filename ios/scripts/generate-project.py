@@ -61,7 +61,8 @@ def sources(*patterns):
 memberships = {
     'ChirpIOS': sources('App/**/*.swift', 'Intents/*.swift'),
     'ChirpKeyboard': sources('Keyboard/*.swift', 'Keyboard/UI/**/*.swift'),
-    'ChirpWidgets': sources('Widgets/**/*.swift', 'Intents/SessionIntents.swift', 'Intents/ChirpActivityAttributes.swift'),
+    'ChirpWidgets': sources('Widgets/**/*.swift', 'Intents/SessionIntents.swift', 'Intents/ChirpActivityAttributes.swift',
+                             'Intents/NotesIntents.swift', 'Intents/NotesActivityAttributes.swift'),
     'ChirpIOSTests': sorted(str(p.relative_to(ROOT)) for p in ROOT.glob('Tests/**/*.swift')),
     'ChirpIOSUITests': sorted(str(p.relative_to(ROOT)) for p in ROOT.glob('UITests/**/*.swift')),
 }

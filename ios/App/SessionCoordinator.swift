@@ -52,6 +52,8 @@ final class SessionCoordinator: ObservableObject {
     @Published private(set) var profiles: [CorrectionProfile] = []
     @Published private(set) var diagnostics: [DiagnosticEvent] = []
     private(set) var services: AppServices?
+    /// Live Notes holds the microphone: a keyboard session cannot arm meanwhile.
+    var otherCaptureActive: () -> Bool = { false }
     private let audio: any SessionAudio
     private let http: URLSession
     private let makeStream: (ServerConfig, StartOptions, URLSession) -> StreamSession
@@ -274,6 +276,7 @@ final class SessionCoordinator: ObservableObject {
     }
 
     func armSession() async throws {
+        guard !otherCaptureActive() else { throw SessionFailure.notesRecording }
         if armed { try reconcileOrThrow(); return }
         guard !working, let config, services != nil else { throw SessionFailure.setup }
         working = true

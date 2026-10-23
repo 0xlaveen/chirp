@@ -2,6 +2,11 @@
   "ChirpIOS": [
     "App/ChirpApp.swift",
     "App/DebugFixtures.swift",
+    "App/LiveNotesActivity.swift",
+    "App/LiveNotesAudio.swift",
+    "App/LiveNotesController.swift",
+    "App/LiveNotesFixtures.swift",
+    "App/LiveNotesView.swift",
     "App/MicrophoneCapture.swift",
     "App/PairingScanner.swift",
     "App/PrivacyController.swift",
@@ -10,6 +15,8 @@
     "App/SettingsViews.swift",
     "Intents/ChirpActivityAttributes.swift",
     "Intents/ChirpLiveActivity.swift",
+    "Intents/NotesActivityAttributes.swift",
+    "Intents/NotesIntents.swift",
     "Intents/SessionIntents.swift"
   ],
   "ChirpKeyboard": [
@@ -18,18 +25,24 @@
   ],
   "ChirpWidgets": [
     "Intents/ChirpActivityAttributes.swift",
+    "Intents/NotesActivityAttributes.swift",
+    "Intents/NotesIntents.swift",
     "Intents/SessionIntents.swift",
-    "Widgets/ChirpWidgets.swift"
+    "Widgets/ChirpWidgets.swift",
+    "Widgets/NotesActivityWidget.swift"
   ],
   "ChirpIOSTests": [
     "Tests/CaptureSinkTests.swift",
+    "Tests/LiveNotesControllerTests.swift",
     "Tests/LongDictationTests.swift",
     "Tests/SessionCoordinatorTests.swift"
   ],
   "ChirpIOSUITests": [
     "UITests/ChirpHardwareKeyboardUITests.swift",
     "UITests/ChirpKeyboardUITests.swift",
+    "UITests/ChirpLiveNotesUITests.swift",
     "UITests/ChirpLiveServerUITests.swift",
+    "UITests/ChirpNotesUITests.swift",
     "UITests/ChirpUITests.swift",
     "UITests/KeyboardSetup.swift"
   ]

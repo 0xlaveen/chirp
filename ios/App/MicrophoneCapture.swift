@@ -18,7 +18,7 @@ protocol SessionAudio: AnyObject {
 }
 
 enum SessionFailure: Error, LocalizedError, Equatable {
-    case setup, permission, audio, connection, expired, cancelled, timeout, noResult, storage
+    case setup, permission, audio, connection, expired, cancelled, timeout, noResult, storage, notesRecording
     /// A classified reachability failure; its message names the likely cause.
     case mac(ConnectionIssue)
     var errorDescription: String? {
@@ -33,6 +33,7 @@ enum SessionFailure: Error, LocalizedError, Equatable {
         case .timeout: "The Mac did not finish in time."
         case .noResult: "Didn't catch that."
         case .storage: "Protected storage unavailable. Unlock and reopen Chirp."
+        case .notesRecording: "Live Notes is recording. Stop it in Live Notes to dictate."
         }
     }
 }

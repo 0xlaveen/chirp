@@ -87,6 +87,24 @@ private func richDocument() -> NotesDocument {
         #expect(FileManager.default.fileExists(atPath: future.path) && FileManager.default.fileExists(atPath: garbage.path))
     }
 
+    @Test func aCodecSealsEveryFileAndAFileItCannotOpenIsSkipped() throws {
+        let dir = tempDirectory()
+        // A reversible stand-in for a real cipher: the bytes on disk are not the JSON.
+        let codec = NotesJournalCodec(seal: { Data($0.reversed()) + Data("!".utf8) }, open: { sealed in
+            guard sealed.last == UInt8(ascii: "!") else { throw CocoaError(.fileReadCorruptFile) }
+            return Data(sealed.dropLast().reversed())
+        })
+        let store = NotesJournalStore(directory: dir, codec: codec)
+        let record = NotesJournalRecord(document: richDocument(), elapsed: 42)
+        try store.write(record)
+        let raw = try Data(contentsOf: store.file(record.document.id))
+        #expect(!String(decoding: raw, as: UTF8.self).contains("Friday"))
+        #expect(store.recoverable().map(\.document) == [record.document])
+        #expect(NotesJournalStore(directory: dir).recoverable().isEmpty)   // without the codec: unreadable, skipped
+        try Data("{}".utf8).write(to: dir.appendingPathComponent("\(UUID().uuidString).json"))
+        #expect(store.recoverable().count == 1)
+    }
+
     @Test func theNewestSessionComesFirst() throws {
         let store = NotesJournalStore(directory: tempDirectory())
         let old = NotesJournalRecord(document: NotesDocument(text: "old"), elapsed: 1, writtenAt: Date(timeIntervalSince1970: 100))
