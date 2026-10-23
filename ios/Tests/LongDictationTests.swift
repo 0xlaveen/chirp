@@ -67,9 +67,10 @@ struct CaptureCutTests {
         sink.cut(to: b)
         sink.receive(try buffer()); sink.receive(try buffer())
         try await Task.sleep(for: .milliseconds(50))
-        #expect(bytes(first) == 3200 && bytes(second) == 0, "The new segment's audio waits for its Ready")
+        #expect(bytes(second) == 0, "The new segment's audio waits for its Ready")
         sink.ready()
-        try await Task.sleep(for: .milliseconds(50))
+        // stop() waits for each audio pump, so the counts are final (on slow CI too).
+        await a.stop(); await b.stop()
         #expect(bytes(first) == 3200 && bytes(second) == 6400)
     }
 }

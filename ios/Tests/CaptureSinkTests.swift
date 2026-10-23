@@ -37,8 +37,9 @@ struct CaptureSinkTests {
         await withCheckedContinuation { (done: CheckedContinuation<Void, Never>) in
             DispatchQueue(label: "dev.chirp.tests.realtime").async { tap(input, time); done.resume() }
         }
-        #expect(binaryBytes(transport) > 0)
+        // stop() waits for the audio pump, so every frame the tap queued has been sent (on slow CI too).
         await session.stop()
+        #expect(binaryBytes(transport) > 0)
     }
 
     @Test func idleDiscardsAndReadyPrecedesAllAudioIncludingFlush() async throws {
