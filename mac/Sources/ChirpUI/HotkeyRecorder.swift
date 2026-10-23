@@ -38,6 +38,43 @@ public enum HotkeyRecording {
         }
     }
 
+    /// Follows modifier presses while recording, for a modifier pressed and let go on its own: the most modifiers held
+    /// at once since they were last all up, the modifier key pressed last, and whether any other key was pressed
+    /// meanwhile (then it was a combination, not a modifier alone).
+    public struct ModifierPress: Sendable {
+        private var peak: UInt32 = 0
+        private var held: UInt32 = 0
+        private var lastKey: UInt16 = 0
+        private var sawKey = false
+
+        public init() {}
+
+        /// `held` is `modifierOnlyFlags` of a flagsChanged event and `keyCode` the modifier key that changed. Returns
+        /// the outcome once every modifier is up after one was used alone.
+        public mutating func flagsChanged(held: UInt32, keyCode: UInt16) -> Outcome? {
+            defer { self.held = held }
+            // One event changes one key. A modifier gone and another one down means a release happened elsewhere
+            // (⌘ let go in another app after ⌘Tab): that press is over, and this is a new one.
+            if held & ~self.held != 0, self.held & ~held != 0 {
+                peak = 0
+                sawKey = false
+            }
+            if held == 0 {
+                let peak = peak, typed = sawKey
+                self.peak = 0
+                sawKey = false
+                return peak != 0 && !typed ? HotkeyRecording.modifierOnlyOutcome(modifiers: peak, lastKey: lastKey) : nil
+            }
+            if held & peak == peak {
+                peak = held
+                lastKey = keyCode
+            }
+            return nil
+        }
+
+        public mutating func keyDown() { sawKey = true }
+    }
+
     public static func outcome(keyCode: UInt16, flags: NSEvent.ModifierFlags) -> Outcome {
         let modifiers = carbonModifiers(flags)
         if Int(keyCode) == kVK_Escape, modifiers == 0 { return .cancelled }
@@ -69,11 +106,7 @@ public final class HotkeyRecorder: NSButton {
     public var isRecording: Bool { if case .idle = status { false } else { true } }
 
     private var monitor: Any?
-    /// The most modifiers held at once since they were last all up, the modifier key pressed last, and whether any
-    /// other key was pressed meanwhile (then it was a combination, not a modifier alone).
-    private var peakModifiers: UInt32 = 0
-    private var lastModifierKey: UInt16 = 0
-    private var sawKey = false
+    private var press = HotkeyRecording.ModifierPress()
 
     public init() {
         super.init(frame: .zero)
@@ -106,8 +139,7 @@ public final class HotkeyRecorder: NSButton {
 
     public func start() {
         guard !isRecording else { return }
-        peakModifiers = 0
-        sawKey = false
+        press = HotkeyRecording.ModifierPress()
         status = .recording(heldModifiers: "")
         onRecordingChanged?(true)
         monitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .flagsChanged, .leftMouseDown, .rightMouseDown]) { [weak self] event in
@@ -131,22 +163,14 @@ public final class HotkeyRecorder: NSButton {
         switch event.type {
         case .flagsChanged:
             let held = HotkeyRecording.modifierOnlyFlags(event.modifierFlags)
-            if held == 0 {
-                let peak = peakModifiers, typed = sawKey
-                peakModifiers = 0
-                sawKey = false
-                if peak != 0, !typed {
-                    apply(HotkeyRecording.modifierOnlyOutcome(modifiers: peak, lastKey: lastModifierKey))
-                    return false
-                }
-            } else if held & peakModifiers == peakModifiers {
-                peakModifiers = held
-                lastModifierKey = event.keyCode
+            if let outcome = press.flagsChanged(held: held, keyCode: event.keyCode) {
+                apply(outcome)
+                return false
             }
             if isRecording { status = .recording(heldModifiers: HotKeyValidation.modifierSymbols(held)) }
             return false
         case .keyDown:
-            sawKey = true
+            press.keyDown()
             apply(HotkeyRecording.outcome(keyCode: event.keyCode, flags: event.modifierFlags))
             return true
         default:
@@ -165,8 +189,9 @@ public final class HotkeyRecorder: NSButton {
     public func apply(_ outcome: HotkeyRecording.Outcome) {
         switch outcome {
         case .accepted(let combo):
-            stop()
+            // First the new shortcut, then the end of recording, which makes the owner register it.
             onCapture?(combo)
+            stop()
         case .rejected(let why):
             status = .rejected(why)
         case .cancelled:
