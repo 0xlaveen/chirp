@@ -334,6 +334,17 @@ sentence, line or field keeps its capital. With **Spoken commands** on
 paragraph" types one or two line breaks instead of the words. Use raw always
 inserts the server's text unchanged.
 
+**Press Return after dictating** (Settings; off by default). A custom
+keyboard can only type Return; the app decides what it does. **On Send, Go or
+Done keys** types Return only where the field's Return key does that, such
+as search boxes and many chat fields, so the message goes out. **Always** also
+types Return in plain fields, where it is a newline. It never fires after a
+dictation that failed partway, after you moved the cursor, after an empty
+result, in Search or Next fields, or between the parts of a long dictation.
+Once it fires, the status shows "↵ sent" and Undo is not offered. A keyboard
+can't press an app's own Send button (Messages has one), and it can't tell
+which app it is in, so there is no "chat apps only" mode as on Android.
+
 The keyboard edits only a verified owned suffix: it binds what it inserted to
 the exact editor context and refuses to delete anything it cannot prove it
 wrote. Live text is updated by rewriting only the part that changed, and long
