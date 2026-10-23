@@ -11,6 +11,40 @@ final class ChirpKeyboardUITests: XCTestCase {
         try runSyntheticDictation(prefix: "", extraArguments: ["--chirp-keyboard-host-empty"])
     }
 
+    /// Auto-Enter: in a field whose Return key is Send, the final lands and Return fires exactly once.
+    @MainActor func testAutoEnterPressesSendOnceAfterTheFinal() throws {
+        continueAfterFailure = false
+        XCUIDevice.shared.orientation = .portrait
+        let app = XCUIApplication()
+        app.launchArguments = ["--chirp-ui-test", "--chirp-keyboard-host", "--chirp-keyboard-host-send", "--chirp-auto-enter", "actionKeys"]
+        app.launch()
+        defer { app.activate(); if app.buttons["chirp.host.end"].exists { app.buttons["chirp.host.end"].tap() } }
+        let setup = app.staticTexts["chirp.host.setup"]
+        XCTAssertTrue(setup.waitForExistence(timeout: 10))
+        let prepared = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label != %@", "Preparing synthetic shared session"), object: setup)
+        XCTAssertEqual(XCTWaiter.wait(for: [prepared], timeout: 10), .completed)
+        if setup.label.contains("unavailable") || setup.label.contains("could not arm") { throw XCTSkip(setup.label) }
+        try enableKeyboardInSettings()
+        app.activate()
+        let field = app.textFields["chirp.host.send"]
+        XCTAssertTrue(field.waitForExistence(timeout: 10))
+        field.tap()
+        try selectChirpKeyboard(in: app)
+        let status = app.staticTexts["chirp.keyboard.status"]
+        XCTAssertTrue(status.waitForExistence(timeout: 10))
+        let armed = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label BEGINSWITH %@", "Session armed"), object: status)
+        XCTAssertEqual(XCTWaiter.wait(for: [armed], timeout: 10), .completed)
+        let primary = app.buttons["chirp.keyboard.primary"]
+        primary.tap()
+        XCTAssertTrue(wait(for: field, key: "value", equalTo: "synthetic words"))
+        XCTAssertEqual(app.staticTexts["chirp.host.sends"].label, "Returns: 0", "No Return while dictating")
+        primary.tap()
+        XCTAssertTrue(wait(for: field, key: "value", equalTo: "Synthetic words."))
+        XCTAssertTrue(wait(for: app.staticTexts["chirp.host.sends"], key: "label", equalTo: "Returns: 1"), "Send must fire once after the final")
+        XCTAssertTrue(status.label.contains(AutoEnterSentMarker), status.label)
+        XCTAssertFalse(app.buttons["chirp.keyboard.undo"].exists, "Nothing to undo once sent")
+    }
+
     @MainActor private func runSyntheticDictation(prefix: String, extraArguments: [String]) throws {
         continueAfterFailure = false
         XCUIDevice.shared.orientation = .portrait
@@ -95,3 +129,5 @@ final class ChirpKeyboardUITests: XCTestCase {
         return XCTWaiter.wait(for: [expectation], timeout: 10) == .completed
     }
 }
+
+private let AutoEnterSentMarker = "↵ sent"

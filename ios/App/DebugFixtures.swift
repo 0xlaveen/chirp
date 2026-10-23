@@ -184,11 +184,17 @@ struct KeyboardTestHost: View {
     @State private var setup = "Preparing synthetic shared session"
     @State private var secure = false
     @State private var password = ""
+    @State private var sends = 0
+    private var args: [String] { ProcessInfo.processInfo.arguments }
     var body: some View {
         VStack {
             Text(setup).accessibilityIdentifier("chirp.host.setup")
             Text(model.phase.rawValue).accessibilityIdentifier("chirp.host.phase")
             LiveKeyboardHost().frame(maxWidth: .infinity, maxHeight: .infinity)
+            if args.contains("--chirp-keyboard-host-send") {
+                SendFieldHost(sends: $sends).frame(height: 44)
+                Text("Returns: \(sends)").accessibilityIdentifier("chirp.host.sends")
+            }
             // On screen only on demand: while any secure field is visible, iOS offers no third-party keyboard.
             Toggle("Password field", isOn: $secure).accessibilityIdentifier("chirp.host.secure.toggle")
             if secure {
@@ -199,6 +205,9 @@ struct KeyboardTestHost: View {
                 .accessibilityIdentifier("chirp.host.end")
         }.padding()
             .task {
+                if let i = args.firstIndex(of: "--chirp-auto-enter"), i + 1 < args.count {
+                    model.preferences.autoEnter = args[i + 1]; model.savePreferences()
+                }
                 await model.pair(link: "chirp://pair?url=https%3A%2F%2Fsynthetic.test.ts.net%2Fchirp&token=synthetic-only")
                 guard model.paired else {
                     setup = "Simulator shared App Group/Keychain unavailable: " + model.notice
@@ -227,5 +236,26 @@ struct LiveKeyboardHost: UIViewRepresentable {
         return view
     }
     func updateUIView(_ view: UITextView, context: Context) {}
+}
+
+/// A single-line field whose Return key is Send, counting the Returns the host receives (auto-Enter fixture).
+struct SendFieldHost: UIViewRepresentable {
+    @Binding var sends: Int
+    func makeCoordinator() -> Delegate { Delegate(sends: $sends) }
+    func makeUIView(context: Context) -> UITextField {
+        let field = UITextField()
+        field.returnKeyType = .send
+        field.borderStyle = .roundedRect
+        field.autocorrectionType = .no
+        field.accessibilityIdentifier = "chirp.host.send"
+        field.delegate = context.coordinator
+        return field
+    }
+    func updateUIView(_ view: UITextField, context: Context) {}
+    final class Delegate: NSObject, UITextFieldDelegate {
+        var sends: Binding<Int>
+        init(sends: Binding<Int>) { self.sends = sends }
+        func textFieldShouldReturn(_ textField: UITextField) -> Bool { sends.wrappedValue += 1; return false }
+    }
 }
 #endif

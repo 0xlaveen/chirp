@@ -87,6 +87,14 @@ struct SessionSettingsView: View {
                 Toggle("Spoken commands", isOn: Binding(get: { model.preferences.spokenCommands == true },
                                                         set: { model.preferences.spokenCommands = $0 ? true : nil; model.savePreferences() }))
                     .accessibilityIdentifier("chirp.settings.spokenCommands")
+                Picker("Press Return after dictating", selection: Binding(get: { model.preferences.autoEnter ?? "off" },
+                                                                        set: { model.preferences.autoEnter = $0 == "off" ? nil : $0; model.savePreferences() })) {
+                    Text("Off").tag("off")
+                    Text("On Send, Go or Done keys").tag("actionKeys")
+                    Text("Always").tag("always")
+                }.accessibilityIdentifier("chirp.settings.autoEnter")
+                Text("After the last words land, Chirp Keyboard types Return. Where the field's Return key is Send, Go or Done, that sends; elsewhere Always types a newline. Never after a failed or partial dictation. A keyboard cannot press an app's own Send button, such as the one in Messages.")
+                    .font(.footnote).foregroundStyle(.secondary)
                 Text("Off by default. In Chirp Keyboard, ending a dictation with \"new line\" or \"new paragraph\" types a line break instead of the words. Mid-sentence, a common first word such as \"so\" or \"and\" starts lower-case.")
                     .font(.footnote).foregroundStyle(.secondary)
                 if model.armed { Button("End session", role: .destructive) { model.endSession() }.frame(minHeight: 44) }

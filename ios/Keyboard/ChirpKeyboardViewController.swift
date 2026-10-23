@@ -316,7 +316,7 @@ final class ChirpKeyboardViewController: UIInputViewController {
         guard execute(plan), policy.didApply(plan, observed: context(), now: Date()) else {
             invalidateOwnership(); return
         }
-        if kind == .final { kept = result.kept == true }
+        if kind == .final { kept = result.kept == true; pressReturnIfAsked(after: plan, result: result) }
         if kind == .final, let original = result.raw, original != result.text {
             rawUntil = Date().addingTimeInterval(5)
         }
@@ -379,6 +379,38 @@ final class ChirpKeyboardViewController: UIInputViewController {
         rawUntil = nil; rawRequested = false; startPending = false; pendingUntil = nil
         send(.cancel, utteranceID: utterance)
     }
+    /// Auto-Enter: after the last segment's final, wait for the host to settle, then type Return only if the editor
+    /// still shows exactly what we left (a cursor move or edit cancels it).
+    private func pressReturnIfAsked(after plan: EditPlan, result: BridgeResult) {
+        let mode = AutoEnterMode(rawValue: state?.autoEnter ?? "") ?? .off
+        guard textDocumentProxy.isSecureTextEntry != true,
+              AutoEnter.presses(mode: mode, returnKey: returnKey(), kept: result.kept == true, moved: false,
+                                lastSegment: state?.phase == .finished, text: plan.replacement) else { return }
+        let landed = context()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) { [weak self] in
+            guard let self, self.visible, self.policy.isFinal, self.context().matches(landed) else { return }
+            self.textDocumentProxy.insertText("\n")
+            // Sent: nothing is left to undo or swap.
+            self.policy.release(); self.rawUntil = nil; self.rawRequested = false; self.kept = false
+            self.show("Finished · " + AutoEnter.sent)
+            self.render()
+        }
+    }
+    private func returnKey() -> ReturnKey {
+        switch textDocumentProxy.returnKeyType ?? .default {
+        case .default: .plain
+        case .send: .send
+        case .go: .go
+        case .done: .done
+        case .join: .join
+        case .route: .route
+        case .continue: .continue
+        case .search, .google, .yahoo: .search
+        case .next, .emergencyCall: .next
+        @unknown default: .other
+        }
+    }
+
     /// Removes the dictation that just landed, only if the editor still shows exactly what we inserted.
     private func undo() {
         if let plan = policy.undo(context: context(), now: Date()), execute(plan) { show("Dictation removed") }

@@ -697,7 +697,7 @@ final class SessionCoordinator: ObservableObject {
                 leaseUntil: now().addingTimeInterval(8), sessionExpiresAt: expiresAt, debugRetention: debugRetention,
                 privacyMode: preferences.privacyMode, styleID: preferences.styleID,
                 availableStyleIDs: profiles.isEmpty ? ["default"] : profiles.map(\.id), errorCode: lastError,
-                spokenCommands: preferences.spokenCommands == true ? true : nil))
+                spokenCommands: preferences.spokenCommands == true ? true : nil, autoEnter: preferences.autoEnter))
             signal.post()
         } catch { endSession(code: .storage) }
     }

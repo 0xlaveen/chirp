@@ -18,14 +18,16 @@ public struct BridgeState: Codable, Sendable, Equatable {
     public var errorCode: DiagnosticCode?
     /// The keyboard applies spoken commands to finals. Optional so older mailboxes still decode.
     public var spokenCommands: Bool?
+    /// The keyboard's auto-Enter mode (raw value of `AutoEnterMode`); nil is off.
+    public var autoEnter: String?
     public init(generation: UUID, phase: SessionPhase, utteranceID: UUID? = nil, leaseUntil: Date,
                 sessionExpiresAt: Date? = nil, debugRetention: Bool = false, privacyMode: Bool = false,
                 styleID: String = "default", availableStyleIDs: [String] = ["default"], errorCode: DiagnosticCode? = nil,
-                spokenCommands: Bool? = nil) {
+                spokenCommands: Bool? = nil, autoEnter: String? = nil) {
         self.generation = generation; self.phase = phase; self.utteranceID = utteranceID; self.leaseUntil = leaseUntil
         self.sessionExpiresAt = sessionExpiresAt; self.debugRetention = debugRetention; self.privacyMode = privacyMode
         self.styleID = styleID; self.availableStyleIDs = availableStyleIDs; self.errorCode = errorCode
-        self.spokenCommands = spokenCommands
+        self.spokenCommands = spokenCommands; self.autoEnter = autoEnter
     }
 }
 public struct BridgeCommand: Codable, Sendable, Equatable, Identifiable {
