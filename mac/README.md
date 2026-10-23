@@ -281,7 +281,7 @@ The HUD never takes focus, so status changes (Listening, Inserted, Copied, error
 | Status line "Server unreachable" (red) | The bird is dimmed; check that `chirp-server` is running (the Server submenu can copy the doctor command). |
 | Status line "DEBUG recordings kept" (red) | The server is running with opt-in debug retention; a red dot also sits on the bird. |
 | `Use raw` after a paste only copies | A pasted insertion can't be verified, so Chirp never posts a blind ⌘Z; it copies the raw text for a manual ⌘V. |
-| Chirp quit unexpectedly | Each crash leaves `~/Library/Logs/DiagnosticReports/ChirpMac-<date>.ips`; attach the newest one to the issue (it holds the stack, never text or audio). `log show --predicate 'subsystem == "dev.chirp.mac"' --last 30m` shows what Chirp was doing. |
+| Chirp quit unexpectedly | Each crash leaves `~/Library/Logs/DiagnosticReports/ChirpMac-<date>.ips`; attach the newest one to the issue (stack traces and system details). `log show --predicate 'subsystem == "dev.chirp.mac"' --last 30m` shows what Chirp was doing. |
 | Dictation stopped working while paused | Only the header switch resumes it; nothing else re-registers the hotkey while paused. A relaunch also resumes. |
 
 ## Develop and test
