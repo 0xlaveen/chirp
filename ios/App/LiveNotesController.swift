@@ -292,6 +292,9 @@ final class LiveNotesController: ObservableObject {
         sync()
     }
 
+    /// Waits for the queued journal writes (tests).
+    func settleJournal() async { await journal?.settle() }
+
     func discardRecovered() {
         guard !recoverable.isEmpty else { return }
         journal?.discard(recoverable.removeFirst().document.id)

@@ -174,8 +174,9 @@ struct LiveNotesControllerTests {
         await first.notes.record()
         try await eventually("recording") { first.notes.state == .recording }
         await first.notes.stop()
-        try await eventually("stopped") { first.notes.state == .stopped }
-        try await eventually("journal written") { !first.journalFiles.isEmpty }
+        try await eventually("stopped and structured") { first.notes.state == .stopped && first.notes.document.text.contains("Synthetic words.") }
+        await first.notes.settleJournal()
+        #expect(!first.journalFiles.isEmpty)
         let text = first.notes.recorder.document.text
         first.notes.recorder.cancel(); first.audio.stop()
 
