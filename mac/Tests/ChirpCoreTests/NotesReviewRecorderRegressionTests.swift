@@ -10,7 +10,7 @@ import Testing
     /// when the new document's `version` happens to equal the request's, `applyReorganize` replaces the request's
     /// (old) range in the new text: discarded notes come back and the user's new text is overwritten. With a new text
     /// shorter than that range the same path raises NSRangeException (crash).
-    @Test func aReorganizeFromADiscardedDocumentNeverLandsInTheNewOne() async throws {
+    @Test(.timeLimit(.minutes(2))) func aReorganizeFromADiscardedDocumentNeverLandsInTheNewOne() async throws {
         let stub = PassStub(), clock = ManualClock()
         stub.holdReorganize = true
         let r = NotesRecorder(makeSession: { StreamSession(config: ServerConfig(baseURL: URL(string: "http://127.0.0.1:9")!), options: $0) },
@@ -21,13 +21,14 @@ import Testing
         let old = "## Secret\n" + String(repeating: "- discarded point\n", count: 8)
         r.userEdit(NSRange(location: 0, length: 0), old)                       // version 1
         r.reorganizeNow()
-        _ = await pollUntil(within: 10) { stub.waiting > 0 }   // time this test got to run: a busy main actor must not fail it
+        await stub.waitUntilHeld()                                              // the call arrived, however loaded the machine is
         try #require(stub.waiting == 1)
         r.reset()                                                               // New → Discard
         let fresh = String(repeating: "my new notes after New. ", count: 20)
         r.userEdit(NSRange(location: 0, length: 0), fresh)                     // version 1 again
         stub.release()
-        try? await Task.sleep(for: .milliseconds(300))
+        _ = await pollUntil(within: 10) { !r.passInFlight }                     // the late answer has been dealt with
+        try? await Task.sleep(for: .milliseconds(50))
         #expect(!r.document.text.contains("discarded point"))
         #expect(r.document.text == fresh)
     }

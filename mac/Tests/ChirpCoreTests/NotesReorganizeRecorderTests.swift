@@ -11,6 +11,8 @@ final class PassStub: @unchecked Sendable {
     private var running = 0
     private var _maxRunning = 0
     private var held: [CheckedContinuation<Void, Never>] = []
+    /// Tests suspended in `waitUntilHeld()`.
+    private var arrivals: [CheckedContinuation<Void, Never>] = []
     var holdStructure = false
     var holdReorganize = false
     /// A switch the reply closures can read (set by the test that installs them).
@@ -33,7 +35,29 @@ final class PassStub: @unchecked Sendable {
             _maxRunning = max(_maxRunning, running)
             return hold
         }
-        if shouldHold { await withCheckedContinuation { c in lock.withLock { held.append(c) } } }
+        if shouldHold {
+            await withCheckedContinuation { c in
+                let arrived = lock.withLock { () -> [CheckedContinuation<Void, Never>] in
+                    held.append(c)
+                    defer { arrivals.removeAll() }
+                    return arrivals
+                }
+                for a in arrived { a.resume() }
+            }
+        }
+    }
+
+    /// Suspends until a request is being held (returns at once when one already is): the test continues exactly when
+    /// the recorder's call arrived, whatever the machine's load.
+    func waitUntilHeld() async {
+        await withCheckedContinuation { c in
+            let ready = lock.withLock { () -> Bool in
+                if !held.isEmpty { return true }
+                arrivals.append(c)
+                return false
+            }
+            if ready { c.resume() }
+        }
     }
 
     func structure(_ r: NotesStructureRequest) async throws -> NotesStructureResponse {
