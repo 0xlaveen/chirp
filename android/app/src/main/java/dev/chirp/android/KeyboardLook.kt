@@ -114,7 +114,8 @@ internal enum class SamsungColors(val background: Int, val keys: Int, val functi
 }
 
 /** Colours for the Chirp row, taken from the keyboard's own HeliBoard theme so the row blends in. */
-internal data class StripColors(val ink: Int, val muted: Int, val accent: Int, val onAccent: Int, val highlight: Int, val chip: Int) {
+internal data class StripColors(val ink: Int, val muted: Int, val accent: Int, val onAccent: Int, val highlight: Int, val chip: Int,
+                                val background: Int, val tints: StripTints) {
     companion object {
         fun of(context: Context): StripColors {
             val colors = runCatching { Settings.getValues()?.mColors }.getOrNull()
@@ -130,7 +131,7 @@ internal data class StripColors(val ink: Int, val muted: Int, val accent: Int, v
             val solidAccent = opaque(accent)
             val onAccent = listOf(Color.WHITE, 0xFF1B1B1F.toInt()).maxBy { ColorUtils.calculateContrast(it, solidAccent) }
             return StripColors(opaque(ink), opaque(muted), solidAccent, onAccent, readable(solidAccent, base),
-                ColorUtils.setAlphaComponent(solidAccent, 0x40))
+                ColorUtils.setAlphaComponent(solidAccent, 0x40), base, StripTints.derive(base, ink, solidAccent))
         }
         private fun opaque(color: Int) = color or 0xFF000000.toInt()
         /** Waveform and shimmer need 3:1 against the row even when the theme accent is pale. */

@@ -48,18 +48,32 @@ class KeyboardRenderTest {
         override fun getCurrentInputEditorInfo() = info
         override fun isInputViewShown() = true
     }
-    @Test fun `render real HeliBoard keys with Chirp strip idle listening final in both themes`() {
+    private class Fixture(val name: String, val message: String, val kind: StripKind, val show: (KeyboardStrip) -> Unit)
+    private val fixtures = listOf(
+        Fixture("idle", "Tap mic · hold to talk", StripKind.IDLE) { it.show("Tap mic · hold to talk", "", false, false, false, false) },
+        Fixture("connecting", "Connecting to Mac…", StripKind.CONNECTING) { it.show("Connecting to Mac…", "", true, false, false, false) },
+        Fixture("listening", "Listening…", StripKind.LISTENING) { it.show("Listening…", "Synthetic example for visual review", true, false, false, false); it.level(.45) },
+        Fixture("countdown", "Listening… · 15 s left", StripKind.LISTENING) { it.show("Listening… · 15 s left", "", true, false, false, false, countdown = true); it.level(.45) },
+        Fixture("polishing", "Polishing…", StripKind.POLISHING) { it.show("Polishing…", "", true, true, false, false, polishing = true, style = "Email") },
+        Fixture("final", "Inserted", StripKind.SUCCESS) { it.show("Inserted · tap mic to dictate again", "", false, false, true, false, notice = true, undoable = true) },
+        Fixture("tailscale", DictationAction.TAILSCALE_OFF, StripKind.ERROR) { it.show(DictationAction.TAILSCALE_OFF, "", false, false, false, false) },
+        Fixture("offline", ConnectionFailure.OFFLINE, StripKind.ERROR) { it.show(ConnectionFailure.OFFLINE, "", false, false, false, false, offline = true) },
+        Fixture("phone", "Listening…", StripKind.LISTENING) { it.show("Listening…", "", true, false, false, false, phone = "Phone speech recogniser"); it.level(.3) },
+        Fixture("retention", "Debug retention on · Listening…", StripKind.LISTENING) { it.show("Listening…", "", true, false, false, true); it.level(.3) },
+    )
+    @Test fun `render every strip state in both themes, looks and cover and inner widths at an unchanged height`() {
         val app = RuntimeEnvironment.getApplication()
         Settings.init(app); SubtypeSettings.init(app); RichInputMethodManager.init(app)
         val output = File(System.getProperty("chirp.screenshots")).apply { mkdirs() }
+        // Renders show each state settled, not mid-morph.
+        android.provider.Settings.Global.putFloat(app.contentResolver, android.provider.Settings.Global.ANIMATOR_DURATION_SCALE, 0f)
         val service = Robolectric.buildService(RenderIme::class.java).create()
         val ime = service.get()
         try {
-            for ((name, night) in listOf("light" to Configuration.UI_MODE_NIGHT_NO, "dark" to Configuration.UI_MODE_NIGHT_YES)) {
-                RuntimeEnvironment.setQualifiers("w411dp-h891dp-" + (if (name == "dark") "night" else "notnight") + "-mdpi")
+            for (look in listOf(KeyboardLook.GBOARD, KeyboardLook.SAMSUNG)) for ((size, qualifier, width) in listOf(Triple("cover", "w411dp-h891dp", 411), Triple("inner", "w673dp-h841dp", 673))) for (name in listOf("light", "dark")) {
+                applyKeyboardLook(keyboardPrefs(app), look)
+                RuntimeEnvironment.setQualifiers("$qualifier-" + (if (name == "dark") "night" else "notnight") + "-mdpi")
                 ime.onConfigurationChanged(Configuration(app.resources.configuration))
-                val config = Configuration(app.resources.configuration).apply { uiMode = Configuration.UI_MODE_TYPE_NORMAL or night }
-                val themed = ContextThemeWrapper(app.createConfigurationContext(config), R.style.Theme_Chirp)
                 val keys = ime.onCreateInputView()
                 ime.setInputView(keys)
                 ime.onStartInput(ime.info, false); ime.onStartInputView(ime.info, false)
@@ -68,27 +82,33 @@ class KeyboardRenderTest {
                 val strip = keys.findViewWithTag<KeyboardStrip>("chirp_strip")
                 // InputView applies this on its first window layout, which a detached render never gets.
                 Settings.getValues().mColors.setBackground(root, ColorType.MAIN_BACKGROUND)
+                val colors = StripColors.of(app)
                 var idleHeight = 0
-                for (state in listOf("idle", "listening", "countdown", "final", "tailscale")) {
-                    strip.show(when(state) { "listening" -> "Listening…"; "countdown" -> "Listening… · 15 s left"; "final" -> "Inserted · tap mic to dictate again"
-                        "tailscale" -> DictationAction.TAILSCALE_OFF; else -> "Tap mic · hold to talk" },
-                        if (state == "listening") "Synthetic example for visual review" else "", state == "listening" || state == "countdown", false, state == "final", false)
-                    strip.level(if (state == "listening" || state == "countdown") .45 else 0.0)
-                    root.measure(View.MeasureSpec.makeMeasureSpec(411, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(900, View.MeasureSpec.AT_MOST))
-                    root.layout(0, 0, 411, root.measuredHeight)
+                for (state in fixtures) {
+                    state.show(strip)
+                    assertEquals("${state.name} ${look.name} $size $name", state.kind, strip.stripKind)
+                    root.measure(View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(900, View.MeasureSpec.AT_MOST))
+                    root.layout(0, 0, width, root.measuredHeight)
                     assertTrue(root.measuredHeight > strip.measuredHeight)
-                    if (state == "idle") idleHeight = root.measuredHeight
-                    else assertEquals("Dictation must reuse the suggestion row height", idleHeight, root.measuredHeight)
+                    if (state.name == "idle") idleHeight = root.measuredHeight
+                    else assertEquals("Dictation must reuse the suggestion row height (${state.name})", idleHeight, root.measuredHeight)
                     assertFalse("Partial belongs only in the editor", strip.status.text.contains("Synthetic example"))
-                    if (state == "countdown") assertEquals("Listening… · 15 s left", strip.status.text.toString())
+                    if (state.name == "countdown") assertEquals("Listening… · 15 s left", strip.status.text.toString())
+                    if (state.name == "final") assertEquals("Inserted", strip.status.text.toString())
                     assertNotNull(KeyboardSwitcher.getInstance().keyboard?.getKey('a'.code))
-                    val bitmap = Bitmap.createBitmap(411, root.measuredHeight, Bitmap.Config.ARGB_8888)
+                    colors.tints.of(state.kind)?.let { tint ->
+                        assertTrue("${state.name} text on tint", androidx.core.graphics.ColorUtils.calculateContrast(tint.text, tint.fill) >= StripTints.TEXT)
+                        assertEquals("the row paints its tint", tint.fill, strip.tintColor)
+                    }
+                    val default = look == KeyboardLook.GBOARD && size == "cover"
+                    val file = if (default) "keyboard-${state.name}-$name.png" else "keyboard-${look.name.lowercase()}-$size-${state.name}-$name.png"
+                    val bitmap = Bitmap.createBitmap(width, root.measuredHeight, Bitmap.Config.ARGB_8888)
                     root.draw(Canvas(bitmap))
-                    File(output, "keyboard-$state-$name.png").outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
+                    File(output, file).outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
                     bitmap.recycle()
                 }
             }
-        } finally { service.destroy() }
+        } finally { applyKeyboardLook(keyboardPrefs(app), KeyboardLook.DEFAULT); service.destroy() }
     }
     @Test fun `render Chirp keyboard looks with the Chirp row in both themes`() {
         val app = RuntimeEnvironment.getApplication()

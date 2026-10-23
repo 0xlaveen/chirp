@@ -22,16 +22,24 @@ import com.google.android.material.button.MaterialButton
 import dev.chirp.android.ui.chirpColorScheme
 import kotlin.math.max
 
-internal data class VoicePalette(val background: Int, val surface: Int, val ink: Int, val muted: Int, val accent: Int, val onAccent: Int) {
+internal data class VoicePalette(val background: Int, val surface: Int, val ink: Int, val muted: Int, val accent: Int, val onAccent: Int,
+                                 val accentContainer: Int, val onAccentContainer: Int, val secondaryContainer: Int, val onSecondaryContainer: Int,
+                                 val errorContainer: Int, val onErrorContainer: Int) {
     companion object {
         /** The app's colours: wallpaper dynamic colour unless "App colours" is Chirp green (also before first unlock). */
         fun of(context: Context): VoicePalette {
             val night = context.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK == Configuration.UI_MODE_NIGHT_YES
-            if (runCatching { SettingsStore(context).dynamicColor }.getOrDefault(false)) return chirpColorScheme(context, night, true).run {
-                VoicePalette(surface.toArgb(), surfaceContainer.toArgb(), onSurface.toArgb(), onSurfaceVariant.toArgb(), primary.toArgb(), onPrimary.toArgb())
+            val dynamic = runCatching { SettingsStore(context).dynamicColor }.getOrDefault(false)
+            val scheme = chirpColorScheme(context, night, dynamic)
+            fun roles(base: VoicePalette) = base.copy(accentContainer = scheme.primaryContainer.toArgb(), onAccentContainer = scheme.onPrimaryContainer.toArgb(),
+                secondaryContainer = scheme.secondaryContainer.toArgb(), onSecondaryContainer = scheme.onSecondaryContainer.toArgb(),
+                errorContainer = scheme.errorContainer.toArgb(), onErrorContainer = scheme.onErrorContainer.toArgb())
+            val none = Color.TRANSPARENT
+            if (dynamic) return scheme.run {
+                roles(VoicePalette(surface.toArgb(), surfaceContainer.toArgb(), onSurface.toArgb(), onSurfaceVariant.toArgb(), primary.toArgb(), onPrimary.toArgb(), none, none, none, none, none, none))
             }
-            return if (night) VoicePalette(Color.rgb(18, 23, 21), Color.rgb(32, 42, 37), Color.rgb(227, 235, 229), Color.rgb(164, 184, 172), Color.rgb(159, 211, 185), Color.rgb(18, 56, 42))
-            else VoicePalette(Color.rgb(246, 250, 246), Color.rgb(230, 239, 232), Color.rgb(24, 45, 37), Color.rgb(83, 105, 92), Color.rgb(56, 106, 88), Color.WHITE)
+            return roles(if (night) VoicePalette(Color.rgb(18, 23, 21), Color.rgb(32, 42, 37), Color.rgb(227, 235, 229), Color.rgb(164, 184, 172), Color.rgb(159, 211, 185), Color.rgb(18, 56, 42), none, none, none, none, none, none)
+            else VoicePalette(Color.rgb(246, 250, 246), Color.rgb(230, 239, 232), Color.rgb(24, 45, 37), Color.rgb(83, 105, 92), Color.rgb(56, 106, 88), Color.WHITE, none, none, none, none, none, none))
         }
     }
 }
@@ -92,6 +100,15 @@ internal class VoicePanel(context: Context) : LinearLayout(context) {
     }
     fun show(statusText: String, text: String, stable: String = "", active: Boolean = false, finalizing: Boolean = false) {
         status.text = statusText
+        // The strip's state colours: listening tints accent, a failure or prompt tints error; idle and success stay plain.
+        val (fill, ink) = when {
+            active || finalizing -> colors.accentContainer to colors.onAccentContainer
+            Cue.isError(statusText) || DictationAction.forStatus(statusText) != null -> colors.errorContainer to colors.onErrorContainer
+            else -> null to colors.muted
+        }
+        status.setTextColor(ink)
+        status.background = fill?.let { GradientDrawable().apply { setColor(it); cornerRadius = context.dp(12).toFloat() } }
+        status.setPadding(context.dp(if (fill != null) 10 else 4), context.dp(5), context.dp(4), context.dp(5))
         val content = text.ifEmpty { "Tap to dictate · hold to talk" }
         transcript.text = SpannableString(content).apply {
             if (text.isNotEmpty()) {

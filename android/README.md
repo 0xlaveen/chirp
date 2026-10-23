@@ -132,7 +132,7 @@ Android 17/API 37 needs `ACCESS_LOCAL_NETWORK` for servers reached directly over
 
 - Tap the **mic in the suggestion row** to start. The mic changes colour and icon while listening, with a waveform and a subtle pulse.
 - Tap the **stop icon** the mic becomes to finish and insert. **✕** discards the dictation.
-- **Long press the mic** for quick options: **Clean-up: on ✓ / Clean-up: off** (or *Mac has clean-up off*), the styles the Mac advertises (`Style · <name>`, with `· rewrites` where it may restructure, ✓ on the active one), and **Chirp settings**.
+- **Long press the mic** for quick options, a sectioned menu: a **Clean-up** switch (or *Mac has clean-up off*) with where the correction runs, a **Style** radio group of the styles the Mac advertises (*rewrites* beside those that may restructure; one choice closes the menu), and a **Chirp settings** row. TalkBack hears the switch and radio roles with their checked state. Long-pressing a history entry opens the same menu style (Copy, Insert raw, Delete).
 - A configured keyboard **voice key** still supports push-to-talk: press-and-hold to talk, release to finish; a short tap toggles.
 - Haptic cues fire on start, manual stop and successful insertion when haptics are enabled (they follow Android's system setting).
 - **Chirp settings → Dictation → Stop dictation**: **When I tap** (default) or **When I pause** with a pause of 1, 1.5, 2, 3 or 5 s (2 s default). Pause mode is a port of the Mac's auto-stop: speech is judged against the room's own noise floor, so steady background noise never counts as talking; it never stops before you have spoken, and gives up after 10 s of silence. Tapping stop still works in both modes.
@@ -181,7 +181,7 @@ Showing the keyboard prewarms the bearer-authenticated socket without sending `s
 
 Clean-up asks the Mac to polish the **final** text only; partials always stay raw. After pairing it is **on by default when the Mac's correction stays on that Mac**; an external correction endpoint requires explicit opt-in and a known host. Your toggle is recorded (`correction_explicit`) and persists across refreshes and restarts; if the Mac loses clean-up availability or its correction destination changes, clean-up suspends until you enable it again, and a server reporting clean-up off always dictates with `correction=false`.
 
-While it runs, the raw transcript stays underlined in the field and the row shows **Polishing…**, an animated shimmer and the selected style chip; polishing stays readable for at least 450 ms even for very fast finals, and state changes fade over 180 ms. The final commits the cleaned text and shows a **cleaned** notice with a **Use raw** button for five seconds — one tap, exposed to TalkBack, invalidated by edits or cursor changes. Correction errors, disconnects and a 12-second polishing timeout commit the raw text with a **kept original** note. Recovery and error notices dismiss after five seconds to restore normal suggestions. An empty or blank final cancels the composition, inserts nothing (not even a separator or a deletion of a selection) and briefly shows **Didn't catch that**.
+While it runs, the raw transcript stays underlined in the field and the row shows a ✦ **Polishing…** with an animated shimmer, the selected style chip and a loading indicator in place of the stop button; polishing stays readable for at least 450 ms even for very fast finals, and state changes fade over 180 ms. The final commits the cleaned text and shows a **cleaned** notice with a **Use raw** button for five seconds — one tap, exposed to TalkBack, invalidated by edits or cursor changes. Correction errors, disconnects and a 12-second polishing timeout commit the raw text with a **kept original** note. Recovery and error notices dismiss after five seconds to restore normal suggestions. An empty or blank final cancels the composition, inserts nothing (not even a separator or a deletion of a selection) and briefly shows **Didn't catch that**.
 
 ### Styles
 
@@ -224,7 +224,19 @@ Every look is applied only through HeliBoard's existing theme preferences (`them
 
 The migration `chirp_keyboard_look_v1` runs once in `ChirpApplication`, next to the existing `chirp_keyboard_defaults_v1` / typing defaults. An install with no theme preference at all (fresh, or 0.5.x that never opened Appearance) switches to the Gboard-like look; any theme preference already written was chosen explicitly and is kept. Later choices are never overwritten.
 
-The Chirp row takes its colours from the active HeliBoard theme instead of a fixed green palette. Its background is transparent, so HeliBoard's own suggestion-row colour (or a background image) shows through. The idle mic uses the key text colour like Gboard's toolbar icons; while listening it becomes an accent pill with a contrasting icon. The waveform and Polishing… shimmer use the accent, darkened or lightened until it reaches 3:1 contrast against the row. **Use raw** and the style chip use a translucent accent chip. The red debug-retention banner is unchanged.
+The Chirp row takes its colours from the active HeliBoard theme instead of a fixed green palette. Idle it is transparent, so HeliBoard's own suggestion-row colour (or a background image) shows through, with the mic in the accent colour. Every other state tints the row, derived from the keyboard's background, text and accent so it suits the Gboard-like, Samsung-like and HeliBoard looks in light and dark:
+
+| State | Row | Shows |
+|---|---|---|
+| Connecting | accent tint | loading indicator, *Connecting to Mac…*, stop |
+| Listening | accent tint | live level bars, status, elapsed time (`0:12`, `0:12 · #2` on a long dictation's second segment), stop |
+| Time limit near | accent tint | the time becomes a warning chip with the countdown in the status |
+| Polishing | accent tint | ✦ *Polishing…*, style chip, loading indicator |
+| Inserted / cleaned | neutral tint | ✓ *Inserted*, **Undo**, **Use raw** chips (five seconds, no hint sentence) |
+| Prompts and errors | error tint | ⚠ message and one action pill (*Turn on*, *Pair Mac*, *Retry*); *Mac offline* shows the muted mic |
+| Phone recogniser | accent tint | the *on phone* chip next to the level bars |
+
+The mic and stop button morph between a round and a rounded-square shape while the tint fades in (200 ms); with animations off (system animator scale 0) every change is instant and nothing animates. Text on each tint is held to 4.5:1 and the stop icon on its fill to 3:1 (`StripStatesTest`). Debug retention uses the error colours of the palette. The history button's open state is a tonal accent fill with a readable icon. Row height and key height never change between states, and every state keeps its content descriptions, one announcement per final and the spoken countdown.
 
 ### App colours
 
