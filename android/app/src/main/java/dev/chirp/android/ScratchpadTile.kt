@@ -1,5 +1,6 @@
 package dev.chirp.android
 
+import android.annotation.SuppressLint
 import android.app.PendingIntent
 import android.content.Intent
 import android.os.Build
@@ -19,6 +20,8 @@ open class ScratchpadTileService : TileService() {
     }
     internal open fun locked() = isLocked
     internal open fun unlock(then: Runnable) = unlockAndRun(then)
+    // The Intent overload throws on API 34+; it is reached only on API 31-33, where the PendingIntent one does not exist.
+    @SuppressLint("StartActivityAndCollapseDeprecated")
     internal open fun open(intent: Intent, pending: PendingIntent) {
         if (Build.VERSION.SDK_INT >= 34) startActivityAndCollapse(pending)
         else @Suppress("DEPRECATION") startActivityAndCollapse(intent)
