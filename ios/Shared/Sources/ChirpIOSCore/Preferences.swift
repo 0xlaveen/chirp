@@ -40,6 +40,7 @@ public final class PreferenceStore: Sendable {
 
 public enum DiagnosticCode: String, Codable, Sendable, CaseIterable {
     case auth, busy, tooLong, badAudio, badRequest, engine, unreachable, timeout, permission, interrupted, storage, unknown
+    case offline, notFound, secure
     public static func server(_ value: String) -> Self {
         switch value { case "auth": .auth; case "busy": .busy; case "too_long": .tooLong
         case "bad_audio": .badAudio; case "bad_request": .badRequest; case "engine": .engine; default: .unknown }

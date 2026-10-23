@@ -174,7 +174,7 @@ private func inputs(_ phase: KeyboardPhase? = .armed, access: Bool = true, lease
 
     @Test func specificGuidance() {
         #expect(KeyboardError.unreachable.guidance.contains("Tailscale"))
-        #expect(KeyboardError.auth.guidance.contains("Re-pair"))
+        #expect(KeyboardError.auth.guidance.contains("Pair again"))
         #expect(KeyboardError.permission.guidance.contains("Microphone"))
         #expect(KeyboardError.timeout.guidance.contains("too long"))
         #expect(KeyboardError.tooLong.guidance.contains("length"))
@@ -188,7 +188,8 @@ private func inputs(_ phase: KeyboardPhase? = .armed, access: Bool = true, lease
         let s = KeyboardPresenter.screen(inputs(.failed))
         #expect(s.status == "Dictation failed" && s.detail == KeyboardError.unknown.guidance)
         #expect(KeyboardError.allCases.map(\.rawValue) ==
-                ["auth", "busy", "tooLong", "badAudio", "badRequest", "engine", "unreachable", "timeout", "permission", "interrupted", "storage", "unknown"])
+                ["auth", "busy", "tooLong", "badAudio", "badRequest", "engine", "unreachable", "timeout", "permission", "interrupted", "storage", "unknown",
+                                                  "offline", "notFound", "secure"])
         #expect(KeyboardPhase.allCases.map(\.rawValue) == ["idle", "armed", "connecting", "listening", "correcting", "finished", "failed"])
     }
 
@@ -258,5 +259,33 @@ private func inputs(_ phase: KeyboardPhase? = .armed, access: Bool = true, lease
         let regular = KeyboardMetrics.make(width: width, compactHeight: false)
         #expect(m.primaryHeight >= KeyboardMetrics.minimumPrimaryHeight && m.keyHeight < regular.keyHeight)
         #expect(m.maxPrimaryWidth == (width >= 600 ? 440 : nil))
+    }
+}
+
+@Suite struct KeyboardUndoAndKeptTests {
+    func live(_ phase: KeyboardPhase) -> KeyboardInputs {
+        let now = Date(timeIntervalSince1970: 1_000)
+        var i = KeyboardInputs(now: now)
+        i.hasFullAccess = true; i.phase = phase; i.leaseUntil = now.addingTimeInterval(8)
+        return i
+    }
+    @Test func cancelSlotBecomesUndoOnlyAfterAnOwnedFinal() {
+        var i = live(.finished); i.ownsUtterance = true; i.isFinal = true; i.undoAvailable = true
+        let undo = KeyboardPresenter.screen(i)
+        #expect(undo.showsUndo && undo.cancelEnabled)
+        i.undoAvailable = false
+        #expect(!KeyboardPresenter.screen(i).showsUndo && !KeyboardPresenter.screen(i).cancelEnabled)
+        var recording = live(.listening); recording.ownsUtterance = true; recording.undoAvailable = true
+        #expect(!KeyboardPresenter.screen(recording).showsUndo && KeyboardPresenter.screen(recording).cancelEnabled)
+    }
+    @Test func keptFinalAndNoticesNameWhatHappened() {
+        var i = live(.finished); i.kept = true; i.errorCode = .notFound
+        let kept = KeyboardPresenter.screen(i)
+        #expect(kept.phaseText == "Kept what was heard")
+        #expect(kept.detail == KeyboardError.notFound.guidance)
+        i.notice = "Dictation removed"
+        #expect(KeyboardPresenter.screen(i).status.hasPrefix("Dictation removed"))
+        var gone = i; gone.leaseUntil = nil
+        #expect(!KeyboardPresenter.screen(gone).status.hasPrefix("Dictation removed"), "Notices need a live session")
     }
 }

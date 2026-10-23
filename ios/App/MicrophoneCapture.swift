@@ -1,5 +1,6 @@
 import AVFoundation
 import ChirpCore
+import ChirpIOSCore
 import Foundation
 
 /// The coordinator is the sole owner; the tap uses a locked sink without an unbounded task queue.
@@ -15,8 +16,11 @@ protocol SessionAudio: AnyObject {
 
 enum SessionFailure: Error, LocalizedError, Equatable {
     case setup, permission, audio, connection, expired, cancelled, timeout, noResult, storage
+    /// A classified reachability failure; its message names the likely cause.
+    case mac(ConnectionIssue)
     var errorDescription: String? {
         switch self {
+        case .mac(let issue): issue.message
         case .setup: "Open Chirp to pair your Mac and start a session."
         case .permission: "Open Chirp and allow microphone access in Settings."
         case .audio: "Microphone unavailable. Open Chirp to start again."

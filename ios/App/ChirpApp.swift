@@ -156,6 +156,14 @@ struct DictationView: View {
                     .font(.title2.bold()).accessibilityIdentifier("sessionStatus")
                 Text(model.armed ? "Idle audio is discarded immediately. Audio is sent to your paired Mac only while dictating. Switch back to your other app and choose Chirp Keyboard to dictate there." : "Start a session here, then dictate in any app with Chirp Keyboard. The microphone stays active until the session ends.")
                     .foregroundStyle(.secondary)
+                if let issue = model.connectionIssue, issue.isOffline {
+                    HStack {
+                        Label("Mac offline", systemImage: "wifi.slash").font(.headline).foregroundStyle(.orange)
+                        Spacer()
+                        Button("Check again") { Task { await model.checkConnection() } }
+                            .buttonStyle(.bordered).disabled(model.working).accessibilityIdentifier("chirp.offline.retry")
+                    }.accessibilityIdentifier("chirp.offline")
+                }
                 if !model.armed {
                     Button("Start keyboard session") { Task { do { try await model.armSession() } catch { model.show(error) } } }
                         .buttonStyle(.bordered).disabled(!model.paired || model.working).frame(minHeight: 44)

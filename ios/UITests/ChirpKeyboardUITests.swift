@@ -63,9 +63,16 @@ final class ChirpKeyboardUITests: XCTestCase {
         XCTAssertTrue(partialArrived, "Real mailbox partial must reach the editor; host text was \(String(describing: field.value))")
         primary.tap()
         XCTAssertTrue(wait(for: field, key: "value", equalTo: prefix + "Synthetic words."), "Final must replace only the keyboard-owned partial")
+        // For 5 seconds after the final, the Cancel slot is Undo and removes exactly the dictation.
+        let undo = app.buttons["chirp.keyboard.undo"]
+        XCTAssertTrue(undo.waitForExistence(timeout: 3), "Undo must be offered after the final lands")
+        undo.tap()
+        XCTAssertTrue(wait(for: field, key: "value", equalTo: prefix), "Undo must restore the field exactly; was \(String(describing: field.value))")
+        XCTAssertTrue(status.label.hasPrefix("Dictation removed"), status.label)
+        XCTAssertTrue(app.buttons["chirp.keyboard.cancel"].waitForExistence(timeout: 3))
         app.buttons["chirp.keyboard.end"].tap()
         XCTAssertTrue(wait(for: app.staticTexts["chirp.host.phase"], key: "label", equalTo: "idle"))
-        XCTAssertEqual(field.value as? String, prefix + "Synthetic words.")
+        XCTAssertEqual(field.value as? String ?? "", prefix)
         // Secure fields always get Apple's keyboard; on the iOS 27.0 simulator a visible secure field also
         // withholds third-party keyboards from the window's other fields until it is gone.
         let toggle = app.descendants(matching: .any).matching(identifier: "chirp.host.secure.toggle").firstMatch
@@ -75,7 +82,7 @@ final class ChirpKeyboardUITests: XCTestCase {
         secure.tap()
         XCTAssertTrue(waitForAbsence(status), "Chirp Keyboard must not appear in a secure field")
         XCTAssertTrue(app.keys["space"].waitForExistence(timeout: 5), "Apple's keyboard must take over in the secure field")
-        XCTAssertEqual(field.value as? String, prefix + "Synthetic words.")
+        XCTAssertEqual(field.value as? String ?? "", prefix)
     }
 
     @MainActor private func waitForAbsence(_ element: XCUIElement) -> Bool {

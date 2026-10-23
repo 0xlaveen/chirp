@@ -42,6 +42,8 @@ final class SessionCoordinator: ObservableObject {
     @Published private(set) var notice = ""
     @Published private(set) var debugRetention = false
     @Published private(set) var canUseRaw = false
+    /// Why the last attempt to reach the Mac failed; nil once it answers.
+    @Published private(set) var connectionIssue: ConnectionIssue?
     /// Chirp Keyboard has opened with Full Access at least once (see `KeyboardSetupStore`).
     @Published private(set) var keyboardReady = false
     @Published var preferences = IOSPreferences()
@@ -84,6 +86,8 @@ final class SessionCoordinator: ObservableObject {
     private var systemObservers: [NSObjectProtocol] = []
     private var waiters: [UUID: [CheckedContinuation<Void, Error>]] = [:]
     private var historyID: UUID?
+    /// Published to the keyboard so it can explain the last failure.
+    private var lastError: DiagnosticCode?
     private var startingUtterance = false
     private let signal = DarwinSignal(name: DarwinSignal.bridgeChanged)
 
@@ -145,15 +149,23 @@ final class SessionCoordinator: ObservableObject {
         working = true
         let ticket = lifecycle
         defer { working = false }
+        let seen = IssueBox()
         do {
             let credentials = try PairingLink.parse(link)
-            let checked = try await services.pairing.verifyAndSave(credentials, session: http)
+            let checked = try await services.pairing.verifyAndSave(credentials) { [http] config in
+                do { return try await config.checkHealth(session: http) }
+                catch { seen.issue = ConnectionIssue.classify(error); throw error }
+            }
             guard ticket == lifecycle else { return }
             config = try services.pairing.load(); paired = config != nil
-            applyHealth(checked)
+            reached(checked)
             notice = "Mac verified and pairing saved."
             await loadProfiles()
-        } catch { notice = "Could not verify pairing. Check the link, Tailscale and your Mac."; record(.auth) }
+        } catch {
+            let issue = (error as? CoreError) == .unauthorized ? .refused : seen.issue
+            notice = issue?.message ?? "Could not verify pairing. Check the link, Tailscale and your Mac."
+            connectionIssue = issue; record(issue?.diagnostic ?? .auth)
+        }
     }
 
     func forgetPairing() {
@@ -169,12 +181,30 @@ final class SessionCoordinator: ObservableObject {
         let ticket = lifecycle
         defer { working = false }
         do {
-            let checked = try await config.fetchHealth(session: http)
+            let checked = try await healthy(config)
             guard ticket == lifecycle else { return }
-            guard checked.ok, checked.ready == true, checked.engine != nil else { throw SessionFailure.connection }
-            applyHealth(checked); notice = "Mac connection verified."
+            reached(checked); notice = "Mac connection verified."
             await loadProfiles()
-        } catch { notice = SessionFailure.connection.localizedDescription; if armed { endSession(code: .unreachable) } }
+        } catch {}
+    }
+
+    /// Authenticated health or a classified failure. A failure keeps an armed session (and the keyboard's
+    /// view of it) alive with the reason, so the user can retry once the Mac is back.
+    private func healthy(_ config: ServerConfig) async throws -> Health {
+        let checked: Health
+        do { checked = try await config.checkHealth(session: http) } catch { throw reachFailed(error) }
+        guard checked.ok, checked.ready == true, checked.engine != nil else { throw reachFailed(ConnectionIssueError(.other)) }
+        return checked
+    }
+    private func reachFailed(_ error: Error) -> SessionFailure {
+        let issue = ConnectionIssue.classify(error)
+        connectionIssue = issue; lastError = issue.diagnostic; notice = issue.message
+        record(issue.diagnostic); publishState()
+        return .mac(issue)
+    }
+    private func reached(_ value: Health) {
+        connectionIssue = nil; lastError = nil
+        applyHealth(value); publishState()
     }
 
     private func applyHealth(_ value: Health) {
@@ -242,11 +272,9 @@ final class SessionCoordinator: ObservableObject {
         defer { working = false }
         guard await requestPermission() else { throw SessionFailure.permission }
         guard ticket == lifecycle else { throw SessionFailure.cancelled }
-        let checked: Health
-        do { checked = try await config.fetchHealth(session: http) }
-        catch { throw SessionFailure.connection }
-        guard ticket == lifecycle, checked.ok, checked.ready == true, checked.engine != nil else { throw SessionFailure.connection }
-        applyHealth(checked)
+        let checked = try await healthy(config)
+        guard ticket == lifecycle else { throw SessionFailure.cancelled }
+        reached(checked)
         await activityTeardown?.value
         guard ticket == lifecycle else { throw SessionFailure.cancelled }
         try activityBegin(debugRetention)
@@ -290,16 +318,14 @@ final class SessionCoordinator: ObservableObject {
         try await armSession()
         guard ticket == lifecycle else { throw SessionFailure.cancelled }
         if wasArmed, let config {
-            let checked: Health
-            do { checked = try await config.fetchHealth(session: http) }
-            catch { endSession(code: .unreachable); throw SessionFailure.connection }
+            let checked = try await healthy(config)
             guard ticket == lifecycle, armed else { throw SessionFailure.cancelled }
-            guard checked.ok, checked.ready == true, checked.engine != nil else { endSession(code: .unreachable); throw SessionFailure.connection }
-            applyHealth(checked)
+            reached(checked)
         }
         try reconcileOrThrow()
         guard stream == nil, let config else { throw SessionFailure.setup }
         clearUtterance()
+        lastError = nil
         utterance = id; companion = source == .companion ? id : nil; utteranceSource = source
         privateUtterance = preferences.privacyMode
         var options = StartOptions(client: "ios", correction: health.map { preferences.permitsCorrection(health: $0) } ?? false,
@@ -361,7 +387,7 @@ final class SessionCoordinator: ObservableObject {
         let previous = stream
         clearUtterance(error: SessionFailure.expired)
         heartbeat?.cancel(); heartbeat = nil; expiry?.cancel(); expiry = nil; expiresAt = nil
-        generation = UUID(); phase = .idle
+        generation = UUID(); phase = .idle; lastError = nil
         if let code { record(code); notice = code == .timeout ? "Session ended." : "Session interrupted. Open Chirp to start again." }
         else { notice = "Session ended. Microphone off." }
         if let previous { Task { await previous.cancel() } }
@@ -384,11 +410,15 @@ final class SessionCoordinator: ObservableObject {
         case .closed(let reason):
             if reason != nil {
                 if phase == .correcting, !raw.isEmpty {
+                    lastError = .unreachable
                     complete(FinalResult(text: raw), id: id)
                     notice = "Connection lost during clean-up. Kept original."
                     record(.unreachable)
+                } else {
+                    let issue = ConnectionIssue.classify(streamReason: reason ?? "")
+                    if issue.isOffline { connectionIssue = issue }
+                    keepHeard(id: id, code: issue.diagnostic, reason: issue == .other ? "Connection lost." : issue.message)
                 }
-                else { endSession(code: .unreachable) }
             }
         case .message(let message):
             switch message {
@@ -408,13 +438,43 @@ final class SessionCoordinator: ObservableObject {
             case .final(let result):
                 guard ready, stopRequested else { return }
                 complete(result, id: id)
-            case .error(let code, _): endSession(code: DiagnosticCode.server(code))
+            case .error(let code, _): keepHeard(id: id, code: DiagnosticCode.server(code), reason: Self.serverMessage(code))
             case .unknown: break
             }
         }
     }
 
-    private func complete(_ result: FinalResult, id: UUID) {
+    /// A failed utterance keeps its last partial as plain text (no clean-up) and leaves the session armed, so
+    /// the keyboard inserts it and shows why. With nothing heard, only the reason is shown.
+    private func keepHeard(id: UUID, code: DiagnosticCode, reason: String) {
+        guard utterance == id, armed else { return }
+        lastError = code; record(code)
+        let heard = text
+        if ready, !heard.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            complete(FinalResult(text: heard, raw: heard), id: id, kept: true)
+            notice = reason + " Kept what was heard."
+        } else {
+            let previous = stream
+            clearUtterance(error: SessionFailure.noResult)
+            setPhase(.armed)
+            notice = reason
+            if let previous { Task { await previous.cancel() } }
+        }
+    }
+
+    static func serverMessage(_ code: String) -> String {
+        switch code {
+        case "auth": ConnectionIssue.refused.message
+        case "busy": "Your Mac is busy. Try again in a moment."
+        case "too_long": "That dictation hit the 120-second limit."
+        case "bad_audio": SessionFailure.noResult.localizedDescription
+        case "engine": "The speech engine had a problem. Try again."
+        case "bad_request": "The clean-up prompt is too long. Shorten it in Styles."
+        default: "Your Mac couldn't finish that dictation. Try again."
+        }
+    }
+
+    private func complete(_ result: FinalResult, id: UUID, kept: Bool = false) {
         guard utterance == id, armed else { return }
         guard !result.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             cancelDictation(); notice = SessionFailure.noResult.localizedDescription; return
@@ -426,7 +486,7 @@ final class SessionCoordinator: ObservableObject {
         canUseRaw = result.canUseRaw
         setPhase(.finished)
         guard armed, utterance == id else { return }
-        publishResult(.final, text: result.text, raw: result.raw)
+        publishResult(.final, text: result.text, raw: result.raw, kept: kept)
         guard armed, utterance == id else { return }
         if !privateUtterance, !preferences.privacyMode {
             do { historyID = try services?.history.record(text: result.text, raw: result.raw, corrected: result.corrected)?.id }
@@ -452,7 +512,7 @@ final class SessionCoordinator: ObservableObject {
                 let fallback = self.raw
                 self.complete(FinalResult(text: fallback), id: id)
                 self.notice = "Clean-up timed out. Kept original."
-            } else { self.endSession(code: .timeout) }
+            } else { self.keepHeard(id: id ?? UUID(), code: .timeout, reason: SessionFailure.timeout.localizedDescription) }
         }
     }
     private func clearUtterance(error: Error = SessionFailure.cancelled) {
@@ -514,16 +574,17 @@ final class SessionCoordinator: ObservableObject {
             try services.bridge.publish(BridgeState(generation: generation, phase: phase, utteranceID: utterance,
                 leaseUntil: now().addingTimeInterval(8), sessionExpiresAt: expiresAt, debugRetention: debugRetention,
                 privacyMode: preferences.privacyMode, styleID: preferences.styleID,
-                availableStyleIDs: profiles.isEmpty ? ["default"] : profiles.map(\.id)))
+                availableStyleIDs: profiles.isEmpty ? ["default"] : profiles.map(\.id), errorCode: lastError))
             signal.post()
         } catch { endSession(code: .storage) }
     }
-    private func publishResult(_ kind: BridgeResultKind, text: String, raw: String? = nil) {
+    private func publishResult(_ kind: BridgeResultKind, text: String, raw: String? = nil, kept: Bool = false) {
         guard let utterance, armed, let services else { return }
         sequence += 1
         do {
             try services.bridge.publish(BridgeResult(generation: generation, utteranceID: utterance, kind: kind,
-                text: text, raw: raw, sequence: sequence, createdAt: now(), expiresAt: now().addingTimeInterval(8)))
+                text: text, raw: raw, sequence: sequence, createdAt: now(), expiresAt: now().addingTimeInterval(8),
+                kept: kept ? true : nil))
             signal.post()
         } catch { endSession(code: .storage) }
     }
@@ -562,5 +623,15 @@ final class SessionCoordinator: ObservableObject {
         let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0"
         let events = (try? DiagnosticExport.data(events: diagnostics)) ?? Data("[]".utf8)
         return "Chirp \(version) · iOS \(ProcessInfo.processInfo.operatingSystemVersion.majorVersion)\n" + String(decoding: events, as: UTF8.self)
+    }
+}
+
+/// Carries the classified health failure out of the pairing store's `@Sendable` check.
+private final class IssueBox: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value: ConnectionIssue?
+    var issue: ConnectionIssue? {
+        get { lock.withLock { value } }
+        set { lock.withLock { value = newValue } }
     }
 }

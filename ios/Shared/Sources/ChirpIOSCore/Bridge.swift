@@ -47,10 +47,14 @@ public struct BridgeResult: Codable, Sendable, Equatable, Identifiable {
     public var sequence: Int
     public var createdAt: Date
     public var expiresAt: Date
+    /// A final that is only what was heard before the connection failed (no clean-up). Optional so older
+    /// mailboxes still decode.
+    public var kept: Bool?
     public init(id: UUID = UUID(), generation: UUID, utteranceID: UUID, kind: BridgeResultKind, text: String,
-                raw: String? = nil, sequence: Int = 0, createdAt: Date = Date(), expiresAt: Date) {
+                raw: String? = nil, sequence: Int = 0, createdAt: Date = Date(), expiresAt: Date, kept: Bool? = nil) {
         self.id = id; self.generation = generation; self.utteranceID = utteranceID; self.kind = kind
         self.text = text; self.raw = raw; self.sequence = sequence; self.createdAt = createdAt; self.expiresAt = expiresAt
+        self.kept = kept
     }
 }
 
