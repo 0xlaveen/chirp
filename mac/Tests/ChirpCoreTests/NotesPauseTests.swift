@@ -17,12 +17,9 @@ import Testing
                              health: Health(correction: "available", notesStructure: true))
     }
 
+    /// Polls for at most 60 s of time this test got to run (`pollUntil`), so a suite holding the main actor does not fail it.
     private func eventually(_ what: String, _ condition: () -> Bool) async {
-        let deadline = Date().addingTimeInterval(60)
-        while !condition() {
-            if Date() > deadline { Issue.record("timed out waiting for \(what)"); return }
-            try? await Task.sleep(for: .milliseconds(10))
-        }
+        if !(await pollUntil(within: 60, condition)) { Issue.record("timed out waiting for \(what)") }
     }
 
     private func send(_ r: NotesRecorder, frames n: Int) {
