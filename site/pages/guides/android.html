@@ -44,22 +44,22 @@ cd android
     <li><strong>USB</strong>: turn on USB debugging in the phone's Developer options, plug it in and run <code>adb install -r app/build/outputs/apk/release/app-arm64-v8a-release.apk</code>.</li>
   </ul>
   <div class="callout warn"><b>Play Protect may warn you.</b><p>It flags any app that doesn't come from the Play Store. Choose <strong>More details → Install anyway</strong>.</p></div>
-  <p>Open <strong>Chirp</strong>. Setup has four steps and always opens on the first one you haven't finished:</p>
+  <p>Open <strong>Chirp</strong>. Onboarding is four short pages and always opens on the first one you haven't finished:</p>
   <ol class="steps">
-    <li><strong>Enable Chirp Keyboard</strong><p>Turn it on, then select it as your default. On Samsung: Settings → General management → Keyboard list and default.</p></li>
+    <li><strong>Welcome</strong><p>What Chirp is, in one picture. Skipped if the phone is already paired.</p></li>
+    <li><strong>Turn on Chirp Keyboard</strong><p>Enable it, then select it as your default. On Samsung: Settings → General management → Keyboard list and default.</p></li>
     <li><strong>Allow the microphone</strong><p>It's only open while you dictate.</p></li>
     <li><strong>Pair your Mac</strong><p>See the next section.</p></li>
-    <li><strong>Try it</strong><p>A test field, plus the keyboard look and when dictation should stop.</p></li>
   </ol>
   <div class="shot-row">
-    <figure><div class="frame"><!--shot:android/setup-1|Setup step 1: enable and select Chirp Keyboard--></div><figcaption>Step 1</figcaption></figure>
-    <figure><div class="frame"><!--shot:android/setup-3|Setup step 3: Connect your Mac--></div><figcaption>Step 3</figcaption></figure>
+    <figure><div class="frame"><!--shot:android/onboarding-keyboard|Onboarding: turn on Chirp Keyboard--></div><figcaption>Keyboard</figcaption></figure>
+    <figure><div class="frame"><!--shot:android/onboarding-pair|Onboarding: scan the code on your Mac--></div><figcaption>Pair your Mac</figcaption></figure>
   </div>
 
   <h2 id="pair">Pair with your Mac</h2>
   <ol class="steps">
     <li><strong>Show the pairing code on the Mac</strong><p>In Chirp for Mac open <strong>Settings → Devices → Pair a Phone…</strong> If your tailnet isn't serving Chirp yet, it shows the exact Tailscale command and runs it only after you confirm. Then it shows a QR code.</p></li>
-    <li><strong>Scan it on the phone</strong><p>In setup step 3 tap <strong>Scan pairing QR</strong>, then <strong>Test connection &amp; save pairing</strong>. Nothing is saved until the connection works.</p></li>
+    <li><strong>Scan it on the phone</strong><p>On the last onboarding page tap <strong>Scan code</strong>. Chirp tests the connection and saves the pairing by itself; nothing is saved until the connection works. Then tap <strong>Finish</strong>; Chirp settings opens with a <strong>Try it</strong> card holding a test field.</p></li>
   </ol>
   <figure class="shot"><div class="frame"><!--shot:mac/settings-devices-ready|Settings, Devices: Pair a Phone button, noting the phone reaches this Mac over your tailnet only--></div></figure>
   <div class="callout"><b>The QR code is a secret.</b><p>It contains the key to your Mac's speech server. The Mac hides the window from screenshots and screen sharing and closes it after two minutes. Don't post it anywhere.</p></div>

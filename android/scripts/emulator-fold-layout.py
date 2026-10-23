@@ -87,9 +87,9 @@ def main():
                 adb('shell', 'am', 'force-stop', smoke.PACKAGE)
                 adb('shell', 'ime', 'enable', smoke.IME)
                 adb('shell', 'ime', 'set', smoke.IME)
-                adb('shell', 'am', 'start', '-n', smoke.PACKAGE + '/.SetupActivity', '--es', 'section', 'settings')
+                adb('shell', 'am', 'start', '-n', smoke.PACKAGE + '/.SetupActivity', '--es', 'section', 'try')
                 # The editor's heading starts below the viewport on cover landscape.
-                smoke.wait_for('Step 4 of 4 · Try it', 60)
+                smoke.wait_for('Try it', 60)
                 focus_editor()
                 keys = [n for n in smoke.nodes() if n.get('class') == 'helium314.keyboard.keyboard.Key']
                 geometry = {n.get('content-desc'): smoke.bounds(n) for n in keys}

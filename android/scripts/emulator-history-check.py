@@ -7,7 +7,7 @@ import re
 import time
 import xml.etree.ElementTree as ET
 
-HINTS = ('Test dictation here', 'Try a sentence')
+HINTS = ('Test dictation here', 'Try it')
 
 
 def log(*args):

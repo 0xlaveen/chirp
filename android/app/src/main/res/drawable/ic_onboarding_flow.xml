@@ -1,0 +1,15 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="192dp" android:height="86dp" android:viewportWidth="160" android:viewportHeight="72">
+    <!-- Phone -->
+    <path android:fillColor="#FFFFFFFF" android:pathData="M12,6h28a6,6 0 0,1 6,6v48a6,6 0 0,1 -6,6H12a6,6 0 0,1 -6,-6V12a6,6 0 0,1 6,-6zM12,12v42h28V12zM26,62.5a2,2 0 1,0 0.01,0z" android:fillType="evenOdd" />
+    <!-- Mic on the phone screen -->
+    <path android:fillColor="#FFFFFFFF" android:fillAlpha="0.55" android:pathData="M26,20a4,4 0 0,1 4,4v7a4,4 0 0,1 -8,0v-7a4,4 0 0,1 4,-4zM20,31.5h1.5a4.5,4.5 0 0,0 9,0H32a6,6 0 0,1 -5.25,5.95V41h-1.5v-3.55A6,6 0 0,1 20,31.5z" />
+    <!-- Voice travelling over the tailnet -->
+    <path android:fillColor="#FFFFFFFF" android:pathData="M58,36a2.5,2.5 0 1,0 0.01,0zM71,36a2.5,2.5 0 1,0 0.01,0zM84,36a2.5,2.5 0 1,0 0.01,0z" android:fillAlpha="0.7" />
+    <path android:fillColor="#FFFFFFFF" android:pathData="M92,30l8,6l-8,6z" android:fillAlpha="0.7" />
+    <!-- Mac -->
+    <path android:fillColor="#FFFFFFFF" android:pathData="M112,14h36a4,4 0 0,1 4,4v32a4,4 0 0,1 -4,4h-36a4,4 0 0,1 -4,-4V18a4,4 0 0,1 4,-4zM112,18v32h36V18z" android:fillType="evenOdd" />
+    <path android:fillColor="#FFFFFFFF" android:pathData="M104,58h52a2,2 0 0,1 2,2v1a3,3 0 0,1 -3,3h-50a3,3 0 0,1 -3,-3v-1a2,2 0 0,1 2,-2z" />
+    <!-- Text on the Mac -->
+    <path android:fillColor="#FFFFFFFF" android:fillAlpha="0.55" android:pathData="M115,23h22v3h-22zM115,30h30v3h-30zM115,37h18v3h-18z" />
+</vector>

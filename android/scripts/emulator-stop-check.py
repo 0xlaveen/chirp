@@ -90,10 +90,9 @@ def check(probe, work, expect_crash=False):
         if case == 'polishing': assert state['correcting'], 'Managed polishing did not run'
         print('PASS stop:', case, '; content-free server state:', state, flush=True)
     assert not expect_crash, 'Baseline did not reproduce the reported TLS crash'
-    # A new task drops the test editor's focus/scroll state before opening Diagnostics.
-    adb('shell', 'am', 'start', '-f', '0x10008000', '-n', package + '/.SetupActivity', '--es', 'section', 'pair')
-    wait_for('Scan pairing QR')
+    # A new task drops the test editor's focus/scroll state before opening Diagnostics (Chirp settings → About).
+    adb('shell', 'am', 'start', '-f', '0x10008000', '-n', package + '/.SetupActivity', '--es', 'section', 'settings')
+    wait_for('Diagnostics')
     click('Diagnostics')
     wait_for('No crashes recorded')
-    click('Close')
     print('PASS: stop-state matrix; StrictMode debug network death enabled; logcat and in-app Diagnostics clean.', flush=True)

@@ -308,15 +308,14 @@ def main():
             # adb prints the intent URI, so output is deliberately never forwarded to logs.
             link = "chirp://pair?" + urllib.parse.urlencode({"url": scheme + "://10.0.2.2:7899", "token": token})
             adb("shell", "am", "start", "-a", "android.intent.action.VIEW", "-d", shlex.quote(link))
-            # Pairing UI contains the throwaway credential; never retain a capture here.
-            click("Test connection & save pairing")
+            # The link is tested and saved on arrival. The pairing UI holds the throwaway credential; never retain a capture here.
             deadline = time.monotonic() + 15
             while time.monotonic() < deadline:
-                if any(n.get("text") == "Mac ready" for n in nodes()):
+                if any(n.get("text", "").startswith(("Connected", "Paired")) for n in nodes()):
                     break
                 time.sleep(.3)
             else:
-                statuses = [n.get("text", "") for n in nodes() if n.get("text", "").startswith(("Mac ", "Pairing link received", "Invalid Chirp", "Paste a valid", "Paired", "Checking Mac"))]
+                statuses = [n.get("text", "") for n in nodes() if n.get("text", "").startswith(("Mac ", "Couldn", "Invalid Chirp", "Connecting", "Connected", "Paired", "Checking Mac"))]
                 screenshot(Path("/tmp/chirp-pairing-failure.png"))
                 print("Pairing status:", statuses, flush=True)
                 diagnostic = adb("shell", "run-as", PACKAGE, "cat", "shared_prefs/debug_capture.xml")
