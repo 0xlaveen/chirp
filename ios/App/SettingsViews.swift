@@ -108,9 +108,12 @@ struct SessionSettingsView: View {
                 Text("If the keyboard cannot open Chirp, open the app manually and start a session. Return with the app switcher or system Back affordance. Automatic return to an arbitrary editor is unavailable.")
             }
             Section("Content-free diagnostics") {
+                Text(model.timingSummary).font(.caption.monospaced()).textSelection(.enabled)
+                    .accessibilityIdentifier("chirp.diagnostics.timings")
+                Button("Clear timings", role: .destructive) { model.clearTimings() }.frame(minHeight: 44)
                 Text(model.diagnosticText).font(.caption.monospaced()).textSelection(.enabled)
                 ShareLink(item: model.diagnosticText) { Label("Share diagnostics", systemImage: "square.and.arrow.up") }
-                Text("Only app/OS version, phase, fixed local error codes, duration and counts. No transcripts, prompts, audio, addresses or credentials.")
+                Text("Timings of the last 50 dictations (numbers only), plus app/OS version, phase, fixed local error codes, durations and counts. No transcripts, prompts, audio, addresses, network names or credentials.")
                     .font(.footnote).foregroundStyle(.secondary)
             }
         }.navigationTitle("Settings")
