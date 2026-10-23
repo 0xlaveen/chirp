@@ -436,6 +436,7 @@ final class NotesEditorCoordinator: NSObject, NSTextViewDelegate {
     private func applyAll(_ changes: [NotesTextChange]) {
         var i = 0
         while i < changes.count {
+            if let run = changes[i].run { applyStep(changes[i], run: run); i += 1; continue }
             guard changes[i].kind == .organize else { apply(changes[i]); i += 1; continue }
             textView.breakUndoCoalescing()
             undo.beginUndoGrouping()
@@ -443,6 +444,40 @@ final class NotesEditorCoordinator: NSObject, NSTextViewDelegate {
             undo.setActionName(Self.reorganizeAction)
             undo.endUndoGrouping()
         }
+    }
+
+    /// The whole-document Organize run whose steps are being applied: its number and the text after its last step.
+    private var organizeRun: (run: Int, after: String)?
+
+    /// A step of a whole-document Organize. The run's first step registers one undo action that puts back the text
+    /// from before the run; every step is applied without undo registration, so one ⌘Z (or the chip's Undo) undoes
+    /// the whole run, as long as nothing else was done in between.
+    private func applyStep(_ change: NotesTextChange, run: Int) {
+        let continuing = organizeRun?.run == run && organizeRun?.after == textView.string && undo.undoActionName == Self.reorganizeAction
+        if !continuing {
+            let before = textView.string
+            textView.breakUndoCoalescing()
+            undo.beginUndoGrouping()
+            undo.registerUndo(withTarget: self) { $0.restore(before) }
+            undo.setActionName(Self.reorganizeAction)
+            undo.endUndoGrouping()
+        }
+        undo.disableUndoRegistration()
+        apply(change, grouped: true)
+        undo.enableUndoRegistration()
+        organizeRun = (run, textView.string)
+    }
+
+    /// Undo (or redo) of a whole Organize run: the storage goes back to `text`, reported like any undo.
+    private func restore(_ text: String) {
+        let current = textView.string
+        undo.registerUndo(withTarget: self) { $0.restore(current) }
+        undo.setActionName(Self.reorganizeAction)
+        organizeRun = nil
+        guard let storage = textView.textStorage, let d = NotesDocument.diff(current, text, kind: .user) else { return }
+        storage.replaceCharacters(in: d.range, with: d.replacement)
+        NotesEditorStyle.restyle(storage, range: NSRange(location: d.range.location, length: d.replacement.utf16.count))
+        textView.setSelectedRange(NSRange(location: min(d.range.location, storage.length), length: 0))
     }
 
     /// One AI change as one undo group (unless `grouped` in an open one), with the caret kept where the user left it.
@@ -465,7 +500,8 @@ final class NotesEditorCoordinator: NSObject, NSTextViewDelegate {
             undo.setActionName(reorganize ? Self.reorganizeAction : Self.updateAction)
             undo.endUndoGrouping()
         }
-        NotesEditorStyle.restyle(storage, range: reorganize ? nil : NSRange(location: change.range.location, length: change.replacement.utf16.count))
+        // Only the paragraphs it replaced: a reorganize late in a long document leaves the rest alone.
+        NotesEditorStyle.restyle(storage, range: NSRange(location: change.range.location, length: change.replacement.utf16.count))
         isApplyingModelChange = false
         if reorganize, let caret {
             textView.setSelectedRange(NSRange(location: min(mapCaret(caret, change: change), storage.length), length: 0))

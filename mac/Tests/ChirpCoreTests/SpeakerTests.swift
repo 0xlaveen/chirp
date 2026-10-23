@@ -220,16 +220,15 @@ private func span(_ slot: Int, _ start: Double, _ end: Double) -> SpeakerSpan { 
         #expect(d.transcriptLines() == ["**[00:00:00] Person 1:** a _(kept original)_", "**[00:00:01] Person 2:** b _(kept original)_"])
     }
 
-    @Test func startOptionsAskForWordTimingsOnlyWithLabels() {
+    @Test func notesStartOptionsAlwaysAskForWordTimings() {
         let name = "chirp-test-\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: name)!
         defer { defaults.removePersistentDomain(forName: name) }
         let prefs = Preferences(defaults: defaults)
         #expect(!prefs.notesSpeakerLabels)
         let health = Health(correction: "available", notesCorrection: true)
-        #expect(prefs.notesStartOptions(health: health) == prefs.notesStartOptions(health: health, speakerLabels: false))
-        #expect(!ClientMessage.start(prefs.notesStartOptions(health: health)).contains("word_timings"))
-        #expect(ClientMessage.start(prefs.notesStartOptions(health: health, speakerLabels: true)).contains("\"word_timings\":true"))
+        // Always on: the overlap trim at a hard cut needs them as much as the speaker labels do.
+        #expect(ClientMessage.start(prefs.notesStartOptions(health: health)).contains("\"word_timings\":true"))
         prefs.notesSpeakerLabels = true
         #expect(Preferences(defaults: defaults).notesSpeakerLabels)
     }

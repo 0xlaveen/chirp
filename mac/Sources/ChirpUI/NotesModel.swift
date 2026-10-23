@@ -38,6 +38,18 @@ public enum NotesStatus {
     /// The header's line about the dictation hotkey, which drives Notes while this window is in front.
     public static func hotkeyHint(key: String, pause: Bool) -> String { "\(key) to record · \(key) again to \(pause ? "pause" : "stop")" }
     public static let stopped = "Stopped"
+    public static let keepGoing = "Keep going"
+    public static let stopRecording = "Stop"
+
+    /// "Notes 1:20 behind": committed speech the notes have not caught up with.
+    public static func behind(_ seconds: TimeInterval) -> String {
+        let s = Int(seconds)
+        return "Notes " + (s >= 3600 ? String(format: "%d:%02d:%02d", s / 3600, s / 60 % 60, s % 60) : String(format: "%d:%02d", s / 60, s % 60))
+            + " behind"
+    }
+
+    /// The reminder every `NotesModel.longRunEvery` of recording.
+    public static func longRun(hours: Int) -> String { "Notes has been recording for \(hours) h" }
     public static let empty = "Press Record or \(MenuContent.notesHotkeyTitle) to start taking notes."
     public static let privacy = "Notes stay in memory until you save them."
     public static let recoveryFolder = "~/Library/Application Support/Chirp/Recovery"
@@ -81,18 +93,20 @@ public struct RecoveryOffer: Equatable, Sendable {
     public var text: String { NotesStatus.recovered(startedAt: startedAt, elapsed: elapsed) }
 }
 
-/// One transcript row: a whole segment (no labels, or a gap), or one speaker turn of a labelled segment.
+/// One transcript row: a paragraph (`TranscriptParagraph`), with the speaker chip where it shows.
 public struct TranscriptRow: Identifiable, Equatable {
-    public var id: String
-    public var offset: TimeInterval
-    public var segment: NotesSegment
-    public var turn: SpeakerTurn?
+    public var paragraph: TranscriptParagraph
     /// The speaker chip's name and colour slot; nil when the chip collapses (same person as the row before).
     public var chip: (name: String, color: Int, approximate: Bool)?
+    /// The last chip shown, as of this row (who, and when): where the next row's collapse rule picks up.
+    var anchor: (person: Int, at: TimeInterval)?
+
+    public var id: String { paragraph.id }
+    public var offset: TimeInterval { paragraph.offset }
 
     public static func == (a: TranscriptRow, b: TranscriptRow) -> Bool {
-        a.id == b.id && a.offset == b.offset && a.segment == b.segment && a.turn == b.turn
-            && a.chip?.name == b.chip?.name && a.chip?.color == b.chip?.color && a.chip?.approximate == b.chip?.approximate
+        a.paragraph == b.paragraph && a.chip?.name == b.chip?.name && a.chip?.color == b.chip?.color
+            && a.chip?.approximate == b.chip?.approximate
     }
 }
 
@@ -151,6 +165,15 @@ public final class NotesModel {
     /// The dictation hotkey's keys ("⌥ Option"), empty until the window is shown.
     public var dictationKey = ""
     public var hotkeyHint: String? { dictationKey.isEmpty ? nil : NotesStatus.hotkeyHint(key: dictationKey, pause: NotesHotkeyRouter.pauseAvailable) }
+    /// The transcript paragraph under the pointer: it shows each segment's timestamp.
+    public var hoveredParagraph: String?
+    /// A section's `[hh:mm:ss]` was clicked: the transcript scrolls to this paragraph (bumped per click) and tints it.
+    public var highlightedParagraph: String?
+    public var transcriptJump = 0
+    /// The lag chip's popover (the Hearing text) is open.
+    public var showsBacklog = false
+    /// Reminders dismissed with "Keep going": one per `longRunEvery` of recording (reset by New).
+    public var longRunAcknowledged = 0
 
     /// AI changes the editor has not replayed yet. Not observed: the editor drains them as they arrive.
     @ObservationIgnored public private(set) var pendingChanges: [NotesTextChange] = []
@@ -377,29 +400,86 @@ public final class NotesModel {
         }
     }
 
+    // MARK: long sessions
+
+    /// The lag chip shows once the notes are this far behind the speech.
+    public static let lagThreshold: TimeInterval = 60
+    /// A non-blocking reminder after this long recording, and again after each further stretch. There is no cap.
+    public static let longRunEvery: TimeInterval = 2 * 3600
+
+    /// "Notes 1:20 behind" while recording with structuring on and more than `lagThreshold` of speech waiting.
+    public var lagText: String? {
+        guard isRecording, !structuring.isOff else { return nil }
+        let lag = document.unstructuredSeconds
+        return lag >= Self.lagThreshold ? NotesStatus.behind(lag) : nil
+    }
+
+    /// Whole `longRunEvery` stretches recorded so far.
+    public var longRunHours: Int { Int(elapsed / Self.longRunEvery) * Int(Self.longRunEvery / 3600) }
+
+    /// The reminder shows while recording, for each stretch not yet acknowledged.
+    public var showsLongRunNotice: Bool { isRecording && Int(elapsed / Self.longRunEvery) > longRunAcknowledged }
+
+    /// "Keep going": the reminder comes back after the next stretch.
+    public func keepGoing() { longRunAcknowledged = Int(elapsed / Self.longRunEvery) }
+
+    /// A section's `[hh:mm:ss]` in Preview: the transcript (Split when only the notes show) scrolls to the paragraph
+    /// said then and tints it.
+    public func jumpToTranscript(at offset: TimeInterval) {
+        guard let id = document.paragraphID(at: offset, in: transcriptRows.map(\.paragraph)) else { return }
+        if tab == .notes {
+            tab = .split
+            onTabChange(.split)
+        }
+        highlightedParagraph = id
+        transcriptJump += 1
+    }
+
     /// A chip reappears for the same person after this long.
     public static let chipRepeat: TimeInterval = 60
 
-    /// The transcript's rows: a labelled segment gives one row per turn, and consecutive turns by one person (across
-    /// segments too) collapse the chip until a minute has passed.
+    /// The rows the transcript last showed, and what they were built from: a new segment walks only the paragraph it
+    /// may extend; new labels walk again from the first relabelled segment; another document or a renamed person
+    /// rebuilds them all.
+    @ObservationIgnored private var rowCache: (document: UUID, segments: Int, labels: Int, roster: SpeakerRoster, rows: [TranscriptRow])?
+
+    /// The transcript's rows, one per paragraph. A labelled paragraph has a chip, which collapses while one person
+    /// keeps talking (across paragraphs too) until a minute has passed.
     public var transcriptRows: [TranscriptRow] {
-        var rows: [TranscriptRow] = []
-        var last: (person: Int, at: TimeInterval)?
-        let roster = document.roster
-        for s in document.segments {
-            guard let turns = s.turns, !turns.isEmpty, !s.isGap else {
-                rows.append(TranscriptRow(id: "\(s.id)", offset: s.offset, segment: s))
-                last = nil
-                continue
-            }
-            for (i, t) in turns.enumerated() {
-                let person = roster.resolve(t.person)
-                let same = last.map { $0.person == person && t.start - $0.at < Self.chipRepeat } ?? false
-                if !same { last = (person, t.start) }
-                rows.append(TranscriptRow(id: "\(s.id).\(i)", offset: t.start, segment: s, turn: t,
-                                          chip: same ? nil : (roster.displayName(person), roster.colorIndex(person), t.approximate)))
+        let d = document
+        var paragraphs: [TranscriptParagraph] = []
+        var kept: [TranscriptRow] = []
+        var from = 0
+        if let c = rowCache, c.document == d.id, c.roster == d.roster, c.segments <= d.segments.count, c.labels <= d.labelRevision {
+            if c.segments == d.segments.count, c.labels == d.labelRevision { return c.rows }
+            // Walk again from the first segment that is new or relabelled; a paragraph reaching into it keeps only
+            // its earlier parts (and may grow again).
+            from = min(c.segments, d.firstRelabelled(since: c.labels))
+            // The last paragraph with anything before `from` is walked on from (cut to those parts): segment
+            // `from` may join it.
+            let seed = c.rows.lastIndex { $0.paragraph.segments.lowerBound < from }
+            kept = Array(c.rows.prefix(seed ?? 0))
+            if let seed, case var p = c.rows[seed].paragraph {
+                if p.failure == nil { p.parts = p.parts.filter { $0.segment < from } }
+                paragraphs = [p]
             }
         }
+        d.extendParagraphs(&paragraphs, from: from)
+        let roster = d.roster
+        var rows = kept
+        var anchor = kept.last?.anchor
+        for p in paragraphs {
+            guard let person = p.person, p.failure == nil else {
+                rows.append(TranscriptRow(paragraph: p))
+                anchor = nil
+                continue
+            }
+            let same = anchor.map { $0.person == person && p.offset - $0.at < Self.chipRepeat } ?? false
+            if !same { anchor = (person, p.offset) }
+            rows.append(TranscriptRow(paragraph: p, chip: same ? nil : (roster.displayName(person), roster.colorIndex(person), p.approximate),
+                                      anchor: anchor))
+        }
+        rowCache = (d.id, d.segments.count, d.labelRevision, roster, rows)
         return rows
     }
 

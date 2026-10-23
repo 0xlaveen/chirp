@@ -164,11 +164,11 @@ public actor StreamSession {
         return accepted
     }
 
-    /// Finalize: flush queued audio, then ask for the final transcript.
-    public func stop() async {
+    /// Finalize: flush queued audio, then ask for the final transcript (with Live Notes' clean-up `context`).
+    public func stop(context: String? = nil) async {
         audioIn.finish()
         await pump?.value
-        try? await transport.send(.string(ClientMessage.stop))
+        try? await transport.send(.string(ClientMessage.stop(context: context)))
     }
 
     /// Discard: no final will be produced. The cancel frame is best effort: a transport that stopped draining

@@ -150,6 +150,12 @@ public enum ClientMessage {
         return json(message)
     }
     public static let stop = json(["type": "stop"])
+    /// `stop` with Live Notes clean-up context (the end of the previous segment's final); nil sends the plain `stop`.
+    /// Only for a server whose health has `notes_context`. Never logged.
+    public static func stop(context: String?) -> String {
+        guard let context, !context.isEmpty else { return stop }
+        return json(["type": "stop", "context": context])
+    }
     public static let cancel = json(["type": "cancel"])
 
     private static func json(_ object: [String: Any]) -> String {
@@ -178,6 +184,8 @@ public struct Health: Decodable, Sendable, Equatable {
     public var notesReorganize: Bool?
     /// The hidden `live_notes` style exists (authenticated health only); nil from an older server, which gets `default`.
     public var notesCorrection: Bool?
+    /// `stop.context` is taken: the end of the previous Live Notes segment, for casing and punctuation at the join.
+    public var notesContext: Bool?
     /// Build, API level and capabilities (authenticated health only); nil from a server that predates them.
     public var version: String?
     public var commit: String?
@@ -190,7 +198,7 @@ public struct Health: Decodable, Sendable, Equatable {
     public init(ok: Bool = true, engine: String? = nil, ready: Bool? = nil, debugRetention: Bool? = nil,
                 correction: String? = nil, correctionLeavesMachine: Bool? = nil, correctionHost: String? = nil,
                 correctionProfiles: [CorrectionProfile]? = nil, correctionKeepLoaded: Bool? = nil, correctionLoaded: Bool? = nil,
-                notesStructure: Bool? = nil, notesCorrection: Bool? = nil, notesReorganize: Bool? = nil,
+                notesStructure: Bool? = nil, notesCorrection: Bool? = nil, notesReorganize: Bool? = nil, notesContext: Bool? = nil,
                 version: String? = nil, commit: String? = nil, api: Int? = nil, capabilities: [String]? = nil,
                 startedAt: Double? = nil, source: String? = nil) {
         self.ok = ok
@@ -206,6 +214,7 @@ public struct Health: Decodable, Sendable, Equatable {
         self.notesStructure = notesStructure
         self.notesCorrection = notesCorrection
         self.notesReorganize = notesReorganize
+        self.notesContext = notesContext
         self.version = version
         self.commit = commit
         self.api = api
@@ -294,6 +303,9 @@ public struct NotesReorganizeRequest: Encodable, Sendable, Equatable {
     public var range: NSRange
     /// The `NotesDocument.id` the request was made from.
     public var documentID: UUID?
+    /// Organize's merge pass: further sections (after `range`) sent along with it; the answer replaces `range` and
+    /// these go. Client-only, like `range`.
+    public var merged: [NSRange] = []
 
     public init(notes: String, outline: [String] = [], final: Bool = false, version: Int = 0, range: NSRange = NSRange(),
                 documentID: UUID? = nil) {

@@ -89,6 +89,7 @@ public final class NotesSession {
     private var lastRecorderState: NotesRecorderState = .idle
     private var lastHealth: Health?
     private var lastReorganize: ReorganizeStatus = .idle
+    private var lastLongRun = false
     /// The last health this server answered with, kept across a failed poll so one blip never changes what
     /// structuring may do (dropped when the server URL changes).
     private var knownHealth: (url: String, health: Health)?
@@ -202,7 +203,7 @@ public final class NotesSession {
         let diarizer = speakers.readyDiarizer()
         let labels = diarizer != nil
         recorder.speakers = diarizer
-        recorder.options = settings.notesStartOptions(health: health, speakerLabels: labels)
+        recorder.options = settings.notesStartOptions(health: health)
         recorder.serverHost = settings.serverConfig().host
         applyAvailability(health)
         if model.structuring == .off(.correctionOff) || model.structuring == .off(.unsupported), model.tab == .notes, recorder.document.isEmpty {
@@ -280,6 +281,8 @@ public final class NotesSession {
         recorder.reset()
         speakers.reset()
         recorder.speakers = nil
+        model.longRunAcknowledged = 0
+        model.highlightedParagraph = nil
     }
 
     // MARK: speaker labels
@@ -451,8 +454,16 @@ public final class NotesSession {
             guard let self else { return }
             self.model.elapsed = self.recorder.elapsed
             self.model.finishingElapsed = self.recorder.stoppingElapsed
+            self.announceLongRun()
             self.onChange?()
         }
+    }
+
+    /// The 2 h reminder is announced once when it appears (it stays on screen until answered).
+    private func announceLongRun() {
+        let shows = model.showsLongRunNotice
+        if shows, !lastLongRun { deps.announce(NotesStatus.longRun(hours: model.longRunHours)) }
+        lastLongRun = shows
     }
 }
 

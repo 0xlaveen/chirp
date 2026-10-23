@@ -17,6 +17,11 @@ public struct NotesSegment: Equatable, Sendable, Identifiable, Codable {
     public var turns: [SpeakerTurn]?
     /// The labels were attached before the diarizer settled this stretch (they waited the maximum time).
     public var labelsTentative = false
+    /// Seconds from the start of the session to the end of its audio; nil when not known (older documents, tests).
+    public var end: TimeInterval?
+    /// The quiet between the previous segment's last speech and this one's first, when it follows that segment
+    /// without a break (a cut, not Stop and Record); nil starts a new paragraph.
+    public var pauseBefore: TimeInterval?
 
     public init(id: Int, offset: TimeInterval, raw: String, text: String? = nil, corrected: Bool = false,
                 keptOriginal: Bool = false, failure: String? = nil) {
@@ -52,11 +57,14 @@ public struct NotesTextChange: Equatable, Sendable {
     public var range: NSRange
     public var replacement: String
     public var kind: Kind
+    /// A whole-document Organize: every change of one run is one undo step together.
+    public var run: Int?
 
-    public init(range: NSRange, replacement: String, kind: Kind) {
+    public init(range: NSRange, replacement: String, kind: Kind, run: Int? = nil) {
         self.range = range
         self.replacement = replacement
         self.kind = kind
+        self.run = run
     }
 
     /// `text` with this change applied.
@@ -120,11 +128,25 @@ public struct NotesDocument: Equatable, Sendable, Codable {
     public private(set) var startedAt: Date
     /// The people speaker labels found in this document (Person 1, Person 2…).
     public private(set) var roster = SpeakerRoster()
+    /// +1 whenever a committed segment's labels change; `relabelled` keeps the newest (revision, segment) pairs, so
+    /// the window rebuilds its transcript only from there.
+    public private(set) var labelRevision = 0
+    /// When each heading was first said: the offset of the first segment of the window its section came from, by
+    /// `NotesDocument.headingKey`. A renamed heading loses it; merged headings keep the earliest.
+    public internal(set) var sectionOffsets: [String: TimeInterval] {
+        get { stamps ?? [:] }
+        set { stamps = newValue }
+    }
+    /// Optional storage, so a journal written before section times decodes.
+    private var stamps: [String: TimeInterval]?
+    private var relabelled: [Relabel] = []
+    private struct Relabel: Equatable, Sendable { var revision: Int, segment: Int }
 
     /// What the recovery journal stores: everything but `livePartial` (display only).
     private enum CodingKeys: String, CodingKey {
         case id, segments, text, tailStart, version, windowGeneration, windowStart, structuredEnd, consecutiveFailures
         case lastReorganizeVersion, charsSinceReorganize, fallbackBlocks, isDirty, startedAt, roster
+        case stamps = "sectionOffsets"
     }
 
     public init(startedAt: Date = Date(), text: String = "") {
@@ -174,6 +196,17 @@ public struct NotesDocument: Equatable, Sendable, Codable {
         }
         segments[id].labelsTentative = tentative
         isDirty = true
+        labelRevision += 1
+        relabelled.append(Relabel(revision: labelRevision, segment: id))
+        if relabelled.count > 64 { relabelled.removeFirst(relabelled.count - 64) }
+    }
+
+    /// The first segment whose labels changed after `revision`: `segments.count` when none did, 0 when that is too
+    /// long ago to tell.
+    public func firstRelabelled(since revision: Int) -> Int {
+        guard revision < labelRevision else { return segments.count }
+        guard let oldest = relabelled.first, oldest.revision <= revision + 1 else { return 0 }
+        return relabelled.filter { $0.revision > revision }.map(\.segment).min() ?? segments.count
     }
 
     /// A recovered document's new diarizer starts with its own slots: keep the people, forget which slot was whom.
@@ -322,6 +355,7 @@ public struct NotesDocument: Equatable, Sendable, Codable {
               request.windowEnd < segments.count, request.windowEnd > structuredEnd else { return nil }
         return recordingChange(.append) { d in
             if response.structured, let md = response.markdown?.trimmingCharacters(in: .whitespacesAndNewlines), !md.isEmpty {
+                d.stampSections(md)
                 d.replaceTail(with: md)
                 d.structuredEnd = request.windowEnd
                 d.consecutiveFailures = 0
@@ -454,6 +488,7 @@ public struct NotesDocument: Equatable, Sendable, Codable {
         guard request.documentID == id, request.windowGeneration == windowGeneration, request.windowEnd >= windowStart,
               request.windowEnd < segments.count, request.windowEnd > structuredEnd, !pieces.isEmpty else { return nil }
         return recordingChange(.append) { d in
+            d.stampSections(Self.render(pieces))
             d.replaceTail(with: Self.render(pieces))
             for case .fallback(let body) in pieces {
                 d.fallbackBlocks.append(Self.fallbackBlock(body.trimmingCharacters(in: .whitespacesAndNewlines)))
@@ -561,6 +596,32 @@ public struct NotesDocument: Equatable, Sendable, Codable {
         return change
     }
 
+    /// Organize's merge pass: the answer replaces the first section and the other sections it was sent with go, only
+    /// when the text is exactly what the request was made from. The changes in replay order (from the end back), or
+    /// empty (unchanged, failed or stale).
+    public mutating func applyMerge(_ response: NotesReorganizeResponse, for request: NotesReorganizeRequest, run: Int?) -> [NotesTextChange] {
+        guard request.documentID == id, request.version == version, response.reorganized,
+              ([request.range] + request.merged).allSatisfy({ NSMaxRange($0) <= count }) else { return [] }
+        guard response.changed, let md = response.markdown?.trimmingCharacters(in: .whitespacesAndNewlines), !md.isEmpty else {
+            lastReorganizeVersion = version
+            return []
+        }
+        let ns = text as NSString
+        let old = ns.substring(with: request.range)
+        let trail = String(old.reversed().prefix { $0.isWhitespace }.reversed())
+        var changes: [NotesTextChange] = []
+        for r in request.merged.sorted(by: { $0.location > $1.location }) {
+            changes.append(NotesTextChange(range: r, replacement: "", kind: .reorganize, run: run))
+        }
+        changes.append(NotesTextChange(range: request.range, replacement: md + (trail.isEmpty ? "\n\n" : trail), kind: .reorganize, run: run))
+        for c in changes { text = c.applied(to: text) }
+        settleTail()
+        changed(inserted: md.utf16.count)
+        lastReorganizeVersion = version
+        charsSinceReorganize = 0
+        return changes
+    }
+
     // MARK: export
 
     /// `[hh:mm:ss]` from the session start.
@@ -593,24 +654,19 @@ public struct NotesDocument: Equatable, Sendable, Codable {
             .joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    /// One line per segment: `**[00:00:12]** text`, gaps and "kept original" marked. `raw` swaps in the raw text.
-    /// A labelled segment has one line per turn instead: `**[00:01:12] Person 1:** text`.
+    /// One line per paragraph (`transcriptParagraphs`): `**[00:00:12]** text`, gaps and "kept original" marked. `raw`
+    /// swaps in the raw text. A labelled paragraph names its person: `**[00:01:12] Person 1:** text`.
     public func transcriptLines(raw: Bool = false) -> [String] {
-        segments.flatMap { s -> [String] in
-            if let turns = s.turns, !turns.isEmpty, s.failure == nil {
-                return turns.map { t in
-                    "**[\(Self.timestamp(t.start))] \(roster.displayName(t.person)):** " + (raw ? t.raw : t.text)
-                        + ((s.keptOriginal || t.keptOriginal) && !raw ? " _(kept original)_" : "")
-                }
-            }
-            let stamp = "**[\(Self.timestamp(s.offset))]** "
-            if let failure = s.failure { return [stamp + "⚠︎ audio not transcribed (\(failure))"] }
-            return [stamp + (raw ? s.raw : s.text) + (s.keptOriginal && !raw ? " _(kept original)_" : "")]
+        transcriptParagraphs.map { p in
+            let time = "[\(Self.timestamp(p.offset))]"
+            if let failure = p.failure { return "**\(time)** ⚠︎ audio not transcribed (\(failure))" }
+            let stamp = p.person.map { "**\(time) \(roster.displayName($0)):** " } ?? "**\(time)** "
+            return stamp + p.parts.map { ($0.text(raw)) + ($0.keptOriginal && !raw ? " _(kept original)_" : "") }.joined(separator: " ")
         }
     }
 
     public func transcriptMarkdown(raw: Bool = false) -> String {
-        // A blank line between segments, so Markdown renderers keep one paragraph per segment.
+        // A blank line between paragraphs, so Markdown renderers keep them apart.
         (["## Transcript"] + transcriptLines(raw: raw)).joined(separator: "\n\n")
     }
 

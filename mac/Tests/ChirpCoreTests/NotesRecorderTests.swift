@@ -417,7 +417,7 @@ final class StructureStub: @unchecked Sendable {
             if router.route(frame, level: level) { cuts.append(i) }
         }
         #expect(cuts == [411])                     // 20 s of speech, then 0.6 s of quiet
-        let (old, offset) = router.swap(to: session)
-        #expect(old != nil && offset == 25)
+        let swap = router.swap(to: session)
+        #expect(swap.old != nil && swap.offset == 25 && swap.overlap == 0)   // a pause cut: no overlap
     }
 }

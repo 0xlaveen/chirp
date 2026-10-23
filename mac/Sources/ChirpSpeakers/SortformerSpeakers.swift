@@ -369,5 +369,6 @@ public final class SortformerSpeakerDiarizer: SpeakerDiarizing, @unchecked Senda
         let frames = chunk.startFrame + chunk.finalizedFrameCount
         timeline.finalizedThrough = max(timeline.finalizedThrough,
                                         documentTime(Double(frames) * Double(diarizer.config.frameDurationSeconds)))
+        timeline.prune()
     }
 }
