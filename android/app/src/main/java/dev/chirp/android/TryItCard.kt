@@ -1,6 +1,5 @@
 package dev.chirp.android
 
-import android.content.Intent
 import android.content.res.ColorStateList
 import android.text.InputType
 import android.view.View
@@ -22,7 +21,7 @@ import dev.chirp.android.ui.NavRow
 import dev.chirp.android.ui.SettingsGroup
 import kotlinx.coroutines.launch
 
-/** First-run card above Chirp settings: a real field to type and dictate into, plus the Scratchpad and Notes. Stays until dismissed. */
+/** First-run card on Home: a real field to type and dictate into, and the keyboard picker. Stays until dismissed. */
 @Composable
 internal fun TryItCard(store: SettingsStore, onDismiss: () -> Unit) {
     val context = LocalContext.current
@@ -49,9 +48,7 @@ internal fun TryItCard(store: SettingsStore, onDismiss: () -> Unit) {
                 editor.backgroundTintList = ColorStateList.valueOf(editorAccent)
             }, modifier = Modifier.fillMaxWidth().bringIntoViewRequester(bringEditor))
             SettingsGroup {
-                NavRow("Open Scratchpad", { context.startActivity(Intent(context, ScratchpadActivity::class.java)) })
                 NavRow("Choose keyboard", { context.getSystemService(android.view.inputmethod.InputMethodManager::class.java).showInputMethodPicker() })
-                NavRow("Open Notes", { context.startActivity(Intent(context, NotesActivity::class.java)) })
             }
             TextButton({ store.tryItDismissed = true; onDismiss() }, Modifier.align(Alignment.End)) { Text("Dismiss") }
         }

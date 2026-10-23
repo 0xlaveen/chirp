@@ -1,22 +1,13 @@
 package dev.chirp.android
 
-import android.Manifest
-import android.content.ClipData
-import android.content.ClipDescription
-import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
-import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
-import android.os.PersistableBundle
-import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
-import androidx.activity.result.contract.ActivityResultContracts
-import androidx.activity.viewModels
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -45,24 +36,17 @@ import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.unit.dp
 import dev.chirp.android.ui.StatusBanner
 import dev.chirp.android.ui.StatusKind
-import androidx.lifecycle.viewmodel.initializer
-import androidx.lifecycle.viewmodel.viewModelFactory
 
 /**
  * Live Notes on the phone: record a meeting or a long think-aloud, and the Mac turns it into Markdown notes while the
  * transcript fills in beside them. Kept until Save, Copy or Share, with a sealed recovery copy meanwhile ([NotesJournal]).
- * The screen itself is [NotesScreen], so a future app shell can host it; this activity only adds the system glue.
+ * The screen itself is [NotesScreen], which the app shell also hosts as its Notes tab; both share one session ([NotesSessionHolder]).
  */
 open class NotesActivity : ComponentActivity() {
     internal open fun createModel(): NotesModel = NotesModel(applicationContext)
     internal open val tailscale: TailscaleControl by lazy { AndroidTailscale(this) }
-    internal val model: NotesModel by viewModels { viewModelFactory { initializer { createModel() } } }
-    private val micPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-        if (granted) record() else model.message = "Microphone permission is needed to take notes — open mic settings"
-    }
-    /** Optional: without it the recording still runs, only its notification (with Stop) stays hidden. */
-    private val notificationPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { model.start() }
-    private val saveFile = registerForActivityResult(ActivityResultContracts.CreateDocument("text/markdown")) { uri -> uri?.let(::write) }
+    internal val model: NotesModel by lazy { NotesSessionHolder.model(this, ::createModel) }
+    private val host = NotesHost(this, { tailscale }, { model })
     private var recordOnResume = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -77,9 +61,9 @@ open class NotesActivity : ComponentActivity() {
         }
     }
     override fun onNewIntent(intent: Intent) { super.onNewIntent(intent); handle(intent) }
-    override fun onStart() { super.onStart(); model.visible(true); model.refresh() }
+    override fun onStart() { super.onStart(); NotesSessionHolder.visible(model, this, true); model.refresh() }
     // Screen off or another app in front: the battery saver skips screen work until this is visible again.
-    override fun onStop() { model.visible(false); super.onStop() }
+    override fun onStop() { NotesSessionHolder.visible(model, this, false); super.onStop() }
     // The microphone service may only start from a visible screen: the tile's Record waits until this one is.
     override fun onResume() { super.onResume(); if (recordOnResume) { recordOnResume = false; if (!model.state.active) record() } }
 
@@ -92,16 +76,7 @@ open class NotesActivity : ComponentActivity() {
         setIntent(Intent(intent).setAction(null))
     }
 
-    internal fun record() {
-        if (model.state.active) { model.toggle(); return }
-        when {
-            checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED -> micPermission.launch(Manifest.permission.RECORD_AUDIO)
-            Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED &&
-                !asked -> { asked = true; notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS) }
-            else -> model.start()
-        }
-    }
-    private var asked = false
+    internal fun record() = host.record()
 
     /** Back while recording keeps it going in the background; with notes, it asks first (nothing is saved). */
     internal fun leave(discard: Boolean) {
@@ -111,37 +86,11 @@ open class NotesActivity : ComponentActivity() {
         }
     }
 
-    internal fun copy() {
-        if (!model.hasContent) return
-        val clip = ClipData.newPlainText("Chirp notes", model.export())
-        // Keeps the notes out of clipboard previews and overlays where the system supports it.
-        clip.description.extras = PersistableBundle().apply {
-            putBoolean(if (Build.VERSION.SDK_INT >= 33) ClipDescription.EXTRA_IS_SENSITIVE else "android.content.extra.IS_SENSITIVE", true)
-        }
-        getSystemService(ClipboardManager::class.java)?.setPrimaryClip(clip)
-        model.message = "Copied as Markdown"
-    }
-    internal fun share() {
-        if (!model.hasContent) return
-        startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).setType("text/markdown")
-            .putExtra(Intent.EXTRA_SUBJECT, model.document.title().removePrefix("# ")).putExtra(Intent.EXTRA_TEXT, model.export()), null))
-    }
-    internal fun save() {
-        if (!model.hasContent) return
-        try { saveFile.launch(model.document.fileName()) } catch (_: android.content.ActivityNotFoundException) { model.message = "No app to save files — use Share" }
-    }
-    internal fun write(uri: Uri) = model.save { contentResolver.openOutputStream(uri, "wt") }
-    internal fun act(action: DictationAction) {
-        fun setup(section: String) = startActivity(Intent(this, SetupActivity::class.java).putExtra("section", section)
-            .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP))
-        when (action) {
-            DictationAction.PAIR -> setup("pair")
-            DictationAction.MICROPHONE -> startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", packageName, null)))
-            DictationAction.NETWORK, DictationAction.TAILSCALE_OPEN -> if (!tailscale.open()) setup("network")
-            DictationAction.TAILSCALE_SETUP -> setup("network")
-            DictationAction.TAILSCALE_ON -> if (tailscale.connect()) model.message = "Connecting Tailscale…" else if (!tailscale.open()) setup("network")
-        }
-    }
+    internal fun copy() = host.copy()
+    internal fun share() = host.share()
+    internal fun save() = host.save()
+    internal fun write(uri: Uri) = host.write(uri)
+    internal fun act(action: DictationAction) = host.act(action)
 
     companion object {
         /** Opens Notes from outside (the recording notification), reusing the running screen. */
@@ -156,14 +105,15 @@ private val SIDE_BY_SIDE = 700.dp
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun NotesScreen(model: NotesModel, record: () -> Unit, copy: () -> Unit, share: () -> Unit, act: (DictationAction) -> Unit,
-                         leave: (Boolean) -> Unit, save: () -> Unit = {}) {
+                         leave: (Boolean) -> Unit, save: () -> Unit = {}, handleBack: Boolean = true) {
     // Discard asked from Back leaves the screen; from New it only empties it.
     var confirm by remember { mutableStateOf<Boolean?>(null) }
     var renaming by remember { mutableStateOf(false) }
     var settings by remember { mutableStateOf(false) }
     var recent by remember { mutableStateOf(false) }
     var pendingOpen by remember { mutableStateOf<NotesSessionEntry?>(null) }
-    BackHandler { if (!model.state.active && model.dirty && !model.keeps) confirm = true else leave(false) }
+    // In the app shell, Back goes to Home and the notes stay in the session; only this screen's own activity asks to discard.
+    BackHandler(enabled = handleBack) { if (!model.state.active && model.dirty && !model.keeps) confirm = true else leave(false) }
     confirm?.let { leaving ->
         AlertDialog({ confirm = null }, title = { Text("Discard these notes?") },
             text = { Text("They aren’t saved. Save, Copy or Share them first to keep them.") },

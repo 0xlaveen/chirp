@@ -118,13 +118,14 @@ Run on the reference Mac after installing the build with `./scripts/install-mac.
     - On the Mac, open Chirp → Settings → Devices → **Pair a Phone…** (it checks Tailscale Serve and shows the QR code), or run `cd server && uv run chirp-server pair --url https://<your-mac>.<tailnet>.ts.net/chirp`, which prints a secret link and a terminal QR code.
     - Tap **Scan code** on the Pair your Mac page. Google Play services owns the scanner UI and camera access; Chirp needs no camera permission. The Fold 8 has Play services; the scanner module may download on first use. A valid scan is tested and saved automatically. Paste remains available if scanning is unavailable or cancelled. The real scanner still needs device acceptance.
     - Never put the link in chat, shell history or screenshots.
-    - Wait for **Connected · host**, then tap **Finish**; Chirp settings opens with the **Try it** card.
+    - Wait for **Connected · host**, then tap **Finish**; Home opens with the **Try it** card. Relaunching the app now opens Home, not onboarding.
+    - App shell: a bar on the cover screen and a rail on the inner screen; Back from a tab returns to Home, then leaves. Turn Tailscale off → Home's card says **Tailscale is off** with **Turn on**; quit Chirp on the Mac → **Mac offline** with **Check again**. With history on, swipe an entry in History away and tap **Undo**: it comes back.
 11. **Dictate:**
     - In Samsung Notes or a browser field, switch to Chirp with the keyboard icon and tap the mic.
     - Live text appears underlined in the field, and the final text replaces it.
     - Check these cases from `android/README.md`: hold-to-talk, ✕ cancel, fold/unfold mid-utterance, hiding the keyboard, and Wi-Fi vs LTE.
     - With a Bluetooth keyboard: Ctrl+Alt+Space starts and stops, Esc cancels; with TalkBack on, one "Inserted, N words" per final and nothing while listening.
-12. **Notes** (long-press the launcher icon → **Notes**):
+12. **Notes** (long-press the launcher icon → **Notes**, or the Notes tab; both are one session):
     - Record a 5-minute mock meeting with a decision, two to-dos and a "we will **not** …" sentence. Check that notes appear under the AI tail after each segment, that the transcript has one line per segment (none longer than 45 s, nothing lost at a cut) and that the negation is kept.
     - While recording, type a line above the notes and fix a word inside them: the caret never jumps and new notes appear after your edit.
     - Turn the screen off for 2 minutes, then on: the **Chirp Notes is recording** notification stayed (no notes text in it), and the transcript kept growing. From the lock screen, **Pause** (mic indicator off, notification says paused), then **Resume**; **Stop** in the notification finishes the notes.

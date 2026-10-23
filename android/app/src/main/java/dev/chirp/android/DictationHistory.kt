@@ -96,6 +96,12 @@ internal class DictationHistory(
 
     fun delete(id: String) = update(id) { null }
 
+    /** Undo of [delete]: puts the entry back where it was, unless history went off or it has since expired. */
+    fun restore(entry: HistoryEntry) {
+        if (!enabled || !available) return
+        synchronized(LOCK) { save(prune((load().filter { it.id != entry.id } + entry).sortedBy { it.time })) }
+    }
+
     /** Cheap check on keyboard show: decrypts only when the oldest entry may have expired. */
     fun pruneIfDue() {
         if (!enabled || !available) return
