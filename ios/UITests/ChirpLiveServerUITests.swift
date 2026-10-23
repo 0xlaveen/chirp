@@ -57,8 +57,7 @@ final class ChirpLiveServerUITests: XCTestCase {
     @MainActor func pair(_ app: XCUIApplication) {
         selectTab("Pair Mac", symbol: "qrcode.viewfinder", in: app)
         endSession(app)
-        let forget = app.buttons["Forget pairing"]
-        if forget.exists { forget.tap() }
+        forgetPairing(app)
         let field = app.secureTextFields["pairingLink"]
         XCTAssertTrue(field.waitForExistence(timeout: 5))
         field.tap()
@@ -70,11 +69,22 @@ final class ChirpLiveServerUITests: XCTestCase {
                       "The per-device pairing name must show")
     }
 
+    /// The saved-pairing rows can push Forget pairing under iOS 27's floating tab bar; bring it into view first.
+    @MainActor func forgetPairing(_ app: XCUIApplication) {
+        // The Form builds only visible rows: below the fold the button is not in the tree yet.
+        guard app.staticTexts["Mac pairing saved"].waitForExistence(timeout: 2) else { return }
+        let forget = app.buttons["Forget pairing"]
+        for _ in 0..<4 where !(forget.exists && forget.isHittable) { app.swipeUp() }
+        guard forget.exists else { XCTFail("Forget pairing is not reachable"); return }
+        forget.tap()
+        XCTAssertTrue(waitFor(app.staticTexts["Mac pairing saved"], "exists == false", timeout: 5), "Forget pairing did not clear it")
+    }
+
     /// The QR's secret link opened by iOS: the system asks "Open in Chirp?" before Chirp verifies and saves.
     @MainActor func pairByDeepLink(_ app: XCUIApplication) throws {
         selectTab("Pair Mac", symbol: "qrcode.viewfinder", in: app)
         endSession(app)
-        if app.buttons["Forget pairing"].exists { app.buttons["Forget pairing"].tap() }
+        forgetPairing(app)
         XCTAssertFalse(app.staticTexts["Mac pairing saved"].waitForExistence(timeout: 2))
         XCUIDevice.shared.system.open(try XCTUnwrap(URL(string: link)))
         let open = XCUIApplication(bundleIdentifier: "com.apple.springboard").buttons["Open"]
