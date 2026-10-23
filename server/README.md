@@ -447,6 +447,8 @@ Rules for configured profiles:
 
 Prompts never bypass the core safety rules or the output guards. Non-rewriting styles retain source words in order; rewriting styles allow bounded restructuring while rejecting novel words, lost substantive details and huge length changes. Unsafe or unsupported edits return the raw transcript.
 
+The built-in prompts list a few **known terms** (Claude, Claude Code, Tailscale, GitHub, macOS, …) and fix a word only when context makes it clearly a mishearing ("ask clawed code" → "Claude Code"; "the cat clawed the sofa" stays). The guards accept exactly those respellings (`known_terms.py`) and no other substitution, so this holds for edited prompts too, but only the built-in prompts ask the model to do it. See [bench.md](../docs/bench.md).
+
 ### Per-utterance selection and edits
 
 Clients select a profile per utterance with `start.correction_profile` (default `"default"`). When the user edits a style, the client sends `start.correction_prompt` — a string of at most 4000 Unicode characters — to replace that profile's editable prompt for this utterance. An empty string is a valid edit. Omit the field for unedited styles so server defaults and updates apply. A non-string or oversized value returns `bad_request` before engine leasing. Edits cannot change the fixed wrapper or output guards, and prompts are never logged.

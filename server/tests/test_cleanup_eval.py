@@ -9,18 +9,19 @@ from chirp_server.cleanup_eval import load_cases, score
 from chirp_server.config import CorrectionConfig
 from chirp_server.correction import Corrector, rejected
 from chirp_server.managed_cleanup import ManagedCleanup
-from chirp_server.profiles import BUILTINS
+from chirp_server.profiles import BUILTINS, LIVE_NOTES, LIVE_NOTES_ID
 
 CASES = load_cases(Path(__file__).with_name("cleanup_eval.jsonl"))
+PROFILES = {**BUILTINS, LIVE_NOTES_ID: LIVE_NOTES}
 
 
 def test_synthetic_fixture_contract():
-    assert len(CASES) >= 59
+    assert len(CASES) >= 75
     assert len({case["id"] for case in CASES}) == len(CASES)
     for case in CASES:
         assert score(case, case["expected"]).passed, case["id"]
         assert not rejected(
-            case["raw"], case["expected"], "stop", BUILTINS[case.get("profile", "default")]
+            case["raw"], case["expected"], "stop", PROFILES[case.get("profile", "default")]
         ), case["id"]
 
 
