@@ -34,7 +34,8 @@ internal class FrameRouter<T : Any>(private val segmenter: DictationSegmenter = 
     /** Audio routed since the last [resetTime], seconds. */
     val seconds: Double get() = synchronized(lock) { bytes / 2 / SAMPLE_RATE }
 
-    fun resetTime() = synchronized(lock) { bytes = 0 }
+    /** Restarts the clock, at [seconds] for a recovered session. */
+    fun resetTime(seconds: Double = 0.0) = synchronized(lock) { bytes = (seconds * SAMPLE_RATE).toLong() * 2 }
 
     private companion object { const val SAMPLE_RATE = 16000.0 }
 }

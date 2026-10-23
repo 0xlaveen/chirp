@@ -191,18 +191,19 @@ internal interface HistoryKeys {
     fun delete()
 }
 
-/** A separate key from pairing: clearing history crypto-shreds it without touching the pairing token. */
-internal object KeystoreHistoryKeys : HistoryKeys {
-    private const val ALIAS = "chirp_history_v1"
+/** One Keystore key per store, apart from pairing: clearing a store crypto-shreds it without touching the pairing token. */
+internal open class KeystoreKeys(private val alias: String) : HistoryKeys {
     private fun store() = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
     override fun get(create: Boolean): SecretKey? {
-        (store().getKey(ALIAS, null) as? SecretKey)?.let { return it }
+        (store().getKey(alias, null) as? SecretKey)?.let { return it }
         if (!create) return null
         return KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, "AndroidKeyStore").apply {
-            init(KeyGenParameterSpec.Builder(ALIAS, KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT)
+            init(KeyGenParameterSpec.Builder(alias, KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT)
                 .setBlockModes(KeyProperties.BLOCK_MODE_GCM).setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
                 .setKeySize(256).build())
         }.generateKey()
     }
-    override fun delete() { store().deleteEntry(ALIAS) }
+    override fun delete() { store().deleteEntry(alias) }
 }
+
+internal object KeystoreHistoryKeys : KeystoreKeys("chirp_history_v1")

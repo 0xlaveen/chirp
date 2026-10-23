@@ -103,6 +103,10 @@ class SettingsStore(context: Context) {
     var phoneFallback: Boolean
         get() = prefs.getBoolean("phone_fallback", false)
         set(value) { prefs.edit { putBoolean("phone_fallback", value) } }
+    /** Notes: a sealed recovery copy of unsaved notes, on by default. */
+    var notesRecovery: Boolean
+        get() = prefs.getBoolean("notes_recovery", true)
+        set(value) { prefs.edit { putBoolean("notes_recovery", value) } }
     var health: Health?
         get() = try { prefs.getString("health", null)?.let(Protocol::health) } catch (_: Exception) { null }
         set(value) {

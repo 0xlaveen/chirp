@@ -107,7 +107,9 @@ Run on the reference Mac after installing the build with `./scripts/install-mac.
 12. **Notes** (long-press the launcher icon → **Notes**):
     - Record a 5-minute mock meeting with a decision, two to-dos and a "we will **not** …" sentence. Check that notes appear under the AI tail after each segment, that the transcript has one line per segment (none longer than 45 s, nothing lost at a cut) and that the negation is kept.
     - While recording, type a line above the notes and fix a word inside them: the caret never jumps and new notes appear after your edit.
-    - Turn the screen off for 2 minutes, then on: the **Chirp Notes is recording** notification stayed (no notes text in it), and the transcript kept growing. **Stop** in the notification finishes the notes.
+    - Turn the screen off for 2 minutes, then on: the **Chirp Notes is recording** notification stayed (no notes text in it), and the transcript kept growing. From the lock screen, **Pause** (mic indicator off, notification says paused), then **Resume**; **Stop** in the notification finishes the notes.
+    - Add the **Notes** Quick Settings tile: a tap opens Notes and starts recording, the tile shows **Recording**/**Paused**, and a second tap stops it.
+    - Record a minute and type a line, wait 3 s, then `adb shell am kill dev.chirp.android` (or swipe Chirp away) and reopen Notes → **Recovered unsaved notes from …**, the notes, line and transcript are back and stopped, and **Record** continues the timestamps. **Save** to Downloads → the `.md` opens with the notes and transcript; `adb shell run-as dev.chirp.android ls no_backup` (debug build) no longer lists `notes_recovery.bin`.
     - Fold and unfold: notes and transcript sit side by side on the inner screen and as tabs on the cover screen, with nothing lost.
     - Press **Organize**, then type at once → "Notes changed while organizing — try again", typing intact. Organize again, then **Undo organize** restores the text.
     - Stop the Mac server for 30 s mid-recording: failed segments show `⚠︎ audio not transcribed`, and three in a row stop the recording with the notes kept.
