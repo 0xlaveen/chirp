@@ -269,6 +269,7 @@ internal class KeyboardDictation(
                 setSpan(android.text.style.ForegroundColorSpan(ink), 0, length, android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
             }
         }
+        composing?.shapeFinal(store.spokenCommands)
         text = ""; pressAt = SystemClock.elapsedRealtime(); firstPartial = null; stopAt = null; finalLatency = null
         val stream = DictationStream(
             transportFactory = { event, failed -> takeTransport(paired, event, failed) },

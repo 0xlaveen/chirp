@@ -18,6 +18,7 @@ internal fun ChirpSettingsSection() {
     val store = remember { SettingsStore(context) }
     var cleanup by remember { mutableStateOf(store.correction) }
     var haptics by remember { mutableStateOf(store.haptics) }
+    var commands by remember { mutableStateOf(store.spokenCommands) }
     var diagnostics by remember { mutableStateOf(false) }
     fun open(section: String) { context.startActivity(Intent(context, SetupActivity::class.java).putExtra("section", section)) }
     Column(Modifier.fillMaxWidth().padding(20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -43,6 +44,12 @@ internal fun ChirpSettingsSection() {
             Switch(haptics, { haptics = it; store.haptics = it }, modifier = Modifier.semantics { contentDescription = "Haptic cues" })
         }
         Text("Voice cues use haptics. Keyboard sound controls are below.", style = MaterialTheme.typography.bodySmall)
+        Text("Spoken commands", style = MaterialTheme.typography.titleSmall)
+        Row(Modifier.fillMaxWidth()) {
+            Text("Say \"new line\" or \"new paragraph\"", Modifier.weight(1f))
+            Switch(commands, { commands = it; store.spokenCommands = it }, modifier = Modifier.semantics { contentDescription = "Spoken commands" })
+        }
+        Text("Off by default. Ending a dictation with \"new line\" or \"new paragraph\" types a line break instead of the words.", style = MaterialTheme.typography.bodySmall)
         KeyboardLookChooser()
         SwipeTypingSettings()
         HistorySettings()
