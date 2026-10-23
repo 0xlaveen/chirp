@@ -1,0 +1,48 @@
+<!--
+title: Take Live Notes — Chirp
+description: How to turn a meeting or a long think-aloud into editable Markdown notes on your Mac with Chirp Live Notes.
+section: guides
+-->
+<div class="narrow guide-hero">
+  <p class="crumbs"><a href="index.html">Guides</a> / 04</p>
+  <h1>Take Live Notes</h1>
+  <p class="lede">Keep the mic open for a meeting, a lecture or thinking out loud. Chirp writes Markdown notes as you talk — headings, bullets, to-dos, decisions and open questions — right beside the full transcript.</p>
+  <div class="meta-row"><span>Needs: Chirp on your Mac with a clean-up model</span></div>
+</div>
+<article class="narrow prose">
+  <figure class="shot"><div class="frame"><!--shot:mac/notes-split|Chirp Notes in split view: structured notes on the left, timestamped transcript on the right--></div><figcaption>Split view: notes on the left, the transcript on the right, and what Chirp is hearing right now at the bottom.</figcaption></figure>
+
+  <h2 id="start">Start and stop</h2>
+  <ol class="steps">
+    <li><strong>Press <kbd>⌃⌥N</kbd></strong><p>From anywhere. The <strong>Chirp Notes</strong> window comes forward without stealing focus from the app you're in. You can also choose <strong>Start Notes</strong> in the menu bar, or press <strong>Record</strong> in the window.</p></li>
+    <li><strong>Talk</strong><p>Speech is transcribed in chunks. At most every 15 seconds the local model turns the newest stretch into notes; earlier sections stay put so they don't shift while you read.</p></li>
+    <li><strong>Stop</strong><p>Press <strong>Stop</strong> in the window. Chirp finishes the last bit and tidies the notes once more.</p></li>
+  </ol>
+  <div class="callout"><b>Notes need the clean-up model.</b><p>Structuring uses the same local model as clean-up. Without it, Notes still works as a live transcript and a plain editor. Download one under Settings → Server → Manage Local Models….</p></div>
+
+  <h2 id="edit">Edit while it writes</h2>
+  <p>The notes are one Markdown document you can type in at any time — before, during or after recording.</p>
+  <figure class="shot"><div class="frame"><!--shot:mac/notes-editing|The Notes editor: a typed agenda at the top and AI-written notes in a tinted block below--></div><figcaption>Your typing at the top; new notes from speech arrive in the tinted block below.</figcaption></figure>
+  <ul>
+    <li><strong>The tinted block</strong> at the end is what the model may still rewrite. Edit anything in it and it becomes yours — the tint goes away and Chirp never touches it again.</li>
+    <li><strong>Your text is safe:</strong> updates never overwrite your typing or move your cursor. Each update is one undo step.</li>
+    <li><strong>Markdown shortcuts:</strong> <code>#</code> headings, <code>- </code> bullets (<kbd>Tab</kbd> to nest), <code>- [ ]</code> to-dos you can click, <kbd>⌘B</kbd> and <kbd>⌘I</kbd>. <strong>Preview</strong> shows it rendered.</li>
+    <li><strong>Hearing</strong>, under the editor, shows words that aren't in the notes yet.</li>
+  </ul>
+
+  <h2 id="organize">Organize</h2>
+  <p>Every few minutes while you record, Chirp regroups recent notes: duplicate headings merge, and tasks, decisions and questions are collected — without dropping or adding anything (the server checks). Press <strong>Organize</strong> (<kbd>⌥⌘R</kbd>) to do it yourself; an <strong>Undo</strong> chip appears for 20 seconds. On the reference Mac an update takes about 2 seconds for a short stretch and 5 seconds for a long one.</p>
+
+  <h2 id="speakers">Label speakers (optional)</h2>
+  <p>Switch on <strong>Label speakers</strong> in the window's footer and Chirp marks who's talking as Person 1, Person 2… so notes can say who owns each action. It asks before downloading a 106 MB on-device model the first time, handles up to four people, and runs entirely on your Mac.</p>
+
+  <h2 id="save">Save or copy</h2>
+  <ul>
+    <li><strong>Copy Markdown</strong> copies the notes as edited.</li>
+    <li><strong>Save…</strong> writes the notes and the transcript to a <code>.md</code> file you choose.</li>
+    <li>Nothing is saved otherwise — no autosave, no history. Closing the window or quitting asks <strong>Save / Discard / Cancel</strong> first.</li>
+  </ul>
+  <div class="callout warn"><b>One at a time.</b><p>While Notes is recording, the dictation hotkey is paused on that Mac, and a phone dictating to the same Mac may be told it's busy.</p></div>
+
+  <div class="next"><a href="iphone.html">← iPhone and iPad</a><a href="coding-agent.html">Next: Build with your coding agent →</a></div>
+</article>

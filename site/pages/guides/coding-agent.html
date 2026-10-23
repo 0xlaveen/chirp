@@ -1,0 +1,76 @@
+<!--
+title: Build Chirp with your coding agent — Chirp
+description: Copy-paste prompts that let a coding agent install Chirp on your Mac, build the Android keyboard, or change Chirp for you — safely.
+section: guides
+-->
+<div class="narrow guide-hero">
+  <p class="crumbs"><a href="index.html">Guides</a> / 05</p>
+  <h1>Build Chirp with your coding agent</h1>
+  <p class="lede">Chirp installs from source, which is exactly what coding agents are good at. Paste one of these prompts into the agent you already use in Terminal and work through it together.</p>
+  <div class="meta-row"><span>Works with: any agent that can run shell commands on your Mac</span></div>
+</div>
+<article class="narrow prose">
+  <div class="callout"><b>You stay in charge.</b><p>An agent can build and install, but some steps are yours: approving the signing identity, granting Microphone and Accessibility, picking models, and anything on your phone. The prompts tell the agent to stop and ask you there, and never to handle your pairing secret.</p></div>
+
+  <h2 id="mac">Install Chirp on this Mac</h2>
+<pre class="prompt" data-copy="Copy Mac prompt"><code>Help me install Chirp, a local-first voice dictation app, on this Mac from source.
+Repository: https://github.com/araa47/chirp
+
+1. Check this is an Apple Silicon Mac. If it isn't, stop and tell me.
+2. Clone the repository (or update it if I already have it) and read README.md,
+   mac/README.md and server/README.md before running anything.
+3. Make sure Apple's Command Line Tools and uv are installed. Ask me before
+   installing either one.
+4. From the repository root run ./scripts/install-mac.sh and explain what it is
+   doing as it runs.
+5. When the Models on this Mac window opens, tell me to download Parakeet v2
+   (English) or v3 (multilingual), optionally the Qwen3 4B clean-up model, and
+   to click Start Local Server. Wait for me to confirm.
+6. Tell me to grant Microphone and Accessibility in the Set Up Chirp window.
+   Wait for me.
+7. Verify the server with its doctor command from server/README.md and tell me
+   the result in plain words. Then ask me to press Control-Option-Space in a
+   text field and say a sentence.
+
+Rules: ask before installing anything or changing system settings. Never use
+sudo without asking. Never print, copy or paste the pairing token or a
+pairing QR/link. Never enable Tailscale Funnel or expose the server beyond
+127.0.0.1 or my tailnet.</code></pre>
+
+  <h2 id="android">Build the Android keyboard</h2>
+<pre class="prompt" data-copy="Copy Android prompt"><code>Help me build Chirp Keyboard for Android from the Chirp repository on this Mac
+(https://github.com/araa47/chirp). Chirp for Mac is already working here.
+
+1. Read android/README.md first, especially Install, Pair and Develop and test.
+2. Run android/scripts/setup-toolchain.sh (user-scoped, no sudo), then
+   source ~/.local/share/chirp-android/env.sh.
+3. If android/keystore/local-debug.keystore doesn't exist, run
+   android/scripts/make-keystore.sh. If it already exists, never replace it:
+   Android would refuse updates signed with a new key.
+4. In android/, run ./gradlew assembleRelease and tell me where the arm64 APK is.
+5. Tell me how to install it on my phone (Taildrop or adb install -r) and wait.
+   Don't touch my phone yourself unless I say so.
+6. Walk me through pairing: Settings → Devices → Pair a Phone… on the Mac,
+   then Scan pairing QR on the phone. I will scan it myself.
+
+Rules: never print, log or paste the pairing token, QR or link. Never enable
+Tailscale Funnel. Ask before changing any Tailscale setting.</code></pre>
+
+  <h2 id="change">Change Chirp to suit you</h2>
+  <p>It's your copy. Good first changes: a clean-up style for how you write, different per-app styles, or a new sound. Describe what you want where it says so:</p>
+<pre class="prompt" data-copy="Copy change prompt"><code>I use Chirp (https://github.com/araa47/chirp), checked out on this Mac. I want
+to change it: &lt;describe the change, e.g. "a clean-up style for commit messages"&gt;.
+
+1. Read README.md, docs/architecture.md and the README of the component you'd
+   change (server/, mac/, android/ or ios/), and docs/TESTING.md.
+2. Propose the smallest change that does it, matching the surrounding code
+   style, and wait for my OK.
+3. Make it on a new git branch, add or update tests, and run that component's
+   full test command from its README.
+4. Keep Chirp's privacy rules: no dictated text, audio, tokens or URLs in logs,
+   files or test fixtures.
+5. Tell me how to rebuild and reinstall to try it.</code></pre>
+  <p>Many settings don't need code at all: clean-up prompts, styles, per-app styles, hotkeys and models are all editable in Chirp's Settings.</p>
+
+  <div class="next"><a href="live-notes.html">← Take Live Notes</a><a href="index.html">All guides →</a></div>
+</article>
