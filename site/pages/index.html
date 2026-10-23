@@ -69,10 +69,12 @@ class: home
     </div>
 
     <div class="tabpanel" role="tabpanel" id="panel-notes" aria-labelledby="tab-notes" tabindex="0" hidden>
-      <p>Press <kbd>⌃⌥N</kbd> for a meeting or a long think-aloud. Chirp keeps listening and writes Markdown notes — headings, to-dos, decisions — next to the full transcript.</p>
+      <p>Press <kbd>⌃⌥N</kbd> on the Mac, or tap Record in Chirp Notes on Android, for a meeting or a long think-aloud. Chirp keeps listening and writes Markdown notes — headings, to-dos, decisions — next to the full transcript.</p>
       <div class="reel" tabindex="0" aria-label="Live Notes screenshots">
         <figure class="w-xl"><div class="frame"><!--shot:mac/notes-split|Chirp Notes in split view: structured notes with headings and to-dos on the left, the timestamped transcript on the right--></div><figcaption>Notes and transcript side by side, updated as you talk.</figcaption></figure>
         <figure class="w-xl"><div class="frame"><!--shot:mac/notes-editing|The Chirp Notes editor with a typed agenda followed by AI-written notes in a tinted block--></div><figcaption>Type anywhere while it records. Your edits are never overwritten.</figcaption></figure>
+        <figure class="w-l"><div class="frame"><!--shot:android/notes-inner-recording|Chirp Notes on an Android foldable's inner screen: Markdown notes beside the transcript while recording--></div><figcaption>The same Live Notes on Android, beside the transcript on a Fold.</figcaption></figure>
+        <figure class="w-s"><div class="frame"><!--shot:android/notes-cover-recording|Chirp Notes recording on a phone-width screen--></div><figcaption>On the cover screen.</figcaption></figure>
       </div>
       <div class="reel-nav"><button type="button" aria-label="Previous screenshots">←</button><button type="button" aria-label="Next screenshots">→</button></div>
     </div>
@@ -233,7 +235,7 @@ class: home
           <tr><th scope="row">What is kept</th><td data-label="Chirp" class="us">Nothing by default. History is opt-in and encrypted on the phone</td><td data-label="Cloud dictation services">Depends on the provider's policy</td><td data-label="Built-in OS dictation">Depends on the vendor's policy and your settings</td></tr>
           <tr><th scope="row">Phones</th><td data-label="Chirp" class="us">Stream to your Mac over your tailnet — one model everywhere</td><td data-label="Cloud dictation services">Stream to the provider</td><td data-label="Built-in OS dictation">Each device uses its own engine</td></tr>
           <tr><th scope="row">Clean-up</th><td data-label="Chirp" class="us">Optional local model, styles per app, raw text one keystroke away</td><td data-label="Cloud dictation services">Often, on their servers</td><td data-label="Built-in OS dictation">Varies; mostly punctuation</td></tr>
-          <tr><th scope="row">Meetings and long notes</th><td data-label="Chirp" class="us">Live Notes: Markdown notes while you talk, on your Mac</td><td data-label="Cloud dictation services">Usually a separate product</td><td data-label="Built-in OS dictation">Not built in</td></tr>
+          <tr><th scope="row">Meetings and long notes</th><td data-label="Chirp" class="us">Live Notes: Markdown notes while you talk, on the Mac or an Android phone</td><td data-label="Cloud dictation services">Usually a separate product</td><td data-label="Built-in OS dictation">Not built in</td></tr>
           <tr><th scope="row">Cost and account</th><td data-label="Chirp" class="us">No subscription, no account. Open models: Parakeet for speech, optional Qwen clean-up</td><td data-label="Cloud dictation services">Usually a subscription and an account</td><td data-label="Built-in OS dictation">Included with the OS</td></tr>
           <tr><th scope="row">Make it yours</th><td data-label="Chirp" class="us">Open source. Prompts, styles, hotkeys and models are editable</td><td data-label="Cloud dictation services">Settings the provider offers</td><td data-label="Built-in OS dictation">System settings</td></tr>
           <tr><th scope="row">What you need</th><td data-label="Chirp" class="us">An Apple Silicon Mac; Tailscale for phones; building from source</td><td data-label="Cloud dictation services">An internet connection</td><td data-label="Built-in OS dictation">Nothing extra</td></tr>
@@ -273,6 +275,7 @@ class: home
           <li>Autocorrect, clipboard history and emoji</li>
           <li>Undo and Use raw after every dictation</li>
           <li>Scratchpad for long text, with a Quick Settings tile</li>
+          <li>Live Notes for meetings, structured by your Mac</li>
           <li>Opt-in encrypted history, on the phone only</li>
         </ul>
         <a class="more" href="guides/android.html">Use Chirp on Android →</a>
@@ -301,7 +304,7 @@ class: home
       <p>Chirp keeps audio and text in memory only for as long as one dictation takes. These are the defaults, and the code is open for you to check.</p>
     </div>
     <div class="pgrid">
-      <div><h3>Nothing retained</h3><p>No recordings, transcripts or logs of what you said. Logs carry only timings, byte counts and error codes. No telemetry.</p></div>
+      <div><h3>Nothing retained</h3><p>No recordings, transcripts or logs of what you said. Logs carry only timings, byte counts and error codes. No telemetry. The one exception you can see: unsaved Mac Live Notes keep a text-only recovery copy until you save or discard them.</p></div>
       <div><h3>Recognition on your Mac</h3><p>The server listens on 127.0.0.1 only. Clean-up runs as a local model too, unless you deliberately point it elsewhere — and then the apps say so.</p></div>
       <div><h3>Tailnet only</h3><p>Phones reach the Mac through Tailscale Serve on your private tailnet. Chirp refuses to pair while Tailscale Funnel is on.</p></div>
       <div><h3>Secret pairing</h3><p>Pairing uses a bearer token shown as a QR code on your Mac. Phones store it encrypted; the Mac's pairing window is hidden from screen sharing.</p></div>
