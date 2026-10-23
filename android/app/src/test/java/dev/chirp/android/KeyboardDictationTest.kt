@@ -61,6 +61,25 @@ class KeyboardDictationTest {
         finish(); assertEquals("Synthetic. Synthetic.", host.editor.committed)
         assertEquals(2, host.editor.commits); assertEquals(2, resyncs)
     }
+    @Test fun `countdown shows the seconds left and clears once finishing`() {
+        voice.toggle(); stream.ready(); stream.partial(); advance(16)
+        capture.countdown!!(15); advance(0)
+        assertEquals("Listening… · 15 s left", strip.status.text.toString())
+        stream.partial(2, "more"); advance(16)
+        assertEquals("Listening… · 15 s left", strip.status.text.toString())
+        capture.countdown!!(14); advance(0)
+        assertEquals("Listening… · 14 s left", strip.status.text.toString())
+        assertEquals("Listening… · 15 s left", strip.status.contentDescription.toString())
+        voice.toggle(); advance(0)
+        assertFalse(strip.status.text.contains("s left"))
+        stream.final(); advance(0)
+        assertFalse(strip.status.text.contains("s left"))
+    }
+    @Test fun `pause mode passes the chosen pause to capture and tap mode passes none`() {
+        voice.toggle(); assertNull(capture.pauseSeconds); voice.cancel()
+        SettingsStore(host).apply { stopOnPause = true; pauseSeconds = 3.0 }
+        voice.toggle(); assertEquals(3.0, capture.pauseSeconds!!, 0.0)
+    }
     @Test fun `hold before ready waits for release and cancel rejects late results`() {
         voice.touch(MotionEvent.ACTION_DOWN); capture.frame(byteArrayOf(1, 2)); advance(350)
         voice.touch(MotionEvent.ACTION_UP); advance(0)

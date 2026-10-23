@@ -70,5 +70,47 @@ class PcmCaptureTest {
         assertTrue(done.await(10, TimeUnit.SECONDS)); assertNull(error.get())
         assertFalse(opened); assertTrue(closed)
     }
-
+    /** Endless 16 kHz input: [level] gives each frame's constant sample value, indexed by seconds of audio so far. */
+    private class Endless(val level: (Int) -> Short) : PcmInput {
+        var frames = 0
+        override fun start() = Unit
+        override fun read(samples: ShortArray, offset: Int, count: Int): Int {
+            val value = level(frames * 640 / 16000)
+            for (i in offset until offset + count) samples[i] = value
+            frames++; return count
+        }
+        override fun stop() = Unit
+        override fun close() = Unit
+    }
+    private fun run(input: Endless, pause: Double? = null, countdown: MutableList<Int>? = null): Pair<Int, String?> {
+        val done = CountDownLatch(1)
+        val error = AtomicReference<String?>()
+        var sent = 0
+        val capture = PcmCapture({ sent++; true }, {}, { error.set(it); done.countDown() }, input)
+        capture.pauseSeconds = pause
+        if (countdown != null) capture.countdown = { countdown += it }
+        capture.start()
+        assertTrue(done.await(20, TimeUnit.SECONDS))
+        return sent to error.get()
+    }
+    @Test fun `capture stops itself at 119 seconds and counts down from 15 without an error`() {
+        val left = mutableListOf<Int>()
+        val (sent, error) = run(Endless { 1024 }, countdown = left)
+        assertNull(error); assertEquals(119 * 25, sent)
+        assertEquals((15 downTo 1).toList(), left)
+    }
+    @Test fun `pause mode stops after the quiet that follows speech`() {
+        val left = mutableListOf<Int>()
+        val (sent, error) = run(Endless { second -> if (second < 1) 20 else if (second < 3) 4000 else 20 }, pause = 2.0, countdown = left)
+        assertNull(error); assertTrue(left.isEmpty())
+        assertTrue("stopped at ${sent / 25.0} s", Math.abs(sent / 25.0 - 5.0) <= 0.1)
+    }
+    @Test fun `pause mode never stops before speech and gives up after 10 seconds`() {
+        val (sent, error) = run(Endless { 20 }, pause = 1.0)
+        assertNull(error); assertTrue("stopped at ${sent / 25.0} s", Math.abs(sent / 25.0 - 10.0) <= 0.1)
+    }
+    @Test fun `tap mode ignores pauses`() {
+        val (sent, error) = run(Endless { second -> if (second < 3) 4000 else 20 })
+        assertNull(error); assertEquals(119 * 25, sent)
+    }
 }

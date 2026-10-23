@@ -70,6 +70,8 @@ class ChirpImeServiceTest {
         var stopRequested = false
         var released = false
         var deferRelease = false
+        override var pauseSeconds: Double? = null
+        override var countdown: ((Int) -> Unit)? = null
         override fun start() { started = true; order += "capture.start" }
         override fun stop() { stopRequested = true; if (!deferRelease) finish() }
         fun finish(error: String? = null) {

@@ -108,6 +108,8 @@ internal class KeyboardDictation(
     private var offlineDismissed = false
     private var checking = false
     private val offlineExpiry = Runnable { if (message == ConnectionFailure.OFFLINE) message = IDLE; render() }
+    private var secondsLeft: Int? = null
+    private var spokenLeft: Int? = null
     val active get() = session != null
     val ownsComposition get() = active || applying
 
@@ -323,6 +325,7 @@ internal class KeyboardDictation(
             }
         }
         composing?.shapeFinal(store.spokenCommands)
+        secondsLeft = null; spokenLeft = null
         text = ""; pressAt = SystemClock.elapsedRealtime(); firstPartial = null; stopAt = null; finalLatency = null
         val stream = DictationStream(
             transportFactory = { event, failed -> takeTransport(paired, event, failed) },
@@ -353,8 +356,9 @@ internal class KeyboardDictation(
                 applying = true
                 try { if (!moved) composing?.partial(ServerEvent.Partial(event.seq, event.raw, "")) } finally { applying = false }
             },
+            pauseSeconds = store.autoStopSeconds, countdown = ::countdown,
             ended = {
-                session = null
+                session = null; secondsLeft = null; spokenLeft = null
                 warmEvent = null; warmFailure = null
                 if (!notice && visible) { notice = true; handler.postDelayed(expiry, 5000) }
                 if (!undo) { composing?.cancel(awayStart, selectionEnd); composing = null }
@@ -403,6 +407,13 @@ internal class KeyboardDictation(
         resync(selectionStart, selectionEnd)
         if (inserted) haptic() else showNotice("Text field unavailable — try again")
         return inserted
+    }
+    private fun countdown(left: Int) {
+        if (secondsLeft == null && store.haptics) strip?.mic?.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
+        secondsLeft = left
+        // The status is a live region: speak the count only at a few marks, not every second.
+        if (left in SPOKEN_MARKS) spokenLeft = left
+        render()
     }
     private fun stop() { stopAt = SystemClock.elapsedRealtime(); session?.stop(); haptic(); render() }
     fun beforeEdit() {
@@ -455,7 +466,9 @@ internal class KeyboardDictation(
     }
     private fun haptic() { if (store.haptics) strip?.mic?.performHapticFeedback(HapticFeedbackConstants.CONFIRM) }
     private fun render() {
-        val status = if (store.debugOverlay) "$message · first ${firstPartial ?: "—"} ms · final ${finalLatency ?: "—"} ms" else message
+        val left = secondsLeft?.takeIf { active && session?.stopping != true }
+        val shown = left?.let { "$message · $it s left" } ?: message
+        val status = if (store.debugOverlay) "$shown · first ${firstPartial ?: "—"} ms · final ${finalLatency ?: "—"} ms" else shown
         val raw = undo && composing?.rawAvailable == true
         strip?.show(action()?.takeUnless { it.prompt }?.let { "$status · ${it.label}" } ?: status, "", active, session?.stopping == true, raw, retained || store.health?.debugRetention == true,
             polishing = session?.polishing == true, style = currentStyle.name, notice = notice, undoable = undo, offline = offline.active())
@@ -463,7 +476,8 @@ internal class KeyboardDictation(
         val disclosure = if (retained || store.health?.debugRetention == true) "Debug retention on. " else ""
         strip?.status?.contentDescription = disclosure + (action()?.let { "$message. ${it.label}" }
             ?: if (message == ConnectionFailure.OFFLINE) ConnectionFailure.OFFLINE_DESCRIPTION
-            else if (undo) "$status. ${if (raw) "Use raw or Undo" else "Undo"} available for five seconds." else status)
+            else if (undo) "$status. ${if (raw) "Use raw or Undo" else "Undo"} available for five seconds."
+            else if (left != null) spokenLeft?.let { "$message · $it s left" } ?: message else status)
     }
     private companion object {
         fun keptStatus(reason: String) = (if (DictationAction.forStatus(reason) == DictationAction.NETWORK ||
@@ -471,5 +485,6 @@ internal class KeyboardDictation(
         const val IDLE = "Tap mic · hold to talk"
         const val CONNECTING = "Connecting Tailscale…"
         const val CONNECTED = "Tailscale connected"
+        val SPOKEN_MARKS = setOf(15, 10, 5, 3, 2, 1)
     }
 }

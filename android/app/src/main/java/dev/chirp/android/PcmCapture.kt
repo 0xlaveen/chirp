@@ -10,7 +10,13 @@ import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.sqrt
 
-interface Capture { fun start(); fun stop() }
+interface Capture {
+    fun start(); fun stop()
+    /** Quiet seconds after speech that end the capture on their own; null stops only on request. Set before [start]. */
+    var pauseSeconds: Double? get() = null; set(_) {}
+    /** Called once per second with the seconds left before the cap, from 15 down to 1. Set before [start]. */
+    var countdown: ((Int) -> Unit)? get() = null; set(_) {}
+}
 
 /** Injectable PCM input keeps the real framing, buffering and transport path under test. */
 internal interface PcmInput {
@@ -50,6 +56,8 @@ class PcmCapture internal constructor(
     private val running = AtomicBoolean(true)
     private val lock = Any()
     private var thread: Thread? = null
+    @Volatile override var pauseSeconds: Double? = null
+    @Volatile override var countdown: ((Int) -> Unit)? = null
     override fun start() {
         check(thread == null)
         thread = Thread({
@@ -58,7 +66,8 @@ class PcmCapture internal constructor(
             try {
                 Process.setThreadPriority(Process.THREAD_PRIORITY_AUDIO)
                 synchronized(lock) { if (running.get()) input.start() }
-                var silentSamples = 0; var total = 0; var signalled = false; var frames = 0
+                var silentSamples = 0; var total = 0; var signalled = false; var frames = 0; var announced = 0
+                val detector = pauseSeconds?.let(::AutoStopDetector)
                 while (running.get()) {
                     var count = 0
                     while (count < samples.size && running.get()) {
@@ -79,7 +88,10 @@ class PcmCapture internal constructor(
                         if (!frame(bytes)) { error = "Mac unreachable — is Tailscale on?"; break }
                     }
                     total += count
-                    if (total >= 16000 * 120) break
+                    if (detector?.feed((sqrt(energy / count) / 32768.0).toFloat(), total / 16000.0) == true) break
+                    val seconds = total / 16000
+                    if (seconds >= CaptureLimit.COUNTDOWN_FROM_SECONDS && seconds != announced) { announced = seconds; countdown?.invoke(CaptureLimit.CAP_SECONDS - seconds) }
+                    if (seconds >= CaptureLimit.STOP_SECONDS) break
                 }
                 if (!signalled && error == null && running.get()) error = "No microphone signal"
             } catch (_: Exception) {
