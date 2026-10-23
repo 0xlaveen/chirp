@@ -15,6 +15,8 @@ open class ChirpImeService : LatinIME() {
     private val handler = Handler(Looper.getMainLooper())
     private var reconfiguring = false
     private var closingHistory = false
+    private var heldShortcut = 0
+    private var showForShortcut = false
     private val history: KeyboardHistory by lazy { createHistory { dictation.insertText(it) } }
     internal open fun createHistory(insert: (String) -> Boolean) = KeyboardHistory(this, insert)
     private val dictation: KeyboardDictation by lazy {
@@ -57,12 +59,23 @@ open class ChirpImeService : LatinIME() {
     // Back closes the history panel and returns to the keys instead of hiding the keyboard.
     override fun onKeyDown(keyCode: Int, event: android.view.KeyEvent): Boolean {
         if (keyCode == android.view.KeyEvent.KEYCODE_BACK && history.open) { closingHistory = true; history.close(); return true }
+        val shortcut = HardwareShortcut.action(keyCode, event, SettingsStore(this).hardwareShortcut, dictation.active)
+        if (shortcut != HardwareShortcut.Action.NONE && hardwareShortcut(shortcut)) { heldShortcut = keyCode; return true }
         return super.onKeyDown(keyCode, event)
     }
     override fun onKeyUp(keyCode: Int, event: android.view.KeyEvent): Boolean {
         if (keyCode == android.view.KeyEvent.KEYCODE_BACK && closingHistory) { closingHistory = false; return true }
+        if (keyCode == heldShortcut) { heldShortcut = 0; return true }
         return super.onKeyUp(keyCode, event)
     }
+    // With a hardware keyboard the soft input view may be suppressed; show it so the strip carries status and Cancel.
+    private fun hardwareShortcut(action: HardwareShortcut.Action): Boolean {
+        if (action == HardwareShortcut.Action.TOGGLE && !isInputViewShown && currentInputEditorInfo?.isPasswordField() == false) {
+            showForShortcut = true; updateInputViewShown()
+        }
+        return dictation.hardware(action)
+    }
+    override fun onEvaluateInputViewShown() = showForShortcut || super.onEvaluateInputViewShown()
     override fun onUpdateSelection(oldSelStart: Int, oldSelEnd: Int, newSelStart: Int, newSelEnd: Int, candidatesStart: Int, candidatesEnd: Int) {
         val owned = dictation.ownsComposition
         dictation.selection(oldSelStart, oldSelEnd, newSelStart, newSelEnd, candidatesStart, candidatesEnd)
@@ -73,7 +86,7 @@ open class ChirpImeService : LatinIME() {
         super.onFinishInputView(finishingInput)
     }
     override fun onWindowHidden() { if (!reconfiguring) { dictation.hidden(); history.close() }; super.onWindowHidden() }
-    override fun onFinishInput() { if (!reconfiguring) { dictation.hidden(); history.close() }; super.onFinishInput() }
+    override fun onFinishInput() { if (!reconfiguring) { dictation.hidden(); history.close(); showForShortcut = false }; super.onFinishInput() }
     override fun onUnbindInput() { dictation.hidden(); history.close(); super.onUnbindInput() }
     override fun onConfigurationChanged(newConfig: Configuration) {
         reconfiguring = true

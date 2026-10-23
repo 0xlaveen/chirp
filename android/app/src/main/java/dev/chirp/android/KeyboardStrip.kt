@@ -19,15 +19,15 @@ internal class KeyboardStrip(context: Context) : LinearLayout(context) {
         maxLines = 1; ellipsize = TextUtils.TruncateAt.END
         accessibilityLiveRegion = View.ACCESSIBILITY_LIVE_REGION_POLITE
     }
+    private val large = SettingsStore(context).largerMic && context.resources.configuration.smallestScreenWidthDp >= 600
+    private val micWidth = context.dp(if (large) 56 else 48)
     val history = control("Dictation history").apply { setIconResource(R.drawable.ic_history) }
     val mic = control("Microphone: tap to dictate, long press for options").apply { setIconResource(R.drawable.ic_mic) }
     val cancel = control("Cancel dictation").apply { text = "✕" }
-    val raw = control("Use raw dictation").apply { text = "Use raw"; visibility = GONE
-        accessibilityLiveRegion = View.ACCESSIBILITY_LIVE_REGION_POLITE }
-    val revert = control("Undo last dictation").apply { text = "Undo"; visibility = GONE
-        accessibilityLiveRegion = View.ACCESSIBILITY_LIVE_REGION_POLITE }
+    val raw = control("Use raw dictation").apply { text = "Use raw"; visibility = GONE }
+    val revert = control("Undo last dictation").apply { text = "Undo"; visibility = GONE }
     /** The button for prompt actions such as turning on Tailscale; the status keeps the explanation. */
-    val action = control("").apply { visibility = GONE; setPadding(context.dp(12), 0, context.dp(12), 0) }
+    val action = control("").apply { visibility = GONE; setPadding(context.dp(12), 0, context.dp(12), 0); minWidth = context.dp(48); minimumWidth = context.dp(48) }
     val style = context.label("", 12f).apply {
         maxLines = 1; ellipsize = TextUtils.TruncateAt.END
         setPadding(context.dp(8), 0, context.dp(8), 0)
@@ -61,9 +61,9 @@ internal class KeyboardStrip(context: Context) : LinearLayout(context) {
         addView(style, LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT))
         addView(raw, LayoutParams(context.dp(88), LayoutParams.MATCH_PARENT))
         addView(revert, LayoutParams(context.dp(72), LayoutParams.MATCH_PARENT).apply { marginStart = context.dp(4) })
-        addView(action, LayoutParams(LayoutParams.WRAP_CONTENT, context.dp(36)).apply { marginEnd = context.dp(4) })
+        addView(action, LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.MATCH_PARENT).apply { marginEnd = context.dp(4) })
         addView(history, LayoutParams(context.dp(48), LayoutParams.MATCH_PARENT))
-        addView(mic, LayoutParams(context.dp(48), LayoutParams.MATCH_PARENT))
+        addView(mic, LayoutParams(micWidth, LayoutParams.MATCH_PARENT))
         show("Tap mic", "", false, false, false, false)
         historyOpen(false)
     }
@@ -75,18 +75,20 @@ internal class KeyboardStrip(context: Context) : LinearLayout(context) {
     }
     fun mount(parent: RelativeLayout) {
         suggestions = parent.findViewById(helium314.keyboard.latin.R.id.suggestions_strip_wrapper)
-        (suggestions?.layoutParams as? RelativeLayout.LayoutParams)?.apply { marginEnd = context.dp(IDLE_WIDTH) }
-        parent.addView(this, RelativeLayout.LayoutParams(context.dp(IDLE_WIDTH), LayoutParams.MATCH_PARENT).apply { addRule(RelativeLayout.ALIGN_PARENT_END) })
+        (suggestions?.layoutParams as? RelativeLayout.LayoutParams)?.apply { marginEnd = idleWidth() }
+        // Larger mic: the row grows to a 48 dp touch height on the inner screen.
+        if (large) (parent.parent as? View)?.let { row -> row.layoutParams?.let { it.height = maxOf(it.height, context.dp(48)); row.layoutParams = it } }
+        parent.addView(this, RelativeLayout.LayoutParams(idleWidth(), LayoutParams.MATCH_PARENT).apply { addRule(RelativeLayout.ALIGN_PARENT_END) })
     }
     fun show(message: String, @Suppress("UNUSED_PARAMETER") text: String, active: Boolean, finishing: Boolean, undo: Boolean, retention: Boolean,
-             polishing: Boolean = false, style: String = "", notice: Boolean = false, undoable: Boolean = false, offline: Boolean = false) {
+             polishing: Boolean = false, style: String = "", notice: Boolean = false, undoable: Boolean = false, offline: Boolean = false, countdown: Boolean = false) {
         val recovery = DictationAction.forStatus(message)
         val offlineRow = message == ConnectionFailure.OFFLINE
         val error = recovery != null || offlineRow
         val full = active || undo || undoable || error || retention || notice
         if (expanded != full) {
             expanded = full
-            (layoutParams as? RelativeLayout.LayoutParams)?.let { it.width = if (full) LayoutParams.MATCH_PARENT else context.dp(IDLE_WIDTH); layoutParams = it }
+            (layoutParams as? RelativeLayout.LayoutParams)?.let { it.width = if (full) LayoutParams.MATCH_PARENT else idleWidth(); layoutParams = it }
             suggestions?.visibility = if (full) INVISIBLE else VISIBLE
             if (motionAllowed()) { alpha = .6f; animate().alpha(1f).setDuration(160).start() }
         }
@@ -105,6 +107,9 @@ internal class KeyboardStrip(context: Context) : LinearLayout(context) {
         status.setTextColor(if (retention) android.graphics.Color.WHITE else palette.ink)
         status.setBackgroundColor(if (retention) android.graphics.Color.rgb(164, 24, 24) else android.graphics.Color.TRANSPARENT)
         status.contentDescription = status.text
+        // Listening, finishing and polishing are silent; the final is announced once by the dictation state.
+        // The time-limit countdown is the one thing spoken while listening; its description changes only at a few marks.
+        status.accessibilityLiveRegion = if (active && !countdown) View.ACCESSIBILITY_LIVE_REGION_NONE else View.ACCESSIBILITY_LIVE_REGION_POLITE
         cancel.visibility = if (full) VISIBLE else GONE
         // INVISIBLE, not GONE: the mic must never slide into the history slot mid-transition.
         history.visibility = if (full) INVISIBLE else VISIBLE
@@ -170,7 +175,7 @@ internal class KeyboardStrip(context: Context) : LinearLayout(context) {
         history.iconTint = android.content.res.ColorStateList.valueOf(palette.accent)
         history.contentDescription = if (open) "Close dictation history" else "Dictation history"
     }
-    private companion object { const val IDLE_WIDTH = 96 }
+    private fun idleWidth() = context.dp(48) + micWidth
 }
 
 private class Waveform(context: Context) : View(context) {
