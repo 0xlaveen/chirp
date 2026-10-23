@@ -5,6 +5,8 @@ import java.util.Date
 import java.util.Locale
 import java.util.TimeZone
 import java.util.concurrent.atomic.AtomicLong
+import org.json.JSONArray
+import org.json.JSONObject
 
 /** One committed segment of a Notes recording: an utterance's final, or a gap where it failed. */
 internal data class NotesSegment(
@@ -110,6 +112,8 @@ internal class NotesDocument(var startedAt: Long = System.currentTimeMillis(), t
         private set
     /** The live partials of the segments still in flight. Display only: never exported. */
     var livePartial = ""
+    /** The user's name for this session (Rename), else the title is the start time. */
+    var name: String? = null
     /** Every fallback block appended, exactly as appended; one still found verbatim is one Organize may redo. */
     private val fallbackBlocks = mutableListOf<String>()
 
@@ -312,7 +316,11 @@ internal class NotesDocument(var startedAt: Long = System.currentTimeMillis(), t
 
     private fun format(pattern: String, zone: TimeZone) = SimpleDateFormat(pattern, Locale.US).apply { timeZone = zone }.format(Date(startedAt))
 
-    fun title(zone: TimeZone = TimeZone.getDefault()) = "# Notes — " + format("yyyy-MM-dd HH:mm", zone)
+    fun title(zone: TimeZone = TimeZone.getDefault()) = "# " + (name ?: "Notes — " + format("yyyy-MM-dd HH:mm", zone))
+
+    /** Save's suggested file name: the name, else the start time, without characters file systems refuse. */
+    fun fileName(zone: TimeZone = TimeZone.getDefault()) =
+        (name ?: "Notes " + format("yyyy-MM-dd HHmm", zone)).replace(Regex("[\\\\/:*?\"<>|\\p{Cntrl}]"), " ").trim().take(80) + ".md"
 
     /** The notes without placeholder lines, trimmed. */
     val notesBody get() = text.split('\n').filter { it.trim() != NotesMarkdown.PLACEHOLDER }.joinToString("\n").trim()
@@ -335,7 +343,32 @@ internal class NotesDocument(var startedAt: Long = System.currentTimeMillis(), t
         return parts.joinToString("\n\n") + "\n"
     }
 
+    // Recovery copy
+
+    /** Everything but the live partial and the reorganize bookkeeping, for [NotesJournal]. */
+    fun toJson(): JSONObject = JSONObject().put("startedAt", startedAt).put("text", text).put("tailStart", tailStart)
+        .put("windowStart", windowStart).put("structuredEnd", structuredEnd).put("fallbacks", JSONArray(fallbackBlocks))
+        .put("segments", JSONArray().apply {
+            committed.forEach { s ->
+                put(JSONObject().put("offset", s.offset).put("raw", s.raw).put("text", s.text).put("corrected", s.corrected)
+                    .put("kept", s.keptOriginal).apply { s.failure?.let { put("failure", it) } })
+            }
+        }).apply { name?.let { put("name", it) } }
+
     companion object {
+        fun fromJson(json: JSONObject) = NotesDocument(json.getLong("startedAt"), json.getString("text")).apply {
+            name = json.optString("name").takeIf { json.has("name") }
+            val list = json.getJSONArray("segments")
+            for (i in 0 until list.length()) list.getJSONObject(i).let { s ->
+                committed += NotesSegment(i, s.getDouble("offset"), s.getString("raw"), s.getString("text"), s.optBoolean("corrected"),
+                    s.optBoolean("kept"), s.optString("failure").takeIf { s.has("failure") })
+            }
+            tailStart = json.getInt("tailStart").coerceIn(0, text.length)
+            windowStart = json.getInt("windowStart").coerceIn(0, committed.size)
+            structuredEnd = json.getInt("structuredEnd").coerceIn(windowStart - 1, committed.size - 1)
+            json.optJSONArray("fallbacks")?.let { a -> for (i in 0 until a.length()) fallbackBlocks += a.getString(i) }
+        }
+
         /** The tail settles once a pass succeeded on this many transcript characters. */
         const val FREEZE_CHARS = 1600
         /** The open window never grows past this; it falls back to raw text instead. */

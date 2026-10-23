@@ -46,7 +46,8 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 
 /**
  * Live Notes on the phone: record a meeting or a long think-aloud, and the Mac turns it into Markdown notes while the
- * transcript fills in beside them. Memory only: the notes leave with the screen (New, or Discard on Back).
+ * transcript fills in beside them. Kept until Save, Copy or Share, with a sealed recovery copy meanwhile ([NotesJournal]).
+ * The screen itself is [NotesScreen], so a future app shell can host it; this activity only adds the system glue.
  */
 open class NotesActivity : ComponentActivity() {
     internal open fun createModel(): NotesModel = NotesModel(applicationContext)
@@ -57,6 +58,8 @@ open class NotesActivity : ComponentActivity() {
     }
     /** Optional: without it the recording still runs, only its notification (with Stop) stays hidden. */
     private val notificationPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { model.start() }
+    private val saveFile = registerForActivityResult(ActivityResultContracts.CreateDocument("text/markdown")) { uri -> uri?.let(::write) }
+    private var recordOnResume = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -65,15 +68,22 @@ open class NotesActivity : ComponentActivity() {
         handle(intent)
         setContent {
             ChirpTheme {
-                NotesScreen(model, record = ::record, copy = ::copy, share = ::share, act = ::act, leave = ::leave)
+                NotesScreen(model, record = ::record, copy = ::copy, share = ::share, act = ::act, leave = ::leave, save = ::save)
             }
         }
     }
     override fun onNewIntent(intent: Intent) { super.onNewIntent(intent); handle(intent) }
     override fun onStart() { super.onStart(); model.refresh() }
+    // The microphone service may only start from a visible screen: the tile's Record waits until this one is.
+    override fun onResume() { super.onResume(); if (recordOnResume) { recordOnResume = false; if (!model.state.active) record() } }
 
     private fun handle(intent: Intent?) {
-        if (intent?.action == NotesService.ACTION_STOP) { if (model.recording) model.stop(); setIntent(Intent(intent).setAction(null)) }
+        when (intent?.action) {
+            NotesService.ACTION_STOP -> if (model.state.live) model.stop()
+            NotesService.ACTION_RECORD -> recordOnResume = true
+            else -> return
+        }
+        setIntent(Intent(intent).setAction(null))
     }
 
     internal fun record() {
@@ -91,7 +101,7 @@ open class NotesActivity : ComponentActivity() {
     internal fun leave(discard: Boolean) {
         when {
             model.state.active -> moveTaskToBack(true)
-            discard || !model.hasContent -> { model.clear(); finish() }
+            discard || !model.dirty -> { model.clear(); finish() }
         }
     }
 
@@ -110,6 +120,11 @@ open class NotesActivity : ComponentActivity() {
         startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).setType("text/markdown")
             .putExtra(Intent.EXTRA_SUBJECT, model.document.title().removePrefix("# ")).putExtra(Intent.EXTRA_TEXT, model.export()), null))
     }
+    internal fun save() {
+        if (!model.hasContent) return
+        try { saveFile.launch(model.document.fileName()) } catch (_: android.content.ActivityNotFoundException) { model.message = "No app to save files — use Share" }
+    }
+    internal fun write(uri: Uri) = model.save { contentResolver.openOutputStream(uri, "wt") }
     internal fun act(action: DictationAction) {
         fun setup(section: String) = startActivity(Intent(this, SetupActivity::class.java).putExtra("section", section)
             .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP))
@@ -132,27 +147,52 @@ open class NotesActivity : ComponentActivity() {
 /** Notes beside the transcript at this width (an unfolded Fold, a tablet); tabs below it (the cover screen). */
 private val SIDE_BY_SIDE = 700.dp
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun NotesScreen(model: NotesModel, record: () -> Unit, copy: () -> Unit, share: () -> Unit, act: (DictationAction) -> Unit,
-                         leave: (Boolean) -> Unit) {
+                         leave: (Boolean) -> Unit, save: () -> Unit = {}) {
     // Discard asked from Back leaves the screen; from New it only empties it.
     var confirm by remember { mutableStateOf<Boolean?>(null) }
-    BackHandler { if (!model.state.active && model.hasContent) confirm = true else leave(false) }
+    var renaming by remember { mutableStateOf(false) }
+    var settings by remember { mutableStateOf(false) }
+    BackHandler { if (!model.state.active && model.dirty) confirm = true else leave(false) }
     confirm?.let { leaving ->
         AlertDialog({ confirm = null }, title = { Text("Discard these notes?") },
-            text = { Text("Nothing is saved. Copy or Share them first to keep them.") },
+            text = { Text("They aren’t saved. Save, Copy or Share them first to keep them.") },
             confirmButton = { TextButton({ confirm = null; if (leaving) leave(true) else model.clear() }) { Text("Discard") } },
             dismissButton = { TextButton({ confirm = null }) { Text("Keep") } })
+    }
+    if (renaming) {
+        var name by remember { mutableStateOf(model.document.name ?: "") }
+        AlertDialog({ renaming = false }, title = { Text("Rename notes") },
+            text = { OutlinedTextField(name, { name = it.take(NotesModel.MAX_NAME) }, singleLine = true, label = { Text("Name") },
+                placeholder = { Text(NotesDocument().title().removePrefix("# ")) }) },
+            confirmButton = { TextButton({ renaming = false; model.rename(name) }) { Text("Rename") } },
+            dismissButton = { TextButton({ renaming = false }) { Text("Cancel") } })
+    }
+    if (settings) ModalBottomSheet({ settings = false }) {
+        Column(Modifier.padding(start = 16.dp, end = 16.dp, bottom = 24.dp)) { NotesSettings() }
     }
     val action = DictationAction.forStatus(model.status)
     Surface(Modifier.fillMaxSize()) {
         BoxWithConstraints(Modifier.fillMaxSize().safeDrawingPadding()) {
             val wide = maxWidth >= SIDE_BY_SIDE
             Column(Modifier.fillMaxSize().padding(horizontal = if (wide) 24.dp else 16.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text("CHIRP  /  NOTES", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("CHIRP  /  NOTES", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+                        TextButton({ renaming = true }, contentPadding = PaddingValues(0.dp),
+                            modifier = Modifier.semantics { contentDescription = "Rename notes: ${model.title}" }) {
+                            Text(model.title, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface, maxLines = 1)
+                        }
+                    }
+                    IconButton({ settings = true }) { Icon(painterResource(R.drawable.ic_settings), "Notes settings") }
+                }
                 if (model.retained) StatusBanner(StatusKind.Error, stringResource(R.string.debug_retention))
+                model.recovered?.let { StatusBanner(StatusKind.Info, it, body = "Save, Copy or Share to keep them.", action = "Discard", onAction = { confirm = false }) }
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     RecordButton(model, record)
+                    if (model.state == NotesRecorder.State.RECORDING || model.paused) PauseButton(model)
                     Column(Modifier.weight(1f)) {
                         if (model.state.active || model.elapsed > 0) Text(model.elapsedText, style = MaterialTheme.typography.titleMedium.copy(fontFeatureSettings = "tnum"))
                         Text(model.status, Modifier.semantics { liveRegion = LiveRegionMode.Polite }, style = MaterialTheme.typography.bodyMedium)
@@ -179,9 +219,14 @@ internal fun NotesScreen(model: NotesModel, record: () -> Unit, copy: () -> Unit
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedButton(copy, Modifier.weight(1f), enabled = model.hasContent) { Text("Copy") }
                     OutlinedButton(share, Modifier.weight(1f), enabled = model.hasContent) { Text("Share") }
-                    TextButton({ if (model.hasContent) confirm = false else model.clear() }, enabled = !model.state.active && (model.hasContent || model.document.segments.isNotEmpty())) { Text("New") }
+                    OutlinedButton(save, Modifier.weight(1f), enabled = model.hasContent) { Text("Save") }
+                    TextButton({ if (model.dirty) confirm = false else model.clear() }, enabled = !model.state.active && (model.hasContent || model.document.segments.isNotEmpty())) { Text("New") }
                 }
-                Text("Nothing is saved: these notes live only on this screen. Copy or Share to keep them.", style = MaterialTheme.typography.bodySmall)
+                Text(when {
+                    model.hasContent && !model.dirty -> "Saved. Changes from here on are not, until you Save again."
+                    model.recoveryOn -> "Not saved until you Save, Copy or Share. Until then a recovery copy stays encrypted on this phone."
+                    else -> "Not saved: these notes live only on this screen until you Save, Copy or Share them."
+                }, style = MaterialTheme.typography.bodySmall)
             }
         }
     }
@@ -195,6 +240,15 @@ private fun RecordButton(model: NotesModel, onClick: () -> Unit) {
         Icon(painterResource(if (recording) R.drawable.ic_stop else R.drawable.ic_record), null, Modifier.size(20.dp))
         Spacer(Modifier.width(8.dp))
         Text(if (recording) "Stop" else "Record")
+    }
+}
+
+@Composable
+private fun PauseButton(model: NotesModel) {
+    FilledTonalButton(model::togglePause, Modifier.heightIn(min = 56.dp).semantics { contentDescription = if (model.paused) "Resume recording notes" else "Pause recording notes" }) {
+        Icon(painterResource(if (model.paused) R.drawable.ic_record else R.drawable.ic_pause), null, Modifier.size(20.dp))
+        Spacer(Modifier.width(8.dp))
+        Text(if (model.paused) "Resume" else "Pause")
     }
 }
 

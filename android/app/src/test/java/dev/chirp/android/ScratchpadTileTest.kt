@@ -48,13 +48,14 @@ class ScratchpadTileTest {
 
     @Test fun `listening without a bound tile is harmless`() { tile().onStartListening() }
 
-    @Test fun `manifest declares a protected tile service and a private Scratchpad`() {
+    @Test fun `manifest declares protected tile services and a private Scratchpad`() {
         val services = app.packageManager.queryIntentServices(Intent("android.service.quicksettings.action.QS_TILE").setPackage(app.packageName), 0)
-        val info = services.single().serviceInfo
-        assertEquals(ScratchpadTileService::class.java.name, info.name)
-        assertEquals("android.permission.BIND_QUICK_SETTINGS_TILE", info.permission)
-        assertTrue(info.exported)
-        assertTrue(info.labelRes != 0 && info.icon != 0)
+        assertEquals(setOf(ScratchpadTileService::class.java.name, NotesTileService::class.java.name), services.map { it.serviceInfo.name }.toSet())
+        for (info in services.map { it.serviceInfo }) {
+            assertEquals("android.permission.BIND_QUICK_SETTINGS_TILE", info.permission)
+            assertTrue(info.exported)
+            assertTrue(info.labelRes != 0 && info.icon != 0)
+        }
     }
 
     @Test fun `launcher shortcut targets the Scratchpad from the launcher activity`() {

@@ -25,8 +25,8 @@ import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 
 /**
- * What the Notes screen shows, in memory only: it survives rotation and folding with the activity's view model and
- * is dropped with it (New, or leaving the screen). Nothing is written to preferences, files or logs.
+ * What the Notes screen shows: it survives rotation and folding with the activity's view model. Until the notes are
+ * saved, only the sealed recovery copy ([NotesJournal], when on) outlives the process; nothing goes to preferences or logs.
  */
 internal class NotesModel(
     context: Context,
@@ -48,7 +48,8 @@ internal class NotesModel(
     /** Starts or stops the microphone foreground service; the recording itself lives here. */
     private val foreground: (Boolean) -> Unit = { on -> NotesService.set(context.applicationContext, on) },
     private val io: suspend (suspend () -> Unit) -> Unit = { withContext(Dispatchers.IO) { it() } },
-) : ViewModel() {
+    private val journal: NotesJournal? = NotesJournal(context.applicationContext, store = store),
+) : ViewModel(), NotesControls.Session {
     private val app = context.applicationContext as android.app.Application
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var client: OkHttpClient? = null
@@ -57,6 +58,10 @@ internal class NotesModel(
     private var ticker: Job? = null
     private var inForeground = false
     private var editing = false
+    private var published: NotesRecorder.State? = null
+    private var committedCount = 0
+    /** What was last saved to a file; the notes are unsaved ([dirty]) once anything differs. */
+    private var savedKey: List<Any?>? = null
     private var health by mutableStateOf(store.health)
     /** Bumped on every recorder change, so Compose reads the recorder's plain fields afresh. */
     private var revision by mutableIntStateOf(0)
@@ -71,6 +76,9 @@ internal class NotesModel(
         private set
     /** "Structure notes": on by default only while structuring stays on the Mac (text never leaves it). */
     var structureEnabled by mutableStateOf(health?.correctionLeavesMachine != true)
+        private set
+    /** "Recovered unsaved notes from 14:03 · 52 min", until the user saves, discards or records. */
+    var recovered by mutableStateOf<String?>(null)
         private set
 
     private fun http() = client ?: ChirpNetwork.client(app).also { client = it }
@@ -95,8 +103,22 @@ internal class NotesModel(
         if (health?.notesCorrection == true) "live_notes" else "default",
         if (health?.notesCorrection == true) null else store.promptEdits["default"])
 
+    /** A session that ended without Save or Discard (process killed, crash, restart) comes back stopped and unsaved. */
+    private fun recover(journal: NotesJournal) = scope.launch {
+        var json: org.json.JSONObject? = null
+        io { json = journal.read() }
+        val copy = json ?: return@launch
+        if (recorder.state.active || !recorder.document.isEmpty) return@launch
+        val restored = try { NotesDocument.fromJson(copy) } catch (_: Exception) { journal.delete(); return@launch }
+        val seconds = copy.optDouble("elapsed", 0.0)
+        recorder.restore(restored, seconds)
+        if (restored.isEmpty) { journal.delete(); return@launch }
+        recovered = "Recovered unsaved notes from " + java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault()).format(java.util.Date(restored.startedAt)) +
+            " · " + (seconds / 60).toInt().coerceAtLeast(1) + " min"
+    }
+
     // What the screen reads.
-    val state get() = revision.let { recorder.state }
+    override val state get() = revision.let { recorder.state }
     val document get() = revision.let { recorder.document }
     val structuring get() = revision.let { recorder.structuring }
     val reorganizing get() = revision.let { recorder.reorganizeStatus }
@@ -104,13 +126,19 @@ internal class NotesModel(
     val retained get() = revision.let { recorder.debugRetention } || health?.debugRetention == true
     val recording get() = state.capturing
     val busy get() = state == NotesRecorder.State.STOPPING
+    val paused get() = state == NotesRecorder.State.PAUSED
     val hasContent get() = !document.isEmpty
+    private fun key() = recorder.document.let { listOf(it.id, it.version, it.segments.size, it.name) }
+    /** Content that no Save has written as it is now: leaving or New asks first, and the recovery copy keeps it. */
+    val dirty get() = revision.let { hasContent && savedKey != key() }
+    val title get() = document.title().removePrefix("# ")
+    val recoveryOn get() = journal?.enabled == true
     val canUndo get() = revision.let { recorder.canUndo }
     val canOrganize get() = reorganizing !is Reorganizing.Unavailable && !reorganizing.running && !busy && document.text.isNotBlank()
     /** The switch is offered once the Mac's health says structuring exists and clean-up is on. */
     val structureAvailable get() = health?.let { it.correctionAvailable && it.notesStructure } == true
     val structureHost get() = health?.takeIf { it.correctionLeavesMachine }?.correctionHost
-    var elapsed by mutableStateOf(0.0)
+    override var elapsed by mutableStateOf(0.0)
         private set
 
     val hearing get() = document.let { d -> listOf(d.unstructuredTail, d.livePartial).filter(String::isNotBlank).joinToString(" ") }
@@ -121,6 +149,7 @@ internal class NotesModel(
         NotesRecorder.State.IDLE -> if (paired) IDLE else "Pair your Mac in Chirp setup"
         NotesRecorder.State.STARTING -> "Connecting to Mac…"
         NotesRecorder.State.RECORDING -> organizingText ?: if (structuring == Structuring.Running) "Updating notes…" else "Listening…"
+        NotesRecorder.State.PAUSED -> recorder.error?.let { "Couldn’t resume: $it" } ?: organizingText ?: "Paused · $elapsedText"
         NotesRecorder.State.STOPPING -> (organizingText ?: "Finishing…") + (revision.let { recorder.stoppingElapsed }?.takeIf { it >= 3000 }?.let { " · ${it / 1000} s" } ?: "")
         NotesRecorder.State.STOPPED -> organizingText ?: "Stopped · Record adds to these notes"
         NotesRecorder.State.ERROR -> recorder.error?.let { error ->
@@ -181,7 +210,7 @@ internal class NotesModel(
 
     fun start() {
         if (state.active) return
-        message = null
+        message = null; recovered = null
         if (!micGranted()) { message = "Allow microphone in Chirp setup"; return }
         pairing().also { paired = it != null } ?: run { message = "Pair your Mac in Chirp setup"; return }
         recorder.options = options()
@@ -189,7 +218,29 @@ internal class NotesModel(
         recorder.start()
     }
 
-    fun stop() { message = null; recorder.stop() }
+    override fun stop() { message = null; recorder.stop() }
+    override fun pause() { message = null; recorder.pause() }
+    override fun resume() { message = null; recorder.resume() }
+    fun togglePause() { if (paused) resume() else pause() }
+
+    /** Rename: the title of the notes, the export and the saved file; blank goes back to the start time. */
+    fun rename(name: String) {
+        recorder.document.name = name.trim().take(MAX_NAME).ifEmpty { null }
+        sync(); keep(now = true)
+    }
+
+    /** Save: the export goes through [open] off the main thread; the notes count as saved unless they changed meanwhile. */
+    fun save(open: () -> java.io.OutputStream?) {
+        val text = export(); val what = key()
+        scope.launch {
+            var ok = false
+            io { ok = try { open()?.use { it.write(text.toByteArray(Charsets.UTF_8)) } != null } catch (_: Exception) { false } }
+            if (!ok) { message = "Couldn’t save — try another place, or Share"; return@launch }
+            savedKey = what; recovered = null; message = "Saved"
+            if (!dirty) journal?.delete()
+            revision++
+        }
+    }
 
     fun organize() { message = null; recorder.organize() }
     fun undo() = recorder.undoOrganize()
@@ -197,7 +248,8 @@ internal class NotesModel(
     /** New: an empty document (only while not recording). */
     fun clear() {
         if (state.active) return
-        recorder.reset(); field = TextFieldValue(""); message = null; elapsed = 0.0
+        recorder.reset(); field = TextFieldValue(""); message = null; elapsed = 0.0; recovered = null; savedKey = null
+        journal?.delete()
     }
 
     /** The editor's new value: the text change goes to the document as the user's edit. */
@@ -227,7 +279,14 @@ internal class NotesModel(
             if (value != field) field = value
         }
         elapsed = recorder.elapsed
-        val active = recorder.state.active
+        val state = recorder.state
+        val commits = recorder.document.segments.size
+        val stateChanged = state != published
+        if (stateChanged) { published = state; NotesControls.publish(app, this) }
+        // At once after a commit, an AI change or a state change; otherwise at most every 2 s.
+        keep(now = changes.isNotEmpty() || commits != committedCount || stateChanged)
+        committedCount = commits
+        val active = state.active
         if (active != inForeground) {
             inForeground = active; foreground(active)
             ticker?.cancel()
@@ -237,10 +296,16 @@ internal class NotesModel(
         revision++
     }
 
+    /** The recovery copy follows the notes while they are unsaved, and goes once they are saved or empty. */
+    private fun keep(now: Boolean) = journal?.update({ if (dirty) recorder.document.toJson().put("elapsed", recorder.elapsed) else null }, now)
+
     /** Copy and Share: the notes, then the transcript, as Markdown. */
     fun export() = document.exportMarkdown()
 
     override fun onCleared() {
+        // Swiped away from Recents is not a discard: the recovery copy stays for next time.
+        journal?.flush()
+        NotesControls.release(app, this)
         recorder.onChange = null
         recorder.dispose()
         ticker?.cancel()
@@ -250,5 +315,10 @@ internal class NotesModel(
         client?.let(ChirpNetwork::dispose); client = null; api = null
     }
 
-    companion object { const val IDLE = "Tap Record to take notes" }
+    init { journal?.let(::recover) }
+
+    companion object {
+        const val IDLE = "Tap Record to take notes"
+        const val MAX_NAME = 120
+    }
 }

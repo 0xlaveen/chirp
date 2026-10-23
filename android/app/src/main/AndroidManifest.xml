@@ -37,6 +37,11 @@
             android:exported="true" android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
             <intent-filter><action android:name="android.service.quicksettings.action.QS_TILE" /></intent-filter>
         </service>
+        <service android:name=".NotesTileService" android:label="@string/notes_short" android:icon="@drawable/ic_notes"
+            android:exported="true" android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter><action android:name="android.service.quicksettings.action.QS_TILE" /></intent-filter>
+            <meta-data android:name="android.service.quicksettings.TOGGLEABLE_TILE" android:value="true" />
+        </service>
         <activity android:name=".HistoryActivity" android:exported="false" android:label="@string/history_title"
             android:windowSoftInputMode="adjustResize" />
         <receiver android:name=".UpdateInstallReceiver" android:exported="false" />

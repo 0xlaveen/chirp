@@ -66,9 +66,12 @@ internal class NotesRecorder(
     private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate),
 ) {
     data class Options(val correction: Boolean, val profile: String = "default", val prompt: String? = null)
-    enum class State { IDLE, STARTING, RECORDING, STOPPING, STOPPED, ERROR;
+    enum class State { IDLE, STARTING, RECORDING, PAUSED, STOPPING, STOPPED, ERROR;
         val capturing get() = this == STARTING || this == RECORDING
-        val active get() = capturing || this == STOPPING
+        /** Segments still commit and appends still run: recording, or paused with the microphone closed. */
+        val live get() = capturing || this == PAUSED
+        /** The session holds the microphone service: recording, paused or finishing. */
+        val active get() = live || this == STOPPING
     }
     enum class PassKind { APPEND, REORGANIZE }
 
@@ -115,6 +118,8 @@ internal class NotesRecorder(
     private var cutting = false
     private var failureStreak = 0
     private var sawReady = false
+    /** The capturing socket came from Resume and is not Ready yet: failing it goes back to paused. */
+    private var resuming = false
 
     private var passJob: Job? = null
     private var waiting = false
@@ -174,7 +179,7 @@ internal class NotesRecorder(
         if (allowed is Structuring.Off) structuring = allowed
         else if (structuring is Structuring.Off) {
             structuring = if (passJob == null) Structuring.Idle else Structuring.Running
-            if (state.capturing) schedule()
+            if (state.live) schedule()
         }
         changed()
     }
@@ -188,8 +193,36 @@ internal class NotesRecorder(
         failureStreak = 0; sawReady = false; lastPassEnd = null; error = null
         if (lastReorganizeEnd == null) lastReorganizeEnd = now()
         if (structuring is Structuring.Off && allowed !is Structuring.Off) structuring = Structuring.Idle
-        state = State.STARTING
         document.stampStart(System.currentTimeMillis())
+        capture()
+    }
+
+    /** Pause: the current segment finalizes as at a cut and the microphone closes; passes go on, nothing freezes. */
+    fun pause() {
+        if (state != State.RECORDING) return
+        releaseMicrophone()
+        state = State.PAUSED
+    }
+
+    /** Resume: a fresh socket continues the same document and tail; the clock goes on from where it paused. */
+    fun resume() {
+        if (state != State.PAUSED) return
+        error = null; resuming = true
+        capture()
+    }
+
+    /** A recovered session: its document, stopped (Record continues it), with the audio clock where it ended. */
+    fun restore(restored: NotesDocument, seconds: Double) {
+        if (state.active) return
+        reset()
+        document = restored
+        router.resetTime(seconds)
+        state = if (restored.isEmpty) State.IDLE else State.STOPPED
+        changed()
+    }
+
+    private fun capture() {
+        state = State.STARTING
         val segment = open()
         val (_, offset) = router.swap(segment)
         val seq = nextSeq++
@@ -216,6 +249,7 @@ internal class NotesRecorder(
     internal fun handleFrame(frame: ByteArray, rms: Float) { if (router.route(frame, rms)) scope.launch { cut() } }
 
     fun stop() {
+        if (state == State.STARTING && resuming) current?.let { abandonResume(it, null) }
         if (state == State.STARTING && !sawReady) { cancel(); return }
         finishRecording(null)
     }
@@ -226,11 +260,27 @@ internal class NotesRecorder(
     private fun captureEnded(problem: String?) {
         capture = null
         val message = problem ?: "The microphone stopped"
-        if (state == State.STARTING && !sawReady) { cancel(); error = message; state = State.ERROR }
+        if (state == State.STARTING && resuming) current?.let { abandonResume(it, message) }
+        else if (state == State.STARTING && !sawReady) { cancel(); error = message; state = State.ERROR }
         else if (state.capturing) finishRecording(message)
     }
 
     private fun stopCapture() { val stopping = capture; capture = null; level = 0.0; stopping?.stop() }
+
+    /** Closes the microphone and lets the capturing segment finalize as at a cut. */
+    private fun releaseMicrophone() {
+        stopCapture()
+        val (old, end) = router.swap(null)
+        current?.let { seq -> segments[seq]?.let { it.end = end; if (it === old) finalize(it) } }
+        current = null
+    }
+
+    /** A Resume whose socket never got Ready: back to paused, the socket dropped as an empty segment. */
+    private fun abandonResume(seq: Int, reason: String?) {
+        stopCapture(); router.swap(null); current = null; resuming = false
+        error = reason; state = State.PAUSED
+        finish(seq, null)
+    }
 
     /** Drops everything in flight at once. The document is kept. */
     fun cancel() {
@@ -238,7 +288,7 @@ internal class NotesRecorder(
         stopCapture()
         router.swap(null)
         segments.values.forEach { close(it, cancel = true) }
-        segments.clear(); results.clear(); nextCommit = nextSeq; current = null
+        segments.clear(); results.clear(); nextCommit = nextSeq; current = null; resuming = false
         passJob?.cancel(); passJob = null
         timer?.cancel(); timer = null
         waiting = false; manualReorganize = false
@@ -317,7 +367,7 @@ internal class NotesRecorder(
                 debugRetention = event.debugRetention; sawReady = true; segment.ready = true
                 if (!segment.buffer.ready()) { lost(segment); return }
                 segment.opened.complete(true)
-                if (state == State.STARTING && segment.seq == current) state = State.RECORDING
+                if (state == State.STARTING && segment.seq == current) { resuming = false; state = State.RECORDING }
                 changed()
             }
             is ServerEvent.Partial -> if (segment.seq >= 0) { segment.partial = event.text; updateLivePartial() }
@@ -342,6 +392,7 @@ internal class NotesRecorder(
     private fun segmentFailed(segment: Segment, reason: String) {
         val seq = segment.seq
         if (segments[seq] !== segment) return
+        if (state == State.STARTING && resuming && seq == current) { abandonResume(seq, reason); return }
         if (state == State.STARTING && !sawReady && seq == current) {
             // The very first socket never got going: nothing is recording yet.
             drop(seq); stopCapture(); router.swap(null); current = null; results.clear(); nextCommit = nextSeq
@@ -458,7 +509,7 @@ internal class NotesRecorder(
         if (passJob != null || finalizingCount > 0) { waiting = true; return }
         waiting = false
         var appendWaiting = false
-        if (state.capturing) {
+        if (state.live) {
             publish(document.freezeOverflow())
             val next = document.nextStructureRequest()
             if (next != null && next.windowEnd > (held?.first?.windowEnd ?: -1)) {
@@ -577,7 +628,7 @@ internal class NotesRecorder(
             publish(document.applyPieces(pieces, request))
             if (structuring !is Structuring.Off) structuring = outcome.failures.firstOrNull()?.let { Structuring.Failed(it) } ?: Structuring.Idle
         }
-        if (waiting || state.capturing) schedule()
+        if (waiting || state.live) schedule()
         changed()
     }
 
@@ -591,7 +642,7 @@ internal class NotesRecorder(
             if (response.structured) dropHeld()
             applyAppend(request, response)
         }
-        if (waiting || state.capturing) schedule()
+        if (waiting || state.live) schedule()
         changed()
     }
 
@@ -712,15 +763,12 @@ internal class NotesRecorder(
     // Stopping
 
     private fun finishRecording(problem: String?) {
-        if (!state.capturing) return
+        if (!state.live) return
         val myEpoch = epoch
         stoppingSince = now()
         state = State.STOPPING
         timer?.cancel(); timer = null; waiting = false; manualReorganize = false
-        stopCapture()
-        val (old, end) = router.swap(null)
-        current?.let { seq -> segments[seq]?.let { it.end = end; if (it === old) finalize(it) } }
-        current = null
+        releaseMicrophone()
         scope.launch {
             waitUntil { segments.isEmpty() && passJob == null }
             if (epoch != myEpoch) return@launch

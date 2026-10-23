@@ -38,7 +38,7 @@ internal class ScriptedNotesApi : NotesApi {
     override fun reorganize(request: NotesReorganizeRequest) = NotesReorganizeResponse(request.notes, true, false)
 }
 
-internal class NotesModelRig(context: Context, health: Health? = notesMac, paired: Boolean = true) {
+internal class NotesModelRig(context: Context, health: Health? = notesMac, paired: Boolean = true, val keys: SoftwareHistoryKeys = SoftwareHistoryKeys()) {
     val wires = mutableListOf<NotesWire>()
     val captures = mutableListOf<FakeNotesCapture>()
     val foreground = mutableListOf<Boolean>()
@@ -53,7 +53,7 @@ internal class NotesModelRig(context: Context, health: Health? = notesMac, paire
             apiFactory = { _, _ -> api }, micGranted = { true },
             pairing = { if (paired) Pairing.from("https://mac.example.test/chirp", "synthetic") else null },
             fetchHealth = { _, _ -> null }, tailscale = TailscalePromptTest.FakeTailscale(),
-            foreground = { foreground += it }, io = { it() })
+            foreground = { foreground += it }, io = { it() }, journal = NotesJournal(context, keys, store, io = { it() }))
     }
     val wire get() = wires.last()
     fun idle() = shadowOf(Looper.getMainLooper()).idle()
@@ -190,11 +190,15 @@ class NotesServiceTest {
         assertEquals("Chirp Notes is recording", notification.extras.getString(Notification.EXTRA_TITLE))
         assertNull(notification.extras.getCharSequence(Notification.EXTRA_TEXT))
         assertTrue(notification.flags and Notification.FLAG_ONGOING_EVENT != 0)
-        val stop = notification.actions.single()
-        assertEquals("Stop", stop.title)
-        val intent = shadowOf(stop.actionIntent).savedIntent
-        assertEquals(NotesService.ACTION_STOP, intent.action)
-        assertEquals(NotesActivity::class.java.name, intent.component?.className)
+        assertEquals(Notification.VISIBILITY_PUBLIC, notification.visibility)
+        assertEquals(listOf("Pause", "Stop"), notification.actions.map { it.title.toString() })
+        // The buttons reach the session through the running service, without opening the screen.
+        for ((action, expected) in notification.actions.zip(listOf(NotesService.ACTION_PAUSE, NotesService.ACTION_STOP))) {
+            val pending = shadowOf(action.actionIntent)
+            assertTrue(pending.isServiceIntent)
+            assertEquals(expected, pending.savedIntent.action)
+            assertEquals(NotesService::class.java.name, pending.savedIntent.component?.className)
+        }
         assertEquals(NotesActivity::class.java.name, shadowOf(notification.contentIntent).savedIntent.component?.className)
         NotesService.set(app, true)
         assertEquals(NotesService::class.java.name, shadowOf(app).nextStartedService.component?.className)
@@ -213,6 +217,9 @@ class NotesRenderTest {
         val output = File(System.getProperty("chirp.screenshots")).apply { mkdirs() }
         val rig = NotesModelRig(RuntimeEnvironment.getApplication())
         val dark = mutableStateOf(false)
+        // A fixed name: the default title is the start time, which would change every capture.
+        fun name() = rig.model.rename("Launch sync")
+        name()
         compose.setContent { ChirpTheme(dark.value) { NotesScreen(rig.model, rig.model::toggle, {}, {}, {}, {}) } }
         fun shot(name: String) {
             compose.waitForIdle()
@@ -230,7 +237,7 @@ class NotesRenderTest {
                 rig.wire.partial("Someone should draft the invite email")
             }
             shot("recording")
-            compose.runOnIdle { rig.model.recorder.cancel(); rig.model.clear() }
+            compose.runOnIdle { rig.model.recorder.cancel(); rig.model.clear(); name() }
         }
     }
 

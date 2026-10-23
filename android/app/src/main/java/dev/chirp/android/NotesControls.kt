@@ -1,0 +1,49 @@
+package dev.chirp.android
+
+import android.content.ComponentName
+import android.content.Context
+import android.service.quicksettings.TileService
+
+/**
+ * Reaches the Notes session from outside its screen: the recording notification's Pause, Resume and Stop, and the Quick
+ * Settings tile. The session registers itself while it holds the microphone service. Main thread only; carries no text.
+ */
+internal object NotesControls {
+    interface Session {
+        val state: NotesRecorder.State
+        val elapsed: Double
+        fun pause()
+        fun resume()
+        fun stop()
+    }
+
+    var session: Session? = null
+        private set
+
+    /** A notification button. False when there is no session to act on. */
+    fun act(action: String?): Boolean {
+        val current = session ?: return false
+        when (action) {
+            NotesService.ACTION_PAUSE -> current.pause()
+            NotesService.ACTION_RESUME -> current.resume()
+            NotesService.ACTION_STOP -> current.stop()
+            else -> return false
+        }
+        return true
+    }
+
+    /** The session's state changed: re-post the notification and ask the tile to redraw. */
+    fun publish(context: Context, from: Session) {
+        val state = from.state
+        if (state.active) { session = from; NotesService.update(context, state == NotesRecorder.State.PAUSED, from.elapsed) }
+        else if (session === from) { session = null; NotesService.update(context, null, 0.0) }
+        else return
+        refreshTile(context)
+    }
+
+    fun release(context: Context, from: Session) { if (session === from) { session = null; refreshTile(context) } }
+
+    private fun refreshTile(context: Context) {
+        try { TileService.requestListeningState(context, ComponentName(context, NotesTileService::class.java)) } catch (_: RuntimeException) { }
+    }
+}
