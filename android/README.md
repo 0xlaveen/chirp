@@ -34,14 +34,14 @@ cd android
 ./gradlew assembleRelease
 ```
 
-The APK lands at `app/build/outputs/apk/release/app-release.apk`. It is signed with `keystore/local-debug.keystore` (create it once with `scripts/make-keystore.sh`; without it the release build is unsigned). **Never generate a replacement key for an app that is already installed** — Android would refuse the update. Debug and release builds both use this local key.
+The build produces two signed APKs in `app/build/outputs/apk/release/`: `app-arm64-v8a-release.apk` for the phone (arm64-v8a only) and `app-x86_64-release.apk` for emulator validation. Install the **arm64** APK on the phone — the ABI split makes it smaller than the former dual-ABI APK (25.7 MiB; measured sizes in [Validation records](#validation-records)). Signing uses `keystore/local-debug.keystore` (create it once with `scripts/make-keystore.sh`; without it the release build is unsigned). **Never generate a replacement key for an app that is already installed** — Android would refuse the update. Debug and release builds both use this local key.
 
 ### Put it on the phone
 
 Install **as an update, without uninstalling Chirp** — that is what keeps the saved pairing. Either works:
 
-- **Over Tailscale (Taildrop):** from the Mac, `tailscale file cp app/build/outputs/apk/release/app-release.apk <phone>:` — the file arrives as a notification in the phone's Tailscale app. Tap it to open the installer.
-- **adb:** `adb install -r app/build/outputs/apk/release/app-release.apk` over USB or wireless debugging.
+- **Over Tailscale (Taildrop):** from the Mac, `tailscale file cp app/build/outputs/apk/release/app-arm64-v8a-release.apk <phone>:` — the file arrives as a notification in the phone's Tailscale app. Tap it to open the installer.
+- **adb:** `adb install -r app/build/outputs/apk/release/app-arm64-v8a-release.apk` over USB or wireless debugging.
 
 Opening a sideloaded APK can trigger a **Play Protect** screen warning about an unknown developer. Choose **More details → Install anyway** to continue. (A separate, optional sideload restriction can affect the floating microphone only — see [Optional floating microphone](#optional-floating-microphone).)
 
@@ -190,7 +190,7 @@ HeliBoard's gesture typing needs a native decoder, and HeliBoard 4.2 ships none.
 4. Chirp installs the file exactly where HeliBoard's loader expects it (read-only `files/libjni_latinime.so`, checksum in `lib_checksum`) and restarts, because native code loads once per process. HeliBoard's Gesture typing settings then appear.
 5. When the library is active, the card offers a **Swipe to type** switch and **Remove gesture library**. A file that fails to load is reported, with a Remove action.
 
-The card warns that the library runs inside Chirp with Chirp's permissions, including network access — use only a file from a source you trust. Release smoke still asserts that no `libjni_latinimegoogle` file is packaged.
+The card warns that the library runs inside Chirp with Chirp's permissions, including network access — use only a file from a source you trust — and that a user-supplied library may not be built for 16 KB memory pages and so can fail to load on Android 15+ devices that use them (Chirp's own packaged libraries are checked for 16 KB alignment at every build). Release smoke still asserts that no `libjni_latinimegoogle` file is packaged.
 
 ### Optional floating microphone
 
@@ -253,13 +253,13 @@ cd android
 ./gradlew lint testDebugUnitTest assembleDebug assembleRelease
 ```
 
-Use the **existing** `keystore/local-debug.keystore` to sign updates; never generate a replacement key for an already-installed app. APKs are `app/build/outputs/apk/{debug,release}/app-{debug,release}.apk`. The host and library use NDK 28.0.13004108; the app setting is needed to strip JNI symbols. The release supports arm64 phones and x86_64 emulator validation (`abiFilters` in the keyboard module). App lint remains strict (warnings as errors); only the vendored keyboard's `lint*Analyze*` tasks are disabled (upstream lint crash — see [Upstream](#upstream)). See [keyboard/UPSTREAM.md](keyboard/UPSTREAM.md) for the pinned source, license, adapter, upstream patch and vendor-only lint workaround.
+Use the **existing** `keystore/local-debug.keystore` to sign updates; never generate a replacement key for an already-installed app. The keyboard module builds both ABIs, but the app splits packaging (`splits.abi`, no universal APK): every build yields an `app-arm64-v8a-<build>.apk` for phones and an `app-x86_64-<build>.apk` for x86_64 emulator validation, under `app/build/outputs/apk/{debug,release}/`. Release smoke installs whichever split matches the connected emulator's ABI (the local `chirp-fold` AVD reports `arm64-v8a` on Apple Silicon). Each assemble also runs `check<Build>Native16kAlignment` (`scripts/check-native-alignment.py`): every packaged `.so` must have only 16 KB-aligned ELF `PT_LOAD` segments and the APK zip layout must satisfy `zipalign -P 16`, because Android 15+ devices may use 16 KB memory pages. The host and library use NDK 28.0.13004108 (NDK r28 aligns by default); the app setting is needed to strip JNI symbols. App lint remains strict (warnings as errors); only the vendored keyboard's `lint*Analyze*` tasks are disabled (upstream lint crash — see [Upstream](#upstream)). See [keyboard/UPSTREAM.md](keyboard/UPSTREAM.md) for the pinned source, license, adapter, upstream patch and vendor-only lint workaround.
 
 Robolectric runs on API 31 and 37 with fake input connections, transport and capture. The integrated keyboard renders actual HeliBoard keys and the production Chirp row in idle/listening/final states, light/dark, under `../docs/screenshots/android/`. Existing transport tests use isolated TLS loopback servers. LiveServerTest stays opt-in (`-Pchirp.live.url` …); no production Chirp server or port 7821 is used by the default check.
 
 ### Mandatory release smoke
 
-Run `android/scripts/emulator-smoke.sh` with the toolchain sourced after every change. It builds and installs the minified release APK, clears only the authorized disposable emulator's Chirp data, walks state-aware setup, opens/backs out of the real Google QR scanner, opens the native editor, checks keyboard/mic/recovery/options, and exercises actual HeliBoard keys: `teh` → `the` (sentence-cased at field start), `im` → `I'm`, next-word suggestions, clipboard history and emoji. It checks inner and cover layouts in both themes, unfolded landscape split, one-handed reachability, settings/diagnostics, packaged dictionary hashes, absence of debug assets/proprietary glide libraries and the Chirp crash buffer. Failure exits non-zero. Every ADB call pins `emulator-5580`; other serials are refused. It changes no phone, Mac configuration, production server or Tailscale state.
+Run `android/scripts/emulator-smoke.sh` with the toolchain sourced after every change. It builds and installs the minified release APK split matching the emulator's ABI, clears only the authorized disposable emulator's Chirp data, walks state-aware setup, opens/backs out of the real Google QR scanner, opens the native editor, checks keyboard/mic/recovery/options, and exercises actual HeliBoard keys: `teh` → `the` (sentence-cased at field start), `im` → `I'm`, next-word suggestions, clipboard history and emoji. It checks inner and cover layouts in both themes, unfolded landscape split, one-handed reachability, settings/diagnostics, packaged dictionary hashes, absence of debug assets/proprietary glide libraries and the Chirp crash buffer. Failure exits non-zero. Every ADB call pins `emulator-5580`; other serials are refused. It changes no phone, Mac configuration, production server or Tailscale state.
 
 A tiny shell-only UiAutomator probe reads all accessibility windows because Android 17's stock `uiautomator dump` returns the editor window without the IME (`scripts/build-ui-probe.sh` builds it under a temporary directory from `UiHierarchy.java`, pushes it to the disposable emulator and removes it in cleanup; it ships in neither APK). Real release captures are `docs/screenshots/android/release-*.png`, each under 2 MB. Release has no synthetic capture source or emulator cleartext policy.
 
@@ -272,7 +272,7 @@ source ~/.local/share/chirp-android/env.sh
 python3 android/scripts/emulator-check.py \
   --python /path/to/chirp/server/.venv/bin/python \
   --model-dir /path/to/cached/parakeet-mlx \
-  --apk android/app/build/outputs/apk/debug/app-debug.apk
+  --apk android/app/build/outputs/apk/debug/app-x86_64-debug.apk
 ```
 
 | Flag | Runs |
@@ -293,7 +293,7 @@ Reproduce the TLS stop matrix after building debug (requires `openssl` for the g
 source ~/.local/share/chirp-android/env.sh
 python3 android/scripts/emulator-check.py --stop-check --tls \
   --python /path/to/server/.venv/bin/python --model-dir /path/to/cached/parakeet-mlx \
-  --apk android/app/build/outputs/apk/debug/app-debug.apk
+  --apk android/app/build/outputs/apk/debug/app-x86_64-debug.apk
 # Omit --tls for HTTP. To check old behaviour, create a disposable detached worktree
 # at a31415b^ and add --server-root /path/to/old-worktree/server.
 ```
@@ -405,3 +405,11 @@ Unit coverage (Robolectric): encryption round-trip with software keys, tamper/co
 Emulator validation ran on **emulator-5582 only** (a second disposable read-only `chirp-fold` instance, used while emulator-5580 belonged to a parallel worker — the checked-in helper itself pins emulator-5580), debug APK with the throwaway TLS server on port 7899: `--history-check` drives the demo end to end — keyboard opt-in, synthetic dictation with clean-up, ciphertext check (no plaintext words on disk), erase and reinsert from the panel, long-press Insert raw, Fold inner/cover in light and dark, back-closes-panel, history-screen search, and turn-off-deletes-file. Screenshots land in `docs/screenshots/android/` as `emulator-history-*.png`; the pre-feature baseline strip is `history-before-keyboard-inner-{light,dark}.png`. Before that, the full `--stop-check --tls` matrix and the release smoke (`scripts/emulator-smoke.sh`) were re-run on this branch. No physical device or production server was used.
 
 Reproduce after building debug, with the [emulator speech check](#emulator-speech-checks-debug-only) command plus `--history-check --tls` (on the authorized emulator-5580). The branch carried no version bump — still **0.5.1 (7)**, signed release APK **27,025,176 bytes (25.76 MiB)** — and was released as **0.6.0 (10)** with the history feature. No APK was published beyond the repository.
+
+### arm64-only phone APK and 16 KB page gate (2026-10-23)
+
+Release packaging splits by ABI (`splits.abi` in the app module; no universal APK, same version code for both outputs): every build produces `app-arm64-v8a-<build>.apk` and `app-x86_64-<build>.apk` under `app/build/outputs/apk/<build>/`, signed with the existing local key. Signed release sizes: arm64 **26,588,220 bytes (25.36 MiB)**, x86_64 **26,603,730 bytes (25.37 MiB)**. Native libraries are the only ABI-specific payload — compressed `libjni_latinime.so` (≈420 KB arm64 / ≈435 KB x86_64) plus `libandroidx.graphics.path.so` (≈4–5 KB) — so the phone APK saves **about 440 KB** against the equivalent dual-ABI build; the 0.6.0-era dual-ABI release measured 27,025,176 bytes. The keyboard module still compiles both ABIs.
+
+Every assemble finalizes with `check<Build>Native16kAlignment` (`scripts/check-native-alignment.py`): every packaged `.so` must have only `PT_LOAD` segments aligned ≥ 16384, stored zip entries must be 4-byte aligned, and an uncompressed `.so` entry must sit on a 16 KB boundary (`zipalign -P 16` semantics). Both current libraries are NDK r28 builds (aligned by default) and are deflated in the APK (legacy packaging), so ELF alignment is the load-time gate. The swipe-typing card and this README warn that a user-supplied gesture library may not be 16 KB-compatible and can fail to load on Android 15+ 16 KB-page devices. `docs/android-input-options.md` marks Path A (voice subtype, auto-start, `switchToPreviousInputMethod`) retired and fixes the Chirp Keyboard naming.
+
+`./gradlew lint testDebugUnitTest assembleDebug assembleRelease` passed on the rebased head (including #47): **366 tests, zero failures/errors, two pre-existing opt-in skips**, both splits built and both alignment checks green. (Lint's informational downgrade of the time-dependent `GradleDependency`/`NewerVersionAvailable`/`AndroidGradlePluginVersion` checks comes from main and covers the Gradle 9.8.2/OkHttp 5.5.1 releases of mid-October 2026.) Release smoke on **emulator-5580 only**: the script resolves the split by the emulator's reported ABI, and the local `chirp-fold` AVD reports **arm64-v8a** on an **Android 17 16 KB-page image** (`sdk_gphone16k_arm64`, page size 16384) — so smoke runs the app on a 16 KB-page system. The run installed the signed arm64 split and passed artifact inspection, the setup wizard, QR scanner open/back, mic permission and pairing actions, long-press options and the real-key typing checks (`teh`→`the`, `I'm`, next-word, clipboard, emoji) before flaking on the first Fold-loop settings cold start (60 s timeout on a contended host). Three later emulator starts crash-looped at QEMU startup (hanging `QEMU2 main loop` after Vulkan init, with and without software GPU); the only native crash in logcat was the system `android.hardware.uwb-service` aborting for a missing `/dev/uwb0`, never `dev.chirp`. The Fold inner/cover theme sweep, landscape split, one-handed reachability and settings/diagnostics screens were therefore not re-verified in this round, and with no x86_64 emulator on this host the x86_64 split was validated by build, the 16 KB gate and artifact inspection only. No phone, production server or Tailscale state was touched.

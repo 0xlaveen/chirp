@@ -168,7 +168,8 @@ internal fun SwipeTypingSettings() {
                     "Chirp never downloads or includes it. Using it is your choice and is subject to that library's own licence.",
                     style = MaterialTheme.typography.bodySmall)
                 Text("This phone needs the $abi version. Chirp checks the file's SHA-256 against the known release and warns " +
-                    "about anything else. The library runs inside Chirp with Chirp's permissions, including network access, " +
+                    "about anything else. A library not built for 16 KB memory pages may fail to load on Android 15+ phones " +
+                    "that use them. The library runs inside Chirp with Chirp's permissions, including network access, " +
                     "so use only a file from a source you trust.", style = MaterialTheme.typography.bodySmall)
                 OutlinedButton({ picker.launch(arrayOf("*/*")) }, Modifier.fillMaxWidth(), enabled = !busy) {
                     Text(if (busy) "Checking…" else "Add gesture library…")

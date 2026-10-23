@@ -183,7 +183,10 @@ def crash_check():
 def main():
     assert os.environ.get('ANDROID_SERIAL', SERIAL) == SERIAL
     assert adb('get-serialno').strip().decode() == SERIAL
-    apk = ROOT / 'android/app/build/outputs/apk/release/app-release.apk'
+    # The release splits by ABI; smoke installs the split matching this emulator's ABI.
+    abi = adb('shell', 'getprop', 'ro.product.cpu.abi').decode().strip()
+    assert abi in ('arm64-v8a', 'x86_64'), 'unexpected emulator ABI ' + abi
+    apk = ROOT / ('android/app/build/outputs/apk/release/app-%s-release.apk' % abi)
     # Artifact inspection supplements (rather than substitutes for) UI verification.
     with zipfile.ZipFile(apk) as archive:
         assert not any('synthetic' in name or 'debug_network_security' in name for name in archive.namelist()), 'Debug resource in release'

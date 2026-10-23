@@ -6,6 +6,15 @@ android {
     buildToolsVersion = "37.0.0"
     ndkVersion = "28.0.13004108"
     packaging { jniLibs { useLegacyPackaging = true } }
+    // Phones install the arm64 APK; the x86_64 split exists only for emulator validation.
+    splits {
+        abi {
+            isEnable = true
+            reset()
+            include("arm64-v8a", "x86_64")
+            isUniversalApk = false
+        }
+    }
     defaultConfig {
         applicationId = "dev.chirp.android"
         minSdk = 31
@@ -106,4 +115,16 @@ val generateEmulatorTls by tasks.registering(Exec::class) {
 tasks.matching { it.name == "preDebugBuild" }.configureEach { dependsOn(generateEmulatorTls) }
 tasks.matching { it.name == "mergeDebugAssets" || it.name == "packageDebugUnitTestForUnitTest" }.configureEach {
     dependsOn(generateDebugSyntheticAudio)
+}
+
+// Android 15+ may use 16 KB pages: packaged .so files need 16 KB-aligned LOAD segments
+// and the APK zip layout must satisfy zipalign -P 16 (scripts/check-native-alignment.py).
+listOf("Debug", "Release").forEach { variant ->
+    val checkNative16k = tasks.register<Exec>("check${variant}Native16kAlignment") {
+        commandLine(
+            "python3", rootProject.file("scripts/check-native-alignment.py").absolutePath,
+            layout.buildDirectory.dir("outputs/apk/${variant.lowercase()}").get().asFile.absolutePath,
+        )
+    }
+    tasks.matching { it.name == "assemble$variant" }.configureEach { finalizedBy(checkNative16k) }
 }
