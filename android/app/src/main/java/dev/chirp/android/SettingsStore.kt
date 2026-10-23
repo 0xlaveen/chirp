@@ -107,6 +107,10 @@ class SettingsStore(context: Context) {
     var notesRecovery: Boolean
         get() = prefs.getBoolean("notes_recovery", true)
         set(value) { prefs.edit { putBoolean("notes_recovery", value) } }
+    /** Notes: skip screen work (live partials, the level meter, editor updates) while the screen is off. On by default. */
+    var notesBatterySaver: Boolean
+        get() = prefs.getBoolean("notes_battery_saver", true)
+        set(value) { prefs.edit { putBoolean("notes_battery_saver", value) } }
     var health: Health?
         get() = try { prefs.getString("health", null)?.let(Protocol::health) } catch (_: Exception) { null }
         set(value) {

@@ -11,6 +11,24 @@ command -v adb >/dev/null
 adb get-state >/dev/null
 mkdir -p "$CHIRP_BATTERY_OUTPUT"
 chmod 700 "$CHIRP_BATTERY_OUTPUT"
+if [[ "${MODE:-dictation}" == notes ]]; then
+    NOTES_MINUTES="${NOTES_MINUTES:-20}"
+    [[ "$NOTES_MINUTES" =~ ^[1-9][0-9]*$ ]] || exit 2
+    printf 'Network: %s. Open Chirp Notes with synthetic speech playing nearby. Press Enter to reset counters. ' "$NETWORK"
+    read -r _
+    adb shell dumpsys batterystats --reset >/dev/null
+    STARTED=$(date +%s)
+    printf 'Tap Record, turn the screen off for %s minutes, then turn it on, check the notes, tap Stop and press Enter. ' "$NOTES_MINUTES"
+    read -r _
+    ELAPSED=$(( $(date +%s) - STARTED ))
+    adb shell dumpsys batterystats --charged dev.chirp.android > "$CHIRP_BATTERY_OUTPUT/notes.txt"
+    adb shell dumpsys power | grep -i 'dev.chirp.android' > "$CHIRP_BATTERY_OUTPUT/wakelocks.txt" || true
+    printf '\nFor docs/bench.md (measured counters require operator review):\n'
+    printf '| Android Notes %s | screen off %s min | elapsed %ss | saver on/off | mAh/min TBM |\n' "$NETWORK" "$NOTES_MINUTES" "$ELAPSED"
+    printf 'Counter files: %s\n' "$CHIRP_BATTERY_OUTPUT"
+    printf 'Add the newest Diagnostics -> Notes sessions line (numbers only).\n'
+    exit 0
+fi
 printf 'Network: %s. Use an unplugged phone at a consistent charge and brightness.\n' "$NETWORK"
 printf 'Show Chirp in a synthetic test field. Press Enter to reset counters. '
 read -r _

@@ -38,7 +38,8 @@ internal class ScriptedNotesApi : NotesApi {
     override fun reorganize(request: NotesReorganizeRequest) = NotesReorganizeResponse(request.notes, true, false)
 }
 
-internal class NotesModelRig(context: Context, health: Health? = notesMac, paired: Boolean = true, val keys: SoftwareHistoryKeys = SoftwareHistoryKeys()) {
+internal class NotesModelRig(context: Context, health: Health? = notesMac, paired: Boolean = true, val keys: SoftwareHistoryKeys = SoftwareHistoryKeys(),
+                             val sessions: NotesSessions = NotesSessions(context, SoftwareHistoryKeys())) {
     val wires = mutableListOf<NotesWire>()
     val captures = mutableListOf<FakeNotesCapture>()
     val foreground = mutableListOf<Boolean>()
@@ -53,7 +54,8 @@ internal class NotesModelRig(context: Context, health: Health? = notesMac, paire
             apiFactory = { _, _ -> api }, micGranted = { true },
             pairing = { if (paired) Pairing.from("https://mac.example.test/chirp", "synthetic") else null },
             fetchHealth = { _, _ -> null }, tailscale = TailscalePromptTest.FakeTailscale(),
-            foreground = { foreground += it }, io = { it() }, journal = NotesJournal(context, keys, store, io = { it() }))
+            foreground = { foreground += it }, io = { it() }, journal = NotesJournal(context, keys, store, io = { it() }),
+            sessions = sessions, background = { it() })
     }
     val wire get() = wires.last()
     fun idle() = shadowOf(Looper.getMainLooper()).idle()
@@ -237,6 +239,8 @@ class NotesRenderTest {
                 rig.wire.partial("Someone should draft the invite email")
             }
             shot("recording")
+            compose.runOnIdle { rig.model.pause(); rig.idle() }
+            shot("paused")
             compose.runOnIdle { rig.model.recorder.cancel(); rig.model.clear(); name() }
         }
     }

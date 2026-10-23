@@ -89,6 +89,15 @@ internal class NotesRecorder(
         private set
     var level = 0.0
         private set
+    /**
+     * Battery saver: nothing is on screen, so the level meter and live partials are not dispatched to the main thread.
+     * Segments, structuring and reorganize run as always; turning it off brings the partial line up to date.
+     */
+    @Volatile var quiet = false
+        set(value) { if (field != value) { field = value; if (!value) updateLivePartial() } }
+    /** Structure and reorganize calls made, for the numbers-only Notes timings. */
+    var passes = 0
+        private set
     /** AI changes to [document] the editor has not replayed yet, oldest first. */
     private val pending = mutableListOf<NotesChange>()
     var onChange: (() -> Unit)? = null
@@ -165,6 +174,7 @@ internal class NotesRecorder(
     val canUndo get() = undo?.second == document.version
 
     fun takePendingChanges(): List<NotesChange> = pending.toList().also { pending.clear() }
+    val pendingCount get() = pending.size
 
     private fun publish(change: NotesChange?) {
         change ?: return
@@ -229,7 +239,7 @@ internal class NotesRecorder(
         segment.seq = seq; segment.offset = offset; current = seq; segments[seq] = segment
         lateinit var made: Capture
         made = captureFactory({ frame, rms -> if (router.route(frame, rms)) scope.launch { cut() } },
-            { value -> scope.launch { if (capture === made && state.capturing) { level = value; changed() } } },
+            { value -> if (!quiet) scope.launch { if (capture === made && state.capturing) { level = value; changed() } } },
             { problem -> scope.launch { if (capture === made) captureEnded(problem) } })
         capture = made
         made.start()
@@ -370,8 +380,8 @@ internal class NotesRecorder(
                 if (state == State.STARTING && segment.seq == current) { resuming = false; state = State.RECORDING }
                 changed()
             }
-            is ServerEvent.Partial -> if (segment.seq >= 0) { segment.partial = event.text; updateLivePartial() }
-            is ServerEvent.Correcting -> if (segment.seq >= 0) { segment.partial = event.raw; segment.correcting = true; updateLivePartial() }
+            is ServerEvent.Partial -> if (segment.seq >= 0) { segment.partial = event.text; if (!quiet) updateLivePartial() }
+            is ServerEvent.Correcting -> if (segment.seq >= 0) { segment.partial = event.raw; segment.correcting = true; if (!quiet) updateLivePartial() }
             is ServerEvent.Final -> if (segment.seq >= 0) {
                 val text = event.text.trim(); val raw = event.raw.trim()
                 val kept = options.correction && !event.corrected && event.correctionError != null
@@ -547,7 +557,7 @@ internal class NotesRecorder(
 
     /** Starts [body] in the pass slot; the slot is taken before the body can run (and free itself). */
     private fun pass(kind: PassKind, body: suspend () -> Unit) {
-        passKind = kind
+        passKind = kind; passes++
         val job = scope.launch(start = CoroutineStart.LAZY) { body() }
         passJob = job
         job.start()

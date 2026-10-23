@@ -208,7 +208,7 @@ class NotesControlsTest {
         assertSame(rig.model, NotesControls.session)
         assertTrue(NotesControls.act(NotesService.ACTION_PAUSE)); rig.idle()
         assertEquals(NotesRecorder.State.PAUSED, rig.model.state)
-        assertTrue(rig.model.status.startsWith("Paused · 00:45"))
+        assertEquals("Paused", rig.model.status); assertEquals("00:45", rig.model.elapsedText)
         assertEquals("Chirp Notes is paused", posted().extras.getString(Notification.EXTRA_TITLE))
         assertEquals(listOf("Resume", "Stop"), posted().actions.map { it.title.toString() })
         assertEquals(listOf(true), rig.foreground)
