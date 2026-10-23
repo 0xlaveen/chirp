@@ -128,9 +128,9 @@ public struct NotesDocument: Equatable, Sendable, Codable {
     public private(set) var startedAt: Date
     /// The people speaker labels found in this document (Person 1, Person 2…).
     public private(set) var roster = SpeakerRoster()
-    /// +1 whenever a committed segment's labels change; `relabelled` keeps the newest (revision, segment) pairs, so
-    /// the window rebuilds its transcript only from there.
-    public private(set) var labelRevision = 0
+    /// +1 whenever a committed segment's labels change; the log keeps the newest (revision, segment) pairs, so the
+    /// window rebuilds its transcript only from there.
+    public var labelRevision: Int { labelLog?.revision ?? 0 }
     /// When each heading was first said: the offset of the first segment of the window its section came from, by
     /// `NotesDocument.headingKey`. A renamed heading loses it; merged headings keep the earliest.
     public internal(set) var sectionOffsets: [String: TimeInterval] {
@@ -139,14 +139,19 @@ public struct NotesDocument: Equatable, Sendable, Codable {
     }
     /// Optional storage, so a journal written before section times decodes.
     private var stamps: [String: TimeInterval]?
-    private var relabelled: [Relabel] = []
-    private struct Relabel: Equatable, Sendable { var revision: Int, segment: Int }
+    /// Optional storage too.
+    private var labelLog: LabelLog?
+    private struct LabelLog: Equatable, Sendable, Codable {
+        var revision = 0
+        var recent: [Relabel] = []
+    }
+    private struct Relabel: Equatable, Sendable, Codable { var revision: Int, segment: Int }
 
     /// What the recovery journal stores: everything but `livePartial` (display only).
     private enum CodingKeys: String, CodingKey {
         case id, segments, text, tailStart, version, windowGeneration, windowStart, structuredEnd, consecutiveFailures
         case lastReorganizeVersion, charsSinceReorganize, fallbackBlocks, isDirty, startedAt, roster
-        case stamps = "sectionOffsets"
+        case stamps = "sectionOffsets", labelLog
     }
 
     public init(startedAt: Date = Date(), text: String = "") {
@@ -196,17 +201,19 @@ public struct NotesDocument: Equatable, Sendable, Codable {
         }
         segments[id].labelsTentative = tentative
         isDirty = true
-        labelRevision += 1
-        relabelled.append(Relabel(revision: labelRevision, segment: id))
-        if relabelled.count > 64 { relabelled.removeFirst(relabelled.count - 64) }
+        var log = labelLog ?? LabelLog()
+        log.revision += 1
+        log.recent.append(Relabel(revision: log.revision, segment: id))
+        if log.recent.count > 64 { log.recent.removeFirst(log.recent.count - 64) }
+        labelLog = log
     }
 
     /// The first segment whose labels changed after `revision`: `segments.count` when none did, 0 when that is too
     /// long ago to tell.
     public func firstRelabelled(since revision: Int) -> Int {
         guard revision < labelRevision else { return segments.count }
-        guard let oldest = relabelled.first, oldest.revision <= revision + 1 else { return 0 }
-        return relabelled.filter { $0.revision > revision }.map(\.segment).min() ?? segments.count
+        guard let recent = labelLog?.recent, let oldest = recent.first, oldest.revision <= revision + 1 else { return 0 }
+        return recent.filter { $0.revision > revision }.map(\.segment).min() ?? segments.count
     }
 
     /// A recovered document's new diarizer starts with its own slots: keep the people, forget which slot was whom.

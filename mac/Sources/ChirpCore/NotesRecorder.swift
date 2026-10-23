@@ -620,12 +620,14 @@ public final class NotesRecorder {
         return false
     }
 
-    /// The final without the words that belong to a neighbour across an overlapped cut.
+    /// The final without the words that belong to a neighbour across an overlapped cut: trimmed by word timings,
+    /// then a first word or pair that still repeats the previous final's end is dropped (both together are the only
+    /// variant no worse than no overlap on every clip of the boundary bench, docs/bench.md).
     private func joinTrimmed(_ f: FinalResult, seq: Int) -> NotesJoin.Final {
-        let final = NotesJoin.Final(raw: f.raw, text: f.text, words: f.words)
+        var final = NotesJoin.Final(raw: f.raw, text: f.text, words: f.words)
         guard let s = segments[seq], s.leading > 0 || s.trailing > 0 else { return final }
         if f.words?.isEmpty == false {
-            return NotesJoin.trim(final, leading: s.leading, trailing: s.trailing, duration: (s.end ?? router.seconds) - s.offset)
+            final = NotesJoin.trim(final, leading: s.leading, trailing: s.trailing, duration: (s.end ?? router.seconds) - s.offset)
         }
         guard s.leading > 0, let previous = lastFinal, previous.seq == seq - 1 else { return final }
         return NotesJoin.dedupe(final, after: previous.text)

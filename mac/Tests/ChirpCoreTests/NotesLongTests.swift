@@ -135,6 +135,19 @@ final class RecordingTransport: StreamTransport, @unchecked Sendable {
         #expect((a.raw + " " + b.raw).split(separator: " ").filter { $0 == "the" }.count == 1)
     }
 
+    @Test func aWordBothDecodesTimedOnTheirOwnSideIsDroppedByTheTextRule() {
+        // The old socket timed "the" before the split, the new one after it: the timing trim keeps both, and the
+        // text rule the recorder runs next drops the repeat.
+        let old = NotesJoin.trim(.init(raw: "we will fix the", text: "We will fix the",
+                                       words: [w("we", 43.0, 43.2), w("will", 43.2, 43.5), w("fix", 43.5, 43.9), w("the", 44.2, 44.45)]),
+                                 leading: 0, trailing: 1, duration: 45)
+        let new = NotesJoin.trim(.init(raw: "the export is slow", text: "The export is slow.",
+                                       words: [w("the", 0.45, 0.6), w("export", 0.7, 1.2), w("is", 1.3, 1.4), w("slow", 1.5, 1.8)]),
+                                 leading: 1, trailing: 0, duration: 20)
+        #expect(old.raw == "we will fix the" && new.raw == "the export is slow")
+        #expect(NotesJoin.dedupe(new, after: old.text).text == "export is slow.")
+    }
+
     @Test func trimmingKeepsTheTextWhenCleanUpDeletedTheWord() {
         let new = NotesJoin.Final(raw: "um the the export works", text: "The export works.",
                                   words: [w("um", 0.1, 0.2), w("the", 0.3, 0.4), w("the", 0.6, 0.7), w("export", 0.8, 1.2),

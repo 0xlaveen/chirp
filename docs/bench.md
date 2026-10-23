@@ -873,6 +873,193 @@ HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 uv run python scripts/bench_cleanup.py \
 uv run pytest -q -m model
 ```
 
+## Live Notes segment boundaries (synthetic, no pauses)
+
+Issue #64. Mac Live Notes cuts a long recording into segments (`NotesSegmenter`: nothing before 12 s,
+a cut at 0.6 s of quiet, 0.3 s from 30 s, **0.15 s from 35 s (new "dip" rule)**, and a **hard cut at
+45 s whatever is being said**), and each segment is decoded on its own socket. The proposal for a
+hard cut is to send the last 1.0 s of the old segment again as the start of the new one and to
+de-duplicate the join. `server/scripts/bench_boundaries.py` tests that on speech with no real pauses.
+It renders a fixed, invented corpus with `say -v Samantha` (three sentences per clip: names, numbers,
+negations), trims each clip, joins clips with no gap into 3, 10 and 30 minute recordings, runs a Python
+port of the segmenter, and decodes every segment in-process with `ParakeetMLX.transcribe_timed`
+(float32, the server's final-decode path; no server). Metrics only; no text or audio is printed or kept.
+
+Method details are in the script's docstring. In short: WER is `jiwer` over the whole joined text
+(lowercase, punctuation stripped, digits spelled out). **Boundary WER** aligns the hypothesis to the
+whole reference with `jiwer`, takes the reference words whose estimated time (clip start plus a
+character-proportional share of the clip) is within 3 s of each hard cut, and divides the errors
+inside that window by its words (about 270 words for 13 cuts, 800 for 39). **Dups** are inserted
+words in a window that repeat the words next to them; **drops** are deleted reference words.
+
+Modes (same decodes, only the join differs): **a** no overlap, segments abut (today); **b** overlap
+plus the timing dedupe (split S = C - 0.5 s, the old segment keeps words whose midpoint is before S,
+the new one words whose midpoint is at or after S); **c** overlap plus the text-only dedupe (drop the
+new segment's first two words if they equal the old's last two, else the first if it equals the
+last). Alternatives tested: **d** b with the word's start time; **e** longest text match of up to six
+words; **f** b, then c's text rule on whatever repeat is left; **g** anchor on the longest run of words
+both decodes heard in the overlap, keep the old segment through it and the new one after it.
+
+Host: M5 Pro (18 logical CPUs), macOS 27.0.1, `parakeet-mlx:tdt-0.6b-v2`, **a heavily contended host**
+(load average 250-330 during the runs), so the decode times are not measurements; the 30 minute run
+took about 5 minutes of decoding per policy. One synthetic voice and one seed: the 3 minute recordings
+have only 3 hard cuts, so a difference of one word there is noise (the overall WER of the 3 minute
+rows moves by up to 0.5 points, 3 words, with nothing near a cut).
+
+The natural `say` pauses between sentences are long enough that the real rule cuts on pauses only
+(checked on 3 minutes: no hard cut), so the speech has to be made pause-free to exercise hard
+cuts. `--pause-cap S` shortens every internal quiet run to S seconds.
+
+Reproduce:
+
+```sh
+cd server
+uv run python scripts/bench_boundaries.py --minutes 3 10 30 --pause-cap 0.1   # first table
+uv run python scripts/bench_boundaries.py --minutes 3 10 30 --pause-cap 0.2   # second table
+```
+
+### Pause-free speech (`--pause-cap 0.1`)
+
+No quiet run is longer than 0.1 s, so the real rule almost never finds a pause (the 0.15 s dip
+needs three quiet 50 ms frames, which only a few frame alignments give) and nearly every cut is a
+hard cut; `forced` cuts every 45 s.
+
+| Recording | Policy | Mode | Cuts | Hard | WER % | Boundary WER % | Dups | Drops |
+|---|---|---|---:|---:|---:|---:|---:|---:|
+| 3 min | real | a | 4 | 3 | 5.18 | 1.8 | 1 | 0 |
+| 3 min | real | b | 4 | 3 | 5.66 | 0.0 | 0 | 0 |
+| 3 min | real | c | 4 | 3 | 6.63 | 10.5 | 6 | 0 |
+| 3 min | real | f | 4 | 3 | 5.66 | 0.0 | 0 | 0 |
+| 3 min | forced | a | 3 | 3 | 5.34 | 1.8 | 1 | 0 |
+| 3 min | forced | b | 3 | 3 | 5.83 | 0.0 | 0 | 0 |
+| 3 min | forced | c | 3 | 3 | 6.80 | 10.5 | 6 | 0 |
+| 3 min | forced | f | 3 | 3 | 5.83 | 0.0 | 0 | 0 |
+| 10 min | real | a | 13 | 11 | 5.01 | 8.0 | 1 | 11 |
+| 10 min | real | b | 13 | 11 | 4.91 | 4.4 | 4 | 1 |
+| 10 min | real | c | 13 | 11 | 6.50 | 19.0 | 21 | 1 |
+| 10 min | real | f | 13 | 11 | 4.72 | 2.6 | 0 | 1 |
+| 10 min | forced | a | 13 | 13 | 4.91 | 5.1 | 2 | 1 |
+| 10 min | forced | b | 13 | 13 | 5.49 | 5.9 | 8 | 1 |
+| 10 min | forced | c | 13 | 13 | 7.23 | 19.1 | 27 | 1 |
+| 10 min | forced | f | 13 | 13 | 5.11 | 2.9 | 0 | 1 |
+| 30 min | real | a | 41 | 30 | 5.49 | 8.4 | 4 | 23 |
+| 30 min | real | b | 41 | 30 | 5.25 | 5.9 | 17 | 2 |
+| 30 min | real | c | 41 | 30 | 6.48 | 18.5 | 58 | 2 |
+| 30 min | real | f | 41 | 30 | 5.02 | 3.6 | 3 | 2 |
+| 30 min | forced | a | 39 | 39 | 5.06 | 6.9 | 6 | 5 |
+| 30 min | forced | b | 39 | 39 | 5.49 | 8.1 | 24 | 7 |
+| 30 min | forced | c | 39 | 39 | 7.23 | 21.3 | 72 | 6 |
+| 30 min | forced | f | 39 | 39 | 5.11 | 5.1 | 0 | 7 |
+
+### Dips of 0.2 s (`--pause-cap 0.2`)
+
+With 0.2 s dips between sentences, the new 0.15 s dip rule always finds one before 45 s, so **the
+real rule made no hard cut at all** in 3, 10 and 30 minutes (4, 16 and 48 pause cuts). Only the
+forced policy has boundaries to measure.
+
+| Recording | Policy | Mode | Cuts | Hard | WER % | Boundary WER % | Dups | Drops |
+|---|---|---|---:|---:|---:|---:|---:|---:|
+| 3 min | real | (pause cuts only) | 4 | 0 | 4.67 | - | 0 | 0 |
+| 3 min | forced | a | 3 | 3 | 5.17 | 6.7 | 0 | 2 |
+| 3 min | forced | b | 3 | 3 | 5.33 | 3.3 | 1 | 0 |
+| 3 min | forced | c | 3 | 3 | 7.17 | 21.7 | 7 | 0 |
+| 3 min | forced | f | 3 | 3 | 5.17 | 1.7 | 0 | 0 |
+| 10 min | real | (pause cuts only) | 16 | 0 | 4.42 | - | 0 | 0 |
+| 10 min | forced | a | 13 | 13 | 5.01 | 8.9 | 2 | 4 |
+| 10 min | forced | b | 13 | 13 | 5.11 | 9.3 | 10 | 1 |
+| 10 min | forced | c | 13 | 13 | 6.95 | 23.7 | 25 | 1 |
+| 10 min | forced | f | 13 | 13 | 4.52 | 4.7 | 0 | 1 |
+| 30 min | real | (pause cuts only) | 48 | 0 | 4.69 | - | 0 | 0 |
+| 30 min | forced | a | 39 | 39 | 5.04 | 8.6 | 6 | 7 |
+| 30 min | forced | b | 39 | 39 | 5.35 | 10.2 | 27 | 5 |
+| 30 min | forced | c | 39 | 39 | 7.14 | 24.0 | 80 | 4 |
+| 30 min | forced | f | 39 | 39 | 4.85 | 6.3 | 3 | 5 |
+
+### Alternatives on the forced 45 s policy
+
+| Recording | Pause cap | Mode | WER % | Boundary WER % | Dups | Drops |
+|---|---|---|---:|---:|---:|---:|
+| 10 min | 0.1 | a | 4.91 | 5.1 | 2 | 1 |
+| 10 min | 0.1 | b | 5.49 | 5.9 | 8 | 1 |
+| 10 min | 0.1 | d | 5.73 | 7.7 | 13 | 1 |
+| 10 min | 0.1 | e | 6.26 | 11.8 | 7 | 1 |
+| 10 min | 0.1 | f | 5.11 | 2.9 | 0 | 1 |
+| 10 min | 0.1 | g | 5.11 | 2.9 | 0 | 1 |
+| 30 min | 0.1 | a | 5.06 | 6.9 | 6 | 5 |
+| 30 min | 0.1 | b | 5.49 | 8.1 | 24 | 7 |
+| 30 min | 0.1 | d | 5.67 | 9.4 | 33 | 9 |
+| 30 min | 0.1 | e | 6.24 | 13.8 | 15 | 6 |
+| 30 min | 0.1 | f | 5.11 | 5.1 | 0 | 7 |
+| 30 min | 0.1 | g | 5.11 | 5.1 | 0 | 7 |
+| 10 min | 0.2 | a | 5.01 | 8.9 | 2 | 4 |
+| 10 min | 0.2 | b | 5.11 | 9.3 | 10 | 1 |
+| 10 min | 0.2 | d | 5.36 | 11.3 | 17 | 1 |
+| 10 min | 0.2 | e | 5.71 | 14.0 | 0 | 1 |
+| 10 min | 0.2 | f | 4.52 | 4.7 | 0 | 1 |
+| 10 min | 0.2 | g | 4.52 | 4.7 | 0 | 1 |
+| 30 min | 0.2 | a | 5.04 | 8.6 | 6 | 7 |
+| 30 min | 0.2 | b | 5.35 | 10.2 | 27 | 5 |
+| 30 min | 0.2 | d | 5.42 | 10.7 | 37 | 4 |
+| 30 min | 0.2 | e | 6.07 | 15.7 | 23 | 5 |
+| 30 min | 0.2 | f | 4.85 | 6.3 | 3 | 5 |
+| 30 min | 0.2 | g | 4.85 | 6.3 | 3 | 5 |
+
+Table notes: `real` rows with no hard cut are one line because every mode is the same decode.
+Mode a drops up to 23 words per run (the real rule at cap 0.1, 30 min) and repeats up to 6, from cutting through words with no overlap.
+
+**Conclusion.** Overlap with the specified midpoint dedupe (b) is **not** no worse than the
+no-overlap baseline (a) on every clip. It halves the boundary WER where cuts are few or mixed with
+pause cuts (3 min: 0.0 against 1.8 %; real rule, 10 min: 4.4 against 8.0 %, 30 min: 5.9 against
+8.4 %), but on the forced policy it is worse at 10 and 30 minutes (5.9 against 5.1 % and 8.1 against
+6.9 % at cap 0.1; 9.3 against 8.9 % and 10.2 against 8.6 % at cap 0.2), with 8-27 duplicated words
+against 2-6, and its overall WER is higher on 7 of the 9 rows that have hard cuts. The text-only
+dedupe (c) is clearly worse everywhere (boundary WER 10-24 %, up to 80 duplicated words in 30
+minutes): it removes one or two of the two to three words that the overlap repeats, not all.
+The midpoint split is not stable between the two decodes of the same second (a word the old segment
+timed before S comes back in the new one after S), which is likely why b leaves repeats; that cause
+was not isolated here. Running the text rule on what the timing split leaves (f) is the only
+variant no worse than a on boundary WER on all 9 rows with hard cuts (e.g. 30 min forced: 5.1 against
+6.9 % and 6.3 against 8.6 %), with 0-3 duplicates, though it does not remove drops (7 against 5 on
+the 30 minute forced run at cap 0.1) and its overall WER is within 0.5 points of a, above it by
+0.05-0.49 points on four rows. Anchoring on the longest common run (g) gave the same numbers as f on
+all 12 runs, and using start time instead of midpoint (d) or a text match alone (e) gave a worse boundary WER
+than b. The Mac-side dedupe should therefore be the midpoint split followed by the repeated-words
+check, not either rule alone.
+
+The Mac app ships f: `NotesJoin.trim` (midpoint split) and then `NotesJoin.dedupe` on the new segment
+(`NotesRecorder.joinTrimmed`). With the dip rule, hard cuts only happen on speech with no 0.15 s dip
+for 10 s past 35 s; on `say` speech with its own pauses (`--pause-cap` off, or 0.2 s) the real rule
+made none.
+
+## Live Notes long sessions
+
+Issue #64. A two-hour session: 160 segments of about 625 characters (about 100 000 transcript
+characters) with speaker labels on, and 30 000 characters of notes. `mac/Tests/ChirpCoreTests/NotesBudgetTests.swift`
+asserts the budgets on the debug build every test run uses (with headroom for a shared host); the numbers
+below are from a release build, run on its own, on an Apple M5 Pro (2026-10-23):
+
+```sh
+cd mac && CHIRP_SOAK=1 swift test -c release -Xswiftc -enable-testing --filter NotesBudgetTests
+```
+
+| Measure | Budget | Measured |
+| --- | --- | --- |
+| Transcript rows, from scratch (160 segments, labelled) | — | 0.17 ms |
+| Per partial (rows from the cache, Hearing parts, lag) | O(changed) | 0.007 ms |
+| Rows after a new segment (walks only the paragraph it may extend) | O(changed) | 0.12 ms |
+| Restyle after an append (the AI tail) | ≤ 5 ms | 0.4 ms |
+| Restyle after a reorganize (its 3500-character scope only) | ≤ 50 ms | 1.8 ms |
+| Restyle of the whole 30 000-character document (load, New, a resync only) | — | 110 ms |
+| Speaker timeline after 2 h (closed spans kept: last 10 min) | bounded | 400 spans |
+| Speaker lookup for one segment (windowed) | O(log n) or windowed | 0.001 ms |
+| Resident memory growth, 161 segments through the recorder over rolling sockets, structuring and labels | ≤ 50 MB | 6 MB |
+
+The memory figure excludes the diarizer model (the soak uses the scripted `FakeDiarizer`) and is
+`phys_footprint` before and after, so it is asserted only when the suite runs alone (`CHIRP_SOAK=1`).
+A reorganize used to restyle the whole document; it now restyles only the scope it replaced, which is
+why the whole-document figure is above the issue's 50 ms but no longer on any path that runs while
+recording or organizing.
+
 ## Speaker labels (Mac Live Notes)
 
 2026-10-20, M5 Pro, macOS 27.0.1, issue #18 M1. `mac/scripts/speaker-bench` drives the **real Live Notes path**:

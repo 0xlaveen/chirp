@@ -36,9 +36,9 @@ struct PCMRing {
 }
 
 /// The seams between Live Notes segments. At a hard cut the last `NotesSegmenter.overlap` of audio goes to both
-/// sockets, so each final is trimmed to its own side of the overlap's middle: with word timings by each word's
-/// midpoint (a word heard on both sockets lands once, whole), without them by dropping a first word or bigram that
-/// repeats the previous segment's last. Pure, so every rule is unit-tested.
+/// sockets, so each final is trimmed to its own side of the overlap's middle by each word's midpoint (a word heard
+/// on both sockets lands once, whole), and then the new one loses a first word or bigram that still repeats the
+/// previous segment's last (the only text rule without timings). Pure, so every rule is unit-tested.
 public enum NotesJoin {
     /// At most this much of the previous segment's final goes along as clean-up context (`stop.context`).
     public static let contextChars = 200
@@ -77,8 +77,9 @@ public enum NotesJoin {
         return Final(raw: kept.map(\.text).joined(separator: " "), text: text, words: kept)
     }
 
-    /// Without word timings: the new segment's first two words when they repeat the previous segment's last two,
-    /// else its first word when it repeats the last one (case and punctuation aside). Only used after a hard cut.
+    /// The new segment's first two words when they repeat the previous segment's last two, else its first word when
+    /// it repeats the last one (case and punctuation aside). Only after a hard cut, after `trim` when there are word
+    /// timings (the two decodes of the overlap can disagree on a word's time).
     public static func dedupe(_ final: Final, after previous: String) -> Final {
         let before = tokens(previous).suffix(2).map(normalized)
         let raw = tokens(final.raw)
