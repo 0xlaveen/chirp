@@ -36,6 +36,25 @@ final class FakeEngine: CaptureEngine, @unchecked Sendable {
     }
     func changeConfiguration() { onChange?() }
     var hasChangeHandler: Bool { onChange != nil }
+    /// What `fallBack` moves to, in order: an input's name, or nil for one that fails to start too.
+    var fallbacks: [String?] = []
+    var inputName: String? = "USB Microphone"
+    func fallBack() -> Bool {
+        guard !fallbacks.isEmpty else { return false }
+        let next = fallbacks.removeFirst()
+        inputName = next
+        startError = next == nil ? Boom() : nil
+        format = AVAudioFormat(standardFormatWithSampleRate: 48_000, channels: 1)!
+        return true
+    }
+    struct Boom: Error {}
+}
+
+final class InputEvents: @unchecked Sendable {
+    private let lock = NSLock()
+    private var _events: [CaptureInputEvent] = []
+    var events: [CaptureInputEvent] { lock.withLock { _events } }
+    func add(_ e: CaptureInputEvent) { lock.withLock { _events.append(e) } }
 }
 
 final class FrameBox: @unchecked Sendable {
@@ -137,4 +156,53 @@ final class FrameBox: @unchecked Sendable {
         engine.changeConfiguration()                    // handler was removed; nothing more happens
         #expect(failures.count == 1)
     }
+
+    // MARK: a capture that survives losing its input (Live Notes)
+
+    @Test func aLostInputFallsBackToTheNextOneAndSaysWhich() throws {
+        let engine = FakeEngine()
+        let events = InputEvents(), box = FrameBox(), failures = FrameBox()
+        let capture = AudioCapture(engine: engine)
+        try capture.start(onInput: { events.add($0) }, onFailure: { failures.add(Data()) }) { box.add($0) }
+        engine.fallbacks = [nil, "MacBook Pro Microphone"]   // the default fails too; the built-in works
+        engine.startError = FakeEngine.Boom()
+        engine.changeConfiguration()
+        #expect(events.events == [.switched("MacBook Pro Microphone")])
+        #expect(failures.count == 0 && capture.isRunning && engine.taps == 1)
+        engine.deliver(seconds: 0.2)
+        #expect(box.count > 0)
+        capture.stop()
+        #expect(engine.taps == 0 && !engine.hasChangeHandler)
+    }
+
+    @Test func withNoInputLeftCaptureWaitsAndResumesWhenOneAppears() throws {
+        let engine = FakeEngine()
+        let events = InputEvents(), box = FrameBox()
+        let capture = AudioCapture(engine: engine)
+        try capture.start(onInput: { events.add($0) }) { box.add($0) }
+        engine.format = nil
+        engine.changeConfiguration()
+        engine.changeConfiguration()                    // still nothing: reported once
+        #expect(events.events == [.lost])
+        #expect(capture.isRunning && engine.taps == 0 && engine.hasChangeHandler)
+        engine.format = AVAudioFormat(standardFormatWithSampleRate: 44_100, channels: 1)!
+        engine.inputName = "Studio Microphone"
+        engine.changeConfiguration()
+        #expect(events.events == [.lost, .switched("Studio Microphone")])
+        engine.deliver(seconds: 0.2)
+        #expect(box.count > 0 && engine.taps == 1)
+        capture.stop()
+        #expect(engine.taps == 0)
+    }
+
+    @Test func aRebuildOnTheSameInputSaysNothing() throws {
+        let engine = FakeEngine()
+        let events = InputEvents()
+        let capture = AudioCapture(engine: engine)
+        try capture.start(onInput: { events.add($0) }) { _ in }
+        engine.changeConfiguration()
+        #expect(events.events.isEmpty && engine.taps == 1)
+        capture.stop()
+    }
 }
+

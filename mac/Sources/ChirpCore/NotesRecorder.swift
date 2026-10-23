@@ -83,7 +83,8 @@ public enum NotesPassEvent: Equatable, Sendable {
 
 /// Routes capture frames to the current segment's socket and runs the segmenter, on the audio thread. The swap at a
 /// cut is atomic under the lock, so every frame lands on exactly one socket, in order, except at a hard cut: the
-/// last `NotesSegmenter.overlap` of audio the old socket got is sent again as the start of the new one.
+/// last `NotesSegmenter.overlap` of audio the old socket got is sent again as the start of the new one. Every frame
+/// also goes to its segment's kept audio, which is all a segment has while the server is offline.
 final class NotesFrameRouter: @unchecked Sendable {
     /// What a swap did: the old target, the document time of the switch, how much audio (seconds) was sent again to
     /// the new target, and the quiet before the old segment's first speech (across the join before it).
@@ -96,6 +97,7 @@ final class NotesFrameRouter: @unchecked Sendable {
 
     private let lock = NSLock()
     private var target: StreamSession?
+    private var audio: NotesSegmentAudio?
     private var segmenter = NotesSegmenter()
     private var cutRequested = false
     /// The requested cut is a hard one: the next swap overlaps.
@@ -112,8 +114,9 @@ final class NotesFrameRouter: @unchecked Sendable {
     /// Sends the frame on; true when the segmenter wants a cut (asked once until the next swap).
     func route(_ frame: Data, level: Level) -> Bool {
         lock.withLock {
-            guard let target else { return false }
-            target.sendAudio(frame)
+            guard target != nil || audio != nil else { return false }
+            target?.sendAudio(frame)
+            audio?.append(frame)
             recent.append(frame)
             speakers?.feed(frame, at: Double(bytes) / (PCMConverter.sampleRate * 2))
             bytes += frame.count
@@ -131,16 +134,21 @@ final class NotesFrameRouter: @unchecked Sendable {
         }
     }
 
-    /// Points capture at `next` (nil stops routing).
-    func swap(to next: StreamSession?) -> Swap {
+    /// Points capture at `next` and its kept audio (both nil stop routing; a nil socket keeps audio only).
+    func swap(to next: StreamSession?, audio nextAudio: NotesSegmentAudio? = nil) -> Swap {
         lock.withLock {
             var result = Swap(old: target, offset: Double(bytes) / (PCMConverter.sampleRate * 2), pause: pauseAtStart ?? quietRun)
+            let routed = target != nil || audio != nil
             target = next
-            if overlapNext, let next, result.old != nil {
-                for frame in recent.contents { next.sendAudio(frame) }
+            audio = nextAudio
+            if overlapNext, routed, next != nil || nextAudio != nil {
+                for frame in recent.contents {
+                    next?.sendAudio(frame)
+                    nextAudio?.append(frame)
+                }
                 result.overlap = recent.seconds
             }
-            if next == nil {
+            if next == nil, nextAudio == nil {
                 recent.removeAll()
                 quietRun = 0
             }
@@ -153,6 +161,9 @@ final class NotesFrameRouter: @unchecked Sendable {
     }
 
     var seconds: TimeInterval { lock.withLock { Double(bytes) / (PCMConverter.sampleRate * 2) } }
+
+    /// `session` failed: capture goes on into the kept audio only, until the next swap.
+    func detach(_ session: StreamSession) { lock.withLock { if target === session { target = nil } } }
 
     func setSpeakers(_ diarizer: SpeakerDiarizing?) { lock.withLock { speakers = diarizer } }
 
@@ -177,8 +188,6 @@ public final class NotesRecorder {
     public static let minInterval: TimeInterval = 15
     /// How long a segment may take from `stop` to its final.
     public static let finalTimeout: TimeInterval = 25
-    /// Segments in a row that may fail before recording stops.
-    public static let maxSegmentFailures = 3
     /// A segment's speaker labels wait at most this long after its final for the diarizer to settle its audio;
     /// then they are attached from what it has (marked tentative).
     public static let labelTimeout: TimeInterval = 3
@@ -231,16 +240,22 @@ public final class NotesRecorder {
     /// Splits and Organize runs, for the log (counts only).
     public var onPassEvent: ((NotesPassEvent) -> Void)?
 
-    private let makeSession: (StartOptions) -> StreamSession
+    let makeSession: (StartOptions) -> StreamSession
     private let structure: Structure
     private let reorganize: Reorganize
     private let edit: Edit
     private let now: () -> TimeInterval
-    private let sleep: @Sendable (Duration) async -> Void
-    private let router = NotesFrameRouter()
+    let sleep: @Sendable (Duration) async -> Void
+    let router = NotesFrameRouter()
+    let audioPool = NotesAudioPool()
+    /// At most this many bytes of audio are kept for replay.
+    let keptAudioCap: Int
 
-    private struct Segment {
-        let session: StreamSession
+    struct Segment {
+        /// nil while it has no socket: recorded while offline, or its socket failed (`replay`).
+        var session: StreamSession?
+        /// Its audio, until the final commits.
+        let audio: NotesSegmentAudio
         let offset: TimeInterval
         /// Where its audio ended (set at the cut that finalizes it).
         var end: TimeInterval?
@@ -256,18 +271,30 @@ public final class NotesRecorder {
         var correcting = false
         var task: Task<Void, Never>?
         var timeout: Task<Void, Never>?
+        /// Its audio waits to be sent again; `replaying` while a replay socket has it.
+        var replay = false
+        var replaying = false
     }
 
-    private var segments: [Int: Segment] = [:]
+    var segments: [Int: Segment] = [:]
     /// Finished segments waiting for an earlier one, so the transcript stays in order. nil: an empty final.
     private var results: [Int: NotesSegment?] = [:]
     private var nextSeq = 0
     private var nextCommit = 0
-    private var current: Int?
+    var current: Int?
     private var cutting = false
     private var speakerFlush: Task<Void, Never>?
-    private var failureStreak = 0
     private var sawReady = false
+    /// A socket failed for a reason a retry fixes and none has been `ready` since: new segments keep audio only.
+    var offline = false
+    var replayTask: Task<Void, Never>?
+    /// The replay backoff ends early (`serverAvailable`); the token tells a stale backoff timer apart.
+    var retryNow = false
+    var backoffToken = 0
+    /// The last segment the cap turned into a gap (the next one in a row joins it).
+    var lastEvicted = -2
+    /// Counts Stops, so a stale Stop's replay limit never cuts a later one short.
+    var stops = 0
     /// The newest final (trimmed), for the next segment's context and dedupe.
     private var lastFinal: (seq: Int, text: String)?
     /// The server takes `stop.context` (health `notes_context`).
@@ -279,7 +306,7 @@ public final class NotesRecorder {
     private var timer: Task<Void, Never>?
     /// What the user and the server allow, independent of the running state.
     private var structuringAllowed: StructuringStatus
-    private var epoch = 0
+    var epoch = 0
 
     /// The server has `POST /v1/notes/reorganize` (health), and it did not answer 404 this session.
     private var reorganizeSupported = false
@@ -338,8 +365,10 @@ public final class NotesRecorder {
                 edit: @escaping Edit = { _ in throw NotesStructureError.unsupported(404) },
                 now: @escaping () -> TimeInterval = { ProcessInfo.processInfo.systemUptime },
                 sleep: @escaping @Sendable (Duration) async -> Void = { try? await Task.sleep(for: $0) },
-                options: StartOptions, structuring: Bool, autoReorganize: Bool = true, health: Health? = nil, serverHost: String = "") {
+                options: StartOptions, structuring: Bool, autoReorganize: Bool = true, health: Health? = nil, serverHost: String = "",
+                keptAudio: TimeInterval = NotesRecorder.maxKeptAudio) {
         self.makeSession = makeSession
+        keptAudioCap = Int(keptAudio * PCMConverter.sampleRate) * 2
         self.structure = structure
         self.reorganize = reorganize
         self.edit = edit
@@ -419,8 +448,8 @@ public final class NotesRecorder {
     public func start() {
         guard !state.isActive else { return }
         epoch += 1
-        failureStreak = 0
         sawReady = false
+        offline = false
         lastPassEnd = nil
         if lastReorganizeEnd == nil { lastReorganizeEnd = now() }
         if structuring.isOff, !structuringAllowed.isOff { structuring = .idle }
@@ -431,10 +460,11 @@ public final class NotesRecorder {
         let seq = nextSeq
         nextSeq += 1
         let session = makeSession(options)
-        let swap = router.swap(to: session)
+        let audio = NotesSegmentAudio(pool: audioPool)
+        let swap = router.swap(to: session, audio: audio)
         current = seq
         lastFinal = nil
-        track(seq, session: session, offset: swap.offset)
+        track(seq, session: session, audio: audio, offset: swap.offset)
         Task { await session.open() }
     }
 
@@ -462,6 +492,7 @@ public final class NotesRecorder {
             if let old = swap.old, segments[seq] != nil { finalize(seq, old) }
         }
         current = nil
+        pumpReplays()
         router.setSpeakers(nil)
         // The diarizer settles the tail while the last final decodes; Resume waits for it.
         speakerFlush = activeSpeakers.map { speakers in Task { await speakers.flush() } }
@@ -474,23 +505,24 @@ public final class NotesRecorder {
         await speakerFlush?.value
         speakerFlush = nil
         guard state == .paused else { return }
-        failureStreak = 0
         pauseReason = nil
         router.setSpeakers(activeSpeakers)
         let session = openCurrent()
         state = .recording
-        Task { await session.open() }
+        if let session { Task { await session.open() } }
     }
 
-    /// The new current segment after a pause: a fresh socket that capture is pointed at, with no join to the one before.
-    private func openCurrent() -> StreamSession {
+    /// The new current segment after a pause: a fresh socket that capture is pointed at, with no join to the one before
+    /// (nil while offline: the segment keeps its audio for a replay).
+    private func openCurrent() -> StreamSession? {
         let seq = nextSeq
         nextSeq += 1
-        let session = makeSession(options)
-        let swap = router.swap(to: session)
+        let session = offline ? nil : makeSession(options)
+        let audio = NotesSegmentAudio(pool: audioPool)
+        let swap = router.swap(to: session, audio: audio)
         current = seq
         lastFinal = nil
-        track(seq, session: session, offset: swap.offset)
+        track(seq, session: session, audio: audio, offset: swap.offset)
         return session
     }
 
@@ -506,9 +538,13 @@ public final class NotesRecorder {
         for (_, s) in segments {
             s.task?.cancel()
             s.timeout?.cancel()
-            Task { await s.session.cancel() }
+            s.audio.release()
+            if let session = s.session { Task { await session.cancel() } }
         }
         segments.removeAll()
+        replayTask?.cancel()
+        replayTask = nil
+        offline = false
         results.removeAll()
         nextCommit = nextSeq
         current = nil
@@ -551,7 +587,6 @@ public final class NotesRecorder {
         router.resetTime()
         dropLabels()
         speakers?.reset()
-        failureStreak = 0
         pendingChanges.removeAll()
         dropHeld()
         reorganizeState = .idle
@@ -593,19 +628,21 @@ public final class NotesRecorder {
         cutting = true
         defer { cutting = false }
         let myEpoch = epoch
-        let next = makeSession(options)
-        await next.open()
+        // Offline, the next segment keeps its audio for a replay instead of opening a socket that would fail.
+        let next = offline ? nil : makeSession(options)
+        await next?.open()
         guard epoch == myEpoch, state == .recording else {
-            await next.cancel()
+            await next?.cancel()
             return
         }
         // The sequence number is taken at the swap, synchronously, so transcript order is capture order.
         let seq = nextSeq
         nextSeq += 1
-        let swap = router.swap(to: next)
+        let audio = NotesSegmentAudio(pool: audioPool)
+        let swap = router.swap(to: next, audio: audio)
         let previous = current
         current = seq
-        track(seq, session: next, offset: swap.offset - swap.overlap, joins: true, leading: swap.overlap)
+        track(seq, session: next, audio: audio, offset: swap.offset - swap.overlap, joins: true, leading: swap.overlap)
         if let previous {
             segments[previous]?.end = swap.offset
             segments[previous]?.trailing = swap.overlap
@@ -613,33 +650,39 @@ public final class NotesRecorder {
             segments[previous]?.pause = joins ? swap.pause : nil
         }
         if let previous, let old = swap.old { finalize(previous, old) }
+        pumpReplays()
     }
 
-    private func track(_ seq: Int, session: StreamSession, offset: TimeInterval, joins: Bool = false,
-                       leading: TimeInterval = 0) {
-        var segment = Segment(session: session, offset: offset, joins: joins, leading: leading)
+    private func track(_ seq: Int, session: StreamSession?, audio: NotesSegmentAudio, offset: TimeInterval,
+                       joins: Bool = false, leading: TimeInterval = 0) {
+        segments[seq] = Segment(session: session, audio: audio, offset: offset, joins: joins, leading: leading,
+                                replay: session == nil)
+        if let session { listen(seq, session) }
+    }
+
+    /// Relays `session`'s events to segment `seq` while it is that segment's socket (a replay brings a new one).
+    func listen(_ seq: Int, _ session: StreamSession) {
         let myEpoch = epoch
-        segment.task = Task {
+        segments[seq]?.task = Task {
             for await event in session.events {
-                guard self.epoch == myEpoch else { return }
+                guard self.epoch == myEpoch, self.segments[seq]?.session === session else { return }
                 if self.handle(event, seq: seq) { break }
             }
-            guard self.epoch == myEpoch else { return }
-            if self.segments[seq] != nil { self.segmentFailed(seq, reason: "connection closed") }
+            guard self.epoch == myEpoch, self.segments[seq]?.session === session else { return }
+            self.segmentFailed(seq, reason: "connection closed")
         }
-        segments[seq] = segment
     }
 
     /// Ask the old segment for its final, with a deadline. With clean-up on the `live_notes` style and a server that
     /// takes it, the previous segment's end goes along as context (known by now: that final came while this one ran).
-    private func finalize(_ seq: Int, _ session: StreamSession) {
+    func finalize(_ seq: Int, _ session: StreamSession) {
         let context = contextSupported && options.correction && options.correctionProfile == CorrectionProfile.liveNotesID
             && segments[seq]?.joins == true && lastFinal?.seq == seq - 1 ? lastFinal.flatMap { NotesJoin.context($0.text) } : nil
         Task { await session.stop(context: context) }
         let sleep = self.sleep, myEpoch = epoch
         segments[seq]?.timeout = Task {
             await sleep(.seconds(Self.finalTimeout))
-            guard !Task.isCancelled, self.epoch == myEpoch, self.segments[seq] != nil else { return }
+            guard !Task.isCancelled, self.epoch == myEpoch, self.segments[seq]?.session === session else { return }
             self.segmentFailed(seq, reason: "timed out")
         }
     }
@@ -651,6 +694,7 @@ public final class NotesRecorder {
         case .message(.ready(_, _, let debug)):
             debugRetention = debug
             sawReady = true
+            offline = false
             if state == .starting { state = .recording }
             changed()
         case .message(.partial(_, let text, _, _)):
@@ -676,16 +720,15 @@ public final class NotesRecorder {
                 labelJobs[seq] = LabelJob(offset: offset, end: end, words: joined.words,
                                           raw: segment.raw, text: segment.text, received: now())
             }
-            failureStreak = 0
             finish(seq, with: segment)
             return true
         case .message(.error(let code, let message)):
-            segmentFailed(seq, reason: Self.friendly(code: code, message: message))
+            segmentFailed(seq, reason: Self.friendly(code: code, message: message), fault: .of(code: code))
             return true
         case .message(.unknown):
             break
         case .closed(let reason):
-            segmentFailed(seq, reason: reason ?? "connection closed")
+            segmentFailed(seq, reason: reason ?? "connection closed", fault: reason.map(NotesSegmentFault.of(closed:)) ?? .retry)
             return true
         }
         return false
@@ -704,7 +747,7 @@ public final class NotesRecorder {
         return NotesJoin.dedupe(final, after: previous.text)
     }
 
-    private func segmentFailed(_ seq: Int, reason: String) {
+    private func segmentFailed(_ seq: Int, reason: String, fault: NotesSegmentFault = .retry) {
         guard let segment = segments[seq] else { return }
         if state == .starting, !sawReady, seq == current {
             // The very first socket never got going: nothing is recording yet.
@@ -718,13 +761,15 @@ public final class NotesRecorder {
             changed()
             return
         }
-        failureStreak += 1
+        if fault == .retry {
+            queueReplay(seq)
+            return
+        }
         finish(seq, with: .gap(id: seq, offset: segment.offset, reason: reason))
-        guard state == .recording else { return }
-        if failureStreak >= Self.maxSegmentFailures {
+        if fault == .stop, state.isLive {
             Task { await self.finish(error: "Notes stopped: \(reason)") }
-        } else if seq == current {
-            // The capturing socket died: roll to a fresh one so recording continues.
+        } else if state == .recording, seq == current {
+            // The capturing socket cannot go on: roll to a fresh one so recording continues.
             Task { await self.cut() }
         }
     }
@@ -732,11 +777,12 @@ public final class NotesRecorder {
     private func drop(_ seq: Int) {
         guard let s = segments.removeValue(forKey: seq) else { return }
         s.timeout?.cancel()
-        Task { await s.session.close() }
+        s.audio.release()
+        if let session = s.session { Task { await session.close() } }
     }
 
     /// A segment is done: commit every finished segment that is next in order, then see whether a pass can run.
-    private func finish(_ seq: Int, with segment: NotesSegment?) {
+    func finish(_ seq: Int, with segment: NotesSegment?) {
         drop(seq)
         results[seq] = .some(segment)
         while let next = results.removeValue(forKey: nextCommit) {
@@ -758,7 +804,7 @@ public final class NotesRecorder {
     }
 
     /// The tail under the notes: the last partials of the segments still finalizing, then the current one's.
-    private func updateLivePartial() {
+    func updateLivePartial() {
         document.livePartial = segments.keys.sorted().compactMap { segments[$0]?.partial }.filter { !$0.isEmpty }.joined(separator: " ")
         changed()
     }
@@ -827,7 +873,7 @@ public final class NotesRecorder {
             if let old = swap.old { finalize(previous, old) }
         }
         current = nil
-        changed()
+        pumpReplays()
         return true
     }
 
@@ -840,17 +886,18 @@ public final class NotesRecorder {
         let myEpoch = epoch
         cutting = true
         defer { cutting = false }
-        let next = makeSession(options)
-        await next.open()
+        let next = offline ? nil : makeSession(options)
+        await next?.open()
         guard epoch == myEpoch, state == .recording, diverted else {
-            await next.cancel()
+            await next?.cancel()
             return
         }
         let seq = nextSeq
         nextSeq += 1
-        let swap = router.swap(to: next)
+        let audio = NotesSegmentAudio(pool: audioPool)
+        let swap = router.swap(to: next, audio: audio)
         current = seq
-        track(seq, session: next, offset: swap.offset)
+        track(seq, session: next, audio: audio, offset: swap.offset)
         changed()
     }
 
@@ -1538,6 +1585,8 @@ public final class NotesRecorder {
         }
         if let seq = current, let old = swap.old, segments[seq] != nil { finalize(seq, old) }
         current = nil
+        pumpReplays()
+        limitStopReplays()
         router.setSpeakers(nil)
         // The tail settles while the last final decodes; the session stays open for the next Record.
         let flush = activeSpeakers.map { speakers in Task { await speakers.flush() } }
@@ -1589,12 +1638,12 @@ public final class NotesRecorder {
         changed()
     }
 
-    private func waitUntil(_ condition: @escaping () -> Bool) async {
+    func waitUntil(_ condition: @escaping () -> Bool) async {
         if condition() { return }
         await withCheckedContinuation { waiters.append((condition, $0)) }
     }
 
-    private func changed() {
+    func changed() {
         if !waiters.isEmpty {
             var keep: [(check: () -> Bool, resume: CheckedContinuation<Void, Never>)] = []
             var ready: [CheckedContinuation<Void, Never>] = []

@@ -60,6 +60,19 @@ enum InputDevice {
 
     static func systemDefault() -> Entry? { defaultInputID().flatMap(entry) }
 
+    static func name(_ id: AudioObjectID) -> String? { entry(id)?.input.name }
+
+    /// The Mac's own microphone, the last input Live Notes falls back to.
+    static func builtIn() -> Entry? {
+        all().first { entry in
+            var a = address(kAudioDevicePropertyTransportType)
+            var transport: UInt32 = 0
+            var size = UInt32(MemoryLayout<UInt32>.size)
+            return AudioObjectGetPropertyData(entry.id, &a, 0, nil, &size, &transport) == noErr
+                && transport == kAudioDeviceTransportTypeBuiltIn
+        }
+    }
+
     /// The Core Audio id of the picked device while it is connected; nil follows the system default.
     static func pickedID(uid: String?) -> AudioObjectID? {
         guard let uid else { return nil }

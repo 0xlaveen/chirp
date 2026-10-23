@@ -1,3 +1,4 @@
+import AppKit
 import ChirpCore
 import Foundation
 
@@ -15,8 +16,14 @@ public struct NotesSessionDependencies {
     public var speakerStore: SpeakerModelStore
     /// Where the crash-recovery journal lives (tests pass a temporary directory).
     public var journalStore: NotesJournalStore
-    /// The guard that stops Notes on digital silence (one per microphone start).
+    /// Digital silence for this long shows "Microphone is silent (muted?)" (its `window`; Notes keeps recording).
     public var silenceGuard: () -> SilenceGuard = { SilenceGuard() }
+    /// Where system sleep and wake are posted (nil: `NSWorkspace`'s; tests pass their own center).
+    public var workspaceNotifications: NotificationCenter?
+    /// Digital silence this long pauses Notes.
+    public var silencePause: TimeInterval = NotesCaptureSink.pauseAfter
+    /// At most this much audio waits in memory for an offline server.
+    public var keptAudio: TimeInterval = NotesRecorder.maxKeptAudio
     public var now: () -> TimeInterval = { ProcessInfo.processInfo.systemUptime }
     public var sleep: @Sendable (Duration) async -> Void = { try? await Task.sleep(for: $0) }
     /// Starts the once-a-second elapsed tick; the returned closure stops it.
@@ -97,6 +104,13 @@ public final class NotesSession {
     /// The last health this server answered with, kept across a failed poll so one blip never changes what
     /// structuring may do (dropped when the server URL changes).
     private var knownHealth: (url: String, health: Health)?
+    /// A silent, switched or missing input while recording.
+    private var micNotice: NotesMicNotice?
+    private var switchedAt: TimeInterval?
+    /// The session paused for a system sleep: wake resumes it (and only that pause).
+    private var pausedForSleep = false
+    /// "Switched to …" shows this long.
+    public static let switchedNoticeFor: TimeInterval = 10
 
     public private(set) lazy var gate = PauseGate(
         register: { [weak self] in
@@ -113,7 +127,7 @@ public final class NotesSession {
             makeSession: deps.makeSession, structure: deps.structure, reorganize: deps.reorganize, edit: deps.edit,
             now: deps.now, sleep: deps.sleep,
             options: settings.notesStartOptions(health: nil), structuring: settings.notesStructureEnabled(health: nil),
-            autoReorganize: settings.notesAutoReorganize)
+            autoReorganize: settings.notesAutoReorganize, keptAudio: deps.keptAudio)
         speakers = SpeakerLabels(store: deps.speakerStore, enabled: settings.notesSpeakerLabels,
                                  onPreference: { settings.notesSpeakerLabels = $0 })
         journal = NotesJournal(store: deps.journalStore, enabled: settings.notesRecoveryCopy, sleep: deps.sleep)
@@ -180,6 +194,14 @@ public final class NotesSession {
             case .redownload(let size): NotesStatus.speakerRedownloadPrompt(size: size)
             }
             (self?.confirmSpeakerDownload ?? { _, done in done(false) })(message, done)
+        }
+        // Posted on the main thread; the session lives as long as the app (tests pass a center of their own).
+        let center = deps.workspaceNotifications ?? NSWorkspace.shared.notificationCenter
+        _ = center.addObserver(forName: NSWorkspace.willSleepNotification, object: nil, queue: nil) { [weak self] _ in
+            MainActor.assumeIsolated { self?.willSleep() }
+        }
+        _ = center.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: nil) { [weak self] _ in
+            MainActor.assumeIsolated { self?.didWake() }
         }
         sync()
     }
@@ -254,14 +276,16 @@ public final class NotesSession {
     }
 
     private func openMicrophone() {
-        let sink = NotesCaptureSink(recorder: recorder, silenceGuard: deps.silenceGuard(), onLevel: { [weak self] level in
+        micNotice = nil
+        let sink = NotesCaptureSink(recorder: recorder, warnAfter: deps.silenceGuard().window, pauseAfter: deps.silencePause,
+                                    onLevel: { [weak self] level in
             Task { @MainActor in if self?.isRecording == true { self?.model.level = UtteranceLevels.normalize(rms: level.rms) } }
-        }) { [weak self] in
-            Task { @MainActor in await self?.fail("No microphone signal") }
+        }) { [weak self] event in
+            Task { @MainActor in self?.silenceChanged(event) }
         }
         do {
-            try capture.start(onFailure: { [weak self] in
-                Task { @MainActor in await self?.fail("The microphone stopped — check the input device") }
+            try capture.start(onInput: { [weak self] event in
+                Task { @MainActor in self?.inputChanged(event) }
             }) { sink.handle($0) }
         } catch {
             Task { await fail(error is CaptureError ? "No microphone input device" : "Could not start the microphone") }
@@ -283,6 +307,49 @@ public final class NotesSession {
             return true
         } catch {
             return false
+        }
+    }
+
+    /// Digital silence warns (recording goes on); `long` silence pauses, keeping the notes.
+    private func silenceChanged(_ event: NotesSilenceEvent) {
+        guard recorder.state == .recording else { return }
+        switch event {
+        case .started: micNotice = .silent
+        case .ended: if micNotice == .silent { micNotice = nil }
+        case .long: Task { await pause(reason: NotesStatus.silencePause) }
+        }
+        chirpLog.info("notes silence \(String(describing: event), privacy: .public)")
+        sync()
+    }
+
+    /// The input went away: capture went on with another one, or waits for one.
+    private func inputChanged(_ event: CaptureInputEvent) {
+        guard isRecording else { return }
+        switch event {
+        case .lost: micNotice = .missing
+        case .switched(let name):
+            micNotice = name.map { .switched($0) }
+            switchedAt = deps.now()
+        }
+        chirpLog.info("notes input \(event == .lost ? "lost" : "switched", privacy: .public)")
+        sync()
+    }
+
+    /// The Mac goes to sleep: the segment is cut and capture closes cleanly (a pause), so sleep is never a failure.
+    private func willSleep() {
+        guard recorder.state == .recording else { return }
+        pausedForSleep = true
+        Task { await pause(reason: NotesStatus.sleptPause) }
+    }
+
+    /// Awake: a session the sleep paused records again, and what waited for the server is sent.
+    private func didWake() {
+        recorder.serverAvailable()
+        guard pausedForSleep else { return }
+        pausedForSleep = false
+        Task {
+            guard isPaused, recorder.pauseReason == NotesStatus.sleptPause else { return }
+            await resume()
         }
     }
 
@@ -479,6 +546,7 @@ public final class NotesSession {
 
     /// New server health (or the toggle): what structuring may do, and the privacy line.
     public func healthChanged() {
+        if health() != nil { recorder.serverAvailable() }
         let h = resolvedHealth()
         guard h != lastHealth else { return }
         lastHealth = h
@@ -512,6 +580,7 @@ public final class NotesSession {
             lastState = state
             if !recorder.state.isCapturing { capture.stop() }
         }
+        if !recorder.state.isCapturing { micNotice = nil }
         model.state = state
         let changes = recorder.takePendingChanges()
         model.snapshots.record(changes, from: model.document.text, result: recorder.document.text, at: Date())
@@ -535,6 +604,8 @@ public final class NotesSession {
         model.debugRetention = recorder.debugRetention || (resolvedHealth()?.debugRetention ?? false)
         if !recorder.state.isCapturing, model.level != 0 { model.level = 0 }
         model.elapsed = recorder.elapsed
+        model.connection = recorder.connection
+        model.micNotice = micNotice
         model.pauseReason = recorder.pauseReason
         model.finishingElapsed = recorder.stoppingElapsed
         model.reduceMotion = deps.reduceMotion()
@@ -560,6 +631,11 @@ public final class NotesSession {
         stopTick = deps.startTicker { [weak self] in
             guard let self else { return }
             self.model.elapsed = self.recorder.elapsed
+            self.model.connection = self.recorder.connection
+            if case .switched = self.micNotice, let at = self.switchedAt, self.deps.now() - at >= Self.switchedNoticeFor {
+                self.micNotice = nil
+                self.model.micNotice = nil
+            }
             self.model.finishingElapsed = self.recorder.stoppingElapsed
             self.announceLongRun()
             self.onChange?()
@@ -589,32 +665,53 @@ extension NotesRecorderState {
     }
 }
 
-/// Runs on the audio thread: the silence guard, then the frame to the recorder (which routes it and runs the segmenter).
+/// What the Live Notes silence watch saw: digital zeros began (a mute), ended, or ran `NotesCaptureSink.pauseAfter`.
+public enum NotesSilenceEvent: Sendable { case started, ended, long }
+
+/// Runs on the audio thread: the silence watch, then the frame to the recorder (which routes it and runs the segmenter).
+/// Digital silence never stops Notes (dictation's `SilenceGuard` does): it warns, and pauses after `pauseAfter`.
 public final class NotesCaptureSink: @unchecked Sendable {
+    /// Digital silence this long pauses the session (and keeps the notes).
+    public nonisolated static let pauseAfter: TimeInterval = 15 * 60
+
     private let recorder: NotesRecorder
-    private let onSilence: @Sendable () -> Void
-    private let lock = NSLock()
-    private var guardState: SilenceGuard
-    private var clock: TimeInterval = 0
-
+    private let onSilence: @Sendable (NotesSilenceEvent) -> Void
     private let onLevel: (@Sendable (Level) -> Void)?
+    private let warnAfter: TimeInterval
+    private let pauseAfter: TimeInterval
+    private let lock = NSLock()
+    private var clock: TimeInterval = 0
+    private var silentSince: TimeInterval?
+    private var warned = false
+    private var paused = false
 
-    public init(recorder: NotesRecorder, silenceGuard: SilenceGuard = SilenceGuard(), onLevel: (@Sendable (Level) -> Void)? = nil,
-                onSilence: @escaping @Sendable () -> Void) {
+    public init(recorder: NotesRecorder, warnAfter: TimeInterval = SilenceGuard().window, pauseAfter: TimeInterval = NotesCaptureSink.pauseAfter,
+                onLevel: (@Sendable (Level) -> Void)? = nil, onSilence: @escaping @Sendable (NotesSilenceEvent) -> Void) {
         self.recorder = recorder
         self.onLevel = onLevel
         self.onSilence = onSilence
-        guardState = silenceGuard
+        self.warnAfter = warnAfter
+        self.pauseAfter = pauseAfter
     }
 
     public func handle(_ frame: Data) {
         let level = Level(pcm16: frame)
-        let silent = lock.withLock { () -> Bool in
+        let event = lock.withLock { () -> NotesSilenceEvent? in
             clock += Double(frame.count / 2) / PCMConverter.sampleRate
-            return guardState.feed(level, at: clock)
+            if level.peak > 0 {
+                silentSince = nil
+                paused = false
+                defer { warned = false }
+                return warned ? .ended : nil
+            }
+            let since = silentSince ?? clock
+            silentSince = since
+            if !warned, clock - since >= warnAfter { warned = true; return .started }
+            if !paused, clock - since >= pauseAfter { paused = true; return .long }
+            return nil
         }
         recorder.handleFrame(frame, level: level)
         onLevel?(level)
-        if silent { onSilence() }
+        if let event { onSilence(event) }
     }
 }

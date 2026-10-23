@@ -15,6 +15,24 @@ public protocol CaptureEngine: AnyObject {
     /// Called when the default input changes (e.g. the USB mic is unplugged) and the engine has stopped.
     /// nil removes the handler.
     func setConfigurationChangeHandler(_ handler: (@Sendable () -> Void)?)
+    /// The input in use, for "Switched to …" (nil when not known).
+    var inputName: String? { get }
+    /// The input could not be opened: use the next one to try (the system default, then the built-in microphone).
+    /// False when nothing is left to try.
+    func fallBack() -> Bool
+}
+
+extension CaptureEngine {
+    public var inputName: String? { nil }
+    public func fallBack() -> Bool { false }
+}
+
+/// What happened to the input under a capture that keeps going (Live Notes).
+public enum CaptureInputEvent: Equatable, Sendable {
+    /// The input went away and capture went on with another one (its name, when known).
+    case switched(String?)
+    /// No input could be opened: capture waits, and goes on by itself when an input appears (`switched`).
+    case lost
 }
 
 /// Microphone → 16 kHz mono PCM16 frames. The engine is kept between dictations (so it is ready), but the input is
@@ -25,6 +43,10 @@ public final class AudioCapture: @unchecked Sendable {
     private var converter: PCMConverter?
     private var onFrame: (@Sendable (Data) -> Void)?
     private var onFailure: (@Sendable () -> Void)?
+    /// Set for a capture that survives losing its input: rebuilds fall back, then wait for an input.
+    private var onInput: (@Sendable (CaptureInputEvent) -> Void)?
+    /// No input could be opened; the next configuration change tries again.
+    private var waiting = false
     /// Tracked on its own: a failed start leaves a tap installed while `onFrame` is already cleared.
     private var tapInstalled = false
 
@@ -32,10 +54,12 @@ public final class AudioCapture: @unchecked Sendable {
 
     public var isRunning: Bool { lock.withLock { onFrame != nil } }
 
-    /// Starts capturing. `onFailure` runs when the engine cannot be rebuilt after an input-device change.
-    public func start(onFailure: (@Sendable () -> Void)? = nil, onFrame: @escaping @Sendable (Data) -> Void) throws {
+    /// Starts capturing. `onFailure` runs when the engine cannot be rebuilt after an input-device change; with
+    /// `onInput` it never does: the rebuild falls back to other inputs, then waits for one (and reports each step).
+    public func start(onInput: (@Sendable (CaptureInputEvent) -> Void)? = nil, onFailure: (@Sendable () -> Void)? = nil,
+                      onFrame: @escaping @Sendable (Data) -> Void) throws {
         if isRunning { stop() }
-        lock.withLock { self.onFrame = onFrame; self.onFailure = onFailure }
+        lock.withLock { self.onFrame = onFrame; self.onFailure = onFailure; self.onInput = onInput; waiting = false }
         do { try install() } catch {
             unwind()
             throw error
@@ -57,15 +81,42 @@ public final class AudioCapture: @unchecked Sendable {
         try engine.start()
     }
 
-    /// The default input changed: rebuild on the new device, or give up cleanly.
+    /// The default input changed: rebuild on the new device, or give up cleanly (or, with `onInput`, fall back to
+    /// the next input and then wait for one).
     private func rebuild() {
         guard isRunning else { return }
+        let before = engine.inputName
         removeTapIfInstalled()
         do { try install() } catch {
-            let failure = lock.withLock { onFailure }
-            unwind()
-            failure?()
+            let (failure, input, wasWaiting) = lock.withLock { (onFailure, onInput, waiting) }
+            guard let input else {
+                unwind()
+                failure?()
+                return
+            }
+            guard fallBack() else {
+                removeTapIfInstalled()
+                engine.stop()
+                lock.withLock { converter = nil; waiting = true }
+                if !wasWaiting { input(.lost) }
+                return
+            }
         }
+        let (input, wasWaiting) = lock.withLock { () -> ((@Sendable (CaptureInputEvent) -> Void)?, Bool) in
+            defer { waiting = false }
+            return (onInput, waiting)
+        }
+        let name = engine.inputName
+        if wasWaiting || name != before { input?(.switched(name)) }
+    }
+
+    /// Tries the engine's fallback inputs in turn; true once one runs.
+    private func fallBack() -> Bool {
+        while engine.fallBack() {
+            removeTapIfInstalled()
+            if (try? install()) != nil { return true }
+        }
+        return false
     }
 
     private func removeTapIfInstalled() {
@@ -78,7 +129,7 @@ public final class AudioCapture: @unchecked Sendable {
         engine.setConfigurationChangeHandler(nil)
         removeTapIfInstalled()
         engine.stop()
-        lock.withLock { converter = nil; onFrame = nil; onFailure = nil }
+        lock.withLock { converter = nil; onFrame = nil; onFailure = nil; onInput = nil; waiting = false }
         engine.prepare()
     }
 

@@ -68,14 +68,16 @@ import Testing
         #expect(!h.engine.isTapped)
     }
 
-    @Test func losingTheInputDeviceStopsAndKeepsTheNotes() async {
+    @Test func losingTheOnlyInputDeviceKeepsRecordingAndTheNotes() async {
         let h = NotesHarness()
         await h.record()
         await h.speak(13).pause(1).speak(2)
         await h.until("first final") { h.document.segments.count == 1 }
         h.engine.changeDevice(replacement: false)
-        await h.until("error") { if case .error = h.model.state { true } else { false } }
-        h.expectStatus("The microphone stopped — check the input device").expectEditorInSync()
+        await h.settle()
+        h.expectStatus(NotesStatus.noMic).expectEditorInSync()
+        #expect(h.recorder.state == .recording && !h.engine.isTapped)
+        await h.stop()
         #expect(h.transcript == ["Segment 0.", "Segment 1."])
         #expect(!h.session.isCapturing)
     }
@@ -93,13 +95,14 @@ import Testing
         #expect(h.transcript == ["Segment 0."])
     }
 
-    @Test func digitalSilenceStopsWithNoMicrophoneSignal() async {
+    @Test func digitalSilenceWarnsAndKeepsRecording() async {
         let h = NotesHarness()
         await h.record()
         await h.speak(13).pause(1).speak(1)
         await h.mute(2)
-        await h.until("error") { if case .error = h.model.state { true } else { false } }
-        h.expectStatus("No microphone signal")
+        h.expectStatus(NotesStatus.micSilent)
+        #expect(h.recorder.state == .recording)
+        await h.stop()
         #expect(h.transcript == ["Segment 0.", "Segment 1."])
     }
 

@@ -237,7 +237,7 @@ final class StructureStub: @unchecked Sendable {
         #expect(stub.requests.last?.outline == ["Notes"] && stub.requests.last?.transcript == "Segment 1.")
     }
 
-    @Test func threeConsecutiveSegmentFailuresStopWithAnError() async throws {
+    @Test func engineHiccupsAreReplayedAndNeverStopRecording() async throws {
         let (server, port) = try await started(try MockServer())
         defer { server.stop() }
         for i in 1...3 { server.script(i, .init(errorOnAudio: "engine")) }
@@ -248,15 +248,25 @@ final class StructureStub: @unchecked Sendable {
         send(r, frames: 2)
         await r.cut()
         await eventually("segment 0 committed") { r.document.segments.count == 1 }
-        let deadline = Date().addingTimeInterval(5)
-        while r.state.isCapturing || r.state == .stopping, Date() < deadline {
-            send(r, frames: 1)
-            try await Task.sleep(for: .milliseconds(20))
+        for _ in 0..<3 {
+            send(r, frames: 2)
+            await r.cut()
         }
-        #expect(r.state == .error("Notes stopped: Speech engine hiccup"))
-        #expect(r.document.segments.first?.text == "Segment 0.")
-        #expect(r.document.segments.filter(\.isGap).count == 3)
-        #expect(!r.document.isEmpty)
+        send(r, frames: 2)
+        #expect(r.state == .recording)
+        let stopping = Task { await r.stop() }
+        // Replays that fail wait out the backoff on the fake clock.
+        let deadline = Date().addingTimeInterval(20)
+        while r.state != .stopped, Date() < deadline {
+            clock.advance(1)
+            try await Task.sleep(for: .milliseconds(50))
+        }
+        await stopping.value
+        #expect(r.state == .stopped)
+        // A socket that fails while capturing is cut at once, so there may be one segment more than cuts.
+        #expect(r.document.segments.count >= 5 && !r.document.segments.contains(where: \.isGap))
+        #expect(r.document.segments.map(\.id) == Array(0..<r.document.segments.count))
+        #expect(r.keptAudioBytes == 0)
     }
 
     @Test func firstSocketThatCannotStartIsAnError() async throws {
