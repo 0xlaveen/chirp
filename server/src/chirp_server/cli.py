@@ -1,6 +1,7 @@
 """Local CLI. Pairing is the only command that deliberately prints a credential."""
 
 import argparse
+import json
 import logging
 import os
 import plistlib
@@ -11,6 +12,7 @@ from pathlib import Path
 from urllib.parse import urlencode, urlsplit
 
 from .config import Settings, load_token
+from .devices import DeviceStore
 from .retention import Retention
 
 LABEL = "dev.chirp.server"
@@ -54,6 +56,46 @@ def service(action, arguments=()):
     subprocess.run(["launchctl", "bootstrap", target, str(destination)], check=True)
 
 
+def pair_uri(url, token):
+    parts = urlsplit(url)
+    if (
+        parts.scheme not in {"http", "https"}
+        or not parts.hostname
+        or parts.username
+        or parts.password
+    ):
+        raise ValueError("Pair URL must be an HTTP(S) base URL without credentials")
+    return "chirp://pair?" + urlencode({"url": url, "token": token})
+
+
+def devices(store, args):
+    if args.action == "revoke":
+        try:
+            device = store.revoke(args.device)
+        except LookupError as exc:
+            raise SystemExit(str(exc)) from None
+        print(f"Revoked {device['name']} ({device['id']})")
+        return
+    entries = store.entries(args.all)
+    if args.json:
+        print(json.dumps({"devices": entries}, ensure_ascii=False))
+        return
+    if not entries:
+        print("No paired devices; the shared token is accepted until rotated")
+        return
+    columns = ["id", "name", "created", "last_seen"] + (["revoked"] if args.all else [])
+    rows = [[c.upper().replace("_", " ") for c in columns]]
+    rows += [
+        [(entry[c] or "never") if c == "last_seen" else (entry[c] or "") for c in columns]
+        for entry in entries
+    ]
+    widths = [max(len(row[i]) for row in rows) for i in range(len(columns))]
+    for row in rows:
+        print(
+            "  ".join(cell.ljust(width) for cell, width in zip(row, widths, strict=True)).rstrip()
+        )
+
+
 def parser():
     result = argparse.ArgumentParser(description="Private local streaming dictation")
     result.add_argument("--config", type=Path)
@@ -78,6 +120,12 @@ def parser():
     commands = result.add_subparsers(dest="command")
     pair = commands.add_parser("pair")
     pair.add_argument("--url", default="http://127.0.0.1:7821")
+    pair.add_argument("--name", help="mint a revocable token for this device (else the shared one)")
+    paired = commands.add_parser("devices", help="list or revoke device tokens")
+    paired.add_argument("action", choices=["list", "revoke"])
+    paired.add_argument("device", nargs="?", help="name or id to revoke")
+    paired.add_argument("--all", action="store_true", help="include revoked devices")
+    paired.add_argument("--json", action="store_true")
     model = commands.add_parser("model")
     model.add_argument("action", choices=["fetch"])
     model.add_argument("--engine", choices=["mlx", "onnx", "sensevoice"], default=argparse.SUPPRESS)
@@ -116,14 +164,30 @@ def main():
     if args.command == "pair":
         import segno
 
-        url = urlsplit(args.url)
-        if url.scheme not in {"http", "https"} or not url.hostname or url.username or url.password:
-            raise SystemExit("Pair URL must be an HTTP(S) base URL without credentials")
-        uri = "chirp://pair?" + urlencode(
-            {"url": args.url, "token": load_token(settings.config_dir)}
-        )
+        try:
+            pair_uri(args.url, "")  # validate before minting anything
+            if args.name is None:
+                token = load_token(settings.config_dir)
+            else:
+                device, token = DeviceStore(settings.config_dir).mint(args.name)
+        except ValueError as exc:
+            raise SystemExit(str(exc)) from None
+        uri = pair_uri(args.url, token)
         print(uri)
         segno.make(uri).terminal(compact=True)
+        if args.name is not None:
+            print(
+                f"Paired {device['name']} ({device['id']}); "
+                f"revoke with: chirp-server devices revoke {device['id']}",
+                file=sys.stderr,
+            )
+    elif args.command == "devices":
+        if (args.action == "revoke") != (args.device is not None):
+            raise SystemExit("devices revoke needs exactly one name or id; list takes none")
+        try:
+            devices(DeviceStore(settings.config_dir), args)
+        except ValueError as exc:
+            raise SystemExit(str(exc)) from None
     elif args.command == "model":
         if args.cleanup is not None:
             from .cleanup_models import fetch
