@@ -21,13 +21,14 @@ class RollingDictationTest {
         val partials = mutableListOf<String>()
         val landed = mutableListOf<String>()
         var nexts = 0
+        val lasts = mutableListOf<Boolean>()
         var ended = 0
         var sent = 0
-        val session = RollingDictation(
+        val session: RollingDictation = RollingDictation(
             transportFactory = { event, failure -> ChirpImeServiceTest.FakeTransport(event, failure, order).also { transports += it } },
             captureFactory = { frame, _, done -> ChirpImeServiceTest.FakeCapture(frame, done, order).also { capture = it } },
             changed = { status, partial -> statuses += status; if (partial != null) partials += partial.text },
-            level = {}, retention = {}, final = { landed += "final:${it.text}" }, ended = { ended++ },
+            level = {}, retention = {}, final = { landed += "final:${it.text}"; lasts += session.landingLast }, ended = { ended++ },
             kept = if (kept) { heard, reason -> landed += "kept:$heard:$reason" } else null,
             next = { nexts++; landed += "next" },
         )
@@ -92,6 +93,7 @@ class RollingDictationTest {
         assertTrue(h.landed.isEmpty()); assertEquals(0, h.ended)
         h.final(h.transports[0], "One."); h.advance()
         assertEquals(listOf("final:One.", "next", "final:Two."), h.landed); assertEquals(1, h.ended)
+        assertEquals(listOf(false, true), h.lasts)
     }
     @Test fun `only the oldest unfinished segment reaches the editor and later partials are replayed after it lands`() {
         val h = Harness(); h.session.start(false); h.transports[0].ready(); h.transports[0].partial(1, "one")

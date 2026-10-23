@@ -10,7 +10,10 @@ import kotlin.math.sqrt
  * under the server's 120 s cap. Never before [MIN_SEGMENT], then at the first [PAUSE_CUT] of quiet ([RELAXED_PAUSE]
  * past [RELAXED_AFTER]), and at [MAX_SEGMENT] whatever is being said. Dictations shorter than [MIN_SEGMENT] are one utterance.
  */
-internal class DictationSegmenter {
+internal class DictationSegmenter(
+    private val minSegment: Double = MIN_SEGMENT, private val pauseCut: Double = PAUSE_CUT, private val relaxedAfter: Double = RELAXED_AFTER,
+    private val relaxedPause: Double = RELAXED_PAUSE, private val maxSegment: Double = MAX_SEGMENT,
+) {
     var elapsed = 0.0
         private set
     private var quiet = 0.0
@@ -19,9 +22,9 @@ internal class DictationSegmenter {
     fun feed(rms: Float, duration: Double): Boolean {
         elapsed += duration
         quiet = if (rms < QUIET_RMS) quiet + duration else 0.0
-        if (elapsed + EPSILON >= MAX_SEGMENT) return true
-        if (elapsed + EPSILON < MIN_SEGMENT) return false
-        return quiet + EPSILON >= if (elapsed + EPSILON >= RELAXED_AFTER) RELAXED_PAUSE else PAUSE_CUT
+        if (elapsed + EPSILON >= maxSegment) return true
+        if (elapsed + EPSILON < minSegment) return false
+        return quiet + EPSILON >= if (elapsed + EPSILON >= relaxedAfter) relaxedPause else pauseCut
     }
     fun reset() { elapsed = 0.0; quiet = 0.0 }
 
@@ -125,8 +128,8 @@ internal class RollingDictation(
     var stopping = false
         private set
     val polishing get() = segments.firstOrNull()?.stream?.polishing == true && (stopping || segments.size == 1)
-    /** Segments started so far, for tests and diagnostics (never content). */
-    var opened = 0
+    /** False while an earlier segment lands and the dictation goes on: no done cue then. */
+    var landingLast = true
         private set
 
     fun start(correction: Boolean, profile: String = "default", instructions: String = "", prompt: String? = null) {
@@ -144,7 +147,7 @@ internal class RollingDictation(
     }
     private fun open() {
         val segment = Segment()
-        segments.addLast(segment); opened++
+        segments.addLast(segment)
         segment.stream = DictationStream(
             transportFactory = transportFactory,
             captureFactory = { frame, _, done -> SegmentCapture(frame, done, ::attach, ::detach) },
@@ -195,6 +198,7 @@ internal class RollingDictation(
             if (!segment.done) break
             segments.removeFirst()
             val outcome = segment.outcome
+            landingLast = segments.isEmpty()
             if (outcome != null) outcome() else if (segments.isEmpty()) changed(segment.status, null)
             val following = segments.firstOrNull() ?: break
             next()

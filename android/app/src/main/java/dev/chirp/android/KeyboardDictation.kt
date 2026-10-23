@@ -401,9 +401,10 @@ internal class KeyboardDictation(
         applying = true
         val inserted = try { target?.final(result, awayStart, selectionEnd) == true } finally { applying = false }
         if (inserted && target != null && target.selectionStart >= 0) { selectionStart = target.selectionStart; selectionEnd = target.selectionEnd }
-        notice = inserted; words = if (inserted && reason == null) result.text.trim().split(Regex("\\s+")).size else 0
+        // A long dictation announces its words once, after the last segment, and stays quiet between segments.
+        notice = inserted; words = if (inserted && reason == null) words + result.text.trim().split(Regex("\\s+")).size else 0
         historyId = if (inserted) history?.record(result.text, result.raw.takeIf { result.corrected }, historyInfo, partial = reason != null) else null
-        if (inserted) { haptic(); cue(Cue.INSERTED) }
+        if (inserted && session?.landingLast != false) { haptic(); cue(Cue.INSERTED) }
         message = if (!inserted) reason ?: "Text field unavailable — try again"
             else if (reason != null) keptStatus(reason)
             else if (result.correctionError != null) "kept original"
