@@ -31,13 +31,11 @@ import Testing
                                       correction: { false }, enableCorrection: {}, timeout: { _ in timeout }))
     }
 
-    /// Generous like the recorder suites: the snapshot renderer holds the main actor for seconds in a full run.
+    /// Counts its own polls (≥ 60 s), not wall time: in a loaded full run the snapshot renderer can hold the main
+    /// actor (and so the session's main-queue delivery and this loop) for many minutes.
     private func settle(_ session: LocalSetupSession) async throws {
-        let deadline = ContinuousClock.now + .seconds(60)
-        while !session.isIdle {
-            #expect(ContinuousClock.now < deadline, "setup job never finished"); if ContinuousClock.now >= deadline { return }
-            try await Task.sleep(for: .milliseconds(20))
-        }
+        for _ in 0..<3000 where !session.isIdle { try await Task.sleep(for: .milliseconds(20)) }
+        #expect(session.isIdle, "setup job never finished")
     }
 
     @Test func staleHelperThatPrintsNothingFailsTheDownloadInsteadOfCrashing() async throws {
@@ -127,8 +125,8 @@ import Testing
         let progress = #"{"event":"progress","model":"cleanup","phase":"downloading","completed_bytes":1,"total_bytes":10}"#
         let s = session(try helper("echo '\(progress)'; trap 'exit 130' INT; while :; do sleep 0.05; done"))
         s.download(.cleanup)
-        let deadline = ContinuousClock.now + .seconds(30) // a 4 KB-blocking read would never deliver it before EOF
-        while s.state.models[.cleanup]?.phase != "downloading", ContinuousClock.now < deadline { try await Task.sleep(for: .milliseconds(20)) }
+        // A 4 KB-blocking read would never deliver this line before EOF (the helper loops until paused).
+        for _ in 0..<1500 where s.state.models[.cleanup]?.phase != "downloading" { try await Task.sleep(for: .milliseconds(20)) }
         #expect(s.state.models[.cleanup]?.phase == "downloading")
         s.download(.cleanup) // Pause
         #expect(s.state.models[.cleanup]?.phase == "cancelling")
