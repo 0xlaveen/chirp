@@ -583,6 +583,7 @@ private struct TranscriptPane: View {
                     .controlSize(.small)
             }
             Divider()
+            if let banner = model.visibleSpeakerBanner { SpeakerBannerView(model: model, banner: banner) }
             ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 12) {
@@ -645,7 +646,18 @@ private struct TranscriptPane: View {
                         .foregroundStyle(.orange)
                 } else {
                     HStack(alignment: .firstTextBaseline, spacing: 8) {
-                        if let chip = r.chip { SpeakerChip(name: chip.name, color: chip.color, approximate: chip.approximate) }
+                        if let chip = r.chip, let person = p.person {
+                            Menu { SpeakerMenuItems(model: model, row: p.id, person: person, turns: NotesDocument.turnRefs(p)) } label: {
+                                SpeakerChip(name: chip.name, color: chip.color, approximate: chip.approximate)
+                            }
+                            .menuStyle(.button)
+                            .buttonStyle(.plain)
+                            .menuIndicator(.hidden)
+                            .fixedSize()
+                            .help(SpeakerMenuItems.help)
+                            .accessibilityLabel("Speaker: \(chip.name)")
+                            .accessibilityHint(SpeakerMenuItems.help)
+                        }
                         paragraphText(p, hovered: model.hoveredParagraph == p.id)
                             .font(.system(size: 13))
                             .lineSpacing(2)
@@ -658,6 +670,11 @@ private struct TranscriptPane: View {
         }
         .padding(.vertical, 2)
         .background(RoundedRectangle(cornerRadius: 4).fill(Color.accentColor.opacity(model.highlightedParagraph == p.id ? 0.12 : 0)))
+        .modifier(SpeakerRowMenu(model: model, paragraph: p))
+        .popover(isPresented: Binding(get: { model.renaming?.row == p.id }, set: { if !$0 { model.renaming = nil } }),
+                 arrowEdge: .bottom) {
+            if let r = model.renaming { SpeakerRenameField(model: model, person: r.person) }
+        }
         .id(p.id)
         .onHover { inside in
             if inside { model.hoveredParagraph = p.id } else if model.hoveredParagraph == p.id { model.hoveredParagraph = nil }

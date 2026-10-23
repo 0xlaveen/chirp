@@ -683,6 +683,12 @@ public enum Snapshots {
             notes("transcript-speakers") {
                 $0.tab = .transcript; $0.document = demoSpeakers(); $0.speakerLabels = true; $0.speakerModel = .ready
             },
+            notes("transcript-speakers-renamed") {
+                var d = demoSpeakers()
+                d.renameSpeaker(2, to: "Maya")
+                $0.tab = .transcript; $0.document = d; $0.speakerLabels = true; $0.speakerModel = .ready
+                $0.speakerBanner = SpeakerBanner(document: d.id, kind: .offerReplace(old: "Person 2", new: "Maya", count: 2))
+            },
             notes("hearing-speakers") {
                 var d = demoSpeakers()
                 d.userEdit(NSRange(location: 0, length: 0), "## Lantern kickoff\n- Launch target moved to **March 3**\n")

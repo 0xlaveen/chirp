@@ -128,12 +128,20 @@ public struct SpeakerRoster: Equatable, Sendable, Codable {
     public init() {}
 
     /// The person a slot speaks as, numbering a new one on first sight.
-    public mutating func person(forSlot slot: Int) -> Int {
-        if let id = slots[slot] { return resolve(id) }
-        let id = people.count + 1
-        people.append(Person(id: id))
+    public mutating func person(forSlot slot: Int) -> Int { resolve(id(forSlot: slot)) }
+
+    /// The id a slot was numbered as (before merges): what a turn stores, so undoing a merge gives it back.
+    public mutating func id(forSlot slot: Int) -> Int {
+        if let id = slots[slot] { return id }
+        let id = addPerson()
         slots[slot] = id
         return id
+    }
+
+    /// A person no slot speaks as yet ("This turn is ▸ New person").
+    public mutating func addPerson() -> Int {
+        people.append(Person(id: people.count + 1))
+        return people.count
     }
 
     /// The person a slot already maps to, if any.
@@ -173,13 +181,25 @@ public struct SpeakerRoster: Equatable, Sendable, Codable {
         people[target - 1].name = trimmed?.isEmpty == false ? trimmed : nil
     }
 
-    /// `id` becomes `target`: past turns resolve to it, and its slots feed it from now on.
+    /// `id` becomes `target`: past turns resolve to it, and its slots feed it from now on (they still point at `id`,
+    /// which resolves to `target`, so `separate` undoes it).
     public mutating func merge(_ id: Int, into target: Int) {
         let from = resolve(id), to = resolve(target)
         guard from != to, people.indices.contains(from - 1), people.indices.contains(to - 1) else { return }
         people[from - 1].mergedInto = to
-        for (slot, person) in slots where resolve(person) == to { slots[slot] = to }
     }
+
+    /// Undoes `merge` of `id`: its turns and slots are its own again (people merged into it stay with it).
+    public mutating func separate(_ id: Int) {
+        guard people.indices.contains(id - 1) else { return }
+        people[id - 1].mergedInto = nil
+    }
+
+    /// The people merged straight into `id`, for "Separate ▸".
+    public func merged(into id: Int) -> [Int] { people.filter { $0.mergedInto == id }.map(\.id) }
+
+    /// People still standing (not merged away), in order.
+    public var active: [Int] { people.filter { $0.mergedInto == nil }.map(\.id) }
 
     /// A recovered session has a new diarizer whose slots mean other voices: forget the slot map, keep the people.
     public mutating func forgetSlots() { slots = [:] }

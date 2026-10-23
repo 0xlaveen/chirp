@@ -53,8 +53,11 @@ extension NotesDocument {
                 units = [(Self.part(s, id: "\(s.id)", offset: s.offset, text: s.text, raw: s.raw), nil, false)]
             }
             for (i, unit) in units.enumerated() {
-                if i == 0, var last = paragraphs.last, last.failure == nil, last.parts.last?.segment == s.id - 1,
-                   last.person.map(roster.resolve) == unit.person, let pause = s.pauseBefore, pause < NotesJoin.paragraphPause {
+                // A turn joins the paragraph before it when it is the same person: within a segment (after a merge
+                // or a reassign), or across a cut without a long pause.
+                let follows = i > 0 || (paragraphs.last?.parts.last?.segment == s.id - 1
+                                        && s.pauseBefore.map { $0 < NotesJoin.paragraphPause } == true)
+                if follows, var last = paragraphs.last, last.failure == nil, last.person.map(roster.resolve) == unit.person {
                     last.parts.append(unit.part)
                     last.approximate = last.approximate || unit.approximate
                     paragraphs[paragraphs.count - 1] = last

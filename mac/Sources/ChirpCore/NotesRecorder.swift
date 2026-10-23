@@ -1275,6 +1275,13 @@ public final class NotesRecorder {
         changed()
     }
 
+    /// A speaker fix-up from the transcript (rename, merge, reassign, replace in notes). `body` returns the notes
+    /// changes it made, which the editor replays like an AI change.
+    public func editSpeakers(_ body: (inout NotesDocument) -> [NotesTextChange]) {
+        for change in body(&document) { publish(change) }
+        changed()
+    }
+
     private func dropLabels() {
         tentativeJobs.removeAll()
         labelTask?.cancel()
