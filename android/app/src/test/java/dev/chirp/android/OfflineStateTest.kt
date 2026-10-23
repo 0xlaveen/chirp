@@ -47,7 +47,7 @@ class OfflineStateTest {
             captureFactory = { frame, _, done -> ChirpImeServiceTest.FakeCapture(frame, done, mutableListOf()) },
             transportFactory = { _, _, event, failure -> transports++; ChirpImeServiceTest.FakeTransport(event, failure, mutableListOf()).also { stream = it } },
             prepare = {}, resync = { _, _ -> }, pairing = { Pairing.from(url, "synthetic") }, checkHealth = checkHealth,
-            tailscale = tailscale, healthCheck = { health() })
+            tailscale = tailscale, healthCheck = { health() }, policy = PrewarmPolicy().apply { dictated(null) })
         strip = KeyboardStrip(ContextThemeWrapper(host, R.style.Theme_Chirp)); voice.attach(strip)
         voice.input(host.info, false); voice.shown()
     }

@@ -40,16 +40,22 @@ class KeyboardDictationTest {
     private fun tap() { voice.touch(MotionEvent.ACTION_DOWN); advance(40); voice.touch(MotionEvent.ACTION_UP) }
     private fun start() { tap(); stream.ready() }
     private fun finish(corrected: Boolean = false) { tap(); advance(0); stream.final(corrected) }
+    private var healthCalls = 0
+    private var sockets = 0
+    private fun build(policy: PrewarmPolicy, checkHealth: Boolean = false) {
+        voice = KeyboardDictation(host,
+            captureFactory = { frame, _, done -> ChirpImeServiceTest.FakeCapture(frame, done, order).also { capture = it } },
+            transportFactory = { _, _, event, failure -> sockets++; ChirpImeServiceTest.FakeTransport(event, failure, order).also { stream = it } },
+            prepare = { order += "prepare" }, resync = { _, _ -> resyncs++ },
+            pairing = { Pairing.from("https://mac.example.test", "synthetic") }, checkHealth = checkHealth,
+            healthCheck = { healthCalls++; Health(true, false, true, false, null) }, policy = policy)
+        strip = KeyboardStrip(ContextThemeWrapper(host, R.style.Theme_Chirp)); voice.attach(strip)
+        voice.input(host.info, false); voice.shown()
+    }
     @Before fun setup() {
         controller.create(); host = controller.get()
         shadowOf(RuntimeEnvironment.getApplication()).grantPermissions(Manifest.permission.RECORD_AUDIO, LOCAL_NETWORK_PERMISSION)
-        voice = KeyboardDictation(host,
-            captureFactory = { frame, _, done -> ChirpImeServiceTest.FakeCapture(frame, done, order).also { capture = it } },
-            transportFactory = { _, _, event, failure -> ChirpImeServiceTest.FakeTransport(event, failure, order).also { stream = it } },
-            prepare = { order += "prepare" }, resync = { _, _ -> resyncs++ },
-            pairing = { Pairing.from("https://mac.example.test", "synthetic") }, checkHealth = false)
-        strip = KeyboardStrip(ContextThemeWrapper(host, R.style.Theme_Chirp)); voice.attach(strip)
-        voice.input(host.info, false); voice.shown()
+        build(PrewarmPolicy().apply { dictated(null) })
     }
     @After fun teardown() { voice.destroy(); controller.destroy() }
     @Test fun `full keyboard stays after two finals even with legacy auto return enabled`() {
@@ -185,6 +191,25 @@ class KeyboardDictationTest {
         val idle = stream; advance(30000); assertTrue(idle.closed)
         start(); assertEquals(1, stream.starts); assertTrue(capture.started)
         voice.hidden(); assertTrue(stream.closed)
+    }
+    @Test fun `a cold keyboard connects on press and the next show prewarms after a dictation`() {
+        voice.destroy(); sockets = 0
+        build(PrewarmPolicy())
+        assertEquals("no recent dictation: no socket on show", 0, sockets)
+        voice.hidden(); voice.shown(); assertEquals(0, sockets)
+        start(); assertEquals(1, sockets); assertEquals(1, stream.starts); assertTrue(capture.started)
+        finish(); voice.hidden(); voice.shown()
+        assertEquals("dictated a moment ago: warm on show", 2, sockets); assertTrue(stream.connected); assertEquals(0, stream.starts)
+    }
+    @Test fun `show checks health at most once a minute and a failed check frees the slot`() {
+        voice.destroy(); healthCalls = 0
+        var clock = 0L
+        build(PrewarmPolicy(now = { clock }), checkHealth = true)
+        val await = { n: Int -> repeat(300) { shadowOf(Looper.getMainLooper()).idle(); if (healthCalls >= n) return@repeat; Thread.sleep(10) } }
+        await(1); assertEquals(1, healthCalls)
+        voice.hidden(); clock += 30_000; voice.shown(); Thread.sleep(100); shadowOf(Looper.getMainLooper()).idle()
+        assertEquals("within 60 s: no second health call", 1, healthCalls)
+        voice.hidden(); clock += 31_000; voice.shown(); await(2); assertEquals(2, healthCalls)
     }
     @Test fun `error notice expires to restore suggestions`() {
         shadowOf(RuntimeEnvironment.getApplication()).denyPermissions(Manifest.permission.RECORD_AUDIO)

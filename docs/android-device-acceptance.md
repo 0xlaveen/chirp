@@ -49,7 +49,7 @@ Also try: hold-to-talk, ✕ cancel, fold/unfold mid-utterance, Wi-Fi vs LTE, Tai
 
 ## 5. Collect the timings
 
-Setup → **Diagnostics** now shows content-free session timings (the last 50 sessions): p50/p90 of connect, ready, first partial, stop → final, polishing and audio length, counts per outcome and error code, network type (Wi-Fi, cellular, Ethernet), whether a VPN was up and how many sessions used the prewarmed socket. Tap **Copy diagnostics** and paste it into [bench.md](bench.md) under a new dated heading, together with:
+Setup → **Diagnostics** now shows content-free session timings (the last 50 sessions): p50/p90 of connect, ready, first partial, stop → final, polishing and audio length, counts per outcome and error code, network type (Wi-Fi, cellular, Ethernet), whether a VPN was up and how many sessions used the prewarmed socket, and ready p50/p90 for warm vs cold sessions (adaptive prewarm: the first dictation after a quiet spell is cold, the ones after it warm). Tap **Copy diagnostics** and paste it into [bench.md](bench.md) under a new dated heading, together with:
 
 - the device, Android build, Chirp version and Mac engine;
 - the `battery-session.sh` rows for Wi-Fi and LTE;

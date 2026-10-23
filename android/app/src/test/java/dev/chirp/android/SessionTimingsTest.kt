@@ -96,6 +96,14 @@ class SessionTimingsTest {
         assertTrue(text, text.contains("Errors: busy 1"))
         assertTrue(text, text.contains("connect  p50 – · p90 – · n=0"))
     }
+    @Test fun `summary compares ready latency for warm and cold sessions`() {
+        val items = listOf(entry(1).copy(prewarmed = true, readyMs = 40), entry(2).copy(prewarmed = true, readyMs = 60),
+            entry(3).copy(readyMs = 300), entry(4).copy(readyMs = 500), entry(5, TimingOutcome.FAILED).copy(readyMs = null))
+        val text = TimingSummary.of(items)
+        assertTrue(text, text.contains("ready, warm  p50 40 ms · p90 60 ms · n=2"))
+        assertTrue(text, text.contains("ready, cold  p50 300 ms · p90 500 ms · n=2"))
+        assertTrue(text, text.contains("ready  p50 60 ms"))
+    }
     @Test fun `stored form holds numbers booleans and enum names only`() {
         val log = TimingLog(context); log.clear()
         log.record(SessionTiming(1, TimingOutcome.KEPT, TimingError.BUSY, TimingNetwork.CELLULAR, vpn = true, prewarmed = true, connectMs = 1, readyMs = 2, firstPartialMs = 3, stopFinalMs = 4, polishMs = 5, audioMs = 6))
