@@ -20,7 +20,7 @@ import dev.chirp.android.UpdateController
 
 internal enum class SettingsPage(val title: String) {
     Connection("Mac connection"), Look("Look"), SwipeTyping("Swipe typing"), History("Dictation history"),
-    FloatingMic("Floating mic"), Updates("Updates"), Diagnostics("Diagnostics"),
+    Notes("Notes"), FloatingMic("Floating mic"), Updates("Updates"), Diagnostics("Diagnostics"),
 }
 
 internal class SettingsActions(

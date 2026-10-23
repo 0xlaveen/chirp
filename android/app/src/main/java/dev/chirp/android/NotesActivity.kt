@@ -179,7 +179,7 @@ internal fun NotesScreen(model: NotesModel, record: () -> Unit, copy: () -> Unit
             dismissButton = { TextButton({ renaming = false }) { Text("Cancel") } })
     }
     if (settings) ModalBottomSheet({ settings = false }) {
-        Column(Modifier.padding(start = 16.dp, end = 16.dp, bottom = 24.dp)) { NotesSettings() }
+        Column(Modifier.padding(start = 16.dp, end = 16.dp, bottom = 24.dp)) { NotesSettings(title = "Notes settings") }
     }
     if (recent) ModalBottomSheet({ recent = false }) {
         RecentNotes(model, open = { entry ->

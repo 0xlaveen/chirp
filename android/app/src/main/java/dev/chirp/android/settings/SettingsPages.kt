@@ -18,6 +18,7 @@ internal fun SettingsDetail(page: SettingsPage, state: SetupState, actions: Sett
         SettingsPage.Look -> { KeyboardLookChooser(); AppColoursSettings() }
         SettingsPage.SwipeTyping -> SwipeTypingSettings()
         SettingsPage.History -> HistorySettings(store = history)
+        SettingsPage.Notes -> NotesSettings()
         SettingsPage.FloatingMic -> FloatingMicPage(state, actions)
         SettingsPage.Updates -> UpdateSettings(updates)
         SettingsPage.Diagnostics -> DiagnosticsPage()

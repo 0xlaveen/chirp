@@ -59,6 +59,7 @@ internal fun SettingsHome(state: SetupState, actions: SettingsActions, history: 
         SettingsGroup("Privacy & history") {
             NavRow("Dictation history", { open(SettingsPage.History) },
                 summary = if (dictationHistory.enabled) "On · keeps ${dictationHistory.retention.label}" else "Off")
+            NavRow("Notes", { open(SettingsPage.Notes) }, summary = notesSummary(context))
         }
         SettingsGroup("Other ways to dictate") {
             NavRow("Floating mic (Accessibility)", { open(SettingsPage.FloatingMic) }, summary = if (state.bubbleEnabled) "On" else "Off")

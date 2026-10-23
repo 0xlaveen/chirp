@@ -45,11 +45,12 @@ class SettingsScreenTest {
     private val tree = linkedMapOf<SettingsPage?, List<String>>(
         null to listOf("Clean-up · Correction on Mac", "Styles", "Stop dictation", "Spoken commands", "Press Send after dictating", "Look", "Swipe typing",
             "Hardware keyboard shortcut", "Larger mic on the inner screen", "Layouts, languages & typing", "Haptic cues", "Sound cues",
-            "Dictation history", "Floating mic (Accessibility)", "Updates", "Diagnostics"),
+            "Dictation history", "Notes", "Floating mic (Accessibility)", "Updates", "Diagnostics"),
         SettingsPage.Connection to listOf("Check connection", "Change pairing", "Forget pairing", "Use this phone's recogniser"),
         SettingsPage.Look to listOf("Keyboard look", "App colours"),
         SettingsPage.SwipeTyping to listOf("Add gesture library…"),
         SettingsPage.History to listOf("Keep dictation history on this phone"),
+        SettingsPage.Notes to listOf("Save battery while the screen is off", "Keep a recovery copy until notes are saved", "Keep notes on this phone"),
         SettingsPage.FloatingMic to listOf("Turn on floating mic"),
         SettingsPage.Updates to listOf("Check for updates"),
         SettingsPage.Diagnostics to listOf("Debug overlay (timings only)", "Copy diagnostics", "Clear timings"),
@@ -59,7 +60,7 @@ class SettingsScreenTest {
         val (state, history, updates) = settingsFixture()
         show(state, history, updates)
         val rows = mapOf(SettingsPage.Connection to "Connected · mac.example.test", SettingsPage.Look to "Look", SettingsPage.SwipeTyping to "Swipe typing",
-            SettingsPage.History to "Dictation history", SettingsPage.FloatingMic to "Floating mic (Accessibility)", SettingsPage.Updates to "Updates",
+            SettingsPage.History to "Dictation history", SettingsPage.Notes to "Notes", SettingsPage.FloatingMic to "Floating mic (Accessibility)", SettingsPage.Updates to "Updates",
             SettingsPage.Diagnostics to "Diagnostics")
         tree.getValue(null).forEach(::assertOnce)
         for ((page, row) in rows) {
