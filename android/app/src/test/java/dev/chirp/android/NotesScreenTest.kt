@@ -217,6 +217,9 @@ class NotesRenderTest {
         val output = File(System.getProperty("chirp.screenshots")).apply { mkdirs() }
         val rig = NotesModelRig(RuntimeEnvironment.getApplication())
         val dark = mutableStateOf(false)
+        // A fixed name: the default title is the start time, which would change every capture.
+        fun name() = rig.model.rename("Launch sync")
+        name()
         compose.setContent { ChirpTheme(dark.value) { NotesScreen(rig.model, rig.model::toggle, {}, {}, {}, {}) } }
         fun shot(name: String) {
             compose.waitForIdle()
@@ -234,7 +237,7 @@ class NotesRenderTest {
                 rig.wire.partial("Someone should draft the invite email")
             }
             shot("recording")
-            compose.runOnIdle { rig.model.recorder.cancel(); rig.model.clear() }
+            compose.runOnIdle { rig.model.recorder.cancel(); rig.model.clear(); name() }
         }
     }
 
