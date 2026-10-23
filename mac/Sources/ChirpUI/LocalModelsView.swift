@@ -107,17 +107,26 @@ public final class LocalModelsView: NSView {
             let selected = state.activeModels[model.rawValue] == option?.id && option != nil
             let picker = model == .speech ? speechPicker : cleanupPicker
             let options = state.options.filter { $0.kind == model }
-            // Avoid replacing an open native popup on every progress event.
-            if picker.itemArray.compactMap({ $0.representedObject as? String }) != options.map(\.id) || picker.itemTitles != options.map(\.label) {
-                picker.removeAllItems()
-                for option in options { // addItem(withTitle:) drops an earlier item with the same title.
-                    let item = NSMenuItem(title: option.label, action: nil, keyEquivalent: "")
-                    item.toolTip = option.repository + "\nRevision: " + option.revision
-                    item.representedObject = option.id
-                    picker.menu?.addItem(item)
+            // Section headers only when the list spans more than one engine.
+            let sections = Set(options.compactMap(\.engineSection)).count > 1
+            var items: [NSMenuItem] = []
+            for option in sections ? options.sorted(by: { ($0.engineSection ?? "") < ($1.engineSection ?? "") }) : options {
+                if sections, let section = option.engineSection, items.last(where: { $0.representedObject == nil })?.title != section {
+                    items.append(NSMenuItem.sectionHeader(title: section))
                 }
+                // addItem(withTitle:) drops an earlier item with the same title.
+                let item = NSMenuItem(title: option.label, action: nil, keyEquivalent: "")
+                item.toolTip = option.repository + "\nRevision: " + option.revision
+                item.representedObject = option.id
+                items.append(item)
             }
-            if let id = state.choices[model], let index = options.firstIndex(where: { $0.id == id }) { picker.selectItem(at: index) }
+            // Avoid replacing an open native popup on every progress event.
+            let shape = { (items: [NSMenuItem]) in items.map { "\($0.representedObject as? String ?? "§")\t\($0.title)" } }
+            if shape(picker.itemArray) != shape(items) {
+                picker.removeAllItems()
+                for item in items { picker.menu?.addItem(item) }
+            }
+            if let id = state.choices[model], let item = picker.itemArray.first(where: { $0.representedObject as? String == id }) { picker.select(item) }
             picker.isEnabled = !row.busy && !state.starting && !state.catalogBusy
             let button = model == .speech ? speech : cleanup
             button.title = row.ready ? (option == nil ? "Downloaded" : selected ? "Selected" : "Use Model") : row.phase == "verifying" ? "Checking…" : row.phase == "cancelling" ? "Pausing…" : row.busy ? "Pause" : row.phase == "cancelled" ? "Resume" : row.phase == "error" ? "Retry" : "Download"

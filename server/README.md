@@ -100,10 +100,20 @@ num_threads = 4
 ```
 
 `--engine` overrides the saved engine. `--sensevoice-num-threads 2` overrides the thread count,
-which must be an integer from 1 to 256. The Mac model picker manages MLX choices. While SenseVoice
-is configured, speech selection and `setup start` report a clear message directing you to start
-`chirp-server` directly;
-set `engine = "mlx"` to use the Mac helper again. A saved MLX selection does not supply
+which must be an integer from 1 to 256.
+
+On a Mac, **Models on this Mac** lists SenseVoice next to the Parakeet models, grouped by engine.
+**Download** adds the pinned runtime (about 12 MB) to the app's server environment when it is
+missing, using `uv sync --locked --extra sensevoice` for a `scripts/install-mac.sh` install (which
+keeps the extra on later reinstalls) or `uv pip install` of the pinned packages otherwise, then
+downloads the same pinned files with progress, pause and resume. A read-only environment, such as
+a Nix store, reports how to add the extra instead. **Use Model** loads and warms the model before
+saving the choice; **Apply & Restart Server** switches the engine. Choosing a Parakeet model
+switches back to MLX. The choice is stored with the model in `model-selection.json` and overrides
+`engine` in server.toml, which is never rewritten; selections saved before this change keep the
+file's engine. Threads stay in `[sensevoice]`. A service whose arguments pin `--engine` or
+`--model-dir` must drop them before a choice can be applied. The engine name appears in `/v1/health`,
+the Mac menu's Server submenu and on paired phones. A saved MLX selection does not supply
 SenseVoice's model directory.
 `chirp-server --engine sensevoice doctor --quick` checks the optional package and local assets;
 without `--quick`, it also loads and warms the model.

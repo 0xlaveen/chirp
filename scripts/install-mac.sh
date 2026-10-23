@@ -33,7 +33,13 @@ mkdir -p "$SERVER"
 cp "$ROOT/server/pyproject.toml" "$ROOT/server/uv.lock" "$SERVER/"
 mkdir -p "$SERVER/src/chirp_server"
 rsync -a --exclude __pycache__ "$ROOT/server/src/chirp_server/" "$SERVER/src/chirp_server/"
-uv sync --project "$SERVER" --locked --no-dev
+# Keep the optional SenseVoice runtime if the app added it; a plain sync would remove it.
+EXTRA=
+if "$SERVER/.venv/bin/python" -c 'import importlib.util as u, sys; sys.exit(not u.find_spec("sherpa_onnx"))' 2>/dev/null; then
+  EXTRA='--extra sensevoice'
+fi
+# shellcheck disable=SC2086
+uv sync --project "$SERVER" --locked --no-dev $EXTRA
 if [ "$MODE" = server ]; then
   printf 'Server installed: %s\n' "$SERVER/.venv/bin/chirp-server"
   echo 'Use its setup commands to select/download models and start the server.'

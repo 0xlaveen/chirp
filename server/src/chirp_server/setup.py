@@ -5,14 +5,28 @@ import os
 import subprocess
 import time
 from pathlib import Path
+from types import SimpleNamespace
 
 from . import cleanup_models, model_catalog
 from .config import Settings
 from .engine import models as speech_models
+from .engine import sensevoice_models
 
 
 def emit(event, **values):
     print(json.dumps({"event": event, **values}), flush=True)
+
+
+def discover_speech(settings):
+    if settings.engine == "sensevoice":
+        if not sensevoice_models.runtime_installed():
+            raise ValueError("SenseVoice runtime not installed")
+        return sensevoice_models.discover()
+    return (
+        speech_models.discover(settings.model_dir)
+        if settings.model_dir
+        else speech_models.discover()
+    )
 
 
 def status(settings):
@@ -20,12 +34,10 @@ def status(settings):
     for kind, title, discover in (
         (
             "speech",
-            "Parakeet · Speech recognition",
-            lambda: (
-                speech_models.discover(settings.model_dir)
-                if settings.model_dir
-                else speech_models.discover()
-            ),
+            "SenseVoice · Speech recognition"
+            if settings.engine == "sensevoice"
+            else "Parakeet · Speech recognition",
+            lambda: discover_speech(settings),
         ),
         (
             "cleanup",
@@ -67,9 +79,13 @@ def download(kind, settings, choice=None):
         repository, revision = option.repository, option.revision
         patterns = speech_models.FILES if kind == "speech" else cleanup_models.PATTERNS
         local = speech_models.model_root() / "parakeet-mlx" if option.id == "parakeet-v2" else None
+        if option.engine == "sensevoice":
+            patterns = sensevoice_models.HUB_FILES
+            local = model_catalog.snapshot_path(option)
 
         def discover():
-            return model_catalog.directory(option)
+            if not model_catalog.ready(option):
+                raise ValueError("Model files missing or incomplete")
     elif kind == "speech":
         repository, revision = speech_models.REPOSITORY, speech_models.REVISION
         patterns = speech_models.FILES
@@ -84,6 +100,10 @@ def download(kind, settings, choice=None):
             return cleanup_models.discover(settings.correction.model)
 
     emit("progress", model=kind, phase="preparing", completed_bytes=0, total_bytes=0)
+    sensevoice = bool(choice) and option.engine == "sensevoice"
+    if sensevoice and not sensevoice_models.runtime_installed():
+        emit("progress", model=kind, phase="installing", completed_bytes=0, total_bytes=0)
+        sensevoice_models.install_runtime()
     try:
         discover()
         emit("complete", model=kind)
@@ -130,6 +150,8 @@ def download(kind, settings, choice=None):
         )
         completed += item.file_size
         progress(completed, force=True)
+    if sensevoice:
+        sensevoice_models.fetch_vad(local)  # Pinned by SHA-256, not by the hub revision.
     discover()  # Only a complete usable snapshot gets a green checkmark.
     emit("complete", model=kind)
 
@@ -174,8 +196,8 @@ def server_matches(port, wanted):
         return False
 
 
-def start_server(port, model_dir=None):
-    speech_models.discover(model_dir) if model_dir else speech_models.discover()
+def start_server(port, model_dir=None, engine="mlx"):
+    discover_speech(SimpleNamespace(engine=engine, model_dir=model_dir))
     if server_running(port) and not model_catalog.pending_restart():
         emit("started")
         return
@@ -193,8 +215,8 @@ def start_server(port, model_dir=None):
         arguments = document.get("ProgramArguments", [])
         if document.get("Label") != label or arguments[1:3] != ["-m", "chirp_server"]:
             raise ValueError("Unexpected local server service")
-        if "--model-dir" in arguments and model_catalog.pending_restart():
-            raise ValueError("Remove the service model-dir override before applying model choices")
+        if model_catalog.pending_restart() and ({"--model-dir", "--engine"} & set(arguments)):
+            raise ValueError("Remove the service model/engine override before applying choices")
         service_port = (
             int(arguments[arguments.index("--port") + 1]) if "--port" in arguments else 7821
         )
@@ -258,17 +280,6 @@ def emit_catalog(settings):
 def run(action, model, config, port, choice=None, repository=None):
     try:
         settings = Settings.read(config)
-        if settings.engine == "sensevoice" and (
-            action == "start" or (action == "select" and model == "speech")
-        ):
-            emit(
-                "error",
-                model=model,
-                message="SenseVoice is configured. Start it with chirp-server directly. "
-                "Mac local speech selection and setup start manage MLX; "
-                'set engine = "mlx" to use them.',
-            )
-            return 1
         if action == "status":
             emit(
                 "status",
@@ -310,8 +321,11 @@ def run(action, model, config, port, choice=None, repository=None):
                 return 1
             emit("catalog_progress", message="Models are up to date. Choose a model to download.")
         else:
-            start_server(port, settings.model_dir) if settings.model_dir else start_server(port)
+            start_server(port, settings.model_dir, settings.engine)
         return 0
+    except sensevoice_models.RuntimeUnavailable as error:
+        emit("error", model=model if action in {"download", "select"} else None, message=str(error))
+        return 1
     except KeyboardInterrupt:
         emit("cancelled", model=model)
         return 130

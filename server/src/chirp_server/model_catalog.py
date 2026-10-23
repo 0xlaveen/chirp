@@ -6,12 +6,15 @@ import fnmatch
 import json
 import os
 import re
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 from uuid import uuid4
 
 from . import cleanup_models
 from .engine import models as speech_models
+from .engine import sensevoice_models
+
+ENGINES = {"mlx", "sensevoice"}
 
 
 @dataclass(frozen=True)
@@ -26,6 +29,8 @@ class Model:
     license: str = ""
     memory_mb: int = 0
     latest: bool = False
+    # Speech only. Selections written before engine switching have none and keep server.toml's.
+    engine: str = ""
 
     def __post_init__(self):
         from huggingface_hub.utils import validate_repo_id
@@ -37,6 +42,11 @@ class Model:
             raise ValueError("Invalid pinned model")
         if not self.id or len(self.id) > 200 or len(self.title) > 200 or self.size_bytes < 0:
             raise ValueError("Invalid model metadata")
+        if self.engine and (self.kind != "speech" or self.engine not in ENGINES):
+            raise ValueError("Invalid model engine")
+
+
+SENSEVOICE = "sensevoice-small"
 
 
 def root():
@@ -84,6 +94,7 @@ def defaults():
             2472000000,
             "English · existing default",
             "cc-by-4.0",
+            engine="mlx",
         ),
         Model(
             "parakeet-v3",
@@ -94,6 +105,19 @@ def defaults():
             2509044141,
             "25 languages · alternative",
             "cc-by-4.0",
+            engine="mlx",
+        ),
+        Model(
+            SENSEVOICE,
+            "speech",
+            "SenseVoice Small · 中文 / 粵語 / English",
+            sensevoice_models.REPOSITORY,
+            sensevoice_models.REVISION,
+            938576997,
+            "Mandarin, Cantonese, English and mixed speech · CPU · "
+            "adds a 12 MB runtime on first download",
+            "FunASR model license",
+            engine="sensevoice",
         ),
     ]
     for key, spec in cleanup_models.MODELS.items():
@@ -162,8 +186,13 @@ def pending_restart():
 
 def active_ids(settings):
     chosen = selection()
+    speech = chosen.get("speech")
     return {
-        "speech": chosen["speech"].id if "speech" in chosen else "parakeet-v2",
+        "speech": SENSEVOICE
+        if settings.engine == "sensevoice"
+        else speech.id
+        if speech and speech.engine != "sensevoice"
+        else "parakeet-v2",
         "cleanup": chosen["cleanup"].id
         if "cleanup" in chosen
         else (settings.correction.model or cleanup_models.DEFAULT_MODEL)
@@ -175,6 +204,8 @@ def active_ids(settings):
 def snapshot_path(model):
     from huggingface_hub.constants import HF_HUB_CACHE
 
+    if model.engine == "sensevoice":
+        return speech_models.model_root() / SENSEVOICE
     if model.id == "parakeet-v2":
         try:
             return speech_models.discover()
@@ -193,6 +224,8 @@ def directory(model):
 
     if model.id == "parakeet-v2":
         return speech_models.discover()
+    if model.engine == "sensevoice":
+        return sensevoice_models.discover()
     path = Path(
         snapshot_download(
             model.repository,
@@ -214,7 +247,7 @@ def directory(model):
 def ready(model):
     try:
         directory(model)
-        return True
+        return model.engine != "sensevoice" or sensevoice_models.runtime_installed()
     except (OSError, ValueError):
         return False
 
@@ -314,6 +347,7 @@ def inspect_repository(kind, repository):
             str(card.get("license", ""))[:200],
             existing.memory_mb if existing else 0,
             latest=True,
+            engine="mlx" if kind == "speech" else "",
         )
 
 
@@ -338,7 +372,13 @@ def verify(model):
         contextlib.redirect_stdout(sink),
         contextlib.redirect_stderr(sink),
     ):
-        if model.kind == "speech":
+        if model.engine == "sensevoice":
+            from .engine.sensevoice import SenseVoice
+
+            engine = SenseVoice(path)
+            engine.load()
+            engine.warm()
+        elif model.kind == "speech":
             from .engine.mlx import ParakeetMLX
 
             engine = ParakeetMLX(path)
@@ -361,6 +401,8 @@ def verify(model):
 
 def choose(choice, kind):
     model = resolve(choice, kind)
+    if kind == "speech" and not model.engine:
+        model = replace(model, engine="mlx")  # Added Parakeet repositories run on MLX.
     verify(model)  # No selection file is touched until this succeeds.
     update_json(
         root() / "model-selection.json",
@@ -375,11 +417,12 @@ def choose(choice, kind):
 
 
 def apply_settings(settings):
+    """The app's choices override server.toml; a speech choice also picks its engine."""
     chosen = selection()
     if speech := chosen.get("speech"):
-        settings.speech_model = speech.id
-        settings.model_dir = snapshot_path(speech)
+        settings.engine = speech.engine or settings.engine
+        if speech.engine != "sensevoice":
+            settings.speech_model = speech.id
+            settings.model_dir = snapshot_path(speech)
     if cleanup := chosen.get("cleanup"):
-        from dataclasses import replace
-
         settings.correction = replace(settings.correction, mode="managed", model=cleanup.id)

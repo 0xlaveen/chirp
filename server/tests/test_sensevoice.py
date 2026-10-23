@@ -264,26 +264,6 @@ def test_fetch_engine_option_before_or_after_subcommand(tmp_path, monkeypatch, a
     assert requested == [expected]
 
 
-@pytest.mark.parametrize("action", ["start", "select"])
-def test_mac_setup_reports_sensevoice_scope_without_mlx_or_service_work(
-    tmp_path, monkeypatch, capsys, action
-):
-    from chirp_server import setup
-
-    monkeypatch.setenv("HOME", str(tmp_path))
-    config = tmp_path / "server.toml"
-    config.write_text('engine = "sensevoice"\n')
-    monkeypatch.setattr(setup, "start_server", lambda *a: pytest.fail("Mac service action"))
-    monkeypatch.setattr(setup.model_catalog, "choose", lambda *a: pytest.fail("MLX selection"))
-    monkeypatch.setattr(
-        setup.speech_models, "discover", lambda *a: pytest.fail("MLX model required")
-    )
-    assert setup.run(action, "speech", config, 7831, "parakeet-v3") == 1
-    message = capsys.readouterr().out
-    assert '"event": "error"' in message
-    assert "SenseVoice is configured" in message and "chirp-server directly" in message
-
-
 @pytest.mark.parametrize("client_name", ["mac", "android"])
 def test_existing_socket_protocol_auth_cancellation_and_untimed_finals(settings, client_name):
     engine = stub_engine([(0, RATE)])
