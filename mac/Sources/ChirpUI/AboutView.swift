@@ -52,7 +52,7 @@ public final class AboutView: NSView {
         blurb.textColor = .secondaryLabelColor
         blurb.alignment = .center
         blurb.preferredMaxLayoutWidth = Self.width - 72
-        let credits = NSTextField(wrappingLabelWithString: "Live Notes speaker labels run on this Mac with FluidAudio (Apache-2.0) and NVIDIA Sortformer (CC-BY-4.0).")
+        let credits = NSTextField(wrappingLabelWithString: "Live Notes speaker labels run on this Mac with FluidAudio (Apache-2.0), NVIDIA Sortformer (CC-BY-4.0) and, for saved voices, pyannote WeSpeaker (CC-BY-4.0).")
         credits.font = .systemFont(ofSize: NSFont.smallSystemFontSize)
         credits.textColor = .tertiaryLabelColor
         credits.alignment = .center

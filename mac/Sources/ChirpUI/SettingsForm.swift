@@ -60,6 +60,8 @@ public struct SettingsState: Sendable {
     public var serverHost = "this Mac"
     /// Some of Live Notes' speaker-label model is on this Mac, complete or not (Remove deletes it).
     public var speakerModelDownloaded = false
+    /// Notes › Voices: "Recognize saved voices", the voice model and the saved voices.
+    public var voices = VoiceProfilesState()
     /// Dictation: every input device, the system default among them, and the one the user picked (nil follows the default).
     public var inputs: [AudioInput] = []
     public var defaultInput: AudioInput?
@@ -185,6 +187,8 @@ public final class SettingsForm {
     public let removeSpeakerModel = NSButton(title: "Remove", target: nil, action: nil)
     private let speakerStatus = StatusLine()
     private let speakerHelp = SettingsForm.help("")
+    /// Notes: "Recognize saved voices" and the saved voices, each with Forget.
+    public let voicesView = VoiceProfilesView()
     /// Notes: brings the Notes window forward.
     public let notesButton = NSButton(title: "Open Notes Window", target: nil, action: nil)
     /// About: the icon, the version and Third-Party Notices….
@@ -325,6 +329,7 @@ public final class SettingsForm {
             row("Open Notes:", openNotes.shortcutView),
             row("Recovery:", notesRecoveryCopy, help: Self.help(NotesStatus.recoveryHelp)),
             row("Speakers:", stack([speakerStatus, speakerHelp])),
+            row("Voices:", voicesView),
             row("Window:", notesButton,
                 help: Self.help("Structure notes, Auto-reorganize and Label speakers are switches in the window's footer, so you can change them while you record.")),
         ], groups: [2])
@@ -542,6 +547,7 @@ public final class SettingsForm {
         speakerStatus.set(symbol: s.speakerModelDownloaded ? "checkmark.circle.fill" : "circle", tone: s.speakerModelDownloaded ? .ok : .normal,
                           text: s.speakerModelDownloaded ? "Speaker model on this Mac" : "Speaker model not downloaded")
         removeSpeakerModel.isHidden = !s.speakerModelDownloaded
+        voicesView.apply(s.voices)
         speakerHelp.stringValue = s.speakerModelDownloaded
             ? "Labels who is talking in Live Notes, on this Mac. Removing it turns labels off until you download it again."
             : "Live Notes downloads it only when you turn on Label speakers in the Notes window, and asks first."

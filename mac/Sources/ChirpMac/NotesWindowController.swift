@@ -29,6 +29,7 @@ final class NotesWindowController: NSObject, NSWindowDelegate {
         model.onRecoverySave = { [weak self] in self?.saveRecovered() }
         model.onRecoveryDiscard = { [weak self] in self?.notes.dropRecovered() }
         notes.confirmSpeakerDownload = { [weak self] message, done in self?.confirmSpeakerDownload(message, done: done) }
+        notes.confirmRememberVoice = { [weak self] name, done in self?.confirmRememberVoice(name, done: done) }
         model.onManageModels = { [weak self] in self?.onOpenModels() }
         NotesMenuTarget.shared.model = model
         NotesMenuTarget.shared.windowIsKey = { [weak self] in NSApp.isActive && self?.window?.isKeyWindow == true }
@@ -237,6 +238,19 @@ final class NotesWindowController: NSObject, NSWindowDelegate {
         }
     }
 
+    /// "Remember this voice as Maya…": Remember is enabled only once the consent box is ticked.
+    private func confirmRememberVoice(_ name: String, done: @escaping (Bool) -> Void) {
+        let alert = NSAlert()
+        alert.messageText = VoiceText.consentTitle
+        alert.informativeText = VoiceText.consentDetail(name)
+        alert.addButton(withTitle: "Remember")
+        alert.addButton(withTitle: "Cancel")
+        let tick = ConsentBox(title: VoiceText.consentTick, remember: alert.buttons[0])
+        alert.accessoryView = tick
+        let handle: (NSApplication.ModalResponse) -> Void = { done($0 == .alertFirstButtonReturn && tick.state == .on) }
+        if let window, window.isVisible { alert.beginSheetModal(for: window, completionHandler: handle) } else { handle(alert.runModal()) }
+    }
+
     // MARK: actions
 
     private func new() {
@@ -303,4 +317,25 @@ final class NotesWindowController: NSObject, NSWindowDelegate {
         chirpLog.info("notes saved chars=\(text.count, privacy: .public)")
         return true
     }
+}
+
+/// The consent tick of "Remember this voice": the Remember button follows it.
+private final class ConsentBox: NSButton {
+    private weak var remember: NSButton?
+
+    init(title: String, remember: NSButton) {
+        self.remember = remember
+        super.init(frame: .zero)
+        setButtonType(.switch)
+        self.title = title
+        state = .off
+        remember.isEnabled = false
+        target = self
+        action = #selector(toggled)
+        sizeToFit()
+    }
+
+    @available(*, unavailable) required init?(coder: NSCoder) { fatalError("not used") }
+
+    @objc private func toggled() { remember?.isEnabled = state == .on }
 }

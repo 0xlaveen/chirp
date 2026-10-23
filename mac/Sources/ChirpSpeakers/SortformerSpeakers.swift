@@ -212,6 +212,16 @@ public final class SortformerSpeakerDiarizer: SpeakerDiarizing, @unchecked Senda
     private var generation = 0
     private var timeline = SpeakerTimeline()
     private var _stats = Stats()
+    /// Voice profiles (M3): the embedder, and each slot's voiceprint so far. Memory only.
+    private var embedder: (any VoiceEmbedder)?
+    private var prints: [Int: Voiceprint] = [:]
+
+    /// Recent audio (inference queue only, and only while an embedder is attached): what a settled span is embedded
+    /// from. Nothing older than `voiceRetain` is kept.
+    private var recent: [(at: TimeInterval, pcm: Data)] = []
+    /// A settled span is embedded when it is at least this long (its last `WeSpeakerEmbedder` window at most).
+    public static let minVoiceSpan: TimeInterval = 2
+    static let voiceRetain: TimeInterval = 30
 
     // The inference queue's own state.
     private struct Piece {
@@ -237,6 +247,14 @@ public final class SortformerSpeakerDiarizer: SpeakerDiarizing, @unchecked Senda
     }
 
     public var snapshot: SpeakerTimeline { lock.withLock { timeline } }
+    public var voiceprints: [Int: Voiceprint] { lock.withLock { prints } }
+
+    public func attachEmbedder(_ embedder: (any VoiceEmbedder)?) {
+        lock.withLock {
+            self.embedder = embedder
+            if embedder == nil { prints = [:] }
+        }
+    }
     public var stats: Stats { lock.withLock { _stats } }
 
     public func feed(_ pcm16: Data, at documentTime: TimeInterval) {
@@ -272,6 +290,7 @@ public final class SortformerSpeakerDiarizer: SpeakerDiarizing, @unchecked Senda
             head = 0
             pendingSamples = 0
             timeline = SpeakerTimeline()
+            prints = [:]
         }
     }
 
@@ -301,9 +320,12 @@ public final class SortformerSpeakerDiarizer: SpeakerDiarizing, @unchecked Senda
         if gen != modelGeneration {
             diarizer.reset()
             pieces.removeAll()
+            recent.removeAll()
             samplesFed = 0
             modelGeneration = gen
         }
+        let embedder = lock.withLock { self.embedder }
+        if embedder != nil { remember(batch) } else { recent.removeAll() }
         var samples: [Float] = []
         samples.reserveCapacity(batch.reduce(0) { $0 + $1.pcm.count / 2 } + Int(padding * Self.rate))
         for (pcm, at) in batch {
@@ -325,13 +347,53 @@ public final class SortformerSpeakerDiarizer: SpeakerDiarizing, @unchecked Senda
         var failed = false
         do { update = try diarizer.process(samples: samples) } catch { update = nil; failed = true }
         let elapsed = Date().timeIntervalSince(started)
-        lock.withLock {
+        let settled = lock.withLock { () -> [SpeakerSpan] in
             _stats.processSeconds += elapsed
             _stats.audioSeconds += Double(samples.count) / Self.rate
             if failed { _stats.errors += 1 }
-            guard gen == generation, let update else { return }
-            apply(update)
+            guard gen == generation, let update else { return [] }
+            return apply(update)
         }
+        if let embedder { embed(settled, with: embedder, generation: gen) }
+    }
+
+    // MARK: voiceprints
+
+    private func remember(_ batch: [(pcm: Data, at: TimeInterval)]) {
+        recent += batch.map { ($0.at, $0.pcm) }
+        guard let last = recent.last else { return }
+        let horizon = last.at - Self.voiceRetain
+        if let first = recent.first, first.at < horizon { recent.removeAll { $0.at < horizon } }
+    }
+
+    /// Adds each settled span of `minVoiceSpan` or more to its slot's voiceprint (its last 10 s at most).
+    private func embed(_ spans: [SpeakerSpan], with embedder: any VoiceEmbedder, generation gen: Int) {
+        for span in spans where span.duration >= Self.minVoiceSpan {
+            let start = max(span.start, span.end - Double(WeSpeakerEmbedder.window) / Self.rate)
+            let clip = audio(from: start, to: span.end)
+            let seconds = Double(clip.count) / Self.rate
+            guard seconds >= Self.minVoiceSpan, let e = try? embedder.embedding(clip) else { continue }
+            lock.withLock {
+                guard gen == generation, self.embedder === embedder else { return }
+                prints[span.slot, default: Voiceprint()].add(e, seconds: seconds)
+            }
+        }
+    }
+
+    /// The recent audio between two document times, as floats.
+    private func audio(from start: TimeInterval, to end: TimeInterval) -> [Float] {
+        var out: [Float] = []
+        for (at, pcm) in recent {
+            let n = pcm.count / 2
+            let frameEnd = at + Double(n) / Self.rate
+            guard frameEnd > start, at < end else { continue }
+            let lo = max(0, Int(((start - at) * Self.rate).rounded())), hi = min(n, Int(((end - at) * Self.rate).rounded()))
+            guard hi > lo else { continue }
+            pcm.withUnsafeBytes { raw in
+                for s in raw.bindMemory(to: Int16.self)[lo..<hi] { out.append(Float(s) / 32_768) }
+            }
+        }
+        return out
     }
 
     /// Starts a new piece of the clock map where the document time is not where the model's clock says it should be
@@ -361,14 +423,16 @@ public final class SortformerSpeakerDiarizer: SpeakerDiarizing, @unchecked Senda
         return end > start ? SpeakerSpan(slot: s.speakerIndex, start: start, end: end) : nil
     }
 
-    /// Under the lock.
-    private func apply(_ update: DiarizerTimelineUpdate) {
-        timeline.spans += update.finalizedSegments.compactMap(span)
+    /// Under the lock. Returns the spans it settled.
+    private func apply(_ update: DiarizerTimelineUpdate) -> [SpeakerSpan] {
+        let settled = update.finalizedSegments.compactMap(span)
+        timeline.spans += settled
         timeline.tentative = update.tentativeSegments.compactMap(span)
         let chunk = update.chunkResult
         let frames = chunk.startFrame + chunk.finalizedFrameCount
         timeline.finalizedThrough = max(timeline.finalizedThrough,
                                         documentTime(Double(frames) * Double(diarizer.config.frameDurationSeconds)))
         timeline.prune()
+        return settled
     }
 }

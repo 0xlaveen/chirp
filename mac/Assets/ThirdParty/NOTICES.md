@@ -20,3 +20,15 @@ It is a CoreML conversion (6-bit palettized weights) by FluidInference of NVIDIA
 `nvidia/diar_streaming_sortformer_4spk-v2.1` (<https://huggingface.co/nvidia/diar_streaming_sortformer_4spk-v2.1>,
 CC BY 4.0). Chirp downloads it unchanged, only after you choose Download, checks it against the pinned file hashes,
 and runs it on this Mac only. No warranties are given by the licensors.
+
+## Voice model (downloaded only if you turn on Recognize saved voices, not bundled)
+
+"Speaker Diarization CoreML" (`wespeaker_v2.mlmodelc` only) by FluidInference,
+<https://huggingface.co/FluidInference/speaker-diarization-coreml> at revision
+`df2625ac79a7ac6b65ad868fee6d80f320da4232`, licensed under Creative Commons Attribution 4.0 International
+(CC BY 4.0, <https://creativecommons.org/licenses/by/4.0/>).
+
+It is a CoreML conversion by FluidInference of pyannote's WeSpeaker ResNet34 speaker-embedding model
+(`pyannote/wespeaker-voxceleb-resnet34-LM`, CC BY 4.0), itself from the WeSpeaker project. Chirp downloads it
+unchanged, only after you choose Download, checks it against the pinned file hashes, and runs it on this Mac only.
+No warranties are given by the licensors.
