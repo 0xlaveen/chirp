@@ -622,12 +622,17 @@ final class NotesHarness {
          recorder.passInFlight ? 1 : 0, statuses.count, model.pendingChanges.count, recorder.finalizingCount]
     }
 
-    /// Polls until `condition` holds (generous: a full test run can hold the main actor for seconds).
+    /// Polls until `condition` holds for at most `seconds` of time this test got to run. In a full run another suite
+    /// (the snapshot renderer) can hold the main actor for minutes; a gap between polls counts as one short poll, so
+    /// starvation makes the wait longer instead of failing it.
     func until(_ what: String, within seconds: Double = 120, _ condition: () -> Bool) async {
-        let deadline = Date().addingTimeInterval(seconds)
+        var waited = 0.0, last = ContinuousClock.now
         while !condition() {
-            if Date() > deadline { Issue.record("timed out waiting for \(what)"); return }
+            if waited > seconds { Issue.record("timed out waiting for \(what)"); return }
             try? await Task.sleep(for: .milliseconds(5))
+            let now = ContinuousClock.now
+            waited += min((now - last).inSeconds, 0.05)
+            last = now
         }
         editor.update()
     }

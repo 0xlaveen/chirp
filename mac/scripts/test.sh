@@ -11,7 +11,17 @@ if grep -rnE '^[[:space:]]*@(State|FocusState|Entry|Previewable)\b' Sources; the
 fi
 DEV=$(xcode-select -p)
 PLUGINS="$DEV/usr/lib/swift/host/plugins/testing"
-if [ "$DEV" = "/Library/Developer/CommandLineTools" ] && [ -d "$PLUGINS" ]; then
-    exec swift test -Xswiftc -plugin-path -Xswiftc "$PLUGINS" "$@"
+run() {
+    if [ "$DEV" = "/Library/Developer/CommandLineTools" ] && [ -d "$PLUGINS" ]; then
+        swift test -Xswiftc -plugin-path -Xswiftc "$PLUGINS" "$@"
+    else
+        swift test "$@"
+    fi
+}
+# With no arguments the 2-hour Live Notes soak runs on its own after the rest: its 2-minute limit must not include
+# minutes where the snapshot renderer holds the main actor.
+if [ $# -eq 0 ]; then
+    run --skip NotesSoakTests
+    exec "$0" --skip-build --filter NotesSoakTests
 fi
-exec swift test "$@"
+run "$@"

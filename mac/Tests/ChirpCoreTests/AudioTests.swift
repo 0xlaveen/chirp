@@ -47,6 +47,20 @@ import Testing
         #expect(Level(pcm16: Data()) == .zero)
     }
 
+    @Test func levelMatchesAPerSampleLoopExactly() {
+        var rng = SystemRandomNumberGenerator()
+        for count in [1, 3, 800, 801, 16_000] {
+            var samples = (0..<count).map { _ in Int16.random(in: .min ... .max, using: &rng) }
+            samples[0] = .min
+            let data = samples.withUnsafeBytes { Data($0) }
+            var peak: Int32 = 0, sum = 0.0
+            for v in samples.map(Int32.init) { peak = max(peak, abs(v)); sum += Double(v) * Double(v) }
+            let expected = Level(peak: Float(peak) / 32768, rms: Float((sum / Double(count)).squareRoot() / 32768))
+            #expect(Level(pcm16: data) == expected)
+            #expect(Level(pcm16: data + Data([7])) == expected)   // a stray odd byte is ignored
+        }
+    }
+
     @Test func silenceGuardFiresOnceAfterWindow() {
         var g = SilenceGuard(window: 1.5)
         var fired: [Double] = []

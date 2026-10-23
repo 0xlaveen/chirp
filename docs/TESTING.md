@@ -22,6 +22,11 @@ It then checks that a wrong token is refused, that the server log contains no tr
 
 For iPhone/iPad, `ios/scripts/simulator-e2e.sh SIMULATOR-UUID` does the same with the iOS app on a simulator: throwaway server on 127.0.0.1:7899, a local clean-up stand-in, the full UI scheme including the live-server suite and the real Chirp Keyboard. It then checks that the server log contains no transcript. See [ios/README.md](../ios/README.md#develop-and-test).
 
+Live Notes has two more checks of its own:
+
+- **The harness tests** (`NotesSessionTests`, `NotesFaultTests` and `NotesSoakTests` in `mac/scripts/test.sh`) run whole sessions through the real `NotesSession`, `StreamSession` and editor against scripted sockets and a scripted notes endpoint, on a fake clock. They cover the fault matrix (socket drops, outages, structure errors, Organize races, sleep/wake, crash recovery) and a 2-hour soak with budgets (see [bench.md](bench.md#live-notes-session-soak-66)). Rows that describe behaviour not built yet are disabled tests that name their issue.
+- **`mac/scripts/notes-selftest.sh`** starts a throwaway `chirp-server` (temporary HOME, port 7899, never 7821 or the running app) and plays a 25 s `say` recording through `ChirpMac --notes-selftest`: once clean (it must hear "budget" and "Thursday") and once with `--fault drop@14`. It prints the segments, status changes, notes and transcript, and checks that the server log has no spoken words.
+
 Latency figures from these runs are observations on a shared, loaded host, not targets. Measured engine numbers are in [bench.md](bench.md).
 
 ### CI
@@ -34,7 +39,7 @@ GitHub Actions (`.github/workflows/`) runs the automated checks on every pull re
 | `android.yml` | ubuntu, JDK 21, Android SDK 37.2 | `./gradlew lint testDebugUnitTest assembleDebug assembleRelease` | The release APK is unsigned (no keystore secret). Lint and test reports upload on failure. |
 | `mac.yml` | macos | `mac/scripts/ci-test.sh` (wraps `test.sh`) | Only for `mac/**` changes (macOS minutes are expensive). Can also be started by hand (`workflow_dispatch`). |
 
-The hosted runners only have Xcode 26 (Swift 6.2/6.3). On them, six stream and recorder suites abort the shared test process (`freed pointer was not the last allocation`) although every test passes alone and on Swift 6.4, so `ci-test.sh` runs those one test per process. It skips `GeneratedSoundTests` (needs `swift make-sounds.swift`) and `SnapshotTests` (the runner's fonts render PNGs over the committed-size cap). Both run in `mac/scripts/test.sh` on the Mac.
+The hosted runners only have Xcode 26 (Swift 6.2/6.3). On them, six stream and recorder suites abort the shared test process (`freed pointer was not the last allocation`) although every test passes alone and on Swift 6.4, so `ci-test.sh` runs those one test per process, together with the Live Notes soak (`NotesSoakTests`; `test.sh` with no arguments also runs it after the rest, so its 2-minute limit covers the soak alone). It skips `GeneratedSoundTests` (needs `swift make-sounds.swift`) and `SnapshotTests` (the runner's fonts render PNGs over the committed-size cap). Both run in `mac/scripts/test.sh` on the Mac.
 
 iOS is not in CI: the project needs the iOS 27 simulator SDK and signing-free simulator runs that the hosted runners do not provide yet. Use `ios/scripts/simulator.sh` on the Mac.
 
@@ -99,6 +104,7 @@ Run on the reference Mac after installing the build with `./scripts/install-mac.
 15. Dock: open Notes (menu → Open Notes, or ⌃⌥⇧N) → Chirp appears in the Dock and ⌘-Tab, with a Window menu listing Chirp Notes. Close the window (nothing recorded, nothing unsaved) → the Dock icon goes and the menu-bar bird stays. Start ⌃⌥N, close the window → the Dock icon stays and a click brings it back; stop, close → gone. Move and resize the window, quit and relaunch → it reopens there. Dock menu: Open Notes, New Notes, Start/Stop Recording. Settings → General → Always show Chirp in the Dock keeps the icon with no window.
 16. Open Notes shortcut: Settings → General → Open Notes → Record Shortcut…, try ⌃⌥N and your dictation hotkey (both refused, with the reason), then ⌃⌥O; the new one works and the menu shows it. Reset restores ⌃⌥⇧N. Pressing it never starts recording.
 17. Dictation hotkey in Notes: click into the Notes window and press the dictation hotkey → Notes records (no HUD); press again → it stops (Pause/Resume once #65 lands). Switch to another app → the hotkey dictates. The header reads "<key> to record · <key> again to stop".
+18. Two-hour soak in real time (optional, before a release): start a throwaway server as `mac/scripts/notes-selftest.sh` does, build a 2-hour `say` playlist (for example `say -f talk.txt -o talk.aiff` over a long text, then `ffmpeg -ar 16000 -ac 1`), and run `ChirpMac --notes-selftest talk.wav --url http://127.0.0.1:7899 --token-file <throwaway>/.config/chirp/token` without `--fast`. It should end with `notes-selftest: OK`, `gaps=0` on stderr, and the process's memory in Activity Monitor flat after the first minutes. Add `--fault down@600-660` to watch a one-minute outage (today Notes stops after three failed segments; #62 keeps it recording).
 7. Hotkey registration without pressing keys: `log show --predicate 'subsystem == "dev.chirp.mac"' --info --last 5m | grep "hotkey register id=4"` shows `combo=control-option-n status=0` after launch; `hotkey register id=5` shows `combo=control-option-shift-n status=0`.
 
 ### Fold 8

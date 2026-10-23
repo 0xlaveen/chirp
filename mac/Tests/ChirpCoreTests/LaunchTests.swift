@@ -36,4 +36,22 @@ import Testing
         #expect(LaunchMode.parse(["--selftest", "a.wav"]) == .selftest)
         #expect(LaunchMode.parse(["--fast", "--selftest", "a.wav"]) == .selftest)
     }
+
+    @Test func notesSelftestIsItsOwnModeAndNeverLaunchesUI() {
+        #expect(LaunchMode.parse(["--notes-selftest", "a.wav"]) == .notesSelftest)
+        #expect(LaunchMode.parse(["--fast", "--notes-selftest", "a.wav", "--fault", "drop@30"]) == .notesSelftest)
+        #expect(LaunchMode.usageText.contains("--notes-selftest"))
+    }
+
+    @Test func aFaultPlanParsesDropsAndOutages() throws {
+        let plan = try #require(NotesFaultPlan.parse("drop@30, down@60-90"))
+        #expect(plan.faults == [.drop(at: 30), .down(from: 60, to: 90)])
+        #expect(!plan.isDown(at: 59.9) && plan.isDown(at: 60) && plan.isDown(at: 89.9) && !plan.isDown(at: 90))
+        #expect(plan.drops(opened: 0, now: 30) && !plan.drops(opened: 0, now: 29.9))
+        #expect(!plan.drops(opened: 30, now: 45))          // a socket opened after the drop keeps going
+        #expect(plan.drops(opened: 45, now: 60))           // the outage loses the open socket too
+        for bad in ["", "drop", "drop@", "drop@-1", "down@90-60", "down@60", "stall@3"] {
+            #expect(NotesFaultPlan.parse(bad) == nil, "\(bad)")
+        }
+    }
 }
