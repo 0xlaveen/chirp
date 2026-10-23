@@ -81,7 +81,8 @@ internal class KeyboardStrip(context: Context) : LinearLayout(context) {
         parent.addView(this, RelativeLayout.LayoutParams(idleWidth(), LayoutParams.MATCH_PARENT).apply { addRule(RelativeLayout.ALIGN_PARENT_END) })
     }
     fun show(message: String, @Suppress("UNUSED_PARAMETER") text: String, active: Boolean, finishing: Boolean, undo: Boolean, retention: Boolean,
-             polishing: Boolean = false, style: String = "", notice: Boolean = false, undoable: Boolean = false, offline: Boolean = false, countdown: Boolean = false) {
+             polishing: Boolean = false, style: String = "", notice: Boolean = false, undoable: Boolean = false, offline: Boolean = false, countdown: Boolean = false,
+             phone: String? = null) {
         val recovery = DictationAction.forStatus(message)
         val offlineRow = message == ConnectionFailure.OFFLINE
         val error = recovery != null || offlineRow
@@ -120,9 +121,10 @@ internal class KeyboardStrip(context: Context) : LinearLayout(context) {
         action.visibility = if (recovery?.prompt == true && !active) VISIBLE else GONE
         action.text = recovery?.label ?: ""
         action.contentDescription = recovery?.label ?: ""
-        this.style.text = style
-        this.style.contentDescription = "Clean-up style: $style"
-        this.style.visibility = if (polishing) VISIBLE else GONE
+        // The same chip names a phone-recognised dictation; [phone] is its provider disclosure.
+        this.style.text = if (phone != null) PhoneFallback.CHIP else style
+        this.style.contentDescription = phone ?: "Clean-up style: $style"
+        this.style.visibility = if (polishing || phone != null) VISIBLE else GONE
         val animateState = active && (!finishing || polishing)
         if (pulse != null && pulsingPolish != polishing) { pulse?.cancel(); pulse = null; status.alpha = 1f; mic.alpha = 1f }
         if (animateState && motionAllowed() && pulse == null) {

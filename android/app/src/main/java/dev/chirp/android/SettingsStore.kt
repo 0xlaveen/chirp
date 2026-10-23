@@ -92,6 +92,10 @@ class SettingsStore(context: Context) {
     var debugOverlay: Boolean
         get() = prefs.getBoolean("overlay", false)
         set(value) { prefs.edit { putBoolean("overlay", value) } }
+    /** Opt-in: when the Mac can't be reached, dictate with the phone's on-device recogniser. */
+    var phoneFallback: Boolean
+        get() = prefs.getBoolean("phone_fallback", false)
+        set(value) { prefs.edit { putBoolean("phone_fallback", value) } }
     var health: Health?
         get() = try { prefs.getString("health", null)?.let(Protocol::health) } catch (_: Exception) { null }
         set(value) {

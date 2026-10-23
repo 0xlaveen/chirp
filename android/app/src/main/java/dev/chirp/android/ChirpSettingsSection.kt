@@ -42,6 +42,7 @@ internal fun ChirpSettingsSection() {
         TextButton({ open("pair") }) { Text("Pairing & connection") }
         TextButton({ open("settings") }) { Text("Test dictation") }
         StopDictationSettings()
+        PhoneFallbackSettings()
         Text("Sounds & haptics", style = MaterialTheme.typography.titleSmall)
         Row(Modifier.fillMaxWidth()) {
             Text("Haptic cues", Modifier.weight(1f))
