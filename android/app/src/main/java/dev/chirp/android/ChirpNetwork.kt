@@ -89,6 +89,8 @@ interface ImeTransport {
     fun audio(bytes: ByteArray): Boolean
     fun stop(): Boolean
     fun close(cancel: Boolean = false, immediate: Boolean = false)
+    /** Why the last socket attempt failed, classified from exception classes only. */
+    val failureKind: ConnectionFailure.Kind get() = ConnectionFailure.Kind.OTHER
 }
 
 /** Main-thread control; audio() is also called by the capture thread. */
@@ -103,6 +105,8 @@ class StreamTransport(
     @Volatile private var socket: WebSocket? = null
     @Volatile private var ready = false
     @Volatile private var active = false
+    @Volatile override var failureKind = ConnectionFailure.Kind.OTHER
+        private set
     private var closed = false
     private var connected = false
     private var startSent = false
@@ -123,7 +127,7 @@ class StreamTransport(
             override fun onOpen(webSocket: WebSocket, response: Response) {
                 dispatch {
                     if (closed || attempt != id) { webSocket.cancel(); return@dispatch }
-                    connected = true
+                    connected = true; failureKind = ConnectionFailure.Kind.OTHER
                     if (active) sendStart()
                     opened()
                 }
@@ -150,6 +154,8 @@ class StreamTransport(
                 }
             }
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
+                // An HTTP response means the Mac answered; only a missing one says anything about reachability.
+                failureKind = if (response == null) ConnectionFailure.classify(t) else ConnectionFailure.Kind.OTHER
                 dispatch { if (!closed && attempt == id) failed() }
             }
             override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {

@@ -57,12 +57,33 @@ class DictationStreamTest {
         assertEquals(1, h.ended); assertTrue(h.finals.isEmpty())
     }
     @Test fun `startup and finalization timeouts release all resources`() {
-        val startup = Harness(); startup.session.start(false); startup.advance(18000)
+        val startup = Harness(); startup.session.start(false); startup.advance(7000)
         assertTrue(startup.capture.released); assertTrue(startup.transport.closed)
-        assertTrue(startup.statuses.last().contains("Tailscale")); assertEquals(1, startup.ended)
+        assertEquals(ConnectionFailure.Kind.DOWN.status, startup.statuses.last()); assertEquals(1, startup.ended)
         val finish = Harness(); finish.session.start(false); finish.transport.ready(); finish.session.stop(); finish.advance()
         assertTrue(finish.capture.released); finish.advance(60000)
         assertEquals(1, finish.ended); assertTrue(finish.transport.closed)
+    }
+    @Test fun `pre-Ready deadline is 7 seconds and Ready cancels it`() {
+        val slow = Harness(); slow.session.start(false); slow.advance(6900)
+        assertEquals(0, slow.ended); slow.advance(100); assertEquals(1, slow.ended)
+        val ok = Harness(); ok.session.start(false); ok.advance(5000); ok.transport.ready(); ok.advance(60000)
+        assertEquals(0, ok.ended); assertEquals("Listening…", ok.statuses.last())
+    }
+    @Test fun `transport failures name the recorded reason and never a server message`() {
+        for ((kind, expected) in listOf(ConnectionFailure.Kind.DNS to "Can't find your Mac on the tailnet", ConnectionFailure.Kind.DOWN to "asleep",
+            ConnectionFailure.Kind.TLS to "secure connection", ConnectionFailure.Kind.OTHER to "Mac unreachable")) {
+            val h = Harness(); h.session.start(false)
+            h.transport.failureKind = kind; h.transport.failure(); h.advance()
+            assertTrue("${kind.name}: ${h.statuses.last()}", h.statuses.last().contains(expected)); assertEquals(1, h.ended)
+        }
+    }
+    @Test fun `a full pre-Ready buffer is reported as a connect timeout unless the transport knows better`() {
+        val h = Harness(); h.session.start(false); h.capture.finish("Mac unreachable — is Tailscale on?"); h.advance()
+        assertEquals(ConnectionFailure.Kind.DOWN.status, h.statuses.last())
+        val dns = Harness(); dns.session.start(false); dns.transport.failureKind = ConnectionFailure.Kind.DNS
+        dns.capture.finish("Mac unreachable — is Tailscale on?"); dns.advance()
+        assertEquals(ConnectionFailure.Kind.DNS.status, dns.statuses.last())
     }
     @Test fun `debug retention changes before partials and no final is accepted before stop`() {
         val h = Harness(); h.session.start(false)
