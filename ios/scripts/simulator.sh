@@ -4,7 +4,8 @@ set -eu
 cd "$(dirname "$0")/.."
 action="${1:-}"
 device="${2:-}"
-case "$action" in build|test|ui) ;; *) echo 'Usage: simulator.sh build|test|ui SIMULATOR-UUID' >&2; exit 2;; esac
+case "$action" in build|test|ui) ;; *) echo 'Usage: simulator.sh build|test|ui SIMULATOR-UUID [xcodebuild args]' >&2; exit 2;; esac
+shift $(( $# < 2 ? $# : 2 ))
 ./scripts/toolchain.sh >/dev/null
 CHIRP_SIMULATOR_UUID="$device" xcrun simctl list devices available --json | CHIRP_SIMULATOR_UUID="$device" python3 -c '
 import json,os,re,sys
@@ -20,15 +21,16 @@ if [ "$action" = test ]; then operation=test; fi
 if [ "$action" = ui ]; then operation=test; scheme=ChirpIOS-UI; fi
 # Simulator-only ad-hoc signing retains App Group/shared-Keychain entitlements.
 # No development team, Apple ID, provisioning update or physical device is used.
+# Extra arguments (e.g. -only-testing:…) go to xcodebuild.
 # Compare with CHIRP_SIMULATOR_SIGNING=unsigned to diagnose entitlement failures;
 # the host fixture reports a precise skip if shared storage cannot be opened.
 case "${CHIRP_SIMULATOR_SIGNING:-adhoc}" in
-  adhoc) set -- CODE_SIGNING_ALLOWED=YES CODE_SIGNING_REQUIRED=YES CODE_SIGN_IDENTITY=- CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM= ;;
-  unsigned) set -- CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO ;;
+  adhoc) signing='CODE_SIGNING_ALLOWED=YES CODE_SIGNING_REQUIRED=YES CODE_SIGN_IDENTITY=- CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM=' ;;
+  unsigned) signing='CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO' ;;
   *) echo 'CHIRP_SIMULATOR_SIGNING must be adhoc or unsigned' >&2; exit 2 ;;
 esac
 exec xcodebuild -project Chirp.xcodeproj -scheme "$scheme" -configuration Debug \
   -sdk iphonesimulator -destination "platform=iOS Simulator,id=$device" \
   -parallel-testing-enabled NO \
-  -derivedDataPath DerivedData "$@" \
+  -derivedDataPath DerivedData $signing "$@" \
   "$operation"

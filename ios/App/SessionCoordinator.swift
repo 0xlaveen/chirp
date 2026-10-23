@@ -97,7 +97,11 @@ final class SessionCoordinator: ObservableObject {
          copyText: @escaping (String) -> Void = { UIPasteboard.general.string = $0 },
          now: @escaping () -> Date = Date.init,
          production: Bool = true) {
+        #if DEBUG
+        self.audio = audio ?? SimulatorFileAudio.fromArguments() ?? MicrophoneCapture()
+        #else
         self.audio = audio ?? MicrophoneCapture()
+        #endif
         self.http = http; self.makeStream = makeStream; self.requestPermission = requestPermission; self.permissionGranted = permissionGranted
         self.activityBegin = activityBegin; self.activityActive = activityActive
         self.activityUpdate = activityUpdate; self.activityEnd = activityEnd; self.copyText = copyText; self.now = now

@@ -29,6 +29,9 @@ public enum PairingLink {
         !token.isEmpty && token.utf8.count <= 4096 && token.utf8.allSatisfy { $0 >= 0x21 && $0 <= 0x7e }
     }
     public static func validateBaseURL(_ value: String) throws -> URL {
+        #if DEBUG && targetEnvironment(simulator)
+        if let url = simulatorLoopbackURL(value) { return url }
+        #endif
         guard value.utf8.count <= 4096, !value.contains("\\"),
               let c = URLComponents(string: value), c.scheme == "https",
               c.user == nil, c.password == nil, c.query == nil, c.fragment == nil,
@@ -46,6 +49,15 @@ public enum PairingLink {
               !c.path.split(separator: "/").contains(where: { $0 == "." || $0 == ".." }),
               let url = c.url else { throw CoreError.invalidURL }
         return url
+    }
+    /// Debug simulator builds only (see `validateBaseURL`): the simulator shares the Mac's loopback, so a
+    /// throwaway local chirp-server can be paired without Tailscale. Exactly `http://127.0.0.1:PORT`.
+    static func simulatorLoopbackURL(_ value: String) -> URL? {
+        guard value.utf8.count <= 64, let c = URLComponents(string: value), c.scheme == "http", c.host == "127.0.0.1",
+              let port = c.port, (1024...65535).contains(port), c.user == nil, c.password == nil,
+              c.query == nil, c.fragment == nil, c.path.isEmpty || c.path == "/",
+              value == "http://127.0.0.1:\(port)" || value == "http://127.0.0.1:\(port)/" else { return nil }
+        return URL(string: "http://127.0.0.1:\(port)")
     }
 }
 

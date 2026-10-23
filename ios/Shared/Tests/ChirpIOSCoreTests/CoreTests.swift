@@ -38,6 +38,17 @@ struct PairingTests {
         "https://mac.ts.net/../x", "https://mac.ts.net/%2e%2e", "https://mac..ts.net", "https://-mac.ts.net",
         "https://mac.ts.net./chirp", "https://mac.ts.net:0", "https://mac.ts.net\\@evil.com"])
     func invalidBase(_ value: String) { #expect(throws: (any Error).self) { try PairingLink.validateBaseURL(value) } }
+    @Test func simulatorLoopbackIsExactAndNeverAcceptedOutsideTheSimulator() throws {
+        #expect(PairingLink.simulatorLoopbackURL("http://127.0.0.1:7899")?.absoluteString == "http://127.0.0.1:7899")
+        #expect(PairingLink.simulatorLoopbackURL("http://127.0.0.1:7899/")?.absoluteString == "http://127.0.0.1:7899")
+        for bad in ["http://127.0.0.1", "http://127.0.0.1:80", "https://127.0.0.1:7899", "http://localhost:7899",
+                    "http://127.0.0.2:7899", "http://127.0.0.1:7899/chirp", "http://u@127.0.0.1:7899",
+                    "http://127.0.0.1:7899?x=1", "http://127.0.0.1:7899#x", "http://127.0.0.1:07899", "http://[::1]:7899"] {
+            #expect(PairingLink.simulatorLoopbackURL(bad) == nil, "\(bad)")
+        }
+        // The package tests run on macOS, where only tailnet HTTPS pairs.
+        #expect(throws: CoreError.invalidURL) { try PairingLink.validateBaseURL("http://127.0.0.1:7899") }
+    }
     @Test func authenticatedHealthRequiredAndSecretsStayInKeychain() async throws {
         let root = try temporaryRoot(); defer { try? FileManager.default.removeItem(at: root) }
         let secrets = MemorySecretStore(); let store = try PairingStore(root: root, secrets: secrets)

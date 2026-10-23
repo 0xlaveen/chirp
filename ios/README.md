@@ -13,31 +13,39 @@ never used.
 This is a **personal install** target. No App Store distribution, TestFlight or
 ad-hoc readiness is claimed or tested.
 
-## Status: builds and passes simulator gates; not yet on a device (2026-10-19)
+## Status: runs end to end on iPhone and iPad simulators; not yet on a device (2026-10-23)
 
-Full Xcode with the iPhoneSimulator 27.0 SDK is now on the build Mac. The app,
-keyboard and widgets **build**, and the unit and UI tests **pass on iPhone and
-iPad simulators**, including a UI test that drives the **real installed Chirp
-Keyboard extension**. That test adds the keyboard in simulator Settings, allows
-Full Access, switches to it with the globe key, and dictates synthetic audio
-into an app text field through the real encrypted App Group mailbox. **Nothing
-has been installed, signed for or run on a physical iPhone or iPad yet.**
+The app, keyboard and widgets **build** with full Xcode, and the unit and UI
+tests **pass on an iPhone and an iPad simulator**. The UI tests include a
+**live run against a real local chirp-server** (throwaway HOME, port 7899,
+real Parakeet model, spoken `say` audio) and the **real installed Chirp
+Keyboard** dictating into Messages. **Nothing has been installed, signed for or
+run on a physical iPhone or iPad yet.**
 
-| Check (2026-10-19) | Result |
+| Check (2026-10-23, iOS 27.0 simulators) | Result |
 |---|---|
-| `ios/scripts/simulator.sh build` — iPhone 17 and iPad Pro 11-inch (M5), iOS 27.0 | BUILD SUCCEEDED on both |
-| `ios/scripts/simulator.sh test` — same two simulators | 15 tests in 2 suites, both |
-| `ios/scripts/simulator.sh ui` — same two simulators | 4/4 pass, no skips, both: app pair/dictate/raw/end, history + rotation, real keyboard dictation after existing text and into an empty field |
-| `swift test --package-path ios/Keyboard/Policy` (insertion safety + voice-first presenter) | 62 test functions in 9 suites (142 expanded cases) |
-| `ios/Shared/scripts/test.sh` (pairing/storage/history/bridge) | 20 tests in 5 suites |
-| `mac/scripts/test.sh` | 393 tests in 62 suites |
+| `ios/scripts/simulator.sh build` — iPhone 18 Pro and iPad Pro 13-inch (M5) | BUILD SUCCEEDED on both |
+| `ios/scripts/simulator.sh test` — same two simulators | 17 tests in 2 suites, both |
+| `ios/scripts/simulator-e2e.sh` (full UI scheme plus live server) — same two simulators | 6/6 pass, no skips, both: app pair/dictate/raw/end + tab switch while armed, history + rotation, real keyboard into an empty field and after existing text + secure-field fallback, **live**: pair/clean-up/partials/Use raw/history/end, **live** keyboard dictation into Messages; server log transcript-free |
+| `swift test --package-path ios/Keyboard/Policy` | 62 tests in 9 suites |
+| `ios/Shared/scripts/test.sh` | 22 tests in 6 suites |
 | `ios/scripts/check-sources.sh` | passed |
 
-Simulator runs use synthetic audio and a synthetic transport — no microphone,
-no Mac server. They cannot establish device signing/provisioning, the
-keyboard's URL handoff to the app, background-audio survival, lock-screen
-behavior or App Store acceptance; those remain operator device gates in
-[docs/milestones/M5-ios.md](../docs/milestones/M5-ios.md). Evidence:
+Flows verified on both simulators against the live server: pairing by pasted
+secret link (the deep link opens the same path behind iOS's "Open in Chirp?"
+prompt), the setup checklist, in-app dictation with live partials, clean-up
+plus **Use raw**, encrypted history opt-in, End session, keyboard enable plus
+Full Access in Settings, starting a keyboard session, keyboard dictation into
+Messages (partials, final, End), and the secure-field fallback to Apple's
+keyboard. Screenshots: [docs/screenshots/ios/](../docs/screenshots/ios/).
+
+Not covered by the simulator: the real microphone (see Develop and test),
+signing/provisioning, background-audio survival on a device, the lock screen,
+Live Activity and Control Center interaction, and App Store acceptance. Those
+remain operator device gates in
+[docs/milestones/M5-ios.md](../docs/milestones/M5-ios.md). iPad
+hardware-keyboard shortcuts, rotation and split view during dictation, and
+dark-mode screenshots are still to be exercised. Earlier evidence:
 [docs/review/ios-simulator.md](../docs/review/ios-simulator.md),
 [docs/review/ios-keyboard.md](../docs/review/ios-keyboard.md),
 [docs/review/ios-app.md](../docs/review/ios-app.md).
@@ -411,6 +419,36 @@ unmodified). It has already caught one real conditional-API mistake, but it
 does not validate the iOS SDK, signing, the simulator, SwiftUI view macro
 expansion, App Intents or ActivityKit, and it is not runtime evidence.
 
+**Live end to end on a simulator** (full Xcode, the cached model at
+`~/.koi/voice-models/parakeet-mlx`, `ffmpeg`):
+
+```sh
+ios/scripts/simulator-e2e.sh SIMULATOR-UUID   # full UI scheme + live server; prints iOS E2E: PASS
+```
+
+It starts a throwaway `chirp-server` (temporary HOME and token, port 7899 or
+`CHIRP_E2E_PORT`, no LaunchAgent), a deterministic local clean-up stand-in
+(`ios/scripts/fake-cleanup.py`, drops "um"/"uh") and a synthetic `say`
+sentence. Then it runs the UI tests and checks the server log holds no transcript
+words. Two **Debug, Simulator-only** hooks make this possible. Neither exists in
+Release or on a device:
+
+- Pairing also accepts exactly `chirp://pair?url=http://127.0.0.1:PORT&token=…`
+  (the simulator shares the Mac's loopback); `chirp-server pair --url
+  http://127.0.0.1:PORT` prints one.
+- `--chirp-sim-audio FILE` plays a speech file through the real capture sink
+  instead of the microphone. On this build Mac the simulator's microphone
+  input hangs inside AudioToolbox (an RPC timeout abort in
+  `AVAudioEngine.inputNode`), so real capture is never armed there; looping
+  silent output keeps the app running in the background as the microphone
+  does on a device.
+
+Observed simulator behavior the tests account for: iOS 27.0's globe-key
+input-mode list shows third-party keyboards as unlabeled rows, so tests cycle
+the globe key (iPad's Emoji keyboard has no globe key, so there they fall back to the list). While any secure field is on screen, iOS offers no third-party
+keyboard to the window's other fields either. Safari never reports idle to
+XCUITest, so Messages is the other-app host.
+
 With full Xcode: `ios/scripts/toolchain.sh`, then the three simulator actions
 from the install section — build, unit tests (`ChirpIOS` scheme) and UI tests
 (`ChirpIOS-UI` scheme, which includes `ChirpKeyboardUITests`) — on a disposable
@@ -443,9 +481,12 @@ ios/
 
 ## Known limits
 
-- **Not yet run on a device.** Simulator build, unit and UI gates pass on
-  iPhone and iPad; signing, provisioning and every on-device check are still
-  operator steps.
+- **Not yet run on a device.** Simulator build, unit, UI and live-server gates
+  pass on iPhone and iPad; signing, provisioning, the real microphone and every
+  on-device check are still operator steps.
+- **Secure fields hide Chirp Keyboard for the whole screen** (seen on the
+  iOS 27.0 simulator): while a password field is visible, iOS uses Apple's
+  keyboard for the screen's other fields too.
 - **Personal install only.** No App Store readiness; the keyboard's URL-open
   handoff is a known App Store review risk.
 - **The keyboard has no microphone, ever** (Apple sandbox). A session must be
