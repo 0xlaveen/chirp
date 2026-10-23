@@ -13,7 +13,8 @@ sealed interface ServerEvent {
 
 data class Health(val ready: Boolean, val debugRetention: Boolean, val correctionAvailable: Boolean,
                   val correctionLeavesMachine: Boolean, val correctionHost: String?, val engine: String? = null,
-                  val correctionProfiles: List<CorrectionProfile> = emptyList())
+                  val correctionProfiles: List<CorrectionProfile> = emptyList(),
+                  val notesStructure: Boolean = false, val notesReorganize: Boolean = false, val notesCorrection: Boolean = false)
 
 object Protocol {
     fun start(correction: Boolean, profile: String = "default", instructions: String = "", prompt: String? = null): String {
@@ -72,6 +73,6 @@ object Protocol {
                     if (CleanupStyles.validId(id) && none { it.id == id }) add(CorrectionProfile(id,
                         item.optString("name", id).take(80), item.optString("description").take(300), item.optBoolean("rewrites")))
                 }
-            })
+            }, json.optBoolean("notes_structure"), json.optBoolean("notes_reorganize"), json.optBoolean("notes_correction"))
     }
 }

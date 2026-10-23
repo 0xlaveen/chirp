@@ -5,4 +5,9 @@
         <intent android:action="android.intent.action.VIEW" android:targetPackage="dev.chirp.android"
             android:targetClass="dev.chirp.android.ScratchpadActivity" />
     </shortcut>
+    <shortcut android:shortcutId="notes" android:enabled="true" android:icon="@drawable/ic_notes"
+        android:shortcutShortLabel="@string/notes_short" android:shortcutLongLabel="@string/notes_name">
+        <intent android:action="android.intent.action.VIEW" android:targetPackage="dev.chirp.android"
+            android:targetClass="dev.chirp.android.NotesActivity" />
+    </shortcut>
 </shortcuts>

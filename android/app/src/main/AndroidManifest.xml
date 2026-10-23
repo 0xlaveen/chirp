@@ -6,6 +6,7 @@
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <queries><package android:name="com.tailscale.ipn" /></queries>
     <application android:name=".ChirpApplication" android:label="@string/app_name" android:icon="@mipmap/ic_launcher" android:roundIcon="@mipmap/ic_launcher_round"
         android:theme="@style/Theme.Chirp"
@@ -28,6 +29,9 @@
         </activity>
         <activity android:name=".ScratchpadActivity" android:exported="false" android:label="@string/scratchpad_name"
             android:windowSoftInputMode="adjustResize" />
+        <activity android:name=".NotesActivity" android:exported="false" android:label="@string/notes_name"
+            android:launchMode="singleTop" android:windowSoftInputMode="adjustResize" />
+        <service android:name=".NotesService" android:exported="false" android:foregroundServiceType="microphone" />
         <service android:name=".ScratchpadTileService" android:label="@string/scratchpad_short" android:icon="@drawable/ic_mic"
             android:exported="true" android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
             <intent-filter><action android:name="android.service.quicksettings.action.QS_TILE" /></intent-filter>

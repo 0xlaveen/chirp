@@ -166,6 +166,7 @@ internal fun SetupWizard(
                         TextButton(picker) { Text("Choose keyboard") }
                         val context = LocalContext.current
                         TextButton({ context.startActivity(Intent(context, ScratchpadActivity::class.java)) }) { Text("Open Scratchpad") }
+                        TextButton({ context.startActivity(Intent(context, NotesActivity::class.java)) }) { Text("Open Notes") }
                         OutlinedButton(check, Modifier.fillMaxWidth(), enabled = !state.checking) { Text("Check Mac connection") }
                         if (state.status.startsWith("Mac unreachable") || state.status.startsWith("Check Tailscale")) {
                             Text("Check Tailscale is connected on both devices. Wake the Mac and start Chirp, then check the connection again.")

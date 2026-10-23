@@ -1,0 +1,793 @@
+package dev.chirp.android
+
+import android.os.SystemClock
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
+
+/** Why structuring does not run. WAITING: health is unknown, so where the text would go is unknown: fail closed. */
+internal enum class StructuringOff { DISABLED, CORRECTION_OFF, UNSUPPORTED, WAITING }
+
+internal sealed interface Structuring {
+    data class Off(val why: StructuringOff) : Structuring
+    data object Idle : Structuring
+    data object Running : Structuring
+    /** The last pass failed with this label (`timeout`, `busy`, `rejected: novel_name`…); the next segment retries. */
+    data class Failed(val label: String) : Structuring
+    companion object {
+        fun availability(health: Health?, enabled: Boolean): Structuring = when {
+            health == null -> Off(StructuringOff.WAITING)
+            !health.correctionAvailable -> Off(StructuringOff.CORRECTION_OFF)
+            !health.notesStructure -> Off(StructuringOff.UNSUPPORTED)
+            else -> if (enabled) Idle else Off(StructuringOff.DISABLED)
+        }
+    }
+}
+
+internal sealed interface Reorganizing {
+    data class Unavailable(val why: StructuringOff) : Reorganizing
+    data object Idle : Reorganizing
+    data object Running : Reorganizing
+    data class Organizing(val step: Int, val of: Int) : Reorganizing
+    /** A reorganize or Organize changed the notes; Undo restores the text from before it. */
+    data class Applied(val at: Long) : Reorganizing
+    data class Failed(val label: String) : Reorganizing
+    data class Organized(val failed: Int, val reason: String?) : Reorganizing
+    /** The notes changed while it ran, so its result was discarded. */
+    data object Conflict : Reorganizing
+    data object TooLong : Reorganizing
+    val running get() = this == Running || this is Organizing
+}
+
+/**
+ * A Notes session: one long recording cut into ordinary `/v1/stream` utterances over rolling sockets, plus the
+ * structuring passes that turn the transcript into Markdown. A port of the Mac's `NotesRecorder` (without speaker
+ * labels). Every edge (sockets, microphone, the notes calls, time) is injected; runs on the main thread. Nothing here
+ * is logged or persisted.
+ */
+internal class NotesRecorder(
+    private val transportFactory: ((ServerEvent) -> Unit, () -> Unit) -> ImeTransport,
+    private val captureFactory: (frame: (ByteArray, Float) -> Unit, level: (Double) -> Unit, done: (String?) -> Unit) -> Capture,
+    private val structure: suspend (NotesStructureRequest) -> NotesStructureResponse,
+    private val reorganize: suspend (NotesReorganizeRequest) -> NotesReorganizeResponse,
+    var options: Options,
+    health: Health?,
+    structuringEnabled: Boolean,
+    var autoReorganize: Boolean = true,
+    private val now: () -> Long = SystemClock::uptimeMillis,
+    private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate),
+) {
+    data class Options(val correction: Boolean, val profile: String = "default", val prompt: String? = null)
+    enum class State { IDLE, STARTING, RECORDING, STOPPING, STOPPED, ERROR;
+        val capturing get() = this == STARTING || this == RECORDING
+        val active get() = capturing || this == STOPPING
+    }
+    enum class PassKind { APPEND, REORGANIZE }
+
+    var state = State.IDLE
+        private set(value) { if (field != value) { field = value; changed() } }
+    var error: String? = null
+        private set
+    var document = NotesDocument()
+        private set
+    var structuring: Structuring
+        private set
+    var debugRetention = false
+        private set
+    var passKind: PassKind? = null
+        private set
+    var level = 0.0
+        private set
+    /** AI changes to [document] the editor has not replayed yet, oldest first. */
+    private val pending = mutableListOf<NotesChange>()
+    var onChange: (() -> Unit)? = null
+
+    private inner class Segment(val transport: ImeTransport, val buffer: PreReadyBuffer) {
+        var seq = -1
+        var offset = 0.0
+        var end: Double? = null
+        var partial = ""
+        var correcting = false
+        var ready = false
+        val opened = CompletableDeferred<Boolean>()
+        var timeout: Job? = null
+        @Volatile var lost = false
+    }
+
+    private val router = FrameRouter<Segment> { segment, frame ->
+        if (!segment.buffer.offer(frame) && !segment.lost) { segment.lost = true; scope.launch { lost(segment) } }
+    }
+    private var capture: Capture? = null
+    private val segments = HashMap<Int, Segment>()
+    /** Finished segments waiting for an earlier one, so the transcript stays in order. A null value: an empty final. */
+    private val results = HashMap<Int, NotesSegment?>()
+    private var nextSeq = 0
+    private var nextCommit = 0
+    private var current: Int? = null
+    private var cutting = false
+    private var failureStreak = 0
+    private var sawReady = false
+
+    private var passJob: Job? = null
+    private var waiting = false
+    private var lastPassEnd: Long? = null
+    private var timer: Job? = null
+    private var timerDeadline: Long? = null
+    private var allowed: Structuring = Structuring.availability(health, structuringEnabled)
+    private var epoch = 0
+
+    private var reorganizeSupported = health?.notesReorganize == true
+    private var reorganizeMissing = false
+    private var reorganizeState: Reorganizing = Reorganizing.Idle
+    private var manualReorganize = false
+    private var lastReorganizeEnd: Long? = null
+    private var reorganizeRetry = false
+    private var lastKeystroke: Long? = null
+    private var editorInTail = false
+    private var editorComposing = false
+    private var held: Pair<NotesStructureRequest, NotesStructureResponse>? = null
+    private var holdJob: Job? = null
+    private var lastCommit: Long? = null
+    private var versionAtReorganizeEnd: Int? = null
+    private var stoppingSince: Long? = null
+    /** The text before the last applied reorganize or Organize, while nothing else changed it since. */
+    private var undo: Pair<String, Int>? = null
+    private var organizeBase: String? = null
+    private val waiters = mutableListOf<Pair<() -> Boolean, CompletableDeferred<Unit>>>()
+
+    init { structuring = allowed }
+
+    /** Audio recorded into this document so far, seconds. */
+    val elapsed get() = router.seconds
+    val stoppingElapsed get() = stoppingSince?.let { now() - it }
+    /** Segments cut from capture whose final has not landed. A pass waits for them: clean-up needs the model first. */
+    val finalizingCount get() = segments.keys.count { it != current }
+    val passInFlight get() = passJob != null
+    val holding get() = held != null
+    val reorganizeStatus: Reorganizing get() = when {
+        structuring is Structuring.Off -> Reorganizing.Unavailable((structuring as Structuring.Off).why)
+        !reorganizeSupported -> Reorganizing.Unavailable(StructuringOff.UNSUPPORTED)
+        else -> reorganizeState
+    }
+    val canUndo get() = undo?.second == document.version
+
+    fun takePendingChanges(): List<NotesChange> = pending.toList().also { pending.clear() }
+
+    private fun publish(change: NotesChange?) {
+        change ?: return
+        pending += change
+        if (reorganizeState is Reorganizing.Applied && change.kind != NotesChange.Kind.REORGANIZE) reorganizeState = Reorganizing.Idle
+    }
+
+    /** The user's "Structure notes" switch or new health. Turning it on schedules a pass for what is waiting. */
+    fun configure(enabled: Boolean, health: Health?) {
+        allowed = Structuring.availability(health, enabled)
+        reorganizeSupported = health?.notesReorganize == true && !reorganizeMissing
+        if (allowed is Structuring.Off) structuring = allowed
+        else if (structuring is Structuring.Off) {
+            structuring = if (passJob == null) Structuring.Idle else Structuring.Running
+            if (state.capturing) schedule()
+        }
+        changed()
+    }
+
+    // Recording
+
+    /** Starts recording into the document (a stopped document continues with a new window). */
+    fun start() {
+        if (state.active) return
+        epoch++
+        failureStreak = 0; sawReady = false; lastPassEnd = null; error = null
+        if (lastReorganizeEnd == null) lastReorganizeEnd = now()
+        if (structuring is Structuring.Off && allowed !is Structuring.Off) structuring = Structuring.Idle
+        state = State.STARTING
+        document.stampStart(System.currentTimeMillis())
+        val segment = open()
+        val (_, offset) = router.swap(segment)
+        val seq = nextSeq++
+        segment.seq = seq; segment.offset = offset; current = seq; segments[seq] = segment
+        lateinit var made: Capture
+        made = captureFactory({ frame, rms -> if (router.route(frame, rms)) scope.launch { cut() } },
+            { value -> scope.launch { if (capture === made && state.capturing) { level = value; changed() } } },
+            { problem -> scope.launch { if (capture === made) captureEnded(problem) } })
+        capture = made
+        made.start()
+        if (!segment.transport.start(options.correction, options.profile, "", options.prompt)) segmentFailed(segment, ConnectionFailure.status(segment.transport.failureKind))
+    }
+
+    private fun open(): Segment {
+        lateinit var segment: Segment
+        val buffer = PreReadyBuffer(send = { segment.transport.audio(it) })
+        val transport = transportFactory({ event -> handle(segment, event) },
+            { if (segment.seq < 0) segment.opened.complete(false) else segmentFailed(segment, ConnectionFailure.status(segment.transport.failureKind)) })
+        segment = Segment(transport, buffer)
+        return segment
+    }
+
+    /** One frame from a test or a non-microphone source, as the capture thread would route it. */
+    internal fun handleFrame(frame: ByteArray, rms: Float) { if (router.route(frame, rms)) scope.launch { cut() } }
+
+    fun stop() {
+        if (state == State.STARTING && !sawReady) { cancel(); return }
+        finishRecording(null)
+    }
+
+    /** Ends recording with an error (lost microphone…): finishes like Stop and keeps the content. */
+    fun fail(reason: String) = finishRecording(reason)
+
+    private fun captureEnded(problem: String?) {
+        capture = null
+        val message = problem ?: "The microphone stopped"
+        if (state == State.STARTING && !sawReady) { cancel(); error = message; state = State.ERROR }
+        else if (state.capturing) finishRecording(message)
+    }
+
+    private fun stopCapture() { val stopping = capture; capture = null; level = 0.0; stopping?.stop() }
+
+    /** Drops everything in flight at once. The document is kept. */
+    fun cancel() {
+        epoch++
+        stopCapture()
+        router.swap(null)
+        segments.values.forEach { close(it, cancel = true) }
+        segments.clear(); results.clear(); nextCommit = nextSeq; current = null
+        passJob?.cancel(); passJob = null
+        timer?.cancel(); timer = null
+        waiting = false; manualReorganize = false
+        dropHeld()
+        if (reorganizeState.running) reorganizeState = Reorganizing.Idle
+        passKind = null
+        document.livePartial = ""
+        if (state.active) state = if (document.isEmpty) State.IDLE else State.STOPPED
+        if (structuring == Structuring.Running) structuring = if (allowed is Structuring.Off) allowed else Structuring.Idle
+        waiters.toList().also { waiters.clear() }.forEach { it.second.complete(Unit) }
+        changed()
+    }
+
+    /** New: an empty document (only while not recording). */
+    fun reset() {
+        if (state.active) return
+        epoch++
+        passJob?.cancel(); passJob = null; passKind = null; manualReorganize = false
+        timer?.cancel(); timer = null; timerDeadline = null; waiting = false
+        document = NotesDocument()
+        router.resetTime()
+        failureStreak = 0; pending.clear(); dropHeld()
+        reorganizeState = Reorganizing.Idle; reorganizeRetry = false; lastReorganizeEnd = null; versionAtReorganizeEnd = null
+        lastKeystroke = null; lastCommit = null; undo = null; error = null
+        state = State.IDLE
+        if (allowed !is Structuring.Off) structuring = Structuring.Idle
+        changed()
+    }
+
+    fun dispose() { cancel(); scope.cancel() }
+
+    // Segments
+
+    /** The rolling hand-off: open the next socket, wait for Ready, swap capture to it, then finalize the old one. */
+    private suspend fun cut() {
+        if (state != State.RECORDING || cutting) return
+        cutting = true
+        val myEpoch = epoch
+        val next = open()
+        val started = next.transport.start(options.correction, options.profile, "", options.prompt)
+        val ok = started && withTimeoutOrNull(READY_MS) { next.opened.await() } == true
+        if (epoch != myEpoch || state != State.RECORDING || !ok) {
+            close(next, cancel = true); cutting = false
+            if (epoch == myEpoch && state == State.RECORDING) {
+                // The current socket keeps the audio meanwhile; a server that stays down ends the session.
+                if (++failureStreak >= MAX_SEGMENT_FAILURES) finishRecording("Notes stopped: " + ConnectionFailure.status(next.transport.failureKind))
+                else scope.launch { delay(RETRY_CUT_MS); if (epoch == myEpoch) cut() }
+            }
+            return
+        }
+        // The sequence number is taken at the swap, so transcript order is capture order.
+        val seq = nextSeq++
+        val (old, offset) = router.swap(next)
+        next.seq = seq; next.offset = offset
+        val previous = current
+        current = seq; segments[seq] = next
+        cutting = false
+        if (previous != null) segments[previous]?.end = offset
+        if (old != null && previous != null && segments[previous] === old) finalize(old)
+        changed()
+    }
+
+    private fun finalize(segment: Segment) {
+        if (!segment.transport.stop()) { segmentFailed(segment, "connection closed"); return }
+        val myEpoch = epoch
+        segment.timeout = scope.launch {
+            delay(FINAL_TIMEOUT_MS)
+            if (epoch == myEpoch && segments[segment.seq] === segment) segmentFailed(segment, "timed out")
+        }
+    }
+
+    private fun handle(segment: Segment, event: ServerEvent) {
+        if (segment.seq >= 0 && segments[segment.seq] !== segment) return
+        when (event) {
+            is ServerEvent.Ready -> {
+                debugRetention = event.debugRetention; sawReady = true; segment.ready = true
+                if (!segment.buffer.ready()) { lost(segment); return }
+                segment.opened.complete(true)
+                if (state == State.STARTING && segment.seq == current) state = State.RECORDING
+                changed()
+            }
+            is ServerEvent.Partial -> if (segment.seq >= 0) { segment.partial = event.text; updateLivePartial() }
+            is ServerEvent.Correcting -> if (segment.seq >= 0) { segment.partial = event.raw; segment.correcting = true; updateLivePartial() }
+            is ServerEvent.Final -> if (segment.seq >= 0) {
+                val text = event.text.trim(); val raw = event.raw.trim()
+                val kept = options.correction && !event.corrected && event.correctionError != null
+                failureStreak = 0
+                finish(segment.seq, if (text.isEmpty()) null else NotesSegment(segment.seq, segment.offset, raw.ifEmpty { text }, text, event.corrected, kept))
+            }
+            is ServerEvent.Failure -> if (segment.seq < 0) segment.opened.complete(false) else segmentFailed(segment, friendly(event.code))
+            ServerEvent.Unknown -> Unit
+        }
+    }
+
+    /** A frame could not be sent (backpressure, a dead socket, Ready too late): the segment becomes a gap. */
+    private fun lost(segment: Segment) {
+        if (segment.seq < 0) segment.opened.complete(false)
+        else segmentFailed(segment, if (segment.ready) "connection lost" else ConnectionFailure.status(segment.transport.failureKind, timedOut = true))
+    }
+
+    private fun segmentFailed(segment: Segment, reason: String) {
+        val seq = segment.seq
+        if (segments[seq] !== segment) return
+        if (state == State.STARTING && !sawReady && seq == current) {
+            // The very first socket never got going: nothing is recording yet.
+            drop(seq); stopCapture(); router.swap(null); current = null; results.clear(); nextCommit = nextSeq
+            error = reason; state = State.ERROR
+            changed()
+            return
+        }
+        failureStreak++
+        finish(seq, NotesSegment.gap(seq, segment.offset, reason))
+        if (state != State.RECORDING) return
+        if (failureStreak >= MAX_SEGMENT_FAILURES) finishRecording("Notes stopped: $reason")
+        else if (seq == current) scope.launch { cut() } // The capturing socket died: roll to a fresh one.
+    }
+
+    private fun close(segment: Segment, cancel: Boolean) {
+        segment.timeout?.cancel(); segment.buffer.cancel()
+        segment.transport.close(cancel = cancel, immediate = cancel)
+    }
+
+    private fun drop(seq: Int) { segments.remove(seq)?.let { close(it, cancel = false) } }
+
+    /** A segment is done: commit every finished segment that is next in order, then see whether a pass can run. */
+    private fun finish(seq: Int, segment: NotesSegment?) {
+        drop(seq)
+        results[seq] = segment
+        while (results.containsKey(nextCommit)) {
+            results.remove(nextCommit)?.let(document::append)
+            nextCommit++
+            lastCommit = now()
+        }
+        updateLivePartial()
+        schedule()
+        changed()
+    }
+
+    private fun updateLivePartial() {
+        document.livePartial = segments.keys.sorted().mapNotNull { segments[it]?.partial?.takeIf(String::isNotEmpty) }.joinToString(" ")
+        changed()
+    }
+
+    // Editing
+
+    /** The editor changed the text. A claim of the tail drops a held append and may unblock the next pass. */
+    fun userEdit(start: Int, end: Int, replacement: String) {
+        val generation = document.windowGeneration
+        document.userEdit(start, end, replacement)
+        lastKeystroke = now()
+        if (document.windowGeneration != generation) dropHeld()
+        if (reorganizeState is Reorganizing.Applied) reorganizeState = Reorganizing.Idle
+        if (held != null) armHold()
+        schedule()
+        changed()
+    }
+
+    /** The caret is in the tail (with focus), or IME is composing: appends wait; leaving releases a held one. */
+    fun editorFocus(inTail: Boolean, composing: Boolean) {
+        editorInTail = inTail; editorComposing = composing
+        if (held != null && !inTail && !composing) releaseHeld()
+    }
+
+    /** Organize: runs at the first moment the pass slot is free, whatever the thresholds say. */
+    fun organize() {
+        if (state == State.STOPPING || structuring is Structuring.Off || !reorganizeSupported) return
+        manualReorganize = true
+        schedule(); changed()
+    }
+
+    /** Restores the text from before the last applied reorganize or Organize, as the user's own edit. */
+    fun undoOrganize() {
+        val (text, version) = undo ?: return
+        if (version != document.version) return
+        undo = null
+        val change = NotesDocument.diff(document.text, text, NotesChange.Kind.USER) ?: return
+        userEdit(change.start, change.end, change.replacement)
+        pending += change
+        reorganizeState = Reorganizing.Idle
+        changed()
+    }
+
+    fun setAuto(on: Boolean) { autoReorganize = on; schedule(); changed() }
+
+    private val holdsAppends get() = editorComposing || (editorInTail && typedRecently)
+    private val typedRecently get() = lastKeystroke?.let { now() - it < HOLD_MAX_MS } == true
+
+    private fun dropHeld() { held = null; holdJob?.cancel(); holdJob = null }
+
+    private fun releaseHeld() {
+        val (request, response) = held ?: return
+        dropHeld(); applyAppend(request, response); schedule(); changed()
+    }
+
+    private fun armHold() {
+        if (held == null) return
+        holdJob?.cancel()
+        val wait = if (typedRecently) HOLD_MAX_MS - (now() - (lastKeystroke ?: now())) else HOLD_MAX_MS
+        val myEpoch = epoch
+        holdJob = scope.launch {
+            delay(wait)
+            if (epoch != myEpoch || held == null) return@launch
+            holdJob = null
+            if (!holdsAppends) releaseHeld() else armHold()
+        }
+    }
+
+    // Passes
+
+    /**
+     * The single pass slot, shared by append and reorganize. Nothing runs while a pass is in flight or a segment is
+     * still finalizing. Then: an append when due, else Organize, else an automatic reorganize once enough was added,
+     * enough time passed and the user stopped typing.
+     */
+    private fun schedule() {
+        if (structuring is Structuring.Off) return
+        if (passJob != null || finalizingCount > 0) { waiting = true; return }
+        waiting = false
+        var appendWaiting = false
+        if (state.capturing) {
+            publish(document.freezeOverflow())
+            val next = document.nextStructureRequest()
+            if (next != null && next.windowEnd > (held?.first?.windowEnd ?: -1)) {
+                val last = lastPassEnd
+                if (last != null && now() - last < MIN_INTERVAL_MS) {
+                    appendWaiting = true; waiting = true
+                    armTimer(MIN_INTERVAL_MS - (now() - last))
+                } else { run(next); return }
+            }
+        }
+        if (manualReorganize && state != State.STOPPING) { manualReorganize = false; runOrganize(); return }
+        // Auto, while recording: only in the quiet stretch right after a segment commit, on the trailing sections.
+        val t = now()
+        val commit = lastCommit ?: return
+        if (appendWaiting || !autoReorganize || !reorganizeSupported || state != State.RECORDING || held != null ||
+            t - commit > REORGANIZE_AFTER_COMMIT_MS || document.charsSinceReorganize < REORGANIZE_EVERY_CHARS ||
+            lastReorganizeEnd?.let { t - it < if (reorganizeRetry) REORGANIZE_RETRY_MS else REORGANIZE_MIN_INTERVAL_MS } == true ||
+            lastKeystroke?.let { t - it < TYPING_IDLE_MS } == true) return
+        val request = document.reorganizeRequest(final = false, manual = false, maxChars = NotesDocument.RECORDING_REORGANIZE_CHARS) ?: return
+        runReorganize(request, manual = false)
+    }
+
+    private fun armTimer(after: Long) {
+        val deadline = now() + after
+        if (timer != null && (timerDeadline ?: Long.MAX_VALUE) <= deadline) return
+        timer?.cancel(); timerDeadline = deadline
+        val myEpoch = epoch
+        timer = scope.launch {
+            delay(after)
+            if (epoch != myEpoch) return@launch
+            timer = null; timerDeadline = null
+            if (waiting) { schedule(); changed() }
+        }
+    }
+
+    /** Starts [body] in the pass slot; the slot is taken before the body can run (and free itself). */
+    private fun pass(kind: PassKind, body: suspend () -> Unit) {
+        passKind = kind
+        val job = scope.launch(start = CoroutineStart.LAZY) { body() }
+        passJob = job
+        job.start()
+    }
+
+    private fun endPass() { passJob = null; passKind = null }
+
+    private fun run(request: NotesStructureRequest) {
+        structuring = Structuring.Running
+        changed()
+        val myEpoch = epoch
+        pass(PassKind.APPEND) {
+            val (response, disable) = callStructure(request)
+            if (epoch != myEpoch) return@pass
+            // A rejected window is retried in halves (then quarters) before any of it falls back to raw text.
+            val halves = if (disable == null && response.error == "rejected") NotesDocument.split(request.transcript) else null
+            if (halves != null) {
+                val outcome = PieceOutcome()
+                val first = structurePieces(halves.first, request.outline, request.final, 1, outcome)
+                val second = structurePieces(halves.second, request.outline + headings(first), request.final, 1, outcome)
+                if (epoch != myEpoch) return@pass
+                splitFinished(request, first + second, outcome)
+            } else passFinished(request, response, disable)
+        }
+    }
+
+    private suspend fun callStructure(request: NotesStructureRequest): Pair<NotesStructureResponse, StructuringOff?> = try {
+        structure(request) to null
+    } catch (e: CancellationException) { throw e } catch (e: Exception) {
+        val disable = (e as? NotesHttpError)?.let { if (it.off) StructuringOff.CORRECTION_OFF else if (it.unsupported) StructuringOff.UNSUPPORTED else null }
+        NotesStructureResponse.failed(HttpNotesApi.code(e)) to disable
+    }
+
+    private suspend fun callReorganize(request: NotesReorganizeRequest): Pair<NotesReorganizeResponse, NotesHttpError?> = try {
+        reorganize(request) to null
+    } catch (e: CancellationException) { throw e } catch (e: Exception) {
+        NotesReorganizeResponse.failed(HttpNotesApi.code(e)) to e as? NotesHttpError
+    }
+
+    private class PieceOutcome {
+        var depth = 0
+        val failures = mutableListOf<String>()
+        /** A part failed for a reason splitting cannot help (timeout, busy, http): the whole text keeps the retry. */
+        var transient: String? = null
+        var disable: StructuringOff? = null
+        val usable get() = transient == null && disable == null
+    }
+
+    /** Structures [text] as one or more parts, splitting a rejected part (halves, then quarters, never under 400). */
+    private suspend fun structurePieces(text: String, outline: List<String>, final: Boolean, depth: Int, outcome: PieceOutcome): List<NotesPiece> {
+        if (!outcome.usable) return listOf(NotesPiece.Fallback(text))
+        if (text.scalars > NotesDocument.MAX_WINDOW_CHARS) NotesDocument.split(text)?.let { (a, b) ->
+            val first = structurePieces(a, outline, final, depth, outcome)
+            return first + structurePieces(b, outline + headings(first), final, depth, outcome)
+        }
+        val (response, disable) = callStructure(NotesStructureRequest(text, NotesDocument.capOutline(outline), final))
+        if (disable != null) { outcome.disable = disable; return listOf(NotesPiece.Fallback(text)) }
+        val md = response.markdown?.trim()
+        if (response.structured && !md.isNullOrEmpty()) { outcome.depth = maxOf(outcome.depth, depth); return listOf(NotesPiece.Markdown(md)) }
+        if (response.error != "rejected") { outcome.transient = response.failureLabel; return listOf(NotesPiece.Fallback(text)) }
+        if (depth < MAX_SPLIT_DEPTH) NotesDocument.split(text)?.let { (a, b) ->
+            val first = structurePieces(a, outline, final, depth + 1, outcome)
+            return first + structurePieces(b, outline + headings(first), final, depth + 1, outcome)
+        }
+        outcome.depth = maxOf(outcome.depth, depth)
+        outcome.failures += response.failureLabel
+        return listOf(NotesPiece.Fallback(text))
+    }
+
+    private fun headings(pieces: List<NotesPiece>) = pieces.filterIsInstance<NotesPiece.Markdown>().flatMap { NotesMarkdown.headings(it.text) }
+
+    private fun splitFinished(request: NotesStructureRequest, pieces: List<NotesPiece>, outcome: PieceOutcome) {
+        outcome.transient?.let { passFinished(request, NotesStructureResponse.failed(it), null); return }
+        endPass(); lastPassEnd = now()
+        val disable = outcome.disable
+        if (disable != null) { allowed = Structuring.Off(disable); structuring = allowed } else {
+            dropHeld()
+            publish(document.applyPieces(pieces, request))
+            if (structuring !is Structuring.Off) structuring = outcome.failures.firstOrNull()?.let { Structuring.Failed(it) } ?: Structuring.Idle
+        }
+        if (waiting || state.capturing) schedule()
+        changed()
+    }
+
+    private fun passFinished(request: NotesStructureRequest, response: NotesStructureResponse, disable: StructuringOff?) {
+        endPass(); lastPassEnd = now()
+        if (disable != null) { allowed = Structuring.Off(disable); structuring = allowed }
+        else if (response.structured && holdsAppends && state != State.STOPPING) {
+            // The caret is in the tail: keep the newest answer until it leaves (or the user goes quiet).
+            held = request to response; armHold(); structuring = Structuring.Idle
+        } else {
+            if (response.structured) dropHeld()
+            applyAppend(request, response)
+        }
+        if (waiting || state.capturing) schedule()
+        changed()
+    }
+
+    private fun applyAppend(request: NotesStructureRequest, response: NotesStructureResponse) {
+        publish(document.apply(response, request))
+        if (structuring !is Structuring.Off) structuring = if (response.structured) Structuring.Idle else Structuring.Failed(response.failureLabel)
+    }
+
+    private fun runReorganize(request: NotesReorganizeRequest, manual: Boolean) {
+        reorganizeState = Reorganizing.Running
+        organizeBase = document.text
+        changed()
+        val myEpoch = epoch
+        pass(PassKind.REORGANIZE) {
+            val (response, failure) = callReorganize(request)
+            if (epoch != myEpoch) return@pass
+            endPass()
+            if (applyReorganizeResult(request, response, manual, failure)) {
+                // Not run: a segment clean-up took the model. No note and no backoff; the next commit tries again.
+                lastCommit = null
+                if (manual) manualReorganize = true
+            }
+            schedule(); changed()
+        }
+    }
+
+    /**
+     * Organize (the button): structure what automatic passes left raw — the pending window and every fallback block the
+     * user has not edited, each replaced in place — then reorganize. Without anything raw it is a plain reorganize.
+     */
+    private fun runOrganize() {
+        publish(document.freezeOverflow())
+        val window = if (state != State.STOPPING) document.nextStructureRequest() else null
+        val blocks = document.untouchedFallbacks
+        if (window == null && blocks.isEmpty()) {
+            val request = document.reorganizeRequest(final = false, manual = true)
+            if (request != null) runReorganize(request, manual = true)
+            else { reorganizeState = if (document.reorganizeTooLong) Reorganizing.TooLong else Reorganizing.Idle; changed() }
+            return
+        }
+        val total = (if (window == null) 0 else 1) + blocks.size + 1
+        reorganizeState = Reorganizing.Organizing(1, total)
+        organizeBase = document.text
+        changed()
+        val myEpoch = epoch
+        pass(PassKind.REORGANIZE) {
+            val failures = mutableListOf<String>()
+            var step = 1
+            fun advance() { step++; reorganizeState = Reorganizing.Organizing(minOf(step, total), total); changed() }
+            fun failed(outcome: PieceOutcome) { failures += outcome.transient ?: outcome.failures.firstOrNull() ?: "rejected" }
+            fun structured(pieces: List<NotesPiece>) = pieces.any { it is NotesPiece.Markdown }
+            if (window != null) {
+                val outcome = PieceOutcome()
+                val pieces = structurePieces(window.transcript, window.outline, false, 0, outcome)
+                if (epoch != myEpoch) return@pass
+                if (outcome.usable && structured(pieces)) {
+                    dropHeld(); publish(document.applyPieces(pieces, window)); failures += outcome.failures
+                } else failed(outcome)
+                advance()
+            }
+            val version = document.version
+            val replacements = mutableListOf<Pair<String, List<NotesPiece>>>()
+            for ((block, body) in blocks) {
+                val outcome = PieceOutcome()
+                val pieces = structurePieces(body, document.outline, false, 0, outcome)
+                if (epoch != myEpoch) return@pass
+                if (outcome.usable && structured(pieces)) { replacements += block to pieces; failures += outcome.failures } else failed(outcome)
+                advance()
+            }
+            var conflict = false
+            if (replacements.isNotEmpty()) {
+                // Version-checked as one batch: an edit (or a composition) while it ran discards all of it.
+                val changes = if (editorComposing) emptyList() else document.replaceFallbacks(replacements, version)
+                if (changes.isEmpty()) conflict = true else changes.forEach(::publish)
+            }
+            if (!conflict && reorganizeSupported) document.reorganizeRequest(final = false, manual = true)?.let { request ->
+                val (response, failure) = callReorganize(request)
+                if (epoch != myEpoch) return@pass
+                applyReorganizeResult(request, response, true, failure)
+                when (val r = reorganizeState) { is Reorganizing.Failed -> failures += r.label; Reorganizing.Conflict -> conflict = true; else -> Unit }
+            }
+            endPass()
+            val base = organizeBase
+            if (base != null && base != document.text) undo = base to document.version
+            reorganizeState = when {
+                conflict -> Reorganizing.Conflict
+                reorganizeState is Reorganizing.Applied && failures.isEmpty() -> reorganizeState
+                else -> Reorganizing.Organized(failures.size, failures.firstOrNull())
+            }
+            schedule(); changed()
+        }
+    }
+
+    /** Records a reorganize answer and applies it when the text is still what it was made from. True when preempted. */
+    private fun applyReorganizeResult(request: NotesReorganizeRequest, response: NotesReorganizeResponse, manual: Boolean, failure: NotesHttpError?): Boolean {
+        if (response.preempted && failure == null) { reorganizeState = Reorganizing.Idle; return true }
+        lastReorganizeEnd = now(); versionAtReorganizeEnd = document.version; reorganizeRetry = true
+        when {
+            failure?.unsupported == true -> { reorganizeMissing = true; reorganizeSupported = false; reorganizeState = Reorganizing.Idle }
+            failure?.off == true -> { allowed = Structuring.Off(StructuringOff.CORRECTION_OFF); structuring = allowed; reorganizeState = Reorganizing.Idle }
+            request.version != document.version || request.documentId != document.id || editorComposing ->
+                reorganizeState = if (manual) Reorganizing.Conflict else Reorganizing.Idle
+            !response.reorganized -> reorganizeState = Reorganizing.Failed(response.failureLabel)
+            else -> {
+                reorganizeRetry = false
+                val base = document.text
+                val change = document.applyReorganize(response, request)
+                if (change != null) {
+                    dropHeld(); publish(change)
+                    undo = (organizeBase ?: base) to document.version
+                    reorganizeState = Reorganizing.Applied(now())
+                } else reorganizeState = Reorganizing.Idle
+            }
+        }
+        return false
+    }
+
+    // Stopping
+
+    private fun finishRecording(problem: String?) {
+        if (!state.capturing) return
+        val myEpoch = epoch
+        stoppingSince = now()
+        state = State.STOPPING
+        timer?.cancel(); timer = null; waiting = false; manualReorganize = false
+        stopCapture()
+        val (old, end) = router.swap(null)
+        current?.let { seq -> segments[seq]?.let { it.end = end; if (it === old) finalize(it) } }
+        current = null
+        scope.launch {
+            waitUntil { segments.isEmpty() && passJob == null }
+            if (epoch != myEpoch) return@launch
+            held?.let { (request, response) -> dropHeld(); applyAppend(request, response) }
+            publish(document.freezeOverflow())
+            if (structuring !is Structuring.Off) document.nextStructureRequest(final = true)?.let {
+                run(it)
+                waitUntil { passJob == null }
+                if (epoch != myEpoch) return@launch
+            }
+            publish(document.freezeAll(structuring !is Structuring.Off))
+            document.livePartial = ""
+            // One final reorganize, unless one just ran on this very text.
+            val justTried = versionAtReorganizeEnd == document.version && lastReorganizeEnd?.let { now() - it < STOP_REORGANIZE_SKIP_MS } == true
+            if (structuring !is Structuring.Off && autoReorganize && reorganizeSupported && !justTried && document.version != document.lastReorganizeVersion) {
+                document.reorganizeRequest(final = true, manual = false)?.let {
+                    runReorganize(it, manual = false)
+                    waitUntil { passJob == null }
+                    if (epoch != myEpoch) return@launch
+                }
+            }
+            stoppingSince = null
+            error = problem
+            state = if (problem != null) State.ERROR else State.STOPPED
+            changed()
+        }
+    }
+
+    private suspend fun waitUntil(condition: () -> Boolean) {
+        if (condition()) return
+        val done = CompletableDeferred<Unit>()
+        waiters += condition to done
+        done.await()
+    }
+
+    private fun changed() {
+        if (waiters.isNotEmpty()) waiters.filter { it.first() }.forEach { waiters.remove(it); it.second.complete(Unit) }
+        onChange?.invoke()
+    }
+
+    companion object {
+        /** A pass starts at most this often (from the end of the last one). */
+        const val MIN_INTERVAL_MS = 15000L
+        /** How long a segment may take from `stop` to its final. */
+        const val FINAL_TIMEOUT_MS = 25000L
+        /** How long the next socket may take to be ready at a cut (the current one keeps the audio meanwhile). */
+        const val READY_MS = 10000L
+        const val RETRY_CUT_MS = 2000L
+        /** Segments (or next sockets) in a row that may fail before recording stops. */
+        const val MAX_SEGMENT_FAILURES = 3
+        const val REORGANIZE_EVERY_CHARS = 1200
+        const val REORGANIZE_MIN_INTERVAL_MS = 180000L
+        const val TYPING_IDLE_MS = 15000L
+        const val MAX_SPLIT_DEPTH = 2
+        const val REORGANIZE_RETRY_MS = 60000L
+        /** A held append is applied after this long without a keystroke, even with the caret in the tail. */
+        const val HOLD_MAX_MS = 10000L
+        const val REORGANIZE_AFTER_COMMIT_MS = 5000L
+        const val STOP_REORGANIZE_SKIP_MS = 30000L
+
+        fun friendly(code: String) = when (code) {
+            "auth" -> "Pairing refused — pair again in Chirp setup"
+            "busy" -> "Mac is busy"
+            "too_long" -> "Segment too long"
+            "bad_audio" -> "audio not understood"
+            "engine" -> "speech engine hiccup"
+            else -> "speech engine unavailable"
+        }
+    }
+}
