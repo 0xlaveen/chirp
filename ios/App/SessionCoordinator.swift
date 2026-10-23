@@ -14,12 +14,14 @@ struct AppServices {
     let history: HistoryStore
     let bridge: SharedBridge
     let keyboardSetup: KeyboardSetupStore
+    let timings: TimingLog
     init(root: URL, secrets: any SecretStore) throws {
         pairing = try PairingStore(root: root, secrets: secrets)
         preferences = try PreferenceStore(root: root)
         history = try HistoryStore(root: root, secrets: secrets)
         bridge = try SharedBridge(root: root, secrets: secrets, role: .app)
         keyboardSetup = try KeyboardSetupStore(root: root)
+        timings = try TimingLog(root: root)
     }
     static func production() throws -> Self {
         let config = SharedConfiguration(bundle: .main)
@@ -53,6 +55,8 @@ final class SessionCoordinator: ObservableObject {
     @Published var preferences = IOSPreferences()
     @Published private(set) var profiles: [CorrectionProfile] = []
     @Published private(set) var diagnostics: [DiagnosticEvent] = []
+    /// Content-free timings of recent dictations (SessionTimings.swift), as shown in Diagnostics.
+    @Published private(set) var timingSummary = ""
     private(set) var services: AppServices?
     /// Live Notes holds the microphone: a keyboard session cannot arm meanwhile.
     var otherCaptureActive: () -> Bool = { false }
@@ -101,6 +105,8 @@ final class SessionCoordinator: ObservableObject {
     private var landed: [(text: String, raw: String)] = []
     private var heldLive: (kind: BridgeResultKind, text: String, raw: String?)?
     private var liveFinal: (result: FinalResult, kept: Bool)?
+    private var timer: SessionTimer?
+    private let network: () -> SessionTiming.Network
     private var startingUtterance = false
     private let signal = DarwinSignal(name: DarwinSignal.bridgeChanged)
 
@@ -116,6 +122,7 @@ final class SessionCoordinator: ObservableObject {
          copyText: @escaping (String) -> Void = { UIPasteboard.general.string = $0 },
          appActive: @escaping () -> Bool = { UIApplication.shared.applicationState == .active },
          now: @escaping () -> Date = Date.init,
+         network: @escaping () -> SessionTiming.Network = { NetworkKind.shared.current },
          production: Bool = true) {
         #if DEBUG
         self.audio = audio ?? SimulatorFileAudio.fromArguments() ?? MicrophoneCapture()
@@ -124,7 +131,7 @@ final class SessionCoordinator: ObservableObject {
         #endif
         self.http = http; self.makeStream = makeStream; self.requestPermission = requestPermission; self.permissionGranted = permissionGranted
         self.activityBegin = activityBegin; self.activityActive = activityActive
-        self.activityUpdate = activityUpdate; self.activityEnd = activityEnd; self.copyText = copyText; self.appActive = appActive; self.now = now
+        self.activityUpdate = activityUpdate; self.activityEnd = activityEnd; self.copyText = copyText; self.appActive = appActive; self.now = now; self.network = network
         do {
             let stores = try services ?? (production ? AppServices.production() : nil)
             self.services = stores
@@ -133,7 +140,7 @@ final class SessionCoordinator: ObservableObject {
             paired = config != nil
             try stores?.bridge.endSession()
         } catch { notice = SessionFailure.storage.localizedDescription }
-        refreshSetup()
+        refreshSetup(); refreshTimings()
         guard production else { return }
         observation = signal.observe { [weak self] in Task { @MainActor in self?.processCommands() } }
         for name in [AVAudioSession.interruptionNotification, AVAudioSession.routeChangeNotification,
@@ -343,6 +350,7 @@ final class SessionCoordinator: ObservableObject {
         clearUtterance()
         lastError = nil
         utterance = id; companion = source == .companion ? id : nil; utteranceSource = source
+        timer = SessionTimer(now: now())
         privateUtterance = preferences.privacyMode
         var options = StartOptions(client: "ios", correction: health.map { preferences.permitsCorrection(health: $0) } ?? false,
                                    correctionProfile: preferences.styleID, wordTimings: true)
@@ -395,7 +403,7 @@ final class SessionCoordinator: ObservableObject {
         let next = makeStream(config, options, http)
         let old = FinishingSegment(index: segmentIndex, stream: live, partial: text, lastSequence: lastServerSequence, task: eventTask)
         finishing.append(old)
-        segmentIndex += 1
+        segmentIndex += 1; timer?.rolledOver()
         stream = next; ready = false; lastServerSequence = -1; text = ""; raw = ""; words = []
         updateEarlierText()
         audio.cut(to: next)
@@ -470,7 +478,7 @@ final class SessionCoordinator: ObservableObject {
 
     func stopDictation() {
         guard let stream, !stopRequested else { return }
-        stopRequested = true
+        stopRequested = true; timer?.stopped(now())
         audio.finish() // serialized against tap conversion; trailing PCM is queued before stream.stop.
         utteranceLimit?.cancel()
         if ready { Task { await stream.stop() } }
@@ -479,6 +487,7 @@ final class SessionCoordinator: ObservableObject {
     }
 
     func cancelDictation() {
+        finishTiming(.cancelled)
         let previous = stream
         clearUtterance(error: SessionFailure.cancelled)
         if let previous { Task { await previous.cancel() } }
@@ -487,6 +496,7 @@ final class SessionCoordinator: ObservableObject {
     }
 
     func endSession(code: DiagnosticCode? = nil) {
+        finishTiming(.cancelled, error: code)
         lifecycle = UUID()
         armed = false
         audio.disarm()
@@ -530,16 +540,17 @@ final class SessionCoordinator: ObservableObject {
             switch message {
             case .ready(_, _, let debug):
                 guard !ready else { return }
-                ready = true; debugRetention = debug; audio.ready()
+                ready = true; debugRetention = debug; audio.ready(); timer?.ready(now())
                 setPhase(.listening)
                 if stopRequested, let stream { Task { await stream.stop() } }
             case .partial(let seq, let value, _, let timings):
                 guard ready, !stopRequested, seq > lastServerSequence else { return }
-                lastServerSequence = seq; text = value; words = timings ?? []
+                lastServerSequence = seq; text = value; words = timings ?? []; timer?.partial(now())
                 publishLive(.partial, text: value)
             case .correcting(let seq, let value, _, let timings):
                 guard ready, stopRequested, seq > lastServerSequence else { return }
                 lastServerSequence = seq; raw = value; text = value; words = timings ?? []
+                timer?.polishing(now())
                 setPhase(.correcting); publishLive(.correcting, text: value, raw: value); startDeadline(seconds: 12)
             case .final(let result):
                 guard ready, stopRequested else { return }
@@ -565,6 +576,7 @@ final class SessionCoordinator: ObservableObject {
             finishLive(FinalResult(text: ""), id: id)
             notice = reason
         } else {
+            finishTiming(.failed, error: code)
             let previous = stream
             clearUtterance(error: SessionFailure.noResult)
             setPhase(.armed)
@@ -597,8 +609,9 @@ final class SessionCoordinator: ObservableObject {
         guard utterance == id, armed else { return }
         let empty = result.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         guard !empty || !landed.isEmpty else {
-            cancelDictation(); notice = SessionFailure.noResult.localizedDescription; return
+            finishTiming(.empty); cancelDictation(); notice = SessionFailure.noResult.localizedDescription; return
         }
+        finishTiming(kept ? .kept : .final, error: kept ? lastError : nil)
         audio.discard(); deadline?.cancel(); utteranceLimit?.cancel()
         let finishedStream = stream; stream = nil
         if let finishedStream { Task { await finishedStream.close() } }
@@ -742,6 +755,18 @@ final class SessionCoordinator: ObservableObject {
             }
         } catch { endSession(code: .storage) }
     }
+    /// One content-free timing entry per dictation; later calls for the same dictation do nothing.
+    private func finishTiming(_ outcome: SessionTiming.Outcome, error: DiagnosticCode? = nil) {
+        guard var current = timer else { return }
+        timer = nil
+        let source: SessionTiming.Source = switch utteranceSource { case .keyboard?: .keyboard; case .companion?: .companion; default: .app }
+        guard let entry = current.finish(outcome, error: error, source: source, network: network(), now: now()) else { return }
+        try? services?.timings.record(entry)
+        refreshTimings()
+    }
+    func refreshTimings() { timingSummary = TimingSummary.text((try? services?.timings.entries()) ?? []) }
+    func clearTimings() { try? services?.timings.clear(); refreshTimings() }
+
     private func record(_ code: DiagnosticCode) {
         diagnostics.append(DiagnosticEvent(phase: phase, code: code))
         diagnostics = Array(diagnostics.suffix(200))
@@ -753,6 +778,7 @@ final class SessionCoordinator: ObservableObject {
         let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0"
         let events = (try? DiagnosticExport.data(events: diagnostics)) ?? Data("[]".utf8)
         return "Chirp \(version) · iOS \(ProcessInfo.processInfo.operatingSystemVersion.majorVersion)\n" + String(decoding: events, as: UTF8.self)
+            + "\n\nDictation timings\n" + timingSummary
     }
 }
 

@@ -8,6 +8,7 @@
     "App/LiveNotesFixtures.swift",
     "App/LiveNotesView.swift",
     "App/MicrophoneCapture.swift",
+    "App/NetworkKind.swift",
     "App/PairingScanner.swift",
     "App/PrivacyController.swift",
     "App/RollingDictation.swift",
@@ -35,7 +36,8 @@
     "Tests/CaptureSinkTests.swift",
     "Tests/LiveNotesControllerTests.swift",
     "Tests/LongDictationTests.swift",
-    "Tests/SessionCoordinatorTests.swift"
+    "Tests/SessionCoordinatorTests.swift",
+    "Tests/SessionTimingTests.swift"
   ],
   "ChirpIOSUITests": [
     "UITests/ChirpHardwareKeyboardUITests.swift",

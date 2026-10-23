@@ -513,7 +513,13 @@ when it matters; surrounding editor text is never collected.
   next access — there is no background purge daemon.
 - **Diagnostics are content-free.** Version, OS, phase, fixed local error
   codes, durations and counts only — no transcripts, prompts, audio, URLs,
-  hosts, tokens or device identifiers.
+  hosts, tokens or device identifiers. Settings → Diagnostics also keeps
+  **timings of the last 50 dictations**: time to ready, to the first words,
+  from stop to the final, polishing and audio length, plus the outcome
+  (final, empty, kept, failed, cancelled), error code, where you dictated
+  (app, keyboard, companion), the kind of network (Wi-Fi, cellular, wired) and
+  how many parts a long dictation used. It shows p50/p90 summaries, is included
+  in Share diagnostics, and has a **Clear timings** button.
 - **No telemetry, no background sync, no analytics.**
 
 ## Troubleshooting
