@@ -31,6 +31,7 @@ internal class KeyboardDictation(
     private val tailscale: TailscaleControl = AndroidTailscale(host),
     private val healthCheck: (okhttp3.Call) -> Health = ChirpNetwork::health,
     private val cues: Cues = Cues(host),
+    private val policy: PrewarmPolicy = PrewarmPolicy(),
 ) {
     private val handler = Handler(Looper.getMainLooper())
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
@@ -49,7 +50,7 @@ internal class KeyboardDictation(
         warmEvent = null; warmFailure = null
     }
     private fun prewarm(paired: Pairing) {
-        if (active || warmed != null) return
+        if (active || warmed != null || !policy.shouldPrewarm(targetPackage)) return
         warmed = transportFactory(client, paired, { warmEvent?.invoke(it) }, {
             warmed?.failureKind?.takeIf { it.offline }?.let(::noteReach)
             warmed = null; warmFailure?.invoke()
@@ -280,7 +281,7 @@ internal class KeyboardDictation(
         }
         promptOffline()
         render()
-        if (paired != null) reach(paired)
+        if (paired != null) { if (policy.healthDue()) reach(paired) else prewarm(paired) }
     }
     private fun reach(paired: Pairing, quick: Boolean = false, then: ((ConnectionFailure.Kind?) -> Unit)? = null) {
         prewarm(paired)
@@ -299,7 +300,7 @@ internal class KeyboardDictation(
                 then?.invoke(null)
             } catch (e: Exception) {
                 if (version != id || !visible || destroyed) return@launch
-                healthCall = null
+                healthCall = null; policy.healthFailed()
                 val kind = ConnectionFailure.classify(e)
                 noteReach(kind); then?.invoke(kind.takeIf { it.offline || it == ConnectionFailure.Kind.TLS })
             }
@@ -318,7 +319,7 @@ internal class KeyboardDictation(
         if (retry(paired)) return
         checking = false
         val connection = host.currentInputConnection ?: return
-        forgetUndo(); notice = false; words = 0; started(); prepare()
+        forgetUndo(); notice = false; words = 0; started(); prepare(); policy.dictated(targetPackage)
         historyInfo = info; historyId = null
         currentStyle = CleanupStyles.profiles(store.health).firstOrNull { it.id == styleOverride } ?: store.style(targetPackage)
         insertionStart = minOf(selectionStart, selectionEnd).takeIf { it >= 0 } ?: minOf(info.initialSelStart, info.initialSelEnd)

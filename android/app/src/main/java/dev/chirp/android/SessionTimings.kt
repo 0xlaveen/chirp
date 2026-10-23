@@ -69,6 +69,7 @@ internal object TimingSummary {
         return listOf(
             "Last ${items.size} of up to ${TimingLog.MAX} sessions",
             row("connect", items.mapNotNull { it.connectMs }), row("ready", items.mapNotNull { it.readyMs }),
+            row("  ready, warm", items.filter { it.prewarmed }.mapNotNull { it.readyMs }), row("  ready, cold", items.filter { !it.prewarmed }.mapNotNull { it.readyMs }),
             row("first partial", items.mapNotNull { it.firstPartialMs }), row("stop → final", items.mapNotNull { it.stopFinalMs }),
             row("polishing", items.mapNotNull { it.polishMs }), row("audio", items.map { it.audioMs }, seconds = true),
             "Outcomes: " + count(items.map { it.outcome.name.lowercase() }),
