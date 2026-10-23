@@ -1,4 +1,5 @@
 import AppKit
+import ImageIO
 import Carbon.HIToolbox
 import ChirpCore
 import SwiftUI
@@ -763,7 +764,22 @@ public enum Snapshots {
             bytesPerRow: 0, bitsPerPixel: 0) else { return nil }
         rep.size = size
         appearance.performAsCurrentDrawingAppearance { host.cacheDisplay(in: host.bounds, to: rep) }
-        return rep.representation(using: .png, properties: [:])
+        return isWindow ? opaquePNG(rep) ?? rep.representation(using: .png, properties: [:]) : rep.representation(using: .png, properties: [:])
+    }
+
+    /// A window is opaque, so its PNG drops the alpha channel: the same pixels in a smaller file. (`cacheDisplay`
+    /// only draws into a bitmap with alpha, so the pixels are copied into one that ignores it.)
+    private static func opaquePNG(_ rep: NSBitmapImageRep) -> Data? {
+        guard let image = rep.cgImage,
+              let context = CGContext(data: nil, width: image.width, height: image.height, bitsPerComponent: 8, bytesPerRow: 0,
+                                      space: image.colorSpace ?? CGColorSpaceCreateDeviceRGB(),
+                                      bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue) else { return nil }
+        context.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
+        let data = NSMutableData()
+        guard let opaque = context.makeImage(),
+              let destination = CGImageDestinationCreateWithData(data, "public.png" as CFString, 1, nil) else { return nil }
+        CGImageDestinationAddImage(destination, opaque, nil)
+        return CGImageDestinationFinalize(destination) ? data as Data : nil
     }
 
     private static func textViews(in view: NSView) -> [NSTextView] {
