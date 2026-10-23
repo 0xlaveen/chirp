@@ -21,8 +21,7 @@ import Testing
         let old = "## Secret\n" + String(repeating: "- discarded point\n", count: 8)
         r.userEdit(NSRange(location: 0, length: 0), old)                       // version 1
         r.reorganizeNow()
-        let deadline = Date().addingTimeInterval(10)
-        while stub.waiting == 0, Date() < deadline { try? await Task.sleep(for: .milliseconds(10)) }
+        _ = await pollUntil(within: 10) { stub.waiting > 0 }   // time this test got to run: a busy main actor must not fail it
         try #require(stub.waiting == 1)
         r.reset()                                                               // New → Discard
         let fresh = String(repeating: "my new notes after New. ", count: 20)
