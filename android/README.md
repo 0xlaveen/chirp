@@ -51,7 +51,7 @@ Opening a sideloaded APK can trigger a **Play Protect** screen warning about an 
 
 Once the first install is on the phone, later builds can update it in place from the paired Mac.
 
-On the Mac, stage the signed release APK and its manifest, then host that folder yourself at `/chirp-apk/` on the same tailnet host as the pairing (for example with your existing static file server behind `tailscale serve`; this script hosts and publishes nothing):
+On the Mac, stage the signed arm64 release APK (`app-arm64-v8a-release.apk`, the phone split) and its manifest, then host that folder yourself at `/chirp-apk/` on the same tailnet host as the pairing (for example with your existing static file server behind `tailscale serve`; this script hosts and publishes nothing):
 
 ```sh
 ./gradlew assembleRelease
