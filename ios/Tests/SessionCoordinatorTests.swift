@@ -12,6 +12,7 @@ struct SessionCoordinatorTests {
         var copied: [String] = []
         var date = Date()
         var activity = true
+        var active = true
         var transports: [SyntheticTransport] = []
     }
     @MainActor struct Fixture {
@@ -38,7 +39,7 @@ struct SessionCoordinatorTests {
             },
             requestPermission: { permission }, permissionGranted: { permission }, activityBegin: { _ in }, activityActive: { values.activity },
             activityUpdate: { _, _ in }, activityEnd: {}, copyText: { values.copied.append($0) },
-            now: { values.date }, production: false)
+            appActive: { values.active }, now: { values.date }, production: false)
         return Fixture(model: model, transport: transport, audio: audio, values: values, stores: stores, root: root)
     }
     func eventually(_ check: () -> Bool) async throws {
@@ -97,6 +98,49 @@ struct SessionCoordinatorTests {
         #expect(try await stopping.value == "Copied. Paste with ⌘V.")
         #expect(f.values.copied == ["Hotkey final"])
         #expect(f.model.armed)
+    }
+
+    /// A hardware-keyboard toggle must never stop or copy dictation that Chirp Keyboard owns.
+    @Test func toggleRefusesKeyboardOwnedUtterance() async throws {
+        let f = try await fixture(); defer { f.clean() }
+        try await f.model.begin(source: .keyboard)
+        try await ready(f)
+        #expect(try await f.model.perform(action: .toggle) == "Chirp Keyboard is dictating. Stop it in the keyboard.")
+        #expect(f.model.phase == .listening && f.audio.finishCount == 0)
+        f.model.stopDictation()
+        f.transport.push(#"{"type":"final","text":"Keyboard final"}"#)
+        try await eventually { f.model.phase == .finished }
+        #expect(f.values.copied.isEmpty)
+    }
+
+    /// With no session and Chirp in the background, start and toggle need the foreground; nothing arms.
+    @Test func toggleWithoutSessionInBackgroundNeedsForeground() async throws {
+        let f = try await fixture(); defer { f.clean() }
+        f.values.active = false
+        #expect(f.model.needsForegroundToStart)
+        await #expect(throws: SessionFailure.setup) { try await f.model.perform(action: .toggle) }
+        await #expect(throws: SessionFailure.setup) { try await f.model.perform(action: .start) }
+        #expect(!f.model.armed && f.values.transports.isEmpty)
+        f.values.active = true
+        #expect(!f.model.needsForegroundToStart)
+        try await f.model.armSession()
+        f.values.active = false
+        #expect(!f.model.needsForegroundToStart, "An armed session starts from any app")
+    }
+
+    @Test func toggleStopWithEmptyFinalNeverCopies() async throws {
+        let f = try await fixture(); defer { f.clean() }
+        try await f.model.armSession()
+        _ = try await f.model.perform(action: .toggle)
+        try await ready(f)
+        let stopping = Task { () -> Bool in
+            do { _ = try await f.model.perform(action: .toggle); return false }
+            catch { return (error as? SessionFailure) == .cancelled }
+        }
+        try await eventually { f.audio.finishCount == 1 }
+        f.transport.push(#"{"type":"final","text":""}"#)
+        #expect(await stopping.value)
+        #expect(f.values.copied.isEmpty && f.model.armed)
     }
 
     @Test func keyboardStopIntentDoesNotCopy() async throws {

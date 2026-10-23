@@ -68,6 +68,18 @@ final class ChirpLiveServerUITests: XCTestCase {
         XCTAssertTrue(app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS '127.0.0.1'")).firstMatch.exists)
     }
 
+    /// The QR's secret link opened by iOS: the system asks "Open in Chirp?" before Chirp verifies and saves.
+    @MainActor func pairByDeepLink(_ app: XCUIApplication) throws {
+        selectTab("Pair Mac", symbol: "qrcode.viewfinder", in: app)
+        endSession(app)
+        if app.buttons["Forget pairing"].exists { app.buttons["Forget pairing"].tap() }
+        XCTAssertFalse(app.staticTexts["Mac pairing saved"].waitForExistence(timeout: 2))
+        XCUIDevice.shared.system.open(try XCTUnwrap(URL(string: link)))
+        let open = XCUIApplication(bundleIdentifier: "com.apple.springboard").buttons["Open"]
+        if open.waitForExistence(timeout: 5) { open.tap() }
+        XCTAssertTrue(app.staticTexts["Mac pairing saved"].waitForExistence(timeout: 15), "Deep-link pairing failed")
+    }
+
     @MainActor func testLivePairDictateCleanupRawHistoryAndEnd() {
         let app = launch()
         pair(app)
@@ -137,7 +149,7 @@ final class ChirpLiveServerUITests: XCTestCase {
     /// Chirp owns the session; the real extension dictates into another app through the encrypted mailbox.
     @MainActor func testLiveKeyboardDictationInMessages() throws {
         let app = launch()
-        pair(app)
+        try pairByDeepLink(app)
         try enableKeyboardInSettings()
         app.activate()
         XCTAssertTrue(app.wait(for: .runningForeground, timeout: 10))
@@ -171,5 +183,96 @@ final class ChirpLiveServerUITests: XCTestCase {
         screenshot("Keyboard final in Messages", messages)
         messages.buttons["chirp.keyboard.end"].tap()
         XCTAssertTrue(waitFor(status, "NOT label BEGINSWITH 'Session armed'", timeout: 10), status.label)
+    }
+
+    /// Runs Chirp's App Shortcut from Spotlight, as a hardware-keyboard user would with ⌘Space or a Full
+    /// Keyboard Access command: Toggle starts in the armed session without opening Chirp, Toggle again
+    /// stops and copies, and ⌘V pastes the final into Messages.
+    @MainActor func testLiveToggleShortcutFromSpotlightThenPaste() throws {
+        let app = launch()
+        pair(app)
+        selectTab("Dictate", symbol: "mic", in: app)
+        app.buttons["Start keyboard session"].tap()
+        allowSystemAlert()
+        XCTAssertTrue(app.staticTexts["Session armed · microphone active"].waitForExistence(timeout: 15))
+        let messages = XCUIApplication(bundleIdentifier: "com.apple.MobileSMS")
+        defer { app.activate(); endSession(app); app.terminate(); messages.terminate() }
+
+        try runToggleFromSpotlight(expecting: "Recording")
+        let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
+        let activity = springboard.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS[c] 'dictating' OR label CONTAINS[c] 'Chirp'")).firstMatch
+        let shot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+        shot.name = "Home screen while toggled dictation runs"; shot.lifetime = .keepAlways
+        add(shot)
+        let activityEvidence = XCTAttachment(string: activity.exists ? activity.debugDescription : springboard.debugDescription)
+        activityEvidence.name = "Live Activity element"; activityEvidence.lifetime = .keepAlways
+        add(activityEvidence)
+        XCTAssertFalse(app.state == .runningForeground, "Toggle must not bring Chirp forward in an armed session")
+        sleep(7) // the synthetic sentence is about 5 s
+        try runToggleFromSpotlight(expecting: "Copied")
+
+        messages.launch()
+        let conversation = messages.cells.firstMatch
+        XCTAssertTrue(conversation.waitForExistence(timeout: 10))
+        conversation.tap()
+        let field = messages.descendants(matching: .any).matching(identifier: "messageBodyField").firstMatch
+        XCTAssertTrue(field.waitForExistence(timeout: 10))
+        field.tap()
+        messages.typeKey("v", modifierFlags: .command)
+        let allow = springboard.buttons["Allow Paste"]
+        if allow.waitForExistence(timeout: 2) { allow.tap() }
+        XCTAssertTrue(waitFor(field, "value CONTAINS[c] 'design group'", timeout: 10), String(describing: field.value))
+        screenshot("Toggle final pasted into Messages", messages)
+    }
+
+    @MainActor func runToggleFromSpotlight(expecting dialog: String) throws {
+        let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
+        XCUIDevice.shared.press(.home)
+        let pill = springboard.descendants(matching: .any).matching(identifier: "spotlight-pill").firstMatch
+        if pill.waitForExistence(timeout: 3) { pill.tap() } else {
+            // iPad has no Search pill: Spotlight opens with a downward swipe from mid-screen.
+            springboard.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.35))
+                .press(forDuration: 0.05, thenDragTo: springboard.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.7)))
+        }
+        let search = springboard.descendants(matching: .any).matching(NSPredicate(format: "(elementType == %d OR elementType == %d) AND hasKeyboardFocus == true", XCUIElement.ElementType.searchField.rawValue, XCUIElement.ElementType.textField.rawValue)).firstMatch
+        guard search.waitForExistence(timeout: 5) else { dump("Spotlight", springboard); throw XCTSkip("Spotlight search did not open") }
+        search.typeText("Toggle dictation")
+        let action = springboard.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS[c] 'Toggle dictation' OR label CONTAINS[c] 'Toggle Chirp dictation'")).firstMatch
+        guard action.waitForExistence(timeout: 10) else { dump("Spotlight results", springboard); XCTFail("Spotlight shows no Chirp Toggle action"); return }
+        action.tap()
+        let result = springboard.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH[c] %@", dialog)).firstMatch
+        if !result.waitForExistence(timeout: 15) { dump("Toggle result", springboard) }
+        XCTAssertTrue(result.exists, "Toggle dialog did not say \(dialog)")
+        let shot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+        shot.name = "Toggle from Spotlight: \(dialog)"; shot.lifetime = .keepAlways
+        add(shot)
+        XCUIDevice.shared.press(.home)
+    }
+
+    /// An armed session shows Chirp's Live Activity on the lock screen with only its content-free phase.
+    @MainActor func testLiveActivityOnLockScreen() throws {
+        let app = launch()
+        pair(app)
+        selectTab("Dictate", symbol: "mic", in: app)
+        app.buttons["Start keyboard session"].tap()
+        allowSystemAlert()
+        XCTAssertTrue(app.staticTexts["Session armed · microphone active"].waitForExistence(timeout: 15))
+        defer { app.activate(); endSession(app); app.terminate() }
+        let lock = NSSelectorFromString("pressLockButton")
+        guard XCUIDevice.shared.responds(to: lock) else { throw XCTSkip("This XCTest cannot lock the simulator") }
+        XCUIDevice.shared.perform(lock)
+        sleep(2)
+        XCUIDevice.shared.press(.home) // wakes the display onto the lock screen without unlocking
+        let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
+        let phase = springboard.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS 'Microphone active · idle audio discarded'")).firstMatch
+        let found = phase.waitForExistence(timeout: 10)
+        let shot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+        shot.name = "Lock screen Live Activity"; shot.lifetime = .keepAlways
+        add(shot)
+        if !found { dump("Lock screen", springboard) }
+        XCUIDevice.shared.press(.home)
+        springboard.swipeUp()
+        XCTAssertTrue(found, "Lock screen shows no Chirp Live Activity")
+        XCTAssertFalse(springboard.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS[c] 'design group'")).firstMatch.exists)
     }
 }

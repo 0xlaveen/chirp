@@ -13,7 +13,7 @@ never used.
 This is a **personal install** target. No App Store distribution, TestFlight or
 ad-hoc readiness is claimed or tested.
 
-## Status: runs end to end on iPhone and iPad simulators; not yet on a device (2026-10-23)
+## Status: runs end to end on iPhone and iPad simulators; not yet on a device (2026-10-24)
 
 The app, keyboard and widgets **build** with full Xcode, and the unit and UI
 tests **pass on an iPhone and an iPad simulator**. The UI tests include a
@@ -22,30 +22,47 @@ real Parakeet model, spoken `say` audio) and the **real installed Chirp
 Keyboard** dictating into Messages. **Nothing has been installed, signed for or
 run on a physical iPhone or iPad yet.**
 
-| Check (2026-10-23, iOS 27.0 simulators) | Result |
+| Check (2026-10-24, iOS 27.0 simulators) | Result |
 |---|---|
 | `ios/scripts/simulator.sh build` — iPhone 18 Pro and iPad Pro 13-inch (M5) | BUILD SUCCEEDED on both |
-| `ios/scripts/simulator.sh test` — same two simulators | 17 tests in 2 suites, both |
-| `ios/scripts/simulator-e2e.sh` (full UI scheme plus live server) — same two simulators | 6/6 pass, no skips, both: app pair/dictate/raw/end + tab switch while armed, history + rotation, real keyboard into an empty field and after existing text + secure-field fallback, **live**: pair/clean-up/partials/Use raw/history/end, **live** keyboard dictation into Messages; server log transcript-free |
+| `ios/scripts/simulator.sh test` — same two simulators | 20 tests in 2 suites, both |
+| `CHIRP_E2E_APPEARANCE=dark ios/scripts/simulator-e2e.sh` (full UI scheme plus live server) — same two simulators | 11 tests, both: 9 pass, 2 skip with stated reasons (⌘ shortcuts need a hardware keyboard on the simulator; UI tests cannot open Spotlight); server log transcript-free |
 | `swift test --package-path ios/Keyboard/Policy` | 62 tests in 9 suites |
 | `ios/Shared/scripts/test.sh` | 22 tests in 6 suites |
 | `ios/scripts/check-sources.sh` | passed |
 
-Flows verified on both simulators against the live server: pairing by pasted
-secret link (the deep link opens the same path behind iOS's "Open in Chirp?"
-prompt), the setup checklist, in-app dictation with live partials, clean-up
-plus **Use raw**, encrypted history opt-in, End session, keyboard enable plus
-Full Access in Settings, starting a keyboard session, keyboard dictation into
-Messages (partials, final, End), and the secure-field fallback to Apple's
-keyboard. Screenshots: [docs/screenshots/ios/](../docs/screenshots/ios/).
+Verified on both simulators, against the live server where it matters:
+- pairing by pasted secret link and by deep link through iOS's "Open in Chirp?"
+  prompt, and the setup checklist;
+- in-app dictation with live partials, clean-up plus **Use raw**, encrypted
+  history opt-in, End session, switching tabs while armed;
+- rotating during dictation (portrait and both landscapes; this caught and
+  fixed a crash);
+- keyboard enable plus Full Access in Settings, a keyboard session, keyboard
+  dictation into Messages (partials, final, End), and the secure-field
+  fallback to Apple's keyboard;
+- the **Live Activity on the lock screen** for an armed session (content-free
+  phase only);
+- the Full Keyboard Access → Commands path the hardware-keyboard help gives.
 
-Not covered by the simulator: the real microphone (see Develop and test),
-signing/provisioning, background-audio survival on a device, the lock screen,
-Live Activity and Control Center interaction, and App Store acceptance. Those
-remain operator device gates in
-[docs/milestones/M5-ios.md](../docs/milestones/M5-ios.md). iPad
-hardware-keyboard shortcuts, rotation and split view during dictation, and
-dark-mode screenshots are still to be exercised. Earlier evidence:
+Screenshots: [docs/screenshots/ios/](../docs/screenshots/ios/) (light on iPhone and iPad, dark on iPhone).
+
+Not verified here:
+- The app's **⌘ shortcuts**: headless simulators drop synthesized hardware key
+  events. `ChirpHardwareKeyboardUITests.testDictationMenuShortcuts` runs them
+  when a hardware keyboard is connected to the simulator, and skips with that
+  reason otherwise.
+- **Toggle from Spotlight / a Full Keyboard Access key**: UI tests could not
+  open Spotlight. Toggle's start, stop-and-copy and keyboard-refusal rules are
+  unit tested.
+- **Split view / Stage Manager windows**: UI tests cannot resize iPad windows.
+- **Control Center and Action Button controls**: adding them needs the
+  system's edit gallery.
+- The real microphone (see Develop and test), signing/provisioning,
+  background-audio survival on a device, and App Store acceptance. These remain
+  operator device gates in [docs/milestones/M5-ios.md](../docs/milestones/M5-ios.md).
+
+Earlier evidence:
 [docs/review/ios-simulator.md](../docs/review/ios-simulator.md),
 [docs/review/ios-keyboard.md](../docs/review/ios-keyboard.md),
 [docs/review/ios-app.md](../docs/review/ios-app.md).
@@ -307,13 +324,19 @@ receive hardware key presses. So there are two ways to dictate into another app:
 - **Show Chirp Keyboard.** Press the globe key (or Control-Space) until Chirp is
   chosen, then use the small keyboard bar at the bottom of the screen to show
   it, and tap Start/Stop dictation. Text goes in at the cursor as usual.
+- **Toggle from anywhere.** Start a session in Chirp, then from any app press
+  ⌘Space, type *Toggle dictation* and press Return; do it again to stop. Chirp
+  copies the final text, so press ⌘V to paste.
 - **A global shortcut key.** In the Shortcuts app, make a shortcut with Chirp's
-  **Toggle Chirp dictation** action. Then Settings → Accessibility → Keyboards →
-  **Full Keyboard Access** → on → **Commands**, and give that shortcut a key
-  combination. With a keyboard session running, press it to start; press it
-  again to stop. Chirp copies the final text, so press ⌘V to paste. Toggle
-  runs in the background and never starts a session cold: with no session it
-  fails and asks you to open Chirp.
+  **Toggle Chirp dictation** action. Then Settings → Accessibility →
+  **Keyboards & Typing** → **Full Keyboard Access** → on → **Commands**, and give
+  that shortcut a key combination (iOS lists Shortcuts-app shortcuts there once
+  you have made one). Press it to start; press it again to stop and copy.
+
+With a session armed, Toggle runs in the background without leaving your app.
+With no session it opens Chirp to set one up (permission and setup need Chirp
+on screen). While Chirp Keyboard owns the current dictation, Toggle refuses
+rather than stopping or copying it. Stop that dictation in the keyboard.
 
 ## Companion controls (Action Button, Control Center, Shortcuts)
 
@@ -326,8 +349,9 @@ content-free phase (e.g. "Microphone active · dictating") with Start/Stop/
 Cancel/End buttons; enable Live Activities for Chirp in system settings or
 session start refuses.
 
-Companion start requires the app in the foreground for permission/setup — the
-intent opens Chirp rather than recording cold in the background. Companion
+Companion start runs in the background when a session is armed. With no
+session it opens Chirp for permission and setup rather than recording cold in
+the background. Companion
 **Stop** (and **Toggle** when it stops) is the one path that explicitly copies its own fresh final to the
 clipboard; keyboard and in-app dictation never write the clipboard implicitly.
 Nothing transcript-like ever appears on the lock screen.
@@ -424,6 +448,7 @@ expansion, App Intents or ActivityKit, and it is not runtime evidence.
 
 ```sh
 ios/scripts/simulator-e2e.sh SIMULATOR-UUID   # full UI scheme + live server; prints iOS E2E: PASS
+CHIRP_E2E_APPEARANCE=dark ios/scripts/simulator-e2e.sh SIMULATOR-UUID   # same, in dark mode
 ```
 
 It starts a throwaway `chirp-server` (temporary HOME and token, port 7899 or
