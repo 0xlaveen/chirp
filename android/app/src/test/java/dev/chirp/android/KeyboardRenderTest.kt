@@ -69,8 +69,9 @@ class KeyboardRenderTest {
                 // InputView applies this on its first window layout, which a detached render never gets.
                 Settings.getValues().mColors.setBackground(root, ColorType.MAIN_BACKGROUND)
                 var idleHeight = 0
-                for (state in listOf("idle", "listening", "final")) {
-                    strip.show(when(state) { "listening" -> "Listening…"; "final" -> "Inserted · tap mic to dictate again"; else -> "Tap mic · hold to talk" },
+                for (state in listOf("idle", "listening", "final", "tailscale")) {
+                    strip.show(when(state) { "listening" -> "Listening…"; "final" -> "Inserted · tap mic to dictate again"
+                        "tailscale" -> DictationAction.TAILSCALE_OFF; else -> "Tap mic · hold to talk" },
                         if (state == "listening") "Synthetic example for visual review" else "", state == "listening", false, state == "final", false)
                     strip.level(if (state == "listening") .45 else 0.0)
                     root.measure(View.MeasureSpec.makeMeasureSpec(411, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(900, View.MeasureSpec.AT_MOST))
