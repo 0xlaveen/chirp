@@ -153,6 +153,7 @@ internal object TimingNetworks {
 
 /** Setup and settings Diagnostics: session timings first, then the crash log. */
 internal object DiagnosticsReport {
-    fun text(context: Context) = "Session timings\n${TimingLog(context).summary()}\n\nCrashes\n${CrashLog(context).text()}"
-    fun clearTimings(context: Context) = TimingLog(context).clear()
+    fun text(context: Context) = "Session timings\n${TimingLog(context).summary()}\n\nNotes sessions\n${NotesTimingLog(context).summary()}" +
+        "\n\nCrashes\n${CrashLog(context).text()}"
+    fun clearTimings(context: Context) { TimingLog(context).clear(); NotesTimingLog(context).clear() }
 }

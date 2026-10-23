@@ -114,6 +114,9 @@ internal class NotesDocument(var startedAt: Long = System.currentTimeMillis(), t
     var livePartial = ""
     /** The user's name for this session (Rename), else the title is the start time. */
     var name: String? = null
+    /** Survives the recovery copy and kept sessions, so keeping it again replaces the earlier copy. */
+    var uid: String = java.util.UUID.randomUUID().toString()
+        private set
     /** Every fallback block appended, exactly as appended; one still found verbatim is one Organize may redo. */
     private val fallbackBlocks = mutableListOf<String>()
 
@@ -347,7 +350,7 @@ internal class NotesDocument(var startedAt: Long = System.currentTimeMillis(), t
 
     /** Everything but the live partial and the reorganize bookkeeping, for [NotesJournal]. */
     fun toJson(): JSONObject = JSONObject().put("startedAt", startedAt).put("text", text).put("tailStart", tailStart)
-        .put("windowStart", windowStart).put("structuredEnd", structuredEnd).put("fallbacks", JSONArray(fallbackBlocks))
+        .put("windowStart", windowStart).put("structuredEnd", structuredEnd).put("fallbacks", JSONArray(fallbackBlocks)).put("uid", uid)
         .put("segments", JSONArray().apply {
             committed.forEach { s ->
                 put(JSONObject().put("offset", s.offset).put("raw", s.raw).put("text", s.text).put("corrected", s.corrected)
@@ -358,6 +361,7 @@ internal class NotesDocument(var startedAt: Long = System.currentTimeMillis(), t
     companion object {
         fun fromJson(json: JSONObject) = NotesDocument(json.getLong("startedAt"), json.getString("text")).apply {
             name = json.optString("name").takeIf { json.has("name") }
+            json.optString("uid").takeIf { it.isNotEmpty() }?.let { uid = it }
             val list = json.getJSONArray("segments")
             for (i in 0 until list.length()) list.getJSONObject(i).let { s ->
                 committed += NotesSegment(i, s.getDouble("offset"), s.getString("raw"), s.getString("text"), s.optBoolean("corrected"),

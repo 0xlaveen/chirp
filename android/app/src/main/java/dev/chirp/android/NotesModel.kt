@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -49,6 +50,10 @@ internal class NotesModel(
     private val foreground: (Boolean) -> Unit = { on -> NotesService.set(context.applicationContext, on) },
     private val io: suspend (suspend () -> Unit) -> Unit = { withContext(Dispatchers.IO) { it() } },
     private val journal: NotesJournal? = NotesJournal(context.applicationContext, store = store),
+    private val sessions: NotesSessions? = NotesSessions(context.applicationContext),
+    private val timings: NotesTimingLog? = NotesTimingLog(context.applicationContext),
+    /** Fire-and-forget storage work, in order, off the main thread. */
+    private val background: (() -> Unit) -> Unit = NotesIo::run,
 ) : ViewModel(), NotesControls.Session {
     private val app = context.applicationContext as android.app.Application
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
@@ -60,6 +65,11 @@ internal class NotesModel(
     private var editing = false
     private var published: NotesRecorder.State? = null
     private var committedCount = 0
+    private var pendingSeen = 0
+    private var visible = true
+    private var counter: NotesSessionCounter? = null
+    /** What was last kept in "Recent notes", so an unchanged session is not written again. */
+    private var keptKey: List<Any?>? = null
     /** What was last saved to a file; the notes are unsaved ([dirty]) once anything differs. */
     private var savedKey: List<Any?>? = null
     private var health by mutableStateOf(store.health)
@@ -79,6 +89,12 @@ internal class NotesModel(
         private set
     /** "Recovered unsaved notes from 14:03 · 52 min", until the user saves, discards or records. */
     var recovered by mutableStateOf<String?>(null)
+        private set
+    /** Kept sessions for the "Recent notes" sheet, newest first; loaded on demand. */
+    var recent by mutableStateOf<List<NotesSessionEntry>>(emptyList())
+        private set
+    /** Battery saver: the screen is off (or Notes is out of sight), so editor updates, the ticker and the meter wait. */
+    override var quiet = false
         private set
 
     private fun http() = client ?: ChirpNetwork.client(app).also { client = it }
@@ -133,13 +149,16 @@ internal class NotesModel(
     val dirty get() = revision.let { hasContent && savedKey != key() }
     val title get() = document.title().removePrefix("# ")
     val recoveryOn get() = journal?.enabled == true
+    /** "Keep notes on this phone": stopped notes are kept in Recent notes, so leaving or New need not ask. */
+    val keeps get() = sessions?.enabled == true
     val canUndo get() = revision.let { recorder.canUndo }
     val canOrganize get() = reorganizing !is Reorganizing.Unavailable && !reorganizing.running && !busy && document.text.isNotBlank()
     /** The switch is offered once the Mac's health says structuring exists and clean-up is on. */
     val structureAvailable get() = health?.let { it.correctionAvailable && it.notesStructure } == true
     val structureHost get() = health?.takeIf { it.correctionLeavesMachine }?.correctionHost
-    override var elapsed by mutableStateOf(0.0)
+    var elapsed by mutableStateOf(0.0)
         private set
+    override val recordedSeconds get() = recorder.elapsed
 
     val hearing get() = document.let { d -> listOf(d.unstructuredTail, d.livePartial).filter(String::isNotBlank).joinToString(" ") }
 
@@ -149,7 +168,7 @@ internal class NotesModel(
         NotesRecorder.State.IDLE -> if (paired) IDLE else "Pair your Mac in Chirp setup"
         NotesRecorder.State.STARTING -> "Connecting to Mac…"
         NotesRecorder.State.RECORDING -> organizingText ?: if (structuring == Structuring.Running) "Updating notes…" else "Listening…"
-        NotesRecorder.State.PAUSED -> recorder.error?.let { "Couldn’t resume: $it" } ?: organizingText ?: "Paused · $elapsedText"
+        NotesRecorder.State.PAUSED -> recorder.error?.let { "Couldn’t resume: $it" } ?: organizingText ?: "Paused"
         NotesRecorder.State.STOPPING -> (organizingText ?: "Finishing…") + (revision.let { recorder.stoppingElapsed }?.takeIf { it >= 3000 }?.let { " · ${it / 1000} s" } ?: "")
         NotesRecorder.State.STOPPED -> organizingText ?: "Stopped · Record adds to these notes"
         NotesRecorder.State.ERROR -> recorder.error?.let { error ->
@@ -242,13 +261,69 @@ internal class NotesModel(
         }
     }
 
+    /** With "Keep notes on this phone": the session is kept (replacing its earlier copy) and counts as saved. */
+    fun keepSession(): Boolean {
+        val kept = sessions?.takeIf { it.enabled } ?: return false
+        if (recorder.state.active || !hasContent) return false
+        val what = key()
+        if (keptKey != what) {
+            val document = recorder.document
+            val json = document.toJson().put("elapsed", recorder.elapsed); val title = document.title().removePrefix("# ")
+            background { kept.put(document.uid, title, json) }
+            keptKey = what
+        }
+        savedKey = what; recovered = null
+        journal?.delete()
+        revision++
+        return true
+    }
+
+    fun loadRecent() { val kept = sessions ?: return; scope.launch { var list = emptyList<NotesSessionEntry>(); io { list = kept.entries() }; recent = list } }
+
+    /** Opens a kept session in place of the current notes (kept first when that is on). */
+    fun open(entry: NotesSessionEntry) {
+        if (state.active) return
+        keepSession()
+        val document = try { NotesDocument.fromJson(entry.document) } catch (_: Exception) { message = "Couldn’t open these notes"; return }
+        recorder.restore(document, entry.document.optDouble("elapsed", 0.0))
+        message = null; recovered = null
+        savedKey = key(); keptKey = savedKey
+        journal?.delete()
+        revision++
+    }
+
+    fun deleteKept(entry: NotesSessionEntry) {
+        val kept = sessions ?: return
+        recent = recent.filter { it.id != entry.id }
+        if (entry.id == recorder.document.uid) keptKey = null
+        background { kept.delete(entry.id) }
+    }
+
+    /** The screen came into or went out of sight (the activity's start and stop). */
+    fun visible(on: Boolean) { visible = on; updateQuiet() }
+
+    private fun updateQuiet() {
+        val now = !visible && store.notesBatterySaver
+        if (now == quiet) return
+        quiet = now; recorder.quiet = now; counter?.quiet(now)
+        // Out of sight: nothing more to do. Back: the editor, partial line and clock catch up at once.
+        if (!now) sync()
+        retick()
+        if (recorder.state.active) NotesControls.publish(app, this)
+    }
+
+    private fun retick() {
+        ticker?.cancel()
+        ticker = if (inForeground && !quiet) scope.launch { while (isActive) { delay(1000); elapsed = recorder.elapsed; revision++ } } else null
+    }
+
     fun organize() { message = null; recorder.organize() }
     fun undo() = recorder.undoOrganize()
 
     /** New: an empty document (only while not recording). */
     fun clear() {
         if (state.active) return
-        recorder.reset(); field = TextFieldValue(""); message = null; elapsed = 0.0; recovered = null; savedKey = null
+        recorder.reset(); field = TextFieldValue(""); message = null; elapsed = 0.0; recovered = null; savedKey = null; keptKey = null
         journal?.delete()
     }
 
@@ -265,10 +340,16 @@ internal class NotesModel(
     private fun reportFocus() = recorder.editorFocus(
         inTail = focused && recorder.document.touchesTail(field.selection.min, field.selection.max), composing = field.composition != null)
 
-    /** Replays AI changes onto the editor, keeping the caret where the user left it. */
+    /**
+     * Replays AI changes onto the editor, keeping the caret where the user left it. With the battery saver on and the
+     * screen off, only the work that matters off screen runs (state, notification, recovery copy, service); the editor
+     * and the clock catch up when the screen is back.
+     */
     private fun sync() {
-        val changes = recorder.takePendingChanges()
-        if (!editing) {
+        val quiet = quiet
+        val changes = if (quiet) emptyList() else recorder.takePendingChanges()
+        counter?.let { if (quiet) it.skipped++ else it.updates++ }
+        if (!quiet && !editing) {
             var value = field
             for (change in changes) {
                 val composition = value.composition?.takeIf { it.max <= change.start }
@@ -278,22 +359,26 @@ internal class NotesModel(
             if (value.text != text) value = TextFieldValue(text, TextRange(value.selection.start.coerceAtMost(text.length), value.selection.end.coerceAtMost(text.length)))
             if (value != field) field = value
         }
-        elapsed = recorder.elapsed
+        if (!quiet) elapsed = recorder.elapsed
         val state = recorder.state
         val commits = recorder.document.segments.size
         val stateChanged = state != published
         if (stateChanged) { published = state; NotesControls.publish(app, this) }
+        val aiChanged = if (quiet) recorder.pendingCount != pendingSeen else changes.isNotEmpty()
+        pendingSeen = recorder.pendingCount
         // At once after a commit, an AI change or a state change; otherwise at most every 2 s.
-        keep(now = changes.isNotEmpty() || commits != committedCount || stateChanged)
+        keep(now = aiChanged || commits != committedCount || stateChanged)
         committedCount = commits
         val active = state.active
         if (active != inForeground) {
             inForeground = active; foreground(active)
-            ticker?.cancel()
-            ticker = if (active) scope.launch { while (isActive) { delay(1000); elapsed = recorder.elapsed; revision++ } } else null
+            if (active) counter = NotesSessionCounter(SystemClock::uptimeMillis, recorder, store.notesBatterySaver).also { it.quiet(quiet) }
+            else { counter?.let { c -> timings?.let { log -> val t = c.finish(System.currentTimeMillis()); background { log.record(t) } } }; counter = null }
+            retick()
             if (!active) client?.let(ChirpNetwork::release)
         }
-        revision++
+        if (stateChanged && state == NotesRecorder.State.STOPPED) keepSession()
+        if (!quiet) revision++
     }
 
     /** The recovery copy follows the notes while they are unsaved, and goes once they are saved or empty. */
@@ -303,7 +388,8 @@ internal class NotesModel(
     fun export() = document.exportMarkdown()
 
     override fun onCleared() {
-        // Swiped away from Recents is not a discard: the recovery copy stays for next time.
+        // Swiped away from Recents is not a discard: the recovery copy (or the kept session) stays for next time.
+        keepSession()
         journal?.flush()
         NotesControls.release(app, this)
         recorder.onChange = null

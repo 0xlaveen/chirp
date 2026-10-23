@@ -28,7 +28,7 @@ class NotesService : Service() {
         }
         try {
             val session = NotesControls.session
-            startForeground(ID, notification(this, session?.state == NotesRecorder.State.PAUSED, session?.elapsed ?: 0.0),
+            startForeground(ID, notification(this, session?.state == NotesRecorder.State.PAUSED, session?.recordedSeconds ?: 0.0),
                 ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE)
         } catch (_: RuntimeException) {
             // Not allowed now (no microphone permission, or not started from the visible screen): recording goes on
@@ -56,12 +56,13 @@ class NotesService : Service() {
         }
 
         /** Re-posts the running service's notification (paused or recording); null removes it. */
-        fun update(context: Context, paused: Boolean?, elapsed: Double) {
+        fun update(context: Context, paused: Boolean?, elapsed: Double, saver: Boolean = false) {
             val manager = context.getSystemService(NotificationManager::class.java)
-            try { if (paused == null) manager.cancel(ID) else manager.notify(ID, notification(context, paused, elapsed)) } catch (_: RuntimeException) { }
+            try { if (paused == null) manager.cancel(ID) else manager.notify(ID, notification(context, paused, elapsed, saver)) } catch (_: RuntimeException) { }
         }
 
-        fun notification(context: Context, paused: Boolean = false, elapsed: Double = 0.0): Notification {
+        /** [saver]: the battery saver is skipping screen work; the notes catch up the moment the screen is back. */
+        fun notification(context: Context, paused: Boolean = false, elapsed: Double = 0.0, saver: Boolean = false): Notification {
             val manager = context.getSystemService(NotificationManager::class.java)
             manager.createNotificationChannel(NotificationChannel(CHANNEL, context.getString(R.string.notes_channel), NotificationManager.IMPORTANCE_LOW)
                 .apply { setShowBadge(false) })
@@ -72,6 +73,7 @@ class NotesService : Service() {
             return Notification.Builder(context, CHANNEL)
                 .setSmallIcon(R.drawable.ic_mic)
                 .setContentTitle(context.getString(if (paused) R.string.notes_paused else R.string.notes_recording))
+                .apply { if (saver) setSubText(context.getString(R.string.notes_saver)) }
                 .setContentIntent(open)
                 .addAction(if (paused) control(ACTION_RESUME, 2, R.drawable.ic_record, R.string.notes_resume)
                     else control(ACTION_PAUSE, 3, R.drawable.ic_pause, R.string.notes_pause))

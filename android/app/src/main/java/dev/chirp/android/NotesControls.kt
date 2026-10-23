@@ -11,7 +11,10 @@ import android.service.quicksettings.TileService
 internal object NotesControls {
     interface Session {
         val state: NotesRecorder.State
-        val elapsed: Double
+        /** Audio recorded so far, seconds (the notification's running time). */
+        val recordedSeconds: Double
+        /** The battery saver is skipping screen work (the screen is off). */
+        val quiet: Boolean
         fun pause()
         fun resume()
         fun stop()
@@ -35,7 +38,7 @@ internal object NotesControls {
     /** The session's state changed: re-post the notification and ask the tile to redraw. */
     fun publish(context: Context, from: Session) {
         val state = from.state
-        if (state.active) { session = from; NotesService.update(context, state == NotesRecorder.State.PAUSED, from.elapsed) }
+        if (state.active) { session = from; NotesService.update(context, state == NotesRecorder.State.PAUSED, from.recordedSeconds, from.quiet) }
         else if (session === from) { session = null; NotesService.update(context, null, 0.0) }
         else return
         refreshTile(context)

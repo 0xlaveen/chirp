@@ -57,3 +57,21 @@ Setup → **Diagnostics** now shows content-free session timings (the last 50 se
 - subjective notes on microphone quality and smoothness.
 
 Run the session once on Wi-Fi and once on LTE and record each separately: clear the timings between them. Report only what was measured; mark anything skipped as not verified.
+
+## 6. Notes battery
+
+Live Notes records with the screen off for a whole meeting, so measure it separately. Use synthetic speech (a podcast or a read-aloud paragraph playing near the phone), never a real meeting.
+
+```sh
+cd android
+MODE=notes NOTES_MINUTES=20 NETWORK=wifi scripts/battery-session.sh
+```
+
+It resets batterystats, asks you to start **Record** in Notes and turn the screen off for the given minutes, then to turn it on, check the notes caught up at once, and **Stop**. Then:
+
+1. Run it twice, with **Save battery while the screen is off** on and then off (Chirp settings → Privacy & history → Notes, or the gear on the Notes screen), at the same charge, brightness and network.
+2. Read the UID `dev.chirp.android` estimated mAh from each `notes.txt` and note it per minute.
+3. Copy the newest **Chirp settings → About → Diagnostics → Notes sessions** line for each run (minutes recorded and off, segments, gaps, notes calls, screen updates run and skipped). With the saver on, "skipped" should be far larger than "updates" and the mAh per minute lower; segments and notes calls should match the saver-off run.
+4. Check that the notes were current the moment the screen came on, with no catch-up delay, and that `dumpsys power | grep -i wake` showed no Chirp wake lock during the run.
+
+Record both rows in [bench.md](bench.md). Emulator numbers are not battery truth; leave the rows out until the phone run is done.

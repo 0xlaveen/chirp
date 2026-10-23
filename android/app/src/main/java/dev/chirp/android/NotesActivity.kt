@@ -31,7 +31,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.foundation.clickable
 import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
@@ -73,7 +77,9 @@ open class NotesActivity : ComponentActivity() {
         }
     }
     override fun onNewIntent(intent: Intent) { super.onNewIntent(intent); handle(intent) }
-    override fun onStart() { super.onStart(); model.refresh() }
+    override fun onStart() { super.onStart(); model.visible(true); model.refresh() }
+    // Screen off or another app in front: the battery saver skips screen work until this is visible again.
+    override fun onStop() { model.visible(false); super.onStop() }
     // The microphone service may only start from a visible screen: the tile's Record waits until this one is.
     override fun onResume() { super.onResume(); if (recordOnResume) { recordOnResume = false; if (!model.state.active) record() } }
 
@@ -101,7 +107,7 @@ open class NotesActivity : ComponentActivity() {
     internal fun leave(discard: Boolean) {
         when {
             model.state.active -> moveTaskToBack(true)
-            discard || !model.dirty -> { model.clear(); finish() }
+            discard || !model.dirty || model.keepSession() -> { model.clear(); finish() }
         }
     }
 
@@ -155,7 +161,9 @@ internal fun NotesScreen(model: NotesModel, record: () -> Unit, copy: () -> Unit
     var confirm by remember { mutableStateOf<Boolean?>(null) }
     var renaming by remember { mutableStateOf(false) }
     var settings by remember { mutableStateOf(false) }
-    BackHandler { if (!model.state.active && model.dirty) confirm = true else leave(false) }
+    var recent by remember { mutableStateOf(false) }
+    var pendingOpen by remember { mutableStateOf<NotesSessionEntry?>(null) }
+    BackHandler { if (!model.state.active && model.dirty && !model.keeps) confirm = true else leave(false) }
     confirm?.let { leaving ->
         AlertDialog({ confirm = null }, title = { Text("Discard these notes?") },
             text = { Text("They aren’t saved. Save, Copy or Share them first to keep them.") },
@@ -171,7 +179,19 @@ internal fun NotesScreen(model: NotesModel, record: () -> Unit, copy: () -> Unit
             dismissButton = { TextButton({ renaming = false }) { Text("Cancel") } })
     }
     if (settings) ModalBottomSheet({ settings = false }) {
-        Column(Modifier.padding(start = 16.dp, end = 16.dp, bottom = 24.dp)) { NotesSettings() }
+        Column(Modifier.padding(start = 16.dp, end = 16.dp, bottom = 24.dp)) { NotesSettings(title = "Notes settings") }
+    }
+    if (recent) ModalBottomSheet({ recent = false }) {
+        RecentNotes(model, open = { entry ->
+            recent = false
+            if (model.dirty && !model.keeps) pendingOpen = entry else model.open(entry)
+        })
+    }
+    pendingOpen?.let { entry ->
+        AlertDialog({ pendingOpen = null }, title = { Text("Open other notes?") },
+            text = { Text("The notes on screen aren’t saved and will be discarded.") },
+            confirmButton = { TextButton({ pendingOpen = null; model.open(entry) }) { Text("Discard and open") } },
+            dismissButton = { TextButton({ pendingOpen = null }) { Text("Keep") } })
     }
     val action = DictationAction.forStatus(model.status)
     Surface(Modifier.fillMaxSize()) {
@@ -186,6 +206,9 @@ internal fun NotesScreen(model: NotesModel, record: () -> Unit, copy: () -> Unit
                             Text(model.title, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface, maxLines = 1)
                         }
                     }
+                    if (model.keeps) IconButton({ model.loadRecent(); recent = true }, enabled = !model.state.active) {
+                        Icon(painterResource(R.drawable.ic_history), "Recent notes")
+                    }
                     IconButton({ settings = true }) { Icon(painterResource(R.drawable.ic_settings), "Notes settings") }
                 }
                 if (model.retained) StatusBanner(StatusKind.Error, stringResource(R.string.debug_retention))
@@ -196,6 +219,9 @@ internal fun NotesScreen(model: NotesModel, record: () -> Unit, copy: () -> Unit
                     Column(Modifier.weight(1f)) {
                         if (model.state.active || model.elapsed > 0) Text(model.elapsedText, style = MaterialTheme.typography.titleMedium.copy(fontFeatureSettings = "tnum"))
                         Text(model.status, Modifier.semantics { liveRegion = LiveRegionMode.Polite }, style = MaterialTheme.typography.bodyMedium)
+                        // Sound is arriving: a small input meter while the microphone is open.
+                        if (model.recording) LinearProgressIndicator({ kotlin.math.sqrt(model.level * 8).toFloat().coerceIn(0f, 1f) },
+                            Modifier.padding(top = 4.dp).width(96.dp).clearAndSetSemantics { }, drawStopIndicator = {})
                     }
                     if (action != null) TextButton({ act(action) }) { Text(action.label) }
                 }
@@ -220,9 +246,10 @@ internal fun NotesScreen(model: NotesModel, record: () -> Unit, copy: () -> Unit
                     OutlinedButton(copy, Modifier.weight(1f), enabled = model.hasContent) { Text("Copy") }
                     OutlinedButton(share, Modifier.weight(1f), enabled = model.hasContent) { Text("Share") }
                     OutlinedButton(save, Modifier.weight(1f), enabled = model.hasContent) { Text("Save") }
-                    TextButton({ if (model.dirty) confirm = false else model.clear() }, enabled = !model.state.active && (model.hasContent || model.document.segments.isNotEmpty())) { Text("New") }
+                    TextButton({ if (model.dirty && !model.keeps) confirm = false else { model.keepSession(); model.clear() } }, enabled = !model.state.active && (model.hasContent || model.document.segments.isNotEmpty())) { Text("New") }
                 }
                 Text(when {
+                    model.keeps -> "Kept encrypted on this phone in Recent notes when you stop or leave. Save, Copy or Share to take them elsewhere."
                     model.hasContent && !model.dirty -> "Saved. Changes from here on are not, until you Save again."
                     model.recoveryOn -> "Not saved until you Save, Copy or Share. Until then a recovery copy stays encrypted on this phone."
                     else -> "Not saved: these notes live only on this screen until you Save, Copy or Share them."
@@ -240,6 +267,25 @@ private fun RecordButton(model: NotesModel, onClick: () -> Unit) {
         Icon(painterResource(if (recording) R.drawable.ic_stop else R.drawable.ic_record), null, Modifier.size(20.dp))
         Spacer(Modifier.width(8.dp))
         Text(if (recording) "Stop" else "Record")
+    }
+}
+
+@Composable
+private fun RecentNotes(model: NotesModel, open: (NotesSessionEntry) -> Unit) {
+    val now = System.currentTimeMillis()
+    Column(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text("Recent notes", Modifier.semantics { heading() }, style = MaterialTheme.typography.titleLarge)
+        if (model.recent.isEmpty()) Text("Notes you stop or leave are kept here, encrypted on this phone.", style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant)
+        LazyColumn(Modifier.fillMaxWidth().heightIn(max = 480.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            items(model.recent, key = { it.id }) { entry ->
+                val (age, spoken) = historyAge(now, entry.time)
+                ListItem(headlineContent = { Text(entry.title, maxLines = 1) }, supportingContent = { Text("$age · ${entry.chars} characters") },
+                    modifier = Modifier.clickable(onClickLabel = "Open") { open(entry) }.semantics { stateDescription = spoken },
+                    trailingContent = { IconButton({ model.deleteKept(entry) }) { Icon(painterResource(R.drawable.ic_delete), "Delete ${entry.title}") } },
+                    colors = ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.surfaceContainer))
+            }
+        }
     }
 }
 
