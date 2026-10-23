@@ -42,6 +42,8 @@ final class SessionCoordinator: ObservableObject {
     @Published private(set) var notice = ""
     @Published private(set) var debugRetention = false
     @Published private(set) var canUseRaw = false
+    /// Long dictation: what earlier segments contributed, shown before the live segment's `text`.
+    @Published private(set) var earlierText = ""
     /// Why the last attempt to reach the Mac failed; nil once it answers.
     @Published private(set) var connectionIssue: ConnectionIssue?
     /// Chirp Keyboard has opened with Full Access at least once (see `KeyboardSetupStore`).
@@ -88,6 +90,13 @@ final class SessionCoordinator: ObservableObject {
     private var historyID: UUID?
     /// Published to the keyboard so it can explain the last failure.
     private var lastError: DiagnosticCode?
+    // Long dictation (RollingDictation.swift): `stream` is always the live segment.
+    private var utteranceOptions: StartOptions?
+    private var segmentIndex = 0
+    private var finishing: [FinishingSegment] = []
+    private var landed: [(text: String, raw: String)] = []
+    private var heldLive: (kind: BridgeResultKind, text: String, raw: String?)?
+    private var liveFinal: (result: FinalResult, kept: Bool)?
     private var startingUtterance = false
     private let signal = DarwinSignal(name: DarwinSignal.bridgeChanged)
 
@@ -334,6 +343,7 @@ final class SessionCoordinator: ObservableObject {
             let limit = profiles.first { $0.id == preferences.styleID }?.maxPromptChars ?? 4000
             options.correctionPrompt = CorrectionProfile.clampPrompt(prompt, limit: min(4000, limit))
         }
+        utteranceOptions = options
         let session = makeStream(config, options, http)
         stream = session
         do {
@@ -343,23 +353,112 @@ final class SessionCoordinator: ObservableObject {
             } }, onLimit: { [weak self] in Task { @MainActor in
                 guard let self, self.armed, self.lifecycle == ticket, self.utterance == id else { return }
                 self.stopDictation()
+            } }, onCut: { [weak self] in Task { @MainActor in
+                guard let self, self.armed, self.lifecycle == ticket, self.utterance == id else { return }
+                self.rollOver()
             } })
         } catch { endSession(code: .interrupted); throw SessionFailure.audio }
         setPhase(.connecting)
         guard armed, utterance == id else { throw SessionFailure.storage }
-        eventTask = Task { [weak self] in
-            await session.open()
-            for await event in session.events {
-                guard !Task.isCancelled, let self, self.utterance == id, self.stream === session, self.armed else { return }
-                self.receive(event, id: id)
-            }
-        }
+        eventTask = listen(to: session, id: id)
         utteranceLimit = Task { [weak self] in
-            // Leave one second for converter delay and scheduling before the protocol's hard 120s cap.
-            try? await Task.sleep(for: .seconds(119))
+            // Each segment stays under the protocol's 120 s cap; the whole dictation stops just under 10 minutes.
+            try? await Task.sleep(for: .seconds(RollingDictation.maxTotal - 1))
             guard !Task.isCancelled, self?.utterance == id else { return }
             self?.stopDictation()
         }
+    }
+
+    private func listen(to session: StreamSession, id: UUID) -> Task<Void, Never> {
+        Task { [weak self] in
+            await session.open()
+            for await event in session.events {
+                guard !Task.isCancelled, let self, self.utterance == id, self.armed else { return }
+                if self.stream === session { self.receive(event, id: id) }
+                else if let segment = self.finishing.first(where: { $0.stream === session }) { self.receive(event, finishing: segment, id: id) }
+                else { return }
+            }
+        }
+    }
+
+    /// Long dictation: at a pause the microphone moves to a new segment; the old one finishes on its own.
+    func rollOver() {
+        guard armed, let id = utterance, let live = stream, ready, !stopRequested, let config, let options = utteranceOptions,
+              finishing.count < RollingDictation.maxFinishing else { return }
+        let next = makeStream(config, options, http)
+        let old = FinishingSegment(index: segmentIndex, stream: live, partial: text, lastSequence: lastServerSequence, task: eventTask)
+        finishing.append(old)
+        segmentIndex += 1
+        stream = next; ready = false; lastServerSequence = -1; text = ""; raw = ""; words = []
+        updateEarlierText()
+        audio.cut(to: next)
+        eventTask = listen(to: next, id: id)
+        Task { await live.stop() }
+        old.deadline = Task { [weak self, weak old] in
+            try? await Task.sleep(for: .seconds(20))
+            guard !Task.isCancelled, let self, let old, self.utterance == id else { return }
+            old.fail(); self.record(.timeout); self.drain(id: id)
+        }
+    }
+
+    private func receive(_ event: StreamEvent, finishing segment: FinishingSegment, id: UUID) {
+        switch event {
+        case .closed(let reason): if reason != nil { segment.fail() }
+        case .message(let message):
+            switch message {
+            case .partial(let seq, let value, _, _):
+                guard seq > segment.lastSequence, segment.outcome == nil else { return }
+                segment.lastSequence = seq; segment.partial = value
+                if segment === finishing.first { publishResult(.partial, text: joiner() + value, segment: segment.index) }
+            case .correcting(let seq, let value, _, _):
+                guard seq > segment.lastSequence else { return }
+                segment.lastSequence = seq; segment.raw = value
+            case .final(let result): if segment.outcome == nil { segment.outcome = .final(result) }
+            case .error(let code, _): record(DiagnosticCode.server(code)); segment.fail()
+            default: break
+            }
+        }
+        updateEarlierText()
+        drain(id: id)
+    }
+
+    /// Lands finished segments oldest first, then releases what the next one has held back.
+    private func drain(id: UUID) {
+        guard utterance == id, armed else { return }
+        while let first = finishing.first, let outcome = first.outcome {
+            finishing.removeFirst(); first.close()
+            let piece: (text: String, raw: String, kept: Bool)?
+            switch outcome {
+            case .final(let result): piece = result.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : (result.text, result.raw, false)
+            case .kept(let heard): piece = (heard, heard, true)
+            case .nothing: piece = nil
+            }
+            guard let piece else { continue }
+            let separator = joiner()
+            landed.append((piece.text, piece.raw))
+            publishResult(.final, text: separator + piece.text, raw: separator + piece.raw, kept: piece.kept, segment: first.index)
+            if piece.kept { notice = "Part of the dictation was lost. Kept what was heard." }
+        }
+        updateEarlierText()
+        if let next = finishing.first {
+            if !next.partial.isEmpty { publishResult(.partial, text: joiner() + next.partial, segment: next.index) }
+        } else if let held = liveFinal {
+            liveFinal = nil; complete(held.result, id: id, kept: held.kept)
+        } else if let held = heldLive {
+            heldLive = nil; publishLive(held.kind, text: held.text, raw: held.raw)
+        }
+    }
+
+    /// The separator before the next segment: none for the first, else a space unless one is there.
+    private func joiner() -> String { LongText.joiner(after: LongText.join(landed.map(\.text))) }
+    private func updateEarlierText() {
+        earlierText = LongText.join(landed.map(\.text) + finishing.map { $0.raw.isEmpty ? $0.partial : $0.raw })
+    }
+    /// The live segment's results wait while earlier segments are still finishing, so text lands in order.
+    private func publishLive(_ kind: BridgeResultKind, text value: String, raw: String? = nil, kept: Bool = false) {
+        guard finishing.isEmpty else { heldLive = (kind, value, raw); return }
+        let separator = joiner()
+        publishResult(kind, text: separator + value, raw: raw.map { separator + $0 }, kept: kept, segment: segmentIndex)
     }
 
     func stopDictation() {
@@ -411,7 +510,7 @@ final class SessionCoordinator: ObservableObject {
             if reason != nil {
                 if phase == .correcting, !raw.isEmpty {
                     lastError = .unreachable
-                    complete(FinalResult(text: raw), id: id)
+                    finishLive(FinalResult(text: raw), id: id)
                     notice = "Connection lost during clean-up. Kept original."
                     record(.unreachable)
                 } else {
@@ -430,14 +529,14 @@ final class SessionCoordinator: ObservableObject {
             case .partial(let seq, let value, _, let timings):
                 guard ready, !stopRequested, seq > lastServerSequence else { return }
                 lastServerSequence = seq; text = value; words = timings ?? []
-                publishResult(.partial, text: value)
+                publishLive(.partial, text: value)
             case .correcting(let seq, let value, _, let timings):
                 guard ready, stopRequested, seq > lastServerSequence else { return }
                 lastServerSequence = seq; raw = value; text = value; words = timings ?? []
-                setPhase(.correcting); publishResult(.correcting, text: value, raw: value); startDeadline(seconds: 12)
+                setPhase(.correcting); publishLive(.correcting, text: value, raw: value); startDeadline(seconds: 12)
             case .final(let result):
                 guard ready, stopRequested else { return }
-                complete(result, id: id)
+                finishLive(result, id: id)
             case .error(let code, _): keepHeard(id: id, code: DiagnosticCode.server(code), reason: Self.serverMessage(code))
             case .unknown: break
             }
@@ -451,8 +550,13 @@ final class SessionCoordinator: ObservableObject {
         lastError = code; record(code)
         let heard = text
         if ready, !heard.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            complete(FinalResult(text: heard, raw: heard), id: id, kept: true)
+            finishLive(FinalResult(text: heard, raw: heard), id: id, kept: true)
             notice = reason + " Kept what was heard."
+        } else if !landed.isEmpty || !finishing.isEmpty {
+            // Earlier segments still land; the dictation ends with what they heard.
+            if let live = stream { Task { await live.cancel() } }
+            finishLive(FinalResult(text: ""), id: id)
+            notice = reason
         } else {
             let previous = stream
             clearUtterance(error: SessionFailure.noResult)
@@ -474,25 +578,37 @@ final class SessionCoordinator: ObservableObject {
         }
     }
 
+    /// The live (last) segment finished; it completes once every earlier segment has landed.
+    private func finishLive(_ result: FinalResult, id: UUID, kept: Bool = false) {
+        guard finishing.isEmpty else {
+            liveFinal = (result, kept); audio.discard(); deadline?.cancel(); utteranceLimit?.cancel(); return
+        }
+        complete(result, id: id, kept: kept)
+    }
+
     private func complete(_ result: FinalResult, id: UUID, kept: Bool = false) {
         guard utterance == id, armed else { return }
-        guard !result.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+        let empty = result.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        guard !empty || !landed.isEmpty else {
             cancelDictation(); notice = SessionFailure.noResult.localizedDescription; return
         }
         audio.discard(); deadline?.cancel(); utteranceLimit?.cancel()
         let finishedStream = stream; stream = nil
         if let finishedStream { Task { await finishedStream.close() } }
-        text = result.text; raw = result.raw; words = result.words ?? []
-        canUseRaw = result.canUseRaw
+        let separator = empty ? "" : joiner()
+        text = empty ? "" : result.text; raw = empty ? "" : result.raw; words = result.words ?? []
+        canUseRaw = !empty && result.canUseRaw
         setPhase(.finished)
         guard armed, utterance == id else { return }
-        publishResult(.final, text: result.text, raw: result.raw, kept: kept)
+        if !empty { publishResult(.final, text: separator + result.text, raw: separator + result.raw, kept: kept, segment: segmentIndex) }
         guard armed, utterance == id else { return }
+        let whole = LongText.join(landed.map(\.text) + (empty ? [] : [result.text]))
+        let wholeRaw = LongText.join(landed.map(\.text) + (empty ? [] : [result.raw]))
         if !privateUtterance, !preferences.privacyMode {
-            do { historyID = try services?.history.record(text: result.text, raw: result.raw, corrected: result.corrected)?.id }
+            do { historyID = try services?.history.record(text: whole, raw: wholeRaw, corrected: result.corrected)?.id }
             catch { notice = SessionFailure.storage.localizedDescription; record(.storage) }
         }
-        if companion == id { copyText(result.text); companion = nil; notice = "Copied final text." }
+        if companion == id { copyText(whole); companion = nil; notice = "Copied final text." }
         else { notice = result.corrected ? "Cleaned. Copy or share when ready." : "Finished. Copy or share when ready." }
         for waiter in waiters.removeValue(forKey: id) ?? [] { waiter.resume() }
         rawExpiry = Task { [weak self] in
@@ -521,18 +637,24 @@ final class SessionCoordinator: ObservableObject {
         audio.discard(); stream = nil; utterance = nil; companion = nil; utteranceSource = nil
         text = ""; raw = ""; words = []; canUseRaw = false; ready = false; stopRequested = false
         sequence = 0; lastServerSequence = -1; historyID = nil
+        for segment in finishing { segment.cancel() }
+        finishing = []; landed = []; segmentIndex = 0; heldLive = nil; liveFinal = nil; earlierText = ""; utteranceOptions = nil
         let pending = waiters; waiters.removeAll()
         for group in pending.values { for waiter in group { waiter.resume(throwing: error) } }
     }
     func useRaw() {
         guard canUseRaw, phase == .finished else { return }
-        text = raw; canUseRaw = false; publishResult(.raw, text: raw, raw: raw)
+        text = raw; canUseRaw = false
+        let separator = joiner(); publishResult(.raw, text: separator + raw, raw: separator + raw, segment: segmentIndex)
         if let historyID {
             do { _ = try services?.history.useRaw(id: historyID) }
             catch { notice = SessionFailure.storage.localizedDescription; record(.storage) }
         }
     }
-    func copy() { guard !text.isEmpty, phase == .finished else { return }; copyText(text); notice = "Copied." }
+    func copy() {
+        let whole = LongText.join(landed.map(\.text) + (text.isEmpty ? [] : [text]))
+        guard !whole.isEmpty, phase == .finished else { return }; copyText(whole); notice = "Copied."
+    }
 
     /// Cold setup and permission requests need Chirp on screen; an armed session starts from anywhere.
     var needsForegroundToStart: Bool { !armed && !appActive() }
@@ -578,13 +700,13 @@ final class SessionCoordinator: ObservableObject {
             signal.post()
         } catch { endSession(code: .storage) }
     }
-    private func publishResult(_ kind: BridgeResultKind, text: String, raw: String? = nil, kept: Bool = false) {
+    private func publishResult(_ kind: BridgeResultKind, text: String, raw: String? = nil, kept: Bool = false, segment: Int = 0) {
         guard let utterance, armed, let services else { return }
         sequence += 1
         do {
             try services.bridge.publish(BridgeResult(generation: generation, utteranceID: utterance, kind: kind,
                 text: text, raw: raw, sequence: sequence, createdAt: now(), expiresAt: now().addingTimeInterval(8),
-                kept: kept ? true : nil))
+                kept: kept ? true : nil, segment: segment == 0 ? nil : segment))
             signal.post()
         } catch { endSession(code: .storage) }
     }

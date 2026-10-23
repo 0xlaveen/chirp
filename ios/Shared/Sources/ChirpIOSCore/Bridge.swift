@@ -50,11 +50,14 @@ public struct BridgeResult: Codable, Sendable, Equatable, Identifiable {
     /// A final that is only what was heard before the connection failed (no clean-up). Optional so older
     /// mailboxes still decode.
     public var kept: Bool?
+    /// Long dictation: which segment this is (nil for the first). A segment's text starts with its separator.
+    public var segment: Int?
     public init(id: UUID = UUID(), generation: UUID, utteranceID: UUID, kind: BridgeResultKind, text: String,
-                raw: String? = nil, sequence: Int = 0, createdAt: Date = Date(), expiresAt: Date, kept: Bool? = nil) {
+                raw: String? = nil, sequence: Int = 0, createdAt: Date = Date(), expiresAt: Date, kept: Bool? = nil,
+                segment: Int? = nil) {
         self.id = id; self.generation = generation; self.utteranceID = utteranceID; self.kind = kind
         self.text = text; self.raw = raw; self.sequence = sequence; self.createdAt = createdAt; self.expiresAt = expiresAt
-        self.kept = kept
+        self.kept = kept; self.segment = segment
     }
 }
 
@@ -78,6 +81,8 @@ public final class SharedBridge: Sendable {
         var resultUtterance: UUID?
         var finalPublished = false
         var rawPublished = false
+        /// Long dictation: the segment whose results are being published. Optional so older mailboxes decode.
+        var segment: Int?
     }
     private let sealed: SealedStorage
     private let role: BridgeRole
@@ -153,12 +158,12 @@ public final class SharedBridge: Sendable {
             if let previous = d.state, previous.generation != state.generation {
                 try retire(previous.generation, in: &d)
                 d.commands = []; d.results = []; d.sequence = -1; d.resultUtterance = nil
-                d.finalPublished = false; d.rawPublished = false
+                d.finalPublished = false; d.rawPublished = false; d.segment = nil
             }
             if d.state?.utteranceID != state.utteranceID {
                 // Results for a previous utterance cannot cross an ownership boundary.
                 d.results = []; d.sequence = -1; d.resultUtterance = state.utteranceID
-                d.finalPublished = false; d.rawPublished = false
+                d.finalPublished = false; d.rawPublished = false; d.segment = nil
             }
             d.state = state
             if state.phase == .idle || state.phase == .failed { d.commands = []; d.results = [] }
@@ -213,6 +218,12 @@ public final class SharedBridge: Sendable {
             let state = try current(result.generation, d)
             guard state.utteranceID == result.utteranceID else { throw CoreError.foreignUtterance }
             guard result.sequence > d.sequence else { throw CoreError.replay }
+            let segment = result.segment ?? 0, published = d.segment ?? 0
+            if segment > published {
+                // The next segment of a long dictation opens only after this one's final, strictly in order.
+                guard segment == published + 1, d.finalPublished, result.kind != .raw else { throw CoreError.invalidState }
+                d.segment = segment; d.finalPublished = false; d.rawPublished = false
+            } else if segment < published { throw CoreError.invalidState }
             if d.finalPublished {
                 guard result.kind == .raw, !d.rawPublished else { throw CoreError.invalidState }
             } else if result.kind == .raw { throw CoreError.invalidState }
@@ -244,7 +255,7 @@ public final class SharedBridge: Sendable {
             var d = try pruned()
             if let state = d.state { try retire(state.generation, in: &d) }
             d.state = nil; d.commands = []; d.results = []; d.sequence = -1; d.resultUtterance = nil
-            d.finalPublished = false; d.rawPublished = false
+            d.finalPublished = false; d.rawPublished = false; d.segment = nil
             // Tombstones contain IDs/deadlines only; no command or transcript survives session end.
             try save(d)
         }

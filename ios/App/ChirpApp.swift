@@ -180,8 +180,8 @@ struct DictationView: View {
                         .buttonStyle(.borderedProminent)
                         .disabled(!model.paired || model.working).frame(minHeight: 44)
                 }
-                if !model.text.isEmpty {
-                    Text(model.text).font(.title3).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
+                if !shownText.isEmpty {
+                    Text(shownText).font(.title3).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
                         .padding().background(.quaternary, in: RoundedRectangle(cornerRadius: 16))
                         .accessibilityIdentifier("transcript")
                         .animation(reduceMotion ? nil : .easeOut(duration: 0.15), value: model.phase)
@@ -205,9 +205,11 @@ struct DictationView: View {
         }.navigationTitle("Chirp").controlSize(.large)
             .onAppear { if !model.paired || !model.keyboardReady { guide = true } }
     }
+    /// Long dictation shows the segments that already landed before the live one.
+    var shownText: String { LongText.join([model.earlierText, model.text].filter { !$0.isEmpty }) }
     @ViewBuilder var resultActions: some View {
         Button("Copy", systemImage: "doc.on.doc") { model.copy() }.buttonStyle(.bordered)
-        ShareLink(item: model.text) { Label("Share", systemImage: "square.and.arrow.up") }.buttonStyle(.bordered)
+        ShareLink(item: shownText) { Label("Share", systemImage: "square.and.arrow.up") }.buttonStyle(.bordered)
         if model.canUseRaw { Button("Use raw") { model.useRaw() }.accessibilityIdentifier("chirp.dictation.raw").buttonStyle(.bordered) }
     }
     var status: String {

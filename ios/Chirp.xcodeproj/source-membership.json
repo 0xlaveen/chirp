@@ -5,6 +5,7 @@
     "App/MicrophoneCapture.swift",
     "App/PairingScanner.swift",
     "App/PrivacyController.swift",
+    "App/RollingDictation.swift",
     "App/SessionCoordinator.swift",
     "App/SettingsViews.swift",
     "Intents/ChirpActivityAttributes.swift",
@@ -22,6 +23,7 @@
   ],
   "ChirpIOSTests": [
     "Tests/CaptureSinkTests.swift",
+    "Tests/LongDictationTests.swift",
     "Tests/SessionCoordinatorTests.swift"
   ],
   "ChirpIOSUITests": [

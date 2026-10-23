@@ -309,7 +309,7 @@ final class ChirpKeyboardViewController: UIInputViewController {
         }
         let event = TextEvent(id: result.id, generation: result.generation, utteranceID: result.utteranceID,
                               kind: kind, text: result.text, sequence: result.sequence,
-                              createdAt: result.createdAt, expiresAt: result.expiresAt)
+                              createdAt: result.createdAt, expiresAt: result.expiresAt, segment: result.segment ?? 0)
         guard let plan = policy.plan(event, context: context(), now: Date(), leaseUntil: leaseUntil,
                                      rawRequested: rawRequested) else { return }
         startPending = false

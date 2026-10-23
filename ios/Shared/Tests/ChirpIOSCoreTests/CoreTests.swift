@@ -168,6 +168,27 @@ struct HistoryTests {
 }
 
 struct BridgeTests {
+    @Test func longDictationSegmentsOpenOnlyAfterTheFinalAndInOrder() throws {
+        let root = try temporaryRoot(); defer { try? FileManager.default.removeItem(at: root) }
+        let clock = TestClock(), secrets = MemorySecretStore(), generation = UUID(), utterance = UUID()
+        let app = try SharedBridge(root: root, secrets: secrets, role: .app, now: clock.now)
+        try app.publish(BridgeState(generation: generation, phase: .listening, utteranceID: utterance, leaseUntil: clock.now() + 8))
+        var sequence = 0
+        func result(_ kind: BridgeResultKind, segment: Int?) -> BridgeResult {
+            sequence += 1
+            return BridgeResult(generation: generation, utteranceID: utterance, kind: kind, text: "x", sequence: sequence,
+                                createdAt: clock.now(), expiresAt: clock.now() + 10, segment: segment)
+        }
+        try app.publish(result(.partial, segment: nil))
+        #expect(throws: CoreError.invalidState) { try app.publish(result(.partial, segment: 1)) }
+        try app.publish(result(.final, segment: nil))
+        #expect(throws: CoreError.invalidState) { try app.publish(result(.raw, segment: 1)) }
+        #expect(throws: CoreError.invalidState) { try app.publish(result(.partial, segment: 2)) }
+        try app.publish(result(.partial, segment: 1))
+        #expect(throws: CoreError.invalidState) { try app.publish(result(.partial, segment: nil)) }
+        try app.publish(result(.final, segment: 1))
+        try app.publish(result(.raw, segment: 1))
+    }
     @Test func encryptedConsumeReplayOrderingAndOwnership() throws {
         let root = try temporaryRoot(); defer { try? FileManager.default.removeItem(at: root) }
         let clock = TestClock(), secrets = MemorySecretStore(), generation = UUID(), utterance = UUID()

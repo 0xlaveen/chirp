@@ -87,10 +87,13 @@ public struct TextEvent: Sendable {
     public var sequence: Int
     public var createdAt: Date
     public var expiresAt: Date
+    /// Long dictation segment, 0 for the first.
+    public var segment: Int
     public init(id: UUID = UUID(), generation: UUID, utteranceID: UUID, kind: ResultKind,
-                text: String, sequence: Int = 0, createdAt: Date, expiresAt: Date) {
+                text: String, sequence: Int = 0, createdAt: Date, expiresAt: Date, segment: Int = 0) {
         self.id = id; self.generation = generation; self.utteranceID = utteranceID
         self.kind = kind; self.text = text; self.sequence = sequence; self.createdAt = createdAt; self.expiresAt = expiresAt
+        self.segment = segment
     }
 }
 
@@ -100,6 +103,8 @@ public struct OwnedInsertion: Sendable {
     public private(set) var ownedText = ""
     public private(set) var requiresRecovery = false
     public private(set) var isFinal = false
+    /// Long dictation: the segment this keyboard currently owns. Earlier segments' text is no longer ours.
+    public private(set) var segment = 0
     private var expected: CursorContext?
     private var startedAt = Date.distantFuture
     private var lastSequence = -1
@@ -134,6 +139,14 @@ public struct OwnedInsertion: Sendable {
               leaseUntil > now else { return nil }
         // The encrypted bridge publishes an increasing sequence per utterance.
         guard event.sequence > lastSequence else { return nil }
+        if event.segment > segment {
+            // The previous segment landed; the next one starts right after it and owns nothing yet. Only hand
+            // over where we left the editor, so landed text is never touched again.
+            guard isFinal, event.segment == segment + 1, event.kind != .raw, let expected, context == expected else {
+                invalidate(); return nil
+            }
+            segment = event.segment; ownedText = ""; isFinal = false; rawDeadline = nil; undoDeadline = nil
+        } else if event.segment < segment { return nil }
         guard !isFinal || (event.kind == .raw && rawRequested && now < (rawDeadline ?? .distantPast)) else {
             return nil
         }
