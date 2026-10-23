@@ -43,6 +43,8 @@ Open **Settings → Server → Manage Local Models…**, or **Set Up Models…**
 
 **Check for Updates** checks known repositories for current revisions without downloading weights. Older choices remain available. **Add Model** checks a public Hugging Face `owner/model` for the selected type. Speech models must use the 16 kHz Parakeet TDT MLX interface; correction requires quantized safetensors and an architecture supported by the installed MLX-LM library. Adding/checking models only reads metadata. A new architecture may require updating Chirp's locked runtime. Model code is never loaded from the repository.
 
+The window drives `chirp-server setup <action>`, which prints one JSON line per event. A helper that prints nothing (an older `chirp-server`), garbled lines, a missing or unlaunchable helper, or a job that hangs past its timeout ends in a red "Update chirp-server…" / "Install chirp-server…" / "Could not launch…" message and a **Retry** on the model row, never a crash.
+
 Choosing **Use Model** for correction configures managed local correction; applying it to the server enables the app's clean-up preference. **Use local correction** subsequently toggles that preference. Choices are stored atomically under `~/.config/chirp/` in `model-selection.json`; checked metadata lives in `model-catalog.json`. Server TOML, pairing tokens, and dotfiles are not rewritten. CLI `--model-dir` remains an explicit override; remove a service's override before applying a different speech selection in the app.
 
 The helper exposes `chirp-server setup status`, `setup refresh`, `setup add --model speech|cleanup --repository owner/model`, `setup download --model speech|cleanup --choice ID`, `setup select --model speech|cleanup --choice ID`, and `setup start` as newline-delimited JSON. Status is offline. Downloads/checks are explicit. Local setup is available only for a loopback server URL. `ChirpMac --models` opens the same window.
@@ -279,6 +281,7 @@ The HUD never takes focus, so status changes (Listening, Inserted, Copied, error
 | Status line "Server unreachable" (red) | The bird is dimmed; check that `chirp-server` is running (the Server submenu can copy the doctor command). |
 | Status line "DEBUG recordings kept" (red) | The server is running with opt-in debug retention; a red dot also sits on the bird. |
 | `Use raw` after a paste only copies | A pasted insertion can't be verified, so Chirp never posts a blind ⌘Z; it copies the raw text for a manual ⌘V. |
+| Chirp quit unexpectedly | Each crash leaves `~/Library/Logs/DiagnosticReports/ChirpMac-<date>.ips`; attach the newest one to the issue (it holds the stack, never text or audio). `log show --predicate 'subsystem == "dev.chirp.mac"' --last 30m` shows what Chirp was doing. |
 | Dictation stopped working while paused | Only the header switch resumes it; nothing else re-registers the hotkey while paused. A relaunch also resumes. |
 
 ## Develop and test
