@@ -16,7 +16,7 @@ public struct VoiceProfilesState: Equatable, Sendable {
 public enum VoiceProfilesText {
     public static let toggle = "Recognize saved voices"
     public static let explainer = "Chirp can remember what a person's voice sounds like as a numeric voiceprint, stored only in this Mac's Keychain. Voiceprints are biometric data: only save people who agreed. They never leave this Mac."
-    public static let empty = "No saved voices. In Live Notes, name a speaker, then choose Remember This Voice from their chip."
+    public static let empty = "No saved voices yet: name a speaker in Live Notes, then Remember This Voice."
     public static let forgetAll = "Forget All Voices…"
     public static func downloadPrompt(size: String) -> String {
         "Recognizing saved voices needs a \(size) on-device model, downloaded once. Audio and voiceprints never leave this Mac."
@@ -65,7 +65,7 @@ public final class VoiceProfilesView: NSStackView {
         super.init(frame: .zero)
         orientation = .vertical
         alignment = .leading
-        spacing = 6
+        spacing = 4
         widthAnchor.constraint(equalToConstant: SettingsForm.controlWidth).isActive = true
         toggle.target = self
         toggle.action = #selector(toggled)
@@ -87,10 +87,13 @@ public final class VoiceProfilesView: NSStackView {
         toggle.state = s.enabled || s.model.isDownloading ? .on : .off
         status.stringValue = VoiceProfilesText.status(s)
         status.textColor = s.model.isFailure ? .systemOrange : .secondaryLabelColor
+        // Only a download, a load or a failure needs a line of its own; on and off are the checkbox.
+        status.isHidden = s.model == .ready || s.model == .notDownloaded
         let changed = shown != s.profiles
         shown = s.profiles
         for v in list.arrangedSubviews { list.removeArrangedSubview(v); v.removeFromSuperview() }
-        if s.profiles.isEmpty { list.addArrangedSubview(SettingsForm.help(VoiceProfilesText.empty)) }
+        if s.profiles.isEmpty, s.enabled { list.addArrangedSubview(SettingsForm.help(VoiceProfilesText.empty)) }
+        list.isHidden = list.arrangedSubviews.isEmpty
         for p in s.profiles { addRow(p, compatible: p.model == s.modelID, locale: locale, timeZone: timeZone) }
         forgetAll.isHidden = s.profiles.isEmpty
         if changed { onResize?() }

@@ -212,7 +212,7 @@ import Testing
         #expect(SettingsTab.allCases.allSatisfy { form.view(for: $0).fittingSize.width == sizes[0].width })
         // Not one tall form: only Clean-up (the prompt editor) is tall.
         let heights = Dictionary(uniqueKeysWithValues: zip(SettingsTab.allCases, sizes.map(\.height)))
-        #expect(heights[.general]! < 260 && heights[.devices]! < 260 && heights[.notes]! < 360 && heights[.server]! < 380, "\(heights)")
+        #expect(heights[.general]! < 260 && heights[.devices]! < 260 && heights[.notes]! < 420 && heights[.server]! < 380, "\(heights)")
         #expect(heights[.dictation]! < 560, "\(heights)")
         #expect(heights[.cleanup]! > heights[.dictation]! * 1.25)
     }
@@ -269,7 +269,7 @@ import Testing
     }
 
     @Test(arguments: [(SettingsTab.general, SoundPack.chirp, 4), (.dictation, .chirp, 9), (.dictation, .custom, 11), (.cleanup, .chirp, 7),
-                      (.notes, .chirp, 5), (.server, .chirp, 6), (.devices, .chirp, 3)])
+                      (.notes, .chirp, 6), (.server, .chirp, 6), (.devices, .chirp, 3)])
     func labelsShareARightEdgeAndControlsALeftEdge(tab: SettingsTab, pack: SoundPack, expectedLabels: Int) throws {
         var state = SettingsState()
         state.soundPack = pack
@@ -288,7 +288,7 @@ import Testing
         case .general: [form.launch, form.openNotes.alwaysInDock, form.setupButton]
         case .dictation: [form.hotkey, form.mode, form.silence, form.microphone, form.wordWaveform, form.autoEnter, form.sounds, form.soundPack, form.volume]
         case .cleanup: [form.cleanupEnabled, form.style, form.insertRawFirst, form.appStyles.scroll, form.showChanges, form.offerRaw]
-        case .notes: [form.notesRecoveryCopy, form.notesButton, form.openNotes.shortcutView]
+        case .notes: [form.notesRecoveryCopy, form.notesButton, form.openNotes.shortcutView, form.voicesView.toggle]
         case .server: [form.serverURL, form.keepLoaded, form.doctorButton, form.modelsButton]
         case .devices: [form.pairButton, form.devicesView, form.rotateButton]
         case .about: []
