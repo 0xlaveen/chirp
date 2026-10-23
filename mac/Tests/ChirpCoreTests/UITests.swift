@@ -227,7 +227,8 @@ import Testing
             view.setFrameSize(size)
             view.layoutSubtreeIfNeeded()
             #expect(body.frame.minX >= 19.5 && abs(body.frame.minY - 20) < 0.5 && abs(size.height - body.frame.maxY - 20) < 0.5, "\(tab.title)")
-            #expect(abs(body.frame.midX - size.width / 2) < 0.5, "\(tab.title)")
+            // Centred to the point: an odd leftover width rounds half a point to one side.
+            #expect(abs(body.frame.midX - size.width / 2) <= 0.5, "\(tab.title)")
             if tab == widest { #expect(abs(body.frame.minX - 20) < 0.5 && abs(size.width - body.frame.maxX - 20) < 0.5) }
         }
     }
