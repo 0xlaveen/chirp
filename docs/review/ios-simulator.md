@@ -47,7 +47,7 @@ used to configure/select the extension.
 828F0310-54C8-4DD6-8D96-4C32F03448DB` passed the two app tests but the fixture
 attachment reported `Simulator shared App Group/Keychain unavailable`.
 The unsigned run log is
-`/Users/rex/.koi/run-logs/23f5689e-2493-4715-916c-857850746d7e-20261019T054429-75028.log`.
+`~/.koi/run-logs/23f5689e-2493-4715-916c-857850746d7e-20261019T054429-75028.log`.
 
 The default is now simulator ad-hoc signing: `CODE_SIGN_IDENTITY=-`,
 `CODE_SIGNING_ALLOWED=YES`, `CODE_SIGNING_REQUIRED=YES`, `CODE_SIGN_STYLE=Manual`,
@@ -97,7 +97,7 @@ limitations also produce a specific XCTSkip reason rather than a false pass.
 
 Successful full-gate job: started `2026-10-19T05:46:58Z`, exit 0 in 4m27s.
 Log:
-`/Users/rex/.koi/run-logs/23f5689e-2493-4715-916c-857850746d7e-20261019T054658-76537.log`.
+`~/.koi/run-logs/23f5689e-2493-4715-916c-857850746d7e-20261019T054658-76537.log`.
 Results in `ios/DerivedData/Logs/Test/`:
 
 - `Test-ChirpIOS-2026.10.19_12-47-04-+0700.xcresult` (iPhone unit)

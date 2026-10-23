@@ -30,7 +30,7 @@ Goal: `server/` is a uv-managed Python 3.13 package, `chirp_server`, that serves
    - Routes: `GET /v1/health`, `POST /v1/transcribe` (16 kHz mono PCM16 WAV; reuse or adapt Koi `voice/wav.py`), `WS /v1/stream`.
    - Bind to `127.0.0.1:7821` by default. `--root-path /chirp` serves behind `tailscale serve`.
    - Auth: a bearer header, or the first `auth` frame on the WS. Compare tokens in constant time. The token lives in `~/.config/chirp/token` (0600) and is generated on first run.
-   - `chirp-server pair --url https://mainframe.tail676ff2.ts.net/chirp` prints the `chirp://pair?...` string plus a terminal QR code (`qrcode` or `segno`).
+   - `chirp-server pair --url https://<your-mac>.<tailnet>.ts.net/chirp` prints the `chirp://pair?...` string plus a terminal QR code (`qrcode` or `segno`).
    - Limits: one engine with a queue, 120 s max, and the error codes from the protocol. Log `Tailscale-User-Login` presence (not the value) for diagnostics.
 5. **Correction** (`correction.py`):
    - Port the Koi `voice/cleanup.py` behaviour: an OpenAI-compatible chat endpoint, Koi's prompt adapted for dictation into arbitrary text fields, timeout, and fallback to raw on timeout, HTTP error, empty output or answer-shaped output.

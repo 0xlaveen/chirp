@@ -200,17 +200,17 @@ is **not** the Android reproduction result: the wrapper captured and printed eac
 individual command's exit status, including the intentional failure below.
 
 The run used a fresh worktree-local HOME and TMPDIR under
-`.koi/review-validation/`, `UV_CACHE_DIR=/Users/rex/.cache/uv`, and
-`GRADLE_USER_HOME=/Users/rex/.gradle`. Dependency resolution was offline. Python's
+`.koi/review-validation/`, `UV_CACHE_DIR=~/.cache/uv`, and
+`GRADLE_USER_HOME=~/.gradle`. Dependency resolution was offline. Python's
 temporary test files were also confined to the worktree. Android's existing
-`/Users/rex/.local/share/chirp-android/env.sh` selected the JDK/SDK. No server CLI,
+`~/.local/share/chirp-android/env.sh` selected the JDK/SDK. No server CLI,
 real token, model, device, TCC prompt, or external network was accessed; Android
 network unit tests use local ephemeral mock servers and synthetic credentials.
 
 | Directory | Exact command | Result |
 |---|---|---|
 | `server/` | `uv run --offline --locked ruff check .` | Exit 0; all checks passed. |
-| `server/` | `uv run --offline --locked pytest -q --basetemp=/Users/rex/Documents/Programming/chirp/.koi/worktrees/chirp-review-40730d/.koi/review-validation/pytest` | Exit 0; **63 passed, 2 deselected, 1 xfailed** in 0.82 s. R2-01 is the strict xfail; model tests were deselected. |
+| `server/` | `uv run --offline --locked pytest -q --basetemp=<checkout>/.koi/worktrees/chirp-review-40730d/.koi/review-validation/pytest` | Exit 0; **63 passed, 2 deselected, 1 xfailed** in 0.82 s. R2-01 is the strict xfail; model tests were deselected. |
 | `mac/` | `./scripts/test.sh --filter ReviewRound2Tests` | Exit 0; **3 tests, 3 known issues**, covering R2-02 twice and R2-03 once. Only injected fakes ran. |
 | `android/` | `./gradlew --offline testDebugUnitTest` | Exit 0; BUILD SUCCESSFUL. R2-07 is skipped by its assumption; the live-server test remains opt-in. |
 | `android/` | `CHIRP_REVIEW_REPRO=1 ./gradlew --offline testDebugUnitTest --tests dev.chirp.android.ReviewRound2Test --rerun-tasks` | **Exit 1, intentional:** 1 test, 1 failure, `ComparisonFailure` at `ReviewRound2Test.kt:32`; the deleted corrected text is not preserved. |

@@ -5,7 +5,7 @@ Status: agreed direction for the v1 build. Every performance number below is eit
 ## 1. Shape
 
 ```
- ┌──────────── Mac mini (mainframe, M5 Pro, 64 GB) ─────────────┐
+ ┌──────────── Mac mini (M5 Pro, 64 GB) ────────────────────────┐
  │                                                              │
  │  ChirpMac.app (Swift, menu bar)   chirp-server (Python, uv)  │
  │  hotkey → mic → WS ───────────►  127.0.0.1:7821             │
@@ -14,7 +14,7 @@ Status: agreed direction for the v1 build. Every performance number below is eit
  │                                    ├─ optional correction ───┼──► OpenAI-compatible LLM
  │                                    └─ debug retention (opt-in)│    (local LM Studio or remote,
  │                                                              │     off by default, final only)
- │  tailscale serve  https://mainframe.<tailnet>.ts.net/chirp ──┤
+ │  tailscale serve  https://<your-mac>.<tailnet>.ts.net/chirp ─┤
  └──────────────────────────────▲───────────────────────────────┘
                                 │ wss over the tailnet (WireGuard)
  ┌─────────────── Galaxy Z Fold 8 ──────┴────────────────────────┐
@@ -28,7 +28,7 @@ There is one speech server, the Mac, and two thin clients. All recognition and c
 
 ## 2. Reuse decisions (and why)
 
-Koi already ships a proven, privacy-reviewed local dictation stack on this exact machine. Its source is the installed `koi` package (`site-packages/koi/voice/*`, `ui/routes_voice.py`, `tailscale*.py`) and the docs at `nansen-ai/koi:docs/voice.md`. Chirp adapts its patterns and code rather than importing Koi as a dependency, because Koi is a large orchestration app.
+Koi already ships a proven, privacy-reviewed local dictation stack on this exact machine. Its source is the installed `koi` package (`site-packages/koi/voice/*`, `ui/routes_voice.py`, `tailscale*.py`) and its voice docs. Chirp adapts its patterns and code rather than importing Koi as a dependency, because Koi is a large orchestration app.
 
 | Concern | Options considered | Decision | Evidence / rationale |
 |---|---|---|---|
@@ -43,7 +43,7 @@ Koi already ships a proven, privacy-reviewed local dictation stack on this exact
 
 ## 3. Wire protocol (v1, frozen for parallel work)
 
-All endpoints sit under a base URL: either `http://127.0.0.1:7821` (Mac local) or `https://mainframe.tail676ff2.ts.net/chirp` (tailnet). The server honours `X-Forwarded-Prefix` or is started with `--root-path /chirp`.
+All endpoints sit under a base URL: either `http://127.0.0.1:7821` (Mac local) or `https://<your-mac>.<tailnet>.ts.net/chirp` (tailnet). The server honours `X-Forwarded-Prefix` or is started with `--root-path /chirp`.
 
 Every request carries `Authorization: Bearer <token>`. WebSocket clients that cannot set headers may send the token as the first text frame `{"type":"auth","token":"…"}` instead. The token is never put in a URL.
 
@@ -314,7 +314,7 @@ Version additions preserve existing fields. A breaking change becomes `/v2`.
 - The mic is only opened while the IME window is visible and the user has started dictation. It is released on stop, `onFinishInputView` and `onWindowHidden`. There is no foreground service and no wake lock.
 - The user switches to Chirp from the keyboard picker (the navigation-bar keyboard icon) or through the `voice` subtype. The Chirp view offers "⌨ back" (`switchToPreviousInputMethod`).
 - Fold specifics: the cover and inner screens differ in width, and configuration changes must not drop an active utterance. The layout is a single large mic button with a partial-text strip, so it works at both widths.
-- The phone needs the Tailscale Android app connected. Chirp uses `https://mainframe.tail676ff2.ts.net/chirp`, which resolves through MagicDNS on the tailnet.
+- The phone needs the Tailscale Android app connected. Chirp uses `https://<your-mac>.<tailnet>.ts.net/chirp`, which resolves through MagicDNS on the tailnet.
 
 ## 6. Interaction model (Koi parity)
 

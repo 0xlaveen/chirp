@@ -75,14 +75,14 @@ Commands were launched with `koi run`, ending the turn while each ran.
    `ios/Shared/scripts/test.sh && mac/scripts/test.sh && cd mac && swift build -c release`
    exited 0. Shared: **19 tests in 5 suites**; Mac: **380 tests in 61 suites**;
    release build completed. Log:
-   `/Users/rex/.koi/run-logs/f786a1d5-4ac6-4abc-adda-f2e79f0d5bb8-20261018T055224-8998.log`.
+   `~/.koi/run-logs/f786a1d5-4ac6-4abc-adda-f2e79f0d5bb8-20261018T055224-8998.log`.
    The Mac changes tested are unchanged since this run. Existing CLT search-path
    and AppKit animation/sendability warnings remain in the release build.
 3. After the shared-only reconciliation optimization and strengthened notification
    test, final `ios/Shared/scripts/test.sh` on **`5419f3b`** exited 0:
    **20 tests in 5 suites**, including 23 parameterized invalid-input cases.
    Log:
-   `/Users/rex/.koi/run-logs/f786a1d5-4ac6-4abc-adda-f2e79f0d5bb8-20261018T055406-13608.log`.
+   `~/.koi/run-logs/f786a1d5-4ac6-4abc-adda-f2e79f0d5bb8-20261018T055406-13608.log`.
 4. `git diff --check` passed; final working tree was clean before adding this
    evidence-only document.
 
