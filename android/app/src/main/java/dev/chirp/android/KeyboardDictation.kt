@@ -38,7 +38,7 @@ internal class KeyboardDictation(
     private val client = ChirpNetwork.client(host)
     private val gesture = MicGesture()
     private var strip: KeyboardStrip? = null
-    private var session: DictationStream? = null
+    private var session: RollingDictation? = null
     private var warmed: ImeTransport? = null
     private var warmEvent: ((ServerEvent) -> Unit)? = null
     private var warmFailure: (() -> Unit)? = null
@@ -86,6 +86,8 @@ internal class KeyboardDictation(
     private var insertionStart = -1
     // The caret left the utterance: stop, stop touching the editor's caret, land the final where it was spoken.
     private var moved = false
+    // Where our own commit left the caret when one segment of a long dictation hands over to the next.
+    private var handoff: Pair<Int, Int>? = null
     private var pressAt = 0L
     private var firstPartial: Long? = null
     private var stopAt: Long? = null
@@ -322,20 +324,13 @@ internal class KeyboardDictation(
         historyInfo = info; historyId = null
         currentStyle = CleanupStyles.profiles(store.health).firstOrNull { it.id == styleOverride } ?: store.style(targetPackage)
         insertionStart = minOf(selectionStart, selectionEnd).takeIf { it >= 0 } ?: minOf(info.initialSelStart, info.initialSelEnd)
-        moved = false
-        composing = ComposingSession(connection, insertionStart) { value ->
-            android.text.SpannableString(value).apply {
-                setSpan(android.text.style.UnderlineSpan(), 0, length, android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
-                val ink = VoicePalette.of(host).ink and 0x00ffffff or 0xbb000000.toInt()
-                setSpan(android.text.style.ForegroundColorSpan(ink), 0, length, android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
-            }
-        }
-        composing?.shapeFinal(store.spokenCommands)
+        moved = false; handoff = null
+        composing = compose(connection)
         secondsLeft = null; spokenLeft = null
         text = ""; pressAt = SystemClock.elapsedRealtime(); firstPartial = null; stopAt = null; finalLatency = null
-        val timer = SessionTimer(TimingLog(host), { TimingNetworks.current(host) })
-        val stream = DictationStream(
-            transportFactory = { event, failed -> val warm = warmed != null; takeTransport(paired, event, failed).also { timer.attach(it, warm) } },
+        var timer: SessionTimer? = null
+        val stream = RollingDictation(
+            transportFactory = { event, failed -> val warm = warmed != null; takeTransport(paired, event, failed).also { timer?.attach(it, warm) } },
             captureFactory = captureFactory,
             changed = { status, partial ->
                 // The user just tried to dictate, so a dismissed Tailscale prompt may return as the reason.
@@ -364,7 +359,9 @@ internal class KeyboardDictation(
                 applying = true
                 try { if (!moved) composing?.partial(ServerEvent.Partial(event.seq, event.raw, "")) } finally { applying = false }
             },
-            pauseSeconds = store.autoStopSeconds, countdown = ::countdown, timing = timer,
+            pauseSeconds = store.autoStopSeconds, countdown = ::countdown,
+            timing = { SessionTimer(TimingLog(host), { TimingNetworks.current(host) }).also { timer = it } },
+            next = { nextSegment(connection) },
             ended = {
                 session = null; secondsLeft = null; spokenLeft = null
                 warmEvent = null; warmFailure = null
@@ -380,6 +377,23 @@ internal class KeyboardDictation(
         haptic(); cue(Cue.START)
     }
     private val awayStart get() = if (moved) selectionStart else -1
+    private fun compose(connection: android.view.inputmethod.InputConnection) = ComposingSession(connection, insertionStart) { value ->
+        android.text.SpannableString(value).apply {
+            setSpan(android.text.style.UnderlineSpan(), 0, length, android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            val ink = VoicePalette.of(host).ink and 0x00ffffff or 0xbb000000.toInt()
+            setSpan(android.text.style.ForegroundColorSpan(ink), 0, length, android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        }
+    }.also { it.shapeFinal(store.spokenCommands) }
+    /** A long dictation's segment landed (or came back empty): the next one composes right after it. */
+    private fun nextSegment(connection: android.view.inputmethod.InputConnection) {
+        partialFrames.clear()
+        val landed = undo || composing == null
+        if (!landed) { applying = true; try { composing?.cancel(awayStart, selectionEnd) } finally { applying = false } }
+        if (landed) insertionStart = minOf(selectionStart, selectionEnd)
+        handoff = insertionStart to (if (landed) maxOf(selectionStart, selectionEnd) else insertionStart)
+        forgetUndo(); notice = false; text = ""
+        composing = compose(host.currentInputConnection ?: connection)
+    }
     /** Commits a final, or what was heard before a failure ([reason]), and offers Undo for five seconds. */
     private fun land(result: ServerEvent.Final, reason: String? = null) {
         partialFrames.clear()
@@ -437,8 +451,8 @@ internal class KeyboardDictation(
         selectionStart = start; selectionEnd = end
         if (applying) return
         if (active) {
-            if (composingStart >= 0 && start == composingEnd && end == composingEnd) insertionStart = composingStart
-            else if (start != oldStart || end != oldEnd) moveAway()
+            if (composingStart >= 0 && start == composingEnd && end == composingEnd) { insertionStart = composingStart; handoff = null }
+            else if ((start != oldStart || end != oldEnd) && handoff != (start to end)) moveAway()
         } else if (undo && (start != composing?.selectionStart || end != composing?.selectionEnd)) {
             // forgetUndo cancels the expiry; keep the "cleaned" notice from pinning the row open.
             forgetUndo(); if (notice) handler.postDelayed(expiry, 5000); render()

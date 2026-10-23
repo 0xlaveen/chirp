@@ -82,12 +82,13 @@ class PcmCaptureTest {
         override fun stop() = Unit
         override fun close() = Unit
     }
-    private fun run(input: Endless, pause: Double? = null, countdown: MutableList<Int>? = null): Pair<Int, String?> {
+    private fun run(input: Endless, pause: Double? = null, countdown: MutableList<Int>? = null, limit: Int? = null): Pair<Int, String?> {
         val done = CountDownLatch(1)
         val error = AtomicReference<String?>()
         var sent = 0
         val capture = PcmCapture({ sent++; true }, {}, { error.set(it); done.countDown() }, input)
         capture.pauseSeconds = pause
+        if (limit != null) capture.limitSeconds = limit
         if (countdown != null) capture.countdown = { countdown += it }
         capture.start()
         assertTrue(done.await(20, TimeUnit.SECONDS))
@@ -97,6 +98,12 @@ class PcmCaptureTest {
         val left = mutableListOf<Int>()
         val (sent, error) = run(Endless { 1024 }, countdown = left)
         assertNull(error); assertEquals(119 * 25, sent)
+        assertEquals((15 downTo 1).toList(), left)
+    }
+    @Test fun `a longer limit moves the stop and the countdown with it`() {
+        val left = mutableListOf<Int>()
+        val (sent, error) = run(Endless { 1024 }, countdown = left, limit = 140)
+        assertNull(error); assertEquals(139 * 25, sent)
         assertEquals((15 downTo 1).toList(), left)
     }
     @Test fun `pause mode stops after the quiet that follows speech`() {

@@ -16,6 +16,8 @@ interface Capture {
     var pauseSeconds: Double? get() = null; set(_) {}
     /** Called once per second with the seconds left before the cap, from 15 down to 1. Set before [start]. */
     var countdown: ((Int) -> Unit)? get() = null; set(_) {}
+    /** Seconds the capture may run; it stops one second early. Set before [start]. */
+    var limitSeconds: Int get() = CaptureLimit.CAP_SECONDS; set(_) {}
 }
 
 /** Injectable PCM input keeps the real framing, buffering and transport path under test. */
@@ -58,6 +60,7 @@ class PcmCapture internal constructor(
     private var thread: Thread? = null
     @Volatile override var pauseSeconds: Double? = null
     @Volatile override var countdown: ((Int) -> Unit)? = null
+    @Volatile override var limitSeconds = CaptureLimit.CAP_SECONDS
     override fun start() {
         check(thread == null)
         thread = Thread({
@@ -90,8 +93,8 @@ class PcmCapture internal constructor(
                     total += count
                     if (detector?.feed((sqrt(energy / count) / 32768.0).toFloat(), total / 16000.0) == true) break
                     val seconds = total / 16000
-                    if (seconds >= CaptureLimit.COUNTDOWN_FROM_SECONDS && seconds != announced) { announced = seconds; countdown?.invoke(CaptureLimit.CAP_SECONDS - seconds) }
-                    if (seconds >= CaptureLimit.STOP_SECONDS) break
+                    if (seconds >= limitSeconds - CaptureLimit.COUNTDOWN_SECONDS && seconds != announced) { announced = seconds; countdown?.invoke(limitSeconds - seconds) }
+                    if (seconds >= limitSeconds - 1) break
                 }
                 if (!signalled && error == null && running.get()) error = "No microphone signal"
             } catch (_: Exception) {
