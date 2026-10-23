@@ -210,7 +210,7 @@ class NotesControlsTest {
         assertEquals(NotesRecorder.State.PAUSED, rig.model.state)
         assertEquals("Paused", rig.model.status); assertEquals("00:45", rig.model.elapsedText)
         assertEquals("Chirp Notes is paused", posted().extras.getString(Notification.EXTRA_TITLE))
-        assertEquals(listOf("Resume", "Stop"), posted().actions.map { it.title.toString() })
+        assertEquals(listOf("Resume", "Command", "Stop"), posted().actions.map { it.title.toString() })
         assertEquals(listOf(true), rig.foreground)
         // The service routes a button to the session.
         Robolectric.buildService(NotesService::class.java, Intent(app, NotesService::class.java).setAction(NotesService.ACTION_RESUME))

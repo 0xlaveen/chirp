@@ -8,6 +8,9 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -19,11 +22,20 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.foundation.shape.CircleShape
+import android.os.SystemClock
+import kotlinx.coroutines.delay
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.foundation.clickable
 import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.disabled
+import androidx.compose.ui.semantics.onClick
+import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.stateDescription
@@ -259,12 +271,67 @@ private fun NotesPane(model: NotesModel, modifier: Modifier) {
             keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences, autoCorrectEnabled = false))
         if (model.hearing.isNotBlank()) Text("Hearing: " + model.hearing, Modifier.fillMaxWidth(), color = MaterialTheme.colorScheme.onSurfaceVariant,
             style = MaterialTheme.typography.bodySmall, fontStyle = FontStyle.Italic, maxLines = 3)
+        if (model.voiceEditAvailable) Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            CommandButton(model, Modifier.weight(1f))
+            if (model.listeningForCommand) TextButton(model::cancelCommand) { Text("Cancel") } else if (model.showEditedChip) EditedChip(model)
+        }
+        model.voiceEditNote?.let { note ->
+            Text(note, Modifier.fillMaxWidth().semantics { liveRegion = LiveRegionMode.Polite }, style = MaterialTheme.typography.bodySmall)
+            LaunchedEffect(model.voiceEditDone) { delay(NotesVoiceEdit.NOTE_MS); model.dismissVoiceEdit() }
+        }
         if (model.reorganizing !is Reorganizing.Unavailable) Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             FilledTonalButton(model::organize, enabled = model.canOrganize) { Text("Organize") }
             if (model.canUndo) TextButton(model::undo) { Text("Undo organize") }
             model.organizeNote?.let { Text(it, Modifier.weight(1f), style = MaterialTheme.typography.bodySmall) }
         } else model.organizeNote?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
     }
+}
+
+/**
+ * Edit by voice: hold it and say what to change, let go to send. A quick tap latches it and the next tap sends, which is
+ * also what TalkBack's double tap does. What is said goes to the edit and never into the transcript.
+ */
+@Composable
+private fun CommandButton(model: NotesModel, modifier: Modifier) {
+    val listening = model.listeningForCommand
+    val enabled = model.canCommand
+    var pressed by remember { mutableStateOf(false) }
+    val colors = MaterialTheme.colorScheme
+    val (container, content) = if (listening) colors.errorContainer to colors.onErrorContainer else colors.secondaryContainer to colors.onSecondaryContainer
+    Surface(modifier.heightIn(min = 56.dp).alpha(if (enabled) 1f else 0.38f)
+        .pointerInput(enabled) {
+            if (enabled) awaitEachGesture {
+                val down = awaitFirstDown()
+                pressed = true; model.commandPress()
+                val up = waitForUpOrCancellation()
+                pressed = false
+                model.commandRelease((up?.uptimeMillis ?: SystemClock.uptimeMillis()) - down.uptimeMillis)
+            }
+        }
+        .semantics(mergeDescendants = true) {
+            role = Role.Button
+            contentDescription = if (listening) "Send the spoken edit" else "Edit notes by voice. Hold, say the change, let go."
+            onClick(if (listening) "Send" else "Start") { model.command(); true }
+            if (!enabled) disabled()
+        }, shape = ButtonDefaults.shape, color = container, contentColor = content) {
+        Row(Modifier.padding(horizontal = 16.dp), Arrangement.Center, Alignment.CenterVertically) {
+            Icon(painterResource(R.drawable.ic_mic), null, Modifier.size(20.dp))
+            Spacer(Modifier.width(8.dp))
+            Text(when { !listening -> "Hold to edit by voice"; pressed -> "Release to send"; else -> "Tap to send" }, style = MaterialTheme.typography.labelLarge)
+        }
+    }
+}
+
+/** "Edited · Undo", for 20 s after a voice edit (or until the next edit or a click). */
+@Composable
+private fun EditedChip(model: NotesModel) {
+    Surface(shape = CircleShape, color = MaterialTheme.colorScheme.tertiaryContainer, contentColor = MaterialTheme.colorScheme.onTertiaryContainer) {
+        Row(Modifier.padding(start = 14.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text(NotesVoiceEditText.EDITED, style = MaterialTheme.typography.labelLarge)
+            TextButton(model::undoVoiceEdit, Modifier.semantics { contentDescription = "Undo the spoken edit" }) { Text("Undo") }
+        }
+    }
+    LaunchedEffect(model.voiceEditDone) { delay(NotesVoiceEdit.CHIP_MS); model.dismissVoiceEdit() }
 }
 
 @Composable

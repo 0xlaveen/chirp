@@ -64,6 +64,7 @@ internal class NotesModel(
     private var inForeground = false
     private var editing = false
     private var published: NotesRecorder.State? = null
+    private var publishedCommand = false
     private var committedCount = 0
     private var pendingSeen = 0
     private var visible = true
@@ -99,13 +100,23 @@ internal class NotesModel(
 
     private fun http() = client ?: ChirpNetwork.client(app).also { client = it }
 
+    private val streams: ((ServerEvent) -> Unit, () -> Unit) -> ImeTransport = { event, failed -> transportFactory(http(), requireNotNull(pairing()), event, failed) }
+
     val recorder = NotesRecorder(
-        transportFactory = { event, failed -> transportFactory(http(), requireNotNull(pairing()), event, failed) },
+        transportFactory = streams,
         captureFactory = captureFactory,
         structure = { request -> call { it.structure(request) } },
         reorganize = { request -> call { it.reorganize(request) } },
         options = options(), health = health, structuringEnabled = structureEnabled,
+        editNotes = { request -> call { it.edit(request) } },
     ).also { it.onChange = ::sync }
+
+    /** Edit by voice: the Command button and the notification action. */
+    private val voiceEdit = NotesVoiceEdit(recorder, streams,
+        microphone = { sink, ended -> captureFactory({ bytes, _ -> sink(bytes) }, {}, ended).also { it.start() } },
+        selection = { field.selection.takeIf { !it.collapsed }?.let { it.min to it.max } }, scope = scope).also { it.onChange = ::sync }
+    /** A press that is still down ended its command on release; one already listening (latched) ends on the next press. */
+    private var commandDown = false
 
     private suspend fun <T> call(body: (NotesApi) -> T): T {
         val current = api ?: apiFactory(http(), requireNotNull(pairing())).also { api = it }
@@ -164,7 +175,7 @@ internal class NotesModel(
 
     val elapsedText get() = elapsed.toInt().let { s -> if (s >= 3600) "%d:%02d:%02d".format(s / 3600, s / 60 % 60, s % 60) else "%02d:%02d".format(s / 60, s % 60) }
 
-    val status: String get() = message ?: when (state) {
+    val status: String get() = voiceEditStatus?.let(NotesVoiceEditText::status) ?: message ?: when (state) {
         NotesRecorder.State.IDLE -> if (paired) IDLE else "Pair your Mac in Chirp setup"
         NotesRecorder.State.STARTING -> "Connecting to Mac…"
         NotesRecorder.State.RECORDING -> organizingText ?: if (structuring == Structuring.Running) "Updating notes…" else "Listening…"
@@ -176,6 +187,35 @@ internal class NotesModel(
             if (error.startsWith("Mac unreachable")) pairing()?.let(::tailscaleStatus) ?: error else error
         } ?: "Notes stopped"
     }
+
+    // Edit by voice.
+    /** The Mac can edit notes by voice (health), so the Command button is offered. */
+    val voiceEditAvailable get() = revision.let { recorder.canEdit }
+    val voiceEditStatus: VoiceEditStatus? get() = revision.let { voiceEdit.status.takeIf { it.isBusy } }
+    val listeningForCommand get() = revision.let { voiceEdit.status.isListening }
+    val canCommand get() = revision.let { voiceEdit.status.isListening || voiceEdit.canStart }
+    /** The note for the last edit that did not apply. */
+    val voiceEditNote: String? get() = revision.let { (voiceEdit.status as? VoiceEditStatus.Done)?.let { NotesVoiceEditText.note(it.outcome) } }
+    /** "Edited · Undo" after a voice edit applied, until the next edit, a click or [NotesVoiceEdit.CHIP_MS]. */
+    val showEditedChip get() = revision.let { (voiceEdit.status as? VoiceEditStatus.Done)?.outcome == NotesEditOutcome.Applied && recorder.canUndoEdit }
+    val voiceEditDone: VoiceEditStatus? get() = revision.let { voiceEdit.status.takeIf { it is VoiceEditStatus.Done } }
+    fun dismissVoiceEdit() = voiceEdit.dismiss()
+    fun undoVoiceEdit() { recorder.undoEdit(); voiceEdit.dismiss() }
+    fun cancelCommand() = voiceEdit.cancel()
+    /** The Command button went down: start a command, or (a latched one) end it. */
+    fun commandPress() {
+        if (voiceEdit.status.isListening) { voiceEdit.finish(); commandDown = false; return }
+        message = null
+        voiceEdit.start()
+        commandDown = voiceEdit.status.isListening
+    }
+    /** The button came up after [heldMs]: a hold ends the command, a tap leaves it listening until the next press. */
+    fun commandRelease(heldMs: Long) {
+        val ours = commandDown; commandDown = false
+        if (ours && heldMs >= NotesVoiceEdit.HOLD_MS) voiceEdit.finish()
+    }
+    override val commanding: Boolean? get() = revision.let { if (recorder.canEdit) voiceEdit.status.isListening else null }
+    override fun command() { message = null; voiceEdit.toggle() }
 
     private val organizingText get() = when (val r = reorganizing) {
         is Reorganizing.Organizing -> "Organizing notes… ${r.step}/${r.of}"
@@ -229,6 +269,7 @@ internal class NotesModel(
 
     fun start() {
         if (state.active) return
+        if (voiceEdit.holdsMicrophone) { message = "Finish the spoken edit first"; return }
         message = null; recovered = null
         if (!micGranted()) { message = "Allow microphone in Chirp setup"; return }
         pairing().also { paired = it != null } ?: run { message = "Pair your Mac in Chirp setup"; return }
@@ -239,7 +280,7 @@ internal class NotesModel(
 
     override fun stop() { message = null; recorder.stop() }
     override fun pause() { message = null; recorder.pause() }
-    override fun resume() { message = null; recorder.resume() }
+    override fun resume() { if (voiceEdit.holdsMicrophone) { message = "Finish the spoken edit first"; return }; message = null; recorder.resume() }
     fun togglePause() { if (paused) resume() else pause() }
 
     /** Rename: the title of the notes, the export and the saved file; blank goes back to the start time. */
@@ -300,7 +341,11 @@ internal class NotesModel(
     }
 
     /** The screen came into or went out of sight (the activity's start and stop). */
-    fun visible(on: Boolean) { visible = on; updateQuiet() }
+    fun visible(on: Boolean) {
+        visible = on; updateQuiet()
+        // Without the recording's service Android silences a hidden app's microphone, so a command on its own microphone ends.
+        if (!on && !recorder.state.active) voiceEdit.cancel()
+    }
 
     private fun updateQuiet() {
         val now = !visible && store.notesBatterySaver
@@ -331,7 +376,7 @@ internal class NotesModel(
     fun edit(value: TextFieldValue) {
         val old = recorder.document.text
         editing = true
-        try { NotesDocument.diff(old, value.text, NotesChange.Kind.USER)?.let { recorder.userEdit(it.start, it.end, it.replacement) } }
+        try { NotesDocument.diff(old, value.text, NotesChange.Kind.USER)?.let { recorder.userEdit(it.start, it.end, it.replacement); voiceEdit.dismiss() } }
         finally { editing = false }
         field = value
         reportFocus()
@@ -363,7 +408,8 @@ internal class NotesModel(
         val state = recorder.state
         val commits = recorder.document.segments.size
         val stateChanged = state != published
-        if (stateChanged) { published = state; NotesControls.publish(app, this) }
+        val commanding = voiceEdit.status.isListening
+        if (stateChanged || commanding != publishedCommand) { published = state; publishedCommand = commanding; NotesControls.publish(app, this) }
         val aiChanged = if (quiet) recorder.pendingCount != pendingSeen else changes.isNotEmpty()
         pendingSeen = recorder.pendingCount
         // At once after a commit, an AI change or a state change; otherwise at most every 2 s.
@@ -391,6 +437,7 @@ internal class NotesModel(
         // Swiped away from Recents is not a discard: the recovery copy (or the kept session) stays for next time.
         keepSession()
         journal?.flush()
+        voiceEdit.cancel()
         NotesControls.release(app, this)
         recorder.onChange = null
         recorder.dispose()

@@ -15,9 +15,13 @@ internal object NotesControls {
         val recordedSeconds: Double
         /** The battery saver is skipping screen work (the screen is off). */
         val quiet: Boolean
+        /** Voice edit: null when the Mac cannot edit by voice, else whether a command is listening. */
+        val commanding: Boolean?
         fun pause()
         fun resume()
         fun stop()
+        /** The notification's Command action: start a command, or end the one listening. */
+        fun command()
     }
 
     var session: Session? = null
@@ -30,6 +34,7 @@ internal object NotesControls {
             NotesService.ACTION_PAUSE -> current.pause()
             NotesService.ACTION_RESUME -> current.resume()
             NotesService.ACTION_STOP -> current.stop()
+            NotesService.ACTION_COMMAND -> current.command()
             else -> return false
         }
         return true
@@ -38,7 +43,7 @@ internal object NotesControls {
     /** The session's state changed: re-post the notification and ask the tile to redraw. */
     fun publish(context: Context, from: Session) {
         val state = from.state
-        if (state.active) { session = from; NotesService.update(context, state == NotesRecorder.State.PAUSED, from.recordedSeconds, from.quiet) }
+        if (state.active) { session = from; NotesService.update(context, state == NotesRecorder.State.PAUSED, from.recordedSeconds, from.quiet, from.commanding) }
         else if (session === from) { session = null; NotesService.update(context, null, 0.0) }
         else return
         refreshTile(context)

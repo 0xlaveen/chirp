@@ -28,7 +28,7 @@ class NotesService : Service() {
         }
         try {
             val session = NotesControls.session
-            startForeground(ID, notification(this, session?.state == NotesRecorder.State.PAUSED, session?.recordedSeconds ?: 0.0),
+            startForeground(ID, notification(this, session?.state == NotesRecorder.State.PAUSED, session?.recordedSeconds ?: 0.0, session?.quiet == true, session?.commanding),
                 ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE)
         } catch (_: RuntimeException) {
             // Not allowed now (no microphone permission, or not started from the visible screen): recording goes on
@@ -46,6 +46,8 @@ class NotesService : Service() {
         const val ACTION_STOP = "dev.chirp.android.notes.STOP"
         const val ACTION_PAUSE = "dev.chirp.android.notes.PAUSE"
         const val ACTION_RESUME = "dev.chirp.android.notes.RESUME"
+        /** Edit by voice: starts a spoken command, or (while listening) ends it. */
+        const val ACTION_COMMAND = "dev.chirp.android.notes.COMMAND"
         /** Opens Notes and starts recording (the Quick Settings tile). */
         const val ACTION_RECORD = "dev.chirp.android.notes.RECORD"
 
@@ -56,13 +58,16 @@ class NotesService : Service() {
         }
 
         /** Re-posts the running service's notification (paused or recording); null removes it. */
-        fun update(context: Context, paused: Boolean?, elapsed: Double, saver: Boolean = false) {
+        fun update(context: Context, paused: Boolean?, elapsed: Double, saver: Boolean = false, command: Boolean? = null) {
             val manager = context.getSystemService(NotificationManager::class.java)
-            try { if (paused == null) manager.cancel(ID) else manager.notify(ID, notification(context, paused, elapsed, saver)) } catch (_: RuntimeException) { }
+            try { if (paused == null) manager.cancel(ID) else manager.notify(ID, notification(context, paused, elapsed, saver, command)) } catch (_: RuntimeException) { }
         }
 
-        /** [saver]: the battery saver is skipping screen work; the notes catch up the moment the screen is back. */
-        fun notification(context: Context, paused: Boolean = false, elapsed: Double = 0.0, saver: Boolean = false): Notification {
+        /**
+         * [saver]: the battery saver is skipping screen work; the notes catch up the moment the screen is back.
+         * [command]: Edit by voice is available (null: it is not), and whether a command is listening.
+         */
+        fun notification(context: Context, paused: Boolean = false, elapsed: Double = 0.0, saver: Boolean = false, command: Boolean? = null): Notification {
             val manager = context.getSystemService(NotificationManager::class.java)
             manager.createNotificationChannel(NotificationChannel(CHANNEL, context.getString(R.string.notes_channel), NotificationManager.IMPORTANCE_LOW)
                 .apply { setShowBadge(false) })
@@ -77,6 +82,7 @@ class NotesService : Service() {
                 .setContentIntent(open)
                 .addAction(if (paused) control(ACTION_RESUME, 2, R.drawable.ic_record, R.string.notes_resume)
                     else control(ACTION_PAUSE, 3, R.drawable.ic_pause, R.string.notes_pause))
+                .apply { if (command != null) addAction(control(ACTION_COMMAND, 4, R.drawable.ic_mic, if (command) R.string.notes_command_send else R.string.notes_command)) }
                 .addAction(control(ACTION_STOP, 1, R.drawable.ic_stop, R.string.notes_stop))
                 // The elapsed time counts on while recording, also on the lock screen.
                 .setShowWhen(!paused).setUsesChronometer(!paused).setWhen(System.currentTimeMillis() - (elapsed * 1000).toLong())

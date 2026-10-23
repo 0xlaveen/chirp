@@ -52,7 +52,7 @@ internal data class NotesReorganizeResponse(val markdown: String?, val reorganiz
     }
 }
 
-private fun JSONObject.text(key: String) = if (has(key) && !isNull(key)) optString(key) else null
+internal fun JSONObject.text(key: String) = if (has(key) && !isNull(key)) optString(key) else null
 
 internal object NotesFailure {
     /** A guard name as the server sends it (`novel_name`), else null: it is shown, so it is never free text. */
@@ -71,10 +71,12 @@ internal class NotesHttpError(val status: Int) : IOException("Notes HTTP $status
     val code get() = when (status) { 401 -> "auth"; 404, 405 -> "unsupported"; 409 -> "notes_off"; 503 -> "busy"; else -> "http" }
 }
 
-/** The two notes calls. Blocking: callers run them off the main thread. Logs nothing. */
+/** The notes calls. Blocking: callers run them off the main thread. Logs nothing. */
 internal interface NotesApi {
     fun structure(request: NotesStructureRequest): NotesStructureResponse
     fun reorganize(request: NotesReorganizeRequest): NotesReorganizeResponse
+    /** `POST /v1/notes/edit`; an implementation without it behaves like an older server. */
+    fun edit(request: NotesEditRequest): NotesEditResponse = throw NotesHttpError(404)
 }
 
 internal class HttpNotesApi(client: OkHttpClient, private val pairing: Pairing) : NotesApi {
@@ -84,6 +86,7 @@ internal class HttpNotesApi(client: OkHttpClient, private val pairing: Pairing) 
 
     override fun structure(request: NotesStructureRequest) = NotesStructureResponse.decode(post(structureClient, "v1/notes/structure", request.json()))
     override fun reorganize(request: NotesReorganizeRequest) = NotesReorganizeResponse.decode(post(reorganizeClient, "v1/notes/reorganize", request.json()))
+    override fun edit(request: NotesEditRequest) = NotesEditResponse.decode(post(reorganizeClient, "v1/notes/edit", request.json()))
 
     private fun post(client: OkHttpClient, path: String, body: String): String {
         val request = Request.Builder().url(pairing.endpoint(path)).header("Authorization", "Bearer ${pairing.token}")
