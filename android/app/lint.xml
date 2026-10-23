@@ -10,4 +10,9 @@
     <issue id="IconLauncherShape">
         <ignore regexp="res/mipmap-[^/]+/ic_launcher(_round)?\.png$" />
     </issue>
+    <!-- Upstream releases make these fail builds that passed yesterday. Version bumps are
+         deliberate changes reviewed on their own, not lint gates. -->
+    <issue id="GradleDependency" severity="informational" />
+    <issue id="NewerVersionAvailable" severity="informational" />
+    <issue id="AndroidGradlePluginVersion" severity="informational" />
 </lint>
