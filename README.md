@@ -89,7 +89,7 @@ A HeliBoard-based keyboard for the Galaxy Z Fold that streams to your Mac over T
 source ~/.local/share/chirp-android/env.sh
 cd android
 ./gradlew assembleRelease
-adb install -r app/build/outputs/apk/release/app-release.apk
+adb install -r app/build/outputs/apk/release/app-arm64-v8a-release.apk
 ```
 
 On the phone: enable Chirp Keyboard, grant the microphone, then pair by scanning the QR that `uv run chirp-server pair` prints on the Mac. Full setup, build and validation notes: [android/README.md](android/README.md).
