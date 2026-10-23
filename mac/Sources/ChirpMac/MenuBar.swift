@@ -33,6 +33,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     struct NotesMenuState {
         var recording = false
         var finishing = false
+        var paused = false
         var elapsed: String?
         var hasDocument = false
         var hotkeyRegistered = true
@@ -163,6 +164,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         let notes = actions.notes()
         inputs.notesRecording = notes.recording
         inputs.notesFinishing = notes.finishing
+        inputs.notesPaused = notes.paused
         inputs.notesElapsed = notes.elapsed
         inputs.notesHasDocument = notes.hasDocument
         inputs.notesHotkeyRegistered = notes.hotkeyRegistered

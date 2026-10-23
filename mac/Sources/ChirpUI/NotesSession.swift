@@ -134,6 +134,7 @@ public final class NotesSession {
         model.tab = NotesTab(rawValue: settings.notesTab) ?? .notes
         model.structureEnabled = false
         model.onRecordToggle = { [weak self] in self?.toggle(fromHotkey: false) }
+        model.onPauseToggle = { [weak self] in Task { await self?.togglePause() } }
         model.onStructureToggle = { [weak self] on in self?.setStructure(on) }
         model.onTabChange = { settings.notesTab = $0.rawValue }
         model.preview = settings.notesPreview
@@ -179,6 +180,7 @@ public final class NotesSession {
 
     public var isRecording: Bool { recorder.state.isCapturing }
     public var isActive: Bool { recorder.state.isActive }
+    public var isPaused: Bool { recorder.state == .paused }
     public var hasDocument: Bool { !recorder.document.segments.isEmpty }
     /// The microphone is open.
     public var isCapturing: Bool { capture.isRunning }
@@ -188,7 +190,7 @@ public final class NotesSession {
 
     /// The menu's switch: pausing Chirp stops Notes gracefully (the notes stay) and releases ⌃⌥N.
     public func setRunning(_ running: Bool) {
-        if !running, isRecording { Task { await stop() } }
+        if !running, isRecording || isPaused { Task { await stop() } }
         gate.setRunning(running)
     }
 
@@ -196,6 +198,7 @@ public final class NotesSession {
 
     public func toggle(fromHotkey: Bool) {
         if isRecording { Task { await stop() }; return }
+        if isPaused { Task { await resume() }; return }
         guard recorder.state != .stopping else { return }
         start(focus: !fromHotkey)
     }
@@ -277,10 +280,39 @@ public final class NotesSession {
 
     /// Stop: the microphone closes at once, then the last segment finalizes and the final pass runs.
     public func stop() async {
-        guard isRecording else { return }
+        guard isRecording || isPaused else { return }
         capture.stop()
         if settings.soundsEnabled { deps.play(.stop) }
         await recorder.stop()
+    }
+
+    /// Pause: the microphone closes at once and the segment finalizes; no final pass. `reason` (a sleeping Mac, a long
+    /// silence) replaces the plain "Paused" in the status.
+    public func pause(reason: String? = nil) async {
+        guard isRecording, recorder.state == .recording else { return }
+        capture.stop()
+        if settings.soundsEnabled { deps.play(.stop) }
+        await recorder.pause(reason: reason)
+        chirpLog.info("notes paused reason=\(reason != nil, privacy: .public)")
+    }
+
+    /// Resume: a fresh socket into the same tail, then the microphone opens again.
+    public func resume() async {
+        guard isPaused, !gate.isPaused else { return }
+        guard !isDictating() else { deps.beep(); return }
+        recorder.options = settings.notesStartOptions(health: resolvedHealth())
+        if settings.soundsEnabled { deps.play(.start) }
+        let micMayOpen = deps.now() + deps.soundStartDelay()
+        await recorder.resume()
+        guard recorder.state == .recording else { return }
+        let wait = micMayOpen - deps.now()
+        if wait > 0 { await deps.sleep(.seconds(wait)) }
+        guard isRecording, !capture.isRunning else { return }
+        openMicrophone()
+    }
+
+    public func togglePause() async {
+        if isPaused { await resume() } else { await pause() }
     }
 
     private func fail(_ message: String) async {
@@ -300,7 +332,7 @@ public final class NotesSession {
         capture.stop()
         let finished = AsyncStream<Void>.makeStream()
         let sleep = deps.sleep
-        Task { if self.isRecording { await self.recorder.stop() } else { await self.waitWhileStopping() }; finished.continuation.yield() }
+        Task { if self.isRecording || self.isPaused { await self.recorder.stop() } else { await self.waitWhileStopping() }; finished.continuation.yield() }
         Task { await sleep(limit); finished.continuation.yield() }
         for await _ in finished.stream { break }
         if isActive { recorder.cancel() }
@@ -471,9 +503,10 @@ public final class NotesSession {
         model.keepSaving = journal.keepStatus
         model.debugRetention = recorder.debugRetention || (resolvedHealth()?.debugRetention ?? false)
         model.elapsed = recorder.elapsed
+        model.pauseReason = recorder.pauseReason
         model.finishingElapsed = recorder.stoppingElapsed
         model.reduceMotion = deps.reduceMotion()
-        setTicking(recorder.state.isActive)
+        setTicking(recorder.state.isCapturing || recorder.state == .stopping)
         let announcement = model.announcement
         if announcement != lastAnnouncement {
             lastAnnouncement = announcement
@@ -518,6 +551,7 @@ extension NotesRecorderState {
         case .recording: "recording"
         case .stopping: "stopping"
         case .stopped: "stopped"
+        case .paused: "paused"
         case .error: "error"
         }
     }

@@ -88,7 +88,7 @@ extension NotesSession {
     /// The menu's view of Notes.
     var menuState: MenuBarController.NotesMenuState {
         MenuBarController.NotesMenuState(
-            recording: isRecording, finishing: recorder.state == .stopping,
+            recording: isRecording, finishing: recorder.state == .stopping, paused: isPaused,
             elapsed: model.elapsedText, hasDocument: hasDocument,
             hotkeyRegistered: gate.hotkeyRegistered, debugRetention: isRecording && recorder.debugRetention)
     }

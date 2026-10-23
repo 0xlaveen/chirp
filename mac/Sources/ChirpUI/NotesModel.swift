@@ -36,8 +36,11 @@ public enum NotesStatus {
         "Couldn’t organize \(count) section\(count == 1 ? "" : "s")\(reason.map { " (\($0))" } ?? "") — kept as is"
     }
     /// The header's line about the dictation hotkey, which drives Notes while this window is in front.
-    public static func hotkeyHint(key: String, pause: Bool) -> String { "\(key) to record · \(key) again to \(pause ? "pause" : "stop")" }
+    public static func hotkeyHint(key: String, pause: Bool, paused: Bool = false) -> String {
+        paused ? "\(key) to resume" : "\(key) to record · \(key) again to \(pause ? "pause" : "stop")"
+    }
     public static let stopped = "Stopped"
+    public static let paused = "Paused"
     public static let keepGoing = "Keep going"
     public static let stopRecording = "Stop"
 
@@ -126,6 +129,8 @@ public final class NotesModel {
     public var structuring: StructuringStatus = .idle
     /// Audio recorded into the document, seconds.
     public var elapsed: TimeInterval = 0
+    /// Why the session is paused when the user did not pause it ("Paused while the Mac slept").
+    public var pauseReason: String?
     public var tab: NotesTab = .notes
     /// The transcript shows each segment's raw text.
     public var showRaw = false
@@ -168,7 +173,7 @@ public final class NotesModel {
     public var focusRequest = 0
     /// The dictation hotkey's keys ("⌥ Option"), empty until the window is shown.
     public var dictationKey = ""
-    public var hotkeyHint: String? { dictationKey.isEmpty ? nil : NotesStatus.hotkeyHint(key: dictationKey, pause: NotesHotkeyRouter.pauseAvailable) }
+    public var hotkeyHint: String? { dictationKey.isEmpty ? nil : NotesStatus.hotkeyHint(key: dictationKey, pause: NotesHotkeyRouter.pauseAvailable, paused: isPaused) }
     /// The transcript paragraph under the pointer: it shows each segment's timestamp.
     public var hoveredParagraph: String?
     /// A section's `[hh:mm:ss]` was clicked: the transcript scrolls to this paragraph (bumped per click) and tints it.
@@ -187,6 +192,7 @@ public final class NotesModel {
     @ObservationIgnored public var onPendingChanges: (() -> Void)?
 
     public var onRecordToggle: () -> Void = {}
+    public var onPauseToggle: () -> Void = {}
     public var onCopy: () -> Void = {}
     public var onSave: () -> Void = {}
     public var onNew: () -> Void = {}
@@ -235,6 +241,7 @@ public final class NotesModel {
     }
 
     public var isRecording: Bool { state.isCapturing }
+    public var isPaused: Bool { state == .paused }
     public var isBusy: Bool { state == .stopping }
     public var hasContent: Bool { !document.isEmpty }
     /// Record or Stop can be pressed (not while the last segment finishes).
@@ -258,6 +265,7 @@ public final class NotesModel {
             isReorganizing ? reorganizingText : structuring == .running ? NotesStatus.updating : NotesStatus.listening
         case .stopping: (isReorganizing ? reorganizingText : NotesStatus.finishing) + finishingSuffix
         case .stopped where isReorganizing, .idle where isReorganizing: reorganizingText
+        case .paused: "\(pauseReason ?? NotesStatus.paused) · \(elapsedText)"
         case .stopped: NotesStatus.stopped
         case .error(let message): message
         }
