@@ -312,6 +312,13 @@ public struct ShortcutMatcher: Sendable {
         return .none
     }
 
+    /// The tap was off and may have missed events: catch up with the modifiers held now (`cgFlags`). A press it saw
+    /// ends if they were let go meanwhile; a press it missed does not start.
+    public mutating func resync(cgFlags: UInt64) -> Outcome {
+        guard combo.isModifierOnly, phase != .idle else { return .none }
+        return flagsChanged(keyCode: UInt16(truncatingIfNeeded: KeyCombo.anyModifierKey), cgFlags: cgFlags)
+    }
+
     /// A click while the modifier is held (⌥-click) is a chord too.
     public mutating func mouseDown() -> Outcome {
         guard combo.isModifierOnly, phase == .pressed else { return .none }
@@ -329,6 +336,7 @@ public final class HotKeyCenter {
     public static let shared = HotKeyCenter()
 
     private struct Entry {
+        var combo: KeyCombo?
         var ref: EventHotKeyRef?
         var onDown: () -> Void
         var onUp: () -> Void
@@ -347,6 +355,8 @@ public final class HotKeyCenter {
         case keyUp(keyCode: UInt16)
         case flagsChanged(keyCode: UInt16, cgFlags: UInt64)
         case mouseDown
+        /// The tap was turned back on; `cgFlags` are the modifiers held now.
+        case resync(cgFlags: UInt64)
     }
 
     private var entries: [UInt32: Entry] = [:]
@@ -360,11 +370,23 @@ public final class HotKeyCenter {
 
     private init() {}
 
-    /// Registers `combo` under `id`, replacing an earlier registration with the same id. `onChord` fires when a
-    /// modifier-only shortcut turned out to be part of another shortcut (see `ShortcutMatcher`).
+    /// Registers `combo` under `id`, replacing an earlier registration with the same id. The same shortcut again keeps
+    /// its registration (and a press under way) and only takes the new handlers. `onChord` fires when a modifier-only
+    /// shortcut turned out to be part of another shortcut (see `ShortcutMatcher`).
     @discardableResult
     public func register(id: UInt32, combo: KeyCombo, onDown: @escaping () -> Void, onUp: @escaping () -> Void = {},
                          onChord: @escaping () -> Void = {}) -> Bool {
+        if tapEntries[id]?.matcher.combo == combo {
+            tapEntries[id]?.onDown = onDown
+            tapEntries[id]?.onUp = onUp
+            tapEntries[id]?.onChord = onChord
+            return true
+        }
+        if entries[id]?.combo == combo {
+            entries[id]?.onDown = onDown
+            entries[id]?.onUp = onUp
+            return true
+        }
         unregister(id: id)
         if combo.needsEventTap {
             let running = startTap()
@@ -379,7 +401,7 @@ public final class HotKeyCenter {
                                          GetApplicationEventTarget(), 0, &ref)
         chirpLog.info("hotkey register id=\(id, privacy: .public) combo=\(combo.id, privacy: .public) status=\(status, privacy: .public)")
         guard status == noErr else { return false }
-        entries[id] = Entry(ref: ref, onDown: onDown, onUp: onUp)
+        entries[id] = Entry(combo: combo, ref: ref, onDown: onDown, onUp: onUp)
         return true
     }
 
@@ -418,6 +440,7 @@ public final class HotKeyCenter {
             case .keyUp(let key): outcome = entry.matcher.keyUp(keyCode: key)
             case .flagsChanged(let key, let flags): outcome = entry.matcher.flagsChanged(keyCode: key, cgFlags: flags)
             case .mouseDown: outcome = entry.matcher.mouseDown()
+            case .resync(let flags): outcome = entry.matcher.resync(cgFlags: flags)
             }
             tapEntries[id] = entry
             swallow = swallow || outcome.swallow
@@ -456,9 +479,13 @@ public final class HotKeyCenter {
         tapSource = nil
     }
 
-    /// macOS turns a tap off when a callback is slow or after secure input; turn it straight back on.
-    fileprivate func reenableTap() {
-        if let tap { CGEvent.tapEnable(tap: tap, enable: true) }
+    /// macOS turns a tap off when the main thread is slow or after secure input, and the events meanwhile never reach
+    /// it: turn it straight back on and catch up with the modifiers held now, so a release it missed still ends the press.
+    fileprivate func reenableTap(timeout: Bool) {
+        guard let tap else { return }
+        CGEvent.tapEnable(tap: tap, enable: true)
+        chirpLog.info("hotkey tap re-enabled timeout=\(timeout, privacy: .public)")
+        _ = tapReceived(.resync(cgFlags: CGEventSource.flagsState(.combinedSessionState).rawValue))
     }
 
     fileprivate func tapReceived(_ event: TapEvent) -> Bool {
@@ -505,7 +532,7 @@ private func hotKeyTapCallback(proxy: CGEventTapProxy, type: CGEventType, event:
     let tapEvent: HotKeyCenter.TapEvent
     switch type {
     case .tapDisabledByTimeout, .tapDisabledByUserInput:
-        MainActor.assumeIsolated { HotKeyCenter.shared.reenableTap() }
+        MainActor.assumeIsolated { HotKeyCenter.shared.reenableTap(timeout: type == .tapDisabledByTimeout) }
         return Unmanaged.passUnretained(event)
     case .keyDown: tapEvent = .keyDown(keyCode: keyCode, cgFlags: flags, isRepeat: event.getIntegerValueField(.keyboardEventAutorepeat) != 0)
     case .keyUp: tapEvent = .keyUp(keyCode: keyCode)
