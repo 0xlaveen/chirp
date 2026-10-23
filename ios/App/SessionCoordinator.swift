@@ -58,12 +58,14 @@ final class SessionCoordinator: ObservableObject {
     private let activityUpdate: (String, Bool) async -> Void
     private let activityEnd: () async -> Void
     private let copyText: (String) -> Void
+    private let appActive: () -> Bool
     private let now: () -> Date
     private var config: ServerConfig?
     private var generation = UUID()
     private var lifecycle = UUID()
     private var utterance: UUID?
     private var companion: UUID?
+    private var utteranceSource: DictationSource?
     private var privateUtterance = false
     private var sequence = 0
     private var lastServerSequence = -1
@@ -95,6 +97,7 @@ final class SessionCoordinator: ObservableObject {
          activityUpdate: @escaping (String, Bool) async -> Void = { await ChirpLiveActivity.update(phase: $0, debugRetention: $1) },
          activityEnd: @escaping () async -> Void = { await ChirpLiveActivity.end() },
          copyText: @escaping (String) -> Void = { UIPasteboard.general.string = $0 },
+         appActive: @escaping () -> Bool = { UIApplication.shared.applicationState == .active },
          now: @escaping () -> Date = Date.init,
          production: Bool = true) {
         #if DEBUG
@@ -104,7 +107,7 @@ final class SessionCoordinator: ObservableObject {
         #endif
         self.http = http; self.makeStream = makeStream; self.requestPermission = requestPermission; self.permissionGranted = permissionGranted
         self.activityBegin = activityBegin; self.activityActive = activityActive
-        self.activityUpdate = activityUpdate; self.activityEnd = activityEnd; self.copyText = copyText; self.now = now
+        self.activityUpdate = activityUpdate; self.activityEnd = activityEnd; self.copyText = copyText; self.appActive = appActive; self.now = now
         do {
             let stores = try services ?? (production ? AppServices.production() : nil)
             self.services = stores
@@ -297,7 +300,7 @@ final class SessionCoordinator: ObservableObject {
         try reconcileOrThrow()
         guard stream == nil, let config else { throw SessionFailure.setup }
         clearUtterance()
-        utterance = id; companion = source == .companion ? id : nil
+        utterance = id; companion = source == .companion ? id : nil; utteranceSource = source
         privateUtterance = preferences.privacyMode
         var options = StartOptions(client: "ios", correction: health.map { preferences.permitsCorrection(health: $0) } ?? false,
                                    correctionProfile: preferences.styleID, wordTimings: true)
@@ -455,7 +458,7 @@ final class SessionCoordinator: ObservableObject {
     private func clearUtterance(error: Error = SessionFailure.cancelled) {
         eventTask?.cancel(); eventTask = nil; deadline?.cancel(); deadline = nil
         utteranceLimit?.cancel(); utteranceLimit = nil; rawExpiry?.cancel(); rawExpiry = nil
-        audio.discard(); stream = nil; utterance = nil; companion = nil
+        audio.discard(); stream = nil; utterance = nil; companion = nil; utteranceSource = nil
         text = ""; raw = ""; words = []; canUseRaw = false; ready = false; stopRequested = false
         sequence = 0; lastServerSequence = -1; historyID = nil
         let pending = waiters; waiters.removeAll()
@@ -471,11 +474,13 @@ final class SessionCoordinator: ObservableObject {
     }
     func copy() { guard !text.isEmpty, phase == .finished else { return }; copyText(text); notice = "Copied." }
 
+    /// Cold setup and permission requests need Chirp on screen; an armed session starts from anywhere.
+    var needsForegroundToStart: Bool { !armed && !appActive() }
+
     func perform(action: SessionAction) async throws -> String {
         switch action {
         case .start:
-            // Cold setup and permission requests require a visible containing app.
-            guard armed || UIApplication.shared.applicationState == .active else { throw SessionFailure.setup }
+            guard !needsForegroundToStart else { throw SessionFailure.setup }
             try await begin(source: .companion)
             return "Recording. Stop Chirp to copy the final text."
         case .stop:
@@ -486,7 +491,11 @@ final class SessionCoordinator: ObservableObject {
             return copies ? "Copied. Paste with ⌘V." : "Dictation finished."
         case .toggle:
             // One action for a hardware-keyboard shortcut: start in an armed session, or stop and copy.
-            if utterance != nil, stream != nil { return try await perform(action: .stop) }
+            if utterance != nil, stream != nil {
+                // Keyboard dictation is never copied, so the shortcut leaves it to Chirp Keyboard.
+                guard utteranceSource != .keyboard else { return "Chirp Keyboard is dictating. Stop it in the keyboard." }
+                return try await perform(action: .stop)
+            }
             _ = try await perform(action: .start)
             return "Recording. Run Toggle Chirp dictation again to stop and copy."
         case .cancel: cancelDictation(); return "Dictation cancelled."
