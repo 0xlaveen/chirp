@@ -173,8 +173,13 @@ final class ChirpLiveServerUITests: XCTestCase {
         // A previous test may have left Chirp Keyboard up; its globe key moves to the next (Apple's) keyboard.
         // On Face ID iPhones iOS draws its own globe below a custom keyboard ("Next keyboard").
         let globe = messages.buttons.matching(NSPredicate(format: "identifier == 'Next keyboard' OR label == 'Next keyboard' OR identifier == 'chirp.keyboard.globe'")).firstMatch
-        for _ in 0..<4 where !messages.keys["space"].waitForExistence(timeout: 3) && globe.exists { globe.tap() }
-        XCTAssertTrue(messages.keys["space"].waitForExistence(timeout: 5), "Apple's keyboard is needed to type the prefix")
+        // A letters keyboard: Emoji also has a space key, but a "letters" button and no globe.
+        let letters = messages.buttons["letters"]
+        func lettersUp() -> Bool { messages.keys["space"].waitForExistence(timeout: 3) && !letters.exists }
+        for _ in 0..<4 where !lettersUp() {
+            if letters.exists { letters.tap() } else if globe.exists { globe.tap() } else { break }
+        }
+        XCTAssertTrue(lettersUp(), "Apple's keyboard is needed to type the prefix")
         field.typeText("We met and ")
         let typed = field.value as? String ?? ""
         XCTAssertTrue(typed.hasSuffix("We met and "), typed)
