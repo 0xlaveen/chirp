@@ -829,6 +829,50 @@ uv run python scripts/bench_notes.py --set talk --repetitions 1
 
 Metrics are in [notes-cleanup-talk.json](bench-data/notes-cleanup-talk.json).
 
+## Known terms in the clean-up prompts (2026-10-23)
+
+Recognition mishears a few domain words ("clawed code" for "Claude Code"), and Parakeet has no
+hotword biasing. The `default`, `chat`, `email`, `code`, `notes` and `live_notes` prompts now carry
+a short **known terms** list (Claude, Claude Code, Anthropic, Tailscale, GitHub, Koi, Chirp,
+Parakeet, Qwen, macOS, iOS, Android) and one rule: respell a word only when context makes it clearly
+a mishearing of a listed term, never otherwise ("the cat clawed the sofa" stays).
+
+The word guards compare against the source words, so a respelling would have been rejected as an
+invented word. They now also accept the output as faithful to the source with the contextual
+respellings applied (`known_terms.respell`: "clawed code", "ask/tell/thanks clawed", "tail scale",
+"get hub", "mac OS", "qwen 3"), and nothing else. Any other substitution of those words, or the same
+respelling without its context, is still rejected and falls back to the raw text.
+
+The eval grew from 59 to 75 synthetic cases: 16 known-term cases (9 positives across `default`, a
+repair, `chat`, `email`, `code`, `notes` and `live_notes`; 6 negatives such as a cat or bear that
+"clawed", "cloud code" and "claw back"; one already-correct sentence) in
+[cleanup_eval.jsonl](../server/tests/cleanup_eval.jsonl). Real Qwen3 4B Instruct 2507 4-bit,
+cached weights, one supervised helper, temperature 0, through `scripts/bench_cleanup.py`:
+
+| | Before (prompt unchanged) | After |
+|---|---:|---:|
+| Original 59 cases | 59/59 | 59/59 |
+| New known-term cases | n/a | 16/16 |
+| Guard fallbacks | 1 (`code-literal`) | 2 (`code-literal`, `literal-repair-words`) |
+
+The two fallbacks are guard catches that returned the raw text, which satisfies those fixtures
+(they are "keep as is" cases): `code-literal` as before, and `literal-repair-words`, where the
+longer prompt made the model drop "actually" once; the guard rejected it. Prompt wording matters at
+this size: a first draft cited "ask clawed to review it" in the rule and made the model drop
+"please" from `name-repair`, and one without "never add a word" turned a bare "clawed" into
+"Claude Code" in `email` (the guard rejected both). The final text fixes both. Timings are not
+comparable between runs: the host load was 60-114 throughout.
+
+`uv run pytest` passed 725 tests, and `uv run pytest -m model` passed 11 with 2 skipped. Metrics
+(no transcripts) are in [cleanup-known-terms.json](bench-data/cleanup-known-terms.json).
+
+```sh
+cd server
+HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 uv run python scripts/bench_cleanup.py \
+  --model qwen3-4b-instruct-2507-4bit --label known-terms
+uv run pytest -q -m model
+```
+
 ## Speaker labels (Mac Live Notes)
 
 2026-10-20, M5 Pro, macOS 27.0.1, issue #18 M1. `mac/scripts/speaker-bench` drives the **real Live Notes path**:

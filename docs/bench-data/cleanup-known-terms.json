@@ -1,0 +1,80 @@
+{
+  "profiles": {
+    "default": {
+      "runs": 49,
+      "passed": 49,
+      "rejected": 1,
+      "median_ms": 1241.2,
+      "min_ms": 695.5,
+      "max_ms": 4058.3
+    },
+    "chat": {
+      "runs": 4,
+      "passed": 4,
+      "rejected": 0,
+      "median_ms": 761.2,
+      "min_ms": 566.3,
+      "max_ms": 854.6
+    },
+    "email": {
+      "runs": 4,
+      "passed": 4,
+      "rejected": 0,
+      "median_ms": 985.4,
+      "min_ms": 822.2,
+      "max_ms": 1410.8
+    },
+    "code": {
+      "runs": 7,
+      "passed": 7,
+      "rejected": 1,
+      "median_ms": 719.3,
+      "min_ms": 595.2,
+      "max_ms": 1155.2
+    },
+    "notes": {
+      "runs": 5,
+      "passed": 5,
+      "rejected": 0,
+      "median_ms": 1168.9,
+      "min_ms": 703.7,
+      "max_ms": 1357.2
+    },
+    "custom": {
+      "runs": 4,
+      "passed": 4,
+      "rejected": 0,
+      "median_ms": 875.9,
+      "min_ms": 446.5,
+      "max_ms": 1187.6
+    },
+    "live_notes": {
+      "runs": 2,
+      "passed": 2,
+      "rejected": 0,
+      "median_ms": 2004.2,
+      "min_ms": 1745.6,
+      "max_ms": 2262.7
+    }
+  },
+  "label": "known-terms",
+  "model": "qwen3-4b-instruct-2507-4bit",
+  "cold_ms": 12684.9,
+  "cold_error": null,
+  "warm_median_ms": 1139.3,
+  "warm_min_ms": 446.5,
+  "warm_max_ms": 4058.3,
+  "runs": 75,
+  "passed": 75,
+  "exact": 75,
+  "near": 75,
+  "must_keep": 75,
+  "must_drop": 75,
+  "unchanged": 75,
+  "rejected": 2,
+  "failures": [],
+  "loadavg_min_max": [
+    88.2,
+    114.2
+  ]
+}

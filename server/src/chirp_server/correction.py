@@ -10,6 +10,7 @@ from dataclasses import dataclass
 import httpx
 
 from .config import CorrectionConfig
+from .known_terms import respell
 from .managed_cleanup import ManagedCleanup
 from .profiles import DEFAULT_PROMPT as DEFAULT_PROMPT
 from .profiles import LIVE_NOTES_ID, MAX_PROMPT_CHARS, system_prompt
@@ -55,13 +56,19 @@ def rejected(raw: str, text: str, finish, profile=None) -> bool:
     source = re.sub(r"^(?:(?:um|uh|er|ah|like|you know)[\s,]+)+", "", raw.lower())
     if any(text.lower().startswith(op) and not source.startswith(op) for op in OPENERS):
         return True
+    # A known-term respelling ("clawed code" -> "Claude Code") is the one licensed substitution.
+    fixed = respell(raw)
+    return not (_guard(raw, text, profile) or (fixed != raw and _guard(fixed, text, profile)))
+
+
+def _guard(raw: str, text: str, profile) -> bool:
     if profile and profile.id == LIVE_NOTES_ID:
-        return not notes_faithful(raw, text)
+        return notes_faithful(raw, text)
     if profile and profile.rewrites:
-        return not rewrite_faithful(raw, text)
+        return rewrite_faithful(raw, text)
     if profile and profile.id == "code":
-        return not code_faithful(raw, text)
-    return not faithful(raw, text)
+        return code_faithful(raw, text)
+    return faithful(raw, text)
 
 
 # Only these bounded value repairs may bypass word retention. Ambiguous repairs
@@ -592,7 +599,9 @@ class Corrector:
                     timeout=budget,
                 )
                 if rejected(raw, text, finish, selected):
-                    restored = restore_hedges(raw, text) if finish in {"stop", "eos"} else None
+                    restored = None
+                    if finish in {"stop", "eos"}:
+                        restored = restore_hedges(raw, text) or restore_hedges(respell(raw), text)
                     if restored is None or rejected(raw, restored, finish, selected):
                         return CorrectionResult(raw, error="rejected")
                     text = restored
