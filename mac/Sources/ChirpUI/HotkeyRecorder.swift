@@ -99,6 +99,8 @@ public final class HotkeyRecorder: NSButton {
 
     public private(set) var status: Status = .idle { didSet { refreshTitle(); onStatusChange?(status) } }
     public var onCapture: ((KeyCombo) -> Void)?
+    /// Another Chirp shortcut the combination would clash with; refused with the reason, recording continues.
+    public var conflict: ((KeyCombo) -> HotKeyValidation.Rejection?)?
     /// True when recording begins and false when it ends, so the owner can release the live hotkey meanwhile
     /// (pressing the current shortcut would otherwise start a dictation).
     public var onRecordingChanged: ((Bool) -> Void)?
@@ -189,6 +191,7 @@ public final class HotkeyRecorder: NSButton {
     public func apply(_ outcome: HotkeyRecording.Outcome) {
         switch outcome {
         case .accepted(let combo):
+            if let why = conflict?(combo) { status = .rejected(why); return }
             // First the new shortcut, then the end of recording, which makes the owner register it.
             onCapture?(combo)
             stop()

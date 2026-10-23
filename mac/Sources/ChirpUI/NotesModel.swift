@@ -35,6 +35,8 @@ public enum NotesStatus {
     public static func organizeFailed(_ count: Int, reason: String?) -> String {
         "Couldn’t organize \(count) section\(count == 1 ? "" : "s")\(reason.map { " (\($0))" } ?? "") — kept as is"
     }
+    /// The header's line about the dictation hotkey, which drives Notes while this window is in front.
+    public static func hotkeyHint(key: String, pause: Bool) -> String { "\(key) to record · \(key) again to \(pause ? "pause" : "stop")" }
     public static let stopped = "Stopped"
     public static let empty = "Press Record or \(MenuContent.notesHotkeyTitle) to start taking notes."
     public static let privacy = "Notes stay in memory until you save them."
@@ -143,6 +145,9 @@ public final class NotesModel {
     public var editorFocused = false
     /// Bumped to ask the editor to take keyboard focus (the empty state was clicked, the window opened with focus).
     public var focusRequest = 0
+    /// The dictation hotkey's keys ("⌥ Option"), empty until the window is shown.
+    public var dictationKey = ""
+    public var hotkeyHint: String? { dictationKey.isEmpty ? nil : NotesStatus.hotkeyHint(key: dictationKey, pause: NotesHotkeyRouter.pauseAvailable) }
 
     /// AI changes the editor has not replayed yet. Not observed: the editor drains them as they arrive.
     @ObservationIgnored public private(set) var pendingChanges: [NotesTextChange] = []

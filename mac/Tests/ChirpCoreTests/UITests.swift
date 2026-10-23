@@ -268,8 +268,8 @@ import Testing
         #expect(!form.removeSpeakerModel.isHidden && form.removeSpeakerModel.accessibilityLabel() == "Remove the speaker model")
     }
 
-    @Test(arguments: [(SettingsTab.general, SoundPack.chirp, 3), (.dictation, .chirp, 9), (.dictation, .custom, 11), (.cleanup, .chirp, 7),
-                      (.notes, .chirp, 4), (.server, .chirp, 6), (.devices, .chirp, 1)])
+    @Test(arguments: [(SettingsTab.general, SoundPack.chirp, 4), (.dictation, .chirp, 9), (.dictation, .custom, 11), (.cleanup, .chirp, 7),
+                      (.notes, .chirp, 5), (.server, .chirp, 6), (.devices, .chirp, 1)])
     func labelsShareARightEdgeAndControlsALeftEdge(tab: SettingsTab, pack: SoundPack, expectedLabels: Int) throws {
         var state = SettingsState()
         state.soundPack = pack
@@ -285,10 +285,10 @@ import Testing
         let edges = rowLabels.map { view.convert($0.bounds, from: $0).maxX }
         #expect(edges.allSatisfy { abs($0 - edges[0]) < 0.5 })
         let leading: [NSView] = switch tab {
-        case .general: [form.launch, form.setupButton]
+        case .general: [form.launch, form.openNotes.alwaysInDock, form.setupButton]
         case .dictation: [form.hotkey, form.mode, form.silence, form.microphone, form.wordWaveform, form.autoEnter, form.sounds, form.soundPack, form.volume]
         case .cleanup: [form.cleanupEnabled, form.style, form.insertRawFirst, form.appStyles.scroll, form.showChanges, form.offerRaw]
-        case .notes: [form.notesRecoveryCopy, form.notesButton]
+        case .notes: [form.notesRecoveryCopy, form.notesButton, form.openNotes.shortcutView]
         case .server: [form.serverURL, form.keepLoaded, form.doctorButton, form.modelsButton]
         case .devices: [form.pairButton]
         case .about: []

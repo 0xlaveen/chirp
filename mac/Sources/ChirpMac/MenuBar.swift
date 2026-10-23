@@ -33,6 +33,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         var elapsed: String?
         var hasDocument = false
         var hotkeyRegistered = true
+        var openShortcut: String?
         var debugRetention = false
     }
 
@@ -161,6 +162,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         inputs.notesElapsed = notes.elapsed
         inputs.notesHasDocument = notes.hasDocument
         inputs.notesHotkeyRegistered = notes.hotkeyRegistered
+        inputs.openNotesShortcut = notes.openShortcut
         inputs.debugRetention = controller.debugRetention || notes.debugRetention
         menu.removeAllItems()
         menu.addItem(headerItem(MenuContent.header(inputs), menu: menu))

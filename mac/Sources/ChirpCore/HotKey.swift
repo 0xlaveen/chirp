@@ -24,6 +24,8 @@ public struct KeyCombo: Sendable, Equatable, Identifiable {
     public static let escape = KeyCombo(id: "escape", title: "Esc", keyCode: UInt32(kVK_Escape), modifiers: 0)
     /// Live Notes' fixed toggle (not one of the dictation presets).
     public static let controlOptionN = KeyCombo(id: "control-option-n", title: "⌃⌥N", keyCode: UInt32(kVK_ANSI_N), modifiers: UInt32(controlKey | optionKey))
+    /// "Open Notes" default: brings the Notes window forward without recording (⌃⌥N records).
+    public static let controlOptionShiftN = KeyCombo(id: "control-option-shift-n", title: "⌃⌥⇧N", keyCode: UInt32(kVK_ANSI_N), modifiers: UInt32(controlKey | optionKey | shiftKey))
 
     /// Selectable dictation hotkeys; the first is the default. ⌃Space alone is Raycast's default and the system
     /// input-source switcher, so it is not offered.
@@ -56,11 +58,13 @@ public struct KeyCombo: Sendable, Equatable, Identifiable {
 
     /// The stored id back to a combo: a preset, or a custom shortcut that still passes validation. Anything else
     /// (unknown ids, a custom id that can never fire, such as one saved by hand) falls back to the default.
-    public static func resolve(id: String?) -> KeyCombo {
-        guard let id, id.hasPrefix(customPrefix) else { return preset(id: id) }
+    public static func resolve(id: String?, fallback: KeyCombo = .controlOptionSpace) -> KeyCombo {
+        guard let id else { return fallback }
+        if id == fallback.id { return fallback }
+        guard id.hasPrefix(customPrefix) else { return presets.first { $0.id == id } ?? fallback }
         let parts = id.dropFirst(customPrefix.count).split(separator: ":")
         guard parts.count == 2, let key = UInt32(parts[0]), let mods = UInt32(parts[1]),
-              case .success(let combo) = HotKeyValidation.validate(keyCode: key, modifiers: mods) else { return .controlOptionSpace }
+              case .success(let combo) = HotKeyValidation.validate(keyCode: key, modifiers: mods) else { return fallback }
         return combo
     }
 }
@@ -142,6 +146,8 @@ public enum HotKeyValidation {
         case controlSpace
         case reserved(String)
         case escape
+        /// Another Chirp shortcut already uses it ("Dictation", "Start/stop Notes").
+        case inUse(String)
 
         /// One sentence for the recorder to show next to the field.
         public var reason: String {
@@ -152,6 +158,7 @@ public enum HotKeyValidation {
             case .controlSpace: "⌃Space is Raycast’s default shortcut and the input-source switcher. Try ⌃⌥Space."
             case .reserved(let owner): "macOS reserves this shortcut for \(owner)."
             case .escape: "Esc cancels a dictation, so it can’t start one."
+            case .inUse(let owner): "Already used for \(owner). Pick another."
             }
         }
     }
@@ -189,6 +196,12 @@ public enum HotKeyValidation {
             return .failure(.reserved(hit.owner))
         }
         return .success(combo(keyCode: keyCode, modifiers: modifiers))
+    }
+
+    /// Whether `combo` is already another Chirp shortcut: `taken` lists the others by what they do. A modifier alone
+    /// (⌥) also clashes with a shortcut made of that modifier, so only the same keys count here.
+    public static func conflict(_ combo: KeyCombo, with taken: [(owner: String, combo: KeyCombo)]) -> Rejection? {
+        taken.first { $0.combo.keyCode == combo.keyCode && $0.combo.modifiers == combo.modifiers }.map { .inUse($0.owner) }
     }
 
     /// The preset with these keys when there is one (recording ⌥ alone gives the "⌥ Option" preset), else a custom one.
