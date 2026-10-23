@@ -15,6 +15,9 @@ public struct IOSPreferences: Codable, Sendable, Equatable {
     public var privacyMode = false
     /// Consent is bound to the disclosed destination. Nil means no external consent.
     public var consentHost: String?
+    /// Chirp Keyboard turns a dictation ending in "new line" / "new paragraph" into line breaks. Off unless set;
+    /// optional so older preference files still decode.
+    public var spokenCommands: Bool?
     public init() {}
     public func permitsCorrection(health: Health) -> Bool {
         guard correction, health.correctionAvailable else { return false }

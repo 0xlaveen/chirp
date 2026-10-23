@@ -67,4 +67,10 @@ struct ConnectionIssueTests {
         var kept = result; kept.kept = true
         #expect(try JSONDecoder().decode(BridgeResult.self, from: JSONEncoder().encode(kept)).kept == true)
     }
+
+    @Test func preferencesSavedBeforeSpokenCommandsStillLoad() throws {
+        let old = #"{"correction":false,"styleID":"default","prompts":{},"sessionDuration":"fiveMinutes","privacyMode":false}"#
+        let decoded = try JSONDecoder().decode(IOSPreferences.self, from: Data(old.utf8))
+        #expect(decoded.spokenCommands == nil)
+    }
 }

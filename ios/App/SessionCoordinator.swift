@@ -696,7 +696,8 @@ final class SessionCoordinator: ObservableObject {
             try services.bridge.publish(BridgeState(generation: generation, phase: phase, utteranceID: utterance,
                 leaseUntil: now().addingTimeInterval(8), sessionExpiresAt: expiresAt, debugRetention: debugRetention,
                 privacyMode: preferences.privacyMode, styleID: preferences.styleID,
-                availableStyleIDs: profiles.isEmpty ? ["default"] : profiles.map(\.id), errorCode: lastError))
+                availableStyleIDs: profiles.isEmpty ? ["default"] : profiles.map(\.id), errorCode: lastError,
+                spokenCommands: preferences.spokenCommands == true ? true : nil))
             signal.post()
         } catch { endSession(code: .storage) }
     }

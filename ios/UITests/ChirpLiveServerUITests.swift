@@ -169,6 +169,9 @@ final class ChirpLiveServerUITests: XCTestCase {
         let field = messages.descendants(matching: .any).matching(identifier: "messageBodyField").firstMatch
         guard field.waitForExistence(timeout: 10) else { dump("Messages compose", messages); throw XCTSkip("Messages exposes no message body field") }
         field.tap()
+        // Typed first with Apple's keyboard: the dictation then continues a sentence, so "So" lands lower-case.
+        if messages.keys["space"].waitForExistence(timeout: 3) { field.typeText("We met and ") }
+        let typed = field.value as? String ?? ""
         try selectChirpKeyboard(in: messages)
         let status = messages.staticTexts["chirp.keyboard.status"]
         guard status.waitForExistence(timeout: 10) else { dump("Messages keyboard", messages); XCTFail("Chirp Keyboard did not appear in Messages"); return }
@@ -179,7 +182,9 @@ final class ChirpLiveServerUITests: XCTestCase {
         XCTAssertTrue(waitFor(field, "value CONTAINS[c] 'design group'"), "Partial never reached Messages: \(String(describing: field.value))")
         screenshot("Keyboard partial in Messages", messages)
         primary.tap()
-        XCTAssertTrue(waitFor(field, "value BEGINSWITH 'So, um, schedule' AND value ENDSWITH 'design group.'"), String(describing: field.value))
+        XCTAssertTrue(waitFor(field, "value ENDSWITH 'design group.'"), String(describing: field.value))
+        let expectedStart = typed.hasSuffix("and ") ? typed + "so, um, schedule" : "So, um, schedule"
+        XCTAssertTrue((field.value as? String ?? "").hasPrefix(expectedStart), "Mid-sentence casing: \(String(describing: field.value))")
         screenshot("Keyboard final in Messages", messages)
         messages.buttons["chirp.keyboard.end"].tap()
         XCTAssertTrue(waitFor(status, "NOT label BEGINSWITH 'Session armed'", timeout: 10), status.label)
