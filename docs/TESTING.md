@@ -73,9 +73,9 @@ Run on the reference Mac after installing the build with `./scripts/install-mac.
 
 7. **Enable wireless debugging and pair adb:** `adb pair IP:PAIRPORT`, then `adb connect IP:PORT`. See `android/README.md`.
 8. **Install the app:**
-   - Build and install: `cd android && ./scripts/make-keystore.sh && ./gradlew assembleRelease && adb install -r app/build/outputs/apk/release/app-release.apk`.
+   - Build and install: `cd android && ./scripts/make-keystore.sh && ./gradlew assembleRelease && adb install -r app/build/outputs/apk/release/app-arm64-v8a-release.apk`.
    - Or install the debug APK.
-9. **Set up on the phone:** open **Chirp Voice**, grant the microphone, and enable the keyboard (Settings → General management → Keyboard list and default). Keep Samsung Keyboard on.
+9. **Set up on the phone:** open **Chirp Keyboard**, grant the microphone, and enable the keyboard (Settings → General management → Keyboard list and default). Keep Samsung Keyboard on.
 10. **Pair:**
     - On the Mac, run `cd server && uv run chirp-server pair --url https://mainframe.tail676ff2.ts.net/chirp`. It prints a secret link and a terminal QR code.
     - Tap **Scan pairing QR** in Chirp Setup. Google Play services owns the scanner UI and camera access; Chirp needs no camera permission. The Fold 8 has Play services; the scanner module may download on first use. Scanning fills the masked pairing field after validating the link. Paste remains available if scanning is unavailable or cancelled. The real scanner still needs device acceptance.
@@ -84,7 +84,7 @@ Run on the reference Mac after installing the build with `./scripts/install-mac.
 11. **Dictate:**
     - In Samsung Notes or a browser field, switch to Chirp with the keyboard icon and tap the mic.
     - Live text appears underlined in the field, and the final text replaces it.
-    - Check these cases from `android/README.md`: hold-to-talk, ✕ cancel, fold/unfold mid-utterance, hiding the keyboard, Wi-Fi vs LTE, and auto-return on/off.
+    - Check these cases from `android/README.md`: hold-to-talk, ✕ cancel, fold/unfold mid-utterance, hiding the keyboard, and Wi-Fi vs LTE.
 12. **Battery:** run `android/scripts/battery-session.sh`, which resets batterystats, runs a scripted session and dumps the results. Record the result in `docs/bench.md`.
 
 ## 3. Privacy checks
