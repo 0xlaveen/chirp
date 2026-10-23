@@ -12,10 +12,11 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.unit.dp
 import androidx.core.content.edit
+import dev.chirp.android.ui.ActionRow
+import dev.chirp.android.ui.SettingsGroup
+import dev.chirp.android.ui.SettingsItem
+import dev.chirp.android.ui.SwitchRow
 import helium314.keyboard.latin.settings.Defaults
 import helium314.keyboard.latin.settings.Settings
 import helium314.keyboard.latin.utils.ChecksumCalculator
@@ -143,26 +144,22 @@ internal fun SwipeTypingSettings() {
         }
     }
     fun restart() { context.getActivity()?.let(::restartChirp) }
-    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Text("Swipe typing", style = MaterialTheme.typography.titleSmall)
+    SettingsGroup("Swipe typing") {
         when (status) {
             GestureLibrary.Status.ACTIVE -> {
-                Row(Modifier.fillMaxWidth()) {
-                    Text("Swipe to type", Modifier.weight(1f))
-                    Switch(enabled, {
-                        enabled = it; prefs.edit { putBoolean(Settings.PREF_GESTURE_INPUT, it) }
-                    }, modifier = Modifier.semantics { contentDescription = "Swipe to type" })
-                }
-                Text("Using the gesture library you added. Trail and preview options are in Keyboard layouts & settings → Gesture typing.",
-                    style = MaterialTheme.typography.bodySmall)
-                TextButton({ confirmRemove = true }) { Text("Remove gesture library") }
+                SwitchRow("Swipe to type", enabled, {
+                    enabled = it; prefs.edit { putBoolean(Settings.PREF_GESTURE_INPUT, it) }
+                }, summary = "Using the gesture library you added. Trail and preview options are in Keyboard layouts & settings → Gesture typing.")
+                ActionRow("Remove gesture library", { confirmRemove = true }, destructive = true)
             }
             GestureLibrary.Status.NOT_LOADED -> {
-                Text("The library you added did not load on this phone ($abi). Remove it, then add a compatible file.",
-                    style = MaterialTheme.typography.bodySmall)
-                TextButton({ confirmRemove = true }) { Text("Remove gesture library") }
+                SettingsItem {
+                    Text("The library you added did not load on this phone ($abi). Remove it, then add a compatible file.",
+                        style = MaterialTheme.typography.bodySmall)
+                }
+                ActionRow("Remove gesture library", { confirmRemove = true }, destructive = true)
             }
-            GestureLibrary.Status.NONE -> {
+            GestureLibrary.Status.NONE -> SettingsItem {
                 Text("Chirp has no built-in swipe typing. Like HeliBoard, it can use a compatible gesture library " +
                     "that you add yourself, usually Google's libjni_latinimegoogle.so taken from a Google Apps (GApps) package. " +
                     "Chirp never downloads or includes it. Using it is your choice and is subject to that library's own licence.",

@@ -101,18 +101,18 @@ class VoiceUiTest {
         val state = SetupState().apply { step = 3; paired = true; health = store.health; correction = store.correction }
         compose.setContent { ChirpTheme { SetupWizard(state,
             preferences = { store.haptics = state.haptics }, correctionChanged = { store.correction = it }) } }
-        compose.onNodeWithContentDescription("Clean-up · Correction on Mac").assertIsDisplayed().assertIsOn()
+        compose.onNodeWithText("Clean-up · Correction on Mac").assertIsDisplayed().assertIsOn()
         compose.onNodeWithText("Polishes punctuation and filler words on your Mac; text never leaves it").assertIsDisplayed()
-        compose.onNodeWithContentDescription("Haptic cues").performScrollTo().performClick()
+        compose.onNodeWithText("Haptic cues").performScrollTo().performClick()
         compose.runOnIdle { assertFalse(context.getSharedPreferences("chirp", 0).contains("correction_explicit")) }
-        compose.onNodeWithContentDescription("Clean-up · Correction on Mac").performScrollTo().performClick()
+        compose.onNodeWithText("Clean-up · Correction on Mac").performScrollTo().performClick()
         compose.runOnIdle { assertFalse(store.correction); assertTrue(context.getSharedPreferences("chirp", 0).getBoolean("correction_explicit", false)) }
     }
     @Test fun `paired server with clean-up off explains it instead of hiding the feature`() {
         val state = SetupState().apply { step = 3; paired = true; health = Health(true, false, false, false, null) }
         compose.setContent { ChirpTheme { SetupWizard(state) } }
         compose.onNodeWithText("Mac has clean-up off").assertIsDisplayed()
-        compose.onNodeWithContentDescription("Clean-up · Correction on Mac").assertDoesNotExist()
+        compose.onNodeWithText("Clean-up · Correction on Mac").assertDoesNotExist()
     }
 
 }

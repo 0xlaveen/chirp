@@ -10,6 +10,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import dev.chirp.android.ui.NavRow
 
 @Composable
 internal fun CleanupStyleSettings(health: Health?, appsOnly: Boolean = false) {
@@ -39,7 +40,7 @@ internal fun CleanupStyleSettings(health: Health?, appsOnly: Boolean = false) {
     var selecting by remember { mutableStateOf(false) }
     var editingApp by remember { mutableStateOf<String?>(null) }
     var packageName by remember { mutableStateOf("") }
-    TextButton({ open = true }) { Text(if (appsOnly) "Per-app styles" else "Clean-up styles") }
+    NavRow(if (appsOnly) "Per-app styles" else "Clean-up styles", { open = true })
     if (open) AlertDialog(onDismissRequest = { open = false }, title = { Text(if (appsOnly) "Per-app styles" else "Clean-up styles") },
         text = {
             Column(Modifier.fillMaxWidth().heightIn(max = 480.dp).verticalScroll(rememberScrollState()),

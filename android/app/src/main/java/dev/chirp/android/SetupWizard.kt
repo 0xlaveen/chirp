@@ -19,7 +19,6 @@ import androidx.compose.foundation.relocation.bringIntoViewRequester
 import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.*
@@ -27,32 +26,19 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import dev.chirp.android.ui.ActionRow
+import dev.chirp.android.ui.AppColoursSettings
+import dev.chirp.android.ui.NavRow
+import dev.chirp.android.ui.SettingsGroup
+import dev.chirp.android.ui.SettingsItem
+import dev.chirp.android.ui.StatusBanner
+import dev.chirp.android.ui.StatusKind
+import dev.chirp.android.ui.SwitchRow
 
+/** Moved to [dev.chirp.android.ui.ChirpTheme]; this name stays so existing callers compile unchanged. */
 @Composable
-internal fun ChirpTheme(dark: Boolean = isSystemInDarkTheme(), content: @Composable () -> Unit) {
-    val colors = if (dark) darkColorScheme(
-        primary = Color(0xFF9FD3B9), onPrimary = Color(0xFF12382A),
-        primaryContainer = Color(0xFF284E3E), onPrimaryContainer = Color(0xFFBCEFD3),
-        secondary = Color(0xFFB5CCBE), onSecondary = Color(0xFF21352A),
-        secondaryContainer = Color(0xFF344A3D), onSecondaryContainer = Color(0xFFD0E8D9),
-        surface = Color(0xFF121715), onSurface = Color(0xFFE3EBE5),
-        surfaceVariant = Color(0xFF34443B), onSurfaceVariant = Color(0xFFB5C8BC),
-        surfaceContainer = Color(0xFF202A25), surfaceContainerHigh = Color(0xFF29382F),
-        surfaceContainerHighest = Color(0xFF34443B), background = Color(0xFF121715),
-        outline = Color(0xFF8B9F91), outlineVariant = Color(0xFF34443B),
-    ) else lightColorScheme(
-        primary = Color(0xFF386A58), onPrimary = Color.White,
-        primaryContainer = Color(0xFFBCEFD3), onPrimaryContainer = Color(0xFF12382A),
-        secondary = Color(0xFF52645B), onSecondary = Color.White,
-        secondaryContainer = Color(0xFFD5E8DC), onSecondaryContainer = Color(0xFF21352A),
-        surface = Color(0xFFF6FAF6), onSurface = Color(0xFF182D25),
-        surfaceVariant = Color(0xFFE0EAE2), onSurfaceVariant = Color(0xFF43564A),
-        surfaceContainer = Color(0xFFE6EFE8), surfaceContainerHigh = Color(0xFFDDE9DF),
-        surfaceContainerHighest = Color(0xFFD5E3D8), background = Color(0xFFF6FAF6),
-        outline = Color(0xFF6D8475), outlineVariant = Color(0xFFBFCFC3),
-    )
-    MaterialTheme(colorScheme = colors, content = content)
-}
+internal fun ChirpTheme(dark: Boolean = isSystemInDarkTheme(), content: @Composable () -> Unit) =
+    dev.chirp.android.ui.ChirpTheme(dark, content = content)
 
 @Composable
 internal fun SetupWizard(
@@ -86,14 +72,8 @@ internal fun SetupWizard(
                 Text("Speak on your phone. Your Mac transcribes over Tailscale.", style = MaterialTheme.typography.bodyLarge)
                 LinearProgressIndicator(progress = { (state.step + 1) / 4f }, modifier = Modifier.fillMaxWidth().semantics { contentDescription = "Setup progress" })
                 Text("Step ${state.step + 1} of 4 · ${listOf("Chirp Keyboard", "Microphone", "Pair Mac", "Try it")[state.step]}", style = MaterialTheme.typography.labelLarge)
-                if (state.health?.debugRetention == true) {
-                    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)) {
-                        Text("DEBUG RETENTION IS ON — the Mac may retain audio and text", Modifier.padding(16.dp), color = MaterialTheme.colorScheme.onErrorContainer)
-                    }
-                }
-                Card(Modifier.fillMaxWidth()) {
-                    Text(state.status, Modifier.padding(16.dp).semantics { liveRegion = LiveRegionMode.Polite })
-                }
+                if (state.health?.debugRetention == true) StatusBanner(StatusKind.Error, "DEBUG RETENTION IS ON — the Mac may retain audio and text")
+                StatusBanner(StatusKind.Info, state.status, live = true)
                 when (state.step) {
                     0 -> {
                         Text("Enable Chirp Keyboard", style = MaterialTheme.typography.titleLarge)
@@ -103,13 +83,13 @@ internal fun SetupWizard(
                         Text("Samsung: Settings → General management → Keyboard list and default.")
                         Button(keyboardSettings, Modifier.fillMaxWidth()) { Text(if (state.inputEnabled) "Chirp Keyboard enabled ✓" else "Enable Chirp Keyboard") }
                         OutlinedButton(picker, Modifier.fillMaxWidth()) { Text(if (state.inputSelected) "Chirp Keyboard selected ✓" else "Select it as default") }
-                        TextButton(keyboardPreferences) { Text("Keyboard layouts & settings") }
+                        SettingsGroup { NavRow("Keyboard layouts & settings", keyboardPreferences) }
                     }
                     1 -> {
                         Text("Allow the microphone", style = MaterialTheme.typography.titleLarge)
                         Text("The mic opens only when you start dictation and is released as soon as you stop. No recordings are saved on this phone; transcripts are kept only if you turn on dictation history.")
                         Button(grantMic, Modifier.fillMaxWidth()) { Text(if (state.mic) "Microphone allowed ✓" else "Allow microphone") }
-                        TextButton(appSettings) { Text("Open app permissions") }
+                        SettingsGroup { NavRow("Open app permissions", appSettings) }
                     }
                     2 -> {
                         Text("Connect your Mac", style = MaterialTheme.typography.titleLarge)
@@ -130,16 +110,15 @@ internal fun SetupWizard(
                         if (state.paired) {
                             Text("Paired with ${state.host}", style = MaterialTheme.typography.titleMedium)
                             Text("Engine: ${state.health?.engine ?: "Not reported by Mac"}")
-                            if (state.health.cleanupAvailable()) {
-                                Preference("Clean-up · ${correctionLabel(state.health)}", state.correction) {
+                            if (state.health.cleanupAvailable()) SettingsGroup {
+                                SwitchRow("Clean-up · ${correctionLabel(state.health)}", state.correction, {
                                     state.correction = it; correctionChanged(it)
-                                }
-                                Text(cleanupDescription(state.health), style = MaterialTheme.typography.bodySmall)
+                                }, summary = cleanupDescription(state.health))
                                 CleanupStyleSettings(state.health)
                             } else Text("Mac has clean-up off", style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
-                        TextButton({ state.step = 2 }) { Text(if (state.paired) "Change pairing" else "Pair Mac") }
+                        SettingsGroup { NavRow(if (state.paired) "Change pairing" else "Pair Mac", { state.step = 2 }) }
                         Text("Try a sentence", style = MaterialTheme.typography.titleLarge)
                         Text("Tap the field below. Type on Chirp Keyboard, then tap its mic to start and ✓ to finish (or pause, if you chose When I pause). Long press the mic for quick options. ✕ cancels. The keyboard stays selected after every final.")
                         StopDictationSettings()
@@ -161,28 +140,35 @@ internal fun SetupWizard(
                             editor.backgroundTintList = ColorStateList.valueOf(editorAccent)
                         }, modifier = Modifier.fillMaxWidth().bringIntoViewRequester(bringEditor))
                         Text("Typing suggestions learn on this device.", style = MaterialTheme.typography.bodySmall)
+                        AppColoursSettings()
                         KeyboardLookChooser()
                         SwipeTypingSettings()
-                        TextButton(picker) { Text("Choose keyboard") }
                         val context = LocalContext.current
-                        TextButton({ context.startActivity(Intent(context, ScratchpadActivity::class.java)) }) { Text("Open Scratchpad") }
-                        TextButton({ context.startActivity(Intent(context, NotesActivity::class.java)) }) { Text("Open Notes") }
+                        SettingsGroup {
+                            NavRow("Choose keyboard", picker)
+                            NavRow("Open Scratchpad", { context.startActivity(Intent(context, ScratchpadActivity::class.java)) })
+                            NavRow("Open Notes", { context.startActivity(Intent(context, NotesActivity::class.java)) })
+                        }
                         OutlinedButton(check, Modifier.fillMaxWidth(), enabled = !state.checking) { Text("Check Mac connection") }
                         if (state.status.startsWith("Mac unreachable") || state.status.startsWith("Check Tailscale")) {
                             Text("Check Tailscale is connected on both devices. Wake the Mac and start Chirp, then check the connection again.")
                         }
-                        Preference("Haptic cues", state.haptics) { state.haptics = it; preferences() }
-                        Preference("Debug overlay (timings only)", state.debug) { state.debug = it; preferences() }
+                        SettingsGroup {
+                            SwitchRow("Haptic cues", state.haptics, { state.haptics = it; preferences() })
+                            SwitchRow("Debug overlay (timings only)", state.debug, { state.debug = it; preferences() })
+                        }
                         HistorySettings()
                         UpdateSettings()
-                        TextButton(keyboardPreferences) { Text("Keyboard layouts & settings") }
-                        BuildSetupOptions()
-                        HorizontalDivider()
-                        Text("Optional floating microphone", style = MaterialTheme.typography.titleMedium)
-                        Text("Off by default. Enable only if you want a floating mic with another keyboard. Chirp reads the focused field locally to insert safely. Keyboard dictation works without Accessibility.")
-                        TextButton(accessibilitySettings) { Text(if (state.bubbleEnabled) "Floating mic enabled ✓" else "Enable optional floating mic") }
-                        Text("Settings → Accessibility → Installed apps. If sideloading blocks this optional feature: Apps → Chirp Keyboard → ⋮ → Allow restricted settings.")
-                        TextButton(forget) { Text("Forget pairing") }
+                        SettingsGroup {
+                            NavRow("Keyboard layouts & settings", keyboardPreferences)
+                            BuildSetupOptions()
+                        }
+                        SettingsGroup("Optional floating microphone") {
+                            SettingsItem { Text("Off by default. Enable only if you want a floating mic with another keyboard. Chirp reads the focused field locally to insert safely. Keyboard dictation works without Accessibility.") }
+                            NavRow(if (state.bubbleEnabled) "Floating mic enabled ✓" else "Enable optional floating mic", accessibilitySettings,
+                                summary = "Settings → Accessibility → Installed apps. If sideloading blocks this optional feature: Apps → Chirp Keyboard → ⋮ → Allow restricted settings.")
+                        }
+                        SettingsGroup { ActionRow("Forget pairing", forget, destructive = true) }
                     }
                 }
                 TextButton({ diagnostics(); showDiagnostics = true }) { Text("Diagnostics") }
@@ -197,13 +183,5 @@ internal fun SetupWizard(
                 }
             }
         }
-    }
-}
-
-@Composable
-private fun Preference(label: String, checked: Boolean, enabled: Boolean = true, changed: (Boolean) -> Unit) {
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        Text(label, Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
-        Switch(checked, changed, enabled = enabled, modifier = Modifier.semantics { contentDescription = label })
     }
 }

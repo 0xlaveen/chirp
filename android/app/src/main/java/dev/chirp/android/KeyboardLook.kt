@@ -5,6 +5,7 @@ import android.content.SharedPreferences
 import android.content.res.Configuration
 import android.graphics.Color
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
@@ -12,6 +13,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -21,6 +23,8 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.core.content.edit
 import androidx.core.graphics.ColorUtils
+import dev.chirp.android.ui.SettingsGroup
+import dev.chirp.android.ui.SettingsItem
 import helium314.keyboard.keyboard.ColorSetting
 import helium314.keyboard.keyboard.KeyboardSwitcher
 import helium314.keyboard.keyboard.KeyboardTheme
@@ -206,12 +210,12 @@ internal fun KeyboardLookChooser() {
     val prefs = remember { keyboardPrefs(context) }
     var selected by remember { mutableStateOf(currentKeyboardLook(prefs)) }
     val night = androidx.compose.foundation.isSystemInDarkTheme()
-    Column(Modifier.fillMaxWidth().selectableGroup(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Text("Keyboard look", style = MaterialTheme.typography.titleSmall)
+    SettingsGroup("Keyboard look", Modifier.selectableGroup()) {
         for (look in KeyboardLook.entries) {
-            Row(Modifier.fillMaxWidth().selectable(selected == look, role = Role.RadioButton) {
+            Row(Modifier.fillMaxWidth().heightIn(min = 56.dp).clip(MaterialTheme.shapes.extraSmall)
+                .background(MaterialTheme.colorScheme.surfaceContainer).selectable(selected == look, role = Role.RadioButton) {
                     applyKeyboardLook(prefs, look); selected = look
-                }.padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically,
+                }.padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 RadioButton(selected == look, onClick = null)
                 LookPreview(look, night)
@@ -221,9 +225,11 @@ internal fun KeyboardLookChooser() {
                 }
             }
         }
-        if (selected == null) Text("Custom look from Appearance is in use. Pick one above to switch.",
-            style = MaterialTheme.typography.bodySmall)
-        Text("Fine-tune colours, key borders, height and background in Appearance.",
-            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        SettingsItem {
+            if (selected == null) Text("Custom look from Appearance is in use. Pick one above to switch.",
+                style = MaterialTheme.typography.bodySmall)
+            Text("Fine-tune colours, key borders, height and background in Appearance.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
     }
 }
