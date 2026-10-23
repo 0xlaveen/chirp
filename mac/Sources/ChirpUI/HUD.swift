@@ -39,7 +39,7 @@ public final class HUDModel {
     public var unstable = ""
     /// Recent input levels for the waveform, newest last.
     public var levels = LevelHistory()
-    /// The word waveform (Settings → General): each word's audio drawn above it. Off keeps the HUD as it always was.
+    /// The word waveform (Settings → Dictation): each word's audio drawn above it. Off keeps the HUD as it always was.
     public var wordWaveform = false
     /// Every level of the utterance so far, kept only while the word waveform is on.
     public var utterance = UtteranceLevels()

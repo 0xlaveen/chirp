@@ -5,7 +5,7 @@ something in the waveform. Should probably be an optional mode, but make it cool
 
 ## What ships
 
-Settings → General → **Word waveform overlay** (off by default). When on, the Mac asks the server for
+Settings → Dictation → **Word waveform overlay** (off by default). When on, the Mac asks the server for
 `word_timings` and the HUD draws the live transcript word by word, each word with the bars of its own
 audio directly above it. The committed snapshots are
 `docs/screenshots/mac/hud-wordwave-{listening,long,polishing}-{light,dark}.png`.

@@ -119,36 +119,6 @@ public enum SoundTiming {
     }
 }
 
-/// The menu's Sounds choices: Off, a pack, or Custom.
-public enum SoundChoice: Equatable, Sendable {
-    case off
-    case pack(SoundPack)
-
-    public static let menuOrder: [SoundChoice] = [.off] + SoundPack.builtIn.map { .pack($0) } + [.pack(.custom)]
-
-    public var id: String {
-        switch self {
-        case .off: "off"
-        case .pack(let p): p.rawValue
-        }
-    }
-
-    public init?(id: String?) {
-        guard let id else { return nil }
-        if id == "off" { self = .off } else if let p = SoundPack(rawValue: id) { self = .pack(p) } else { return nil }
-    }
-
-    public static func current(enabled: Bool, pack: SoundPack) -> SoundChoice { enabled ? .pack(pack) : .off }
-
-    /// Off keeps the pack; picking a pack turns sounds on.
-    public func apply(to preferences: Preferences) {
-        switch self {
-        case .off: preferences.soundsEnabled = false
-        case .pack(let p): preferences.soundPack = p; preferences.soundsEnabled = true
-        }
-    }
-}
-
 // MARK: files
 
 /// The file operations the custom-sound import needs, so tests can inject a fake.

@@ -18,7 +18,6 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         /// Opens Settings, on `tab` when given (else wherever it was).
         var openSettings: (SettingsTab?) -> Void
         var openSetup: () -> Void
-        var openAbout: () -> Void
         var toggleNotes: () -> Void = {}
         var showNotes: () -> Void = {}
         /// Live Notes' state for the menu and the icon.
@@ -154,9 +153,6 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         inputs.rawOfferKey = controller.rawOffer.hotkeyActive ? RawOffer.combo.title : nil
         inputs.hotkey = settings.hotkey
         inputs.activationMode = settings.activationMode
-        inputs.soundsEnabled = settings.soundsEnabled
-        inputs.soundPack = settings.soundPack
-        inputs.serverURL = settings.serverURL
         inputs.micGranted = Permissions.microphoneGranted
         inputs.accessibilityGranted = Permissions.accessibilityGranted
         let notes = actions.notes()
@@ -227,12 +223,9 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         case .toggleCleanup: #selector(toggleCleanup)
         case .toggleShowChanges: #selector(toggleShowChanges)
         case .pickStyle: #selector(pickStyle(_:))
-        case .copyDoctor: #selector(copyDoctor)
-        case .pickSound: #selector(pickSound(_:))
         case .showSettings: #selector(showSettings)
         case .editStyles: #selector(editStyles)
         case .showSetup: #selector(showSetup)
-        case .showAbout: #selector(showAbout)
         case .quit: #selector(quit)
         }
     }
@@ -250,22 +243,9 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         // Custom needs instructions: open the style editor, where they are written.
         if id == CorrectionProfile.customID { actions.openSettings(.cleanup) }
     }
-    @objc private func copyDoctor() {
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(DoctorHelp.clipboardText(serverURL: settings.serverURL), forType: .string)
-    }
     @objc private func showSettings() { actions.openSettings(nil) }
     @objc private func editStyles() { actions.openSettings(.cleanup) }
     @objc private func showSetup() { actions.openSetup() }
-    @objc private func showAbout() { actions.openAbout() }
-    @objc private func pickSound(_ sender: NSMenuItem) {
-        guard let choice = SoundChoice(id: sender.representedObject as? String) else { return }
-        // Custom needs files: until there are some, Settings is where they are chosen.
-        if choice == .pack(.custom), settings.customStartSound == nil, settings.customStopSound == nil { actions.openSettings(.sounds) }
-        choice.apply(to: settings)
-        Sounds.prepare()
-        if choice != .off { Sounds.play(.start) }   // hear what was picked
-    }
     @objc private func quit() { NSApp.terminate(nil) }
 }
 

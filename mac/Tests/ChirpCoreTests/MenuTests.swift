@@ -93,8 +93,7 @@ import Testing
     // MARK: the structure
 
     @Test func readyMenuHasTheTargetStructure() {
-        #expect(groups(inputs()) == [["Start Dictation", "Start Notes"], ["Clean-up", "Microphone", "Sounds", "Server"],
-                                     ["Settings…", "About Chirp"], ["Quit Chirp"]])
+        #expect(groups(inputs()) == [["Start Dictation", "Start Notes"], ["Clean-up", "Microphone"], ["Settings…"], ["Quit Chirp"]])
         #expect(MenuContent.header(inputs()).title == "Chirp")
     }
 
@@ -104,13 +103,21 @@ import Testing
             #expect(!e.title.isEmpty && !e.title.contains("\n"))
             #expect(e.value == nil || e.shortcut == nil)
         }
-        // Under the header, around the dictation rows, around Settings/About and above Quit.
+        // Under the header, around the dictation rows, around Settings and above Quit.
         #expect(MenuContent.entries(inputs()).filter(\.isSeparator).count == 4)
     }
 
-    @Test func hotkeyAndLaunchAtLoginLiveOnlyInSettings() {
+    @Test func setOncePreferencesLiveOnlyInSettings() {
         let all = MenuContent.entries(inputs { $0.cleanupOn = true }).flatMap { [$0] + ($0.submenu ?? []) }
-        #expect(!all.contains { $0.title == "Hotkey" || $0.title == "Launch at Login" })
+        for title in ["Hotkey", "Launch at Login", "Sounds", "Server", "About Chirp", "Copy Doctor Command"] {
+            #expect(!all.contains { $0.title == title }, "\(title)")
+        }
+    }
+
+    @Test func useRawIsItsOwnGroupUnderTheStartRows() {
+        let m = inputs { $0.rawOfferOpen = true; $0.rawOfferKey = "⌃⌥Z" }
+        #expect(groups(m) == [["Start Dictation", "Start Notes"], ["Use Raw for Last Dictation"], ["Clean-up", "Microphone"],
+                              ["Settings…"], ["Quit Chirp"]])
     }
 
     // MARK: header and status
@@ -172,7 +179,7 @@ import Testing
         let open = try #require(entry(inputs { $0.rawOfferOpen = true; $0.rawOfferKey = "⌃⌥Z" }, .useRaw))
         #expect(open.title == "Use Raw for Last Dictation" && open.shortcut == "⌃⌥Z")
         #expect(try #require(entry(inputs { $0.rawOfferOpen = true }, .useRaw)).shortcut == nil)
-        #expect(groups(inputs { $0.rawOfferOpen = true })[0] == ["Start Dictation", "Use Raw for Last Dictation", "Start Notes"])
+        #expect(groups(inputs { $0.rawOfferOpen = true })[1] == ["Use Raw for Last Dictation"])
     }
 
     // MARK: Clean-up
@@ -228,7 +235,7 @@ import Testing
         let configs: [(inout MenuInputs) -> Void] = [
             { _ in }, { $0.cleanupOn = true }, { $0.cleanupOn = true; $0.showChanges = true },
             { $0.health = Health(correction: "off"); $0.cleanupOn = true }, { $0.health = nil; $0.cleanupOn = true },
-            { $0.soundsEnabled = true }, { $0.chosenInputUID = "studio" }, { $0.paused = true },
+            { $0.chosenInputUID = "studio" }, { $0.paused = true },
         ]
         for configure in configs {
             for top in MenuContent.entries(inputs(configure)) {
@@ -289,41 +296,9 @@ import Testing
     }
 
     @Test func rowsKeepOnlyTheirTitleWhenThereIsNoValue() {
-        let about = entry(inputs(), "About Chirp")
-        #expect(about?.accessibilityLabel == "About Chirp")
+        #expect(entry(inputs { $0.micGranted = false }, "Set Up Chirp…")?.accessibilityLabel == "Set Up Chirp…")
         #expect(entry(inputs(), "Settings…")?.accessibilityLabel == "Settings…, ⌘,")
         #expect(entry(inputs(), "Start Dictation")?.accessibilityLabel == "Start Dictation, ⌃⌥Space")
-    }
-
-    // MARK: Sounds
-
-    @Test func soundsValueIsTheChoiceAndTheSubmenuMarksIt() throws {
-        let off = try #require(entry(inputs(), "Sounds"))
-        #expect(off.value == "Off" && off.action == nil && off.isEnabled)
-        #expect(off.submenu?.filter { $0.mark == .on }.map(\.title) == ["Off"])
-        let chirp = try #require(entry(inputs { $0.soundsEnabled = true }, "Sounds"))
-        #expect(chirp.value == "Chirp" && chirp.submenu?.filter { $0.mark == .on }.map(\.title) == ["Chirp"])
-        #expect(try #require(entry(inputs { $0.soundsEnabled = true; $0.soundPack = .glass }, "Sounds")).value == "Glass")
-        #expect(try #require(entry(inputs { $0.soundsEnabled = true; $0.soundPack = .custom }, "Sounds")).value == "Custom")
-    }
-
-    // MARK: Server
-
-    @Test func serverValueSaysWhereItRuns() throws {
-        #expect(try #require(entry(inputs(), "Server")).value == "This Mac")
-        #expect(try #require(entry(inputs { $0.serverURL = "http://localhost:7821" }, "Server")).value == "This Mac")
-        #expect(try #require(entry(inputs { $0.serverURL = "https://mainframe.ts.net/chirp" }, "Server")).value == "mainframe.ts.net")
-        let far = try #require(entry(inputs { $0.serverURL = "https://mainframe-with-a-very-long-name.example.ts.net/chirp" }, "Server"))
-        #expect(far.value?.hasSuffix("…") == true && far.fullValue == "mainframe-with-a-very-long-name.example.ts.net")
-    }
-
-    @Test func serverSubmenuShowsUrlEngineStatusAndTheDoctorCommand() throws {
-        let sub = try #require(entry(inputs(), "Server")?.submenu)
-        #expect(sub.filter { !$0.isSeparator }.map(\.title) == ["http://127.0.0.1:7821", "Engine: parakeet", "Status: Ready", "Copy Doctor Command"])
-        #expect(sub.filter { !$0.isSeparator }.map(\.action) == [nil, nil, nil, .copyDoctor])
-        let down = try #require(entry(inputs { $0.health = nil; $0.healthError = "x" }, "Server"))
-        #expect(down.tone == .error && down.submenu?.map(\.title).contains("Status: Unreachable") == true)
-        #expect(entry(inputs { $0.health = Health(ready: false) }, "Server")?.submenu?.map(\.title).contains("Status: Loading model…") == true)
     }
 
     // MARK: Set Up Chirp…, footer
@@ -340,15 +315,14 @@ import Testing
 
     @Test func setUpChirpSitsBetweenTheSeparatorAndSettings() {
         let m = inputs { $0.micGranted = false }
-        #expect(groups(m)[2] == ["Set Up Chirp…", "Settings…", "About Chirp"])
+        #expect(groups(m)[2] == ["Set Up Chirp…", "Settings…"])
     }
 
-    @Test func footerHasSettingsAboutAndQuitWithTheirKeys() {
+    @Test func footerHasSettingsAndQuitWithTheirKeys() {
         let settings = entry(inputs(), .showSettings)
         #expect(settings?.keyEquivalent == "," && settings?.shortcut == "⌘,")
         #expect(entry(inputs(), .quit)?.keyEquivalent == "q" && entry(inputs(), .quit)?.shortcut == "⌘Q")
-        #expect(entry(inputs(), .showAbout) != nil)
-        #expect(titles(inputs()).suffix(3) == ["Settings…", "About Chirp", "Quit Chirp"])
+        #expect(titles(inputs()).suffix(2) == ["Settings…", "Quit Chirp"])
     }
 
     @Test func permissionsHaveNoRowsInTheMenu() {
@@ -419,7 +393,7 @@ import Testing
 
     @Test func itemPayloadsCarryTheirChoice() {
         #expect(MenuAction.pickInput("boya").payload == "boya" && MenuAction.pickInput(nil).payload == nil)
-        #expect(MenuAction.pickStyle("email").payload == "email" && MenuAction.pickSound("glass").payload == "glass")
+        #expect(MenuAction.pickStyle("email").payload == "email")
         #expect(MenuAction.quit.payload == nil && MenuAction.editStyles.payload == nil)
     }
 }

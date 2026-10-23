@@ -170,7 +170,7 @@ public enum KeepLoaded {
     }
 }
 
-/// What the Clean-up tab's switch shows, as the server's answers come in. The switch changes at once and goes back with
+/// What the Server tab's Keep clean-up model loaded switch shows, as the server's answers come in. The switch changes at once and goes back with
 /// an inline error when the server refuses.
 public struct KeepLoadedState: Sendable, Equatable {
     public enum Availability: Sendable, Equatable {

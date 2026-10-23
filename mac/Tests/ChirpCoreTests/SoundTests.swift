@@ -48,33 +48,6 @@ import Testing
         #expect(p.soundVolume == 0.6)
     }
 
-    @Test func theMenuChoicesAreOffThePacksThenCustom() throws {
-        #expect(SoundChoice.menuOrder.map(\.id) == ["off", "chirp", "soft", "glass", "click", "system", "custom"])
-        let (p, defaults, suite) = try prefs()
-        defer { defaults.removePersistentDomain(forName: suite) }
-        SoundChoice.pack(.soft).apply(to: p)
-        #expect(p.soundsEnabled && p.soundPack == .soft)
-        SoundChoice.off.apply(to: p)
-        #expect(!p.soundsEnabled && p.soundPack == .soft)   // Off keeps the pack for next time
-        #expect(SoundChoice(id: "off") == .off && SoundChoice(id: "glass") == .pack(.glass) && SoundChoice(id: "nope") == nil)
-        #expect(SoundChoice.current(enabled: false, pack: .glass) == .off && SoundChoice.current(enabled: true, pack: .glass) == .pack(.glass))
-    }
-
-    @Test func theMenuMarksTheCurrentChoice() throws {
-        func submenu(_ configure: (inout MenuInputs) -> Void) throws -> [MenuEntry] {
-            var m = MenuInputs()
-            configure(&m)
-            return try #require(MenuContent.entries(m).first { $0.title == "Sounds" }?.submenu)
-        }
-        let on = try submenu { $0.soundsEnabled = true; $0.soundPack = .glass }
-        #expect(on.filter { !$0.isSeparator }.map(\.title) == ["Off", "Chirp", "Soft", "Glass", "Click", "System", "Custom…"])
-        #expect(on.filter { $0.mark == .on }.map(\.title) == ["Glass"])
-        #expect(on.compactMap(\.action) == SoundChoice.menuOrder.map { .pickSound($0.id) })
-        #expect(try submenu { $0.soundsEnabled = false; $0.soundPack = .glass }.filter { $0.mark == .on }.map(\.title) == ["Off"])
-        #expect(try submenu { $0.soundsEnabled = true; $0.soundPack = .custom }.filter { $0.mark == .on }.map(\.title) == ["Custom…"])
-        #expect(MenuAction.pickSound("soft").payload == "soft")
-    }
-
     @Test func eachPackHasAStartAndStopFileExceptSystemAndCustom() {
         for pack in SoundPack.builtIn where pack != .system {
             #expect(pack.resourceName(for: .start) == "\(pack.rawValue)-start" && pack.resourceName(for: .stop) == "\(pack.rawValue)-stop")
@@ -574,10 +547,10 @@ struct GeneratedSounds {
 
     @Test func theCustomRowsOnlyShowForTheCustomPack() {
         let form = SettingsForm(SettingsState())
-        let before = form.fittingSize(for: .sounds).height
+        let before = form.fittingSize(for: .dictation).height
         form.showPack(.custom)
-        #expect(form.fittingSize(for: .sounds).height > before)
+        #expect(form.fittingSize(for: .dictation).height > before)
         form.showPack(.soft)
-        #expect(form.fittingSize(for: .sounds).height == before)
+        #expect(form.fittingSize(for: .dictation).height == before)
     }
 }

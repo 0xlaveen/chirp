@@ -20,6 +20,7 @@ final class SettingsWindowController: NSObject, NSTextFieldDelegate {
     var onOpenSetup: (() -> Void)?
     var onOpenModels: (() -> Void)?
     var onPairPhone: (() -> Void)?
+    var onOpenNotes: (() -> Void)?
     var onRemoveSpeakerModel: (() -> Void)?
     var onNotesRecoveryCopyChange: (() -> Void)?
     private var testTask: Task<Void, Never>?
@@ -65,6 +66,10 @@ final class SettingsWindowController: NSObject, NSTextFieldDelegate {
         s.serverOffersStyles = health == nil || health?.correctionProfiles != nil
         s.keepLoaded = keepLoaded
         s.speakerModelDownloaded = SpeakerModel.hasFiles()
+        s.inputs = InputDevice.all().map(\.input)
+        s.defaultInput = InputDevice.systemDefault()?.input
+        s.chosenInputUID = settings.inputDeviceUID
+        s.about = AboutInfo(infoDictionary: Bundle.main.infoDictionary)
         s.serverHost = KeepLoaded.hostPhrase(ServerConfig(baseURL: URL(string: settings.serverURL) ?? ServerConfig.defaultURL))
         return s
     }
@@ -84,7 +89,7 @@ final class SettingsWindowController: NSObject, NSTextFieldDelegate {
         if let window, let tabs, let current = tabs.tabViewItems[tabs.selectedTabViewItemIndex].viewController?.view {
             window.makeFirstResponder(current)
         }
-        if SettingsTab.allCases[tabs?.selectedTabViewItemIndex ?? 0] == .cleanup { refreshKeepLoaded() }
+        if SettingsTab.allCases[tabs?.selectedTabViewItemIndex ?? 0] == .server { refreshKeepLoaded() }
     }
 
     // MARK: keep clean-up model loaded
@@ -154,7 +159,7 @@ final class SettingsWindowController: NSObject, NSTextFieldDelegate {
     }
 
     private func makeWindow() -> NSWindow {
-        let form = SettingsForm(state)
+        let form = SettingsForm(state, icon: NSApp.applicationIconImage, onNotices: { Self.openNotices() })
         form.setupButton.target = self
         form.setupButton.action = #selector(openSetup)
         form.doctorButton.target = self
@@ -163,6 +168,10 @@ final class SettingsWindowController: NSObject, NSTextFieldDelegate {
         form.modelsButton.action = #selector(openModels)
         form.pairButton.target = self
         form.pairButton.action = #selector(pairPhone)
+        form.notesButton.target = self
+        form.notesButton.action = #selector(openNotes)
+        form.microphone.target = self
+        form.microphone.action = #selector(microphoneChanged(_:))
         form.removeSpeakerModel.target = self
         form.removeSpeakerModel.action = #selector(removeSpeakerModel)
         form.cleanupEnabled.target = self
@@ -229,7 +238,7 @@ final class SettingsWindowController: NSObject, NSTextFieldDelegate {
         self.form = form
 
         let tabs = SettingsTabs.makeController(form: form) { [weak self] tab in
-            if tab == .cleanup { self?.refreshKeepLoaded() }
+            if tab == .server { self?.refreshKeepLoaded() }
         }
         self.tabs = tabs
         let w = NSWindow(contentViewController: tabs)
@@ -246,13 +255,22 @@ final class SettingsWindowController: NSObject, NSTextFieldDelegate {
     @objc private func openSetup() { onOpenSetup?() }
     @objc private func openModels() { onOpenModels?() }
     @objc private func pairPhone() { onPairPhone?() }
+    @objc private func openNotes() { onOpenNotes?() }
+    @objc private func microphoneChanged(_ sender: NSPopUpButton) { settings.inputDeviceUID = sender.selectedItem?.representedObject as? String }
     @objc private func openKeyboardSettings() {
         NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.Keyboard-Settings.extension")!)
     }
     @objc private func removeSpeakerModel() { onRemoveSpeakerModel?() }
 
-    /// The speaker model came or went: refresh the General tab's row.
+    /// The speaker model came or went: refresh the Notes tab's row.
     func speakerModelChanged() { form?.apply(state) }
+
+    /// The notices shipped in the app bundle (`bundle.sh` copies them); the repository copy for a bare `swift run`.
+    private static func openNotices() {
+        let url = Bundle.main.url(forResource: "NOTICES", withExtension: "md", subdirectory: "ThirdParty")
+            ?? URL(string: "https://github.com/araa47/chirp/blob/main/mac/Assets/ThirdParty/NOTICES.md")!
+        NSWorkspace.shared.open(url)
+    }
 
     @objc private func copyDoctor() {
         NSPasteboard.general.clearContents()

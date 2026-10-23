@@ -217,9 +217,11 @@ public enum Snapshots {
         func form(_ name: String, _ tab: SettingsTab, _ configure: (inout SettingsState) -> Void = { _ in }) -> Scenario {
             var state = SettingsState()
             state.launch = .on; state.serverStatus = "parakeet-mlx:tdt-0.6b-v2"
+            state.inputs = [boya, studio]; state.defaultInput = boya
+            state.about = AboutInfo(version: "0.1.0", build: "1")
             configure(&state)
             return Scenario(name: "settings-\(tab.rawValue)-\(name)") {
-                let form = SettingsForm(state)
+                let form = SettingsForm(state, icon: appIcon, onNotices: {})
                 let view = form.view(for: tab)
                 view.setFrameSize(form.fittingSize(for: tab))
                 return view
@@ -235,21 +237,24 @@ public enum Snapshots {
         let warmOff = CleanupModelSettings(keepLoaded: false, model: "qwen3-4b", memoryMB: 2662, memoryEstimated: true)
         return [
             form("ready", .general) { _ in },
-            form("custom-hotkey", .general) { $0.hotkey = .custom(keyCode: 0x0F, modifiers: UInt32(controlKey | optionKey | cmdKey)) },   // ⌃⌥⌘R
-            form("option-hold", .general) { $0.hotkey = .option; $0.activationMode = .holdToTalk },
             form("login-unavailable", .general) { $0.launch = .unavailable },
-            Scenario(name: "settings-general-hotkey-rejected") {
-                let form = SettingsForm(SettingsState())
+            form("missing", .general) { $0.micGranted = false; $0.accessibilityGranted = false },
+            form("ready", .dictation) { _ in },
+            form("custom-hotkey", .dictation) { $0.hotkey = .custom(keyCode: 0x0F, modifiers: UInt32(controlKey | optionKey | cmdKey)) },   // ⌃⌥⌘R
+            form("option-hold", .dictation) { $0.hotkey = .option; $0.activationMode = .holdToTalk },
+            Scenario(name: "settings-dictation-hotkey-rejected") {
+                var state = SettingsState()
+                state.inputs = [boya, studio]; state.defaultInput = boya
+                let form = SettingsForm(state)
                 // As if ⇧ had just been pressed and let go in the recorder (set directly: no event monitor offscreen).
                 form.recorder.apply(.rejected(.shiftAlone))
-                let view = form.view(for: .general)
-                view.setFrameSize(form.fittingSize(for: .general))
+                let view = form.view(for: .dictation)
+                view.setFrameSize(form.fittingSize(for: .dictation))
                 return view
             },
-            form("ready", .devices) { _ in },
-            form("off", .sounds) { _ in },
-            form("pack", .sounds) { $0.soundsEnabled = true; $0.soundPack = .chirp; $0.soundVolume = 0.6 },
-            form("custom", .sounds) {
+            form("picked-microphone", .dictation) { $0.chosenInputUID = "studio" },
+            form("sounds", .dictation) { $0.soundsEnabled = true; $0.soundPack = .chirp; $0.soundVolume = 0.6 },
+            form("sounds-custom", .dictation) {
                 $0.soundsEnabled = true; $0.soundPack = .custom; $0.soundVolume = 0.4
                 $0.customStart = CustomSound(fileName: "custom-start-1a2b3c4d.m4a", displayName: "Doorbell chime.m4a", duration: 1.2)
                 $0.customStop = CustomSound(fileName: "custom-stop-5e6f7a8b.wav", displayName: "soft-tap.wav", duration: 0.18)
@@ -275,36 +280,38 @@ public enum Snapshots {
                 $0.catalog = StyleCatalog(profiles: samplePrompts, source: .cached)
                 $0.editingStyle = "code"
             },
-            form("warm-off", .cleanup) { styled(&$0); $0.keepLoaded = KeepLoadedState(settings: warmOff, availability: .available) },
-            form("warm-loading", .cleanup) {
-                styled(&$0)
-                $0.keepLoaded = KeepLoadedState(settings: CleanupModelSettings(keepLoaded: true, loading: true, model: "qwen3-4b", memoryMB: 2662, memoryEstimated: true),
-                                                availability: .available)
-            },
-            form("warm-remote-host", .cleanup) {
-                styled(&$0); $0.serverHost = "mainframe.example.ts.net"
-                $0.keepLoaded = KeepLoadedState(settings: CleanupModelSettings(keepLoaded: true, loaded: true, model: "qwen3-4b", memoryMB: 2662),
-                                                availability: .available)
-            },
-            form("warm-error", .cleanup) {
-                styled(&$0)
-                $0.keepLoaded = KeepLoadedState(settings: warmOff, availability: .available, error: CleanupSettingsError.unreachable.changeFailure)
-            },
-            form("warm-old-server", .cleanup) { styled(&$0); $0.keepLoaded = KeepLoadedState(availability: .unavailable(.serverTooOld)) },
-            form("warm-remote-model", .cleanup) { styled(&$0); $0.keepLoaded = KeepLoadedState(availability: .unavailable(.remoteModel)) },
             form("no-styles", .cleanup) {
                 $0.cleanupEnabled = true; $0.cleanupStyle = "notes"; $0.serverOffersStyles = false
             },
             form("unavailable", .cleanup) {
                 $0.cleanupDetail = "The server has clean-up turned off; see the README to enable it."; $0.cleanupAvailable = false
             },
-            form("ready", .server) { _ in },
+            form("downloaded", .notes) { $0.speakerModelDownloaded = true },
+            form("not-downloaded", .notes) { _ in },
+            form("ready", .server) { styled(&$0) },
             form("unreachable", .server) {
                 $0.tokenPresent = false; $0.serverURL = "https://mainframe.example.ts.net/chirp"
                 $0.serverStatus = "Unreachable"; $0.serverStatusTone = .error
             },
-            form("granted", .permissions) { _ in },
-            form("missing", .permissions) { $0.micGranted = false; $0.accessibilityGranted = false },
+            form("warm-off", .server) { styled(&$0); $0.keepLoaded = KeepLoadedState(settings: warmOff, availability: .available) },
+            form("warm-loading", .server) {
+                styled(&$0)
+                $0.keepLoaded = KeepLoadedState(settings: CleanupModelSettings(keepLoaded: true, loading: true, model: "qwen3-4b", memoryMB: 2662, memoryEstimated: true),
+                                                availability: .available)
+            },
+            form("warm-remote-host", .server) {
+                styled(&$0); $0.serverHost = "mainframe.example.ts.net"; $0.serverURL = "https://mainframe.example.ts.net/chirp"
+                $0.keepLoaded = KeepLoadedState(settings: CleanupModelSettings(keepLoaded: true, loaded: true, model: "qwen3-4b", memoryMB: 2662),
+                                                availability: .available)
+            },
+            form("warm-error", .server) {
+                styled(&$0)
+                $0.keepLoaded = KeepLoadedState(settings: warmOff, availability: .available, error: CleanupSettingsError.unreachable.changeFailure)
+            },
+            form("warm-old-server", .server) { styled(&$0); $0.keepLoaded = KeepLoadedState(availability: .unavailable(.serverTooOld)) },
+            form("warm-remote-model", .server) { styled(&$0); $0.keepLoaded = KeepLoadedState(availability: .unavailable(.remoteModel)) },
+            form("ready", .devices) { _ in },
+            form("ready", .about) { _ in },
         ]
     }
 
@@ -360,10 +367,6 @@ public enum Snapshots {
         ]
     }
 
-    public static var aboutScenarios: [Scenario] {
-        [Scenario(name: "about") { AboutView(icon: appIcon, info: AboutInfo(version: "0.1.0", build: "1"), onNotices: {}) }]
-    }
-
     private static let boya = AudioInput(uid: "boya", name: "BOYA CM40")
     private static let studio = AudioInput(uid: "studio", name: "Studio Display Microphone")
 
@@ -402,7 +405,7 @@ public enum Snapshots {
             },
             menu("cleanup-off-on-server") { $0.health = Health(engine: "parakeet-mlx:tdt-0.6b-v2", ready: true, correction: "off") },
             menu("unreachable") {
-                $0.healthError = "Server unreachable at 127.0.0.1"; $0.serverURL = "https://mainframe.example.ts.net/chirp"
+                $0.healthError = "Server unreachable at 127.0.0.1"
             },
             menu("permissions-missing") {
                 $0.health = Health(engine: "parakeet-mlx:tdt-0.6b-v2", ready: true)
@@ -420,13 +423,10 @@ public enum Snapshots {
             menu("long-names") {
                 $0.health = local; $0.chosenInputUID = "long"
                 $0.inputs = [boya, AudioInput(uid: "long", name: "Studio Display Microphone (Built-in, Aggregate)")]
-                $0.serverURL = "https://mainframe-with-a-very-long-name.example.ts.net/chirp"
             },
             submenu("cleanup-submenu", of: "Clean-up") { $0.health = local; $0.cleanupOn = true; $0.styleID = "email" },
             submenu("cleanup-submenu-off", of: "Clean-up") { $0.health = local },
             submenu("microphone-submenu", of: "Microphone") { $0.health = local; $0.chosenInputUID = "studio" },
-            submenu("sounds-submenu", of: "Sounds") { $0.health = local; $0.soundsEnabled = true; $0.soundPack = .chirp },
-            submenu("server-submenu", of: "Server") { $0.health = local },
         ]
     }
 
@@ -436,8 +436,8 @@ public enum Snapshots {
         "hud-listening", "hud-flow-2-polishing", "hud-flow-3-diff", "hud-correction-use-raw",
         "hud-wordwave-listening", "hud-wordwave-long", "hud-wordwave-polishing",
         "menu-ready", "menu-cleanup-submenu",
-        "settings-general-ready", "settings-sounds-pack", "settings-cleanup-custom", "settings-server-ready",
-        "settings-devices-ready", "settings-permissions-missing", "onboarding-welcome",
+        "settings-general-missing", "settings-dictation-sounds", "settings-cleanup-custom", "settings-notes-downloaded",
+        "settings-server-ready", "settings-devices-ready", "settings-about-ready", "onboarding-welcome",
         "notes-editing", "notes-split",
     ]
 
@@ -652,7 +652,7 @@ public enum Snapshots {
     }
 
     public static var allScenarios: [Scenario] {
-        hudScenarios + wordWaveScenarios + settingsScenarios + onboardingScenarios + aboutScenarios + menuScenarios + localModelsScenarios
+        hudScenarios + wordWaveScenarios + settingsScenarios + onboardingScenarios + menuScenarios + localModelsScenarios
             + notesScenarios + pairingScenarios
     }
 
@@ -671,7 +671,7 @@ public enum Snapshots {
         host.boxType = .custom
         host.borderWidth = 0
         host.contentViewMargins = .zero
-        let isWindow = ["settings-", "onboarding-", "models-", "about", "notes-", "pairing-"].contains { scenario.name.hasPrefix($0) }
+        let isWindow = ["settings-", "onboarding-", "models-", "notes-", "pairing-"].contains { scenario.name.hasPrefix($0) }
         host.fillColor = isWindow ? .windowBackgroundColor : .clear
         host.appearance = appearance
         host.contentView = view

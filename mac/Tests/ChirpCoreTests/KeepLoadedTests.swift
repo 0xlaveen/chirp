@@ -344,9 +344,9 @@ private let home = ServerConfig(baseURL: URL(string: "http://127.0.0.1:7821/chir
         let f = form(KeepLoadedState(settings: try decode(loadedJSON), availability: .available))
         #expect(f.keepLoaded.title == "Keep clean-up model loaded")
         #expect(f.keepLoaded.state == .on && f.keepLoaded.isEnabled)
-        #expect(f.keepLoaded.isDescendant(of: f.view(for: .cleanup)))
+        #expect(f.keepLoaded.isDescendant(of: f.view(for: .server)))
         #expect(f.keepLoaded.accessibilityHelp()?.contains("2.6 GB") == true)
-        let shown = texts(in: f.view(for: .cleanup))
+        let shown = texts(in: f.view(for: .server))
         #expect(shown.contains("Loaded · 2.6 GB"))
         #expect(shown.contains("Clean-up starts instantly instead of loading after a pause. Uses 2.6 GB of memory on this Mac."))
     }
@@ -354,30 +354,30 @@ private let home = ServerConfig(baseURL: URL(string: "http://127.0.0.1:7821/chir
     @Test func followsTheStateThroughTransitions() throws {
         let f = form(KeepLoadedState())
         #expect(!f.keepLoaded.isEnabled && f.keepLoaded.state == .off)
-        #expect(texts(in: f.view(for: .cleanup)).contains("Checking the server…"))
+        #expect(texts(in: f.view(for: .server)).contains("Checking the server…"))
 
         var s = KeepLoadedState(settings: try decode(estimateJSON), availability: .available)
         f.showKeepLoaded(s, host: "mainframe.example.ts.net")
         #expect(f.keepLoaded.isEnabled && f.keepLoaded.state == .off)
-        var shown = texts(in: f.view(for: .cleanup))
+        var shown = texts(in: f.view(for: .server))
         #expect(shown.contains("Not loaded"))
         #expect(shown.contains { $0.hasSuffix("Uses about 2.6 GB of memory on mainframe.example.ts.net.") })
 
         _ = s.toggle(to: true)
         f.showKeepLoaded(s, host: "this Mac")
         #expect(f.keepLoaded.state == .on && !f.keepLoaded.isEnabled)
-        #expect(texts(in: f.view(for: .cleanup)).contains("Loading…"))
+        #expect(texts(in: f.view(for: .server)).contains("Loading…"))
 
         s.toggleFailed(.unreachable)
         f.showKeepLoaded(s, host: "this Mac")
         #expect(f.keepLoaded.state == .off && f.keepLoaded.isEnabled)
-        shown = texts(in: f.view(for: .cleanup))
+        shown = texts(in: f.view(for: .server))
         #expect(shown.contains(CleanupSettingsError.unreachable.changeFailure))
 
         _ = s.toggle(to: true)
         s.toggleSucceeded(try decode(loadedJSON))
         f.showKeepLoaded(s, host: "this Mac")
-        shown = texts(in: f.view(for: .cleanup))
+        shown = texts(in: f.view(for: .server))
         #expect(f.keepLoaded.state == .on && shown.contains("Loaded · 2.6 GB") && !shown.contains(CleanupSettingsError.unreachable.changeFailure))
     }
 
@@ -388,16 +388,16 @@ private let home = ServerConfig(baseURL: URL(string: "http://127.0.0.1:7821/chir
                             (.unreachable, "Can’t reach the server.")] {
             let f = form(KeepLoadedState(availability: .unavailable(why)))
             #expect(!f.keepLoaded.isEnabled && f.keepLoaded.state == .off)
-            let shown = texts(in: f.view(for: .cleanup))
+            let shown = texts(in: f.view(for: .server))
             #expect(shown.contains(line))
             #expect(!shown.contains("Loading…") && !shown.contains("Not loaded"))
         }
     }
 
-    @Test func theCleanupTabStillFitsTheScreenLogic() {
+    @Test func theServerTabStillFitsTheScreenLogic() {
         // the new row must not break the tab's measured size
         let f = form(KeepLoadedState())
-        let size = f.fittingSize(for: .cleanup)
+        let size = f.fittingSize(for: .server)
         #expect(size.width > 300 && size.height > 300)
     }
 }
