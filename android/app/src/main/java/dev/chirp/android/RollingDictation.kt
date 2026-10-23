@@ -110,7 +110,7 @@ internal class RollingDictation(
     private val limitSeconds: Int = CaptureLimit.ROLLING_SECONDS,
     /** A fresh timer per segment, before its transport is made: each utterance logs its own timings. */
     private val timing: () -> SessionTimer? = { null },
-) {
+) : Utterance {
     private inner class Segment {
         lateinit var stream: DictationStream
         var status = ""
@@ -125,11 +125,11 @@ internal class RollingDictation(
     private var captureStarted = false
     private var live = false
     private var begin: (DictationStream) -> Unit = {}
-    var stopping = false
+    override var stopping = false
         private set
-    val polishing get() = segments.firstOrNull()?.stream?.polishing == true && (stopping || segments.size == 1)
+    override val polishing get() = segments.firstOrNull()?.stream?.polishing == true && (stopping || segments.size == 1)
     /** False while an earlier segment lands and the dictation goes on: no done cue then. */
-    var landingLast = true
+    override var landingLast = true
         private set
 
     fun start(correction: Boolean, profile: String = "default", instructions: String = "", prompt: String? = null) {
@@ -183,7 +183,7 @@ internal class RollingDictation(
         open()
         old.stream.stop()
     }
-    fun stop() {
+    override fun stop() {
         if (!live || stopping) return
         stopping = true
         segments.last().stream.stop()
@@ -207,7 +207,7 @@ internal class RollingDictation(
         if (live && segments.isEmpty() && stopping) { live = false; capture = null; ended() }
     }
     /** Discards every segment that has not landed; text already inserted stays. */
-    fun cancel() {
+    override fun cancel() {
         if (!live) return
         live = false
         segments.forEach { it.stream.cancel() }; segments.clear()

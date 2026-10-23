@@ -7,7 +7,8 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
-    <queries><package android:name="com.tailscale.ipn" /></queries>
+    <queries><package android:name="com.tailscale.ipn" />
+        <intent><action android:name="android.speech.RecognitionService" /></intent></queries>
     <application android:name=".ChirpApplication" android:label="@string/app_name" android:icon="@mipmap/ic_launcher" android:roundIcon="@mipmap/ic_launcher_round"
         android:theme="@style/Theme.Chirp"
         android:allowBackup="false" android:fullBackupContent="false"
