@@ -311,7 +311,7 @@ final class ChirpKeyboardViewController: UIInputViewController {
                               kind: kind, text: result.text, sequence: result.sequence,
                               createdAt: result.createdAt, expiresAt: result.expiresAt, segment: result.segment ?? 0)
         guard let plan = policy.plan(event, context: context(), now: Date(), leaseUntil: leaseUntil,
-                                     rawRequested: rawRequested) else { return }
+                                     rawRequested: rawRequested, commands: state?.spokenCommands == true) else { return }
         startPending = false
         guard execute(plan), policy.didApply(plan, observed: context(), now: Date()) else {
             invalidateOwnership(); return

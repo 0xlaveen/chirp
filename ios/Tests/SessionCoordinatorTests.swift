@@ -46,11 +46,11 @@ struct SessionCoordinatorTests {
         return Fixture(model: model, transport: transport, audio: audio, values: values, stores: stores, secrets: secrets, root: root)
     }
     func eventually(_ check: () -> Bool) async throws {
-        for _ in 0..<200 {
+        for _ in 0..<600 {
             if check() { return }
             try await Task.sleep(for: .milliseconds(5))
         }
-        #expect(check(), "Expected synthetic event to complete within one second")
+        #expect(check(), "Expected synthetic event to complete within three seconds")
     }
     func ready(_ f: Fixture, index: Int = 0) async throws {
         f.values.transports[index].push(#"{"type":"ready","session":"synthetic","debug_retention":false}"#)

@@ -63,6 +63,8 @@ extension XCTestCase {
         let loaded = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in status.exists || globe.exists }, object: nil)
         _ = XCTWaiter.wait(for: [loaded], timeout: 10)
         if status.exists { return }
+        // iPad's Emoji keyboard has no globe key; "letters" returns to one that has.
+        if !globe.exists, app.buttons["letters"].exists { app.buttons["letters"].tap(); _ = globe.waitForExistence(timeout: 3) }
         guard globe.exists, globe.isHittable else {
             throw XCTSkip("Simulator has no system globe/input-mode button; disable Connect Hardware Keyboard and retry.")
         }

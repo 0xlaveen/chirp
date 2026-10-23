@@ -84,6 +84,11 @@ struct SessionSettingsView: View {
                     .onChange(of: model.preferences.privacyMode) { _, _ in model.savePreferences() }
                 Text("Chirp cannot detect every editor's private mode. Use this control before private dictation. No surrounding editor text is collected.")
                     .font(.footnote).foregroundStyle(.secondary)
+                Toggle("Spoken commands", isOn: Binding(get: { model.preferences.spokenCommands == true },
+                                                        set: { model.preferences.spokenCommands = $0 ? true : nil; model.savePreferences() }))
+                    .accessibilityIdentifier("chirp.settings.spokenCommands")
+                Text("Off by default. In Chirp Keyboard, ending a dictation with \"new line\" or \"new paragraph\" types a line break instead of the words. Mid-sentence, a common first word such as \"so\" or \"and\" starts lower-case.")
+                    .font(.footnote).foregroundStyle(.secondary)
                 if model.armed { Button("End session", role: .destructive) { model.endSession() }.frame(minHeight: 44) }
                 Link("Open Chirp permissions", destination: URL(string: UIApplication.openSettingsURLString)!)
             }

@@ -132,6 +132,8 @@ public struct OwnedInsertion: Sendable {
     public private(set) var isFinal = false
     /// Long dictation: the segment this keyboard currently owns. Earlier segments' text is no longer ours.
     public private(set) var segment = 0
+    /// Decided once from the text just before the dictation (or segment): lower-case a common first word.
+    public private(set) var midSentence = false
     private var expected: CursorContext?
     private var startedAt = Date.distantFuture
     private var lastSequence = -1
@@ -149,6 +151,7 @@ public struct OwnedInsertion: Sendable {
         guard context.isUsable else { requiresRecovery = true; return false }
         self.generation = generation; self.utteranceID = utteranceID
         expected = context; startedAt = now
+        midSentence = FinalCasing.midSentence(context.before.map { String($0.suffix(FinalCasing.lookbehind)) })
         return true
     }
 
@@ -158,8 +161,17 @@ public struct OwnedInsertion: Sendable {
         ownedText = ""; seen.removeAll(); rawDeadline = nil
     }
 
+    /// The text to insert for `event`: casing on everything but Use raw, spoken commands on finals only.
+    public func shaped(_ event: TextEvent, commands: Bool) -> String {
+        switch event.kind {
+        case .raw: event.text
+        case .final: FinalCasing.shape(event.text, midSentence: midSentence, commands: commands)
+        case .partial, .correcting: midSentence ? FinalCasing.lowerFirstWord(event.text) : event.text
+        }
+    }
+
     public mutating func plan(_ event: TextEvent, context: CursorContext, now: Date,
-                              leaseUntil: Date, rawRequested: Bool = false) -> EditPlan? {
+                              leaseUntil: Date, rawRequested: Bool = false, commands: Bool = false) -> EditPlan? {
         guard event.generation == generation, event.utteranceID == utteranceID,
               !seen.contains(event.id), event.expiresAt > now,
               event.createdAt >= startedAt, event.createdAt <= now,
@@ -173,15 +185,17 @@ public struct OwnedInsertion: Sendable {
                 invalidate(); return nil
             }
             segment = event.segment; ownedText = ""; isFinal = false; rawDeadline = nil; undoDeadline = nil
+            midSentence = FinalCasing.midSentence(expected.before.map { String($0.suffix(FinalCasing.lookbehind)) })
         } else if event.segment < segment { return nil }
         guard !isFinal || (event.kind == .raw && rawRequested && now < (rawDeadline ?? .distantPast)) else {
             return nil
         }
+        let text = shaped(event, commands: commands)
         guard event.kind != .raw || (isFinal && rawRequested), context.isUsable,
               let expected, context.matches(expected),
-              event.text.utf16.count <= InsertionLimits.maximumResultUTF16,
-              event.text.utf8.count <= InsertionLimits.maximumResultUTF8,
-              ((expected.before ?? "").utf16.count - ownedText.utf16.count + event.text.utf16.count)
+              text.utf16.count <= InsertionLimits.maximumResultUTF16,
+              text.utf8.count <= InsertionLimits.maximumResultUTF8,
+              ((expected.before ?? "").utf16.count - ownedText.utf16.count + text.utf16.count)
                 <= InsertionLimits.maximumContextUTF16 else {
             invalidate(); return nil
         }
@@ -189,12 +203,12 @@ public struct OwnedInsertion: Sendable {
         let after = expected.after ?? ""
         // A leading combining mark / ZWJ must never absorb the user's previous
         // grapheme into our suffix. The same rule applies to the following text.
-        guard (anchor + event.text).count == anchor.count + event.text.count,
-              (anchor + event.text + after).count == anchor.count + event.text.count + after.count else {
+        guard (anchor + text).count == anchor.count + text.count,
+              (anchor + text + after).count == anchor.count + text.count + after.count else {
             invalidate(); return nil
         }
         seen.insert(event.id); lastSequence = event.sequence; pendingEvent = event
-        return EditPlan(expected: expected, ownedText: ownedText, replacement: event.text)
+        return EditPlan(expected: expected, ownedText: ownedText, replacement: text)
     }
 
     /// Ownership transfers only after the host actually exposes the exact result.

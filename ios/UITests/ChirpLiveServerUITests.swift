@@ -169,6 +169,20 @@ final class ChirpLiveServerUITests: XCTestCase {
         let field = messages.descendants(matching: .any).matching(identifier: "messageBodyField").firstMatch
         guard field.waitForExistence(timeout: 10) else { dump("Messages compose", messages); throw XCTSkip("Messages exposes no message body field") }
         field.tap()
+        // Typed first with Apple's keyboard: the dictation then continues a sentence, so "So" lands lower-case.
+        // A previous test may have left Chirp Keyboard up; its globe key moves to the next (Apple's) keyboard.
+        // On Face ID iPhones iOS draws its own globe below a custom keyboard ("Next keyboard").
+        let globe = messages.buttons.matching(NSPredicate(format: "identifier == 'Next keyboard' OR label == 'Next keyboard' OR identifier == 'chirp.keyboard.globe'")).firstMatch
+        // A letters keyboard: Emoji also has a space key, but a "letters" button and no globe.
+        let letters = messages.buttons["letters"]
+        func lettersUp() -> Bool { messages.keys["space"].waitForExistence(timeout: 3) && !letters.exists }
+        for _ in 0..<4 where !lettersUp() {
+            if letters.exists { letters.tap() } else if globe.exists { globe.tap() } else { break }
+        }
+        XCTAssertTrue(lettersUp(), "Apple's keyboard is needed to type the prefix")
+        field.typeText("We met and ")
+        let typed = field.value as? String ?? ""
+        XCTAssertTrue(typed.hasSuffix("We met and "), typed)
         try selectChirpKeyboard(in: messages)
         let status = messages.staticTexts["chirp.keyboard.status"]
         guard status.waitForExistence(timeout: 10) else { dump("Messages keyboard", messages); XCTFail("Chirp Keyboard did not appear in Messages"); return }
@@ -179,7 +193,9 @@ final class ChirpLiveServerUITests: XCTestCase {
         XCTAssertTrue(waitFor(field, "value CONTAINS[c] 'design group'"), "Partial never reached Messages: \(String(describing: field.value))")
         screenshot("Keyboard partial in Messages", messages)
         primary.tap()
-        XCTAssertTrue(waitFor(field, "value BEGINSWITH 'So, um, schedule' AND value ENDSWITH 'design group.'"), String(describing: field.value))
+        XCTAssertTrue(waitFor(field, "value ENDSWITH 'design group.'"), String(describing: field.value))
+        let expectedStart = typed + "so, um, schedule"
+        XCTAssertTrue((field.value as? String ?? "").hasPrefix(expectedStart), "Mid-sentence casing: \(String(describing: field.value))")
         screenshot("Keyboard final in Messages", messages)
         messages.buttons["chirp.keyboard.end"].tap()
         XCTAssertTrue(waitFor(status, "NOT label BEGINSWITH 'Session armed'", timeout: 10), status.label)

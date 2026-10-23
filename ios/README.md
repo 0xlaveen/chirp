@@ -324,6 +324,16 @@ Start and stop give a light haptic when Full Access is on.
    **Style** picks the server's clean-up profile; **End session** stops the
    microphone.
 
+**Casing and spoken commands.** When the text just before a dictation shows a
+sentence already under way (it ends in a word, a digit, a comma or a
+semicolon), a common first word such as "so", "and" or "the" lands
+lower-case: "We met and" + "So we left" gives "We met and so we left". Names,
+"I", acronyms and mixed-case words stay as Chirp heard them, and a new
+sentence, line or field keeps its capital. With **Spoken commands** on
+(Settings, off by default), ending a dictation with "new line" or "new
+paragraph" types one or two line breaks instead of the words. Use raw always
+inserts the server's text unchanged.
+
 The keyboard edits only a verified owned suffix: it binds what it inserted to
 the exact editor context and refuses to delete anything it cannot prove it
 wrote. Live text is updated by rewriting only the part that changed, and long
