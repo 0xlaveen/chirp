@@ -38,10 +38,11 @@ GitHub Actions (`.github/workflows/`) runs the automated checks on every pull re
 | `server.yml` | ubuntu | `uv sync --locked`, `ruff check`, `ruff format --check`, `pytest -q` | MLX packages are darwin-only, so Linux installs the portable set. `-m model` tests (real cached models) are deselected by `addopts`; run them on the Mac. |
 | `android.yml` | ubuntu, JDK 21, Android SDK 37.2 | `./gradlew lint testDebugUnitTest assembleDebug assembleRelease` | The release APK is unsigned (no keystore secret). Lint and test reports upload on failure. |
 | `mac.yml` | macos | `mac/scripts/ci-test.sh` (wraps `test.sh`) | Only for `mac/**` changes (macOS minutes are expensive). Can also be started by hand (`workflow_dispatch`). |
+| `ios.yml` | macos, newest installed Xcode | `ios/scripts/ci-test.sh`: `check-sources.sh`, `Shared/scripts/test.sh`, the keyboard policy package tests, then `ios/scripts/simulator.sh test` (build and unit tests of the app with its keyboard and widgets) on one iPhone simulator | Only for `ios/**`, the `mac` package sources the app links (`ChirpCore`, `ChirpSpeakers`, `Package.*`) and the workflow file. Ad-hoc simulator signing, no team or secrets. Can also be started by hand. |
 
 The hosted runners only have Xcode 26 (Swift 6.2/6.3). On them, six stream and recorder suites abort the shared test process (`freed pointer was not the last allocation`) although every test passes alone and on Swift 6.4, so `ci-test.sh` runs those one test per process, together with the Live Notes soak (`NotesSoakTests`; `test.sh` with no arguments also runs it after the rest, so its 2-minute limit covers the soak alone). It skips `GeneratedSoundTests` (needs `swift make-sounds.swift`) and `SnapshotTests` (the runner's fonts render PNGs over the committed-size cap). Both run in `mac/scripts/test.sh` on the Mac.
 
-iOS is not in CI: the project needs the iOS 27 simulator SDK and signing-free simulator runs that the hosted runners do not provide yet. Use `ios/scripts/simulator.sh` on the Mac.
+iOS CI runs the portable checks and the app's unit tests only. The UI schemes and the live-server end to end (`ios/scripts/simulator-e2e.sh`) stay on the Mac: they need `say`, ffmpeg, the cached model and a real keyboard setup, which the runners do not have, and headless simulator UI runs are not reliable enough to gate a PR. Run `ios/scripts/simulator.sh ui` or `simulator-e2e.sh` before merging UI changes.
 
 `scripts/e2e-local.sh` and the operator steps below need a real Mac, `say` and (for the app) permissions, so they stay local.
 

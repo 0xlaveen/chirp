@@ -448,6 +448,7 @@ swift test --package-path ios/Keyboard/Policy   # full Xcode selected; with only
 #   -Xswiftc -plugin-path -Xswiftc /Library/Developer/CommandLineTools/usr/lib/swift/host/plugins/testing
 ios/scripts/check-sources.sh                # regenerate + structural, plist and per-target syntax checks
 ios/scripts/typecheck-catalyst.sh           # optional Catalyst compiler aid (see below)
+ios/scripts/ci-test.sh                      # what GitHub Actions runs: the checks above + app unit tests on one iPhone simulator
 ```
 
 `check-sources.sh` regenerates the project, runs the structural project check
