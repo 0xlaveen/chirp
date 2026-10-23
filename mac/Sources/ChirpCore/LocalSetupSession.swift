@@ -113,7 +113,8 @@ public final class LocalSetupSession {
         }
         jobs[key] = (id, child)
         if ["refresh", "add"].contains(action) { state.catalogBusy = true; refresh() }
-        Task.detached(priority: .utility) { [weak self, child] in
+        // Blocking reads and waitUntilExit stay off the shared concurrency pool; the main queue keeps events in order.
+        DispatchQueue.global(qos: .utility).async { [weak self, child] in
             var buffer = Data()
             var sawEvent = false
             while let data = child.chunk() {
@@ -122,16 +123,20 @@ public final class LocalSetupSession {
                     let line = Data(buffer[..<newline]); buffer.removeSubrange(...newline)
                     if let event = try? LocalSetupEvent.decode(line) {
                         sawEvent = true
-                        await self?.receive(event, key: key, id: id)
+                        DispatchQueue.main.async { [weak self] in MainActor.assumeIsolated { self?.receive(event, key: key, id: id) } }
                     }
                 }
                 guard buffer.count <= Self.maxLine else { break }
             }
             if child.process.isRunning { child.process.terminate() }
             child.process.waitUntilExit()
-            await self?.finished(key: key, id: id, action: action, model: model,
-                                 code: child.process.terminationStatus, sawEvent: sawEvent,
-                                 interrupted: child.process.terminationReason == .uncaughtSignal && child.process.terminationStatus == 2)
+            let code = child.process.terminationStatus, saw = sawEvent
+            let interrupted = child.process.terminationReason == .uncaughtSignal && code == 2
+            DispatchQueue.main.async { [weak self] in
+                MainActor.assumeIsolated {
+                    self?.finished(key: key, id: id, action: action, model: model, code: code, sawEvent: saw, interrupted: interrupted)
+                }
+            }
         }
         // Read-only discovery and startup must not leave a permanently spinning UI.
         if action != "download" {

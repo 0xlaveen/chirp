@@ -31,8 +31,9 @@ import Testing
                                       correction: { false }, enableCorrection: {}, timeout: { _ in timeout }))
     }
 
+    /// Generous like the recorder suites: the snapshot renderer holds the main actor for seconds in a full run.
     private func settle(_ session: LocalSetupSession) async throws {
-        let deadline = ContinuousClock.now + .seconds(15)
+        let deadline = ContinuousClock.now + .seconds(60)
         while !session.isIdle {
             #expect(ContinuousClock.now < deadline, "setup job never finished"); if ContinuousClock.now >= deadline { return }
             try await Task.sleep(for: .milliseconds(20))
@@ -126,7 +127,7 @@ import Testing
         let progress = #"{"event":"progress","model":"cleanup","phase":"downloading","completed_bytes":1,"total_bytes":10}"#
         let s = session(try helper("echo '\(progress)'; trap 'exit 130' INT; while :; do sleep 0.05; done"))
         s.download(.cleanup)
-        let deadline = ContinuousClock.now + .seconds(2) // progress lines arrive as written, not in 4 KB chunks
+        let deadline = ContinuousClock.now + .seconds(30) // a 4 KB-blocking read would never deliver it before EOF
         while s.state.models[.cleanup]?.phase != "downloading", ContinuousClock.now < deadline { try await Task.sleep(for: .milliseconds(20)) }
         #expect(s.state.models[.cleanup]?.phase == "downloading")
         s.download(.cleanup) // Pause
