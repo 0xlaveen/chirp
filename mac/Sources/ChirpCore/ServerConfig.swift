@@ -39,6 +39,8 @@ public struct ServerConfig: Sendable, Equatable {
 
     /// `POST …/v1/notes/reorganize`, keeping any base path such as `/chirp`.
     public var notesReorganizeURL: URL { baseURL.appendingPathComponent("v1/notes/reorganize") }
+    /// `POST …/v1/notes/edit`.
+    public var notesEditURL: URL { baseURL.appendingPathComponent("v1/notes/edit") }
 
     public func authorized(_ request: URLRequest) -> URLRequest {
         var r = request
@@ -70,6 +72,12 @@ public struct ServerConfig: Sendable, Equatable {
     public func reorganizeNotes(_ r: NotesReorganizeRequest, session: URLSession = .shared,
                                 timeout: TimeInterval = 50) async throws -> NotesReorganizeResponse {
         try await postNotes(r, to: notesReorganizeURL, session: session, timeout: timeout)
+    }
+
+    /// One voice edit, with the same error mapping (a 404 means only editing is missing).
+    public func editNotes(_ r: NotesEditRequest, session: URLSession = .shared,
+                          timeout: TimeInterval = 50) async throws -> NotesEditResponse {
+        try await postNotes(r, to: notesEditURL, session: session, timeout: timeout)
     }
 
     private func postNotes<Request: Encodable, Response: Decodable>(_ r: Request, to url: URL, session: URLSession,

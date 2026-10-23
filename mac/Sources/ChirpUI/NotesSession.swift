@@ -10,6 +10,8 @@ public struct NotesSessionDependencies {
     public var makeSession: (StartOptions) -> StreamSession
     public var structure: NotesRecorder.Structure
     public var reorganize: NotesRecorder.Reorganize
+    /// `POST /v1/notes/edit` (#97); set after init (the default: no server support).
+    public var edit: NotesRecorder.Edit = { _ in throw NotesStructureError.unsupported(404) }
     public var speakerStore: SpeakerModelStore
     /// Where the crash-recovery journal lives (tests pass a temporary directory).
     public var journalStore: NotesJournalStore
@@ -60,6 +62,8 @@ public struct NotesSessionDependencies {
 public final class NotesSession {
     public let model = NotesModel()
     public let recorder: NotesRecorder
+    /// Edit by Voice (#97).
+    public let voiceEdit: NotesVoiceEdit
     private let deps: NotesSessionDependencies
     private var settings: Preferences { deps.settings }
 
@@ -106,14 +110,19 @@ public final class NotesSession {
         let settings = deps.settings
         capture = AudioCapture(engine: deps.engine)
         recorder = NotesRecorder(
-            makeSession: deps.makeSession, structure: deps.structure, reorganize: deps.reorganize,
+            makeSession: deps.makeSession, structure: deps.structure, reorganize: deps.reorganize, edit: deps.edit,
             now: deps.now, sleep: deps.sleep,
             options: settings.notesStartOptions(health: nil), structuring: settings.notesStructureEnabled(health: nil),
             autoReorganize: settings.notesAutoReorganize)
         speakers = SpeakerLabels(store: deps.speakerStore, enabled: settings.notesSpeakerLabels,
                                  onPreference: { settings.notesSpeakerLabels = $0 })
         journal = NotesJournal(store: deps.journalStore, enabled: settings.notesRecoveryCopy, sleep: deps.sleep)
+        voiceEdit = NotesVoiceEdit(recorder: recorder, makeSession: deps.makeSession, now: deps.now, sleep: deps.sleep)
         recorder.onChange = { [weak self] in self?.sync() }
+        voiceEdit.onChange = { [weak self] in self?.sync() }
+        voiceEdit.openMicrophone = { [weak self] session in self?.openCommandMicrophone(session) ?? false }
+        voiceEdit.closeMicrophone = { [weak self] in self?.capture.stop() }
+        voiceEdit.selection = { [weak self] in self?.model.editorSelection() }
         recorder.onPassEvent = { event in
             switch event {
             case .split(let chars, let depth, let parts, let fallbacks):
@@ -134,7 +143,13 @@ public final class NotesSession {
             settings.notesAutoReorganize = on
             self?.recorder.setAutoReorganize(on)
         }
-        model.onUserEdit = { [weak self] range, text, kind in self?.recorder.userEdit(range, text, kind: kind) }
+        model.onUserEdit = { [weak self] range, text, kind in
+            self?.recorder.userEdit(range, text, kind: kind)
+            self?.voiceEdit.dismiss()
+        }
+        model.onVoiceEdit = { [weak self] in self?.toggleVoiceEdit() }
+        model.onVoiceEditCancel = { [weak self] in self?.voiceEdit.cancel() }
+        model.onVoiceEditDismiss = { [weak self] in self?.voiceEdit.dismiss() }
         model.onReorganize = { [weak self] in self?.recorder.reorganizeNow() }
         model.onEditorFocus = { [weak self] inTail, composing in self?.recorder.setEditorFocus(inTail: inTail, composing: composing) }
         model.onSpeakerLabelsToggle = { [weak self] on in self?.setSpeakerLabels(on) }
@@ -187,6 +202,8 @@ public final class NotesSession {
 
     public func start(focus: Bool) {
         guard !gate.isPaused, !isActive else { return }
+        // A spoken edit outside a recording has the microphone: it ends (or Esc drops it) before Record.
+        guard !voiceEdit.status.isListening else { deps.beep(); return }
         guard !isDictating() else { deps.beep(); return }
         onShowWindow?(focus)
         if speakers.needsLoad {
@@ -237,6 +254,24 @@ public final class NotesSession {
             }) { sink.handle($0) }
         } catch {
             Task { await fail(error is CaptureError ? "No microphone input device" : "Could not start the microphone") }
+        }
+    }
+
+    // MARK: voice edit
+
+    /// The button and ⇧⌘E. Outside a recording the microphone opens just for the command (never during a dictation).
+    public func toggleVoiceEdit() {
+        if !voiceEdit.status.isListening, !isActive, isDictating() { deps.beep(); return }
+        voiceEdit.toggle()
+    }
+
+    private func openCommandMicrophone(_ session: StreamSession) -> Bool {
+        guard !isDictating(), !capture.isRunning else { return false }
+        do {
+            try capture.start(onFailure: { [weak self] in Task { @MainActor in self?.voiceEdit.cancel() } }) { session.sendAudio($0) }
+            return true
+        } catch {
+            return false
         }
     }
 
@@ -423,6 +458,12 @@ public final class NotesSession {
         model.speakerModel = speakers.model
         let reorganize = recorder.reorganizeStatus
         model.reorganizeStatus = reorganize
+        if voiceEdit.status != model.voiceEdit, case .done(let outcome, _) = voiceEdit.status {
+            deps.announce(NotesStatus.voiceEditNote(outcome) ?? NotesStatus.voiceEdited)
+        }
+        model.voiceEdit = voiceEdit.status
+        model.voiceEditAvailable = recorder.canEdit
+        model.canVoiceEdit = voiceEdit.status.isListening || voiceEdit.canStart
         // The editor replays the AI changes right away, onto text that matches `model.document` before them.
         let changes = recorder.takePendingChanges()
         model.enqueue(changes)

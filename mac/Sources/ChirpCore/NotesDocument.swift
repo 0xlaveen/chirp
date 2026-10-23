@@ -56,6 +56,8 @@ public struct NotesTextChange: Equatable, Sendable {
         case user, append, reorganize, toggleTask, organize
         /// A speaker rename replaced the old name in the notes (one undo group, "Rename Speaker").
         case rename
+        /// A voice edit (#97), one undo group ("Edit by Voice").
+        case edit
     }
 
     public var range: NSRange

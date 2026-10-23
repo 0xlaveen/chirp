@@ -657,6 +657,22 @@ public enum Snapshots {
                 $0.reorganizeStatus = .applied(at: 1)
             },
             notes("reorganizing") { $0.reorganizeStatus = .running },
+            notes("voice-edit-listening") {
+                $0.voiceEditAvailable = true
+                $0.canVoiceEdit = true
+                $0.voiceEdit = .listening(heard: "remove the bit about the budget")
+            },
+            notes("voice-edited") {
+                $0.voiceEditAvailable = true
+                $0.canVoiceEdit = true
+                $0.voiceEdit = .done(.applied, at: 1)
+            },
+            notes("voice-edit-refused") {
+                $0.state = .stopped
+                $0.voiceEditAvailable = true
+                $0.canVoiceEdit = true
+                $0.voiceEdit = .done(.refused("adds_content"), at: 1)
+            },
             notes("organizing") { $0.state = .stopped; $0.reorganizeStatus = .organizing(step: 2, of: 3) },
             notes("organize-partial") {
                 $0.state = .stopped

@@ -202,6 +202,8 @@ final class NotesHTTP: @unchecked Sendable {
     private let id = UUID().uuidString
     private var structureQueue: [NotesAnswer] = []
     private var reorganizeQueue: [NotesAnswer] = []
+    private var editQueue: [EditAnswer] = []
+    private var _edit: [EditWire] = []
     private var _structure: [Wire] = []
     private var _reorganize: [Wire] = []
     private var held: [CheckedContinuation<Void, Never>] = []
@@ -225,6 +227,21 @@ final class NotesHTTP: @unchecked Sendable {
 
     func answerStructure(_ answers: NotesAnswer...) { lock.withLock { structureQueue += answers } }
     func answerReorganize(_ answers: NotesAnswer...) { lock.withLock { reorganizeQueue += answers } }
+    /// `/v1/notes/edit` answers, in order; with none queued an edit comes back unchanged.
+    enum EditAnswer: Sendable {
+        case ok(String)
+        case unchanged
+        case refused(String)
+        case rejected(String)
+        case preempted
+        case status(Int)
+    }
+    struct EditWire: Decodable, Equatable {
+        var notes: String
+        var instruction: String
+    }
+    func answerEdit(_ answers: EditAnswer...) { lock.withLock { editQueue += answers } }
+    var editRequests: [EditWire] { lock.withLock { _edit } }
     /// A request as it went over the wire: the transcript (structure) or the notes in scope (reorganize).
     struct Wire: Decodable, Equatable {
         var transcript: String?
@@ -235,7 +252,7 @@ final class NotesHTTP: @unchecked Sendable {
     }
     var structureRequests: [Wire] { lock.withLock { _structure } }
     var reorganizeRequests: [Wire] { lock.withLock { _reorganize } }
-    var calls: Int { lock.withLock { _structure.count + _reorganize.count } }
+    var calls: Int { lock.withLock { _structure.count + _reorganize.count + _edit.count } }
     /// While set, answers wait until `release()`.
     var hold: Bool {
         get { lock.withLock { _hold } }
@@ -262,8 +279,33 @@ final class NotesHTTP: @unchecked Sendable {
         return { try await config.reorganizeNotes($0, session: session) }
     }
 
+    func edit(_ config: ServerConfig) -> NotesRecorder.Edit {
+        let session = self.session
+        return { try await config.editNotes($0, session: session) }
+    }
+
+    private func respondEdit(_ body: Data) async -> (Int, Data)? {
+        guard let r = try? JSONDecoder().decode(EditWire.self, from: body) else { return (400, Data()) }
+        let answer = lock.withLock { () -> EditAnswer in
+            _edit.append(r)
+            return editQueue.isEmpty ? .unchanged : editQueue.removeFirst()
+        }
+        if hold { await withCheckedContinuation { c in lock.withLock { if _hold { held.append(c) } else { c.resume() } } } }
+        let json: [String: Any]
+        switch answer {
+        case .ok(let md): json = ["markdown": md, "edited": true, "changed": true]
+        case .unchanged: json = ["markdown": r.notes, "edited": true, "changed": false]
+        case .refused(let reason): json = ["edited": false, "changed": false, "error": "refused", "reason": reason]
+        case .rejected(let reason): json = ["edited": false, "changed": false, "error": "rejected", "reason": reason]
+        case .preempted: json = ["edited": false, "changed": false, "error": "preempted"]
+        case .status(let code): return (code, Data())
+        }
+        return (200, (try? JSONSerialization.data(withJSONObject: json)) ?? Data())
+    }
+
     /// The status and body for one request (after any hold).
     fileprivate func respond(_ request: URLRequest, body: Data) async -> (Int, Data)? {
+        if request.url?.path.hasSuffix("/edit") == true { return await respondEdit(body) }
         let reorganize = request.url?.path.hasSuffix("/reorganize") == true
         guard let r = try? JSONDecoder().decode(Wire.self, from: body) else { return (400, Data()) }
         let answer = lock.withLock { () -> NotesAnswer in
@@ -479,6 +521,7 @@ final class NotesHarness {
             settings: prefs, engine: engine, makeSession: { streams.makeSession($0) },
             structure: http.structure(config), reorganize: http.reorganize(config), speakerStore: store,
             journalStore: NotesJournalStore(directory: self.journalDirectory))
+        deps.edit = http.edit(config)
         deps.silenceGuard = { SilenceGuard(window: silence) }
         deps.now = { clock.now }
         deps.sleep = { await clock.sleep($0) }

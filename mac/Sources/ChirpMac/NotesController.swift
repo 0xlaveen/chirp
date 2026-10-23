@@ -15,6 +15,8 @@ extension NotesSession {
     static let structureTimeout: TimeInterval = 35
     /// A reorganize pass may take longer (up to 3500 chars in and out).
     static let reorganizeTimeout: TimeInterval = 50
+    /// A voice edit is bounded like a reorganize on the server.
+    static let editTimeout: TimeInterval = 50
 
     convenience init() {
         var deps = NotesSessionDependencies(
@@ -24,6 +26,7 @@ extension NotesSession {
             structure: { request in try await Self.structure(request) },
             reorganize: { request in try await Self.reorganize(request) },
             speakerStore: SortformerModelStore(), journalStore: NotesJournalStore())
+        deps.edit = { request in try await Self.edit(request) }
         deps.requestMicrophone = { await Permissions.requestMicrophone() }
         deps.openMicrophoneSettings = { Permissions.openSettings(.microphone) }
         deps.microphoneStatus = { Permissions.microphone.rawValue }
@@ -52,6 +55,13 @@ extension NotesSession {
         try await timed({ try await settings.serverConfig().reorganizeNotes(request, timeout: reorganizeTimeout) }) { result, ms in
             chirpLog.info("notes reorganize chars=\(request.notes.count, privacy: .public) scope=\(request.range.length, privacy: .public) result=\(result, privacy: .public) ms=\(ms, privacy: .public)")
         } result: { $0.reorganized ? ($0.changed ? "changed" : "unchanged") : $0.failureLabel }
+    }
+
+    /// One voice edit, logged with counts and the outcome code only (never the instruction or the notes).
+    private nonisolated static func edit(_ request: NotesEditRequest) async throws -> NotesEditResponse {
+        try await timed({ try await settings.serverConfig().editNotes(request, timeout: editTimeout) }) { result, ms in
+            chirpLog.info("notes edit chars=\(request.notes.count, privacy: .public) instruction=\(request.instruction.count, privacy: .public) result=\(result, privacy: .public) ms=\(ms, privacy: .public)")
+        } result: { $0.edited ? ($0.changed ? "changed" : "unchanged") : $0.failureLabel }
     }
 
     /// Runs `call`, then logs its outcome (`result` of the answer, or the error code) and duration.

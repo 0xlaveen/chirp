@@ -186,6 +186,8 @@ public struct Health: Decodable, Sendable, Equatable {
     public var notesCorrection: Bool?
     /// `stop.context` is taken: the end of the previous Live Notes segment, for casing and punctuation at the join.
     public var notesContext: Bool?
+    /// `POST /v1/notes/edit` exists (a spoken edit instruction); nil from a server that predates it.
+    public var notesEdit: Bool?
     /// Build, API level and capabilities (authenticated health only); nil from a server that predates them.
     public var version: String?
     public var commit: String?
@@ -199,7 +201,7 @@ public struct Health: Decodable, Sendable, Equatable {
                 correction: String? = nil, correctionLeavesMachine: Bool? = nil, correctionHost: String? = nil,
                 correctionProfiles: [CorrectionProfile]? = nil, correctionKeepLoaded: Bool? = nil, correctionLoaded: Bool? = nil,
                 notesStructure: Bool? = nil, notesCorrection: Bool? = nil, notesReorganize: Bool? = nil, notesContext: Bool? = nil,
-                version: String? = nil, commit: String? = nil, api: Int? = nil, capabilities: [String]? = nil,
+                notesEdit: Bool? = nil, version: String? = nil, commit: String? = nil, api: Int? = nil, capabilities: [String]? = nil,
                 startedAt: Double? = nil, source: String? = nil) {
         self.ok = ok
         self.engine = engine
@@ -215,6 +217,7 @@ public struct Health: Decodable, Sendable, Equatable {
         self.notesCorrection = notesCorrection
         self.notesReorganize = notesReorganize
         self.notesContext = notesContext
+        self.notesEdit = notesEdit
         self.version = version
         self.commit = commit
         self.api = api

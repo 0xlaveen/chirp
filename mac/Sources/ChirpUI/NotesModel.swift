@@ -208,6 +208,16 @@ public final class NotesModel {
     @ObservationIgnored public var onEditorFocus: (_ inTail: Bool, _ composing: Bool) -> Void = { _, _ in }
     /// Set by the editor: undoes the last reorganize if it is still the top undo group (the chip's Undo).
     @ObservationIgnored public var undoReorganize: () -> Void = {}
+    /// Voice edit (#97, `NotesVoiceEditModel.swift`): its status, whether the server offers it and the button works.
+    public var voiceEdit: NotesVoiceEditStatus = .idle
+    public var voiceEditAvailable = false
+    public var canVoiceEdit = false
+    public var onVoiceEdit: () -> Void = {}
+    public var onVoiceEditCancel: () -> Void = {}
+    public var onVoiceEditDismiss: () -> Void = {}
+    /// Set by the editor: undoes the voice edit if it is still the top undo group, and reads the selection.
+    @ObservationIgnored public var undoEdit: () -> Void = {}
+    @ObservationIgnored public var editorSelection: () -> NSRange? = { nil }
 
     public init() {}
 
@@ -240,7 +250,8 @@ public final class NotesModel {
     public var isError: Bool { if case .error = state { true } else { false } }
 
     public var statusText: String {
-        switch state {
+        if !isError, let text = voiceEditStatusText { return text }
+        return switch state {
         case .idle: ""
         case .starting: NotesStatus.connecting
         case .recording:

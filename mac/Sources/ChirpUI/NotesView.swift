@@ -57,7 +57,7 @@ private struct NotesHeader: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            RecordButton(model: model)
+            RecordButton(model: model).fixedSize()
             status
             if let hint = model.hotkeyHint {
                 Text(hint).font(.caption).foregroundStyle(.tertiary).lineLimit(1).layoutPriority(-1)
@@ -71,6 +71,7 @@ private struct NotesHeader: View {
             .labelsHidden()
             .fixedSize()
             HStack(spacing: 2) {
+                if model.voiceEditAvailable { VoiceEditButton(model: model) }
                 if !model.reorganizeHidden { reorganizeButton }
                 iconButton("doc.on.doc", label: "Copy Markdown", enabled: model.canExport, action: model.onCopy)
                 iconButton("square.and.arrow.down", label: "Save…", enabled: model.canExport, action: model.onSave)
@@ -86,7 +87,9 @@ private struct NotesHeader: View {
         HStack(spacing: 6) {
             if model.isError {
                 Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.red)
-            } else if model.isUpdating || model.isReorganizing || model.isBusy || model.state == .starting {
+            } else if model.voiceEdit.isListening {
+                Image(systemName: "mic.fill").foregroundStyle(.red).accessibilityHidden(true)
+            } else if model.isUpdating || model.isReorganizing || model.isBusy || model.isVoiceEditing || model.state == .starting {
                 ProgressView().controlSize(.small).scaleEffect(0.8)
             }
             Text(model.statusText)
@@ -188,6 +191,7 @@ private struct NotesPane: View {
                     if model.showsEmptyState { emptyState }
                 }
                 VStack(alignment: .trailing, spacing: 6) {
+                    if model.showEditedChip { EditedChip(model: model) }
                     if model.showUndoChip { UndoChip(model: model) }
                     if model.isUpdating { UpdatingBadge() }
                 }
@@ -228,7 +232,7 @@ private struct NotesStatusLines: View {
     let model: NotesModel
 
     var body: some View {
-        let notes = [model.retryNote, model.reorganizeNote].compactMap { $0 }
+        let notes = [model.retryNote, model.reorganizeNote, model.voiceEditNote].compactMap { $0 }
         if !notes.isEmpty {
             VStack(alignment: .leading, spacing: 4) {
                 ForEach(notes, id: \.self) { note in
@@ -242,6 +246,12 @@ private struct NotesStatusLines: View {
             .padding(.horizontal, 28)
             .padding(.vertical, 6)
             .frame(maxWidth: .infinity)
+            .task(id: model.voiceEdit) {
+                // A voice edit's note goes after a while; the other notes stay until their state changes.
+                guard model.voiceEditNote != nil else { return }
+                try? await Task.sleep(for: .seconds(12))
+                if !Task.isCancelled { model.onVoiceEditDismiss() }
+            }
         }
     }
 }
@@ -340,6 +350,56 @@ private struct LongRunNotice: View {
         .background(Color.orange.opacity(0.08))
         .overlay(alignment: .bottom) { Divider() }
         .accessibilityElement(children: .contain)
+    }
+}
+
+/// Edit by Voice: starts a spoken edit; while it listens (a red check), pressing it again ends it.
+private struct VoiceEditButton: View {
+    let model: NotesModel
+
+    var body: some View {
+        let listening = model.voiceEdit.isListening
+        Button(action: model.onVoiceEdit) {
+            Image(systemName: listening ? "checkmark.circle.fill" : "mic.badge.plus")
+                .font(.system(size: 14, weight: .regular))
+                .foregroundStyle(listening ? AnyShapeStyle(Color.red) : AnyShapeStyle(.primary))
+                .frame(width: 30, height: 24)
+        }
+        .buttonStyle(.borderless)
+        .disabled(!model.canVoiceEdit)
+        .help(listening ? NotesStatus.voiceEditDoneHelp : NotesStatus.voiceEditHelp)
+        .accessibilityLabel(listening ? NotesStatus.voiceEditDoneHelp : NotesStatus.voiceEditHelp)
+    }
+}
+
+/// "Edited · Undo", for 20 s after a voice edit (or until the next edit or a click).
+private struct EditedChip: View {
+    let model: NotesModel
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "mic.badge.plus").font(.caption)
+            Text(NotesStatus.edited).font(.caption.weight(.medium))
+            Text("·").font(.caption).foregroundStyle(.secondary)
+            Button {
+                model.undoEdit()
+                model.onVoiceEditDismiss()
+            } label: {
+                Text("Undo").font(.caption.weight(.semibold))
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(Color.accentColor)
+            .accessibilityLabel("Undo the spoken edit")
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 5)
+        .background(Capsule().fill(.regularMaterial))
+        .overlay(Capsule().strokeBorder(Color.primary.opacity(0.1)))
+        .shadow(color: .black.opacity(0.08), radius: 3, y: 1)
+        .task(id: model.voiceEdit) {
+            try? await Task.sleep(for: .seconds(20))
+            if !Task.isCancelled { model.onVoiceEditDismiss() }
+        }
     }
 }
 
