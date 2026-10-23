@@ -326,3 +326,5 @@ pre .c { color: #8fa0bd; }
 }
 .reel-nav[hidden] { display: none; }
 .toc li { margin: 0 0 .35em; }
+.privacy-sub { font-size: clamp(1.5rem, 3vw, 2rem); margin: 48px 0 20px; }
+.privacy .footnote { color: #a5b1c6; }

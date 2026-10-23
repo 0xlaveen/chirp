@@ -1,6 +1,6 @@
 <!--
 title: Chirp — Talk anywhere. Type nowhere.
-description: Local-first voice dictation for your Mac, Android and iPhone. Speech recognition runs on your own Mac, and nothing is retained.
+description: Local-first voice dictation for your Mac, Android and iPhone. Speech recognition runs on your own Mac. Your words stay yours.
 section: home
 class: home
 -->
@@ -9,7 +9,7 @@ class: home
     <div>
       <p class="eyebrow">Local-first voice dictation</p>
       <h1>Talk anywhere.<br><em>Type nowhere.</em></h1>
-      <p class="lede">Chirp is voice dictation for your Mac, Android and iPhone. Speech recognition runs on your own Mac, and nothing is retained. Press a key, talk, and the words land in whatever app you are using.</p>
+      <p class="lede">Chirp is voice dictation for your Mac, Android and iPhone. Speech recognition runs on your own Mac, and your words stay yours. Press a key, talk, and the words land in whatever app you are using.</p>
       <div class="actions">
         <a class="btn btn-primary" href="guides/mac.html">Set up Chirp on your Mac</a>
         <a class="btn btn-ghost" href="#see">See it in action</a>
@@ -232,7 +232,7 @@ class: home
         <thead><tr><th scope="col"><span class="sr-only">Question</span></th><th scope="col" class="us">Chirp</th><th scope="col">Cloud dictation services</th><th scope="col">Built-in OS dictation</th></tr></thead>
         <tbody>
           <tr><th scope="row">Where speech is recognised</th><td data-label="Chirp" class="us">On your own Mac</td><td data-label="Cloud dictation services">On the provider's servers</td><td data-label="Built-in OS dictation">On the device or the vendor's servers, depending on platform and settings</td></tr>
-          <tr><th scope="row">What is kept</th><td data-label="Chirp" class="us">Nothing by default. History is opt-in and encrypted on the phone</td><td data-label="Cloud dictation services">Depends on the provider's policy</td><td data-label="Built-in OS dictation">Depends on the vendor's policy and your settings</td></tr>
+          <tr><th scope="row">What is kept</th><td data-label="Chirp" class="us">Your choice: nothing by default, or encrypted history on your phone</td><td data-label="Cloud dictation services">Depends on the provider's policy</td><td data-label="Built-in OS dictation">Depends on the vendor's policy and your settings</td></tr>
           <tr><th scope="row">Phones</th><td data-label="Chirp" class="us">Stream to your Mac over your tailnet — one model everywhere</td><td data-label="Cloud dictation services">Stream to the provider</td><td data-label="Built-in OS dictation">Each device uses its own engine</td></tr>
           <tr><th scope="row">Clean-up</th><td data-label="Chirp" class="us">Optional local model, styles per app, raw text one keystroke away</td><td data-label="Cloud dictation services">Often, on their servers</td><td data-label="Built-in OS dictation">Varies; mostly punctuation</td></tr>
           <tr><th scope="row">Meetings and long notes</th><td data-label="Chirp" class="us">Live Notes: Markdown notes while you talk, on the Mac or an Android phone</td><td data-label="Cloud dictation services">Usually a separate product</td><td data-label="Built-in OS dictation">Not built in</td></tr>
@@ -300,17 +300,21 @@ class: home
   <div class="wrap">
     <div class="section-head">
       <p class="eyebrow">Privacy</p>
-      <h2 id="privacy-title">Private by default, not by setting</h2>
-      <p>Chirp keeps audio and text in memory only for as long as one dictation takes. These are the defaults, and the code is open for you to check.</p>
+      <h2 id="privacy-title">Your data stays yours</h2>
+      <p>Chirp has no cloud, no account and no telemetry. Your Mac is the server. Audio and text only move between your own devices, over your own private Tailscale network — never to us or anyone else.</p>
     </div>
     <div class="pgrid">
-      <div><h3>Nothing retained</h3><p>No recordings, transcripts or logs of what you said. Logs carry only timings, byte counts and error codes. No telemetry. The one exception you can see: unsaved Mac Live Notes keep a text-only recovery copy until you save or discard them.</p></div>
-      <div><h3>Recognition on your Mac</h3><p>The server listens on 127.0.0.1 only. Clean-up runs as a local model too, unless you deliberately point it elsewhere — and then the apps say so.</p></div>
-      <div><h3>Tailnet only</h3><p>Phones reach the Mac through Tailscale Serve on your private tailnet. Chirp refuses to pair while Tailscale Funnel is on.</p></div>
-      <div><h3>Secret pairing</h3><p>Pairing uses a bearer token shown as a QR code on your Mac. Phones store it encrypted; the Mac's pairing window is hidden from screen sharing.</p></div>
-      <div><h3>Opt-in history</h3><p>Phone history is off until you turn it on, then encrypted on the device and excluded from backups.</p></div>
-      <div><h3>Loud debugging</h3><p>Keeping recordings for debugging is opt-in, local, expires after three days, and shows a red warning in every app.</p></div>
+      <div><h3>Your Mac is the server</h3><p>Speech recognition and clean-up run on your Mac. The server listens only on its own loopback address; clean-up uses a local model unless you deliberately point it elsewhere, and then every app says where text goes.</p></div>
+      <div><h3>Only your devices</h3><p>Phones reach your Mac through Tailscale on your own tailnet, never the public internet. Chirp refuses to pair while Tailscale Funnel is on.</p></div>
+      <div><h3>Paired with a secret</h3><p>Each device pairs by scanning a QR code with a secret token, which you can revoke per device. Phones store it encrypted; the Mac hides the pairing window from screen sharing.</p></div>
     </div>
+    <h3 class="privacy-sub">You choose what's kept</h3>
+    <div class="pgrid">
+      <div><h3>Nothing, by default</h3><p>Audio and text stay in memory for one dictation, then they're gone. Logs hold timings and error codes, never what you said.</p></div>
+      <div><h3>History on your phone</h3><p>Turn it on to reinsert past dictations. It's encrypted on the device, kept for 24 hours, 7 days or 30 days (up to 200 entries), and you can clear it any time.</p></div>
+      <div><h3>Live Notes on your Mac</h3><p>Notes stay in the window until you save or copy them. A crash-recovery copy on your Mac (on by default, text only) is deleted when you save or discard.</p></div>
+    </div>
+    <p class="footnote">A debug mode that keeps recordings exists for troubleshooting. It's off unless you start it, stays on your Mac, and shows a red warning in every app while it's on. Full details: <a href="{{repo}}/blob/main/docs/privacy.md">docs/privacy.md</a>.</p>
   </div>
 </section>
 
