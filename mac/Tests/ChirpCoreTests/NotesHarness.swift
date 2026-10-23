@@ -191,8 +191,8 @@ enum NotesAnswer: Sendable {
     case status(Int)
 }
 
-/// The notes HTTP endpoints behind a `URLProtocol`: answers come from a queue (then a default that turns each
-/// transcript line into a bullet), and every request is kept. Each instance has its own session, so suites can run
+/// The notes HTTP endpoints behind a `URLProtocol`: answers come from a queue (then a default: a `## Notes` section
+/// with each transcript line as a bullet), and every request is kept. Each instance has its own session, so suites can run
 /// side by side.
 final class NotesHTTP: @unchecked Sendable {
     private static let lock = NSLock()
@@ -272,7 +272,7 @@ final class NotesHTTP: @unchecked Sendable {
                 return reorganizeQueue.isEmpty ? .ok(Self.bullets(r.text)) : reorganizeQueue.removeFirst()
             }
             _structure.append(r)
-            return structureQueue.isEmpty ? .ok(Self.bullets(r.text)) : structureQueue.removeFirst()
+            return structureQueue.isEmpty ? .ok("## Notes\n" + Self.bullets(r.text)) : structureQueue.removeFirst()
         }
         if hold { await withCheckedContinuation { c in lock.withLock { if _hold { held.append(c) } else { c.resume() } } } }
         let json: [String: Any]
@@ -341,7 +341,7 @@ final class SyntheticEngine: CaptureEngine, @unchecked Sendable {
     private var _format: AVAudioFormat? = AVAudioFormat(standardFormatWithSampleRate: 16_000, channels: 1)!
     private var block: (@Sendable (AVAudioPCMBuffer) -> Void)?
     private var onChange: (@Sendable () -> Void)?
-    private var buffers: [Sound: AVAudioPCMBuffer] = [:]
+    private var buffers: [String: AVAudioPCMBuffer] = [:]
     var startError: Error?
     private(set) var starts = 0
 
@@ -358,10 +358,11 @@ final class SyntheticEngine: CaptureEngine, @unchecked Sendable {
     func stop() {}
     func setConfigurationChangeHandler(_ handler: (@Sendable () -> Void)?) { lock.withLock { onChange = handler } }
 
-    /// Plays `seconds` of `sound` through the tap, one 50 ms buffer at a time, on the caller's thread.
-    func play(_ sound: Sound, seconds: Double) {
-        let n = Int((seconds * 20).rounded())
-        guard n > 0, let buffer = buffer(sound) else { return }
+    /// Plays `seconds` of `sound` through the tap, one `buffer`-long capture buffer at a time (50 ms, as a microphone
+    /// delivers; the soak uses longer ones), on the caller's thread. The socket still gets 50 ms frames.
+    func play(_ sound: Sound, seconds: Double, buffer length: Double = 0.05) {
+        let n = Int((seconds / length).rounded())
+        guard n > 0, let buffer = buffer(sound, length) else { return }
         for _ in 0..<n {
             guard let block = lock.withLock({ self.block }) else { return }
             block(buffer)
@@ -378,11 +379,12 @@ final class SyntheticEngine: CaptureEngine, @unchecked Sendable {
         handler?()
     }
 
-    private func buffer(_ sound: Sound) -> AVAudioPCMBuffer? {
+    private func buffer(_ sound: Sound, _ length: Double) -> AVAudioPCMBuffer? {
         lock.withLock {
-            if let b = buffers[sound] { return b }
+            let key = "\(sound)-\(length)"
+            if let b = buffers[key] { return b }
             guard let format = _format else { return nil }
-            let n = AVAudioFrameCount(format.sampleRate / 20)
+            let n = AVAudioFrameCount((format.sampleRate * length).rounded())
             guard let b = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: n) else { return nil }
             b.frameLength = n
             let samples = b.floatChannelData![0]
@@ -393,7 +395,7 @@ final class SyntheticEngine: CaptureEngine, @unchecked Sendable {
                 case .zero: samples[i] = 0
                 }
             }
-            buffers[sound] = b
+            buffers[key] = b
             return b
         }
     }
@@ -410,11 +412,12 @@ final class NotesHarness {
     let streams: ScriptedStreams
     let http = NotesHTTP()
     let engine = SyntheticEngine()
-    let store: FakeModelStore
+    let store: SpeakerModelStore
     let prefs: Preferences
     private let suite: String
-    /// The recovery journal's directory, private to this harness.
+    /// The recovery journal's directory: private to this harness unless it was handed one (a relaunch).
     let journalDirectory: URL
+    private let ownsJournal: Bool
     let session: NotesSession
     let editor: NotesEditorCoordinator
     var health: Health?
@@ -422,6 +425,12 @@ final class NotesHarness {
     let edges = Edges()
     /// Every status line the window showed, in order (repeats collapsed).
     private(set) var statuses: [String] = []
+    /// How often the session published a change (each one is a SwiftUI update of the window).
+    private(set) var syncs = 0
+    /// How long each editor update that took a new document version ran (the append or reorganize replay and
+    /// its restyle), seconds.
+    private(set) var editorUpdates: [Double] = []
+    private var editorVersion = -1
 
     @MainActor final class Edges {
         var micGranted = true
@@ -449,25 +458,27 @@ final class NotesHarness {
 
     static let defaultHealth = Health(correction: "available", notesStructure: true, notesCorrection: true)
 
-    init(health: Health? = NotesHarness.defaultHealth, silence: TimeInterval = 1.5, speakerModel: Bool = false,
+    init(health: Health? = NotesHarness.defaultHealth, silence: TimeInterval = 1.5, speakers: SpeakerModelStore? = nil,
+         journalDirectory: URL? = nil,
          finalText: @escaping @Sendable (Int) -> String = { "Segment \($0)." }) {
         let clock = self.clock, edges = self.edges
         let streams = ScriptedStreams(sleep: { await clock.sleep($0) }, finalText: finalText)
         self.streams = streams
-        store = FakeModelStore(downloaded: speakerModel)
+        store = speakers ?? FakeModelStore(downloaded: false)
         suite = "chirp-notes-harness-\(UUID().uuidString)"
-        journalDirectory = FileManager.default.temporaryDirectory.appendingPathComponent(suite, isDirectory: true)
+        ownsJournal = journalDirectory == nil
+        self.journalDirectory = journalDirectory ?? FileManager.default.temporaryDirectory.appendingPathComponent(suite, isDirectory: true)
         prefs = Preferences(defaults: UserDefaults(suiteName: suite)!)
         prefs.serverURL = "http://127.0.0.1:9"   // never contacted: the sockets and HTTP are scripted
         prefs.correction = true
         prefs.soundsEnabled = true
-        prefs.notesSpeakerLabels = speakerModel
+        prefs.notesSpeakerLabels = speakers != nil
         self.health = health
         let config = ServerConfig(baseURL: URL(string: prefs.serverURL)!)
         var deps = NotesSessionDependencies(
             settings: prefs, engine: engine, makeSession: { streams.makeSession($0) },
             structure: http.structure(config), reorganize: http.reorganize(config), speakerStore: store,
-            journalStore: NotesJournalStore(directory: journalDirectory))
+            journalStore: NotesJournalStore(directory: self.journalDirectory))
         deps.silenceGuard = { SilenceGuard(window: silence) }
         deps.now = { clock.now }
         deps.sleep = { await clock.sleep($0) }
@@ -487,7 +498,7 @@ final class NotesHarness {
 
     deinit {
         removeTestDefaults(suite)
-        try? FileManager.default.removeItem(at: journalDirectory)
+        if ownsJournal { try? FileManager.default.removeItem(at: journalDirectory) }
     }
 
     var model: NotesModel { session.model }
@@ -500,7 +511,16 @@ final class NotesHarness {
     var gaps: Int { document.segments.filter(\.isGap).count }
 
     private func observe() {
-        editor.update()
+        syncs += 1
+        let version = model.document.version
+        if version != editorVersion {
+            editorVersion = version
+            let start = ContinuousClock.now
+            editor.update()
+            editorUpdates.append((ContinuousClock.now - start).inSeconds)
+        } else {
+            editor.update()
+        }
         let s = model.statusText
         if statuses.last != s { statuses.append(s) }
     }
@@ -512,7 +532,11 @@ final class NotesHarness {
     func record(waitForMic: Bool = true) async -> Self {
         session.toggle(fromHotkey: false)
         if waitForMic {
-            await until("microphone open") { (self.engine.isTapped && self.recorder.state != .starting) || !self.session.isRecording }
+            // A speaker model loads first; an error (permission, the first socket) ends the wait too.
+            await until("microphone open") {
+                if case .error = self.model.state { return true }
+                return self.engine.isTapped && self.recorder.state == .recording
+            }
         }
         return self
     }
@@ -631,4 +655,8 @@ func removeTestDefaults(_ suite: String) {
     UserDefaults().removePersistentDomain(forName: suite)
     let file = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Preferences/\(suite).plist")
     try? FileManager.default.removeItem(at: file)
+}
+
+extension Duration {
+    var inSeconds: Double { Double(components.seconds) + Double(components.attoseconds) / 1e18 }
 }

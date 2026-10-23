@@ -5,8 +5,8 @@ import Testing
 @testable import ChirpUI
 
 /// The fault matrix (#66, docs/research/live-notes-ux.md §3): one end-to-end test per fault, through `NotesHarness`.
-/// Tests named `…Today` pin what happens now; the disabled ones describe the behaviour #61 and #62 add, and those
-/// issues enable them.
+/// Tests named `…Today` pin what happens now; the disabled ones describe the behaviour #62 adds, and that issue
+/// enables them. The crash rows run against the recovery journal (#61).
 @MainActor
 @Suite(.serialized) struct NotesFaultTests {
     /// About 13 s of speech, a pause the segmenter cuts at, and the start of the next segment.
@@ -50,7 +50,7 @@ import Testing
         h.streams.script(1, SocketScript(start: .stall))
         await h.record()
         await segment(h)
-        await h.advance(StreamLimits().readyDeadline.seconds)
+        await h.advance(StreamLimits().readyDeadline.inSeconds)
         await h.until("gap") { h.gaps == 1 }
         #expect(h.recorder.state == .recording)
         await h.speak(2)
@@ -341,42 +341,42 @@ import Testing
         #expect(h.gaps == 0)
     }
 
-    /// The crash equivalent: the session goes away without `stopForQuit`; a fresh one starts empty.
-    @Test func aSessionDroppedWithoutQuitLosesEverythingToday() async {
-        var h: NotesHarness? = NotesHarness()
-        await h!.record()
-        await segment(h!)
-        h = nil
-        let next = NotesHarness()
-        #expect(next.document.segments.isEmpty && next.text.isEmpty)
+    /// The crash equivalent: the session never gets `stopForQuit`, and a relaunch (a second session on the same
+    /// journal) offers what was journaled.
+    @Test func aSessionDroppedWithoutQuitIsRecovered() async {
+        let h = NotesHarness()
+        await h.record()
+        await segment(h)
+        await h.typeAtEnd("\nmy note")
+        await h.advance(NotesJournal.debounce.inSeconds)
+        await h.session.journal.settle()
+        let next = NotesHarness(journalDirectory: h.journalDirectory)
+        #expect(next.session.checkRecovery())
+        next.session.keepRecovered()
+        await next.settle()
+        #expect(next.document.text == h.document.text && next.text == h.document.text)
+        #expect(next.text.contains("my note"))
+        #expect(next.transcript == ["Segment 0."])
+        #expect(next.recorder.state == .stopped && next.document.isDirty)
+        await h.stop()
     }
 
-    @Test(.disabled("#61: the journal brings back a session dropped without quit"))
-    func aSessionDroppedWithoutQuitIsRecovered() async {
-        var h: NotesHarness? = NotesHarness()
-        await h!.record()
-        await segment(h!)
-        let text = h!.document.text
-        h = nil
-        let next = NotesHarness()
-        #expect(next.document.text == text)
-    }
-
-    @Test(.disabled("#61: quit while Finishing flushes the journal before the cancel"))
-    func quitWhileFinishingFlushesTheJournal() async {
+    @Test func quitWhileFinishingLeavesTheJournalForTheNextLaunch() async {
         let h = NotesHarness()
         h.streams.script(1, SocketScript(stop: .stall))
         await h.record()
         await segment(h)
-        let stopping = Task { await h.session.stopForQuit(limit: .seconds(5)) }
+        let quit = Task { await h.session.stopForQuit(limit: .seconds(5)) }
+        await h.until("finishing") { h.recorder.state == .stopping }
         await h.advance(5)
-        await stopping.value
+        await quit.value
+        await h.session.journal.settle()
         #expect(!h.session.isActive)
+        let next = NotesHarness(journalDirectory: h.journalDirectory)
+        #expect(next.session.checkRecovery())
+        #expect(next.session.offeredDocument?.text == h.document.text)
+        #expect(next.session.offeredDocument?.segments.map(\.text) == ["Segment 0."])
     }
-}
-
-private extension Duration {
-    var seconds: Double { Double(components.seconds) + Double(components.attoseconds) / 1e18 }
 }
 
 private extension StructuringStatus {
