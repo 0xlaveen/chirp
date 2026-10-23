@@ -270,8 +270,13 @@ from every tab and show in the iPad's hold-⌘ overlay and menu bar:
 | ⌘⇧Z | Use raw transcript |
 | ⌘⇧K | Start keyboard session |
 | ⌘⇧E | End session | The app never writes the clipboard by
-itself. Utterances stop automatically just under the 120-second protocol cap
-(about 119 seconds).
+itself. **Long dictation** runs past the server's
+120-second limit. After 45 seconds, at the first pause (0.6 s of quiet, 0.3 s
+after 70 s, and at 90 s regardless), Chirp moves the microphone to a new
+utterance without dropping audio, while the earlier one finishes. The parts
+land in order with a space between them. Undo and Use raw apply to the last
+part, and a part that fails keeps what it heard. A dictation stops just under
+10 minutes.
 
 If the server runs with `--debug-retain`, a persistent red banner "DEBUG: Mac
 keeps recordings" stays on screen in the app, keyboard and Live Activity.
@@ -321,7 +326,12 @@ Start and stop give a light haptic when Full Access is on.
 
 The keyboard edits only a verified owned suffix: it binds what it inserted to
 the exact editor context and refuses to delete anything it cannot prove it
-wrote. Some hosts expose short, truncated or asynchronous editor context; in
+wrote. Live text is updated by rewriting only the part that changed, and long
+dictation hands each part over at the caret, so text that has landed is never
+retyped. Hosts show the keyboard only a window around the caret (Messages
+about 1,000 characters before it). Chirp works through such a window as long
+as it is an exact view of the text it expects and at least 256 characters
+long. Some hosts expose shorter, shifted or asynchronous editor context; in
 those the automatic replacement can stop with a partial already inserted — the
 keyboard shows "Text kept in place" and leaves your text alone. Recover
 explicitly in the Chirp app (the last transcript stays there); the keyboard

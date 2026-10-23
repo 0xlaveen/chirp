@@ -309,7 +309,7 @@ final class ChirpKeyboardViewController: UIInputViewController {
         }
         let event = TextEvent(id: result.id, generation: result.generation, utteranceID: result.utteranceID,
                               kind: kind, text: result.text, sequence: result.sequence,
-                              createdAt: result.createdAt, expiresAt: result.expiresAt)
+                              createdAt: result.createdAt, expiresAt: result.expiresAt, segment: result.segment ?? 0)
         guard let plan = policy.plan(event, context: context(), now: Date(), leaseUntil: leaseUntil,
                                      rawRequested: rawRequested) else { return }
         startPending = false
@@ -326,7 +326,7 @@ final class ChirpKeyboardViewController: UIInputViewController {
     /// UIKit edits are synchronous requests, but hosts may apply them differently.
     /// Verify every intermediate context and stop immediately if one disagrees.
     private func execute(_ plan: EditPlan) -> Bool {
-        guard context() == plan.expected else { return false }
+        guard context().matches(plan.expected) else { return false }
         applying = true
         defer { applying = false }
         return VerifiedEditor.apply(plan, context: { self.context() },

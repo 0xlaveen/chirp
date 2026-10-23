@@ -259,3 +259,48 @@ func resultBoundsAcceptBoundaryAndRefuseUnicodeOverflowBeforeAnyEdit(_ unit: Str
     #expect(f.policy.undo(context: typed, now: f.now.addingTimeInterval(1)) == nil)
     #expect(f.policy.undo(context: f.cursor, now: f.now.addingTimeInterval(1)) != nil)
 }
+
+private extension Fixture {
+    func segment(_ text: String, _ index: Int, kind: ResultKind = .partial, sequence: Int) -> TextEvent {
+        TextEvent(generation: generation, utteranceID: utterance, kind: kind, text: text, sequence: sequence,
+                  createdAt: now, expiresAt: now.addingTimeInterval(30), segment: index)
+    }
+}
+
+@Test func longDictationHandsOwnershipToTheNextSegmentAfterTheLandedText() {
+    var f = Fixture()
+    #expect(f.apply(f.event("first part")) != nil)
+    #expect(f.apply(f.event("First part.", kind: .final, sequence: 1)) != nil)
+    let handed = f.apply(f.segment(" second", 1, sequence: 2))
+    let next = try! #require(handed)
+    #expect(next.ownedText.isEmpty, "Landed text is no longer ours")
+    #expect(f.cursor.before == "A: First part. second")
+    #expect(f.policy.segment == 1 && !f.policy.isFinal)
+    let landed = f.apply(f.segment(" Second part.", 1, kind: .final, sequence: 3))
+    let final = try! #require(landed)
+    #expect(final.ownedText == " second")
+    #expect(f.cursor.before == "A: First part. Second part." && f.cursor.after == " tail")
+    // Undo now removes only the last segment.
+    let undo = try! #require(f.policy.undo(context: f.cursor, now: f.now))
+    #expect(undo.resultingContext.before == "A: First part.")
+}
+
+@Test func segmentHandOffRefusesGapsEarlyArrivalsAndEdits() {
+    var f = Fixture()
+    #expect(f.apply(f.event("one")) != nil)
+    #expect(f.policy.plan(f.segment(" two", 1, sequence: 1), context: f.cursor, now: f.now,
+                          leaseUntil: f.now.addingTimeInterval(60)) == nil, "The next segment waits for the final")
+    #expect(f.policy.requiresRecovery)
+
+    var g = Fixture()
+    #expect(g.apply(g.event("One.", kind: .final)) != nil)
+    #expect(g.policy.plan(g.segment(" three", 2, sequence: 1), context: g.cursor, now: g.now,
+                          leaseUntil: g.now.addingTimeInterval(60)) == nil, "Segments arrive in order")
+
+    var h = Fixture()
+    #expect(h.apply(h.event("One.", kind: .final)) != nil)
+    var typed = h.cursor; typed.before = (typed.before ?? "") + "!"
+    #expect(h.policy.plan(h.segment(" two", 1, sequence: 1), context: typed, now: h.now,
+                          leaseUntil: h.now.addingTimeInterval(60)) == nil, "An edit stops automatic insertion")
+    #expect(h.policy.requiresRecovery)
+}

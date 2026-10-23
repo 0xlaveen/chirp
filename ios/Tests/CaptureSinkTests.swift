@@ -65,7 +65,7 @@ struct CaptureSinkTests {
 
     @Test func preReadyOverflowFailsWithoutTransmittingAudio() async throws {
         let transport = SyntheticTransport(), session = StreamSession(transport: transport, options: StartOptions())
-        let sink = CaptureSink(), input = try buffer(samples: 40_000), failures = Counter()
+        let sink = CaptureSink(), input = try buffer(samples: 100_000), failures = Counter() // over the 5 s pre-Ready buffer
         sink.configure(format: input.format)
         try sink.begin(session, onFailure: { failures.add() }, onLimit: {})
         sink.receive(input)

@@ -16,9 +16,9 @@ final class ChirpLiveServerUITests: XCTestCase {
         XCUIDevice.shared.orientation = .portrait
     }
 
-    @MainActor func launch() -> XCUIApplication {
+    @MainActor func launch(audio file: String? = nil) -> XCUIApplication {
         let app = XCUIApplication()
-        app.launchArguments = ["--chirp-sim-audio", audio]
+        app.launchArguments = ["--chirp-sim-audio", file ?? audio]
         app.launch()
         return app
     }
@@ -274,5 +274,46 @@ final class ChirpLiveServerUITests: XCTestCase {
         springboard.swipeUp()
         XCTAssertTrue(found, "Lock screen shows no Chirp Live Activity")
         XCTAssertFalse(springboard.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS[c] 'design group'")).firstMatch.exists)
+    }
+
+    /// Past one segment: about 50 s of speech, a pause where the microphone moves to a second utterance, then a
+    /// closing sentence. The real keyboard lands both segments in order, joined by one space, with no repeats.
+    @MainActor func testLiveLongDictationInMessages() throws {
+        guard let long = ProcessInfo.processInfo.environment["CHIRP_LIVE_LONG_AUDIO"], !long.isEmpty else {
+            throw XCTSkip("Set TEST_RUNNER_CHIRP_LIVE_LONG_AUDIO (ios/scripts/simulator-e2e.sh does).")
+        }
+        let app = launch(audio: long)
+        pair(app)
+        try enableKeyboardInSettings()
+        app.activate()
+        XCTAssertTrue(app.wait(for: .runningForeground, timeout: 10))
+        let start = app.buttons["Start keyboard session"]
+        for _ in 0..<3 where !start.waitForExistence(timeout: 3) { selectTab("Dictate", symbol: "mic", in: app) }
+        start.tap()
+        allowSystemAlert()
+        XCTAssertTrue(app.staticTexts["Session armed · microphone active"].waitForExistence(timeout: 15))
+        let messages = XCUIApplication(bundleIdentifier: "com.apple.MobileSMS")
+        messages.launch()
+        defer { app.activate(); endSession(app); app.terminate(); messages.terminate() }
+        let conversation = messages.cells.firstMatch
+        XCTAssertTrue(conversation.waitForExistence(timeout: 10))
+        conversation.tap()
+        let field = messages.descendants(matching: .any).matching(identifier: "messageBodyField").firstMatch
+        XCTAssertTrue(field.waitForExistence(timeout: 10))
+        field.tap()
+        try selectChirpKeyboard(in: messages)
+        let primary = messages.buttons["chirp.keyboard.primary"]
+        XCTAssertTrue(primary.waitForExistence(timeout: 10))
+        primary.tap()
+        XCTAssertTrue(waitFor(field, "value CONTAINS[c] 'Friday afternoon'", timeout: 90),
+                      "The second segment never reached Messages: \(String(describing: field.value))")
+        screenshot("Long dictation, second segment live", messages)
+        primary.tap()
+        XCTAssertTrue(waitFor(messages.staticTexts["chirp.keyboard.status"], "label BEGINSWITH 'Finished'", timeout: 30))
+        let value = field.value as? String ?? ""
+        XCTAssertTrue(value.hasPrefix("Here is the plan"), value)
+        XCTAssertTrue(value.contains("progress. Finally"), "Segments must join with exactly one space: \(value)")
+        XCTAssertEqual(value.components(separatedBy: "Here is the plan").count, 2, "No segment may repeat: \(value)")
+        screenshot("Long dictation final in Messages", messages)
     }
 }

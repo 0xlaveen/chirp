@@ -67,9 +67,12 @@ final class SyntheticAudio: SessionAudio {
     private(set) var failures: [@Sendable () -> Void] = []
     private var stream: StreamSession?
     func arm(onInterruption: @escaping @Sendable () -> Void) throws { armed = true }
-    func begin(stream: StreamSession, onFailure: @escaping @Sendable () -> Void, onLimit: @escaping @Sendable () -> Void) throws {
-        self.stream = stream; limits.append(onLimit); failures.append(onFailure)
+    private(set) var cuts: [@Sendable () -> Void] = []
+    func begin(stream: StreamSession, onFailure: @escaping @Sendable () -> Void, onLimit: @escaping @Sendable () -> Void,
+               onCut: @escaping @Sendable () -> Void) throws {
+        self.stream = stream; limits.append(onLimit); failures.append(onFailure); cuts.append(onCut)
     }
+    func cut(to stream: StreamSession) { self.stream = stream }
     func ready() { stream?.sendAudio(Data(count: 1600)) }
     func finish() { finishCount += 1; stream?.sendAudio(Data(count: 640)) }
     func discard() { stream = nil }
@@ -135,8 +138,9 @@ final class SimulatorFileAudio: SessionAudio {
             player.play()
         } catch { disarm(); throw SessionFailure.audio }
     }
-    func begin(stream: StreamSession, onFailure: @escaping @Sendable () -> Void, onLimit: @escaping @Sendable () -> Void) throws {
-        try sink.begin(stream, onFailure: onFailure, onLimit: onLimit)
+    func begin(stream: StreamSession, onFailure: @escaping @Sendable () -> Void, onLimit: @escaping @Sendable () -> Void,
+               onCut: @escaping @Sendable () -> Void) throws {
+        try sink.begin(stream, onFailure: onFailure, onLimit: onLimit, onCut: onCut)
         feeder?.cancel()
         feeder = Task.detached { [url, sink] in
             guard let file = try? AVAudioFile(forReading: url) else { return }
@@ -152,6 +156,7 @@ final class SimulatorFileAudio: SessionAudio {
             }
         }
     }
+    func cut(to stream: StreamSession) { sink.cut(to: stream) }
     func ready() { sink.ready() }
     func finish() { feeder?.cancel(); feeder = nil; sink.finish() }
     func discard() { feeder?.cancel(); feeder = nil; sink.discard() }
