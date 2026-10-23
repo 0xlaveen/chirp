@@ -21,6 +21,7 @@ from .audio import MAX_FRAME, MAX_PCM, AudioError, decode_wav, levels, samples, 
 from .cleanup_models import DEFAULT_MODEL, model_spec
 from .config import Settings, load_token, persist_keep_loaded, read_keep_loaded
 from .correction import CorrectionResult, Corrector
+from .devices import Credentials
 from .engine import EngineWorker
 from .managed_cleanup import ManagedCleanup
 from .profiles import MAX_PROMPT_CHARS
@@ -45,6 +46,8 @@ def error(code):
 
 
 def authorized(token, value):
+    if isinstance(token, Credentials):
+        return token.check(value)
     # Comparing UTF-8 bytes also handles malicious non-ASCII credentials safely.
     return isinstance(value, str) and secrets.compare_digest(token.encode(), value.encode())
 
@@ -402,7 +405,7 @@ def create_app(settings=None, engine=None, token=None, corrector=None):
     @asynccontextmanager
     async def lifespan(app):
         nonlocal credential
-        credential = credential or load_token(settings.config_dir)
+        credential = Credentials(credential or load_token(settings.config_dir), settings.config_dir)
         cleanup = None
         try:
             if settings.debug_retain:
@@ -425,7 +428,12 @@ def create_app(settings=None, engine=None, token=None, corrector=None):
                 await corrector.close()
 
     async def health(request: Request):
-        if not authorized(credential, bearer(request.headers)):
+        if not authorized(credential, value := bearer(request.headers)):
+            if credential.revoked(value):
+                # Only a revoked device token learns more, so its client can re-pair.
+                return JSONResponse(
+                    error("auth"), status_code=401, headers={"WWW-Authenticate": "Bearer"}
+                )
             # Frozen protocol intentionally exposes only liveness without credentials.
             return JSONResponse({"ok": True})
         correction = settings.correction

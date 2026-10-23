@@ -170,7 +170,24 @@ Authenticated health adds `speech_model` and `correction_model`; unauthenticated
 uv run chirp-server pair --url https://<your-mac>.<tailnet>.ts.net/chirp
 ```
 
-`pair` prints a **secret** pairing URI and a terminal QR code, locally only. Do not paste it into logs or chat. The generated bearer token lives at `~/.config/chirp/token`, mode 0600.
+`pair` prints a **secret** pairing URI and a terminal QR code, locally only. Do not paste it into logs or chat. Without `--name` it carries the shared bearer token at `~/.config/chirp/token`, mode 0600, which the Mac app also reads.
+
+### Per-device tokens
+
+Give each phone or tablet its own token, so a lost device can be cut off without re-pairing the others:
+
+```sh
+uv run chirp-server pair --name "Pixel 9" --url https://<your-mac>.<tailnet>.ts.net/chirp
+uv run chirp-server devices list            # id, name, created, last seen (--all adds revoked, --json for scripts)
+uv run chirp-server devices revoke "Pixel 9" # or the 8-character id
+```
+
+- The URI and QR have the same format as before; a one-line note with the device ID goes to stderr. The token is shown only this once.
+- `~/.config/chirp/devices.json` (mode 0600, written atomically) stores each device's ID, name, created and last-seen times (UTC, updated at most once a minute) and a SHA-256 digest of the token, never the token itself. Lookups compare against every digest in constant time.
+- Names are 1–64 printable characters and unique among active devices; revoking frees the name for re-pairing.
+- Revocation applies to the next request without a restart: WS gets `auth` and close 4401, and HTTP (health included) returns 401 `auth`, so clients route to re-pair. Only a revoked token gets 401 on health; unknown credentials still see `{"ok":true}`. The revoked entry's digest is kept so it can be recognized.
+- If `devices.json` is unreadable, invalid or a symlink, device tokens are refused (a warning without content is logged) and the shared token keeps working.
+- The shared token stays valid until you rotate it: stop the server, delete `~/.config/chirp/token` and start it again (a new one is generated); devices paired without `--name` then need re-pairing, while the Mac app on the same machine reads the new file.
 
 ## The API
 
@@ -189,7 +206,7 @@ Full protocol details, including every message field, are in [the architecture d
 
 ### Authentication
 
-- Every request carries `Authorization: Bearer <token>`. HTTP and WS checks share a constant-time comparison.
+- Every request carries `Authorization: Bearer <token>`: the shared token or a [device token](#per-device-tokens). HTTP and WS checks share a constant-time comparison.
 - A browser WebSocket that cannot set headers sends `{"type":"auth","token":"…"}` as its first frame instead.
 - Audio is rejected before authentication: unauthenticated clients never get to send speech.
 - Unauthenticated health deliberately reports only `{"ok":true}`.
@@ -213,7 +230,7 @@ Cancel or disconnect during finalization discards the utterance: no correction r
 
 | Code | Meaning |
 |---|---|
-| `auth` | Missing/invalid credentials (HTTP 401 on the REST endpoints) |
+| `auth` | Missing/invalid credentials (HTTP 401 on the REST endpoints, and on health for a revoked device token) |
 | `busy` | Engine occupied longer than the queue wait |
 | `too_long` | Utterance exceeded 120 s (HTTP 413 on POST) |
 | `bad_audio` | Invalid audio or control frame |

@@ -47,6 +47,8 @@ All endpoints sit under a base URL: either `http://127.0.0.1:7821` (Mac local) o
 
 Every request carries `Authorization: Bearer <token>`. WebSocket clients that cannot set headers may send the token as the first text frame `{"type":"auth","token":"…"}` instead. The token is never put in a URL.
 
+The token is either the shared one or a per-device token minted by `chirp-server pair --name` (see [server/README.md](../server/README.md#per-device-tokens)). A revoked device token gets `auth` (WS close 4401) everywhere and HTTP 401 `auth` even on health, so clients route it to re-pair; other unauthenticated health requests still get only `{"ok":true}`.
+
 ### Endpoints
 
 - `GET /v1/health` → `{"ok":true,"engine":"parakeet-mlx:tdt-0.6b-v2","ready":true,"debug_retention":false,"correction":"off|available","correction_mode":"off|managed|endpoint","correction_leaves_machine":false,"correction_host":null,"correction_profiles":[{"id":"default","name":"Default","description":"Conservative transcript cleanup.","rewrites":false},…],…,"notes_structure":true,"notes_correction":true,"notes_reorganize":true}`. The unauthenticated variant returns only `{"ok":true}`. For endpoint correction, `correction_host` is its hostname (no credentials, path or port); otherwise it is `null`. `correction_leaves_machine` is true only for enabled, non-loopback correction.
