@@ -180,10 +180,13 @@ profiles; nothing here is validated for that path.
 ## Pair with your Mac
 
 1. Connect Tailscale on the Mac and on the iPhone/iPad.
-2. On the Mac, from `server/`, publish the pairing QR (printed locally only):
+2. On the Mac, from `server/`, publish the pairing QR (printed locally only).
+   Give this device its own pairing with `--name`, so you can revoke it on its
+   own later (`chirp-server devices list`, `chirp-server devices revoke "My iPad"`).
+   Without `--name` the QR carries the Mac's shared token:
 
    ```sh
-   uv run chirp-server pair --url https://<your-mac>.<tailnet>.ts.net/chirp
+   uv run chirp-server pair --name "My iPad" --url https://<your-mac>.<tailnet>.ts.net/chirp
    ```
 
 3. In Chirp, open the **Pair Mac** tab → **Scan pairing QR**. Grant camera
@@ -193,7 +196,10 @@ profiles; nothing here is validated for that path.
 4. Chirp verifies the authenticated connection before saving anything: the
    **Saved pairing** section then shows "Mac pairing saved" with the Mac's
    tailnet host and recognition engine, so you can confirm you paired the
-   right machine. The token itself is stored in the iOS Keychain. **Check Mac
+   right machine, and **This device** with the name you gave it. A device
+   paired with the shared token shows how to switch to a named pairing. If the
+   pairing is revoked, Chirp says "Your Mac refused this device. Pair again
+   in Chirp." The token itself is stored in the iOS Keychain. **Check Mac
    connection** re-verifies later; **Forget pairing** clears the token.
 
 Accepted links are exactly `chirp://pair?url=…&token=…` with an HTTPS

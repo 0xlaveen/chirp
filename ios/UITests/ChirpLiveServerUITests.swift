@@ -66,6 +66,8 @@ final class ChirpLiveServerUITests: XCTestCase {
         app.buttons["Test connection and save pairing"].tap()
         XCTAssertTrue(app.staticTexts["Mac pairing saved"].waitForExistence(timeout: 15), "Live server pairing failed")
         XCTAssertTrue(app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS '127.0.0.1'")).firstMatch.exists)
+        XCTAssertTrue(app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS 'Chirp simulator'")).firstMatch.exists,
+                      "The per-device pairing name must show")
     }
 
     /// The QR's secret link opened by iOS: the system asks "Open in Chirp?" before Chirp verifies and saves.

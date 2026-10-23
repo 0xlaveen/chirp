@@ -183,6 +183,20 @@ def test_device_token_on_http_and_ws(app_client, store):
     assert store.entries()[0]["last_seen"] is not None
 
 
+def test_health_tells_a_device_its_own_pairing_name(app_client, store):
+    _, token = store.mint("Akshay's iPad")
+    mine = app_client.get("/v1/health", headers={"Authorization": f"Bearer {token}"}).json()
+    assert mine["device"] == "Akshay's iPad"
+    assert "device" not in app_client.get("/v1/health", headers=HEADERS).json()
+    wrong = {"Authorization": "Bearer wrong"}
+    assert app_client.get("/v1/health", headers=wrong).json() == {"ok": True}
+    store.revoke("Akshay's iPad")
+    assert (
+        "device"
+        not in app_client.get("/v1/health", headers={"Authorization": f"Bearer {token}"}).json()
+    )
+
+
 def test_revoked_token_rejected_on_ws_and_http(app_client, store, wav):
     device, token = store.mint("Lost phone")
     headers = {"Authorization": f"Bearer {token}"}

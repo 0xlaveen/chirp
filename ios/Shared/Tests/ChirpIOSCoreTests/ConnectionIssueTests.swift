@@ -57,6 +57,19 @@ struct ConnectionIssueTests {
         #expect(health.engine == "synthetic" && health.ready == true)
     }
 
+    @Test func checkedHealthCarriesThisDevicesPairingName() async throws {
+        let configuration = URLSessionConfiguration.ephemeral; configuration.protocolClasses = [FixedHTTP.self]
+        let session = URLSession(configuration: configuration)
+        let config = ServerConfig(baseURL: URL(string: "https://mac.tail.ts.net/chirp")!, token: "synthetic")
+        FixedHTTP.status = 200
+        FixedHTTP.body = Data(#"{"ok":true,"ready":true,"engine":"synthetic","device":"Akshay's iPad"}"#.utf8)
+        #expect(try await config.checkedHealth(session: session).device == "Akshay's iPad")
+        FixedHTTP.body = Data(#"{"ok":true,"ready":true,"engine":"synthetic"}"#.utf8)
+        #expect(try await config.checkedHealth(session: session).device == nil, "The shared token has no name")
+        FixedHTTP.body = Data(#"{"ok":true,"ready":true,"engine":"synthetic","device":"bad\nname"}"#.utf8)
+        #expect(try await config.checkedHealth(session: session).device == nil)
+    }
+
     @Test func bridgeResultsWithoutTheKeptFlagStillDecode() throws {
         let result = BridgeResult(generation: UUID(), utteranceID: UUID(), kind: .final, text: "x", expiresAt: Date())
         var json = try JSONSerialization.jsonObject(with: JSONEncoder().encode(result)) as! [String: Any]

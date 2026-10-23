@@ -53,6 +53,12 @@ def authorized(token, value):
     return isinstance(value, str) and secrets.compare_digest(token.encode(), value.encode())
 
 
+def device_field(token, value):
+    """Authenticated health tells a device its own pairing name; the shared token has none."""
+    name = token.name(value) if isinstance(token, Credentials) else None
+    return {"device": name} if name else {}
+
+
 def bearer(headers):
     value = headers.get("authorization", "")
     scheme, _, token = value.partition(" ")
@@ -467,6 +473,7 @@ def create_app(settings=None, engine=None, token=None, corrector=None):
                     profile.metadata() for profile in correction.resolved_profiles.values()
                 ],
                 "correction_keep_loaded": keep["value"],
+                **device_field(credential, value),
                 "correction_loaded": bool(managed and managed.loaded),
                 "notes_structure": True,
                 # The hidden `live_notes` style for Live Notes segments exists.
