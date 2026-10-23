@@ -70,16 +70,18 @@ On the phone, Chirp settings → **About → Updates** checks `https://<paired h
 
 ### First launch
 
-Chirp Keyboard's setup has four steps — *Chirp Keyboard, Microphone, Pair Mac, Try it* — and always opens on the first unfinished one, advancing automatically after you return from system settings.
+Onboarding is four full-screen pages with one job each and one primary button pinned at the bottom: *Welcome, Keyboard, Microphone, Pair your Mac*. A segmented bar at the top shows where you are; pages slide sideways (a cross-fade when animations are off) and back, including the predictive back gesture, returns to the previous page. It opens on the first unfinished page and advances by itself when you return from system settings. If the phone is already paired, as after an update, the welcome page is skipped; if everything is done the launcher opens Chirp settings directly.
 
-1. **Enable Chirp Keyboard**, then **Select it as default**. On Samsung: Settings → General management → Keyboard list and default.
-2. **Allow the microphone.** The mic opens only when you start dictation and is released as soon as you stop.
-3. **Pair your Mac** — see [Pair](#pair). If the phone was already paired, the saved pairing survives the update.
-4. **Try it:** tap the test field, type, then dictate. The step holds only that field, **Open settings**, **Choose keyboard** and the Scratchpad and Notes links; every setting lives in Chirp settings.
+1. **Welcome:** what Chirp is in one picture, phone → Mac, then **Get started**.
+2. **Keyboard:** the button follows the next unmet requirement — **Enable Chirp Keyboard**, then **Select Chirp Keyboard**, then **Continue** — with an *Enabled* and a *Selected as default* check row. The Samsung path (Settings → General management → Keyboard list and default), personalised suggestions and swipe typing are behind **Samsung path and suggestions**.
+3. **Microphone:** **Allow microphone**. The mic opens only when you start dictation and is released as soon as you stop; the details are behind **What Chirp keeps**. If you deny it, the page offers **Open app permissions**.
+4. **Pair your Mac:** **Scan code**, or **Paste link instead**. A scanned code or a pasted link is tested and **saved automatically**, with no further tap; the page then shows *Connected · host* with the engine the Mac reports, and **Finish** opens Chirp settings. If the Mac can't be reached the page says so with one action (**Open Tailscale** when it is installed, otherwise **Try again**); an unavailable scanner offers **Paste link instead**. The pairing token is stored only after the Mac answers.
+
+Chirp settings then opens with a first-run **Try it** card on top: a real text field to type and dictate into, **Choose keyboard**, **Open Scratchpad** and **Open Notes**. **Dismiss** removes it for good. Renders: `docs/screenshots/android/onboarding-*.png` (light, dark, 200% font, and the pairing success, failure and connecting states).
 
 ### Chirp settings
 
-One screen, **Chirp settings**, holds every setting. Open it from setup (**Open settings**), from HeliBoard → Keyboard layouts & settings (the Chirp section at the top is a summary: the connection row, the clean-up switch and **Open Chirp settings**), or from the keyboard's long-press **Chirp settings**. The top level is a list of groups; a row either toggles a switch in place or opens a page:
+One screen, **Chirp settings**, holds every setting. Open it from the launcher once onboarding is done, from HeliBoard → Keyboard layouts & settings (the Chirp section at the top is a summary: the connection row, the clean-up switch and **Open Chirp settings**), or from the keyboard's long-press **Chirp settings**. The top level is a list of groups; a row either toggles a switch in place or opens a page:
 
 | Group | Contents |
 |---|---|
@@ -101,10 +103,10 @@ On the Mac, print the secret pairing QR (see [server/README.md](../server/README
 uv run chirp-server pair --url https://<your-mac>.<tailnet>.ts.net/chirp
 ```
 
-On the phone, setup step 3 (*Connect your Mac*) — with Tailscale on, on both devices:
+On the phone, onboarding's last page (*Pair your Mac*, or Chirp settings → Mac connection → Change pairing) — with Tailscale on, on both devices:
 
-- **Scan pairing QR** is primary (the scanner uses Google Play services). **Paste pairing link instead** works without it.
-- **Test connection & save pairing** verifies the connection before anything is stored.
+- **Scan code** is primary (the scanner uses Google Play services). **Paste link instead** works without it.
+- A scanned code or pasted link is tested and saved straight away; nothing is stored until the Mac answers.
 - A saved pairing shows the Mac host and the engine it reports, and offers **Check Mac connection** and **Forget pairing**.
 
 The token is stored encrypted (AES-GCM) under the Android Keystore alias `chirp_pairing_v1`; pairing links are parsed strictly (`chirp://pair?url=…&token=…`, HTTPS only) and never rendered into logs. Recoverable connection problems offer **Pair Mac**, **Open mic settings** or **Check Tailscale** (which opens the Tailscale app when it is installed).
@@ -278,7 +280,7 @@ A place to dictate long-form text outside any text field, edit it, then **Copy**
 
 ![Scratchpad idle](../docs/screenshots/android/scratchpad-idle-light.png) ![Listening](../docs/screenshots/android/scratchpad-listening-light.png) ![With text (dark)](../docs/screenshots/android/scratchpad-text-dark.png)
 
-- **Open it** from the launcher icon's long-press shortcut **Scratchpad**, from a **Quick Settings tile**, or from **Open Scratchpad** in Chirp setup. Add the tile once: swipe down twice, tap the pencil/Edit button, and drag **Scratchpad** into the panel. Tapping it collapses the shade and opens the Scratchpad (on a locked phone it asks for your screen lock first, because the pairing needs the unlocked phone).
+- **Open it** from the launcher icon's long-press shortcut **Scratchpad**, from a **Quick Settings tile**, or from **Open Scratchpad** in the Try it card. Add the tile once: swipe down twice, tap the pencil/Edit button, and drag **Scratchpad** into the panel. Tapping it collapses the shade and opens the Scratchpad (on a locked phone it asks for your screen lock first, because the pairing needs the unlocked phone).
 - **Dictate:** each final is placed at the cursor, or replaces the selection, with a space where needed and a lower-cased first word when it continues a sentence. The opt-in **spoken commands** setting ("new line", "new paragraph") applies here too. The text is read-only while you dictate; edit freely otherwise.
 - **Style picker:** **Raw** or any clean-up style the Mac offers. It applies to this screen only and never changes the keyboard's own setting; it is hidden when the Mac has clean-up off.
 - **Memory only.** The text lives in the screen's view model: it survives rotation and folding, and is gone when you leave the Scratchpad (back, swipe away or the system closes it). Nothing is written to preferences or files, the Recents thumbnail is blank, and the clipboard copy is marked sensitive where Android supports it. Only if you turned on [Dictation history](#dictation-history) is each dictation (not the text in the box) also saved, encrypted, exactly like keyboard dictations; the screen says so while it is on.
@@ -290,7 +292,7 @@ Live Notes on the phone: tap **Record**, talk for as long as the meeting lasts, 
 
 ![Notes on the cover screen](../docs/screenshots/android/notes-cover-recording-light.png) ![Notes beside the transcript on the inner screen (dark)](../docs/screenshots/android/notes-inner-recording-dark.png)
 
-- **Open it** from the launcher icon's long-press shortcut **Notes**, the **Notes** Quick Settings tile (add it like the Scratchpad tile; a tap opens Notes and starts recording, a tap while recording stops it, and the tile says **Recording** or **Paused**), or **Open Notes** in Chirp setup.
+- **Open it** from the launcher icon's long-press shortcut **Notes**, the **Notes** Quick Settings tile (add it like the Scratchpad tile; a tap opens Notes and starts recording, a tap while recording stops it, and the tile says **Recording** or **Paused**), or **Open Notes** in the Try it card.
 - **Record / Pause / Stop** with the elapsed time. **Pause** lets the current segment finish and closes the microphone (the mic indicator goes off and the clock stops), but the notes keep updating from what was already said; nothing is frozen and no final pass runs. **Resume** continues the same notes on a fresh socket; if the Mac cannot be reached it stays paused and says why. **Stop** works from paused too. The recording is cut into ordinary `/v1/stream` utterances at a pause after 12 s (0.3 s of quiet once past 30 s) and always at 45 s (`DictationSegmenter` with the Notes thresholds). At a cut the next socket is opened and must be **ready** before capture swaps to it (`FrameRouter`), then the old one finalizes in the background, so nothing is dropped and finals land in capture order even when a later one arrives first. Segments use the hidden `live_notes` clean-up style when the Mac has it (only fillers and repeats go), otherwise the default style.
 - **Live notes.** After each final (at most every 15 s, never while a segment is still finalizing) the open window goes to `POST /v1/notes/structure` and the answer replaces only the AI-owned **tail** of the notes. The notes stay editable while recording: typing before the tail just shifts it; editing inside it makes it yours, and the next answer starts a new tail after it. An answer that arrives while an input method is composing, or while you are typing in the tail, waits until you stop (at most 10 s). Unstructured speech shows on the **Hearing** line under the editor. A rejected window is retried in halves and quarters; a part that still fails becomes an editable `_Not structured — see transcript_` block.
 - **Organize** structures any raw blocks you have not edited and then reorganizes the trailing sections with `POST /v1/notes/reorganize`. Every result is applied only if the notes are unchanged since the request ("Notes changed while organizing — try again" otherwise), and **Undo organize** restores the text from before it. **Auto-organize** runs the same pass on its own after about 1200 new characters, 3 minutes and 15 s without typing, and once at Stop. A `busy` server (one notes generation at a time, shared with a Mac using the same server) means "retry after the next segment", never an error.

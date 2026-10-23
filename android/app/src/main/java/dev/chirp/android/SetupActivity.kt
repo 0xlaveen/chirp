@@ -20,7 +20,6 @@ import androidx.lifecycle.lifecycleScope
 import dev.chirp.android.settings.SettingsActions
 import dev.chirp.android.settings.SettingsPage
 import dev.chirp.android.settings.SettingsScreen
-import dev.chirp.android.settings.copyDiagnostics
 import com.google.mlkit.vision.barcode.common.Barcode
 import com.google.mlkit.vision.codescanner.GmsBarcodeScannerOptions
 import com.google.mlkit.vision.codescanner.GmsBarcodeScanning
@@ -29,7 +28,16 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 internal class SetupState {
-    var step by mutableIntStateOf(0)
+    /** The onboarding page (`PAGE_*`). */
+    var step by mutableIntStateOf(PAGE_WELCOME)
+    /** The page onboarding opened on: back stops here instead of walking through pages the entry skipped. */
+    var entryStep by mutableIntStateOf(PAGE_WELCOME)
+    var micDenied by mutableStateOf(false)
+    /** A pairing was tested and saved in this onboarding run; the pair page shows it instead of the scanner. */
+    var connected by mutableStateOf(false)
+    var pairIssue by mutableStateOf<PairIssue?>(null)
+    /** Settings opens with the first-run "Try it" card on top. */
+    var tryIt by mutableStateOf(false)
     var wifiPermissionNeeded by mutableStateOf(false)
     var localNetwork by mutableStateOf(android.os.Build.VERSION.SDK_INT < 37)
     var mic by mutableStateOf(false)
@@ -67,48 +75,47 @@ open class SetupActivity : ComponentActivity() {
         else state.status = if (granted) "Wi-Fi server access allowed — test your pairing link" else "Wi-Fi server access denied. Tailscale still works; allow Wi-Fi access in app permissions if needed."
     }
     private val micPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) {
-        state.mic = it
-        if (it) state.step = setupStep(state.inputEnabled, state.inputSelected, true, state.paired)
+        state.mic = it; state.micDenied = !it
+        if (it) advance()
         state.status = if (it) "Microphone permission granted" else "Microphone permission is needed to dictate — open app permissions to allow it"
     }
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         store = SettingsStore(this)
-        state.step = savedInstanceState?.getInt("step", 0)?.coerceIn(0, 3) ?: 0
+        state.step = savedInstanceState?.getInt("step", 0)?.coerceIn(PAGE_WELCOME, PAGE_PAIR) ?: PAGE_WELCOME
         savedInstanceState?.let {
+            state.entryStep = it.getInt("entry", 0).coerceIn(PAGE_WELCOME, PAGE_PAIR); state.connected = it.getBoolean("connected"); state.tryIt = it.getBoolean("try_it")
             state.settingsOpen = it.getBoolean("settings"); settingsStandalone = it.getBoolean("standalone")
             state.settingsPage = it.getString("settings_page")?.let { name -> SettingsPage.entries.firstOrNull { page -> page.name == name } }
         }
         refresh()
-        if (savedInstanceState == null) state.step = setupStep(state.inputEnabled, state.inputSelected, state.mic, state.paired)
+        if (savedInstanceState == null) {
+            val first = setupStep(state.inputEnabled, state.inputSelected, state.mic, state.paired, welcomed = false)
+            if (first == ONBOARDING_DONE) finishOnboarding() else { state.step = first; state.entryStep = first }
+        }
         consumeSection(intent)
         setContent {
             ChirpTheme {
                 if (state.settingsOpen) SettingsScreen(state, SettingsActions(
                     checkConnection = { testPairing(save = false) },
-                    changePairing = { state.settingsOpen = false; state.step = 2 },
+                    changePairing = ::openPairing,
                     forgetPairing = ::forgetPairing,
                     allowWifi = { networkPermission.launch(LOCAL_NETWORK_PERMISSION) },
                     floatingMicSettings = { startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) },
                     keyboardPreferences = ::openKeyboardPreferences,
                 ), initialPage = state.settingsPage, onExit = if (settingsStandalone) null else ({ state.settingsOpen = false }))
-                else SetupWizard(state,
+                else Onboarding(state, OnboardingActions(
                     grantMic = {
                         if (state.mic) state.status = "Microphone permission already granted"
                         else micPermission.launch(Manifest.permission.RECORD_AUDIO)
                     },
                     keyboardSettings = { awaitingPrerequisite = true; startActivity(Intent(Settings.ACTION_INPUT_METHOD_SETTINGS)) },
-                    accessibilitySettings = { startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) },
                     appSettings = { awaitingPrerequisite = true; startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, "package:$packageName".toUri())) },
                     picker = { awaitingPrerequisite = true; getSystemService(InputMethodManager::class.java).showInputMethodPicker() },
                     grantNetwork = { networkPermission.launch(LOCAL_NETWORK_PERMISSION) },
-                    keyboardPreferences = ::openKeyboardPreferences,
-                    diagnostics = { state.diagnostics = DiagnosticsReport.text(this) },
-                    clearTimings = { DiagnosticsReport.clearTimings(this); state.diagnostics = DiagnosticsReport.text(this) },
-                    copyDiagnostics = { copyDiagnostics(this, DiagnosticsReport.text(this)) },
-                    scan = ::scan, check = { testPairing(save = state.link.isNotBlank()) },
-                    openSettings = { state.settingsPage = null; settingsStandalone = false; state.settingsOpen = true },
-                )
+                    scan = ::scan, pasteLink = ::editLink, retry = { if (state.link.isBlank()) scan() else testPairing(save = true) },
+                    openTailscale = { AndroidTailscale(this).open() }, finish = ::advance,
+                ))
             }
         }
         consumePairingIntent(intent)
@@ -117,13 +124,28 @@ open class SetupActivity : ComponentActivity() {
     private fun openKeyboardPreferences() = startActivity(Intent(this, helium314.keyboard.settings.SettingsActivity::class.java))
     private fun forgetPairing() {
         ++pairingGeneration; ChirpNetwork.cancel(pendingHealth); pendingHealth = null
-        store.forget(); state.link = ""; state.status = "Pairing removed"; state.checking = false; state.reachable = null; refresh()
+        store.forget(); state.link = ""; state.status = "Pairing removed"; state.checking = false; state.reachable = null; state.connected = false; refresh()
+    }
+    /** Onboarding is complete: hand over to Chirp settings, with the first-run "Try it" card until it's dismissed. */
+    private fun finishOnboarding() {
+        state.tryIt = !store.tryItDismissed; state.settingsPage = null; settingsStandalone = true; state.settingsOpen = true
+    }
+    /** Moves to the first page whose requirement isn't met, or finishes. Never back to the welcome page once past it. */
+    internal fun advance() {
+        val next = setupStep(state.inputEnabled, state.inputSelected, state.mic, state.paired, welcomed = state.step > PAGE_WELCOME)
+        if (next == ONBOARDING_DONE) finishOnboarding() else state.step = next
+    }
+    /** Opens the pair page on its own: from settings (Change pairing), a pairing link or a recovery action. Back leaves it. */
+    private fun openPairing() {
+        if (state.settingsOpen) state.entryStep = PAGE_PAIR
+        state.settingsOpen = false; state.step = PAGE_PAIR; state.connected = false; state.pairIssue = null
     }
     private fun openSettings(page: SettingsPage?) { state.settingsPage = page; settingsStandalone = true; state.settingsOpen = true }
     private fun consumeSection(source: Intent) {
         when (source.getStringExtra("section")) {
-            "pair" -> { state.settingsOpen = false; state.step = 2 }
+            "pair" -> openPairing()
             "settings" -> openSettings(null)
+            "try" -> { state.tryIt = true; openSettings(null) }
             "connection" -> openSettings(SettingsPage.Connection)
             "network" -> { state.reachable = false; openSettings(SettingsPage.Connection) }
         }
@@ -132,7 +154,7 @@ open class SetupActivity : ComponentActivity() {
         super.onWindowFocusChanged(hasFocus)
         if (hasFocus && awaitingPrerequisite && ::store.isInitialized) {
             refresh()
-            state.step = setupStep(state.inputEnabled, state.inputSelected, state.mic, state.paired)
+            if (!state.settingsOpen) advance()
             awaitingPrerequisite = false
         }
     }
@@ -141,20 +163,27 @@ open class SetupActivity : ComponentActivity() {
         source.data = null
         if (value != null) receivePairingLink(value)
     }
+    /** A scanned code or opened link: test it and save it, with no further tap. The token reaches prefs only after the Mac answers. */
     private fun receivePairingLink(value: String?) {
         try {
             Pairing.parse(value ?: error("Missing pairing link"))
             ++pairingGeneration; ChirpNetwork.cancel(pendingHealth); pendingHealth = null; state.checking = false
-            state.link = value.orEmpty(); state.settingsOpen = false; state.step = 2
-            state.status = "Pairing link received — test to save"
-        } catch (_: Exception) { state.status = "Invalid Chirp pairing link" }
+            state.link = value.orEmpty(); openPairing()
+            testPairing(save = true)
+        } catch (_: Exception) { state.status = "Invalid Chirp pairing link"; state.pairIssue = PairIssue.InvalidLink }
+    }
+    /** The paste field: a pasted link that parses is tested and saved straight away. */
+    internal fun editLink(value: String) {
+        state.link = value; state.pairIssue = null
+        if (runCatching { Pairing.parse(value) }.isSuccess) testPairing(save = true)
     }
     internal fun scan() {
-        state.scanning = true
+        state.scanning = true; state.pairIssue = null
         scanPairingQr(
             received = { if (!isDestroyed) { state.scanning = false; receivePairingLink(it) } },
             cancelled = { if (!isDestroyed) { state.scanning = false; state.status = "Scan cancelled — scan again or paste the pairing link" } },
-            failed = { if (!isDestroyed) { state.scanning = false; state.status = "Scanner unavailable — check Google Play services or paste the pairing link" } },
+            failed = { if (!isDestroyed) { state.scanning = false; state.pairIssue = PairIssue.ScannerUnavailable
+                state.status = "Scanner unavailable — check Google Play services or paste the pairing link" } },
         )
     }
     protected open fun scanPairingQr(received: (String?) -> Unit, cancelled: () -> Unit, failed: () -> Unit) {
@@ -169,7 +198,8 @@ open class SetupActivity : ComponentActivity() {
         if (::store.isInitialized) { refresh(); if (state.paired && state.link.isBlank()) testPairing(save = false, requestPermission = false) }
     }
     override fun onSaveInstanceState(outState: Bundle) {
-        outState.putInt("step", state.step); outState.putBoolean("settings", state.settingsOpen); outState.putBoolean("standalone", settingsStandalone)
+        outState.putInt("step", state.step); outState.putInt("entry", state.entryStep); outState.putBoolean("connected", state.connected)
+        outState.putBoolean("try_it", state.tryIt); outState.putBoolean("settings", state.settingsOpen); outState.putBoolean("standalone", settingsStandalone)
         outState.putString("settings_page", state.settingsPage?.name)
         super.onSaveInstanceState(outState)
     }
@@ -197,20 +227,20 @@ open class SetupActivity : ComponentActivity() {
         val id = ++pairingGeneration
         ChirpNetwork.cancel(pendingHealth)
         val call = ChirpNetwork.healthCall(client, pairing); pendingHealth = call
-        state.checking = true; state.status = "Checking Mac…"
+        state.checking = true; state.pairIssue = null; state.status = "Checking Mac…"
         lifecycleScope.launch {
             try {
-                val health = withContext(Dispatchers.IO) { ChirpNetwork.health(call) }
+                val health = checkMac(call)
                 if (pairingGeneration != id) return@launch
                 pendingHealth = null; state.checking = false
-                if (save) { store.save(pairing, health); state.link = "" }
+                if (save) { savePairing(pairing, health); state.link = "" }
                 else {
                     store.health = health
                 }
                 state.reachable = true
                 state.status = if (health.ready) "Mac ready" else "Paired · Mac is loading its speech model"
                 refresh()
-                if (save) state.step = 3
+                if (save) state.connected = true
             } catch (error: Exception) {
                 recordDebugNetworkFailure(this@SetupActivity, error)
                 if (pairingGeneration == id && generateSequence<Throwable>(error) { it.cause }.take(5).any { it is WifiServerPermissionRequired }) {
@@ -220,12 +250,14 @@ open class SetupActivity : ComponentActivity() {
                     return@launch
                 }
                 if (pairingGeneration == id) {
-                    pendingHealth = null; state.checking = false; state.reachable = false
+                    pendingHealth = null; state.checking = false; state.reachable = false; if (save) state.pairIssue = PairIssue.Unreachable
                     state.status = "Mac unreachable — is Tailscale on? Check the Mac is awake, Chirp is running, and the pairing link is current."
                 }
             }
         }
     }
+    protected open suspend fun checkMac(call: okhttp3.Call): Health = withContext(Dispatchers.IO) { ChirpNetwork.health(call) }
+    protected open fun savePairing(pairing: Pairing, health: Health) = store.save(pairing, health)
     override fun onStop() {
         ++pairingGeneration; ChirpNetwork.cancel(pendingHealth); pendingHealth = null; state.checking = false
         super.onStop()

@@ -56,6 +56,17 @@ class SettingsScreenTest {
         SettingsPage.Diagnostics to listOf("Debug overlay (timings only)", "Copy diagnostics", "Clear timings"),
     )
 
+    @Test fun `the first-run Try it card sits above the list until it is dismissed for good`() {
+        val (state, history, updates) = settingsFixture()
+        state.tryIt = true
+        show(state, history, updates)
+        compose.onNodeWithText("Try it").assertIsDisplayed()
+        compose.onNodeWithText("Open Scratchpad").assertExists(); compose.onNodeWithText("Open Notes").assertExists()
+        compose.onNodeWithText("Dismiss").performScrollTo().performClick()
+        compose.onNodeWithText("Try it").assertDoesNotExist()
+        assertFalse(state.tryIt); assertTrue(SettingsStore(context).tryItDismissed)
+    }
+
     @Test fun `every setting is reachable from the list exactly once, and back returns to the list`() {
         val (state, history, updates) = settingsFixture()
         show(state, history, updates)

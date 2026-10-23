@@ -143,8 +143,8 @@ internal fun InfoSheetContent(title: String, body: String, onDismiss: () -> Unit
 
 /** "Learn more" link that opens an [InfoSheet]. */
 @Composable
-internal fun LearnMore(title: String, body: String, modifier: Modifier = Modifier) {
+internal fun LearnMore(title: String, body: String, modifier: Modifier = Modifier, label: String = "Learn more") {
     var open by rememberSaveable { mutableStateOf(false) }
-    TextButton({ open = true }, modifier) { Text("Learn more") }
+    TextButton({ open = true }, modifier) { Text(label) }
     if (open) InfoSheet(title, body) { open = false }
 }

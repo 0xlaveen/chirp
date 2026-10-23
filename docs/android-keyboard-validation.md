@@ -89,8 +89,7 @@ emulator's `10.0.2.2:7899`; release remains HTTPS-only.
 2. Open Chirp Keyboard → **Enable Chirp Keyboard**. On Samsung: Settings → General
    management → Keyboard list and default → enable Chirp, then select it as default.
 3. Allow microphone permission. Leave the optional floating accessibility mic off.
-4. Keep existing pairing, or scan the Mac's existing Chirp QR and tap **Test connection
-   & save pairing** with Tailscale connected. Local-network permission is needed only
+4. Keep existing pairing, or scan the Mac's existing Chirp QR (it is saved automatically) with Tailscale connected. Local-network permission is needed only
    for a direct Wi-Fi server; the tailnet/VPN path works without it.
 5. In the test field, type a word, tap the mic to start/stop, dictate again, hold/release
    for push-to-talk, and cancel once. Chirp stays selected after every final. If cleanup
