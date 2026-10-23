@@ -17,6 +17,11 @@ final class NotesController {
         options: settings.notesStartOptions(health: nil), structuring: settings.notesStructureEnabled(health: nil),
         autoReorganize: settings.notesAutoReorganize)
 
+    /// The crash-recovery journal and the opt-in "keep this file up to date" writes.
+    let journal = NotesJournal(enabled: settings.notesRecoveryCopy)
+    /// Sessions the journal found at launch, newest first; the first is on offer in the window.
+    private var recoverable: [NotesJournalRecord] = []
+
     /// The server's structure timeout (30 s) plus a margin.
     static let structureTimeout: TimeInterval = 35
     /// A reorganize pass may take longer (up to 3500 chars in and out).
@@ -117,6 +122,11 @@ final class NotesController {
         model.onReorganize = { [weak self] in self?.recorder.reorganizeNow() }
         model.onEditorFocus = { [weak self] inTail, composing in self?.recorder.setEditorFocus(inTail: inTail, composing: composing) }
         model.onSpeakerLabelsToggle = { [weak self] on in self?.setSpeakerLabels(on) }
+        journal.onWrite = { bytes, ms in
+            chirpLog.info("notes journal bytes=\(bytes ?? -1, privacy: .public) ms=\(ms, privacy: .public)")
+        }
+        journal.onKeepSaved = { [weak self] in self?.markSaved() }
+        journal.onKeepChange = { [weak self] in self?.sync() }
         recorder.onLabels = { [weak self] lag, tentative in
             guard let self else { return }
             chirpLog.info("\(SpeakerLog.labels(speakers: self.recorder.document.speakerCount, lag: lag, tentative: tentative), privacy: .public)")
@@ -270,6 +280,63 @@ final class NotesController {
 
     func markSaved() { recorder.markSaved() }
 
+    /// Save… wrote `url`: the document is saved, and with `keep` the file follows later changes.
+    func didSave(to url: URL, keep: Bool) {
+        recorder.markSaved()
+        journal.didSave(to: url, keep: keep)
+        chirpLog.info("notes saved keep=\(keep, privacy: .public)")
+        sync()
+    }
+
+    /// Discard (the quit alert, where no New follows): the recovery copy goes with the notes.
+    func discardJournal() { journal.discard() }
+
+    // MARK: recovery
+
+    /// At launch: a journal left by a session that did not end with Save or Discard is offered in the window.
+    /// Returns whether there is one.
+    @discardableResult
+    func checkRecovery() -> Bool {
+        recoverable = journal.store.recoverable()
+        offerRecovery()
+        return model.recovery != nil
+    }
+
+    private func offerRecovery() {
+        model.recovery = recoverable.first.map { RecoveryOffer(startedAt: $0.document.startedAt, elapsed: $0.elapsed) }
+        if let first = recoverable.first {
+            chirpLog.info("notes recovery offered segments=\(first.document.segments.count, privacy: .public) chars=\(first.document.text.utf16.count, privacy: .public)")
+        }
+    }
+
+    /// The offered session, for Save… (it is written without being loaded).
+    var offeredDocument: NotesDocument? { recoverable.first?.document }
+
+    /// Keep: the offered session becomes the stopped, still unsaved document (the caller asked about the current one).
+    func keepRecovered() {
+        guard !isActive, !recoverable.isEmpty else { return }
+        let record = recoverable.removeFirst()
+        journal.discard()
+        journal.adopt(record)
+        recorder.restore(record.document, elapsed: record.elapsed)
+        model.recovery = nil
+        chirpLog.info("notes recovery kept segments=\(record.document.segments.count, privacy: .public)")
+        sync()
+    }
+
+    /// Discard or Save…: the offered journal is deleted and the next one (if any) is offered.
+    func dropRecovered() {
+        guard !recoverable.isEmpty else { return }
+        journal.discard(recoverable.removeFirst().document.id)
+        offerRecovery()
+    }
+
+    /// The Settings switch changed: the footer line follows, and turning it off deletes the copy.
+    func recoveryCopyChanged() {
+        journal.setEnabled(settings.notesRecoveryCopy)
+        applyAvailability(resolvedHealth())
+    }
+
     // MARK: structuring
 
     private func setStructure(_ on: Bool) {
@@ -301,7 +368,8 @@ final class NotesController {
         let enabled = settings.notesStructureEnabled(health: health)
         model.structureEnabled = enabled
         recorder.configureStructuring(enabled: enabled, health: health)
-        var line = NotesStatus.privacy
+        var line = settings.notesRecoveryCopy ? NotesStatus.privacyRecovery : NotesStatus.privacy
+        model.privacyHelp = settings.notesRecoveryCopy ? NotesStatus.privacyRecoveryHelp : ""
         if enabled, health?.correctionLeavesMachine == true {
             line += " · Structuring sends text to \(health?.correctionHost ?? settings.serverConfig().host)"
         }
@@ -319,6 +387,7 @@ final class NotesController {
             startError = nil
         }
         let state = NotesModel.displayState(recorder: recorder.state, startError: startError)
+        let leftCapture = state != lastState && !state.isCapturing
         if state != lastState {
             chirpLog.info("notes \(String(describing: self.lastState.logName), privacy: .public) -> \(state.logName, privacy: .public) segments=\(self.recorder.document.segments.count, privacy: .public) chars=\(self.recorder.document.text.utf16.count, privacy: .public) tail=\(self.recorder.document.tail.utf16.count, privacy: .public)")
             lastState = state
@@ -332,7 +401,10 @@ final class NotesController {
         let reorganize = recorder.reorganizeStatus
         model.reorganizeStatus = reorganize
         // The editor replays the AI changes right away, onto text that matches `model.document` before them.
-        model.enqueue(recorder.takePendingChanges())
+        let changes = recorder.takePendingChanges()
+        model.enqueue(changes)
+        journal.update(recorder.document, elapsed: recorder.elapsed, urgent: !changes.isEmpty || leftCapture)
+        model.keepSaving = journal.keepStatus
         model.debugRetention = recorder.debugRetention || (resolvedHealth()?.debugRetention ?? false)
         model.elapsed = recorder.elapsed
         model.finishingElapsed = recorder.stoppingElapsed

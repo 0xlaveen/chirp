@@ -21,6 +21,7 @@ final class SettingsWindowController: NSObject, NSTextFieldDelegate {
     var onOpenModels: (() -> Void)?
     var onPairPhone: (() -> Void)?
     var onRemoveSpeakerModel: (() -> Void)?
+    var onNotesRecoveryCopyChange: (() -> Void)?
     private var testTask: Task<Void, Never>?
     private var window: NSWindow?
     private var tabs: NSTabViewController?
@@ -39,6 +40,7 @@ final class SettingsWindowController: NSObject, NSTextFieldDelegate {
         s.tokenPresent = ServerConfig.readToken() != nil
         s.launch = LaunchAtLogin.state
         s.wordWaveform = settings.wordWaveform
+        s.notesRecoveryCopy = settings.notesRecoveryCopy
         s.soundsEnabled = settings.soundsEnabled
         s.soundPack = settings.soundPack
         s.soundVolume = settings.soundVolume
@@ -215,6 +217,8 @@ final class SettingsWindowController: NSObject, NSTextFieldDelegate {
         form.launch.action = #selector(toggleLaunch(_:))
         form.wordWaveform.target = self
         form.wordWaveform.action = #selector(toggleWordWaveform(_:))
+        form.notesRecoveryCopy.target = self
+        form.notesRecoveryCopy.action = #selector(toggleNotesRecoveryCopy(_:))
         form.micButton.target = self
         form.micButton.action = #selector(grantMic)
         form.accessibilityButton.target = self
@@ -253,6 +257,10 @@ final class SettingsWindowController: NSObject, NSTextFieldDelegate {
     }
 
     @objc private func toggleCleanup(_ sender: NSButton) { settings.correction = sender.state == .on }
+    @objc private func toggleNotesRecoveryCopy(_ sender: NSButton) {
+        settings.notesRecoveryCopy = sender.state == .on
+        onNotesRecoveryCopyChange?()
+    }
     @objc private func toggleWordWaveform(_ sender: NSButton) { settings.wordWaveform = sender.state == .on }
     @objc private func toggleOfferRaw(_ sender: NSButton) { settings.showRawAfterCleanup = sender.state == .on }
 

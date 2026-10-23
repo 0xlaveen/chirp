@@ -598,6 +598,16 @@ public enum Snapshots {
                 d.livePartial = "the beta itself should start in the second"
                 $0.document = d
             },
+            notes("recovered") {
+                $0.state = .stopped; $0.elapsed = 0; $0.document = NotesDocument()
+                $0.recovery = RecoveryOffer(startedAt: Date(timeIntervalSince1970: 1_792_504_980), elapsed: 52 * 60)
+                $0.privacyLine = NotesStatus.privacyRecovery
+            },
+            notes("keep-saving-stopped") {
+                $0.state = .stopped
+                $0.privacyLine = NotesStatus.privacyRecovery
+                $0.keepSaving = .stopped(KeepSavingStatus.moved)
+            },
             notes("transcript-raw") { $0.tab = .transcript; $0.showRaw = true; $0.document = demoNotes(gap: true) },
             notes("transcript") { $0.tab = .transcript; $0.document = demoNotes(gap: true) },
             notes("transcript-speakers") {

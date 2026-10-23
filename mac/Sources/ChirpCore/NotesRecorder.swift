@@ -119,6 +119,9 @@ final class NotesFrameRouter: @unchecked Sendable {
     func setSpeakers(_ diarizer: SpeakerDiarizing?) { lock.withLock { speakers = diarizer } }
 
     func resetTime() { lock.withLock { bytes = 0 } }
+
+    /// A recovered document continues its clock: new audio starts `seconds` in.
+    func seed(seconds: TimeInterval) { lock.withLock { bytes = Int(max(0, seconds) * PCMConverter.sampleRate) * 2 } }
 }
 
 /// A Live Notes session: one long recording cut into ordinary `/v1/stream` utterances over rolling sockets, plus the
@@ -434,6 +437,18 @@ public final class NotesRecorder {
         lastCommit = nil
         state = .idle
         if !structuringAllowed.isOff { structuring = .idle }
+        changed()
+    }
+
+    /// Keep after a crash: `recovered` replaces the (empty) document as a stopped one, so Record continues into it with
+    /// its clock at `elapsed`. The old diarizer slots are forgotten (a new diarizer's slots are other voices).
+    public func restore(_ recovered: NotesDocument, elapsed: TimeInterval) {
+        guard !state.isActive else { return }
+        reset()
+        document = recovered
+        document.forgetSpeakerSlots()
+        router.seed(seconds: elapsed)
+        state = .stopped
         changed()
     }
 

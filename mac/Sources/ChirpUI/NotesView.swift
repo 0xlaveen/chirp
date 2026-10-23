@@ -21,6 +21,7 @@ public struct NotesView: View {
         VStack(spacing: 0) {
             NotesHeader(model: model)
             Divider()
+            if let offer = model.recovery { RecoveryBanner(model: model, offer: offer) }
             content
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             Divider()
@@ -419,6 +420,38 @@ private struct UpdatingBadge: View {
     }
 }
 
+/// A session the journal found at launch: Keep restores it as a stopped, unsaved document.
+private struct RecoveryBanner: View {
+    @Bindable var model: NotesModel
+    let offer: RecoveryOffer
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 10) {
+            Image(systemName: "arrow.counterclockwise.circle.fill")
+                .font(.system(size: 15))
+                .foregroundStyle(Color.accentColor)
+                .accessibilityHidden(true)
+            Text(offer.text)
+                .font(.callout)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            Button("Keep", action: model.onRecoveryKeep)
+                .keyboardShortcut(.defaultAction)
+                .controlSize(.small)
+                .disabled(model.isBusy || model.state.isActive)
+            Button("Save…", action: model.onRecoverySave)
+                .controlSize(.small)
+            Button("Discard", role: .destructive, action: model.onRecoveryDiscard)
+                .controlSize(.small)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .background(Color.accentColor.opacity(0.1))
+        .overlay(alignment: .bottom) { Divider() }
+        .accessibilityElement(children: .contain)
+    }
+}
+
 /// Why structuring is off, above the editor (which stays editable).
 private struct ExplanationBanner: View {
     @Bindable var model: NotesModel
@@ -616,6 +649,14 @@ private struct NotesFooter: View {
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
                 .truncationMode(.middle)
+                .help(model.privacyHelp)
+            if let keep = model.keepSaving.text {
+                Text(keep)
+                    .font(.caption)
+                    .foregroundStyle(model.keepSaving.isSaving ? AnyShapeStyle(.secondary) : AnyShapeStyle(Color.orange))
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
             if model.debugRetention {
                 Text("DEBUG: recording kept")
                     .font(.caption.weight(.bold))

@@ -38,6 +38,24 @@ public enum NotesStatus {
     public static let stopped = "Stopped"
     public static let empty = "Press Record or \(MenuContent.notesHotkeyTitle) to start taking notes."
     public static let privacy = "Notes stay in memory until you save them."
+    public static let recoveryFolder = "~/Library/Application Support/Chirp/Recovery"
+    /// The footer line while the recovery copy is on.
+    public static let privacyRecovery = "Recovery copy until you save: \(recoveryFolder)"
+    public static let privacyRecoveryHelp = "Chirp keeps the text of your unsaved notes and transcript, never audio, in \(recoveryFolder) (readable only by you). It is deleted when you save or discard the notes."
+    public static let recoverySwitch = "Keep a recovery copy until notes are saved"
+    public static let recoveryHelp = "Keeps unsaved Live Notes text (never audio) on this Mac so a crash does not lose a meeting."
+    public static let keepSavingCheckbox = "Keep saving changes to this file"
+
+    /// "Recovered unsaved notes from 14:03 (52 min)".
+    public static func recovered(startedAt: Date, elapsed: TimeInterval, timeZone: TimeZone = .current) -> String {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.timeZone = timeZone
+        f.dateFormat = "HH:mm"
+        let minutes = Int(elapsed / 60)
+        let length = minutes < 1 ? "under 1 min" : minutes < 60 ? "\(minutes) min" : "\(minutes / 60) h \(String(format: "%02d", minutes % 60)) min"
+        return "Recovered unsaved notes from \(f.string(from: startedAt)) (\(length))"
+    }
     public static let speakerLabels = "Label speakers"
     public static let speakerHelp = "Labels who is talking as Person 1, Person 2… On this Mac only: voices, labels and audio never leave it. Up to 4 people; a 5th voice joins the closest one."
     public static func speakerDownloadPrompt(size: String) -> String {
@@ -46,6 +64,19 @@ public enum NotesStatus {
     public static func speakerRedownloadPrompt(size: String) -> String {
         "The speaker model on this Mac did not load. Remove it and download it again (\(size))? Audio never leaves this Mac."
     }
+}
+
+/// A session the journal found at launch, waiting for Keep, Save… or Discard.
+public struct RecoveryOffer: Equatable, Sendable {
+    public var startedAt: Date
+    public var elapsed: TimeInterval
+
+    public init(startedAt: Date, elapsed: TimeInterval) {
+        self.startedAt = startedAt
+        self.elapsed = elapsed
+    }
+
+    public var text: String { NotesStatus.recovered(startedAt: startedAt, elapsed: elapsed) }
 }
 
 /// One transcript row: a whole segment (no labels, or a gap), or one speaker turn of a labelled segment.
@@ -88,6 +119,12 @@ public final class NotesModel {
     /// The user's "Structure notes" toggle.
     public var structureEnabled = true
     public var privacyLine = NotesStatus.privacy
+    /// The tooltip that spells out what the recovery copy holds (empty while it is off).
+    public var privacyHelp = ""
+    /// A recovered session is waiting (the banner above the notes).
+    public var recovery: RecoveryOffer?
+    /// A saved file is being kept up to date (the footer says so), or stopped.
+    public var keepSaving: KeepSavingStatus = .off
     public var debugRetention = false
     /// The server is on this Mac, so "Manage Local Models…" can open the models window.
     public var canManageModels = false
@@ -118,6 +155,9 @@ public final class NotesModel {
     public var onCopy: () -> Void = {}
     public var onSave: () -> Void = {}
     public var onNew: () -> Void = {}
+    public var onRecoveryKeep: () -> Void = {}
+    public var onRecoverySave: () -> Void = {}
+    public var onRecoveryDiscard: () -> Void = {}
     public var onManageModels: () -> Void = {}
     public var onStructureToggle: (Bool) -> Void = { _ in }
     public var onTabChange: (NotesTab) -> Void = { _ in }

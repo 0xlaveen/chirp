@@ -61,6 +61,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         notes.isDictating = { [controller] in controller.state.isActive }
         notes.onChange = { [weak self] in self?.menu?.refreshIcon() }
         notes.onShowWindow = { [weak self] focus in self?.notesWindow.show(focus: focus) }
+        settingsWindow.onNotesRecoveryCopyChange = { [notes] in notes.recoveryCopyChanged() }
         notesWindow.onOpenModels = { [localModelsWindow] in localModelsWindow.show() }
         settingsWindow.onRemoveSpeakerModel = { [notes] in notes.removeSpeakerModel() }
         notes.onSpeakerModelChange = { [settingsWindow] in settingsWindow.speakerModelChanged() }
@@ -91,6 +92,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 controller.retryHotkeyIfNeeded()
             }
         }
+
+        // A session the last run did not end with Save or Discard (a crash, a force quit, a power loss) comes back here.
+        if notes.checkRecovery() { notesWindow.show(focus: false) }
 
         // First run: the setup window, not Settings. It records completion itself, only once finished.
         if !settings.didOnboard { onboardingWindow.show() }
