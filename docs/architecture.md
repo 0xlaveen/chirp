@@ -51,10 +51,11 @@ The token is either the shared one or a per-device token minted by `chirp-server
 
 ### Endpoints
 
-- `GET /v1/health` → `{"ok":true,"engine":"parakeet-mlx:tdt-0.6b-v2","ready":true,"debug_retention":false,"correction":"off|available","correction_mode":"off|managed|endpoint","correction_leaves_machine":false,"correction_host":null,"correction_profiles":[{"id":"default","name":"Default","description":"Conservative transcript cleanup.","rewrites":false},…],…,"notes_structure":true,"notes_correction":true,"notes_reorganize":true,"notes_context":true}`. The unauthenticated variant returns only `{"ok":true}`. For endpoint correction, `correction_host` is its hostname (no credentials, path or port); otherwise it is `null`. `correction_leaves_machine` is true only for enabled, non-loopback correction.
+- `GET /v1/health` → `{"ok":true,"engine":"parakeet-mlx:tdt-0.6b-v2","ready":true,"debug_retention":false,"correction":"off|available","correction_mode":"off|managed|endpoint","correction_leaves_machine":false,"correction_host":null,"correction_profiles":[{"id":"default","name":"Default","description":"Conservative transcript cleanup.","rewrites":false},…],…,"notes_structure":true,"notes_correction":true,"notes_reorganize":true,"notes_context":true,"notes_edit":true}`. The unauthenticated variant returns only `{"ok":true}`. For endpoint correction, `correction_host` is its hostname (no credentials, path or port); otherwise it is `null`. `correction_leaves_machine` is true only for enabled, non-loopback correction.
 - `GET /v1/correction/profiles` (authenticated) → `{"profiles":[{"id":"default","name":"Default","description":"Conservative transcript cleanup.","rewrites":false,"prompt":"<editable default style>","max_prompt_chars":4000},…]}`. Fixed safety rules are excluded; `custom` has an empty built-in prompt. Available even when correction is off. Invalid or missing bearer credentials return HTTP 401 with `WWW-Authenticate: Bearer`.
 - `POST /v1/notes/structure` (authenticated, JSON): stateless Live Notes structuring, specified [below](#live-notes-structuring-v1-compatible-addition). `/v1/stream` is unchanged.
 - `POST /v1/notes/reorganize` (authenticated, JSON): stateless reorganize of a whole Live Notes document (or its trailing sections), specified [below](#live-notes-reorganize-v1-compatible-addition). `/v1/stream` and `/v1/notes/structure` are unchanged.
+- `POST /v1/notes/edit` (authenticated, JSON): stateless voice edit of a Live Notes document (notes + a spoken instruction → edited notes), specified [below](#live-notes-edit-v1-compatible-addition).
 - `POST /v1/transcribe`: the body is 16 kHz mono PCM16 WAV, capped at 120 s. It returns the same object as a `final` message. Used for tests and as a fallback.
 - `WS /v1/stream`:
   - client → `{"type":"start","sample_rate":16000,"encoding":"pcm_s16le","client":"mac|android|ios","correction":false,"correction_profile":"default","correction_instructions":"","context":"…"}` (`correction_prompt`, `word_timings` and `context` are optional)
@@ -230,6 +231,66 @@ content, no negation is added, and the structuring flip check passes on the outp
 source is not itself an affirmative line next to a negated one in the notes; every distinct task keeps exactly its checked state and its people
 (bold names and a capitalised owner), no task is invented, and every `**Decision:**`/`**Question:**` line keeps its label. These are heuristics
 tuned for English, like the other guards.
+
+### Live Notes edit (v1-compatible addition)
+
+`POST /v1/notes/edit` applies one spoken instruction ("remove the pricing section", "go to the top
+and clean that up", "make the action items a checklist") to the notes. It is stateless like
+reorganize: the client sends the Markdown and applies the answer only if the document has not
+changed since.
+
+Request (`Content-Type: application/json`, body at most 64 KiB):
+
+```json
+{"notes": "## Launch plan\n- …", "instruction": "remove the pricing section", "selection": "## Pricing\n- …"}
+```
+
+- `notes`: the Markdown source, 1-3500 characters after trimming (`MAX_EDIT_CHARS`), or up to
+  32000 with a `selection`. Untrusted data.
+- `instruction`: what the person said, 1-400 characters after collapsing whitespace. It is the
+  only instruction; names, numbers and dates in it may appear in the output ("change Friday to
+  Thursday").
+- `selection`: optional, 1-3500 characters after trimming, and it must occur exactly once in
+  `notes`. Only the selection is sent to the model and checked; the edited text replaces it in
+  place and `markdown` is the whole document.
+- Unknown keys are rejected (`bad_notes`).
+
+| Status | Body | When |
+|---|---|---|
+| 200 | `{"markdown":"…","edited":true,"changed":true,"error":null,"timings_ms":{"edit":1234.5}}` | The output passed the edit guards; `markdown` is the whole new document |
+| 200 | `{"markdown":"<input notes, trimmed>","edited":true,"changed":false,…}` | The model returned the notes unchanged (apart from trailing spaces and blank lines): nothing to apply |
+| 200 | `{"markdown":null,"edited":false,"changed":false,"error":"refused","reason":"adds_content\|unclear\|not_an_edit",…}` | The instruction asks for something an edit may not do: new writing (a summary, explanation, ideas, an answer, a translation; `adds_content`, refused before the model runs when the word does not already appear in the notes), a part that is not there (`unclear`) or something that is not an edit (`not_an_edit`). The client shows the reason |
+| 200 | `{"markdown":null,"edited":false,"changed":false,"error":"rejected\|timeout\|http\|preempted","reason":"…\|null",…}` | Fails closed as reorganize; `reason` is a guard name (the reorganize names plus `dropped_unasked` and `summary`) |
+| 400 / 401 / 409 / 503 | as `/v1/notes/structure` (`bad_notes`, `auth`, `notes_off`, `busy`) | Same rules |
+
+Authenticated health carries `"notes_edit": true` (and `notes_edit` in `capabilities`). The pass shares the structuring lock (`503
+busy` while a structure, reorganize or edit runs), has reorganize's helper priority (never starts
+while corrections queue, preempted by one that queues while it runs), is bounded by
+`[correction] reorganize_timeout` and 1024 output tokens, never takes the engine lease and never
+retains anything; the log line has lengths, whether a selection was sent, the outcome and the
+reason.
+
+The guards (`edit_rejection_reason`) are the reorganize guards with the instruction as an extra
+source, relaxed only where the instruction's own words allow it:
+
+- **Delete** (remove, delete, drop, cut, get rid of, take out, trim, shorten, …): input lines
+  missing from the output (under 60 % of their content words kept) are the deleted lines. Each
+  section that lost lines or its heading must mention one of the instruction's topic words (its
+  words other than verbs and place words such as "top", "last", "section", "bit") in its heading
+  or a deleted line; an instruction with only place words ("delete the last line") may delete
+  from one section. The remaining lines are then held to every reorganize check. Otherwise:
+  `dropped_unasked`.
+- **Replace** (change, replace, correct, rename, update, …): a number or date may leave its line.
+- **Tasks**: checklist, task, to-do or action item words allow new `- [ ]` tasks made from
+  existing lines; existing tasks still keep their state. Done, check, tick, complete, open, …
+  allow state changes on the tasks that share the instruction's topic words (every task when it
+  has none). Decision or question words allow new labels from existing lines. A name the
+  instruction mentions may leave a task.
+- **Numbered list**: "number" or "numbered" makes `1.` markers markup rather than numbers.
+- Always: no new Summary, Overview, Recap, Takeaways or Conclusion heading (`summary`); no name,
+  number, date or contact outside the notes and instruction; length at most 1.15 × input + 200 +
+  the instruction's length (and at least 0.6 × input unless deleting); negations and hedges kept;
+  instruction-like lines in the notes are content.
 
 **Managed helper pipe protocol** (private to `managed_cleanup.py` and `cleanup_worker.py`). The
 request `{"text","system"}` is unchanged. Two optional keys exist for structuring: `"user"`, a

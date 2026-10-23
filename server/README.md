@@ -211,6 +211,7 @@ Full protocol details, including every message field, are in [the architecture d
 | `GET`/`PUT /v1/correction/settings` | bearer | Clean-up `keep_loaded` state (see [keep_loaded](#keep_loaded)) |
 | `POST /v1/notes/structure` | bearer | Live Notes: structure a transcript window into Markdown (see [Notes structuring](#notes-structuring)) |
 | `POST /v1/notes/reorganize` | bearer | Live Notes: reorganize an edited notes document (see [Notes structuring](#notes-structuring)) |
+| `POST /v1/notes/edit` | bearer | Live Notes: apply a spoken edit instruction to the notes (see [Notes structuring](#notes-structuring)) |
 | `POST /v1/transcribe` | bearer | 16 kHz mono PCM16 WAV body (same limits as streaming); returns the final object |
 | `WS /v1/stream` | bearer | Streaming dictation |
 
@@ -246,7 +247,7 @@ Cancel or disconnect during finalization discards the utterance: no correction r
 | `bad_audio` | Invalid audio or control frame |
 | `bad_request` | Invalid correction prompt/settings body (HTTP 400) |
 | `unsupported` | PUT settings outside managed mode (HTTP 409) |
-| `bad_notes` | Invalid notes-structuring or reorganize request (HTTP 400) |
+| `bad_notes` | Invalid notes-structuring, reorganize or edit request (HTTP 400) |
 | `notes_off` | Notes structuring needs correction enabled (HTTP 409) |
 | `engine` | Speech engine unavailable |
 
@@ -309,7 +310,7 @@ retain_days = 3
 | `timeout` | Whole-call correction timeout in seconds (default 8.0) |
 | `notes_timeout` | Whole-call timeout for a Live Notes segment's clean-up (`live_notes` style) in seconds (default 15.0); dictation keeps `timeout` |
 | `structure_timeout` | Whole-call Notes structuring timeout in seconds (default 30.0); the same finite, positive validation as `timeout` |
-| `reorganize_timeout` | Whole-call Notes reorganize timeout in seconds (default 45.0; up to 1024 output tokens, about 15 s on an M5 Pro at 3500 characters); the same validation |
+| `reorganize_timeout` | Whole-call Notes reorganize timeout in seconds (default 45.0; up to 1024 output tokens, about 15 s on an M5 Pro at 3500 characters; also bounds `/v1/notes/edit`); the same validation |
 | `api_key_env` | Environment variable holding the API key (endpoint mode) |
 | `keychain_service` | Read the key from Keychain: `security find-generic-password -s SERVICE -w` |
 | `prompt` | Legacy override for the `default` profile's prompt |
@@ -535,6 +536,28 @@ uv run python scripts/bench_notes.py --mode reorganize --repetitions 1 --dump /t
 ```
 
 (`--mode structure`, the default, is the structuring bench; `--mode both` runs both.)
+
+`POST /v1/notes/edit` applies one spoken instruction to the notes ("remove the pricing
+section", "go to the top and clean that up", "make the action items a checklist", "mark Priya's
+guide as done", "change Friday to Thursday"). The body is `{"notes":"<Markdown, at most 3500
+chars>","instruction":"<at most 400 chars>"}`, optionally with `"selection"` (an exact excerpt of
+the notes, at most 3500 chars; only it is edited and the notes may then be up to 32000 chars). The
+answer is `{"markdown":"<the whole edited notes>","edited":true,"changed":true|false,
+"error":null,"timings_ms":{"edit":…}}`, or `"markdown":null,"edited":false` with `error`
+`refused` and `reason` `adds_content` (it asks for a summary, explanation, ideas or anything else
+not in the notes), `unclear` (the named part is not there) or `not_an_edit`, or `error` `rejected`,
+`timeout`, `http` or `preempted` as for reorganize. The guards are reorganize's, with the
+instruction as an extra source of names, numbers and dates, and relax only where its words allow:
+a delete may drop lines only in the sections it names (`dropped_unasked` otherwise), a checklist
+may turn lines into tasks but never tick or reopen one, "done" may tick the tasks it names, a
+"change"/"replace" may swap a number or date, and no Summary/Overview heading is ever added. It
+shares the structuring lock, reorganize's preemptible priority, `reorganize_timeout` and the
+1024-token cap. Details are in [the architecture
+doc](../docs/architecture.md#live-notes-edit-v1-compatible-addition); eval and negatives:
+
+```sh
+uv run python scripts/bench_notes.py --mode edit --repetitions 1 --dump /tmp/edit-out.jsonl
+```
 
 Measure it on your Mac with the cached default model (not run in CI):
 
