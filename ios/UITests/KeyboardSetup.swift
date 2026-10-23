@@ -56,15 +56,26 @@ extension XCTestCase {
     }
 
     @MainActor func selectChirpKeyboard(in app: XCUIApplication) throws {
-        if app.staticTexts["chirp.keyboard.status"].exists { return }
+        // The previous test may have left Chirp selected; it can take a moment to appear.
+        if app.staticTexts["chirp.keyboard.status"].waitForExistence(timeout: 3) { return }
         // Only system keyboard labels are used here. Extension queries use IDs.
         let globe = app.buttons.matching(NSPredicate(format: "identifier == 'Next keyboard' OR label == 'Next keyboard' OR identifier == 'Change Keyboard' OR label == 'Change Keyboard'")).firstMatch
         guard globe.waitForExistence(timeout: 5), globe.isHittable else {
             throw XCTSkip("Simulator has no system globe/input-mode button; disable Connect Hardware Keyboard and retry.")
         }
+        // iOS 27.0's input-mode list shows third-party keyboards as unlabeled rows; tapping the globe key
+        // cycles through every enabled keyboard, as a user would.
+        for _ in 0..<4 {
+            globe.tap()
+            if app.staticTexts["chirp.keyboard.status"].waitForExistence(timeout: 3) { return }
+        }
         globe.press(forDuration: 1)
         let mode = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS[c] 'Chirp'")).firstMatch
         guard mode.waitForExistence(timeout: 5), mode.isHittable else {
+            let attachment = XCTAttachment(string: app.debugDescription)
+            attachment.name = "Input-mode list without Chirp"
+            attachment.lifetime = .keepAlways
+            add(attachment)
             throw XCTSkip("System input-mode list has no selectable Chirp Keyboard entry on this simulator.")
         }
         mode.tap()

@@ -66,6 +66,21 @@ final class ChirpKeyboardUITests: XCTestCase {
         app.buttons["chirp.keyboard.end"].tap()
         XCTAssertTrue(wait(for: app.staticTexts["chirp.host.phase"], key: "label", equalTo: "idle"))
         XCTAssertEqual(field.value as? String, prefix + "Synthetic words.")
+        // Secure fields always get Apple's keyboard; on the iOS 27.0 simulator a visible secure field also
+        // withholds third-party keyboards from the window's other fields until it is gone.
+        let toggle = app.descendants(matching: .any).matching(identifier: "chirp.host.secure.toggle").firstMatch
+        toggle.switches.firstMatch.exists ? toggle.switches.firstMatch.tap() : toggle.tap()
+        let secure = app.secureTextFields["chirp.host.secure"]
+        XCTAssertTrue(secure.waitForExistence(timeout: 5))
+        secure.tap()
+        XCTAssertTrue(waitForAbsence(status), "Chirp Keyboard must not appear in a secure field")
+        XCTAssertTrue(app.keys["space"].waitForExistence(timeout: 5), "Apple's keyboard must take over in the secure field")
+        XCTAssertEqual(field.value as? String, prefix + "Synthetic words.")
+    }
+
+    @MainActor private func waitForAbsence(_ element: XCUIElement) -> Bool {
+        let expectation = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: element)
+        return XCTWaiter.wait(for: [expectation], timeout: 10) == .completed
     }
 
     @MainActor private func wait(for element: XCUIElement, key: String, equalTo value: String) -> Bool {

@@ -43,7 +43,8 @@ final class ChirpUITests: XCTestCase {
         XCTAssertTrue(app.buttons["chirp.session.end"].exists, "Switching tabs must not end the session")
         selectTab("Dictate", symbol: "mic", in: app)
         XCTAssertTrue(app.staticTexts["Finished · microphone still active"].exists)
-        app.buttons["chirp.session.end"].tap()
+        // Each tab carries its own session bar; only the visible one is hittable.
+        app.buttons.matching(identifier: "chirp.session.end").allElementsBoundByIndex.first { $0.isHittable }?.tap()
         XCTAssertTrue(app.staticTexts["Microphone off"].waitForExistence(timeout: 5))
         XCTAssertFalse(app.staticTexts["transcript"].exists)
     }

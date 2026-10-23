@@ -175,11 +175,19 @@ enum KeyboardTestMode {
 struct KeyboardTestHost: View {
     @ObservedObject var model: SessionCoordinator
     @State private var setup = "Preparing synthetic shared session"
+    @State private var secure = false
+    @State private var password = ""
     var body: some View {
         VStack {
             Text(setup).accessibilityIdentifier("chirp.host.setup")
             Text(model.phase.rawValue).accessibilityIdentifier("chirp.host.phase")
             LiveKeyboardHost().frame(maxWidth: .infinity, maxHeight: .infinity)
+            // On screen only on demand: while any secure field is visible, iOS offers no third-party keyboard.
+            Toggle("Password field", isOn: $secure).accessibilityIdentifier("chirp.host.secure.toggle")
+            if secure {
+                SecureField("Password", text: $password).textFieldStyle(.roundedBorder)
+                    .accessibilityIdentifier("chirp.host.secure")
+            }
             Button("End fixture session") { model.endSession() }
                 .accessibilityIdentifier("chirp.host.end")
         }.padding()

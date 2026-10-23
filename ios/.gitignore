@@ -3,3 +3,6 @@ DerivedData/
 *.xcresult/
 xcuserdata/
 Artifacts/
+Chirp.xcodeproj/project.xcworkspace/
+Shared/Package.resolved
+Keyboard/Policy/Package.resolved

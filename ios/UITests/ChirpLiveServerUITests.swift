@@ -56,7 +56,7 @@ final class ChirpLiveServerUITests: XCTestCase {
     /// Forget, paste the secret link, verify against the live server, save.
     @MainActor func pair(_ app: XCUIApplication) {
         selectTab("Pair Mac", symbol: "qrcode.viewfinder", in: app)
-        if app.buttons["chirp.session.end"].exists { app.buttons["chirp.session.end"].tap() }
+        endSession(app)
         let forget = app.buttons["Forget pairing"]
         if forget.exists { forget.tap() }
         let field = app.secureTextFields["pairingLink"]
@@ -116,9 +116,60 @@ final class ChirpLiveServerUITests: XCTestCase {
         XCTAssertTrue(entry.waitForExistence(timeout: 5), "History did not record the final")
         screenshot("History entry", app)
 
-        app.buttons["chirp.session.end"].tap()
+        endSession(app)
         selectTab("Dictate", symbol: "mic", in: app)
         XCTAssertTrue(app.staticTexts["Microphone off"].waitForExistence(timeout: 5))
         XCTAssertFalse(transcript.exists)
+    }
+
+    @MainActor func dump(_ name: String, _ app: XCUIApplication) {
+        let tree = XCTAttachment(string: app.debugDescription)
+        tree.name = name; tree.lifetime = .keepAlways
+        add(tree)
+    }
+
+    /// Each tab carries its own session bar; only the visible one is hittable.
+    @MainActor func endSession(_ app: XCUIApplication) {
+        let bar = app.buttons.matching(identifier: "chirp.session.end").allElementsBoundByIndex.first { $0.isHittable }
+        bar?.tap()
+    }
+
+    /// Chirp owns the session; the real extension dictates into another app through the encrypted mailbox.
+    @MainActor func testLiveKeyboardDictationInMessages() throws {
+        let app = launch()
+        pair(app)
+        try enableKeyboardInSettings()
+        app.activate()
+        XCTAssertTrue(app.wait(for: .runningForeground, timeout: 10))
+        let start = app.buttons["Start keyboard session"]
+        for _ in 0..<3 where !start.waitForExistence(timeout: 3) { selectTab("Dictate", symbol: "mic", in: app) }
+        start.tap()
+        allowSystemAlert()
+        XCTAssertTrue(app.staticTexts["Session armed · microphone active"].waitForExistence(timeout: 15))
+
+        let messages = XCUIApplication(bundleIdentifier: "com.apple.MobileSMS")
+        messages.launch()
+        defer { app.activate(); endSession(app); app.terminate(); messages.terminate() }
+        // The simulator ships sample conversations; a draft in one is never sent.
+        let conversation = messages.cells.firstMatch
+        guard conversation.waitForExistence(timeout: 10) else { dump("Messages without conversations", messages); throw XCTSkip("Messages shows no conversation") }
+        conversation.tap()
+        let field = messages.descendants(matching: .any).matching(identifier: "messageBodyField").firstMatch
+        guard field.waitForExistence(timeout: 10) else { dump("Messages compose", messages); throw XCTSkip("Messages exposes no message body field") }
+        field.tap()
+        try selectChirpKeyboard(in: messages)
+        let status = messages.staticTexts["chirp.keyboard.status"]
+        guard status.waitForExistence(timeout: 10) else { dump("Messages keyboard", messages); XCTFail("Chirp Keyboard did not appear in Messages"); return }
+        XCTAssertTrue(waitFor(status, "label BEGINSWITH 'Session armed'", timeout: 10), status.label)
+        screenshot("Keyboard armed in Messages", messages)
+        let primary = messages.buttons["chirp.keyboard.primary"]
+        primary.tap()
+        XCTAssertTrue(waitFor(field, "value CONTAINS[c] 'design group'"), "Partial never reached Messages: \(String(describing: field.value))")
+        screenshot("Keyboard partial in Messages", messages)
+        primary.tap()
+        XCTAssertTrue(waitFor(field, "value BEGINSWITH 'So, um, schedule' AND value ENDSWITH 'design group.'"), String(describing: field.value))
+        screenshot("Keyboard final in Messages", messages)
+        messages.buttons["chirp.keyboard.end"].tap()
+        XCTAssertTrue(waitFor(status, "NOT label BEGINSWITH 'Session armed'", timeout: 10), status.label)
     }
 }
