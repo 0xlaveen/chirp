@@ -165,8 +165,9 @@ final class NotesFrameRouter: @unchecked Sendable {
 public final class NotesRecorder {
     public typealias Structure = @Sendable (NotesStructureRequest) async throws -> NotesStructureResponse
     public typealias Reorganize = @Sendable (NotesReorganizeRequest) async throws -> NotesReorganizeResponse
+    public typealias Edit = @Sendable (NotesEditRequest) async throws -> NotesEditResponse
 
-    public enum PassKind: Equatable, Sendable { case append, reorganize }
+    public enum PassKind: Equatable, Sendable { case append, reorganize, edit }
 
     /// A pass starts at most this often (counted from the end of the last one).
     public static let minInterval: TimeInterval = 15
@@ -227,6 +228,7 @@ public final class NotesRecorder {
     private let makeSession: (StartOptions) -> StreamSession
     private let structure: Structure
     private let reorganize: Reorganize
+    private let edit: Edit
     private let now: () -> TimeInterval
     private let sleep: @Sendable (Duration) async -> Void
     private let router = NotesFrameRouter()
@@ -297,6 +299,13 @@ public final class NotesRecorder {
     private var waiters: [(check: () -> Bool, resume: CheckedContinuation<Void, Never>)] = []
     /// Numbers whole-document Organize runs, so the editor makes each one undo step.
     private var organizeRuns = 0
+    /// Voice edit (#97): capture goes to a command socket, not the notes; the server has `/v1/notes/edit`; the edit
+    /// waiting for the pass slot.
+    private var diverted = false
+    private var editSupported = false
+    private var pendingEdit: PendingEdit?
+    /// Numbers edit calls; New and quit bump it so a late answer is ignored.
+    private var editRuns = 0
 
     /// A segment waiting for its speaker labels.
     private struct LabelJob {
@@ -319,14 +328,17 @@ public final class NotesRecorder {
 
     public init(makeSession: @escaping (StartOptions) -> StreamSession, structure: @escaping Structure,
                 reorganize: @escaping Reorganize = { _ in throw NotesStructureError.unsupported(404) },
+                edit: @escaping Edit = { _ in throw NotesStructureError.unsupported(404) },
                 now: @escaping () -> TimeInterval = { ProcessInfo.processInfo.systemUptime },
                 sleep: @escaping @Sendable (Duration) async -> Void = { try? await Task.sleep(for: $0) },
                 options: StartOptions, structuring: Bool, autoReorganize: Bool = true, health: Health? = nil, serverHost: String = "") {
         self.makeSession = makeSession
         self.structure = structure
         self.reorganize = reorganize
+        self.edit = edit
         self.autoReorganize = autoReorganize
         reorganizeSupported = health?.notesReorganize == true
+        editSupported = health?.notesEdit == true
         contextSupported = health?.notesContext == true
         self.now = now
         self.sleep = sleep
@@ -384,6 +396,7 @@ public final class NotesRecorder {
         structuringAllowed = .availability(health: health, enabled: enabled)
         reorganizeSupported = health?.notesReorganize == true && !reorganizeEndpointMissing
         contextSupported = health?.notesContext == true
+        editSupported = health?.notesEdit == true
         if structuringAllowed.isOff {
             structuring = structuringAllowed
         } else if structuring.isOff {
@@ -434,6 +447,8 @@ public final class NotesRecorder {
     /// Drops everything in flight at once (quit). The document is kept.
     public func cancel() {
         epoch += 1
+        diverted = false
+        editRuns += 1
         _ = router.swap(to: nil)
         for (_, s) in segments {
             s.task?.cancel()
@@ -454,6 +469,7 @@ public final class NotesRecorder {
         if reorganizeState.isRunning { reorganizeState = .idle }
         passKind = nil
         dropLabels()
+        failEdit(.conflict)
         document.livePartial = ""
         if state.isActive { state = document.isEmpty ? .idle : .stopped }
         if structuring == .running { structuring = structuringAllowed.isOff ? structuringAllowed : .idle }
@@ -476,6 +492,8 @@ public final class NotesRecorder {
         timer = nil
         timerDeadline = nil
         pending = false
+        editRuns += 1
+        failEdit(.conflict)
         document = NotesDocument()
         router.resetTime()
         dropLabels()
@@ -518,7 +536,7 @@ public final class NotesRecorder {
     func cut() async {
         // One cut at a time (the segmenter and a roll after a dead socket can both ask): a second request is
         // already served by the swap in flight.
-        guard state == .recording, !cutting else { return }
+        guard state == .recording, !cutting, !diverted else { return }
         cutting = true
         defer { cutting = false }
         let myEpoch = epoch
@@ -730,6 +748,149 @@ public final class NotesRecorder {
         changed()
     }
 
+    // MARK: voice edit (#97)
+
+    /// The server has `POST /v1/notes/edit` (health), and it did not answer 404 this session.
+    public var canEdit: Bool { editSupported }
+
+    /// Capture goes to `command` (a spoken edit instruction) instead of the notes, from now until `endDivert()`. The
+    /// segment before it finalizes as at a cut; nothing `command` hears enters the transcript. False when not
+    /// recording (the caller feeds `command` itself) or while a cut is in flight.
+    public func divert(to command: StreamSession) -> Bool {
+        guard state == .recording, !diverted, !cutting else { return false }
+        diverted = true
+        let swap = router.swap(to: command)
+        if let previous = current {
+            segments[previous]?.end = swap.offset
+            let joins = segments[previous]?.joins == true
+            segments[previous]?.pause = joins ? swap.pause : nil
+            if let old = swap.old { finalize(previous, old) }
+        }
+        current = nil
+        changed()
+        return true
+    }
+
+    /// Back to the notes after a command: the next segment's socket opens first and capture swaps to it, so nothing
+    /// is dropped (the command socket may hear a moment more). Nothing to do once recording stopped.
+    public func endDivert() async {
+        guard diverted else { return }
+        defer { diverted = false }
+        guard state == .recording else { return }
+        let myEpoch = epoch
+        cutting = true
+        defer { cutting = false }
+        let next = makeSession(options)
+        await next.open()
+        guard epoch == myEpoch, state == .recording, diverted else {
+            await next.cancel()
+            return
+        }
+        let seq = nextSeq
+        nextSeq += 1
+        let swap = router.swap(to: next)
+        current = seq
+        track(seq, session: next, offset: swap.offset)
+        changed()
+    }
+
+    private struct PendingEdit {
+        let instruction: String
+        let selection: NSRange?
+        var attempts = 0
+        let done: @MainActor (NotesEditOutcome) -> Void
+    }
+
+    /// The edit attempts a segment clean-up may preempt before it gives up.
+    public static let editAttempts = 3
+
+    /// Applies `instruction` to the selected lines, the whole notes or the trailing sections of long ones. It runs in
+    /// the pass slot ahead of any other pass (no append or reorganize lands meanwhile), and its answer applies only to
+    /// the text it was made from, as one undo step. One at a time: another request meanwhile gets `busy`.
+    public func edit(_ instruction: String, selection: NSRange?, done: @escaping @MainActor (NotesEditOutcome) -> Void) {
+        guard editSupported else { done(.failed("unsupported")); return }
+        guard pendingEdit == nil else { done(.failed("busy")); return }
+        pendingEdit = PendingEdit(instruction: instruction, selection: selection, done: done)
+        schedule()
+        changed()
+    }
+
+    /// A voice edit is waiting for the slot or running.
+    public var isEditing: Bool { pendingEdit != nil }
+
+    private func failEdit(_ outcome: NotesEditOutcome) {
+        guard let e = pendingEdit else { return }
+        pendingEdit = nil
+        e.done(outcome)
+    }
+
+    private func runEdit() {
+        guard let e = pendingEdit else { return }
+        let range: NSRange
+        switch document.editScope(selection: e.selection) {
+        case .range(let r): range = r
+        case .nothing(let why): failEdit(.nothing(why)); return
+        }
+        let request = document.editRequest(e.instruction, range: range)
+        passKind = .edit
+        editRuns += 1
+        let run = editRuns
+        changed()
+        passTask = Task {
+            let response = await self.callEdit(request)
+            guard self.editRuns == run else { return }
+            self.editFinished(request, response)
+        }
+    }
+
+    private func callEdit(_ request: NotesEditRequest) async -> NotesEditResponse {
+        do {
+            return try await edit(request)
+        } catch let error as NotesStructureError {
+            return .failed(error.code)
+        } catch let error as URLError where error.code == .timedOut {
+            return .failed("timeout")
+        } catch {
+            return .failed("http")
+        }
+    }
+
+    private func editFinished(_ request: NotesEditRequest, _ response: NotesEditResponse) {
+        passTask = nil
+        passKind = nil
+        defer {
+            schedule()
+            changed()
+        }
+        guard var e = pendingEdit else { return }
+        if response.preempted, e.attempts + 1 < Self.editAttempts {
+            // A segment clean-up took the model: the edit stays first in line and runs again when the slot is free.
+            e.attempts += 1
+            pendingEdit = e
+            return
+        }
+        if response.error == "unsupported" {
+            editSupported = false
+        }
+        let outcome: NotesEditOutcome
+        if let reason = response.refusal {
+            outcome = .refused(reason)
+        } else if !response.edited {
+            outcome = .failed(response.preempted ? "busy" : response.failureLabel)
+        } else if !response.changed {
+            outcome = .unchanged
+        } else if !document.canApplyEdit(request) || editorComposing {
+            outcome = .conflict
+        } else if let change = document.applyEdit(response, for: request) {
+            dropHeld()
+            publish(change)
+            outcome = .applied
+        } else {
+            outcome = .unchanged
+        }
+        failEdit(outcome)
+    }
+
     /// An append would land under the user's typing: IME is composing, or the caret is in the tail and a key was
     /// pressed within `holdMax`.
     private var holdsAppends: Bool { editorComposing || (editorInTail && typedRecently) }
@@ -770,6 +931,12 @@ public final class NotesRecorder {
     /// still finalizing. Then: an append when one is due (fresh notes beat tidy notes), else a manual reorganize,
     /// else an automatic one once enough was added, enough time passed and the user stopped typing.
     private func schedule() {
+        if pendingEdit != nil {
+            // A voice edit goes first, once the segment before its command is in (its clean-up would preempt it).
+            guard passTask == nil, finalizingCount == 0 else { pending = true; return }
+            runEdit()
+            return
+        }
         guard !structuring.isOff else { return }
         guard passTask == nil, finalizingCount == 0, labelQueue.isEmpty else { pending = true; return }
         relabelSettled()
@@ -1302,6 +1469,7 @@ public final class NotesRecorder {
         timer = nil
         pending = false
         manualReorganize = false
+        diverted = false
         let swap = router.swap(to: nil)
         if let seq = current {
             segments[seq]?.end = swap.offset

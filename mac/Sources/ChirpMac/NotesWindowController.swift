@@ -132,6 +132,7 @@ final class NotesWindowController: NSObject, NSWindowDelegate {
         edit.addItem(findItem)
         edit.addItem(.separator())
         add(edit, "Organize Notes", NSSelectorFromString("reorganizeNotes:"), "r", [.command, .option])
+        add(edit, "Edit Notes by Voice", NSSelectorFromString("editNotesByVoice:"), "e", [.command, .shift])
         let editItem = NSMenuItem(title: "Edit", action: nil, keyEquivalent: "")
         editItem.submenu = edit
         main.addItem(editItem)

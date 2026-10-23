@@ -142,6 +142,14 @@ final class NotesTextView: NSTextView {
     /// Edit ▸ Organize Notes (⌥⌘R), through the responder chain.
     @objc func reorganizeNotes(_ sender: Any?) { coordinator?.model.onReorganize() }
 
+    /// Edit ▸ Edit Notes by Voice (⇧⌘E): starts a spoken edit, or ends the one listening.
+    @objc func editNotesByVoice(_ sender: Any?) { coordinator?.model.onVoiceEdit() }
+
+    /// Esc drops a spoken edit that is still listening.
+    override func cancelOperation(_ sender: Any?) {
+        if let model = coordinator?.model, model.voiceEdit.isListening { model.onVoiceEditCancel() } else { super.cancelOperation(sender) }
+    }
+
     /// ⌘Z / ⇧⌘Z act on the notes' own undo stack (the window's would be empty).
     @objc func undo(_ sender: Any?) { coordinator?.undo.undo() }
     @objc func redo(_ sender: Any?) { coordinator?.undo.redo() }
@@ -151,6 +159,8 @@ final class NotesTextView: NSTextView {
         switch item.action {
         case #selector(reorganizeNotes(_:)):
             return coordinator?.model.canReorganize ?? false
+        case #selector(editNotesByVoice(_:)):
+            return coordinator?.model.canVoiceEdit ?? false
         case #selector(undo(_:)):
             (item as? NSMenuItem)?.title = undo.undoMenuItemTitle
             return undo.canUndo
@@ -170,6 +180,7 @@ final class NotesTextView: NSTextView {
 final class NotesEditorCoordinator: NSObject, NSTextViewDelegate {
     static let updateAction = "Update Notes"
     static let reorganizeAction = "Organize Notes"
+    static let editAction = "Edit by Voice"
     static let toggleAction = "Toggle Task"
     static let renameAction = "Rename Speaker"
 
@@ -220,6 +231,8 @@ final class NotesEditorCoordinator: NSObject, NSTextViewDelegate {
         model.editorOwner = ObjectIdentifier(self)
         model.onPendingChanges = { [weak self] in self?.pendingChangesArrived() }
         model.undoReorganize = { [weak self] in self?.undoReorganize() }
+        model.undoEdit = { [weak self] in self?.undoEdit() }
+        model.editorSelection = { [weak self] in self?.textView.selectedRange() }
         // NSTextView's undo and redo change the storage without `shouldChangeText` or `textDidChange`, so they are
         // reported from here (menu, ⌘Z, the chip's Undo alike).
         for name in [Notification.Name.NSUndoManagerDidUndoChange, .NSUndoManagerDidRedoChange] {
@@ -267,6 +280,8 @@ final class NotesEditorCoordinator: NSObject, NSTextViewDelegate {
         model.editorOwner = nil
         model.onPendingChanges = nil
         model.undoReorganize = {}
+        model.undoEdit = {}
+        model.editorSelection = { nil }
         model.onEditorFocus(false, false)
     }
 
@@ -500,7 +515,7 @@ final class NotesEditorCoordinator: NSObject, NSTextViewDelegate {
             textView.didChangeText()
         }
         if !grouped {
-            undo.setActionName(reorganize ? Self.reorganizeAction : Self.updateAction)
+            undo.setActionName(change.kind == .edit ? Self.editAction : reorganize ? Self.reorganizeAction : Self.updateAction)
             undo.endUndoGrouping()
         }
         // Only the paragraphs it replaced: a reorganize late in a long document leaves the rest alone.
@@ -690,6 +705,12 @@ final class NotesEditorCoordinator: NSObject, NSTextViewDelegate {
     /// The chip's Undo: only while the reorganize is still the top undo group.
     func undoReorganize() {
         guard undo.canUndo, undo.undoActionName == Self.reorganizeAction else { return }
+        undo.undo()
+    }
+
+    /// The "Edited · Undo" chip: undoes the voice edit if it is still the top undo group.
+    func undoEdit() {
+        guard undo.canUndo, undo.undoActionName == Self.editAction else { return }
         undo.undo()
     }
 
