@@ -26,3 +26,18 @@ and the fp16 build for comparison, then prints the tables recorded in
 Word attribution aligns the transcript's raw words (real Parakeet words, real segments) to the reference words by
 text, so it needs no forced alignment; a word scores when its Person maps to the reference speaker under the best
 one-to-one mapping. `aligned` is the share of reference words the transcript recovered at all.
+
+## Voice profiles (`VoiceBench`)
+
+Measures saved-voice suggestions (issue #18 M3) with no server: `make_voice_clips.py` writes every pair of eight
+neural `say` voices as a one-minute conversation into `~/Library/Caches/Chirp/speaker-bench/voices/`, and
+`VoiceBench` feeds each through the app's `SortformerSpeakerDiarizer` with the app's `WeSpeakerEmbedder` (the 8 MB
+model downloads into FluidAudio's cache on the first run), remembers each voice from its first conversation, and
+scores the app's `VoiceMatch.suggest` over the rest with 4 voices saved and 4 unknown. Results:
+[docs/bench.md](../../../docs/bench.md#voice-profiles-saved-voices-18-m3).
+
+```sh
+B=~/Library/Caches/Chirp/speaker-bench
+uv run --no-project --with numpy python make_voice_clips.py $B/voices
+swift run -c release VoiceBench --clips $B/voices --out $B/out/voices/rates.json
+```

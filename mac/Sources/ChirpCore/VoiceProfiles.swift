@@ -171,7 +171,7 @@ public struct KeychainVoiceProfileStore: VoiceProfileStore {
 /// Matching a session's voices to profiles. Only ever a suggestion: the user confirms a name.
 public enum VoiceMatch {
     /// The cosine similarity a suggestion needs (from the bench, docs/bench.md "Voice profiles")…
-    public static let threshold: Float = 0.70
+    public static let threshold: Float = 0.75
     /// …and its lead over the next-best profile.
     public static let margin: Float = 0.10
     /// Seconds of a person's speech before Chirp suggests anything for them.
