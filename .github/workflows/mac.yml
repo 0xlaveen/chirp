@@ -1,0 +1,32 @@
+name: mac
+
+# macOS runner minutes cost 10x Linux: run only when `mac/**` or this file change.
+on:
+  pull_request:
+    paths: ["mac/**", ".github/workflows/mac.yml"]
+  push:
+    branches: [main]
+    paths: ["mac/**", ".github/workflows/mac.yml"]
+  workflow_dispatch:
+
+concurrency:
+  group: mac-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: macos-26
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/cache@v4
+        with:
+          path: mac/.build
+          key: mac-spm-${{ hashFiles('mac/Package.resolved', 'mac/Package.swift') }}
+          restore-keys: mac-spm-
+      - run: swift --version
+      - run: ./scripts/ci-test.sh
+        working-directory: mac
