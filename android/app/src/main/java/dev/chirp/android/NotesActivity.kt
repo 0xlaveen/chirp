@@ -17,7 +17,6 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
-import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -30,7 +29,6 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.onFocusChanged
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
@@ -41,6 +39,8 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.unit.dp
+import dev.chirp.android.ui.StatusBanner
+import dev.chirp.android.ui.StatusKind
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 
@@ -150,8 +150,7 @@ internal fun NotesScreen(model: NotesModel, record: () -> Unit, copy: () -> Unit
             val wide = maxWidth >= SIDE_BY_SIDE
             Column(Modifier.fillMaxSize().padding(horizontal = if (wide) 24.dp else 16.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text("CHIRP  /  NOTES", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
-                if (model.retained) Text(stringResource(R.string.debug_retention), Modifier.fillMaxWidth().background(Color(0xFFA41818)).padding(8.dp),
-                    color = Color.White, style = MaterialTheme.typography.labelLarge)
+                if (model.retained) StatusBanner(StatusKind.Error, stringResource(R.string.debug_retention))
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     RecordButton(model, record)
                     Column(Modifier.weight(1f)) {

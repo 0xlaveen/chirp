@@ -37,6 +37,8 @@ import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.unit.dp
+import dev.chirp.android.ui.StatusBanner
+import dev.chirp.android.ui.StatusKind
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 
@@ -105,8 +107,7 @@ internal fun ScratchpadScreen(model: ScratchpadModel, mic: () -> Unit, copy: () 
             Column(Modifier.widthIn(max = 600.dp).fillMaxSize().padding(horizontal = 24.dp, vertical = 16.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text("CHIRP  /  SCRATCHPAD", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
-                if (model.retained) Text(stringResource(R.string.debug_retention), Modifier.fillMaxWidth().background(androidx.compose.ui.graphics.Color(0xFFA41818)).padding(8.dp),
-                    color = androidx.compose.ui.graphics.Color.White, style = MaterialTheme.typography.labelLarge)
+                if (model.retained) StatusBanner(StatusKind.Error, stringResource(R.string.debug_retention))
                 OutlinedTextField(model.field, { if (!model.active) model.field = it }, Modifier.fillMaxWidth().weight(1f).heightIn(min = 120.dp),
                     label = { Text("Scratchpad text") }, placeholder = { Text("Dictate, then edit here") }, readOnly = model.active,
                     keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences))
