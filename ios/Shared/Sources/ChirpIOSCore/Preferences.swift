@@ -18,6 +18,9 @@ public struct IOSPreferences: Codable, Sendable, Equatable {
     /// Chirp Keyboard turns a dictation ending in "new line" / "new paragraph" into line breaks. Off unless set;
     /// optional so older preference files still decode.
     public var spokenCommands: Bool?
+    /// Chirp Keyboard presses Return after a dictation: nil/"off", "actionKeys" or "always" (KeyboardPolicy
+    /// `AutoEnterMode`). Optional so older preference files still decode.
+    public var autoEnter: String?
     public init() {}
     public func permitsCorrection(health: Health) -> Bool {
         guard correction, health.correctionAvailable else { return false }
