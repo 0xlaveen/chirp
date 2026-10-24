@@ -170,6 +170,17 @@ class ChirpComponentsTest {
         compose.runOnIdle { assertEquals(PondLight.primary, primary) }
     }
 
+    @Test fun `a success banner is a tonal surface in dark and light, not the muddy koi container (174)`() {
+        for (scheme in listOf(PondDark, PondLight)) {
+            val (fill, text) = statusColors(scheme, StatusKind.Success)
+            assertEquals(scheme.surfaceContainerHigh, fill); assertEquals(scheme.onSurface, text)
+            assertNotEquals(scheme.primaryContainer, fill)
+            // No full-width status card uses the koi container.
+            StatusKind.values().forEach { assertNotEquals("$it", scheme.primaryContainer, statusColors(scheme, it).first) }
+        }
+        assertEquals(0xFF5C2207.toInt(), PondDark.primaryContainer.toArgb()) // the colour Success used to be in dark
+    }
+
     @Test fun `status banner announces politely and learn more opens and closes its sheet`() {
         compose.setContent { ChirpTheme { Column {
             StatusBanner(StatusKind.Info, "Mac ready", live = true)

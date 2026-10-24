@@ -94,9 +94,9 @@ original value (delete it if previously null).
 - **Virtual keyboard nodes:** after closing History, HeliBoard can render all
   keys while the accessibility cache temporarily exposes only the strip. Check
   that the panel closed and the strip returned, and inspect its screenshot.
-- **Hold control:** the default fold AVD currently has no accessible `Voice input`
-  key, while the strip's long press opens options. The sweep reports this as a
-  failure rather than silently substituting tap; tracked in issue #172.
+- **Hold control:** press-and-hold on the strip mic is push-to-talk (release
+  finishes); quick options live on the **⋯** (`Dictation options`) beside it, not on a
+  long press (#172). The `dictation` phase's hold cycle presses the strip mic itself.
 - **Floating mic selection:** the bubble hides intentionally when Chirp Keyboard
   is selected. The dedicated `--bubble-check` suite selects Gboard and covers the
   first-class bubble; the `device` phase covers onboarding, TalkBack, font and

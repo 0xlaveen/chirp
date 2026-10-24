@@ -126,7 +126,7 @@ def focus_editor():
                 if 100 < cy < h - 120:
                     x, y = center(editor)
                     adb('shell', 'CLASSPATH=/data/local/tmp/chirp-ui-probe.jar', 'app_process', '/', 'dev.chirp.smoke.UiHierarchy', 'tap', str(x), str(y))
-                    wait_for('Microphone: tap to dictate, long press for options')
+                    wait_for('Microphone: tap to dictate, hold to talk')
                     return
             start, end = (h * 3 // 4, h // 3) if direction == 'up' else (h // 3, h * 3 // 4)
             adb('shell', 'input', 'swipe', str(w // 2), str(start), str(w // 2), str(end), '250')
@@ -271,7 +271,7 @@ def main():
         click('Dictate')
         wait_for('Dictate, then edit here')
         focus_editor()
-        mic = wait_for('Microphone: tap to dictate, long press for options')
+        mic = wait_for('Microphone: tap to dictate, hold to talk')
         tap(mic)
         action = wait_for('Pair your Mac in Chirp settings. Pair Mac')
         assert action.get('text') == 'Pair Mac', 'Mic strip did not respond'
@@ -282,10 +282,9 @@ def main():
         click('Dictate')
         wait_for('Dictate, then edit here')
         focus_editor()
-        # Long press must expose options and stay idle (no capture before consent).
-        mic = wait_for('Microphone: tap to dictate, long press for options')
-        x, y = center(mic)
-        adb('shell', 'input', 'swipe', str(x), str(y), str(x), str(y), '700')
+        # The ⋯ beside the mic must expose options and stay idle (no capture before consent); a hold on the mic is push-to-talk.
+        wait_for('Microphone: tap to dictate')
+        tap(wait_for('Dictation options'))
         wait_for('Chirp settings')
         adb('shell', 'input', 'keyevent', '4')
         focus_editor()
@@ -297,7 +296,7 @@ def main():
                 adb('shell', 'cmd', 'uimode', 'night', 'yes' if theme == 'dark' else 'no')
                 fresh_editor()
                 hierarchy = nodes()
-                mic = find('Microphone: tap to dictate, long press for options', hierarchy)
+                mic = find('Microphone: tap to dictate, hold to talk', hierarchy)
                 assert mic is not None, 'Mic absent after configuration change'
                 w, h = size()
                 digits = [n for n in hierarchy if n.get('class') == 'helium314.keyboard.keyboard.Key' and n.get('content-desc') == '1']
@@ -315,7 +314,7 @@ def main():
                 assert cancel is not None and cancel.get('clickable') == 'true', 'Cancel missing beside pair action'
                 screenshot('pair-action-' + form + '-' + theme)
                 tap(cancel)
-                wait_for('Microphone: tap to dictate, long press for options')
+                wait_for('Microphone: tap to dictate, hold to talk')
                 crash_check()
         adb('shell', 'wm', 'size', '2560x1600')
         adb('shell', 'cmd', 'uimode', 'night', 'no')
@@ -331,7 +330,7 @@ def main():
         # Geometry is verified above. Return to portrait before opening Settings, so all category rows fit.
         adb('shell', 'wm', 'size', '2076x2152')
         focus_editor()
-        mic = wait_for('Microphone: tap to dictate, long press for options')
+        mic = wait_for('Microphone: tap to dictate, hold to talk')
         x, y = center(mic)
         adb('shell', 'input', 'swipe', str(x), str(y), str(x), str(y), '700')
         click('Chirp settings')
@@ -340,7 +339,7 @@ def main():
         wait_for('Diagnostics')
         assert any('No crashes recorded' in n.get('text', '') for n in nodes()), 'Chirp crash in diagnostics'
         crash_check()
-        print('PASS: release install; state-aware setup; QR scanner open/back; editor + keyboard; mic pairing action; long-press options; inner/cover light/dark; accessible labels and bounds; autocorrect teh/the + contraction; next-word suggestions; clipboard + emoji; settings + diagnostics; no Chirp crash.')
+        print('PASS: release install; state-aware setup; QR scanner open/back; editor + keyboard; mic pairing action; ⋯ options; inner/cover light/dark; accessible labels and bounds; autocorrect teh/the + contraction; next-word suggestions; clipboard + emoji; settings + diagnostics; no Chirp crash.')
         print('Release APK bytes:', apk.stat().st_size)
     finally:
         for command, original in [('size', original_size), ('density', original_density)]:

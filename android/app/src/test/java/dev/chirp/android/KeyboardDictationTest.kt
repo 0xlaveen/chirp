@@ -86,6 +86,43 @@ class KeyboardDictationTest {
         SettingsStore(host).apply { stopOnPause = true; pauseSeconds = 3.0 }
         voice.toggle(); assertEquals(3.0, capture.pauseSeconds!!, 0.0)
     }
+    private fun micTouch(action: Int) {
+        val now = android.os.SystemClock.uptimeMillis()
+        MotionEvent.obtain(now, now, action, 20f, 20f, 0).also { strip.mic.dispatchTouchEvent(it); it.recycle() }
+    }
+    @Test fun `press and hold on the strip mic is push-to-talk, release finishes (172)`() {
+        assertFalse(strip.mic.isLongClickable) // a long press no longer opens options: it is a hold
+        micTouch(MotionEvent.ACTION_DOWN); assertTrue(voice.active); assertTrue(capture.started); stream.ready()
+        capture.frame(byteArrayOf(1, 2)); stream.partial(); advance(700)
+        assertTrue(voice.active); assertEquals(0, stream.stops)
+        micTouch(MotionEvent.ACTION_UP); advance(0)
+        assertTrue(capture.released); assertEquals(1, stream.stops)
+        stream.final(); advance(0); assertEquals("Synthetic.", host.editor.committed)
+    }
+    @Test fun `a short tap on the strip mic keeps listening and the next tap stops`() {
+        micTouch(MotionEvent.ACTION_DOWN); advance(60); micTouch(MotionEvent.ACTION_UP); stream.ready()
+        assertTrue(voice.active); assertEquals(0, stream.stops)
+        micTouch(MotionEvent.ACTION_DOWN); advance(60); micTouch(MotionEvent.ACTION_UP); advance(0)
+        assertEquals(1, stream.stops)
+    }
+    @Test fun `a cancelled hold cancels the dictation and accessibility click still toggles`() {
+        micTouch(MotionEvent.ACTION_DOWN); stream.ready(); stream.partial(); advance(16)
+        micTouch(MotionEvent.ACTION_CANCEL); advance(0)
+        assertFalse(voice.active); assertEquals("", host.editor.committed)
+        strip.mic.performClick(); assertTrue(voice.active); stream.ready() // TalkBack double-tap
+        strip.mic.performClick(); advance(0); assertEquals(1, stream.stops)
+    }
+    @Test fun `options sit on the beside-mic button and as a TalkBack action, not on the mic's long press`() {
+        assertEquals("Dictation options", strip.options.contentDescription.toString())
+        assertEquals(android.view.View.VISIBLE, strip.options.visibility)
+        val actions = androidx.core.view.accessibility.AccessibilityNodeInfoCompat.obtain().also { strip.mic.onInitializeAccessibilityNodeInfo(it.unwrap()) }
+            .actionList.map { it.label?.toString() }
+        assertTrue(actions.toString(), "Dictation options" in actions)
+        assertTrue(strip.mic.contentDescription.toString().contains("hold to talk"))
+        strip.options.performClick(); assertFalse(voice.active) // opening options never starts capture
+        voice.toggle(); stream.ready(); advance(0)
+        assertEquals(android.view.View.INVISIBLE, strip.options.visibility) // out of the way while listening, like history
+    }
     @Test fun `hold before ready waits for release and cancel rejects late results`() {
         voice.touch(MotionEvent.ACTION_DOWN); capture.frame(byteArrayOf(1, 2)); advance(350)
         voice.touch(MotionEvent.ACTION_UP); advance(0)

@@ -46,7 +46,7 @@ trusts its certificate for `https://10.0.2.2:7899` only in debug.
 | `emulator-check.py --bubble-check --tls …` / `emulator-bubble-check.py` | First-class floating mic: tap/hold, real final insertion, copy fallback, drag/snap, cancellation and keyboard retention |
 | `emulator-smoke.sh` / `emulator-smoke.py` | Separate release acceptance: onboarding, scanner, typing, unpaired recovery; builds/installs release, not needed to exercise real-server debug |
 | `emulator-fold-layout.py` | Keyboard geometry across cover/inner and rotations; run with probe installed |
-| `emulator-talkback.py` | Enable TalkBack, accessible mic click/long-click/cancel and restore previous services |
+| `emulator-talkback.py` | Enable TalkBack, accessible mic click, ⋯ options and cancel and restore previous services |
 | `build-ui-probe.sh`, `UiHierarchy.java` | Shell-only all-window UiAutomator probe; never packaged into the app |
 
 Evidence is printed at startup (`/tmp/chirp-android-e2e.*` by default); set

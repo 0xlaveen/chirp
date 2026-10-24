@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.material3.*
+import androidx.compose.ui.graphics.Color
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
@@ -118,20 +119,22 @@ internal fun <T> ChoiceChips(options: List<T>, selected: T, label: (T) -> String
 
 internal enum class StatusKind(@DrawableRes val icon: Int) { Info(R.drawable.ic_info), Success(R.drawable.ic_check_circle), Warning(R.drawable.ic_warning), Error(R.drawable.ic_error) }
 
+/** The card's fill and text colour. A full-width card is never the koi container (muddy brown in dark): Success is a tonal surface, its lily check carries the meaning. */
+internal fun statusColors(scheme: ColorScheme, kind: StatusKind): Pair<Color, Color> = when (kind) {
+    StatusKind.Info -> scheme.secondaryContainer to scheme.onSecondaryContainer
+    StatusKind.Success -> scheme.surfaceContainerHigh to scheme.onSurface
+    StatusKind.Warning -> scheme.tertiaryContainer to scheme.onTertiaryContainer
+    StatusKind.Error -> scheme.errorContainer to scheme.onErrorContainer
+}
+
 /** Status card. [live] announces changes politely, as the setup status line always has. */
 @Composable
 internal fun StatusBanner(kind: StatusKind, title: String, modifier: Modifier = Modifier, body: String? = null,
                           action: String? = null, onAction: () -> Unit = {}, live: Boolean = false) {
-    val scheme = MaterialTheme.colorScheme
-    val (container, content) = when (kind) {
-        StatusKind.Info -> scheme.secondaryContainer to scheme.onSecondaryContainer
-        StatusKind.Success -> scheme.primaryContainer to scheme.onPrimaryContainer
-        StatusKind.Warning -> scheme.tertiaryContainer to scheme.onTertiaryContainer
-        StatusKind.Error -> scheme.errorContainer to scheme.onErrorContainer
-    }
+    val (container, content) = statusColors(MaterialTheme.colorScheme, kind)
     Surface(modifier.fillMaxWidth(), shape = MaterialTheme.shapes.large, color = container, contentColor = content) {
         Row(Modifier.padding(16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            Icon(painterResource(kind.icon), null)
+            Icon(painterResource(kind.icon), null, tint = if (kind == StatusKind.Success) LocalChirpRoles.current.lily else LocalContentColor.current)
             Column(Modifier.weight(1f).semantics(mergeDescendants = true) { if (live) liveRegion = LiveRegionMode.Polite },
                 verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(title, style = if (body == null) MaterialTheme.typography.bodyLarge else MaterialTheme.typography.titleSmall)

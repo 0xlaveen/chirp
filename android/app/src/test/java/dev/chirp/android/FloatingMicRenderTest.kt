@@ -123,6 +123,25 @@ class FloatingMicRenderTest {
         assertTrue(area.bottom <= 1400)
     }
 
+    @Test fun `large panel buttons are tonal surfaces with a hairline in dark, never the koi container (174)`() {
+        val activity = Robolectric.buildActivity(Activity::class.java).setup().get()
+        for (night in listOf(true, false)) {
+            val config = Configuration(activity.resources.configuration).apply {
+                uiMode = Configuration.UI_MODE_TYPE_NORMAL or if (night) Configuration.UI_MODE_NIGHT_YES else Configuration.UI_MODE_NIGHT_NO
+            }
+            val context = ContextThemeWrapper(activity.createConfigurationContext(config), R.style.Theme_Chirp)
+            val palette = VoicePalette.of(context)
+            val panel = VoicePanel(context)
+            for (button in listOf(panel.scratchpad, panel.raw)) {
+                assertEquals("${button.text} fill, night=$night", palette.surfaceHigh, button.backgroundTintList!!.defaultColor)
+                assertNotEquals("${button.text} uses the koi container, night=$night", palette.accentContainer, button.backgroundTintList!!.defaultColor)
+                assertEquals(palette.ink, button.textColors.defaultColor)
+                assertTrue(button.strokeWidth > 0)
+            }
+            if (night) assertEquals(0xFF5C2207.toInt(), palette.accentContainer) // the colour the buttons used to be
+        }
+    }
+
     @Test fun `ready to copy shows Done Scratchpad and Copy and an error exactly one fix`() {
         val context = ContextThemeWrapper(Robolectric.buildActivity(Activity::class.java).setup().get(), R.style.Theme_Chirp)
         val panel = VoicePanel(context)

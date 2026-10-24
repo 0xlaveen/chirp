@@ -82,7 +82,7 @@ def check(p, work, output):
         poll(lambda: p['find']('Cancel dictation') is not None or p['editor_text']() != before, 'TalkBack dictation produced no state or final')
         if p['find']('Cancel dictation') is not None: native('click', 'Cancel dictation')
         wait('Microphone: tap to dictate')
-        native('long-click', 'Microphone: tap to dictate')
+        native('click', 'Dictation options')
         wait('Chirp settings')
         adb('shell', 'input', 'keyevent', 'KEYCODE_BACK')
 

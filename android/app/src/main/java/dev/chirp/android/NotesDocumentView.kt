@@ -170,8 +170,8 @@ internal fun NotesEmpty(recording: Boolean, type: () -> Unit, modifier: Modifier
     val scheme = MaterialTheme.colorScheme
     Column(modifier.clickable(onClickLabel = "Type notes", onClick = type).padding(top = 56.dp, bottom = 24.dp, start = 24.dp, end = 24.dp),
         horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Box(Modifier.size(72.dp).clip(CircleShape).background(scheme.primaryContainer), contentAlignment = Alignment.Center) {
-            Icon(painterResource(R.drawable.ic_notes_tab), null, Modifier.size(32.dp), tint = scheme.onPrimaryContainer)
+        Box(Modifier.size(72.dp).clip(CircleShape).background(scheme.surfaceContainerHigh), contentAlignment = Alignment.Center) {
+            Icon(painterResource(R.drawable.ic_notes_tab), null, Modifier.size(32.dp), tint = scheme.primary)
         }
         Text(if (recording) "Notes appear as you talk" else "Your notes appear here", style = MaterialTheme.typography.titleLarge, textAlign = TextAlign.Center)
         Text(if (recording) "Headings, lists and to-dos land here a moment after each pause." else "Tap Record and talk. Chirp turns it into headings, lists and to-dos. Or tap here to type.",

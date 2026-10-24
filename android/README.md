@@ -18,7 +18,7 @@ The launcher, Settings → Apps and notifications call the app **Chirp**; Androi
 
 - [Install](#install) — build the APK, put it on the phone, update over Tailscale, enable the keyboard · [Pair](#pair) — QR, paste, Wi-Fi servers
 - [The app](#the-app-notes-history-settings) — Notes (the start tab, with the Mac's status chip, Record and Dictate), History, Settings
-- [Dictate](#dictate) — start/stop/cancel, quick options, clean-up, styles, Undo, Use raw
+- [Dictate](#dictate) — start/stop/cancel, push-to-talk, quick options, clean-up, styles, Undo, Use raw
 - [Keyboard](#keyboard) — typing, looks, Fold layout, swipe typing; [Keep your keyboard](#keep-your-keyboard) — the floating mic
 - [Scratchpad](#scratchpad) — dictate long text, edit, copy or share; Quick Settings tile and launcher shortcut
 - [Notes](#notes) — a notes library: record a meeting into live Markdown notes, search, Recently Deleted, kept-audio replay
@@ -148,8 +148,8 @@ Android 17/API 37 needs `ACCESS_LOCAL_NETWORK` for servers reached directly over
 
 - Tap the **mic in the suggestion row** to start. The mic changes colour and icon while listening, with a waveform and a subtle pulse.
 - Tap the **stop icon** the mic becomes to finish and insert. **✕** discards the dictation.
-- **Long press the mic** for quick options, a sectioned menu: a **Clean-up** switch (or *Mac has clean-up off*) with where the correction runs, a **Style** radio group of the styles the Mac advertises (*rewrites* beside those that may restructure; one choice closes the menu), and a **Chirp settings** row. TalkBack hears the switch and radio roles with their checked state. Long-pressing a history entry opens the same menu style (Copy, Insert raw, Delete).
-- A configured keyboard **voice key** still supports push-to-talk: press-and-hold to talk, release to finish; a short tap toggles.
+- **Press and hold the mic to talk, release to finish** (push-to-talk): the press starts listening at once; a short tap keeps listening (tap again to stop), and a hold of 0.3 s or more stops and inserts on release. Quick options moved to the **⋯** beside the mic (TalkBack also offers them as a **Dictation options** action on the mic; double-tap still starts and stops). **⋯ opens quick options**, a sectioned menu: a **Clean-up** switch (or *Mac has clean-up off*) with where the correction runs, a **Style** radio group of the styles the Mac advertises (*rewrites* beside those that may restructure; one choice closes the menu), and a **Chirp settings** row. TalkBack hears the switch and radio roles with their checked state. Long-pressing a history entry opens the same menu style (Copy, Insert raw, Delete).
+- A configured keyboard **voice key** supports the same push-to-talk: press-and-hold to talk, release to finish; a short tap toggles. The strip mic needs no voice key for this.
 - Haptic cues fire on start, manual stop and successful insertion when haptics are enabled (they follow Android's system setting).
 - **Chirp settings → Dictation → Stopping**: **When I tap** (default) or **When I pause** with a pause of 1, 1.5, 2, 3 or 5 s (2 s default). Pause mode is a port of the Mac's auto-stop: speech is judged against the room's own noise floor, so steady background noise never counts as talking; it never stops before you have spoken, and gives up after 10 s of silence. Tapping stop still works in both modes.
 - **Long dictation**: the Mac accepts 120 s per utterance, so a keyboard dictation is cut into segments of at most 90 s, the way the Mac's Live Notes does it. A dictation shorter than 45 s is never cut. After 45 s the cut comes at the first 0.6 s pause (0.3 s after 70 s), and at 90 s the cut happens whatever you are saying. At a cut the microphone stays open and the next segment takes over at once, buffering until its own socket is ready, so no audio is dropped. The previous segment finishes in the background. Its final, cleaned on its own, is committed at the caret, and the next segment's live text continues right after it. Each segment lands in order, even if a later one finishes first. The live text pauses for a moment after a cut until the earlier segment lands. Each segment is its own history entry. There are no haptics, sound or TalkBack between segments; the word count is announced once at the end.
@@ -201,7 +201,7 @@ While it runs, the raw transcript stays underlined in the field and the row show
 
 ### Styles
 
-Long press the mic to pick any health-advertised style plus Custom for the current editor. Chirp settings provide a default style and editable package-based overrides; matching uses `EditorInfo.packageName` exactly, and removed rows inherit the default. Initial defaults:
+Tap the ⋯ beside the mic to pick any health-advertised style plus Custom for the current editor. Chirp settings provide a default style and editable package-based overrides; matching uses `EditorInfo.packageName` exactly, and removed rows inherit the default. Initial defaults:
 
 | Style | Packages |
 |---|---|

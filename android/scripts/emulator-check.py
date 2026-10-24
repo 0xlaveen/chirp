@@ -459,11 +459,17 @@ def main():
                 tap(round(width * .10), round(height * .72))
                 typed = editor().get("text", "")
                 assert typed in (before_type + "a", before_type + "A"), "Typing after dictation failed"
-                # Toolbar long-press opens options without starting capture; voice-key
-                # push-to-talk remains covered by the real host touch regression tests.
-                adb("shell", "input", "swipe", str(x), str(y), str(x), str(y), "700")
+                # The strip's ⋯ opens options without starting capture (#172: a hold on the mic is push-to-talk now).
+                tap(*center(_probe["wait_for"]("Dictation options")))
                 _probe["wait_for"]("Chirp settings")
                 adb("shell", "input", "keyevent", "4")
+                # Press-and-hold on the strip mic is the reachable push-to-talk gesture: partials while held, a final on release.
+                before_hold = editor().get("text", "")
+                adb("shell", "input", "swipe", str(x), str(y), str(x), str(y), "2500")
+                time.sleep(3)
+                held = editor().get("text", "")
+                assert held and held != before_hold, "Hold on the strip mic did not dictate on release"
+                screenshot(output / ("emulator-keyboard-hold-" + theme + ".png"))
                 before_cancel = editor().get("text", "")
                 tap(x, y); time.sleep(.5); tap(width - x, y); time.sleep(.5)
                 assert editor().get("text", "") == before_cancel, "Cancel changed committed text"

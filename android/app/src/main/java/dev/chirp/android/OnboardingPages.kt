@@ -147,8 +147,8 @@ private fun PondHero() {
 private fun Illustration(@DrawableRes icon: Int, wide: Boolean = false) {
     val scheme = MaterialTheme.colorScheme
     if (wide) Icon(painterResource(icon), null, Modifier.padding(horizontal = 24.dp, vertical = 8.dp), tint = scheme.primary)
-    else Box(Modifier.size(152.dp).clip(CircleShape).background(scheme.primaryContainer), contentAlignment = Alignment.Center) {
-        Icon(painterResource(icon), null, Modifier.size(72.dp), tint = scheme.onPrimaryContainer)
+    else Box(Modifier.size(152.dp).clip(CircleShape).background(scheme.surfaceContainerHigh), contentAlignment = Alignment.Center) {
+        Icon(painterResource(icon), null, Modifier.size(72.dp), tint = scheme.primary)
     }
 }
 

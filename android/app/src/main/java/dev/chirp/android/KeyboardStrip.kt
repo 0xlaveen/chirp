@@ -43,7 +43,9 @@ internal class KeyboardStrip(context: Context, private val now: () -> Long = Sys
     private val large = SettingsStore(context).largerMic && context.resources.configuration.smallestScreenWidthDp >= 600
     private val micWidth = context.dp(if (large) 56 else 48)
     val history = control("Dictation history").apply { setIconResource(R.drawable.ic_history) }
-    val mic = control("Microphone: tap to dictate, long press for options").apply { setIconResource(R.drawable.ic_mic) }
+    /** The ⋯ beside the mic: dictation options now that press-and-hold on the mic is push-to-talk. */
+    val options = control("Dictation options").apply { setIconResource(R.drawable.ic_more_vert) }
+    val mic = control(MIC_IDLE).apply { setIconResource(R.drawable.ic_mic) }
     val cancel = control("Cancel dictation").apply { text = "✕" }
     val raw = control("Use raw dictation").apply { text = "Use raw"; visibility = GONE }
     val revert = control("Undo last dictation").apply { text = "Undo"; visibility = GONE }
@@ -89,7 +91,7 @@ internal class KeyboardStrip(context: Context, private val now: () -> Long = Sys
         // Transparent when idle: HeliBoard's own suggestion-row background (colour or image) shows through; states tint over it.
         background = rowTint
         cancel.backgroundTintList = ColorStateList.valueOf(Color.TRANSPARENT); cancel.setTextColor(palette.ink)
-        for (button in listOf(mic, cancel, raw, revert, action)) {
+        for (button in listOf(mic, cancel, raw, revert, action, options)) {
             button.cornerRadius = context.dp(20)
             button.rippleColor = ColorStateList.valueOf(palette.ink and 0x00ffffff or 0x22000000)
         }
@@ -105,6 +107,7 @@ internal class KeyboardStrip(context: Context, private val now: () -> Long = Sys
         addView(raw, LayoutParams(context.dp(88), LayoutParams.MATCH_PARENT).apply { marginEnd = context.dp(4) })
         addView(action, LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.MATCH_PARENT).apply { marginEnd = context.dp(4) })
         addView(history, LayoutParams(context.dp(48), LayoutParams.MATCH_PARENT))
+        addView(options, LayoutParams(context.dp(OPTIONS_WIDTH), LayoutParams.MATCH_PARENT))
         addView(mic, LayoutParams(micWidth, LayoutParams.MATCH_PARENT))
         show("Tap mic", "", false, false, false, false)
         historyOpen(false)
@@ -176,6 +179,7 @@ internal class KeyboardStrip(context: Context, private val now: () -> Long = Sys
         cancel.visibility = if (full) VISIBLE else GONE
         // INVISIBLE, not GONE: the mic must never slide into the history slot mid-transition.
         history.visibility = if (full) INVISIBLE else VISIBLE
+        options.visibility = if (full) INVISIBLE else VISIBLE
         cancel.isEnabled = active || undo || undoable || error
         levels.visibility = if (kind == StripKind.LISTENING) VISIBLE else GONE
         busy.visibility = if (kind == StripKind.CONNECTING) VISIBLE else GONE
@@ -223,7 +227,7 @@ internal class KeyboardStrip(context: Context, private val now: () -> Long = Sys
             else -> mic.setIconResource(R.drawable.ic_mic)
         }
         mic.isEnabled = !finishing
-        mic.contentDescription = if (polishing) "Polishing dictation" else if (active) "Stop dictation" else if (offline) ConnectionFailure.OFFLINE_DESCRIPTION else "Microphone: tap to dictate, long press for options"
+        mic.contentDescription = if (polishing) "Polishing dictation" else if (active) "Stop dictation" else if (offline) ConnectionFailure.OFFLINE_DESCRIPTION else MIC_IDLE
         // Stop is a filled record pill while it stops something; polishing keeps the accent (it isn't a stop control).
         transition(if (active) 1f else 0f, tint, offline && !active, active && !polishing)
         if (!active || finishing) level(0.0)
@@ -327,9 +331,13 @@ internal class KeyboardStrip(context: Context, private val now: () -> Long = Sys
         history.backgroundTintList = ColorStateList.valueOf(fill)
         history.iconTint = ColorStateList.valueOf(if (open) StripTints.readableOn(fill, palette.ink) else palette.highlight)
         history.contentDescription = if (open) "Close dictation history" else "Dictation history"
+        options.backgroundTintList = ColorStateList.valueOf(Color.TRANSPARENT)
+        options.iconTint = ColorStateList.valueOf(palette.highlight)
     }
-    private fun idleWidth() = context.dp(48) + micWidth
+    private fun idleWidth() = context.dp(48 + OPTIONS_WIDTH) + micWidth
     private companion object {
+        const val OPTIONS_WIDTH = 36
+        const val MIC_IDLE = "Microphone: tap to dictate, hold to talk"
         const val CONNECTING = "Connecting"
         const val HINT = " · tap mic to dictate again"
         val POSITIVE = listOf("Inserted", "cleaned", "Used raw", "Dictation removed", "Tailscale connected")
