@@ -13,15 +13,22 @@ internal fun captureForBuild(context: Context, frame: (ByteArray) -> Boolean, le
     if (context.getSharedPreferences("debug_capture", 0).getBoolean("synthetic", false))
         PcmCapture(frame, level, done, SyntheticPcmInput(context))
     else PcmCapture(frame, level, done)
+/** Notes and its voice commands: the synthetic asset repeats with [NOTES_GAP_MS] of silence between, like a meeting. */
+internal fun notesInputForBuild(context: Context): PcmInput =
+    if (context.getSharedPreferences("debug_capture", 0).getBoolean("synthetic", false)) SyntheticPcmInput(context, loop = true) else MicrophoneInput()
+private const val NOTES_GAP_MS = 4000L
 
 /** Debug only: generated speech asset, paced in real time through PcmCapture's real framing loop. */
-private class SyntheticPcmInput(private val context: Context) : PcmInput {
+private class SyntheticPcmInput(private val context: Context, private val loop: Boolean = false) : PcmInput {
     private var stream: DataInputStream? = null
     private var left = 0
     @Volatile private var stopped = false
     private var firstRead = true
-    override val finished get() = left < 2
-    override fun start() {
+    private var silence = 0
+    override val finished get() = !loop && left < 2
+    override fun start() { open() }
+    private fun open() {
+        stream?.close()
         val input = DataInputStream(context.assets.open("synthetic.wav")); stream = input
         check(input.readInt() == 0x52494646); input.skipBytes(4); check(input.readInt() == 0x57415645)
         while (true) {
@@ -35,7 +42,16 @@ private class SyntheticPcmInput(private val context: Context) : PcmInput {
             firstRead = false
             Thread.sleep(context.getSharedPreferences("debug_capture", 0).getLong("initial_frame_delay_ms", 0).coerceIn(0, 4000))
         }
-        if (stopped || left < 2) return -1
+        if (stopped) return -1
+        if (left < 2) {
+            if (!loop) return -1
+            if (silence == 0) silence = (NOTES_GAP_MS * 16).toInt()
+            val size = minOf(count, silence)
+            samples.fill(0, offset, offset + size); silence -= size
+            Thread.sleep(size * 1000L / 16000)
+            if (silence == 0) open()
+            return size
+        }
         val size = minOf(count, left / 2)
         for (i in 0 until size) samples[offset + i] = java.lang.Short.reverseBytes(stream!!.readShort())
         left -= size * 2

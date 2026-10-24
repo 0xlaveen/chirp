@@ -82,13 +82,14 @@ class NotesVoiceEditRecorderTest {
         assertEquals(75, command.frames); assertEquals(75, first.frames)
 
         v.voice.finish(); rig.idle()
-        assertEquals("the next notes socket opens before capture swaps to it", 3, rig.wires.size)
+        assertEquals("a fresh notes socket takes capture at once", 3, rig.wires.size)
+        assertEquals("the command stops at once: the Mac readies the notes socket only after its final", 1, command.stops)
         rig.speak(0.5)
-        assertEquals("the command hears a moment more", 87, command.frames)
+        assertEquals(75, command.frames)
         rig.wires[2].ready(); rig.idle()
-        assertEquals(1, command.stops)
+        assertEquals("the notes audio meanwhile was held, then sent", 12, rig.wires[2].frames)
         rig.speak(1.0)
-        assertEquals(87, command.frames); assertEquals(25, rig.wires[2].frames)
+        assertEquals(75, command.frames); assertEquals(37, rig.wires[2].frames)
 
         command.final("remove the pricing section"); rig.idle()
         assertEquals(VoiceEditStatus.Editing("remove the pricing section"), v.voice.status)

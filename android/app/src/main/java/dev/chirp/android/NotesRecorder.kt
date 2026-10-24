@@ -11,7 +11,6 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withTimeoutOrNull
 
 /** Why structuring does not run. WAITING: health is unknown, so where the text would go is unknown: fail closed. */
 internal enum class StructuringOff { DISABLED, CORRECTION_OFF, UNSUPPORTED, WAITING }
@@ -110,7 +109,6 @@ internal class NotesRecorder(
         var partial = ""
         var correcting = false
         var ready = false
-        val opened = CompletableDeferred<Boolean>()
         var timeout: Job? = null
         @Volatile var lost = false
     }
@@ -125,7 +123,6 @@ internal class NotesRecorder(
     private var nextSeq = 0
     private var nextCommit = 0
     private var current: Int? = null
-    private var cutting = false
     private var failureStreak = 0
     private var sawReady = false
     /** The capturing socket came from Resume and is not Ready yet: failing it goes back to paused. */
@@ -262,9 +259,9 @@ internal class NotesRecorder(
 
     private fun open(): Segment {
         lateinit var segment: Segment
-        val buffer = PreReadyBuffer(send = { segment.transport.audio(it) })
+        val buffer = PreReadyBuffer(send = { segment.transport.audio(it) }, maxBytes = PRE_READY_BYTES)
         val transport = transportFactory({ event -> handle(segment, event) },
-            { if (segment.seq < 0) segment.opened.complete(false) else segmentFailed(segment, ConnectionFailure.status(segment.transport.failureKind)) })
+            { segmentFailed(segment, ConnectionFailure.status(segment.transport.failureKind)) })
         segment = Segment(transport, buffer)
         return segment
     }
@@ -349,23 +346,20 @@ internal class NotesRecorder(
 
     // Segments
 
-    /** The rolling hand-off: open the next socket, wait for Ready, swap capture to it, then finalize the old one. */
-    private suspend fun cut() {
-        if (state != State.RECORDING || cutting || diverted != null) return
-        cutting = true
-        val myEpoch = epoch
+    /**
+     * The rolling hand-off: capture swaps to the next socket at once (its audio held until Ready), then the old one
+     * finalizes. The next socket cannot be Ready before that: the Mac transcribes one utterance at a time, and only
+     * the old segment's final frees the engine for it.
+     */
+    private fun cut() {
+        if (state != State.RECORDING || diverted != null) return
         val next = open()
-        val started = next.transport.start(options.correction, options.profile, "", options.prompt)
-        val ok = started && withTimeoutOrNull(READY_MS) { next.opened.await() } == true
-        // A command took capture meanwhile: the notes come back to a fresh socket when it ends.
-        if (diverted != null) { close(next, cancel = true); cutting = false; return }
-        if (epoch != myEpoch || state != State.RECORDING || !ok) {
-            close(next, cancel = true); cutting = false
-            if (epoch == myEpoch && state == State.RECORDING) {
-                // The current socket keeps the audio meanwhile; a server that stays down ends the session.
-                if (++failureStreak >= MAX_SEGMENT_FAILURES) finishRecording("Notes stopped: " + ConnectionFailure.status(next.transport.failureKind))
-                else scope.launch { delay(RETRY_CUT_MS); if (epoch == myEpoch) cut() }
-            }
+        if (!next.transport.start(options.correction, options.profile, "", options.prompt)) {
+            close(next, cancel = true)
+            // The current socket keeps the audio meanwhile; a server that stays down ends the session.
+            val myEpoch = epoch
+            if (++failureStreak >= MAX_SEGMENT_FAILURES) finishRecording("Notes stopped: " + ConnectionFailure.status(next.transport.failureKind))
+            else scope.launch { delay(RETRY_CUT_MS); if (epoch == myEpoch) cut() }
             return
         }
         // The sequence number is taken at the swap, so transcript order is capture order.
@@ -374,7 +368,6 @@ internal class NotesRecorder(
         next.seq = seq; next.offset = offset
         val previous = current
         current = seq; segments[seq] = next
-        cutting = false
         if (previous != null) segments[previous]?.end = offset
         if (old != null && previous != null && segments[previous] === old) finalize(old)
         changed()
@@ -395,7 +388,6 @@ internal class NotesRecorder(
             is ServerEvent.Ready -> {
                 debugRetention = event.debugRetention; sawReady = true; segment.ready = true
                 if (!segment.buffer.ready()) { lost(segment); return }
-                segment.opened.complete(true)
                 if (state == State.STARTING && segment.seq == current) { resuming = false; state = State.RECORDING }
                 changed()
             }
@@ -407,15 +399,14 @@ internal class NotesRecorder(
                 failureStreak = 0
                 finish(segment.seq, if (text.isEmpty()) null else NotesSegment(segment.seq, segment.offset, raw.ifEmpty { text }, text, event.corrected, kept))
             }
-            is ServerEvent.Failure -> if (segment.seq < 0) segment.opened.complete(false) else segmentFailed(segment, friendly(event.code))
+            is ServerEvent.Failure -> segmentFailed(segment, friendly(event.code))
             ServerEvent.Unknown -> Unit
         }
     }
 
     /** A frame could not be sent (backpressure, a dead socket, Ready too late): the segment becomes a gap. */
     private fun lost(segment: Segment) {
-        if (segment.seq < 0) segment.opened.complete(false)
-        else segmentFailed(segment, if (segment.ready) "connection lost" else ConnectionFailure.status(segment.transport.failureKind, timedOut = true))
+        segmentFailed(segment, if (segment.ready) "connection lost" else ConnectionFailure.status(segment.transport.failureKind, timedOut = true))
     }
 
     private fun segmentFailed(segment: Segment, reason: String) {
@@ -543,8 +534,8 @@ internal class NotesRecorder(
         return true
     }
 
-    /** Back to the notes after a command: the next segment's socket opens first and capture swaps to it, so nothing is dropped. */
-    suspend fun endDivert() {
+    /** Back to the notes after a command: capture swaps to a fresh notes socket at once (held until Ready), so nothing is dropped. */
+    fun endDivert() {
         if (diverted == null) return
         diverted = null
         cut()
@@ -942,8 +933,11 @@ internal class NotesRecorder(
         const val MIN_INTERVAL_MS = 15000L
         /** How long a segment may take from `stop` to its final. */
         const val FINAL_TIMEOUT_MS = 25000L
-        /** How long the next socket may take to be ready at a cut (the current one keeps the audio meanwhile). */
-        const val READY_MS = 10000L
+        /**
+         * Audio a segment holds until its socket is Ready: the Mac queues a start for up to 10 s while the previous
+         * segment finishes, then answers `busy`.
+         */
+        const val PRE_READY_BYTES = 16000 * 2 * 12
         const val RETRY_CUT_MS = 2000L
         /** Segments (or next sockets) in a row that may fail before recording stops. */
         const val MAX_SEGMENT_FAILURES = 3

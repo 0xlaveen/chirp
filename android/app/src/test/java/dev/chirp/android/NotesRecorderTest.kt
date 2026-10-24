@@ -76,7 +76,7 @@ internal class NotesRig(health: Health? = notesMac) {
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [37])
 class NotesRecorderTest {
-    @Test fun `rolling hand-off opens the next socket first, routes every frame once and commits in order`() {
+    @Test fun `rolling hand-off swaps to the next socket at once, routes every frame once and commits in order`() {
         val rig = NotesRig()
         rig.recorder.start(); rig.idle()
         assertEquals(NotesRecorder.State.STARTING, rig.recorder.state)
@@ -87,13 +87,13 @@ class NotesRecorderTest {
         assertEquals(25, rig.wires[0].frames)
         rig.speak(44.0)
         assertEquals("the cut opened a second socket", 2, rig.wires.size)
+        assertEquals("and asked the first for its final at once", 1, rig.wires[0].stops)
         rig.speak(2.0)
-        assertEquals("until it is ready, audio stays on the first", 1175, rig.wires[0].frames)
-        assertEquals(0, rig.wires[0].stops)
+        assertEquals("audio after the cut is held for the second until it is ready", 1125, rig.wires[0].frames)
         rig.wires[1].ready(); rig.idle()
-        assertEquals(1, rig.wires[0].stops)
+        assertEquals(50, rig.wires[1].frames)
         rig.speak(1.0)
-        assertEquals(1175, rig.wires[0].frames); assertEquals(25, rig.wires[1].frames)
+        assertEquals(1125, rig.wires[0].frames); assertEquals(75, rig.wires[1].frames)
         assertEquals(48.0, rig.recorder.elapsed, 1e-9)
         // The second segment's final arrives first; the transcript still follows capture order.
         rig.speak(45.0); rig.wires[2].ready(); rig.idle()
@@ -101,7 +101,26 @@ class NotesRecorderTest {
         assertEquals(0, rig.recorder.document.segments.size)
         rig.wires[0].final("first part"); rig.idle()
         assertEquals(listOf("first part", "second part"), rig.recorder.document.segments.map { it.text })
-        assertEquals(listOf(0.0, 47.0), rig.recorder.document.segments.map { it.offset })
+        assertEquals(listOf(0.0, 45.0), rig.recorder.document.segments.map { it.offset })
+    }
+
+    /** The Mac transcribes one utterance at a time: a socket is Ready only once the one before it has its final (#134). */
+    @Test fun `cuts never wait for a Ready the Mac gives only after the previous segment's final`() {
+        val rig = NotesRig()
+        rig.recorder.start(); rig.wire.ready(); rig.idle()
+        repeat(4) { n ->
+            val old = rig.wire
+            rig.speak(if (n == 0) 45.0 else 35.0); rig.idle()
+            assertEquals("cut $n asked the old segment for its final at once", 1, old.stops)
+            rig.speak(10.0) // the Mac finishing the old segment: up to its 10 s queue limit, held for the next socket
+            rig.idle(12) // past any wait for Ready, within the final's own deadline
+            old.final("part $n"); rig.idle()
+            rig.wire.ready(); rig.idle()
+            assertEquals("every held frame went on", 250, rig.wire.frames)
+        }
+        assertEquals(NotesRecorder.State.RECORDING, rig.recorder.state)
+        assertEquals((0..3).map { "part $it" }, rig.recorder.document.segments.map { it.text })
+        assertTrue(rig.recorder.document.segments.none { it.failure != null })
     }
 
     @Test fun `a failed segment leaves a marked gap and recording rolls on, three in a row stop with nothing lost`() {

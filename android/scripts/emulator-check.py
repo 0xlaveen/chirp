@@ -244,6 +244,7 @@ def main():
     args.add_argument("--frames-only", action="store_true")
     args.add_argument("--stop-check", action="store_true")
     args.add_argument("--history-check", action="store_true")
+    args.add_argument("--notes-check", action="store_true")
     args.add_argument("--tls", action="store_true")
     args.add_argument("--expect-crash", action="store_true")
     args.add_argument("--server-root", type=Path, default=ROOT / "server")
@@ -272,7 +273,7 @@ def main():
                    HF_HUB_OFFLINE="1", TRANSFORMERS_OFFLINE="1", PYTHONPATH=str(opt.server_root / "src"))
         if opt.tls: env["SSL_CERT_FILE"] = str(cert)
         command = [opt.python, "-m", "chirp_server", "--port", "7899", "--model-dir", opt.model_dir]
-        if opt.tls or opt.stop_check:
+        if opt.tls or opt.stop_check or opt.notes_check:
             command = [opt.python, str(Path(__file__).with_name("emulator-stop-server.py")),
                        "--model-dir", opt.model_dir, "--metadata", str(work / "events.json")]
             if opt.tls: command += ["--cert", str(cert), "--key", str(opt.tls_dir / "emulator-tls/key.pem")]
@@ -288,7 +289,7 @@ def main():
                 time.sleep(.1)
             token = token_path.read_text().strip()
             wait_health(token, base=base, context=context)
-            if opt.cleanup_only or opt.frames_only or opt.stop_check or opt.history_check: warm_cleanup(opt.python, token_path, env, opt.tls)
+            if opt.cleanup_only or opt.frames_only or opt.stop_check or opt.history_check or opt.notes_check: warm_cleanup(opt.python, token_path, env, opt.tls)
             # Independent host-routing probe, no authentication or private response content.
             probe = adb("shell", "sh", "-c", shlex.quote("printf 'GET /v1/health HTTP/1.0\\r\\nHost: 10.0.2.2\\r\\n\\r\\n' | toybox nc -w 3 10.0.2.2 7899"))
             print("Emulator route to throwaway server:", opt.tls or b"200 OK" in probe, flush=True)
@@ -326,6 +327,10 @@ def main():
             if opt.stop_check:
                 module = runpy.run_path(str(Path(__file__).with_name("emulator-stop-check.py")))
                 module["check"](dict(_probe, adb=adb), work, opt.expect_crash)
+                return
+            if opt.notes_check:
+                module = runpy.run_path(str(Path(__file__).with_name("emulator-notes-check.py")))
+                module["check"](dict(_probe, adb=adb), work, output)
                 return
             if opt.history_check:
                 module = runpy.run_path(str(Path(__file__).with_name("emulator-history-check.py")))
