@@ -75,6 +75,8 @@ public final class HUDModel {
     /// Draws an opaque stand-in for the blur: used for Increase Contrast and the offscreen snapshots, which have no
     /// window to blur through. The live panel's translucency is an `NSVisualEffectView` behind this view.
     public var flatSurface = false
+    /// The live panel draws `.glassEffect()` (macOS 26); the controller sets it where the system has it.
+    public var usesGlass = false
     public var onUseRaw: (() -> Void)?
 
     public init() {}
@@ -218,12 +220,24 @@ public struct LevelHistory: Equatable, Sendable {
 }
 
 public enum HUDViewMetrics {
-    /// Corner radius of the HUD: a capsule at one line (the content is 44 pt tall) and a rounded rectangle when it wraps.
-    public static let corner: CGFloat = 22
+    /// Corner radius of the HUD (the Pond panel radius): a rounded rectangle at one line and at three.
+    public static let corner: CGFloat = ChirpRadius.panel
+    /// The HUD never changes width, so it does not jump as words arrive: 360 pt, and 420 pt while the word waveform is on.
+    public static let width: CGFloat = 360
+    public static let wordWaveformWidth: CGFloat = 420
+    public static let horizontalPadding: CGFloat = ChirpSpacing.s16
+    public static let verticalPadding: CGFloat = 12
+    /// A transcript is at most three lines; older words give way at the front.
+    public static let transcriptLines = 3
+
+    public static func width(wordWaveform: Bool) -> CGFloat { wordWaveform ? wordWaveformWidth : width }
+    /// The width of the text column inside the padding.
+    public static func contentWidth(wordWaveform: Bool) -> CGFloat { width(wordWaveform: wordWaveform) - 2 * horizontalPadding }
 }
 
 public struct HUDView: View {
-    static let maxTextWidth: CGFloat = 440
+    /// The widest text column (the word waveform's).
+    static let maxTextWidth: CGFloat = HUDViewMetrics.contentWidth(wordWaveform: true)
 
     let model: HUDModel
     let onSize: (CGSize) -> Void
@@ -233,107 +247,69 @@ public struct HUDView: View {
         self.onSize = onSize
     }
 
-    private var shape: RoundedRectangle { RoundedRectangle(cornerRadius: HUDViewMetrics.corner, style: .continuous) }
+    private var contentWidth: CGFloat { HUDViewMetrics.contentWidth(wordWaveform: model.wordWaveform) }
 
     public var body: some View {
         content
-            .padding(.horizontal, 16)
-            .padding(.vertical, 11)
-            .frame(minWidth: 150, alignment: .leading)
-            .background { if model.flatSurface || model.increaseContrast { flatSurface } }
-            .overlay { shape.strokeBorder(Color.primary.opacity(model.increaseContrast ? 0.55 : 0.12), lineWidth: model.increaseContrast ? 1.5 : 1) }
-            .clipShape(shape)
+            .padding(.horizontal, HUDViewMetrics.horizontalPadding)
+            .padding(.vertical, HUDViewMetrics.verticalPadding)
+            .frame(width: HUDViewMetrics.width(wordWaveform: model.wordWaveform), alignment: .leading)
+            .tint(Color.chirp.koi)
+            .modifier(HUDSurface(flat: model.flatSurface || model.increaseContrast, glass: model.usesGlass, contrast: model.increaseContrast))
             .fixedSize()
             .onGeometryChange(for: CGSize.self, of: { $0.size }, action: onSize)
-            // The live panel is sized by `onSize`; in a larger frame the capsule stays centred.
+            // The live panel is sized by `onSize`; in a larger frame the HUD stays centred.
             .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    private var flatSurface: some View { shape.fill(HUDColors.surface) }
-
     private var content: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 10) {
                 indicator
                     .accessibilityHidden(true)
                 Text(model.status)
                     .font(.system(size: 13, weight: .medium))
                     .foregroundStyle(model.isError ? HUDColors.error : Color.primary)
-                    .lineLimit(3)
-                    .frame(width: HUDText.fittedWidth(model.status, font: .systemFont(ofSize: 13, weight: .medium), max: Self.maxTextWidth - 90),
-                           alignment: .leading)
+                    .lineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 0)
                 if let name = model.styleName {
-                    Text(name)
-                        .font(.system(size: 10, weight: .semibold))
-                        .padding(.horizontal, 7).padding(.vertical, 2)
-                        .background(Color.primary.opacity(model.increaseContrast ? 0.16 : 0.1), in: Capsule())
-                        .foregroundStyle(Color.primary.opacity(model.increaseContrast ? 0.9 : 0.7))
-                        .lineLimit(1)
-                        .fixedSize()
-                        .accessibilityLabel("Style: \(name)")
+                    HUDChip(name).accessibilityLabel("Style: \(name)")
                 }
-                if model.keptOriginal {
-                    Text("kept original")
-                        .font(.system(size: 10, weight: .semibold))
-                        .padding(.horizontal, 7).padding(.vertical, 2)
-                        .background(Color.primary.opacity(0.1), in: Capsule())
-                        .foregroundStyle(Color.primary.opacity(model.increaseContrast ? 0.9 : 0.7))
-                        .lineLimit(1)
-                        .fixedSize()
-                }
-                if model.cleaned {
-                    Label("cleaned", systemImage: "sparkles")
-                        .font(.system(size: 10, weight: .semibold))
-                        .padding(.horizontal, 7).padding(.vertical, 2)
-                        .background(HUDColors.action.opacity(0.16), in: Capsule())
-                        .foregroundStyle(HUDColors.action)
-                        .lineLimit(1)
-                        .fixedSize()
-                }
+                if model.keptOriginal { HUDChip("kept original") }
+                if model.cleaned { HUDChip("cleaned", symbol: "sparkles", tone: .moon) }
                 if model.showUseRaw {
-                    Button("Use raw") { model.onUseRaw?() }
+                    Button { model.onUseRaw?() } label: { HUDChip("Use raw", tone: .action) }
                         .buttonStyle(.plain)
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(HUDColors.action)
-                        .fixedSize()
+                        .accessibilityLabel("Use raw")
                 }
                 if model.debugRetention {
-                    Text(MenuContent.debugRetention)
-                        .font(.system(size: 10, weight: .bold))
-                        .padding(.horizontal, 6).padding(.vertical, 2)
-                        .background(HUDColors.badge, in: Capsule())
-                        .foregroundStyle(.white)
-                        .fixedSize()
+                    HUDChip(MenuContent.debugRetention, tone: .alert)
                         .help(MenuContent.debugRetentionHelp)
                 }
             }
-            let shown = HUDText.tail(stable: model.stable, unstable: model.unstable)
+            let shown = HUDText.tail(stable: model.stable, unstable: model.unstable, limit: HUDText.lineBudget)
             if model.showsWordWaveform {
                 WordWaveformView(cells: model.wordCells, levels: model.utterance, revised: model.revisedWords,
                                  truncated: model.wordsTruncated, polishing: model.polishing, animated: !model.reduceMotion,
                                  contrast: model.increaseContrast, pulsePhase: model.pulsePhase, shimmerPhase: model.shimmerPhase,
-                                 maxWidth: Self.maxTextWidth)
+                                 maxWidth: contentWidth)
                     .transition(.opacity)
             } else if let diff = model.diff {
                 DiffText(segments: diff, fade: model.diffFade, contrast: model.increaseContrast)
-                    .frame(width: HUDText.fittedWidth(DiffText.plain(diff), font: .systemFont(ofSize: 15), max: Self.maxTextWidth),
-                           alignment: .leading)
+                    .frame(width: contentWidth, alignment: .leading)
                     .fixedSize(horizontal: false, vertical: true)
                     .transition(.opacity)
             } else if model.polishing, !shown.stable.isEmpty || !shown.unstable.isEmpty {
                 ShimmerText(text: shown.stable + shown.unstable, animated: !model.reduceMotion, phase: model.shimmerPhase)
-                    .frame(width: HUDText.fittedWidth(shown.stable + shown.unstable, font: .systemFont(ofSize: 15), max: Self.maxTextWidth),
-                           alignment: .leading)
+                    .frame(width: contentWidth, alignment: .leading)
                     .fixedSize(horizontal: false, vertical: true)
                     .transition(.opacity)
             } else if !shown.stable.isEmpty || !shown.unstable.isEmpty {
                 (Text(shown.stable) + Text(shown.unstable).foregroundStyle(Color.primary.opacity(model.increaseContrast ? 0.72 : 0.5)))
                     .font(.system(size: 15))
-                    .lineLimit(4)
-                    .frame(width: HUDText.fittedWidth(shown.stable + shown.unstable, font: .systemFont(ofSize: 15), max: Self.maxTextWidth),
-                           alignment: .leading)
+                    .lineLimit(HUDViewMetrics.transcriptLines)
+                    .frame(width: contentWidth, alignment: .leading)
                     .fixedSize(horizontal: false, vertical: true)
                     .accessibilityAddTraits(.updatesFrequently)
             }
@@ -345,17 +321,100 @@ public struct HUDView: View {
         if let symbol = model.indicator.symbol {
             Image(systemName: symbol.name)
                 .font(.system(size: 15))
-                .foregroundStyle(model.isError ? HUDColors.error : model.indicator == .success ? Color.green : Color.secondary)
+                .foregroundStyle(model.isError ? HUDColors.error : model.indicator == .success ? Color.chirp.lily : Color.chirp.inkMuted)
                 .frame(width: 20, height: 20)
         } else if model.indicator == .waveform {
             Ripple(level: Double(model.levels.samples.last ?? 0), reduceMotion: model.reduceMotion, phase: model.pulsePhase)
         } else if model.indicator == .sparkle {
             Image(systemName: "sparkles")
                 .font(.system(size: 15))
-                .foregroundStyle(HUDColors.action)
+                .foregroundStyle(Color.chirp.moon)
                 .symbolEffect(.pulse, options: .repeating, isActive: !model.reduceMotion)
                 .frame(width: 20, height: 20)
         }
+    }
+}
+
+/// The HUD's one chip style: a small capsule of 10 pt semibold text — neutral for the style and "kept original", moon for what the
+/// AI did, a koi tonal button for "Use raw", and a solid white-on-red badge for the debug warning.
+struct HUDChip: View {
+    enum Tone { case neutral, moon, action, alert }
+
+    let text: String
+    var symbol: String?
+    var tone: Tone = .neutral
+
+    init(_ text: String, symbol: String? = nil, tone: Tone = .neutral) {
+        self.text = text; self.symbol = symbol; self.tone = tone
+    }
+
+    private var foreground: Color {
+        switch tone {
+        case .neutral: Color.chirp.inkMuted
+        case .moon: Color.chirp.moon
+        case .action: Color.chirp.onKoiContainer
+        case .alert: .white
+        }
+    }
+
+    private var background: Color {
+        switch tone {
+        case .neutral: Color.primary.opacity(0.08)
+        case .moon: Color.chirp.moonFill.opacity(0.28)
+        case .action: Color.chirp.koiContainer
+        case .alert: HUDColors.badge
+        }
+    }
+
+    var body: some View {
+        HStack(spacing: 3) {
+            if let symbol { Image(systemName: symbol).font(.system(size: 9, weight: .semibold)) }
+            Text(text).lineLimit(1)
+        }
+        .font(.system(size: 10, weight: .semibold))
+        .foregroundStyle(foreground)
+        .padding(.horizontal, 8).padding(.vertical, 3)
+        .background(background, in: Capsule())
+        .fixedSize()
+    }
+}
+
+/// The HUD's surface: `.glassEffect()` on macOS 26 (the live panel), a hairline panel otherwise (the `NSVisualEffectView`
+/// behind the hosting view supplies the blur), and an opaque stand-in for Increase Contrast and the offscreen snapshots.
+private struct HUDSurface: ViewModifier {
+    let flat: Bool
+    let glass: Bool
+    let contrast: Bool
+
+    private var shape: RoundedRectangle { RoundedRectangle(cornerRadius: HUDViewMetrics.corner, style: .continuous) }
+
+    @ViewBuilder func body(content: Content) -> some View {
+        if flat {
+            content
+                .background { shape.fill(HUDColors.surface) }
+                .overlay { shape.strokeBorder(Color.primary.opacity(contrast ? 0.55 : 0.12), lineWidth: contrast ? 1.5 : 1) }
+                .clipShape(shape)
+        } else if glass {
+            glassed(content)
+        } else {
+            hairline(content)
+        }
+    }
+
+    private func hairline(_ content: Content) -> some View {
+        content.overlay { shape.strokeBorder(Color.primary.opacity(0.12), lineWidth: 1) }.clipShape(shape)
+    }
+
+    @ViewBuilder private func glassed(_ content: Content) -> some View {
+        #if swift(>=6.2)
+        if #available(macOS 26, *) {
+            content.glassEffect(.regular, in: shape)
+        } else {
+            hairline(content)
+        }
+        #else
+        hairline(content)
+        #endif
     }
 }
 
@@ -379,7 +438,7 @@ struct ShimmerText: View {
         }
     }
 
-    private var label: some View { Text(text).font(.system(size: 15)).lineLimit(4) }
+    private var label: some View { Text(text).font(.system(size: 15)).lineLimit(HUDViewMetrics.transcriptLines) }
 
     @ViewBuilder private func sweep(at position: Double?) -> some View {
         if let position {
@@ -402,8 +461,8 @@ struct ShimmerText: View {
     }
 }
 
-/// The brief highlight of what clean-up changed: the cleaned text with removed raw words struck through and fading out,
-/// and changed or added words gently tinted.
+/// The brief highlight of what clean-up changed, without red and green: the cleaned text with removed raw words struck
+/// through in `inkMuted` (fading out), and added or changed words underlined in moon.
 struct DiffText: View {
     let segments: [WordDiff.Segment]
     let fade: Double
@@ -420,15 +479,16 @@ struct DiffText: View {
             case .same:
                 return acc + Text(space + seg.text)
             case .changed, .added:
-                return acc + Text(space) + Text(seg.text).foregroundStyle(HUDColors.change)
+                return acc + Text(space) + Text(seg.text).underline(true, pattern: .solid, color: Color.chirp.moon)
             case .removed:
                 // Removed words fade out and, once gone, take no room.
                 guard fade < 0.97 else { return acc }
-                return acc + Text(space) + Text(seg.text).strikethrough().foregroundStyle(Color.primary.opacity((contrast ? 0.75 : 0.55) * (1 - fade)))
+                return acc + Text(space) + Text(seg.text).strikethrough(true, color: Color.chirp.inkMuted)
+                    .foregroundStyle(Color.chirp.inkMuted.opacity((contrast ? 1 : 0.9) * (1 - fade)))
             }
         }
         .font(.system(size: 15))
-        .lineLimit(4)
+        .lineLimit(HUDViewMetrics.transcriptLines)
     }
 }
 
@@ -478,6 +538,9 @@ public struct OutcomePresentation: Equatable, Sendable {
 }
 
 public enum HUDText {
+    /// The most characters of a plain transcript the HUD keeps (about three lines at 360 pt); older words give way at the front.
+    public static let lineBudget = 120
+
     /// The width a line of text wants, capped at `max`. SwiftUI proposes no width to a fixed-size capsule, so a Text
     /// would never wrap; giving it this width makes the HUD hug short text and wrap long text at the maximum.
     @MainActor
@@ -516,9 +579,9 @@ public enum HUDColors {
     /// Background of the white "DEBUG: recordings kept" badge.
     public static let badgeRGB: RGB = (0.72, 0.07, 0.07)
 
-    /// The "Use raw" button; the system accent blue is about 2.7:1 on the light material.
-    public static let actionLight: RGB = (0.0, 0.30, 0.75)
-    public static let actionDark: RGB = (0.62, 0.80, 1.0)
+    /// The koi accent (revised words, the word waveform's tint); the "Use raw" chip sets its own text on `koiContainer`.
+    public static let actionLight: RGB = ChirpColor.Pond.koi.light
+    public static let actionDark: RGB = ChirpColor.Pond.koi.dark
 
     private static func dynamic(light: RGB, dark: RGB) -> Color {
         Color(nsColor: NSColor(name: nil) { appearance in
@@ -537,8 +600,8 @@ public enum HUDColors {
     public static let error = dynamic(light: errorLight, dark: errorDark)
     public static let action = dynamic(light: actionLight, dark: actionDark)
     public static let badge = Color(red: badgeRGB.r, green: badgeRGB.g, blue: badgeRGB.b)
-    /// Changed words in the clean-up highlight: the action blue, a little lighter than the "Use raw" button.
+    /// A word the recogniser just revised, for the brief crossfade.
     public static let change = action
-    /// The shimmer's highlight band: the accent blue, so the sweep reads against the solid text.
-    public static let shimmer = action.opacity(0.9)
+    /// The shimmer's highlight band while clean-up runs: moon, the AI/polish colour.
+    public static let shimmer = Color.chirp.moon.opacity(0.9)
 }

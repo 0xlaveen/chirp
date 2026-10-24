@@ -290,6 +290,7 @@ final class NotesWindowController: NSObject, NSWindowDelegate {
         panel.canCreateDirectories = true
         panel.isExtensionHidden = false
         if let last = notes.journal.savedFile { panel.directoryURL = last.deletingLastPathComponent() }
+        else if let folder = settings.notesExportFolder { panel.directoryURL = URL(fileURLWithPath: folder) }
         let keep = NSButton(checkboxWithTitle: NotesStatus.keepSavingCheckbox, target: nil, action: nil)
         if offerKeeping {
             keep.state = notes.journal.keepStatus.isSaving ? .on : .off

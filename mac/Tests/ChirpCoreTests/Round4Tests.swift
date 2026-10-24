@@ -202,7 +202,7 @@ import Testing
             let form = SettingsForm(state)
             #expect(!form.keyboardSettingsButton.isHiddenOrHasHiddenAncestor)
             #expect(form.fnKeyHelp.stringValue.contains("Do Nothing"))
-            let fnHeight = form.fittingSize(for: .shortcuts).height
+            let fnHeight = form.fittingSize(for: .dictation).height
 
             form.recorder.start()
             form.recorder.apply(.rejected(.shiftAlone))
@@ -213,7 +213,7 @@ import Testing
                           .custom(keyCode: KeyCombo.anyModifierKey, modifiers: ModifierKeys.fn | UInt32(cmdKey))] {
                 form.fillHotkeyMenu(selecting: other)
                 #expect(form.keyboardSettingsButton.isHiddenOrHasHiddenAncestor)
-                #expect(form.fittingSize(for: .shortcuts).height < fnHeight)
+                #expect(form.fittingSize(for: .dictation).height < fnHeight)
             }
             form.fillHotkeyMenu(selecting: fn)
             #expect(!form.keyboardSettingsButton.isHiddenOrHasHiddenAncestor)
@@ -308,27 +308,29 @@ import Testing
         let base = size { _ in }
         // The Ripple glyph is narrower than the waveform bars it replaced, so a short capsule rests
         // on the HUD's own 150 pt floor rather than rising past it.
-        #expect(base.height > 40 && base.width >= 150 && base.width <= 440 + 32 + 1)
+        #expect(base.height > 40 && base.width == HUDViewMetrics.width)
         #expect(size { $0.reduceMotion = true } == base)
         #expect(size { $0.increaseContrast = true } == base)
     }
 
-    @Test func theHUDGrowsWithTextUpToAMaxWidthThenWraps() {
-        func size(_ text: String) -> CGSize {
+    @Test func theHUDKeepsAFixedWidthAndWrapsInsteadOfGrowing() {
+        func size(_ text: String, words: Bool = false) -> CGSize {
             let m = HUDModel()
             m.flatSurface = true
+            m.wordWaveform = words
             m.status = HUDStatus.listening
             m.stable = text
             return NSHostingViewSize.of(HUDView(model: m))
         }
         let none = size(""), short = size("hello"), medium = size("please move the standup to three thirty")
         let long = size(String(repeating: "and then we should check the rollout plan ", count: 8))
-        #expect(none.height <= 48)                                  // a capsule: one line
-        #expect(medium.width > short.width)
-        #expect(long.width <= 440 + 32 + 1)                         // never wider than the maximum
-        #expect(long.height > medium.height)                       // wraps instead
+        #expect(none.height <= 48)                                  // one line
+        // Never jumps sideways: 360 pt for every text, 420 pt with the word waveform on.
+        #expect([none, short, medium, long].allSatisfy { $0.width == HUDViewMetrics.width })
+        #expect(size("hello", words: true).width == HUDViewMetrics.wordWaveformWidth)
+        #expect(long.height > medium.height && medium.height > short.height - 0.5)   // wraps instead
         let huge = size(String(repeating: "word ", count: 400))
-        #expect(huge.height < 160)                                  // four lines at most, plus the header row
+        #expect(huge.height < 140)                                  // three lines at most, plus the header row
     }
 }
 

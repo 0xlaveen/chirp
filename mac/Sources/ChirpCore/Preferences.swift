@@ -254,6 +254,12 @@ public final class Preferences: @unchecked Sendable {
         set { defaults.set(newValue, forKey: "notesKeepAudio") }
     }
 
+    /// The folder Export Markdown… opens in (a path); nil opens wherever it was last used.
+    public var notesExportFolder: String? {
+        get { defaults.string(forKey: "notesExportFolder") }
+        set { defaults.set(newValue, forKey: "notesExportFolder") }
+    }
+
     /// Legacy transient recovery preference. The Mac library always saves notes independently.
     public var notesRecoveryCopy: Bool {
         get { defaults.object(forKey: "notesRecoveryCopy") as? Bool ?? true }

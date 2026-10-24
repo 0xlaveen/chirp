@@ -221,7 +221,7 @@ public enum Snapshots {
     }
 
     public static var settingsScenarios: [Scenario] {
-        /// A tab's content, as the preferences window shows it under the toolbar.
+        /// A page, as the preferences window shows it: the sidebar and the page at the window's fixed 720 × 520.
         func form(_ name: String, _ tab: SettingsTab, _ configure: (inout SettingsState) -> Void = { _ in }) -> Scenario {
             var state = SettingsState()
             state.launch = .on; state.serverStatus = "parakeet-mlx:tdt-0.6b-v2"
@@ -229,10 +229,7 @@ public enum Snapshots {
             state.about = AboutInfo(version: "0.1.0", build: "1")
             configure(&state)
             return Scenario(name: "settings-\(tab.rawValue)-\(name)") {
-                let form = SettingsForm(state, icon: appIcon, onNotices: {})
-                let view = form.view(for: tab)
-                view.setFrameSize(form.fittingSize(for: tab))
-                return view
+                settingsWindow(state, tab)
             }
         }
         let styled: (inout SettingsState) -> Void = {
@@ -247,12 +244,10 @@ public enum Snapshots {
             Scenario(name: "settings-devices-\(name)") {
                 var state = SettingsState()
                 state.about = AboutInfo(version: "0.1.0", build: "1")
-                let form = SettingsForm(state, icon: appIcon, onNotices: {})
-                form.devicesView.apply(phase, revoking: revoking, problem: problem, now: sampleNow,
-                                       locale: Locale(identifier: "en_US"), timeZone: TimeZone(identifier: "UTC")!)
-                let view = form.view(for: .devices)
-                view.setFrameSize(form.fittingSize(for: .devices))
-                return view
+                return settingsWindow(state, .devices) { form in
+                    form.devicesView.apply(phase, revoking: revoking, problem: problem, now: sampleNow,
+                                           locale: Locale(identifier: "en_US"), timeZone: TimeZone(identifier: "UTC")!)
+                }
             }
         }
         let warmOff = CleanupModelSettings(keepLoaded: false, model: "qwen3-4b", memoryMB: 2662, memoryEstimated: true)
@@ -266,23 +261,20 @@ public enum Snapshots {
             form("ready", .general) { _ in },
             form("login-unavailable", .general) { $0.launch = .unavailable },
             form("missing", .general) { $0.micGranted = false; $0.accessibilityGranted = false },
-            form("ready", .shortcuts) { _ in },
-            form("custom", .shortcuts) {
+            form("shortcuts-custom", .dictation) {
                 $0.hotkey = .custom(keyCode: 0x0F, modifiers: UInt32(controlKey | optionKey | cmdKey))   // ⌃⌥⌘R
                 $0.notesHotkey = .custom(keyCode: 0x2E, modifiers: UInt32(controlKey | optionKey))       // ⌃⌥M
             },
-            form("fn", .shortcuts) { $0.hotkey = .custom(keyCode: KeyCombo.anyModifierKey, modifiers: ModifierKeys.fn) },
-            Scenario(name: "settings-shortcuts-rejected") {
+            form("shortcuts-fn", .dictation) { $0.hotkey = .custom(keyCode: KeyCombo.anyModifierKey, modifiers: ModifierKeys.fn) },
+            Scenario(name: "settings-dictation-shortcuts-rejected") {
                 var state = SettingsState()
                 state.inputs = [boya, studio]; state.defaultInput = boya
-                let form = SettingsForm(state)
-                // As if ⇧ had just been pressed and let go in the recorder, and ⌃⌥Space typed for Live Notes (set
-                // directly: no event monitor offscreen).
-                form.recorder.apply(.rejected(.shiftAlone))
-                form.notesShortcut.refuse(.inUse("dictation"))
-                let view = form.view(for: .shortcuts)
-                view.setFrameSize(form.fittingSize(for: .shortcuts))
-                return view
+                return settingsWindow(state, .dictation) { form in
+                    // As if ⇧ had just been pressed and let go in the recorder, and ⌃⌥Space typed for New Note (set
+                    // directly: no event monitor offscreen).
+                    form.recorder.apply(.rejected(.shiftAlone))
+                    form.notesShortcut.refuse(.inUse("dictation"))
+                }
             },
             form("ready", .dictation) { _ in },
             form("option-hold", .dictation) { $0.hotkey = .option; $0.activationMode = .holdToTalk },
@@ -320,32 +312,51 @@ public enum Snapshots {
             form("unavailable", .cleanup) {
                 $0.cleanupDetail = "The server has clean-up turned off; see the README to enable it."; $0.cleanupAvailable = false
             },
+            form("library", .notes) {
+                $0.notesRetention = .ninetyDays; $0.recentlyDeletedCount = 3
+                $0.notesKeepAudio = true; $0.notesAudioBytes = 48_300_000
+                $0.exportFolder = NSHomeDirectory() + "/Documents/Notes"
+                $0.structureNotes = true; $0.autoReorganize = true
+            },
             form("downloaded", .notes) { $0.speakerModelDownloaded = true },
             form("not-downloaded", .notes) { _ in },
-            form("ready", .server) { styled(&$0) },
-            form("unreachable", .server) {
+            form("ready", .advanced) { styled(&$0) },
+            form("unreachable", .advanced) {
                 $0.tokenPresent = false; $0.serverURL = "https://mainframe.example.ts.net/chirp"
                 $0.serverStatus = "Unreachable"; $0.serverStatusTone = .error
             },
-            form("warm-off", .server) { styled(&$0); $0.keepLoaded = KeepLoadedState(settings: warmOff, availability: .available) },
-            form("warm-loading", .server) {
+            form("warm-off", .advanced) { styled(&$0); $0.keepLoaded = KeepLoadedState(settings: warmOff, availability: .available) },
+            form("warm-loading", .advanced) {
                 styled(&$0)
                 $0.keepLoaded = KeepLoadedState(settings: CleanupModelSettings(keepLoaded: true, loading: true, model: "qwen3-4b", memoryMB: 2662, memoryEstimated: true),
                                                 availability: .available)
             },
-            form("warm-remote-host", .server) {
+            form("warm-remote-host", .advanced) {
                 styled(&$0); $0.serverHost = "mainframe.example.ts.net"; $0.serverURL = "https://mainframe.example.ts.net/chirp"
                 $0.keepLoaded = KeepLoadedState(settings: CleanupModelSettings(keepLoaded: true, loaded: true, model: "qwen3-4b", memoryMB: 2662),
                                                 availability: .available)
             },
-            form("warm-error", .server) {
+            form("warm-error", .advanced) {
                 styled(&$0)
                 $0.keepLoaded = KeepLoadedState(settings: warmOff, availability: .available, error: CleanupSettingsError.unreachable.changeFailure)
             },
-            form("warm-old-server", .server) { styled(&$0); $0.keepLoaded = KeepLoadedState(availability: .unavailable(.serverTooOld)) },
-            form("warm-remote-model", .server) { styled(&$0); $0.keepLoaded = KeepLoadedState(availability: .unavailable(.remoteModel)) },
+            form("warm-old-server", .advanced) { styled(&$0); $0.keepLoaded = KeepLoadedState(availability: .unavailable(.serverTooOld)) },
+            form("warm-remote-model", .advanced) { styled(&$0); $0.keepLoaded = KeepLoadedState(availability: .unavailable(.remoteModel)) },
             form("ready", .about) { _ in },
         ]
+    }
+
+    /// The Settings window's content for `state`, opened on `tab`: the sidebar (flat, with no window to blur through) and the
+    /// page, with the permission badge General shows. `prepare` sets up the form first (a device list, a refused shortcut).
+    static func settingsWindow(_ state: SettingsState, _ tab: SettingsTab, full: Bool = false,
+                               prepare: (SettingsForm) -> Void = { _ in }) -> NSView {
+        let form = SettingsForm(state, icon: appIcon, onNotices: {})
+        prepare(form)
+        let shell = SettingsShell(form: form, selected: tab, flat: true)
+        // `full` stretches the window to the whole page, for review (the real window is fixed and scrolls).
+        if full { shell.contentHeight = max(SettingsShell.size.height, form.fittingSize(for: tab).height + 28) }
+        shell.setBadge(SettingsShell.permissionProblems(micGranted: state.micGranted, accessibilityGranted: state.accessibilityGranted))
+        return shell
     }
 
     // MARK: setup and About
@@ -378,6 +389,21 @@ public enum Snapshots {
     /// A made-up link: the snapshots never read the real token.
     static let sampleLink = try! PairingLink(serverURL: TailscaleServe.pairingURL(host: "my-mac.example-tailnet.ts.net"),
                                              token: "snapshot-sample-not-a-real-token-0123456789")
+
+    /// The library's newest notes as the menu's Recent Notes lists them (relative to `sampleNow`).
+    static let sampleRecentNotes = [
+        RecentNote(id: "n1", title: "Weekly standup", updatedAt: sampleNow.addingTimeInterval(-14 * 60)),
+        RecentNote(id: "n2", title: "Launch checklist", updatedAt: sampleNow.addingTimeInterval(-3 * 3_600)),
+        RecentNote(id: "n3", title: "Ideas for the icon sizes", updatedAt: sampleNow.addingTimeInterval(-26 * 3_600)),
+        RecentNote(id: "n4", title: "Call with the design team", updatedAt: sampleNow.addingTimeInterval(-4 * 86_400)),
+        RecentNote(id: "n5", title: "Note, 3 October", updatedAt: sampleNow.addingTimeInterval(-11 * 86_400)),
+    ]
+
+    static let utcCalendar: Calendar = {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "UTC")!
+        return calendar
+    }()
 
     static let sampleNow = Date(timeIntervalSince1970: 1_792_000_000)   // 2026-10-14 17:46 UTC
     static let samplePhones = [
@@ -418,6 +444,9 @@ public enum Snapshots {
             var inputs = MenuInputs()
             inputs.inputs = [boya, studio]
             inputs.defaultInput = boya
+            inputs.now = sampleNow
+            inputs.calendar = utcCalendar
+            inputs.recentNotes = sampleRecentNotes
             configure(&inputs)
             let header = MenuContent.header(inputs)
             let entries = MenuContent.entries(inputs)
@@ -427,6 +456,9 @@ public enum Snapshots {
             var inputs = MenuInputs()
             inputs.inputs = [boya, studio]
             inputs.defaultInput = boya
+            inputs.now = sampleNow
+            inputs.calendar = utcCalendar
+            inputs.recentNotes = sampleRecentNotes
             configure(&inputs)
             let rows = MenuContent.entries(inputs).first { $0.title == title }?.submenu ?? []
             return Scenario(name: "menu-\(name)") { MenuPanelView(header: nil, entries: rows, native: true) }
@@ -460,8 +492,10 @@ public enum Snapshots {
             },
             menu("notes-recording") {
                 $0.health = local; $0.cleanupOn = true
-                $0.notesRecording = true; $0.notesElapsed = "12:34"; $0.notesHasDocument = true
+                $0.notesRecording = true; $0.notesElapsed = "03:12"; $0.notesTitle = "Weekly standup"; $0.notesHasDocument = true
             },
+            menu("loading") { $0.health = Health(engine: "parakeet-mlx:tdt-0.6b-v2", ready: false) },
+            menu("empty-library") { $0.health = local; $0.recentNotes = [] },
             menu("use-raw") { $0.health = local; $0.cleanupOn = true; $0.rawOfferOpen = true; $0.rawOfferKey = "⌃⌥Z" },
             menu("long-names") {
                 $0.health = local; $0.chosenInputUID = "long"
@@ -469,6 +503,7 @@ public enum Snapshots {
             },
             submenu("cleanup-submenu", of: "Clean-up") { $0.health = local; $0.cleanupOn = true; $0.styleID = "email" },
             submenu("cleanup-submenu-off", of: "Clean-up") { $0.health = local },
+            submenu("recent-notes-submenu", of: "Recent Notes") { $0.health = local },
             submenu("microphone-submenu", of: "Microphone") { $0.health = local; $0.chosenInputUID = "studio" },
         ]
     }
@@ -479,9 +514,10 @@ public enum Snapshots {
         "hud-listening", "ripple-speech", "ripple-static",
         "hud-flow-2-polishing", "hud-flow-3-diff", "hud-correction-use-raw",
         "hud-wordwave-listening", "hud-wordwave-long", "hud-wordwave-polishing",
-        "menu-ready", "menu-cleanup-submenu",
-        "settings-general-missing", "settings-shortcuts-custom", "settings-dictation-sounds", "settings-cleanup-custom", "settings-notes-downloaded",
-        "settings-server-ready", "settings-devices-ready", "settings-about-ready", "onboarding-welcome",
+        "menu-ready", "menu-notes-recording", "menu-recent-notes-submenu", "menu-cleanup-submenu",
+        "settings-general-ready", "settings-general-missing", "settings-dictation-ready", "settings-dictation-shortcuts-custom",
+        "settings-dictation-sounds", "settings-cleanup-custom", "settings-notes-library", "settings-notes-downloaded",
+        "settings-devices-ready", "settings-advanced-ready", "settings-about-ready", "onboarding-welcome",
         "notes-editing", "notes-split", "notes-paused", "notes-review-sheet", "notes-tip",
     ]
 
@@ -974,7 +1010,8 @@ private final class SubmenuRowView: NSView {
 
     var fittingWidth: CGFloat {
         let width = (entry.title as NSString).size(withAttributes: [.font: MenuStyle.font]).width
-        return max(MenuMetrics.minimumWidth - 60, ceil(width) + 34 + MenuMetrics.trailing + 12)
+        let value = entry.value.map { ($0 as NSString).size(withAttributes: [.font: MenuStyle.font]).width + 28 } ?? 0
+        return max(MenuMetrics.minimumWidth - 60, ceil(width + value) + 34 + MenuMetrics.trailing + 12)
     }
 
     override func draw(_ dirtyRect: NSRect) {
@@ -985,5 +1022,10 @@ private final class SubmenuRowView: NSView {
             ("✓" as NSString).draw(at: NSPoint(x: 14, y: y), withAttributes: [.font: MenuStyle.font, .foregroundColor: color])
         }
         (entry.title as NSString).draw(at: NSPoint(x: 34, y: y), withAttributes: [.font: MenuStyle.font, .foregroundColor: color])
+        if let value = entry.value {
+            let size = (value as NSString).size(withAttributes: [.font: MenuStyle.font])
+            (value as NSString).draw(at: NSPoint(x: bounds.width - MenuMetrics.trailing - size.width, y: y),
+                                     withAttributes: [.font: MenuStyle.font, .foregroundColor: NSColor.secondaryLabelColor])
+        }
     }
 }

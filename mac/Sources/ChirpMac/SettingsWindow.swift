@@ -29,6 +29,8 @@ final class SettingsWindowController: NSObject, NSTextFieldDelegate {
     var onRemoveSpeakerModel: (() -> Void)?
     /// Live Notes voice profiles (Settings › Notes › Voices).
     var voices: SpeakerVoices?
+    /// The Notes library: Recently Deleted's count and the kept-audio total, and the two bulk actions on them.
+    var library: NotesLibrary?
     var onNotesRecoveryCopyChange: (() -> Void)?
     /// "Always show in the Dock" flipped.
     var onAlwaysShowInDockChange: ((Bool) -> Void)?
@@ -42,7 +44,7 @@ final class SettingsWindowController: NSObject, NSTextFieldDelegate {
     }()
     private var testTask: Task<Void, Never>?
     private var window: NSWindow?
-    private var tabs: NSTabViewController?
+    private var tabs: SettingsShellController?
     private var form: SettingsForm?
     private var refreshTimer: Timer?
     /// What the server last said about keeping the clean-up model loaded, and the request that is updating it.
@@ -64,6 +66,12 @@ final class SettingsWindowController: NSObject, NSTextFieldDelegate {
         s.launch = LaunchAtLogin.state
         s.wordWaveform = settings.wordWaveform
         s.notesRecoveryCopy = settings.notesRecoveryCopy
+        s.notesRetention = settings.notesRetention
+        s.notesKeepAudio = settings.notesKeepAudio
+        s.recentlyDeletedCount = library?.recentlyDeleted.count ?? 0
+        s.notesAudioBytes = library?.totalAudioBytes ?? 0
+        s.exportFolder = settings.notesExportFolder
+        s.autoReorganize = settings.notesAutoReorganize
         s.soundsEnabled = settings.soundsEnabled
         s.soundPack = settings.soundPack
         s.soundVolume = settings.soundVolume
@@ -81,6 +89,7 @@ final class SettingsWindowController: NSObject, NSTextFieldDelegate {
         s.showChanges = settings.showChangesAfterCleanup
         s.appStyles = settings.appStyles
         let health = health()
+        s.structureNotes = settings.notesStructureEnabled(health: health)
         (s.cleanupDetail, s.cleanupAvailable) = SettingsForm.cleanupDetail(health: health)
         let catalog = catalog()
         s.catalog = catalog
@@ -97,23 +106,37 @@ final class SettingsWindowController: NSObject, NSTextFieldDelegate {
         return s
     }
 
-    /// Opens Settings, on `tab` when given (else on the tab it was left on).
+    /// Fills the form from the system, and puts the permission badge on General.
+    private func refresh(full: Bool = false) {
+        let state = state
+        form?.apply(state, full: full)
+        tabs?.shell.setBadge(SettingsShell.permissionProblems(micGranted: state.micGranted, accessibilityGranted: state.accessibilityGranted))
+    }
+
+    /// Opens Settings, on `tab` when given (else on the page it was left on).
     func show(tab: SettingsTab? = nil) {
         if window == nil { window = makeWindow() }
-        form?.apply(state)
-        if let tab, let tabs { tabs.selectedTabViewItemIndex = SettingsTab.allCases.firstIndex(of: tab) ?? 0 }
+        refresh()
+        if let tab { tabs?.shell.show(tab, notify: false) }
+        Task { [weak self] in
+            try? await self?.library?.reload()
+            self?.refresh()
+        }
         refreshTimer?.invalidate()
         refreshTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
-            MainActor.assumeIsolated { if let self { self.form?.apply(self.state) } }
+            MainActor.assumeIsolated { self?.refresh() }
         }
         NSApp.activate()
         window?.makeKeyAndOrderFront(nil)
-        // Ordering the window front lets AppKit pick the first text field; park focus on the content instead.
-        if let window, let tabs, let current = tabs.tabViewItems[tabs.selectedTabViewItemIndex].viewController?.view {
-            window.makeFirstResponder(current)
-        }
-        if SettingsTab.allCases[tabs?.selectedTabViewItemIndex ?? 0] == .server { refreshKeepLoaded() }
-        if SettingsTab.allCases[tabs?.selectedTabViewItemIndex ?? 0] == .devices { refreshDevices() }
+        // Ordering the window front lets AppKit pick the first text field; park focus on the page instead.
+        if let window, let shell = tabs?.shell { window.makeFirstResponder(shell.form.view(for: shell.selected)) }
+        pageShown(tabs?.shell.selected ?? .general)
+    }
+
+    /// A page came on screen: the ones that ask the server or the library refresh what they show.
+    private func pageShown(_ tab: SettingsTab) {
+        if tab == .advanced { refreshKeepLoaded() }
+        if tab == .devices { refreshDevices() }
     }
 
     // MARK: paired devices
@@ -210,20 +233,9 @@ final class SettingsWindowController: NSObject, NSTextFieldDelegate {
         }
     }
 
-    /// The Custom sound rows came or went: the tab is a different height now, and the window follows it, top edge fixed.
+    /// A row appeared or went (the Custom sound rows, a paired phone): the page re-flows itself; the window never resizes.
     private func tabSizeChanged() {
-        guard let window, let tabs else { return }
-        let index = tabs.selectedTabViewItemIndex
-        guard let tabController = tabs.tabViewItems[index].viewController as? SettingsTabController else { return }
-        tabController.refreshSize()
-        let target = tabController.preferredContentSize
-        let current = window.contentRect(forFrameRect: window.frame).size
-        guard abs(target.height - current.height) > 0.5 else { return }
-        var frame = window.frame
-        let newFrame = window.frameRect(forContentRect: NSRect(origin: .zero, size: NSSize(width: current.width, height: target.height)))
-        frame.origin.y += frame.height - newFrame.height
-        frame.size.height = newFrame.height
-        window.setFrame(frame, display: true, animate: true)
+        window?.contentView?.layoutSubtreeIfNeeded()
     }
 
     private func makeWindow() -> NSWindow {
@@ -324,15 +336,35 @@ final class SettingsWindowController: NSObject, NSTextFieldDelegate {
         form.micButton.action = #selector(grantMic)
         form.accessibilityButton.target = self
         form.accessibilityButton.action = #selector(grantAX)
+        form.notesRetention.target = self
+        form.notesRetention.action = #selector(retentionChanged(_:))
+        form.keepAudio.target = self
+        form.keepAudio.action = #selector(toggleKeepAudio(_:))
+        form.deleteAudio.target = self
+        form.deleteAudio.action = #selector(confirmDeleteAudio)
+        form.emptyDeleted.target = self
+        form.emptyDeleted.action = #selector(confirmEmptyDeleted)
+        form.chooseExport.target = self
+        form.chooseExport.action = #selector(chooseExportFolder)
+        form.resetExport.target = self
+        form.resetExport.action = #selector(resetExportFolder)
+        form.structureNotes.target = self
+        form.structureNotes.action = #selector(toggleStructureNotes(_:))
+        form.autoReorganize.target = self
+        form.autoReorganize.action = #selector(toggleAutoReorganize(_:))
         self.form = form
 
-        let tabs = SettingsTabs.makeController(form: form) { [weak self] tab in
-            if tab == .server { self?.refreshKeepLoaded() }
-            if tab == .devices { self?.refreshDevices() }
-        }
+        let tabs = SettingsTabs.makeController(form: form) { [weak self] tab in self?.pageShown(tab) }
         self.tabs = tabs
         let w = NSWindow(contentViewController: tabs)
-        w.styleMask = [.titled, .closable]
+        // A System Settings-style window: fixed size, the sidebar running up under a transparent title bar.
+        w.styleMask = [.titled, .closable, .fullSizeContentView]
+        w.titlebarAppearsTransparent = true
+        w.titleVisibility = .hidden
+        w.isMovableByWindowBackground = true
+        w.setContentSize(SettingsShell.size)
+        w.contentMinSize = SettingsShell.size
+        w.contentMaxSize = SettingsShell.size
         w.isReleasedWhenClosed = false
         w.center()
         return w
@@ -354,7 +386,7 @@ final class SettingsWindowController: NSObject, NSTextFieldDelegate {
     @objc private func removeSpeakerModel() { onRemoveSpeakerModel?() }
 
     /// The speaker model came or went: refresh the Notes tab's row.
-    func speakerModelChanged() { form?.apply(state) }
+    func speakerModelChanged() { refresh() }
 
     // MARK: voice profiles
 
@@ -435,6 +467,86 @@ final class SettingsWindowController: NSObject, NSTextFieldDelegate {
     }
 
     @objc private func toggleCleanup(_ sender: NSButton) { settings.correction = sender.state == .on }
+    // MARK: notes library
+
+    @objc private func retentionChanged(_ sender: NSPopUpButton) {
+        guard let raw = sender.selectedItem?.representedObject as? String, let retention = NotesRetention(rawValue: raw) else { return }
+        // Applied when Chirp opens (`NotesSession` maintains the library then); older notes go to Recently Deleted first.
+        settings.notesRetention = retention
+    }
+
+    /// On keeps audio for new notes. Off stops that, and offers to delete what is already kept.
+    @objc private func toggleKeepAudio(_ sender: NSButton) {
+        settings.notesKeepAudio = sender.state == .on
+        if sender.state == .off, (library?.totalAudioBytes ?? 0) > 0 { confirmDeleteAudio() }
+    }
+
+    @objc private func confirmDeleteAudio() {
+        guard let library, let window else { return }
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = "Delete kept audio (\(SettingsForm.sizeText(library.totalAudioBytes)))?"
+        alert.informativeText = "The notes and transcripts stay; only the recordings of your voice are removed from this Mac."
+        alert.addButton(withTitle: "Delete Audio")
+        alert.addButton(withTitle: "Keep")
+        alert.buttons[0].hasDestructiveAction = true
+        alert.beginSheetModal(for: window) { [weak self] response in
+            guard response == .alertFirstButtonReturn, let library = self?.library else { return }
+            Task {
+                for entry in library.notes + library.recentlyDeleted where entry.hasAudio { try? await library.deleteAudio(entry.id) }
+                self?.refresh()
+            }
+        }
+    }
+
+    @objc private func confirmEmptyDeleted() {
+        guard let library, let window else { return }
+        let count = library.recentlyDeleted.count
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = "Permanently delete \(count == 1 ? "1 note" : "\(count) notes")?"
+        alert.informativeText = "Recently Deleted notes, with their kept audio, are removed from this Mac. This can’t be undone."
+        alert.addButton(withTitle: "Delete Forever")
+        alert.addButton(withTitle: "Cancel")
+        alert.buttons[0].hasDestructiveAction = true
+        alert.beginSheetModal(for: window) { [weak self] response in
+            guard response == .alertFirstButtonReturn, let library = self?.library else { return }
+            Task {
+                for entry in library.recentlyDeleted { try? await library.purge(entry.id) }
+                self?.refresh()
+            }
+        }
+    }
+
+    @objc private func chooseExportFolder() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.canCreateDirectories = true
+        panel.prompt = "Choose"
+        panel.message = "Export Markdown… opens in this folder."
+        if let current = settings.notesExportFolder { panel.directoryURL = URL(fileURLWithPath: current) }
+        guard let window else { return }
+        panel.beginSheetModal(for: window) { [weak self] response in
+            guard response == .OK, let url = panel.url else { return }
+            settings.notesExportFolder = url.path
+            self?.refresh(full: true)
+        }
+    }
+
+    @objc private func resetExportFolder() {
+        settings.notesExportFolder = nil
+        refresh(full: true)
+    }
+
+    @objc private func toggleStructureNotes(_ sender: NSButton) {
+        settings.setNotesStructure(sender.state == .on, health: health())
+    }
+
+    @objc private func toggleAutoReorganize(_ sender: NSButton) {
+        settings.notesAutoReorganize = sender.state == .on
+    }
+
     @objc private func toggleNotesRecoveryCopy(_ sender: NSButton) {
         settings.notesRecoveryCopy = sender.state == .on
         onNotesRecoveryCopyChange?()

@@ -147,6 +147,15 @@ public enum ChirpBrand {
         return image
     }
 
+    /// The app icon's pond artwork (the koi-patterned bird on a lily pad under the moon): the welcome hero. From the
+    /// bundle's icon when installed, else `Assets/AppIcon.png` (unbundled runs and the snapshots).
+    @MainActor
+    public static func pond() -> NSImage? {
+        let file = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+            .deletingLastPathComponent().deletingLastPathComponent().appendingPathComponent("Assets/AppIcon.png")
+        return NSImage(contentsOf: file) ?? NSApp?.applicationIconImage
+    }
+
     /// The glyph pre-tinted for SwiftUI, rendered at 2× so it stays crisp.
     @MainActor
     public static func tinted(_ tint: Color, size: CGFloat) -> NSImage? {

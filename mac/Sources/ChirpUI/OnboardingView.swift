@@ -6,6 +6,8 @@ public struct OnboardingState: Sendable {
     public var flow = OnboardingFlow()
     public var checks = OnboardingChecks()
     public var hotkey: KeyCombo = .controlOptionSpace
+    /// New Note's shortcut, shown with the dictation one on the last step.
+    public var notesHotkey: KeyCombo = .controlOptionN
     public var activationMode: ActivationMode = .autoStop
     public var localModelsAvailable = false
 
@@ -56,29 +58,73 @@ public struct OnboardingStatus: Equatable, Sendable {
     }
 }
 
-/// The first-run window's content: a header, one step's explanation and live status, and Back / Continue. Plain AppKit
-/// like Settings. Controls are exposed so the owner can attach actions.
+/// What a step's mark in the left rail shows, live: the step you are on, ✓ for one that is in order, ⚠ for one that needs
+/// attention, and a hollow number for one still ahead. Pure, so the rules are tested without a window.
+public enum OnboardingRail {
+    public enum Mark: Equatable, Sendable { case current, done, warning, upcoming }
+
+    public static func marks(_ flow: OnboardingFlow, _ checks: OnboardingChecks) -> [Mark] {
+        OnboardingStep.allCases.map { step in
+            let satisfied = flow.isSatisfied(step, checks)
+            switch step.rawValue {
+            case ..<flow.step.rawValue:
+                // A step already passed shows how it stands now: a permission revoked later turns it ⚠.
+                return step == .tryIt || satisfied ? .done : .warning
+            case flow.step.rawValue:
+                return .current
+            default:
+                // Still ahead: only a check that already passes (the microphone was granted earlier) shows its ✓.
+                return step != .welcome && step != .tryIt && satisfied ? .done : .upcoming
+            }
+        }
+    }
+
+    /// What VoiceOver reads for a step's row.
+    public static func label(_ step: OnboardingStep, _ mark: Mark) -> String {
+        switch mark {
+        case .current: "\(step.title), current step"
+        case .done: "\(step.title), done"
+        case .warning: "\(step.title), needs attention"
+        case .upcoming: step.title
+        }
+    }
+}
+
+/// The first-run window's content: a step rail at the left with live ✓/⚠ states, and at the right one step's explanation,
+/// its live status and Back / Continue. Plain AppKit like Settings. Controls are exposed so the owner can attach actions.
 @MainActor
 public final class OnboardingView: NSView {
-    public static let size = NSSize(width: 520, height: 400)
+    public static let size = NSSize(width: 720, height: 460)
+    static let railWidth: CGFloat = 220
+    static let paneWidth = size.width - railWidth
 
     public let primary = NSButton(title: "", target: nil, action: nil)
     public let back = NSButton(title: "Back", target: nil, action: nil)
     public let fix = NSButton(title: "Fix…", target: nil, action: nil)
+    /// The last step's way into the library: finishes setup and opens Notes.
+    public let openNotes = NSButton(title: "Open Notes", target: nil, action: nil)
     /// Where the Try it step's dictation lands.
     public let tryField = NSTextField(string: "")
 
     private let icon: NSImage?
+    private let pond: NSImage?
     private let content = NSStackView()
-    private let dots = NSStackView()
+    private let rail = NSStackView()
     private var shownStep: OnboardingStep?
 
-    public init(icon: NSImage?) {
+    /// - Parameters:
+    ///   - icon: the brand glyph (template), for the rail's header.
+    ///   - pond: the app's pond art, the welcome hero.
+    public init(icon: NSImage?, pond: NSImage? = ChirpBrand.pond()) {
         self.icon = icon
+        self.pond = pond
         super.init(frame: NSRect(origin: .zero, size: Self.size))
         primary.bezelStyle = .rounded
         primary.keyEquivalent = "\r"
+        primary.bezelColor = .chirpKoi   // koi even where the bundle's AccentColor is not there (unbundled runs, snapshots)
         back.bezelStyle = .rounded
+        openNotes.bezelStyle = .rounded
+        openNotes.setAccessibilityLabel("Finish setup and open Notes")
         fix.bezelStyle = .rounded
         fix.controlSize = .small
         fix.setAccessibilityLabel("Fix this step")
@@ -86,44 +132,53 @@ public final class OnboardingView: NSView {
         tryField.font = .systemFont(ofSize: 15)
         tryField.setAccessibilityLabel("Try dictation here")
 
+        let railBackground = SettingsFlatView(SettingsLayout.sidebarBackground)
+        let pane = SettingsFlatView(SettingsLayout.pageBackground)
+        for v in [railBackground, pane] { v.translatesAutoresizingMaskIntoConstraints = false; addSubview(v) }
+
+        rail.orientation = .vertical
+        rail.alignment = .leading
+        rail.spacing = 4
+        rail.translatesAutoresizingMaskIntoConstraints = false
+        railBackground.addSubview(rail)
+
         content.orientation = .vertical
-        content.alignment = .centerX
+        content.alignment = .leading
         content.spacing = 10
         content.translatesAutoresizingMaskIntoConstraints = false
+        pane.addSubview(content)
 
-        let divider = NSBox()
-        divider.boxType = .separator
-        divider.translatesAutoresizingMaskIntoConstraints = false
-
-        dots.orientation = .horizontal
-        dots.spacing = 6
-        let buttons = NSStackView(views: [back, primary])
+        let buttons = NSStackView(views: [back, openNotes, primary])
         buttons.orientation = .horizontal
         buttons.spacing = 8
-        let footer = NSStackView(views: [dots, NSView(), buttons])
-        footer.orientation = .horizontal
-        footer.alignment = .centerY
-        footer.translatesAutoresizingMaskIntoConstraints = false
+        buttons.translatesAutoresizingMaskIntoConstraints = false
+        pane.addSubview(buttons)
 
-        addSubview(content)
-        addSubview(divider)
-        addSubview(footer)
         NSLayoutConstraint.activate([
             widthAnchor.constraint(equalToConstant: Self.size.width),
             heightAnchor.constraint(equalToConstant: Self.size.height),
-            content.topAnchor.constraint(equalTo: topAnchor, constant: 34),
-            content.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 44),
-            trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: 44),
-            divider.leadingAnchor.constraint(equalTo: leadingAnchor),
-            divider.trailingAnchor.constraint(equalTo: trailingAnchor),
-            divider.bottomAnchor.constraint(equalTo: footer.topAnchor, constant: -14),
-            footer.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 24),
-            trailingAnchor.constraint(equalTo: footer.trailingAnchor, constant: 24),
-            bottomAnchor.constraint(equalTo: footer.bottomAnchor, constant: 18),
+            railBackground.leadingAnchor.constraint(equalTo: leadingAnchor),
+            railBackground.topAnchor.constraint(equalTo: topAnchor),
+            railBackground.bottomAnchor.constraint(equalTo: bottomAnchor),
+            railBackground.widthAnchor.constraint(equalToConstant: Self.railWidth),
+            pane.leadingAnchor.constraint(equalTo: railBackground.trailingAnchor),
+            pane.trailingAnchor.constraint(equalTo: trailingAnchor),
+            pane.topAnchor.constraint(equalTo: topAnchor),
+            pane.bottomAnchor.constraint(equalTo: bottomAnchor),
+            rail.leadingAnchor.constraint(equalTo: railBackground.leadingAnchor, constant: 12),
+            rail.trailingAnchor.constraint(equalTo: railBackground.trailingAnchor, constant: -12),
+            rail.topAnchor.constraint(equalTo: railBackground.topAnchor, constant: 28),
+            content.leadingAnchor.constraint(equalTo: pane.leadingAnchor, constant: 36),
+            content.trailingAnchor.constraint(equalTo: pane.trailingAnchor, constant: -36),
+            content.topAnchor.constraint(equalTo: pane.topAnchor, constant: 32),
+            buttons.trailingAnchor.constraint(equalTo: pane.trailingAnchor, constant: -28),
+            buttons.bottomAnchor.constraint(equalTo: pane.bottomAnchor, constant: -22),
         ])
     }
 
     @available(*, unavailable) required init?(coder: NSCoder) { fatalError("not used") }
+
+    private static var contentWidth: CGFloat { paneWidth - 72 }
 
     public func apply(_ state: OnboardingState) {
         let step = state.flow.step
@@ -131,28 +186,24 @@ public final class OnboardingView: NSView {
         if step == .server, state.localModelsAvailable { status?.fixTitle = "Set Up Models…" }
         primary.title = state.flow.primaryTitle(state.checks)
         back.isHidden = state.flow.isFirst
-        rebuildDots(current: step.rawValue)
+        openNotes.isHidden = !state.flow.isLast
+        rebuildRail(OnboardingRail.marks(state.flow, state.checks))
 
         for view in content.arrangedSubviews { content.removeArrangedSubview(view); view.removeFromSuperview() }
-        let (symbol, body) = Self.copy(step, hotkey: state.hotkey, mode: state.activationMode)
-        content.addArrangedSubview(header(step: step, symbol: symbol))
-        let title = NSTextField(labelWithString: step.title)
-        title.font = .systemFont(ofSize: 22, weight: .semibold)
-        content.addArrangedSubview(title)
-        let text = NSTextField(wrappingLabelWithString: body)
-        text.font = MenuStyle.font
-        text.textColor = .secondaryLabelColor
-        text.alignment = .center
-        text.preferredMaxLayoutWidth = Self.size.width - 120
-        content.addArrangedSubview(text)
-        content.setCustomSpacing(18, after: text)
-
-        if let status {
-            content.addArrangedSubview(statusBox(status))
-        } else if step == .tryIt {
-            for view in tryItViews(state) { content.addArrangedSubview(view) }
+        if step == .welcome {
+            welcome(state)
         } else {
-            content.addArrangedSubview(keycap(state.hotkey.title, caption: "Your hotkey"))
+            let (symbol, body) = Self.copy(step, hotkey: state.hotkey, mode: state.activationMode)
+            content.addArrangedSubview(header(symbol: symbol))
+            content.setCustomSpacing(14, after: content.arrangedSubviews[0])
+            content.addArrangedSubview(titleLabel(step.title))
+            content.addArrangedSubview(bodyLabel(body))
+            content.setCustomSpacing(18, after: content.arrangedSubviews.last!)
+            if let status {
+                content.addArrangedSubview(statusBox(status))
+            } else if step == .tryIt {
+                for view in tryItViews(state) { content.addArrangedSubview(view) }
+            }
         }
         shownStep = step
     }
@@ -162,9 +213,9 @@ public final class OnboardingView: NSView {
     private static func copy(_ step: OnboardingStep, hotkey: KeyCombo, mode: ActivationMode) -> (symbol: String, body: String) {
         switch step {
         case .welcome:
-            ("", "Press a hotkey in any app, talk, and your words appear where you’re typing. Setup takes a minute: Chirp needs the microphone, Accessibility and a speech server.")
+            ("", "")
         case .microphone:
-            ("mic.fill", "Chirp listens only while you dictate or take Live Notes. Audio goes to your own server and is never stored.")
+            ("mic.fill", "Chirp listens only while you dictate or take Live Notes. Audio goes to your own server and is never stored unless you choose to keep it with a note.")
         case .accessibility:
             ("text.cursor", "Lets Chirp type into the app you’re using. Without it Chirp copies the text and you press ⌘V.")
         case .server:
@@ -177,31 +228,82 @@ public final class OnboardingView: NSView {
         }
     }
 
-    private func header(step: OnboardingStep, symbol: String) -> NSView {
-        let size: CGFloat = 72
-        let view: NSView
-        if step == .welcome {
-            let image = NSImageView(image: icon ?? NSImage())
-            image.imageScaling = .scaleProportionallyUpOrDown
-            image.contentTintColor = .chirpKoi
-            image.setAccessibilityLabel("Chirp")
-            view = image
-        } else {
-            let disc = ColorView(NSColor.chirpKoi.withAlphaComponent(0.16), cornerRadius: size / 2)
-            let glyph = NSImageView(image: NSImage(systemSymbolName: symbol, accessibilityDescription: nil)?
-                .withSymbolConfiguration(.init(pointSize: 30, weight: .regular).applying(.init(paletteColors: [.chirpKoi]))) ?? NSImage())
-            glyph.translatesAutoresizingMaskIntoConstraints = false
-            disc.addSubview(glyph)
-            NSLayoutConstraint.activate([
-                glyph.centerXAnchor.constraint(equalTo: disc.centerXAnchor), glyph.centerYAnchor.constraint(equalTo: disc.centerYAnchor),
-            ])
-            view = disc
-        }
-        view.translatesAutoresizingMaskIntoConstraints = false
-        NSLayoutConstraint.activate([
-            view.widthAnchor.constraint(equalToConstant: size), view.heightAnchor.constraint(equalToConstant: size),
+    private func titleLabel(_ text: String) -> NSTextField {
+        let title = NSTextField(labelWithString: text)
+        title.font = .systemFont(ofSize: 24, weight: .semibold)
+        return title
+    }
+
+    private func bodyLabel(_ text: String) -> NSTextField {
+        let label = NSTextField(wrappingLabelWithString: text)
+        label.font = .systemFont(ofSize: 14)
+        label.textColor = .secondaryLabelColor
+        label.preferredMaxLayoutWidth = Self.contentWidth
+        return label
+    }
+
+    /// Welcome: the pond art, the two things Chirp does, and the keys.
+    private func welcome(_ state: OnboardingState) {
+        let art = PondArt(pond, width: Self.contentWidth, height: 150)
+        content.addArrangedSubview(art)
+        content.setCustomSpacing(16, after: art)
+        content.addArrangedSubview(titleLabel("Welcome to Chirp"))
+        let features = NSStackView(views: [
+            feature("mic.fill", "Dictate into any app",
+                    "Press \(state.hotkey.title) anywhere, talk, and your words appear where you’re typing."),
+            feature("note.text", "Keep conversations in Notes",
+                    "Press \(state.notesHotkey.title) to start a note. Chirp writes it as you talk and keeps every note on this Mac."),
         ])
-        return view
+        features.orientation = .vertical
+        features.alignment = .leading
+        features.spacing = 12
+        content.setCustomSpacing(14, after: content.arrangedSubviews.last!)
+        content.addArrangedSubview(features)
+        content.setCustomSpacing(14, after: features)
+        content.addArrangedSubview(bodyLabel("Setup takes a minute: the microphone, Accessibility and a speech server."))
+    }
+
+    private func feature(_ symbol: String, _ title: String, _ detail: String) -> NSView {
+        let tile = ColorView(SettingsLayout.tonal, cornerRadius: 8)
+        tile.translatesAutoresizingMaskIntoConstraints = false
+        let glyph = NSImageView(image: NSImage(systemSymbolName: symbol, accessibilityDescription: nil)?
+            .withSymbolConfiguration(.init(pointSize: 14, weight: .medium).applying(.init(paletteColors: [SettingsLayout.onTonal]))) ?? NSImage())
+        glyph.translatesAutoresizingMaskIntoConstraints = false
+        tile.addSubview(glyph)
+        NSLayoutConstraint.activate([
+            tile.widthAnchor.constraint(equalToConstant: 32), tile.heightAnchor.constraint(equalToConstant: 32),
+            glyph.centerXAnchor.constraint(equalTo: tile.centerXAnchor), glyph.centerYAnchor.constraint(equalTo: tile.centerYAnchor),
+        ])
+        let name = NSTextField(labelWithString: title)
+        name.font = .systemFont(ofSize: 13, weight: .semibold)
+        let text = NSTextField(wrappingLabelWithString: detail)
+        text.font = MenuStyle.secondaryFont
+        text.textColor = .secondaryLabelColor
+        text.preferredMaxLayoutWidth = Self.contentWidth - 46
+        let column = NSStackView(views: [name, text])
+        column.orientation = .vertical
+        column.alignment = .leading
+        column.spacing = 1
+        let row = NSStackView(views: [tile, column])
+        row.orientation = .horizontal
+        row.alignment = .top
+        row.spacing = 12
+        return row
+    }
+
+    private func header(symbol: String) -> NSView {
+        let size: CGFloat = 56
+        let disc = ColorView(SettingsLayout.tonal, cornerRadius: 16)
+        let glyph = NSImageView(image: NSImage(systemSymbolName: symbol, accessibilityDescription: nil)?
+            .withSymbolConfiguration(.init(pointSize: 24, weight: .regular).applying(.init(paletteColors: [.chirpKoi]))) ?? NSImage())
+        glyph.translatesAutoresizingMaskIntoConstraints = false
+        disc.addSubview(glyph)
+        disc.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            glyph.centerXAnchor.constraint(equalTo: disc.centerXAnchor), glyph.centerYAnchor.constraint(equalTo: disc.centerYAnchor),
+            disc.widthAnchor.constraint(equalToConstant: size), disc.heightAnchor.constraint(equalToConstant: size),
+        ])
+        return disc
     }
 
     private func statusBox(_ status: OnboardingStatus) -> NSView {
@@ -222,27 +324,13 @@ public final class OnboardingView: NSView {
         row.alignment = .centerY
         row.spacing = 8
         row.edgeInsets = NSEdgeInsets(top: 10, left: 14, bottom: 10, right: 12)
+        row.widthAnchor.constraint(equalToConstant: Self.contentWidth).isActive = true
         return card(around: row)
-    }
-
-    private func keycap(_ title: String, caption: String) -> NSView {
-        let label = NSTextField(labelWithString: title)
-        label.font = .systemFont(ofSize: 20, weight: .medium)
-        label.alignment = .center
-        let small = NSTextField(labelWithString: caption)
-        small.font = MenuStyle.secondaryFont
-        small.textColor = .secondaryLabelColor
-        let stack = NSStackView(views: [label, small])
-        stack.orientation = .vertical
-        stack.alignment = .centerX
-        stack.spacing = 2
-        stack.edgeInsets = NSEdgeInsets(top: 10, left: 26, bottom: 10, right: 26)
-        return card(around: stack)
     }
 
     private func tryItViews(_ state: OnboardingState) -> [NSView] {
         tryField.translatesAutoresizingMaskIntoConstraints = false
-        tryField.widthAnchor.constraint(equalToConstant: Self.size.width - 120).isActive = true
+        tryField.widthAnchor.constraint(equalToConstant: Self.contentWidth).isActive = true
         let heard = state.flow.heardHotkey
         let image = NSImageView(image: MenuStyle.symbol(heard ? "checkmark.circle.fill" : "ellipsis.circle", tone: heard ? .ok : .normal) ?? NSImage())
         image.setAccessibilityElement(false)
@@ -253,17 +341,48 @@ public final class OnboardingView: NSView {
         row.orientation = .horizontal
         row.spacing = 6
         row.alignment = .centerY
-        return [tryField, row]
+        let keys = NSStackView(views: [
+            shortcutKeys(state.hotkey.title, caption: "Dictate into any app"),
+            shortcutKeys(state.notesHotkey.title, caption: "Start a note"),
+        ])
+        keys.orientation = .horizontal
+        keys.alignment = .top
+        keys.spacing = 28
+        return [tryField, row, keys]
+    }
+
+    /// A shortcut as keycaps (one per modifier, one for the key) with what it does underneath.
+    private func shortcutKeys(_ title: String, caption: String) -> NSView {
+        let caps = NSStackView(views: Self.keySymbols(title).map { Keycap($0) })
+        caps.orientation = .horizontal
+        caps.spacing = 4
+        let small = NSTextField(labelWithString: caption)
+        small.font = MenuStyle.secondaryFont
+        small.textColor = .secondaryLabelColor
+        let stack = NSStackView(views: [caps, small])
+        stack.orientation = .vertical
+        stack.alignment = .leading
+        stack.spacing = 6
+        stack.setAccessibilityLabel("\(caption): \(title)")
+        return stack
+    }
+
+    /// "⌃⌥Space" → ["⌃", "⌥", "Space"]: each modifier glyph on its own, then the rest.
+    static func keySymbols(_ title: String) -> [String] {
+        let modifiers = Set("⌃⌥⇧⌘")
+        let mods = title.prefix { modifiers.contains($0) }.map(String.init)
+        let key = String(title.dropFirst(mods.count))
+        return mods + (key.isEmpty ? [] : [key])
     }
 
     /// A rounded, filled container like a grouped-list row.
     private func card(around inner: NSStackView) -> NSView {
         let box = NSBox()
         box.boxType = .custom
-        box.cornerRadius = 10
+        box.cornerRadius = ChirpRadius.row
         box.borderWidth = 1
         box.borderColor = .separatorColor
-        box.fillColor = .controlBackgroundColor
+        box.fillColor = SettingsLayout.card
         box.contentViewMargins = .zero
         let container = NSView()
         inner.translatesAutoresizingMaskIntoConstraints = false
@@ -274,19 +393,189 @@ public final class OnboardingView: NSView {
         ])
         box.contentView = container
         box.translatesAutoresizingMaskIntoConstraints = false
-        box.widthAnchor.constraint(greaterThanOrEqualToConstant: 200).isActive = true
         return box
     }
 
-    private func rebuildDots(current: Int) {
-        for view in dots.arrangedSubviews { dots.removeArrangedSubview(view); view.removeFromSuperview() }
-        for index in 0..<OnboardingStep.allCases.count {
-            let dot = ColorView(index == current ? .chirpKoi : .tertiaryLabelColor, cornerRadius: 3.5)
-            dot.translatesAutoresizingMaskIntoConstraints = false
-            NSLayoutConstraint.activate([dot.widthAnchor.constraint(equalToConstant: 7), dot.heightAnchor.constraint(equalToConstant: 7)])
-            dots.addArrangedSubview(dot)
+    /// The rail: the brand glyph and name, then one row per step with its live mark.
+    private func rebuildRail(_ marks: [OnboardingRail.Mark]) {
+        for view in rail.arrangedSubviews { rail.removeArrangedSubview(view); view.removeFromSuperview() }
+        let brand = NSStackView(views: [brandGlyph(), {
+            let name = NSTextField(labelWithString: "Chirp")
+            name.font = .systemFont(ofSize: 15, weight: .semibold)
+            return name
+        }()])
+        brand.orientation = .horizontal
+        brand.alignment = .centerY
+        brand.spacing = 8
+        brand.edgeInsets = NSEdgeInsets(top: 0, left: 8, bottom: 0, right: 0)
+        rail.addArrangedSubview(brand)
+        rail.setCustomSpacing(22, after: brand)
+        for (index, step) in OnboardingStep.allCases.enumerated() {
+            let row = RailRow(step: step, number: index + 1, mark: marks[index])
+            rail.addArrangedSubview(row)
+            row.widthAnchor.constraint(equalTo: rail.widthAnchor).isActive = true
         }
-        dots.setAccessibilityLabel("Step \(current + 1) of \(OnboardingStep.allCases.count)")
+        rail.setAccessibilityLabel("Step \((marks.firstIndex(of: .current) ?? 0) + 1) of \(marks.count)")
+    }
+
+    private func brandGlyph() -> NSView {
+        let image = NSImageView(image: icon ?? NSImage())
+        image.imageScaling = .scaleProportionallyUpOrDown
+        image.contentTintColor = .chirpKoi
+        image.setAccessibilityLabel("Chirp")
+        image.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([image.widthAnchor.constraint(equalToConstant: 26), image.heightAnchor.constraint(equalToConstant: 26)])
+        return image
+    }
+}
+
+/// The pond art as the welcome hero: the app icon's artwork cropped to a wide banner with rounded corners.
+@MainActor
+final class PondArt: NSView {
+    init(_ image: NSImage?, width: CGFloat, height: CGFloat) {
+        super.init(frame: NSRect(x: 0, y: 0, width: width, height: height))
+        wantsLayer = true
+        layer?.cornerRadius = ChirpRadius.panel
+        layer?.cornerCurve = .continuous
+        layer?.masksToBounds = true
+        layer?.contents = image
+        layer?.contentsGravity = .resizeAspectFill
+        // The bird, the moon and the ripples: the middle band of the square artwork.
+        layer?.contentsRect = CGRect(x: 0, y: 0.27, width: 1, height: 0.62)
+        translatesAutoresizingMaskIntoConstraints = false
+        widthAnchor.constraint(equalToConstant: width).isActive = true
+        heightAnchor.constraint(equalToConstant: height).isActive = true
+        setAccessibilityElement(true)
+        setAccessibilityRole(.image)
+        setAccessibilityLabel("A koi-patterned bird singing on a lily pad under the moon")
+    }
+
+    @available(*, unavailable) required init?(coder: NSCoder) { fatalError("not used") }
+}
+
+/// One shortcut key drawn as a keycap.
+@MainActor
+final class Keycap: NSView {
+    private let label: NSTextField
+
+    init(_ text: String) {
+        label = NSTextField(labelWithString: text)
+        super.init(frame: .zero)
+        wantsLayer = true
+        layer?.cornerRadius = ChirpRadius.control
+        layer?.borderWidth = 1
+        label.font = .systemFont(ofSize: 15, weight: .medium)
+        label.alignment = .center
+        label.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(label)
+        translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            label.centerXAnchor.constraint(equalTo: centerXAnchor),
+            label.centerYAnchor.constraint(equalTo: centerYAnchor),
+            heightAnchor.constraint(equalToConstant: 30),
+            widthAnchor.constraint(greaterThanOrEqualToConstant: 30),
+            widthAnchor.constraint(equalTo: label.widthAnchor, constant: 16),
+        ])
+        setAccessibilityElement(false)
+        restyle()
+    }
+
+    @available(*, unavailable) required init?(coder: NSCoder) { fatalError("not used") }
+
+    override func viewDidChangeEffectiveAppearance() { super.viewDidChangeEffectiveAppearance(); restyle() }
+
+    private func restyle() {
+        effectiveAppearance.performAsCurrentDrawingAppearance {
+            layer?.backgroundColor = SettingsLayout.card.cgColor
+            layer?.borderColor = NSColor.separatorColor.cgColor
+        }
+    }
+}
+
+/// One row of the step rail: a mark (number, ✓, ⚠ or the current step's koi disc) and the step's title.
+@MainActor
+final class RailRow: NSView {
+    private let mark: OnboardingRail.Mark
+    private let markView = NSView()
+    private let inner = NSImageView()
+    private let numeral: NSTextField
+    private let title: NSTextField
+
+    init(step: OnboardingStep, number: Int, mark: OnboardingRail.Mark) {
+        self.mark = mark
+        numeral = NSTextField(labelWithString: "\(number)")
+        title = NSTextField(labelWithString: step.title)
+        super.init(frame: .zero)
+        wantsLayer = true
+        layer?.cornerRadius = 8
+        layer?.cornerCurve = .continuous
+        translatesAutoresizingMaskIntoConstraints = false
+
+        markView.wantsLayer = true
+        markView.layer?.cornerRadius = 11
+        markView.translatesAutoresizingMaskIntoConstraints = false
+        inner.translatesAutoresizingMaskIntoConstraints = false
+        numeral.font = .systemFont(ofSize: 11, weight: .semibold)
+        numeral.translatesAutoresizingMaskIntoConstraints = false
+        markView.addSubview(inner)
+        markView.addSubview(numeral)
+        title.translatesAutoresizingMaskIntoConstraints = false
+        title.font = .systemFont(ofSize: 13, weight: mark == .current ? .semibold : .regular)
+        addSubview(markView)
+        addSubview(title)
+        NSLayoutConstraint.activate([
+            inner.centerXAnchor.constraint(equalTo: markView.centerXAnchor), inner.centerYAnchor.constraint(equalTo: markView.centerYAnchor),
+            numeral.centerXAnchor.constraint(equalTo: markView.centerXAnchor), numeral.centerYAnchor.constraint(equalTo: markView.centerYAnchor),
+            heightAnchor.constraint(equalToConstant: 36),
+            markView.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 8),
+            markView.centerYAnchor.constraint(equalTo: centerYAnchor),
+            markView.widthAnchor.constraint(equalToConstant: 22), markView.heightAnchor.constraint(equalToConstant: 22),
+            title.leadingAnchor.constraint(equalTo: markView.trailingAnchor, constant: 10),
+            title.centerYAnchor.constraint(equalTo: centerYAnchor),
+        ])
+        setAccessibilityElement(true)
+        setAccessibilityRole(.staticText)
+        setAccessibilityLabel(OnboardingRail.label(step, mark))
+        restyle()
+    }
+
+    @available(*, unavailable) required init?(coder: NSCoder) { fatalError("not used") }
+
+    override func viewDidChangeEffectiveAppearance() { super.viewDidChangeEffectiveAppearance(); restyle() }
+
+    /// Colours are dynamic, so they are resolved in this row's own appearance whenever it changes.
+    private func restyle() {
+        func glyph(_ name: String, _ color: NSColor) -> NSImage? {
+            NSImage(systemSymbolName: name, accessibilityDescription: nil)?
+                .withSymbolConfiguration(.init(pointSize: 11, weight: .bold).applying(.init(paletteColors: [color])))
+        }
+        effectiveAppearance.performAsCurrentDrawingAppearance {
+            inner.isHidden = true
+            numeral.isHidden = false
+            markView.layer?.borderWidth = 0
+            layer?.backgroundColor = NSColor.clear.cgColor
+            title.textColor = mark == .upcoming ? .secondaryLabelColor : .labelColor
+            switch mark {
+            case .current:
+                markView.layer?.backgroundColor = SettingsLayout.selectionTile.cgColor
+                numeral.textColor = SettingsLayout.onSelectionTile
+                layer?.backgroundColor = SettingsLayout.selection.cgColor
+                title.textColor = SettingsLayout.onSelection
+            case .done:
+                markView.layer?.backgroundColor = MenuStyle.lily.withAlphaComponent(0.18).cgColor
+                inner.image = glyph("checkmark", MenuStyle.lily)
+                inner.isHidden = false; numeral.isHidden = true
+            case .warning:
+                markView.layer?.backgroundColor = MenuStyle.moon.withAlphaComponent(0.2).cgColor
+                inner.image = glyph("exclamationmark", MenuStyle.moon)
+                inner.isHidden = false; numeral.isHidden = true
+            case .upcoming:
+                markView.layer?.backgroundColor = NSColor.clear.cgColor
+                markView.layer?.borderWidth = 1
+                markView.layer?.borderColor = NSColor.tertiaryLabelColor.cgColor
+                numeral.textColor = .secondaryLabelColor
+            }
+        }
     }
 }
 

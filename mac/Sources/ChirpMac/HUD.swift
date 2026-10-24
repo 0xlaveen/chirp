@@ -8,14 +8,14 @@ private final class HUDPanel: NSPanel {
 }
 
 /// A non-activating floating panel: it shows partial text without ever taking focus from the target app.
-/// The blur is a real `NSVisualEffectView` (HUD material, so it follows light and dark), masked to a rounded
-/// capsule; the SwiftUI content sits on top and the panel follows the content's size with a short animation.
+/// The surface is `.glassEffect()` on macOS 26 and otherwise a real `NSVisualEffectView` (HUD material, so it follows
+/// light and dark), masked to a rounded rectangle; the SwiftUI content sits on top and the panel follows the content's size with a short animation.
 @MainActor
 final class HUDController {
     let model = HUDModel()
     private var panel: HUDPanel?
     private var hideTask: Task<Void, Never>?
-    private var size = CGSize(width: 190, height: 44)
+    private var size = CGSize(width: HUDViewMetrics.width, height: 44)
     /// Bumped by every show/hide so a fade-out that was overtaken never orders the panel out.
     private var generation = 0
 
@@ -37,18 +37,32 @@ final class HUDController {
         p.becomesKeyOnlyIfNeeded = true
         p.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
 
-        let effect = NSVisualEffectView(frame: NSRect(origin: .zero, size: size))
-        effect.material = .hudWindow
-        effect.blendingMode = .behindWindow
-        effect.state = .active
-        effect.maskImage = Self.roundedMask(radius: HUDViewMetrics.corner)
         let host = NSHostingView(rootView: HUDView(model: model) { [weak self] s in self?.resize(to: s) })
         host.sizingOptions = []
-        host.frame = effect.bounds
+        host.frame = NSRect(origin: .zero, size: size)
         host.autoresizingMask = [.width, .height]
-        effect.addSubview(host)
-        p.contentView = effect
+        if Self.hasGlass {
+            // macOS 26: the SwiftUI view draws its own `.glassEffect()`, so the panel is just a clear window around it.
+            model.usesGlass = true
+            p.contentView = host
+        } else {
+            let effect = NSVisualEffectView(frame: host.frame)
+            effect.material = .hudWindow
+            effect.blendingMode = .behindWindow
+            effect.state = .active
+            effect.maskImage = Self.roundedMask(radius: HUDViewMetrics.corner)
+            effect.addSubview(host)
+            p.contentView = effect
+        }
         return p
+    }
+
+    /// The system draws Liquid Glass (macOS 26 and later); earlier systems keep the `.hudWindow` blur.
+    private static var hasGlass: Bool {
+        #if swift(>=6.2)
+        if #available(macOS 26, *) { return true }
+        #endif
+        return false
     }
 
     /// A stretchable rounded-rect mask: the corners stay round at any size, so the blur is a capsule when the HUD is

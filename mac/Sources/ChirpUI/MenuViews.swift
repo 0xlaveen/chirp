@@ -79,7 +79,14 @@ public final class MenuRowView: NSView {
             (text as NSString).draw(in: NSRect(x: x, y: top, width: width, height: MenuStyle.font.boundingRectForFont.height),
                                     withAttributes: [.font: MenuStyle.font, .foregroundColor: color, .paragraphStyle: style])
         }
-        draw(entry.title, x: MenuMetrics.leading, width: titleWidth + 2, color: titleColor, alignment: .left)
+        if entry.tone == .active, entry.title.hasPrefix("◉"), !selected {
+            // The record glyph that leads the live-Notes row is the Pond record red.
+            let text = NSMutableAttributedString(string: entry.title, attributes: [.font: MenuStyle.font, .foregroundColor: titleColor])
+            text.addAttribute(.foregroundColor, value: MenuStyle.record, range: NSRange(location: 0, length: 1))
+            text.draw(in: NSRect(x: MenuMetrics.leading, y: top, width: titleWidth + 2, height: MenuStyle.font.boundingRectForFont.height))
+        } else {
+            draw(entry.title, x: MenuMetrics.leading, width: titleWidth + 2, color: titleColor, alignment: .left)
+        }
 
         let right = bounds.width - MenuMetrics.trailing
         if entry.submenu != nil { drawChevron(endingAt: right, color: selected ? .selectedMenuItemTextColor : .secondaryLabelColor) }
@@ -145,7 +152,12 @@ public final class MenuHeaderView: NSView {
         statusLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         for label in [title, statusLabel] { label.setAccessibilityElement(false) }
 
-        let stack = NSStackView(views: [title, statusLabel])
+        let dot = MenuDotView(header.dot)
+        let statusRow = NSStackView(views: [dot, statusLabel])
+        statusRow.orientation = .horizontal
+        statusRow.alignment = .centerY
+        statusRow.spacing = 5
+        let stack = NSStackView(views: [title, statusRow])
         stack.orientation = .vertical
         stack.alignment = .leading
         stack.spacing = 1
@@ -202,5 +214,36 @@ public final class MenuSeparatorView: NSView {
     override public func draw(_ dirtyRect: NSRect) {
         NSColor.separatorColor.setFill()
         NSRect(x: MenuMetrics.leading - 2, y: bounds.midY - 0.5, width: bounds.width - 2 * (MenuMetrics.leading - 2), height: 1).fill()
+    }
+}
+
+/// The header's status dot: a filled lily, moon or record dot, or a hollow ring while Chirp is paused.
+@MainActor
+final class MenuDotView: NSView {
+    private let dot: MenuDot
+    static let diameter: CGFloat = 7
+
+    init(_ dot: MenuDot) {
+        self.dot = dot
+        super.init(frame: NSRect(x: 0, y: 0, width: Self.diameter, height: Self.diameter))
+        setAccessibilityElement(false)
+    }
+
+    @available(*, unavailable) required init?(coder: NSCoder) { fatalError("not used") }
+
+    override var intrinsicContentSize: NSSize { NSSize(width: Self.diameter, height: Self.diameter) }
+
+    override func draw(_ dirtyRect: NSRect) {
+        let rect = bounds.insetBy(dx: 0.5, dy: 0.5)
+        let color = MenuStyle.color(dot)
+        if dot == .paused {
+            color.setStroke()
+            let ring = NSBezierPath(ovalIn: rect)
+            ring.lineWidth = 1
+            ring.stroke()
+        } else {
+            color.setFill()
+            NSBezierPath(ovalIn: rect).fill()
+        }
     }
 }
