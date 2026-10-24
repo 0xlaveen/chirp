@@ -229,12 +229,14 @@ class NotesRenderTest {
         name()
         compose.setContent { ChirpTheme(dark.value) { NotesScreen(rig.model, rig.model::toggle, {}, {}, {}, {}) } }
         fun shot(name: String) {
-            compose.waitForIdle()
+            // Let the last tap's ripple fade before the capture.
+            compose.mainClock.advanceTimeBy(2000); compose.waitForIdle()
             val bitmap = compose.onRoot().captureToImage().asAndroidBitmap()
             File(output, "notes-$width-$name-${if (dark.value) "dark" else "light"}.png").outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
         }
-        val notes = NotesStructureResponse("## Launch plan\n- Beta goes to ten design partners first\n- [ ] Draft the invite email\n" +
-            "- **Decision:** Ship the beta on Friday\n- **Question:** Do we need a waitlist?", true)
+        val notes = NotesStructureResponse("## Launch plan\n- Beta goes to **ten** design partners first\n  - Then open the waitlist\n" +
+            "- **Decision:** Ship the beta on Friday\n\n## Follow-ups\n- [x] Book the review room\n- [ ] Draft the invite email\n" +
+            "- [ ] Check pricing with finance\n- **Question:** Do we need a waitlist?", true)
         for (night in listOf(false, true)) {
             rig.api.answers += notes
             compose.runOnIdle { dark.value = night }
@@ -257,6 +259,10 @@ class NotesRenderTest {
             shot("edited")
             compose.runOnIdle { rig.model.pause(); rig.idle() }
             shot("paused")
+            compose.onNodeWithContentDescription("Edit notes").performClick()
+            shot("editing")
+            compose.onNodeWithText("Done").performClick()
+            if (width == "cover") { compose.onNodeWithText("Transcript").performClick(); shot("transcript"); compose.onNodeWithText("Notes").performClick() }
             compose.runOnIdle { rig.model.recorder.cancel(); rig.model.clear(); name() }
         }
     }

@@ -129,7 +129,7 @@ class ShellBackTest {
         assertEquals(ShellTab.Home, activity.state.tab); assertFalse(activity.isFinishing)
         compose.onNode(hasText("Notes") and hasText("Live Notes") and hasClickAction()).performClick()
         assertEquals(ShellTab.Notes, activity.state.tab)
-        compose.onNodeWithText("CHIRP  /  NOTES").assertExists()
+        compose.onNodeWithContentDescription("Record notes").assertExists()
         assertSame("the tab and NotesActivity share one session", NotesSessionHolder.current, NotesSessionHolder.model(activity) { error("already created") })
         compose.runOnIdle { activity.onBackPressedDispatcher.onBackPressed() }
         assertEquals("Back from Notes goes Home without asking to discard", ShellTab.Home, activity.state.tab)

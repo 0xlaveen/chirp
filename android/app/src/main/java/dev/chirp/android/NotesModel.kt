@@ -160,6 +160,7 @@ internal class NotesModel(
     /** Content that no Save has written as it is now: leaving or New asks first, and the recovery copy keeps it. */
     val dirty get() = revision.let { hasContent && savedKey != key() }
     val title get() = document.title().removePrefix("# ")
+    val displayTitle get() = document.displayTitle()
     val recoveryOn get() = journal?.enabled == true
     /** "Keep notes on this phone": stopped notes are kept in Recent notes, so leaving or New need not ask. */
     val keeps get() = sessions?.enabled == true

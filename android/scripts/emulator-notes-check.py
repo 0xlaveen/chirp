@@ -32,8 +32,10 @@ def check(probe, work, output):
     def state():
         hierarchy = nodes()
         texts = [n.get('text', '') for n in hierarchy]
+        # The notes render as Markdown blocks (tagged notes-block); while editing they are one EditText.
+        blocks = [n for n in hierarchy if n.get('resource-id') == 'notes-block']
         editor = next((n.get('text', '') for n in hierarchy if n.get('class') == 'android.widget.EditText'), '')
-        if editor == 'Record, or type your own notes': editor = ''
+        notes = sum(len(n.get('text', '')) for n in blocks) or len(editor)
         status = next((t for t in texts if t.startswith(STATUSES)), None)
         # A listening command shows what it heard: never printed.
         if any(t.startswith('“') for t in texts) and status is None: status = '“…”'
@@ -41,8 +43,8 @@ def check(probe, work, output):
         # Chirp's elapsed clock (not the status bar's) comes before any transcript timestamp.
         clock = next((n.get('text') for n in hierarchy if n.get('package') == package and re.fullmatch(r'(\d+:)?\d\d:\d\d', n.get('text', ''))), '0:0')
         seconds = sum(int(part) * 60 ** i for i, part in enumerate(reversed(clock.split(':'))))
-        return {'status': status, 'note': note, 'clock': seconds, 'notes_chars': len(editor), 'gaps': [t for t in texts if 'audio not transcribed' in t],
-                'hearing': any(t.startswith('Hearing: ') for t in texts)}
+        return {'status': status, 'note': note, 'clock': seconds, 'notes_chars': notes, 'gaps': [t for t in texts if 'audio not transcribed' in t],
+                'hearing': any(n.get('resource-id') == 'notes-hearing' for n in hierarchy)}
 
     def wait(predicate, message, seconds=DEADLINE):
         deadline = time.monotonic() + seconds
@@ -126,19 +128,25 @@ def check(probe, work, output):
     assert all(code == 200 for code in server().get('structure', [])), 'A structure call failed: ' + json.dumps(server())
     # Organize on notes under the reorganize minimum says so; with more notes it reorganizes them.
     organized = calls('reorganize')
+    # Organize and Share are in the ⋮ menu; typing needs Edit (the page is rendered Markdown until then).
+    # Wait for the item rather than click(), whose scroll-to-find swipe would close the menu.
+    def menu(item): probe['click']('More options'); tap(wait_node(item))
     if state()['notes_chars'] < 80:
-        probe['click']('Organize')
+        menu('Organize')
         wait(lambda s: s['note'] == 'Nothing to organize yet — keep going', 'Organize on short notes gave no answer', 20)
         assert calls('reorganize') == organized
-        tap(next(n for n in nodes() if n.get('class') == 'android.widget.EditText'))
+        probe['click']('Edit notes')
+        tap(wait_node('Notes (Markdown)'))
         adb('shell', 'input', 'keyevent', 'KEYCODE_MOVE_END'); adb('shell', 'input', 'keyevent', 'KEYCODE_ENTER')
         adb('shell', 'input', 'text', '-%sReview%sthe%sbudget%swith%sfinance%sbefore%sthe%slaunch%son%sMonday')
         adb('shell', 'input', 'keyevent', 'KEYCODE_BACK')  # hides the keyboard
         wait(lambda s: s['notes_chars'] >= 80 and s['note'] is None, 'Typing into the notes did not land', 20)
-    probe['click']('Organize')
+        probe['click']('Done editing')
+        wait(lambda s: s['notes_chars'] > 0, 'The page did not come back after editing', 10)
+    menu('Organize')
     wait(lambda s: calls('reorganize') > organized and not (s['status'] or '').startswith('Organizing'), 'Organize did not reorganize', 90)
     assert all(code == 200 for code in server()['reorganize']), 'A reorganize call failed: ' + json.dumps(server())
-    probe['click']('Share')
+    menu('Share')
     deadline = time.monotonic() + 15
     while 'Chooser' not in adb('shell', 'dumpsys', 'activity', 'top').decode(errors='replace'):
         assert time.monotonic() < deadline, 'Share did not open the share sheet'
@@ -161,7 +169,7 @@ def check(probe, work, output):
     log('PASS: Live Notes: rolling segments reached the transcript, structured notes reached the editor while recording; voice edit; screen-off battery saver; pause, resume, stop; Organize; Share; Scratchpad', server())
 
 
-# The fixed notes under the editor (voice edit, Organize, structuring); never notes text.
+# The fixed notes above the record control (voice edit, Organize, structuring); never notes text.
 NOTES = ('Couldn’t', 'Didn’t catch', 'Nothing to edit', 'That didn’t sound', 'Can’t add', 'Notes changed', 'The edit changed',
          'Too much to edit', 'Edited', 'Organized', 'Too long to organize', 'Nothing to organize')
 STATUSES = ('Tap Record', 'Pair your Mac', 'Connecting', 'Listening', 'Updating', 'Organizing', 'Finishing', 'Stopped', 'Paused',

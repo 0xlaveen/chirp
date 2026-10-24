@@ -545,7 +545,7 @@ class NotesVoiceEditScreenTest {
     @Test fun `pressing the button listens and says to let go`() {
         val rig = screen()
         compose.runOnIdle { rig.model.toggle(); rig.wire.ready(); rig.idle() }
-        compose.onNodeWithText("Hold to edit by voice").assertIsDisplayed()
+        compose.onNodeWithText("Hold to edit").assertIsDisplayed()
         compose.onNodeWithContentDescription(hold).performTouchInput { down(center) }
         compose.runOnIdle { rig.idle() }
         compose.onNodeWithText("Release to send").assertIsDisplayed()
@@ -579,7 +579,7 @@ class NotesVoiceEditScreenTest {
         compose.onNodeWithText("Tap to send").assertIsDisplayed()
         compose.onNodeWithText("Cancel").performClick()
         compose.runOnIdle { rig.idle() }
-        compose.onNodeWithText("Hold to edit by voice").assertIsDisplayed()
+        compose.onNodeWithText("Hold to edit").assertIsDisplayed()
         assertTrue(rig.api.edits.isEmpty())
 
         // TalkBack's double tap is a click: it starts, and the next one sends.
@@ -592,7 +592,7 @@ class NotesVoiceEditScreenTest {
 
     @Test fun `the button is not offered when the Mac cannot edit by voice`() {
         screen(notesMac.copy(notesEdit = false))
-        compose.onNodeWithText("Hold to edit by voice").assertDoesNotExist()
+        compose.onNodeWithText("Hold to edit").assertDoesNotExist()
     }
 
     @Test fun `a refusal shows its note under the editor`() {
