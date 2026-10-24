@@ -21,6 +21,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// Quit stops Notes gracefully (at most 5 s), then asks about unsaved notes before the app goes.
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        if notes.library != nil {
+            Task {
+                await notes.stopForQuit()
+                notes.journal.flush()
+                await notes.journal.settle()
+                NSApp.reply(toApplicationShouldTerminate: true)
+            }
+            return .terminateLater
+        }
         guard notes.isActive || notes.model.document.isDirty else { return .terminateNow }
         Task {
             await notes.stopForQuit()

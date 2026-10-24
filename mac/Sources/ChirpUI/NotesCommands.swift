@@ -40,7 +40,7 @@ public enum NotesCommand: CaseIterable, Sendable {
                             enabled: on && model.tab != .transcript, checked: false)
             case .copyMarkdown:
                 return Item(command: c, title: "Copy Markdown", key: "c", modifiers: shiftCommand, enabled: on && model.canExport, checked: false)
-            case .save: return Item(command: c, title: "Save…", key: "s", modifiers: .command, enabled: on && model.canExport, checked: false)
+            case .save: return Item(command: c, title: model.exportTitle, key: "s", modifiers: .command, enabled: on && model.canExport, checked: false)
             case .new: return Item(command: c, title: "New", key: "n", modifiers: .command, enabled: on && model.canNew, checked: false)
             case .restoreOrganize:
                 return Item(command: c, title: "Restore Notes Before Organize…", key: "", modifiers: [], enabled: on && model.canRestore, checked: false)

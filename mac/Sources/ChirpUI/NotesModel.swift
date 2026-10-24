@@ -282,6 +282,11 @@ public final class NotesModel {
     @ObservationIgnored public var undoEdit: () -> Void = {}
     @ObservationIgnored public var editorSelection: () -> NSRange? = { nil }
 
+    public var libraryEnabled = false
+    public var exportTitle: String { libraryEnabled ? "Export Markdown…" : "Save…" }
+    public static let libraryPrivacy = "Notes stay on this Mac and save automatically."
+    public static let libraryPrivacyHelp = "Stored locally in Application Support/Chirp/Notes with owner-only permissions. Audio is kept only when enabled."
+
     public init() {}
 
     /// Queues AI changes for the editor. With no editor on screen they are dropped: an editor that appears loads

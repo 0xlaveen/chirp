@@ -19,6 +19,8 @@ public struct NotesSessionDependencies {
     public var voiceProfileStore: VoiceProfileStore = MemoryVoiceProfileStore()
     /// Where the crash-recovery journal lives (tests pass a temporary directory).
     public var journalStore: NotesJournalStore
+    /// Mac library; nil retains the legacy recovery contract for other clients and isolated harnesses.
+    public var library: NotesLibrary?
     /// Digital silence for this long shows "Microphone is silent (muted?)" (its `window`; Notes keeps recording).
     public var silenceGuard: () -> SilenceGuard = { SilenceGuard() }
     /// Where system sleep and wake are posted (nil: `NSWorkspace`'s; tests pass their own center).
@@ -97,12 +99,15 @@ public final class NotesSession {
     public let voices: SpeakerVoices
     /// The crash-recovery journal and the opt-in "keep this file up to date" writes.
     public let journal: NotesJournal
+    public var library: NotesLibrary? { deps.library }
     /// Sessions the journal found at launch, newest first; the first is on offer in the window.
     private var recoverable: [NotesJournalRecord] = []
 
     private let capture: AudioCapture
     private var stopTick: (() -> Void)?
     /// A start that failed before the recorder ran (permission, no input device).
+    private var restoringDocument = false
+    private var selectionGeneration = 0
     private var startError: String?
     private var lastAnnouncement = ""
     private var lastState: NotesRecorderState = .idle
@@ -141,8 +146,14 @@ public final class NotesSession {
                                  onPreference: { settings.notesSpeakerLabels = $0 })
         voices = SpeakerVoices(modelStore: deps.voiceModelStore, profileStore: deps.voiceProfileStore,
                                enabled: settings.notesVoiceProfiles, onPreference: { settings.notesVoiceProfiles = $0 })
-        journal = NotesJournal(store: deps.journalStore, enabled: settings.notesRecoveryCopy, sleep: deps.sleep)
+        journal = NotesJournal(store: deps.journalStore, enabled: settings.notesRecoveryCopy, library: deps.library, sleep: deps.sleep)
         voiceEdit = NotesVoiceEdit(recorder: recorder, makeSession: deps.makeSession, now: deps.now, sleep: deps.sleep)
+        recorder.shouldKeepAudio = { settings.notesKeepAudio }
+        recorder.onSegmentAudio = { [weak self] id, segment, frames, offset in
+            guard let self, deps.library != nil else { return }
+            journal.update(recorder.document, elapsed: recorder.elapsed, urgent: true, recording: recorder.state.isActive)
+            journal.keepAudio(id, segment: segment, frames: frames, offset: offset, sampleRate: PCMConverter.sampleRate)
+        }
         recorder.onChange = { [weak self] in self?.sync() }
         voiceEdit.onChange = { [weak self] in self?.sync() }
         voiceEdit.openMicrophone = { [weak self] session in self?.openCommandMicrophone(session) ?? false }
@@ -156,6 +167,7 @@ public final class NotesSession {
                 chirpLog.info("notes organize steps=\(steps, privacy: .public) failed=\(failed, privacy: .public) conflict=\(conflict, privacy: .public)")
             }
         }
+        model.libraryEnabled = deps.library != nil
         model.tab = NotesTab(rawValue: settings.notesTab) ?? .notes
         model.structureEnabled = false
         model.onRecordToggle = { [weak self] in
@@ -242,6 +254,7 @@ public final class NotesSession {
         if isRecording { Task { await stop() }; return }
         if isPaused { Task { await resume() }; return }
         guard recorder.state != .stopping else { return }
+        if fromHotkey, library != nil { reset() }
         start(focus: !fromHotkey)
     }
 
@@ -436,6 +449,7 @@ public final class NotesSession {
     /// New (after the dirty guard): an empty document.
     public func reset() {
         guard !isActive else { return }
+        selectionGeneration += 1
         startError = nil
         recorder.reset()
         speakers.reset()
@@ -445,6 +459,42 @@ public final class NotesSession {
         model.closeReview()
         model.longRunAcknowledged = 0
         model.highlightedParagraph = nil
+    }
+
+    /// Opens a stored note after all writes for the previous document are durable.
+    public func openNote(_ id: UUID) async throws {
+        guard !isActive, let library else { throw NotesLibraryError.recording }
+        selectionGeneration += 1
+        let generation = selectionGeneration
+        journal.flush()
+        await journal.settle()
+        let record = try await library.record(id)
+        guard !isActive, generation == selectionGeneration, record.document.deletedAt == nil else { throw NotesLibraryError.deleted }
+        restoreRecord(record)
+        model.snapshots.removeAll()
+        model.closeReview()
+    }
+
+    /// Updating keep-export status may invoke sync; publish only after both journal and recorder adopt the note.
+    private func restoreRecord(_ record: NotesJournalRecord) {
+        restoringDocument = true
+        journal.adopt(record)
+        recorder.restore(record.document, elapsed: record.elapsed)
+        restoringDocument = false
+        sync()
+    }
+
+    public func continueRecording(_ id: UUID, focus: Bool = true) async throws {
+        try await openNote(id)
+        start(focus: focus)
+    }
+
+    /// Applies a rename to the current document as well, so a later journal write retains it.
+    public func renameNote(_ id: UUID, title: String) async throws {
+        guard let library else { throw NotesLibraryError.missing }
+        if recorder.document.id == id { recorder.rename(title) }
+        await journal.settle()
+        try await library.rename(id, title: title)
     }
 
     // MARK: organize snapshots
@@ -502,6 +552,13 @@ public final class NotesSession {
     /// Returns whether there is one.
     @discardableResult
     public func checkRecovery() -> Bool {
+        if let library {
+            Task {
+                try? await library.migrate(from: journal.store)
+                try? await library.maintain(retention: settings.notesRetention)
+            }
+            return false
+        }
         recoverable = journal.store.recoverable()
         offerRecovery()
         return model.recovery != nil
@@ -522,8 +579,7 @@ public final class NotesSession {
         guard !isActive, !recoverable.isEmpty else { return }
         let record = recoverable.removeFirst()
         journal.discard()
-        journal.adopt(record)
-        recorder.restore(record.document, elapsed: record.elapsed)
+        restoreRecord(record)
         model.snapshots.removeAll()
         model.recovery = nil
         chirpLog.info("notes recovery kept segments=\(record.document.segments.count, privacy: .public)")
@@ -577,7 +633,8 @@ public final class NotesSession {
         recorder.configureStructuring(enabled: enabled, health: health)
         model.privacyHelp = settings.notesRecoveryCopy ? NotesStatus.privacyRecoveryHelp : ""
         model.structuringHost = enabled && health?.correctionLeavesMachine == true ? health?.correctionHost ?? settings.serverConfig().host : nil
-        model.privacyLine = settings.notesRecoveryCopy ? NotesStatus.privacyRecovery : NotesStatus.privacy
+        model.privacyLine = library != nil ? NotesModel.libraryPrivacy : settings.notesRecoveryCopy ? NotesStatus.privacyRecovery : NotesStatus.privacy
+        if library != nil { model.privacyHelp = NotesModel.libraryPrivacyHelp }
         model.canManageModels = settings.serverConfig().isLoopback
         sync()
     }
@@ -585,6 +642,7 @@ public final class NotesSession {
     // MARK: model
 
     func sync() {
+        guard !restoringDocument else { return }
         if recorder.state != lastRecorderState {
             // The recorder moved on: an earlier start error no longer describes it.
             lastRecorderState = recorder.state
@@ -617,7 +675,8 @@ public final class NotesSession {
         model.canVoiceEdit = voiceEdit.status.isListening || voiceEdit.canStart
         // The editor replays the AI changes right away, onto text that matches `model.document` before them.
         model.enqueue(changes)
-        journal.update(recorder.document, elapsed: recorder.elapsed, urgent: !changes.isEmpty || leftCapture)
+        library?.setRecordingNote(recorder.state.isActive ? recorder.document.id : nil)
+        journal.update(recorder.document, elapsed: recorder.elapsed, urgent: !changes.isEmpty || leftCapture, recording: recorder.state.isActive)
         model.keepSaving = journal.keepStatus
         model.debugRetention = recorder.debugRetention || (resolvedHealth()?.debugRetention ?? false)
         if !recorder.state.isCapturing, model.level != 0 { model.level = 0 }

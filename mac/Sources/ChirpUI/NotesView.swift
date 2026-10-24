@@ -96,7 +96,7 @@ private struct NotesHeader: View {
                     if model.voiceEditAvailable { VoiceEditButton(model: model) }
                     if !model.reorganizeHidden { reorganizeButton(iconOnly: tier == .icons) }
                     iconButton("doc.on.doc", label: "Copy Markdown", enabled: model.canExport, action: model.onCopy)
-                    iconButton("square.and.arrow.down", label: "Save…", enabled: model.canExport, action: model.onSave)
+                    iconButton("square.and.arrow.down", label: model.exportTitle, enabled: model.canExport, action: model.onSave)
                     iconButton("square.and.pencil", label: "New", enabled: model.canNew, action: model.onNew)
                 }
             }
@@ -121,7 +121,7 @@ private struct NotesHeader: View {
                 Button(NotesStatus.organizeLabel, action: model.onReorganize).disabled(!model.canReorganize)
             }
             Button("Copy Markdown", action: model.onCopy).disabled(!model.canExport)
-            Button("Save…", action: model.onSave).disabled(!model.canExport)
+            Button(model.exportTitle, action: model.onSave).disabled(!model.canExport)
             Button("New", action: model.onNew).disabled(!model.canNew)
         } label: {
             Image(systemName: "ellipsis.circle").font(.system(size: 14))

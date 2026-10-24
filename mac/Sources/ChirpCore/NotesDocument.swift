@@ -81,11 +81,7 @@ public struct NotesTextChange: Equatable, Sendable {
     }
 }
 
-/// Everything a Live Notes session holds, in memory only: the transcript segments and one Markdown source string, the
-/// notes, written by the user and by structuring passes. The AI owns only a suffix of it, the tail
-/// (`text[tailStart...]`); an append pass only ever replaces the tail, and any user edit that touches the tail hands
-/// it to the user. Nothing here is logged. It reaches disk through an explicit Save…, and as the recovery journal
-/// (`NotesJournal`, which is deleted on Save, Discard and New); it goes away on New, a discarded close or quit.
+/// A local notes document. The library journals text and capture metadata continuously; exports are separate.
 public struct NotesDocument: Equatable, Sendable, Codable {
     /// The tail settles once a pass succeeded on at least this many transcript characters (from the M1 bench:
     /// longer windows lose guard pass rate on the default Qwen).
@@ -108,6 +104,8 @@ public struct NotesDocument: Equatable, Sendable, Codable {
     /// This document, as opposed to one that New or a discarded close replaced: a pass carries it, so a late answer
     /// for a discarded document is never applied to the next one.
     public private(set) var id = UUID()
+    /// Optional so schema 1 documents continue to decode.
+    public internal(set) var libraryMetadata: NotesMetadata?
     public internal(set) var segments: [NotesSegment] = []
     /// The notes, Markdown source, user and AI text (without the `# Notes — date` title export adds).
     public internal(set) var text = ""
@@ -159,7 +157,7 @@ public struct NotesDocument: Equatable, Sendable, Codable {
     private enum CodingKeys: String, CodingKey {
         case id, segments, text, tailStart, version, windowGeneration, windowStart, structuredEnd, consecutiveFailures
         case lastReorganizeVersion, charsSinceReorganize, fallbackBlocks, isDirty, startedAt, roster
-        case stamps = "sectionOffsets", labelLog
+        case stamps = "sectionOffsets", labelLog, libraryMetadata
     }
 
     public init(startedAt: Date = Date(), text: String = "") {
@@ -705,5 +703,16 @@ public struct NotesDocument: Equatable, Sendable, Codable {
             parts.append(transcriptMarkdown())
         }
         return parts.joined(separator: "\n\n") + "\n"
+    }
+}
+
+// Capture boundaries also invalidate any outstanding AI window.
+extension NotesDocument {
+    /// A new capture, including Continue. Pausing/resuming inside a capture does not add a boundary.
+    public mutating func beginCapture(at date: Date = Date(), offset: TimeInterval) {
+        windowGeneration += 1
+        ensureMetadata()
+        libraryMetadata?.sessions.append(NotesCaptureBoundary(startedAt: date, offset: offset, firstSegment: segments.count))
+        libraryMetadata?.updatedAt = date
     }
 }

@@ -215,7 +215,13 @@ public final class NotesRecorder {
     public static let stepRetryAfter: Duration = .seconds(2)
 
     public private(set) var state: NotesRecorderState = .idle { didSet { if state != oldValue { changed() } } }
+    private var suppressChanges = false
     public private(set) var document = NotesDocument()
+    /// Delivered on the main actor after a segment commits; the library queues encoding off the audio thread.
+    public var onSegmentAudio: ((_ noteID: UUID, _ segment: Int, _ frames: [Data], _ offset: TimeInterval) -> Void)?
+    public var shouldKeepAudio: () -> Bool = { false }
+    private var finishedAudio: [Int: [Data]] = [:]
+
     public private(set) var structuring: StructuringStatus
     public private(set) var debugRetention = false
     /// Why the session is paused when it was not the user (shown instead of "Paused").
@@ -455,6 +461,7 @@ public final class NotesRecorder {
         if structuring.isOff, !structuringAllowed.isOff { structuring = .idle }
         state = .starting
         document.stampStart(Date())
+        document.beginCapture(offset: elapsed)
         activeSpeakers = speakers
         router.setSpeakers(speakers)
         let seq = nextSeq
@@ -546,6 +553,7 @@ public final class NotesRecorder {
         replayTask = nil
         offline = false
         results.removeAll()
+        finishedAudio.removeAll()
         nextCommit = nextSeq
         current = nil
         passTask?.cancel()
@@ -604,11 +612,18 @@ public final class NotesRecorder {
     /// its clock at `elapsed`. The old diarizer slots are forgotten (a new diarizer's slots are other voices).
     public func restore(_ recovered: NotesDocument, elapsed: TimeInterval) {
         guard !state.isActive else { return }
+        suppressChanges = true
         reset()
         document = recovered
         document.forgetSpeakerSlots()
         router.seed(seconds: elapsed)
         state = .stopped
+        suppressChanges = false
+        changed()
+    }
+
+    public func rename(_ title: String) {
+        document.rename(title)
         changed()
     }
 
@@ -627,11 +642,11 @@ public final class NotesRecorder {
         guard state == .recording, !cutting, !diverted else { return }
         cutting = true
         defer { cutting = false }
-        let myEpoch = epoch
+        let myEpoch = epoch, myDocumentID = document.id
         // Offline, the next segment keeps its audio for a replay instead of opening a socket that would fail.
         let next = offline ? nil : makeSession(options)
         await next?.open()
-        guard epoch == myEpoch, state == .recording else {
+        guard epoch == myEpoch && document.id == myDocumentID, state == .recording else {
             await next?.cancel()
             return
         }
@@ -662,13 +677,13 @@ public final class NotesRecorder {
 
     /// Relays `session`'s events to segment `seq` while it is that segment's socket (a replay brings a new one).
     func listen(_ seq: Int, _ session: StreamSession) {
-        let myEpoch = epoch
+        let myEpoch = epoch, myDocumentID = document.id
         segments[seq]?.task = Task {
             for await event in session.events {
-                guard self.epoch == myEpoch, self.segments[seq]?.session === session else { return }
+                guard self.epoch == myEpoch && self.document.id == myDocumentID, self.segments[seq]?.session === session else { return }
                 if self.handle(event, seq: seq) { break }
             }
-            guard self.epoch == myEpoch, self.segments[seq]?.session === session else { return }
+            guard self.epoch == myEpoch && self.document.id == myDocumentID, self.segments[seq]?.session === session else { return }
             self.segmentFailed(seq, reason: "connection closed")
         }
     }
@@ -679,10 +694,10 @@ public final class NotesRecorder {
         let context = contextSupported && options.correction && options.correctionProfile == CorrectionProfile.liveNotesID
             && segments[seq]?.joins == true && lastFinal?.seq == seq - 1 ? lastFinal.flatMap { NotesJoin.context($0.text) } : nil
         Task { await session.stop(context: context) }
-        let sleep = self.sleep, myEpoch = epoch
+        let sleep = self.sleep, myEpoch = epoch, myDocumentID = document.id
         segments[seq]?.timeout = Task {
             await sleep(.seconds(Self.finalTimeout))
-            guard !Task.isCancelled, self.epoch == myEpoch, self.segments[seq]?.session === session else { return }
+            guard !Task.isCancelled, self.epoch == myEpoch && self.document.id == myDocumentID, self.segments[seq]?.session === session else { return }
             self.segmentFailed(seq, reason: "timed out")
         }
     }
@@ -756,6 +771,7 @@ public final class NotesRecorder {
             _ = router.swap(to: nil)
             current = nil
             results.removeAll()
+            finishedAudio.removeAll()
             nextCommit = nextSeq
             state = .error(message)
             changed()
@@ -783,16 +799,23 @@ public final class NotesRecorder {
 
     /// A segment is done: commit every finished segment that is next in order, then see whether a pass can run.
     func finish(_ seq: Int, with segment: NotesSegment?) {
+        if segment != nil, onSegmentAudio != nil, shouldKeepAudio() {
+            finishedAudio[seq] = segments[seq]?.audio.contents
+        }
         drop(seq)
         results[seq] = .some(segment)
         while let next = results.removeValue(forKey: nextCommit) {
             if let s = next {
                 document.append(s)
+                if let frames = finishedAudio.removeValue(forKey: nextCommit), shouldKeepAudio() {
+                    onSegmentAudio?(document.id, document.segments.count - 1, frames, s.offset)
+                }
                 if var job = labelJobs.removeValue(forKey: nextCommit) {
                     job.segment = document.segments.count - 1
                     labelQueue.append(job)
                 }
             }
+            finishedAudio[nextCommit] = nil
             labelJobs[nextCommit] = nil
             nextCommit += 1
             lastCommit = now()
@@ -883,12 +906,12 @@ public final class NotesRecorder {
         guard diverted else { return }
         defer { diverted = false }
         guard state == .recording else { return }
-        let myEpoch = epoch
+        let myEpoch = epoch, myDocumentID = document.id
         cutting = true
         defer { cutting = false }
         let next = offline ? nil : makeSession(options)
         await next?.open()
-        guard epoch == myEpoch, state == .recording, diverted else {
+        guard epoch == myEpoch && document.id == myDocumentID, state == .recording, diverted else {
             await next?.cancel()
             return
         }
@@ -1023,10 +1046,10 @@ public final class NotesRecorder {
         holdTask?.cancel()
         // Composing alone re-checks every `holdMax`; the end of composition releases it sooner (`setEditorFocus`).
         let wait = typedRecently ? Self.holdMax - (now() - (lastKeystroke ?? now())) : Self.holdMax
-        let sleep = self.sleep, myEpoch = epoch
+        let sleep = self.sleep, myEpoch = epoch, myDocumentID = document.id
         holdTask = Task {
             await sleep(.milliseconds(Int((wait * 1000).rounded(.up))))
-            guard !Task.isCancelled, self.epoch == myEpoch, self.held != nil else { return }
+            guard !Task.isCancelled, self.epoch == myEpoch && self.document.id == myDocumentID, self.held != nil else { return }
             self.holdTask = nil
             if !self.holdsAppends { self.releaseHeld() } else { self.armHold() }
         }
@@ -1088,10 +1111,10 @@ public final class NotesRecorder {
         if timer != nil, let d = timerDeadline, d <= deadline { return }
         timer?.cancel()
         timerDeadline = deadline
-        let sleep = self.sleep, myEpoch = epoch
+        let sleep = self.sleep, myEpoch = epoch, myDocumentID = document.id
         timer = Task {
             await sleep(.milliseconds(Int((seconds * 1000).rounded(.up))))
-            guard !Task.isCancelled, self.epoch == myEpoch else { return }
+            guard !Task.isCancelled, self.epoch == myEpoch && self.document.id == myDocumentID else { return }
             self.timer = nil
             self.timerDeadline = nil
             if self.pending {
@@ -1105,17 +1128,17 @@ public final class NotesRecorder {
         structuring = .running
         passKind = .append
         changed()
-        let myEpoch = epoch
+        let myEpoch = epoch, myDocumentID = document.id
         passTask = Task {
             let (response, disable) = await self.callStructure(request)
-            guard self.epoch == myEpoch else { return }
+            guard self.epoch == myEpoch && self.document.id == myDocumentID else { return }
             // A rejected window is retried in halves (then quarters) before any of it falls back to raw text.
             if disable == nil, response.error == "rejected", let (a, b) = NotesDocument.split(request.transcript) {
                 var outcome = PieceOutcome()
                 let first = await self.structurePieces(a, outline: request.outline, final: request.final, depth: 1, outcome: &outcome)
                 let second = await self.structurePieces(b, outline: request.outline + Self.headings(first), final: request.final,
                                                         depth: 1, outcome: &outcome)
-                guard self.epoch == myEpoch else { return }
+                guard self.epoch == myEpoch && self.document.id == myDocumentID else { return }
                 self.splitFinished(request, first + second, outcome)
                 return
             }
@@ -1253,10 +1276,10 @@ public final class NotesRecorder {
         reorganizeState = .running
         passKind = .reorganize
         changed()
-        let myEpoch = epoch
+        let myEpoch = epoch, myDocumentID = document.id
         passTask = Task {
             let (response, failure) = await self.callReorganize(request)
-            guard self.epoch == myEpoch else { return }
+            guard self.epoch == myEpoch && self.document.id == myDocumentID else { return }
             self.reorganizeFinished(request, response, manual: manual, failure: failure)
         }
     }
@@ -1281,7 +1304,7 @@ public final class NotesRecorder {
         passKind = .reorganize
         reorganizeState = .organizing(step: 1, of: total)
         changed()
-        let myEpoch = epoch
+        let myEpoch = epoch, myDocumentID = document.id
         passTask = Task {
             var failures: [String] = []
             var step = 1
@@ -1297,7 +1320,7 @@ public final class NotesRecorder {
                 var outcome = PieceOutcome()
                 let pieces = await self.structurePieces(window.transcript, outline: window.outline, final: false, depth: 0,
                                                         outcome: &outcome)
-                guard self.epoch == myEpoch else { return }
+                guard self.epoch == myEpoch && self.document.id == myDocumentID else { return }
                 if outcome.usable, pieces.contains(where: { if case .markdown = $0 { true } else { false } }) {
                     self.dropHeld()
                     self.publish(self.document.applyPieces(pieces, for: window))
@@ -1313,7 +1336,7 @@ public final class NotesRecorder {
                 var outcome = PieceOutcome()
                 let pieces = await self.structurePieces(block.body, outline: self.document.outline, final: false, depth: 0,
                                                         outcome: &outcome)
-                guard self.epoch == myEpoch else { return }
+                guard self.epoch == myEpoch && self.document.id == myDocumentID else { return }
                 if outcome.usable, pieces.contains(where: { if case .markdown = $0 { true } else { false } }) {
                     replacements.append((block.block, pieces))
                     failures += outcome.failures
@@ -1337,7 +1360,7 @@ public final class NotesRecorder {
                 if result.applied, failures.isEmpty, !conflict { self.reorganizeState = .applied(at: self.now()) }
             } else if !conflict, self.reorganizeSupported, let request = self.document.reorganizeRequest(final: false, manual: true) {
                 let (response, failure) = await self.callReorganize(request)
-                guard self.epoch == myEpoch else { return }
+                guard self.epoch == myEpoch && self.document.id == myDocumentID else { return }
                 _ = self.applyReorganizeResult(request, response, manual: true, failure: failure)
                 switch self.reorganizeState {
                 case .failed(let label): failures.append(label)
@@ -1426,7 +1449,7 @@ public final class NotesRecorder {
     /// conflict and keeps the steps already applied. All its changes share one run number, so they undo as one step.
     /// Nil when the document was replaced meanwhile.
     private func reorganizeInSteps(final: Bool, advance: () -> Void) async -> (failures: [String], conflict: Bool, applied: Bool)? {
-        let myEpoch = epoch
+        let myEpoch = epoch, myDocumentID = document.id
         organizeRuns += 1
         let run = organizeRuns
         var failures: [String] = [], applied = false, cursor = 0
@@ -1435,12 +1458,12 @@ public final class NotesRecorder {
             var attempt = 0
             while true {
                 let (response, failure) = await callReorganize(request)
-                guard epoch == myEpoch else { return nil }
+                guard epoch == myEpoch && document.id == myDocumentID else { return nil }
                 if response.preempted, failure == nil {
                     guard attempt < Self.stepRetries else { return .failed("busy") }
                     attempt += 1
                     await sleep(Self.stepRetryAfter)
-                    guard epoch == myEpoch else { return nil }
+                    guard epoch == myEpoch && document.id == myDocumentID else { return nil }
                     continue
                 }
                 lastReorganizeEnd = now()
@@ -1568,7 +1591,7 @@ public final class NotesRecorder {
 
     private func finish(error: String?) async {
         guard state.isLive else { return }
-        let myEpoch = epoch
+        let myEpoch = epoch, myDocumentID = document.id
         stoppingSince = now()
         defer { stoppingSince = nil }
         state = .stopping
@@ -1594,7 +1617,7 @@ public final class NotesRecorder {
         // Record cannot start before this returns, so the Stop silence is in the model before any new audio.
         await flush?.value
         relabelSettled()
-        guard epoch == myEpoch else { return }
+        guard epoch == myEpoch && document.id == myDocumentID else { return }
         if let h = held {
             dropHeld()
             applyAppend(h.request, h.response)
@@ -1603,7 +1626,7 @@ public final class NotesRecorder {
         if !structuring.isOff, let request = document.nextStructureRequest(final: true) {
             run(request)
             await waitUntil { self.passTask == nil }
-            guard epoch == myEpoch else { return }
+            guard epoch == myEpoch && document.id == myDocumentID else { return }
         }
         publish(document.freezeAll(structuring: !structuring.isOff))
         document.livePartial = ""
@@ -1623,7 +1646,7 @@ public final class NotesRecorder {
                 self.reorganizeState = .organizing(step: min(step, total), of: total)
                 self.changed()
             }
-            guard epoch == myEpoch, let result else { return }
+            guard epoch == myEpoch && document.id == myDocumentID, let result else { return }
             passKind = nil
             reorganizeState = result.conflict ? .idle : result.applied && result.failures.isEmpty ? .applied(at: now())
                 : result.failures.isEmpty ? .idle : .failed(result.failures[0])
@@ -1632,7 +1655,7 @@ public final class NotesRecorder {
            let request = document.reorganizeRequest(final: true, manual: false) {
             runReorganize(request, manual: false)
             await waitUntil { self.passTask == nil }
-            guard epoch == myEpoch else { return }
+            guard epoch == myEpoch && document.id == myDocumentID else { return }
         }
         state = error.map { .error($0) } ?? .stopped
         changed()
@@ -1644,6 +1667,7 @@ public final class NotesRecorder {
     }
 
     func changed() {
+        guard !suppressChanges else { return }
         if !waiters.isEmpty {
             var keep: [(check: () -> Bool, resume: CheckedContinuation<Void, Never>)] = []
             var ready: [CheckedContinuation<Void, Never>] = []
