@@ -22,13 +22,15 @@ import dev.chirp.android.UpdateController
 
 /** The seven categories (spec §D): each row opens one detail page. */
 internal enum class SettingsPage(val title: String) {
-    Connection("Connection"), Dictation("Dictation"), Keyboard("Keyboard"), Feedback("Feedback & look"),
+    Connection("Connection"), HowYouDictate("How you dictate"), Dictation("Dictation"), Keyboard("Keyboard"), Feedback("Feedback & look"),
     Notes("Notes"), History("Privacy & history"), About("About"),
 }
 
 internal class SettingsActions(
     val checkConnection: () -> Unit = {}, val changePairing: () -> Unit = {}, val forgetPairing: () -> Unit = {},
     val allowWifi: () -> Unit = {}, val floatingMicSettings: () -> Unit = {}, val keyboardPreferences: () -> Unit = {},
+    val chooseMode: (dev.chirp.android.InputMode) -> Unit = {}, val picker: () -> Unit = {},
+    val appSettings: () -> Unit = {}, val keyboardSettings: () -> Unit = {},
     /** Opens the Tailscale app; null when it is not installed. */
     val openTailscale: (() -> Unit)? = null,
 )

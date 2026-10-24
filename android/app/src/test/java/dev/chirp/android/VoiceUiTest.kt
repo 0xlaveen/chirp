@@ -34,20 +34,24 @@ class VoiceUiTest {
     private val syntheticLink = "chirp://pair?url=https%3A%2F%2Fmac.example.test%2Fchirp&token=synthetic%2Btoken%3D"
     private class Calls { val seen = mutableListOf<String>()
         fun actions(state: SetupState? = null) = OnboardingActions(grantMic = { seen += "mic" }, keyboardSettings = { seen += "enable" }, picker = { seen += "select" },
-            appSettings = { seen += "permissions" }, scan = { seen += "scan" }, pasteLink = { state?.link = it; seen += "paste" }, retry = { seen += "retry" }, finish = { seen += "finish" }) }
+            appSettings = { seen += "permissions" }, scan = { seen += "scan" }, pasteLink = { state?.link = it; seen += "paste" }, retry = { seen += "retry" }, finish = { seen += "finish" }, chooseMode = { state?.inputMode = it }) }
 
     private fun fontScaled(scale: Float, content: @Composable () -> Unit) = fontScaled(mutableFloatStateOf(scale), content)
     private fun fontScaled(scale: State<Float>, content: @Composable () -> Unit) =
         compose.setContent { CompositionLocalProvider(LocalDensity provides Density(LocalDensity.current.density, scale.value)) { content() } }
 
-    @Test fun `onboarding is four pages and each primary button follows the next unmet requirement`() {
+    @Test fun `onboarding is five pages and each primary button follows the next unmet requirement`() {
         val state = SetupState(); val calls = Calls()
-        compose.setContent { ChirpTheme { Onboarding(state, calls.actions()) } }
-        compose.onNodeWithContentDescription("Step 1 of 4").assertIsDisplayed()
+        compose.setContent { ChirpTheme { Onboarding(state, calls.actions(state)) } }
+        compose.onNodeWithContentDescription("Step 1 of 5").assertIsDisplayed()
         compose.onNodeWithText("Dictate anywhere").assertIsDisplayed()
         compose.onNodeWithText("Get started").performClick()
+        compose.onNodeWithText("How you’ll dictate").assertIsDisplayed()
+        compose.onNodeWithText("Continue").assertIsNotEnabled()
+        compose.runOnIdle { state.inputMode = InputMode.KEYBOARD }
+        compose.onNodeWithText("Continue").performClick()
         compose.onNodeWithText("Turn on Chirp Keyboard").assertIsDisplayed()
-        compose.onNodeWithContentDescription("Step 2 of 4").assertExists()
+        compose.onNodeWithContentDescription("Step 3 of 5").assertExists()
         compose.onNodeWithText("Enable Chirp Keyboard").performClick()
         compose.runOnIdle { state.inputEnabled = true }
         compose.onNodeWithText("Select Chirp Keyboard").performClick()
@@ -119,7 +123,7 @@ class VoiceUiTest {
         val state = SetupState()
         compose.setContent { ChirpTheme { Onboarding(state) } }
         compose.onNodeWithText("Get started").performClick()
-        compose.onNodeWithText("Turn on Chirp Keyboard").assertIsDisplayed()
+        compose.onNodeWithText("How you’ll dictate").assertIsDisplayed()
     }
     @Test fun `at 200 percent font the primary button is visible without scrolling on every page`() {
         val state = SetupState()

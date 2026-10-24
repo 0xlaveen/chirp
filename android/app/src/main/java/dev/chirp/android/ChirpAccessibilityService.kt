@@ -75,6 +75,9 @@ open class ChirpAccessibilityService : AccessibilityService() {
         event ?: return
         if (locked()) { onInterrupt(); return }
         if (event.packageName == packageName && event.windowId == overlay?.createAccessibilityNodeInfo()?.windowId) return
+        if ((event.eventType == AccessibilityEvent.TYPE_VIEW_FOCUSED || event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) && chirpKeyboardActive(this)) {
+            cancel(); removeOverlay(); return
+        }
         when (event.eventType) {
             AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED -> {
                 // A window transition must never carry a final into a different app, including the lockscreen.
@@ -109,6 +112,7 @@ open class ChirpAccessibilityService : AccessibilityService() {
     private fun collapse() {
         expanded = false; panel = null
         val node = focused
+        if (chirpKeyboardActive(this)) { cancel(); removeOverlay(); return }
         if (!eligible(node)) { removeOverlay(); return }
         val themed = ContextThemeWrapper(this, R.style.Theme_Chirp)
         val bubble = MaterialButton(themed).apply {

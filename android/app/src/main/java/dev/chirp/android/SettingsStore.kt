@@ -18,6 +18,17 @@ enum class AppColour { POND, DYNAMIC }
 
 class SettingsStore(context: Context) {
     private val prefs = context.getSharedPreferences(FILE, Context.MODE_PRIVATE)
+    /** Non-sensitive choice; null means the fresh-install choice page is still unanswered. */
+    var inputMode: InputMode?
+        get() = prefs.getString("input_mode", null)?.let { saved -> InputMode.entries.firstOrNull { it.name == saved } }
+        set(value) { prefs.edit { if (value == null) remove("input_mode") else putString("input_mode", value.name) } }
+    var floatingMicSkipped: Boolean
+        get() = prefs.getBoolean("floating_mic_skipped", false)
+        set(value) { prefs.edit { putBoolean("floating_mic_skipped", value) } }
+    fun migrateInputMode(enabled: Boolean, selected: Boolean, bubbleEnabled: Boolean): InputMode? {
+        inputMode?.let { return it }
+        return migratedInputMode(enabled, selected, bubbleEnabled).also { if (it != null) inputMode = it }
+    }
     var correction: Boolean
         get() {
             val current = health

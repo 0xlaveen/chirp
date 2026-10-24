@@ -11,8 +11,10 @@ import time
 import xml.etree.ElementTree as ET
 import zipfile
 
-SERIAL = os.environ.get("ANDROID_SERIAL", "emulator-5580")
-assert SERIAL in ("emulator-5580", "emulator-5600"), "Only the authorized disposable emulators are supported"
+from emulator_serial import emulator_serial
+
+SERIAL = emulator_serial()
+
 PACKAGE = 'dev.chirp.android'
 IME = PACKAGE + '/.ChirpImeService'
 ROOT = Path(__file__).resolve().parents[2]
@@ -51,7 +53,7 @@ def tap(node):
 
 def find(label, hierarchy=None):
     matches = [n for n in (nodes() if hierarchy is None else hierarchy)
-               if visible(n) and (n.get('text') == label or label in n.get('content-desc', ''))]
+               if visible(n) and (label in n.get('text', '').split('\n') or label in n.get('content-desc', ''))]
     return matches[-1] if matches else None
 
 
@@ -62,7 +64,7 @@ def size():
 def click(label):
     for _ in range(7):
         hierarchy = nodes()
-        matches = [n for n in hierarchy if visible(n) and (n.get('text') == label or label in n.get('content-desc', ''))]
+        matches = [n for n in hierarchy if visible(n) and (label in n.get('text', '').split('\n') or label in n.get('content-desc', ''))]
         actionable = [n for n in matches if n.get('clickable') == 'true' or any(
             p.get('clickable') == 'true' and n in list(p.iter('node'))[1:] for p in hierarchy)]
         if actionable:
@@ -213,6 +215,9 @@ def main():
         adb('shell', 'am', 'start', '-n', PACKAGE + '/.SetupActivity')
         wait_for('Dictate anywhere')
         click('Get started')
+        wait_for('How you’ll dictate')
+        click('Use Chirp Keyboard')
+        click('Continue')
         wait_for('Turn on Chirp Keyboard')
         click('Enable Chirp Keyboard')
         wait_for('Keyboard apps')

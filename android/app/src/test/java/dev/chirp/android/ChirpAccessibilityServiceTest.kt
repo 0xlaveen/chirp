@@ -147,4 +147,29 @@ class ChirpAccessibilityServiceTest {
         bubble.performClick(); assertTrue(shows("Allow microphone in Chirp settings"))
         assertTrue(service.captures.isEmpty()); assertNotNull(button("Fix setup"))
     }
+    @Test fun `Chirp default hides floating mic in both input modes and window transitions cancel capture`() {
+        for (mode in InputMode.entries) {
+            SettingsStore(service).inputMode = mode
+            android.provider.Settings.Secure.putString(service.contentResolver, android.provider.Settings.Secure.DEFAULT_INPUT_METHOD, "dev.chirp.android/.ChirpImeService")
+            focus(); assertNull(overlay)
+            android.provider.Settings.Secure.putString(service.contentResolver, android.provider.Settings.Secure.DEFAULT_INPUT_METHOD, "com.google.android.inputmethod.latin/com.android.inputmethod.latin.LatinIME")
+            focus(); assertNotNull(overlay)
+            start()
+            android.provider.Settings.Secure.putString(service.contentResolver, android.provider.Settings.Secure.DEFAULT_INPUT_METHOD, "dev.chirp.android/.ChirpImeService")
+            service.onAccessibilityEvent(AccessibilityEvent().apply { eventType = AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED })
+            assertNull(overlay); assertTrue(service.captures.last().released)
+            service.streams.last().final(); assertEquals(0, writes)
+        }
+    }
+    @Test fun `Accessibility event types timeout and flags keep their narrow scope`() {
+        val xml = service.resources.getXml(R.xml.accessibility_service)
+        while (xml.next() != org.xmlpull.v1.XmlPullParser.START_TAG) { }
+        val ns = "http://schemas.android.com/apk/res/android"
+        assertEquals(AccessibilityEvent.TYPE_VIEW_FOCUSED or AccessibilityEvent.TYPE_VIEW_TEXT_CHANGED or AccessibilityEvent.TYPE_VIEW_TEXT_SELECTION_CHANGED or AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED, xml.getAttributeIntValue(ns, "accessibilityEventTypes", 0))
+        assertEquals("100", xml.getAttributeValue(ns, "notificationTimeout"))
+        assertNull(xml.getAttributeValue(ns, "accessibilityFlags"))
+        assertEquals("false", xml.getAttributeValue(ns, "isAccessibilityTool"))
+        xml.close()
+    }
+
 }

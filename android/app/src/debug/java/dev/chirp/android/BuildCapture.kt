@@ -8,7 +8,7 @@ import androidx.compose.ui.platform.LocalContext
 import okhttp3.HttpUrl
 import java.io.DataInputStream
 
-internal fun allowedServer(base: HttpUrl) = base.isHttps || (base.scheme == "http" && base.host == "10.0.2.2" && base.port == 7899)
+internal fun allowedServer(base: HttpUrl) = base.isHttps || (base.scheme == "http" && base.host == "10.0.2.2" && base.port in 1024..65535)
 internal fun captureForBuild(context: Context, frame: (ByteArray) -> Boolean, level: (Double) -> Unit, done: (String?) -> Unit): Capture =
     if (context.getSharedPreferences("debug_capture", 0).getBoolean("synthetic", false))
         PcmCapture(frame, level, done, SyntheticPcmInput(context))

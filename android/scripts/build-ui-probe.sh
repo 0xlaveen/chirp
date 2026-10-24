@@ -1,8 +1,8 @@
 #!/bin/sh
 set -eu
-PROBE_SERIAL=${ANDROID_SERIAL:-emulator-5580}
-case "$PROBE_SERIAL" in emulator-5580|emulator-5600) ;; *) exit 1 ;; esac
 SCRIPT_ROOT=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+PROBE_SERIAL=$(python3 "$SCRIPT_ROOT/emulator_serial.py" "$@")
+export ANDROID_SERIAL="$PROBE_SERIAL"
 PROBE_WORK=$(mktemp -d)
 trap 'rm -rf "$PROBE_WORK"' EXIT
 mkdir "$PROBE_WORK/classes" "$PROBE_WORK/dex"

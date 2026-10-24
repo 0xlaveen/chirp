@@ -15,6 +15,7 @@ import dev.chirp.android.ui.*
 internal fun SettingsDetail(page: SettingsPage, state: SetupState, actions: SettingsActions, history: DictationHistory?, updates: UpdateController?) {
     when (page) {
         SettingsPage.Connection -> ConnectionPage(state, actions)
+        SettingsPage.HowYouDictate -> HowYouDictate(state, actions.chooseMode, actions.floatingMicSettings, actions.appSettings, actions.picker, actions.keyboardSettings)
         SettingsPage.Dictation -> DictationPage(state, actions)
         SettingsPage.Keyboard -> KeyboardPage(actions)
         SettingsPage.Feedback -> FeedbackPage()
@@ -69,13 +70,7 @@ private fun DictationPage(state: SetupState, actions: SettingsActions) {
             infoTitle = "Spoken commands", infoBody = "Ending a dictation with \"new line\" or \"new paragraph\" types a line break instead of the words.")
     }
     SettingsGroup("Press Send") { SettingsItem { AutoEnterSettings() } }
-    SettingsGroup("Other ways to dictate") {
-        NavRow("Floating mic (Accessibility)", actions.floatingMicSettings, summary = if (state.bubbleEnabled) "On" else "Off",
-            infoTitle = "Optional floating microphone",
-            infoBody = "Chirp reads the focused field locally to insert text safely. Nothing is sent anywhere except the audio you dictate.\n\n" +
-                "Turn it on in Settings → Accessibility → Installed apps → Chirp floating microphone. If sideloading blocks this optional feature: " +
-                "Apps → Chirp → ⋮ → Allow restricted settings.")
-    }
+
 }
 
 @Composable
@@ -88,7 +83,7 @@ private fun KeyboardPage(actions: SettingsActions) {
     KeyboardLookChooser()
     SwipeTypingSettings()
     SettingsGroup("Keys and shortcuts") {
-        SwitchRow("Hardware keyboard shortcut", shortcut, { shortcut = it; store.hardwareShortcut = it }, summary = "Ctrl+Alt+Space",
+        SwitchRow("Hardware keyboard shortcut", shortcut, { shortcut = it; store.hardwareShortcut = it }, summary = "Ctrl+Alt+Space · Works with Chirp Keyboard",
             infoTitle = "Hardware keyboard shortcut", infoBody = "Ctrl+Alt+Space starts and stops dictation; Esc cancels while listening.")
         SwitchRow("Larger mic on the inner screen", largerMic, { largerMic = it; store.largerMic = it })
         NavRow("Layouts, languages & typing", actions.keyboardPreferences, summary = "Opens the keyboard's own settings")

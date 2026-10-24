@@ -105,7 +105,7 @@ class ShellBackTest {
 
     @Test fun `back from the pair page opened from Home returns to the shell, and Notes’ tiles switch tabs`() {
         val activity = compose.activity
-        compose.runOnIdle { activity.state.apply { inputEnabled = true; inputSelected = true; mic = true; paired = true }; activity.advance() }
+        compose.runOnIdle { activity.state.apply { inputMode = InputMode.KEYBOARD; inputEnabled = true; inputSelected = true; mic = true; paired = true }; activity.advance() }
         compose.onNodeWithContentDescription("Record new note").assertExists()
         compose.runOnIdle { activity.fix(HomeFix.Pair) }
         compose.waitForIdle()

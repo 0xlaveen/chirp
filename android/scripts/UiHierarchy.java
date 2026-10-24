@@ -45,6 +45,8 @@ public final class UiHierarchy {
                 for (AccessibilityWindowInfo window : automation.getWindows()) {
                     AccessibilityNodeInfo target = find(window.getRoot(), args[1]);
                     if (target != null) {
+                        while (target != null && !(args[0].equals("click") ? target.isClickable() : target.isLongClickable())) target = target.getParent();
+                        if (target == null) throw new IllegalStateException("Accessible action missing");
                         int action = args[0].equals("click") ? AccessibilityNodeInfo.ACTION_CLICK : AccessibilityNodeInfo.ACTION_LONG_CLICK;
                         if (!target.performAction(action)) throw new IllegalStateException("Accessibility action rejected");
                         found = true; break;
@@ -152,7 +154,7 @@ public final class UiHierarchy {
     }
     private static AccessibilityNodeInfo find(AccessibilityNodeInfo node, String label) {
         if (node == null || !node.isVisibleToUser()) return null;
-        if (label.equals(safe(node.getText())) || safe(node.getContentDescription()).startsWith(label)) return node;
+        if (java.util.Arrays.asList(safe(node.getText()).split("\n")).contains(label) || safe(node.getContentDescription()).startsWith(label)) return node;
         for (int i = 0; i < node.getChildCount(); i++) {
             AccessibilityNodeInfo found = find(node.getChild(i), label);
             if (found != null) return found;
@@ -172,6 +174,9 @@ public final class UiHierarchy {
         xml.attribute(null, "bounds", bounds.toShortString());
         xml.attribute(null, "long-clickable", String.valueOf(node.isLongClickable()));
         xml.attribute(null, "clickable", String.valueOf(node.isClickable()));
+        xml.attribute(null, "checkable", String.valueOf(node.isCheckable()));
+        xml.attribute(null, "checked", String.valueOf(node.isChecked()));
+        xml.attribute(null, "selected", String.valueOf(node.isSelected()));
         xml.attribute(null, "enabled", String.valueOf(node.isEnabled()));
         for (int i = 0; i < node.getChildCount(); i++) {
             AccessibilityNodeInfo child = node.getChild(i);

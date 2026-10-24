@@ -47,10 +47,11 @@ class SettingsScreenTest {
 
     /** Every control reachable by the label it has, one page per category; each must exist somewhere in that page's tree. */
     private val tree = linkedMapOf<SettingsPage?, List<String>>(
-        null to listOf("Connection", "Dictation", "Keyboard", "Feedback & look", "Notes", "Privacy & history", "About"),
+        null to listOf("Connection", "How you dictate", "Dictation", "Keyboard", "Feedback & look", "Notes", "Privacy & history", "About"),
         SettingsPage.Connection to listOf("Check connection", "Change pairing", "Forget pairing", "Use this phone's recogniser"),
         SettingsPage.Dictation to listOf("Clean-up · Correction on Mac", "Styles", "Stop dictation", "Spoken commands",
-            "Press Send after dictating", "Floating mic (Accessibility)"),
+            "Press Send after dictating"),
+        SettingsPage.HowYouDictate to listOf("Use Chirp Keyboard", "Keep my keyboard", "Other ways to dictate"),
         SettingsPage.Keyboard to listOf("Keyboard look", "Swipe typing", "Hardware keyboard shortcut", "Larger mic on the inner screen",
             "Layouts, languages & typing"),
         SettingsPage.Feedback to listOf("App colours", "Haptic cues", "Sound cues"),

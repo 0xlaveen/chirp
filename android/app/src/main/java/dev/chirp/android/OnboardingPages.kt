@@ -33,7 +33,20 @@ internal fun OnboardingPage(page: Int, state: SetupState, actions: OnboardingAct
             Body("Speak on your phone and your Mac writes the words into any app, privately over Tailscale. " +
                 "Meetings and thoughts can live in Notes: a recording that transcribes and organises itself while you talk.")
         }
-        PAGE_KEYBOARD -> PageFrame("Turn on Chirp Keyboard", { Illustration(R.drawable.ic_keyboard) }, when {
+        PAGE_CHOICE -> PageFrame("How you’ll dictate", {}, PrimaryAction("Continue", state.inputMode != null) { next() }) {
+            InputModeCards(state, actions.chooseMode)
+        }
+        PAGE_KEYBOARD -> if (state.inputMode == InputMode.OWN_KEYBOARD) {
+            PageFrame("Turn on the floating mic", {}, when {
+                state.advancedProtection -> PrimaryAction("Continue without it", onClick = actions.skipFloatingMic)
+                state.bubbleEnabled -> PrimaryAction("Continue") { next() }
+                else -> PrimaryAction("Open Accessibility settings", onClick = actions.accessibility)
+            }) {
+                FloatingMicGuide(state, actions.accessibility, actions.appSettings,
+                    useKeyboard = { actions.chooseMode(InputMode.KEYBOARD) })
+                if (!state.advancedProtection) TextButton(actions.skipFloatingMic) { Text("Skip for now") }
+            }
+        } else PageFrame("Turn on Chirp Keyboard", { Illustration(R.drawable.ic_keyboard) }, when {
             !state.inputEnabled -> PrimaryAction("Enable Chirp Keyboard", onClick = actions.keyboardSettings)
             !state.inputSelected -> PrimaryAction("Select Chirp Keyboard", onClick = actions.picker)
             else -> PrimaryAction("Continue") { next() }
@@ -51,12 +64,12 @@ internal fun OnboardingPage(page: Int, state: SetupState, actions: OnboardingAct
         }
         PAGE_MIC -> PageFrame("Allow the microphone", { Illustration(R.drawable.ic_mic) }, if (state.mic) PrimaryAction("Continue") { next() }
             else PrimaryAction("Allow microphone", onClick = actions.grantMic)) {
-            Body("Chirp listens only while you dictate. Nothing is recorded on this phone.")
+            Body("Chirp listens only while you dictate or record a note. Notes and optional kept audio stay on this phone.")
             if (state.mic) SettingsGroup { CheckRow("Microphone allowed", true) }
             else if (state.micDenied) StatusBanner(StatusKind.Warning, "Allow the microphone to dictate", action = "Open app permissions", onAction = actions.appSettings, live = true)
             Tips("What Chirp keeps", "Your microphone",
-                "The mic opens only when you start dictation and is released as soon as you stop. No recordings are saved on this phone; " +
-                "transcripts are kept only if you turn on dictation history, and unsaved Notes keep an encrypted recovery copy until you save.")
+                "The mic opens only when you start dictation or a note and is released when you stop. Dictation history is opt-in. " +
+                "Notes are kept locally; keeping their audio is optional and off by default.")
         }
         else -> PairPage(state, actions)
     }
@@ -111,7 +124,7 @@ private fun PairPage(state: SetupState, actions: OnboardingActions) {
  * The hero runs edge to edge; the text keeps the page gutter. At 200% font the content scrolls under the hero, button still pinned.
  */
 @Composable
-private fun PageFrame(title: String, hero: @Composable () -> Unit, primary: PrimaryAction, content: @Composable ColumnScope.() -> Unit) {
+internal fun PageFrame(title: String, hero: @Composable () -> Unit, primary: PrimaryAction, content: @Composable ColumnScope.() -> Unit) {
     Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(16.dp)) {
             Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.TopCenter) { hero() }
@@ -145,7 +158,7 @@ private fun Body(text: String) = Text(text, Modifier.fillMaxWidth(), style = Mat
 
 /** One requirement: a check in a circle when met, an empty circle when not (an icon, not a "✓" character). */
 @Composable
-private fun CheckRow(title: String, done: Boolean) {
+internal fun CheckRow(title: String, done: Boolean) {
     ListItem(headlineContent = { Text(title) }, modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp)
         .semantics(mergeDescendants = true) { stateDescription = if (done) "Done" else "Not done yet" },
         leadingContent = { Icon(painterResource(if (done) R.drawable.ic_check_circle else R.drawable.ic_circle_outline), null,

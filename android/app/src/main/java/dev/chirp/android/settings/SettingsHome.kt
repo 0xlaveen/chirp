@@ -34,8 +34,9 @@ internal fun SettingsList(state: SetupState, actions: SettingsActions, history: 
         key(revision) { SettingsGroup {
             NavRow(SettingsPage.Connection.title, { open(SettingsPage.Connection) },
                 summary = connection.summary ?: "Pair your Mac to dictate", icon = R.drawable.ic_devices)
+            NavRow(SettingsPage.HowYouDictate.title, { open(SettingsPage.HowYouDictate) }, summary = inputModeSummary(state), icon = R.drawable.ic_mic)
             NavRow(SettingsPage.Dictation.title, { open(SettingsPage.Dictation) }, summary = dictationSummary(context, state), icon = R.drawable.ic_tune)
-            NavRow(SettingsPage.Keyboard.title, { open(SettingsPage.Keyboard) }, summary = keyboardSummary(context, prefs), icon = R.drawable.ic_keyboard)
+            NavRow(SettingsPage.Keyboard.title, { open(SettingsPage.Keyboard) }, summary = if (state.inputMode == InputMode.OWN_KEYBOARD) "Not in use — you’re keeping ${state.keyboardLabel ?: "your keyboard"}" else keyboardSummary(context, prefs), icon = R.drawable.ic_keyboard)
             NavRow(SettingsPage.Feedback.title, { open(SettingsPage.Feedback) }, summary = feedbackSummary(context), icon = R.drawable.ic_palette)
             NavRow(SettingsPage.Notes.title, { open(SettingsPage.Notes) }, summary = notesSummary(context), icon = R.drawable.ic_note)
             NavRow(SettingsPage.History.title, { open(SettingsPage.History) },
@@ -73,4 +74,10 @@ internal fun feedbackSummary(context: android.content.Context): String {
     val store = remember(context) { SettingsStore(context) }
     val colour = if (store.appColour == AppColour.DYNAMIC) "Match wallpaper" else "Pond"
     return "$colour · haptic cues ${if (store.haptics) "on" else "off"}"
+}
+
+internal fun inputModeSummary(state: SetupState): String = when (state.inputMode) {
+    InputMode.KEYBOARD -> "Chirp Keyboard"
+    InputMode.OWN_KEYBOARD -> "${state.keyboardLabel ?: "Your keyboard"}${if (state.bubbleEnabled) " + floating mic" else " · floating mic off"}"
+    null -> "Choose how you dictate"
 }

@@ -48,7 +48,7 @@ Install **as an update, without uninstalling Chirp** — that is what keeps the 
 
 - **From your Mac, in the app (updates):** see [Update over Tailscale](#update-over-tailscale).
 
-Opening a sideloaded APK can trigger a **Play Protect** screen warning about an unknown developer. Choose **More details → Install anyway** to continue. (A separate, optional sideload restriction can affect the floating microphone only — see [Optional floating microphone](#optional-floating-microphone).)
+Opening a sideloaded APK can trigger a **Play Protect** screen warning about an unknown developer. Choose **More details → Install anyway** to continue. (A separate, optional sideload restriction can affect the floating microphone only — see [Keep your keyboard](#keep-your-keyboard).)
 
 ### Update over Tailscale
 
@@ -71,14 +71,15 @@ On the phone, Chirp settings → **About → Updates** checks `https://<paired h
 
 ### First launch
 
-Onboarding is four full-screen pages with one job each and one primary button pinned at the bottom: *Welcome, Keyboard, Microphone, Pair your Mac*. A segmented bar at the top shows where you are; pages slide sideways (a cross-fade when animations are off) and back, including the predictive back gesture, returns to the previous page. It opens on the first unfinished page and advances by itself when you return from system settings. If the phone is already paired, as after an update, the welcome page is skipped; if everything is done the launcher opens the app's [Home](#the-app-home-notes-history-settings) directly, and keeps doing so once onboarding has finished, even if a requirement later lapses (Home then shows it).
+Onboarding has five steps: **Welcome · How you’ll dictate · Keyboard or Floating mic · Microphone · Pair**. A segmented bar shows progress and one primary button stays at the bottom, including at 200% font. Back returns to the previous step. Returning from system settings refreshes the checklist and advances when the requirement is met. Existing users who finished onboarding go straight to Notes after an upgrade.
 
-1. **Welcome:** what Chirp is in one picture, phone → Mac, then **Get started**.
-2. **Keyboard:** the button follows the next unmet requirement — **Enable Chirp Keyboard**, then **Select Chirp Keyboard**, then **Continue** — with an *Enabled* and a *Selected as default* check row. The Samsung path (Settings → General management → Keyboard list and default), personalised suggestions and swipe typing are behind **Samsung path and suggestions**.
-3. **Microphone:** **Allow microphone**. The mic opens only when you start dictation and is released as soon as you stop; the details are behind **What Chirp keeps**. If you deny it, the page offers **Open app permissions**.
-4. **Pair your Mac:** **Scan code**, or **Paste link instead**. A scanned code or a pasted link is tested and **saved automatically**, with no further tap; the page then shows *Connected · host* with the engine the Mac reports, and **Finish** opens Home. If the Mac can't be reached the page says so with one action (**Open Tailscale** when it is installed, otherwise **Try again**); an unavailable scanner offers **Paste link instead**. The pairing token is stored only after the Mac answers.
+1. **Welcome:** dictation and Notes, then **Get started**.
+2. **How you’ll dictate:** choose **Use Chirp Keyboard** or **Keep Gboard** (or your selected keyboard’s name). Neither is preselected; Continue requires a choice. Notes, Scratchpad, History and tiles work either way.
+3. **Keyboard:** enable and select Chirp Keyboard. **Floating mic:** read the disclosure, open the service’s Accessibility details, then allow it. Returning with it still off offers restricted-settings help. **Skip for now** leaves a dismissible reminder in Notes. Advanced Protection replaces the setup action with **Use Chirp Keyboard instead** and **Continue without it**.
+4. **Microphone:** allow it while using the app. It opens only during dictation or a recording note.
+5. **Pair:** scan the Mac’s QR code or paste its pairing link. Chirp tests the link before saving it. **Finish** opens Notes.
 
-Home then shows a first-run **Try it** card: a real text field to type and dictate into, and **Choose keyboard**. **Dismiss** removes it for good. Renders: `docs/screenshots/android/onboarding-*.png` (light, dark, 200% font, and the pairing success, failure and connecting states).
+Switch later in **Settings → How you dictate**, directly below Connection. The selected mode has a live checklist and keyboard picker or the same floating-mic guide. Choosing a mode never disables an IME or service. Keyboard preferences remain available; the hardware shortcut requires Chirp Keyboard. The floating mic hides while Chirp Keyboard is selected in either mode. Renders: `docs/screenshots/android/keepkb-*.png` and `onboarding-*.png`.
 
 ### The app: Home, Notes, History, Settings
 
@@ -283,9 +284,17 @@ HeliBoard's gesture typing needs a native decoder, and HeliBoard 4.2 ships none.
 
 The card warns that the library runs inside Chirp with Chirp's permissions, including network access — use only a file from a source you trust — and that a user-supplied library may not be built for 16 KB memory pages and so can fail to load on Android 15+ devices that use them (Chirp's own packaged libraries are checked for 16 KB alignment at every build). Release smoke still asserts that no `libjni_latinimegoogle` file is packaged.
 
-### Optional floating microphone
+### Keep your keyboard
 
-The floating accessibility mic is **optional and off by default**; keyboard dictation needs no Accessibility permission. Enable it only if you choose to use another keyboard — it reads the focused field locally to insert safely, runs as a microphone foreground service with a notification, and field contents stay on the phone. For sideload restrictions: Apps → Chirp → ⋮ → Allow restricted settings, then Accessibility → Installed apps → Chirp floating microphone. An already-enabled optional service remains under your Android setting; the app does not enable it on update. Design notes on this and the other input paths considered are in [docs/android-input-options.md](../docs/android-input-options.md).
+Choose **Keep my keyboard** at first launch or in **Settings → How you dictate**. The floating mic stays off until you explicitly enable **Chirp floating mic** in Android Accessibility. The guide explains what Chirp can see before opening that service’s own details page (or the Accessibility list if unavailable).
+
+Chirp reads only the focused editable field locally to insert text safely. Passwords and fields without safe insertion support get no bubble. The floating mic does not work in every app; selecting Chirp does not redirect Samsung Keyboard’s or Gboard’s own microphone. Only dictated audio goes to your own Mac. Idle capture, network activity and timers are absent. Recording uses a microphone foreground notification.
+
+If Android blocks a sideloaded app, return to Chirp and expand **Did Android say “Restricted setting”?** Open app info, tap **⋮ → Allow restricted settings**, confirm your screen lock, then try Accessibility again. The menu appears only after a blocked attempt, and varies by phone; managed phones may disallow it. Advanced Protection can prevent activation or turn the service off. Chirp explains this and offers its keyboard or continuing without the mic. Notes and Scratchpad remain available.
+
+### Quick dictate
+
+Notes and the Scratchpad tile already work with any keyboard. A dedicated Dictate-to-clipboard tile, Speak-button handler and widget are planned separately; this setup change does not add them. Input-path decisions and sources are in [android-input-options.md](../docs/android-input-options.md).
 
 ## Scratchpad
 
@@ -415,13 +424,15 @@ The Robolectric renders write to `app/build/screenshots/`, so an ordinary test r
 
 ### Mandatory release smoke
 
-Run `android/scripts/emulator-smoke.sh` with the toolchain sourced after every change. It builds and installs the minified release APK split matching the emulator's ABI, clears only the authorized disposable emulator's Chirp data, walks state-aware setup, opens/backs out of the real Google QR scanner, opens the native editor, checks keyboard/mic/recovery/options, and exercises actual HeliBoard keys: `teh` → `the` (sentence-cased at field start), `im` → `I'm`, next-word suggestions, clipboard history and emoji. It checks inner and cover layouts in both themes, unfolded landscape split, one-handed reachability, settings/diagnostics, packaged dictionary hashes, absence of debug assets/proprietary glide libraries and the Chirp crash buffer. Failure exits non-zero. Every ADB call pins `emulator-5580`; other serials are refused. It changes no phone, Mac configuration, production server or Tailscale state.
+Run `android/scripts/emulator-smoke.sh` with the toolchain sourced after every change. It builds and installs the minified release APK split matching the emulator's ABI, clears only the authorized disposable emulator's Chirp data, walks state-aware setup, opens/backs out of the real Google QR scanner, opens the native editor, checks keyboard/mic/recovery/options, and exercises actual HeliBoard keys: `teh` → `the` (sentence-cased at field start), `im` → `I'm`, next-word suggestions, clipboard history and emoji. It checks inner and cover layouts in both themes, unfolded landscape split, one-handed reachability, settings/diagnostics, packaged dictionary hashes, absence of debug assets/proprietary glide libraries and the Chirp crash buffer. Failure exits non-zero. Every ADB call uses the shared emulator-only serial guard: `ANDROID_SERIAL` or `--serial`, matching `emulator-<port>`; physical devices are refused. The default is `emulator-5580`. It changes no phone, Mac configuration, production server or Tailscale state.
 
 A tiny shell-only UiAutomator probe reads all accessibility windows because Android 17's stock `uiautomator dump` returns the editor window without the IME (`scripts/build-ui-probe.sh` builds it under a temporary directory from `UiHierarchy.java`, pushes it to the disposable emulator and removes it in cleanup; it ships in neither APK). Real release captures are `docs/screenshots/android/release-*.png`, each under 2 MB. Release has no synthetic capture source or emulator cleartext policy.
 
 ### Emulator speech checks (debug only)
 
-The operator-authorized emulator is **emulator-5580 only** — `emulator-check.py` refuses other serials (an `ANDROID_SERIAL` that disagrees is rejected too). The helper starts the actual server with a throwaway HOME on port 7899, uses the existing cached speech model, pairs through the QR deep-link path, and feeds generated speech through the real `PcmCapture` framing, buffer, `StreamTransport` and composing/final path. All subprocess/intent output that could contain a credential is suppressed. The test server and test credentials are removed in cleanup; the emulator is left running.
+Use a disposable **read-only** `chirp-fold` instance on your own free even port. Set `ANDROID_SERIAL=emulator-<port>` or pass `--serial emulator-<port>`; every emulator helper shares the same physical-device refusal guard (default `emulator-5580`). Never select another session’s instance. The speech helper uses a throwaway HOME and cached model on `--server-port` (default 7899), deep-link pairing and debug-only synthetic audio. It suppresses credential-bearing output and removes test credentials afterward.
+
+`--keepkb-check` verifies the fresh choice, disclosure, service-details and app-info deep links, returned-off help, enable/resume, pairing without changing Gboard, Settings switching and picker, and bubble hiding with Chirp selected. It saves/restores Accessibility settings and the default IME. Run `emulator-talkback.py --keepkb-check` for the actual TalkBack radio-card contract. The debug-only `EditorProbeActivity` supplies plain, password, unsupported and WebView fields, plus clipboard/recognizer length reports. It never ships in release. Restricted sideload blocking, Advanced Protection enrollment and One UI policy require [device acceptance](../docs/android-device-acceptance.md).
 
 ```sh
 source ~/.local/share/chirp-android/env.sh

@@ -4,20 +4,25 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class SetupFlowTest {
-    @Test fun `onboarding chooses the first incomplete requirement for all combinations`() {
-        for (enabled in listOf(false, true)) for (selected in listOf(false, true))
-            for (mic in listOf(false, true)) for (paired in listOf(false, true)) {
-                val expected = listOf(enabled && selected, mic, paired).indexOfFirst { !it }.let { if (it < 0) ONBOARDING_DONE else it + 1 }
-                assertEquals(expected, setupStep(enabled, selected, mic, paired))
-                val firstRun = !enabled && !selected && !mic && !paired
-                assertEquals(if (firstRun) PAGE_WELCOME else expected, setupStep(enabled, selected, mic, paired, welcomed = false))
-            }
+    @Test fun `every requirement combination respects the chosen mode and skip`() {
+        for (mode in InputMode.entries) for (enabled in listOf(false, true)) for (selected in listOf(false, true))
+            for (mic in listOf(false, true)) for (paired in listOf(false, true)) for (bubble in listOf(false, true))
+                for (skipped in listOf(false, true)) {
+                    val ready = if (mode == InputMode.KEYBOARD) enabled && selected else bubble || skipped
+                    val expected = when { !ready -> PAGE_KEYBOARD; !mic -> PAGE_MIC; !paired -> PAGE_PAIR; else -> ONBOARDING_DONE }
+                    assertEquals(expected, setupStep(enabled, selected, mic, paired, mode = mode, bubbleEnabled = bubble, floatingMicSkipped = skipped))
+                }
     }
-    @Test fun `the welcome page is skipped once paired or once the user is past it`() {
-        assertEquals(PAGE_WELCOME, setupStep(false, false, false, false, welcomed = false))
-        assertEquals(PAGE_KEYBOARD, setupStep(false, false, false, false, welcomed = true))
-        assertEquals(PAGE_KEYBOARD, setupStep(false, false, false, true, welcomed = false))
-        assertEquals(ONBOARDING_DONE, setupStep(true, true, true, true, welcomed = false))
+    @Test fun `fresh installs start at welcome then require a choice`() {
+        assertEquals(PAGE_WELCOME, setupStep(false, false, false, false, welcomed = false, mode = null))
+        assertEquals(PAGE_CHOICE, setupStep(false, false, false, false, mode = null))
+        assertEquals(PAGE_CHOICE, setupStep(false, false, true, true, mode = null))
+    }
+    @Test fun `every legacy keyboard and bubble combination migrates without changing its behaviour`() {
+        for (enabled in listOf(false, true)) for (selected in listOf(false, true)) for (bubble in listOf(false, true)) {
+            val expected = when { selected || (enabled && !bubble) -> InputMode.KEYBOARD; bubble -> InputMode.OWN_KEYBOARD; else -> null }
+            assertEquals(expected, migratedInputMode(enabled, selected, bubble))
+        }
     }
     @Test fun `each recoverable dictation error has a specific action`() {
         assertEquals(DictationAction.PAIR, DictationAction.forStatus("Pair your Mac in Chirp settings"))
