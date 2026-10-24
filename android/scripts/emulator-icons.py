@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Verify the signed release's launcher and system icon surfaces on emulator-5580."""
+"""Verify the signed release's launcher and system icon surfaces on the selected emulator."""
 from pathlib import Path
 import runpy
 
@@ -8,7 +8,7 @@ adb = m['adb']
 
 
 def main():
-    assert adb('get-serialno').strip().decode() == 'emulator-5580'
+    assert adb('get-serialno').strip().decode() == m['SERIAL']
     try:
         adb('shell', 'am', 'start', '-a', 'android.intent.action.ALL_APPS')
         m['wait_for']('Chirp Keyboard')

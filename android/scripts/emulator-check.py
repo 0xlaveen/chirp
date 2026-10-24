@@ -20,8 +20,10 @@ import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
 
-SERIAL = os.environ.get("ANDROID_SERIAL", "emulator-5580")
-assert SERIAL in ("emulator-5580", "emulator-5600"), "Only the authorized disposable emulators are supported"
+from emulator_serial import emulator_serial
+
+SERIAL = emulator_serial()
+
 PACKAGE = "dev.chirp.android"
 IME = PACKAGE + "/.ChirpImeService"
 ROOT = Path(__file__).resolve().parents[2]
@@ -207,7 +209,7 @@ def cleanup_frames(output, work):
     print("Uninstrumented cleanup:", "; ".join(metrics), flush=True)
 
 
-def warm_cleanup(python, token_path, env, tls=False):
+def warm_cleanup(python, token_path, env, tls=False, port=7899):
     # Warm the throwaway helper, including first-use Metal compilation in its empty HOME.
     # The subprocess uses the server venv's websocket package; it prints metadata only.
     code = r'''import asyncio, json, sys, wave, ssl
@@ -217,7 +219,7 @@ async def warm():
     token = Path(sys.argv[1]).read_text().strip()
     with wave.open(sys.argv[2]) as wav: pcm = wav.readframes(wav.getnframes())
     options = {"ssl": ssl.create_default_context()} if sys.argv[3] == "tls" else {}
-    url = ("wss" if options else "ws") + "://127.0.0.1:7899/v1/stream"
+    url = ("wss" if options else "ws") + "://127.0.0.1:" + sys.argv[4] + "/v1/stream"
     async with websockets.connect(url, additional_headers={"Authorization":"Bearer " + token}, **options) as ws:
         await ws.send(json.dumps({"type":"start","sample_rate":16000,"encoding":"pcm_s16le","client":"android","correction":True}))
         assert json.loads(await ws.recv())["type"] == "ready"
@@ -230,7 +232,7 @@ async def warm():
                 print(json.dumps({"corrected":event["corrected"]}), flush=True)
                 return
 asyncio.run(warm())'''
-    result = subprocess.run([python, "-c", code, str(token_path), str(ROOT / "android/app/build/generated/chirp-debug-assets/synthetic.wav"), "tls" if tls else "http"],
+    result = subprocess.run([python, "-c", code, str(token_path), str(ROOT / "android/app/build/generated/chirp-debug-assets/synthetic.wav"), "tls" if tls else "http", str(port)],
                    env=env, check=True, timeout=120, stdout=subprocess.PIPE)
     warm = json.loads(result.stdout)
     print("Managed warmup: corrected=" + str(warm["corrected"]), flush=True)
@@ -246,6 +248,9 @@ def main():
     args.add_argument("--stop-check", action="store_true")
     args.add_argument("--history-check", action="store_true")
     args.add_argument("--notes-check", action="store_true")
+    args.add_argument("--keepkb-check", action="store_true")
+    args.add_argument("--serial")
+    args.add_argument("--server-port", type=int, default=7899)
     args.add_argument("--tls", action="store_true")
     args.add_argument("--expect-crash", action="store_true")
     args.add_argument("--server-root", type=Path, default=ROOT / "server")
@@ -253,7 +258,8 @@ def main():
     opt = args.parse_args()
     assert os.environ.get("ANDROID_SERIAL", SERIAL) == SERIAL
     scheme = "https" if opt.tls else "http"
-    base = scheme + "://127.0.0.1:7899"
+    assert 1024 <= opt.server_port <= 65535, "Use an unprivileged server port"
+    base = scheme + "://127.0.0.1:" + str(opt.server_port)
     cert = opt.tls_dir / "generated/chirp-debug-res/raw/emulator_ca.pem"
     context = ssl.create_default_context(cafile=str(cert)) if opt.tls else None
     assert adb("get-serialno").strip().decode() == SERIAL
@@ -261,7 +267,7 @@ def main():
     # Refuse to disturb any service already using this test port.
     with socket.socket() as probe:
         probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        probe.bind(("127.0.0.1", 7899))
+        probe.bind(("127.0.0.1", opt.server_port))
     output = ROOT / "docs/screenshots/android"
     with tempfile.TemporaryDirectory(prefix="chirp-emulator-") as name:
         work = Path(name)
@@ -273,10 +279,10 @@ def main():
         env = dict(os.environ, HOME=str(home), HF_HOME=str(Path.home() / ".cache/huggingface"),
                    HF_HUB_OFFLINE="1", TRANSFORMERS_OFFLINE="1", PYTHONPATH=str(opt.server_root / "src"))
         if opt.tls: env["SSL_CERT_FILE"] = str(cert)
-        command = [opt.python, "-m", "chirp_server", "--port", "7899", "--model-dir", opt.model_dir]
+        command = [opt.python, "-m", "chirp_server", "--port", str(opt.server_port), "--model-dir", opt.model_dir]
         if opt.tls or opt.stop_check or opt.notes_check:
             command = [opt.python, str(Path(__file__).with_name("emulator-stop-server.py")),
-                       "--model-dir", opt.model_dir, "--metadata", str(work / "events.json")]
+                       "--model-dir", opt.model_dir, "--metadata", str(work / "events.json"), "--server-port", str(opt.server_port)]
             if opt.tls: command += ["--cert", str(cert), "--key", str(opt.tls_dir / "emulator-tls/key.pem")]
             if opt.notes_check: command += ["--ready-delay", "6"]
         server = subprocess.Popen(command,
@@ -291,11 +297,15 @@ def main():
                 time.sleep(.1)
             token = token_path.read_text().strip()
             wait_health(token, base=base, context=context)
-            if opt.cleanup_only or opt.frames_only or opt.stop_check or opt.history_check or opt.notes_check: warm_cleanup(opt.python, token_path, env, opt.tls)
+            if opt.cleanup_only or opt.frames_only or opt.stop_check or opt.history_check or opt.notes_check: warm_cleanup(opt.python, token_path, env, opt.tls, opt.server_port)
             # Independent host-routing probe, no authentication or private response content.
-            probe = adb("shell", "sh", "-c", shlex.quote("printf 'GET /v1/health HTTP/1.0\\r\\nHost: 10.0.2.2\\r\\n\\r\\n' | toybox nc -w 3 10.0.2.2 7899"))
+            probe = adb("shell", "sh", "-c", shlex.quote("printf 'GET /v1/health HTTP/1.0\\r\\nHost: 10.0.2.2\\r\\n\\r\\n' | toybox nc -w 3 10.0.2.2 " + str(opt.server_port)))
             print("Emulator route to throwaway server:", opt.tls or b"200 OK" in probe, flush=True)
             adb("install", "-r", str(Path(opt.apk).resolve()))
+            if opt.keepkb_check:
+                module = runpy.run_path(str(Path(__file__).with_name("emulator-keepkb-check.py")))
+                module["check"](dict(_probe, adb=adb), work, output, scheme + "://10.0.2.2:" + str(opt.server_port), token)
+                return
             adb("shell", "am", "force-stop", PACKAGE)
             if opt.stop_check:
                 adb("shell", "run-as", PACKAGE, "rm", "-f", "shared_prefs/crash_diagnostics.xml")
@@ -309,7 +319,7 @@ def main():
             adb("shell", "settings", "put", "secure", "show_ime_with_hard_keyboard", "1")
             adb("logcat", "-b", "crash", "-c")
             # adb prints the intent URI, so output is deliberately never forwarded to logs.
-            link = "chirp://pair?" + urllib.parse.urlencode({"url": scheme + "://10.0.2.2:7899", "token": token})
+            link = "chirp://pair?" + urllib.parse.urlencode({"url": scheme + "://10.0.2.2:" + str(opt.server_port), "token": token})
             adb("shell", "am", "start", "-a", "android.intent.action.VIEW", "-d", shlex.quote(link))
             # The link is tested and saved on arrival. The pairing UI holds the throwaway credential; never retain a capture here.
             deadline = time.monotonic() + 15
@@ -420,7 +430,7 @@ def main():
             adb("shell", "rm", "-f", "/sdcard/chirp-check.xml", "/sdcard/chirp-check.png", "/sdcard/chirp-cleanup.mp4", "/sdcard/chirp-polishing.png", "/sdcard/chirp-cleaned.png", "/sdcard/chirp-windows.xml", "/data/local/tmp/chirp-ui-probe.jar")
             adb("shell", "am", "force-stop", PACKAGE)
             adb("shell", "run-as", PACKAGE, "rm", "-f", "shared_prefs/debug_capture.xml", "shared_prefs/chirp.xml")
-            adb("shell", "ime", "set", IME)
+            if not opt.keepkb_check: adb("shell", "ime", "set", IME)
 
 
 if __name__ == "__main__":

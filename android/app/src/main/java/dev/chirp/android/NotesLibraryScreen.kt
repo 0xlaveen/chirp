@@ -240,8 +240,9 @@ internal fun NotesLibraryScreen(
                         val captureInset = if (!trash && selection.isEmpty()) 72.dp else 0.dp
                         LazyColumn(Modifier.fillMaxSize().padding(padding).padding(bottom = captureInset).testTag("notes-library-list"), if (trash) trashList else list,
                             contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 16.dp)) {
-                            if (!trash && !setupDismissed && state != null && (!state.mic || !state.paired || !state.inputEnabled || state.tryIt)) item(key = "setup") {
-                                SetupCard(connection, dismiss = { setupDismissed = true; state.tryIt = false; SettingsStore(context).tryItDismissed = true })
+                            if (!trash && !setupDismissed && state != null && (!state.mic || !state.paired || (if (state.inputMode == InputMode.OWN_KEYBOARD) !state.bubbleEnabled else !state.inputEnabled) || state.tryIt)) item(key = "setup") {
+                                SetupCard(if (state.inputMode == InputMode.OWN_KEYBOARD && !state.bubbleEnabled) ({ context.startActivity(android.content.Intent(context, SetupActivity::class.java).putExtra("section", "input")) }) else connection,
+                                    floatingMic = state.inputMode == InputMode.OWN_KEYBOARD && !state.bubbleEnabled, dismiss = { setupDismissed = true; state.tryIt = false; SettingsStore(context).tryItDismissed = true })
                             }
                             if (!trash && !enabled) item(key = "opt-out") {
                                 Surface(shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.surfaceContainer) {
@@ -311,13 +312,13 @@ private fun ConnectionChip(state: SetupState?, click: () -> Unit) {
 }
 
 @Composable
-private fun SetupCard(fix: () -> Unit, dismiss: () -> Unit) {
+private fun SetupCard(fix: () -> Unit, floatingMic: Boolean = false, dismiss: () -> Unit) {
     Surface(Modifier.fillMaxWidth().padding(bottom = 8.dp), shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.surfaceContainer) {
         Row(Modifier.padding(start = 16.dp, top = 8.dp, bottom = 8.dp, end = 4.dp), verticalAlignment = Alignment.Top) {
             Column(Modifier.weight(1f).padding(top = 8.dp)) {
                 Text("Make yourself at home", style = MaterialTheme.typography.titleMedium)
                 Text("Finish setting up Chirp to record and dictate.", Modifier.padding(top = 4.dp), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                TextButton(fix, contentPadding = PaddingValues(vertical = 8.dp)) { Text("Finish setup") }
+                TextButton(fix, contentPadding = PaddingValues(vertical = 8.dp)) { Text(if (floatingMic) "Turn on the floating mic" else "Finish setup") }
             }
             IconButton(dismiss) { Icon(painterResource(R.drawable.ic_close), "Dismiss setup") }
         }

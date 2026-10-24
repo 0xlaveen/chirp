@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Fold layout geometry regression and screenshots; emulator-5580 only.
+"""Fold layout geometry regression and screenshots; emulator-only.
 
 Run after build-ui-probe.sh with the desired APK installed. --before captures
 the unmodified 0.5.2 default, including the tablet arrangement at 600–767 dp.
@@ -53,6 +53,7 @@ def choose_look(label):
 
 def main():
     parser = argparse.ArgumentParser()
+    parser.add_argument('--serial')
     parser.add_argument('--before', action='store_true')
     parser.add_argument('--look', choices=('gboard', 'samsung'), default='gboard')
     opt = parser.parse_args()
