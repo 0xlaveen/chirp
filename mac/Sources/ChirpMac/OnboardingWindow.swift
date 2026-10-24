@@ -59,7 +59,7 @@ final class OnboardingWindowController: NSObject, NSWindowDelegate {
     }
 
     private func makeWindow() {
-        let v = OnboardingView(icon: NSApp.applicationIconImage)
+        let v = OnboardingView(icon: ChirpBrand.glyph())
         v.primary.target = self; v.primary.action = #selector(primaryPressed)
         v.back.target = self; v.back.action = #selector(backPressed)
         v.fix.target = self; v.fix.action = #selector(fixPressed)

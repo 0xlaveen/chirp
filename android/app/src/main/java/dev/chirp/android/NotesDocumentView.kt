@@ -51,7 +51,7 @@ internal val NOTES_READING_WIDTH = 680.dp
 internal object NotesType {
     val body @Composable get() = MaterialTheme.typography.bodyLarge.copy(fontSize = 17.sp, lineHeight = 27.sp)
     @Composable fun heading(level: Int): TextStyle = when (level) {
-        1 -> MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.SemiBold)
+        1 -> MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.SemiBold, fontFamily = FontFamily.Serif)
         2 -> MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.SemiBold, fontSize = 22.sp, lineHeight = 30.sp)
         3 -> MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold, fontSize = 18.sp, lineHeight = 26.sp)
         else -> MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold, fontSize = 16.sp, lineHeight = 24.sp)

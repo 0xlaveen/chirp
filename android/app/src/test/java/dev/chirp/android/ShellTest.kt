@@ -1,5 +1,7 @@
 package dev.chirp.android
 
+import dev.chirp.android.AppColour
+
 import android.content.Intent
 import android.os.Looper
 import android.text.InputType
@@ -145,7 +147,7 @@ class AppShellTest {
     private val page = mutableStateOf(false)
 
     private fun show() = compose.setContent {
-        ChirpTheme(dynamic = false) {
+        ChirpTheme(colour = AppColour.POND) {
             AppShell(tab.value, { tab.value = it; exit.value = false }, exit.value) { shown ->
                 if (shown == ShellTab.Settings) BackHandler(enabled = page.value) { page.value = false }
                 Text("${shown.label} content" + if (page.value) " page" else "")
@@ -204,7 +206,7 @@ class HomeScreenTest {
     private var historySettings = 0
 
     private fun show(state: SetupState) = compose.setContent {
-        ChirpTheme(dynamic = false) {
+        ChirpTheme(colour = AppColour.POND) {
             HomeScreen(state, HomeActions(fix = { fixes += it }, dictate = { dictated++ }, history = { opened += it }, historySettings = { historySettings++ }),
                 history, now = { now }, zone = ZoneOffset.UTC)
         }

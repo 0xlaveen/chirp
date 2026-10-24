@@ -1,5 +1,7 @@
 package dev.chirp.android
 
+import dev.chirp.android.AppColour
+
 import android.app.Activity
 import android.content.res.Configuration
 import android.graphics.Bitmap
@@ -141,7 +143,7 @@ class VoiceUiTest {
         val state = SetupState()
         val dark = mutableStateOf(false)
         val font = mutableFloatStateOf(1f)
-        fontScaled(font) { dev.chirp.android.ui.ChirpTheme(dark.value, dynamic = false) { Onboarding(state) } }
+        fontScaled(font) { dev.chirp.android.ui.ChirpTheme(dark.value, colour = AppColour.POND) { Onboarding(state) } }
         fun shot(name: String) {
             compose.waitForIdle()
             val bitmap = compose.onRoot().captureToImage().asAndroidBitmap()

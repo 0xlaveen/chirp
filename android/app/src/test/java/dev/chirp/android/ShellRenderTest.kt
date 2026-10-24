@@ -1,5 +1,7 @@
 package dev.chirp.android
 
+import dev.chirp.android.AppColour
+
 import android.graphics.Bitmap
 import android.text.InputType
 import android.view.inputmethod.EditorInfo
@@ -48,7 +50,7 @@ class ShellRenderTest {
 
     private fun start(state: SetupState) {
         compose.setContent {
-            ChirpTheme(dark.value, dynamic = false) {
+            ChirpTheme(dark.value, colour = AppColour.POND) {
                 AppShell(tab.value, { tab.value = it }) { shown ->
                     when (shown) {
                         ShellTab.History -> HistoryScreen(history, { now }, ZoneOffset.UTC)

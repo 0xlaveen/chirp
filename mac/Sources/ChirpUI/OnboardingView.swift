@@ -183,12 +183,13 @@ public final class OnboardingView: NSView {
         if step == .welcome {
             let image = NSImageView(image: icon ?? NSImage())
             image.imageScaling = .scaleProportionallyUpOrDown
-            image.setAccessibilityLabel("Chirp app icon")
+            image.contentTintColor = .chirpKoi
+            image.setAccessibilityLabel("Chirp")
             view = image
         } else {
-            let disc = ColorView(NSColor.controlAccentColor.withAlphaComponent(0.16), cornerRadius: size / 2)
+            let disc = ColorView(NSColor.chirpKoi.withAlphaComponent(0.16), cornerRadius: size / 2)
             let glyph = NSImageView(image: NSImage(systemSymbolName: symbol, accessibilityDescription: nil)?
-                .withSymbolConfiguration(.init(pointSize: 30, weight: .regular).applying(.init(paletteColors: [.controlAccentColor]))) ?? NSImage())
+                .withSymbolConfiguration(.init(pointSize: 30, weight: .regular).applying(.init(paletteColors: [.chirpKoi]))) ?? NSImage())
             glyph.translatesAutoresizingMaskIntoConstraints = false
             disc.addSubview(glyph)
             NSLayoutConstraint.activate([
@@ -280,7 +281,7 @@ public final class OnboardingView: NSView {
     private func rebuildDots(current: Int) {
         for view in dots.arrangedSubviews { dots.removeArrangedSubview(view); view.removeFromSuperview() }
         for index in 0..<OnboardingStep.allCases.count {
-            let dot = ColorView(index == current ? .controlAccentColor : .tertiaryLabelColor, cornerRadius: 3.5)
+            let dot = ColorView(index == current ? .chirpKoi : .tertiaryLabelColor, cornerRadius: 3.5)
             dot.translatesAutoresizingMaskIntoConstraints = false
             NSLayoutConstraint.activate([dot.widthAnchor.constraint(equalToConstant: 7), dot.heightAnchor.constraint(equalToConstant: 7)])
             dots.addArrangedSubview(dot)

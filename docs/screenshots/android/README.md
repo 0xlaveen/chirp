@@ -40,7 +40,7 @@ operator acceptance on the phone.
 
 ## Design components
 
-- `components-{light,dark}.png`: the shared settings components (`ui/ChirpComponents.kt`) in Chirp green:
+- `components-{light,dark}.png`: the shared settings components (`ui/ChirpComponents.kt`) in Pond:
   `SettingsGroup` with `SwitchRow`, `NavRow` and a destructive `ActionRow`, `ChoiceChips`, the four
   `StatusBanner` kinds and the `InfoSheet` body. `components-dynamic-{light,dark}.png` show the
   default wallpaper colours (Robolectric's stock dynamic palette), and `components-font-200.png`

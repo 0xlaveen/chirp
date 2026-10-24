@@ -475,7 +475,7 @@ import Testing
         let names = Snapshots.committedNames
         let all = Set(Snapshots.allScenarios.map(\.name))
         #expect(names.allSatisfy { all.contains($0) } && Set(names).count == names.count)
-        #expect(names.count * 2 <= 46)
+        #expect(names.count * 2 <= 50)  // 25 states now: the Pond Ripple adds its own component states
         // The menu in light and dark, one per Settings tab, setup, the key HUD states and the Notes window.
         #expect(names.contains("notes-editing") && names.contains("notes-split"))
         #expect(names.contains("menu-ready") && names.contains("onboarding-welcome") && names.contains { $0.hasPrefix("hud-") })

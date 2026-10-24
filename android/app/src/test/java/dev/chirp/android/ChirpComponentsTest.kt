@@ -79,19 +79,19 @@ class ChirpComponentsTest {
     private fun inside(outer: Rect, inner: Rect) = inner.left >= outer.left - 1 && inner.top >= outer.top - 1 &&
         inner.right <= outer.right + 1 && inner.bottom <= outer.bottom + 1
 
-    @Test fun `render components in Chirp green and wallpaper colours, light, dark and at 200 percent font`() {
+    @Test fun `render components in Pond and wallpaper colours, light, dark and at 200 percent font`() {
         val output = File(System.getProperty("chirp.screenshots")).apply { mkdirs() }
         val dark = mutableStateOf(false)
-        val dynamic = mutableStateOf(false)
+        val colour = mutableStateOf(AppColour.POND)
         val fontScale = mutableFloatStateOf(1f)
         compose.setContent {
             CompositionLocalProvider(LocalDensity provides Density(LocalDensity.current.density, fontScale.floatValue)) {
-                ChirpTheme(dark.value, dynamic.value) { Box { Gallery() } }
+                ChirpTheme(dark.value, colour.value) { Box { Gallery() } }
             }
         }
-        for ((name, setting) in listOf("light" to Triple(false, false, 1f), "dark" to Triple(true, false, 1f),
-            "dynamic-light" to Triple(false, true, 1f), "dynamic-dark" to Triple(true, true, 1f), "font-200" to Triple(false, true, 2f))) {
-            compose.runOnIdle { dark.value = setting.first; dynamic.value = setting.second; fontScale.floatValue = setting.third }
+        for ((name, setting) in listOf("light" to Triple(false, AppColour.POND, 1f), "dark" to Triple(true, AppColour.POND, 1f),
+            "dynamic-light" to Triple(false, AppColour.DYNAMIC, 1f), "dynamic-dark" to Triple(true, AppColour.DYNAMIC, 1f), "font-200" to Triple(false, AppColour.DYNAMIC, 2f))) {
+            compose.runOnIdle { dark.value = setting.first; colour.value = setting.second; fontScale.floatValue = setting.third }
             compose.waitForIdle()
             val gallery = compose.onNodeWithTag("gallery").fetchSemanticsNode()
             // Every label is laid out in full and sits inside its row, toggle or card: nothing clipped at any font scale.
@@ -118,7 +118,7 @@ class ChirpComponentsTest {
 
     @Test fun `switch row is one merged switch node read as title then summary, toggled from anywhere on the row`() {
         var checked by mutableStateOf(false)
-        compose.setContent { ChirpTheme(dynamic = false) { SwitchRow("Haptic cues", checked, { checked = it }, summary = "Vibrate on start and stop") } }
+        compose.setContent { ChirpTheme(colour = AppColour.POND) { SwitchRow("Haptic cues", checked, { checked = it }, summary = "Vibrate on start and stop") } }
         val row = compose.onNode(isToggleable())
         row.assertIsOff().assert(SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Switch))
             .assert(SemanticsMatcher.expectValue(SemanticsProperties.Text, listOf(AnnotatedString("Haptic cues"), AnnotatedString("Vibrate on start and stop"))))
@@ -152,21 +152,21 @@ class ChirpComponentsTest {
         }
     }
 
-    @Test fun `app colours default to the wallpaper, and Chirp green persists and restyles the app and floating mic`() {
+    @Test fun `app colours default to Pond, and Match wallpaper persists and restyles the app and floating mic`() {
         val store = SettingsStore(context)
-        assertTrue(store.dynamicColor)
+        assertEquals(AppColour.POND, store.appColour)
         val wallpaper = dynamicLightColorScheme(context).primary
-        assertNotEquals(ChirpGreenLight.primary, wallpaper)
+        assertNotEquals(PondLight.primary, wallpaper)
         var primary = Color.Unspecified
         compose.setContent { ChirpTheme(dark = false) { primary = MaterialTheme.colorScheme.primary; AppColoursSettings() } }
-        compose.runOnIdle { assertEquals(wallpaper, primary) }
+        compose.runOnIdle { assertEquals(PondLight.primary, primary) }
+        assertEquals(PondLight.primary.toArgb(), VoicePalette.of(context).accent)
+        compose.onNodeWithText("Pond").assertIsSelected()
+        compose.onNodeWithText("Match wallpaper").performClick()
+        compose.runOnIdle { assertEquals(AppColour.DYNAMIC, SettingsStore(context).appColour); assertEquals(wallpaper, primary) }
         assertEquals(wallpaper.toArgb(), VoicePalette.of(context).accent)
-        compose.onNodeWithText("Match wallpaper").assertIsSelected()
-        compose.onNodeWithText("Chirp green").performClick()
-        compose.runOnIdle { assertFalse(SettingsStore(context).dynamicColor); assertEquals(ChirpGreenLight.primary, primary) }
-        assertEquals(ChirpGreenLight.primary.toArgb(), VoicePalette.of(context).accent)
-        store.dynamicColor = true
-        compose.runOnIdle { assertEquals(wallpaper, primary) }
+        store.appColour = AppColour.POND
+        compose.runOnIdle { assertEquals(PondLight.primary, primary) }
     }
 
     @Test fun `status banner announces politely and learn more opens and closes its sheet`() {

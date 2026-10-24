@@ -36,6 +36,8 @@ public struct NotesView: View {
         .sheet(isPresented: Binding(get: { model.reviewing != nil }, set: { if !$0 { model.closeReview() } })) {
             OrganizeReviewSheet(model: model)
         }
+        // The app accent (koi): system controls in Notes follow it, bundled or not.
+        .tint(Color.chirp.koi)
     }
 
     @ViewBuilder private var content: some View {
@@ -332,9 +334,13 @@ private struct NotesPane: View {
 
     private var emptyState: some View {
         VStack(spacing: 12) {
-            Image(systemName: "note.text")
-                .font(.system(size: 36, weight: .light))
-                .foregroundStyle(.tertiary)
+            if let glyph = ChirpBrand.tinted(.chirp.inkMuted, size: 56) {
+                Image(nsImage: glyph)
+            } else {
+                Image(systemName: "note.text")
+                    .font(.system(size: 36, weight: .light))
+                    .foregroundStyle(.tertiary)
+            }
             Text(NotesStatus.empty(key: model.notesKey))
                 .font(.title3)
                 .foregroundStyle(.secondary)
@@ -406,7 +412,7 @@ private struct HearingStrip: View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
             Image(systemName: "waveform")
                 .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(Color.accentColor)
+                .foregroundStyle(Color.chirp.koi)
                 .accessibilityHidden(true)
             Text("Hearing")
                 .font(.caption.weight(.semibold))
@@ -517,7 +523,7 @@ private struct EditedChip: View {
                 Text("Undo").font(.caption.weight(.semibold))
             }
             .buttonStyle(.plain)
-            .foregroundStyle(Color.accentColor)
+            .foregroundStyle(Color.chirp.koi)
             .accessibilityLabel("Undo the spoken edit")
         }
         .padding(.horizontal, 10)
@@ -548,7 +554,7 @@ private struct UndoChip: View {
                     Text("Show changes").font(.caption.weight(.semibold))
                 }
                 .buttonStyle(.plain)
-                .foregroundStyle(Color.accentColor)
+                .foregroundStyle(Color.chirp.koi)
                 .accessibilityLabel("Show what organize changed")
                 Text("·").font(.caption).foregroundStyle(.secondary)
             }
@@ -559,7 +565,7 @@ private struct UndoChip: View {
                 Text("Undo").font(.caption.weight(.semibold))
             }
             .buttonStyle(.plain)
-            .foregroundStyle(Color.accentColor)
+            .foregroundStyle(Color.chirp.koi)
             .accessibilityLabel("Undo organize")
         }
         .padding(.horizontal, 10)
@@ -683,11 +689,11 @@ private struct UpdatingBadge: View {
     var body: some View {
         Label("Updating", systemImage: "sparkles")
             .font(.caption.weight(.medium))
-            .foregroundStyle(Color.accentColor)
+            .foregroundStyle(Color.chirp.koi)
             .padding(.horizontal, 8)
             .padding(.vertical, 3)
             .background(Capsule().fill(.regularMaterial))
-            .overlay(Capsule().fill(Color.accentColor.opacity(0.1)))
+            .overlay(Capsule().fill(Color.chirp.koi.opacity(0.1)))
     }
 }
 
@@ -700,7 +706,7 @@ private struct RecoveryBanner: View {
         HStack(alignment: .center, spacing: 10) {
             Image(systemName: "arrow.counterclockwise.circle.fill")
                 .font(.system(size: 15))
-                .foregroundStyle(Color.accentColor)
+                .foregroundStyle(Color.chirp.koi)
                 .accessibilityHidden(true)
             Text(offer.text)
                 .font(.callout)
@@ -717,7 +723,7 @@ private struct RecoveryBanner: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
-        .background(Color.accentColor.opacity(0.1))
+        .background(Color.chirp.koi.opacity(0.1))
         .overlay(alignment: .bottom) { Divider() }
         .accessibilityElement(children: .contain)
     }
@@ -732,7 +738,7 @@ private struct ExplanationBanner: View {
         HStack(alignment: .center, spacing: 10) {
             Image(systemName: "text.badge.star")
                 .font(.system(size: 15))
-                .foregroundStyle(Color.accentColor)
+                .foregroundStyle(Color.chirp.koi)
             Text(text)
                 .font(.callout)
                 .fixedSize(horizontal: false, vertical: true)
@@ -749,7 +755,7 @@ private struct ExplanationBanner: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
-        .background(Color.accentColor.opacity(0.07))
+        .background(Color.chirp.koi.opacity(0.07))
         .overlay(alignment: .bottom) { Divider() }
     }
 }
@@ -872,7 +878,7 @@ private struct TranscriptPane: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .padding(.vertical, 2)
-        .background(RoundedRectangle(cornerRadius: 4).fill(Color.accentColor.opacity(model.highlightedParagraph == p.id ? 0.12 : 0)))
+        .background(RoundedRectangle(cornerRadius: 4).fill(Color.chirp.koi.opacity(model.highlightedParagraph == p.id ? 0.12 : 0)))
         .modifier(SpeakerRowMenu(model: model, paragraph: p))
         .popover(isPresented: Binding(get: { model.renaming?.row == p.id }, set: { if !$0 { model.renaming = nil } }),
                  arrowEdge: .bottom) {

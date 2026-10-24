@@ -13,6 +13,9 @@ import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
 
+/** The "App colours" choices: Pond is Chirp's own scheme, DYNAMIC matches the wallpaper. */
+enum class AppColour { POND, DYNAMIC }
+
 class SettingsStore(context: Context) {
     private val prefs = context.getSharedPreferences(FILE, Context.MODE_PRIVATE)
     var correction: Boolean
@@ -100,10 +103,20 @@ class SettingsStore(context: Context) {
     var returnToPrevious: Boolean
         get() = prefs.getBoolean("return_to_previous", false)
         set(value) { prefs.edit { putBoolean("return_to_previous", value) } }
-    /** "App colours": wallpaper dynamic colour (default) or Chirp green, for the app and the floating mic. */
-    var dynamicColor: Boolean
-        get() = prefs.getBoolean("dynamic_color", true)
-        set(value) { prefs.edit { putBoolean("dynamic_color", value) } }
+    /**
+     * "App colours": Pond (the default) or the wallpaper's dynamic colour. Migrated lazily from the
+     * pre-Pond boolean, which was only written on an explicit chip tap: an explicit "Match wallpaper"
+     * stays wallpaper, an explicit "Chirp green" becomes Pond (its replacement), and no earlier
+     * choice at all starts on Pond.
+     */
+    var appColour: AppColour
+        get() {
+            prefs.getString("app_colours", null)?.let { saved -> return AppColour.entries.firstOrNull { it.name == saved } ?: AppColour.POND }
+            val chosen = if (prefs.contains("dynamic_color") && prefs.getBoolean("dynamic_color", true)) AppColour.DYNAMIC else AppColour.POND
+            prefs.edit { putString("app_colours", chosen.name); remove("dynamic_color") }
+            return chosen
+        }
+        set(value) { prefs.edit { putString("app_colours", value.name) } }
     var debugOverlay: Boolean
         get() = prefs.getBoolean("overlay", false)
         set(value) { prefs.edit { putBoolean("overlay", value) } }

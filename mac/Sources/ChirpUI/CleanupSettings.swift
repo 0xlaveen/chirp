@@ -89,7 +89,7 @@ public final class StylePromptsEditor: NSObject, NSTextViewDelegate {
         count.font = MenuStyle.secondaryFont
         count.setAccessibilityLabel("Character count")
         editedLabel.font = MenuStyle.secondaryFont
-        editedLabel.textColor = .controlAccentColor
+        editedLabel.textColor = .chirpKoi
         resetButton.bezelStyle = .rounded
         resetButton.controlSize = .small
         resetButton.target = self
@@ -152,7 +152,7 @@ public final class StylePromptsEditor: NSObject, NSTextViewDelegate {
         let edited = isEdited(selectedID)
         editedLabel.isHidden = !(edited || blankNeedsDefault)
         editedLabel.stringValue = edited ? "Edited" : "Blank: the default prompt is used"
-        editedLabel.textColor = edited ? .controlAccentColor : .secondaryLabelColor
+        editedLabel.textColor = edited ? .chirpKoi : .secondaryLabelColor
         resetButton.isHidden = !(edited && isEditable)
     }
 

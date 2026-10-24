@@ -106,8 +106,7 @@ internal fun ScratchpadScreen(model: ScratchpadModel, mic: () -> Unit, copy: () 
         Box(Modifier.fillMaxSize().safeDrawingPadding(), contentAlignment = Alignment.TopCenter) {
             Column(Modifier.widthIn(max = 600.dp).fillMaxSize().padding(horizontal = 24.dp, vertical = 16.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text("CHIRP  /  SCRATCHPAD", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
-                if (model.retained) StatusBanner(StatusKind.Error, stringResource(R.string.debug_retention))
+                    if (model.retained) StatusBanner(StatusKind.Error, stringResource(R.string.debug_retention))
                 OutlinedTextField(model.field, { if (!model.active) model.field = it }, Modifier.fillMaxWidth().weight(1f).heightIn(min = 120.dp),
                     label = { Text("Scratchpad text") }, placeholder = { Text("Dictate, then edit here") }, readOnly = model.active,
                     keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences))
