@@ -76,11 +76,13 @@ class Bubble:
 
     def probe_field(self, label):
         """Opens the probe and focuses one of its fields by tapping it, like a person would."""
-        self.adb('shell', 'am', 'start', '-W', '-n', PROBE)
+        self.adb('shell', 'am', 'start', '-W', '--activity-clear-task', '-n', PROBE)
         # The report line changes once used; the Recognize button is always there.
         self.label('Recognize')
         field = self.label(label)
         self.tap(field)
+        # Let the tap's caret move land first: a caret that moves after the bubble's snapshot is (rightly) a changed field.
+        time.sleep(1.2)
         return field
 
     def field_state(self, label):
@@ -101,6 +103,12 @@ class Bubble:
         node = editors[0]
         hint = node.get('text', '') == 'Plain field'
         return 0 if hint else len(node.get('text', '')), node.get('selection', '')
+
+    def change_while_live(self):
+        """Tap the bubble, then type into the field right after the snapshot: the final can't go in and must wait."""
+        self.tap(self.wait(self.bubble, 'bubble'))
+        time.sleep(.5)
+        self.adb('shell', 'input', 'text', 'x')
 
     def click_now(self, label):
         """One accessibility click by label, without a hierarchy round trip; False when it isn't there."""
@@ -222,10 +230,8 @@ class Bubble:
 
     def field_changed(self):
         self.probe_field('Plain field')
-        self.dictate('Plain field', stop=False)
-        # Typing while the utterance is live: the field no longer matches the snapshot, so the final can't go in.
-        self.adb('shell', 'input', 'text', 'x')
-        self.label(COULDNT, 60)
+        self.change_while_live()
+        self.label(COULDNT, 90)
         self.capture('ready', keep=False)
         self.press('Copy')
         self.gone(lambda h: any(n.get('text') == COULDNT for n in h), 'Ready to copy panel')
@@ -252,7 +258,7 @@ class Bubble:
 
     def web_field(self):
         """Records the WebView outcome (the spec asks which); Chromium's textarea node comes and goes, so this never fails the run."""
-        self.adb('shell', 'am', 'start', '-W', '-n', PROBE)
+        self.adb('shell', 'am', 'start', '-W', '--activity-clear-task', '-n', PROBE)
         self.label('Recognize')
         def textarea(h):
             return next((n for n in h if n.get('class') == 'android.widget.EditText' and n.get('package') == PACKAGE
@@ -296,9 +302,12 @@ class Bubble:
 
     def scratchpad_field(self):
         """Chirp's own Scratchpad as the backdrop for captures: a real editor, and unlike the probe not FLAG_SECURE."""
-        self.adb('shell', 'am', 'start', '-W', '-n', PACKAGE + '/.ScratchpadActivity')
+        # Not exported: reached the way a person does, from Notes' Dictate action (as the release smoke does).
+        self.adb('shell', 'am', 'start', '-W', '-n', PACKAGE + '/.SetupActivity', '--es', 'section', 'try')
+        self.press('Dictate')
         field = self.label('Dictate, then edit here')
         self.tap(field)
+        time.sleep(1.2)
 
     def captures(self):
         """Idle, listening and Ready to copy over the Scratchpad, on the inner screen and the cover size, light and dark."""
@@ -313,15 +322,16 @@ class Bubble:
                     self.scratchpad_field()
                     self.wait(self.bubble, 'bubble'); time.sleep(.6)
                     self.capture(f'idle-{screen}-{theme}')
-                    self.dictate('Scratchpad', stop=False)
-                    self.capture(f'listening-{screen}-{theme}')
                     # Typing while live sends the final to Ready to copy, the never-lost state.
-                    self.adb('shell', 'input', 'text', 'x')
-                    self.label(COULDNT, 60); time.sleep(.4)
+                    self.change_while_live()
+                    self.label('Listening', 40)
+                    self.capture(f'listening-{screen}-{theme}')
+                    self.label(COULDNT, 90); time.sleep(.4)
                     self.capture(f'ready-{screen}-{theme}')
                     self.press('Done')
                     self.no_microphone_service('captures')
-                    self.adb('shell', 'am', 'force-stop', PACKAGE)
+                    # Back, not force-stop: force-stopping the package also unbinds the accessibility service.
+                    self.adb('shell', 'input', 'keyevent', 'KEYCODE_BACK'); self.adb('shell', 'input', 'keyevent', 'KEYCODE_BACK')
         finally:
             self.adb('shell', 'cmd', 'uimode', 'night', 'no')
             override = re.search(r'Override size: (\S+)', original)

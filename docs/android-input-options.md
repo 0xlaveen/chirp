@@ -97,7 +97,10 @@ The user is granting sensitive screen-interaction capabilities; onboarding and t
   - By default it sits on the right edge just above the field's centre.
   - It is nudged vertically off the field so it never covers the text.
   - The panel is at most 360 dp wide, 16 dp from the edges, and above the field when it fits, otherwise below it.
-- **Keeping clear of the IME (spike).** The overlay first reads `WindowInsets.Type.ime()` from its window metrics and its own root. Otherwise, with the field in the lower half of the screen, it places the bubble above the field. The PR records which one the emulator exercised.
+- **Keeping clear of the IME (spike).** The overlay first reads `WindowInsets.Type.ime()` from its window metrics and its own root. Otherwise, with the field in the lower half of the screen, it places the bubble above the field.
+  - **Result on the API 37 emulator (Gboard): not determined.** Every focused field in the bubble check sat in the upper half, and the bubble stayed clear of Gboard there.
+  - Which rule applies to a low field is unverified on hardware. Both rules are covered by `BubblePlacementTest`, and the device acceptance steps include a low field.
+- **WebView.** On the API 37 emulator Chromium reported its textarea as focused while a native field held the input focus, so the service now trusts only the system's input focus. The probe's textarea then got no bubble: Chromium did not report it as the input focus. Rich and web editors otherwise end in Ready to copy when they refuse `ACTION_SET_TEXT`.
 - **Hide here.** While dragging, a koi-outlined ✕ sits at bottom centre. Dropping on it hides the bubble for the current app until another app comes to the front. This is session-only state, never persisted.
 - **TalkBack.** The bubble is a button: double tap dictates, and its custom actions are **Move to other side** and **Hide in this app**. Hold to talk isn't offered, because the panel's toggle covers it.
 - **States.** Connecting → Listening (Ripple, live partials, Stop as a `record` pill, Cancel) → Finishing/Polishing → Inserted. Two other outcomes:

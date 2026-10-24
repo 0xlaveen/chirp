@@ -43,8 +43,9 @@ def bubble_actions():
     def custom(action):
         adb('shell', 'CLASSPATH=/data/local/tmp/chirp-ui-probe.jar', 'app_process', '/', 'dev.chirp.smoke.UiHierarchy',
             'custom-action', shlex.quote(bubble), shlex.quote(action))
-    adb('shell', 'am', 'start', '-n', m['PACKAGE'] + '/.ScratchpadActivity')
-    wait_for('Dictate, then edit here')
+    # The smoke's own editor (Notes → Dictate → Scratchpad), then Gboard so the floating mic shows instead of Chirp's keyboard.
+    m['fresh_editor']()
+    adb('shell', 'ime', 'set', 'com.google.android.inputmethod.latin/com.android.inputmethod.latin.LatinIME')
     probe('click', 'Dictate, then edit here')
     node = wait_for(bubble)
     assert node.get('content-desc') == 'Chirp microphone: tap to dictate, hold to talk', 'Bubble label changed'

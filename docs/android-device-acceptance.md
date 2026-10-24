@@ -98,7 +98,8 @@ The emulator can't reproduce One UI's foreground-service and app-op rules for a 
 2. **Samsung Notes.** Focus a note body. The bubble appears at the right edge, clear of the text. Tap it, read a sentence, tap **Stop**. Record whether the text was **Inserted** or ended in **Ready to copy** (rich editors may refuse `ACTION_SET_TEXT`). If it was Ready to copy, **Copy**, long-press the note and paste.
 3. **Samsung Internet or Chrome.** Repeat in a web page's text area, and record Inserted or Ready to copy.
 4. **Microphone start.** During each dictation, check that the green privacy dot and the "Chirp is listening" notification appear, and that both go away after Stop, Cancel, ✕ and an error. If the panel says "Android blocked the microphone here", record the One UI version: that is the FGS restriction this check exists for.
-5. **Hold and drag.** Hold the bubble (push-to-talk) and release. Drag it to the other edge and confirm no privacy dot flashes. Fold and unfold: each screen keeps its own position.
-6. **Clipboard history.** After a Copy, open Samsung Keyboard's clipboard panel and note whether the dictated text appears. The clip is marked sensitive, but One UI may keep it anyway.
+5. **Low field.** In a chat app with the message field at the bottom and the keyboard up, check that the bubble sits above the field, not over the keyboard. The emulator could not show this.
+6. **Hold and drag.** Hold the bubble (push-to-talk) and release. Drag it to the other edge and confirm no privacy dot flashes. Fold and unfold: each screen keeps its own position.
+7. **Clipboard history.** After a Copy, open Samsung Keyboard's clipboard panel and note whether the dictated text appears. The clip is marked sensitive, but One UI may keep it anyway.
 
 Record the One UI version and each result. Mark anything skipped as not verified.
