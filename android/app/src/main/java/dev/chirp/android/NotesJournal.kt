@@ -33,17 +33,40 @@ internal class SealedFile(private val file: File, private val keys: HistoryKeys,
         catch (error: Exception) { atomic.failWrite(stream); throw error }
     }
 
-    fun read(): ByteArray? {
-        if (!file.exists()) return null
+    /** What [load] found: nothing, the plain bytes, or a file that exists but cannot be opened (the file is left alone). */
+    sealed interface Loaded {
+        data object Missing : Loaded
+        class Ok(val plain: ByteArray) : Loaded
+        data object Corrupt : Loaded
+    }
+
+    fun load(): Loaded {
+        if (!file.exists()) return Loaded.Missing
         return try {
             val bytes = AtomicFile(file).readFully()
             require(bytes.size > header.size + IV_BYTES && bytes.copyOfRange(0, header.size).contentEquals(header))
             val cipher = Cipher.getInstance(TRANSFORMATION)
             cipher.init(Cipher.DECRYPT_MODE, keys.get(create = false) ?: error("missing key"), GCMParameterSpec(128, bytes, header.size, IV_BYTES))
             cipher.updateAAD(header)
-            cipher.doFinal(bytes, header.size + IV_BYTES, bytes.size - header.size - IV_BYTES)
-        } catch (_: Exception) { AtomicFile(file).delete(); null }
+            Loaded.Ok(cipher.doFinal(bytes, header.size + IV_BYTES, bytes.size - header.size - IV_BYTES))
+        } catch (_: Exception) { Loaded.Corrupt }
     }
+
+    /** The plain bytes, or null; a file that cannot be opened is deleted, never repaired. */
+    fun read(): ByteArray? = when (val loaded = load()) {
+        is Loaded.Ok -> loaded.plain
+        Loaded.Missing -> null
+        Loaded.Corrupt -> { AtomicFile(file).delete(); null }
+    }
+
+    /** Only the file: the key stays, because other sealed files share it. */
+    fun remove() { AtomicFile(file).delete() }
+
+    /** Moves an unreadable file to [target] (kept for the user, never opened again by Chirp); false when it could not move. */
+    fun quarantine(target: File): Boolean = try {
+        target.parentFile?.mkdirs()
+        file.exists() && file.renameTo(target)
+    } catch (_: Exception) { false }
 
     /** The file and its key: crypto-shredded. */
     fun delete() { AtomicFile(file).delete(); try { keys.delete() } catch (_: Exception) { } }
