@@ -364,6 +364,8 @@ import Testing
         #expect(entry(inputs { $0.openNotesShortcut = "⌃⌥⇧N" }, "Open Notes")?.shortcut == "⌃⌥⇧N")
         #expect(entry(inputs { $0.openNotesShortcut = "⌃⌥⇧N"; $0.paused = true }, "Open Notes")?.shortcut == nil)
         #expect(entry(inputs { $0.notesHotkeyRegistered = false }, .toggleNotes)?.shortcut == nil)
+        // A recorded Start/Stop Notes shortcut is what the row shows.
+        #expect(entry(inputs { $0.notesShortcut = "⌃⌥⌘M" }, .toggleNotes)?.shortcut == "⌃⌥⌘M")
     }
 
     @Test func notesAndDictationExcludeEachOther() {

@@ -2,20 +2,22 @@
 import Carbon.HIToolbox
 import Foundation
 
-/// The short window after a cleaned-up insertion in which "Use raw" is offered outside the HUD: a global ⌃⌥Z hotkey
-/// that exists only while the window is open, and a menu item. The HUD itself is already gone. The timing comes from an
+/// The short window after a cleaned-up insertion in which "Use raw" is offered outside the HUD: a global hotkey (⌃⌥Z
+/// unless changed in Settings) that exists only while the window is open, and a menu item. The HUD itself is already gone. The timing comes from an
 /// injected sleep so the tests drive it with a fake clock.
 @MainActor
 public final class RawOffer {
     public static let duration: Duration = .seconds(5)
-    public static let combo = KeyCombo.custom(keyCode: UInt32(kVK_ANSI_Z), modifiers: UInt32(controlKey | optionKey))
+    /// The default hotkey.
+    public static let combo = KeyCombo.controlOptionZ
 
     public private(set) var isOpen = false
-    /// The ⌃⌥Z hotkey is registered for this window. False when it is the dictation hotkey or another app owns it:
+    /// The hotkey is registered for this window. False when it is the dictation hotkey or another app owns it:
     /// the menu item is then the only way.
     public private(set) var hotkeyActive = false
 
     private let sleep: @Sendable (Duration) async -> Void
+    private let hotkey: () -> KeyCombo
     private let register: (KeyCombo, @escaping () -> Void) -> Bool
     private let unregister: () -> Void
     private let use: () -> Void
@@ -24,23 +26,27 @@ public final class RawOffer {
     private var generation = 0
 
     public init(sleep: @escaping @Sendable (Duration) async -> Void = { try? await Task.sleep(for: $0) },
+                hotkey: @escaping () -> KeyCombo = { RawOffer.combo },
                 register: @escaping (KeyCombo, @escaping () -> Void) -> Bool,
                 unregister: @escaping () -> Void,
                 use: @escaping () -> Void,
                 onChange: @escaping () -> Void = {}) {
         self.sleep = sleep
+        self.hotkey = hotkey
         self.register = register
         self.unregister = unregister
         self.use = use
         self.onChange = onChange
     }
 
-    /// Opens the window for `duration`. `dictation` is the dictation hotkey: ⌃⌥Z is not registered when it is the same.
+    /// Opens the window for `duration`. `dictation` is the dictation hotkey: the Use raw one is not registered when it
+    /// has the same keys.
     public func open(avoiding dictation: KeyCombo? = nil, for duration: Duration = RawOffer.duration) {
         closeQuietly()
         isOpen = true
-        if dictation != Self.combo {
-            hotkeyActive = register(Self.combo) { [weak self] in self?.take() }
+        let combo = hotkey()
+        if dictation.map({ !$0.sameKeys(combo) }) ?? true {
+            hotkeyActive = register(combo) { [weak self] in self?.take() }
         }
         generation += 1
         let token = generation

@@ -4,8 +4,11 @@ import ChirpCore
 /// What the Settings window shows. The window controller reads it from the system; the snapshots pass fixed values.
 public struct SettingsState: Sendable {
     public var hotkey: KeyCombo = .controlOptionSpace
-    /// "Open Notes" shortcut and "Always show Chirp in the Dock".
+    /// Shortcuts: Start/Stop Notes, Open Notes and Use raw.
+    public var notesHotkey: KeyCombo = .controlOptionN
     public var openNotesHotkey: KeyCombo = .controlOptionShiftN
+    public var useRawHotkey: KeyCombo = .controlOptionZ
+    /// General: "Always show Chirp in the Dock".
     public var alwaysShowInDock = false
     public var activationMode: ActivationMode = .autoStop
     /// Dictation: press Return after inserting (off by default).
@@ -70,16 +73,26 @@ public struct SettingsState: Sendable {
     public var about = AboutInfo()
 
     public init() {}
+
+    public func combo(for shortcut: ChirpShortcut) -> KeyCombo {
+        switch shortcut {
+        case .dictation: hotkey
+        case .notes: notesHotkey
+        case .openNotes: openNotesHotkey
+        case .useRaw: useRawHotkey
+        }
+    }
 }
 
-/// The preferences window's toolbar tabs, in order: one per task (start Chirp and fix permissions; how a dictation
-/// starts, sounds and where it listens; clean-up; Live Notes; the server and its models; phones; the version).
+/// The preferences window's toolbar tabs, in order: one per task (start Chirp and fix permissions; every global
+/// shortcut; how a dictation runs, sounds and where it listens; clean-up; Live Notes; the server and its models; phones; the version).
 public enum SettingsTab: String, CaseIterable, Sendable {
-    case general, dictation, cleanup, notes, server, devices, about
+    case general, shortcuts, dictation, cleanup, notes, server, devices, about
 
     public var title: String {
         switch self {
         case .general: "General"
+        case .shortcuts: "Shortcuts"
         case .dictation: "Dictation"
         case .cleanup: "Clean-up"
         case .notes: "Notes"
@@ -93,6 +106,7 @@ public enum SettingsTab: String, CaseIterable, Sendable {
     public var symbol: String {
         switch self {
         case .general: "gearshape"
+        case .shortcuts: "keyboard"
         case .dictation: "mic"
         case .cleanup: "sparkles"
         case .notes: "note.text"
@@ -120,15 +134,19 @@ public final class SettingsForm {
     static let controlWidth: CGFloat = 340
     /// Extra space above the first row of a group.
     static let groupSpacing: CGFloat = 12
-    /// Narrowest a tab may be: room for the seven toolbar tabs (they need about 420 pt) without an overflow chevron.
-    static let minimumWidth: CGFloat = 440
+    /// Narrowest a tab may be: room for the eight toolbar tabs (they need about 490 pt) without an overflow chevron.
+    static let minimumWidth: CGFloat = 500
 
     /// One content view per tab, holding its body (a grid, or the About view) with a 20 pt margin above and below.
     private var tabViews: [SettingsTab: SettingsContentView] = [:]
     private var bodies: [SettingsTab: NSView] = [:]
     public let hotkey = NSPopUpButton(frame: .zero, pullsDown: false)
     public let recorder = HotkeyRecorder()
-    public let openNotes = NotesShortcutControls()
+    /// Shortcuts: every global shortcut besides dictation, with the same recorder and rules.
+    public let notesShortcut = ShortcutControls(.notes, purpose: "Starts and stops Live Notes from any app.")
+    public let openNotes = ShortcutControls(.openNotes, purpose: "Brings the Notes window forward without recording.")
+    public let useRawShortcut = ShortcutControls(.useRaw, purpose: "Puts the original words back for 5 s after a cleaned insertion.")
+    public let alwaysInDock = NSButton(checkboxWithTitle: "Always show Chirp in the Dock", target: nil, action: nil)
     /// Under the hotkey: how it works, or why the last recording was refused.
     public let hotkeyHelp = SettingsForm.help("")
     /// Fn/Globe has a separate macOS action that the user must turn off in Keyboard settings.
@@ -141,6 +159,7 @@ public final class SettingsForm {
     /// Press Return after inserting: Off, Always, or in chat apps only.
     public let autoEnter = NSPopUpButton(frame: .zero, pullsDown: false)
     private let modeHelp = SettingsForm.help("")
+    private let offerRawHelp = SettingsForm.help("")
     private var shownHotkey = KeyCombo.controlOptionSpace
     public let sounds = NSButton(checkboxWithTitle: "Play start and stop sounds", target: nil, action: nil)
     /// Sounds: the pack, ▶ previews, the volume, and (for the Custom pack) the user's files.
@@ -254,6 +273,8 @@ public final class SettingsForm {
 
         for button in [setupButton, doctorButton, modelsButton, pairButton, rotateButton, notesButton] { button.bezelStyle = .rounded }
         setupButton.setAccessibilityLabel("Set up Chirp")
+        alwaysInDock.setAccessibilityLabel("Always show Chirp in the Dock")
+        alwaysInDock.toolTip = "Off: Chirp is in the Dock and ⌘-Tab only while a Notes window is open."
         keyboardSettingsButton.bezelStyle = .rounded
         keyboardSettingsButton.controlSize = .small
 
@@ -279,7 +300,7 @@ public final class SettingsForm {
 
         build(.general, [
             row("Startup:", launch, help: launchHelp),
-            row("Dock:", openNotes.alwaysInDock),
+            row("Dock:", alwaysInDock),
             row("Permissions:", stack([micStatus, accessibilityStatus]),
                 help: Self.help("The microphone lets Chirp hear you; Accessibility lets it insert text into other apps and send ⌘V.")),
             row("Setup:", setupButton, help: Self.help("Check the permissions and the server, and try a dictation.")),
@@ -294,9 +315,16 @@ public final class SettingsForm {
         let volumeRow = NSStackView(views: [volume, volumeLabel])
         volumeRow.orientation = .horizontal
         volumeRow.spacing = 8
-        build(.dictation, [
-            row("Hotkey:", hotkeyRow, help: hotkeyHelp),
+        build(.shortcuts, [
+            row("Dictation:", hotkeyRow, help: hotkeyHelp),
             row("", stack([fnKeyHelp, keyboardSettingsButton])),
+            row("Live Notes:", notesShortcut.view),
+            row("Open Notes:", openNotes.view),
+            row("Use raw:", useRawShortcut.view),
+        ], groups: [2])
+        fnKeySetupRow = grids[.shortcuts]?.row(at: 1)
+
+        build(.dictation, [
             row("Mode:", mode, help: modeHelp),
             row("Auto-stop:", silence),
             row("Microphone:", microphone, help: Self.help("Follows the system default unless you pick one. Applies from the next dictation.")),
@@ -308,8 +336,7 @@ public final class SettingsForm {
             row("Start sound:", Self.fileRow(startFile, choose: chooseStart, remove: removeStart), help: customStartHelp),
             row("Stop sound:", Self.fileRow(stopFile, choose: chooseStop, remove: removeStop),
                 help: Self.help("Plays after you stop talking, up to \(SoundTiming.stopLimit) s.")),
-        ], groups: [4, 7], customRows: [10, 11])
-        fnKeySetupRow = grids[.dictation]?.row(at: 1)
+        ], groups: [2, 5], customRows: [8, 9])
 
         build(.cleanup, [
             row("Clean-up:", cleanupEnabled, help: cleanupHelp),
@@ -318,21 +345,16 @@ public final class SettingsForm {
             row("Per-app:", appStyles.view, help: Self.help("The frontmost app when you start dictating picks the style. Other apps use the default style.")),
             row("Insertion:", insertRawFirst, help: Self.help("Swaps in the cleaned text in place where Chirp can verify the insert; elsewhere it inserts once.")),
             row("Review:", showChanges, help: Self.help("Off: the cleaned text is inserted at once. On: the HUD highlights what changed and keeps a Use raw button.")),
-            row("Undo:", offerRaw, help: Self.help("Puts the original words back, with ⌃⌥Z or from the menu.")),
+            row("Undo:", offerRaw, help: offerRawHelp),
         ], groups: [4])
 
-        let notesShortcut = NSTextField(labelWithString: MenuContent.notesHotkeyTitle)
-        notesShortcut.font = MenuStyle.font
         build(.notes, [
-            row("Shortcut:", notesShortcut,
-                help: Self.help("Starts and stops Live Notes from any app. It is fixed; if another app owns it, use Start Notes in the menu.")),
-            row("Open Notes:", openNotes.shortcutView),
             row("Recovery:", notesRecoveryCopy, help: Self.help(NotesStatus.recoveryHelp)),
             row("Speakers:", stack([speakerStatus, speakerHelp])),
             row("Voices:", voicesView),
             row("Window:", notesButton,
                 help: Self.help("Structure notes, Auto-reorganize and Label speakers are switches in the window's footer, so you can change them while you record.")),
-        ], groups: [2])
+        ])
 
         let keepLoadedStack = stack([keepLoaded, keepLoadedStatus, keepLoadedHelp, keepLoadedError])
         keepLoadedError.textColor = .systemRed
@@ -490,8 +512,9 @@ public final class SettingsForm {
     /// states and never overwrites what the user is typing or a login-item error shown under the checkbox.
     public func apply(_ s: SettingsState, full: Bool = false) {
         if full {
-            fillHotkeyMenu(selecting: s.hotkey)
-            openNotes.show(s.openNotesHotkey, alwaysInDock: s.alwaysShowInDock)
+            fillHotkeyMenu(selecting: s.hotkey, taken: ChirpShortcut.dictation.taken(s.combo(for:)))
+            showShortcuts(s)
+            alwaysInDock.state = s.alwaysShowInDock ? .on : .off
             showMode(s.activationMode, silence: s.autoStopSilence)
             autoEnter.selectItem(at: AutoEnter.allCases.firstIndex(of: s.autoEnter) ?? 0)
             sounds.state = s.soundsEnabled ? .on : .off
@@ -584,14 +607,38 @@ public final class SettingsForm {
         }
     }
 
-    /// The presets, plus the recorded shortcut when one is in use, with `current` selected.
-    public func fillHotkeyMenu(selecting current: KeyCombo) {
+    /// Start/Stop Notes, Open Notes and Use raw as stored (Clean-up's Undo help names the Use raw keys too).
+    public func showShortcuts(_ s: SettingsState) {
+        notesShortcut.show(s.notesHotkey)
+        openNotes.show(s.openNotesHotkey)
+        useRawShortcut.show(s.useRawHotkey)
+        offerRawHelp.stringValue = "Puts the original words back, with \(s.useRawHotkey.title) or from the menu."
+    }
+
+    /// The other shortcut rows by role.
+    public func controls(for shortcut: ChirpShortcut) -> ShortcutControls? {
+        switch shortcut {
+        case .dictation: nil
+        case .notes: notesShortcut
+        case .openNotes: openNotes
+        case .useRaw: useRawShortcut
+        }
+    }
+
+    /// The presets, plus the recorded shortcut when one is in use, with `current` selected. A preset another Chirp
+    /// shortcut already has (`taken`) is disabled and says which.
+    public func fillHotkeyMenu(selecting current: KeyCombo, taken: [(owner: String, combo: KeyCombo)] = []) {
         shownHotkey = current
         refreshHotkeyHelp()
         hotkey.removeAllItems()
+        hotkey.autoenablesItems = false
         for combo in KeyCombo.presets + (current.isCustom ? [current] : []) {
             hotkey.addItem(withTitle: combo.isCustom ? "\(combo.title) (custom)" : combo.title)
             hotkey.lastItem?.representedObject = combo.id
+            if combo != current, let why = HotKeyValidation.conflict(combo, with: taken) {
+                hotkey.lastItem?.isEnabled = false
+                hotkey.lastItem?.toolTip = why.reason
+            }
         }
         if let index = hotkey.itemArray.firstIndex(where: { $0.representedObject as? String == current.id }) {
             hotkey.selectItem(at: index)

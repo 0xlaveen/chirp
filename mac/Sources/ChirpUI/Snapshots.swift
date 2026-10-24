@@ -259,19 +259,26 @@ public enum Snapshots {
             form("ready", .general) { _ in },
             form("login-unavailable", .general) { $0.launch = .unavailable },
             form("missing", .general) { $0.micGranted = false; $0.accessibilityGranted = false },
-            form("ready", .dictation) { _ in },
-            form("custom-hotkey", .dictation) { $0.hotkey = .custom(keyCode: 0x0F, modifiers: UInt32(controlKey | optionKey | cmdKey)) },   // ⌃⌥⌘R
-            form("option-hold", .dictation) { $0.hotkey = .option; $0.activationMode = .holdToTalk },
-            Scenario(name: "settings-dictation-hotkey-rejected") {
+            form("ready", .shortcuts) { _ in },
+            form("custom", .shortcuts) {
+                $0.hotkey = .custom(keyCode: 0x0F, modifiers: UInt32(controlKey | optionKey | cmdKey))   // ⌃⌥⌘R
+                $0.notesHotkey = .custom(keyCode: 0x2E, modifiers: UInt32(controlKey | optionKey))       // ⌃⌥M
+            },
+            form("fn", .shortcuts) { $0.hotkey = .custom(keyCode: KeyCombo.anyModifierKey, modifiers: ModifierKeys.fn) },
+            Scenario(name: "settings-shortcuts-rejected") {
                 var state = SettingsState()
                 state.inputs = [boya, studio]; state.defaultInput = boya
                 let form = SettingsForm(state)
-                // As if ⇧ had just been pressed and let go in the recorder (set directly: no event monitor offscreen).
+                // As if ⇧ had just been pressed and let go in the recorder, and ⌃⌥Space typed for Live Notes (set
+                // directly: no event monitor offscreen).
                 form.recorder.apply(.rejected(.shiftAlone))
-                let view = form.view(for: .dictation)
-                view.setFrameSize(form.fittingSize(for: .dictation))
+                form.notesShortcut.refuse(.inUse("dictation"))
+                let view = form.view(for: .shortcuts)
+                view.setFrameSize(form.fittingSize(for: .shortcuts))
                 return view
             },
+            form("ready", .dictation) { _ in },
+            form("option-hold", .dictation) { $0.hotkey = .option; $0.activationMode = .holdToTalk },
             form("picked-microphone", .dictation) { $0.chosenInputUID = "studio" },
             form("sounds", .dictation) { $0.soundsEnabled = true; $0.soundPack = .chirp; $0.soundVolume = 0.6 },
             form("sounds-custom", .dictation) {
@@ -465,7 +472,7 @@ public enum Snapshots {
         "hud-listening", "hud-flow-2-polishing", "hud-flow-3-diff", "hud-correction-use-raw",
         "hud-wordwave-listening", "hud-wordwave-long", "hud-wordwave-polishing",
         "menu-ready", "menu-cleanup-submenu",
-        "settings-general-missing", "settings-dictation-sounds", "settings-cleanup-custom", "settings-notes-downloaded",
+        "settings-general-missing", "settings-shortcuts-custom", "settings-dictation-sounds", "settings-cleanup-custom", "settings-notes-downloaded",
         "settings-server-ready", "settings-devices-ready", "settings-about-ready", "onboarding-welcome",
         "notes-editing", "notes-split", "notes-paused", "notes-review-sheet", "notes-tip",
     ]

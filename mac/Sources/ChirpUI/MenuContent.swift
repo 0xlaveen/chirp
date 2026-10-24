@@ -100,8 +100,9 @@ public struct MenuInputs: Sendable {
     public var notesFinishing = false
     /// A notes document exists (recorded, not yet discarded with New).
     public var notesHasDocument = false
-    /// ⌃⌥N is registered (not while paused, or when another app owns it).
+    /// The Start/Stop Notes shortcut is registered (not while paused, or when another app owns it), and its keys.
     public var notesHotkeyRegistered = true
+    public var notesShortcut = KeyCombo.controlOptionN.title
     /// The "Open Notes" shortcut's keys, nil while it is not registered (paused, or another app owns it).
     public var openNotesShortcut: String?
 
@@ -196,10 +197,10 @@ public enum MenuContent {
         return out
     }
 
-    /// Live Notes: Start/Stop with ⌃⌥N, and a way back to the window while there are notes. Notes cannot start
+    /// Live Notes: Start/Stop with its shortcut, and a way back to the window while there are notes. Notes cannot start
     /// during a dictation, while paused, or while the last session is still finishing.
     static func notesRows(_ m: MenuInputs) -> [MenuEntry] {
-        let shortcut = m.paused || !m.notesHotkeyRegistered ? nil : notesHotkeyTitle
+        let shortcut = m.paused || !m.notesHotkeyRegistered ? nil : m.notesShortcut
         var rows: [MenuEntry]
         if m.notesRecording {
             rows = [MenuEntry(title: "Stop Notes", shortcut: shortcut, action: .toggleNotes)]
@@ -212,9 +213,6 @@ public enum MenuContent {
         rows.append(MenuEntry(title: "Open Notes", shortcut: m.paused ? nil : m.openNotesShortcut, action: .showNotes))
         return rows
     }
-
-    /// The Live Notes hotkey's glyphs (fixed: ⌃⌥N).
-    public static let notesHotkeyTitle = "⌃⌥N"
 
     private static func row(_ title: String, value: String, tone: MenuEntry.Tone = .normal, submenu: [MenuEntry]?) -> MenuEntry {
         let short = truncated(value)

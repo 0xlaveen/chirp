@@ -22,7 +22,7 @@ public enum NotesStatus {
     public static let updating = "Updating notes…"
     public static let finishing = "Finishing…"
     public static let reorganizing = "Organizing notes…"
-    public static let placeholder = "Type notes, or press Record (\(MenuContent.notesHotkeyTitle))…"
+    public static func placeholder(key: String = KeyCombo.controlOptionN.title) -> String { "Type notes, or press Record (\(key))…" }
     public static let reorganized = "Notes organized"
     public static let organized = "Organized"
     public static let organizeLabel = "Organize"
@@ -73,7 +73,7 @@ public enum NotesStatus {
 
     /// The reminder every `NotesModel.longRunEvery` of recording.
     public static func longRun(hours: Int) -> String { "Notes has been recording for \(hours) h" }
-    public static let empty = "Press Record or \(MenuContent.notesHotkeyTitle) to start taking notes."
+    public static func empty(key: String = KeyCombo.controlOptionN.title) -> String { "Press Record or \(key) to start taking notes." }
     public static let privacy = "Notes stay in memory until you save them."
     public static let recoveryFolder = "~/Library/Application Support/Chirp/Recovery"
     /// The footer line while the recovery copy is on.
@@ -220,6 +220,8 @@ public final class NotesModel {
     public var focusRequest = 0
     /// The dictation hotkey's keys ("⌥ Option"), empty until the window is shown.
     public var dictationKey = ""
+    /// The Start/Stop Notes shortcut's keys, for the empty state and the editor's placeholder.
+    public var notesKey = KeyCombo.controlOptionN.title
     public var hotkeyHint: String? { dictationKey.isEmpty ? nil : NotesStatus.hotkeyHint(key: dictationKey, pause: NotesHotkeyRouter.pauseAvailable, paused: isPaused) }
     /// The transcript paragraph under the pointer: it shows each segment's timestamp.
     public var hoveredParagraph: String?

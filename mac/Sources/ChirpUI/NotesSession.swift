@@ -44,7 +44,7 @@ public struct NotesSessionDependencies {
     /// A VoiceOver announcement.
     public var announce: (String) -> Void = { _ in }
     public var reduceMotion: () -> Bool = { false }
-    /// Registers ⌃⌥N; false when another app owns it.
+    /// Registers the Start/Stop Notes shortcut (⌃⌥N by default); false when another app owns it.
     public var registerHotkey: (_ onDown: @escaping () -> Void) -> Bool = { _ in false }
     public var unregisterHotkey: () -> Void = {}
 
@@ -66,7 +66,7 @@ public struct NotesSessionDependencies {
     }
 }
 
-/// Live Notes glue: its own microphone capture, the `NotesRecorder`, the ⌃⌥N hotkey and the window's model. Notes and
+/// Live Notes glue: its own microphone capture, the `NotesRecorder`, the Start/Stop hotkey and the window's model. Notes and
 /// dictation never run together (the AppDelegate wires the checks both ways). Logs carry state names and counts only.
 @MainActor
 public final class NotesSession {
@@ -227,8 +227,10 @@ public final class NotesSession {
 
     @discardableResult
     public func registerHotkey() -> Bool { gate.registerHotkey() }
+    /// Releases the hotkey while a Settings recorder listens; `registerHotkey()` takes it back.
+    public func suspendHotkey() { gate.suspendHotkey() }
 
-    /// The menu's switch: pausing Chirp stops Notes gracefully (the notes stay) and releases ⌃⌥N.
+    /// The menu's switch: pausing Chirp stops Notes gracefully (the notes stay) and releases its hotkey.
     public func setRunning(_ running: Bool) {
         if !running, isRecording || isPaused { Task { await stop() } }
         gate.setRunning(running)

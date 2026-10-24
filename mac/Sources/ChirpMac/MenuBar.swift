@@ -22,7 +22,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         var showNotes: () -> Void = {}
         /// Live Notes' state for the menu and the icon.
         var notes: () -> NotesMenuState = { NotesMenuState() }
-        /// The menu's switch, for Live Notes (pausing stops it and releases ⌃⌥N).
+        /// The menu's switch, for Live Notes (pausing stops it and releases its shortcut).
         var setRunning: (Bool) -> Void = { _ in }
         /// A server older than the app, what the last fix said, and the fix.
         var serverNotice: () -> (notice: ServerNotice?, message: String?) = { (nil, nil) }
@@ -156,7 +156,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         inputs.showChanges = settings.showChangesAfterCleanup
         inputs.styleID = settings.correctionProfile
         inputs.rawOfferOpen = controller.rawOffer.isOpen
-        inputs.rawOfferKey = controller.rawOffer.hotkeyActive ? RawOffer.combo.title : nil
+        inputs.rawOfferKey = controller.rawOffer.hotkeyActive ? settings.useRawHotkey.title : nil
         inputs.hotkey = settings.hotkey
         inputs.activationMode = settings.activationMode
         inputs.micGranted = Permissions.microphoneGranted
@@ -168,6 +168,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         inputs.notesElapsed = notes.elapsed
         inputs.notesHasDocument = notes.hasDocument
         inputs.notesHotkeyRegistered = notes.hotkeyRegistered
+        inputs.notesShortcut = settings.notesHotkey.title
         inputs.openNotesShortcut = notes.openShortcut
         inputs.debugRetention = controller.debugRetention || notes.debugRetention
         menu.removeAllItems()
