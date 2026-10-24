@@ -9,18 +9,8 @@ def check(p, work, output):
         adb('shell', 'cmd', 'uimode', 'night', 'yes' if theme == 'dark' else 'no')
         p['fresh_editor']()
         for mode in ('tap', 'hold'):
-            if mode == 'hold':
-                p['click']('More keys')
-                try:
-                    target = p['wait_for']('Voice input', 10)
-                except AssertionError:
-                    data = adb('exec-out', 'screencap', '-p')
-                    (output / (theme + '-hold-control-missing.png')).write_bytes(data[data.index(b'\x89PNG'):])
-                    failures.append(theme + ': no accessible Voice input hold target')
-                    print('FAIL:', failures[-1], flush=True)
-                    continue
-            else:
-                target = p['wait_for']('Microphone: tap to dictate')
+            # #172: press-and-hold on the strip mic is the reachable push-to-talk gesture (release finishes).
+            target = p['wait_for']('Microphone: tap to dictate')
             x, y = p['center'](target)
             remote = '/sdcard/chirp-listening.png'
             adb('shell', 'rm', '-f', remote)

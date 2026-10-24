@@ -171,9 +171,11 @@ class ChirpComponentsTest {
     }
 
     @Test fun `a success banner is a tonal surface in dark, not the muddy koi container (174)`() {
-        compose.setContent { ChirpTheme(dark = true, colour = AppColour.POND) { Box(Modifier.fillMaxWidth()) { StatusBanner(StatusKind.Success, "Chirp is up to date.") } } }
-        val text = compose.onNodeWithText("Chirp is up to date.").fetchSemanticsNode().boundsInRoot
-        val pixel = compose.onRoot().captureToImage().asAndroidBitmap().getPixel(6, text.center.y.toInt())
+        compose.setContent { ChirpTheme(dark = true, colour = AppColour.POND) { StatusBanner(StatusKind.Success, "Chirp is up to date.", Modifier.testTag("banner")) } }
+        compose.waitForIdle()
+        val image = compose.onNodeWithTag("banner").captureToImage().asAndroidBitmap()
+        // Inside the rounded corners, level with the text: the card's own fill.
+        val pixel = image.getPixel(image.width / 2, 4.coerceAtMost(image.height - 1) + image.height / 4)
         assertEquals(PondDark.surfaceContainerHigh.toArgb(), pixel)
         assertNotEquals(PondDark.primaryContainer.toArgb(), pixel)
     }
