@@ -89,3 +89,16 @@ Use a test phone with Gboard or Samsung Keyboard selected. Finish Welcome, confi
 Automated reproduction: launch your own `chirp-fold -read-only -no-snapshot-save -port <free-even-port>`, set `ANDROID_SERIAL`, run `emulator-smoke.sh`, then debug `emulator-check.py --keepkb-check --server-port <free-port>` with a cached model and debug APK. Rebuild the all-window probe and run `emulator-talkback.py --keepkb-check`. The editor probe exists only in debug and reports lengths/states without printing text.
 
 Implementation verification: the bounded keep-keyboard emulator attempt reached the choice page, then the read-only emulator hung and disconnected while waiting for the floating-mic page (`ADB operation failed: shell`). The throwaway server stopped and the emulator process exited; secure-setting restoration could not finish after the disconnect, and no snapshot was saved. Full runtime acceptance, release smoke and the new TalkBack path remain pending. Advanced Protection and real sideload restrictions are covered by fakeable/UI tests and the hardware steps above, not claimed as emulator coverage.
+
+## Keep your keyboard: the floating mic
+
+The emulator can't reproduce One UI's foreground-service and app-op rules for a microphone started from an Accessibility service, or Samsung's own editors. Check them here with Samsung Keyboard (or Gboard) still selected, using synthetic speech only.
+
+1. Turn on Android Settings → Accessibility → Installed apps → **Chirp floating microphone**. If Android says "Restricted setting", allow it under Apps → Chirp → ⋮ first.
+2. **Samsung Notes.** Focus a note body. The bubble appears at the right edge, clear of the text. Tap it, read a sentence, tap **Stop**. Record whether the text was **Inserted** or ended in **Ready to copy** (rich editors may refuse `ACTION_SET_TEXT`). If it was Ready to copy, **Copy**, long-press the note and paste.
+3. **Samsung Internet or Chrome.** Repeat in a web page's text area, and record Inserted or Ready to copy.
+4. **Microphone start.** During each dictation, check that the green privacy dot and the "Chirp is listening" notification appear, and that both go away after Stop, Cancel, ✕ and an error. If the panel says "Android blocked the microphone here", record the One UI version: that is the FGS restriction this check exists for.
+5. **Hold and drag.** Hold the bubble (push-to-talk) and release. Drag it to the other edge and confirm no privacy dot flashes. Fold and unfold: each screen keeps its own position.
+6. **Clipboard history.** After a Copy, open Samsung Keyboard's clipboard panel and note whether the dictated text appears. The clip is marked sensitive, but One UI may keep it anyway.
+
+Record the One UI version and each result. Mark anything skipped as not verified.

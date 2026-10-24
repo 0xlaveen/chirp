@@ -116,6 +116,10 @@ internal fun HowYouDictate(state: SetupState, choose: (InputMode) -> Unit, acces
             FloatingMicGuide(state, accessibility, appInfo, useKeyboard = { choose(InputMode.KEYBOARD) })
             if (state.advancedProtection && !state.bubbleEnabled) Text("Turned off by Advanced Protection", style = MaterialTheme.typography.bodyMedium)
             if (!state.advancedProtection && !state.bubbleEnabled) Button(accessibility, Modifier.fillMaxWidth().heightIn(min = 56.dp)) { Text("Open Accessibility settings") }
+            // #167: the clipboard is the floating mic's fallback, never automatic.
+            if (state.bubbleEnabled) Text("If a field can’t take your words, they wait in the floating mic’s panel until you tap Copy. " +
+                "Chirp never copies on its own and marks copies as sensitive, but Samsung’s clipboard history may still keep them.",
+                Modifier.padding(horizontal = 16.dp), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         null -> Unit
     }

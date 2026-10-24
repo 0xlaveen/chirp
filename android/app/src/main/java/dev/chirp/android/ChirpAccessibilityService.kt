@@ -365,6 +365,8 @@ open class ChirpAccessibilityService : AccessibilityService(), FloatingMicOverla
     private fun leaveField() {
         if (pendingStart && stream == null) { cancel(); return }
         if (surface == Surface.HOLD) { overlay?.leaveHold(); surface = Surface.BUBBLE }
+        // The field is gone: the final can only wait in Ready to copy, never land in whatever has focus now.
+        target?.forget(); target = null
         stop()
     }
     private fun cancel() {

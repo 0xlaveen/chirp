@@ -305,18 +305,21 @@ class ChirpAccessibilityServiceTest {
             (prefsDir.listFiles()?.joinToString { it.readText() } ?: "")
         assertFalse(all.contains("ynthetic")); assertFalse(all.contains("prefix"))
     }
-    @Test fun `Chirp default hides floating mic in both input modes and window transitions cancel capture`() {
+    @Test fun `Chirp default hides floating mic in both input modes and window transitions stop capture without writing`() {
         for (mode in InputMode.entries) {
             SettingsStore(service).inputMode = mode
             android.provider.Settings.Secure.putString(service.contentResolver, android.provider.Settings.Secure.DEFAULT_INPUT_METHOD, "dev.chirp.android/.ChirpImeService")
-            focus(); assertNull(overlay)
+            focus(); assertFalse(bubbleShown)
             android.provider.Settings.Secure.putString(service.contentResolver, android.provider.Settings.Secure.DEFAULT_INPUT_METHOD, "com.google.android.inputmethod.latin/com.android.inputmethod.latin.LatinIME")
-            focus(); assertNotNull(overlay)
+            focus(); assertTrue(bubbleShown)
             start()
             android.provider.Settings.Secure.putString(service.contentResolver, android.provider.Settings.Secure.DEFAULT_INPUT_METHOD, "dev.chirp.android/.ChirpImeService")
             service.onAccessibilityEvent(AccessibilityEvent().apply { eventType = AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED })
-            assertNull(overlay); assertTrue(service.captures.last().released)
-            service.streams.last().final(); assertEquals(0, writes)
+            advance()
+            assertFalse(bubbleShown); assertTrue(service.captures.last().released)
+            // The final never lands in the field after a window change; it waits in Ready to copy instead.
+            service.streams.last().final(); assertEquals(0, writes); assertTrue(shows("Synthetic."))
+            panel!!.done.performClick(); advance()
         }
     }
     @Test fun `Accessibility event types timeout and flags keep their narrow scope`() {
@@ -330,4 +333,11 @@ class ChirpAccessibilityServiceTest {
         xml.close()
     }
 
+    @Test fun `no overlay permission is added and the description promises no automatic copy`() {
+        val requested = app.packageManager.getPackageInfo(app.packageName, android.content.pm.PackageManager.GET_PERMISSIONS).requestedPermissions.orEmpty()
+        assertFalse(requested.contains(Manifest.permission.SYSTEM_ALERT_WINDOW))
+        assertFalse(requested.contains(Manifest.permission.RECEIVE_BOOT_COMPLETED))
+        assertFalse(requested.contains(Manifest.permission.WAKE_LOCK))
+        assertTrue(app.getString(R.string.accessibility_description).contains("never copies on its own"))
+    }
 }
