@@ -60,6 +60,7 @@ dependencies {
     implementation(platform(libs.compose.bom))
     implementation(libs.compose.material3)
     implementation(libs.compose.material3.navigation.suite)
+    implementation(libs.compose.adaptive.layout)
     implementation(libs.activity.compose)
     implementation(libs.material)
     testImplementation(platform(libs.compose.bom))

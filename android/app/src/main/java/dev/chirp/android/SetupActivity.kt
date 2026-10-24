@@ -23,9 +23,7 @@ import androidx.lifecycle.compose.LifecycleStartEffect
 import androidx.lifecycle.lifecycleScope
 import dev.chirp.android.shell.AppShell
 import dev.chirp.android.shell.HistoryScreen
-import dev.chirp.android.shell.HomeActions
 import dev.chirp.android.shell.HomeFix
-import dev.chirp.android.shell.HomeScreen
 import dev.chirp.android.shell.ShellTab
 import dev.chirp.android.settings.SettingsActions
 import dev.chirp.android.settings.SettingsPage
@@ -68,10 +66,10 @@ internal class SetupState {
     var failure by mutableStateOf<ConnectionFailure.Kind?>(null)
     /** Paired over the tailnet while no VPN is up: the Mac can't be reached until Tailscale is on. */
     var tailscaleOff by mutableStateOf(false)
-    /** The app shell (Home · Notes · History · Settings) is showing; otherwise onboarding. */
+    /** The app shell (Notes · History · Settings) is showing; otherwise onboarding. */
     var shellOpen by mutableStateOf(false)
-    var tab by mutableStateOf(ShellTab.Home)
-    /** The shell was opened from outside (the keyboard, a recovery link): Back returns there rather than to Home. */
+    var tab by mutableStateOf(ShellTab.Notes)
+    /** The shell was opened from outside (the keyboard, a recovery link): Back returns there rather than to Notes. */
     var exitOnBack by mutableStateOf(false)
     /** The pair page was opened from the shell: Back returns to it. */
     var pairFromShell by mutableStateOf(false)
@@ -115,7 +113,7 @@ open class SetupActivity : ComponentActivity() {
         savedInstanceState?.let {
             state.entryStep = it.getInt("entry", 0).coerceIn(PAGE_WELCOME, PAGE_PAIR); state.connected = it.getBoolean("connected"); state.tryIt = it.getBoolean("try_it")
             state.shellOpen = it.getBoolean("shell"); state.exitOnBack = it.getBoolean("exit_on_back"); state.pairFromShell = it.getBoolean("pair_from_shell")
-            state.tab = ShellTab.entries.firstOrNull { tab -> tab.name == it.getString("tab") } ?: ShellTab.Home
+            state.tab = ShellTab.entries.firstOrNull { tab -> tab.name == it.getString("tab") } ?: ShellTab.Notes
             state.settingsPage = it.getString("settings_page")?.let { name -> SettingsPage.entries.firstOrNull { page -> page.name == name } }
         }
         refresh()
@@ -152,14 +150,14 @@ open class SetupActivity : ComponentActivity() {
     private fun Shell() {
         AppShell(state.tab, ::selectTab, state.exitOnBack) { tab ->
             when (tab) {
-                ShellTab.Home -> HomeScreen(state, HomeActions(fix = ::fix, dictate = { startActivity(Intent(this, ScratchpadActivity::class.java)) },
-                    notes = { selectTab(ShellTab.Notes) }, history = { id -> state.historyEntry = id; selectTab(ShellTab.History) },
-                    historySettings = { openSettings(SettingsPage.History, outside = false) }), notesLive = NotesSessionHolder.current?.state?.active == true)
                 ShellTab.Notes -> {
                     LifecycleStartEffect(notes) { NotesSessionHolder.visible(notes, this@SetupActivity, true); notes.refresh()
                         onStopOrDispose { NotesSessionHolder.visible(notes, this@SetupActivity, false) } }
-                    NotesScreen(notes, record = notesHost::record, copy = notesHost::copy, share = notesHost::share, act = notesHost::act,
-                        leave = { }, save = notesHost::save, handleBack = false)
+                    NotesLibraryScreen(notes, NotesSessionHolder.reader(this@SetupActivity),
+                        record = { id -> if (id == null) notesHost.recordNew() else notesHost.continueNote(id) },
+                        copy = { notesHost.copy(it) }, share = { notesHost.share(it) }, save = { notesHost.save(it) }, act = notesHost::act,
+                        state = state, connection = { openSettings(SettingsPage.Connection, outside = false) },
+                        dictate = { startActivity(Intent(this, ScratchpadActivity::class.java)) })
                 }
                 ShellTab.History -> HistoryScreen(selected = state.historyEntry, select = { state.historyEntry = it })
                 ShellTab.Settings -> key(state.settingsRequest) {
@@ -176,7 +174,7 @@ open class SetupActivity : ComponentActivity() {
             }
         }
     }
-    /** A tab picked in the bar or rail, or from Home: from here Back goes Home as usual. */
+    /** A tab picked in the bar or rail, or from Notes: from here Back goes to Notes as usual. */
     private fun selectTab(tab: ShellTab) { state.exitOnBack = false; state.tab = tab }
     /** Home's connection card: the one fix for what it shows. */
     internal fun fix(fix: HomeFix) {
@@ -193,9 +191,9 @@ open class SetupActivity : ComponentActivity() {
         ++pairingGeneration; ChirpNetwork.cancel(pendingHealth); pendingHealth = null
         store.forget(); state.link = ""; state.status = "Pairing removed"; state.checking = false; state.reachable = null; state.failure = null; state.connected = false; refresh()
     }
-    /** Onboarding is complete (now or on an earlier run): open Home, with the first-run "Try it" card until it's dismissed. */
+    /** Onboarding is complete (now or on an earlier run): open Notes, with the first-run "Try it" card until it's dismissed. */
     private fun finishOnboarding() {
-        store.onboarded = true; state.tryIt = !store.tryItDismissed; state.settingsPage = null; open(ShellTab.Home, outside = false)
+        store.onboarded = true; state.tryIt = !store.tryItDismissed; state.settingsPage = null; open(ShellTab.Notes, outside = false)
     }
     /** Moves to the first page whose requirement isn't met, or finishes. Never back to the welcome page once past it. */
     internal fun advance() {
@@ -213,7 +211,7 @@ open class SetupActivity : ComponentActivity() {
         when (source.getStringExtra("section")) {
             "pair" -> openPairing()
             "settings" -> openSettings(null)
-            "try" -> { state.tryIt = true; open(ShellTab.Home, outside = false) }
+            "try" -> { state.tryIt = true; open(ShellTab.Notes, outside = false) }
             "connection" -> openSettings(SettingsPage.Connection)
             "network" -> { state.reachable = false; openSettings(SettingsPage.Connection) }
             "history" -> { state.historyEntry = null; open(ShellTab.History, outside = true) }

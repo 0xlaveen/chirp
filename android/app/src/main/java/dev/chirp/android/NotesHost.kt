@@ -49,6 +49,13 @@ internal object NotesSessionHolder : ViewModelStoreOwner {
         })
         return ViewModelProvider(this, viewModelFactory { initializer { create() } })[NotesModel::class.java].also { current = it }
     }
+    /** A separate document for browsing while the shared live model keeps recording. Never owns a microphone. */
+    fun reader(host: ComponentActivity): NotesModel {
+        val live = requireNotNull(current)
+        return ViewModelProvider(this, viewModelFactory { initializer {
+            NotesModel(host.applicationContext, journal = null, sessions = live.library)
+        } })["notes-reader", NotesModel::class.java]
+    }
     private fun clear() { current = null; viewModelStore.clear() }
 
     /** The notes are on screen somewhere; the battery saver may quiet them only when no host shows them. */
@@ -61,26 +68,36 @@ internal object NotesSessionHolder : ViewModelStoreOwner {
 /** What a screen hosting [NotesScreen] needs from its activity: permission prompts, the save picker, copy, share and fix actions. */
 internal class NotesHost(private val activity: ComponentActivity, private val tailscale: () -> TailscaleControl, private val model: () -> NotesModel) {
     private val micPermission = activity.registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-        if (granted) record() else model().message = "Microphone permission is needed to take notes — open mic settings"
+        if (granted) recordWith(pendingRecord ?: { model().start() }) else model().message = "Microphone permission is needed to take notes — open mic settings"
     }
     /** Optional: without it the recording still runs, only its notification (with Stop) stays hidden. */
-    private val notificationPermission = activity.registerForActivityResult(ActivityResultContracts.RequestPermission()) { model().start() }
+    private val notificationPermission = activity.registerForActivityResult(ActivityResultContracts.RequestPermission()) { val action = pendingRecord; pendingRecord = null; action?.invoke() }
+    private var pendingRecord: (() -> Unit)? = null
+    private var exportModel: NotesModel? = null
     private val saveFile = activity.registerForActivityResult(ActivityResultContracts.CreateDocument("text/markdown")) { uri -> uri?.let(::write) }
     private var asked = false
 
     fun record() {
         val model = model()
         if (model.state.active) { model.toggle(); return }
+        recordWith { model.start() }
+    }
+
+    fun recordNew() = recordWith { model().let { it.keepSession(); it.clear(); it.start() } }
+    fun continueNote(id: String) = recordWith { model().continueRecording(id, stopCurrent = true) }
+
+    private fun recordWith(start: () -> Unit) {
+        pendingRecord = start
         when {
             activity.checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED -> micPermission.launch(Manifest.permission.RECORD_AUDIO)
             Build.VERSION.SDK_INT >= 33 && activity.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED &&
                 !asked -> { asked = true; notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS) }
-            else -> model.start()
+            else -> { pendingRecord = null; start() }
         }
     }
 
-    fun copy() {
-        val model = model()
+    fun copy() = copy(model())
+    fun copy(model: NotesModel) {
         if (!model.hasContent) return
         val clip = ClipData.newPlainText("Chirp notes", model.export())
         // Keeps the notes out of clipboard previews and overlays where the system supports it.
@@ -90,18 +107,22 @@ internal class NotesHost(private val activity: ComponentActivity, private val ta
         activity.getSystemService(ClipboardManager::class.java)?.setPrimaryClip(clip)
         model.message = "Copied as Markdown"
     }
-    fun share() {
-        val model = model()
+    fun share() = share(model())
+    fun share(model: NotesModel) {
         if (!model.hasContent) return
         activity.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).setType("text/markdown")
             .putExtra(Intent.EXTRA_SUBJECT, model.document.title().removePrefix("# ")).putExtra(Intent.EXTRA_TEXT, model.export()), null))
     }
-    fun save() {
-        val model = model()
+    fun save() = save(model())
+    fun save(model: NotesModel) {
         if (!model.hasContent) return
+        exportModel = model
         try { saveFile.launch(model.document.fileName()) } catch (_: android.content.ActivityNotFoundException) { model.message = "No app to save files — use Share" }
     }
-    fun write(uri: Uri) = model().save { activity.contentResolver.openOutputStream(uri, "wt") }
+    fun write(uri: Uri) {
+        val note = exportModel ?: model(); exportModel = null
+        note.save { activity.contentResolver.openOutputStream(uri, "wt") }
+    }
     fun act(action: DictationAction) {
         fun setup(section: String) = activity.startActivity(Intent(activity, SetupActivity::class.java).putExtra("section", section)
             .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP))

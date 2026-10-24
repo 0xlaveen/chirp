@@ -124,3 +124,57 @@ and landscape split; it restores size, density, night mode and rotation settings
 It selects the requested look through the production chooser and leaves it selected.
 The dimensions approximate the reported Fold inner screen; these are emulator
 layout checks, with hardware acceptance left to the operator.
+
+## Notes library (Pond)
+
+`notes-library-{cover,inner}-{state}-{light,dark}.png` are API 37 Robolectric native
+renders of the production Notes-first shell at 411 × 891 dp (cover, navigation bar)
+and 840 × 900 dp (inner, navigation rail and list/detail). States:
+
+- `empty`: glyph and static rings, first-record guidance and local-storage line.
+- `populated`: serif titles, relative times, two-line previews, duration and open tasks.
+- `recording`: pinned Ripple card with frozen preview and tabular timer.
+- `search` / `no-results`: local body/transcript search and highlighted matches.
+- `recently-deleted`: restore controls and the 30-day explanation.
+- `multi-select`: selected rows and bulk delete, while another note keeps recording.
+- `detail`: the rendered document, Continue, and a jump back to the active recording.
+- `transcript-sheet`: the actual modal sheet with per-segment playback controls.
+
+`notes-library-wide-landscape-{light,dark}.png` additionally show the transcript as
+a third pane at 1280 × 800 dp. Normal inner windows use a sheet to preserve reading
+space. Motion is disabled for these review captures, so Ripple uses its static
+accessibility treatment. `NotesScreenshots.kt` draws Material's separate sheet
+window over the activity because it does not expose `DialogWindowProvider` to the
+Robolectric PixelCopy helper.
+
+Regenerate this set and the existing detail states deliberately:
+
+```sh
+./gradlew testDebugUnitTest -Pchirp.updateScreenshots \
+  --tests '*NotesLibraryScreenTest*' --tests '*NotesRenderTest*'
+```
+
+The older `home-*` captures document the retired dashboard. The starting screen is
+now Notes; `notes-{cover,inner}-*` remain detail/editor review states. All fixture
+words and audio references are synthetic. Pixel renders do not establish codec
+support; the emulator check separately exercises the real platform codecs.
+
+The strengthened `emulator-check.py --notes-check` opts into kept audio on the
+throwaway emulator and requires a real MediaCodec AAC segment to prepare, start,
+play for at least two seconds, and complete naturally through MediaPlayer. It
+rejects decoder errors and keeps its output content-free.
+
+`emulator-notes-kept-audio-playing.png` is a real Android 17 arm64 capture from a
+separate read-only `chirp-fold` instance on `emulator-5600`. It shows the segment
+highlight and Stop playback control during actual playback, using only generated
+speech. The complete notes check passed: rolling transcription/structuring,
+voice edit, screen-off capture, pause/resume/stop, real kept-audio replay, native
+Markdown editing, Organize, Share and Scratchpad dictation. The owned emulator was
+shut down after the run; no other emulator instance was touched. The content-free
+result is in `emulator-notes-result.txt`.
+
+The original `emulator-5580` remains the default. To target the explicitly allowed
+read-only instance instead, set `ANDROID_SERIAL=emulator-5600` when invoking the
+check and the UI probe builder. The fixture's six-second Ready delay applies to
+Notes streams only; ordinary dictation uses the normal two-second delay so its
+smaller pre-ready buffer is not exhausted by the Notes stress scenario.

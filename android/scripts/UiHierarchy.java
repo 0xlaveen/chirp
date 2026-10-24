@@ -52,6 +52,21 @@ public final class UiHierarchy {
                 }
                 if (!found) throw new IllegalStateException("Accessible target missing");
             }
+            if (args.length == 1 && args[0].equals("append-notes")) {
+                for (AccessibilityWindowInfo window : automation.getWindows()) {
+                    AccessibilityNodeInfo target = find(window.getRoot(), "Notes (Markdown)");
+                    while (target != null && !target.isEditable()) target = target.getParent();
+                    if (target == null) continue;
+                    android.os.Bundle value = new android.os.Bundle();
+                    value.putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE,
+                        safe(target.getText()) + "\n- Review the budget with finance before the launch on Monday");
+                    if (!target.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, value))
+                        throw new IllegalStateException("Notes edit accessibility action rejected");
+                    System.out.println("Synthetic notes edit applied");
+                    return;
+                }
+                throw new IllegalStateException("Notes editor accessibility target missing");
+            }
             if (args.length == 3 && (args[0].equals("watch") || args[0].equals("watch-undo"))) {
                 long deadline = android.os.SystemClock.uptimeMillis() + 35000;
                 boolean matched = false;

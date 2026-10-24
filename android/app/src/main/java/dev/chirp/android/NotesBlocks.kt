@@ -281,7 +281,5 @@ internal class NotesTextUndo(private val clock: () -> Long = System::currentTime
     companion object { const val BURST_MS = 1000L; const val MAX = 100 }
 }
 
-/** The title shown on the Notes screen: the name given, else a `# ` heading on the first line, else the start time. */
-internal fun NotesDocument.displayTitle(): String = name
-    ?: text.lineSequence().firstOrNull { it.isNotBlank() }?.let { NotesMarkdown.heading(it.trim()) }?.takeIf { it.first == 1 }?.second
-    ?: title().removePrefix("# ")
+/** The document and its library row share the same title; a user rename always wins. */
+internal fun NotesDocument.displayTitle(): String = libraryTitle()

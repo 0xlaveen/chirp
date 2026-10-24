@@ -27,6 +27,12 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.ui.text.input.ImeAction
+import androidx.lifecycle.compose.LifecycleStartEffect
+import dev.chirp.android.ui.Ripple
+import dev.chirp.android.ui.ChirpTokens
+import dev.chirp.android.ui.LocalChirpRoles
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -60,7 +66,7 @@ import dev.chirp.android.ui.StatusKind
 import kotlinx.coroutines.delay
 
 /** The transcript beside the notes from this width (an unfolded Fold, a tablet); a Notes · Transcript switch below it (the cover screen). */
-private val SIDE_BY_SIDE = 700.dp
+private val SIDE_BY_SIDE = 1000.dp
 
 /** Where to put the page when switching between reading and editing: a source offset and its distance from the top, px. */
 private data class Anchor(val offset: Int, val y: Int)
@@ -73,13 +79,10 @@ private data class Anchor(val offset: Int, val y: Int)
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalComposeUiApi::class)
 @Composable
 internal fun NotesScreen(model: NotesModel, record: () -> Unit, copy: () -> Unit, share: () -> Unit, act: (DictationAction) -> Unit,
-                         leave: (Boolean) -> Unit, save: () -> Unit = {}, handleBack: Boolean = true) {
-    // Discard asked from Back leaves the screen; from New it only empties it.
-    var confirm by remember { mutableStateOf<Boolean?>(null) }
+                         leave: (Boolean) -> Unit, save: () -> Unit = {}, handleBack: Boolean = true, back: (() -> Unit)? = null, externalTranscript: Boolean = false, recordingElsewhere: NotesModel? = null, jumpToRecording: () -> Unit = {}) {
     var renaming by remember { mutableStateOf(false) }
     var settings by remember { mutableStateOf(false) }
-    var recent by remember { mutableStateOf(false) }
-    var pendingOpen by remember { mutableStateOf<NotesIndexEntry?>(null) }
+    var transcript by rememberSaveable { mutableStateOf(false) }
     var editing by rememberSaveable { mutableStateOf(false) }
     var anchor by remember { mutableStateOf<Anchor?>(null) }
     val focus = LocalFocusManager.current
@@ -95,41 +98,15 @@ internal fun NotesScreen(model: NotesModel, record: () -> Unit, copy: () -> Unit
         }
         focus.clearFocus(); editing = false
     }
-    // In the app shell, Back goes to Home and the notes stay in the session; only this screen's own activity asks to discard.
-    BackHandler(enabled = handleBack) { if (!model.state.active && model.dirty && !model.keeps) confirm = true else leave(false) }
+    BackHandler(enabled = handleBack) { model.keepSession(); leave(false) }
     BackHandler(enabled = editing) { read() }
-    confirm?.let { leaving ->
-        AlertDialog({ confirm = null }, title = { Text("Discard these notes?") },
-            text = { Text("They aren’t saved. Save, Copy or Share them first to keep them.") },
-            confirmButton = { TextButton({ confirm = null; if (leaving) leave(true) else { model.clear(); editing = false } }) { Text("Discard") } },
-            dismissButton = { TextButton({ confirm = null }) { Text("Keep") } })
-    }
-    if (renaming) {
-        var name by remember { mutableStateOf(model.document.name ?: "") }
-        AlertDialog({ renaming = false }, title = { Text("Rename notes") },
-            text = { OutlinedTextField(name, { name = it.take(NotesModel.MAX_NAME) }, singleLine = true, label = { Text("Name") },
-                placeholder = { Text(NotesDocument().title().removePrefix("# ")) }) },
-            confirmButton = { TextButton({ renaming = false; model.rename(name) }) { Text("Rename") } },
-            dismissButton = { TextButton({ renaming = false }) { Text("Cancel") } })
-    }
     if (settings) ModalBottomSheet({ settings = false }) {
         Column(Modifier.padding(start = 16.dp, end = 16.dp, bottom = 24.dp)) { NotesSettings(title = "Notes settings") }
     }
-    if (recent) ModalBottomSheet({ recent = false }, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
-        RecentNotes(model, open = { entry ->
-            recent = false
-            if (model.dirty && !model.keeps) pendingOpen = entry else { model.open(entry); editing = false }
-        })
+    if (transcript && !externalTranscript) ModalBottomSheet({ transcript = false }, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+        TranscriptPane(model, Modifier.fillMaxWidth().fillMaxHeight(.85f).padding(horizontal = 24.dp), close = { transcript = false })
     }
-    pendingOpen?.let { entry ->
-        AlertDialog({ pendingOpen = null }, title = { Text("Open other notes?") },
-            text = { Text("The notes on screen aren’t saved and will be discarded.") },
-            confirmButton = { TextButton({ pendingOpen = null; model.open(entry); editing = false }) { Text("Discard and open") } },
-            dismissButton = { TextButton({ pendingOpen = null }) { Text("Keep") } })
-    }
-    val menu = NotesMenuActions(copy = copy, share = share, save = save, rename = { renaming = true }, settings = { settings = true },
-        recent = { model.loadRecent(); recent = true },
-        new = { if (model.dirty && !model.keeps) confirm = false else { model.keepSession(); model.clear(); editing = false } })
+    val menu = NotesMenuActions(copy = copy, share = share, save = save, rename = { renaming = true }, settings = { settings = true })
     val action = DictationAction.forStatus(model.status)
     /** Into the editor at the block tapped (or the first one on screen), at the height it had on the page. */
     fun startEditing(block: NotesBlock?) {
@@ -145,29 +122,34 @@ internal fun NotesScreen(model: NotesModel, record: () -> Unit, copy: () -> Unit
     // Test tags as resource ids: the emulator harness reads the rendered page by its blocks' tags, never by their words.
     Surface(Modifier.fillMaxSize().semantics { testTagsAsResourceId = true }) {
         BoxWithConstraints(Modifier.fillMaxSize().safeDrawingPadding()) {
-            val wide = maxWidth >= SIDE_BY_SIDE
+            val wide = !externalTranscript && maxWidth >= SIDE_BY_SIDE && maxWidth > maxHeight
             val gutter = if (wide) 28.dp else 20.dp
-            var tab by rememberSaveable { mutableIntStateOf(0) }
+
             Column(Modifier.fillMaxSize()) {
-                NotesTopBar(model, editing, gutter, edit = { if (editing) read() else startEditing(null) }, menu, rename = { renaming = true })
-                Column(Modifier.padding(horizontal = gutter), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    if (model.retained) StatusBanner(StatusKind.Error, stringResource(R.string.debug_retention))
-                    model.recovered?.let { StatusBanner(StatusKind.Info, it, body = "Save, Copy or Share to keep them.", action = "Discard", onAction = { confirm = false }) }
-                    if (action != null) StatusBanner(StatusKind.Warning, model.status, action = action.label, onAction = { act(action) })
-                }
-                if (!wide && !editing) SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth().padding(horizontal = gutter, vertical = 8.dp)) {
-                    listOf("Notes", "Transcript").forEachIndexed { index, label ->
-                        SegmentedButton(tab == index, { tab = index }, SegmentedButtonDefaults.itemShape(index, 2), icon = {}) { Text(label) }
+                NotesTopBar(model, editing, gutter, edit = { if (editing) read() else startEditing(null) }, menu,
+                    renaming = renaming, rename = { renaming = it }, back = back)
+                if (recordingElsewhere != null) AssistChip(jumpToRecording, modifier = Modifier.padding(horizontal = gutter),
+                    label = { Text("Recording · ${recordingElsewhere.displayTitle} · ${recordingElsewhere.elapsedText}", maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                    leadingIcon = { Ripple(recordingElsewhere.level.toFloat(), Modifier.size(20.dp)) })
+                // One banner slot, ordered by urgency. Action feedback uses the dock's single notice slot.
+                Box(Modifier.padding(horizontal = gutter)) {
+                    when {
+                        model.retained -> StatusBanner(StatusKind.Error, stringResource(R.string.debug_retention))
+                        action != null -> StatusBanner(StatusKind.Warning, model.status, action = action.label, onAction = { act(action) })
+                        model.recovered != null -> StatusBanner(StatusKind.Info, "Recovered note", body = "Your note was recovered and kept on this phone.")
+                        model.explanation != null -> Text(model.explanation!!, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
+                }
+                if (!editing && !wide && !externalTranscript) Row(Modifier.padding(horizontal = gutter)) {
+                    AssistChip({ transcript = true }, label = { Text("Transcript") }, leadingIcon = { Icon(painterResource(R.drawable.ic_notes_tab), null, Modifier.size(18.dp)) })
                 }
                 Row(Modifier.fillMaxWidth().weight(1f)) {
                     Box(Modifier.weight(1.5f).fillMaxHeight()) {
                         when {
                             editing -> NotesEditor(model, scroll, anchor, { layout = it }, { anchor = null }, gutter, done = ::read)
-                            wide || tab == 0 -> NotesPage(model, blocks, list, anchor, { anchor = null }, gutter, edit = ::startEditing)
-                            else -> TranscriptPane(model, Modifier.fillMaxSize().padding(horizontal = gutter), titled = false)
+                            else -> NotesPage(model, blocks, list, anchor, { anchor = null }, gutter, edit = ::startEditing)
                         }
-                        if (!editing) NotesDock(model, record, Modifier.align(Alignment.BottomCenter).padding(horizontal = 16.dp, vertical = 16.dp))
+                        if (!editing) NotesDock(model, record, Modifier.align(Alignment.BottomCenter).padding(horizontal = 16.dp, vertical = 16.dp), allowCommand = recordingElsewhere == null)
                     }
                     if (wide) Surface(Modifier.weight(1f).fillMaxHeight().padding(end = 16.dp, bottom = 16.dp), shape = MaterialTheme.shapes.extraLarge,
                         color = MaterialTheme.colorScheme.surfaceContainerLow) {
@@ -179,19 +161,32 @@ internal fun NotesScreen(model: NotesModel, record: () -> Unit, copy: () -> Unit
     }
 }
 
-private class NotesMenuActions(val copy: () -> Unit, val share: () -> Unit, val save: () -> Unit, val rename: () -> Unit, val settings: () -> Unit,
-                               val recent: () -> Unit, val new: () -> Unit)
+private class NotesMenuActions(val copy: () -> Unit, val share: () -> Unit, val save: () -> Unit, val rename: () -> Unit, val settings: () -> Unit)
 
 /** Title (tap to rename) over a one-line status, then Edit and the overflow menu. */
 @Composable
-private fun NotesTopBar(model: NotesModel, editing: Boolean, gutter: androidx.compose.ui.unit.Dp, edit: () -> Unit, menu: NotesMenuActions, rename: () -> Unit) {
+private fun NotesTopBar(model: NotesModel, editing: Boolean, gutter: androidx.compose.ui.unit.Dp, edit: () -> Unit, menu: NotesMenuActions, renaming: Boolean, rename: (Boolean) -> Unit, back: (() -> Unit)?) {
     val scheme = MaterialTheme.colorScheme
     Row(Modifier.fillMaxWidth().padding(start = gutter - 4.dp, end = 4.dp, top = 8.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+        if (back != null) IconButton(back) { Icon(painterResource(R.drawable.ic_arrow_back), "Back to notes") }
         Column(Modifier.weight(1f)) {
             val title = model.displayTitle
-            Text(title, Modifier.clip(MaterialTheme.shapes.small).clickable(onClickLabel = "Rename", onClick = rename).padding(horizontal = 4.dp)
+            if (renaming) {
+                var name by remember { mutableStateOf(title) }
+                val titleFocus = remember { FocusRequester() }
+                LaunchedEffect(Unit) { titleFocus.requestFocus() }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    BasicTextField(name, { name = it.take(NotesModel.MAX_NAME) }, Modifier.weight(1f).focusRequester(titleFocus).semantics { contentDescription = "Note title" },
+                        singleLine = true, textStyle = ChirpTokens.noteTitle.copy(color = scheme.onSurface), cursorBrush = SolidColor(scheme.primary),
+                        keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences, imeAction = ImeAction.Done),
+                        keyboardActions = KeyboardActions(onDone = { model.rename(name); rename(false) }))
+                    IconButton({ model.rename(name); rename(false) }) { Icon(painterResource(R.drawable.ic_check), "Save title") }
+                }
+            } else {
+                Text(title, Modifier.clip(MaterialTheme.shapes.small).clickable(onClickLabel = "Rename", onClick = { rename(true) }).padding(horizontal = 4.dp)
                 .semantics { contentDescription = "Rename notes: $title"; heading() },
-                style = MaterialTheme.typography.titleLarge.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold, fontFamily = androidx.compose.ui.text.font.FontFamily.Serif), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                style = ChirpTokens.noteTitle, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
             Row(Modifier.padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 if (model.state.active) LiveDot(model.recording)
                 Text(model.status, Modifier.weight(1f, fill = false).semantics { liveRegion = LiveRegionMode.Polite }, style = MaterialTheme.typography.labelLarge,
@@ -234,11 +229,13 @@ private fun NotesMenu(model: NotesModel, actions: NotesMenuActions) {
             if (model.reorganizing !is Reorganizing.Unavailable || model.structureAvailable) HorizontalDivider()
             item("Copy", R.drawable.ic_copy, model.hasContent, run = actions.copy)
             item("Share", R.drawable.ic_share, model.hasContent, run = actions.share)
-            item("Save as Markdown", R.drawable.ic_download, model.hasContent, run = actions.save)
+            item("Export Markdown", R.drawable.ic_download, model.hasContent, run = actions.save)
             HorizontalDivider()
             item("Rename", R.drawable.ic_edit, run = actions.rename)
-            if (model.keeps) item("Recent notes", R.drawable.ic_history, !model.state.active, run = actions.recent)
-            item("New notes", R.drawable.ic_add, !model.state.active && (model.hasContent || model.document.segments.isNotEmpty()), run = actions.new)
+            val bytes = model.document.audio.sumOf { it.bytes }
+            if (bytes > 0) {
+                item("Delete audio", R.drawable.ic_delete, summary = "${"%.1f".format(bytes / 1024.0)} KB on this phone") { model.deleteAudio() }
+            }
             item("Notes settings", R.drawable.ic_settings, run = actions.settings)
         }
     }
@@ -254,8 +251,7 @@ private fun NotesPage(model: NotesModel, blocks: List<NotesBlock>, list: LazyLis
     val text = model.field.text
     val keys = remember(text, blocks) { NotesBlocks.keys(text, blocks) }
     val hearing = model.hearing
-    val explanation = model.explanation
-    val lead = if (explanation != null) 1 else 0
+    val lead = 0
     var follow by remember { mutableStateOf(true) }
     LaunchedEffect(list) {
         snapshotFlow { list.isScrollInProgress }.collect { scrolling -> if (!scrolling) follow = !list.canScrollForward }
@@ -271,9 +267,6 @@ private fun NotesPage(model: NotesModel, blocks: List<NotesBlock>, list: LazyLis
     val readable = Modifier.widthIn(max = NOTES_READING_WIDTH).fillMaxWidth().padding(horizontal = gutter)
     LazyColumn(Modifier.fillMaxSize().testTag("notes-page"), list, contentPadding = PaddingValues(top = 4.dp, bottom = 128.dp),
         horizontalAlignment = Alignment.CenterHorizontally) {
-        if (explanation != null) item(key = "explanation") {
-            Text(explanation, readable.padding(bottom = 8.dp), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
         itemsIndexed(blocks, key = { i, _ -> keys[i] }) { _, block ->
             NotesBlockView(block, edit, toggle = { task ->
                 model.edit(model.field.copy(text = NotesBlocks.toggle(model.field.text, task)))
@@ -281,17 +274,7 @@ private fun NotesPage(model: NotesModel, blocks: List<NotesBlock>, list: LazyLis
         }
         if (blocks.isEmpty() && hearing.isBlank()) item(key = "empty") { NotesEmpty(model.state.active, { edit(null) }, readable) }
         if (hearing.isNotBlank()) item(key = "hearing") { HearingLine(hearing, model.recording, readable.animateItem(fadeInSpec = tween(300), placementSpec = null)) }
-        if (model.hasContent) item(key = "saved") {
-            Text(savedLine(model), readable.padding(top = 24.dp), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.outline)
-        }
     }
-}
-
-private fun savedLine(model: NotesModel) = when {
-    model.keeps -> "Kept encrypted on this phone in Recent notes when you stop or leave. Save, Copy or Share to take them elsewhere."
-    !model.dirty -> "Saved. Changes from here on are not, until you Save again."
-    model.recoveryOn -> "Not saved until you Save, Copy or Share. Until then a recovery copy stays encrypted on this phone."
-    else -> "Not saved: these notes live only on this screen until you Save, Copy or Share them."
 }
 
 /**
@@ -348,11 +331,11 @@ private fun NotesEditor(model: NotesModel, scroll: androidx.compose.foundation.S
  * running time, and Stop. Edit by voice sits beside it when the Mac offers it. Notes about the last action float above.
  */
 @Composable
-private fun NotesDock(model: NotesModel, record: () -> Unit, modifier: Modifier) {
+private fun NotesDock(model: NotesModel, record: () -> Unit, modifier: Modifier, allowCommand: Boolean = true) {
     Column(modifier, horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Notices(model)
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
-            if (model.voiceEditAvailable && (model.state.active || model.hasContent)) CommandButton(model, Modifier.weight(1f, fill = false))
+            if (allowCommand && model.voiceEditAvailable && (model.state.active || model.hasContent)) CommandButton(model, Modifier.weight(1f, fill = false))
             if (model.state.active) RecordingPill(model, record) else RecordButton(model, record)
         }
     }
@@ -360,17 +343,16 @@ private fun NotesDock(model: NotesModel, record: () -> Unit, modifier: Modifier)
 
 @Composable
 private fun Notices(model: NotesModel) {
-    if (model.listeningForCommand) TextButton(model::cancelCommand) { Text("Cancel") }
-    else if (model.showEditedChip) EditedChip(model)
-    model.voiceEditNote?.let { note ->
-        Notice(note)
-        LaunchedEffect(model.voiceEditDone) { delay(NotesVoiceEdit.NOTE_MS); model.dismissVoiceEdit() }
-    }
-    // Organize's outcome shows for a few seconds, then the page is quiet again.
     val organized = model.organizeNote
     var shown by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(organized) { shown = organized; if (organized != null) { delay(NOTICE_MS); shown = null } }
-    AnimatedVisibility(shown != null && model.voiceEditNote == null, enter = fadeIn(), exit = fadeOut()) { Notice(shown ?: "") }
+    LaunchedEffect(model.voiceEditDone) { if (model.voiceEditNote != null) { delay(NotesVoiceEdit.NOTE_MS); model.dismissVoiceEdit() } }
+    when {
+        model.listeningForCommand -> TextButton(model::cancelCommand) { Text("Cancel") }
+        model.showEditedChip -> EditedChip(model)
+        model.voiceEditNote != null -> Notice(model.voiceEditNote!!)
+        shown != null -> Notice(shown!!)
+    }
 }
 
 private const val NOTICE_MS = 6000L
@@ -386,11 +368,11 @@ private fun Notice(text: String) {
 @Composable
 private fun RecordButton(model: NotesModel, onClick: () -> Unit) {
     val scheme = MaterialTheme.colorScheme
-    Surface(onClick, Modifier.heightIn(min = 64.dp).semantics { contentDescription = "Record notes" }, enabled = !model.busy, shape = CircleShape,
-        color = scheme.primaryContainer, contentColor = scheme.onPrimaryContainer, shadowElevation = 6.dp) {
+    Surface(onClick, Modifier.heightIn(min = 64.dp).semantics { contentDescription = if (model.hasContent || model.elapsed > 0) "Continue recording notes" else "Record notes" }, enabled = !model.busy, shape = CircleShape,
+        color = scheme.primary, contentColor = scheme.onPrimary, shadowElevation = 6.dp) {
         Row(Modifier.padding(start = 22.dp, end = 26.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            Icon(painterResource(R.drawable.ic_record), null, Modifier.size(22.dp), tint = dev.chirp.android.ui.LocalChirpRoles.current.record)
-            Text("Record", style = MaterialTheme.typography.titleMedium)
+            Icon(painterResource(R.drawable.ic_record), null, Modifier.size(22.dp), tint = scheme.onPrimary)
+            Text(if (model.hasContent || model.elapsed > 0) "Continue" else "Record", style = MaterialTheme.typography.titleMedium)
         }
     }
 }
@@ -406,25 +388,13 @@ private fun RecordingPill(model: NotesModel, stop: () -> Unit) {
                 Icon(painterResource(if (model.paused) R.drawable.ic_mic else R.drawable.ic_pause), null)
             }
             Column(Modifier.padding(horizontal = 14.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                if (model.busy) CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp) else Meter(model.level, model.recording)
+                if (model.busy) CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp) else Ripple(model.level.toFloat(), Modifier.size(24.dp))
                 Text(model.elapsedText, style = dev.chirp.android.ui.ChirpTokens.timer)
             }
             FilledIconButton(stop, Modifier.size(48.dp).semantics { contentDescription = "Stop recording notes" }, enabled = !model.busy,
                 colors = IconButtonDefaults.filledIconButtonColors(containerColor = dev.chirp.android.ui.LocalChirpRoles.current.record, contentColor = scheme.onError)) {
                 Icon(painterResource(R.drawable.ic_stop), null)
             }
-        }
-    }
-}
-
-/** Sound is arriving: five bars that follow the input level while the microphone is open, flat while paused. */
-@Composable
-private fun Meter(level: Double, open: Boolean) {
-    val loud by animateFloatAsState(if (open) kotlin.math.sqrt(level * 8).toFloat().coerceIn(0f, 1f) else 0f, tween(180), label = "level")
-    val color = if (open) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline
-    Row(Modifier.height(16.dp).clearAndSetSemantics { }, horizontalArrangement = Arrangement.spacedBy(3.dp), verticalAlignment = Alignment.CenterVertically) {
-        listOf(.45f, .8f, 1f, .7f, .5f).forEach { weight ->
-            Box(Modifier.width(3.dp).fillMaxHeight(.3f + .7f * loud * weight).clip(CircleShape).background(color))
         }
     }
 }
@@ -439,7 +409,7 @@ private fun CommandButton(model: NotesModel, modifier: Modifier) {
     val enabled = model.canCommand
     var pressed by remember { mutableStateOf(false) }
     val colors = MaterialTheme.colorScheme
-    val (container, content) = if (listening) colors.errorContainer to colors.onErrorContainer else colors.secondaryContainer to colors.onSecondaryContainer
+    val (container, content) = if (listening) colors.errorContainer to colors.onErrorContainer else colors.tertiaryContainer to colors.onTertiaryContainer
     Surface(modifier.heightIn(min = 56.dp).alpha(if (enabled) 1f else 0.38f)
         .pointerInput(enabled) {
             if (enabled) awaitEachGesture {
@@ -479,14 +449,21 @@ private fun EditedChip(model: NotesModel) {
 
 /** One quiet line per segment: the time as metadata, then what was said. */
 @Composable
-private fun TranscriptPane(model: NotesModel, modifier: Modifier, titled: Boolean = true) {
+internal fun TranscriptPane(model: NotesModel, modifier: Modifier, titled: Boolean = true, close: (() -> Unit)? = null) {
     val scheme = MaterialTheme.colorScheme
+    val locale = androidx.compose.ui.platform.LocalConfiguration.current.locales[0]
+    val player = remember(model.library) { model.library?.let(::NotesAudioPlayer) }
+    val playing by (player?.playing ?: remember { kotlinx.coroutines.flow.MutableStateFlow<NotesClipRef?>(null) }).collectAsState()
+    val playbackFailed by (player?.failed ?: remember { kotlinx.coroutines.flow.MutableStateFlow(false) }).collectAsState()
+    LifecycleStartEffect(player) { onStopOrDispose { player?.stop() } }
     Column(modifier) {
         Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
             if (titled) Text("Transcript", Modifier.semantics { heading() }, style = MaterialTheme.typography.titleSmall, color = scheme.onSurfaceVariant)
             Spacer(Modifier.weight(1f))
             FilterChip(model.raw, { model.raw = !model.raw }, label = { Text("Show raw") })
+            if (close != null) IconButton(close) { Icon(painterResource(R.drawable.ic_close), "Close transcript") }
         }
+        if (playbackFailed) Text("Couldn’t play kept audio. Try another segment.", Modifier.padding(vertical = 8.dp), color = scheme.error, style = MaterialTheme.typography.bodyMedium)
         val document = model.document
         // A copy: the document's list is the same object as it grows, which the lazy list would not see change.
         val rows = document.segments.toList()
@@ -494,13 +471,23 @@ private fun TranscriptPane(model: NotesModel, modifier: Modifier, titled: Boolea
         LaunchedEffect(rows.size) { if (rows.isNotEmpty() && !list.canScrollForward) list.animateScrollToItem(rows.size) }
         LazyColumn(Modifier.fillMaxWidth().weight(1f), list, contentPadding = PaddingValues(top = 4.dp, bottom = 128.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             items(rows, key = { it.id }) { segment ->
-                Row(Modifier.animateItem(fadeInSpec = tween(300), placementSpec = null), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                val active = playing == NotesClipRef(document.uid, segment.id)
+                val clip = document.audio.firstOrNull { it.segment == segment.id }
+                val boundary = document.boundaries.firstOrNull { it.offset == segment.offset }
+                if (boundary != null) Text("Continued · " + java.text.SimpleDateFormat("MMM d, h:mm a", locale).format(java.util.Date(boundary.time)),
+                    Modifier.padding(vertical = 8.dp), style = MaterialTheme.typography.labelMedium, color = scheme.onSurfaceVariant)
+                Row(Modifier.animateItem(fadeInSpec = tween(300), placementSpec = null).clip(MaterialTheme.shapes.medium)
+                    .background(if (active) scheme.secondaryContainer else androidx.compose.ui.graphics.Color.Transparent).padding(8.dp)
+                    .semantics { if (active) stateDescription = "Playing" }, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    if (clip != null) IconButton({ if (active) player?.stop() else player?.play(document.uid, segment.id) }, Modifier.size(48.dp)) {
+                        Icon(painterResource(if (active) R.drawable.ic_stop else R.drawable.ic_play), if (active) "Stop playback" else "Play segment ${segment.id + 1}", tint = scheme.primary)
+                    }
                     Text(NotesDocument.timestamp(segment.offset), Modifier.padding(top = 2.dp), style = MaterialTheme.typography.labelSmall, fontFamily = FontFamily.Monospace,
                         color = scheme.outline)
                     val failure = segment.failure
                     if (failure != null) Text("⚠︎ audio not transcribed ($failure)", color = scheme.error, style = MaterialTheme.typography.bodyMedium)
                     else Text((if (model.raw) segment.raw else segment.text) + if (segment.keptOriginal && !model.raw) " (kept original)" else "",
-                        style = MaterialTheme.typography.bodyMedium)
+                        modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
                 }
             }
             if (document.livePartial.isNotBlank()) item(key = "partial") {
@@ -508,35 +495,6 @@ private fun TranscriptPane(model: NotesModel, modifier: Modifier, titled: Boolea
             }
             if (rows.isEmpty() && document.livePartial.isBlank()) item(key = "empty") {
                 Text("What is said appears here, a line per segment.", color = scheme.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium)
-            }
-        }
-    }
-}
-
-/** Kept notes as a notes list: title, when, a preview of the words, and search. */
-@Composable
-private fun RecentNotes(model: NotesModel, open: (NotesIndexEntry) -> Unit) {
-    val now = System.currentTimeMillis()
-    var query by rememberSaveable { mutableStateOf("") }
-    val shown = model.recent.filter { entry -> query.isBlank() || entry.title.contains(query.trim(), true) || entry.snippet.contains(query.trim(), true) }
-    Column(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Text("Recent notes", Modifier.padding(horizontal = 8.dp).semantics { heading() }, style = MaterialTheme.typography.titleLarge)
-        if (model.recent.isEmpty()) Text("Notes you stop or leave are kept here, encrypted on this phone.", Modifier.padding(horizontal = 8.dp),
-            style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        else OutlinedTextField(query, { query = it }, Modifier.fillMaxWidth(), placeholder = { Text("Search notes") }, singleLine = true,
-            leadingIcon = { Icon(painterResource(R.drawable.ic_search), null) }, shape = CircleShape,
-            trailingIcon = if (query.isEmpty()) null else ({ IconButton({ query = "" }) { Icon(painterResource(R.drawable.ic_close), "Clear search") } }))
-        if (model.recent.isNotEmpty() && shown.isEmpty()) Text("No notes match.", Modifier.padding(horizontal = 8.dp), style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant)
-        LazyColumn(Modifier.fillMaxWidth().heightIn(max = 520.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            items(shown, key = { it.id }) { entry ->
-                val (age, spoken) = historyAge(now, entry.updatedAt)
-                ListItem(headlineContent = { Text(entry.title, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleMedium) },
-                    overlineContent = { Text(age) },
-                    supportingContent = entry.snippet.takeIf { it.isNotBlank() }?.let { { Text(it, maxLines = 2, overflow = TextOverflow.Ellipsis) } },
-                    modifier = Modifier.clip(MaterialTheme.shapes.large).clickable(onClickLabel = "Open") { open(entry) }.semantics { stateDescription = spoken },
-                    trailingContent = { IconButton({ model.deleteKept(entry) }) { Icon(painterResource(R.drawable.ic_delete), "Delete ${entry.title}") } },
-                    colors = ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.surfaceContainer))
             }
         }
     }

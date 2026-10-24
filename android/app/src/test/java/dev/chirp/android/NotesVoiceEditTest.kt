@@ -532,6 +532,10 @@ class NotesVoiceEditModelTest {
 @Config(sdk = [37], qualifiers = "w411dp-h891dp-mdpi")
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 class NotesVoiceEditScreenTest {
+    @org.junit.Before fun noMotion() {
+        android.provider.Settings.Global.putFloat(RuntimeEnvironment.getApplication().contentResolver, android.provider.Settings.Global.ANIMATOR_DURATION_SCALE, 0f)
+    }
+
     @get:Rule val compose = createComposeRule()
     private val hold = "Edit notes by voice. Hold, say the change, let go."
 

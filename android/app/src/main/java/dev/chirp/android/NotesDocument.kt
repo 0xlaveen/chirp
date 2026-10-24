@@ -370,7 +370,10 @@ internal class NotesDocument(var startedAt: Long = System.currentTimeMillis(), t
     val snippet: String get() {
         val lines = meaningfulLines()
         val used = if (name.isNullOrBlank()) titleLine()?.first else null
-        val body = lines.filterIndexed { i, _ -> i != used }.map(::plain).filter { it.isNotEmpty() }.joinToString(" ")
+        val title = plain(libraryTitle())
+        val body = lines.filterIndexed { i, line ->
+            i != used && !(NotesMarkdown.heading(line) != null && plain(line).equals(title, ignoreCase = true))
+        }.map(::plain).filter { it.isNotEmpty() }.joinToString(" · ")
         val text = body.ifEmpty { committed.firstOrNull { !it.isGap && it.text.isNotEmpty() }?.text.orEmpty().replace('\n', ' ') }
         return if (text.length > MAX_SNIPPET) text.take(MAX_SNIPPET).trimEnd() + "…" else text
     }

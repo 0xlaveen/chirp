@@ -20,7 +20,8 @@ import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
 
-SERIAL = "emulator-5580"
+SERIAL = os.environ.get("ANDROID_SERIAL", "emulator-5580")
+assert SERIAL in ("emulator-5580", "emulator-5600"), "Only the authorized disposable emulators are supported"
 PACKAGE = "dev.chirp.android"
 IME = PACKAGE + "/.ChirpImeService"
 ROOT = Path(__file__).resolve().parents[2]

@@ -29,12 +29,17 @@ class NotesDocumentLibraryTest {
     @Test fun `snippet skips the title line and the markers, and open to-dos count unchecked boxes only`() {
         val text = "# Plan\nWe will ship it.\n- [ ] write docs\n- [x] done thing\n  * [ ] nested\n1. numbered"
         val d = doc(text)
-        assertEquals("We will ship it. write docs done thing nested numbered", d.snippet)
+        assertEquals("We will ship it. · write docs · done thing · nested · numbered", d.snippet)
         assertEquals(2, d.openTodos)
-        assertEquals("a renamed note keeps every line in the snippet", "Plan We will ship it. write docs done thing nested numbered", doc(text, name = "Mine").snippet)
+        assertEquals("a renamed note keeps every line in the snippet", "Plan · We will ship it. · write docs · done thing · nested · numbered", doc(text, name = "Mine").snippet)
         assertTrue(doc("x".repeat(500) + " tail").snippet.length <= NotesDocument.MAX_SNIPPET + 1)
         val spoken = doc("").apply { append(NotesSegment(0, 0.0, "only the transcript so far")) }
         assertEquals("only the transcript so far", spoken.snippet)
+    }
+
+    @Test fun `snippets separate blocks and omit headings that repeat a user title`() {
+        assertEquals("The first release goes to ten partners. · Draft the invite", doc("## Launch sync\nThe first release goes to ten partners.\n- [ ] Draft the invite", "Launch sync").snippet)
+        assertEquals("A long table by the window · Find a reading lamp", doc("- A long table by the window\n- [ ] Find a reading lamp", "Studio ideas").snippet)
     }
 
     @Test fun `a blank note nobody named is untouched, and anything else is not`() {
@@ -129,6 +134,22 @@ class NotesLibraryModelTest {
         assertEquals(setOf(first, "other"), sessions.entries().map { it.id }.toSet())
         rig.model.open("missing"); rig.idle()
         assertEquals("a note that is gone leaves the open one alone", "other", rig.model.document.uid)
+    }
+
+    @Test fun `opening a note never changes modified time or library order`() {
+        var clock = 1_792_840_000_000L
+        val sessions = NotesSessions(context, SoftwareHistoryKeys(), { clock })
+        sessions.put("older", noteJson("# Older\nSynthetic words"))
+        clock += 60_000
+        sessions.put("newer", noteJson("# Newer\nOther synthetic words"))
+        val before = sessions.entries()
+        val rig = NotesModelRig(context, sessions = sessions)
+        clock += 60_000
+        rig.model.open("older"); rig.idle(); rig.model.keepSession()
+        assertEquals(before, sessions.entries())
+        rig.model.edit(androidx.compose.ui.text.input.TextFieldValue("# Edited\nA user change")); rig.model.keepSession()
+        assertEquals("older", sessions.entries().first().id)
+        assertEquals(clock, sessions.entries().first().updatedAt)
     }
 
     @Test fun `continue recording adds a boundary and carries on from the stored audio clock`() {

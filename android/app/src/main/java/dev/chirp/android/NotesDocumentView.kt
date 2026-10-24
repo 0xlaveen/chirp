@@ -100,7 +100,7 @@ internal fun NotesBlockView(block: NotesBlock, edit: (NotesBlock) -> Unit, toggl
         }
         is NotesBlock.Callout -> {
             val decision = block.kind == NotesBlock.Callout.Kind.DECISION
-            val accent = if (decision) scheme.primary else scheme.tertiary
+            val accent = if (decision) dev.chirp.android.ui.LocalChirpRoles.current.lily else dev.chirp.android.ui.LocalChirpRoles.current.moon
             // A tint of the accent over the page, the same weight in light and dark and with any wallpaper colours.
             val tint = accent.copy(alpha = if (scheme.surface.luminance() < .5f) .16f else .10f)
             Row(modifier.then(indent).padding(vertical = 6.dp).clip(MaterialTheme.shapes.medium).background(tint).then(tap)

@@ -120,7 +120,7 @@ class SetupActivityTest {
         controller.newIntent(Intent().putExtra("section", "connection"))
         assertTrue(activity.state.shellOpen); assertEquals(SettingsPage.Connection, activity.state.settingsPage)
         controller.newIntent(Intent().putExtra("section", "try"))
-        assertTrue(activity.state.tryIt); assertEquals(ShellTab.Home, activity.state.tab); assertFalse(activity.state.exitOnBack)
+        assertTrue(activity.state.tryIt); assertEquals(ShellTab.Notes, activity.state.tab); assertFalse(activity.state.exitOnBack)
         controller.newIntent(Intent().putExtra("section", "network"))
         assertEquals(SettingsPage.Connection, activity.state.settingsPage); assertEquals(false, activity.state.reachable)
         controller.newIntent(Intent().putExtra("section", "history"))
@@ -138,7 +138,7 @@ class SetupActivityTest {
         state.mic = true; activity.advance(); assertEquals(PAGE_PAIR, state.step)
         assertFalse(SettingsStore(activity).onboarded)
         state.paired = true; activity.advance()
-        assertTrue(state.shellOpen); assertEquals(ShellTab.Home, state.tab); assertNull(state.settingsPage); assertTrue(state.tryIt)
+        assertTrue(state.shellOpen); assertEquals(ShellTab.Notes, state.tab); assertNull(state.settingsPage); assertTrue(state.tryIt)
         assertTrue("the launcher opens Home from now on", SettingsStore(activity).onboarded)
         state.shellOpen = false; state.tryIt = false
         SettingsStore(activity).tryItDismissed = true

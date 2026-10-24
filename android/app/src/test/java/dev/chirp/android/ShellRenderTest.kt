@@ -22,7 +22,7 @@ import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 
-/** Renders the app shell to docs/screenshots/android/home-*.png and history-*.png: cover (bar) and Fold inner (rail) widths, light and dark. */
+/** Renders the app shell to docs/screenshots/android/history-*.png: cover (bar) and Fold inner (rail) widths, light and dark. */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [37])
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
@@ -35,7 +35,7 @@ class ShellRenderTest {
     private var clock = now
     private val history = DictationHistory(context, SoftwareHistoryKeys()) { clock }
     private val dark = mutableStateOf(false)
-    private val tab = mutableStateOf(ShellTab.Home)
+    private val tab = mutableStateOf(ShellTab.Notes)
 
     private fun seed() {
         history.enable()
@@ -54,7 +54,7 @@ class ShellRenderTest {
                 AppShell(tab.value, { tab.value = it }) { shown ->
                     when (shown) {
                         ShellTab.History -> HistoryScreen(history, { now }, ZoneOffset.UTC)
-                        else -> HomeScreen(state, history = history, now = { now }, zone = ZoneOffset.UTC)
+                        else -> androidx.compose.material3.Text("Notes")
                     }
                 }
             }
@@ -81,26 +81,20 @@ class ShellRenderTest {
         state.mic = true
         seed()
         start(state)
-        compose.waitUntil(5000) { compose.onAllNodesWithText("Pick up oat milk, lemons and coffee beans.").fetchSemanticsNodes().isNotEmpty() }
-        shots("home-paired", width)
-        compose.runOnIdle { state.reachable = false; state.failure = ConnectionFailure.Kind.DOWN }
-        shots("home-offline", width)
-        compose.runOnIdle { state.reachable = true; state.failure = null; state.tryIt = true }
-        shots("home-first-run", width)
         compose.runOnIdle { tab.value = ShellTab.History }
         compose.waitUntil(5000) { compose.onAllNodesWithText("Yesterday").fetchSemanticsNodes().isNotEmpty() }
         if (width == "inner") compose.onNodeWithText("Can we move the design review to Thursday afternoon?").performClick()
         shots("history-list", width)
-        compose.runOnIdle { history.clear(); tab.value = ShellTab.Home }
+        compose.runOnIdle { history.clear(); tab.value = ShellTab.Notes }
         compose.runOnIdle { tab.value = ShellTab.History }
         compose.waitUntil(5000) { compose.onAllNodesWithText("No dictations yet").fetchSemanticsNodes().isNotEmpty() }
         shots("history-empty", width)
-        compose.runOnIdle { history.disable(); tab.value = ShellTab.Home }
+        compose.runOnIdle { history.disable(); tab.value = ShellTab.Notes }
         compose.runOnIdle { tab.value = ShellTab.History }
         compose.waitUntil(5000) { compose.onAllNodesWithText("Dictation history is off").fetchSemanticsNodes().isNotEmpty() }
         shots("history-off", width)
     }
 
-    @Test @Config(qualifiers = "w411dp-h891dp-mdpi") fun `render Home and History on the cover screen with a bar`() = render("cover")
-    @Test @Config(qualifiers = "w840dp-h900dp-mdpi") fun `render Home and History on the inner screen with a rail and two panes`() = render("inner")
+    @Test @Config(qualifiers = "w411dp-h891dp-mdpi") fun `render History on the cover screen with a bar`() = render("cover")
+    @Test @Config(qualifiers = "w840dp-h900dp-mdpi") fun `render History on the inner screen with a rail and two panes`() = render("inner")
 }

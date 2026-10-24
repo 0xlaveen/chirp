@@ -1,0 +1,23 @@
+Notes library and kept-audio validation — Android 17, arm64
+Device: separate read-only chirp-fold instance, emulator-5600
+Speech: generated synthetic fixture only; no real microphone or user speech
+Server: throwaway real Parakeet MLX server over TLS; temporary credentials removed
+
+PASS: rolling segments and live structured notes
+PASS: spoken edit; recording continues afterward
+PASS: screen off for 40 seconds; two segments and two notes calls continue
+PASS: pause, resume and stop
+PASS: real MediaCodec AAC-LC encoding and sealed kept-audio storage
+PASS: MediaPlayer over the in-memory MediaDataSource; prepared/started playback,
+      playback sustained beyond two seconds, natural completion, no decoder error
+PASS: native Markdown editor action and return to the rendered document
+PASS: Organize and Share
+PASS: Dictate FAB opens Scratchpad and one dictation lands
+
+Observed HTTP results: 8 structure calls, 1 edit call, 1 reorganize call; all 200
+Observed nonempty finals: 12 (includes warmup and Scratchpad)
+Complete notes harness: exit 0
+Owned emulator shut down afterward. Other emulator instances left untouched.
+
+Local Android checks: lint, testDebugUnitTest and assembleDebug passed.
+952 tests, 0 failures, 2 opt-in live-server skips; both ABI alignment checks passed.
