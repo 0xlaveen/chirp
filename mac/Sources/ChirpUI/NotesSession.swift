@@ -73,6 +73,14 @@ public struct NotesSessionDependencies {
 @MainActor
 public final class NotesSession {
     public let model = NotesModel()
+    /// The window around the note: the library list, search, selection, the inspector (Mac library only).
+    public let window = NotesLibraryModel()
+    /// A note opened while another one records (`window.browsed` is its model).
+    private var browsing: NotesBrowsedNote?
+    private var renameTask: Task<Void, Never>?
+    private var searchTask: Task<Void, Never>?
+    private var lastDocumentID: UUID?
+    private var audioSeen: [UUID: Int] = [:]
     public let recorder: NotesRecorder
     /// Edit by Voice (#97).
     public let voiceEdit: NotesVoiceEdit
@@ -168,7 +176,6 @@ public final class NotesSession {
             }
         }
         model.libraryEnabled = deps.library != nil
-        model.tab = NotesTab(rawValue: settings.notesTab) ?? .notes
         model.structureEnabled = false
         model.onRecordToggle = { [weak self] in
             guard let self else { return }
@@ -177,12 +184,13 @@ public final class NotesSession {
         model.onRestoreSnapshot = { [weak self] id, confirmed in self?.restoreSnapshot(id, confirmed: confirmed) }
         model.onPauseToggle = { [weak self] in Task { await self?.togglePause() } }
         model.onStructureToggle = { [weak self] on in self?.setStructure(on) }
-        model.onTabChange = { settings.notesTab = $0.rawValue }
-        model.preview = settings.notesPreview
+        // The inspector is remembered in the old layout preference ("split" showed the transcript beside the notes).
+        window.showsInspector = settings.notesTab != "notes"
+        window.onInspector = { settings.notesTab = $0 ? "split" : "notes" }
+        model.onShowTranscript = { [weak self] in self?.window.setInspector(true) }
         model.tipSeen = settings.notesTipSeen
         model.onTipSeen = { settings.notesTipSeen = true }
         model.autoReorganize = settings.notesAutoReorganize
-        model.onPreviewToggle = { settings.notesPreview = $0 }
         model.onAutoReorganizeToggle = { [weak self] on in
             settings.notesAutoReorganize = on
             self?.recorder.setAutoReorganize(on)
@@ -227,6 +235,7 @@ public final class NotesSession {
         _ = center.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: nil) { [weak self] _ in
             MainActor.assumeIsolated { self?.didWake() }
         }
+        if deps.library != nil { wireLibrary() }
         sync()
     }
 
@@ -284,8 +293,8 @@ public final class NotesSession {
         recorder.options = settings.notesStartOptions(health: health)
         recorder.serverHost = settings.serverConfig().host
         applyAvailability(health)
-        if model.structuring == .off(.correctionOff) || model.structuring == .off(.unsupported), model.tab == .notes, recorder.document.isEmpty {
-            model.tab = .transcript   // structuring unavailable: the transcript is the useful view
+        if model.structuring == .off(.correctionOff) || model.structuring == .off(.unsupported), recorder.document.isEmpty {
+            window.setInspector(true)   // structuring unavailable: the transcript is the useful view
         }
         chirpLog.info("notes start microphone=\(self.deps.microphoneStatus(), privacy: .public) correction=\(self.recorder.options.correction, privacy: .public) structuring=\(String(describing: self.recorder.structuring), privacy: .public) speakers=\(labels, privacy: .public)")
         if settings.soundsEnabled { deps.play(.start) }
@@ -442,7 +451,7 @@ public final class NotesSession {
         if isActive { recorder.cancel() }
     }
 
-    private func waitWhileStopping() async {
+    func waitWhileStopping() async {
         while recorder.state == .stopping { await deps.sleep(.milliseconds(100)) }
     }
 
@@ -676,6 +685,7 @@ public final class NotesSession {
         // The editor replays the AI changes right away, onto text that matches `model.document` before them.
         model.enqueue(changes)
         library?.setRecordingNote(recorder.state.isActive ? recorder.document.id : nil)
+        documentShown()
         journal.update(recorder.document, elapsed: recorder.elapsed, urgent: !changes.isEmpty || leftCapture, recording: recorder.state.isActive)
         model.keepSaving = journal.keepStatus
         model.debugRetention = recorder.debugRetention || (resolvedHealth()?.debugRetention ?? false)
@@ -724,6 +734,299 @@ public final class NotesSession {
         let shows = model.showsLongRunNotice
         if shows, !lastLongRun { deps.announce(NotesStatus.longRun(hours: model.longRunHours)) }
         lastLongRun = shows
+    }
+}
+
+// MARK: library window
+
+extension NotesSession {
+    /// The note on screen: one opened beside a recording, or the recorder's.
+    public var displayedModel: NotesModel { window.displayed(model) }
+
+    private func wireLibrary() {
+        let w = window
+        w.onSelect = { [weak self] in self?.select($0) }
+        w.onNew = { [weak self] in self?.newNote() }
+        w.onRename = { [weak self] id, title in
+            guard let self else { return }
+            Task { try? await self.rename(id, title: title) }
+        }
+        w.onTrash = { [weak self] in self?.trash($0) }
+        w.onRestore = { [weak self] in self?.restore($0) }
+        w.onPurge = { [weak self] id in
+            guard let library = self?.library else { return }
+            Task { try? await library.purge(id) }
+        }
+        w.onEmptyTrash = { [weak self] in
+            guard let library = self?.library else { return }
+            Task { for e in library.recentlyDeleted { try? await library.purge(e.id) } }
+        }
+        w.onContinue = { [weak self] in self?.continueHere($0) }
+        w.onStopAndContinue = { [weak self] id in
+            guard let self else { return }
+            Task { await self.stopAndContinue(id) }
+        }
+        w.onQuery = { [weak self] in self?.search($0) }
+        model.onTitleEdit = { [weak self] title in
+            guard let self else { return }
+            self.titleEdited(self.recorder.document.id, title)
+        }
+        w.selection = .note(recorder.document.id)
+        observeLibrary()
+        if let library { Task { try? await library.reload() } }
+    }
+
+    /// The library changed on disk: the list follows, and so does a search and the note's kept audio.
+    private func observeLibrary() {
+        guard let library else { return }
+        withObservationTracking {
+            _ = library.notes
+            _ = library.recentlyDeleted
+        } onChange: { [weak self] in
+            Task { @MainActor in
+                self?.mirrorLibrary()
+                self?.observeLibrary()
+            }
+        }
+        mirrorLibrary()
+    }
+
+    private func mirrorLibrary() {
+        guard let library else { return }
+        window.notes = library.notes
+        window.deleted = library.recentlyDeleted
+        if !window.query.trimmingCharacters(in: .whitespaces).isEmpty { search(window.query, debounce: false) }
+        let shown = displayedModel
+        let bytes = window.entry(shown.document.id)?.audioBytes ?? 0
+        if audioSeen[shown.document.id] != bytes { refreshKeptAudio(shown) }
+    }
+
+    /// Keeps the window in step with the recorder: the Recording section, the selection when the recorder moves to
+    /// another note (New, the hotkey, Continue), and the title field.
+    func documentShown() {
+        guard library != nil else { return }
+        window.recordingID = recorder.state.isActive ? recorder.document.id : nil
+        let id = recorder.document.id
+        guard id != lastDocumentID else { return }
+        lastDocumentID = id
+        model.titleDraft = nil
+        renameTask?.cancel()
+        if browsing == nil, window.selection != .recentlyDeleted { window.selection = .note(id) }
+        refreshKeptAudio(model)
+    }
+
+    /// The note's kept segment audio, for ▶ in the transcript.
+    private func refreshKeptAudio(_ target: NotesModel) {
+        guard let library else { return }
+        let id = target.document.id
+        audioSeen[id] = window.entry(id)?.audioBytes ?? 0
+        Task {
+            let refs = (try? await library.segmentAudio(id)) ?? []
+            guard target.document.id == id else { return }
+            target.keptAudio = Dictionary(refs.map { ($0.reference.id, $0.url) }, uniquingKeysWith: { _, last in last })
+        }
+    }
+
+    /// A row was chosen. While a note records, any other note opens beside it (the recording goes on); otherwise the
+    /// recorder opens it.
+    func select(_ item: NotesSidebarItem?) {
+        window.player.stop()
+        guard let id = item?.noteID else { return }
+        if id == recorder.document.id { closeBrowsing(); return }
+        if isActive { browse(id); return }
+        closeBrowsing()
+        Task {
+            do { try await openNote(id) } catch { chirpLog.info("notes open failed") }
+        }
+    }
+
+    private func browse(_ id: UUID) {
+        guard let library else { return }
+        Task {
+            await browsing?.flush()
+            guard let record = try? await library.record(id), window.selection == .note(id), record.document.deletedAt == nil else { return }
+            show(NotesBrowsedNote(record: record, library: library, like: model))
+        }
+    }
+
+    private func show(_ note: NotesBrowsedNote) {
+        browsing = note
+        note.model.onRecordToggle = { [weak self, weak note] in if let id = note?.model.document.id { self?.continueHere(id) } }
+        note.model.onTitleEdit = { [weak self, weak note] title in if let id = note?.model.document.id { self?.titleEdited(id, title) } }
+        note.model.onShowTranscript = { [weak self] in self?.window.setInspector(true) }
+        window.browsed = note.model
+        refreshKeptAudio(note.model)
+    }
+
+    private func closeBrowsing() {
+        guard let note = browsing else { return }
+        browsing = nil
+        window.browsed = nil
+        Task { await note.flush() }
+    }
+
+    /// New Note (⌘N, the empty state): a blank note. While another records, it opens beside the recording.
+    public func newNote() {
+        guard library != nil else { reset(); return }
+        if isActive {
+            guard let library else { return }
+            let note = NotesBrowsedNote(record: NotesJournalRecord(document: NotesDocument(), elapsed: 0), library: library, like: model)
+            window.selection = .note(note.model.document.id)
+            show(note)
+            note.model.focusRequest += 1
+            return
+        }
+        closeBrowsing()
+        reset()
+        window.selection = .note(recorder.document.id)
+        model.focusRequest += 1
+    }
+
+    /// The title field: saved after a short pause in typing (an empty title goes back to the derived one).
+    private func titleEdited(_ id: UUID, _ title: String) {
+        renameTask?.cancel()
+        renameTask = Task {
+            try? await Task.sleep(for: .milliseconds(500))
+            guard !Task.isCancelled else { return }
+            try? await rename(id, title: title)
+        }
+    }
+
+    private func rename(_ id: UUID, title: String) async throws {
+        if let note = browsing, note.model.document.id == id {
+            note.model.document.rename(title)
+            await note.flush()
+        }
+        try await renameNote(id, title: title)
+    }
+
+    /// ⌫ / Delete: to Recently Deleted, with Undo in a toast (and ⌘Z). A note that records can't be deleted.
+    public func trash(_ id: UUID) {
+        guard let library, window.canTrash(id), !(isActive && id == recorder.document.id) else { deps.beep(); return }
+        let next = neighbor(of: id)
+        Task {
+            if let note = browsing, note.model.document.id == id {
+                await note.flush()
+                closeBrowsing()
+            }
+            let onRecorder = id == recorder.document.id
+            if onRecorder {
+                journal.flush()
+                await journal.settle()
+            }
+            do { try await library.trash(id) } catch { deps.beep(); return }
+            if onRecorder, !isActive { reset() }
+            window.showToast(NotesLibraryText.deleted, undo: id)
+            if let next { window.select(.note(next)) } else if onRecorder { window.selection = .note(recorder.document.id) }
+        }
+    }
+
+    /// The row after `id` in the list (or the one before it), for the selection after a delete.
+    private func neighbor(of id: UUID) -> UUID? {
+        let order = window.groups().flatMap(\.entries).map(\.id)
+        guard let i = order.firstIndex(of: id) else { return window.recordingID }
+        return i + 1 < order.count ? order[i + 1] : i > 0 ? order[i - 1] : window.recordingID
+    }
+
+    /// Undo or Restore: back from Recently Deleted, and selected.
+    public func restore(_ id: UUID) {
+        guard let library else { return }
+        Task {
+            try? await library.restore(id)
+            if window.toast?.undo == id { window.toast = nil }
+            window.select(.note(id))
+        }
+    }
+
+    /// Continue recording (⌘⇧R) on a finished note: a new capture appends to it after a quiet divider. While another
+    /// note records, it asks first ("Stop current and continue here").
+    public func continueHere(_ id: UUID) {
+        if id == recorder.document.id {
+            if !isActive { start(focus: true) }
+            return
+        }
+        if isActive { window.confirmingSwitch = id; return }
+        Task {
+            if let note = browsing, note.model.document.id == id { await note.flush() }
+            closeBrowsing()
+            window.selection = .note(id)
+            try? await continueRecording(id)
+        }
+    }
+
+    /// "Stop current and continue here": the recording finishes (its notes kept), then this note records.
+    public func stopAndContinue(_ id: UUID) async {
+        await stop()
+        await waitWhileStopping()
+        if let note = browsing, note.model.document.id == id { await note.flush() }
+        closeBrowsing()
+        window.selection = .note(id)
+        try? await continueRecording(id)
+    }
+
+    /// Search over titles, notes and transcripts, a moment after typing stops.
+    private func search(_ query: String, debounce: Bool = true) {
+        searchTask?.cancel()
+        guard let library, !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            window.results = nil
+            return
+        }
+        searchTask = Task {
+            if debounce { try? await Task.sleep(for: .milliseconds(150)) }
+            guard !Task.isCancelled, let results = try? await library.search(query), window.query == query else { return }
+            window.results = results
+        }
+    }
+}
+
+/// A note opened while another records: its own `NotesModel`, edited by typing only (no recorder behind it), saved
+/// to the library a moment after each edit. Organize and recording need the recorder: Continue asks to switch.
+@MainActor
+final class NotesBrowsedNote {
+    let model = NotesModel()
+    private var record: NotesJournalRecord
+    private let library: NotesLibrary
+    private var pending: Task<Void, Never>?
+    private var dirty = false
+
+    init(record: NotesJournalRecord, library: NotesLibrary, like recorder: NotesModel) {
+        self.record = record
+        self.library = library
+        model.document = record.document
+        model.elapsed = record.elapsed
+        model.state = record.document.isEmpty && record.document.segments.isEmpty ? .idle : .stopped
+        model.libraryEnabled = true
+        model.structuring = .idle
+        model.reorganizeStatus = .unavailable(.unsupported)
+        model.tipSeen = true
+        model.notesKey = recorder.notesKey
+        model.dictationKey = recorder.dictationKey
+        model.onCopy = recorder.onCopy
+        model.onSave = recorder.onSave
+        model.onUserEdit = { [weak self] range, text, kind in self?.edit(range, text, kind) }
+    }
+
+    private func edit(_ range: NSRange, _ text: String, _ kind: NotesTextChange.Kind) {
+        _ = model.document.userEdit(range, text, kind: kind == .toggleTask ? .toggleTask : .user)
+        if model.state == .idle, !model.document.isEmpty { model.state = .stopped }
+        dirty = true
+        pending?.cancel()
+        pending = Task {
+            try? await Task.sleep(for: .seconds(1))
+            guard !Task.isCancelled else { return }
+            await flush()
+        }
+    }
+
+    /// Writes what was typed now (before another note opens, Continue, or a delete).
+    func flush() async {
+        pending?.cancel()
+        pending = nil
+        guard dirty || model.document.userTitle != record.document.userTitle else { return }
+        dirty = false
+        record.document = model.document
+        record.recording = false
+        _ = try? await library.write(record)
     }
 }
 

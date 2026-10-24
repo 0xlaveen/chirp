@@ -89,17 +89,17 @@ extension NotesSession {
     }
 
     /// New Note: a fresh note starts recording and its window comes forward. Never continues the note on screen.
-    func newNote() {
+    func recordNewNote() {
         guard !isActive, recorder.state != .stopping else { return }
         if library != nil { reset() }
         start(focus: true)
     }
 
-    /// Recent Notes: the note opens in the window. While a note records the window only comes forward, so browsing never
-    /// stops or replaces the recording.
+    /// Recent Notes: the note opens in the window. While a note records it opens beside the recording (the window's
+    /// selection), so browsing never stops or replaces the recording.
     func showNote(_ id: String) {
-        guard !isActive, let uuid = UUID(uuidString: id) else { return }
-        Task { try? await openNote(uuid) }
+        guard let uuid = UUID(uuidString: id) else { return }
+        window.select(.note(uuid))
     }
 
     /// The library's newest notes for the menu's Recent Notes, without the one being recorded.

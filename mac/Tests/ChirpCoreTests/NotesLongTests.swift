@@ -301,12 +301,12 @@ final class RecordingTransport: StreamTransport, @unchecked Sendable {
             d.append(s)
         }
         m.document = d
-        var tabs: [NotesTab] = []
-        m.onTabChange = { tabs.append($0) }
+        var shown = 0
+        m.onShowTranscript = { shown += 1 }
         m.jumpToTranscript(at: 50)
-        #expect(m.tab == .split && tabs == [.split] && m.highlightedParagraph == "0" && m.transcriptJump == 1)
+        #expect(shown == 1 && m.highlightedParagraph == "0" && m.transcriptJump == 1)
         m.jumpToTranscript(at: 95)
-        #expect(m.highlightedParagraph == "2" && tabs == [.split])
+        #expect(m.highlightedParagraph == "2" && shown == 2)
     }
 }
 

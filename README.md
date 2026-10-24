@@ -20,7 +20,7 @@
 <table>
   <tr>
     <td align="center" width="25%"><a href="docs/screenshots/mac/hud-listening-light.png"><img src="docs/screenshots/mac/hud-listening-light.png" alt="Mac dictation HUD showing the live transcript and a waveform"></a><br><sub>Mac · dictate in any app</sub></td>
-    <td align="center" width="25%"><a href="docs/screenshots/mac/notes-split-dark.png"><img src="docs/screenshots/mac/notes-split-dark.png" alt="Chirp Notes window: live Markdown notes next to the transcript"></a><br><sub>Mac · Live Notes</sub></td>
+    <td align="center" width="25%"><a href="docs/screenshots/mac/notes-inspector-playing-dark.png"><img src="docs/screenshots/mac/notes-inspector-playing-dark.png" alt="Chirp Notes window: the notes library, a note in live preview and its transcript with segment playback"></a><br><sub>Mac · Live Notes</sub></td>
     <td align="center" width="25%"><a href="docs/screenshots/android/keyboard-look-gboard-listening-light.png"><img src="docs/screenshots/android/keyboard-look-gboard-listening-light.png" alt="Chirp Keyboard on Android while listening"></a><br><sub>Android · keyboard</sub></td>
     <td align="center" width="25%"><a href="docs/screenshots/android/scratchpad-text-light.png"><img src="docs/screenshots/android/scratchpad-text-light.png" alt="Android Scratchpad with dictated text and Copy and Share buttons"></a><br><sub>Android · Scratchpad</sub></td>
   </tr>
