@@ -73,7 +73,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                            openSetup: { [onboardingWindow] in onboardingWindow.show() },
                            toggleNotes: { [notes] in notes.toggle(fromHotkey: false) },
                            showNotes: { [notesWindow] in notesWindow.show() },
-                           newNote: { [notes] in notes.newNote() },
+                           newNote: { [notes] in notes.recordNewNote() },
                            openNote: { [notes, notesWindow] id in notes.showNote(id); notesWindow.show() },
                            recentNotes: { [notes] in notes.recentNotes },
                            notes: { [notes, openNotesHotkey] in var state = notes.menuState; state.openShortcut = openNotesHotkey.title; return state },

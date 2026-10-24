@@ -4,8 +4,8 @@ import Testing
 @testable import ChirpCore
 @testable import ChirpUI
 
-/// The Notes window at its minimum width: the Record/Stop label stays on one line in every state, and the structuring
-/// chip shows its whole host (#65).
+/// The Notes window at its minimum width: the toolbar's Record/Continue label and the Recording capsule stay on one line
+/// in every state, and the structuring chip shows its whole host (#65).
 @MainActor
 @Suite struct NotesLayoutTests {
     private func lay(_ configure: (NotesModel) -> Void, width: CGFloat = NotesViewMetrics.minimumSize.width) async -> NotesModel {
@@ -13,7 +13,14 @@ import Testing
         model.elapsed = 192
         model.document = Snapshots.demoNotes()
         configure(model)
-        let host = NSHostingView(rootView: NotesView(model: model))
+        let library = NotesLibraryModel()
+        library.selection = .note(model.document.id)
+        // The note and its meta bar at the window's minimum width, and the toolbar's record control as the toolbar
+        // lays it out (at its own size: a toolbar item never wraps or stretches).
+        let host = NSHostingView(rootView: VStack(spacing: 0) {
+            RecordControl(model: model, library: library).fixedSize()
+            NotesView(model: model, library: library)
+        })
         host.frame = NSRect(x: 0, y: 0, width: width, height: NotesViewMetrics.minimumSize.height + 160)
         let window = NSWindow(contentRect: host.frame, styleMask: [.titled], backing: .buffered, defer: false)
         window.contentView = host
@@ -35,9 +42,10 @@ import Testing
         for (name, state) in states {
             let model = await lay { $0.state = state; $0.level = 0.5 }
             let label = model.probe.recordLabel
-            let word = state.isLive ? "Stop" : "Record"
+            // Not recording: "Continue" (the demo note has content); recording: the capsule with its title and time.
+            let word = state.isActive ? "03:12" : "Continue"
             #expect(label.width + 1 >= textWidth(word, size: 12, weight: .medium), "\(name): label cut short")
-            #expect(label.height > 0 && label.height < 20, "\(name): label wraps (\(label.height) pt high)")
+            #expect(label.height > 0 && label.height < 24, "\(name): label wraps (\(label.height) pt high)")
         }
     }
 
@@ -48,7 +56,7 @@ import Testing
             $0.finishingElapsed = 99
             $0.dictationKey = "⌃⌥ Control Option"
         }
-        #expect(model.probe.recordLabel.height > 0 && model.probe.recordLabel.height < 20)
+        #expect(model.probe.recordLabel.height > 0 && model.probe.recordLabel.height < 24)
     }
 
     @Test func theStructuringChipShowsTheWholeHostAtTheMinimumWidth() async {

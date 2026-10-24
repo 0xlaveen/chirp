@@ -203,9 +203,14 @@ import Testing
         let storage = try #require(h.editor.textView.textStorage)
         #expect(storage.string == "## Budget\n- **Decision:** keep it\n- [x] done\n")
         let heading = try #require(storage.attribute(.font, at: 4, effectiveRange: nil) as? NSFont)
-        #expect(heading.pointSize == 17)
+        #expect(heading.pointSize == 19)
+        // Live preview (the editor is not focused): the `## ` hides; the Decision label is lily.
+        #expect(storage.attribute(.foregroundColor, at: 0, effectiveRange: nil) as? NSColor == .clear)
+        #expect(storage.attribute(.foregroundColor, at: 14, effectiveRange: nil) as? NSColor == NotesEditorDecorations.lily)
+        // Show Markdown: the syntax is tertiary, as before.
+        h.editor.textView.hidesMarkup = false
+        h.editor.restyle(nil)
         #expect(storage.attribute(.foregroundColor, at: 0, effectiveRange: nil) as? NSColor == .tertiaryLabelColor)
-        #expect(storage.attribute(.foregroundColor, at: 14, effectiveRange: nil) as? NSColor == .systemGreen)
         let done = (storage.string as NSString).range(of: "done").location
         #expect(storage.attribute(.strikethroughStyle, at: done, effectiveRange: nil) as? Int == NSUnderlineStyle.single.rawValue)
     }

@@ -52,34 +52,39 @@ import SwiftUI
 
 @MainActor
 @Suite struct NotesReviewTabSwitchTests {
-    /// Notes → Split builds a new editor while the old one is dismantled. If the new coordinator is made first, the old
-    /// one's `detach()` clears the sink the new one just installed, and every later AI change is dropped (and only a
-    /// full `load()` resync on the next SwiftUI update brings it back: caret, scroll and undo reset).
-    @Test func switchingNotesToSplitKeepsTheEditorSink() async throws {
+    /// Opening another note beside a recording builds that note's editor; coming back builds the recorder's again. The
+    /// browsed editor must never take the recorder's sink, and the recorder's new editor must own it once it is back:
+    /// otherwise every later AI change is dropped (only a full `load()` resync would bring it back: caret, scroll and
+    /// undo reset).
+    @Test func browsingAnotherNoteKeepsTheRecordersEditorSink() async throws {
         let model = NotesModel()
-        let host = NSHostingView(rootView: NotesView(model: model))
-        host.frame = NSRect(x: 0, y: 0, width: 1000, height: 700)
+        model.document = NotesDocument(text: "## Mine\n- a line")   // not blank: the editor, not the empty state
+        let library = NotesLibraryModel()
+        let host = NSHostingView(rootView: NotesView(model: model, library: library))
+        host.frame = NSRect(x: 0, y: 0, width: 1100, height: 700)
         let window = NSWindow(contentRect: host.frame, styleMask: [.titled], backing: .buffered, defer: false)
         window.contentView = host
-        host.layoutSubtreeIfNeeded()
-        try? await Task.sleep(for: .milliseconds(100))
+        func settle() async {
+            window.contentView?.layoutSubtreeIfNeeded()
+            try? await Task.sleep(for: .milliseconds(150))
+            window.contentView?.layoutSubtreeIfNeeded()
+        }
+        await settle()
         #expect(model.onPendingChanges != nil)
-        model.tab = .split
-        host.layoutSubtreeIfNeeded()
-        try? await Task.sleep(for: .milliseconds(200))
-        host.layoutSubtreeIfNeeded()
+        let other = NotesModel()
+        other.document = NotesDocument(text: "## Other\n- a note")
+        library.browsed = other
+        await settle()
+        #expect(model.onPendingChanges == nil && other.onPendingChanges != nil)   // the browsed note's editor
+        library.browsed = nil
+        await settle()
         func editors(_ v: NSView) -> [NotesTextView] { (v as? NotesTextView).map { [$0] } ?? v.subviews.flatMap(editors) }
-        let live = editors(host)
-        #expect(live.count == 1)                                     // the Split pane's editor is on screen
-        #expect(model.onPendingChanges != nil)                       // fails: its sink was cleared by the old detach()
-        // An AI change now is dropped instead of replayed; the on-screen storage falls behind the model.
+        #expect(editors(window.contentView!).count == 1)
+        #expect(model.onPendingChanges != nil)
         var d = model.document
         d.userEdit(NSRange(location: 0, length: 0), "typed")
         model.document = d
-        model.tab = .notes
-        host.layoutSubtreeIfNeeded()
-        try? await Task.sleep(for: .milliseconds(200))
-        host.layoutSubtreeIfNeeded()
-        #expect(model.onPendingChanges != nil)
+        await settle()
+        #expect(editors(window.contentView!).first?.string.hasPrefix("typed") == true)
     }
 }

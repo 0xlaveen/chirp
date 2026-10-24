@@ -120,6 +120,14 @@ public struct NotesLibraryEntry: Codable, Equatable, Sendable, Identifiable {
     public var recovered: Bool
     public var recording: Bool
 
+    /// A row built by hand (the window's unsaved new note, snapshots and tests); the library builds its own from records.
+    public init(id: UUID, title: String, snippet: String = "", openTodos: Int = 0, createdAt: Date, updatedAt: Date,
+                deletedAt: Date? = nil, duration: TimeInterval = 0, audioBytes: Int = 0, recovered: Bool = false, recording: Bool = false) {
+        self.id = id; self.title = title; self.snippet = snippet; self.openTodos = openTodos
+        self.createdAt = createdAt; self.updatedAt = updatedAt; self.deletedAt = deletedAt; self.duration = duration
+        self.audioBytes = audioBytes; hasAudio = audioBytes > 0; self.recovered = recovered; self.recording = recording
+    }
+
     init(_ r: NotesJournalRecord) {
         let d = r.document
         id = d.id; title = d.title; snippet = d.snippet(); openTodos = d.openTodoCount()
@@ -136,6 +144,10 @@ public struct NotesSearchResult: Sendable, Identifiable {
     /// UTF-16 ranges in `snippet`, suitable for an attributed string highlight.
     public var matches: [NSRange]
     public var id: UUID { entry.id }
+
+    public init(entry: NotesLibraryEntry, snippet: String, matches: [NSRange]) {
+        self.entry = entry; self.snippet = snippet; self.matches = matches
+    }
 }
 
 public enum NotesLibraryError: Error { case missing, recording, deleted, unsupportedSchema }

@@ -296,13 +296,13 @@ final class NotesURLStub: URLProtocol, @unchecked Sendable {
 
     @Test func controlsFollowTheStateTable() {
         let empty = NotesModel()
-        #expect(empty.canToggle && !empty.canExport && !empty.canNew)
+        #expect(empty.canToggle && !empty.canExport && empty.isBlank && empty.displayTitle == NotesLibraryText.untitled)
         let recording = model { $0.state = .recording }
-        #expect(recording.isRecording && recording.canExport && !recording.canNew)
+        #expect(recording.isRecording && recording.canExport && !recording.isBlank)
         let stopping = model { $0.state = .stopping }
-        #expect(!stopping.canToggle && !stopping.canExport && !stopping.canNew)
+        #expect(!stopping.canToggle && !stopping.canExport)
         let stopped = model { $0.state = .stopped }
-        #expect(stopped.canToggle && stopped.canExport && stopped.canNew)
+        #expect(stopped.canToggle && stopped.canExport)
     }
 
     @Test func aStartErrorNeverHidesARunningRecorder() {
@@ -322,11 +322,13 @@ final class NotesURLStub: URLProtocol, @unchecked Sendable {
         #expect(model { $0.elapsed = 3725 }.elapsedText == "1:02:05")
     }
 
-    @Test func copyIsTheNotesOrTheTranscriptByTab() {
+    @Test func copyIsTheNotesOrTheTranscriptWithoutThem() {
         let notes = model()
         #expect(notes.copyText.contains("- Ship Friday") && !notes.copyText.contains("## Transcript"))
-        let transcript = model { $0.tab = .transcript }
-        #expect(transcript.copyText.contains("## Transcript") && !transcript.copyText.contains("- Ship Friday"))
+        // The inspector showing changes nothing: Copy Markdown is the note.
+        let library = NotesLibraryModel()
+        library.showsInspector = true
+        #expect(library.displayed(notes).copyText == notes.copyText)
         // The notes are text the user can edit: with structuring off they are still the notes.
         let off = model { $0.structuring = .off(.correctionOff) }
         #expect(off.copyText.contains("- Ship Friday") && !off.copyText.contains("## Transcript"))

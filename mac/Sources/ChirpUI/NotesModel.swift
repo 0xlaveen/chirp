@@ -2,19 +2,6 @@ import ChirpCore
 import Foundation
 import Observation
 
-/// The Notes window's three layouts.
-public enum NotesTab: String, CaseIterable, Sendable {
-    case notes, transcript, split
-
-    public var title: String {
-        switch self {
-        case .notes: "Notes"
-        case .transcript: "Transcript"
-        case .split: "Split"
-        }
-    }
-}
-
 /// The Notes window's wording, in one place so the controller, the snapshots and the tests agree.
 public enum NotesStatus {
     public static let connecting = "Connecting…"
@@ -63,7 +50,7 @@ public enum NotesStatus {
     public static let problem = "Problem"
     public static let tip = "Chirp writes here and may still rewrite it. Edit it and it’s yours."
     public static func structuringChip(_ host: String) -> String { "Structuring → \(host)" }
-    public static let shortcutsHint = "Keyboard shortcuts: ⌘⇧R record · ⌘⇧P pause · ⌘1 ⌘2 ⌘3 layout"
+    public static let shortcutsHint = "Keyboard shortcuts: ⌘⇧R record · ⌘⇧P pause · ⌥⌘T transcript"
     public static let keepGoing = "Keep going"
     public static let stopRecording = "Stop"
 
@@ -166,7 +153,6 @@ public final class NotesModel {
     public var connection: NotesConnection = .online
     /// What the microphone is doing, when Notes should say so.
     public var micNotice: NotesMicNotice?
-    public var tab: NotesTab = .notes
     /// The transcript shows each segment's raw text.
     public var showRaw = false
     /// The transcript pane is scrolled to its end, so new segments keep it there. Kept here rather than in `@State`:
@@ -197,6 +183,8 @@ public final class NotesModel {
     public var serverNotice: ServerNotice?
     public var serverFixMessage: String?
     public var reduceMotion = false
+    /// A fixed Ripple phase for the snapshots; nil runs on the clock.
+    public var ripplePhase: Double?
     /// The user's "Label speakers" toggle, and the model behind it.
     public var speakerLabels = false
     public var speakerModel: SpeakerModelState = .notDownloaded
@@ -206,8 +194,10 @@ public final class NotesModel {
     public var speakerBanner: SpeakerBanner?
     /// Voice profiles in this document: suggestions, remembered people (`SpeakerMenu`).
     public var voices = SpeakerVoiceState()
-    /// The Notes pane shows the read-only Preview instead of the editor.
-    public var preview = false
+    /// The title field's text while it is being edited (nil: it shows the note's title).
+    public var titleDraft: String?
+    /// The kept audio of this note's segments (`audio/<segment>.m4a`), for ▶ in the transcript.
+    public var keptAudio: [Int: URL] = [:]
     /// The user's "Auto-reorganize" toggle.
     public var autoReorganize = true
     public var reorganizeStatus: ReorganizeStatus = .idle
@@ -259,14 +249,16 @@ public final class NotesModel {
     /// The error banner's Server Settings… (Settings › Server).
     public var onServerSettings: () -> Void = {}
     public var onStructureToggle: (Bool) -> Void = { _ in }
-    public var onTabChange: (NotesTab) -> Void = { _ in }
+    /// A section's `[hh:mm:ss]` asks for the transcript inspector.
+    public var onShowTranscript: () -> Void = {}
+    /// The title field changed (a rename, saved after a pause in typing).
+    public var onTitleEdit: (String) -> Void = { _ in }
     public var onSpeakerLabelsToggle: (Bool) -> Void = { _ in }
     public var onSpeakerEdit: (SpeakerEdit) -> Void = { _ in }
     /// The editor changed the text: the range (UTF-16, in the old text) and its replacement.
     @ObservationIgnored public var onUserEdit: (NSRange, String, NotesTextChange.Kind) -> Void = { _, _, _ in }
     public var onReorganize: () -> Void = {}
     public var onAutoReorganizeToggle: (Bool) -> Void = { _ in }
-    public var onPreviewToggle: (Bool) -> Void = { _ in }
     /// The caret is in the AI tail with focus, and whether IME is composing.
     @ObservationIgnored public var onEditorFocus: (_ inTail: Bool, _ composing: Bool) -> Void = { _, _ in }
     /// Set by the editor: undoes the last reorganize if it is still the top undo group (the chip's Undo).
@@ -309,7 +301,11 @@ public final class NotesModel {
     /// Record or Stop can be pressed (not while the last segment finishes).
     public var canToggle: Bool { !isBusy }
     public var canExport: Bool { hasContent && !isBusy }
-    public var canNew: Bool { !state.isActive && (hasContent || !document.segments.isEmpty) }
+    /// The note has something in it (a blank note is simply not kept).
+    public var isBlank: Bool { document.isEmpty && document.segments.isEmpty && document.userTitle == nil }
+
+    /// The title the window and the title field show: the user's, else derived, else "New Note" while blank.
+    public var displayTitle: String { isBlank ? NotesLibraryText.untitled : document.title }
 
     public var elapsedText: String {
         let s = max(0, Int(elapsed))
@@ -496,10 +492,9 @@ public final class NotesModel {
         return parts
     }
 
-    /// What Copy Markdown copies: the notes, or the transcript when the Transcript tab is showing (and always the
-    /// transcript when there are no notes).
+    /// What Copy Markdown copies: the notes, or the transcript when there are no notes.
     public var copyText: String {
-        if tab == .transcript || document.notesBody.isEmpty {
+        if document.notesBody.isEmpty {
             return document.exportMarkdown(includeNotes: false)
         }
         return document.exportMarkdown(includeTranscript: false)
@@ -556,14 +551,10 @@ public final class NotesModel {
     /// "Keep going": the reminder comes back after the next stretch.
     public func keepGoing() { longRunAcknowledged = Int(elapsed / Self.longRunEvery) }
 
-    /// A section's `[hh:mm:ss]` in Preview: the transcript (Split when only the notes show) scrolls to the paragraph
-    /// said then and tints it.
+    /// A section's `[hh:mm:ss]`: the transcript inspector opens and scrolls to the paragraph said then, and tints it.
     public func jumpToTranscript(at offset: TimeInterval) {
         guard let id = document.paragraphID(at: offset, in: transcriptRows.map(\.paragraph)) else { return }
-        if tab == .notes {
-            tab = .split
-            onTabChange(.split)
-        }
+        onShowTranscript()
         highlightedParagraph = id
         transcriptJump += 1
     }
