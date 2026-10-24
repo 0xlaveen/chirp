@@ -255,7 +255,7 @@ The mic and stop button morph between a round and a rounded-square shape while t
 
 ### App colours
 
-The setup app follows the wallpaper through Android's dynamic colours by default, so it matches the Gboard-like keyboard. **App colours** (Chirp settings → Keyboard → Look) switches it to **Chirp green**. The same choice colours the optional floating mic panel and the in-keyboard history panel and toggle. Nothing else changes, and the keyboard keys always follow the **Keyboard look** above.
+The setup app uses Chirp's own **Pond** palette by default. **App colours** (Chirp settings → Keyboard → Look) switches it to **Match wallpaper** (Android's dynamic colours). The same choice colours the optional floating mic panel and the in-keyboard history panel and toggle. Nothing else changes, and the keyboard keys always follow the **Keyboard look** above.
 
 ### Fold inner/cover layout
 
