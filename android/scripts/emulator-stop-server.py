@@ -44,6 +44,7 @@ async def observed(scope, receive, send):
             if control.get('type') == 'start':
                 state['started'] = True
                 state['correction_requested'] = control.get('correction', False)
+                state['notes_stream'] = control.get('correction_profile') == 'live_notes'
                 save()
             if control.get('type') == 'stop': state['stop'] = True; save()
         return event
@@ -52,7 +53,8 @@ async def observed(scope, receive, send):
             frame = json.loads(event['text'])
             kind = frame.get('type')
             # Makes a native immediate double tap deterministically precede Ready.
-            if kind == 'ready': await asyncio.sleep(args.ready_delay)
+            # Only Notes has the enlarged pre-ready buffer being stressed by the six-second fixture.
+            if kind == 'ready': await asyncio.sleep(args.ready_delay if state.get('notes_stream') else min(args.ready_delay, 2))
             if kind == 'partial': state['partials'] += 1
             if kind == 'correcting': state['correcting'] = True
             # Keep the real managed correction transition observable on a slow AVD.

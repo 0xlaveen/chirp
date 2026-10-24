@@ -211,6 +211,10 @@ class NotesLibraryScreenTest {
         note("Ideas for the studio", "- A long table by the window\n- [ ] Find a reading lamp", 25)
         val deleted = note("An earlier draft", "A few thoughts worth returning to.", 50)
         library.trash(deleted); time = now
+        compose.onNodeWithText("☐ 0 open").assertDoesNotExist()
+        val listBottom = compose.onNodeWithTag("notes-library-list").fetchSemanticsNode().boundsInRoot.bottom
+        val fabTop = compose.onNodeWithContentDescription("Record new note").fetchSemanticsNode().boundsInRoot.top
+        assertTrue("list viewport stays above the capture controls", listBottom <= fabTop)
         shot("populated")
         compose.runOnIdle { live.model.rename("Product conversation"); live.record().final("We can keep the first release small."); live.idle() }
         shot("recording")

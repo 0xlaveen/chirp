@@ -29,13 +29,19 @@ def check(probe, work, output):
     baseline = 0
     def finals(): return server().get('finals', 0) - baseline
 
+    def notes_editor(hierarchy):
+        # Compose exposes the Markdown description on a separate accessibility child, sharing the EditText's bounds.
+        label = next((n for n in hierarchy if n.get('content-desc') == 'Notes (Markdown)'), None)
+        return next((n for n in hierarchy if n.get('class') == 'android.widget.EditText' and label is not None and n.get('bounds') == label.get('bounds')), None)
+
     def state():
         hierarchy = nodes()
         texts = [n.get('text', '') for n in hierarchy]
         # The notes render as Markdown blocks (tagged notes-block); while editing they are one EditText.
         blocks = [n for n in hierarchy if n.get('resource-id') == 'notes-block']
-        editor = next((n.get('text', '') for n in hierarchy if n.get('class') == 'android.widget.EditText'), '')
-        notes = sum(len(n.get('text', '')) for n in blocks) or len(editor)
+        field = notes_editor(hierarchy)
+        editor = field.get('text', '') if field is not None else ''
+        notes = len(editor) if field is not None else sum(len(child.get('text', '')) for block in blocks for child in block.iter('node'))
         status = next((t for t in texts if t.startswith(STATUSES)), None)
         # A listening command shows what it heard: never printed.
         if any(t.startswith('“') for t in texts) and status is None: status = '“…”'
@@ -87,7 +93,6 @@ def check(probe, work, output):
     baseline = server().get('finals', 0)  # the managed warm-up's final
     adb('shell', 'am', 'start', '-n', package + '/.SetupActivity', '--es', 'section', 'try')
     probe['wait_for']('Notes')
-    probe['click']('Notes')
     wait_node('Record new note')
     started = time.monotonic()
     tap(wait_node('Record new note'))
@@ -162,14 +167,12 @@ def check(probe, work, output):
         # Exactly Edit notes: click() matches by substring, which would also hit Edit notes by voice.
         tap(next(n for n in nodes() if n.get('content-desc') == 'Edit notes'))
         deadline = time.monotonic() + 20
-        while not (editors := [n for n in nodes() if n.get('class') == 'android.widget.EditText']):
+        while (editor := notes_editor(nodes())) is None:
             assert time.monotonic() < deadline, 'Edit did not open the editor'
-        tap(editors[0])
-        adb('shell', 'input', 'keyevent', 'KEYCODE_MOVE_END'); adb('shell', 'input', 'keyevent', 'KEYCODE_ENTER')
-        adb('shell', 'input', 'text', '-%sReview%sthe%sbudget%swith%sfinance%sbefore%sthe%slaunch%son%sMonday')
-        adb('shell', 'input', 'keyevent', 'KEYCODE_BACK')  # hides the keyboard
-        wait(lambda s: s['notes_chars'] >= 80 and s['note'] is None, 'Typing into the notes did not land', 20)
-        probe['click']('Done editing')
+        # Native accessibility text action reaches the real editor callback without racing IME resize/focus.
+        adb('shell', 'CLASSPATH=/data/local/tmp/chirp-ui-probe.jar', 'app_process', '/', 'dev.chirp.smoke.UiHierarchy', 'append-notes')
+        tap(wait_node('Done editing'))
+        wait(lambda s: s['notes_chars'] >= 80 and s['note'] is None, 'The native notes editor action did not land', 20)
         wait(lambda s: s['notes_chars'] > 0, 'The page did not come back after editing', 10)
     menu('Organize')
     wait(lambda s: calls('reorganize') > organized and not (s['status'] or '').startswith('Organizing'), 'Organize did not reorganize', 90)
@@ -186,20 +189,34 @@ def check(probe, work, output):
     tap(wait_node('Back to notes'))  # Detail pops to the preserved Notes library; Dictate is its small FAB.
     probe['wait_for']('Dictate')
     probe['click']('Dictate')
-    before = finals()
-    tap(wait_node('Microphone: tap to dictate'))
-    def scratchpad():
-        return next((n.get('text', '') for n in nodes() if n.get('class') == 'android.widget.EditText'), '')
-    deadline = time.monotonic() + 45
-    while not (finals() > before and scratchpad() not in ('', 'Dictate, then edit here') and find_idle()):
-        assert time.monotonic() < deadline, 'Scratchpad dictation did not land (server: %s)' % json.dumps(server())
-        time.sleep(1)
-    log('Scratchpad: one dictation landed')
+    check_scratchpad(probe, work, output)
     log('PASS: Live Notes: rolling segments reached the transcript, structured notes reached the editor while recording; voice edit; screen-off battery saver; pause, resume, stop; real kept-audio encode and playback; Organize; Share; Scratchpad', server())
+
+
+def check_scratchpad(probe, work, output):
+    adb, nodes = probe['adb'], probe['nodes']
+    def finals():
+        try: return json.loads((work / 'notes.json').read_text()).get('finals', 0)
+        except (OSError, ValueError): return 0
+    before = finals()
+    mic = probe['wait_for']('Microphone: tap to dictate')
+    adb('shell', 'input', 'tap', *map(str, probe['center'](mic)))
+    deadline = time.monotonic() + 60
+    while time.monotonic() < deadline:
+        hierarchy = nodes()
+        editor = next((n.get('text', '') for n in hierarchy if n.get('class') == 'android.widget.EditText'), '')
+        idle = probe['find']('Microphone: tap to dictate', hierarchy) is not None
+        if finals() > before and editor not in ('', 'Dictate, then edit here') and idle:
+            log('Scratchpad: one dictation landed')
+            return
+        time.sleep(1)
+    data = adb('exec-out', 'screencap', '-p')
+    Path('/tmp/chirp-notes-scratchpad-failure.png').write_bytes(data[data.index(b'\x89PNG'):])
+    raise AssertionError('Scratchpad dictation did not land; new finals=%d' % (finals() - before))
 
 
 # The fixed notes above the record control (voice edit, Organize, structuring); never notes text.
 NOTES = ('Couldn’t', 'Didn’t catch', 'Nothing to edit', 'That didn’t sound', 'Can’t add', 'Notes changed', 'The edit changed',
          'Too much to edit', 'Edited', 'Organized', 'Too long to organize', 'Nothing to organize')
-STATUSES = ('Tap Record', 'Pair your Mac', 'Connecting', 'Listening', 'Updating', 'Organizing', 'Finishing', 'Stopped', 'Paused',
+STATUSES = ('Tap Record', 'Pair your Mac', 'Connecting', 'Listening…', 'Updating notes', 'Organizing notes', 'Finishing', 'Stopped', 'Paused',
             'Notes stopped', 'Couldn', 'Mac ', 'Checking', 'Allow microphone', 'Say the edit', 'Editing notes')

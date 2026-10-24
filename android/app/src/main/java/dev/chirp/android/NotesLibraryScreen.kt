@@ -165,6 +165,7 @@ internal fun NotesLibraryScreen(
         }
     }
     fun start(id: String?) {
+        focus.clearFocus()
         if (recording && id == liveId) { live.stop(); return }
         if (recording && id != liveId) { if (id == null) pendingNew = true else pendingRecord = id; return }
         reader.keepSession(); record(id); selected = if (id == null) live.document.uid else id
@@ -216,7 +217,7 @@ internal fun NotesLibraryScreen(
                                             }
                                         }
                                     }
-                                }, scrollBehavior = scrollBehavior,
+                                }, scrollBehavior = scrollBehavior, expandedHeight = 104.dp,
                                 colors = TopAppBarDefaults.largeTopAppBarColors(containerColor = MaterialTheme.colorScheme.background, scrolledContainerColor = MaterialTheme.colorScheme.background))
                             DockedSearchBar(inputField = { SearchBarDefaults.InputField(query, { query = it }, { focus.clearFocus() }, false, {},
                                 placeholder = { Text("Search notes") }, leadingIcon = { Icon(painterResource(R.drawable.ic_search), null) },
@@ -235,8 +236,10 @@ internal fun NotesLibraryScreen(
                                 containerColor = MaterialTheme.colorScheme.primary, contentColor = MaterialTheme.colorScheme.onPrimary, elevation = FloatingActionButtonDefaults.elevation(0.dp))
                         } },
                     ) { padding ->
-                        LazyColumn(Modifier.fillMaxSize().padding(padding).testTag("notes-library-list"), if (trash) trashList else list,
-                            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 112.dp)) {
+                        // Reserve the 56 dp FAB height plus its 16 dp bottom inset. Rows never draw behind the controls.
+                        val captureInset = if (!trash && selection.isEmpty()) 72.dp else 0.dp
+                        LazyColumn(Modifier.fillMaxSize().padding(padding).padding(bottom = captureInset).testTag("notes-library-list"), if (trash) trashList else list,
+                            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 16.dp)) {
                             if (!trash && !setupDismissed && state != null && (!state.mic || !state.paired || !state.inputEnabled || state.tryIt)) item(key = "setup") {
                                 SetupCard(connection, dismiss = { setupDismissed = true; state.tryIt = false; SettingsStore(context).tryItDismissed = true })
                             }
@@ -380,8 +383,10 @@ private fun NoteLibraryRow(entry: NotesIndexEntry, query: String, snippet: Strin
                     Text(highlightedNote(snippet, query), style = MaterialTheme.typography.bodyMedium, color = scheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                         Text(notesDuration(entry.duration), style = MaterialTheme.typography.bodyMedium, color = scheme.onSurfaceVariant)
-                        Text("·", color = scheme.outline)
-                        Text("☐ ${entry.openTodos} open", style = MaterialTheme.typography.bodyMedium, color = scheme.onSurfaceVariant)
+                        if (entry.openTodos > 0) {
+                            Text("·", color = scheme.outline)
+                            Text("☐ ${entry.openTodos} open", style = MaterialTheme.typography.bodyMedium, color = scheme.onSurfaceVariant)
+                        }
                         if (entry.recovered) Text("Recovered", style = MaterialTheme.typography.bodyMedium, color = LocalChirpRoles.current.moon)
                         if (entry.audioBytes > 0) Icon(painterResource(R.drawable.ic_mic), "Kept audio", Modifier.size(14.dp), tint = scheme.onSurfaceVariant)
                     }

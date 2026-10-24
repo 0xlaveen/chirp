@@ -160,9 +160,21 @@ words and audio references are synthetic. Pixel renders do not establish codec
 support; the emulator check separately exercises the real platform codecs.
 
 The strengthened `emulator-check.py --notes-check` opts into kept audio on the
-disposable emulator and requires a real MediaCodec AAC segment to prepare, start,
+throwaway emulator and requires a real MediaCodec AAC segment to prepare, start,
 play for at least two seconds, and complete naturally through MediaPlayer. It
-rejects decoder errors and keeps its output content-free. This change's real codec
-run is **pending**: the shared emulator has not yet been released for validation.
-The committed Robolectric renders and playback lifecycle tests are not codec
-round-trip evidence.
+rejects decoder errors and keeps its output content-free.
+
+`emulator-notes-kept-audio-playing.png` is a real Android 17 arm64 capture from a
+separate read-only `chirp-fold` instance on `emulator-5600`. It shows the segment
+highlight and Stop playback control during actual playback, using only generated
+speech. The complete notes check passed: rolling transcription/structuring,
+voice edit, screen-off capture, pause/resume/stop, real kept-audio replay, native
+Markdown editing, Organize, Share and Scratchpad dictation. The owned emulator was
+shut down after the run; no other emulator instance was touched. The content-free
+result is in `emulator-notes-result.txt`.
+
+The original `emulator-5580` remains the default. To target the explicitly allowed
+read-only instance instead, set `ANDROID_SERIAL=emulator-5600` when invoking the
+check and the UI probe builder. The fixture's six-second Ready delay applies to
+Notes streams only; ordinary dictation uses the normal two-second delay so its
+smaller pre-ready buffer is not exhausted by the Notes stress scenario.

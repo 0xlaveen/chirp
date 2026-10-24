@@ -29,12 +29,17 @@ class NotesDocumentLibraryTest {
     @Test fun `snippet skips the title line and the markers, and open to-dos count unchecked boxes only`() {
         val text = "# Plan\nWe will ship it.\n- [ ] write docs\n- [x] done thing\n  * [ ] nested\n1. numbered"
         val d = doc(text)
-        assertEquals("We will ship it. write docs done thing nested numbered", d.snippet)
+        assertEquals("We will ship it. · write docs · done thing · nested · numbered", d.snippet)
         assertEquals(2, d.openTodos)
-        assertEquals("a renamed note keeps every line in the snippet", "Plan We will ship it. write docs done thing nested numbered", doc(text, name = "Mine").snippet)
+        assertEquals("a renamed note keeps every line in the snippet", "Plan · We will ship it. · write docs · done thing · nested · numbered", doc(text, name = "Mine").snippet)
         assertTrue(doc("x".repeat(500) + " tail").snippet.length <= NotesDocument.MAX_SNIPPET + 1)
         val spoken = doc("").apply { append(NotesSegment(0, 0.0, "only the transcript so far")) }
         assertEquals("only the transcript so far", spoken.snippet)
+    }
+
+    @Test fun `snippets separate blocks and omit headings that repeat a user title`() {
+        assertEquals("The first release goes to ten partners. · Draft the invite", doc("## Launch sync\nThe first release goes to ten partners.\n- [ ] Draft the invite", "Launch sync").snippet)
+        assertEquals("A long table by the window · Find a reading lamp", doc("- A long table by the window\n- [ ] Find a reading lamp", "Studio ideas").snippet)
     }
 
     @Test fun `a blank note nobody named is untouched, and anything else is not`() {

@@ -141,7 +141,7 @@ class NotesBlocksTest {
         val document = NotesDocument(text = "\n# Launch sync\n- a")
         assertEquals("Launch sync", document.displayTitle())
         document.name = "Board prep"; assertEquals("Board prep", document.displayTitle())
-        assertTrue(NotesDocument(text = "## Plan").displayTitle().startsWith("Notes — "))
+        assertEquals("Plan", NotesDocument(text = "## Plan").displayTitle())
     }
 }
 
@@ -164,7 +164,7 @@ class NotesPageTest {
 
     @Test fun `the notes render as a document, not as Markdown source`() {
         screen("## Plan\n- Beta goes to **ten** partners\n- [ ] Draft the invite\n- **Decision:** Ship Friday")
-        compose.onNode(hasText("Plan") and isHeading()).assertIsDisplayed()
+        compose.onNode(hasText("Plan") and isHeading() and hasTestTag("notes-block")).assertIsDisplayed()
         compose.onNodeWithText("Beta goes to ten partners").assertIsDisplayed()
         compose.onNodeWithText("## Plan", substring = true).assertDoesNotExist()
         compose.onNodeWithText("Decision").assertIsDisplayed()
