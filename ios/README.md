@@ -261,8 +261,10 @@ microphone off.
 Connection problems are named by cause: this device is offline, the Mac
 can't be found on the tailnet, the Mac may be asleep or Chirp isn't running on
 it, a secure connection failed, or the Mac refused this device (for example a
-revoked device pairing; pair again). While nothing answers, the Dictate tab
-shows **Mac offline** with **Check again**.
+revoked device pairing; the Dictate tab offers **Pair again**). While nothing
+answers, the Dictate tab shows **Mac offline** with **Check again**; a Mac that
+answers but is still loading its speech model shows **Mac loading its model**
+with **Check again**, not a network error.
 
 While dictating: **Stop dictation** finalizes. After the final you get
 explicit **Copy**, **Share** and — when clean-up changed the text — **Use raw**
@@ -303,7 +305,8 @@ dictation and needs no keyboard session — the two never hold the microphone at
 the same time (end the keyboard session first, and a keyboard session cannot
 start while notes record).
 
-- **Record** opens the microphone. Speech goes to your Mac in rolling segments
+- **Record** opens the microphone (until a Mac is paired, **Pair Mac** beside
+  it opens the Pair Mac tab). Speech goes to your Mac in rolling segments
   of at most 45 seconds (cut at pauses, ordinary `/v1/stream` utterances), and
   the live partial shows under the notes. Clean-up applies when you turned it
   on in Styles, using the Mac's notes style.
@@ -478,7 +481,9 @@ external destination takes an explicit per-destination consent that suspends
 when the destination changes. Styles come from your Mac's authenticated
 profile list (Default, Chat, Email, … plus custom server profiles); each has an
 editable prompt with a **Reset to server default** button. The keyboard's
-**Style** menu mirrors the same server profiles. On clean-up failure or
+**Style** menu mirrors the same server profiles (one Chirp has no name for
+shows its id, in the menu and on the button) and also holds **Private session ·
+exclude history**, the same switch as in Settings. On clean-up failure or
 timeout, the raw transcript is kept and offered instead.
 
 ## History (off by default)
@@ -489,7 +494,7 @@ When on: at most 200 nonempty finals, 4 MiB total, retention 24 hours / 7 days
 a Clear all action. Entries are AES-GCM encrypted with a device-only Keychain
 key, excluded from backups and never synced. Turning history off deletes the
 ciphertext and the key. Cancelled and empty utterances are never recorded, and
-the **Private session** toggle (Settings) keeps an utterance out of history —
+the **Private session** toggle (Settings, or Chirp Keyboard's Style menu) keeps an utterance out of history —
 but Chirp cannot detect every editor's private mode, so switch it on yourself
 when it matters; surrounding editor text is never collected.
 

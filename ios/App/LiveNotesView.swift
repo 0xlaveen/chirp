@@ -10,6 +10,8 @@ enum NotesPane: Hashable { case notes, transcript }
 struct LiveNotesView: View {
     @ObservedObject var notes: LiveNotesController
     @ObservedObject var session: SessionCoordinator
+    /// Opens the Pair Mac tab: Record needs a paired Mac.
+    var pair: () -> Void = {}
     @Environment(\.horizontalSizeClass) private var sizeClass
     @State private var pane = NotesPane.notes
     @State private var showRaw = false
@@ -113,6 +115,10 @@ struct LiveNotesView: View {
         case .stopping:
             ProgressView { Text("Finishing…") }.accessibilityIdentifier("chirp.notes.finishing")
         default:
+            if !notes.paired {
+                Button("Pair Mac", systemImage: "qrcode.viewfinder", action: pair)
+                    .buttonStyle(.borderedProminent).accessibilityIdentifier("chirp.notes.pair")
+            }
             Button(notes.document.isEmpty && notes.document.segments.isEmpty ? "Record" : "Record more", systemImage: "record.circle") {
                 Task { await notes.record() }
             }.buttonStyle(.borderedProminent).disabled(!notes.paired || notes.starting || session.armed)
@@ -222,6 +228,7 @@ struct LiveNotesEntry: ViewModifier {
     static var asTab: Bool { UIDevice.current.userInterfaceIdiom == .pad }
     @ObservedObject var notes: LiveNotesController
     @ObservedObject var session: SessionCoordinator
+    var pair: () -> Void = {}
     @State private var open = false
     func body(content: Content) -> some View {
         if Self.asTab {
@@ -234,7 +241,7 @@ struct LiveNotesEntry: ViewModifier {
                             .labelStyle(.titleAndIcon).tint(notes.isActive ? .red : nil).accessibilityIdentifier("chirp.notes.open")
                     }
                 }
-                .navigationDestination(isPresented: $open) { LiveNotesView(notes: notes, session: session) }
+                .navigationDestination(isPresented: $open) { LiveNotesView(notes: notes, session: session, pair: pair) }
         }
     }
 }

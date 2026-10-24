@@ -42,6 +42,9 @@ struct ConnectionIssueTests {
         #expect(ConnectionIssue.classify(streamReason: "Server did not answer in time") == .down)
         #expect(ConnectionIssue.classify(streamReason: "Server rejected the connection (check the token)") == .refused)
         #expect(ConnectionIssue.classify(streamReason: "Connection lost") == .other)
+        // A Mac still loading its model is answering: not offline, and not a Tailscale problem.
+        #expect(!ConnectionIssue.loading.isOffline && ConnectionIssue.loading.message.contains("loading") && !ConnectionIssue.loading.message.contains("Tailscale"))
+        #expect(ConnectionIssue.classify(ConnectionIssueError(.loading)) == .loading)
     }
 
     @Test func checkHealthKeepsARevokedTokenDistinct() async throws {

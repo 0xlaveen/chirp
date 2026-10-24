@@ -215,7 +215,9 @@ final class SessionCoordinator: ObservableObject {
         let checked: Health
         do { let result = try await config.checkedHealth(session: http); checked = result.health; pairedDevice = result.device }
         catch { throw reachFailed(error) }
-        guard checked.ok, checked.ready == true, checked.engine != nil else { throw reachFailed(ConnectionIssueError(.other)) }
+        guard checked.ok, checked.ready == true, checked.engine != nil else {
+            throw reachFailed(ConnectionIssueError(checked.ok && checked.ready == false ? .loading : .other))
+        }
         return checked
     }
     private func reachFailed(_ error: Error) -> SessionFailure {

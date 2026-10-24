@@ -89,11 +89,11 @@ struct ChirpRootView: View {
         // The session bar goes inside each tab: inset on the TabView itself, it covered iOS 27's floating
         // tab bar, so tapping a tab while armed hit End session instead.
         TabView(selection: $tab) {
-            NavigationStack { DictationView(model: model, tab: $tab).modifier(LiveNotesEntry(notes: .current(for: model), session: model)) }
+            NavigationStack { DictationView(model: model, tab: $tab).modifier(LiveNotesEntry(notes: .current(for: model), session: model, pair: { tab = .pair })) }
                 .modifier(SessionBar(model: model))
                 .tabItem { Label("Dictate", systemImage: "mic") }.tag(ChirpTab.dictate)
             if LiveNotesEntry.asTab {
-                NavigationStack { LiveNotesView(notes: .current(for: model), session: model) }
+                NavigationStack { LiveNotesView(notes: .current(for: model), session: model, pair: { tab = .pair }) }
                     .tabItem { Label("Notes", systemImage: "note.text") }.tag(ChirpTab.notes)
             }
             NavigationStack { PairingView(model: model) }.modifier(SessionBar(model: model))
@@ -161,9 +161,10 @@ struct DictationView: View {
                     .font(.title2.bold()).accessibilityIdentifier("sessionStatus")
                 Text(model.armed ? "Idle audio is discarded immediately. Audio is sent to your paired Mac only while dictating. Switch back to your other app and choose Chirp Keyboard to dictate there." : "Start a session here, then dictate in any app with Chirp Keyboard. The microphone stays active until the session ends.")
                     .foregroundStyle(.secondary)
-                if let issue = model.connectionIssue, issue.isOffline {
+                if let issue = model.connectionIssue, issue.isOffline || issue == .loading {
                     HStack {
-                        Label("Mac offline", systemImage: "wifi.slash").font(.headline).foregroundStyle(.orange)
+                        Label(issue == .loading ? "Mac loading its model" : "Mac offline", systemImage: issue == .loading ? "hourglass" : "wifi.slash")
+                            .font(.headline).foregroundStyle(.orange)
                         Spacer()
                         Button("Check again") { Task { await model.checkConnection() } }
                             .buttonStyle(.bordered).disabled(model.working).accessibilityIdentifier("chirp.offline.retry")
