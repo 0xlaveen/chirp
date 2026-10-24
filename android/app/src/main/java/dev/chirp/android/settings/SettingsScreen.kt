@@ -26,6 +26,8 @@ internal enum class SettingsPage(val title: String) {
 internal class SettingsActions(
     val checkConnection: () -> Unit = {}, val changePairing: () -> Unit = {}, val forgetPairing: () -> Unit = {},
     val allowWifi: () -> Unit = {}, val floatingMicSettings: () -> Unit = {}, val keyboardPreferences: () -> Unit = {},
+    /** Opens the Tailscale app; null when it is not installed. */
+    val openTailscale: (() -> Unit)? = null,
 )
 
 private val TWO_PANE = 600.dp

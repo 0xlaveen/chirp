@@ -86,6 +86,24 @@ class SettingsScreenTest {
         }
     }
 
+    @Test fun `an unreachable Mac offers Open Tailscale only when it is installed`() {
+        val (state, history, updates) = settingsFixture()
+        state.reachable = false
+        var opened = 0
+        show(state, history, updates, SettingsActions(openTailscale = { opened++ }), SettingsPage.Connection)
+        compose.onNodeWithText("Open Tailscale").performClick()
+        assertEquals(1, opened)
+        compose.runOnIdle { state.reachable = true }
+        compose.onNodeWithText("Open Tailscale").assertDoesNotExist()
+    }
+
+    @Test fun `without Tailscale installed the unreachable banner has no button`() {
+        val (state, history, updates) = settingsFixture()
+        state.reachable = false
+        show(state, history, updates, SettingsActions(), SettingsPage.Connection)
+        compose.onNodeWithText("Open Tailscale").assertDoesNotExist()
+    }
+
     @Test fun `forgetting a pairing asks first - dismiss keeps it and confirm forgets it`() {
         val (state, history, updates) = settingsFixture()
         var forgotten = 0

@@ -29,7 +29,10 @@ internal fun SettingsDetail(page: SettingsPage, state: SetupState, actions: Sett
 private fun ConnectionPage(state: SetupState, actions: SettingsActions) {
     var confirmForget by remember { mutableStateOf(false) }
     val connection = connectionSummary(state.paired, state.host, state.reachable, state.checking, state.health)
-    StatusBanner(connection.kind, connection.title, body = connection.hint ?: connection.summary, live = true)
+    // Unreachable: the hint says to check Tailscale, so the banner opens it when it is installed.
+    val tailscale = actions.openTailscale.takeIf { state.paired && state.reachable == false && !state.checking }
+    StatusBanner(connection.kind, connection.title, body = connection.hint ?: connection.summary, live = true,
+        action = tailscale?.let { "Open Tailscale" }, onAction = { tailscale?.invoke() })
     SettingsGroup {
         if (state.paired) ActionRow("Check connection", actions.checkConnection, enabled = !state.checking)
         if (state.wifiPermissionNeeded && !state.localNetwork) ActionRow("Allow Wi-Fi server access", actions.allowWifi,

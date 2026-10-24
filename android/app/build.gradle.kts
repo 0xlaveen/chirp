@@ -84,8 +84,12 @@ dependencies {
 
 // Opt-in live transport check against a running chirp-server (see README "JVM live check").
 // Without -Pchirp.live.url the LiveServerTest is skipped.
+// Robolectric renders go to build/screenshots, so a test run never rewrites the committed PNGs with rendering noise.
+// Refresh docs/screenshots/android on purpose with -Pchirp.updateScreenshots.
+val updateScreenshots = providers.gradleProperty("chirp.updateScreenshots").isPresent
 tasks.withType<Test>().configureEach {
-    systemProperty("chirp.screenshots", rootProject.file("../docs/screenshots/android").absolutePath)
+    systemProperty("chirp.screenshots", (if (updateScreenshots) rootProject.file("../docs/screenshots/android")
+        else layout.buildDirectory.dir("screenshots").get().asFile).absolutePath)
     // Robolectric on JDK 17+: https://robolectric.org/getting-started/#running-with-java-17-and-higher
     jvmArgs(
         "--add-opens=java.base/java.lang=ALL-UNNAMED",
