@@ -501,7 +501,7 @@ enum NSHostingViewSize {
 @MainActor
 @Suite struct AboutViewTests {
     @Test func showsIconNameAndVersion() {
-        let icon = NSImage(systemSymbolName: "bird.fill", accessibilityDescription: nil)
+        let icon = ChirpBrand.glyph() ?? NSImage(systemSymbolName: "bird.fill", accessibilityDescription: nil)
         let view = AboutView(icon: icon, info: AboutInfo(version: "0.1.0", build: "1"))
         func texts(_ v: NSView) -> [String] {
             (v as? NSTextField).map { [$0.stringValue] } ?? v.subviews.flatMap(texts)

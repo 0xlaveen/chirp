@@ -66,9 +66,9 @@ final class NotesTextView: NSTextView {
     override func drawBackground(in rect: NSRect) {
         super.drawBackground(in: rect)
         guard let frame = tintFrame(), frame.intersects(rect) else { return }
-        NSColor.controlAccentColor.withAlphaComponent(0.06).setFill()
+        NSColor.chirpKoi.withAlphaComponent(0.06).setFill()
         frame.fill()
-        NSColor.controlAccentColor.withAlphaComponent(0.35).setFill()
+        NSColor.chirpKoi.withAlphaComponent(0.35).setFill()
         NSRect(x: frame.minX, y: frame.minY, width: 2, height: frame.height).fill()
     }
 

@@ -227,7 +227,7 @@ final class SettingsWindowController: NSObject, NSTextFieldDelegate {
     }
 
     private func makeWindow() -> NSWindow {
-        let form = SettingsForm(state, icon: NSApp.applicationIconImage, onNotices: { Self.openNotices() })
+        let form = SettingsForm(state, icon: ChirpBrand.glyph(), onNotices: { Self.openNotices() })
         form.setupButton.target = self
         form.setupButton.action = #selector(openSetup)
         form.doctorButton.target = self

@@ -29,7 +29,7 @@ public enum MenuStyle {
         switch tone {
         case .normal: nil
         case .ok: .systemGreen
-        case .active: .controlAccentColor
+        case .active: .chirpKoi
         case .warning: .systemOrange
         case .error: .systemRed
         }

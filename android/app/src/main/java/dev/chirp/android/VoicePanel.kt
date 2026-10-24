@@ -6,7 +6,6 @@ import android.content.Context
 import android.content.res.ColorStateList
 import android.content.res.Configuration
 import android.graphics.Canvas
-import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.drawable.GradientDrawable
 import android.text.SpannableString
@@ -19,6 +18,8 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.compose.ui.graphics.toArgb
 import com.google.android.material.button.MaterialButton
+import dev.chirp.android.ui.PondDark
+import dev.chirp.android.ui.PondLight
 import dev.chirp.android.ui.chirpColorScheme
 import kotlin.math.max
 
@@ -26,20 +27,19 @@ internal data class VoicePalette(val background: Int, val surface: Int, val ink:
                                  val accentContainer: Int, val onAccentContainer: Int, val secondaryContainer: Int, val onSecondaryContainer: Int,
                                  val errorContainer: Int, val onErrorContainer: Int) {
     companion object {
-        /** The app's colours: wallpaper dynamic colour unless "App colours" is Chirp green (also before first unlock). */
+        /**
+         * The panel's colours, derived from the same scheme the app uses ("App colours" →
+         * [chirpColorScheme]): Pond, or the wallpaper when the user picked that. The old hand-typed
+         * duplicates of the app scheme are gone; only the keyboard keeps its own HeliBoard looks.
+         */
         fun of(context: Context): VoicePalette {
             val night = context.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK == Configuration.UI_MODE_NIGHT_YES
-            val dynamic = runCatching { SettingsStore(context).dynamicColor }.getOrDefault(false)
-            val scheme = chirpColorScheme(context, night, dynamic)
-            fun roles(base: VoicePalette) = base.copy(accentContainer = scheme.primaryContainer.toArgb(), onAccentContainer = scheme.onPrimaryContainer.toArgb(),
-                secondaryContainer = scheme.secondaryContainer.toArgb(), onSecondaryContainer = scheme.onSecondaryContainer.toArgb(),
-                errorContainer = scheme.errorContainer.toArgb(), onErrorContainer = scheme.onErrorContainer.toArgb())
-            val none = Color.TRANSPARENT
-            if (dynamic) return scheme.run {
-                roles(VoicePalette(surface.toArgb(), surfaceContainer.toArgb(), onSurface.toArgb(), onSurfaceVariant.toArgb(), primary.toArgb(), onPrimary.toArgb(), none, none, none, none, none, none))
+            val scheme = runCatching { chirpColorScheme(context, night) }.getOrElse { if (night) PondDark else PondLight }
+            return scheme.run {
+                VoicePalette(background.toArgb(), surfaceContainer.toArgb(), onSurface.toArgb(), onSurfaceVariant.toArgb(),
+                    primary.toArgb(), onPrimary.toArgb(), primaryContainer.toArgb(), onPrimaryContainer.toArgb(),
+                    secondaryContainer.toArgb(), onSecondaryContainer.toArgb(), errorContainer.toArgb(), onErrorContainer.toArgb())
             }
-            return roles(if (night) VoicePalette(Color.rgb(18, 23, 21), Color.rgb(32, 42, 37), Color.rgb(227, 235, 229), Color.rgb(164, 184, 172), Color.rgb(159, 211, 185), Color.rgb(18, 56, 42), none, none, none, none, none, none)
-            else VoicePalette(Color.rgb(246, 250, 246), Color.rgb(230, 239, 232), Color.rgb(24, 45, 37), Color.rgb(83, 105, 92), Color.rgb(56, 106, 88), Color.WHITE, none, none, none, none, none, none))
         }
     }
 }
@@ -72,7 +72,6 @@ internal class VoicePanel(context: Context) : LinearLayout(context) {
         orientation = VERTICAL
         setPadding(context.dp(16), context.dp(8), context.dp(16), context.dp(8))
         background = GradientDrawable().apply { setColor(this@VoicePanel.colors.background); cornerRadius = context.dp(28).toFloat() }
-        addView(context.label("CHIRP  /  VOICE", 12f).apply { setTextColor(colors.muted); letterSpacing = .12f })
         addView(banner)
         status.setTextColor(colors.muted)
         status.accessibilityLiveRegion = View.ACCESSIBILITY_LIVE_REGION_POLITE

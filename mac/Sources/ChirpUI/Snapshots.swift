@@ -22,15 +22,8 @@ public enum Snapshots {
 
     private static let sentence = "Please move the standup to three thirty and let everyone know"
 
-    /// The app icon when the source tree's `Assets/AppIcon.png` is there (a development checkout), else a bird symbol:
-    /// the icon only exists in the bundled app, and the snapshots never read the app bundle or the installed app.
-    static let appIcon: NSImage? = {
-        let url = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
-            .deletingLastPathComponent().deletingLastPathComponent().appendingPathComponent("Assets/AppIcon.png")
-        if let image = NSImage(contentsOf: url) { return image }
-        return NSImage(systemSymbolName: "bird.fill", accessibilityDescription: nil)?
-            .withSymbolConfiguration(.init(pointSize: 40, weight: .regular).applying(.init(paletteColors: [.systemIndigo])))
-    }()
+    /// The brand glyph (the operator-approved template PNG in `Assets/`), About and onboarding's hero.
+    static let appIcon: NSImage? = ChirpBrand.glyph()
 
     static func hud(_ name: String, _ configure: @escaping (HUDModel) -> Void) -> Scenario {
         Scenario(name: "hud-\(name)") {
@@ -122,18 +115,32 @@ public enum Snapshots {
         m.keptOriginal = p.keptOriginal
     }
 
+    /// The Pond Ripple at review size (the HUD glyph is 20 pt): driven at a few levels, plus the
+    /// Reduce Motion ring whose stroke follows the level.
+    public static var rippleScenarios: [Scenario] {
+        func ripple(_ name: String, _ make: @escaping () -> Ripple) -> Scenario {
+            Scenario(name: "ripple-\(name)") { NSHostingView(rootView: SnapshotBackdrop { make() }) }
+        }
+        return [
+            ripple("silent") { Ripple(level: 0, phase: 0.15, side: 120) },
+            ripple("speech") { Ripple(level: 0.7, phase: 0.4, side: 120) },
+            ripple("peak") { Ripple(level: 1, phase: 0.8, side: 120) },
+            ripple("static") { Ripple(level: 0.7, reduceMotion: true, side: 120) },
+        ]
+    }
+
     public static var hudScenarios: [Scenario] {
         let (stable, tail) = splitPartial(text: sentence + " about the release", stable: sentence)
         let long = Array(repeating: "and then we should also check the rollout plan with the whole team", count: 5).joined(separator: ", ")
         return [
             hud("connecting") { $0.status = HUDStatus.connecting },
-            hud("listening") { $0.status = HUDStatus.listening; $0.levels = .demo(peak: 0.8); $0.stable = stable; $0.unstable = tail },
-            hud("listening-no-text") { $0.status = HUDStatus.listening; $0.levels = .demo(peak: 0.45) },
-            hud("listening-unstable-only") { $0.status = HUDStatus.listening; $0.levels = .demo(peak: 1); $0.unstable = "so the first words are" },
-            hud("listening-multiline") { $0.status = HUDStatus.listening; $0.levels = .demo(peak: 0.7); $0.stable = long; $0.unstable = " and finally" },
-            hud("listening-reduce-motion") { $0.status = HUDStatus.listening; $0.reduceMotion = true; $0.stable = stable; $0.unstable = tail },
+            hud("listening") { $0.status = HUDStatus.listening; $0.levels = .demo(peak: 0.8); $0.pulsePhase = 0.4; $0.stable = stable; $0.unstable = tail },
+            hud("listening-no-text") { $0.status = HUDStatus.listening; $0.levels = .demo(peak: 0.45); $0.pulsePhase = 0.4 },
+            hud("listening-unstable-only") { $0.status = HUDStatus.listening; $0.levels = .demo(peak: 1); $0.pulsePhase = 0.4; $0.unstable = "so the first words are" },
+            hud("listening-multiline") { $0.status = HUDStatus.listening; $0.levels = .demo(peak: 0.7); $0.pulsePhase = 0.6; $0.stable = long; $0.unstable = " and finally" },
+            hud("listening-reduce-motion") { $0.status = HUDStatus.listening; $0.reduceMotion = true; $0.levels = .demo(peak: 0.6); $0.stable = stable; $0.unstable = tail },
             hud("listening-contrast") {
-                $0.status = HUDStatus.listening; $0.levels = .demo(peak: 0.8); $0.increaseContrast = true
+                $0.status = HUDStatus.listening; $0.levels = .demo(peak: 0.8); $0.pulsePhase = 0.4; $0.increaseContrast = true
                 $0.stable = stable; $0.unstable = tail
             },
             // The clean-up transition, in order: listening → finishing → polishing → changes → inserted.
@@ -469,7 +476,8 @@ public enum Snapshots {
     /// The scenarios whose PNGs are committed under `docs/screenshots/mac`: the key HUD states, the menu in light and
     /// dark, one per Settings tab, and the setup window. The rest only render to a temporary directory for review.
     public static let committedNames: [String] = [
-        "hud-listening", "hud-flow-2-polishing", "hud-flow-3-diff", "hud-correction-use-raw",
+        "hud-listening", "hud-listening-reduce-motion", "ripple-speech", "ripple-static",
+        "hud-flow-2-polishing", "hud-flow-3-diff", "hud-correction-use-raw",
         "hud-wordwave-listening", "hud-wordwave-long", "hud-wordwave-polishing",
         "menu-ready", "menu-cleanup-submenu",
         "settings-general-missing", "settings-shortcuts-custom", "settings-dictation-sounds", "settings-cleanup-custom", "settings-notes-downloaded",
@@ -804,8 +812,8 @@ public enum Snapshots {
     }
 
     public static var allScenarios: [Scenario] {
-        hudScenarios + wordWaveScenarios + settingsScenarios + onboardingScenarios + menuScenarios + localModelsScenarios
-            + notesScenarios + pairingScenarios
+        hudScenarios + rippleScenarios + wordWaveScenarios + settingsScenarios + onboardingScenarios + menuScenarios
+            + localModelsScenarios + notesScenarios + pairingScenarios
     }
 
     // MARK: rendering

@@ -1,5 +1,7 @@
 package dev.chirp.android
 
+import dev.chirp.android.AppColour
+
 import androidx.activity.ComponentActivity
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.*
@@ -37,7 +39,7 @@ class SettingsScreenTest {
 
     private fun show(state: SetupState, history: DictationHistory, updates: UpdateController, actions: SettingsActions = SettingsActions(),
                      initialPage: SettingsPage? = null, onExit: (() -> Unit)? = null) =
-        compose.setContent { ChirpTheme(dynamic = false) { SettingsScreen(state, actions, initialPage, history, updates, onExit) } }
+        compose.setContent { ChirpTheme(colour = AppColour.POND) { SettingsScreen(state, actions, initialPage, history, updates, onExit) } }
 
     private fun assertOnce(label: String) = compose.onAllNodesWithText(label).assertCountEquals(1)
 
@@ -76,7 +78,7 @@ class SettingsScreenTest {
     @Test fun `every detail page fits one screen at 100 percent font`() {
         val (state, history, updates) = settingsFixture()
         val shown = androidx.compose.runtime.mutableStateOf(SettingsPage.entries.first())
-        compose.setContent { ChirpTheme(dynamic = false) { androidx.compose.runtime.key(shown.value) {
+        compose.setContent { ChirpTheme(colour = AppColour.POND) { androidx.compose.runtime.key(shown.value) {
             SettingsScreen(state, SettingsActions(), shown.value, history, updates) } } }
         for (page in SettingsPage.entries) {
             compose.runOnIdle { shown.value = page }

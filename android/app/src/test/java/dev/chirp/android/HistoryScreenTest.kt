@@ -1,5 +1,7 @@
 package dev.chirp.android
 
+import dev.chirp.android.AppColour
+
 import android.content.ClipboardManager
 import android.text.InputType
 import android.view.inputmethod.EditorInfo
@@ -32,7 +34,7 @@ class HistoryScreenTest {
     private val hour = 3_600_000L
 
     private fun record(value: String, raw: String? = null, app: String = "Messages", at: Long = now) { clock = at; store.record(value, raw, app, text); clock = now }
-    private fun show() = compose.setContent { dev.chirp.android.ui.ChirpTheme(dynamic = false) { HistoryScreen(store, { now }, ZoneOffset.UTC) } }
+    private fun show() = compose.setContent { dev.chirp.android.ui.ChirpTheme(colour = AppColour.POND) { HistoryScreen(store, { now }, ZoneOffset.UTC) } }
     /** The list is lazy: scroll entries into composition before asserting on them. */
     private fun reveal(text: String) = compose.waitUntil(5000) {
         try { compose.onNode(hasScrollAction()).performScrollToNode(hasText(text)); true } catch (_: AssertionError) { false }

@@ -191,12 +191,12 @@ private fun NotesTopBar(model: NotesModel, editing: Boolean, gutter: androidx.co
             val title = model.displayTitle
             Text(title, Modifier.clip(MaterialTheme.shapes.small).clickable(onClickLabel = "Rename", onClick = rename).padding(horizontal = 4.dp)
                 .semantics { contentDescription = "Rename notes: $title"; heading() },
-                style = MaterialTheme.typography.titleLarge.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                style = MaterialTheme.typography.titleLarge.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold, fontFamily = androidx.compose.ui.text.font.FontFamily.Serif), maxLines = 1, overflow = TextOverflow.Ellipsis)
             Row(Modifier.padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 if (model.state.active) LiveDot(model.recording)
                 Text(model.status, Modifier.weight(1f, fill = false).semantics { liveRegion = LiveRegionMode.Polite }, style = MaterialTheme.typography.labelLarge,
                     color = scheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                if (editing && (model.state.active || model.elapsed > 0)) Text("· " + model.elapsedText, style = MaterialTheme.typography.labelLarge.copy(fontFeatureSettings = "tnum"),
+                if (editing && (model.state.active || model.elapsed > 0)) Text("· " + model.elapsedText, style = dev.chirp.android.ui.ChirpTokens.timerSmall,
                     color = scheme.onSurfaceVariant)
             }
         }
@@ -207,7 +207,7 @@ private fun NotesTopBar(model: NotesModel, editing: Boolean, gutter: androidx.co
 
 @Composable
 private fun LiveDot(on: Boolean) {
-    val color = if (on) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.outline
+    val color = if (on) dev.chirp.android.ui.LocalChirpRoles.current.record else MaterialTheme.colorScheme.outline
     val alpha = if (on) rememberInfiniteTransition(label = "live").animateFloat(1f, .3f, infiniteRepeatable(tween(1000), RepeatMode.Reverse), label = "dot").value else 1f
     Box(Modifier.size(8.dp).alpha(alpha).clip(CircleShape).background(color).clearAndSetSemantics { })
 }
@@ -389,7 +389,7 @@ private fun RecordButton(model: NotesModel, onClick: () -> Unit) {
     Surface(onClick, Modifier.heightIn(min = 64.dp).semantics { contentDescription = "Record notes" }, enabled = !model.busy, shape = CircleShape,
         color = scheme.primaryContainer, contentColor = scheme.onPrimaryContainer, shadowElevation = 6.dp) {
         Row(Modifier.padding(start = 22.dp, end = 26.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            Icon(painterResource(R.drawable.ic_record), null, Modifier.size(22.dp), tint = scheme.error)
+            Icon(painterResource(R.drawable.ic_record), null, Modifier.size(22.dp), tint = dev.chirp.android.ui.LocalChirpRoles.current.record)
             Text("Record", style = MaterialTheme.typography.titleMedium)
         }
     }
@@ -407,10 +407,10 @@ private fun RecordingPill(model: NotesModel, stop: () -> Unit) {
             }
             Column(Modifier.padding(horizontal = 14.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                 if (model.busy) CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp) else Meter(model.level, model.recording)
-                Text(model.elapsedText, style = MaterialTheme.typography.titleMedium.copy(fontFeatureSettings = "tnum"))
+                Text(model.elapsedText, style = dev.chirp.android.ui.ChirpTokens.timer)
             }
             FilledIconButton(stop, Modifier.size(48.dp).semantics { contentDescription = "Stop recording notes" }, enabled = !model.busy,
-                colors = IconButtonDefaults.filledIconButtonColors(containerColor = scheme.error, contentColor = scheme.onError)) {
+                colors = IconButtonDefaults.filledIconButtonColors(containerColor = dev.chirp.android.ui.LocalChirpRoles.current.record, contentColor = scheme.onError)) {
                 Icon(painterResource(R.drawable.ic_stop), null)
             }
         }

@@ -348,7 +348,7 @@ public struct HUDView: View {
                 .foregroundStyle(model.isError ? HUDColors.error : model.indicator == .success ? Color.green : Color.secondary)
                 .frame(width: 20, height: 20)
         } else if model.indicator == .waveform {
-            WaveformView(levels: model.levels, animated: !model.reduceMotion)
+            Ripple(level: Double(model.levels.samples.last ?? 0), reduceMotion: model.reduceMotion, phase: model.pulsePhase)
         } else if model.indicator == .sparkle {
             Image(systemName: "sparkles")
                 .font(.system(size: 15))
@@ -429,27 +429,6 @@ struct DiffText: View {
         }
         .font(.system(size: 15))
         .lineLimit(4)
-    }
-}
-
-/// A live waveform: one bar per recent input level, scrolling left as new levels arrive. Reduce Motion shows steady,
-/// even bars instead of moving ones.
-struct WaveformView: View {
-    static let width: CGFloat = 16 * 2.5 + 15 * 1.5
-    let levels: LevelHistory
-    let animated: Bool
-
-    var body: some View {
-        HStack(spacing: 1.5) {
-            ForEach(0..<LevelHistory.capacity, id: \.self) { i in
-                let level = animated ? CGFloat(levels.samples[i]) : 0.25
-                Capsule()
-                    .fill(Color.primary.opacity(animated ? 0.3 + 0.7 * Double(i + 1) / Double(LevelHistory.capacity) : 0.45))
-                    .frame(width: 2.5, height: 3 + 17 * level)
-            }
-        }
-        .frame(width: Self.width, height: 20)
-        .animation(animated ? .easeOut(duration: 0.08) : nil, value: levels)
     }
 }
 

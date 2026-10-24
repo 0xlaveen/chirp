@@ -1,5 +1,7 @@
 package dev.chirp.android
 
+import dev.chirp.android.AppColour
+
 import android.graphics.Bitmap
 import androidx.compose.runtime.*
 import androidx.compose.ui.graphics.asAndroidBitmap
@@ -47,7 +49,7 @@ class SettingsRenderTest {
         val (state, history, updates) = settingsFixture()
         compose.setContent {
             CompositionLocalProvider(LocalDensity provides Density(LocalDensity.current.density, fontScale.floatValue)) {
-                ChirpTheme(dark.value, dynamic = false) { key(page.value) { SettingsScreen(state, initialPage = page.value, history = history, updates = updates) } }
+                ChirpTheme(dark.value, colour = AppColour.POND) { key(page.value) { SettingsScreen(state, initialPage = page.value, history = history, updates = updates) } }
             }
         }
     }
