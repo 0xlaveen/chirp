@@ -336,9 +336,6 @@ public final class SettingsForm {
             return stack
         }
 
-        // The koi accent on every check box, as the bundle's AccentColor gives the live app (an unbundled run shows system blue).
-        for box in [launch, alwaysInDock, wordWaveform, sounds, cleanupEnabled, insertRawFirst, showChanges, offerRaw, keepAudio,
-                    structureNotes, autoReorganize, notesRecoveryCopy, keepLoaded] { box.contentTintColor = .chirpKoi }
         for button in [emptyDeleted, deleteAudio, chooseExport, resetExport] { button.bezelStyle = .rounded; button.controlSize = .small }
         emptyDeleted.setAccessibilityLabel("Empty Recently Deleted")
         deleteAudio.setAccessibilityLabel("Delete all kept audio")

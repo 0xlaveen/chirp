@@ -19,6 +19,24 @@ enum SettingsLayout {
     static let inkMuted = ChirpColor.dynamic(ChirpColor.Pond.inkMuted.light, ChirpColor.Pond.inkMuted.dark)
     static let koiContainer = ChirpColor.dynamic(ChirpColor.Pond.koiContainer.light, ChirpColor.Pond.koiContainer.dark)
     static let onKoiContainer = ChirpColor.dynamic(ChirpColor.Pond.onKoiContainer.light, ChirpColor.Pond.onKoiContainer.dark)
+    /// A small tonal tile (onboarding's feature icons): the pale koi container in light, and in dark a koi fill at 28% over the
+    /// surface (the solid dark container reads as a brown block there).
+    static let tonal = NSColor(name: "ChirpTonal") { appearance in
+        if appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua {
+            let c = ChirpColor.Pond.koi.dark
+            return NSColor(srgbRed: c.r, green: c.g, blue: c.b, alpha: 0.28)
+        }
+        let c = ChirpColor.Pond.koiContainer.light
+        return NSColor(srgbRed: c.r, green: c.g, blue: c.b, alpha: 1)
+    }
+    static let onTonal = ChirpColor.dynamic(ChirpColor.Pond.onKoiContainer.light, ChirpColor.Pond.onKoiContainer.dark)
+    /// The selected sidebar row and the active onboarding step: the pale koi container with dark koi ink in light, and in dark a
+    /// crisp solid koi pill with pond ink on it (the same pairing as a primary button).
+    static let selection = ChirpColor.dynamic(ChirpColor.Pond.koiContainer.light, ChirpColor.Pond.koi.dark)
+    static let onSelection = ChirpColor.dynamic(ChirpColor.Pond.onKoiContainer.light, ChirpColor.Pond.onKoi.dark)
+    /// The icon tile or step number inside the selected row: a koi tile in light, a pond-ink tile in dark.
+    static let selectionTile = ChirpColor.dynamic(ChirpColor.Pond.koi.light, ChirpColor.Pond.onKoi.dark)
+    static let onSelectionTile = ChirpColor.dynamic(ChirpColor.Pond.onKoi.light, ChirpColor.Pond.koi.dark)
     static let onKoi = ChirpColor.dynamic(ChirpColor.Pond.onKoi.light, ChirpColor.Pond.onKoi.dark)
 }
 

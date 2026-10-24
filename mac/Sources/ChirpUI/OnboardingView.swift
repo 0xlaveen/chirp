@@ -264,10 +264,10 @@ public final class OnboardingView: NSView {
     }
 
     private func feature(_ symbol: String, _ title: String, _ detail: String) -> NSView {
-        let tile = ColorView(SettingsLayout.koiContainer, cornerRadius: 8)
+        let tile = ColorView(SettingsLayout.tonal, cornerRadius: 8)
         tile.translatesAutoresizingMaskIntoConstraints = false
         let glyph = NSImageView(image: NSImage(systemSymbolName: symbol, accessibilityDescription: nil)?
-            .withSymbolConfiguration(.init(pointSize: 14, weight: .medium).applying(.init(paletteColors: [SettingsLayout.onKoiContainer]))) ?? NSImage())
+            .withSymbolConfiguration(.init(pointSize: 14, weight: .medium).applying(.init(paletteColors: [SettingsLayout.onTonal]))) ?? NSImage())
         glyph.translatesAutoresizingMaskIntoConstraints = false
         tile.addSubview(glyph)
         NSLayoutConstraint.activate([
@@ -293,7 +293,7 @@ public final class OnboardingView: NSView {
 
     private func header(symbol: String) -> NSView {
         let size: CGFloat = 56
-        let disc = ColorView(SettingsLayout.koiContainer, cornerRadius: 16)
+        let disc = ColorView(SettingsLayout.tonal, cornerRadius: 16)
         let glyph = NSImageView(image: NSImage(systemSymbolName: symbol, accessibilityDescription: nil)?
             .withSymbolConfiguration(.init(pointSize: 24, weight: .regular).applying(.init(paletteColors: [.chirpKoi]))) ?? NSImage())
         glyph.translatesAutoresizingMaskIntoConstraints = false
@@ -557,10 +557,10 @@ final class RailRow: NSView {
             title.textColor = mark == .upcoming ? .secondaryLabelColor : .labelColor
             switch mark {
             case .current:
-                markView.layer?.backgroundColor = NSColor.chirpKoi.cgColor
-                numeral.textColor = SettingsLayout.onKoi
-                layer?.backgroundColor = SettingsLayout.koiContainer.cgColor
-                title.textColor = SettingsLayout.onKoiContainer
+                markView.layer?.backgroundColor = SettingsLayout.selectionTile.cgColor
+                numeral.textColor = SettingsLayout.onSelectionTile
+                layer?.backgroundColor = SettingsLayout.selection.cgColor
+                title.textColor = SettingsLayout.onSelection
             case .done:
                 markView.layer?.backgroundColor = MenuStyle.lily.withAlphaComponent(0.18).cgColor
                 inner.image = glyph("checkmark", MenuStyle.lily)

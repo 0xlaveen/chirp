@@ -304,10 +304,10 @@ final class SettingsSidebarRow: NSView {
         badgeView.isHidden = badge == 0
         badgeView.stringValue = "\(badge)"
         effectiveAppearance.performAsCurrentDrawingAppearance {
-            layer?.backgroundColor = (isSelected ? SettingsLayout.koiContainer : .clear).cgColor
-            tile.layer?.backgroundColor = (isSelected ? NSColor.chirpKoi : NSColor.labelColor.withAlphaComponent(0.1)).cgColor
-            icon.contentTintColor = isSelected ? SettingsLayout.onKoi : .secondaryLabelColor
-            label.textColor = isSelected ? SettingsLayout.onKoiContainer : .labelColor
+            layer?.backgroundColor = (isSelected ? SettingsLayout.selection : .clear).cgColor
+            tile.layer?.backgroundColor = (isSelected ? SettingsLayout.selectionTile : NSColor.labelColor.withAlphaComponent(0.1)).cgColor
+            icon.contentTintColor = isSelected ? SettingsLayout.onSelectionTile : .secondaryLabelColor
+            label.textColor = isSelected ? SettingsLayout.onSelection : .labelColor
             label.font = .systemFont(ofSize: NSFont.systemFontSize, weight: isSelected ? .medium : .regular)
             badgeView.layer?.backgroundColor = MenuStyle.record.cgColor
         }
