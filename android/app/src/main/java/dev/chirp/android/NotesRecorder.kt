@@ -109,8 +109,15 @@ internal class NotesRecorder(
     /** AI changes to [document] the editor has not replayed yet, oldest first. */
     private val pending = mutableListOf<NotesChange>()
     var onChange: (() -> Unit)? = null
+    /** "Keep audio with notes": each segment's audio is copied while it records and handed to [audioSink] when it commits. */
+    @Volatile var keepAudio = false
+    /**
+     * A committed segment's audio: the document it belongs to, the segment's index in it, its offset in seconds and its PCM16
+     * mono 16 kHz bytes (the receiver owns them). Called on the main thread; encode and store off it.
+     */
+    var audioSink: ((documentId: Long, segment: Int, offset: Double, pcm: ByteArray) -> Unit)? = null
 
-    private inner class Segment(val transport: ImeTransport, val buffer: PreReadyBuffer) {
+    private inner class Segment(val transport: ImeTransport, val buffer: PreReadyBuffer, val pcm: java.io.ByteArrayOutputStream? = null) {
         var seq = -1
         var offset = 0.0
         var end: Double? = null
@@ -124,12 +131,16 @@ internal class NotesRecorder(
     }
 
     private val router = FrameRouter<Segment> { segment, frame ->
+        // Kept audio: a copy of the speech frames, taken before the buffer takes (and wipes) them. Memory only, until committed.
+        segment.pcm?.let { synchronized(it) { it.write(frame) } }
         if (!segment.buffer.offer(frame) && !segment.lost) { segment.lost = true; scope.launch { lost(segment) } }
     }
     private var capture: Capture? = null
     private val segments = HashMap<Int, Segment>()
     /** Finished segments waiting for an earlier one, so the transcript stays in order. A null value: an empty final. */
     private val results = HashMap<Int, NotesSegment?>()
+    /** Audio of finished segments waiting for their turn to commit (only with [keepAudio]). */
+    private val finishedAudio = HashMap<Int, ByteArray>()
     private var nextSeq = 0
     private var nextCommit = 0
     private var current: Int? = null
@@ -270,9 +281,10 @@ internal class NotesRecorder(
     private fun open(): Segment {
         lateinit var segment: Segment
         val buffer = PreReadyBuffer(send = { segment.transport.audio(it) }, maxBytes = PRE_READY_BYTES)
+        val kept = if (keepAudio && audioSink != null) java.io.ByteArrayOutputStream() else null
         val transport = transportFactory({ event -> handle(segment, event) },
             { segmentFailed(segment, ConnectionFailure.status(segment.transport.failureKind)) })
-        segment = Segment(transport, buffer)
+        segment = Segment(transport, buffer, kept)
         return segment
     }
 
@@ -320,7 +332,7 @@ internal class NotesRecorder(
         stopCapture()
         router.swap(null); diverted = null
         segments.values.forEach { close(it, cancel = true) }
-        segments.clear(); results.clear(); nextCommit = nextSeq; current = null; resuming = false
+        segments.clear(); results.clear(); wipeAudio(); nextCommit = nextSeq; current = null; resuming = false
         passJob?.cancel(); passJob = null
         timer?.cancel(); timer = null
         waiting = false; manualReorganize = false
@@ -342,6 +354,7 @@ internal class NotesRecorder(
         passJob?.cancel(); passJob = null; passKind = null; manualReorganize = false
         timer?.cancel(); timer = null; timerDeadline = null; waiting = false
         document = NotesDocument()
+        wipeAudio()
         router.resetTime()
         failureStreak = 0; pending.clear(); dropHeld()
         reorganizeState = Reorganizing.Idle; reorganizeRetry = false; lastReorganizeEnd = null; versionAtReorganizeEnd = null
@@ -351,6 +364,8 @@ internal class NotesRecorder(
         if (allowed !is Structuring.Off) structuring = Structuring.Idle
         changed()
     }
+
+    private fun wipeAudio() { finishedAudio.values.forEach { it.fill(0) }; finishedAudio.clear() }
 
     fun dispose() { cancel(); scope.cancel() }
 
@@ -429,7 +444,7 @@ internal class NotesRecorder(
         if (state == State.STARTING && resuming && seq == current) { abandonResume(seq, reason); return }
         if (state == State.STARTING && !sawReady && seq == current) {
             // The very first socket never got going: nothing is recording yet.
-            drop(seq); stopCapture(); router.swap(null); current = null; results.clear(); nextCommit = nextSeq
+            drop(seq); stopCapture(); router.swap(null); current = null; results.clear(); wipeAudio(); nextCommit = nextSeq
             error = reason; state = State.ERROR
             changed()
             return
@@ -450,10 +465,17 @@ internal class NotesRecorder(
 
     /** A segment is done: commit every finished segment that is next in order, then see whether a pass can run. */
     private fun finish(seq: Int, segment: NotesSegment?) {
+        segments[seq]?.pcm?.let { stream -> finishedAudio[seq] = synchronized(stream) { stream.toByteArray() } }
         drop(seq)
         results[seq] = segment
         while (results.containsKey(nextCommit)) {
-            results.remove(nextCommit)?.let(document::append)
+            val done = results.remove(nextCommit)
+            val pcm = finishedAudio.remove(nextCommit)
+            if (done != null) {
+                val index = document.segments.size
+                document.append(done)
+                if (pcm != null) audioSink?.invoke(document.id, index, done.offset, pcm)
+            } else pcm?.fill(0)
             nextCommit++
             lastCommit = now()
         }

@@ -97,7 +97,7 @@ class NotesRecoveryTest {
     private fun idleFor(seconds: Long) = shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(seconds))
 
     @Test fun `a killed session comes back stopped and unsaved from an encrypted copy, and Discard deletes it`() {
-        val first = NotesModelRig(context)
+        val first = NotesModelRig(context, sessions = libraryOff(context))
         first.api.answers += NotesStructureResponse("## Plan\n- Ship it", true)
         first.record().final("synthetic plan words"); first.idle()
         first.model.rename("Weekly sync")
@@ -106,7 +106,7 @@ class NotesRecoveryTest {
         assertFalse("the copy is encrypted", sealed.contains("synthetic") || sealed.contains("Ship") || sealed.contains("Weekly"))
 
         // A new process: the old model is gone without Save or Discard.
-        val second = NotesModelRig(context, keys = first.keys)
+        val second = NotesModelRig(context, keys = first.keys, sessions = libraryOff(context))
         val model = second.model
         assertEquals(NotesRecorder.State.STOPPED, model.state)
         assertEquals("## Plan\n- Ship it", model.field.text)
@@ -126,7 +126,7 @@ class NotesRecoveryTest {
     }
 
     @Test fun `Save marks the notes saved and removes the copy, later edits bring it back`() {
-        val rig = NotesModelRig(context)
+        val rig = NotesModelRig(context, sessions = libraryOff(context))
         rig.model.edit(androidx.compose.ui.text.input.TextFieldValue("My own line"))
         idleFor(3)
         assertTrue(file.exists())
@@ -146,7 +146,7 @@ class NotesRecoveryTest {
     }
 
     @Test fun `with the switch off nothing is written and turning it off deletes the copy`() {
-        val rig = NotesModelRig(context)
+        val rig = NotesModelRig(context, sessions = libraryOff(context))
         rig.model.edit(androidx.compose.ui.text.input.TextFieldValue("Typed"))
         idleFor(3)
         assertTrue(file.exists())
@@ -157,15 +157,15 @@ class NotesRecoveryTest {
         rig.model.edit(androidx.compose.ui.text.input.TextFieldValue("Typed more"))
         idleFor(3)
         assertFalse(file.exists())
-        assertNull(NotesModelRig(context, keys = rig.keys).model.recovered)
+        assertNull(NotesModelRig(context, keys = rig.keys, sessions = libraryOff(context)).model.recovered)
     }
 
     @Test fun `a damaged copy is dropped, never restored`() {
         val keys = SoftwareHistoryKeys()
-        NotesModelRig(context, keys = keys).model.edit(androidx.compose.ui.text.input.TextFieldValue("Typed"))
+        NotesModelRig(context, keys = keys, sessions = libraryOff(context)).model.edit(androidx.compose.ui.text.input.TextFieldValue("Typed"))
         idleFor(3)
         file.writeBytes(file.readBytes().also { it[it.size - 1] = (it[it.size - 1] + 1).toByte() })
-        val model = NotesModelRig(context, keys = keys).model
+        val model = NotesModelRig(context, keys = keys, sessions = libraryOff(context)).model
         assertNull(model.recovered)
         assertFalse(model.hasContent)
         assertFalse(file.exists())

@@ -2,6 +2,7 @@ package dev.chirp.android.settings
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
@@ -48,15 +49,18 @@ internal fun SettingsScreen(state: SetupState, actions: SettingsActions = Settin
                 Column(Modifier.weight(.4f).widthIn(max = 420.dp).fillMaxHeight().verticalScroll(rememberScrollState()).padding(24.dp)) {
                     SettingsHome(state, actions, history, { page = it })
                 }
-                Column(Modifier.weight(.6f).fillMaxHeight().verticalScroll(rememberScrollState()).padding(24.dp),
+                val shown = page ?: SettingsPage.Connection
+                val detailScroll = rememberSaveable(shown, saver = ScrollState.Saver) { ScrollState(0) }
+                Column(Modifier.weight(.6f).fillMaxHeight().verticalScroll(detailScroll).padding(24.dp),
                     verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                    val shown = page ?: SettingsPage.Connection
                     PageTitle(shown.title, null)
                     SettingsDetail(shown, state, actions, history, updates)
                 }
             } else {
                 val shown = page
-                Column(Modifier.widthIn(max = 600.dp).fillMaxSize().verticalScroll(rememberScrollState()).padding(24.dp),
+                // One scroll position per page: a long page (Notes) must not keep the list's offset, nor leave it behind on Back.
+                val scroll = rememberSaveable(shown, saver = ScrollState.Saver) { ScrollState(0) }
+                Column(Modifier.widthIn(max = 600.dp).fillMaxSize().verticalScroll(scroll).padding(24.dp),
                     verticalArrangement = Arrangement.spacedBy(16.dp)) {
                     if (shown == null) SettingsHome(state, actions, history, { page = it })
                     else { PageTitle(shown.title) { page = null }; SettingsDetail(shown, state, actions, history, updates) }

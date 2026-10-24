@@ -79,7 +79,7 @@ internal fun NotesScreen(model: NotesModel, record: () -> Unit, copy: () -> Unit
     var renaming by remember { mutableStateOf(false) }
     var settings by remember { mutableStateOf(false) }
     var recent by remember { mutableStateOf(false) }
-    var pendingOpen by remember { mutableStateOf<NotesSessionEntry?>(null) }
+    var pendingOpen by remember { mutableStateOf<NotesIndexEntry?>(null) }
     var editing by rememberSaveable { mutableStateOf(false) }
     var anchor by remember { mutableStateOf<Anchor?>(null) }
     val focus = LocalFocusManager.current
@@ -515,13 +515,10 @@ private fun TranscriptPane(model: NotesModel, modifier: Modifier, titled: Boolea
 
 /** Kept notes as a notes list: title, when, a preview of the words, and search. */
 @Composable
-private fun RecentNotes(model: NotesModel, open: (NotesSessionEntry) -> Unit) {
+private fun RecentNotes(model: NotesModel, open: (NotesIndexEntry) -> Unit) {
     val now = System.currentTimeMillis()
     var query by rememberSaveable { mutableStateOf("") }
-    val rows = remember(model.recent) {
-        model.recent.map { entry -> entry to entry.document.optString("text").let { it to NotesBlocks.preview(it, entry.title) } }
-    }
-    val shown = rows.filter { (entry, text) -> query.isBlank() || entry.title.contains(query.trim(), true) || text.first.contains(query.trim(), true) }
+    val shown = model.recent.filter { entry -> query.isBlank() || entry.title.contains(query.trim(), true) || entry.snippet.contains(query.trim(), true) }
     Column(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text("Recent notes", Modifier.padding(horizontal = 8.dp).semantics { heading() }, style = MaterialTheme.typography.titleLarge)
         if (model.recent.isEmpty()) Text("Notes you stop or leave are kept here, encrypted on this phone.", Modifier.padding(horizontal = 8.dp),
@@ -532,11 +529,11 @@ private fun RecentNotes(model: NotesModel, open: (NotesSessionEntry) -> Unit) {
         if (model.recent.isNotEmpty() && shown.isEmpty()) Text("No notes match.", Modifier.padding(horizontal = 8.dp), style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant)
         LazyColumn(Modifier.fillMaxWidth().heightIn(max = 520.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            items(shown, key = { it.first.id }) { (entry, text) ->
-                val (age, spoken) = historyAge(now, entry.time)
+            items(shown, key = { it.id }) { entry ->
+                val (age, spoken) = historyAge(now, entry.updatedAt)
                 ListItem(headlineContent = { Text(entry.title, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleMedium) },
                     overlineContent = { Text(age) },
-                    supportingContent = text.second.takeIf { it.isNotBlank() }?.let { { Text(it, maxLines = 2, overflow = TextOverflow.Ellipsis) } },
+                    supportingContent = entry.snippet.takeIf { it.isNotBlank() }?.let { { Text(it, maxLines = 2, overflow = TextOverflow.Ellipsis) } },
                     modifier = Modifier.clip(MaterialTheme.shapes.large).clickable(onClickLabel = "Open") { open(entry) }.semantics { stateDescription = spoken },
                     trailingContent = { IconButton({ model.deleteKept(entry) }) { Icon(painterResource(R.drawable.ic_delete), "Delete ${entry.title}") } },
                     colors = ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.surfaceContainer))

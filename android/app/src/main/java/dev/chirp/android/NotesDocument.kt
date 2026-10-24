@@ -26,6 +26,9 @@ internal data class NotesSegment(
     companion object { fun gap(id: Int, offset: Double, reason: String) = NotesSegment(id, offset, "", failure = reason) }
 }
 
+/** A capture boundary: the note was continued after [offset] seconds of audio, at wall-clock [time]. */
+internal data class NotesBoundary(val offset: Double, val time: Long)
+
 /** Part of a rejected window after it was split: structured Markdown, or a part that kept failing and stays raw. */
 internal sealed interface NotesPiece {
     data class Markdown(val text: String) : NotesPiece
@@ -117,6 +120,12 @@ internal class NotesDocument(var startedAt: Long = System.currentTimeMillis(), t
     /** Survives the recovery copy and kept sessions, so keeping it again replaces the earlier copy. */
     var uid: String = java.util.UUID.randomUUID().toString()
         private set
+    private val boundaryList = mutableListOf<NotesBoundary>()
+    /** Where a finished note was continued: a quiet divider in the transcript, with the capture clock at that moment. */
+    val boundaries: List<NotesBoundary> get() = boundaryList
+    private val clips = java.util.TreeMap<Int, NotesAudioClip>()
+    /** Kept audio, by segment index (empty unless "Keep audio with notes" was on). Does not count as a text change. */
+    val audio: List<NotesAudioClip> get() = clips.values.toList()
     /** Every fallback block appended, exactly as appended; one still found verbatim is one Organize may redo. */
     private val fallbackBlocks = mutableListOf<String>()
 
@@ -128,6 +137,12 @@ internal class NotesDocument(var startedAt: Long = System.currentTimeMillis(), t
     fun stampStart(time: Long) { if (committed.isEmpty()) startedAt = time }
 
     fun append(segment: NotesSegment) { committed += segment.copy(id = committed.size) }
+
+    /** Continue recording: a capture boundary at [offset] seconds of audio, [time] wall clock. */
+    fun addBoundary(offset: Double, time: Long) { boundaryList += NotesBoundary(offset, time); version++ }
+
+    fun addClip(clip: NotesAudioClip) { clips[clip.segment] = clip }
+    fun clearClips() = clips.clear()
 
     // User edits
 
@@ -328,11 +343,57 @@ internal class NotesDocument(var startedAt: Long = System.currentTimeMillis(), t
     /** The notes without placeholder lines, trimmed. */
     val notesBody get() = text.split('\n').filter { it.trim() != NotesMarkdown.PLACEHOLDER }.joinToString("\n").trim()
 
+    // Library rows
+
+    /** The note's meaningful lines, markdown markers stripped: no blanks, placeholders or "not structured" notices. */
+    private fun meaningfulLines() = notesBody.split('\n').map { it.trim() }
+        .filter { it.isNotEmpty() && it != FALLBACK_HEADER && !it.all { c -> c == '-' || c == '*' || c == '_' } }
+
+    private fun plain(line: String) = line.replace(Regex("^(#{1,6}\\s+|>\\s*|[-*+]\\s+(\\[[ xX]]\\s+)?|\\d+[.)]\\s+)+"), "")
+        .replace(Regex("[*_`]+"), "").trim()
+
+    private fun titleLine(): Pair<Int, String>? {
+        val lines = meaningfulLines()
+        lines.forEachIndexed { i, line -> NotesMarkdown.heading(line)?.let { return i to it.second } }
+        return lines.indices.firstNotNullOfOrNull { i -> plain(lines[i]).takeIf { it.isNotEmpty() }?.let { i to it.take(MAX_LIBRARY_TITLE) } }
+    }
+
+    /** "Note, 24 October" from the start time. */
+    fun dateTitle(zone: TimeZone = TimeZone.getDefault(), locale: Locale = Locale.getDefault()) =
+        "Note, " + SimpleDateFormat("d MMMM", locale).apply { timeZone = zone }.format(Date(startedAt))
+
+    /** The library title: a rename wins forever, else the first heading, else the first meaningful line, else the date. */
+    fun libraryTitle(zone: TimeZone = TimeZone.getDefault(), locale: Locale = Locale.getDefault()) =
+        name?.trim()?.takeIf { it.isNotEmpty() } ?: titleLine()?.second?.take(MAX_LIBRARY_TITLE) ?: dateTitle(zone, locale)
+
+    /** A line or two of the note after its title line (else the start of the transcript), for the list. */
+    val snippet: String get() {
+        val lines = meaningfulLines()
+        val used = if (name.isNullOrBlank()) titleLine()?.first else null
+        val body = lines.filterIndexed { i, _ -> i != used }.map(::plain).filter { it.isNotEmpty() }.joinToString(" ")
+        val text = body.ifEmpty { committed.firstOrNull { !it.isGap && it.text.isNotEmpty() }?.text.orEmpty().replace('\n', ' ') }
+        return if (text.length > MAX_SNIPPET) text.take(MAX_SNIPPET).trimEnd() + "…" else text
+    }
+
+    /** Unchecked to-dos (`- [ ]`) in the notes. */
+    val openTodos: Int get() = text.lineSequence().count { OPEN_TODO.containsMatchIn(it) }
+
+    /** Nothing written and never named: a note like this is not kept. */
+    val untouched get() = isEmpty && name.isNullOrBlank()
+
     /** One line per segment: `**[00:00:12]** text`, gaps and "kept original" marked; [raw] swaps in the raw text. */
-    fun transcriptLines(raw: Boolean = false) = committed.map { s ->
-        val stamp = "**[${timestamp(s.offset)}]** "
-        if (s.failure != null) stamp + "⚠︎ audio not transcribed (${s.failure})"
-        else stamp + (if (raw) s.raw else s.text) + if (s.keptOriginal && !raw) " _(kept original)_" else ""
+    fun transcriptLines(raw: Boolean = false, zone: TimeZone = TimeZone.getDefault(), locale: Locale = Locale.US): List<String> {
+        val lines = mutableListOf<String>()
+        val pending = boundaryList.sortedBy { it.offset }.toMutableList()
+        fun divider(b: NotesBoundary) = "_Continued · " + SimpleDateFormat("MMM d, h:mm a", locale).apply { timeZone = zone }.format(Date(b.time)) + "_"
+        for (s in committed) {
+            while (pending.isNotEmpty() && pending.first().offset <= s.offset) lines += divider(pending.removeAt(0))
+            val stamp = "**[${timestamp(s.offset)}]** "
+            lines += if (s.failure != null) stamp + "⚠︎ audio not transcribed (${s.failure})"
+            else stamp + (if (raw) s.raw else s.text) + if (s.keptOriginal && !raw) " _(kept original)_" else ""
+        }
+        pending.forEach { lines += divider(it) }
+        return lines
     }
 
     fun transcriptMarkdown(raw: Boolean = false) = (listOf("## Transcript") + transcriptLines(raw)).joinToString("\n\n")
@@ -351,6 +412,8 @@ internal class NotesDocument(var startedAt: Long = System.currentTimeMillis(), t
     /** Everything but the live partial and the reorganize bookkeeping, for [NotesJournal]. */
     fun toJson(): JSONObject = JSONObject().put("startedAt", startedAt).put("text", text).put("tailStart", tailStart)
         .put("windowStart", windowStart).put("structuredEnd", structuredEnd).put("fallbacks", JSONArray(fallbackBlocks)).put("uid", uid)
+        .put("boundaries", JSONArray().apply { boundaryList.forEach { put(JSONObject().put("offset", it.offset).put("time", it.time)) } })
+        .put("audio", JSONArray().apply { clips.values.forEach { put(it.toJson()) } })
         .put("segments", JSONArray().apply {
             committed.forEach { s ->
                 put(JSONObject().put("offset", s.offset).put("raw", s.raw).put("text", s.text).put("corrected", s.corrected)
@@ -371,6 +434,8 @@ internal class NotesDocument(var startedAt: Long = System.currentTimeMillis(), t
             windowStart = json.getInt("windowStart").coerceIn(0, committed.size)
             structuredEnd = json.getInt("structuredEnd").coerceIn(windowStart - 1, committed.size - 1)
             json.optJSONArray("fallbacks")?.let { a -> for (i in 0 until a.length()) fallbackBlocks += a.getString(i) }
+            json.optJSONArray("boundaries")?.let { a -> for (i in 0 until a.length()) a.getJSONObject(i).let { boundaryList += NotesBoundary(it.getDouble("offset"), it.getLong("time")) } }
+            json.optJSONArray("audio")?.let { a -> for (i in 0 until a.length()) NotesAudioClip.fromJson(a.getJSONObject(i)).let { clips[it.segment] = it } }
         }
 
         /** The tail settles once a pass succeeded on this many transcript characters. */
@@ -386,6 +451,9 @@ internal class NotesDocument(var startedAt: Long = System.currentTimeMillis(), t
         const val MAX_OUTLINE_ITEM_CHARS = 120
         const val MAX_OUTLINE_CHARS = 1500
         const val MIN_SPLIT_CHARS = 400
+        const val MAX_LIBRARY_TITLE = 80
+        const val MAX_SNIPPET = 160
+        private val OPEN_TODO = Regex("^\\s*[-*+]\\s+\\[ ]")
         const val FALLBACK_HEADER = "_Not structured — see transcript_"
         private val ids = AtomicLong()
 
