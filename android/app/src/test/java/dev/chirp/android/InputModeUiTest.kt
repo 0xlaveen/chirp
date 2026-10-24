@@ -86,10 +86,26 @@ class InputModeUiTest {
         }
         val output = File(System.getProperty("chirp.screenshots")).apply { mkdirs() }
         fun shot(name: String) {
+            val file = File(output, "keepkb-$name-$size-${if (dark.value) "dark" else "light"}${if (font.floatValue == 2f) "-font-200" else ""}.png")
+            // Semantics can be ready before Robolectric's first native window buffer is drawn.
+            compose.waitForIdle()
+            compose.runOnIdle { compose.activity.window.decorView.invalidate() }
+            compose.mainClock.advanceTimeByFrame()
             compose.waitForIdle()
             val bitmap = compose.onRoot().captureToImage().asAndroidBitmap()
-            File(output, "keepkb-$name-$size-${if (dark.value) "dark" else "light"}${if (font.floatValue == 2f) "-font-200" else ""}.png")
-                .outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
+            val background = bitmap.getPixel(0, 0)
+            val colours = HashSet<Int>()
+            var samples = 0
+            var content = 0
+            for (y in 0 until bitmap.height step 4) for (x in 0 until bitmap.width step 4) {
+                val pixel = bitmap.getPixel(x, y)
+                colours += pixel
+                samples++
+                if (pixel != background) content++
+            }
+            assertTrue("${file.name} is essentially blank: ${colours.size} colours, $content/$samples content samples",
+                colours.size > 16 && content > samples / 100)
+            file.outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
         }
         for (night in listOf(false, true)) for (scale in listOf(1f, 2f)) {
             compose.runOnIdle { dark.value = night; font.floatValue = scale; settings.value = false; state.step = PAGE_CHOICE; state.inputMode = null; state.advancedProtection = false; state.accessibilityReturns = 0 }
