@@ -78,7 +78,7 @@ struct SessionSettingsView: View {
                     Text("1 hour").tag(SessionDuration.oneHour)
                     Text("Never").tag(SessionDuration.never)
                 }.disabled(model.armed).onChange(of: model.preferences.sessionDuration) { _, _ in model.savePreferences() }
-                Text("Never lasts until ended, interrupted, terminated or permission is revoked. iOS may suspend or stop the app; indefinite background execution is not guaranteed.")
+                Text((model.armed ? "End the session to change its length. " : "") + "Never lasts until ended, interrupted, terminated or permission is revoked. iOS may suspend or stop the app; indefinite background execution is not guaranteed.")
                     .font(.footnote).foregroundStyle(.secondary)
                 Toggle("Private session · exclude history", isOn: $model.preferences.privacyMode)
                     .onChange(of: model.preferences.privacyMode) { _, _ in model.savePreferences() }
@@ -87,6 +87,8 @@ struct SessionSettingsView: View {
                 Toggle("Spoken commands", isOn: Binding(get: { model.preferences.spokenCommands == true },
                                                         set: { model.preferences.spokenCommands = $0 ? true : nil; model.savePreferences() }))
                     .accessibilityIdentifier("chirp.settings.spokenCommands")
+                Text("Off by default. In Chirp Keyboard, ending a dictation with \"new line\" or \"new paragraph\" types a line break instead of the words. Mid-sentence, a common first word such as \"so\" or \"and\" starts lower-case.")
+                    .font(.footnote).foregroundStyle(.secondary)
                 Picker("Press Return after dictating", selection: Binding(get: { model.preferences.autoEnter ?? "off" },
                                                                         set: { model.preferences.autoEnter = $0 == "off" ? nil : $0; model.savePreferences() })) {
                     Text("Off").tag("off")
@@ -94,8 +96,6 @@ struct SessionSettingsView: View {
                     Text("Always").tag("always")
                 }.accessibilityIdentifier("chirp.settings.autoEnter")
                 Text("After the last words land, Chirp Keyboard types Return. Where the field's Return key is Send, Go or Done, that sends; elsewhere Always types a newline. Never after a failed or partial dictation. A keyboard cannot press an app's own Send button, such as the one in Messages.")
-                    .font(.footnote).foregroundStyle(.secondary)
-                Text("Off by default. In Chirp Keyboard, ending a dictation with \"new line\" or \"new paragraph\" types a line break instead of the words. Mid-sentence, a common first word such as \"so\" or \"and\" starts lower-case.")
                     .font(.footnote).foregroundStyle(.secondary)
                 if model.armed { Button("End session", role: .destructive) { model.endSession() }.frame(minHeight: 44) }
                 Link("Open Chirp permissions", destination: URL(string: UIApplication.openSettingsURLString)!)

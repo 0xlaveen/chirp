@@ -180,7 +180,9 @@ profiles; nothing here is validated for that path.
 ## Pair with your Mac
 
 1. Connect Tailscale on the Mac and on the iPhone/iPad.
-2. On the Mac, from `server/`, publish the pairing QR (printed locally only).
+2. On the Mac, open Chirp → Settings → Devices → **Pair a Phone…**: it checks
+   Tailscale, publishes the server, names this device and shows the QR. Without
+   the Mac app, from `server/`, publish the pairing QR (printed locally only).
    Give this device its own pairing with `--name`, so you can revoke it on its
    own later (`chirp-server devices list`, `chirp-server devices revoke "My iPad"`).
    Without `--name` the QR carries the Mac's shared token:
@@ -276,7 +278,9 @@ from every tab and show in the iPad's hold-⌘ overlay and menu bar:
 | ⌘⇧C | Copy result |
 | ⌘⇧Z | Use raw transcript |
 | ⌘⇧K | Start keyboard session |
-| ⌘⇧E | End session | The app never writes the clipboard by
+| ⌘⇧E | End session |
+
+The app never writes the clipboard by
 itself. **Long dictation** runs past the server's
 120-second limit. After 45 seconds, at the first pause (0.6 s of quiet, 0.3 s
 after 70 s, and at 90 s regardless), Chirp moves the microphone to a new
@@ -513,7 +517,7 @@ when it matters; surrounding editor text is never collected.
   next access — there is no background purge daemon.
 - **Diagnostics are content-free.** Version, OS, phase, fixed local error
   codes, durations and counts only — no transcripts, prompts, audio, URLs,
-  hosts, tokens or device identifiers. Settings → Diagnostics also keeps
+  hosts, tokens or device identifiers. Settings → Content-free diagnostics also keeps
   **timings of the last 50 dictations**: time to ready, to the first words,
   from stop to the final, polishing and audio length, plus the outcome
   (final, empty, kept, failed, cancelled), error code, where you dictated
@@ -546,7 +550,7 @@ when it matters; surrounding editor text is never collected.
 Portable logic (runs on macOS; also works with only the Command Line Tools):
 
 ```sh
-ios/Shared/scripts/test.sh                 # 20 tests / 5 suites
+ios/Shared/scripts/test.sh                 # 22 tests / 6 suites
 mac/scripts/test.sh && (cd mac && swift build -c release)   # 380 tests / 61 suites + release
 swift test --package-path ios/Keyboard/Policy   # full Xcode selected; with only the CLT add
 #   -Xswiftc -plugin-path -Xswiftc /Library/Developer/CommandLineTools/usr/lib/swift/host/plugins/testing

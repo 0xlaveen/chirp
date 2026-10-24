@@ -193,6 +193,10 @@ private func inputs(_ phase: KeyboardPhase? = .armed, access: Bool = true, lease
         #expect(KeyboardPhase.allCases.map(\.rawValue) == ["idle", "armed", "connecting", "listening", "correcting", "finished", "failed"])
     }
 
+    @Test func anOverLongPromptPointsToStylesLikeTheApp() {
+        #expect(KeyboardError.badRequest.guidance.contains("clean-up prompt is too long") && KeyboardError.badRequest.guidance.contains("Styles"))
+    }
+
     @Test func recoveryAndFallbackOutrankErrorGuidance() {
         #expect(KeyboardPresenter.screen(inputs(.failed) { $0.errorCode = .auth; $0.requiresRecovery = true }).status == "Text kept in place")
         #expect(KeyboardPresenter.screen(inputs(.failed) { $0.errorCode = .auth; $0.fallback = "f" }).detail == "f")
