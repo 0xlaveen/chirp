@@ -1,8 +1,8 @@
-# Chirp Keyboard for Android
+# Chirp for Android
 
-A full HeliBoard keyboard for the Galaxy Z Fold with a microphone key that streams your voice to the `chirp-server` on your Mac — over Tailscale, from any app. Live text appears underlined in the focused field while you speak; the final replaces it. An optional clean-up pass on the Mac polishes the final text, and an opt-in history keeps recent dictations on the phone, encrypted.
+The **Chirp** app (Notes, Scratchpad, history and settings) and **Chirp Keyboard**, a full HeliBoard keyboard for the Galaxy Z Fold with a microphone key that streams your voice to the `chirp-server` on your Mac — over Tailscale, from any app. Live text appears underlined in the focused field while you speak; the final replaces it. An optional clean-up pass on the Mac polishes the final text, and an opt-in history keeps recent dictations on the phone, encrypted.
 
-The application ID and IME component stay `dev.chirp.android` / `dev.chirp.android/.ChirpImeService`, so a signed APK installs as an **update** and preserves your pairing (the token is encrypted under an Android Keystore key). Current version: **0.7.1**, version code 13.
+The launcher, Settings → Apps and notifications call the app **Chirp**; Android's keyboard picker and keyboard settings list the input method as **Chirp Keyboard**. The application ID and IME component stay `dev.chirp.android` / `dev.chirp.android/.ChirpImeService`, so a signed APK installs as an **update** and preserves your pairing (the token is encrypted under an Android Keystore key). Current version: **0.7.1**, version code 13.
 
 | At a glance | |
 |---|---|
@@ -285,7 +285,7 @@ The card warns that the library runs inside Chirp with Chirp's permissions, incl
 
 ### Optional floating microphone
 
-The floating accessibility mic is **optional and off by default**; keyboard dictation needs no Accessibility permission. Enable it only if you choose to use another keyboard — it reads the focused field locally to insert safely, runs as a microphone foreground service with a notification, and field contents stay on the phone. For sideload restrictions: Apps → Chirp Keyboard → ⋮ → Allow restricted settings, then Accessibility → Installed apps. An already-enabled optional service remains under your Android setting; the app does not enable it on update. Design notes on this and the other input paths considered are in [docs/android-input-options.md](../docs/android-input-options.md).
+The floating accessibility mic is **optional and off by default**; keyboard dictation needs no Accessibility permission. Enable it only if you choose to use another keyboard — it reads the focused field locally to insert safely, runs as a microphone foreground service with a notification, and field contents stay on the phone. For sideload restrictions: Apps → Chirp → ⋮ → Allow restricted settings, then Accessibility → Installed apps → Chirp floating microphone. An already-enabled optional service remains under your Android setting; the app does not enable it on update. Design notes on this and the other input paths considered are in [docs/android-input-options.md](../docs/android-input-options.md).
 
 ## Scratchpad
 

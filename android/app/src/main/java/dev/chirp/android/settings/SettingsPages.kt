@@ -52,8 +52,8 @@ private fun FloatingMicPage(state: SetupState, actions: SettingsActions) {
         SettingsItem {
             Text("Off by default. A floating mic you can use with another keyboard. Keyboard dictation works without it.", style = MaterialTheme.typography.bodyMedium)
             LearnMore("Optional floating microphone", "Chirp reads the focused field locally to insert text safely. Nothing is sent anywhere except the audio you dictate.\n\n" +
-                "Turn it on in Settings → Accessibility → Installed apps → Chirp Keyboard. If sideloading blocks this optional feature: " +
-                "Apps → Chirp Keyboard → ⋮ → Allow restricted settings.")
+                "Turn it on in Settings → Accessibility → Installed apps → Chirp floating microphone. If sideloading blocks this optional feature: " +
+                "Apps → Chirp → ⋮ → Allow restricted settings.")
         }
         NavRow(if (state.bubbleEnabled) "Floating mic is on" else "Turn on floating mic", actions.floatingMicSettings,
             summary = if (state.bubbleEnabled) "Open Accessibility settings to turn it off" else "Opens Accessibility settings")
