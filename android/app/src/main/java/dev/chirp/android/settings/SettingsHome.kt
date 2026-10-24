@@ -16,14 +16,22 @@ import dev.chirp.android.ui.*
 @Composable
 internal fun SettingsList(state: SetupState, actions: SettingsActions, history: DictationHistory?, open: (SettingsPage) -> Unit) {
     val context = LocalContext.current
-    val store = remember { SettingsStore(context) }
     val prefs = remember { keyboardPrefs(context) }
+    var revision by remember { mutableIntStateOf(0) }
+    DisposableEffect(context, prefs) {
+        val sources = listOf(prefs, context.getSharedPreferences(SettingsStore.FILE, 0),
+            context.getSharedPreferences("chirp_notes_sessions", 0), context.getSharedPreferences("chirp_history", 0))
+        val listener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, _ -> revision++ }
+        sources.forEach { it.registerOnSharedPreferenceChangeListener(listener) }
+        onDispose { sources.forEach { it.unregisterOnSharedPreferenceChangeListener(listener) } }
+    }
     val dictationHistory = history ?: remember { DictationHistory(context) }
     val connection = connectionSummary(state.paired, state.host, state.reachable, state.checking, state.health)
     Column(verticalArrangement = Arrangement.spacedBy(24.dp)) {
         if (state.health?.debugRetention == true) StatusBanner(StatusKind.Error, "DEBUG RETENTION IS ON — the Mac may retain audio and text")
         // One grouped card, System-Settings style: seven rows with an icon and a live one-line summary each.
-        SettingsGroup {
+        // The list stays composed beside its detail page on a Fold: preference changes must refresh its summaries.
+        key(revision) { SettingsGroup {
             NavRow(SettingsPage.Connection.title, { open(SettingsPage.Connection) },
                 summary = connection.summary ?: "Pair your Mac to dictate", icon = R.drawable.ic_devices)
             NavRow(SettingsPage.Dictation.title, { open(SettingsPage.Dictation) }, summary = dictationSummary(context, state), icon = R.drawable.ic_tune)
@@ -33,7 +41,7 @@ internal fun SettingsList(state: SetupState, actions: SettingsActions, history: 
             NavRow(SettingsPage.History.title, { open(SettingsPage.History) },
                 summary = if (dictationHistory.enabled) "History on · keeps ${dictationHistory.retention.label}" else "Dictation history off", icon = R.drawable.ic_shield)
             NavRow(SettingsPage.About.title, { open(SettingsPage.About) }, summary = "Chirp ${BuildConfig.VERSION_NAME}", icon = R.drawable.ic_info)
-        }
+        } }
     }
 }
 

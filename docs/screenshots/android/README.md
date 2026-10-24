@@ -60,6 +60,34 @@ These are review artifacts, not pixel-golden assertions or Galaxy hardware batte
 latency or microphone measurements. Samsung editor quirks and folding still need
 operator acceptance on the phone.
 
+### Secondary surfaces validation (2026-10-25, #160)
+
+Rebased on the Notes-first shell from #163. Refreshed and reviewed the Settings,
+History, onboarding, Scratchpad, keyboard and voice-panel renders, including light
+and dark, cover and inner layouts, and onboarding/Settings at 200% font. Scratchpad's
+listening fixture now disables animation and asserts the active Stop control before
+capturing, so the render cannot silently capture a connection timeout instead.
+
+`./gradlew lint testDebugUnitTest assembleDebug assembleRelease` passed: 964 test
+cases, zero failures/errors, two opt-in skips. Regression coverage includes live
+Settings summaries while the detail pane stays open, preserving note duration/name
+when appending from History, and quarantining an unreadable note while saving the
+dictation as a new note with a new ID. The smoke helper follows Notes → Dictate →
+the borderless Scratchpad, and accepts an explicit release artifact with
+`CHIRP_SMOKE_APK`.
+
+Emulator smoke and TalkBack remain **blocked**. The shared `emulator-5580` was
+unreachable and was left untouched. A separately owned read-only `chirp-fold` on
+`emulator-5600` booted. The unsigned release artifact was signed in `/tmp` with the
+standard Android debug key for this check; no keystore or signing configuration is
+part of this change. After clearing the disposable instance's Chirp install to
+resolve `INSTALL_FAILED_UPDATE_INCOMPATIBLE`, the final attempt reached onboarding
+but lost ADB during the wait for “Scan code” (`ADB operation failed: shell`).
+TalkBack could not push its probe because `emulator-5600` was no longer present.
+The owned emulator had already exited at cleanup; other instances were untouched.
+No further emulator retries were made, and no successful smoke/TalkBack result or
+new emulator captures are claimed for this change.
+
 ## Design components
 
 - `components-{light,dark}.png`: the shared settings components (`ui/ChirpComponents.kt`) in Pond:

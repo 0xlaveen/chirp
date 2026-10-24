@@ -78,7 +78,7 @@ internal fun copyPrivately(context: Context, label: String, text: String) {
 
 /** What "Add to note" did, for the snackbar. */
 internal sealed interface AddToNoteResult {
-    data class Added(val createdNote: Boolean) : AddToNoteResult
+    data class Added(val createdNote: Boolean, val unreadableNote: Boolean = false) : AddToNoteResult
     data object Off : AddToNoteResult
     data object Failed : AddToNoteResult
 }
@@ -91,17 +91,23 @@ internal fun addDictationToNote(kept: NotesSessions, text: String): AddToNoteRes
     if (!kept.enabled) return AddToNoteResult.Off
     val trimmed = text.trim()
     if (trimmed.isEmpty()) return AddToNoteResult.Failed
-    val recent = kept.entries().firstOrNull { !it.deleted }
-    if (recent == null) {
+    fun createNote(unreadableNote: Boolean = false): AddToNoteResult {
         val id = java.util.UUID.randomUUID().toString()
         val note = NotesDocument().apply { userEdit(0, 0, trimmed) }
-        if (kept.put(id, note.toJson())) AddToNoteResult.Added(createdNote = true) else AddToNoteResult.Failed
+        return if (kept.put(id, note.toJson())) AddToNoteResult.Added(createdNote = true, unreadableNote = unreadableNote)
+            else AddToNoteResult.Failed
+    }
+    val recent = kept.entries().firstOrNull { !it.deleted }
+    if (recent == null) {
+        createNote()
     } else {
-        val note = kept.open(recent.id)?.let { runCatching { NotesDocument.fromJson(it.document) }.getOrNull() }
-            ?: NotesDocument(startedAt = recent.createdAt)
+        val record = kept.open(recent.id) ?: return createNote(unreadableNote = true)
+        val note = runCatching { NotesDocument.fromJson(record.document) }.getOrNull()
+            ?: return createNote(unreadableNote = true)
         val separator = if (note.text.isBlank()) "" else "\n\n"
         note.userEdit(note.text.length, note.text.length, separator + trimmed)
-        if (kept.put(recent.id, note.toJson())) AddToNoteResult.Added(createdNote = false) else AddToNoteResult.Failed
+        val document = note.toJson().put("elapsed", record.document.optDouble("elapsed", recent.duration))
+        if (kept.put(recent.id, document)) AddToNoteResult.Added(createdNote = false) else AddToNoteResult.Failed
     }
 } catch (_: Exception) { AddToNoteResult.Failed }
 
@@ -153,7 +159,11 @@ internal fun HistoryScreen(store: DictationHistory? = null, now: () -> Long = Sy
             val result = withContext(Dispatchers.IO) { addDictationToNote(library, entry.text) }
             snackbar.currentSnackbarData?.dismiss()
             val message = when (result) {
-                is AddToNoteResult.Added -> if (result.createdNote) "Saved as a new note" else "Added to your latest note"
+                is AddToNoteResult.Added -> when {
+                    result.unreadableNote -> "Couldn't open that note, saved as a new note"
+                    result.createdNote -> "Saved as a new note"
+                    else -> "Added to your latest note"
+                }
                 AddToNoteResult.Off -> "Notes are off — turn on Keep notes in Settings → Notes"
                 AddToNoteResult.Failed -> "Couldn't add the note"
             }

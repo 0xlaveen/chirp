@@ -123,8 +123,10 @@ def fresh_editor():
     adb('shell', 'ime', 'enable', IME)
     adb('shell', 'ime', 'set', IME)
     adb('shell', 'am', 'start', '-n', PACKAGE + '/.SetupActivity', '--es', 'section', 'try')
-    # Cold start of the settings screen takes 10-13 s on a contended host; 15 s flaked.
-    wait_for('Try it', 60)
+    # Notes is the launcher destination; its Dictate action opens the Scratchpad editor.
+    wait_for('Dictate', 60)
+    click('Dictate')
+    wait_for('Dictate, then edit here', 60)
     focus_editor()
 
 
@@ -187,7 +189,7 @@ def main():
     # The release splits by ABI; smoke installs the split matching this emulator's ABI.
     abi = adb('shell', 'getprop', 'ro.product.cpu.abi').decode().strip()
     assert abi in ('arm64-v8a', 'x86_64'), 'unexpected emulator ABI ' + abi
-    apk = ROOT / ('android/app/build/outputs/apk/release/app-%s-release.apk' % abi)
+    apk = Path(os.environ.get('CHIRP_SMOKE_APK', ROOT / ('android/app/build/outputs/apk/release/app-%s-release.apk' % abi)))
     # Artifact inspection supplements (rather than substitutes for) UI verification.
     with zipfile.ZipFile(apk) as archive:
         assert not any('synthetic' in name or 'debug_network_security' in name for name in archive.namelist()), 'Debug resource in release'
@@ -230,7 +232,9 @@ def main():
         wait_for('Scan code')
         crash_check()
         adb('shell', 'am', 'start', '-n', PACKAGE + '/.SetupActivity', '--es', 'section', 'try')
-        wait_for('Try it')
+        wait_for('Dictate')
+        click('Dictate')
+        wait_for('Dictate, then edit here')
         focus_editor()
         mic = wait_for('Microphone: tap to dictate')
         tap(mic)
@@ -239,7 +243,9 @@ def main():
         tap(action)
         wait_for('Scan code')
         adb('shell', 'am', 'start', '-n', PACKAGE + '/.SetupActivity', '--es', 'section', 'try')
-        wait_for('Try it')
+        wait_for('Dictate')
+        click('Dictate')
+        wait_for('Dictate, then edit here')
         focus_editor()
         # Long press must expose options and stay idle (no capture before consent).
         mic = wait_for('Microphone: tap to dictate')
@@ -286,11 +292,14 @@ def main():
         click('More keys')
         wait_for('One-handed mode')
         adb('shell', 'input', 'keyevent', '4')
-        click('Keyboard layouts & settings')
-        wait_for('Pairing & connection')
-        click('Chirp diagnostics')
-        wait_for('No crashes recorded')
-        click('Close')
+        mic = wait_for('Microphone: tap to dictate')
+        x, y = center(mic)
+        adb('shell', 'input', 'swipe', str(x), str(y), str(x), str(y), '700')
+        click('Chirp settings')
+        wait_for('Settings')
+        click('About')
+        wait_for('Diagnostics')
+        assert any('No crashes recorded' in n.get('text', '') for n in nodes()), 'Chirp crash in diagnostics'
         crash_check()
         print('PASS: release install; state-aware setup; QR scanner open/back; editor + keyboard; mic pairing action; long-press options; inner/cover light/dark; accessible labels and bounds; autocorrect teh/the + contraction; next-word suggestions; clipboard + emoji; settings + diagnostics; no Chirp crash.')
         print('Release APK bytes:', apk.stat().st_size)

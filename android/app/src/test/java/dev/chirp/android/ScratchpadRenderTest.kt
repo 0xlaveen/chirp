@@ -24,6 +24,9 @@ class ScratchpadRenderTest {
 
     @Test fun `render scratchpad idle listening and edited text in light and dark`() {
         val output = File(System.getProperty("chirp.screenshots")).apply { mkdirs() }
+        // Settle Ripple without advancing the stream's connection deadline while capturing.
+        android.provider.Settings.Global.putFloat(RuntimeEnvironment.getApplication().contentResolver,
+            android.provider.Settings.Global.ANIMATOR_DURATION_SCALE, 0f)
         val rig = Rig(RuntimeEnvironment.getApplication())
         val dark = mutableStateOf(false)
         compose.setContent { ChirpTheme(dark.value) { ScratchpadScreen(rig.model, rig.model::toggle, {}, {}, {}) } }
@@ -36,6 +39,8 @@ class ScratchpadRenderTest {
             compose.runOnIdle { dark.value = night }
             shot("idle")
             compose.runOnIdle { rig.model.toggle(); rig.wire.ready(); rig.wire.partial(1, "Synthetic example for visual review") }
+            compose.onNodeWithContentDescription("Microphone: stop dictation").assertIsEnabled()
+            compose.onNodeWithText("Synthetic example for visual review").assertExists()
             shot("listening")
             compose.runOnIdle { rig.model.cancel(); rig.model.field = TextFieldValue("Synthetic example for visual review.") }
             shot("text")

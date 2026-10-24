@@ -86,6 +86,21 @@ class SettingsScreenTest {
         compose.onNodeWithText("Chirp ${BuildConfig.VERSION_NAME}").assertExists()                // About
     }
 
+    @Config(qualifiers = "w840dp-h900dp-mdpi")
+    @Test fun `two pane summaries update while their detail page stays open`() {
+        val (state, history, updates) = settingsFixture()
+        show(state, history, updates)
+        open(SettingsPage.Dictation)
+        compose.onNodeWithText("Clean-up · Correction on Mac").performClick()
+        compose.onNodeWithText("Clean-up off · stops on tap").assertExists()
+        open(SettingsPage.Feedback)
+        compose.onNodeWithText("Haptic cues").performScrollTo().performClick()
+        compose.onNodeWithText("Pond · haptic cues off").assertExists()
+        open(SettingsPage.History)
+        compose.onNodeWithText("Keep dictation history on this phone").performClick()
+        compose.onNodeWithText("History on · keeps 7 days").assertExists()
+    }
+
     @Test fun `paragraph help sits behind an info sheet, not on the row`() {
         val (state, history, updates) = settingsFixture()
         show(state, history, updates)
