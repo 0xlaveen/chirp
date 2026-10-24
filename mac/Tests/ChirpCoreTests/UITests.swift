@@ -561,6 +561,71 @@ import Testing
         let hover = try Data(contentsOf: dir.appendingPathComponent("menu-hover-light.png"))
         #expect(ready != hover)   // the hover scenario draws a selected row
     }
+
+    // MARK: the Notes window's Pond surfaces
+
+    /// Renders one scenario's PNG under an appearance. `NSBitmapImageRep.colorAt` reads top-down.
+    private func rep(_ name: String, _ appearance: NSAppearance.Name) throws -> NSBitmapImageRep {
+        let scenario = try #require(Snapshots.allScenarios.first { $0.name == name })
+        let data = try #require(Snapshots.png(scenario, appearance: appearance))
+        return try #require(NSBitmapImageRep(data: data))
+    }
+
+    /// The committed PNG of `name` (rendered by `scripts/snapshots.sh` in the app process, where the sidebar's
+    /// List material behaves as on screen — the test runner's plainer AppKit draws it differently). nil when this
+    /// is not a full checkout.
+    private func committed(_ name: String) throws -> NSBitmapImageRep? {
+        let dir = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent().appendingPathComponent("docs/screenshots/mac")
+        let url = dir.appendingPathComponent(name)
+        guard let data = try? Data(contentsOf: url) else { return nil }
+        return NSBitmapImageRep(data: data)
+    }
+
+    /// How many 8-px samples in a horizontal band sit within `tolerance` of `rgb` per channel.
+    private func samples(_ rep: NSBitmapImageRep, x0: Int, x1: Int, near rgb: (Int, Int, Int), tolerance: Int = 14) -> Int {
+        var count = 0
+        for x in stride(from: x0, to: min(x1, rep.pixelsWide), by: 8) {
+            for y in stride(from: 0, to: rep.pixelsHigh, by: 8) {
+                if let c = rep.colorAt(x: x, y: y),
+                   abs(Int(c.redComponent * 255) - rgb.0) <= tolerance,
+                   abs(Int(c.greenComponent * 255) - rgb.1) <= tolerance,
+                   abs(Int(c.blueComponent * 255) - rgb.2) <= tolerance {
+                    count += 1
+                }
+            }
+        }
+        return count
+    }
+
+    @Test func theNotesSidebarSitsOnPondWithAKoiSelectedRow() throws {
+        guard let dark = try committed("notes-recording-dark.png"), let light = try committed("notes-recording-light.png") else { return }
+        // The sidebar column is Pond `surfaceRaised` (not the grey system material) beside the `surface` editor.
+        #expect(samples(dark, x0: 40, x1: 500, near: (26, 38, 64)) > 400)
+        #expect(samples(dark, x0: 1100, x1: 2000, near: (18, 28, 48)) > 4000)
+        // The selected row is a crisp solid koi pill, not a muddy wash.
+        #expect(samples(dark, x0: 40, x1: 500, near: (255, 138, 76)) > 60)
+        #expect(samples(light, x0: 40, x1: 500, near: (236, 239, 245)) > 400)
+        // The pale koi container at 85% over `surfaceRaised`.
+        #expect(samples(light, x0: 40, x1: 500, near: (252, 228, 213)) > 60)
+    }
+
+    @Test func theEmptyStateDiscIsARaisedPondSurfaceNotTheMuddyContainer() throws {
+        guard let dark = try committed("notes-empty-dark.png"), let light = try committed("notes-empty-light.png") else { return }
+        // In dark the glyph disc is `surfaceRaised` on the `surface` page; the koi container read as a muddy
+        // brown block at this size.
+        #expect(samples(dark, x0: 1000, x1: 1600, near: (26, 38, 64)) > 100)
+        #expect(samples(dark, x0: 1000, x1: 1600, near: (92, 34, 7), tolerance: 10) == 0)
+        // In light it keeps the pale koi disc.
+        #expect(samples(light, x0: 1000, x1: 1600, near: (255, 228, 212)) > 100)
+    }
+
+    @Test func theHearingStripWashStaysSubtleInDark() throws {
+        let dark = try rep("notes-recording-live", .darkAqua)
+        // 10% koi over the surface — a quiet warm wash, not the 35% koi container that read muddy.
+        #expect(samples(dark, x0: 1100, x1: 2000, near: (42, 38, 51), tolerance: 7) > 60)
+        #expect(samples(dark, x0: 1100, x1: 2000, near: (44, 31, 34), tolerance: 6) < 10)
+    }
 }
 
 extension NSView {

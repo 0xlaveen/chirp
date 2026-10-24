@@ -150,17 +150,24 @@ struct OrganizeReviewSheet: View {
                 Label("Changed blocks are marked in gold", systemImage: "rectangle.portrait.fill")
                     .labelStyle(GoldBarLabel())
                 Spacer()
-                Button("Keep") { model.closeReview() }.keyboardShortcut(.cancelAction)
                 if let id = model.reviewing {
                     if model.confirmingRestore == id {
                         Button("Replace notes (your later edits will be lost)", role: .destructive) { model.onRestoreSnapshot(id, true) }
                     } else {
                         Button("Restore previous") { model.onRestoreSnapshot(id, false) }
-                            .buttonStyle(.borderedProminent)
-                            .keyboardShortcut(.defaultAction)
                             .disabled(!model.canRestore)
                     }
                 }
+                // Keeping is the common case: the prominent default. Esc keeps too (a zero-size twin carries the
+                // cancel shortcut; one button cannot take both Return and Esc).
+                Button("Keep") { model.closeReview() }
+                    .buttonStyle(.borderedProminent)
+                    .keyboardShortcut(.defaultAction)
+                Button("Keep") { model.closeReview() }
+                    .keyboardShortcut(.cancelAction)
+                    .frame(width: 0)
+                    .opacity(0)
+                    .accessibilityHidden(true)
             }
         }
         .padding(20)

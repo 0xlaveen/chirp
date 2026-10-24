@@ -42,7 +42,7 @@ struct NotesSidebar: View {
             } else {
                 if let recording = recordingEntry {
                     Section {
-                        RecordingRow(model: model, entry: recording)
+                        RecordingRow(model: model, entry: recording, selected: library.selection == .note(recording.id))
                             .tag(NotesSidebarItem.note(recording.id))
                             .listRowBackground(SelectionBackground(selected: library.selection == .note(recording.id)))
                     } header: {
@@ -91,7 +91,8 @@ struct NotesSidebar: View {
 
     private func row(_ entry: NotesLibraryEntry, highlight: NotesSearchResult?) -> some View {
         NoteRow(entry: entry, library: library, highlight: highlight,
-                renaming: Binding(get: { library.renaming == entry.id }, set: { if !$0 { library.renaming = nil } }))
+                renaming: Binding(get: { library.renaming == entry.id }, set: { if !$0 { library.renaming = nil } }),
+                selected: library.selection == .note(entry.id))
             .tag(NotesSidebarItem.note(entry.id))
             .listRowBackground(SelectionBackground(selected: library.selection == .note(entry.id)))
             .contextMenu { menu(entry) }
@@ -134,19 +135,40 @@ private struct SidebarHeader: View {
     }
 }
 
-/// The selected row: a koi-container tint in light, a koi wash in dark (the dark container reads muddy on a surface
-/// this large), so selection reads as Chirp's and not the system's blue.
+/// The selected row: the pale koi container in light, and in dark a crisp solid koi pill with pond-ink row text —
+/// the pairing the Settings sidebar's selection uses (a koi wash read muddy on a surface this large).
 struct SelectionBackground: View {
     let selected: Bool
     @Environment(\.colorScheme) private var scheme
 
     var body: some View {
         RoundedRectangle(cornerRadius: ChirpRadius.row)
-            .fill(selected ? (scheme == .dark ? Color.chirp.koi.opacity(0.2) : Color.chirp.koiContainer.opacity(0.85)) : .clear)
-            .overlay(RoundedRectangle(cornerRadius: ChirpRadius.row)
-                .strokeBorder(selected && scheme == .dark ? Color.chirp.koi.opacity(0.35) : .clear))
+            .fill(selected ? (scheme == .dark ? Color.chirp.koi : Color.chirp.koiContainer.opacity(0.85)) : .clear)
             .padding(.horizontal, 10)
     }
+}
+
+/// A sidebar row's text colours: the label colours, except on the selected row in dark, whose solid koi pill
+/// takes pond ink (as a primary button does).
+struct RowInk {
+    /// How much pond ink the snippet and meta keep on the pill (the theme tests check their contrast).
+    static let snippetOnPill: Double = 0.78
+    static let metaOnPill: Double = 0.62
+
+    let selected: Bool
+    let scheme: ColorScheme
+
+    init(selected: Bool, scheme: ColorScheme) {
+        self.selected = selected
+        self.scheme = scheme
+    }
+
+    var onPill: Bool { selected && scheme == .dark }
+    var title: Color { onPill ? Color.chirp.onKoi : NotesInk.primary }
+    var snippet: Color { onPill ? Color.chirp.onKoi.opacity(Self.snippetOnPill) : NotesInk.secondary }
+    var meta: Color { onPill ? Color.chirp.onKoi.opacity(Self.metaOnPill) : NotesInk.tertiary }
+    /// The record-coloured marks (the timer, the dot): pond ink while they sit on the pill.
+    var mark: Color { onPill ? Color.chirp.onKoi : Color.chirp.record }
 }
 
 /// A note in the list: serif title and time, a two-line snippet, and the meta line (duration, open to-dos).
@@ -155,6 +177,10 @@ private struct NoteRow: View {
     @Bindable var library: NotesLibraryModel
     let highlight: NotesSearchResult?
     @Binding var renaming: Bool
+    let selected: Bool
+    @Environment(\.colorScheme) private var scheme
+
+    private var ink: RowInk { RowInk(selected: selected, scheme: scheme) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 3) {
@@ -168,22 +194,22 @@ private struct NoteRow: View {
                 } else {
                     Text(entry.title)
                         .font(.system(size: 14, weight: .semibold, design: .serif))
-                        .foregroundStyle(NotesInk.primary)
+                        .foregroundStyle(ink.title)
                         .lineLimit(1)
                 }
                 Spacer(minLength: 4)
                 Text(NotesLibraryText.relative(entry.updatedAt, now: library.now(), calendar: library.calendar))
                     .font(.system(size: 11))
-                    .foregroundStyle(NotesInk.secondary)
+                    .foregroundStyle(ink.snippet)
                     .lineLimit(1)
                     .fixedSize()
             }
             snippet
                 .font(.system(size: 12))
-                .foregroundStyle(NotesInk.secondary)
+                .foregroundStyle(ink.snippet)
                 .lineLimit(2)
                 .fixedSize(horizontal: false, vertical: true)
-            MetaLine(entry: entry)
+            MetaLine(entry: entry, ink: ink)
         }
         .padding(.vertical, 6)
         .padding(.horizontal, 4)
@@ -220,6 +246,7 @@ private struct NoteRow: View {
 /// "12 min · ☐ 3 open · Recovered".
 private struct MetaLine: View {
     let entry: NotesLibraryEntry
+    let ink: RowInk
 
     var body: some View {
         let length = NotesLibraryText.duration(entry.duration)
@@ -231,11 +258,11 @@ private struct MetaLine: View {
                 if entry.openTodos > 0 {
                     Label(NotesLibraryText.open(entry.openTodos), systemImage: "square")
                 }
-                if entry.recovered { RecoveredBadge() }
+                if entry.recovered { RecoveredBadge(onPill: ink.onPill) }
             }
             .labelStyle(MetaLabelStyle())
             .font(.system(size: 11))
-            .foregroundStyle(NotesInk.tertiary)
+            .foregroundStyle(ink.meta)
             .padding(.top, 1)
         }
     }
@@ -254,16 +281,21 @@ private struct MetaLabelStyle: LabelStyle {
 private struct RecordingRow: View {
     let model: NotesModel
     let entry: NotesLibraryEntry
+    let selected: Bool
+    @Environment(\.colorScheme) private var scheme
+
+    private var ink: RowInk { RowInk(selected: selected, scheme: scheme) }
 
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
             ZStack {
                 if model.isPaused {
-                    Image(systemName: "pause.fill").font(.system(size: 11, weight: .bold)).foregroundStyle(Color.chirp.record)
+                    Image(systemName: "pause.fill").font(.system(size: 11, weight: .bold)).foregroundStyle(ink.mark)
                 } else {
                     Ripple(level: Double(model.level), reduceMotion: model.reduceMotion, phase: model.ripplePhase,
-                           color: .chirp.koiDecor, staticColor: .chirp.koi, side: 30)
-                    Circle().fill(Color.chirp.record).frame(width: 9, height: 9)
+                           color: ink.onPill ? .chirp.onKoi : .chirp.koiDecor,
+                           staticColor: ink.onPill ? .chirp.onKoi : .chirp.koi, side: 30)
+                    Circle().fill(ink.mark).frame(width: 9, height: 9)
                 }
             }
             .frame(width: 30, height: 30)
@@ -271,16 +303,16 @@ private struct RecordingRow: View {
                 HStack(alignment: .firstTextBaseline) {
                     Text(entry.title)
                         .font(.system(size: 14, weight: .semibold, design: .serif))
-                        .foregroundStyle(NotesInk.primary)
+                        .foregroundStyle(ink.title)
                         .lineLimit(1)
                     Spacer(minLength: 4)
                     Text(model.elapsedText)
                         .font(ChirpType.timer(12, weight: .semibold))
-                        .foregroundStyle(Color.chirp.record)
+                        .foregroundStyle(ink.mark)
                 }
                 Text(entry.snippet.isEmpty ? (model.isPaused ? NotesStatus.paused : NotesStatus.listening) : NotesLibraryText.plain(entry.snippet))
                     .font(.system(size: 12))
-                    .foregroundStyle(NotesInk.secondary)
+                    .foregroundStyle(ink.snippet)
                     .lineLimit(2)
             }
         }
@@ -294,18 +326,20 @@ private struct RecordingRow: View {
 /// Recently Deleted, pinned at the bottom of the sidebar with its count.
 private struct RecentlyDeletedButton: View {
     let library: NotesLibraryModel
+    @Environment(\.colorScheme) private var scheme
 
     var body: some View {
         let selected = library.selection == .recentlyDeleted
+        let ink = RowInk(selected: selected, scheme: scheme)
         Button {
             library.select(.recentlyDeleted)
         } label: {
             HStack(spacing: 8) {
-                Image(systemName: "trash").foregroundStyle(selected ? Color.chirp.koi : NotesInk.secondary)
-                Text(NotesLibraryText.recentlyDeleted).foregroundStyle(NotesInk.primary)
+                Image(systemName: "trash").foregroundStyle(ink.onPill ? Color.chirp.onKoi : (selected ? Color.chirp.koi : NotesInk.secondary))
+                Text(NotesLibraryText.recentlyDeleted).foregroundStyle(ink.title)
                 Spacer()
                 if !library.deleted.isEmpty {
-                    Text("\(library.deleted.count)").font(.system(size: 11).monospacedDigit()).foregroundStyle(NotesInk.secondary)
+                    Text("\(library.deleted.count)").font(.system(size: 11).monospacedDigit()).foregroundStyle(ink.snippet)
                 }
             }
             .font(.system(size: 13))

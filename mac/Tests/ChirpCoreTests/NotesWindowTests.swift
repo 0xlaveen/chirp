@@ -219,11 +219,15 @@ private func libraryDirectory() -> URL {
         let id = h.document.id
         await h.until("listed") { w.notes.map(\.id) == [id] }
         h.session.trash(id)
-        await h.until("deleted") { w.deleted.map(\.id) == [id] }
+        // The library's `deleted` list updates before trash's task has reset the recorder and shown the toast;
+        // wait for all of it (reading them in that gap raced in a full run).
+        await h.until("deleted") { w.deleted.map(\.id) == [id] && w.notes.isEmpty && w.toast?.undo == id && h.document.id != id }
         #expect(w.notes.isEmpty && w.toast?.undo == id && w.toast?.text == NotesLibraryText.deleted)
         #expect(h.document.id != id)                                  // the recorder moved on to a blank note
         w.onRestore(id)
-        await h.until("restored") { w.notes.map(\.id) == [id] }
+        // Wait for the whole postcondition: the library reload lands in `notes` before restore's own task has
+        // cleared the toast and moved the selection (reading them in that gap raced in a full run).
+        await h.until("restored") { w.notes.map(\.id) == [id] && w.deleted.isEmpty && w.toast == nil && w.selection == .note(id) }
         #expect(w.deleted.isEmpty && w.toast == nil && w.selection == .note(id))
         await h.until("open again") { h.document.id == id }
     }

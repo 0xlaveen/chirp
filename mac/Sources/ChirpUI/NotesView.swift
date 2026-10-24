@@ -37,6 +37,9 @@ public struct NotesView: View {
     public var body: some View {
         NavigationSplitView {
             NotesSidebar(model: model, library: library)
+                // The sidebar sits on `surfaceRaised` (under the toolbar too), so it belongs to the Pond beside the
+                // editor instead of the grey system material.
+                .background(Color.chirp.surfaceRaised.ignoresSafeArea())
                 .navigationSplitViewColumnWidth(min: NotesViewMetrics.sidebar.min, ideal: NotesViewMetrics.sidebar.ideal,
                                                 max: NotesViewMetrics.sidebar.max)
         } detail: {
@@ -199,13 +202,16 @@ struct NotesTitleHeader: View {
 
 /// "Recovered": a capture that never received Stop, found at launch. No modal, just this mark.
 struct RecoveredBadge: View {
+    /// The selected sidebar row in dark draws a solid koi pill the badge sits on.
+    var onPill = false
+
     var body: some View {
         Text(NotesLibraryText.recovered)
             .font(.system(size: 10.5, weight: .semibold))
-            .foregroundStyle(Color.chirp.moon)
+            .foregroundStyle(onPill ? Color.chirp.onKoi : Color.chirp.moon)
             .padding(.horizontal, 6)
             .padding(.vertical, 1)
-            .background(Capsule().fill(Color.chirp.moonFill.opacity(0.22)))
+            .background(Capsule().fill(onPill ? Color.chirp.onKoi.opacity(0.14) : Color.chirp.moonFill.opacity(0.22)))
             .fixedSize()
             .help("Chirp found this note after it quit unexpectedly. Everything it had is here.")
     }
@@ -391,6 +397,7 @@ private struct VoiceEditButton: View {
 struct NotesEmptyState: View {
     let model: NotesModel
     let library: NotesLibraryModel
+    @Environment(\.colorScheme) private var scheme
 
     var body: some View {
         VStack(spacing: 0) {
@@ -400,7 +407,10 @@ struct NotesEmptyState: View {
                         .strokeBorder(Color.chirp.koiDecor.opacity(0.34 - Double(i) * 0.1), lineWidth: 1.5)
                         .frame(width: 92 + CGFloat(i) * 40, height: 92 + CGFloat(i) * 40)
                 }
-                Circle().fill(Color.chirp.koiContainer).frame(width: 84, height: 84)
+                // The pale koi disc in light; in dark a raised surface disc (the dark koi container reads as a
+                // muddy brown block at this size).
+                Circle().fill(scheme == .dark ? Color.chirp.surfaceRaised : Color.chirp.koiContainer)
+                    .frame(width: 84, height: 84)
                 if let glyph = ChirpBrand.tinted(.chirp.koi, size: 50) {
                     Image(nsImage: glyph)
                 } else {
@@ -658,6 +668,7 @@ private struct NotesStatusLines: View {
 private struct HearingStrip: View {
     let parts: [HearingPart]
     let text: String
+    @Environment(\.colorScheme) private var scheme
 
     /// The words, with each speaker's name in their colour where the speaker changes (labels on).
     private var line: Text {
@@ -691,7 +702,8 @@ private struct HearingStrip: View {
         .padding(.horizontal, 28)
         .padding(.vertical, 10)
         .frame(maxWidth: .infinity)
-        .background(Color.chirp.koiContainer.opacity(0.35))
+        // The pale koi container wash in light; in dark a light koi wash (the dark container reads muddy this wide).
+        .background(scheme == .dark ? Color.chirp.koi.opacity(0.1) : Color.chirp.koiContainer.opacity(0.35))
         .overlay(alignment: .top) { Divider().opacity(0.6) }
         .accessibilityElement(children: .combine)
         .accessibilityLabel("Hearing: \(text)")
