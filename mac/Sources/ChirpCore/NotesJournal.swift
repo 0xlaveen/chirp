@@ -1,10 +1,10 @@
 import Foundation
 
-/// What the Live Notes recovery journal stores for one session: the document (text, tail, segments, roster, start
-/// date, dirty flag) and the saved file, if any. No audio. It is plain JSON in a `0700` folder, readable by the user.
+/// A schema-versioned local note snapshot, including text, capture boundaries, audio references and export options.
+/// Legacy recovery journals and sealed iOS records use the same backward-compatible envelope.
 public struct NotesJournalRecord: Codable, Equatable, Sendable {
     /// Bumped when the format changes incompatibly; a newer file is ignored (and kept) by an older Chirp.
-    public static let schema = 1
+    public static let schema = 2
 
     public var schema = NotesJournalRecord.schema
     public var document: NotesDocument
@@ -14,6 +14,9 @@ public struct NotesJournalRecord: Codable, Equatable, Sendable {
     public var savedFile: URL?
     public var keepSaving: Bool
     public var writtenAt: Date
+    /// Present in library records; nil in schema 1 recovery journals.
+    public var recording: Bool?
+    public var recovered: Bool?
 
     public init(document: NotesDocument, elapsed: TimeInterval, savedFile: URL? = nil, keepSaving: Bool = false,
                 writtenAt: Date = Date()) {
@@ -60,26 +63,7 @@ public struct NotesJournalStore: Sendable {
     public func write(_ record: NotesJournalRecord) throws -> Int {
         let json = try JSONEncoder().encode(record)
         let data = try codec?.seal(json) ?? json
-        let fm = FileManager.default
-        try fm.createDirectory(at: directory.deletingLastPathComponent(), withIntermediateDirectories: true)
-        try fm.createDirectory(at: directory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
-        try fm.setAttributes([.posixPermissions: 0o700], ofItemAtPath: directory.path)
-        let final = file(record.document.id)
-        let temp = directory.appendingPathComponent(record.document.id.uuidString + ".json.tmp")
-        let fd = open(temp.path, O_WRONLY | O_CREAT | O_TRUNC, 0o600)
-        guard fd >= 0 else { throw CocoaError(.fileWriteUnknown) }
-        defer { close(fd) }
-        guard fchmod(fd, 0o600) == 0 else { throw CocoaError(.fileWriteNoPermission) }
-        try data.withUnsafeBytes { buffer in
-            var offset = 0
-            while offset < buffer.count {
-                let n = Darwin.write(fd, buffer.baseAddress! + offset, buffer.count - offset)
-                guard n > 0 else { throw CocoaError(.fileWriteOutOfSpace) }
-                offset += n
-            }
-        }
-        if fcntl(fd, F_FULLFSYNC) != 0 { fsync(fd) }
-        guard rename(temp.path, final.path) == 0 else { throw CocoaError(.fileWriteUnknown) }
+        try NotesAtomicFile.write(data, to: file(record.document.id))
         return data.count
     }
 
@@ -101,7 +85,7 @@ public struct NotesJournalStore: Sendable {
                 continue
             }
             let decoder = JSONDecoder()
-            if let header = try? decoder.decode(Header.self, from: data), header.schema > NotesJournalRecord.schema {
+            if let header = try? decoder.decode(Header.self, from: data), ![1, NotesJournalRecord.schema].contains(header.schema) {
                 chirpLog.info("notes journal ignored schema=\(header.schema, privacy: .public) supported=\(NotesJournalRecord.schema, privacy: .public)")
                 continue
             }
@@ -134,16 +118,16 @@ public enum KeepSavingStatus: Equatable, Sendable {
     }
 }
 
-/// Writes the recovery journal while a Live Notes document has unsaved content, and keeps a saved file up to date
-/// when the user asked for that. One `update` call per change of the document is the only hook: changes are written
-/// at most every `debounce` (an edit arms a timer; more edits inside it ride along), and at once after a segment
-/// commit, an applied AI change, Stop, or the document turning clean. The journal is deleted when the document is
-/// clean (Save…), replaced (New) or discarded. The clock and the file work are injected, so tests run on a fake clock.
+/// Debounced document writer. Mac passes a library, which keeps clean/exported/replaced notes. Clients without a
+/// library retain the legacy transient recovery journal. Text and segment audio disk work is queued in order;
+/// a segment commit, AI change, capture transition or export flushes immediately. Time and storage are injectable.
 @MainActor
 public final class NotesJournal {
     public static let debounce: Duration = .seconds(2)
 
     public let store: NotesJournalStore
+    public let library: NotesLibrary?
+    private var recording = false
     private let sleep: @Sendable (Duration) async -> Void
     private let fileManager = FileManager.default
 
@@ -167,14 +151,18 @@ public final class NotesJournal {
     private var lastFiled: String?
     private var timer: Task<Void, Never>?
 
-    private enum Op { case write(NotesJournalRecord), delete(UUID) }
+    private enum Op {
+        case write(NotesJournalRecord), delete(UUID)
+        case audio(UUID, Int, [Data], TimeInterval, Double)
+    }
     private var ops: [Op] = []
     private var worker: Task<Void, Never>?
 
-    public init(store: NotesJournalStore = NotesJournalStore(), enabled: Bool = true,
+    public init(store: NotesJournalStore = NotesJournalStore(), enabled: Bool = true, library: NotesLibrary? = nil,
                 sleep: @escaping @Sendable (Duration) async -> Void = { try? await Task.sleep(for: $0) }) {
         self.store = store
-        self.enabled = enabled
+        self.library = library
+        self.enabled = library != nil || enabled
         self.sleep = sleep
     }
 
@@ -185,20 +173,22 @@ public final class NotesJournal {
 
     /// The document may have changed (the controller calls this on every recorder change). `urgent`: an applied AI
     /// change or Stop; a new segment or a document that just turned clean is urgent by itself.
-    public func update(_ document: NotesDocument, elapsed: TimeInterval, urgent: Bool = false) {
+    public func update(_ document: NotesDocument, elapsed: TimeInterval, urgent: Bool = false, recording: Bool = false) {
+        let stateChanged = self.recording != recording
         var d = document
         d.livePartial = ""
         if d.id != currentID {
             retire()
             currentID = d.id
         }
+        self.recording = recording
         let before = latest
         latest = d
         self.elapsed = elapsed
-        guard d != before || urgent else { return }
+        guard d != before || urgent || stateChanged else { return }
         let committed = d.segments.count > (before?.segments.count ?? 0)
         let cleaned = before?.isDirty == true && !d.isDirty
-        if urgent || committed || cleaned {
+        if urgent || committed || cleaned || stateChanged {
             flush()
         } else if timer == nil {
             timer = Task { [sleep] in
@@ -211,7 +201,7 @@ public final class NotesJournal {
 
     /// "Keep a recovery copy until notes are saved": off deletes the copy now, on writes it now.
     public func setEnabled(_ on: Bool) {
-        guard on != enabled else { return }
+        guard library == nil, on != enabled else { return }
         enabled = on
         if on { flush() } else { removeJournal() }
     }
@@ -220,11 +210,11 @@ public final class NotesJournal {
     public func discard() {
         timer?.cancel()
         timer = nil
-        removeJournal()
+        if library != nil { flush() } else { removeJournal() }
     }
 
     /// A session offered at launch was discarded without being kept.
-    public func discard(_ id: UUID) { enqueue(.delete(id)) }
+    public func discard(_ id: UUID) { if library == nil { enqueue(.delete(id)) } }
 
     /// Writes what is pending now.
     public func flush() {
@@ -232,16 +222,27 @@ public final class NotesJournal {
         timer = nil
         guard let d = latest else { return }
         if let url = savedFile, case .saving = keepStatus, d.exportMarkdown() != lastFiled, writeFile(d, to: url) {
-            // The file is the up-to-date copy; marking the document saved removes the journal.
+            // The export is up to date. Library persistence continues independently.
             onKeepSaved?()
+            if library == nil { return }
+        }
+        let hasContent = !d.isEmpty || !d.segments.isEmpty || (library != nil && (d.userTitle != nil || d.version > 0))
+        guard enabled, (library != nil || d.isDirty), hasContent || (library != nil && (recording || wrote)) else {
+            if library == nil { removeJournal() }
             return
         }
-        let hasContent = !d.isEmpty || !d.segments.isEmpty
-        guard enabled, d.isDirty, hasContent else { return removeJournal() }
-        guard d != lastJournaled else { return }
+        guard d != lastJournaled || library != nil else { return }
         lastJournaled = d
         wrote = true
-        enqueue(.write(NotesJournalRecord(document: d, elapsed: elapsed, savedFile: savedFile, keepSaving: keepStatus.isSaving)))
+        var record = NotesJournalRecord(document: d, elapsed: elapsed, savedFile: savedFile, keepSaving: keepStatus.isSaving)
+        record.recording = library == nil ? nil : recording
+        enqueue(.write(record))
+    }
+
+    /// Queued with text writes, so the segment exists before its audio metadata is committed.
+    public func keepAudio(_ id: UUID, segment: Int, frames: [Data], offset: TimeInterval, sampleRate: Double) {
+        guard library != nil, !frames.isEmpty else { return }
+        enqueue(.audio(id, segment, frames, offset, sampleRate))
     }
 
     // MARK: keep saving
@@ -251,12 +252,14 @@ public final class NotesJournal {
         savedFile = url
         lastFiled = latest?.exportMarkdown()
         keepStatus = keep ? .saving(file: url.lastPathComponent) : .off
+        if library != nil { flush() }
     }
 
     public func stopKeepSaving() { keepStatus = .off }
 
     /// Keep restored a recovered session: its saved file, and whether it is still being kept up to date.
     public func adopt(_ record: NotesJournalRecord) {
+        if library != nil { flush(); latest = record.document; elapsed = record.elapsed; recording = false }
         currentID = record.document.id
         wrote = true
         lastJournaled = nil
@@ -284,12 +287,13 @@ public final class NotesJournal {
 
     // MARK: disk work, in order
 
-    /// The previous document was replaced (New): its journal goes, and a saved file is not carried over.
+    /// Replacing a document flushes it to the library and stops its keep-updated export.
     private func retire() {
         timer?.cancel()
         timer = nil
-        removeJournal()
+        if library != nil { flush() } else { removeJournal() }
         latest = nil
+        lastJournaled = nil
         lastFiled = nil
         savedFile = nil
         keepStatus = .off
@@ -304,6 +308,7 @@ public final class NotesJournal {
 
     private func enqueue(_ op: Op) {
         switch op {
+        case .audio: break
         case .write(let record):
             if case .write(let last)? = ops.last, last.document.id == record.document.id { ops.removeLast() }
         case .delete(let id):
@@ -316,14 +321,24 @@ public final class NotesJournal {
                 let op = ops.removeFirst()
                 let store = self.store
                 let start = ContinuousClock.now
-                let bytes = await Task.detached(priority: .utility) { () -> Int? in
+                let bytes: Int?
+                if let library {
                     switch op {
-                    case .write(let record): return try? store.write(record)
-                    case .delete(let id):
-                        store.delete(id)
-                        return nil
+                    case .write(let record): bytes = try? await library.write(record)
+                    case .delete: bytes = nil
+                    case .audio(let id, let segment, let frames, let offset, let rate):
+                        try? await library.keepAudio(id, segment: segment, frames: frames, offset: offset, sampleRate: rate)
+                        bytes = nil
                     }
-                }.value
+                } else {
+                    bytes = await Task.detached(priority: .utility) { () -> Int? in
+                        switch op {
+                        case .write(let record): return try? store.write(record)
+                        case .delete(let id): store.delete(id); return nil
+                        case .audio: return nil
+                        }
+                    }.value
+                }
                 if case .write = op {
                     let e = (ContinuousClock.now - start).components
                     onWrite?(bytes, Int(Double(e.seconds) * 1000 + Double(e.attoseconds) / 1e15))

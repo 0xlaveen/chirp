@@ -26,6 +26,7 @@ extension NotesSession {
             structure: { request in try await Self.structure(request) },
             reorganize: { request in try await Self.reorganize(request) },
             speakerStore: SortformerModelStore(), journalStore: NotesJournalStore())
+        deps.library = NotesLibrary()
         deps.edit = { request in try await Self.edit(request) }
         deps.voiceModelStore = WeSpeakerModelStore()
         deps.voiceProfileStore = KeychainVoiceProfileStore()

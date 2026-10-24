@@ -243,8 +243,18 @@ public final class Preferences: @unchecked Sendable {
         get { defaults.object(forKey: "notesAutoReorganize") as? Bool ?? true }
         set { defaults.set(newValue, forKey: "notesAutoReorganize") }
     }
-    /// Live Notes' "Keep a recovery copy until notes are saved" (on by default): the journal under
-    /// `~/Library/Application Support/Chirp/Recovery`, deleted on Save or Discard. A preference, never notes content.
+    /// Notes retention is independent of opt-in dictation history. Upgrades also default to Never.
+    public var notesRetention: NotesRetention {
+        get { defaults.string(forKey: "notesRetention").flatMap(NotesRetention.init(rawValue:)) ?? .never }
+        set { defaults.set(newValue.rawValue, forKey: "notesRetention") }
+    }
+    /// Turning this off only affects future segments; deleting existing audio is an explicit library operation.
+    public var notesKeepAudio: Bool {
+        get { defaults.bool(forKey: "notesKeepAudio") }
+        set { defaults.set(newValue, forKey: "notesKeepAudio") }
+    }
+
+    /// Legacy transient recovery preference. The Mac library always saves notes independently.
     public var notesRecoveryCopy: Bool {
         get { defaults.object(forKey: "notesRecoveryCopy") as? Bool ?? true }
         set { defaults.set(newValue, forKey: "notesRecoveryCopy") }

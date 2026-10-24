@@ -4,9 +4,8 @@ import ChirpUI
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// The Live Notes window. It is never restored and never an `NSDocument`: the notes reach disk through Save… to a path
-/// the user picks (kept up to date only if they ask), as the recovery journal until they are saved, and the pasteboard
-/// only through Copy Markdown.
+/// The Live Notes window. Notes save continuously to the local library. Markdown export is separate and may be
+/// kept up to date at a user-chosen path. Window restoration stores geometry only.
 @MainActor
 final class NotesWindowController: NSObject, NSWindowDelegate {
     private let notes: NotesController
@@ -188,6 +187,8 @@ final class NotesWindowController: NSObject, NSWindowDelegate {
     func windowShouldClose(_ sender: NSWindow) -> Bool {
         // While recording, closing only hides the window; the menu icon keeps showing the open microphone.
         if notes.isActive { sender.orderOut(nil); setPresence(.hidden); return false }
+        notes.journal.flush()
+        if notes.library != nil { return true }
         guard notes.model.document.isDirty else { return true }
         confirmDiscard(in: sender) { [weak self] discard in
             guard discard else { return }
@@ -200,6 +201,7 @@ final class NotesWindowController: NSObject, NSWindowDelegate {
     /// Save… / Discard / Cancel for a dirty document. `done(true)` means it is safe to drop the document (saved or
     /// discarded). As a sheet on `window` when it is visible, else app-modal (quit with the window closed).
     func confirmDiscard(in window: NSWindow? = nil, done: @escaping (Bool) -> Void) {
+        if notes.library != nil { notes.journal.flush(); done(true); return }
         guard notes.model.document.isDirty else { done(true); return }
         let alert = NSAlert()
         alert.messageText = "Save your notes?"

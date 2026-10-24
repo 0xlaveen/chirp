@@ -9,7 +9,8 @@ final class NotesAudioPool: @unchecked Sendable {
     fileprivate func add(_ n: Int) { lock.withLock { total += n } }
 }
 
-/// One segment's 16 kHz PCM16, kept in memory (never on disk) until its final commits, so a segment whose socket
+/// One segment's 16 kHz PCM16, held for replay until its final commits (the opt-in library may then persist AAC).
+/// A segment whose socket
 /// failed, or that was recorded while the server was offline, is sent again from it.
 final class NotesSegmentAudio: @unchecked Sendable {
     private let lock = NSLock()

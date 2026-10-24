@@ -657,6 +657,9 @@ public enum Snapshots {
             let model = NotesModel()
             model.dictationKey = "⌥"
             model.state = .recording
+            model.libraryEnabled = true
+            model.privacyLine = NotesModel.libraryPrivacy
+            model.privacyHelp = NotesModel.libraryPrivacyHelp
             model.document = demoNotes()
             model.elapsed = 192
             model.canManageModels = true
