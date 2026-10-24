@@ -170,6 +170,7 @@ open class SetupActivity : ComponentActivity() {
                         allowWifi = { networkPermission.launch(LOCAL_NETWORK_PERMISSION) },
                         floatingMicSettings = { startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) },
                         keyboardPreferences = ::openKeyboardPreferences,
+                        openTailscale = if (tailscale.installed()) ({ tailscale.open() }) else null,
                     ), initialPage = state.settingsPage)
                 }
             }
