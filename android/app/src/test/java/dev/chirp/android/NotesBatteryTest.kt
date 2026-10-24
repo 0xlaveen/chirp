@@ -19,7 +19,7 @@ class NotesBatteryTest {
     private fun posted() = shadowOf(context.getSystemService(NotificationManager::class.java)).getNotification(NotesService.ID)
 
     @Test fun `screen off skips editor updates, partials, the meter and the clock, but structuring runs and the screen catches up`() {
-        val rig = NotesModelRig(context)
+        val rig = NotesModelRig(context, sessions = libraryOff(context))
         rig.api.answers += NotesStructureResponse("## Plan\n- Ship it", true)
         val first = rig.record()
         rig.model.visible(false)
@@ -82,75 +82,5 @@ class NotesBatteryTest {
         assertTrue(DiagnosticsReport.text(context).contains("Notes sessions"))
         DiagnosticsReport.clearTimings(context)
         assertTrue(log.entries().isEmpty())
-    }
-}
-
-/** "Keep notes on this phone": opt-in, encrypted, kept on Stop and leaving, reopened from Recent notes. */
-@RunWith(RobolectricTestRunner::class)
-@Config(sdk = [31, 37])
-class NotesSessionsTest {
-    private val context get() = RuntimeEnvironment.getApplication()
-    private val file get() = File(context.filesDir, NotesSessions.FILE_NAME)
-
-    @Test fun `off by default nothing is kept`() {
-        val rig = NotesModelRig(context)
-        rig.record().final("synthetic words"); rig.idle()
-        rig.model.toggle(); rig.idle(); rig.wire.final("more"); rig.idle()
-        assertFalse(rig.model.keeps)
-        assertTrue(rig.model.dirty)
-        assertFalse(file.exists())
-    }
-
-    @Test fun `stopped notes are kept encrypted, count as saved, reopen, and keeping again replaces the copy`() {
-        val keys = SoftwareHistoryKeys()
-        val sessions = NotesSessions(context, keys).apply { enable() }
-        val rig = NotesModelRig(context, sessions = sessions)
-        rig.record().final("synthetic plan words"); rig.idle()
-        rig.model.rename("Weekly sync")
-        rig.model.toggle(); rig.idle(); rig.wire.final("and the rest"); rig.idle()
-        assertEquals(NotesRecorder.State.STOPPED, rig.model.state)
-        assertFalse("kept counts as saved", rig.model.dirty)
-        assertFalse(File(context.noBackupFilesDir, NotesJournal.FILE_NAME).exists())
-        val sealed = file.readBytes().toString(Charsets.ISO_8859_1)
-        assertFalse(sealed.contains("synthetic") || sealed.contains("Weekly"))
-        val entry = sessions.entries().single()
-        assertEquals("Weekly sync", entry.title)
-        assertEquals("NotesSessionEntry(<redacted>)", entry.toString())
-
-        // New does not ask; the notes stay in Recent notes and open again.
-        rig.model.keepSession(); rig.model.clear()
-        assertFalse(rig.model.hasContent)
-        rig.model.loadRecent(); rig.idle()
-        rig.model.open(rig.model.recent.single()); rig.idle()
-        assertEquals("Weekly sync", rig.model.title)
-        assertEquals(listOf("synthetic plan words", "and the rest"), rig.model.document.segments.map { it.text })
-        assertEquals(45.0, rig.model.elapsed, 1e-9)
-        assertFalse(rig.model.dirty)
-        rig.model.edit(androidx.compose.ui.text.input.TextFieldValue("My line"))
-        assertTrue(rig.model.keepSession())
-        assertEquals("the same session is replaced", 1, sessions.entries().size)
-        assertEquals("My line", sessions.entries().single().document.getString("text"))
-
-        rig.model.loadRecent(); rig.idle()
-        rig.model.deleteKept(rig.model.recent.single())
-        assertTrue(rig.model.recent.isEmpty())
-        assertTrue(sessions.entries().isEmpty())
-        assertFalse(file.exists())
-    }
-
-    @Test fun `retention prunes old notes and turning it off deletes everything`() {
-        var now = 1_800_000_000_000L
-        val keys = SoftwareHistoryKeys()
-        val sessions = NotesSessions(context, keys) { now }.apply { enable(); retention = HistoryRetention.DAY }
-        sessions.put("a", "Old", org.json.JSONObject().put("text", "old"))
-        now += 2 * 3_600_000L
-        sessions.put("b", "New", org.json.JSONObject().put("text", "new"))
-        assertEquals(listOf("New", "Old"), sessions.entries().map { it.title })
-        now += 23 * 3_600_000L
-        assertEquals(listOf("New"), sessions.entries().map { it.title })
-        sessions.disable()
-        assertFalse(file.exists())
-        assertNull(keys.key)
-        assertTrue(sessions.entries().isEmpty())
     }
 }

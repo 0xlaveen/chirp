@@ -55,6 +55,8 @@ internal class NotesModel(
     private val timings: NotesTimingLog? = NotesTimingLog(context.applicationContext),
     /** Fire-and-forget storage work, in order, off the main thread. */
     private val background: (() -> Unit) -> Unit = NotesIo::run,
+    /** Audio encoding, off the main thread and apart from [background] so a long encode never delays a text save. */
+    private val audioWork: (() -> Unit) -> Unit = NotesAudioIo::run,
 ) : ViewModel(), NotesControls.Session {
     private val app = context.applicationContext as android.app.Application
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
@@ -70,8 +72,15 @@ internal class NotesModel(
     private var pendingSeen = 0
     private var visible = true
     private var counter: NotesSessionCounter? = null
-    /** What was last kept in "Recent notes", so an unchanged session is not written again. */
+    /** What was last written to the library, so an unchanged note is not written again. */
     private var keptKey: List<Any?>? = null
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private var saveScheduled = false
+    private val saveRunnable = Runnable { saveScheduled = false; autosave(now = true) }
+    /** Bumped by every open, so a load that finishes after another one started (or after New) is dropped. */
+    private var openRequest = 0
+    /** "Stop current and continue here": the note to continue once the recording that was stopped has ended. */
+    private var continueAfterStop: String? = null
     /** What was last saved to a file; the notes are unsaved ([dirty]) once anything differs. */
     private var savedKey: List<Any?>? = null
     private var health by mutableStateOf(store.health)
@@ -92,9 +101,11 @@ internal class NotesModel(
     /** "Recovered unsaved notes from 14:03 · 52 min", until the user saves, discards or records. */
     var recovered by mutableStateOf<String?>(null)
         private set
-    /** Kept sessions for the "Recent notes" sheet, newest first; loaded on demand. */
-    var recent by mutableStateOf<List<NotesSessionEntry>>(emptyList())
+    /** The library's live notes for the "Recent notes" sheet, newest first; loaded on demand. */
+    var recent by mutableStateOf<List<NotesIndexEntry>>(emptyList())
         private set
+    /** The library, for the list-detail screens: the index flow, search, rename, trash, restore, purge and kept audio. */
+    val library: NotesSessions? get() = sessions
     /** Battery saver: the screen is off (or Notes is out of sight), so editor updates, the ticker and the meter wait. */
     override var quiet = false
         private set
@@ -141,6 +152,12 @@ internal class NotesModel(
         val seconds = copy.optDouble("elapsed", 0.0)
         recorder.restore(restored, seconds)
         if (restored.isEmpty) { journal.delete(); return@launch }
+        // A recovered session is a library note, marked Recovered; the recovery copy has done its job.
+        sessions?.takeIf { it.enabled }?.let { kept ->
+            background { kept.put(restored.uid, copy, recovered = true) }
+            keptKey = key(); savedKey = keptKey
+            journal.delete()
+        }
         recovered = "Recovered unsaved notes from " + java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault()).format(java.util.Date(restored.startedAt)) +
             " · " + (seconds / 60).toInt().coerceAtLeast(1) + " min"
     }
@@ -156,7 +173,7 @@ internal class NotesModel(
     val busy get() = state == NotesRecorder.State.STOPPING
     val paused get() = state == NotesRecorder.State.PAUSED
     val hasContent get() = !document.isEmpty
-    private fun key() = recorder.document.let { listOf(it.id, it.version, it.segments.size, it.name) }
+    private fun key() = recorder.document.let { listOf(it.id, it.version, it.segments.size, it.name, recorder.state.active) }
     /** Content that no Save has written as it is now: leaving or New asks first, and the recovery copy keeps it. */
     val dirty get() = revision.let { hasContent && savedKey != key() }
     val title get() = document.title().removePrefix("# ")
@@ -278,7 +295,27 @@ internal class NotesModel(
         pairing().also { paired = it != null } ?: run { message = "Pair your Mac in Chirp settings"; return }
         recorder.options = options()
         recorder.configure(structureEnabled, health)
+        recorder.keepAudio = sessions?.let { it.enabled && it.keepAudio } == true
+        // Recording into a finished note continues it: a quiet divider marks where, and the audio clock goes on.
+        if (recorder.state.let { it == NotesRecorder.State.STOPPED || it == NotesRecorder.State.ERROR } && document.segments.isNotEmpty())
+            recorder.document.addBoundary(recorder.elapsed, System.currentTimeMillis())
         recorder.start()
+    }
+
+    /**
+     * Continue recording into the library note [id]: it opens (unless it is the open note), a capture boundary is added and
+     * new segments carry on from its stored audio clock. False when another note is recording and [stopCurrent] is not
+     * set (offer "Stop current and continue here"); with it, that recording stops first and this one starts after.
+     */
+    fun continueRecording(id: String, stopCurrent: Boolean = false): Boolean {
+        if (state.active) {
+            if (recorder.document.uid == id) return true
+            if (!stopCurrent) return false
+            continueAfterStop = id; stop()
+            return true
+        }
+        scope.launch { if (recorder.document.uid == id || load(id)) start() }
+        return true
     }
 
     override fun stop() { message = null; recorder.stop() }
@@ -305,42 +342,89 @@ internal class NotesModel(
         }
     }
 
-    /** With "Keep notes on this phone": the session is kept (replacing its earlier copy) and counts as saved. */
-    fun keepSession(): Boolean {
-        val kept = sessions?.takeIf { it.enabled } ?: return false
-        if (recorder.state.active || !hasContent) return false
+    /**
+     * Autosave: with the library on (the default) every note keeps itself, there is no Save step. Written at once after a
+     * commit, an AI change or a state change, otherwise at most every [SAVE_MS]; a blank, never-named note is not kept. The
+     * recovery copy stands down once the library has the note.
+     */
+    private fun autosave(now: Boolean) {
+        val kept = sessions?.takeIf { it.enabled } ?: return
+        if (!now) { if (!saveScheduled) { saveScheduled = true; mainHandler.postDelayed(saveRunnable, SAVE_MS) }; return }
+        mainHandler.removeCallbacks(saveRunnable); saveScheduled = false
+        val document = recorder.document
         val what = key()
-        if (keptKey != what) {
-            val document = recorder.document
-            val json = document.toJson().put("elapsed", recorder.elapsed); val title = document.title().removePrefix("# ")
-            background { kept.put(document.uid, title, json) }
-            keptKey = what
-        }
-        savedKey = what; recovered = null
+        if (document.untouched || keptKey == what) return
+        val json = document.toJson().put("elapsed", recorder.elapsed)
+        background { kept.put(document.uid, json) }
+        keptKey = what; savedKey = what; recovered = null
+        journal?.delete()
+    }
+
+    /** Keeps the open note now (leaving, New, a stop). True when the note is in the library, or was never worth keeping. */
+    fun keepSession(): Boolean {
+        sessions?.takeIf { it.enabled } ?: return false
+        autosave(now = true)
+        revision++
+        return true
+    }
+
+    fun loadRecent() { val kept = sessions ?: return; scope.launch { var list = emptyList<NotesIndexEntry>(); io { list = kept.entries() }; recent = list } }
+
+    /** Opens a library note in place of the current notes (the current one is kept first). */
+    fun open(entry: NotesIndexEntry) = open(entry.id)
+
+    fun open(id: String) {
+        if (state.active) return
+        scope.launch { load(id) }
+    }
+
+    /** The note's record off the main thread; false when it is gone or recording began meanwhile. Late loads are dropped. */
+    private suspend fun load(id: String): Boolean {
+        val kept = sessions ?: return false
+        if (state.active) return false
+        keepSession()
+        val request = ++openRequest
+        var record: NotesRecord? = null
+        io { record = kept.open(id) }
+        if (request != openRequest || state.active) return false
+        val found = record ?: run { message = "Couldn’t open these notes"; return false }
+        val document = try { NotesDocument.fromJson(found.document) } catch (_: Exception) { message = "Couldn’t open these notes"; return false }
+        recorder.restore(document, found.document.optDouble("elapsed", 0.0))
+        field = TextFieldValue(recorder.document.text)
+        message = null; recovered = null; elapsed = recorder.elapsed
+        savedKey = key(); keptKey = savedKey
         journal?.delete()
         revision++
         return true
     }
 
-    fun loadRecent() { val kept = sessions ?: return; scope.launch { var list = emptyList<NotesSessionEntry>(); io { list = kept.entries() }; recent = list } }
-
-    /** Opens a kept session in place of the current notes (kept first when that is on). */
-    fun open(entry: NotesSessionEntry) {
-        if (state.active) return
-        keepSession()
-        val document = try { NotesDocument.fromJson(entry.document) } catch (_: Exception) { message = "Couldn’t open these notes"; return }
-        recorder.restore(document, entry.document.optDouble("elapsed", 0.0))
-        message = null; recovered = null
-        savedKey = key(); keptKey = savedKey
-        journal?.delete()
-        revision++
+    /** Delete: into Recently Deleted. A note that is recording cannot be deleted until it is stopped. */
+    fun trash(id: String): Boolean {
+        val kept = sessions ?: return false
+        if (state.active && recorder.document.uid == id) return false
+        recent = recent.filter { it.id != id }
+        if (id == recorder.document.uid) { openRequest++; keptKey = null; if (!state.active) clear() }
+        background { kept.trash(id) }
+        return true
     }
 
-    fun deleteKept(entry: NotesSessionEntry) {
-        val kept = sessions ?: return
-        recent = recent.filter { it.id != entry.id }
-        if (entry.id == recorder.document.uid) keptKey = null
-        background { kept.delete(entry.id) }
+    fun deleteKept(entry: NotesIndexEntry) { trash(entry.id) }
+
+    /** Encodes and stores a committed segment's audio, off the main thread, after the note's own write. */
+    private fun keepClip(documentId: Long, segment: Int, offset: Double, pcm: ByteArray) {
+        val kept = sessions?.takeIf { it.enabled && it.keepAudio }
+        val document = recorder.document
+        if (kept == null || document.id != documentId) { pcm.fill(0); return }
+        autosave(now = true) // The note is queued for writing before its first clip is.
+        val uid = document.uid
+        audioWork {
+            val encoded = kept.encodeClip(pcm); pcm.fill(0)
+            if (encoded != null) background {
+                kept.storeClip(uid, segment, offset, pcm.size, encoded)?.let { clip ->
+                    mainHandler.post { if (recorder.document.id == documentId) { recorder.document.addClip(clip); revision++ } }
+                }
+            }
+        }
     }
 
     /** The screen came into or went out of sight (the activity's start and stop). */
@@ -427,11 +511,15 @@ internal class NotesModel(
             if (!active) client?.let(ChirpNetwork::release)
         }
         if (stateChanged && state == NotesRecorder.State.STOPPED) keepSession()
+        if (stateChanged && !state.active) continueAfterStop?.let { id -> continueAfterStop = null; scope.launch { if (load(id)) start() } }
         if (!quiet) revision++
     }
 
     /** The recovery copy follows the notes while they are unsaved, and goes once they are saved or empty. */
-    private fun keep(now: Boolean) = journal?.update({ if (dirty) recorder.document.toJson().put("elapsed", recorder.elapsed) else null }, now)
+    private fun keep(now: Boolean) {
+        autosave(now)
+        journal?.update({ if (dirty) recorder.document.toJson().put("elapsed", recorder.elapsed) else null }, now)
+    }
 
     /** Copy and Share: the notes, then the transcript, as Markdown. */
     fun export() = document.exportMarkdown()
@@ -451,10 +539,15 @@ internal class NotesModel(
         client?.let(ChirpNetwork::dispose); client = null; api = null
     }
 
-    init { journal?.let(::recover) }
+    init {
+        recorder.audioSink = ::keepClip
+        journal?.let(::recover)
+    }
 
     companion object {
         const val IDLE = "Tap Record to take notes"
         const val MAX_NAME = 120
+        /** The library is written at most this often while notes change. */
+        const val SAVE_MS = 2000L
     }
 }

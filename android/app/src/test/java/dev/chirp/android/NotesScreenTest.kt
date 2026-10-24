@@ -43,6 +43,9 @@ internal class ScriptedNotesApi : NotesApi {
     }
 }
 
+/** A library that is switched off, so a test sees only the recovery copy. */
+internal fun libraryOff(context: Context) = NotesSessions(context, SoftwareHistoryKeys()).apply { disable() }
+
 internal class NotesModelRig(context: Context, health: Health? = notesMac, paired: Boolean = true, val keys: SoftwareHistoryKeys = SoftwareHistoryKeys(),
                              val sessions: NotesSessions = NotesSessions(context, SoftwareHistoryKeys())) {
     val wires = mutableListOf<NotesWire>()
@@ -60,7 +63,7 @@ internal class NotesModelRig(context: Context, health: Health? = notesMac, paire
             pairing = { if (paired) Pairing.from("https://mac.example.test/chirp", "synthetic") else null },
             fetchHealth = { _, _ -> null }, tailscale = TailscalePromptTest.FakeTailscale(),
             foreground = { foreground += it }, io = { it() }, journal = NotesJournal(context, keys, store, io = { it() }),
-            sessions = sessions, background = { it() })
+            sessions = sessions, background = { it() }, audioWork = { it() })
     }
     val wire get() = wires.last()
     fun idle() = shadowOf(Looper.getMainLooper()).idle()
