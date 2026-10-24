@@ -20,4 +20,8 @@
     <string name="bubble_name">Chirp floating microphone</string>
     <string name="accessibility_description">Optional floating microphone for when you keep your own keyboard. Chirp reads only the focused text field’s text and selection, to insert dictation safely. Field contents stay on this phone. No screen history, no logs, nothing saved. If a field can’t take the text, your words wait in the panel until you copy them; Chirp never copies on its own. Microphone and network run only during dictation.</string>
 <string name="clipboard_provider_authority">dev.chirp.android.clipboard</string>
+    <string name="dictate_short">Dictate</string>
+    <string name="widget_record">Record</string>
+    <string name="widget_description">Dictate to clipboard or record a note. No text is displayed.</string>
+    <string name="share_to_notes">Save to Chirp Notes</string>
 </resources>

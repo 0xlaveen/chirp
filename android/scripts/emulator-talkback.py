@@ -79,6 +79,22 @@ def bubble_actions():
     print('PASS: actual TalkBack; floating mic bubble label, double tap to its one-fix panel, Move to other side and Hide in this app.')
 
 
+def quickdictate_actions():
+    """The release sheet's single fix and cancellation, then the Share dialog, with real TalkBack bound."""
+    package = m['PACKAGE']
+    adb('shell', 'pm', 'grant', package, 'android.permission.RECORD_AUDIO')
+    adb('shell', 'am', 'start', '-n', package + '/.QuickDictateActivity')
+    wait_for('Quick dictate'); wait_for('Pair Mac'); wait_for('Cancel')
+    probe('click', 'Cancel')
+    adb('shell', 'am', 'start', '-a', 'android.intent.action.SEND', '-t', 'text/plain',
+        '--es', 'android.intent.extra.TEXT', shlex.quote('Synthetic share for accessibility review'), '-n', package + '/.ShareToNotesActivity')
+    wait_for('Save to Notes'); wait_for('Save as new note'); wait_for('Cancel')
+    m['screenshot']('quickdictate-talkback-share')
+    probe('click', 'Cancel')
+    m['crash_check']()
+    print('PASS: actual TalkBack; Quick dictate title, one Pair Mac fix and Cancel; Share title, Save as new note and Cancel; no crash.')
+
+
 def main():
     originals = {key: adb('shell', 'settings', 'get', 'secure', key).decode().strip()
                  for key in ('enabled_accessibility_services', 'accessibility_enabled', 'default_input_method')}
@@ -87,7 +103,7 @@ def main():
         if m['find']('Don’t allow') is not None:
             probe('click', 'Don’t allow')
         adb('logcat', '-b', 'crash', '-c')
-        if '--keepkb-check' not in sys.argv and '--bubble-check' not in sys.argv:
+        if not any(flag in sys.argv for flag in ('--keepkb-check', '--bubble-check', '--quickdictate-check')):
             m['fresh_editor']()
         # Stock uiautomator suppresses/restarts existing services. Run its dump before
         # enabling TalkBack; the preserving all-window probe handles the actual checks.
@@ -118,6 +134,9 @@ def main():
             return
         if '--bubble-check' in sys.argv:
             bubble_actions()
+            return
+        if '--quickdictate-check' in sys.argv:
+            quickdictate_actions()
             return
         mic = wait_for('Microphone: tap to dictate')
         assert mic.get('long-clickable') == 'true', 'Mic options not exposed to TalkBack'

@@ -124,7 +124,7 @@ internal fun HowYouDictate(state: SetupState, choose: (InputMode) -> Unit, acces
         null -> Unit
     }
     SettingsGroup("Other ways to dictate") {
-        // The shared guide above replaces the old optional Accessibility page. Entry-point PRs extend this group.
         Text("Notes and Scratchpad work with any keyboard.", Modifier.padding(16.dp), style = MaterialTheme.typography.bodyMedium)
+        OtherDictationEntries()
     }
 }
