@@ -81,7 +81,7 @@ private func inputs(_ phase: KeyboardPhase? = .armed, access: Bool = true, lease
                                  StyleItem(id: "chat", title: "Chat", isChecked: true),
                                  StyleItem(id: "acme", title: "acme", isChecked: false)])
         #expect(s.styleTitle == "Style: Chat" && s.styleEnabled)
-        #expect(KeyboardPresenter.screen(inputs(.armed) { $0.styleID = "acme" }).styleTitle == "Style: Custom")
+        #expect(KeyboardPresenter.screen(inputs(.armed) { $0.styleID = "acme" }).styleTitle == "Style: acme")   // as the menu names it
         let empty = KeyboardPresenter.screen(inputs(.armed) { $0.availableStyleIDs = [] })
         #expect(empty.styleItems.isEmpty && !empty.styleEnabled)
     }
@@ -191,6 +191,21 @@ private func inputs(_ phase: KeyboardPhase? = .armed, access: Bool = true, lease
                 ["auth", "busy", "tooLong", "badAudio", "badRequest", "engine", "unreachable", "timeout", "permission", "interrupted", "storage", "unknown",
                                                   "offline", "notFound", "secure"])
         #expect(KeyboardPhase.allCases.map(\.rawValue) == ["idle", "armed", "connecting", "listening", "correcting", "finished", "failed"])
+    }
+
+    @Test func aServerDefinedStyleShowsItsIdInTheButtonAsInTheMenu() {
+        var i = inputs(.armed); i.availableStyleIDs = ["default", "meeting"]; i.styleID = "meeting"
+        let s = KeyboardPresenter.screen(i)
+        #expect(s.styleTitle == "Style: meeting" && s.styleItems.map(\.title) == ["Default", "meeting"])
+        i.styleID = nil
+        #expect(KeyboardPresenter.screen(i).styleTitle == "Style: Default")
+    }
+
+    @Test func theStyleMenuMirrorsThePrivateSession() {
+        var i = inputs(.armed)
+        #expect(!KeyboardPresenter.screen(i).privacyOn)
+        i.privacyMode = true
+        #expect(KeyboardPresenter.screen(i).privacyOn)
     }
 
     @Test func anOverLongPromptPointsToStylesLikeTheApp() {

@@ -43,6 +43,7 @@ final class ChirpKeyboardViewController: UIInputViewController {
     private var fallback: String?
     private var clock = RecordingClock()
     private var styleItems: [StyleItem] = []
+    private var privacyOn = false
     private var repeatTimer: Timer?
     private var repeatCount = 0
     private lazy var haptic = UIImpactFeedbackGenerator(style: .light)
@@ -489,7 +490,7 @@ final class ChirpKeyboardViewController: UIInputViewController {
             i.phase = KeyboardPhase(rawValue: state.phase.rawValue)
             i.leaseUntil = state.leaseUntil; i.sessionExpiresAt = state.sessionExpiresAt
             i.styleID = state.styleID; i.availableStyleIDs = state.availableStyleIDs
-            i.debugRetention = state.debugRetention
+            i.debugRetention = state.debugRetention; i.privacyMode = state.privacyMode
             i.errorCode = state.errorCode.flatMap { KeyboardError(rawValue: $0.rawValue) }
         }
         i.ownsUtterance = policy.generation != nil
@@ -532,13 +533,18 @@ final class ChirpKeyboardViewController: UIInputViewController {
         style.configuration?.title = screen.styleTitle
         style.accessibilityLabel = screen.styleTitle
         // Rebuilding the menu while it is open would dismiss it, so only replace it when items change.
-        if screen.styleItems != styleItems {
-            styleItems = screen.styleItems
-            style.menu = UIMenu(children: styleItems.map { item in
+        if screen.styleItems != styleItems || screen.privacyOn != privacyOn {
+            styleItems = screen.styleItems; privacyOn = screen.privacyOn
+            let styles = styleItems.map { item in
                 UIAction(title: item.title, state: item.isChecked ? .on : .off) { [weak self] _ in
                     self?.send(.style(item.id))
                 }
-            })
+            }
+            let on = privacyOn
+            let privacy = UIAction(title: "Private session · exclude history", state: on ? .on : .off) { [weak self] _ in
+                self?.send(.privacy(!on))
+            }
+            style.menu = UIMenu(children: [UIMenu(options: .displayInline, children: styles), UIMenu(options: .displayInline, children: [privacy])])
         }
         end.isEnabled = screen.endEnabled
         openRow.isHidden = !screen.showsOpenChirp

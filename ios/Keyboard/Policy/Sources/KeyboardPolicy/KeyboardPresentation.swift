@@ -11,6 +11,8 @@ public struct KeyboardInputs: Equatable, Sendable {
     public var sessionExpiresAt: Date?
     public var styleID: String?
     public var availableStyleIDs: [String] = []
+    /// The app's Private session switch (history excluded), mirrored so the Style menu can show and flip it.
+    public var privacyMode = false
     public var debugRetention = false
     public var errorCode: KeyboardError?
     /// `OwnedInsertion.generation != nil`: this keyboard currently owns an utterance.
@@ -70,6 +72,8 @@ public struct KeyboardScreen: Equatable, Sendable {
     public var styleEnabled: Bool
     public var styleTitle: String
     public var styleItems: [StyleItem]
+    /// The Style menu's "Private session" item, checked while it is on.
+    public var privacyOn: Bool
     public var endEnabled: Bool
     public var showsOpenChirp: Bool
     public var showsGlobe: Bool
@@ -78,6 +82,9 @@ public struct KeyboardScreen: Equatable, Sendable {
 public enum KeyboardPresenter {
     public static let styleTitles = ["default": "Default", "chat": "Chat", "email": "Email",
                                      "code": "Code", "notes": "Notes", "custom": "Custom"]
+
+    /// A server-defined style the keyboard has no name for shows its id, in the button as in the menu.
+    public static func styleTitle(_ id: String) -> String { styleTitles[id] ?? id }
 
     public static func screen(_ i: KeyboardInputs) -> KeyboardScreen {
         let live = i.hasFullAccess && i.phase != nil && (i.leaseUntil ?? .distantPast) > i.now
@@ -90,7 +97,7 @@ public enum KeyboardPresenter {
         let remaining = live ? i.sessionExpiresAt.map { ClockText.format(ceil($0.timeIntervalSince(i.now))) + " left" } : nil
         let rawLeft = rawSeconds(i)
         let showsUndo = live && !busy && i.isFinal && i.ownsUtterance && i.undoAvailable
-        let items = i.availableStyleIDs.map { StyleItem(id: $0, title: styleTitles[$0] ?? $0, isChecked: $0 == i.styleID) }
+        let items = i.availableStyleIDs.map { StyleItem(id: $0, title: styleTitle($0), isChecked: $0 == i.styleID) }
         return KeyboardScreen(
             status: ([live ? i.notice ?? phaseText : phaseText] + [elapsed, remaining].compactMap { $0 }).joined(separator: " · "),
             phaseText: live ? i.notice ?? phaseText : phaseText, elapsed: elapsed, remaining: remaining,
@@ -102,7 +109,7 @@ public enum KeyboardPresenter {
             rawEnabled: live && rawLeft != nil && i.isFinal && i.ownsUtterance && !i.rawRequested,
             rawTitle: rawLeft.map { "Use raw (\($0)s)" } ?? "Use raw", rawSecondsLeft: rawLeft,
             styleEnabled: live && !busy && !items.isEmpty,
-            styleTitle: "Style: " + (styleTitles[i.styleID ?? "default"] ?? "Custom"), styleItems: items,
+            styleTitle: "Style: " + styleTitle(i.styleID ?? "default"), styleItems: items, privacyOn: i.privacyMode,
             endEnabled: live,
             showsOpenChirp: i.hasFullAccess && (i.fallback != nil || i.requiresRecovery),
             showsGlobe: i.needsGlobe)

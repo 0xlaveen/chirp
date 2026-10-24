@@ -12,6 +12,8 @@ public enum ConnectionIssue: String, Sendable, CaseIterable, Equatable {
     case secure
     /// The Mac answered but refused this device's token (for example a revoked device pairing).
     case refused
+    /// The Mac answered but its speech model is still loading.
+    case loading
     case other
 
     public static func classify(_ error: Error) -> ConnectionIssue {
@@ -49,6 +51,7 @@ public enum ConnectionIssue: String, Sendable, CaseIterable, Equatable {
         case .down: "Your Mac may be asleep, or Chirp isn't running on it."
         case .secure: "Couldn't make a secure connection to your Mac."
         case .refused: "Your Mac refused this device. Pair again in Chirp."
+        case .loading: "Your Mac is loading its speech model. Try again in a moment."
         case .other: "Connection failed. Check Tailscale and your Mac."
         }
     }
@@ -60,6 +63,7 @@ public enum ConnectionIssue: String, Sendable, CaseIterable, Equatable {
         case .down, .other: .unreachable
         case .secure: .secure
         case .refused: .auth
+        case .loading: .engine
         }
     }
 }
