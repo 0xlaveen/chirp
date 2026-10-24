@@ -12,7 +12,7 @@ The application ID and IME component stay `dev.chirp.android` / `dev.chirp.andro
 | Swipe typing | Not bundled; you can load a user-supplied library — see [Keyboard](#keyboard) |
 | Clean-up | On by default after pairing when the Mac cleans up locally; external endpoints need explicit opt-in |
 | History | Opt-in, on-device only, AES-GCM encrypted under an Android Keystore key |
-| Retention | Nothing written by default; diagnostics carry exception classes and frames only |
+| Retention | No audio and no dictated text written by default; unsaved Notes keep an encrypted recovery copy; diagnostics hold numbers-only timings and crash frames |
 
 **Contents**
 
@@ -110,7 +110,7 @@ Back from a page returns to the list (predictive back); back from the list retur
 
 ## Pair
 
-On the Mac, print the secret pairing QR (see [server/README.md](../server/README.md#pair-a-device); the server must be published on your tailnet, e.g. `https://<your-mac>.<tailnet>.ts.net/chirp`):
+On the Mac, open Chirp → Settings → Devices → **Pair a Phone…**, which checks Tailscale, publishes the server and shows the QR. Without the Mac app, print the secret pairing QR from the command line (see [server/README.md](../server/README.md#pair-a-device); the server must be published on your tailnet, e.g. `https://<your-mac>.<tailnet>.ts.net/chirp`):
 
 ```sh
 uv run chirp-server pair --url https://<your-mac>.<tailnet>.ts.net/chirp
@@ -330,7 +330,7 @@ A small pre-existing fix shipped with it: moving the cursor after a cleaned fina
 
 ## Privacy
 
-- **Nothing is retained by default.** Audio and transcripts live in memory for the length of an utterance. No text, audio, URLs or tokens are logged; server error strings are never rendered into diagnostics. While the Mac runs with debug retention, a red **DEBUG: recordings kept on Mac** banner stays visible in the Chirp row.
+- **No dictation is retained by default.** Audio and transcripts live in memory for the length of an utterance; the exceptions below are the Notes recovery copy (on until you save), opt-in history and numbers-only diagnostics. No text, audio, URLs or tokens are logged; server error strings are never rendered into diagnostics. While the Mac runs with debug retention, a red **DEBUG: recordings kept on Mac** banner stays visible in the Chirp row.
 - **The mic opens only when you start dictation** (or **Record** in Notes, which shows a notification while it runs; **Pause** closes the microphone) and is released as soon as you stop. The optional floating mic declares the same rules in its accessibility description.
 - **The phone's recogniser is opt-in and disclosed.** With *Use this phone's recogniser* on, an utterance dictated while the Mac is unavailable goes to Android's on-device speech service, which belongs to Google or the phone maker. Android documents it as recognising on the device, but its own terms apply and Chirp cannot audit it. The **on phone** chip shows each time. Chirp adds no session timing for these utterances and logs no text or audio.
 - **Notes keep only a recovery copy until you save.** It is AES-GCM encrypted under its own Keystore key, excluded from backup and transfer, never logged, and deleted on Save, Discard, New or when you turn it off ([Notes](#notes)). **Keep notes on this phone** is opt-in and sealed the same way under another key; turning it off deletes it. Notes session timings are numbers only.
@@ -346,7 +346,7 @@ Chirp settings → About → **Diagnostics** shows the session timings and the b
 
 | Bar message | What it means | What to do |
 |---|---|---|
-| "Pairing refused — pair again in Chirp setup" | Server `auth` error | Re-pair from setup (**Pair Mac**) |
+| "Pairing refused — pair again in Chirp settings" | Server `auth` error | Re-pair from setup (**Pair Mac**) |
 | "Didn't catch that" | Empty/blank final or server `bad_audio` | Speak again; nothing was inserted |
 | "Speech engine hiccup" | Server `engine` error | Retry; check `chirp-server doctor` on the Mac |
 | "Mac is busy — try again" | Server `busy` (engine occupied) | Retry after a moment |

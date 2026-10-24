@@ -170,11 +170,11 @@ open class ChirpAccessibilityService : AccessibilityService() {
         if (locked()) { onInterrupt(); return }
         forgetUndo()
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
-            message = "Grant microphone permission in Chirp setup"; return
+            message = "Allow microphone in Chirp settings"; render(); return
         }
         target = FocusedInsertion.from(focused)
-        if (target == null) { message = "This field needs Chirp Keyboard — use the keyboard picker"; return }
-        if (loadPairing() == null) { target?.forget(); target = null; message = "Pair with your Mac in Chirp setup"; return }
+        if (target == null) { message = "This field needs Chirp Keyboard — use the keyboard picker"; render(); return }
+        if (loadPairing() == null) { target?.forget(); target = null; message = "Pair your Mac in Chirp settings"; render(); return }
         partial = ""; stable = ""; message = "Connecting to Mac…"
         pendingStart = true; pendingStop = false
         try {
@@ -183,7 +183,7 @@ open class ChirpAccessibilityService : AccessibilityService() {
             ContextCompat.startForegroundService(this, Intent(this, ChirpAccessibilityService::class.java).setAction(START))
         } catch (_: RuntimeException) {
             pendingStart = false; target?.forget(); target = null
-            message = "Microphone start blocked — open Chirp setup or use Chirp Keyboard"
+            message = "Microphone start blocked — open Chirp settings or use Chirp Keyboard"
         }
         render()
     }
@@ -236,7 +236,7 @@ open class ChirpAccessibilityService : AccessibilityService() {
             haptic()
             if (pendingStop) session.stop()
         } catch (_: RuntimeException) {
-            cancel(); message = "Microphone start blocked — open Chirp setup or use Chirp Keyboard"; render()
+            cancel(); message = "Microphone start blocked — open Chirp settings or use Chirp Keyboard"; render()
         }
         return START_NOT_STICKY
     }

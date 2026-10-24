@@ -176,7 +176,7 @@ internal class NotesModel(
     val elapsedText get() = elapsed.toInt().let { s -> if (s >= 3600) "%d:%02d:%02d".format(s / 3600, s / 60 % 60, s % 60) else "%02d:%02d".format(s / 60, s % 60) }
 
     val status: String get() = voiceEditStatus?.let(NotesVoiceEditText::status) ?: message ?: when (state) {
-        NotesRecorder.State.IDLE -> if (paired) IDLE else "Pair your Mac in Chirp setup"
+        NotesRecorder.State.IDLE -> if (paired) IDLE else "Pair your Mac in Chirp settings"
         NotesRecorder.State.STARTING -> "Connecting to Mac…"
         NotesRecorder.State.RECORDING -> organizingText ?: if (structuring == Structuring.Running) "Updating notes…" else "Listening…"
         NotesRecorder.State.PAUSED -> recorder.error?.let { "Couldn’t resume: $it" } ?: organizingText ?: "Paused"
@@ -271,8 +271,8 @@ internal class NotesModel(
         if (state.active) return
         if (voiceEdit.holdsMicrophone) { message = "Finish the spoken edit first"; return }
         message = null; recovered = null
-        if (!micGranted()) { message = "Allow microphone in Chirp setup"; return }
-        pairing().also { paired = it != null } ?: run { message = "Pair your Mac in Chirp setup"; return }
+        if (!micGranted()) { message = "Allow microphone in Chirp settings"; return }
+        pairing().also { paired = it != null } ?: run { message = "Pair your Mac in Chirp settings"; return }
         recorder.options = options()
         recorder.configure(structureEnabled, health)
         recorder.start()

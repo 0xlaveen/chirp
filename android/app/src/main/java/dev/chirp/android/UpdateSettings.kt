@@ -24,7 +24,8 @@ internal sealed interface UpdateStatus {
     data object Current : UpdateStatus
     data object Downloading : UpdateStatus
     data object Installing : UpdateStatus
-    data object NeedsPermission : UpdateStatus
+    /** Android must allow Chirp to install apps first; the update stays on offer. */
+    data class NeedsPermission(val info: UpdateInfo) : UpdateStatus
     class Available(val info: UpdateInfo) : UpdateStatus
     class Failed(val message: String) : UpdateStatus
 }
@@ -59,7 +60,7 @@ internal class UpdateController(
 
     fun install(info: UpdateInfo) {
         if (busy) return
-        if (!UpdateInstaller.canInstall(context)) { status = UpdateStatus.NeedsPermission; return }
+        if (!UpdateInstaller.canInstall(context)) { status = UpdateStatus.NeedsPermission(info); return }
         busy = true; status = UpdateStatus.Downloading
         scope.launch {
             val error = try {
@@ -80,7 +81,7 @@ internal class UpdateController(
     }
 }
 
-/** Updates section of Chirp setup. Checks once when shown; installs only after a tap and Android's own confirmation. */
+/** Updates section of Chirp settings. Checks once when shown; installs only after a tap and Android's own confirmation. */
 @Composable
 internal fun UpdateSettings(controller: UpdateController? = null) {
     val context = LocalContext.current
@@ -101,9 +102,10 @@ internal fun UpdateSettings(controller: UpdateController? = null) {
                 UpdateStatus.Current -> Text("Chirp is up to date.")
                 UpdateStatus.Downloading -> Text("Downloading update…")
                 UpdateStatus.Installing -> Text("Confirm the install in Android's dialog. Chirp restarts when it finishes.")
-                UpdateStatus.NeedsPermission -> {
-                    Text("Allow Chirp to install updates, then tap Install again.")
+                is UpdateStatus.NeedsPermission -> {
+                    Text("Allow Chirp to install updates, then tap Download and install again.")
                     OutlinedButton(updates::allowInstalls, Modifier.fillMaxWidth()) { Text("Allow installing updates") }
+                    Button({ updates.install(status.info) }, Modifier.fillMaxWidth()) { Text("Download and install") }
                 }
                 is UpdateStatus.Available -> {
                     Text("Chirp ${status.info.versionName} is available.")

@@ -19,7 +19,7 @@ import dev.chirp.android.R
 
 /** Rows in one rounded container, 2 dp apart, with an optional header: the Android 16 / Gboard settings layout. */
 @Composable
-internal fun SettingsGroup(title: String, modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) =
+internal fun SettingsGroup(title: String?, modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) =
     Group(title, modifier, content)
 
 @Composable

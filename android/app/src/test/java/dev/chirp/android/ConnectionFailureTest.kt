@@ -51,7 +51,7 @@ class ConnectionFailureTest {
         assertEquals(DictationAction.NETWORK, DictationAction.forStatus(ConnectionFailure.Kind.OTHER.status))
         assertNull(DictationAction.forStatus(ConnectionFailure.Kind.TLS.status))
         assertNull(DictationAction.forStatus(ConnectionFailure.OFFLINE))
-        assertEquals(DictationAction.PAIR, DictationAction.forStatus("Pairing refused — pair again in Chirp setup"))
+        assertEquals(DictationAction.PAIR, DictationAction.forStatus("Pairing refused — pair again in Chirp settings"))
         assertEquals(DictationAction.TAILSCALE_ON, DictationAction.forStatus(DictationAction.TAILSCALE_OFF))
     }
     @Test fun `offline state lasts 30 seconds and clears on reachability`() {

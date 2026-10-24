@@ -11,7 +11,7 @@ internal enum class DictationAction(val label: String, val prompt: Boolean = fal
         const val TAILSCALE_MISSING = "Tailscale isn't installed"
         fun forStatus(status: String): DictationAction? = when {
             status.startsWith("Pair your Mac") || status.startsWith("Pairing refused") -> PAIR
-            status.startsWith("Allow microphone") || status.startsWith("Microphone permission") -> MICROPHONE
+            status.startsWith("Allow microphone") || status.startsWith("Microphone permission") || status.startsWith("Microphone unavailable") -> MICROPHONE
             status.startsWith("Mac unreachable") || status.startsWith("Mac connection") -> NETWORK
             // TLS has no Tailscale fix; the status text alone explains it.
             ConnectionFailure.kind(status).let { it != null && it != ConnectionFailure.Kind.TLS } -> NETWORK

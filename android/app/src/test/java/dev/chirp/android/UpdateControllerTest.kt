@@ -60,8 +60,10 @@ class UpdateControllerTest {
     @Test fun `install asks for permission to install before downloading`() {
         val updates = controller("https://mac.tail1234.ts.net/chirp")
         shadowOf(context.packageManager).setCanRequestPackageInstalls(false)
-        updates.install(UpdateInfo(12, "0.6.2", "https://mac.tail1234.ts.net/chirp-apk/chirp-0.6.2.apk".let { okhttp3.HttpUrl.Companion.run { it.toHttpUrl() } }, "a".repeat(64), 1000))
-        assertEquals(UpdateStatus.NeedsPermission, updates.status)
+        val info = UpdateInfo(12, "0.6.2", "https://mac.tail1234.ts.net/chirp-apk/chirp-0.6.2.apk".let { okhttp3.HttpUrl.Companion.run { it.toHttpUrl() } }, "a".repeat(64), 1000)
+        updates.install(info)
+        // The update stays on offer, so Download and install works again once Android allows it.
+        assertEquals(UpdateStatus.NeedsPermission(info), updates.status)
         assertTrue(requested.isEmpty())
     }
 }

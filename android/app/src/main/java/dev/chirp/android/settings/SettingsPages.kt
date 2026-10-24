@@ -17,7 +17,7 @@ internal fun SettingsDetail(page: SettingsPage, state: SetupState, actions: Sett
         SettingsPage.Connection -> ConnectionPage(state, actions)
         SettingsPage.Look -> { KeyboardLookChooser(); AppColoursSettings() }
         SettingsPage.SwipeTyping -> SwipeTypingSettings()
-        SettingsPage.History -> HistorySettings(store = history)
+        SettingsPage.History -> HistorySettings(store = history, title = null)   // the page already says "Dictation history"
         SettingsPage.Notes -> NotesSettings()
         SettingsPage.FloatingMic -> FloatingMicPage(state, actions)
         SettingsPage.Updates -> UpdateSettings(updates)
@@ -80,7 +80,7 @@ private fun DiagnosticsPage() {
 /** Shared by this page and setup's Diagnostics dialog. */
 @Composable
 internal fun DiagnosticsBody(report: String) {
-    Text("Timings of the last 50 sessions (numbers only) and the last 5 local crashes (exception class, stack frames, app version and time). No messages, text, audio, hosts or tokens.")
+    Text("Timings of the last 50 sessions and Notes session counts (numbers only), and the last 5 local crashes (exception class, stack frames, app version and time). No messages, text, audio, hosts or tokens.")
     SelectionContainer { Text(report, style = MaterialTheme.typography.bodySmall) }
 }
 

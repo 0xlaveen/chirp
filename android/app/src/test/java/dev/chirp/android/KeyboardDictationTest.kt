@@ -229,7 +229,7 @@ class KeyboardDictationTest {
         for ((code, message) in mapOf(
             "bad_audio" to "Didn't catch that", "engine" to "Speech engine hiccup",
             "busy" to "Mac is busy — try again", "too_long" to "Dictation limit is 120 seconds",
-            "auth" to "Pairing refused — pair again in Chirp setup",
+            "auth" to "Pairing refused — pair again in Chirp settings",
             "bad_request" to "Clean-up prompt too long — shorten it in Chirp settings",
             "unknown" to "Mac speech engine unavailable — try again")) {
             start(); tap(); tap(); advance(0) // No partial: nothing heard, nothing kept.

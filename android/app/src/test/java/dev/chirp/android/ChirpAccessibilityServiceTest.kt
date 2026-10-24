@@ -144,7 +144,7 @@ class ChirpAccessibilityServiceTest {
     }
     @Test fun `permission and pairing errors do not start capture and expose setup repair`() {
         shadowOf(RuntimeEnvironment.getApplication()).denyPermissions(Manifest.permission.RECORD_AUDIO)
-        bubble.performClick(); assertTrue(shows("Grant microphone permission"))
+        bubble.performClick(); assertTrue(shows("Allow microphone in Chirp settings"))
         assertTrue(service.captures.isEmpty()); assertNotNull(button("Fix setup"))
     }
 }

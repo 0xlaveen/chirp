@@ -135,7 +135,7 @@ internal class PhoneDictation(
         const val FINISH_MS = 5000L
         fun reason(code: Int) = when (code) {
             SpeechRecognizer.ERROR_NO_MATCH, SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> "Didn't catch that"
-            SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS -> "Allow microphone in Chirp setup"
+            SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS -> "Allow microphone in Chirp settings"
             SpeechRecognizer.ERROR_LANGUAGE_NOT_SUPPORTED, SpeechRecognizer.ERROR_LANGUAGE_UNAVAILABLE -> "Phone has no offline speech for this language"
             SpeechRecognizer.ERROR_RECOGNIZER_BUSY -> "Phone recogniser is busy — try again"
             else -> "Phone recogniser failed — try again"

@@ -132,8 +132,8 @@ internal class ScratchpadModel(
 
     fun start() {
         if (active) return
-        if (!micGranted()) { status = "Allow microphone in Chirp setup"; return }
-        val paired = pairing().also { this.paired = it != null } ?: run { status = "Pair your Mac in Chirp setup"; return }
+        if (!micGranted()) { status = "Allow microphone in Chirp settings"; return }
+        val paired = pairing().also { this.paired = it != null } ?: run { status = "Pair your Mac in Chirp settings"; return }
         val chosen = style
         partial = ""; level = 0.0
         val stream = DictationStream(
