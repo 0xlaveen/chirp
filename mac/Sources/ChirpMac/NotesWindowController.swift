@@ -45,6 +45,7 @@ final class NotesWindowController: NSObject, NSWindowDelegate {
         window = w
         setPresence(.shown)
         notes.model.dictationKey = settings.hotkey.title
+        notes.model.notesKey = settings.notesHotkey.title
         if focus {
             NSApp.activate()
             w.makeKeyAndOrderFront(nil)

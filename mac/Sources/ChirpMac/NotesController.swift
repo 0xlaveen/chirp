@@ -3,7 +3,7 @@ import ChirpCore
 import ChirpSpeakers
 import ChirpUI
 
-/// Live Notes in the app: `NotesSession` (ChirpUI) wired to the real microphone, server, sounds, permissions, ⌃⌥N and
+/// Live Notes in the app: `NotesSession` (ChirpUI) wired to the real microphone, server, sounds, permissions, its hotkey and
 /// VoiceOver. The session itself is tested with fakes; this file only picks the system parts.
 typealias NotesController = NotesSession
 
@@ -40,7 +40,7 @@ extension NotesSession {
                                  userInfo: [.announcement: text, .priority: NSAccessibilityPriorityLevel.high.rawValue])
         }
         deps.reduceMotion = { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
-        deps.registerHotkey = { onDown in HotKeyCenter.shared.register(id: Self.hotkeyID, combo: .controlOptionN, onDown: onDown) }
+        deps.registerHotkey = { onDown in HotKeyCenter.shared.register(id: Self.hotkeyID, combo: settings.notesHotkey, onDown: onDown) }
         deps.unregisterHotkey = { HotKeyCenter.shared.unregister(id: Self.hotkeyID) }
         self.init(deps)
     }

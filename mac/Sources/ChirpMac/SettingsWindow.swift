@@ -8,8 +8,10 @@ import ChirpUI
 final class SettingsWindowController: NSObject, NSTextFieldDelegate {
     /// Called after the hotkey preset changes so the app can re-register it.
     var onHotkeyChange: (() -> Void)?
-    /// The shortcut recorder started or stopped listening.
+    /// One of the shortcut recorders started or stopped listening.
     var onRecordingChanged: ((Bool) -> Void)?
+    /// Start/Stop Notes, Open Notes or Use raw changed (recorded or reset).
+    var onShortcutChange: ((ChirpShortcut) -> Void)?
     /// The server's state for the Status row, from the app's last health check.
     var serverStatus: () -> (text: String, tone: MenuEntry.Tone) = { ("Checking…", .warning) }
     /// The server's last health, for the styles it offers.
@@ -28,9 +30,7 @@ final class SettingsWindowController: NSObject, NSTextFieldDelegate {
     /// Live Notes voice profiles (Settings › Notes › Voices).
     var voices: SpeakerVoices?
     var onNotesRecoveryCopyChange: (() -> Void)?
-    /// "Open Notes" shortcut changed, the recorder started or stopped listening, "Always show in the Dock" flipped.
-    var onOpenNotesHotkeyChange: (() -> Void)?
-    var onOpenNotesRecordingChanged: ((Bool) -> Void)?
+    /// "Always show in the Dock" flipped.
     var onAlwaysShowInDockChange: ((Bool) -> Void)?
     private lazy var devices: DevicesModel = {
         let model = DevicesModel(store: PairedDevices.store, remoteHost: {
@@ -52,7 +52,9 @@ final class SettingsWindowController: NSObject, NSTextFieldDelegate {
     private var state: SettingsState {
         var s = SettingsState()
         s.hotkey = settings.hotkey
+        s.notesHotkey = settings.notesHotkey
         s.openNotesHotkey = settings.openNotesHotkey
+        s.useRawHotkey = settings.useRawHotkey
         s.alwaysShowInDock = settings.alwaysShowInDock
         s.activationMode = settings.activationMode
         s.autoEnter = settings.autoEnter
@@ -262,24 +264,22 @@ final class SettingsWindowController: NSObject, NSTextFieldDelegate {
         form.keyboardSettingsButton.action = #selector(openKeyboardSettings)
         form.recorder.onCapture = { [weak self] combo in
             settings.hotkey = combo
-            self?.form?.fillHotkeyMenu(selecting: combo)
+            self?.fillHotkeyMenu()
             self?.tabSizeChanged()
             self?.onHotkeyChange?()
         }
         form.recorder.onRecordingChanged = { [weak self] recording in self?.onRecordingChanged?(recording) }
-        form.recorder.conflict = { HotKeyValidation.conflict($0, with: Self.notesShortcuts()) }
-        let openNotes = form.openNotes
-        openNotes.recorder.conflict = { HotKeyValidation.conflict($0, with: [("dictation", settings.hotkey)] + Self.notesShortcuts(except: "Open Notes")) }
-        openNotes.recorder.onCapture = { [weak self] combo in
-            settings.openNotesHotkey = combo
-            self?.form?.openNotes.show(combo, alwaysInDock: settings.alwaysShowInDock)
-            self?.onOpenNotesHotkeyChange?()
+        form.recorder.conflict = { ChirpShortcut.dictation.conflict($0) { settings[shortcut: $0] } }
+        for shortcut in ChirpShortcut.allCases {
+            guard let controls = form.controls(for: shortcut) else { continue }
+            controls.recorder.conflict = { shortcut.conflict($0) { settings[shortcut: $0] } }
+            controls.recorder.onCapture = { [weak self] combo in self?.setShortcut(shortcut, combo) }
+            controls.recorder.onRecordingChanged = { [weak self] in self?.onRecordingChanged?($0) }
+            controls.reset.target = self
+            controls.reset.action = #selector(resetShortcut(_:))
         }
-        openNotes.recorder.onRecordingChanged = { [weak self] in self?.onOpenNotesRecordingChanged?($0) }
-        openNotes.reset.target = self
-        openNotes.reset.action = #selector(resetOpenNotesHotkey)
-        openNotes.alwaysInDock.target = self
-        openNotes.alwaysInDock.action = #selector(toggleAlwaysInDock(_:))
+        form.alwaysInDock.target = self
+        form.alwaysInDock.action = #selector(toggleAlwaysInDock(_:))
         form.mode.target = self
         form.mode.action = #selector(modeChanged(_:))
         form.silence.target = self
@@ -439,14 +439,25 @@ final class SettingsWindowController: NSObject, NSTextFieldDelegate {
         settings.notesRecoveryCopy = sender.state == .on
         onNotesRecoveryCopyChange?()
     }
-    /// The fixed Chirp shortcuts a recorded one must not reuse.
-    private static func notesShortcuts(except owner: String? = nil) -> [(owner: String, combo: KeyCombo)] {
-        [("Open Notes", settings.openNotesHotkey), ("Start/Stop Notes", .controlOptionN), ("Use raw", RawOffer.combo)].filter { $0.0 != owner }
+    private func setShortcut(_ shortcut: ChirpShortcut, _ combo: KeyCombo) {
+        settings[shortcut: shortcut] = combo
+        form?.showShortcuts(state)
+        fillHotkeyMenu()
+        onShortcutChange?(shortcut)
     }
-    @objc private func resetOpenNotesHotkey() {
-        settings.openNotesHotkey = .controlOptionShiftN
-        form?.openNotes.show(.controlOptionShiftN, alwaysInDock: settings.alwaysShowInDock)
-        onOpenNotesHotkeyChange?()
+    /// Reset goes back to the default unless another shortcut has those keys now; the recorder then says so.
+    @objc private func resetShortcut(_ sender: NSButton) {
+        guard let shortcut = ChirpShortcut.allCases.first(where: { form?.controls(for: $0)?.reset === sender }),
+              let controls = form?.controls(for: shortcut) else { return }
+        if let why = shortcut.conflict(shortcut.defaultCombo, current: { settings[shortcut: $0] }) {
+            controls.refuse(why)
+            return
+        }
+        setShortcut(shortcut, shortcut.defaultCombo)
+    }
+    /// The presets, with any another shortcut already has disabled.
+    private func fillHotkeyMenu() {
+        form?.fillHotkeyMenu(selecting: settings.hotkey, taken: ChirpShortcut.dictation.taken { settings[shortcut: $0] })
     }
     @objc private func toggleAlwaysInDock(_ sender: NSButton) {
         settings.alwaysShowInDock = sender.state == .on
@@ -457,7 +468,7 @@ final class SettingsWindowController: NSObject, NSTextFieldDelegate {
 
     @objc private func hotkeyChanged(_ sender: NSPopUpButton) {
         settings.hotkey = KeyCombo.resolve(id: sender.selectedItem?.representedObject as? String)
-        form?.fillHotkeyMenu(selecting: settings.hotkey)
+        fillHotkeyMenu()
         tabSizeChanged()
         onHotkeyChange?()
     }

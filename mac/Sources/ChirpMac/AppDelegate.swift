@@ -86,9 +86,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         settingsWindow.catalog = { [controller] in controller.styleCatalog }
         settingsWindow.onHotkeyChange = { [controller, notes] in controller.registerHotkey(); notes.model.dictationKey = settings.hotkey.title }
-        settingsWindow.onRecordingChanged = { [controller] recording in
-            // The live hotkey would start a dictation while the user is typing the new one.
-            if recording { controller.suspendHotkey() } else { controller.registerHotkey() }
+        settingsWindow.onRecordingChanged = { [controller, notes, openNotesHotkey] recording in
+            // A live shortcut would start a dictation or Notes while the user is typing the new one.
+            if recording {
+                controller.suspendHotkey(); notes.suspendHotkey(); openNotesHotkey.suspend()
+            } else {
+                controller.registerHotkey(); notes.registerHotkey(); openNotesHotkey.register()
+            }
+        }
+        settingsWindow.onShortcutChange = { [weak self, notes, openNotesHotkey] shortcut in
+            switch shortcut {
+            case .notes: notes.registerHotkey(); notes.model.notesKey = settings.notesHotkey.title
+            case .openNotes: openNotesHotkey.register()
+            case .dictation, .useRaw: break   // dictation has onHotkeyChange; Use raw is registered per offer
+            }
+            self?.menu?.refreshIcon()
         }
         controller.onChange = { [weak self, serverWatch, controller] in
             self?.menu?.refreshIcon()
@@ -113,10 +125,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NotesWindowController.installEditMenu()
         dock.apply()
         settingsWindow.onAlwaysShowInDockChange = { [weak self] on in self?.dock.update { $0.alwaysShow = on } }
-        settingsWindow.onOpenNotesHotkeyChange = { [openNotesHotkey] in openNotesHotkey.register() }
-        settingsWindow.onOpenNotesRecordingChanged = { [openNotesHotkey] recording in
-            if recording { openNotesHotkey.suspend() } else { openNotesHotkey.register() }
-        }
         openNotesHotkey.open = { [notesWindow] in notesWindow.show() }
         openNotesHotkey.onChange = { [weak self] in self?.menu?.refreshIcon() }
         controller.routeToNotes = { [weak self] dictating in
@@ -137,7 +145,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         if !notes.registerHotkey() {
-            NSLog("Chirp: could not register the Live Notes hotkey ⌃⌥N; it may be in use by another app")
+            NSLog("Chirp: could not register the Live Notes hotkey \(settings.notesHotkey.title); it may be in use by another app")
         }
         if !openNotesHotkey.register() {
             NSLog("Chirp: could not register the Open Notes hotkey \(settings.openNotesHotkey.title); it may be in use by another app")

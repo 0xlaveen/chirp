@@ -202,7 +202,7 @@ import Testing
             let form = SettingsForm(state)
             #expect(!form.keyboardSettingsButton.isHiddenOrHasHiddenAncestor)
             #expect(form.fnKeyHelp.stringValue.contains("Do Nothing"))
-            let fnHeight = form.fittingSize(for: .dictation).height
+            let fnHeight = form.fittingSize(for: .shortcuts).height
 
             form.recorder.start()
             form.recorder.apply(.rejected(.shiftAlone))
@@ -213,7 +213,7 @@ import Testing
                           .custom(keyCode: KeyCombo.anyModifierKey, modifiers: ModifierKeys.fn | UInt32(cmdKey))] {
                 form.fillHotkeyMenu(selecting: other)
                 #expect(form.keyboardSettingsButton.isHiddenOrHasHiddenAncestor)
-                #expect(form.fittingSize(for: .dictation).height < fnHeight)
+                #expect(form.fittingSize(for: .shortcuts).height < fnHeight)
             }
             form.fillHotkeyMenu(selecting: fn)
             #expect(!form.keyboardSettingsButton.isHiddenOrHasHiddenAncestor)

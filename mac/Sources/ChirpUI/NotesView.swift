@@ -330,7 +330,7 @@ private struct NotesPane: View {
             Image(systemName: "note.text")
                 .font(.system(size: 36, weight: .light))
                 .foregroundStyle(.tertiary)
-            Text(NotesStatus.empty)
+            Text(NotesStatus.empty(key: model.notesKey))
                 .font(.title3)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)

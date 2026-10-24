@@ -50,7 +50,7 @@ final class NotesTextView: NSTextView {
     weak var coordinator: NotesEditorCoordinator?
     /// The AI tail to tint, UTF-16; empty when the user owns everything.
     var tint = NSRange(location: 0, length: 0) { didSet { if tint != oldValue { needsDisplay = true } } }
-    var placeholder = NotesStatus.placeholder
+    var placeholder = NotesStatus.placeholder() { didSet { if placeholder != oldValue { needsDisplay = true } } }
 
     static let readingWidth: CGFloat = 720
     static let minInset: CGFloat = 28
@@ -309,6 +309,7 @@ final class NotesEditorCoordinator: NSObject, NSTextViewDelegate {
             load()
         }
         updateTint()
+        textView.placeholder = NotesStatus.placeholder(key: model.notesKey)
         if model.focusRequest != lastFocusRequest {
             lastFocusRequest = model.focusRequest
             textView.window?.makeFirstResponder(textView)

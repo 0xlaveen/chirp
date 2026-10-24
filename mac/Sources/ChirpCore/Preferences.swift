@@ -25,6 +25,35 @@ public final class Preferences: @unchecked Sendable {
         get { KeyCombo.resolve(id: defaults.string(forKey: "openNotesHotkey"), fallback: .controlOptionShiftN) }
         set { defaults.set(newValue.id, forKey: "openNotesHotkey") }
     }
+    /// Starts and stops Live Notes from any app (⌃⌥N by default).
+    public var notesHotkey: KeyCombo {
+        get { KeyCombo.resolve(id: defaults.string(forKey: "notesHotkey"), fallback: .controlOptionN) }
+        set { defaults.set(newValue.id, forKey: "notesHotkey") }
+    }
+    /// "Use raw" during the 5 s after a cleaned insertion (⌃⌥Z by default).
+    public var useRawHotkey: KeyCombo {
+        get { KeyCombo.resolve(id: defaults.string(forKey: "useRawHotkey"), fallback: .controlOptionZ) }
+        set { defaults.set(newValue.id, forKey: "useRawHotkey") }
+    }
+    /// Any of Chirp's shortcuts by role.
+    public subscript(shortcut shortcut: ChirpShortcut) -> KeyCombo {
+        get {
+            switch shortcut {
+            case .dictation: hotkey
+            case .notes: notesHotkey
+            case .openNotes: openNotesHotkey
+            case .useRaw: useRawHotkey
+            }
+        }
+        set {
+            switch shortcut {
+            case .dictation: hotkey = newValue
+            case .notes: notesHotkey = newValue
+            case .openNotes: openNotesHotkey = newValue
+            case .useRaw: useRawHotkey = newValue
+            }
+        }
+    }
     #endif
     /// Show Chirp in the Dock and ⌘-Tab even with no Notes window open. Off by default.
     public var alwaysShowInDock: Bool {

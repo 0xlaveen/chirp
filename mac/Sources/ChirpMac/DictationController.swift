@@ -48,8 +48,10 @@ final class DictationController {
     private static let escapeID: UInt32 = 2
     private static let rawID: UInt32 = 3
 
-    /// The 5 s window after a cleaned insertion in which ⌃⌥Z and the menu offer "Use raw" (the HUD is already gone).
+    /// The 5 s window after a cleaned insertion in which the Use raw hotkey (⌃⌥Z by default) and the menu offer it (the
+    /// HUD is already gone).
     private(set) lazy var rawOffer = RawOffer(
+        hotkey: { settings.useRawHotkey },
         register: { combo, take in HotKeyCenter.shared.register(id: Self.rawID, combo: combo, onDown: take) },
         unregister: { HotKeyCenter.shared.unregister(id: Self.rawID) },
         use: { [weak self] in self?.useRaw() },
