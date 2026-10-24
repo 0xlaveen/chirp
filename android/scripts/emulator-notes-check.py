@@ -129,7 +129,8 @@ def check(probe, work, output):
     # Organize on notes under the reorganize minimum says so; with more notes it reorganizes them.
     organized = calls('reorganize')
     # Organize and Share are in the ⋮ menu; typing needs Edit (the page is rendered Markdown until then).
-    def menu(item): probe['click']('More options'); probe['click'](item)
+    # Wait for the item rather than click(), whose scroll-to-find swipe would close the menu.
+    def menu(item): probe['click']('More options'); tap(wait_node(item))
     if state()['notes_chars'] < 80:
         menu('Organize')
         wait(lambda s: s['note'] == 'Nothing to organize yet — keep going', 'Organize on short notes gave no answer', 20)
