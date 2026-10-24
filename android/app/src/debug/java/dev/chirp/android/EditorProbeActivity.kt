@@ -53,12 +53,21 @@ class EditorProbeActivity : Activity() {
         column.addView(Button(this).apply {
             text = "Recognize"; isAllCaps = false
             setOnClickListener {
-                val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+                val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).setPackage(packageName).putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
                 if (intent.resolveActivity(packageManager) == null) report.text = "Recognizer unavailable"
                 else @Suppress("DEPRECATION") startActivityForResult(intent, 1)
             }
         })
         column.addView(report)
+        column.addView(Button(this).apply {
+            text = "Notes count"; isAllCaps = false
+            setOnClickListener {
+                Thread {
+                    val count = NotesSessions(applicationContext).entries().size
+                    runOnUiThread { report.text = "Notes count=$count" }
+                }.start()
+            }
+        })
         // Below the status bar on edge-to-edge targets, so every field can be tapped.
         setContentView(ScrollView(this).apply { fitsSystemWindows = true; addView(column) })
     }
@@ -67,7 +76,7 @@ class EditorProbeActivity : Activity() {
         super.onActivityResult(requestCode, resultCode, data)
         if (requestCode == 1) {
             val results = data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS).orEmpty()
-            report.text = "Recognize ok=${resultCode == RESULT_OK}; count=${results.size}; length=${results.firstOrNull()?.length ?: 0}"
+            report.text = "Recognize result=$resultCode; ok=${resultCode == RESULT_OK}; count=${results.size}; length=${results.firstOrNull()?.length ?: 0}"
         }
     }
 }

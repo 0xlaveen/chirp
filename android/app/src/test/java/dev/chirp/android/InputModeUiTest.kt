@@ -122,6 +122,10 @@ class InputModeUiTest {
             shot("protected")
             compose.runOnIdle { settings.value = true; state.advancedProtection = false; state.accessibilityReturns = 0 }
             shot("settings")
+            compose.onNodeWithText("Add Widget").performScrollTo()
+            compose.onNodeWithText("Add Dictate tile").assertExists()
+            compose.onNodeWithText("Add Notes tile").assertExists()
+            shot("entry-points")
         }
     }
     @Test fun `render cover in both themes at standard and large font`() = renders("cover")

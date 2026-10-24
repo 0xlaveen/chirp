@@ -103,3 +103,19 @@ The emulator can't reproduce One UI's foreground-service and app-op rules for a 
 7. **Clipboard history.** After a Copy, open Samsung Keyboard's clipboard panel and note whether the dictated text appears. The clip is marked sensitive, but One UI may keep it anyway.
 
 Record the One UI version and each result. Mark anything skipped as not verified.
+
+## Quick dictate, Speak buttons, widget and Share into Notes (#168)
+
+With your normal keyboard still selected, and floating-mic Accessibility turned off:
+
+1. Settings → How you dictate → Other ways to dictate: Add Dictate tile and Add Notes tile. Accept each Android prompt. On Android 12, follow the displayed shade/Edit instructions. Open Dictate while locked and confirm unlock is required before recording.
+2. Dictate from the tile. Confirm live partials, Stop, sensitive clipboard final and “Copied — paste anywhere.” Paste in another app. Repeat with clean-up: Use raw must replace the clipboard. Touch the final to keep it open; leave another final untouched and confirm it closes after four seconds. Edit in Scratchpad must retain the words without a text-bearing Intent. Confirm the microphone indicator disappears on final, Cancel, Back, Home, error and leaving while polishing.
+3. Launch an app’s Speak button. If Android offers a chooser, choose Chirp Just once or Always. Confirm only one final reaches that app, including polished text; Cancel inserts nothing. Try the caller’s language, partial-results and offline options without expecting them to alter the Mac engine or provide on-device recognition. Disconnect the server, abandon the displayed error with Done, and confirm the caller receives an error rather than success. Neither Samsung’s nor Gboard’s own mic is promised to route here.
+4. Add Widget in Chirp, then place its 2×1 widget on the launcher. Dictate must open clipboard capture; Record must start Notes. Resize to 1×1: only Dictate remains. Check light/dark and Match wallpaper, including Samsung’s launcher. Widget placement is an operator check; automation asserts its RemoteViews launch intents.
+5. Share plain text from another app. Save as new note must add exactly one local note with the subject/first-line title. While a note records, then while paused, share again and Add to that note; confirm the text appends, the title stays, and recording continues. Stop that note while the dialog is open: a late Add must never target a replacement recording. Cancel, non-text and >100,000-character shares must create nothing.
+6. Keep dictation history off, then enable it and repeat the tile/Speak cases. Only the enabled cases should appear, labelled Quick dictate or the caller’s app. Check Samsung clipboard history separately; the sensitive flag is not a guarantee that the OEM deletes it.
+7. With TalkBack, navigate the Quick dictate status, Stop, Cancel, one error fix, Use raw, Edit in Scratchpad and Done; activate the Share dialog’s save/append/cancel actions and both widget buttons. Repeat on cover/inner screens with large fonts and reduced motion. Confirm all actions remain reachable.
+
+Emulator automation covers synthetic capture, chooser resolution, result/cancellation/error, sensitive clipboard lengths, Notes tile, text share, provider discovery, resource teardown and TalkBack labels. OEM launchers, Samsung clipboard retention and real microphone indicators require these hardware steps.
+
+Automated evidence for #168 (2026-10-25): the real-server Quick dictate matrix and release smoke/TalkBack phases passed in one host-locked, read-only Fold AVD (2 cores, 3072 MB). Gboard stayed selected; Accessibility was disabled for the entry matrix. Both Chirp and Google resolved the Speak intent (this Play image provides Google’s handler through `com.google.android.tts`). Every tested end state had no Chirp recording client or foreground service. Launcher placement and OEM clipboard retention remain the operator steps above.

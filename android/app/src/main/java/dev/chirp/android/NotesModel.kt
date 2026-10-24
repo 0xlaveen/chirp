@@ -166,6 +166,13 @@ internal class NotesModel(
 
     // What the screen reads.
     override val state get() = revision.let { recorder.state }
+    override val shareTitle get() = displayTitle
+    override fun appendShared(text: String): Boolean {
+        if (state != NotesRecorder.State.RECORDING && state != NotesRecorder.State.PAUSED) return false
+        val before = document.text
+        edit(TextFieldValue(before + (if (before.isBlank()) "" else "\n\n") + text))
+        return true
+    }
     val document get() = revision.let { recorder.document }
     val structuring get() = revision.let { recorder.structuring }
     val reorganizing get() = revision.let { recorder.reorganizeStatus }

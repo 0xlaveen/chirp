@@ -32,6 +32,12 @@ open class ScratchpadTileService : LaunchTileService() {
     override fun onClick() = launch(ScratchpadActivity.intent(this))
 }
 
+/** Keyboard-free, visible microphone entry; intentionally always inactive. */
+open class DictateTileService : LaunchTileService() {
+    override fun onStartListening() { qsTile?.apply { state = Tile.STATE_INACTIVE; updateTile() } }
+    override fun onClick() = launch(QuickDictateActivity.intent(this))
+}
+
 /** Quick Settings tile for Notes: tap to open Notes and record, tap again to stop. Shows Recording or Paused; no text. */
 open class NotesTileService : LaunchTileService() {
     override fun onStartListening() {

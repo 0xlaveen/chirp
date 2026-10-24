@@ -15,3 +15,13 @@
 - **Phone diagnostics are content-free.** Android and iOS keep per-session timings (numbers, booleans and fixed enum names only), and Android message-free crash frames; no text, audio, URLs, hosts, tokens or app names.
 
 - **Keeping your Android keyboard is optional.** The input-mode choice and floating-mic skip are ordinary, non-sensitive preferences. Choosing either mode never grants or revokes system permissions. The Accessibility guide discloses focused-field access before opening Android settings; passwords are excluded, field text stays local and is never logged or saved. The service keeps its four event types and 100 ms timeout without additional window-retrieval flags, key-event filtering or an overlay permission. It hides while Chirp Keyboard is selected. Advanced Protection is queried through a normal permission, not bypassed. Notes and Scratchpad work without Accessibility.
+
+### Quick dictate, Speak buttons, widgets and text sharing (Android)
+
+The Dictate tile and widget deliberately **copy the final automatically** so it can be pasted into any app. These are the only dictation paths that auto-copy. Use raw re-copies the original. Every copy sets Android’s `EXTRA_IS_SENSITIVE`; that hides supported clipboard previews, but Samsung’s clipboard history may still retain it. The floating mic copies only after an explicit Copy tap. [Android clipboard privacy](https://developer.android.com/develop/ui/views/touch-and-input/copy-paste#sensitive-content).
+
+A Speak-button request receives only its single final and an unavailable-confidence marker through `RECOGNIZE_SPEECH`’s Activity result. It does not receive history, other notes or clipboard content, and this mode never auto-copies. The requesting app controls what happens to that result. Speech still goes to the paired Mac even when the caller supplies an offline preference. Dictation history remains opt-in: clipboard sessions use “Quick dictate”; Speak sessions use the requesting app’s label when available.
+
+The launcher widget contains static controls only: no note text, dictated words or periodic refresh. Quick dictate is excluded from Recents, disables its screenshot thumbnail where supported, and cancels microphone/network work when left. Scratchpad hand-off is a one-use, expiring in-process value, never a text Intent extra, preference, log or notification.
+
+Plain-text shares into Notes are saved in the existing sealed, local library or appended as the user’s own edit to the same recording/paused note. Sharing alone makes no speech-server request. The text is sent for processing only if the user later chooses Organize. Oversized and non-text shares are refused. The receiver does not return any library data to the sharing app.
