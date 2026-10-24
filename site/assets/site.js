@@ -1,4 +1,4 @@
-// Chirp site: theme toggle, tabs, screenshot reels, copy buttons and the hero HUD demo. No network.
+// Chirp site: theme toggle, tabs, screenshot reels and copy buttons. No network.
 (() => {
   const doc = document.documentElement;
   doc.classList.add("js");
@@ -85,45 +85,5 @@
       pre.append(btn);
     });
 
-    document.querySelectorAll(".hud[data-demo]").forEach(runHud);
   });
-
-  // Hero HUD: the Mac capsule's real sequence — live words with a dimmed tail, polishing, the diff, inserted.
-  function runHud(hud) {
-    const status = hud.querySelector("[data-status]");
-    const text = hud.querySelector("[data-text]");
-    const words = "please move the standup to three thirty and uh let everyone know".split(" ");
-    const diff = '<ins>Move</ins> the standup to <del>three thirty</del> <ins>3:30</ins> and <del>uh</del> let everyone <ins>know.</ins>';
-    const done = "Move the standup to 3:30 and let everyone know.";
-    const phase = (p, label, body) => { hud.dataset.phase = p; status.textContent = label; if (body !== undefined) text.innerHTML = body; };
-    if (reduce.matches) return phase("polished", "Polished", diff);
-    let visible = true, timer = 0, i = 0, stage = 0;
-    const live = (n) => {
-      const stable = words.slice(0, Math.max(0, n - 3)).join(" ");
-      const tail = words.slice(Math.max(0, n - 3), n).join(" ");
-      return `${stable}${stable && tail ? " " : ""}<span class="tail">${tail}</span>`;
-    };
-    const tick = () => {
-      if (!visible || document.hidden) { timer = setTimeout(tick, 400); return; }
-      if (stage === 0) {
-        if (i === 0) phase("listening", "Listening", "");
-        i++;
-        text.innerHTML = live(i);
-        if (i >= words.length) { stage = 1; i = 0; }
-        return (timer = setTimeout(tick, i === 0 ? 700 : 230 + Math.random() * 120));
-      }
-      const steps = [
-        () => [phase("listening", "Listening", words.join(" ")), 500],
-        () => [phase("polishing", "Polishing"), 1100],
-        () => [phase("polished", "Polished", diff), 2800],
-        () => [phase("inserted", "Inserted", done), 2200],
-      ];
-      const [, wait] = steps[stage - 1]();
-      stage = stage === steps.length ? 0 : stage + 1;
-      timer = setTimeout(tick, wait);
-    };
-    new IntersectionObserver((e) => { visible = e[0].isIntersecting; }).observe(hud);
-    reduce.addEventListener("change", () => { if (reduce.matches) { clearTimeout(timer); phase("polished", "Polished", diff); } });
-    tick();
-  }
 })();

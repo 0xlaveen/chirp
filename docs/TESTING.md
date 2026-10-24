@@ -57,12 +57,33 @@ android/scripts/e2e-all.sh
 android/scripts/e2e-all.sh --only notes
 ```
 
-The sweep queues on one host-wide emulator lease, selects its own free even port,
-builds/installs debug, and uses a real throwaway server on 7899 with temporary
-HOME and debug-only TLS. It prints a pass/fail table and a private evidence
-folder. Never run parallel Chirp emulators across worktrees or use the server
-on 7821. See the [Android E2E skill](../.claude/skills/chirp-android-e2e/SKILL.md)
-for the script coverage table, targeted checks and recovery notes.
+`e2e-all.sh` runs every emulator check in one command: dictation, clean-up,
+Notes (including the library: search, rename, delete and Undo, Recently Deleted,
+Continue and kept-audio replay), history, the stop matrix, device checks
+(onboarding, TalkBack, 200% font, folded and open) and the floating mic bubble.
+`--only <check…>` picks some of them. It builds and installs the debug app, boots
+its own read-only `chirp-fold` AVD on a free even port, and uses a real
+throwaway server on 7899 with a temporary HOME and debug-only TLS. It prints a
+pass/fail table and a private evidence folder (`results.json`, a `run.log` and
+screenshots per check). Never use the server on 7821.
+
+**The emulator lock.** Only one Chirp emulator runs on a host at a time, across
+all worktrees. `e2e-all.sh` takes the host-wide lease
+(`android/scripts/emulator-lock.py`, `/tmp/chirp-emulator.lock`) before it builds
+or boots, records its PID and worktree, waits up to 30 minutes for another run
+to finish (`CHIRP_E2E_LOCK_TIMEOUT`, in seconds), takes over from an owner that
+has died, and releases the lease on exit. Other emulator scripts must take the
+same lease. Queue runs; never start them in parallel.
+
+### Testing skills
+
+Agent workflows for these checks live under [`.claude/skills/`](../.claude/skills/):
+
+| Skill | Use it for |
+|---|---|
+| [`chirp-android-e2e`](../.claude/skills/chirp-android-e2e/SKILL.md) | "test android", "run the emulator", "check notes on android": the `e2e-all.sh` sweep, the script coverage table, targeted UI checks, safe evidence collection and recovery from emulator or harness failures ([reference.md](../.claude/skills/chirp-android-e2e/reference.md)). |
+
+An iOS simulator skill is planned; until it lands, use `ios/scripts/simulator-e2e.sh` as described above.
 
 ## 2. Operator steps
 
@@ -75,7 +96,7 @@ Each step needs the operator's hands or approval. Do them in order.
    - It reuses the cached model at `~/.koi/voice-models/parakeet-mlx`.
    - On first run it creates `~/.config/chirp/token` (mode 0600).
    - Optional, keeps the model warm across reboots: `uv run chirp-server service install`. Remove it with `uv run chirp-server service uninstall`.
-2. **Publish on the tailnet only.** This adds one path to the existing Serve config alongside `/koi`, and it is never Funnel.
+2. **Publish on the tailnet only.** This adds one path to your existing Serve config, and it is never Funnel.
    ```sh
    tailscale serve --bg --set-path /chirp http://127.0.0.1:7821
    tailscale serve status        # shows https://<your-mac>.<tailnet>.ts.net/chirp (tailnet only)
@@ -146,31 +167,31 @@ The simulator gates (`ios/scripts/simulator.sh test` and `ios/scripts/simulator-
 8. **Install the app:**
    - Build and install: `cd android && ./scripts/make-keystore.sh && ./gradlew assembleRelease && adb install -r app/build/outputs/apk/release/app-arm64-v8a-release.apk`.
    - Or install the debug APK.
-9. **Set up on the phone:** open **Chirp**, grant the microphone, and enable the keyboard (Settings → General management → Keyboard list and default). Keep Samsung Keyboard on.
+9. **Set up on the phone:** open **Chirp**. On **How you’ll dictate**, choose **Use Chirp Keyboard** and enable it (Settings → General management → Keyboard list and default; keep Samsung Keyboard on), or choose **Keep Samsung Keyboard** and turn on **Chirp floating mic** from the guided page (expect the Restricted setting step on a sideloaded install). Grant the microphone.
 10. **Pair:**
     - On the Mac, open Chirp → Settings → Devices → **Pair a Phone…** (it checks Tailscale Serve and shows the QR code), or run `cd server && uv run chirp-server pair --url https://<your-mac>.<tailnet>.ts.net/chirp`, which prints a secret link and a terminal QR code.
     - Tap **Scan code** on the Pair your Mac page. Google Play services owns the scanner UI and camera access; Chirp needs no camera permission. The Fold 8 has Play services; the scanner module may download on first use. A valid scan is tested and saved automatically. Paste remains available if scanning is unavailable or cancelled. The real scanner still needs device acceptance.
     - Never put the link in chat, shell history or screenshots.
-    - Wait for **Connected · host**, then tap **Finish**; Home opens with the **Try it** card. Relaunching the app now opens Home, not onboarding.
-    - App shell: a bar on the cover screen and a rail on the inner screen; Back from a tab returns to Home, then leaves. Turn Tailscale off → Home's card says **Tailscale is off** with **Turn on**; quit Chirp on the Mac → **Mac offline** with **Check again**. With history on, swipe an entry in History away and tap **Undo**: it comes back.
+    - Wait for **Connected · host**, then tap **Finish**; Notes opens with the **● Mac** chip. Relaunching the app now opens Notes, not onboarding.
+    - App shell: Notes · History · Settings in a bar on the cover screen and a rail on the inner screen; Back from a tab returns to Notes, then leaves. Turn Tailscale off or quit Chirp on the Mac → the chip says **● Offline**, and tapping it opens Settings → Connection with **Check connection**. With history on, swipe an entry in History away and tap **Undo**: it comes back; long-press one → **Add to note**.
 11. **Dictate:**
-    - In Samsung Notes or a browser field, switch to Chirp with the keyboard icon and tap the mic.
+    - In Samsung Notes or a browser field, switch to Chirp with the keyboard icon and tap the mic. (Floating mic mode: tap the bubble beside the field instead; hold it to talk; drag it to the other edge.)
     - Live text appears underlined in the field, and the final text replaces it.
     - Check these cases from `android/README.md`: hold-to-talk, ✕ cancel, fold/unfold mid-utterance, hiding the keyboard, and Wi-Fi vs LTE.
     - With a Bluetooth keyboard: Ctrl+Alt+Space starts and stops, Esc cancels; with TalkBack on, one "Inserted, N words" per final and nothing while listening.
-12. **Notes** (long-press the launcher icon → **Notes**, or the Notes tab; both are one session):
+12. **Notes** (the Notes tab, or long-press the launcher icon → **Notes**):
     - Record a 5-minute mock meeting with a decision, two to-dos and a "we will **not** …" sentence. Check that notes appear under the AI tail after each segment, that the transcript has one line per segment (none longer than 45 s, nothing lost at a cut) and that the negation is kept.
     - While recording, type a line above the notes and fix a word inside them: the caret never jumps and new notes appear after your edit.
     - Turn the screen off for 2 minutes, then on: the **Chirp Notes is recording** notification stayed (no notes text in it), and the transcript kept growing. From the lock screen, **Pause** (mic indicator off, notification says paused), then **Resume**; **Stop** in the notification finishes the notes.
     - Battery saver: record, turn the screen off for 2 minutes while speaking, turn it on → the notes and transcript are current at once and the notification said **Battery saver** while off. Chirp settings → About → Diagnostics → **Notes sessions** shows a numbers-only line with many skipped updates. The full measurement is [android-device-acceptance.md §6](android-device-acceptance.md#6-notes-battery).
-    - Notes keep themselves (**Keep notes on this phone** is on by default; Chirp settings → Privacy & history → Notes): Stop, then New without a prompt → the clock button lists the notes; open them, delete them (they go to Recently Deleted for 30 days). Turning the switch off keeps the notes; **Delete all notes** removes them. With **Keep audio with notes** on, record a minute: the total under Notes settings grows and **Delete kept audio** returns it to zero.
+    - Notes keep themselves (**Keep notes on this phone** is on by default; Chirp settings → Notes): Stop, and the note is in the library with no prompt. Search for a word from the transcript; rename a note by tapping its title; swipe one away and tap **Undo**; delete it again and restore it from ⋮ → **Recently Deleted**. **Continue** on a finished note adds a `Continued` divider and keeps the clock. Turning the switch off keeps the notes; **Delete all notes** removes them. With **Keep audio with notes** on, record a minute: a segment plays from the **Transcript** sheet, the total under Notes settings grows and **Delete kept audio** returns it to zero.
     - Add the **Notes** Quick Settings tile: a tap opens Notes and starts recording, the tile shows **Recording**/**Paused**, and a second tap stops it.
-    - Record a minute and type a line, wait 3 s, then `adb shell am kill dev.chirp.android` (or swipe Chirp away) and reopen Notes → **Recovered unsaved notes from …**, the notes, line and transcript are back and stopped, and **Record** continues the timestamps. **Save** to Downloads → the `.md` opens with the notes and transcript; `adb shell run-as dev.chirp.android ls no_backup` (debug build) no longer lists `notes_recovery.bin`.
-    - Fold and unfold: notes and transcript sit side by side on the inner screen and as tabs on the cover screen, with nothing lost.
+    - Record a minute and type a line, wait 3 s, then `adb shell am kill dev.chirp.android` (or swipe Chirp away) and reopen Notes → the note is in the library marked **Recovered**, with the line and transcript, stopped, and **Continue** carries on the timestamps. ⋮ → **Export Markdown** to Downloads → the `.md` opens with the notes and transcript.
+    - Fold and unfold: the list and the open note sit side by side on the inner screen; on the cover screen the note opens over the list and the **Transcript** chip opens a sheet, with nothing lost.
     - Edit by voice: with Notes recording, hold **Hold to edit by voice**, say "remove the first bullet", let go. The transcript has none of those words, notes keep arriving after, and **Edited · Undo** appears; **Undo** restores the text. Try "add a summary" (refused with a reason), a tap (latches; the next tap sends), **Cancel**, a selection (only those lines change) and typing while "Editing notes…" shows (a conflict, your typing intact). With the screen off, use the notification's **Command**, then **Send**: the notes are already edited when the screen is on. Outside a recording the button opens the microphone for the command only. Check `adb logcat` and the server log: lengths and outcome codes, never the words.
     - Press **Organize**, then type at once → "Notes changed while organizing — try again", typing intact. Organize again, then **Undo organize** restores the text.
     - Stop the Mac server for 30 s mid-recording: failed segments show `⚠︎ audio not transcribed`, and three in a row stop the recording with the notes kept.
-    - **Copy** and paste into a note app: title, notes, `---`, `## Transcript`. Back asks before discarding; afterwards `adb shell run-as dev.chirp.android ls -R files shared_prefs` holds no notes text.
+    - **Copy** and paste into a note app: title, notes, `---`, `## Transcript`. `adb shell run-as dev.chirp.android ls -R files shared_prefs` (debug build) shows only sealed `notes/*.bin` files and no plain notes text.
 13. **Battery:** run `android/scripts/battery-session.sh`, which resets batterystats, runs a scripted session and dumps the results. Record the result in `docs/bench.md`.
 14. **Full acceptance pass:** follow [android-device-acceptance.md](android-device-acceptance.md) (battery, Perfetto, stop matrix, session timings from Diagnostics).
 
