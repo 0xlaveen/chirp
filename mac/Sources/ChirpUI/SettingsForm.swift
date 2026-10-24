@@ -71,6 +71,16 @@ public struct SettingsState: Sendable {
     public var chosenInputUID: String?
     /// About: the version from the app bundle.
     public var about = AboutInfo()
+    /// Notes › Library: how long notes are kept, how many sit in Recently Deleted, and the kept-audio total.
+    public var notesRetention: NotesRetention = .never
+    public var recentlyDeletedCount = 0
+    public var notesKeepAudio = false
+    public var notesAudioBytes = 0
+    /// Notes › Export: the folder Export Markdown… opens in (nil: wherever it was last used).
+    public var exportFolder: String?
+    /// Notes › Smart notes: the defaults for new recordings.
+    public var structureNotes = false
+    public var autoReorganize = true
 
     public init() {}
 
@@ -84,43 +94,62 @@ public struct SettingsState: Sendable {
     }
 }
 
-/// The preferences window's toolbar tabs, in order: one per task (start Chirp and fix permissions; every global
-/// shortcut; how a dictation runs, sounds and where it listens; clean-up; Live Notes; the server and its models; phones; the version).
+/// The preferences window's pages, in the sidebar's order: start Chirp and fix permissions; dictation (every shortcut,
+/// how a dictation stops, sounds and where it listens); clean-up; the Notes library; phones; and Advanced (the server, its
+/// token, models and the Doctor). About is the sidebar's footer row.
 public enum SettingsTab: String, CaseIterable, Sendable {
-    case general, shortcuts, dictation, cleanup, notes, server, devices, about
+    case general, dictation, cleanup, notes, devices, advanced, about
 
     public var title: String {
         switch self {
         case .general: "General"
-        case .shortcuts: "Shortcuts"
         case .dictation: "Dictation"
         case .cleanup: "Clean-up"
         case .notes: "Notes"
-        case .server: "Server"
         case .devices: "Devices"
+        case .advanced: "Advanced"
         case .about: "About"
         }
     }
 
-    /// The toolbar icon (SF Symbol).
+    /// The sidebar icon (SF Symbol).
     public var symbol: String {
         switch self {
         case .general: "gearshape"
-        case .shortcuts: "keyboard"
         case .dictation: "mic"
         case .cleanup: "sparkles"
         case .notes: "note.text"
-        case .server: "server.rack"
         case .devices: "iphone"
+        case .advanced: "slider.horizontal.3"
         case .about: "info.circle"
         }
     }
+
+    /// What the sidebar's search field matches besides the title, so "login", "token" or "retention" finds its page.
+    public var keywords: [String] {
+        switch self {
+        case .general: ["startup", "launch at login", "dock", "permissions", "microphone", "accessibility", "setup"]
+        case .dictation: ["shortcuts", "hotkey", "hold to talk", "auto-stop", "stop", "silence", "return", "word waveform",
+                          "sounds", "volume", "input device", "use raw", "new note"]
+        case .cleanup: ["style", "prompts", "per-app", "insert raw", "review changes", "undo", "polish"]
+        case .notes: ["library", "retention", "recently deleted", "audio", "storage", "export", "folder", "smart notes",
+                      "structure", "reorganize", "speakers", "voices"]
+        case .devices: ["phone", "pair", "paired", "android", "iphone", "token", "revoke"]
+        case .advanced: ["server", "url", "token", "models", "doctor", "keep loaded", "status"]
+        case .about: ["version", "notices", "licenses"]
+        }
+    }
+
+    /// The pages listed in the sidebar's body; About sits in the footer.
+    public static var sidebar: [SettingsTab] { allCases.filter { $0 != .about } }
 }
 
 /// A tab's content view. It accepts first responder so the window can park focus here instead of on a text field,
 /// which would otherwise open selected.
 public final class SettingsContentView: NSView {
     override public var acceptsFirstResponder: Bool { true }
+    /// Top-down, so a page shorter than the window sits at its top inside the scroll view.
+    override public var isFlipped: Bool { true }
 }
 
 /// The Settings window content, plain AppKit on purpose: the Command Line Tools toolchain has no SwiftUI macro
@@ -130,21 +159,22 @@ public final class SettingsContentView: NSView {
 /// as tall as its content. All controls live here and are exposed so the owner can attach targets and actions.
 @MainActor
 public final class SettingsForm {
-    static let margin: CGFloat = 20
-    static let controlWidth: CGFloat = 340
-    /// Extra space above the first row of a group.
-    static let groupSpacing: CGFloat = 12
-    /// Narrowest a tab may be: room for the eight toolbar tabs (they need about 490 pt) without an overflow chevron.
-    static let minimumWidth: CGFloat = 500
+    static let margin: CGFloat = ChirpSpacing.gutter
+    /// The width a control that fills its row may take.
+    static let controlWidth: CGFloat = SettingsLayout.rowWidth
+    /// A text field beside its title.
+    static let fieldWidth: CGFloat = 280
+    /// Every page is this wide: the card column plus the gutters. The window's detail column is exactly this.
+    static let pageWidth: CGFloat = SettingsLayout.pageWidth + 2 * margin
 
-    /// One content view per tab, holding its body (a grid, or the About view) with a 20 pt margin above and below.
+    /// One content view per page, holding its body (the sections, or the About view) with a 20 pt margin around it.
     private var tabViews: [SettingsTab: SettingsContentView] = [:]
     private var bodies: [SettingsTab: NSView] = [:]
     public let hotkey = NSPopUpButton(frame: .zero, pullsDown: false)
     public let recorder = HotkeyRecorder()
     /// Shortcuts: every global shortcut besides dictation, with the same recorder and rules.
-    public let notesShortcut = ShortcutControls(.notes, purpose: "Starts and stops Live Notes from any app.")
-    public let openNotes = ShortcutControls(.openNotes, purpose: "Brings the Notes window forward without recording.")
+    public let notesShortcut = ShortcutControls(.notes, purpose: "Starts a new note and records, from any app.")
+    public let openNotes = ShortcutControls(.openNotes, purpose: "Brings the Notes library forward without recording.")
     public let useRawShortcut = ShortcutControls(.useRaw, purpose: "Puts the original words back for 5 s after a cleaned insertion.")
     public let alwaysInDock = NSButton(checkboxWithTitle: "Always show Chirp in the Dock", target: nil, action: nil)
     /// Under the hotkey: how it works, or why the last recording was refused.
@@ -152,7 +182,7 @@ public final class SettingsForm {
     /// Fn/Globe has a separate macOS action that the user must turn off in Keyboard settings.
     public let fnKeyHelp = SettingsForm.help("To use fn / 🌐 without opening emoji or another macOS action, open System Settings → Keyboard and set “Press 🌐 key to” to “Do Nothing”.")
     public let keyboardSettingsButton = NSButton(title: "Open Keyboard Settings…", target: nil, action: nil)
-    private var fnKeySetupRow: NSGridRow?
+    private var fnKeySetupRow: SettingsRow?
     /// Auto-stop or hold to talk, and (auto-stop only) how long a pause ends the dictation.
     public let mode = NSPopUpButton(frame: .zero, pullsDown: false)
     public let silence = NSPopUpButton(frame: .zero, pullsDown: false)
@@ -180,9 +210,8 @@ public final class SettingsForm {
     private var customStartSound: CustomSound?
     private var customStopSound: CustomSound?
     private var soundError: String?
-    /// The Start sound and Stop sound rows of the Dictation grid, shown only for the Custom pack.
-    private var customRows: [Int] = []
-    private var soundsGrid: NSGridView { grids[.dictation]! }
+    /// The Start sound and Stop sound rows of the Dictation page, shown only for the Custom pack.
+    private var customRows: [SettingsRow] = []
     /// Dictation: the input device, as in the menu's Microphone submenu.
     public let microphone = NSPopUpButton(frame: .zero, pullsDown: false)
     private var shownMicrophones: [String]?
@@ -192,6 +221,19 @@ public final class SettingsForm {
     public let wordWaveform = NSButton(checkboxWithTitle: "Word waveform overlay", target: nil, action: nil)
     /// Notes: Live Notes' recovery copy of unsaved notes.
     public let notesRecoveryCopy = NSButton(checkboxWithTitle: NotesStatus.recoverySwitch, target: nil, action: nil)
+    /// Notes: how long the library keeps a note, what Recently Deleted holds, kept audio, the export folder and the
+    /// smart-notes defaults. Presentational: each maps to a preference that already exists (or one folder path).
+    public let notesRetention = NSPopUpButton(frame: .zero, pullsDown: false)
+    public let emptyDeleted = NSButton(title: "Empty…", target: nil, action: nil)
+    private let deletedStatus = NSTextField(labelWithString: "")
+    public let keepAudio = NSButton(checkboxWithTitle: "Keep audio with notes", target: nil, action: nil)
+    public let deleteAudio = NSButton(title: "Delete…", target: nil, action: nil)
+    private let audioStatus = NSTextField(labelWithString: "")
+    public let chooseExport = NSButton(title: "Choose…", target: nil, action: nil)
+    public let resetExport = NSButton(title: "Reset", target: nil, action: nil)
+    private let exportFolder = NSTextField(labelWithString: "")
+    public let structureNotes = NSButton(checkboxWithTitle: "Structure notes", target: nil, action: nil)
+    public let autoReorganize = NSButton(checkboxWithTitle: "Auto-reorganize", target: nil, action: nil)
     /// General: reopens the setup walk-through.
     public let setupButton = NSButton(title: "Set Up Chirp…", target: nil, action: nil)
     /// Server: puts the chirp-server doctor command on the pasteboard.
@@ -209,7 +251,7 @@ public final class SettingsForm {
     /// Notes: "Recognize saved voices" and the saved voices, each with Forget.
     public let voicesView = VoiceProfilesView()
     /// Notes: brings the Notes window forward.
-    public let notesButton = NSButton(title: "Open Notes Window", target: nil, action: nil)
+    public let notesButton = NSButton(title: "Open Notes Library", target: nil, action: nil)
     /// About: the icon, the version and Third-Party Notices….
     public let about: AboutView
     /// Server: "Restart server" or "Use Chirp’s managed server instead", shown only for an out-of-date server.
@@ -235,7 +277,6 @@ public final class SettingsForm {
     private let keepLoadedError = SettingsForm.help("")
     private let styleHelp = SettingsForm.help("")
     private let cleanupHelp = SettingsForm.help("")
-    private var grids: [SettingsTab: NSGridView] = [:]
     private var shownProfileIDs: [String] = []
     private var shownCatalog: StyleCatalog?
     private let tokenStatus = StatusLine()
@@ -251,17 +292,13 @@ public final class SettingsForm {
         serverURL.placeholderString = ServerConfig.defaultURL.absoluteString
         serverURL.font = MenuStyle.font
         serverURL.lineBreakMode = .byTruncatingMiddle
-        serverURL.widthAnchor.constraint(equalToConstant: Self.controlWidth).isActive = true
+        serverURL.widthAnchor.constraint(equalToConstant: Self.fieldWidth).isActive = true
         for button in [micButton, accessibilityButton, removeSpeakerModel] { button.bezelStyle = .rounded; button.controlSize = .small }
         micStatus.accessory = micButton
         serverFixButton.bezelStyle = .rounded; serverFixButton.controlSize = .small
         serverFixButton.setAccessibilityLabel("Fix the out-of-date server")
         serverStatus.accessory = serverFixButton
         serverDetail.isHidden = true
-        let serverStack = NSStackView(views: [serverStatus, serverDetail])
-        serverStack.orientation = .vertical
-        serverStack.alignment = .leading
-        serverStack.spacing = 4
         accessibilityStatus.accessory = accessibilityButton
         speakerStatus.accessory = removeSpeakerModel
         micButton.setAccessibilityLabel("Fix Microphone access")
@@ -270,7 +307,7 @@ public final class SettingsForm {
         speakerStatus.setAccessibilityLabel("Speaker model")
         microphone.setAccessibilityLabel("Microphone")
         (microphone.cell as? NSPopUpButtonCell)?.lineBreakMode = .byTruncatingTail
-        microphone.widthAnchor.constraint(lessThanOrEqualToConstant: Self.controlWidth).isActive = true
+        microphone.widthAnchor.constraint(lessThanOrEqualToConstant: Self.fieldWidth).isActive = true
 
         for button in [setupButton, doctorButton, modelsButton, pairButton, rotateButton, notesButton] { button.bezelStyle = .rounded }
         setupButton.setAccessibilityLabel("Set up Chirp")
@@ -279,16 +316,8 @@ public final class SettingsForm {
         keyboardSettingsButton.bezelStyle = .rounded
         keyboardSettingsButton.controlSize = .small
 
-        func row(_ title: String, _ control: NSView, help: NSTextField? = nil) -> [NSView] {
-            var content = control
-            if let help {
-                let stack = NSStackView(views: [control, help])
-                stack.orientation = .vertical
-                stack.alignment = .leading
-                stack.spacing = 4
-                content = stack
-            }
-            return [Self.label(title), content]
+        func row(_ title: String?, _ control: NSView?, help: NSTextField? = nil, stacked: Bool = false) -> SettingsRow {
+            SettingsRow(title: title, control: control, help: help, stacked: stacked)
         }
 
         func stack(_ views: [NSView]) -> NSStackView {
@@ -299,82 +328,132 @@ public final class SettingsForm {
             return stack
         }
 
+        func line(_ views: [NSView], spacing: CGFloat = 8) -> NSStackView {
+            let stack = NSStackView(views: views)
+            stack.orientation = .horizontal
+            stack.alignment = .centerY
+            stack.spacing = spacing
+            return stack
+        }
+
+        // The koi accent on every check box, as the bundle's AccentColor gives the live app (an unbundled run shows system blue).
+        for box in [launch, alwaysInDock, wordWaveform, sounds, cleanupEnabled, insertRawFirst, showChanges, offerRaw, keepAudio,
+                    structureNotes, autoReorganize, notesRecoveryCopy, keepLoaded] { box.contentTintColor = .chirpKoi }
+        for button in [emptyDeleted, deleteAudio, chooseExport, resetExport] { button.bezelStyle = .rounded; button.controlSize = .small }
+        emptyDeleted.setAccessibilityLabel("Empty Recently Deleted")
+        deleteAudio.setAccessibilityLabel("Delete all kept audio")
+        chooseExport.setAccessibilityLabel("Choose the export folder")
+        resetExport.setAccessibilityLabel("Use the last export folder again")
+        for label in [deletedStatus, audioStatus] { label.font = MenuStyle.font; label.textColor = .secondaryLabelColor }
+        exportFolder.font = MenuStyle.font
+        exportFolder.lineBreakMode = .byTruncatingMiddle
+        exportFolder.widthAnchor.constraint(equalToConstant: 170).isActive = true
+        notesRetention.setAccessibilityLabel("Delete notes older than")
+        for r in NotesRetention.allCases {
+            notesRetention.addItem(withTitle: Self.retentionTitle(r))
+            notesRetention.lastItem?.representedObject = r.rawValue
+        }
+        structureNotes.setAccessibilityLabel("Structure notes by default")
+        autoReorganize.setAccessibilityLabel("Auto-reorganize by default")
+        keepAudio.setAccessibilityLabel("Keep audio with notes")
+
         build(.general, [
-            row("Startup:", launch, help: launchHelp),
-            row("Dock:", alwaysInDock),
-            row("Permissions:", stack([micStatus, accessibilityStatus]),
-                help: Self.help("The microphone lets Chirp hear you; Accessibility lets it insert text into other apps and send ⌘V.")),
-            row("Setup:", setupButton, help: Self.help("Check the permissions and the server, and try a dictation.")),
-        ], groups: [2])
+            SettingsSection("Startup", [row(nil, launch, help: launchHelp), row(nil, alwaysInDock)]),
+            SettingsSection("Permissions", [row(nil, micStatus), row(nil, accessibilityStatus)],
+                            footnote: Self.help("The microphone lets Chirp hear you; Accessibility lets it insert text into other apps and send ⌘V.")),
+            SettingsSection("Setup", [row("Set up Chirp", setupButton, help: Self.help("Check the permissions and the server, and try a dictation."))]),
+        ])
 
-        let hotkeyRow = NSStackView(views: [hotkey, recorder])
-        hotkeyRow.orientation = .horizontal
-        hotkeyRow.spacing = 10
-        let packRow = NSStackView(views: [soundPack, previewStart, previewStop])
-        packRow.orientation = .horizontal
-        packRow.spacing = 8
-        let volumeRow = NSStackView(views: [volume, volumeLabel])
-        volumeRow.orientation = .horizontal
-        volumeRow.spacing = 8
-        build(.shortcuts, [
-            row("Dictation:", hotkeyRow, help: hotkeyHelp),
-            row("", stack([fnKeyHelp, keyboardSettingsButton])),
-            row("Live Notes:", notesShortcut.view),
-            row("Open Notes:", openNotes.view),
-            row("Use raw:", useRawShortcut.view),
-        ], groups: [2])
-        fnKeySetupRow = grids[.shortcuts]?.row(at: 1)
-
+        let hotkeyRow = line([hotkey, recorder], spacing: 10)
+        let packRow = line([soundPack, previewStart, previewStop])
+        let volumeRow = line([volume, volumeLabel])
+        let fnRow = row(nil, stack([fnKeyHelp, keyboardSettingsButton]))
+        fnKeySetupRow = fnRow
+        let startRow = row("Start sound", Self.fileRow(startFile, choose: chooseStart, remove: removeStart), help: customStartHelp)
+        let stopRow = row("Stop sound", Self.fileRow(stopFile, choose: chooseStop, remove: removeStop),
+                          help: Self.help("Plays after you stop talking, up to \(SoundTiming.stopLimit) s."))
+        customRows = [startRow, stopRow]
         build(.dictation, [
-            row("Mode:", mode, help: modeHelp),
-            row("Auto-stop:", silence),
-            row("Microphone:", microphone, help: Self.help("Follows the system default unless you pick one. Applies from the next dictation.")),
-            row("Overlay:", wordWaveform, help: Self.help("Draws each word's audio above it as you speak, so you can see what was heard.")),
-            row("Return:", autoEnter, help: Self.help("Sends a chat message after inserting. Hold ⇧ when you stop to skip it. Chat apps are those set to the Chat style.")),
-            row("Sounds:", sounds, help: Self.help("Quiet sounds when dictation starts and stops. Off keeps Chirp silent.")),
-            row("Pack:", packRow, help: packHelp),
-            row("Volume:", volumeRow),
-            row("Start sound:", Self.fileRow(startFile, choose: chooseStart, remove: removeStart), help: customStartHelp),
-            row("Stop sound:", Self.fileRow(stopFile, choose: chooseStop, remove: removeStop),
-                help: Self.help("Plays after you stop talking, up to \(SoundTiming.stopLimit) s.")),
-        ], groups: [2, 5], customRows: [8, 9])
+            SettingsSection("Shortcuts", [
+                row("Dictation", hotkeyRow, help: hotkeyHelp), fnRow,
+                row("New note", notesShortcut.view, help: notesShortcut.helpView),
+                row("Notes library", openNotes.view, help: openNotes.helpView),
+                row("Use raw", useRawShortcut.view, help: useRawShortcut.helpView),
+            ]),
+            SettingsSection("Dictating", [
+                row("Mode", mode, help: modeHelp),
+                row("Stop after", silence),
+                row("Microphone", microphone, help: Self.help("Follows the system default unless you pick one. Applies from the next dictation.")),
+                row(nil, wordWaveform, help: Self.help("Draws each word's audio above it as you speak, so you can see what was heard.")),
+                row("Press Return", autoEnter, help: Self.help("Sends a chat message after inserting. Hold ⇧ when you stop to skip it. Chat apps are those set to the Chat style.")),
+            ]),
+            SettingsSection("Sounds", [
+                row(nil, sounds, help: Self.help("Quiet sounds when dictation starts and stops. Off keeps Chirp silent.")),
+                row("Pack", packRow, help: packHelp), row("Volume", volumeRow), startRow, stopRow,
+            ]),
+        ])
 
         build(.cleanup, [
-            row("Clean-up:", cleanupEnabled, help: cleanupHelp),
-            row("Style:", style, help: styleHelp),
-            row("Prompts:", prompts.view),
-            row("Per-app:", appStyles.view, help: Self.help("The frontmost app when you start dictating picks the style. Other apps use the default style.")),
-            row("Insertion:", insertRawFirst, help: Self.help("Swaps in the cleaned text in place where Chirp can verify the insert; elsewhere it inserts once.")),
-            row("Review:", showChanges, help: Self.help("Off: the cleaned text is inserted at once. On: the HUD highlights what changed and keeps a Use raw button.")),
-            row("Undo:", offerRaw, help: offerRawHelp),
-        ], groups: [4])
+            SettingsSection(nil, [row(nil, cleanupEnabled, help: cleanupHelp), row("Style", style, help: styleHelp)]),
+            SettingsSection("Style prompts", [row(nil, prompts.view, stacked: true)]),
+            SettingsSection("Per-app styles", [row(nil, appStyles.view,
+                help: Self.help("The frontmost app when you start dictating picks the style. Other apps use the default style."), stacked: true)]),
+            SettingsSection("After clean-up", [
+                row(nil, insertRawFirst, help: Self.help("Swaps in the cleaned text in place where Chirp can verify the insert; elsewhere it inserts once.")),
+                row(nil, showChanges, help: Self.help("Off: the cleaned text is inserted at once. On: the HUD highlights what changed and keeps a Use raw button.")),
+                row(nil, offerRaw, help: offerRawHelp),
+            ]),
+        ])
 
         build(.notes, [
-            row("Recovery:", notesRecoveryCopy, help: Self.help(NotesStatus.recoveryHelp)),
-            row("Speakers:", stack([speakerStatus, speakerHelp])),
-            row("Voices:", voicesView),
-            row("Window:", notesButton,
-                help: Self.help("Structure notes, Auto-reorganize and Label speakers are switches in the window's footer, so you can change them while you record.")),
+            SettingsSection("Library", [
+                row("Notes library", notesButton, help: Self.help("Every note is saved as you go and kept on this Mac. Nothing is synced.")),
+                row("Delete notes older than", notesRetention,
+                    help: Self.help("Never by default. Older notes move to Recently Deleted when Chirp opens, and stay there for 30 days.")),
+                row("Recently Deleted", line([deletedStatus, emptyDeleted])),
+            ]),
+            SettingsSection("Audio", [
+                row(nil, keepAudio, help: Self.help("Keeps each spoken segment with its note so you can replay it. Off by default; the audio never leaves this Mac.")),
+                row("Kept audio", line([audioStatus, deleteAudio])),
+            ]),
+            SettingsSection("Export", [
+                row("Export folder", line([exportFolder, chooseExport, resetExport]),
+                    help: Self.help("Where Export Markdown… opens. Exports are copies; the notes stay in the library.")),
+            ]),
+            SettingsSection("Smart notes", [
+                row(nil, structureNotes, help: Self.help("Turns the transcript into headings, bullets and to-dos while you record.")),
+                row(nil, autoReorganize, help: Self.help("Tidies the notes in the background as they grow.")),
+            ], footnote: Self.help("Defaults for new recordings. The ✦ menu in the Notes window changes them while you record.")),
+            SettingsSection("Speakers", [
+                row(nil, stack([speakerStatus, speakerHelp])),
+                row("Saved voices", voicesView, stacked: true),
+            ]),
         ])
 
         let keepLoadedStack = stack([keepLoaded, keepLoadedStatus, keepLoadedHelp, keepLoadedError])
         keepLoadedError.textColor = .systemRed
         keepLoadedError.isHidden = true
         keepLoadedStatus.setAccessibilityLabel("Clean-up model status")
-        build(.server, [
-            row("URL:", serverURL),
-            row("Token:", tokenStatus, help: tokenHelp),
-            row("Status:", serverStack),
-            row("Clean-up:", keepLoadedStack),
-            row("Models:", modelsButton, help: modelsHelp),
-            row("Doctor:", doctorButton, help: Self.help("Copies the command that checks the server, to run in Terminal.")),
-        ], groups: [3])
-
         build(.devices, [
-            row("Phone:", pairButton, help: Self.help("Shows a QR code for Chirp on Android or iPhone. The phone reaches this Mac’s server over your tailnet only. Each phone gets its own token.")),
-            row("Paired:", devicesView, help: Self.help(DevicesText.sharedNote)),
-            row("Advanced:", rotateButton, help: Self.help(DevicesText.rotateHelp)),
-        ], groups: [2])
+            SettingsSection("Phones", [
+                row("Pair a phone", pairButton, help: Self.help("Shows a QR code for Chirp on Android or iPhone. The phone reaches this Mac’s server over your tailnet only. Each phone gets its own token.")),
+                row(nil, devicesView, help: Self.help(DevicesText.sharedNote), stacked: true),
+            ]),
+            SettingsSection("Advanced", [row("Shared token", rotateButton, help: Self.help(DevicesText.rotateHelp))]),
+        ])
+
+        build(.advanced, [
+            SettingsSection("Server", [
+                row("Server URL", serverURL),
+                row("Token", tokenStatus, help: tokenHelp),
+                row("Status", serverStatus, help: serverDetail),
+            ]),
+            SettingsSection("Clean-up model", [row(nil, keepLoadedStack)]),
+            SettingsSection("Tools", [
+                row("Local models", modelsButton, help: modelsHelp),
+                row("Doctor", doctorButton, help: Self.help("Copies the command that checks the server, to run in Terminal.")),
+            ]),
+        ])
 
         place(.about, about)
         for m in ActivationMode.allCases {
@@ -392,13 +471,6 @@ public final class SettingsForm {
         refreshHotkeyHelp()
         configureSoundControls()
         apply(state, full: true)
-        // Every tab takes the shared width, below required so a body that grows still keeps its margins.
-        let width = commonWidth
-        for view in tabViews.values {
-            let c = view.widthAnchor.constraint(equalToConstant: width)
-            c.priority = .defaultHigh
-            c.isActive = true
-        }
     }
 
     private func configureSoundControls() {
@@ -440,7 +512,7 @@ public final class SettingsForm {
     public func showPack(_ pack: SoundPack) {
         if let i = soundPack.itemArray.firstIndex(where: { $0.representedObject as? String == pack.rawValue }) { soundPack.selectItem(at: i) }
         packHelp.stringValue = pack.detail
-        for index in customRows { soundsGrid.row(at: index).isHidden = pack != .custom }
+        for row in customRows { row.isHidden = pack != .custom }
     }
 
     /// Shows the imported files (name and length) and the trimming warning; `error` replaces the warning once.
@@ -466,21 +538,19 @@ public final class SettingsForm {
         }
     }
 
-    /// Lays `rows` out as `tab`'s content: a grid whose `groups` rows start a new group (a little more space above).
-    private func build(_ tab: SettingsTab, _ rows: [[NSView]], groups: [Int] = [], customRows custom: [Int] = []) {
-        let grid = NSGridView(views: rows)
-        grid.rowSpacing = 10
-        grid.columnSpacing = 10
-        grid.rowAlignment = .firstBaseline
-        grid.column(at: 0).xPlacement = .trailing
-        grid.column(at: 1).xPlacement = .leading
-        for index in groups { grid.row(at: index).topPadding = Self.groupSpacing }
-        grids[tab] = grid
-        customRows = custom.isEmpty ? customRows : custom
-        place(tab, grid)
+    /// Lays `sections` out as `tab`'s page: the title, then each section's heading and card.
+    private func build(_ tab: SettingsTab, _ sections: [SettingsSection]) {
+        let page = NSStackView()
+        page.orientation = .vertical
+        page.alignment = .leading
+        page.spacing = ChirpSpacing.s24
+        page.addArrangedSubview(SettingsPageTitle(tab.title))
+        for section in sections { page.addArrangedSubview(section.view()) }
+        page.setCustomSpacing(ChirpSpacing.s16, after: page.arrangedSubviews[0])
+        place(tab, page)
     }
 
-    /// `body` centred across the tab, 20 pt below its top and above its bottom, and at least 20 pt from each side.
+    /// `body` 20 pt from the top, the sides and the bottom of the page.
     private func place(_ tab: SettingsTab, _ body: NSView) {
         body.translatesAutoresizingMaskIntoConstraints = false
         let view = SettingsContentView()
@@ -488,25 +558,21 @@ public final class SettingsForm {
         NSLayoutConstraint.activate([
             body.topAnchor.constraint(equalTo: view.topAnchor, constant: Self.margin),
             view.bottomAnchor.constraint(equalTo: body.bottomAnchor, constant: Self.margin),
-            body.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-            body.leadingAnchor.constraint(greaterThanOrEqualTo: view.leadingAnchor, constant: Self.margin),
+            body.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: Self.margin),
+            view.widthAnchor.constraint(equalToConstant: Self.pageWidth),
         ])
+        if tab == .about { body.centerXAnchor.constraint(equalTo: view.centerXAnchor).isActive = true }
         bodies[tab] = body
         tabViews[tab] = view
     }
 
-    /// The content of `tab`.
+    /// The page for `tab`.
     public func view(for tab: SettingsTab) -> SettingsContentView { tabViews[tab]! }
 
-    /// The size `tab` needs: as wide as the widest tab (and the toolbar), as tall as its own body plus the margins.
-    /// Measured on the bodies, not the content views, because the window sizes the content view (its fitting size
-    /// would then just echo the size it was given).
+    /// The size `tab` needs: the common page width and its own body's height plus the margins. Measured on the bodies,
+    /// not the content views, because the window sizes the content view (its fitting size would just echo that).
     public func fittingSize(for tab: SettingsTab) -> NSSize {
-        NSSize(width: commonWidth, height: bodies[tab]!.fittingSize.height + 2 * Self.margin)
-    }
-
-    private var commonWidth: CGFloat {
-        max(SettingsTab.allCases.map { bodies[$0]!.fittingSize.width }.max()! + 2 * Self.margin, Self.minimumWidth)
+        NSSize(width: Self.pageWidth, height: bodies[tab]!.fittingSize.height + 2 * Self.margin)
     }
 
     /// Fills the window. The periodic refresh passes `full: false` so it only follows the server and permission
@@ -527,6 +593,13 @@ public final class SettingsForm {
             launch.isEnabled = s.launch != .unavailable
             wordWaveform.state = s.wordWaveform ? .on : .off
             notesRecoveryCopy.state = s.notesRecoveryCopy ? .on : .off
+            if let i = NotesRetention.allCases.firstIndex(of: s.notesRetention) { notesRetention.selectItem(at: i) }
+            keepAudio.state = s.notesKeepAudio ? .on : .off
+            structureNotes.state = s.structureNotes ? .on : .off
+            autoReorganize.state = s.autoReorganize ? .on : .off
+            exportFolder.stringValue = s.exportFolder.map { Self.displayPath($0) } ?? "Last used"
+            exportFolder.textColor = s.exportFolder == nil ? .secondaryLabelColor : .labelColor
+            resetExport.isEnabled = s.exportFolder != nil
             launchUnavailable = s.launch == .unavailable
             setLaunchError(nil)
             style.controlSize = .regular
@@ -551,6 +624,7 @@ public final class SettingsForm {
             prompts.configure(catalog: s.catalog, overrides: s.stylePrompts)
             shownCatalog = s.catalog
         }
+        showLibrary(deleted: s.recentlyDeletedCount, audioBytes: s.notesAudioBytes)
         showKeepLoaded(s.keepLoaded, host: s.serverHost)
         cleanupHelp.stringValue = s.cleanupDetail
         cleanupEnabled.isEnabled = s.cleanupAvailable
@@ -585,6 +659,36 @@ public final class SettingsForm {
                                 text: s.accessibilityGranted ? "Accessibility allowed" : "Accessibility not allowed")
         micButton.isHidden = s.micGranted
         accessibilityButton.isHidden = s.accessibilityGranted
+    }
+
+    /// Recently Deleted's count and the kept-audio total, which the library reports (they change without the user
+    /// touching Settings, so the periodic refresh sets them too).
+    public func showLibrary(deleted: Int, audioBytes: Int) {
+        deletedStatus.stringValue = deleted == 0 ? "Empty" : deleted == 1 ? "1 note" : "\(deleted) notes"
+        emptyDeleted.isEnabled = deleted > 0
+        audioStatus.stringValue = audioBytes == 0 ? "None" : Self.sizeText(audioBytes)
+        deleteAudio.isEnabled = audioBytes > 0
+    }
+
+    /// "Never", "After 1 year", … as the retention popup reads.
+    static func retentionTitle(_ r: NotesRetention) -> String {
+        switch r {
+        case .never: "Never"
+        case .oneYear: "1 year"
+        case .ninetyDays: "90 days"
+        case .thirtyDays: "30 days"
+        }
+    }
+
+    /// "12.4 MB" for a byte count (decimal units, like Finder).
+    public static func sizeText(_ bytes: Int) -> String {
+        ByteCountFormatter.string(fromByteCount: Int64(bytes), countStyle: .file)
+    }
+
+    /// A folder path with the home folder shown as "~".
+    static func displayPath(_ path: String) -> String {
+        let home = NSHomeDirectory()
+        return path.hasPrefix(home) ? "~" + path.dropFirst(home.count) : path
     }
 
     /// The "Keep clean-up model loaded" switch, its status and help, or why it is unavailable; the periodic refresh
@@ -747,13 +851,6 @@ public final class SettingsForm {
         return stack
     }
 
-    private static func label(_ text: String) -> NSTextField {
-        let f = NSTextField(labelWithString: text)
-        f.font = MenuStyle.font
-        f.alignment = .right
-        return f
-    }
-
     /// What the server says about clean-up: where it runs, or that it is off.
     public static func cleanupDetail(health: Health?) -> (text: String, available: Bool) {
         guard let h = health else { return ("Needs the server. Tidies punctuation and wording before the text is inserted.", true) }
@@ -768,6 +865,7 @@ public final class SettingsForm {
         f.font = MenuStyle.secondaryFont
         f.textColor = .secondaryLabelColor
         f.preferredMaxLayoutWidth = controlWidth
+        f.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         return f
     }
 }

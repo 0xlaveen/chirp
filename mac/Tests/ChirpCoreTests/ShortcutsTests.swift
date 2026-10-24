@@ -78,15 +78,15 @@ import Testing
 
 @MainActor
 @Suite struct ShortcutsTabTests {
-    @Test func theShortcutsTabHoldsEveryShortcutAndOtherTabsNone() {
+    @Test func theDictationPageHoldsEveryShortcutAndOtherPagesNone() {
         let form = SettingsForm(SettingsState())
         func contains(_ tab: SettingsTab, _ view: NSView) -> Bool { view.isDescendant(of: form.view(for: tab)) }
         for view in [form.hotkey, form.recorder, form.notesShortcut.view, form.openNotes.view, form.useRawShortcut.view] {
-            #expect(contains(.shortcuts, view))
-            #expect(!contains(.dictation, view) && !contains(.notes, view) && !contains(.cleanup, view))
+            #expect(contains(.dictation, view))
+            #expect(!contains(.general, view) && !contains(.notes, view) && !contains(.cleanup, view))
         }
         #expect(contains(.general, form.alwaysInDock))
-        #expect(SettingsTab.allCases.firstIndex(of: .shortcuts) == 1 && SettingsTab.shortcuts.title == "Shortcuts")
+        #expect(SettingsTab.allCases.firstIndex(of: .dictation) == 1 && SettingsTab.dictation.title == "Dictation")
         #expect(ChirpShortcut.allCases.compactMap { form.controls(for: $0)?.shortcut } == [.notes, .openNotes, .useRaw])
     }
 
@@ -105,7 +105,8 @@ import Testing
         // Clean-up's Undo help names the Use raw keys.
         s.useRawHotkey = .custom(keyCode: UInt32(kVK_ANSI_U), modifiers: UInt32(controlKey | optionKey | cmdKey))
         form.apply(s, full: true)
-        let undo = try #require(form.offerRaw.superview?.subviews.compactMap { $0 as? NSTextField }.first)
+        let undo = try #require(form.view(for: .cleanup).allDescendants(of: SettingsRow.self).first { $0.allDescendants(of: NSButton.self).contains(form.offerRaw) }?
+            .allDescendants(of: NSTextField.self).last)
         #expect(undo.stringValue.contains("⌃⌥⌘U"))
     }
 

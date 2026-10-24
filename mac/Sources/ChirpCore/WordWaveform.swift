@@ -73,8 +73,8 @@ public struct WordCell: Equatable, Sendable, Identifiable {
 /// Builds the word cells the HUD's word waveform shows from the server's word timings, and trims them for long
 /// dictation. Pure, so the alignment is unit-tested and the snapshots show real layouts.
 public enum WordWaveform {
-    /// The most characters of transcript kept on screen, like `HUDText.tail`.
-    public static let characterLimit = 200
+    /// The most characters of transcript kept on screen (about three lines of word cells at 420 pt), like `HUDText.tail`.
+    public static let characterLimit = 120
     /// A pause shorter than this is drawn as the ordinary word gap.
     public static let silenceThreshold = 0.3
 

@@ -20,6 +20,12 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         var openSetup: () -> Void
         var toggleNotes: () -> Void = {}
         var showNotes: () -> Void = {}
+        /// New Note: a fresh note, recording, in the Notes window.
+        var newNote: () -> Void = {}
+        /// Recent Notes: opens the note with this id in the Notes window.
+        var openNote: (String) -> Void = { _ in }
+        /// The library's newest notes (most recently modified first).
+        var recentNotes: () -> [RecentNote] = { [] }
         /// Live Notes' state for the menu and the icon.
         var notes: () -> NotesMenuState = { NotesMenuState() }
         /// The menu's switch, for Live Notes (pausing stops it and releases its shortcut).
@@ -35,6 +41,8 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         var finishing = false
         var paused = false
         var elapsed: String?
+        /// The title of the note being recorded.
+        var title: String?
         var hasDocument = false
         var hotkeyRegistered = true
         var openShortcut: String?
@@ -166,6 +174,9 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         inputs.notesFinishing = notes.finishing
         inputs.notesPaused = notes.paused
         inputs.notesElapsed = notes.elapsed
+        inputs.notesTitle = notes.title
+        inputs.recentNotes = actions.recentNotes()
+        inputs.now = Date()
         inputs.notesHasDocument = notes.hasDocument
         inputs.notesHotkeyRegistered = notes.hotkeyRegistered
         inputs.notesShortcut = settings.notesHotkey.title
@@ -204,7 +215,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     private func item(for entry: MenuEntry) -> NSMenuItem {
         if entry.isSeparator { return .separator() }
         let i = NSMenuItem(title: entry.title, action: selector(for: entry.action), keyEquivalent: entry.keyEquivalent ?? "")
-        if entry.keyEquivalent != nil { i.keyEquivalentModifierMask = .command }
+        if entry.keyEquivalent != nil { i.keyEquivalentModifierMask = entry.keyEquivalentOption ? [.command, .option] : .command }
         if entry.action != nil { i.target = self }
         i.isEnabled = entry.isEnabled
         i.state = switch entry.mark { case .off: .off; case .on: .on; case .mixed: .mixed }
@@ -217,20 +228,32 @@ final class MenuBarController: NSObject, NSMenuDelegate {
             let m = NSMenu()
             for e in sub { m.addItem(item(for: e)) }
             i.submenu = m
+        } else if let detail = entry.value, entry.action != nil {
+            // A submenu row with a value (Recent Notes: the note's age): the title, then the value in secondary grey.
+            let style = NSMutableParagraphStyle()
+            style.tabStops = [NSTextTab(textAlignment: .right, location: Self.submenuValueColumn)]
+            let text = NSMutableAttributedString(string: entry.title, attributes: [.font: NSFont.menuFont(ofSize: 0), .paragraphStyle: style])
+            text.append(NSAttributedString(string: "\t" + detail, attributes: [
+                .font: NSFont.menuFont(ofSize: 0), .foregroundColor: NSColor.secondaryLabelColor, .paragraphStyle: style]))
+            i.attributedTitle = text
         }
         return i
     }
+
+    /// Where a submenu row's value ends, measured from the row's text start.
+    private static let submenuValueColumn: CGFloat = 250
 
     private func selector(for action: MenuAction?) -> Selector? {
         switch action {
         case nil: nil
         case .toggleDictation: #selector(toggleDictation)
         case .toggleNotes: #selector(toggleNotes)
+        case .newNote: #selector(newNote)
         case .showNotes: #selector(showNotes)
+        case .openNote: #selector(openNote(_:))
         case .useRaw: #selector(useRaw)
         case .pickInput: #selector(pickInput(_:))
         case .toggleCleanup: #selector(toggleCleanup)
-        case .toggleShowChanges: #selector(toggleShowChanges)
         case .pickStyle: #selector(pickStyle(_:))
         case .fixServer: #selector(fixServer)
         case .showSettings: #selector(showSettings)
@@ -242,11 +265,14 @@ final class MenuBarController: NSObject, NSMenuDelegate {
 
     @objc private func toggleDictation() { controller.toggleDictation() }
     @objc private func toggleNotes() { actions.toggleNotes() }
+    @objc private func newNote() { actions.newNote() }
     @objc private func showNotes() { actions.showNotes() }
+    @objc private func openNote(_ sender: NSMenuItem) {
+        if let id = sender.representedObject as? String { actions.openNote(id) }
+    }
     @objc private func useRaw() { controller.rawOffer.take() }
     @objc private func pickInput(_ sender: NSMenuItem) { settings.inputDeviceUID = sender.representedObject as? String }
     @objc private func toggleCleanup() { settings.correction.toggle() }
-    @objc private func toggleShowChanges() { settings.showChangesAfterCleanup.toggle() }
     @objc private func pickStyle(_ sender: NSMenuItem) {
         guard let id = sender.representedObject as? String else { return }
         settings.correctionProfile = id

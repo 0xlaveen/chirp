@@ -8,6 +8,7 @@ import ChirpUI
 @MainActor
 final class OnboardingWindowController: NSObject, NSWindowDelegate {
     var onOpenModels: (() -> Void)?
+    var onOpenNotes: (() -> Void)?
     private let controller: DictationController
     private var flow = OnboardingFlow()
     private var window: NSWindow?
@@ -39,6 +40,7 @@ final class OnboardingWindowController: NSObject, NSWindowDelegate {
         s.flow = flow
         s.checks = checks
         s.hotkey = settings.hotkey
+        s.notesHotkey = settings.notesHotkey
         s.activationMode = settings.activationMode
         s.localModelsAvailable = settings.serverConfig().isLoopback
         return s
@@ -62,6 +64,7 @@ final class OnboardingWindowController: NSObject, NSWindowDelegate {
         let v = OnboardingView(icon: ChirpBrand.glyph())
         v.primary.target = self; v.primary.action = #selector(primaryPressed)
         v.back.target = self; v.back.action = #selector(backPressed)
+        v.openNotes.target = self; v.openNotes.action = #selector(openNotesPressed)
         v.fix.target = self; v.fix.action = #selector(fixPressed)
         view = v
         let w = NSWindow(contentRect: NSRect(origin: .zero, size: OnboardingView.size),
@@ -98,6 +101,13 @@ final class OnboardingWindowController: NSObject, NSWindowDelegate {
     @objc private func primaryPressed() {
         let finished = flow.advance(markDone: { settings.didOnboard = true })
         if finished { window?.close() } else { refresh() }
+    }
+
+    /// The last step's Open Notes: finishes setup like Done, then brings the library forward.
+    @objc private func openNotesPressed() {
+        _ = flow.advance(markDone: { settings.didOnboard = true })
+        window?.close()
+        onOpenNotes?()
     }
 
     @objc private func backPressed() {

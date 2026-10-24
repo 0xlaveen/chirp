@@ -93,7 +93,8 @@ import Testing
     // MARK: the structure
 
     @Test func readyMenuHasTheTargetStructure() {
-        #expect(groups(inputs()) == [["Start Dictation", "Start Notes", "Open Notes"], ["Clean-up", "Microphone"], ["Settings…"], ["Quit Chirp"]])
+        #expect(groups(inputs()) == [["Start Dictation", "New Note"], ["Recent Notes", "Notes Library…"], ["Clean-up", "Microphone"],
+                                      ["Settings…"], ["Quit Chirp"]])
         #expect(MenuContent.header(inputs()).title == "Chirp")
     }
 
@@ -103,8 +104,8 @@ import Testing
             #expect(!e.title.isEmpty && !e.title.contains("\n"))
             #expect(e.value == nil || e.shortcut == nil)
         }
-        // Under the header, around the dictation rows, around Settings and above Quit.
-        #expect(MenuContent.entries(inputs()).filter(\.isSeparator).count == 4)
+        // Under the header, around the notes rows, below Notes, around Settings and above Quit.
+        #expect(MenuContent.entries(inputs()).filter(\.isSeparator).count == 5)
     }
 
     @Test func setOncePreferencesLiveOnlyInSettings() {
@@ -116,8 +117,8 @@ import Testing
 
     @Test func useRawIsItsOwnGroupUnderTheStartRows() {
         let m = inputs { $0.rawOfferOpen = true; $0.rawOfferKey = "⌃⌥Z" }
-        #expect(groups(m) == [["Start Dictation", "Start Notes", "Open Notes"], ["Use Raw for Last Dictation"], ["Clean-up", "Microphone"],
-                              ["Settings…"], ["Quit Chirp"]])
+        #expect(groups(m) == [["Start Dictation", "New Note"], ["Recent Notes", "Notes Library…"], ["Use Raw for Last Dictation"],
+                              ["Clean-up", "Microphone"], ["Settings…"], ["Quit Chirp"]])
     }
 
     // MARK: header and status
@@ -181,7 +182,7 @@ import Testing
         let open = try #require(entry(inputs { $0.rawOfferOpen = true; $0.rawOfferKey = "⌃⌥Z" }, .useRaw))
         #expect(open.title == "Use Raw for Last Dictation" && open.shortcut == "⌃⌥Z")
         #expect(try #require(entry(inputs { $0.rawOfferOpen = true }, .useRaw)).shortcut == nil)
-        #expect(groups(inputs { $0.rawOfferOpen = true })[1] == ["Use Raw for Last Dictation"])
+        #expect(groups(inputs { $0.rawOfferOpen = true })[2] == ["Use Raw for Last Dictation"])
     }
 
     // MARK: Clean-up
@@ -194,21 +195,21 @@ import Testing
         #expect(try #require(entry(inputs { $0.health = nil; $0.healthError = "x"; $0.cleanupOn = true; $0.styleID = "chat" }, "Clean-up")).value == "Chat")
     }
 
-    @Test func cleanupSubmenuHasToggleStylesShowChangesAndEditStyles() throws {
+    @Test func cleanupSubmenuHasToggleStylesAndTheCleanupSettings() throws {
         let row = try #require(entry(inputs { $0.cleanupOn = true; $0.styleID = "email"; $0.showChanges = true }, "Clean-up"))
         let sub = try #require(row.submenu)
+        // "Show Changes after Clean-up" is a set-once choice: it lives in Settings › Clean-up, not here.
         #expect(sub.filter { !$0.isSeparator }.map(\.title) == ["Clean up Text", "Default", "Chat", "Email", "Code", "Notes", "Custom",
-                                                                "Show Changes after Clean-up", "Edit Styles…"])
+                                                                "Clean-up Settings…"])
         #expect(sub.first?.action == .toggleCleanup && sub.first?.mark == .on)
-        #expect(sub.filter { $0.mark == .on }.map(\.title) == ["Clean up Text", "Email", "Show Changes after Clean-up"])
+        #expect(sub.filter { $0.mark == .on }.map(\.title) == ["Clean up Text", "Email"])
         #expect(sub.first { $0.title == "Chat" }?.action == .pickStyle("chat"))
-        #expect(sub.first { $0.title == "Show Changes after Clean-up" }?.action == .toggleShowChanges)
         #expect(sub.last?.action == .editStyles)
     }
 
     @Test func cleanupSubmenuMarksNothingWhenOff() throws {
         let sub = try #require(entry(inputs(), "Clean-up")?.submenu)
-        #expect(sub.first?.mark == .off && sub.first { $0.title == "Show Changes after Clean-up" }?.mark == .off)
+        #expect(sub.first?.mark == .off)
         #expect(sub.first { $0.title == "Default" }?.mark == .on)   // the default style is still the one a later toggle uses
     }
 
@@ -225,9 +226,9 @@ import Testing
     }
 
     @Test func aServerThatListsNoStylesGetsNoStyleRows() throws {
-        // An older server ignores styles, so there is nothing to pick; the toggle and Edit Styles… remain.
+        // An older server ignores styles, so there is nothing to pick; the toggle and Clean-up Settings… remain.
         let sub = try #require(entry(inputs { $0.health = Health(engine: "p", ready: true, correction: "available") }, "Clean-up")?.submenu)
-        #expect(sub.filter { !$0.isSeparator }.map(\.title) == ["Clean up Text", "Show Changes after Clean-up", "Edit Styles…"])
+        #expect(sub.filter { !$0.isSeparator }.map(\.title) == ["Clean up Text", "Clean-up Settings…"])
         // Before the first health check the built-in styles are offered, so the menu is not empty while it loads.
         let loading = try #require(entry(inputs { $0.health = nil }, "Clean-up")?.submenu)
         #expect(loading.contains { $0.action == .pickStyle("default") })
@@ -317,7 +318,7 @@ import Testing
 
     @Test func setUpChirpSitsBetweenTheSeparatorAndSettings() {
         let m = inputs { $0.micGranted = false }
-        #expect(groups(m)[2] == ["Set Up Chirp…", "Settings…"])
+        #expect(groups(m)[3] == ["Set Up Chirp…", "Settings…"])
     }
 
     @Test func footerHasSettingsAndQuitWithTheirKeys() {
@@ -358,36 +359,99 @@ import Testing
     // MARK: Live Notes
 
     @Test func notesRowsSitUnderDictationWithTheirShortcut() throws {
-        let start = try #require(entry(inputs(), .toggleNotes))
-        #expect(start.title == "Start Notes" && start.shortcut == "⌃⌥N")
-        // Open Notes is always there, with its own shortcut while that is registered; it never starts recording.
-        #expect(groups(inputs())[0] == ["Start Dictation", "Start Notes", "Open Notes"])
-        #expect(entry(inputs(), "Open Notes")?.action == .showNotes && entry(inputs(), "Open Notes")?.shortcut == nil)
-        #expect(entry(inputs { $0.openNotesShortcut = "⌃⌥⇧N" }, "Open Notes")?.shortcut == "⌃⌥⇧N")
-        #expect(entry(inputs { $0.openNotesShortcut = "⌃⌥⇧N"; $0.paused = true }, "Open Notes")?.shortcut == nil)
-        #expect(entry(inputs { $0.notesHotkeyRegistered = false }, .toggleNotes)?.shortcut == nil)
-        // A recorded Start/Stop Notes shortcut is what the row shows.
-        #expect(entry(inputs { $0.notesShortcut = "⌃⌥⌘M" }, .toggleNotes)?.shortcut == "⌃⌥⌘M")
+        let new = try #require(entry(inputs(), .newNote))
+        #expect(new.title == "New Note" && new.shortcut == "⌃⌥N")
+        // The library window is always there, with ⌥⌘L as a real key equivalent; it never starts recording.
+        #expect(groups(inputs())[0] == ["Start Dictation", "New Note"] && groups(inputs())[1] == ["Recent Notes", "Notes Library…"])
+        let library = try #require(entry(inputs(), "Notes Library…"))
+        #expect(library.action == .showNotes && library.shortcut == "⌥⌘L")
+        #expect(library.keyEquivalent == "l" && library.keyEquivalentOption)
+        #expect(entry(inputs { $0.notesHotkeyRegistered = false }, .newNote)?.shortcut == nil)
+        // A recorded New Note shortcut is what the row shows.
+        #expect(entry(inputs { $0.notesShortcut = "⌃⌥⌘M" }, .newNote)?.shortcut == "⌃⌥⌘M")
+        #expect(entry(inputs { $0.paused = true }, "New Note")?.shortcut == nil)
     }
 
     @Test func notesAndDictationExcludeEachOther() {
         // Idle: both can start.
         #expect(entry(inputs(), "Start Dictation")?.action == .toggleDictation)
-        #expect(entry(inputs(), "Start Notes")?.action == .toggleNotes)
+        #expect(entry(inputs(), "New Note")?.action == .newNote)
         // Dictating: Notes cannot start.
-        #expect(entry(inputs { $0.state = .listening }, "Start Notes")?.isEnabled == false)
-        #expect(entry(inputs { $0.state = .correcting }, "Start Notes")?.isEnabled == false)
-        // Notes recording: Start Dictation is disabled, Stop Notes is offered and the window row shows.
+        #expect(entry(inputs { $0.state = .listening }, "New Note")?.isEnabled == false)
+        #expect(entry(inputs { $0.state = .correcting }, "New Note")?.isEnabled == false)
+        // Notes recording: Start Dictation and New Note are disabled and the live row offers Stop.
         let recording = inputs { $0.notesRecording = true; $0.notesElapsed = "01:05" }
-        #expect(entry(recording, "Start Dictation")?.isEnabled == false)
-        #expect(entry(recording, "Stop Notes")?.action == .toggleNotes)
-        #expect(entry(recording, "Open Notes") != nil)
+        #expect(entry(recording, "Start Dictation")?.isEnabled == false && entry(recording, "New Note")?.isEnabled == false)
+        #expect(entry(recording, .toggleNotes)?.title.hasSuffix("— Stop") == true)
+        #expect(entry(recording, "Notes Library…") != nil)
         // Finishing: nothing starts until the last pass is done.
         let finishing = inputs { $0.notesFinishing = true }
-        #expect(entry(finishing, "Start Notes")?.isEnabled == false && entry(finishing, "Start Dictation")?.isEnabled == false)
+        #expect(entry(finishing, "New Note")?.isEnabled == false && entry(finishing, "Start Dictation")?.isEnabled == false)
         // Paused: neither starts, and no shortcut is shown.
         let paused = inputs { $0.paused = true; $0.hotkeyRegistered = false; $0.notesHotkeyRegistered = false }
-        #expect(entry(paused, "Start Notes")?.isEnabled == false && entry(paused, "Start Notes")?.shortcut == nil)
+        #expect(entry(paused, "New Note")?.isEnabled == false && entry(paused, "New Note")?.shortcut == nil)
+    }
+
+    // MARK: recording row, Recent Notes
+
+    @Test func recordingNoteIsTheFirstRowWithItsTitleAndTimer() throws {
+        let m = inputs { $0.notesRecording = true; $0.notesElapsed = "03:12"; $0.notesTitle = "Standup" }
+        let first = try #require(MenuContent.entries(m).first { !$0.isSeparator })
+        #expect(first.title == "◉ Recording \"Standup\" 03:12 — Stop")
+        #expect(first.action == .toggleNotes && first.tone == .active)
+        // Not recording: no such row.
+        #expect(!MenuContent.entries(inputs()).contains { $0.title.hasPrefix("◉") })
+        // A long title is cut so the menu does not stretch; a blank one is named.
+        let long = inputs { $0.notesRecording = true; $0.notesTitle = String(repeating: "w", count: 80) }
+        #expect(try #require(MenuContent.entries(long).first { !$0.isSeparator }).title.count < 60)
+        let blank = inputs { $0.notesRecording = true; $0.notesTitle = "  " }
+        #expect(try #require(MenuContent.entries(blank).first { !$0.isSeparator }).title.contains("Untitled note"))
+    }
+
+    @Test func pausedAndFinishingNotesLeadTheMenuToo() throws {
+        let paused = inputs { $0.notesPaused = true; $0.notesElapsed = "00:40"; $0.notesTitle = "Idea" }
+        let row = try #require(MenuContent.entries(paused).first { !$0.isSeparator })
+        #expect(row.title == "⏸ Paused \"Idea\" 00:40 — Resume" && row.action == .toggleNotes)
+        let finishing = inputs { $0.notesFinishing = true; $0.notesElapsed = "02:00"; $0.notesTitle = "Idea" }
+        #expect(try #require(MenuContent.entries(finishing).first { !$0.isSeparator }).action == nil)
+    }
+
+    @Test func recentNotesListsTheTopFiveWithRelativeDates() throws {
+        let now = Date(timeIntervalSinceReferenceDate: 800_000_000)
+        let notes = (0..<8).map { RecentNote(id: "id\($0)", title: "Note \($0)", updatedAt: now.addingTimeInterval(-Double($0) * 7200)) }
+        let row = try #require(entry(inputs { $0.recentNotes = notes; $0.now = now }, "Recent Notes"))
+        let sub = try #require(row.submenu)
+        #expect(sub.map(\.title) == ["Note 0", "Note 1", "Note 2", "Note 3", "Note 4"])
+        #expect(sub.first?.action == .openNote("id0") && sub.first?.action?.payload == "id0")
+        #expect(sub.allSatisfy { $0.value?.isEmpty == false })
+        // Empty library: one dimmed line, nothing to open.
+        let empty = try #require(entry(inputs(), "Recent Notes")?.submenu)
+        #expect(empty.count == 1 && empty[0].title == "No notes yet" && !empty[0].isEnabled)
+    }
+
+    @Test func relativeDatesReadLikeSpeech() {
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = TimeZone(identifier: "UTC")!
+        let now = Date(timeIntervalSince1970: 1_761_300_000)   // 2025-10-24 10:00 UTC
+        func rel(_ back: TimeInterval) -> String { MenuContent.relativeDate(now.addingTimeInterval(-back), now: now, calendar: cal) }
+        #expect(rel(10) == "Just now")
+        #expect(rel(12 * 60) == "12 min ago")
+        #expect(rel(3 * 3600) == "3 hr ago")
+        #expect(rel(18 * 3600) == "Yesterday")
+        #expect(rel(3 * 86400) == "Tue")
+        #expect(rel(20 * 86400) == "Oct 4")
+    }
+
+    // MARK: status dot
+
+    @Test func statusDotIsLilyMoonOrRecord() {
+        #expect(MenuContent.header(inputs()).dot == .ready)
+        #expect(MenuContent.header(inputs { $0.state = .listening }).dot == .ready)
+        #expect(MenuContent.header(inputs { $0.health = Health(engine: "p", ready: false) }).dot == .loading)
+        #expect(MenuContent.header(inputs { $0.health = nil }).dot == .loading)
+        #expect(MenuContent.header(inputs { $0.health = nil; $0.healthError = "x" }).dot == .error)
+        #expect(MenuContent.header(inputs { $0.state = .error("Mic busy") }).dot == .error)
+        #expect(MenuContent.header(inputs { $0.paused = true }).dot == .paused)
     }
 
     @Test func headerShowsNotesElapsed() {
@@ -399,7 +463,7 @@ import Testing
 
     @Test func itemPayloadsCarryTheirChoice() {
         #expect(MenuAction.pickInput("boya").payload == "boya" && MenuAction.pickInput(nil).payload == nil)
-        #expect(MenuAction.pickStyle("email").payload == "email")
+        #expect(MenuAction.pickStyle("email").payload == "email" && MenuAction.openNote("n1").payload == "n1")
         #expect(MenuAction.quit.payload == nil && MenuAction.editStyles.payload == nil)
     }
 }

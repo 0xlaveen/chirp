@@ -352,7 +352,7 @@ private final class ParkedClock: @unchecked Sendable {
     @Test func pairAPhoneLivesOnTheDevicesTab() {
         let form = SettingsForm(SettingsState())
         #expect(form.pairButton.isDescendant(of: form.view(for: .devices)) && form.pairButton.title == "Pair a Phone…")
-        #expect(!form.pairButton.isDescendant(of: form.view(for: .server)))
+        #expect(!form.pairButton.isDescendant(of: form.view(for: .advanced)))
     }
 
     @Test func theWindowRendersInLightAndDark() throws {
