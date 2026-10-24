@@ -960,7 +960,7 @@ internal class NotesRecorder(
         const val EDIT_ATTEMPTS = 3
 
         fun friendly(code: String) = when (code) {
-            "auth" -> "Pairing refused — pair again in Chirp setup"
+            "auth" -> "Pairing refused — pair again in Chirp settings"
             "busy" -> "Mac is busy"
             "too_long" -> "Segment too long"
             "bad_audio" -> "audio not understood"

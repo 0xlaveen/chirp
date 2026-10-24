@@ -106,7 +106,7 @@ internal class DictationStream(
                 if (remaining > 0) { pendingFinal = finish; handler.postDelayed(finish, remaining) } else finish.run()
             }
             is ServerEvent.Failure -> { timing?.code(event.code); fail(when (event.code) {
-                "auth" -> "Pairing refused — pair again in Chirp setup"
+                "auth" -> "Pairing refused — pair again in Chirp settings"
                 "bad_audio" -> "Didn't catch that"
                 "engine" -> "Speech engine hiccup"
                 "busy" -> "Mac is busy — try again"

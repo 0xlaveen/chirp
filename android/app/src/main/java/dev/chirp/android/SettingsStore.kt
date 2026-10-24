@@ -161,10 +161,12 @@ class SettingsStore(context: Context) {
             .putString("token", Base64.encodeToString(encrypted, Base64.NO_WRAP)).commit())
         this.health = health
     }
+    /** Forget pairing: the Mac's address, token and what it said (clean-up consent is per Mac), not the other settings. */
     fun forget() {
-        prefs.edit { clear() }
+        forgetPairingPrefs()
         KeyStore.getInstance("AndroidKeyStore").apply { load(null); deleteEntry(KEY_ALIAS) }
     }
+    internal fun forgetPairingPrefs() = prefs.edit { PAIRING_KEYS.forEach(::remove) }
     private fun key(): SecretKey {
         val store = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
         (store.getKey(KEY_ALIAS, null) as? SecretKey)?.let { return it }
@@ -176,6 +178,7 @@ class SettingsStore(context: Context) {
     }
     companion object {
         internal const val FILE = "chirp"
+        private val PAIRING_KEYS = listOf("url", "iv", "token", "health", "correction", "correction_explicit", "correction_suspended")
         private const val KEY_ALIAS = "chirp_pairing_v1"
     }
 }

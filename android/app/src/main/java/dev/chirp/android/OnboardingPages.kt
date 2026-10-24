@@ -53,7 +53,7 @@ internal fun OnboardingPage(page: Int, state: SetupState, actions: OnboardingAct
             else if (state.micDenied) StatusBanner(StatusKind.Warning, "Allow the microphone to dictate", action = "Open app permissions", onAction = actions.appSettings, live = true)
             Tips("What Chirp keeps", "Your microphone",
                 "The mic opens only when you start dictation and is released as soon as you stop. No recordings are saved on this phone; " +
-                    "transcripts are kept only if you turn on dictation history.")
+                    "transcripts are kept only if you turn on dictation history, and unsaved Notes keep an encrypted recovery copy until you save.")
         }
         else -> PairPage(state, actions)
     }

@@ -98,7 +98,7 @@ class PcmCapture internal constructor(
                 }
                 if (!signalled && error == null && running.get()) error = "No microphone signal"
             } catch (_: Exception) {
-                if (running.get()) error = "Microphone unavailable — check permission in Chirp setup"
+                if (running.get()) error = "Microphone unavailable — check permission in Chirp settings"
             } finally {
                 running.set(false); samples.fill(0)
                 synchronized(lock) {

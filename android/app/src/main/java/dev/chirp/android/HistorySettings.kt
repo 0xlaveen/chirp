@@ -19,7 +19,7 @@ import dev.chirp.android.ui.SwitchRow
 
 /** Opt-in switch, retention and clear. Turning history off deletes it after confirmation. */
 @Composable
-internal fun HistorySettings(showOpen: Boolean = true, store: DictationHistory? = null, changed: () -> Unit = {}) {
+internal fun HistorySettings(showOpen: Boolean = true, store: DictationHistory? = null, title: String? = "Dictation history", changed: () -> Unit = {}) {
     val context = LocalContext.current
     val history = store ?: remember { DictationHistory(context) }
     val scope = rememberCoroutineScope()
@@ -27,7 +27,7 @@ internal fun HistorySettings(showOpen: Boolean = true, store: DictationHistory? 
     var retention by remember { mutableStateOf(history.retention) }
     var confirmOff by remember { mutableStateOf(false) }
     var confirmClear by remember { mutableStateOf(false) }
-    SettingsGroup("Dictation history") {
+    SettingsGroup(title = title) {
         SwitchRow("Keep dictation history on this phone", enabled, { on ->
             if (on) { history.enable(); enabled = true; changed() } else confirmOff = true
         }, summary = "Off by default. Saves recent dictations encrypted on this phone only, so you can reinsert them from the keyboard's clock button. " +

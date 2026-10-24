@@ -178,7 +178,7 @@ class ScratchpadTest {
         val rig = Rig(context, tailscale = TailscalePromptTest.FakeTailscale(installed = true, connected = true))
         val actions = mutableListOf<DictationAction>(); screen(rig, actions)
         rig.model.toggle(); rig.wire.event(ServerEvent.Failure("auth")); compose.waitForIdle()
-        compose.onNodeWithText("Pairing refused — pair again in Chirp setup").assertExists()
+        compose.onNodeWithText("Pairing refused — pair again in Chirp settings").assertExists()
         compose.onNodeWithText("Pair Mac").performClick()
         assertEquals(listOf(DictationAction.PAIR), actions)
         assertFalse(rig.model.active); assertTrue(rig.wire.closed)
@@ -198,11 +198,11 @@ class ScratchpadTest {
     @Test fun `unpaired and missing microphone are explained without starting capture`() {
         val unpaired = Rig(context, paired = false); screen(unpaired)
         mic().performClick(); compose.waitForIdle()
-        compose.onNodeWithText("Pair your Mac in Chirp setup").assertExists(); compose.onNodeWithText("Pair Mac").assertExists()
+        compose.onNodeWithText("Pair your Mac in Chirp settings").assertExists(); compose.onNodeWithText("Pair Mac").assertExists()
         assertTrue(unpaired.wires.isEmpty()); assertTrue(unpaired.captures.isEmpty())
         val silent = Rig(context, mic = false)
         silent.model.toggle()
-        assertEquals("Allow microphone in Chirp setup", silent.model.status)
+        assertEquals("Allow microphone in Chirp settings", silent.model.status)
         assertEquals(DictationAction.MICROPHONE, DictationAction.forStatus(silent.model.status))
         assertTrue(silent.captures.isEmpty())
     }

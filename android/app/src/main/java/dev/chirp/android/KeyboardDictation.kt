@@ -312,13 +312,13 @@ internal class KeyboardDictation(
     private fun start(phone: Boolean = false) {
         if (!visible || destroyed || active) return
         if (ContextCompat.checkSelfPermission(host, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
-            showNotice("Allow microphone in Chirp setup"); return
+            showNotice("Allow microphone in Chirp settings"); return
         }
         val info = host.currentInputEditorInfo ?: return
         if (info.isPasswordField()) {
             showNotice("Dictation unavailable in password fields"); return
         }
-        val paired = pairing() ?: run { showNotice("Pair your Mac in Chirp setup"); return }
+        val paired = pairing() ?: run { showNotice("Pair your Mac in Chirp settings"); return }
         onPhone = phone || fallback.usable() && (offline.active() || tailscaleStatus() != null)
         if (!onPhone && retry(paired)) return
         checking = false
