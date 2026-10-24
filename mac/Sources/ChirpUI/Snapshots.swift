@@ -767,7 +767,7 @@ public enum Snapshots {
             },
             notes("long-preview") { $0.document = demoLong(); $0.elapsed = 2690; $0.preview = true; $0.structuring = .idle },
             notes("long-run") { $0.document = demoLong(); $0.elapsed = 7262 },
-            notes("error") { $0.state = .error("Notes stopped: Server is busy") },
+            notes("error") { $0.state = .error("Notes stopped: Server rejected the token") },
             notes("paused") { $0.state = .paused; $0.elapsed = 754; var d = demoNotes(); d.livePartial = ""; $0.document = d },
             notes("paused-asleep") { $0.state = .paused; $0.pauseReason = "Paused while the Mac slept"; $0.elapsed = 754 },
             notes("level") { $0.level = 0.8; $0.structuring = .idle },

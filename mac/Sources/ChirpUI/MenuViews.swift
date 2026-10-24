@@ -138,6 +138,7 @@ public final class MenuHeaderView: NSView {
         title.font = NSFont.systemFont(ofSize: NSFont.systemFontSize, weight: .medium)
         title.textColor = .labelColor
         statusLabel.stringValue = header.status
+        statusLabel.toolTip = header.help
         statusLabel.font = NSFont.systemFont(ofSize: 12)
         statusLabel.textColor = MenuStyle.secondaryTextColor(header.tone)
         statusLabel.lineBreakMode = .byTruncatingTail

@@ -59,6 +59,8 @@ public struct MenuHeader: Equatable, Sendable {
     public var tone: MenuEntry.Tone
     /// The switch: on while Chirp is running, off while it is paused.
     public var isOn: Bool
+    /// The status line's tooltip: how to end the debug warning, for now.
+    public var help: String? = nil
 
     public var accessibilityLabel: String { "\(title), \(status)" }
 }
@@ -127,7 +129,7 @@ public enum MenuContent {
     /// The header: the name, what Chirp is doing or what is wrong, and the switch.
     public static func header(_ m: MenuInputs) -> MenuHeader {
         let (status, tone) = statusLine(m)
-        return MenuHeader(status: status, tone: tone, isOn: !m.paused)
+        return MenuHeader(status: status, tone: tone, isOn: !m.paused, help: status == debugRetention ? debugRetentionHelp : nil)
     }
 
     /// The one-line status under the name. What Chirp is doing wins over the server's state, which wins over the
@@ -199,6 +201,8 @@ public enum MenuContent {
 
     /// The warning every surface shows while the server keeps recordings (`--debug-retain`).
     public static let debugRetention = "DEBUG: recordings kept"
+    /// Where the warning comes from and how to end it (the server's `[debug] retain` or `--debug-retain`).
+    public static let debugRetentionHelp = "chirp-server keeps each dictation's audio and text for a few days because it runs with --debug-retain or [debug] retain = true in server.toml. Restart it without them to stop."
 
     /// Live Notes: Start/Stop with its shortcut, and Open Notes, the way back to the window. Notes cannot start
     /// during a dictation, while paused, or while the last session is still finishing.

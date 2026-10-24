@@ -21,7 +21,9 @@ public struct NotesView: View {
         VStack(spacing: 0) {
             NotesHeader(model: model)
             Divider()
-            if let message = model.errorText { ErrorBanner(text: message) }
+            if let message = model.errorText {
+                ErrorBanner(text: message, action: NotesStatus.errorOpensServerSettings(message) ? ("Server Settings…", model.onServerSettings) : nil)
+            }
             if let offer = model.recovery { RecoveryBanner(model: model, offer: offer) }
             if model.showsLongRunNotice { LongRunNotice(model: model) }
             content
@@ -276,6 +278,8 @@ private struct PauseButton: View {
 /// What went wrong, under the header (the header itself only says there is a problem).
 struct ErrorBanner: View {
     let text: String
+    /// A way to fix it, when there is one (the server or its token: Settings › Server).
+    var action: (title: String, run: () -> Void)?
 
     var body: some View {
         HStack(alignment: .center, spacing: 10) {
@@ -284,12 +288,13 @@ struct ErrorBanner: View {
                 .font(.callout)
                 .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity, alignment: .leading)
+            if let action { Button(action.title, action: action.run).controlSize(.small) }
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 8)
         .background(Color.red.opacity(0.08))
         .overlay(alignment: .bottom) { Divider() }
-        .accessibilityElement(children: .combine)
+        .accessibilityElement(children: action == nil ? .combine : .contain)
     }
 }
 
@@ -1001,6 +1006,7 @@ private struct NotesFooter: View {
                 .padding(.vertical, 1)
                 .background(Capsule().fill(Color.red))
                 .fixedSize()
+                .help(MenuContent.debugRetentionHelp)
         }
     }
 

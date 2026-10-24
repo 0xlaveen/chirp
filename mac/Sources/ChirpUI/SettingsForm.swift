@@ -563,7 +563,8 @@ public final class SettingsForm {
         serverFixButton.title = s.serverNotice?.fix?.buttonTitle ?? ServerFix.restart.buttonTitle
         serverFixButton.isHidden = s.serverNotice?.fix == nil
         serverFixButton.isEnabled = s.serverFixMessage?.hasSuffix("…") != true
-        let detail = [s.serverNotice?.message, s.serverFixMessage].compactMap { $0 }.joined(separator: "\n")
+        let unreachable = s.serverNotice == nil && s.serverStatusTone == .error ? Self.unreachableHelp(serverURL: s.serverURL) : nil
+        let detail = [s.serverNotice?.message, s.serverFixMessage, unreachable].compactMap { $0 }.joined(separator: "\n")
         serverDetail.stringValue = detail
         serverDetail.isHidden = detail.isEmpty
         modelsButton.isEnabled = ServerConfig.load(urlString: s.serverURL).isLoopback
@@ -712,6 +713,15 @@ public final class SettingsForm {
             hotkeyHelp.stringValue = why.reason
             hotkeyHelp.textColor = .systemRed
         }
+    }
+
+    /// Under an unreachable server: which address did not answer and what to try next.
+    public static func unreachableHelp(serverURL: String) -> String {
+        let config = ServerConfig.load(urlString: serverURL)
+        let address = config.baseURL.port.map { "\(config.host):\($0)" } ?? config.host
+        return config.isLoopback
+            ? "Nothing answers at \(address). Start this Mac's server in Manage Local Models…, or run Copy Doctor Command in Terminal to see why."
+            : "Nothing answers at \(address). Check that the Mac running chirp-server is awake and on your tailnet, or run the Doctor command there."
     }
 
     /// Shows why toggling launch at login failed under the checkbox; nil restores the usual help text.
