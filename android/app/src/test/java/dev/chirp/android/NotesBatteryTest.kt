@@ -71,6 +71,10 @@ class NotesBatteryTest {
     @Test fun `timings are numbers only and round-trip`() {
         val timing = NotesTiming(1_800_000_000_000L, 3120, 2400, 70, 1, 64, 210, 18400, true)
         assertEquals(listOf(timing), NotesTimingLog.decode(NotesTimingLog.encode(listOf(timing))))
+        val failed = timing.copy(problem = "structure: auth")
+        assertEquals(listOf(failed), NotesTimingLog.decode(NotesTimingLog.encode(listOf(failed))))
+        assertTrue(NotesTimingLog(context).also { it.record(failed) }.summary().endsWith(" · last problem: structure: auth"))
+        NotesTimingLog(context).clear()
         val log = NotesTimingLog(context)
         repeat(NotesTimingLog.MAX + 3) { log.record(timing.copy(time = it.toLong())) }
         assertEquals(NotesTimingLog.MAX, log.entries().size)

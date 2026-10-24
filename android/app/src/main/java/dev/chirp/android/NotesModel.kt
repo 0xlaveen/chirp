@@ -35,7 +35,8 @@ internal class NotesModel(
     private val captureFactory: ((ByteArray, Float) -> Unit, (Double) -> Unit, (String?) -> Unit) -> Capture = { frame, level, done -> NotesCapture(frame, level, done, notesInputForBuild(context.applicationContext)) },
     private val transportFactory: (OkHttpClient, Pairing, (ServerEvent) -> Unit, () -> Unit) -> ImeTransport = { client, pairing, event, failure ->
         val main = Handler(Looper.getMainLooper())
-        StreamTransport(client, pairing, dispatch = { callback -> main.post { callback() } }, event = event, failure = failure)
+        StreamTransport(client, pairing, dispatch = { callback -> main.post { callback() } }, event = event, failure = failure,
+            maxQueued = NotesRecorder.MAX_QUEUED_BYTES)
     },
     private val apiFactory: (OkHttpClient, Pairing) -> NotesApi = ::HttpNotesApi,
     private val micGranted: () -> Boolean = {
@@ -236,6 +237,7 @@ internal class NotesModel(
         is Reorganizing.Organized -> if (r.failed == 0) "Organized" else "Organized · ${r.failed} kept as they were" + (r.reason?.let { " ($it)" } ?: "")
         Reorganizing.Conflict -> "Notes changed while organizing — try again"
         Reorganizing.TooLong -> "Too long to organize — split the last section with a heading"
+        Reorganizing.TooShort -> "Nothing to organize yet — keep going"
         else -> (structuring as? Structuring.Failed)?.let { "Couldn’t update notes (${it.label}) — retrying with the next segment" }
     }
 

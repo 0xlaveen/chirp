@@ -43,6 +43,8 @@ internal sealed interface Reorganizing {
     /** The notes changed while it ran, so its result was discarded. */
     data object Conflict : Reorganizing
     data object TooLong : Reorganizing
+    /** Organize found too little to reorganize (under [NotesDocument.MIN_REORGANIZE_CHARS]). */
+    data object TooShort : Reorganizing
     val running get() = this == Running || this is Organizing
 }
 
@@ -98,6 +100,12 @@ internal class NotesRecorder(
     /** Structure and reorganize calls made, for the numbers-only Notes timings. */
     var passes = 0
         private set
+    /**
+     * The last thing that went wrong since Record, for Diagnostics: an app status or a server code (`structure: auth`),
+     * never notes, transcript or hosts.
+     */
+    var problem: String? = null
+        private set
     /** AI changes to [document] the editor has not replayed yet, oldest first. */
     private val pending = mutableListOf<NotesChange>()
     var onChange: (() -> Unit)? = null
@@ -109,6 +117,8 @@ internal class NotesRecorder(
         var partial = ""
         var correcting = false
         var ready = false
+        /** Finalize came before Ready (a pause or cut right after the swap): `stop` goes out with Ready. */
+        var stopOnReady = false
         var timeout: Job? = null
         @Volatile var lost = false
     }
@@ -189,7 +199,7 @@ internal class NotesRecorder(
     private fun publish(change: NotesChange?) {
         change ?: return
         pending += change
-        if (reorganizeState is Reorganizing.Applied && change.kind != NotesChange.Kind.REORGANIZE) reorganizeState = Reorganizing.Idle
+        if ((reorganizeState is Reorganizing.Applied || reorganizeState == Reorganizing.TooShort) && change.kind != NotesChange.Kind.REORGANIZE) reorganizeState = Reorganizing.Idle
     }
 
     /** The user's "Structure notes" switch or new health. Turning it on schedules a pass for what is waiting. */
@@ -211,7 +221,7 @@ internal class NotesRecorder(
     fun start() {
         if (state.active) return
         epoch++
-        failureStreak = 0; sawReady = false; lastPassEnd = null; error = null
+        failureStreak = 0; sawReady = false; lastPassEnd = null; error = null; problem = null
         if (lastReorganizeEnd == null) lastReorganizeEnd = now()
         if (structuring is Structuring.Off && allowed !is Structuring.Off) structuring = Structuring.Idle
         document.stampStart(System.currentTimeMillis())
@@ -374,12 +384,14 @@ internal class NotesRecorder(
     }
 
     private fun finalize(segment: Segment) {
-        if (!segment.transport.stop()) { segmentFailed(segment, "connection closed"); return }
         val myEpoch = epoch
         segment.timeout = scope.launch {
             delay(FINAL_TIMEOUT_MS)
             if (epoch == myEpoch && segments[segment.seq] === segment) segmentFailed(segment, "timed out")
         }
+        // Not Ready yet: the Mac is still finishing the segment before it, and this one's audio waits in its buffer.
+        if (!segment.ready) segment.stopOnReady = true
+        else if (!segment.transport.stop()) segmentFailed(segment, "connection closed")
     }
 
     private fun handle(segment: Segment, event: ServerEvent) {
@@ -388,6 +400,7 @@ internal class NotesRecorder(
             is ServerEvent.Ready -> {
                 debugRetention = event.debugRetention; sawReady = true; segment.ready = true
                 if (!segment.buffer.ready()) { lost(segment); return }
+                if (segment.stopOnReady && !segment.transport.stop()) { segmentFailed(segment, "connection closed"); return }
                 if (state == State.STARTING && segment.seq == current) { resuming = false; state = State.RECORDING }
                 changed()
             }
@@ -412,6 +425,7 @@ internal class NotesRecorder(
     private fun segmentFailed(segment: Segment, reason: String) {
         val seq = segment.seq
         if (segments[seq] !== segment) return
+        problem = "segment: $reason"
         if (state == State.STARTING && resuming && seq == current) { abandonResume(seq, reason); return }
         if (state == State.STARTING && !sawReady && seq == current) {
             // The very first socket never got going: nothing is recording yet.
@@ -461,7 +475,7 @@ internal class NotesRecorder(
         document.userEdit(start, end, replacement)
         lastKeystroke = now()
         if (document.windowGeneration != generation) dropHeld()
-        if (reorganizeState is Reorganizing.Applied) reorganizeState = Reorganizing.Idle
+        if (reorganizeState is Reorganizing.Applied || reorganizeState == Reorganizing.TooShort) reorganizeState = Reorganizing.Idle
         if (held != null) armHold()
         schedule()
         changed()
@@ -742,6 +756,7 @@ internal class NotesRecorder(
         outcome.transient?.let { passFinished(request, NotesStructureResponse.failed(it), null); return }
         endPass(); lastPassEnd = now()
         val disable = outcome.disable
+        failedPass("structure", disable, outcome.failures.firstOrNull())
         if (disable != null) { allowed = Structuring.Off(disable); structuring = allowed } else {
             dropHeld()
             publish(document.applyPieces(pieces, request))
@@ -753,6 +768,7 @@ internal class NotesRecorder(
 
     private fun passFinished(request: NotesStructureRequest, response: NotesStructureResponse, disable: StructuringOff?) {
         endPass(); lastPassEnd = now()
+        failedPass("structure", disable, response.takeUnless { it.structured }?.failureLabel)
         if (disable != null) { allowed = Structuring.Off(disable); structuring = allowed }
         else if (response.structured && holdsAppends && state != State.STOPPING) {
             // The caret is in the tail: keep the newest answer until it leaves (or the user goes quiet).
@@ -763,6 +779,11 @@ internal class NotesRecorder(
         }
         if (waiting || state.live) schedule()
         changed()
+    }
+
+    private fun failedPass(kind: String, disable: StructuringOff?, label: String?) {
+        val code = when (disable) { StructuringOff.UNSUPPORTED -> "unsupported"; StructuringOff.CORRECTION_OFF -> "notes_off"; else -> label }
+        if (code != null) problem = "$kind: $code"
     }
 
     private fun applyAppend(request: NotesStructureRequest, response: NotesStructureResponse) {
@@ -799,7 +820,7 @@ internal class NotesRecorder(
         if (window == null && blocks.isEmpty()) {
             val request = document.reorganizeRequest(final = false, manual = true)
             if (request != null) runReorganize(request, manual = true)
-            else { reorganizeState = if (document.reorganizeTooLong) Reorganizing.TooLong else Reorganizing.Idle; changed() }
+            else { reorganizeState = if (document.reorganizeTooLong) Reorganizing.TooLong else Reorganizing.TooShort; changed() }
             return
         }
         val total = (if (window == null) 0 else 1) + blocks.size + 1
@@ -859,6 +880,7 @@ internal class NotesRecorder(
     private fun applyReorganizeResult(request: NotesReorganizeRequest, response: NotesReorganizeResponse, manual: Boolean, failure: NotesHttpError?): Boolean {
         if (response.preempted && failure == null) { reorganizeState = Reorganizing.Idle; return true }
         lastReorganizeEnd = now(); versionAtReorganizeEnd = document.version; reorganizeRetry = true
+        if (failure != null || !response.reorganized) problem = "reorganize: " + (failure?.code ?: response.failureLabel)
         when {
             failure?.unsupported == true -> { reorganizeMissing = true; reorganizeSupported = false; reorganizeState = Reorganizing.Idle }
             failure?.off == true -> { allowed = Structuring.Off(StructuringOff.CORRECTION_OFF); structuring = allowed; reorganizeState = Reorganizing.Idle }
@@ -911,6 +933,7 @@ internal class NotesRecorder(
             }
             stoppingSince = null
             error = problem
+            if (problem != null) this@NotesRecorder.problem = problem
             state = if (problem != null) State.ERROR else State.STOPPED
             changed()
         }
@@ -938,6 +961,8 @@ internal class NotesRecorder(
          * segment finishes, then answers `busy`.
          */
         const val PRE_READY_BYTES = 16000 * 2 * 12
+        /** A Notes socket's send queue holds a whole pre-ready buffer flushed at Ready, plus 5 s of live audio. */
+        const val MAX_QUEUED_BYTES = PRE_READY_BYTES + 160000L
         const val RETRY_CUT_MS = 2000L
         /** Segments (or next sockets) in a row that may fail before recording stops. */
         const val MAX_SEGMENT_FAILURES = 3

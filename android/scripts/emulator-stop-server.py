@@ -13,6 +13,8 @@ parser.add_argument('--model-dir', type=Path, required=True)
 parser.add_argument('--metadata', type=Path, required=True)
 parser.add_argument('--cert')
 parser.add_argument('--key')
+# Seconds each `ready` is held back: the Notes check makes it long enough that audio waits past 5 s before Ready.
+parser.add_argument('--ready-delay', type=float, default=2)
 args = parser.parse_args()
 settings = Settings.read()
 settings.model_dir = args.model_dir
@@ -50,7 +52,7 @@ async def observed(scope, receive, send):
             frame = json.loads(event['text'])
             kind = frame.get('type')
             # Makes a native immediate double tap deterministically precede Ready.
-            if kind == 'ready': await asyncio.sleep(2)
+            if kind == 'ready': await asyncio.sleep(args.ready_delay)
             if kind == 'partial': state['partials'] += 1
             if kind == 'correcting': state['correcting'] = True
             # Keep the real managed correction transition observable on a slow AVD.

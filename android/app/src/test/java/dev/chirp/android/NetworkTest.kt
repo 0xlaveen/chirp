@@ -16,18 +16,29 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class NetworkTest {
-    private fun withServer(test: (MockWebServer, OkHttpClient, Pairing) -> Unit) {
+    private fun withServer(protocols: List<okhttp3.Protocol>? = null, test: (MockWebServer, OkHttpClient, Pairing) -> Unit) {
         val certificate = HeldCertificate.Builder().commonName("localhost").addSubjectAlternativeName("localhost").build()
         val serverTls = HandshakeCertificates.Builder().heldCertificate(certificate).build()
         val clientTls = HandshakeCertificates.Builder().addTrustedCertificate(certificate.certificate).build()
         MockWebServer().use { server ->
             server.useHttps(serverTls.sslSocketFactory(), false)
+            protocols?.let { server.protocols = it }
             server.start()
             val client = ChirpNetwork.client().newBuilder().sslSocketFactory(clientTls.sslSocketFactory(), clientTls.trustManager).build()
             try { test(server, client, Pairing.from(server.url("/chirp/").toString(), "synthetic-credential")) }
             finally { ChirpNetwork.dispose(client) }
         }
     }
+    /** A pooled connection the Mac closed as the call went out (#134): notes calls are stateless, so one goes again on a fresh one. */
+    @Test fun `a notes call retries once on a kept-alive connection the server dropped`() = listOf(null, listOf(okhttp3.Protocol.HTTP_1_1)).forEach { protocols -> withServer(protocols) { server, client, pairing ->
+        val api = HttpNotesApi(client, pairing)
+        server.enqueue(MockResponse().setBody("""{"markdown":"- Ship it","structured":true}"""))
+        server.enqueue(MockResponse().setSocketPolicy(okhttp3.mockwebserver.SocketPolicy.DISCONNECT_AFTER_REQUEST))
+        server.enqueue(MockResponse().setBody("""{"markdown":"- Ship it Friday","edited":true,"changed":true}"""))
+        assertTrue(api.structure(NotesStructureRequest("we will ship it")).structured)
+        assertEquals("- Ship it Friday", api.edit(NotesEditRequest("- Ship it", "change it to Friday")).markdown)
+        assertEquals(listOf(0, 1, 0), List(3) { server.takeRequest().sequenceNumber })
+    } }
     @Test fun `authenticated mounted health request preserves privacy flags and rejects redirects`() = withServer { server, client, pairing ->
         server.enqueue(MockResponse().setBody("""{"ok":true,"ready":true,"debug_retention":true,"correction":"off"}"""))
         assertTrue(ChirpNetwork.health(client, pairing).debugRetention)
