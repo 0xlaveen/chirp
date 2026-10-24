@@ -1,17 +1,17 @@
 <!--
 title: Use Chirp on Android — Chirp
-description: A beginner's guide to building Chirp for Android, pairing it with your Mac over Tailscale and dictating in any Android app.
+description: A beginner's guide to building Chirp for Android, pairing it with your Mac over Tailscale, and dictating in any app with Chirp Keyboard or your own keyboard.
 section: guides
 -->
 <div class="narrow guide-hero">
   <p class="crumbs"><a href="index.html">Guides</a> / 02</p>
   <h1>Use Chirp on Android</h1>
-  <p class="lede">Chirp for Android is an app with its own keyboard, Chirp Keyboard: a full Android keyboard with a mic key. It sends your voice to the Chirp server on your Mac and types what comes back — in any app.</p>
+  <p class="lede">Chirp for Android is a notes app and a way to dictate in any app. Use its own keyboard, Chirp Keyboard, or keep Gboard or Samsung Keyboard and use a small floating mic. Either way your voice goes to the Chirp server on your Mac, and the text comes back.</p>
   <div class="meta-row"><span>Needs: Chirp on your Mac, Tailscale on both devices</span><span>Tuned for: Galaxy Z Fold</span></div>
 </div>
 <article class="narrow prose">
   <nav class="toc" aria-label="On this page"><b>On this page</b>
-    <ol><li><a href="#before">Before you start</a></li><li><a href="#tailscale">Connect with Tailscale</a></li><li><a href="#build">Build the keyboard</a></li><li><a href="#install">Install it</a></li><li><a href="#pair">Pair with your Mac</a></li><li><a href="#dictate">Dictate</a></li><li><a href="#scratchpad">Scratchpad</a></li><li><a href="#trouble">If something's off</a></li></ol>
+    <ol><li><a href="#before">Before you start</a></li><li><a href="#tailscale">Connect with Tailscale</a></li><li><a href="#build">Build the keyboard</a></li><li><a href="#install">Install it</a></li><li><a href="#pair">Pair with your Mac</a></li><li><a href="#dictate">Dictate with Chirp Keyboard</a></li><li><a href="#keep">Keep your keyboard</a></li><li><a href="#scratchpad">Scratchpad and Notes</a></li><li><a href="#trouble">If something's off</a></li></ol>
   </nav>
 
   <h2 id="before">Before you start</h2>
@@ -27,7 +27,7 @@ section: guides
     <li><strong>Allow HTTPS on your tailnet</strong><p>Chirp publishes the Mac's server to your tailnet with Tailscale Serve, which needs <strong>MagicDNS</strong> and <strong>HTTPS certificates</strong> turned on (admin console → DNS). If they're off, Tailscale tells you when you pair, with a link to fix it.</p></li>
   </ol>
 
-  <h2 id="build">Build the keyboard</h2>
+  <h2 id="build">Build the app</h2>
   <p>On the Mac, in the <code>chirp</code> folder from the Mac guide. The first command installs a Java and Android toolchain just for your user — no admin password, no emulator images:</p>
 <pre data-copy="Copy commands"><code>android/scripts/setup-toolchain.sh
 source ~/.local/share/chirp-android/env.sh
@@ -44,27 +44,28 @@ cd android
     <li><strong>USB</strong>: turn on USB debugging in the phone's Developer options, plug it in and run <code>adb install -r app/build/outputs/apk/release/app-arm64-v8a-release.apk</code>.</li>
   </ul>
   <div class="callout warn"><b>Play Protect may warn you.</b><p>It flags any app that doesn't come from the Play Store. Choose <strong>More details → Install anyway</strong>.</p></div>
-  <p>Open <strong>Chirp</strong>. Onboarding is four short pages and always opens on the first one you haven't finished:</p>
+  <p>Open <strong>Chirp</strong>. Onboarding is five short pages, with one button at the bottom of each:</p>
   <ol class="steps">
-    <li><strong>Welcome</strong><p>What Chirp is, in one picture. Skipped if the phone is already paired.</p></li>
-    <li><strong>Turn on Chirp Keyboard</strong><p>Enable it, then select it as your default. On Samsung: Settings → General management → Keyboard list and default.</p></li>
-    <li><strong>Allow the microphone</strong><p>It's only open while you dictate.</p></li>
+    <li><strong>Welcome</strong><p>Dictation and notes, in one picture.</p></li>
+    <li><strong>How you’ll dictate</strong><p>Choose <strong>Use Chirp Keyboard</strong> to switch to Chirp’s keyboard, or <strong>Keep Gboard</strong> (it shows your keyboard’s name) to keep yours and use the floating mic. Notes and the Scratchpad work either way, and you can change your mind later in Settings → How you dictate.</p></li>
+    <li><strong>Turn on the keyboard, or the floating mic</strong><p>For Chirp Keyboard: enable it, then select it. On Samsung: Settings → General management → Keyboard list and default. For the floating mic, see <a href="#keep">Keep your keyboard</a>.</p></li>
+    <li><strong>Allow the microphone</strong><p>It's only open while you dictate or record a note.</p></li>
     <li><strong>Pair your Mac</strong><p>See the next section.</p></li>
   </ol>
   <div class="shot-row">
-    <figure><div class="frame"><!--shot:android/onboarding-keyboard|Onboarding: turn on Chirp Keyboard--></div><figcaption>Keyboard</figcaption></figure>
+    <figure><div class="frame"><!--shot:android/keepkb-choice-cover|Onboarding: How you’ll dictate, with Use Chirp Keyboard and Keep Gboard--></div><figcaption>How you’ll dictate</figcaption></figure>
     <figure><div class="frame"><!--shot:android/onboarding-pair|Onboarding: scan the code on your Mac--></div><figcaption>Pair your Mac</figcaption></figure>
   </div>
 
   <h2 id="pair">Pair with your Mac</h2>
   <ol class="steps">
     <li><strong>Show the pairing code on the Mac</strong><p>In Chirp for Mac open <strong>Settings → Devices → Pair a Phone…</strong> If your tailnet isn't serving Chirp yet, it shows the exact Tailscale command and runs it only after you confirm. Then it shows a QR code.</p></li>
-    <li><strong>Scan it on the phone</strong><p>On the last onboarding page tap <strong>Scan code</strong>. Chirp tests the connection and saves the pairing by itself; nothing is saved until the connection works. Then tap <strong>Finish</strong>; Chirp settings opens with a <strong>Try it</strong> card holding a test field.</p></li>
+    <li><strong>Scan it on the phone</strong><p>On the last onboarding page tap <strong>Scan code</strong>. Chirp tests the connection and saves the pairing by itself; nothing is saved until the connection works. Then tap <strong>Finish</strong> and Chirp opens on Notes, with a chip at the top showing it’s connected to your Mac.</p></li>
   </ol>
   <figure class="shot"><div class="frame"><!--shot:mac/settings-devices-ready|Settings, Devices: Pair a Phone button, noting the phone reaches this Mac over your tailnet only--></div></figure>
   <div class="callout"><b>The QR code is a secret.</b><p>It contains the key to your Mac's speech server. The Mac hides the window from screenshots and screen sharing and closes it after two minutes. Don't post it anywhere.</p></div>
 
-  <h2 id="dictate">Dictate</h2>
+  <h2 id="dictate">Dictate with Chirp Keyboard</h2>
   <ol class="steps">
     <li><strong>Tap the mic</strong><p>It's in the row above the keys. Your words appear underlined in the field as you speak.</p></li>
     <li><strong>Tap stop to insert</strong><p>The final text replaces the underlined preview. <strong>✕</strong> throws it away.</p></li>
@@ -76,25 +77,41 @@ cd android
   </div>
   <ul>
     <li><strong>Long-press the mic</strong> to turn clean-up on or off and choose a style.</li>
-    <li><strong>Stop when I pause:</strong> Chirp settings → Stop dictation → <strong>When I pause</strong>.</li>
+    <li><strong>Stop when I pause:</strong> Settings → Dictation → Stopping → <strong>When I pause</strong>.</li>
     <li><strong>Long dictations</strong> work up to 10 minutes; Chirp splits them quietly so nothing is dropped.</li>
     <li><strong>Lost connection?</strong> What was heard so far is kept, never thrown away.</li>
     <li><strong>History</strong> is off by default. Turn it on to keep recent dictations, encrypted, on the phone only.</li>
   </ul>
 
-  <h2 id="scratchpad">Scratchpad for longer text</h2>
-  <p>Long-press the Chirp icon and choose <strong>Scratchpad</strong>, or add the <strong>Scratchpad</strong> tile to Quick Settings. Dictate, edit, then <strong>Copy</strong> or <strong>Share</strong>. The text is gone when you leave — nothing is saved.</p>
+  <h2 id="keep">Keep your keyboard</h2>
+  <p>Chose <strong>Keep Gboard</strong>? Chirp sets up its floating mic: a small bubble that appears at the edge of the screen when a text field you can dictate into has focus.</p>
+  <ol class="steps">
+    <li><strong>Read what it can see</strong><p>The floating mic works through Android Accessibility. Chirp explains first: it reads only the focused text field, on the phone, so it can put your words in. Password fields are skipped.</p></li>
+    <li><strong>Turn it on</strong><p>Chirp opens the <strong>Chirp floating mic</strong> page in Android’s Accessibility settings; switch it on. If Android says <strong>Restricted setting</strong> (it does for apps you installed yourself), come back to Chirp and follow <strong>Did Android say “Restricted setting”?</strong>: app info → <strong>⋮ → Allow restricted settings</strong>, then try again.</p></li>
+    <li><strong>Dictate</strong><p><strong>Tap</strong> the bubble to dictate, or <strong>hold</strong> it to talk and let go to stop. Drag it anywhere; it snaps to the nearer edge.</p></li>
+  </ol>
   <div class="shot-row">
-    <figure><div class="frame"><!--shot:android/scratchpad-idle|The empty Scratchpad--></div></figure>
-    <figure><div class="frame"><!--shot:android/scratchpad-text|The Scratchpad with text and Copy and Share buttons--></div></figure>
+    <figure><div class="frame"><!--shot:android/keepkb-floating-cover|Setup page for the floating mic, explaining what it can see before opening Accessibility settings--></div><figcaption>Setting up the floating mic</figcaption></figure>
+    <figure><div class="frame"><!--shot:android/floating-listening-cover|The floating mic panel while listening, with a red Stop button--></div><figcaption>Listening</figcaption></figure>
   </div>
+  <ul>
+    <li><strong>If an app won’t take the text</strong>, your words wait in the panel with <strong>Copy</strong> and <strong>Open in Scratchpad</strong>. Chirp never copies on its own, and the words are cleared after 2 minutes.</li>
+    <li><strong>It doesn’t work in every app</strong>, and it doesn’t change what Gboard’s or Samsung’s own mic button does.</li>
+    <li>The bubble hides while Chirp Keyboard is the active keyboard, since that has its own mic.</li>
+  </ul>
 
-  <p>For meetings, long-press the Chirp icon and choose <strong>Notes</strong> instead: <a href="live-notes.html#android">Live Notes on Android</a>.</p>
+  <h2 id="scratchpad">Scratchpad and Notes</h2>
+  <p>Chirp opens on <strong>Notes</strong>. Tap <strong>Record</strong> for a meeting or a long think-aloud: <a href="live-notes.html#android">Notes on Android</a>.</p>
+  <p>The small mic button beside Record opens the <strong>Scratchpad</strong>, a blank page for dictating longer text outside any app. (You can also long-press the Chirp icon, or add the Scratchpad tile to Quick Settings.) Dictate, edit, then <strong>Copy</strong> or <strong>Share</strong>, or keep it with <strong>Save as note</strong>. Otherwise the text is gone when you leave.</p>
+  <div class="shot-row">
+    <figure><div class="frame"><!--shot:android/scratchpad-idle|The empty Scratchpad with style choices and a large mic--></div></figure>
+    <figure><div class="frame"><!--shot:android/scratchpad-text|The Scratchpad with dictated text, and Copy and Share in the top bar--></div></figure>
+  </div>
 
   <h2 id="trouble">If something's off</h2>
   <ul>
     <li><strong>“Tailscale is off”</strong> in the keyboard: tap <strong>Turn on</strong>, or open the Tailscale app.</li>
-    <li><strong>Mac unreachable:</strong> is the Mac awake, with Chirp running and Tailscale connected? Setup's <strong>Check Mac connection</strong> tests it.</li>
+    <li><strong>Mac unreachable:</strong> is the Mac awake, with Chirp running and Tailscale connected? The connection chip at the top of Notes opens Settings → Connection, where <strong>Check connection</strong> tests it.</li>
     <li><strong>Updates:</strong> install new builds over the old one — don't uninstall first, or you'll lose your pairing.</li>
   </ul>
   <p>All the details are in the <a href="{{repo}}/blob/main/android/README.md">Android README</a>.</p>

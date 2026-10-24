@@ -1,6 +1,6 @@
 # Chirp website
 
-The public site at **https://araa47.github.io/chirp/**: a landing page and five beginner guides. Plain HTML and CSS with one small script (theme toggle, tabs, screenshot reels, copy buttons, the hero HUD demo). No frameworks, web fonts, analytics, cookies or third-party requests.
+The public site at **https://araa47.github.io/chirp/**: a landing page and five beginner guides. Plain HTML and CSS with one small script (theme toggle, tabs, screenshot reels, copy buttons). No frameworks, web fonts, analytics, cookies or third-party requests.
 
 ```
 site/

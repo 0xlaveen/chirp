@@ -12,19 +12,16 @@ credential or personal text is included.
   and the 673 px inner screen as `keyboard-{gboard,samsung}-{cover,inner}-<state>-{light,dark}.png` (the default
   combination keeps the short names). `KeyboardRenderTest` also asserts the strip and key-area height is identical
   in every state.
-- `emulator-keyboard-{idle,listening,final}-{light,dark}.png`: the authorized Android
-  17 fold emulator (`emulator-5580`), actual IME window over the setup test field.
-  A throwaway real Parakeet server receives say-generated speech through PcmCapture
-  and StreamTransport. Listening shows live composing text; final shows committed
-  text and the keyboard still selected. These captures do not simulate a phone mic.
-- `setup-{1,2,3,4}-{light,dark}.png`: Compose wizard initial viewports at 411 × 891 px.
-  The sequence is enable/select keyboard, mic permission, pairing, test. Longer
-  content scrolls; Diagnostics is reachable throughout.
-- `panel-{idle,connecting,listening,finalizing,error,raw,debug}-{light,dark}.png`:
-  shared Material panel for the optional accessibility mic (700 px listening,
-  360 px other states). No status breadcrumb: a line appears only for an error or a fix prompt, and
-  "Fix setup" is offered only when the pairing or microphone permission is actually broken.
-  This optional surface is separate from the full keyboard.
+- `floating-{idle,idle-copy,hold,connecting,listening,finishing,polished,ready,ready-copy-mode,error,error-tailscale}-{cover,inner}-{light,dark}.png`:
+  the floating mic (keep-my-keyboard path) over a synthetic reply field: the edge-docked Pond bubble (with the
+  clipboard badge where a field can't be filled), hold-to-talk with its one-line preview, and the voice panel's
+  states, from Connecting and Listening (Ripple rings, Stop in `record`) to Polished with Use raw, **Ready to copy**
+  with Copy / Open in Scratchpad / Done, and errors that each carry one fix. Rendered by `FloatingMicRenderTest`.
+- `emulator-floating-{idle,listening,ready}-{cover,inner}-{light,dark}.png`: the same bubble and panel on a real
+  Android 17 emulator with Gboard selected, from `emulator-bubble-check.py` (`e2e-all.sh --only bubble`).
+- `keepkb-{choice,floating,restricted,protected,settings}-{cover,inner}-{light,dark}.png`, plus `-font-200`:
+  onboarding's **How you'll dictate** choice, the guided floating-mic page (disclosure first), the Restricted
+  setting help, the Advanced Protection fallback and Settings → How you dictate. Rendered by `InputModeUiTest`.
 - `settings-{top,top-font-200,connection,dictation,keyboard,feedback,notes,history,about,two-pane,two-pane-about}-*.png`:
   the settings tree (spec §D): a top level of seven category rows in one grouped card, each with an icon and a
   live one-line summary, and one detail page per category behind them (medium top bars collapse on scroll).
@@ -104,26 +101,20 @@ new emulator captures are claimed for this change.
   the Samsung-like look (Rounded + borders, Chirp's One UI-style user colours). The
   Chirp strip takes its ink, accent and highlight from the active keyboard colours.
   Regenerate with `./gradlew testDebugUnitTest --tests '*KeyboardRenderTest*'`.
-- `before-keyboard-{inner,cover}-{light,dark}.png`, `before-keyboard-inner-landscape-light.png`:
-  the round-4 release captures kept for comparison (Material keys, no borders, fixed
-  green strip). The current `release-keyboard-*.png` files show the new default look.
 ## Release captures (round 4)
 
 `release-*.png` are direct, unmodified PNG captures from the minified release APK on
-`emulator-5580`, Android 17. Each file is below 2 MB. They are the primary review set:
+an Android 17 emulator. Each file is below 2 MB.
 
-- `release-keyboard-{inner,cover}-{light,dark}.png`: single suggestion row with mic;
-  inner width has a number row, cover width stays compact.
-- `release-pair-action-{inner,cover}-{light,dark}.png`: accessible pairing recovery in
-  that same row, with no duplicated partial text.
 - `release-pairing-light.png`, `release-scanner-light.png`: QR-first pairing and actual
   Google Play scanner surface, opened from the release APK.
-- `release-typing-{autocorrect,contraction,next-word,clipboard,emoji}.png`: real
-  HeliBoard key taps; `teh` corrects to sentence-cased `The`, `im` to `I'm`, next-word
-  predictions, local clipboard history, and the emoji keyboard.
-- `release-keyboard-inner-landscape-light.png`: landscape split with real key geometry checks; one-handed control reachability.
-- `release-talkback.png`: release with TalkBack enabled; native accessibility click,
-  long-click and mic/status/cancel labels are checked before the capture.
+- `release-launcher-icon.png`, `release-app-icon-settings.png`, `release-keyboard-picker-icon.png`
+  (archived evidence, from `emulator-icons.py`): the launcher, app-settings and keyboard-picker icons. The icon art
+  is unchanged; the labels predate the app's rename to **Chirp**.
+
+The round-4 keyboard, pairing-action, typing and TalkBack captures were removed in the redesign docs sweep
+(2026-10-25): they were taken over the retired setup "Try it" page with the old green strip. Re-run the scripts
+below to capture the current release UI.
 
 Regenerate with the toolchain sourced:
 
@@ -140,6 +131,9 @@ on this image. It is not packaged with the app. Neither release nor debug captur
 establish Samsung hardware microphone quality or Tailscale performance.
 
 ## Fold function-key placement
+
+**Archived evidence.** These captures prove the key geometry, which has not changed, but the page behind the
+keyboard is the retired setup screen. They are kept for the layout record, not as current UI.
 
 `fold-layout-{before,after}-{gboard,samsung}-{form}-{light,dark}.png` are direct
 release-APK captures on emulator-5580. `before` is unmodified 0.5.2; `after` includes
@@ -204,8 +198,8 @@ Regenerate this set and the existing detail states deliberately:
   --tests '*NotesLibraryScreenTest*' --tests '*NotesRenderTest*'
 ```
 
-The older `home-*` captures document the retired dashboard. The starting screen is
-now Notes; `notes-{cover,inner}-*` remain detail/editor review states. All fixture
+The starting screen is Notes (the retired Home dashboard's `home-*` captures were removed); `notes-{cover,inner}-*`
+remain detail/editor review states of the note pane on its own. All fixture
 words and audio references are synthetic. Pixel renders do not establish codec
 support; the emulator check separately exercises the real platform codecs.
 

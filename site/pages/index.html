@@ -1,181 +1,186 @@
 <!--
-title: Chirp — Talk anywhere. Type nowhere.
-description: Local-first voice dictation for your Mac, Android and iPhone. Speech recognition runs on your own Mac. Your words stay yours.
+title: Chirp — private dictation and live notes, powered by your Mac
+description: Dictate into any app and keep live notes on your Mac, Android phone and iPhone. Speech recognition runs on your own Mac: no cloud, no account, no telemetry.
 section: home
 class: home
 -->
-<section class="hero">
+<section class="hero" aria-labelledby="hero-title">
   <div class="wrap hero-grid">
     <div>
-      <p class="eyebrow">Local-first voice dictation</p>
-      <h1>Talk anywhere.<br><em>Type nowhere.</em></h1>
-      <p class="lede">Chirp is voice dictation for your Mac, Android and iPhone. Speech recognition runs on your own Mac, and your words stay yours. Press a key, talk, and the words land in whatever app you are using.</p>
+      <p class="eyebrow">Private dictation and live notes</p>
+      <h1 id="hero-title">Talk anywhere.<br><em>Your Mac writes it down.</em></h1>
+      <p class="lede">Chirp turns your voice into text in any app, and long conversations into notes you can search and replay. <strong>Your own Mac is the engine</strong>: speech recognition and clean-up run on it, your phone reaches it over your private network, and there is no cloud, no account and no telemetry.</p>
       <div class="actions">
-        <a class="btn btn-primary" href="guides/mac.html">Set up Chirp on your Mac</a>
-        <a class="btn btn-ghost" href="#see">See it in action</a>
+        <a class="btn btn-primary" href="#start">Get started</a>
+        <a class="btn btn-ghost" href="#dictate">See it work</a>
       </div>
-      <ul class="platforms" aria-label="Platforms">
-        <li><b>Mac</b> menu-bar app</li>
-        <li><b>Android</b> keyboard</li>
-        <li><b>iPhone &amp; iPad</b> app + keyboard</li>
+      <ul class="chips" aria-label="Platforms">
+        <li><b>Mac</b> · menu bar, HUD, Notes</li>
+        <li><b>Android</b> · keyboard or floating mic, Notes</li>
+        <li><b>iPhone &amp; iPad</b> · early</li>
       </ul>
     </div>
-    <div class="stage">
-      <div class="ripples" aria-hidden="true"><span></span><span></span><span></span></div>
-      <img class="stage-icon" src="assets/chirp-icon.png" width="256" height="256" alt="">
-      <figure style="margin:0;width:100%;display:grid;justify-items:center">
-        <div class="hud" data-demo data-phase="polished" aria-hidden="true">
-          <div class="hud-top">
-            <span class="wave"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span>
-            <svg class="hud-icon spark" viewBox="0 0 24 24" fill="currentColor"><path d="M10 2l1.9 5.6L17.5 9.5l-5.6 1.9L10 17l-1.9-5.6L2.5 9.5l5.6-1.9zM18.5 13l.9 2.6 2.6.9-2.6.9-.9 2.6-.9-2.6-2.6-.9 2.6-.9z"/></svg>
-            <svg class="hud-icon check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 12.5l5 5 10-11"/></svg>
-            <span data-status>Polished</span>
-            <span class="hud-chip">Email</span>
-          </div>
-          <p class="hud-text" data-text><ins>Move</ins> the standup to <del>three thirty</del> <ins>3:30</ins> and <del>uh</del> let everyone <ins>know.</ins></p>
-        </div>
-        <figcaption class="hud-caption">A re-creation of the Mac HUD: live words, then optional local clean-up.</figcaption>
-      </figure>
-      <p class="sr-only">Animated example: you say “please move the standup to three thirty and uh let everyone know”; the live transcript appears as you speak, then clean-up on your Mac inserts “Move the standup to 3:30 and let everyone know.”</p>
+    <div class="scene">
+      <div class="art">
+        <img src="assets/pond.png" width="1024" height="1024" alt="Chirp's artwork: a koi-patterned songbird singing on a lily pad, with golden ripples on a moonlit pond" fetchpriority="high" decoding="async">
+      </div>
+      <div class="ripple" aria-hidden="true"><span></span><span></span><span></span></div>
+      <!--shot:mac/hud-listening-dark|The Mac HUD while listening: the Ripple, “Listening” and the live transcript with a dimmed tail still being recognised|hero-hud-->
+      <!--shot:android/notes-library-cover-populated-dark|Chirp Notes on an Android phone: the notes library grouped by day, with a Mac connection chip, Dictate and Record buttons|hero-phone-->
     </div>
   </div>
 </section>
 
-<section id="see" aria-labelledby="see-title">
+<section id="dictate" aria-labelledby="dictate-title">
   <div class="wrap">
-    <div class="section-head">
-      <p class="eyebrow">See it</p>
-      <h2 id="see-title">One voice, every text field</h2>
-      <p>Real captures from the apps, made with synthetic speech. They follow this page's light or dark theme.</p>
-    </div>
-    <div class="tabs" role="tablist" aria-label="Screenshots">
-      <button role="tab" id="tab-mac" aria-controls="panel-mac" aria-selected="true">Mac HUD</button>
-      <button role="tab" id="tab-notes" aria-controls="panel-notes" aria-selected="false">Live Notes</button>
-      <button role="tab" id="tab-android" aria-controls="panel-android" aria-selected="false">Android keyboard</button>
-      <button role="tab" id="tab-scratch" aria-controls="panel-scratch" aria-selected="false">Scratchpad</button>
-      <button role="tab" id="tab-ios" aria-controls="panel-ios" aria-selected="false">iPhone</button>
-    </div>
-
-    <div class="tabpanel" role="tabpanel" id="panel-mac" aria-labelledby="tab-mac" tabindex="0">
-      <p>Press <kbd>⌃⌥Space</kbd> in any app. A floating capsule shows what Chirp hears, then inserts the text where your cursor is.</p>
-      <div class="reel" tabindex="0" aria-label="Mac screenshots">
-        <figure class="w-xl"><div class="frame"><!--shot:mac/hud-listening|The Chirp HUD while listening: a waveform, “Listening” and the live transcript with a dimmed tail--></div><figcaption>Live transcript while you talk. The still-changing tail is dimmed.</figcaption></figure>
-        <figure class="w-xl"><div class="frame"><!--shot:mac/hud-flow-3-diff|The HUD after clean-up, showing removed filler words struck through and replacements highlighted--></div><figcaption>Optional clean-up shows what it changed, with an Email style chip.</figcaption></figure>
-        <figure class="w-xl"><div class="frame"><!--shot:mac/hud-wordwave-long|The HUD with the optional word waveform: a small waveform above each spoken word--></div><figcaption>Optional word waveform: a little sound-shape above every word.</figcaption></figure>
-        <figure class="w-m"><div class="frame"><!--shot:mac/menu-ready|The Chirp menu-bar menu: Start Dictation, Start Notes, Clean-up, Microphone, Sounds and Server--></div><figcaption>Everything lives in the menu bar.</figcaption></figure>
-        <figure class="w-l"><div class="frame"><!--shot:mac/onboarding-welcome|The Welcome to Chirp setup window showing the ⌃⌥Space hotkey--></div><figcaption>A one-minute setup checks the microphone, Accessibility and the server.</figcaption></figure>
-      </div>
-      <div class="reel-nav"><button type="button" aria-label="Previous screenshots">←</button><button type="button" aria-label="Next screenshots">→</button></div>
-    </div>
-
-    <div class="tabpanel" role="tabpanel" id="panel-notes" aria-labelledby="tab-notes" tabindex="0" hidden>
-      <p>Press <kbd>⌃⌥N</kbd> on the Mac, or tap Record in Chirp Notes on Android, for a meeting or a long think-aloud. Chirp keeps listening and writes Markdown notes — headings, to-dos, decisions — next to the full transcript.</p>
-      <div class="reel" tabindex="0" aria-label="Live Notes screenshots">
-        <figure class="w-xl"><div class="frame"><!--shot:mac/notes-split|Chirp Notes in split view: structured notes with headings and to-dos on the left, the timestamped transcript on the right--></div><figcaption>Notes and transcript side by side, updated as you talk.</figcaption></figure>
-        <figure class="w-xl"><div class="frame"><!--shot:mac/notes-editing|The Chirp Notes editor with a typed agenda followed by AI-written notes in a tinted block--></div><figcaption>Type anywhere while it records. Your edits are never overwritten.</figcaption></figure>
-        <figure class="w-l"><div class="frame"><!--shot:android/notes-inner-recording|Chirp Notes on an Android foldable's inner screen: Markdown notes beside the transcript while recording--></div><figcaption>The same Live Notes on Android, beside the transcript on a Fold.</figcaption></figure>
-        <figure class="w-s"><div class="frame"><!--shot:android/notes-cover-recording|Chirp Notes recording on a phone-width screen--></div><figcaption>On the cover screen.</figcaption></figure>
-      </div>
-      <div class="reel-nav"><button type="button" aria-label="Previous screenshots">←</button><button type="button" aria-label="Next screenshots">→</button></div>
-    </div>
-
-    <div class="tabpanel" role="tabpanel" id="panel-android" aria-labelledby="tab-android" tabindex="0" hidden>
-      <p>A full keyboard with a mic key. Your voice streams to your Mac over your private tailnet; live text appears underlined in the field and the final replaces it.</p>
-      <div class="reel" tabindex="0" aria-label="Android screenshots">
-        <figure class="w-l"><div class="frame"><!--shot:android/keyboard-look-gboard-listening|Chirp Keyboard listening, with a waveform and stop button above the QWERTY keys--></div><figcaption>Listening, in the Gboard-like default look.</figcaption></figure>
-        <figure class="w-l"><div class="frame"><!--shot:android/keyboard-final|Chirp Keyboard after a dictation, offering Use raw for five seconds--></div><figcaption>After a cleaned final, “Use raw” is one tap away.</figcaption></figure>
-        <figure class="w-l"><div class="frame"><!--shot:android/keyboard-look-samsung-idle|Chirp Keyboard in the Samsung-like look--></div><figcaption>A Samsung-like look is one setting away.</figcaption></figure>
-        <figure class="w-l"><div class="frame"><!--shot:android/keyboard-history|The keyboard's dictation history panel with recent entries--></div><figcaption>Opt-in history, encrypted on the phone.</figcaption></figure>
-        <figure class="w-l"><div class="frame"><!--shot:android/release-keyboard-inner|Chirp Keyboard on a foldable's inner screen with a number row--></div><figcaption>Tuned for the Galaxy Z Fold's inner screen.</figcaption></figure>
-        <figure class="w-s"><div class="frame"><!--shot:android/onboarding-pair|Onboarding, last page: Scan the code on your Mac, with Scan code and Paste link instead buttons--></div><figcaption>Pair once by scanning a QR code from your Mac.</figcaption></figure>
-      </div>
-      <div class="reel-nav"><button type="button" aria-label="Previous screenshots">←</button><button type="button" aria-label="Next screenshots">→</button></div>
-    </div>
-
-    <div class="tabpanel" role="tabpanel" id="panel-scratch" aria-labelledby="tab-scratch" tabindex="0" hidden>
-      <p>Scratchpad on Android is a place to dictate long text outside any app, tidy it up, then copy or share. Open it from a Quick Settings tile or the launcher icon.</p>
-      <div class="reel" tabindex="0" aria-label="Scratchpad screenshots">
-        <figure class="w-s"><div class="frame"><!--shot:android/scratchpad-idle|The empty Scratchpad with style chips and a large mic button--></div><figcaption>Pick a style, tap the mic.</figcaption></figure>
-        <figure class="w-s"><div class="frame"><!--shot:android/scratchpad-listening|The Scratchpad while listening--></div><figcaption>Listening.</figcaption></figure>
-        <figure class="w-s"><div class="frame"><!--shot:android/scratchpad-text|The Scratchpad with dictated text and Copy, Share and Clear buttons--></div><figcaption>Copy or share. Nothing is saved.</figcaption></figure>
-      </div>
-      <div class="reel-nav"><button type="button" aria-label="Previous screenshots">←</button><button type="button" aria-label="Next screenshots">→</button></div>
-    </div>
-
-    <div class="tabpanel" role="tabpanel" id="panel-ios" aria-labelledby="tab-ios" tabindex="0" hidden>
-      <div class="notice">
-        <p><span class="badge warn">Early</span></p>
-        <h3>iPhone and iPad: built, not yet on a device</h3>
-        <p>A native SwiftUI app plus a dictation-first keyboard for iOS and iPadOS 18. It builds and passes its tests on iPhone and iPad simulators, including a test that dictates through the real keyboard. It has not been run on a physical device yet, so there are no screenshots here yet.</p>
-        <ul>
-          <li>Pair by QR with the same Mac server the Android keyboard uses.</li>
-          <li>Dictate in the app, or from other apps through Chirp Keyboard.</li>
-          <li>Action Button, Control Center, Shortcuts and a Live Activity.</li>
+    <div class="feature">
+      <div class="section-head">
+        <p class="eyebrow">Dictate anywhere</p>
+        <h2 id="dictate-title">Press a key, talk, and the words land where you’re typing</h2>
+        <p>Live words appear as you speak. When you stop, the final text replaces them about a tenth of a second later, in Mail, Slack, a terminal or a form field.</p>
+        <ul class="ticks">
+          <li><strong><kbd>⌃⌥Space</kbd> on the Mac</strong>, or any shortcut you record (even <kbd>⌥</kbd> alone). Auto-stop when you pause, or hold to talk.</li>
+          <li><strong>Optional clean-up on your Mac</strong> removes the “um”s and fixes punctuation, with chat, email, code and notes styles picked per app. <strong>Use raw</strong> puts back exactly what you said.</li>
+          <li><strong>On Android</strong>, use Chirp Keyboard (a full keyboard with a mic key) or keep your own keyboard and use the floating mic.</li>
+          <li><strong>Nothing you say is lost.</strong> If a dictation fails part-way, Chirp keeps what it heard.</li>
         </ul>
-        <p style="margin:16px 0 0"><a href="guides/iphone.html">Read the iPhone and iPad guide →</a></p>
+      </div>
+      <div class="stack">
+        <figure><div class="panel-shot hud"><!--shot:mac/hud-listening|The Mac HUD while listening, with the Ripple and the live transcript; the still-changing tail is dimmed--></div><figcaption>The HUD shows what Chirp hears. The dimmed tail can still change.</figcaption></figure>
+        <figure><div class="panel-shot hud"><!--shot:mac/hud-flow-3-diff|The HUD after clean-up: “three thirty” struck through and replaced by 3:30, “uh” struck through, with an Email style chip--></div><figcaption>Clean-up shows what it changed, if you want to see it.</figcaption></figure>
+        <div class="row2">
+          <figure><div class="frame"><!--shot:android/keyboard-listening|Chirp Keyboard on Android while listening: Ripple arcs, “Listening…”, a timer and a red Stop pill above the keys--></div><figcaption>Chirp Keyboard on Android.</figcaption></figure>
+          <figure><div class="panel-shot menu"><!--shot:mac/menu-ready|The Chirp menu-bar menu: Ready, Start Dictation, New Note, Recent Notes, Notes Library, Clean-up and Microphone--></div><figcaption>Everything is in the menu bar.</figcaption></figure>
+        </div>
+      </div>
+    </div>
+    <div class="stats" aria-label="Measured speed">
+      <div class="stat"><b>~100<small>ms</small></b><span>Stop → final text</span><p>96–107 ms on a 5.85&nbsp;s clip</p></div>
+      <div class="stat"><b>&lt;250<small>ms</small></b><span>To the first live words</span><p>196–244 ms first partial</p></div>
+      <div class="stat"><b>~100×</b><span>Faster than real time</span><p>Warm, Parakeet v2 on MLX: 88–113×</p></div>
+      <div class="stat"><b>~0.4<small>s</small></b><span>Optional clean-up</span><p>398 ms warm median, local Qwen3 4B</p></div>
+    </div>
+    <p class="footnote">Measured through the real WebSocket path on an Apple M5 Pro with 64 GB, macOS 27, using synthetic clips. These are observations, not guarantees, and phone latency over Tailscale hasn’t been measured on a real device yet. Method and caveats: <a href="{{repo}}/blob/main/docs/bench.md">docs/bench.md</a>.</p>
+  </div>
+</section>
+
+<section id="notes" class="band" aria-labelledby="notes-title">
+  <div class="wrap">
+    <div class="section-head">
+      <p class="eyebrow">Notes that remember</p>
+      <h2 id="notes-title">Leave the mic open. Get notes you can keep.</h2>
+      <p>Press <kbd>⌃⌥N</kbd> on the Mac, or tap <strong>Record</strong> on Android, and talk through a meeting or a long think-aloud. Chirp writes headings, to-dos, decisions and questions while you speak, next to the full transcript. Every note saves itself into a library on the device that recorded it. There is no Save step.</p>
+    </div>
+    <figure class="showcase"><div class="frame"><!--shot:mac/notes-library|The Chirp Notes window on a Mac: the library sidebar grouped Today, Yesterday and Previous 7 Days, and a note with a serif title, to-dos and Decision and Question callouts--></div><figcaption>The Notes window on a Mac: your library on the left, the note on the right, rendered as you write.</figcaption></figure>
+    <div class="cards">
+      <article class="card">
+        <h3>A library, not a pile of files</h3>
+        <p>Notes are listed newest first, grouped by day, with open to-dos counted. They’re kept until you delete them, and a deleted note waits 30 days in Recently Deleted. Pick up a finished note any time with <strong>Continue</strong>.</p>
+        <div class="media phone"><div class="frame"><!--shot:android/notes-library-cover-populated|The Android notes library: notes grouped Today and Yesterday, each with a serif title, a snippet, its length and open to-dos--></div></div>
+      </article>
+      <article class="card">
+        <h3>Find anything</h3>
+        <p>Search covers titles, notes and transcripts, with the matches highlighted. A note that was interrupted by a crash comes back marked <strong>Recovered</strong>, not lost.</p>
+        <div class="media zoom zoom-left"><div class="frame"><!--shot:mac/notes-search|Searching the Mac notes library for “beta”: three matching notes with the word highlighted, one marked Recovered--></div></div>
+      </article>
+      <article class="card">
+        <h3>Replay what was said</h3>
+        <p>Turn on <strong>Keep audio with notes</strong> and each spoken segment is kept with its note. Press play beside a transcript paragraph to hear it again. It’s off by default, and the audio never leaves the device.</p>
+        <div class="media zoom zoom-right"><div class="frame"><!--shot:mac/notes-inspector-playing|The transcript inspector beside a note, with one paragraph highlighted and playing its kept audio--></div></div>
+      </article>
+    </div>
+  </div>
+</section>
+
+<section id="keyboard" aria-labelledby="keyboard-title">
+  <div class="wrap">
+    <div class="feature flip">
+      <div class="section-head">
+        <p class="eyebrow">Keep your keyboard</p>
+        <h2 id="keyboard-title">Love Gboard or Samsung Keyboard? Keep it.</h2>
+        <p>When you set Chirp up on Android, choose how you’ll dictate. <strong>Keep my keyboard</strong> keeps the keyboard you already use and adds a small Chirp mic beside text fields when you need it.</p>
+        <ul class="ticks">
+          <li><strong>Tap the bubble</strong> to dictate, or hold it to talk. Drag it, and it snaps to the nearer edge.</li>
+          <li><strong>It stays out of the way</strong>: no bubble in password fields, and none while Chirp Keyboard is in use.</li>
+          <li><strong>Your words never disappear.</strong> If an app won’t take the text, it waits in the panel with <strong>Copy</strong> and <strong>Open in Scratchpad</strong>. Chirp never copies on its own.</li>
+          <li><strong>Plainly:</strong> it doesn’t work in every app, and it doesn’t change what Gboard’s or Samsung’s own mic button does. Notes and the Scratchpad work either way.</li>
+        </ul>
+      </div>
+      <div class="duo phone-pair">
+        <figure><div class="frame phone"><!--shot:android/keepkb-choice-cover|Onboarding on Android: “How you’ll dictate”, with Use Chirp Keyboard and Keep Gboard choices--></div><figcaption>Choose in setup, change later in Settings.</figcaption></figure>
+        <div class="stack">
+          <figure><div class="frame"><!--shot:android/floating-listening-cover|The floating mic panel while listening: live words, Cancel and a red Stop button with Ripple rings--></div><figcaption>The floating mic, listening.</figcaption></figure>
+          <figure><div class="frame"><!--shot:android/floating-ready-cover|The floating mic panel when the app refused the text: the words wait with Copy, Open in Scratchpad and Done--></div><figcaption>If the field can’t take it, nothing is lost.</figcaption></figure>
+        </div>
       </div>
     </div>
   </div>
 </section>
 
-<section id="how" class="how" aria-labelledby="how-title">
+<section id="privacy" class="band" aria-labelledby="privacy-title">
   <div class="wrap">
     <div class="section-head">
-      <p class="eyebrow">How it works</p>
-      <h2 id="how-title">Your Mac does the listening</h2>
-      <p>One speech server runs on your Mac. The apps are thin: they capture audio, stream it, and insert the text that comes back. Phones reach the Mac only through your own private Tailscale network.</p>
+      <p class="eyebrow">Privacy</p>
+      <h2 id="privacy-title">Your Mac is the engine. There is no cloud.</h2>
+      <p>Chirp has no servers of its own, no account and no telemetry. Audio and text only move between your own devices, over your own private Tailscale network.</p>
     </div>
-    <figure class="diagram" style="margin:0">
+    <div class="pgrid">
+      <div><span class="dot" aria-hidden="true"></span><h3>Recognised on your Mac</h3><p>Speech recognition and clean-up run on your Mac. Its server listens only on the Mac itself, and clean-up stays local unless you deliberately point it elsewhere, in which case every app says where text goes.</p></div>
+      <div><span class="dot" aria-hidden="true"></span><h3>Only your devices</h3><p>Phones reach the Mac through Tailscale on your own tailnet, never the public internet. Each phone pairs with a secret QR code and its own token, which you can revoke.</p></div>
+      <div><span class="dot" aria-hidden="true"></span><h3>Notes stay put</h3><p>Notes live on the device that recorded them, kept until you delete them (or for 1 year, 90 or 30 days if you choose). They’re never synced or indexed. On Android they’re encrypted with a key held by the phone.</p></div>
+      <div><span class="dot" aria-hidden="true"></span><h3>Audio only if you ask</h3><p>Dictation audio is gone when each dictation ends. Keeping audio with notes is off by default, and so is dictation history. Logs hold timings and error codes, never what you said.</p></div>
+    </div>
+    <figure class="diagram">
       <svg class="diagram-wide" viewBox="0 0 1000 430" role="img" aria-labelledby="dg-t dg-d">
         <title id="dg-t">How Chirp connects</title>
-        <desc id="dg-d">The Android keyboard and the iPhone app stream audio over your private tailnet to chirp-server on your Mac. The Mac app talks to the same server over 127.0.0.1. Live words and final text flow back.</desc>
+        <desc id="dg-d">The Android and iPhone apps stream audio over your private tailnet to chirp-server on your Mac. The Mac app talks to the same server over 127.0.0.1. Live words and final text flow back.</desc>
         <path class="tunnel" d="M262 105 C 420 105, 430 150, 588 150"/>
         <path class="tunnel" d="M262 315 C 420 315, 430 190, 588 190"/>
         <path class="wire" d="M262 98 C 420 98, 430 143, 588 143"/>
         <path class="wire back" d="M262 112 C 420 112, 430 157, 588 157"/>
         <path class="wire" d="M262 308 C 420 308, 430 183, 588 183"/>
         <path class="wire back" d="M262 322 C 420 322, 430 197, 588 197"/>
-        <rect class="box" x="20" y="45" width="242" height="120" rx="18"/>
-        <text class="k" x="42" y="78">PHONE</text>
+        <rect class="box" x="20" y="45" width="242" height="120" rx="16"/>
+        <text class="k" x="42" y="78">Phone</text>
         <text class="t" x="42" y="108">Chirp for Android</text>
-        <text class="s" x="42" y="132">app + keyboard with a mic key</text>
-        <rect class="box" x="20" y="255" width="242" height="120" rx="18"/>
-        <text class="k" x="42" y="288">PHONE · TABLET</text>
+        <text class="s" x="42" y="132">keyboard or floating mic, Notes</text>
+        <rect class="box" x="20" y="255" width="242" height="120" rx="16"/>
+        <text class="k" x="42" y="288">Phone · tablet</text>
         <text class="t" x="42" y="318">Chirp for iPhone &amp; iPad</text>
         <text class="s" x="42" y="342">app + dictation keyboard</text>
         <text class="lbl" x="425" y="88" text-anchor="middle">audio →  ← live words + final text</text>
         <text class="lbl" x="425" y="396" text-anchor="middle" style="font-weight:600">Tailscale · your private tailnet</text>
         <text class="lbl" x="425" y="416" text-anchor="middle">encrypted, never the public internet</text>
-        <rect class="mac" x="588" y="18" width="392" height="394" rx="24"/>
-        <text class="k" x="614" y="52">YOUR MAC</text>
+        <rect class="mac" x="588" y="18" width="392" height="394" rx="22"/>
+        <text class="k" x="614" y="52">Your Mac</text>
         <rect class="inner" x="614" y="72" width="340" height="168" rx="14"/>
         <text class="t" x="636" y="106">chirp-server</text>
         <text class="s" x="636" y="132">Parakeet speech recognition (MLX)</text>
         <text class="s" x="636" y="154">optional local Qwen clean-up</text>
         <text class="s" x="636" y="176">Live Notes structuring</text>
-        <text class="s" x="636" y="212" style="fill:var(--lily);font-weight:600">listens on 127.0.0.1 only</text>
+        <text class="s ok" x="636" y="212">listens on 127.0.0.1 only</text>
         <path class="wire" d="M770 300 L770 244"/>
         <path class="wire back" d="M798 300 L798 244"/>
         <text class="lbl" x="812" y="278">loopback</text>
         <rect class="inner" x="614" y="300" width="340" height="88" rx="14"/>
         <text class="t" x="636" y="334">Chirp for Mac</text>
-        <text class="s" x="636" y="358">menu bar · HUD · Live Notes</text>
+        <text class="s" x="636" y="358">menu bar · HUD · Notes library</text>
       </svg>
       <svg class="diagram-tall" viewBox="0 0 360 600" role="img" aria-labelledby="dgt-t dgt-d">
         <title id="dgt-t">How Chirp connects</title>
         <desc id="dgt-d">Phones stream audio over your private tailnet to chirp-server on your Mac; the Mac app uses the same server over 127.0.0.1.</desc>
         <rect class="mac" x="10" y="10" width="340" height="300" rx="22"/>
-        <text class="k" x="32" y="42">YOUR MAC</text>
+        <text class="k" x="32" y="42">Your Mac</text>
         <rect class="inner" x="30" y="58" width="300" height="130" rx="14"/>
         <text class="t" x="48" y="88">chirp-server</text>
         <text class="s" x="48" y="112">Parakeet speech recognition</text>
         <text class="s" x="48" y="132">optional local clean-up</text>
-        <text class="s" x="48" y="166" style="fill:var(--lily);font-weight:600">127.0.0.1 only</text>
+        <text class="s ok" x="48" y="166">127.0.0.1 only</text>
         <path class="wire" d="M150 222 L150 192"/>
         <path class="wire back" d="M172 222 L172 192"/>
         <rect class="inner" x="30" y="222" width="300" height="70" rx="14"/>
         <text class="t" x="48" y="252">Chirp for Mac</text>
-        <text class="s" x="48" y="274">menu bar · HUD · Live Notes</text>
+        <text class="s" x="48" y="274">menu bar · HUD · Notes</text>
         <path class="tunnel" d="M100 450 L100 312"/>
         <path class="tunnel" d="M260 450 L260 312"/>
         <path class="wire" d="M92 450 L92 312"/>
@@ -186,151 +191,58 @@ class: home
         <text class="lbl" x="180" y="380" text-anchor="middle" style="font-weight:600">Tailscale · private tailnet</text>
         <text class="lbl" x="180" y="398" text-anchor="middle">encrypted, never public</text>
         <rect class="box" x="10" y="450" width="164" height="110" rx="16"/>
-        <text class="k" x="26" y="478">ANDROID</text>
+        <text class="k" x="26" y="478">Android</text>
         <text class="t" x="26" y="506">Chirp</text>
-        <text class="t" x="26" y="528">Keyboard</text>
+        <text class="t" x="26" y="528">app + Notes</text>
         <rect class="box" x="186" y="450" width="164" height="110" rx="16"/>
-        <text class="k" x="202" y="478">IPHONE · IPAD</text>
+        <text class="k" x="202" y="478">iPhone · iPad</text>
         <text class="t" x="202" y="506">App +</text>
         <text class="t" x="202" y="528">keyboard</text>
       </svg>
     </figure>
-    <ol class="steps3">
-      <li><h3>You talk</h3><p>Press the hotkey on your Mac, or tap the mic on your phone's keyboard, in any app.</p></li>
-      <li><h3>Your Mac listens</h3><p>Parakeet runs on your Mac's Apple Silicon and streams live words back while you speak.</p></li>
-      <li><h3>Text lands</h3><p>The final text replaces the live preview at your cursor. Optional clean-up removes the “um”s first.</p></li>
-    </ol>
+    <p class="footnote">A debug mode that keeps recordings exists for troubleshooting. It’s off unless you start it on the Mac, and every app shows a red warning while it’s on. Everything Chirp keeps, and where: <a href="{{repo}}/blob/main/docs/privacy.md">docs/privacy.md</a>.</p>
   </div>
 </section>
 
-<section id="speed" aria-labelledby="speed-title">
+<section id="start" aria-labelledby="start-title">
   <div class="wrap">
     <div class="section-head">
-      <p class="eyebrow">Speed</p>
-      <h2 id="speed-title">Done before you reach for the keyboard</h2>
-      <p>Measured through the real WebSocket path on an Apple M5 Pro with 64 GB, macOS 27.</p>
+      <p class="eyebrow">Get started</p>
+      <h2 id="start-title">Start with your Mac, then add a phone</h2>
+      <p>Chirp installs from source; there are no store builds yet. The Mac comes first because it does the listening for every device.</p>
     </div>
-    <div class="stats">
-      <div class="stat"><b>~100<small>ms</small></b><span>Stop → final text</span><p>96–107 ms on a 5.85&nbsp;s clip</p></div>
-      <div class="stat"><b>&lt;250<small>ms</small></b><span>To the first live words</span><p>196–244 ms first partial</p></div>
-      <div class="stat"><b>~100×</b><span>Faster than real time</span><p>Warm, Parakeet v2 on MLX: 88–113×</p></div>
-      <div class="stat"><b>~0.4<small>s</small></b><span>Optional clean-up</span><p>398 ms warm median, local Qwen3 4B</p></div>
-    </div>
-    <p class="footnote">These are observations from synthetic test clips, not guarantees; the streamed finals kept 0% word error rate on those clips, and clean-up passed 59 of 59 synthetic cases. Times depend on your Mac and how busy it is. Phone-over-Tailscale latency hasn't been measured on a real device yet. Every number, with method and caveats: <a href="{{repo}}/blob/main/docs/bench.md">docs/bench.md</a>.</p>
-  </div>
-</section>
-
-<section id="why" class="how" aria-labelledby="why-title">
-  <div class="wrap">
-    <div class="section-head">
-      <p class="eyebrow">Why Chirp</p>
-      <h2 id="why-title">Your voice stays on hardware you own</h2>
-      <p>Chirp is for people who dictate a lot and would rather their speech never left home. Here is the honest trade-off.</p>
-    </div>
-    <div class="table-scroll" tabindex="0" role="region" aria-label="Comparison of Chirp with other dictation options">
-      <table>
-        <thead><tr><th scope="col"><span class="sr-only">Question</span></th><th scope="col" class="us">Chirp</th><th scope="col">Cloud dictation services</th><th scope="col">Built-in OS dictation</th></tr></thead>
-        <tbody>
-          <tr><th scope="row">Where speech is recognised</th><td data-label="Chirp" class="us">On your own Mac</td><td data-label="Cloud dictation services">On the provider's servers</td><td data-label="Built-in OS dictation">On the device or the vendor's servers, depending on platform and settings</td></tr>
-          <tr><th scope="row">What is kept</th><td data-label="Chirp" class="us">Your choice: nothing by default, or encrypted history on your phone</td><td data-label="Cloud dictation services">Depends on the provider's policy</td><td data-label="Built-in OS dictation">Depends on the vendor's policy and your settings</td></tr>
-          <tr><th scope="row">Phones</th><td data-label="Chirp" class="us">Stream to your Mac over your tailnet — one model everywhere</td><td data-label="Cloud dictation services">Stream to the provider</td><td data-label="Built-in OS dictation">Each device uses its own engine</td></tr>
-          <tr><th scope="row">Clean-up</th><td data-label="Chirp" class="us">Optional local model, styles per app, raw text one keystroke away</td><td data-label="Cloud dictation services">Often, on their servers</td><td data-label="Built-in OS dictation">Varies; mostly punctuation</td></tr>
-          <tr><th scope="row">Meetings and long notes</th><td data-label="Chirp" class="us">Live Notes: Markdown notes while you talk, on the Mac or an Android phone</td><td data-label="Cloud dictation services">Usually a separate product</td><td data-label="Built-in OS dictation">Not built in</td></tr>
-          <tr><th scope="row">Cost and account</th><td data-label="Chirp" class="us">No subscription, no account. Open models: Parakeet for speech, optional Qwen clean-up</td><td data-label="Cloud dictation services">Usually a subscription and an account</td><td data-label="Built-in OS dictation">Included with the OS</td></tr>
-          <tr><th scope="row">Make it yours</th><td data-label="Chirp" class="us">Open source. Prompts, styles, hotkeys and models are editable</td><td data-label="Cloud dictation services">Settings the provider offers</td><td data-label="Built-in OS dictation">System settings</td></tr>
-          <tr><th scope="row">What you need</th><td data-label="Chirp" class="us">An Apple Silicon Mac; Tailscale for phones; building from source</td><td data-label="Cloud dictation services">An internet connection</td><td data-label="Built-in OS dictation">Nothing extra</td></tr>
-        </tbody>
-      </table>
-    </div>
-    <p class="footnote"><strong>The limits, plainly:</strong> Chirp needs an Apple Silicon Mac that's switched on. Phones connect only through Tailscale. Everything installs from source — there are no notarized, Play Store or App Store builds — and the iPhone app has passed simulator tests but hasn't run on a device yet.</p>
-  </div>
-</section>
-
-<section id="features" aria-labelledby="features-title">
-  <div class="wrap">
-    <div class="section-head">
-      <p class="eyebrow">Features</p>
-      <h2 id="features-title">What you get on each device</h2>
-    </div>
-    <div class="cards">
+    <div class="platforms">
       <article class="card">
         <h3>Mac <span class="badge">Ready</span></h3>
         <ul>
-          <li>Dictate in any app with <kbd>⌃⌥Space</kbd>, <kbd>⌥</kbd> alone, or any shortcut you record</li>
-          <li>Auto-stop when you pause, or hold to talk; <kbd>Esc</kbd> cancels</li>
-          <li>Floating HUD with the live transcript</li>
-          <li>Optional local clean-up with chat, email, code and notes styles, chosen per app</li>
-          <li>“Use raw” brings back exactly what you said</li>
-          <li>Live Notes for meetings, with optional speaker labels</li>
-          <li>English Parakeet v2 by default, multilingual v3 available</li>
+          <li>An Apple Silicon Mac (M1 or newer)</li>
+          <li>One install script, then pick a speech model</li>
+          <li>Dictation, clean-up and the Notes library</li>
         </ul>
-        <a class="more" href="guides/mac.html">Set up on your Mac →</a>
+        <a class="more" href="guides/mac.html">Set up your Mac →</a>
       </article>
       <article class="card">
         <h3>Android <span class="badge">Ready</span></h3>
         <ul>
-          <li>A full HeliBoard keyboard with a mic key, in any app</li>
-          <li>Live text underlined in the field while you speak</li>
-          <li>Gboard-like or Samsung-like looks; Fold-tuned layouts</li>
-          <li>Autocorrect, clipboard history and emoji</li>
-          <li>Undo and Use raw after every dictation</li>
-          <li>Scratchpad for long text, with a Quick Settings tile</li>
-          <li>Live Notes for meetings, structured by your Mac</li>
-          <li>Opt-in encrypted history, on the phone only</li>
+          <li>Build the app on your Mac; Tailscale on both</li>
+          <li>Chirp Keyboard, or keep your own with the floating mic</li>
+          <li>Notes, Scratchpad and opt-in history</li>
         </ul>
         <a class="more" href="guides/android.html">Use Chirp on Android →</a>
       </article>
       <article class="card">
         <h3>iPhone &amp; iPad <span class="badge warn">Early</span></h3>
         <ul>
-          <li>SwiftUI app plus a dictation-first keyboard (iOS 18+)</li>
-          <li>Pair by QR to the same Mac server</li>
-          <li>Safe replacement: secure fields fall back to Apple's keyboard</li>
-          <li>Action Button, Control Center, Shortcuts, Live Activity</li>
-          <li>Hardware-keyboard shortcuts on iPad</li>
-          <li>Builds and passes simulator tests; not yet run on a device</li>
+          <li>Full Xcode and your own signing team</li>
+          <li>An app plus a dictation-first keyboard</li>
+          <li>Passes simulator tests; not yet run on a device</li>
         </ul>
         <a class="more" href="guides/iphone.html">Read the iPhone guide →</a>
       </article>
     </div>
-  </div>
-</section>
-
-<section id="privacy" class="privacy" aria-labelledby="privacy-title">
-  <div class="wrap">
-    <div class="section-head">
-      <p class="eyebrow">Privacy</p>
-      <h2 id="privacy-title">Your data stays yours</h2>
-      <p>Chirp has no cloud, no account and no telemetry. Your Mac is the server. Audio and text only move between your own devices, over your own private Tailscale network — never to us or anyone else.</p>
+    <div class="agent">
+      <p><strong>Rather not type the commands?</strong>Open the repository in a coding agent and paste one prompt. It installs Chirp with you and asks before touching Tailscale.</p>
+      <a href="guides/coding-agent.html">Build it with your coding agent →</a>
     </div>
-    <div class="pgrid">
-      <div><h3>Your Mac is the server</h3><p>Speech recognition and clean-up run on your Mac. The server listens only on its own loopback address; clean-up uses a local model unless you deliberately point it elsewhere, and then every app says where text goes.</p></div>
-      <div><h3>Only your devices</h3><p>Phones reach your Mac through Tailscale on your own tailnet, never the public internet. Chirp refuses to pair while Tailscale Funnel is on.</p></div>
-      <div><h3>Paired with a secret</h3><p>Each device pairs by scanning a QR code with a secret token, which you can revoke per device. Phones store it encrypted; the Mac hides the pairing window from screen sharing.</p></div>
-    </div>
-    <h3 class="privacy-sub">You choose what's kept</h3>
-    <div class="pgrid">
-      <div><h3>Nothing, by default</h3><p>Audio and text stay in memory for one dictation, then they're gone. Logs hold timings and error codes, never what you said.</p></div>
-      <div><h3>History on your phone</h3><p>Turn it on to reinsert past dictations. It's encrypted on the device, kept for 24 hours, 7 days or 30 days (up to 200 entries), and you can clear it any time.</p></div>
-      <div><h3>Live Notes on your Mac</h3><p>Notes stay in the window until you save or copy them. A crash-recovery copy on your Mac (on by default, text only) is deleted when you save or discard.</p></div>
-    </div>
-    <p class="footnote">A debug mode that keeps recordings exists for troubleshooting. It's off unless you start it, stays on your Mac, and shows a red warning in every app while it's on. Full details: <a href="{{repo}}/blob/main/docs/privacy.md">docs/privacy.md</a>.</p>
-  </div>
-</section>
-
-<section id="guides" aria-labelledby="guides-title">
-  <div class="wrap">
-    <div class="section-head">
-      <p class="eyebrow">Beginner guides</p>
-      <h2 id="guides-title">Start in a few minutes</h2>
-      <p>Step-by-step guides, no prior setup assumed.</p>
-    </div>
-    <ul class="guide-list">
-      <li><a href="guides/mac.html"><span class="n">01</span><h3>Set up Chirp on your Mac</h3><p>Install, download a model, grant two permissions, dictate.</p><span class="go">Start →</span></a></li>
-      <li><a href="guides/android.html"><span class="n">02</span><h3>Use Chirp on Android</h3><p>Build the keyboard, pair it with your Mac, dictate anywhere.</p><span class="go">Start →</span></a></li>
-      <li><a href="guides/iphone.html"><span class="n">03</span><h3>Use Chirp on iPhone or iPad</h3><p>Build with Xcode, pair, turn on the keyboard.</p><span class="go">Start →</span></a></li>
-      <li><a href="guides/live-notes.html"><span class="n">04</span><h3>Take Live Notes</h3><p>Turn a meeting into headings, to-dos and decisions as you talk.</p><span class="go">Start →</span></a></li>
-      <li><a href="guides/coding-agent.html"><span class="n">05</span><h3>Build Chirp with your coding agent</h3><p>Copy a prompt and let an agent do the setup with you.</p><span class="go">Start →</span></a></li>
-    </ul>
   </div>
 </section>

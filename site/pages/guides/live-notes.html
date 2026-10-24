@@ -1,55 +1,77 @@
 <!--
-title: Take Live Notes — Chirp
-description: How to turn a meeting or a long think-aloud into editable Markdown notes on your Mac with Chirp Live Notes.
+title: Take notes — Chirp
+description: How to turn a meeting or a long think-aloud into Markdown notes with Chirp, keep them in a searchable library, and replay what was said, on a Mac or an Android phone.
 section: guides
 -->
 <div class="narrow guide-hero">
   <p class="crumbs"><a href="index.html">Guides</a> / 04</p>
-  <h1>Take Live Notes</h1>
-  <p class="lede">Keep the mic open for a meeting, a lecture or thinking out loud. Chirp writes Markdown notes as you talk — headings, bullets, to-dos, decisions and open questions — right beside the full transcript.</p>
+  <h1>Take notes</h1>
+  <p class="lede">Leave the mic open for a meeting, a lecture or thinking out loud. Chirp writes Markdown notes while you talk (headings, bullets, to-dos, decisions and open questions) next to the full transcript, and keeps every note in a library you can search.</p>
   <div class="meta-row"><span>Needs: Chirp on your Mac with a clean-up model</span><span>Also on: Android</span></div>
 </div>
 <article class="narrow prose">
-  <figure class="shot"><div class="frame"><!--shot:mac/notes-split|Chirp Notes in split view: structured notes on the left, timestamped transcript on the right--></div><figcaption>Split view: notes on the left, the transcript on the right, and what Chirp is hearing right now at the bottom.</figcaption></figure>
+  <nav class="toc" aria-label="On this page"><b>On this page</b>
+    <ol><li><a href="#start">Start and stop</a></li><li><a href="#edit">Edit while it writes</a></li><li><a href="#library">Your library</a></li><li><a href="#replay">Replay what was said</a></li><li><a href="#organize">Organize and speakers</a></li><li><a href="#export">Export</a></li><li><a href="#android">Notes on Android</a></li></ol>
+  </nav>
+  <figure class="shot"><div class="frame"><!--shot:mac/notes-library|The Chirp Notes window: the library grouped by date on the left, and a note with a serif title, to-dos and Decision and Question callouts--></div><figcaption>The Notes window: your library on the left, the note on the right.</figcaption></figure>
 
   <h2 id="start">Start and stop</h2>
   <ol class="steps">
-    <li><strong>Press <kbd>⌃⌥N</kbd></strong><p>From anywhere. The <strong>Chirp Notes</strong> window comes forward without stealing focus from the app you're in. You can also choose <strong>Start Notes</strong> in the menu bar, or press <strong>Record</strong> in the window.</p></li>
-    <li><strong>Talk</strong><p>Speech is transcribed in chunks. At most every 15 seconds the local model turns the newest stretch into notes; earlier sections stay put so they don't shift while you read.</p></li>
-    <li><strong>Stop</strong><p>Press <strong>Stop</strong> in the window. Chirp finishes the last bit and tidies the notes once more.</p></li>
+    <li><strong>Press <kbd>⌃⌥N</kbd></strong><p>From any app. It always starts a new note and records, and the Notes window comes forward without taking focus from the app you’re in. You can also choose <strong>New Note</strong> in the menu bar, or open <strong>Notes Library…</strong> and press <strong>Record</strong>.</p></li>
+    <li><strong>Talk</strong><p>Speech is transcribed in short chunks. At most every 15 seconds the local model turns the newest stretch into notes. Earlier sections stay put, so nothing shifts while you read.</p></li>
+    <li><strong>Stop</strong><p>Press <strong>Stop</strong> in the recording control in the toolbar (or <kbd>⇧⌘R</kbd>), or choose the first row of the menu-bar menu, which reads <strong>◉ Recording “…” 03:12 — Stop</strong>. <kbd>⇧⌘P</kbd> pauses and resumes. Chirp finishes the last bit and tidies the notes once more.</p></li>
   </ol>
-  <div class="callout"><b>Notes need the clean-up model.</b><p>Structuring uses the same local model as clean-up. Without it, Notes still works as a live transcript and a plain editor. Download one under Settings → Server → Manage Local Models….</p></div>
+  <figure class="shot"><div class="frame"><!--shot:mac/notes-recording|A note recording: the Recording section pinned above the library with a live timer, and the recording control in the toolbar--></div><figcaption>The note that’s recording stays pinned at the top of the library, and you can read other notes meanwhile.</figcaption></figure>
+  <div class="callout"><b>Notes need the clean-up model.</b><p>Structuring uses the same local model as clean-up. Without it, Notes still works as a live transcript and a plain editor. Download one under Settings → Advanced → Manage Local Models….</p></div>
+  <p>Notes and dictation take turns on a Mac: while a note records, the dictation hotkey waits, and a phone dictating to the same Mac may be told it’s busy.</p>
 
   <h2 id="edit">Edit while it writes</h2>
-  <p>The notes are one Markdown document you can type in at any time — before, during or after recording.</p>
-  <figure class="shot"><div class="frame"><!--shot:mac/notes-editing|The Notes editor: a typed agenda at the top and AI-written notes in a tinted block below--></div><figcaption>Your typing at the top; new notes from speech arrive in the tinted block below.</figcaption></figure>
+  <p>A note is one Markdown document you can type in at any time: before, during or after recording.</p>
   <ul>
-    <li><strong>The tinted block</strong> at the end is what the model may still rewrite. Edit anything in it and it becomes yours — the tint goes away and Chirp never touches it again.</li>
-    <li><strong>Your text is safe:</strong> updates never overwrite your typing or move your cursor. Each update is one undo step.</li>
-    <li><strong>Markdown shortcuts:</strong> <code>#</code> headings, <code>- </code> bullets (<kbd>Tab</kbd> to nest), <code>- [ ]</code> to-dos you can click, <kbd>⌘B</kbd> and <kbd>⌘I</kbd>. <strong>Preview</strong> shows it rendered.</li>
-    <li><strong>Hearing</strong>, under the editor, shows words that aren't in the notes yet.</li>
+    <li><strong>It reads like a document.</strong> Markdown is hidden except on the line you’re editing: headings without <code>##</code>, bold without <code>**</code>, to-dos as boxes you can tick. <strong>View ▸ Show Markdown</strong> shows every character.</li>
+    <li><strong>The softly tinted block</strong> at the end is what Chirp may still rewrite as you keep talking. Edit anything in it and it becomes yours: the tint goes away and Chirp never touches it again.</li>
+    <li><strong>Your text is safe.</strong> Updates never overwrite your typing or move your cursor, and each one is a single undo step.</li>
+    <li><strong>Rename</strong> by typing over the large title. Your name wins over the one Chirp suggests.</li>
   </ul>
 
-  <h2 id="organize">Organize</h2>
-  <p>Every few minutes while you record, Chirp regroups recent notes: duplicate headings merge, and tasks, decisions and questions are collected — without dropping or adding anything (the server checks). Press <strong>Organize</strong> (<kbd>⌥⌘R</kbd>) to do it yourself; an <strong>Undo</strong> chip appears for 20 seconds. On the reference Mac an update takes about 2 seconds for a short stretch and 5 seconds for a long one.</p>
-
-  <h2 id="speakers">Label speakers (optional)</h2>
-  <p>Switch on <strong>Label speakers</strong> in the window's footer and Chirp marks who's talking as Person 1, Person 2… so notes can say who owns each action. It asks before downloading a 106 MB on-device model the first time, handles up to four people, and runs entirely on your Mac.</p>
-
-  <h2 id="save">Save or copy</h2>
+  <h2 id="library">Your library</h2>
+  <p>Every note saves itself as you go; there is no Save step. The sidebar lists notes newest first, grouped Today, Yesterday, Previous 7 Days and so on, each with a snippet, its length and how many to-dos are still open.</p>
   <ul>
-    <li><strong>Copy Markdown</strong> copies the notes as edited.</li>
-    <li><strong>Save…</strong> writes the notes and the transcript to a <code>.md</code> file you choose.</li>
-    <li><strong>Keep saving changes to this file</strong>, in the Save panel, keeps that file up to date as the notes change.</li>
-    <li>Closing the window or quitting with unsaved notes asks <strong>Save / Discard / Cancel</strong> first.</li>
+    <li><strong>Search</strong> (<kbd>⌥⌘F</kbd>) looks through titles, notes and transcripts and highlights the matches.</li>
+    <li><strong>Continue</strong> on a finished note records more into it, after a quiet “Continued” divider. <kbd>⌃⌥N</kbd> still always starts a new note.</li>
+    <li><strong>Delete</strong> (<kbd>⌘⌫</kbd>) moves a note to <strong>Recently Deleted</strong> for 30 days, with Undo. A note that’s recording can’t be deleted until you stop it.</li>
+    <li><strong>Recovered:</strong> if the Mac crashes or loses power mid-recording, the note is simply in the library next time, marked Recovered.</li>
+    <li><strong>How long notes are kept</strong> is up to you: Settings → Notes → <strong>Delete notes older than</strong>, Never by default. Notes stay on this Mac, readable only by your user account, and are never synced or indexed by Spotlight.</li>
   </ul>
-  <h2 id="recovery">If the Mac crashes</h2>
-  <p>Until you save, Chirp keeps one recovery copy of the notes and transcript on your Mac — text only, never audio, readable only by you. After a crash or power cut, the next launch offers <strong>Recovered unsaved notes — Keep · Save… · Discard</strong>. Saving or discarding deletes the copy. To keep notes in memory only, turn off <strong>Settings → General → Keep a recovery copy until notes are saved</strong>.</p>
-  <div class="callout warn"><b>One at a time.</b><p>While Notes is recording, the dictation hotkey is paused on that Mac, and a phone dictating to the same Mac may be told it's busy.</p></div>
+  <figure class="shot"><div class="frame"><!--shot:mac/notes-search|Searching the library for “beta”: three matching notes with the word highlighted in each snippet--></div></figure>
 
-  <h2 id="android">Live Notes on Android</h2>
-  <p>Chirp on Android has the same Live Notes, structured by your Mac over your tailnet. Long-press the Chirp icon and choose <strong>Notes</strong>, then tap <strong>Record</strong>. Recording keeps going with the screen off (a notification shows it, with Stop). On an unfolded Fold the transcript sits beside the notes. <strong>Copy</strong> or <strong>Share</strong> to keep them — on the phone the notes live in memory only.</p>
-  <figure class="shot"><div class="frame"><!--shot:android/notes-inner-recording|Chirp Notes on Android: Markdown notes with a decision and a question beside the transcript--></div></figure>
+  <h2 id="replay">Replay what was said</h2>
+  <p>The transcript sits in an inspector beside the note: press <kbd>⌥⌘T</kbd> or the sidebar button at the right of the toolbar. It reads as paragraphs, each under its time.</p>
+  <p>Turn on <strong>Settings → Notes → Keep audio with notes</strong> and each spoken segment is kept with its note. A play button then sits beside each transcript paragraph; the paragraph lights up while it plays. It’s off by default, the audio never leaves this Mac, and Settings shows how much space kept audio takes, with <strong>Delete…</strong> to remove it and keep the text.</p>
+  <figure class="shot"><div class="frame"><!--shot:mac/notes-inspector-playing|The transcript inspector with one paragraph highlighted and playing--></div></figure>
+
+  <h2 id="organize">Organize and speakers</h2>
+  <p>Every few minutes while you record, Chirp regroups recent notes: duplicate headings merge, and tasks, decisions and questions are collected, without dropping or adding anything (the server checks). The <strong>✦ Smart notes</strong> menu in the toolbar has <strong>Organize Now</strong> (also <kbd>⌥⌘R</kbd>), a review of what changed with <strong>Restore previous</strong>, and the switches for <strong>Structure notes</strong>, <strong>Auto-reorganize</strong> and <strong>Label speakers</strong>.</p>
+  <p><strong>Label speakers</strong> marks who’s talking as Person 1, Person 2… so notes can say who owns each action. It asks before downloading a 106&nbsp;MB on-device model the first time, handles up to four people, and runs entirely on your Mac.</p>
+
+  <h2 id="export">Export</h2>
+  <ul>
+    <li><strong>Copy Markdown</strong> (<kbd>⇧⌘C</kbd>) copies the note as edited.</li>
+    <li><strong>Export Markdown…</strong> (<kbd>⇧⌘S</kbd>) writes the note and its transcript to a <code>.md</code> file you choose. Tick <strong>Keep saving changes to this file</strong> to keep that file up to date. The note stays in your library either way.</li>
+  </ul>
+
+  <h2 id="android">Notes on Android</h2>
+  <p>Chirp for Android opens on its Notes library, and its notes are structured by your Mac over your tailnet.</p>
+  <ul>
+    <li><strong>Record</strong> starts a note; the recording keeps going with the screen off, with Pause and Stop in its notification. The <strong>Notes</strong> Quick Settings tile starts and stops a recording too.</li>
+    <li>On an unfolded Fold the list and the note sit side by side. Elsewhere, tap a note to open it and the <strong>Transcript</strong> chip to see what was said.</li>
+    <li>Search, swipe a note away to delete it (with Undo), or long-press to select several. Tap the title to rename it.</li>
+    <li>Notes are kept automatically and encrypted on the phone. <strong>Keep audio with notes</strong> (Settings → Notes, off by default) lets you replay segments from the transcript.</li>
+  </ul>
+  <div class="shot-row">
+    <figure><div class="frame"><!--shot:android/notes-library-cover-recording|The Android notes library with a note recording, pinned in a Recording section above the day groups--></div><figcaption>Recording</figcaption></figure>
+    <figure><div class="frame"><!--shot:android/notes-library-cover-detail|A note open on an Android phone, with its title, a Transcript chip and the rendered notes--></div><figcaption>A note</figcaption></figure>
+  </div>
 
   <div class="next"><a href="iphone.html">← iPhone and iPad</a><a href="coding-agent.html">Next: Build with your coding agent →</a></div>
 </article>
