@@ -168,6 +168,12 @@ struct DictationView: View {
                         Button("Check again") { Task { await model.checkConnection() } }
                             .buttonStyle(.bordered).disabled(model.working).accessibilityIdentifier("chirp.offline.retry")
                     }.accessibilityIdentifier("chirp.offline")
+                } else if model.connectionIssue == .refused {
+                    HStack {
+                        Label("Mac refused this device", systemImage: "lock.slash").font(.headline).foregroundStyle(.orange)
+                        Spacer()
+                        Button("Pair again") { tab = .pair }.buttonStyle(.bordered).accessibilityIdentifier("chirp.refused.pair")
+                    }
                 }
                 if !model.armed {
                     Button("Start keyboard session") { Task { do { try await model.armSession() } catch { model.show(error) } } }
@@ -238,7 +244,7 @@ struct SetupChecklist: View {
         VStack(alignment: .leading, spacing: 16) {
             Text("Set up Chirp Keyboard").font(.headline)
             step(1, done: model.paired, title: "Pair your Mac",
-                 detail: model.paired ? "Paired with \(model.pairedHost)." : "Run chirp-server pair on your Mac and scan its QR.") {
+                 detail: model.paired ? "Paired with \(model.pairedHost)." : "On your Mac, open Chirp → Settings → Devices → Pair a Phone… and scan its QR.") {
                 if !model.paired { Button("Pair Mac") { tab = .pair }.buttonStyle(.bordered) }
             }
             step(2, done: model.keyboardReady, title: "Turn on Chirp Keyboard",
@@ -295,7 +301,7 @@ struct PairingView: View {
     var body: some View {
         Form {
             Section("Connect your Mac") {
-                Text("Connect Tailscale on both devices. On your Mac, run chirp-server pair --name \"\(UIDevice.current.model)\" and scan its secret QR here. Chirp verifies the connection before saving your pairing.")
+                Text("Connect Tailscale on both devices. On your Mac, open Chirp → Settings → Devices → Pair a Phone… (or run chirp-server pair --name \"\(UIDevice.current.model)\") and scan its secret QR here. Chirp verifies the connection before saving your pairing.")
                 Button("Scan pairing QR", systemImage: "qrcode.viewfinder") { scanner = true }
                     .disabled(model.armed || model.working).frame(minHeight: 44)
                 SecureField("Secret pairing link", text: $link).textInputAutocapitalization(.never).autocorrectionDisabled()
