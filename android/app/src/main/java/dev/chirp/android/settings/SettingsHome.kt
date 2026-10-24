@@ -63,7 +63,7 @@ internal fun dictationSummary(context: android.content.Context, state: SetupStat
 /** "Gboard look · swipe on": the keyboard's look and gesture library, on one line. */
 @Composable
 internal fun keyboardSummary(context: android.content.Context, prefs: android.content.SharedPreferences): String {
-    val swipe = remember(context) { GestureLibrary.status(context) == GestureLibrary.Status.ACTIVE }
+    val swipe = remember(context) { GestureLibrary.status(context).let { it == GestureLibrary.Status.ACTIVE || it == GestureLibrary.Status.BUILT_IN } }
     val look = currentKeyboardLook(prefs)?.label ?: "Custom"
     return "$look · swipe ${if (swipe) "on" else "off"}"
 }
