@@ -18,7 +18,18 @@ settings = Settings.read()
 settings.model_dir = args.model_dir
 app = create_app(settings)
 
+notes = {}
+
+
 async def observed(scope, receive, send):
+    if scope['type'] == 'http' and scope['path'].startswith('/v1/notes/'):
+        # Content-free: only the endpoint and its status, for the Notes check.
+        async def answer(event):
+            if event['type'] == 'http.response.start':
+                notes.setdefault(scope['path'].rsplit('/', 1)[-1], []).append(event['status'])
+                args.metadata.with_name('notes.json').write_text(json.dumps(notes))
+            await send(event)
+        return await app(scope, receive, answer)
     state = {'frames': 0, 'partials': 0, 'stop': False, 'empty': False, 'correcting': False, 'error': None,
              'correction_requested': False, 'started': False, 'retired': False}
     def save():
@@ -45,6 +56,9 @@ async def observed(scope, receive, send):
             # Keep the real managed correction transition observable on a slow AVD.
             if kind == 'final' and state['correcting']: await asyncio.sleep(2)
             if kind == 'final': state['empty'] = not frame.get('text', '').strip()
+            if kind == 'final' and not state['empty']:
+                notes['finals'] = notes.get('finals', 0) + 1
+                args.metadata.with_name('notes.json').write_text(json.dumps(notes))
             if kind == 'error': state['error'] = frame.get('code')
             save()
         await send(event)
