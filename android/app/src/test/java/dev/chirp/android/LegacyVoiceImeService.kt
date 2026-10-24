@@ -59,7 +59,7 @@ open class LegacyVoiceImeService : InputMethodService() {
     private var partial = ""
     private var stable = ""
     private var voiceMode = false
-    private lateinit var panel: VoicePanel
+    private lateinit var panel: LegacyVoicePanel
     private var retained = false
     private var rtt: Long? = null
     private var stopAt: Long? = null
@@ -83,7 +83,7 @@ open class LegacyVoiceImeService : InputMethodService() {
 
     @SuppressLint("ClickableViewAccessibility")
     override fun onCreateInputView(): View {
-        panel = VoicePanel(ContextThemeWrapper(this, R.style.Theme_Chirp))
+        panel = LegacyVoicePanel(ContextThemeWrapper(this, R.style.Theme_Chirp))
         val column = panel.extras
         banner = panel.banner
         strip = panel.transcript

@@ -51,13 +51,26 @@ internal class FocusedInsertion private constructor(
         })
     }
     fun forget() { before = ""; after = null; inserted = null }
+    /** What the floating mic may do in a field: nothing (no bubble), write the final, or hand it over to copy. */
+    enum class Eligibility { NONE, INSERT, COPY }
     companion object {
+        /** Longer fields are never snapshotted; the bubble offers copy instead. */
+        const val MAX_TEXT = 100000
+
+        /**
+         * Password and disabled fields get no bubble at all. A field that is editable but can't be written safely
+         * (no ACTION_SET_TEXT, more than [MAX_TEXT] characters, or no usable selection) is copy mode.
+         */
+        fun eligibility(node: AccessibilityNodeInfo?): Eligibility {
+            if (node == null || !node.isFocused || !node.isEditable || node.isPassword || !node.isEnabled) return Eligibility.NONE
+            return if (from(node) == null) Eligibility.COPY else Eligibility.INSERT
+        }
         fun from(node: AccessibilityNodeInfo?): FocusedInsertion? {
             if (node == null || !node.isFocused || !node.isEditable || node.isPassword || !node.isEnabled ||
                 node.actionList.none { it.id == AccessibilityNodeInfo.ACTION_SET_TEXT }) return null
             val text = node.text?.toString().orEmpty()
             val start = node.textSelectionStart; val end = node.textSelectionEnd
-            if (text.length > 100000 || start !in 0..text.length || end !in 0..text.length) return null
+            if (text.length > MAX_TEXT || start !in 0..text.length || end !in 0..text.length) return null
             return FocusedInsertion(node, text, start, end)
         }
     }

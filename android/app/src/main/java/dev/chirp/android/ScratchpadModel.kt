@@ -41,6 +41,22 @@ internal object ScratchpadText {
 }
 
 /**
+ * The floating mic's in-process hand-off to the Scratchpad (#167): memory only, never an Intent extra, prefs or a
+ * log. Taken once by the next Scratchpad screen, and dropped if nobody takes it within [TTL_MS].
+ */
+internal object ScratchpadHandoff {
+    private const val TTL_MS = 30_000L
+    private var text: String? = null
+    private var at = 0L
+    @Synchronized fun put(value: String) { text = value; at = android.os.SystemClock.elapsedRealtime() }
+    @Synchronized fun take(): String? {
+        val value = text?.takeIf { android.os.SystemClock.elapsedRealtime() - at < TTL_MS }
+        text = null
+        return value
+    }
+}
+
+/**
  * Everything the Scratchpad shows, in memory only: it survives rotation with the activity's view model and
  * is dropped with it. Nothing is written to preferences, files or logs; only an opted-in history records finals.
  */
@@ -175,6 +191,13 @@ internal class ScratchpadModel(
 
     fun clear() {
         if (!active) { field = TextFieldValue(""); status = IDLE }
+    }
+
+    /** Text handed over by the floating mic's "Open in Scratchpad": it becomes the page, or a new paragraph after what is there. */
+    fun receive(text: String) {
+        if (active || text.isBlank()) return
+        val joined = if (field.text.isBlank()) text else field.text.trimEnd() + "\n\n" + text
+        field = TextFieldValue(joined, TextRange(joined.length))
     }
 
     private enum class SaveNote { SAVED, OFF, FAILED }

@@ -72,4 +72,17 @@ class FocusedInsertionTest {
         target.insert("Synthetic."); target.forget()
         assertFalse(target.useRaw("synthetic")); assertFalse(target.matchesFinal())
     }
+    @Test fun `eligibility separates no bubble, insert and copy mode without changing writes`() {
+        val editor = Editor()
+        assertEquals(FocusedInsertion.Eligibility.INSERT, FocusedInsertion.eligibility(editor.node))
+        editor.node.removeAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_SET_TEXT)
+        assertEquals(FocusedInsertion.Eligibility.COPY, FocusedInsertion.eligibility(editor.node))
+        val long = Editor().apply { node.text = "x".repeat(FocusedInsertion.MAX_TEXT + 1); node.setTextSelection(0, 0) }
+        assertEquals(FocusedInsertion.Eligibility.COPY, FocusedInsertion.eligibility(long.node))
+        listOf<(AccessibilityNodeInfo) -> Unit>({ it.isPassword = true }, { it.isEnabled = false }, { it.isEditable = false }, { it.isFocused = false })
+            .forEach { change -> val other = Editor(); change(other.node)
+                assertEquals(FocusedInsertion.Eligibility.NONE, FocusedInsertion.eligibility(other.node)) }
+        assertEquals(FocusedInsertion.Eligibility.NONE, FocusedInsertion.eligibility(null))
+        assertEquals(0, editor.writes)
+    }
 }
