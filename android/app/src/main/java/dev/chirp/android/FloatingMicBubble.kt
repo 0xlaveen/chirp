@@ -25,7 +25,7 @@ import android.view.WindowManager
 import android.view.accessibility.AccessibilityNodeInfo
 import android.view.animation.PathInterpolator
 import android.widget.FrameLayout
-import android.widget.ImageView
+import androidx.appcompat.widget.AppCompatImageView
 import android.widget.TextView
 import androidx.core.content.ContextCompat
 import kotlin.math.roundToInt
@@ -466,7 +466,7 @@ internal class BubbleView(context: Context, private val palette: VoicePalette) :
 
 /** The drag's "Hide here" target: a koi-outlined ✕ that fills when the bubble is over it. */
 @SuppressLint("ViewConstructor")
-private class TargetView(context: Context, private val palette: VoicePalette) : ImageView(context) {
+private class TargetView(context: Context, private val palette: VoicePalette) : AppCompatImageView(context) {
     var active = false
         set(value) { if (field != value) { field = value; paint() } }
     init {

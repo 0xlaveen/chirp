@@ -34,6 +34,7 @@ import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import android.widget.Toast
 import androidx.core.content.ContextCompat
+import androidx.core.view.isVisible
 
 /**
  * Opt-in, event-driven floating mic (#167). The system binding stays idle; no idle mic, socket or polling.
@@ -441,7 +442,7 @@ open class ChirpAccessibilityService : AccessibilityService(), FloatingMicOverla
             retention = retained || store.health?.debugRetention == true)
         when (surface) {
             Surface.PANEL -> overlay?.panel?.let { panel ->
-                val wasPolished = panel.countdown.visibility == android.view.View.VISIBLE
+                val wasPolished = panel.countdown.isVisible
                 panel.render(model)
                 if (state == FloatingState.POLISHED && !wasPolished) panel.countdown.run(UNDO_MS)
                 overlay?.placePanel()

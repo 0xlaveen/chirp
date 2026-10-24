@@ -276,6 +276,7 @@ internal class VoicePanel(context: Context) : LinearLayout(context) {
 }
 
 /** The Use raw window: a thin linear bar that empties over 5 s (it stays full with animations off). */
+@SuppressLint("ViewConstructor")
 internal class Countdown(context: Context, private val fill: Int, private val track: Int) : View(context) {
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
     private var animator: ValueAnimator? = null
