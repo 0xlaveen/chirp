@@ -1,0 +1,393 @@
+package dev.chirp.android
+
+import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.*
+import androidx.compose.material3.adaptive.ExperimentalMaterial3AdaptiveApi
+import androidx.compose.material3.adaptive.currentWindowAdaptiveInfoV2
+import androidx.compose.material3.adaptive.layout.*
+import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.platform.LocalWindowInfo
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.*
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.LifecycleResumeEffect
+import dev.chirp.android.ui.ChirpTokens
+import dev.chirp.android.ui.LocalChirpRoles
+import dev.chirp.android.ui.Ripple
+import java.time.Instant
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
+import java.time.temporal.ChronoUnit
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withContext
+
+/** Calendar groups, including midnight and month/year boundaries, in the device's time zone. */
+internal fun notesGroup(now: Long, time: Long, zone: ZoneId = ZoneId.systemDefault()): String {
+    val today = Instant.ofEpochMilli(now).atZone(zone).toLocalDate()
+    val date = Instant.ofEpochMilli(time).atZone(zone).toLocalDate()
+    return when (ChronoUnit.DAYS.between(date, today)) {
+        in Long.MIN_VALUE..0L -> "Today"
+        1L -> "Yesterday"
+        in 2L..7L -> "Previous 7 days"
+        in 8L..30L -> "Previous 30 days"
+        else -> date.format(DateTimeFormatter.ofPattern(if (date.year == today.year) "MMMM" else "MMMM yyyy"))
+    }
+}
+
+internal fun notesDuration(seconds: Double): String = if (seconds < 60) "${seconds.toInt().coerceAtLeast(0)} sec" else "${(seconds / 60).toInt()} min"
+
+/** Highlight every match (including a title match), without copying note text into semantics or logs. */
+@Composable
+internal fun highlightedNote(text: String, query: String): AnnotatedString {
+    val needle = query.trim()
+    val style = SpanStyle(background = MaterialTheme.colorScheme.tertiaryContainer, color = MaterialTheme.colorScheme.onTertiaryContainer,
+        fontWeight = FontWeight.SemiBold)
+    return remember(text, needle, style) {
+        val builder = AnnotatedString.Builder(text)
+        if (needle.isNotEmpty()) {
+            var at = text.indexOf(needle, ignoreCase = true)
+            while (at >= 0) {
+                builder.addStyle(style, at, at + needle.length)
+                at = text.indexOf(needle, at + needle.length, ignoreCase = true)
+            }
+        }
+        builder.toAnnotatedString()
+    }
+}
+
+/**
+ * Notes is the app's starting point. The live model owns the microphone; the reader can open and edit other documents
+ * without moving it. Both share the same library/index. Query, selection and list position survive pane and tab changes.
+ */
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3AdaptiveApi::class)
+@Composable
+internal fun NotesLibraryScreen(
+    live: NotesModel, reader: NotesModel,
+    record: (String?) -> Unit, copy: (NotesModel) -> Unit, share: (NotesModel) -> Unit, save: (NotesModel) -> Unit,
+    act: (DictationAction) -> Unit, state: SetupState? = null, connection: () -> Unit = {}, dictate: () -> Unit = {},
+    now: () -> Long = System::currentTimeMillis,
+    initialDetail: Boolean = false,
+) {
+    val library = live.library
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val focus = LocalFocusManager.current
+    val snackbar = remember { SnackbarHostState() }
+    val rows by (library?.index ?: remember { kotlinx.coroutines.flow.MutableStateFlow(emptyList<NotesIndexEntry>()) }).collectAsState()
+    var query by rememberSaveable { mutableStateOf("") }
+    var selected by rememberSaveable { mutableStateOf(if (initialDetail) live.document.uid else null) }
+    var trash by rememberSaveable { mutableStateOf(false) }
+    var selection by rememberSaveable { mutableStateOf(emptyList<String>()) }
+    var setupDismissed by rememberSaveable { mutableStateOf(SettingsStore(context).tryItDismissed) }
+    var enabled by remember { mutableStateOf(library?.enabled == true) }
+    var menu by remember { mutableStateOf(false) }
+    var emptyTrash by remember { mutableStateOf(false) }
+    var pendingRecord by remember { mutableStateOf<String?>(null) }
+    var pendingNew by remember { mutableStateOf(false) }
+    var restoreVersion by remember { mutableIntStateOf(0) }
+    var hits by remember { mutableStateOf<List<NotesSearchHit>>(emptyList()) }
+    var searched by remember { mutableStateOf("") }
+    val list = rememberLazyListState()
+    val trashList = rememberLazyListState()
+    val liveId = live.document.uid
+    val recording = live.state.active
+    val shownModel = if (selected == liveId) live else reader
+    val window = LocalWindowInfo.current.containerSize
+    val width = with(LocalDensity.current) { window.width.toDp() }
+    val twoPane = width >= 600.dp
+    val extraPane = width >= 1200.dp && window.width > window.height && selected != null && !trash
+    val directive = calculatePaneScaffoldDirective(currentWindowAdaptiveInfoV2()).copy(
+        maxHorizontalPartitions = if (extraPane) 3 else if (twoPane && (rows.any { !it.deleted } || recording || trash || selected != null)) 2 else 1,
+        maxVerticalPartitions = 1, horizontalPartitionSpacerSize = if (twoPane) 8.dp else 0.dp,
+    )
+    val value = calculateThreePaneScaffoldValue(directive.maxHorizontalPartitions, ListDetailPaneScaffoldDefaults.adaptStrategies(),
+        ThreePaneScaffoldDestinationItem(if (selected != null && !trash) ListDetailPaneScaffoldRole.Detail else ListDetailPaneScaffoldRole.List, selected))
+    LifecycleResumeEffect(library) {
+        enabled = library?.enabled == true
+        scope.launch { withContext(Dispatchers.IO) { library?.refresh() } }
+        onPauseOrDispose { live.keepSession(); reader.keepSession() }
+    }
+    // Searching the document and transcript happens on IO; cancellation prevents stale queries from replacing new ones.
+    LaunchedEffect(query, rows, trash) {
+        hits = if (query.isBlank() || trash) emptyList() else withContext(Dispatchers.IO) { library?.search(query).orEmpty() }
+        searched = query
+    }
+    LaunchedEffect(selected) {
+        selected?.takeIf { it != liveId }?.let { reader.open(it) }
+    }
+    fun open(id: String) { focus.clearFocus(); reader.keepSession(); selected = id }
+    fun close() { shownModel.keepSession(); selected = null }
+    BackHandler(selected != null) { close() }
+    BackHandler(trash) { trash = false; selection = emptyList() }
+    BackHandler(selection.isNotEmpty()) { selection = emptyList() }
+    fun delete(ids: List<String>) {
+        val deletable = ids.filterNot { recording && it == liveId }
+        if (deletable.isEmpty()) return
+        if (selected in deletable) close()
+        reader.keepSession(); live.keepSession()
+        selection = emptyList()
+        scope.launch {
+            val deleted = withContext(Dispatchers.IO) { deletable.filter { library?.trash(it) == true } }
+            if (deleted.isEmpty()) return@launch
+            // Forget loaded copies, otherwise an edited copy could later resurrect a trashed record.
+            if (reader.document.uid in deleted) reader.clear()
+            if (!live.state.active && live.document.uid in deleted) live.clear()
+            snackbar.currentSnackbarData?.dismiss()
+            if (snackbar.showSnackbar(if (deleted.size == 1) "Note deleted" else "${deleted.size} notes deleted", "Undo", duration = SnackbarDuration.Long) == SnackbarResult.ActionPerformed) {
+                withContext(Dispatchers.IO) { deleted.forEach { library?.restore(it) } }; restoreVersion++
+            }
+        }
+    }
+    fun start(id: String?) {
+        if (recording && id == liveId) { live.stop(); return }
+        if (recording && id != liveId) { if (id == null) pendingNew = true else pendingRecord = id; return }
+        reader.keepSession(); record(id); selected = if (id == null) live.document.uid else id
+    }
+    // A new recording/continued note can finish loading asynchronously; follow it once it owns the microphone.
+    LaunchedEffect(live.document.uid, live.state.active) { if (live.state.active && selected != null && (pendingRecord == null && !pendingNew)) selected = live.document.uid }
+    if (pendingNew || pendingRecord != null) AlertDialog(onDismissRequest = { pendingNew = false; pendingRecord = null },
+        title = { Text(if (pendingNew) "Start a new recording?" else "Continue this note?") },
+        text = { Text("Another note is recording. Stop it before starting here.") },
+        confirmButton = { TextButton({
+            val id = pendingRecord; val new = pendingNew; pendingNew = false; pendingRecord = null
+            reader.keepSession()
+            if (new) {
+                live.stop()
+                scope.launch { snapshotFlow { live.state.active }.first { !it }; record(null); selected = live.document.uid }
+            } else { record(id); selected = id }
+        }) { Text(if (pendingNew) "Stop current and record" else "Stop current and continue here") } },
+        dismissButton = { TextButton({ pendingNew = false; pendingRecord = null }) { Text("Cancel") } })
+    if (emptyTrash) AlertDialog(onDismissRequest = { emptyTrash = false }, title = { Text("Empty Recently Deleted?") },
+        text = { Text("These notes and their audio will be permanently deleted.") },
+        confirmButton = { TextButton({ emptyTrash = false; scope.launch { withContext(Dispatchers.IO) { library?.emptyTrash() } }; selection = emptyList() }) { Text("Delete permanently") } },
+        dismissButton = { TextButton({ emptyTrash = false }) { Text("Cancel") } })
+    val shown = if (trash) rows.filter { it.deleted && (query.isBlank() || it.title.contains(query.trim(), true) || it.snippet.contains(query.trim(), true)) }
+        else if (query.isNotBlank()) hits.map { it.entry } else rows.filterNot { it.deleted }
+    val currentTime = now()
+    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
+    Surface(Modifier.fillMaxSize().semantics { testTagsAsResourceId = true }, color = MaterialTheme.colorScheme.background) {
+        Box(Modifier.fillMaxSize().safeDrawingPadding()) {
+            ListDetailPaneScaffold(directive, value,
+                listPane = { AnimatedPane(Modifier.preferredWidth(320.dp)) {
+                    Scaffold(containerColor = MaterialTheme.colorScheme.background, modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
+                        topBar = { Column {
+                            LargeTopAppBar(title = { Text(if (selection.isNotEmpty()) "${selection.size} selected" else if (trash) "Recently Deleted" else "Notes",
+                                fontFamily = if (selection.isEmpty()) FontFamily.Serif else FontFamily.Default) },
+                                navigationIcon = { if (trash || selection.isNotEmpty()) IconButton({ if (selection.isNotEmpty()) selection = emptyList() else trash = false }) {
+                                    Icon(painterResource(if (selection.isNotEmpty()) R.drawable.ic_close else R.drawable.ic_arrow_back), if (selection.isNotEmpty()) "Clear selection" else "Back to notes") } },
+                                actions = {
+                                    if (selection.isNotEmpty()) {
+                                        if (trash) TextButton({ val ids = selection; selection = emptyList(); scope.launch { withContext(Dispatchers.IO) { ids.forEach { library?.restore(it) } } } }) { Text("Restore") }
+                                        else IconButton({ delete(selection) }) { Icon(painterResource(R.drawable.ic_delete), "Delete selected notes") }
+                                    } else {
+                                        if (!trash) ConnectionChip(state, connection)
+                                        Box {
+                                            IconButton({ menu = true }) { Icon(painterResource(R.drawable.ic_more_vert), "Library options") }
+                                            DropdownMenu(menu, { menu = false }) {
+                                                if (!trash) DropdownMenuItem({ Text("Recently Deleted") }, { menu = false; trash = true; selected = null; selection = emptyList() },
+                                                    leadingIcon = { Icon(painterResource(R.drawable.ic_delete), null) })
+                                                else DropdownMenuItem({ Text("Empty Recently Deleted") }, { menu = false; emptyTrash = true }, enabled = shown.isNotEmpty())
+                                            }
+                                        }
+                                    }
+                                }, scrollBehavior = scrollBehavior,
+                                colors = TopAppBarDefaults.largeTopAppBarColors(containerColor = MaterialTheme.colorScheme.background, scrolledContainerColor = MaterialTheme.colorScheme.background))
+                            DockedSearchBar(inputField = { SearchBarDefaults.InputField(query, { query = it }, { focus.clearFocus() }, false, {},
+                                placeholder = { Text("Search notes") }, leadingIcon = { Icon(painterResource(R.drawable.ic_search), null) },
+                                trailingIcon = if (query.isEmpty()) null else ({ IconButton({ query = "" }) { Icon(painterResource(R.drawable.ic_close), "Clear search") } })) },
+                                expanded = false, onExpandedChange = {}, modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(bottom = 12.dp)) { }
+                            if (!trash && recording) Column(Modifier.padding(horizontal = 16.dp).padding(bottom = 12.dp)) {
+                                Text("Recording", Modifier.padding(start = 8.dp, bottom = 8.dp), style = MaterialTheme.typography.titleMedium, fontFamily = FontFamily.Serif)
+                                RecordingNoteCard(live, { open(liveId) })
+                            }
+                        } },
+                        floatingActionButton = { if (!trash && selection.isEmpty()) Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                            SmallFloatingActionButton(dictate, containerColor = MaterialTheme.colorScheme.surfaceContainerHigh, contentColor = MaterialTheme.colorScheme.onSurface,
+                                elevation = FloatingActionButtonDefaults.elevation(0.dp)) { Icon(painterResource(R.drawable.ic_mic), "Dictate") }
+                            ExtendedFloatingActionButton(onClick = { start(null) }, icon = { Icon(painterResource(R.drawable.ic_record), null) }, text = { Text("Record") },
+                                modifier = Modifier.semantics { contentDescription = "Record new note" },
+                                containerColor = MaterialTheme.colorScheme.primary, contentColor = MaterialTheme.colorScheme.onPrimary, elevation = FloatingActionButtonDefaults.elevation(0.dp))
+                        } },
+                    ) { padding ->
+                        LazyColumn(Modifier.fillMaxSize().padding(padding).testTag("notes-library-list"), if (trash) trashList else list,
+                            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 112.dp)) {
+                            if (!trash && !setupDismissed && state != null && (!state.mic || !state.paired || !state.inputEnabled || state.tryIt)) item(key = "setup") {
+                                SetupCard(connection, dismiss = { setupDismissed = true; state.tryIt = false; SettingsStore(context).tryItDismissed = true })
+                            }
+                            if (!trash && !enabled) item(key = "opt-out") {
+                                Surface(shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.surfaceContainer) {
+                                    Column(Modifier.padding(16.dp)) {
+                                        Text("Enable notes library", style = MaterialTheme.typography.titleMedium)
+                                        Text("Keep your notes on this phone, automatically.", style = MaterialTheme.typography.bodyMedium)
+                                        TextButton({ library?.enable(); enabled = true; live.keepSession() }) { Text("Enable notes library") }
+                                    }
+                                }
+                            }
+                            if (trash) item(key = "trash-info") { Text("Notes are kept here for 30 days. Restore them any time before then.",
+                                Modifier.padding(horizontal = 8.dp, vertical = 16.dp), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                            val grouped = shown.filterNot { !trash && recording && it.id == liveId }.groupBy { if (trash) "Deleted" else notesGroup(currentTime, it.updatedAt) }
+                            grouped.forEach { (group, entries) ->
+                                item(key = "group-$group") { Text(group, Modifier.padding(start = 8.dp, top = 24.dp, bottom = 8.dp).semantics { heading() },
+                                    style = MaterialTheme.typography.titleMedium, fontFamily = FontFamily.Serif, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                                items(entries, key = { "${if (trash) "trash" else "note"}-${it.id}-$restoreVersion" }) { entry ->
+                                    val select = {
+                                        selection = if (entry.id in selection) selection - entry.id else selection + entry.id
+                                    }
+                                    NoteLibraryRow(entry, query, hits.firstOrNull { it.entry.id == entry.id }?.snippet ?: entry.snippet,
+                                        selected == entry.id || entry.id in selection, selection.isNotEmpty(), trash,
+                                        click = { if (trash || selection.isNotEmpty()) select() else open(entry.id) }, longClick = select,
+                                        delete = { delete(listOf(entry.id)) }, restore = { scope.launch { withContext(Dispatchers.IO) { library?.restore(entry.id) } } }, now = currentTime)
+                                }
+                            }
+                            if (shown.isEmpty() && !(recording && !trash && query.isBlank()) && (query.isBlank() || searched == query)) item(key = "empty") {
+                                LibraryEmpty(if (trash) "Nothing recently deleted" else if (query.isBlank()) "Your notes will live here" else "No results for ‘${query.trim()}’",
+                                    if (trash) "Deleted notes appear here for 30 days." else if (query.isBlank()) "Tap Record and talk. Chirp turns it into notes." else "Try another word from your notes or transcript.",
+                                    glyph = query.isBlank(), modifier = Modifier.fillMaxWidth().padding(top = 48.dp))
+                            }
+
+                        }
+                    }
+                } },
+                detailPane = { AnimatedPane {
+                    if (selected != null && !trash) {
+                        key(selected) {
+                            if (shownModel.document.uid == selected) NotesScreen(shownModel, record = { start(selected) }, copy = { copy(shownModel) }, share = { share(shownModel) },
+                                act = act, leave = { close() }, save = { save(shownModel) }, handleBack = false, back = ::close, externalTranscript = extraPane,
+                                recordingElsewhere = live.takeIf { recording && shownModel !== live }, jumpToRecording = { open(liveId) })
+                            else Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                if (reader.message != null) LibraryEmpty("Couldn’t open this note", "Go back to the library and choose another note.", false, Modifier.padding(24.dp))
+                                else CircularProgressIndicator()
+                            }
+                        }
+                    } else Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        LibraryEmpty("A little room to think", "Choose a note, or start a new recording.", true, Modifier.widthIn(max = 360.dp).padding(24.dp))
+                    }
+                } },
+                extraPane = if (extraPane) ({ AnimatedPane { Surface(Modifier.fillMaxSize(), shape = MaterialTheme.shapes.large,
+                    color = MaterialTheme.colorScheme.surfaceContainer) { TranscriptPane(shownModel, Modifier.fillMaxSize().padding(20.dp)) } } }) else null,
+            )
+            SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).padding(16.dp))
+        }
+    }
+}
+
+@Composable
+private fun ConnectionChip(state: SetupState?, click: () -> Unit) {
+    val status = dev.chirp.android.shell.notesConnectionStatus(state?.paired == true, state?.reachable, state?.tailscaleOff == true, SettingsStore(LocalContext.current).phoneFallback)
+    val label = status.label
+    val color = if (status.connected) LocalChirpRoles.current.lily else MaterialTheme.colorScheme.onSurfaceVariant
+    AssistChip(click, label = { Text(label) }, leadingIcon = { Box(Modifier.size(7.dp).clip(CircleShape).background(color)) },
+        modifier = Modifier.semantics { contentDescription = "Connection: $label. Open connection settings" },
+        colors = AssistChipDefaults.assistChipColors(labelColor = color), border = AssistChipDefaults.assistChipBorder(true))
+}
+
+@Composable
+private fun SetupCard(fix: () -> Unit, dismiss: () -> Unit) {
+    Surface(Modifier.fillMaxWidth().padding(bottom = 8.dp), shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.surfaceContainer) {
+        Row(Modifier.padding(start = 16.dp, top = 8.dp, bottom = 8.dp, end = 4.dp), verticalAlignment = Alignment.Top) {
+            Column(Modifier.weight(1f).padding(top = 8.dp)) {
+                Text("Make yourself at home", style = MaterialTheme.typography.titleMedium)
+                Text("Finish setting up Chirp to record and dictate.", Modifier.padding(top = 4.dp), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                TextButton(fix, contentPadding = PaddingValues(vertical = 8.dp)) { Text("Finish setup") }
+            }
+            IconButton(dismiss) { Icon(painterResource(R.drawable.ic_close), "Dismiss setup") }
+        }
+    }
+}
+
+@Composable
+internal fun LibraryEmpty(title: String, body: String, glyph: Boolean, modifier: Modifier = Modifier) {
+    val roles = LocalChirpRoles.current
+    Column(modifier, horizontalAlignment = Alignment.CenterHorizontally) {
+        Box(Modifier.size(112.dp), contentAlignment = Alignment.Center) {
+            if (glyph) {
+                listOf(112, 88, 64).forEach { size -> Box(Modifier.size(size.dp).border(1.dp, roles.koiDecor.copy(alpha = .22f), CircleShape)) }
+                Icon(painterResource(R.drawable.ic_chirp_notification), null, Modifier.size(44.dp), tint = MaterialTheme.colorScheme.primary)
+            } else Icon(painterResource(R.drawable.ic_search), null, Modifier.size(40.dp), tint = MaterialTheme.colorScheme.outline)
+        }
+        Text(title, Modifier.padding(top = 16.dp), style = MaterialTheme.typography.titleLarge.copy(fontFamily = FontFamily.Serif), textAlign = TextAlign.Center)
+        Text(body, Modifier.widthIn(max = 290.dp).padding(top = 8.dp), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center)
+        if (glyph && title == "Your notes will live here") Text("Notes stay on this phone", Modifier.padding(top = 24.dp), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+@Composable
+private fun RecordingNoteCard(model: NotesModel, click: () -> Unit) {
+    // The preview freezes at the beginning of each capture, so live text never rearranges the library.
+    val preview = remember(model.document.uid, model.state.active) { model.document.snippet }
+    Surface(click, Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.surfaceContainer) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (model.recording) Ripple(model.level.toFloat(), Modifier.size(28.dp)) else Ripple(0f, Modifier.size(28.dp), animate = false)
+                Text(model.displayTitle, Modifier.weight(1f), fontFamily = FontFamily.Serif, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(model.elapsedText, style = ChirpTokens.timer, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            Text(preview.ifBlank { "Listening. Your notes are taking shape." }, maxLines = 2, overflow = TextOverflow.Ellipsis,
+                style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun NoteLibraryRow(entry: NotesIndexEntry, query: String, snippet: String, selected: Boolean, selecting: Boolean, trash: Boolean,
+                           click: () -> Unit, longClick: () -> Unit, delete: () -> Unit, restore: () -> Unit, now: Long) {
+    val scheme = MaterialTheme.colorScheme
+    val swipe = rememberSwipeToDismissBoxState()
+    SwipeToDismissBox(swipe, modifier = Modifier.padding(bottom = 8.dp), onDismiss = { delete() }, enableDismissFromStartToEnd = false, enableDismissFromEndToStart = !trash && !selecting,
+        backgroundContent = { Box(Modifier.fillMaxSize().clip(RoundedCornerShape(10.dp)).background(scheme.errorContainer).padding(20.dp), Alignment.CenterEnd) {
+            Icon(painterResource(R.drawable.ic_delete), "Delete note", tint = scheme.onErrorContainer)
+        } }) {
+        Surface(shape = RoundedCornerShape(10.dp), color = if (selected) scheme.secondaryContainer else scheme.surface,
+            modifier = Modifier.fillMaxWidth().testTag("note-library-row").combinedClickable(onClick = click, onLongClick = longClick).semantics(mergeDescendants = true) {
+                if (selecting) { role = Role.Checkbox; stateDescription = if (selected) "Selected" else "Not selected" }
+                customActions = if (trash) listOf(CustomAccessibilityAction("Restore") { restore(); true }) else listOf(CustomAccessibilityAction("Delete") { delete(); true }, CustomAccessibilityAction("Select") { longClick(); true })
+            }) {
+            Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                if (selecting) { Checkbox(selected, null); Spacer(Modifier.width(12.dp)) }
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text(highlightedNote(entry.title, query), Modifier.weight(1f), fontFamily = FontFamily.Serif, style = MaterialTheme.typography.titleMedium,
+                            maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(historyAge(now, entry.updatedAt).first, style = MaterialTheme.typography.bodyMedium, color = scheme.onSurfaceVariant)
+                    }
+                    Text(highlightedNote(snippet, query), style = MaterialTheme.typography.bodyMedium, color = scheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text(notesDuration(entry.duration), style = MaterialTheme.typography.bodyMedium, color = scheme.onSurfaceVariant)
+                        Text("·", color = scheme.outline)
+                        Text("☐ ${entry.openTodos} open", style = MaterialTheme.typography.bodyMedium, color = scheme.onSurfaceVariant)
+                        if (entry.recovered) Text("Recovered", style = MaterialTheme.typography.bodyMedium, color = LocalChirpRoles.current.moon)
+                        if (entry.audioBytes > 0) Icon(painterResource(R.drawable.ic_mic), "Kept audio", Modifier.size(14.dp), tint = scheme.onSurfaceVariant)
+                    }
+                }
+                if (trash && !selecting) TextButton(restore) { Text("Restore") }
+            }
+        }
+    }
+}

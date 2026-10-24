@@ -79,6 +79,8 @@ internal class NotesModel(
     private val saveRunnable = Runnable { saveScheduled = false; autosave(now = true) }
     /** Bumped by every open, so a load that finishes after another one started (or after New) is dropped. */
     private var openRequest = 0
+    /** Restoring a document is not an edit: recorder callbacks must not resave it or change its list position. */
+    private var loading = false
     /** "Stop current and continue here": the note to continue once the recording that was stopped has ended. */
     private var continueAfterStop: String? = null
     /** What was last saved to a file; the notes are unsaved ([dirty]) once anything differs. */
@@ -200,7 +202,7 @@ internal class NotesModel(
         NotesRecorder.State.RECORDING -> organizingText ?: if (structuring == Structuring.Running) "Updating notes…" else "Listening…"
         NotesRecorder.State.PAUSED -> recorder.error?.let { "Couldn’t resume: $it" } ?: organizingText ?: "Paused"
         NotesRecorder.State.STOPPING -> (organizingText ?: "Finishing…") + (revision.let { recorder.stoppingElapsed }?.takeIf { it >= 3000 }?.let { " · ${it / 1000} s" } ?: "")
-        NotesRecorder.State.STOPPED -> organizingText ?: "Stopped · Record adds to these notes"
+        NotesRecorder.State.STOPPED -> organizingText ?: "Stopped"
         NotesRecorder.State.ERROR -> recorder.error?.let { error ->
             // A failed connection to a tailnet Mac usually means Tailscale is off; say that instead.
             if (error.startsWith("Mac unreachable")) pairing()?.let(::tailscaleStatus) ?: error else error
@@ -348,6 +350,7 @@ internal class NotesModel(
      * recovery copy stands down once the library has the note.
      */
     private fun autosave(now: Boolean) {
+        if (loading) return
         val kept = sessions?.takeIf { it.enabled } ?: return
         if (!now) { if (!saveScheduled) { saveScheduled = true; mainHandler.postDelayed(saveRunnable, SAVE_MS) }; return }
         mainHandler.removeCallbacks(saveRunnable); saveScheduled = false
@@ -389,10 +392,13 @@ internal class NotesModel(
         if (request != openRequest || state.active) return false
         val found = record ?: run { message = "Couldn’t open these notes"; return false }
         val document = try { NotesDocument.fromJson(found.document) } catch (_: Exception) { message = "Couldn’t open these notes"; return false }
-        recorder.restore(document, found.document.optDouble("elapsed", 0.0))
-        field = TextFieldValue(recorder.document.text)
-        message = null; recovered = null; elapsed = recorder.elapsed
-        savedKey = key(); keptKey = savedKey
+        loading = true
+        try {
+            recorder.restore(document, found.document.optDouble("elapsed", 0.0))
+            field = TextFieldValue(recorder.document.text)
+            message = null; recovered = null; elapsed = recorder.elapsed
+            savedKey = key(); keptKey = savedKey
+        } finally { loading = false }
         journal?.delete()
         revision++
         return true
@@ -409,6 +415,16 @@ internal class NotesModel(
     }
 
     fun deleteKept(entry: NotesIndexEntry) { trash(entry.id) }
+
+    /** Delete only this note's kept audio. The text and transcript stay. */
+    fun deleteAudio() {
+        val id = document.uid
+        background {
+            if (sessions?.deleteAudio(id) == true) mainHandler.post {
+                if (document.uid == id) { recorder.document.clearClips(); revision++ }
+            }
+        }
+    }
 
     /** Encodes and stores a committed segment's audio, off the main thread, after the note's own write. */
     private fun keepClip(documentId: Long, segment: Int, offset: Double, pcm: ByteArray) {
@@ -517,6 +533,7 @@ internal class NotesModel(
 
     /** The recovery copy follows the notes while they are unsaved, and goes once they are saved or empty. */
     private fun keep(now: Boolean) {
+        if (loading) return
         autosave(now)
         journal?.update({ if (dirty) recorder.document.toJson().put("elapsed", recorder.elapsed) else null }, now)
     }

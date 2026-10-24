@@ -221,6 +221,10 @@ class NotesServiceTest {
 @Config(sdk = [37])
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 class NotesRenderTest {
+    @org.junit.Before fun noMotion() {
+        android.provider.Settings.Global.putFloat(RuntimeEnvironment.getApplication().contentResolver, android.provider.Settings.Global.ANIMATOR_DURATION_SCALE, 0f)
+    }
+
     @get:Rule val compose = createComposeRule()
 
     private fun render(width: String) {
@@ -234,7 +238,8 @@ class NotesRenderTest {
         fun shot(name: String) {
             // Let the last tap's ripple fade before the capture.
             compose.mainClock.advanceTimeBy(2000); compose.waitForIdle()
-            val bitmap = compose.onRoot().captureToImage().asAndroidBitmap()
+            val target = if (name == "transcript") compose.onNode(isRoot() and hasAnyDescendant(hasText("Show raw"))) else compose.onRoot()
+            val bitmap = notesScreenshot(target, name == "transcript")
             File(output, "notes-$width-$name-${if (dark.value) "dark" else "light"}.png").outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
         }
         val notes = NotesStructureResponse("## Launch plan\n- Beta goes to **ten** design partners first\n  - Then open the waitlist\n" +
@@ -265,7 +270,7 @@ class NotesRenderTest {
             compose.onNodeWithContentDescription("Edit notes").performClick()
             shot("editing")
             compose.onNodeWithText("Done").performClick()
-            if (width == "cover") { compose.onNodeWithText("Transcript").performClick(); shot("transcript"); compose.onNodeWithText("Notes").performClick() }
+            if (width == "cover") { compose.onNodeWithText("Transcript").performClick(); shot("transcript"); compose.onNodeWithContentDescription("Close transcript").performClick() }
             compose.runOnIdle { rig.model.recorder.cancel(); rig.model.clear(); name() }
         }
     }

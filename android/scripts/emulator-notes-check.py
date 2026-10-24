@@ -77,14 +77,20 @@ def check(probe, work, output):
     adb('shell', 'pm', 'grant', package, 'android.permission.POST_NOTIFICATIONS')
     # Start from empty notes: no recovery copy (or kept notes) of an earlier run. The fresh install's process reads
     # them only when Notes first opens.
+    adb('shell', 'am', 'force-stop', package)
     adb('shell', 'run-as', package, 'rm', '-f', 'no_backup/notes_recovery.bin', 'files/notes_sessions.bin')
+    adb('shell', 'run-as', package, 'rm', '-rf', 'files/notes')
+    # Opt in on the disposable emulator before the new process reads its preferences. Real MediaCodec, no fake encoder.
+    import shlex
+    adb('shell', 'run-as', package, 'sh', '-c', shlex.quote('cat > shared_prefs/chirp_notes_sessions.xml'),
+        data=b'<map><boolean name="enabled" value="true"/><boolean name="keep_audio" value="true"/></map>')
     baseline = server().get('finals', 0)  # the managed warm-up's final
-    adb('shell', 'am', 'start', '-n', package + '/.SetupActivity')
+    adb('shell', 'am', 'start', '-n', package + '/.SetupActivity', '--es', 'section', 'try')
     probe['wait_for']('Notes')
     probe['click']('Notes')
-    probe['wait_for']('Record notes')
+    wait_node('Record new note')
     started = time.monotonic()
-    probe['click']('Record notes')
+    tap(wait_node('Record new note'))
     wait(lambda s: recording(s) and s['hearing'], 'No live speech reached Notes')
     # The asset repeats every ~12 s, so a cut comes at the first pause after 12 s: three segments need two cuts.
     wait(lambda s: recording(s) and finals() >= 3, 'Three segments did not reach the transcript while recording')
@@ -126,6 +132,24 @@ def check(probe, work, output):
     final = wait(lambda s: (s['status'] or '').startswith('Stopped'), 'Stop did not finish', 60)
     assert final['notes_chars'] > 0, 'Notes are empty after Stop'
     assert all(code == 200 for code in server().get('structure', [])), 'A structure call failed: ' + json.dumps(server())
+    # Replay an actual kept VAD segment. The button changes only after MediaPlayer is prepared and has started.
+    # Require it to keep playing, finish naturally and report no decoder error: this is a real AAC round trip.
+    tap(wait_node('Transcript'))
+    tap(wait_node('Play segment 1', seconds=60))
+    wait_node('Stop playback')
+    time.sleep(2)
+    assert probe['find']('Stop playback') is not None, 'MediaPlayer did not sustain playback'
+    data = adb('exec-out', 'screencap', '-p')
+    (output / 'emulator-notes-kept-audio-playing.png').write_bytes(data[data.index(b'\x89PNG'):])
+    deadline = time.monotonic() + 75
+    while probe['find']('Stop playback') is not None:
+        assert time.monotonic() < deadline, 'Kept audio never completed playback'
+        time.sleep(.5)
+    assert not any('Couldn’t play kept audio' in n.get('text', '') for n in nodes()), 'Kept audio decoder failed'
+    assert probe['find']('Play segment 1') is not None, 'Playback did not return to its idle affordance'
+    tap(wait_node('Close transcript'))
+    log('PASS: real MediaCodec AAC kept-audio record → MediaPlayer prepare/start → natural completion')
+
     # Organize on notes under the reorganize minimum says so; with more notes it reorganizes them.
     organized = calls('reorganize')
     # Organize and Share are in the ⋮ menu; typing needs Edit (the page is rendered Markdown until then).
@@ -159,7 +183,7 @@ def check(probe, work, output):
     adb('shell', 'input', 'keyevent', 'KEYCODE_BACK')
 
     # The Scratchpad: the same server and app network path, the keyboard's capture. One synthetic utterance must land.
-    probe['click']('Home')  # the shell's Home tab; the notes stay in the Notes tab
+    tap(wait_node('Back to notes'))  # Detail pops to the preserved Notes library; Dictate is its small FAB.
     probe['wait_for']('Dictate')
     probe['click']('Dictate')
     before = finals()
@@ -171,7 +195,7 @@ def check(probe, work, output):
         assert time.monotonic() < deadline, 'Scratchpad dictation did not land (server: %s)' % json.dumps(server())
         time.sleep(1)
     log('Scratchpad: one dictation landed')
-    log('PASS: Live Notes: rolling segments reached the transcript, structured notes reached the editor while recording; voice edit; screen-off battery saver; pause, resume, stop; Organize; Share; Scratchpad', server())
+    log('PASS: Live Notes: rolling segments reached the transcript, structured notes reached the editor while recording; voice edit; screen-off battery saver; pause, resume, stop; real kept-audio encode and playback; Organize; Share; Scratchpad', server())
 
 
 # The fixed notes above the record control (voice edit, Organize, structuring); never notes text.

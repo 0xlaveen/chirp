@@ -149,6 +149,10 @@ class NotesBlocksTest {
 @Config(sdk = [37], qualifiers = "w411dp-h891dp-mdpi")
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 class NotesPageTest {
+    @org.junit.Before fun noMotion() {
+        android.provider.Settings.Global.putFloat(RuntimeEnvironment.getApplication().contentResolver, android.provider.Settings.Global.ANIMATOR_DURATION_SCALE, 0f)
+    }
+
     @get:Rule val compose = createComposeRule()
 
     private fun screen(text: String): NotesModelRig {
@@ -166,7 +170,7 @@ class NotesPageTest {
         compose.onNodeWithText("Decision").assertIsDisplayed()
         compose.onNodeWithText("Ship Friday").assertIsDisplayed()
         compose.onNode(hasSetTextAction()).assertDoesNotExist()
-        compose.onNodeWithContentDescription("Record notes").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Continue recording notes").assertIsDisplayed()
     }
 
     @Test fun `ticking a to-do writes it back to the Markdown as the user's edit`() {
@@ -205,7 +209,7 @@ class NotesPageTest {
         compose.onNodeWithContentDescription("More options").performClick()
         compose.onNodeWithText("Organize").assertIsDisplayed()
         compose.onNodeWithText("Share").assertIsDisplayed()
-        compose.onNodeWithText("Save as Markdown").assertIsDisplayed()
+        compose.onNodeWithText("Export Markdown").assertIsDisplayed()
         compose.onNodeWithText("Notes settings").assertIsDisplayed()
     }
 
@@ -213,7 +217,7 @@ class NotesPageTest {
         val rig = screen("")
         compose.runOnIdle { rig.record().final("synthetic words"); rig.idle() }
         compose.onNodeWithText("Transcript").performClick()
-        compose.onNodeWithText("synthetic words").assertIsDisplayed()
+        compose.onAllNodesWithText("synthetic words").onLast().assertIsDisplayed()
         compose.onNodeWithText("00:00:00", substring = true).assertIsDisplayed()
     }
 }

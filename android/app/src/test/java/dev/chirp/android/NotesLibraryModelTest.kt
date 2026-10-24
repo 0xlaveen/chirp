@@ -131,6 +131,22 @@ class NotesLibraryModelTest {
         assertEquals("a note that is gone leaves the open one alone", "other", rig.model.document.uid)
     }
 
+    @Test fun `opening a note never changes modified time or library order`() {
+        var clock = 1_792_840_000_000L
+        val sessions = NotesSessions(context, SoftwareHistoryKeys(), { clock })
+        sessions.put("older", noteJson("# Older\nSynthetic words"))
+        clock += 60_000
+        sessions.put("newer", noteJson("# Newer\nOther synthetic words"))
+        val before = sessions.entries()
+        val rig = NotesModelRig(context, sessions = sessions)
+        clock += 60_000
+        rig.model.open("older"); rig.idle(); rig.model.keepSession()
+        assertEquals(before, sessions.entries())
+        rig.model.edit(androidx.compose.ui.text.input.TextFieldValue("# Edited\nA user change")); rig.model.keepSession()
+        assertEquals("older", sessions.entries().first().id)
+        assertEquals(clock, sessions.entries().first().updatedAt)
+    }
+
     @Test fun `continue recording adds a boundary and carries on from the stored audio clock`() {
         val sessions = NotesSessions(context, SoftwareHistoryKeys())
         val rig = NotesModelRig(context, sessions = sessions)

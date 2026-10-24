@@ -128,31 +128,36 @@ internal data class NotesClipRef(val noteId: String, val segment: Int)
 internal class NotesAudioPlayer(
     private val library: NotesSessions,
     private val newPlayer: () -> MediaPlayer = ::MediaPlayer,
+    private val read: (() -> Unit) -> Unit = { IO.execute(it) },
 ) {
     private val main = Handler(Looper.getMainLooper())
     private val state = MutableStateFlow<NotesClipRef?>(null)
+    private val failure = MutableStateFlow(false)
     private var player: MediaPlayer? = null
+    private var source: BytesDataSource? = null
     private var request = 0
     val playing: StateFlow<NotesClipRef?> get() = state
+    val failed: StateFlow<Boolean> get() = failure
 
     fun play(noteId: String, segment: Int) {
         stop()
+        failure.value = false
         val ref = NotesClipRef(noteId, segment)
         val mine = ++request
-        state.value = ref
-        IO.execute {
+        read {
             val bytes = try { library.clipBytes(noteId, segment) } catch (_: Exception) { null }
             main.post {
                 if (mine != request) { bytes?.fill(0); return@post }
-                if (bytes == null) { state.value = null; return@post }
+                if (bytes == null) { failure.value = true; return@post }
                 try {
+                    val data = BytesDataSource(bytes).also { source = it }
                     val next = newPlayer().also { player = it }
-                    next.setDataSource(BytesDataSource(bytes))
+                    next.setDataSource(data)
                     next.setOnCompletionListener { if (mine == request) stop() }
-                    next.setOnErrorListener { _, _, _ -> if (mine == request) stop(); true }
-                    next.setOnPreparedListener { if (mine == request) it.start() }
+                    next.setOnErrorListener { _, _, _ -> if (mine == request) { stop(); failure.value = true }; true }
+                    next.setOnPreparedListener { if (mine == request) { it.start(); state.value = ref } }
                     next.prepareAsync()
-                } catch (_: Exception) { stop() }
+                } catch (_: Exception) { stop(); failure.value = true }
             }
         }
     }
@@ -162,6 +167,7 @@ internal class NotesAudioPlayer(
         state.value = null
         player?.let { try { it.stop() } catch (_: Exception) { }; it.release() }
         player = null
+        source?.close(); source = null
     }
 
     private companion object { val IO = Executors.newSingleThreadExecutor { Thread(it, "chirp-notes-audio-read").apply { isDaemon = true } } }
