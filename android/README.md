@@ -2,7 +2,7 @@
 
 A full HeliBoard keyboard for the Galaxy Z Fold with a microphone key that streams your voice to the `chirp-server` on your Mac — over Tailscale, from any app. Live text appears underlined in the focused field while you speak; the final replaces it. An optional clean-up pass on the Mac polishes the final text, and an opt-in history keeps recent dictations on the phone, encrypted.
 
-The application ID and IME component stay `dev.chirp.android` / `dev.chirp.android/.ChirpImeService`, so a signed APK installs as an **update** and preserves your pairing (the token is encrypted under an Android Keystore key). Current version: **0.6.0**, version code 10.
+The application ID and IME component stay `dev.chirp.android` / `dev.chirp.android/.ChirpImeService`, so a signed APK installs as an **update** and preserves your pairing (the token is encrypted under an Android Keystore key). Current version: **0.7.0**, version code 12.
 
 | At a glance | |
 |---|---|
