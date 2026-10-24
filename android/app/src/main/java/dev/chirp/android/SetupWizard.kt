@@ -47,7 +47,8 @@ internal fun Onboarding(state: SetupState, actions: OnboardingActions = Onboardi
     }
     Surface(Modifier.fillMaxSize()) {
         Box(Modifier.fillMaxSize().safeDrawingPadding(), contentAlignment = Alignment.TopCenter) {
-            Column(Modifier.widthIn(max = 560.dp).fillMaxSize().padding(horizontal = 24.dp).padding(top = 16.dp, bottom = 16.dp)) {
+            // No horizontal padding here: the welcome page's pond art bleeds edge to edge; each page pads its own text.
+            Column(Modifier.widthIn(max = 560.dp).fillMaxSize().padding(top = 16.dp, bottom = 16.dp)) {
                 PageIndicator(page)
                 AnimatedContent(page, Modifier.weight(1f).fillMaxWidth().graphicsLayer {
                     val scale = 1f - .08f * backProgress; scaleX = scale; scaleY = scale; alpha = 1f - .3f * backProgress

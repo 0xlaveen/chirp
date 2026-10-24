@@ -53,6 +53,8 @@ android {
     }
     lint { warningsAsErrors = true; lintConfig = file("lint.xml") }
     testOptions { unitTests.isIncludeAndroidResources = true }
+    // The render suite (settings, onboarding with the pond art, keyboard states) needs more than the 512m default.
+    tasks.withType<Test>().configureEach { maxHeapSize = "2g" }
     sourceSets.getByName("debug").res.directories.add(layout.buildDirectory.dir("generated/chirp-debug-res").get().asFile.path)
 }
 dependencies {

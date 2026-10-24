@@ -184,8 +184,9 @@ internal fun PhoneFallbackSettings() {
     var enabled by remember { mutableStateOf(store.phoneFallback) }
     SettingsGroup("When your Mac is unavailable") {
         SwitchRow("Use this phone's recogniser", enabled && available, { enabled = it; store.phoneFallback = it }, enabled = available,
-            summary = if (!available) "This phone has no on-device speech recogniser." else
-                "Off by default. When the Mac can't be reached, dictation is recognised on this phone by ${provider ?: "the phone's own speech service (from Google or the phone maker)"}" +
-                    " — not by Chirp's engine on your Mac. Android runs it on-device; that service's own terms apply. No clean-up; the row shows \"on phone\".")
+            summary = if (!available) "This phone has no on-device speech recogniser." else "Off by default",
+            infoTitle = if (available) "Use this phone's recogniser" else null,
+            infoBody = if (available) "When the Mac can't be reached, dictation is recognised on this phone by ${provider ?: "the phone's own speech service (from Google or the phone maker)"}" +
+                " — not by Chirp's engine on your Mac. Android runs it on-device; that service's own terms apply. No clean-up; the row shows \"on phone\"." else null)
     }
 }

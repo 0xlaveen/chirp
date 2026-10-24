@@ -62,12 +62,15 @@ internal class ScratchpadModel(
     },
     private val tailscale: TailscaleControl = AndroidTailscale(context.applicationContext),
     private val io: (() -> Unit) -> Unit = HistoryIo::run,
+    private val notes: NotesSessions? = null,
 ) : ViewModel() {
     private val app = context.applicationContext as android.app.Application
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var client: OkHttpClient? = null
     private var session: DictationStream? = null
     private var refreshing = 0
+    /** The notes library for "Save as note"; built lazily so merely opening the Scratchpad touches no storage. */
+    private val library by lazy { notes ?: NotesSessions(app) }
 
     var field by mutableStateOf(TextFieldValue(""))
     var status by mutableStateOf(IDLE)
@@ -172,6 +175,31 @@ internal class ScratchpadModel(
 
     fun clear() {
         if (!active) { field = TextFieldValue(""); status = IDLE }
+    }
+
+    private enum class SaveNote { SAVED, OFF, FAILED }
+
+    /** "Save as note" (spec §D): the whole text becomes one new note in the library. Never while recording. */
+    fun saveAsNote() {
+        if (active) { status = "Stop dictating first"; return }
+        val text = field.text.trim()
+        if (text.isEmpty()) return
+        scope.launch {
+            val result = withContext(Dispatchers.IO) {
+                try {
+                    if (!library.enabled) SaveNote.OFF
+                    else {
+                        val note = NotesDocument().apply { userEdit(0, 0, text) }
+                        if (library.put(java.util.UUID.randomUUID().toString(), note.toJson())) SaveNote.SAVED else SaveNote.FAILED
+                    }
+                } catch (_: Exception) { SaveNote.FAILED }
+            }
+            status = when (result) {
+                SaveNote.SAVED -> "Saved as note"
+                SaveNote.OFF -> "Notes are off — turn on Keep notes in Chirp settings"
+                SaveNote.FAILED -> "Couldn't save the note"
+            }
+        }
     }
 
     override fun onCleared() {

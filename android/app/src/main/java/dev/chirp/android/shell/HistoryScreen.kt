@@ -5,15 +5,19 @@ import android.content.ClipDescription
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
+import android.graphics.drawable.Drawable
 import android.os.Build
 import android.os.PersistableBundle
 import androidx.annotation.DrawableRes
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
@@ -22,6 +26,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.CustomAccessibilityAction
@@ -34,6 +39,8 @@ import androidx.lifecycle.compose.LifecycleResumeEffect
 import dev.chirp.android.DictationHistory
 import dev.chirp.android.HistoryEntry
 import dev.chirp.android.HistorySettings
+import dev.chirp.android.NotesDocument
+import dev.chirp.android.NotesSessions
 import dev.chirp.android.R
 import dev.chirp.android.historyAge
 import java.time.Instant
@@ -69,18 +76,49 @@ internal fun copyPrivately(context: Context, label: String, text: String) {
     context.getSystemService(ClipboardManager::class.java)?.setPrimaryClip(clip)
 }
 
+/** What "Add to note" did, for the snackbar. */
+internal sealed interface AddToNoteResult {
+    data class Added(val createdNote: Boolean) : AddToNoteResult
+    data object Off : AddToNoteResult
+    data object Failed : AddToNoteResult
+}
+
+/**
+ * Long-press "Add to note" (spec §D): appends to the most recent note, or creates one when the library is empty.
+ * Runs on the caller's IO thread; never throws and never logs. The text becomes plain note body.
+ */
+internal fun addDictationToNote(kept: NotesSessions, text: String): AddToNoteResult = try {
+    if (!kept.enabled) return AddToNoteResult.Off
+    val trimmed = text.trim()
+    if (trimmed.isEmpty()) return AddToNoteResult.Failed
+    val recent = kept.entries().firstOrNull { !it.deleted }
+    if (recent == null) {
+        val id = java.util.UUID.randomUUID().toString()
+        val note = NotesDocument().apply { userEdit(0, 0, trimmed) }
+        if (kept.put(id, note.toJson())) AddToNoteResult.Added(createdNote = true) else AddToNoteResult.Failed
+    } else {
+        val note = kept.open(recent.id)?.let { runCatching { NotesDocument.fromJson(it.document) }.getOrNull() }
+            ?: NotesDocument(startedAt = recent.createdAt)
+        val separator = if (note.text.isBlank()) "" else "\n\n"
+        note.userEdit(note.text.length, note.text.length, separator + trimmed)
+        if (kept.put(recent.id, note.toJson())) AddToNoteResult.Added(createdNote = false) else AddToNoteResult.Failed
+    }
+} catch (_: Exception) { AddToNoteResult.Failed }
+
 private val LIST_DETAIL = 600.dp
 
 /**
  * The History tab: search, entries grouped by day, a detail sheet (a side pane from 600 dp) with Copy, Copy raw, Share and Delete,
- * and swipe-to-delete with Undo. Opt-in, retention and clear sit behind ⋮. [selected]/[select] hoist the open entry (null: kept here).
+ * and swipe-to-delete with Undo. Opt-in, retention and clear sit behind ⋮. Long-press offers "Add to note" through the notes
+ * library. [selected]/[select] hoist the open entry (null: kept here).
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun HistoryScreen(store: DictationHistory? = null, now: () -> Long = System::currentTimeMillis, zone: ZoneId = ZoneId.systemDefault(),
-                           selected: String? = null, select: ((String?) -> Unit)? = null) {
+                           selected: String? = null, select: ((String?) -> Unit)? = null, notes: NotesSessions? = null) {
     val context = LocalContext.current
     val history = store ?: remember { DictationHistory(context) }
+    val library = notes ?: remember { NotesSessions(context) }
     val scope = rememberCoroutineScope()
     val snackbar = remember { SnackbarHostState() }
     var enabled by remember { mutableStateOf(history.enabled) }
@@ -110,6 +148,19 @@ internal fun HistoryScreen(store: DictationHistory? = null, now: () -> Long = Sy
             }
         }
     }
+    fun addToNote(entry: HistoryEntry) {
+        scope.launch {
+            val result = withContext(Dispatchers.IO) { addDictationToNote(library, entry.text) }
+            snackbar.currentSnackbarData?.dismiss()
+            val message = when (result) {
+                is AddToNoteResult.Added -> if (result.createdNote) "Saved as a new note" else "Added to your latest note"
+                AddToNoteResult.Off -> "Notes are off — turn on Keep notes in Settings → Notes"
+                AddToNoteResult.Failed -> "Couldn't add the note"
+            }
+            snackbar.showSnackbar(message, duration = SnackbarDuration.Long)
+        }
+    }
+    val icons = rememberAppIcons()
     val actions = DetailActions(copy = { label, text -> copyPrivately(context, label, text) },
         share = { text -> context.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, text), null)) },
         delete = ::delete)
@@ -121,7 +172,11 @@ internal fun HistoryScreen(store: DictationHistory? = null, now: () -> Long = Sy
             Row(if (twoPane) Modifier.fillMaxSize() else Modifier.widthIn(max = 600.dp).fillMaxSize()) {
                 Column(if (twoPane) Modifier.weight(.45f).widthIn(max = 480.dp).fillMaxHeight() else Modifier.fillMaxSize()) {
                     Row(Modifier.fillMaxWidth().padding(start = 24.dp, end = 12.dp, top = 24.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Text("History", Modifier.weight(1f).semantics { heading() }, style = MaterialTheme.typography.headlineMedium)
+                        Column(Modifier.weight(1f)) {
+                            Text("Dictation history", Modifier.semantics { heading() }, style = MaterialTheme.typography.headlineMedium)
+                            Text("What you dictated, encrypted on this phone only", style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
                         Box {
                             IconButton({ menu = true }) { Icon(painterResource(R.drawable.ic_more_vert), "More options") }
                             DropdownMenu(menu, { menu = false }) {
@@ -148,7 +203,8 @@ internal fun HistoryScreen(store: DictationHistory? = null, now: () -> Long = Sy
                                         style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
                                 }
                                 items(group, key = { "${it.id}/$restores" }) { entry ->
-                                    HistoryRow(entry, historyMeta(entry, now()), twoPane && entry.id == open, { choose(entry.id) }, { delete(entry) })
+                                    HistoryRow(entry, historyMeta(entry, now()), icons[entry.app], twoPane && entry.id == open,
+                                        { choose(entry.id) }, { addToNote(entry) }, { delete(entry) })
                                 }
                             }
                         }
@@ -177,11 +233,32 @@ internal fun HistoryScreen(store: DictationHistory? = null, now: () -> Long = Sy
     }
 }
 
+/** The target app's icon by label (what history stores), computed once per screen; missing apps fall back to a glyph. */
+@Composable
+private fun rememberAppIcons(): Map<String, Drawable> {
+    val context = LocalContext.current
+    return remember(context) {
+        val map = mutableMapOf<String, Drawable>()
+        runCatching {
+            val pm = context.packageManager
+            // Launchable apps (the manifest's <queries> covers them): dictation targets are launchable.
+            val launcher = android.content.Intent(android.content.Intent.ACTION_MAIN).addCategory(android.content.Intent.CATEGORY_LAUNCHER)
+            for (info in pm.queryIntentActivities(launcher, 0)) {
+                val label = runCatching { info.loadLabel(pm).toString() }.getOrNull() ?: continue
+                val icon = runCatching { info.loadIcon(pm) }.getOrNull() ?: continue
+                map.putIfAbsent(label, icon)
+            }
+        }
+        map
+    }
+}
+
 private class DetailActions(val copy: (String, String) -> Unit, val share: (String) -> Unit, val delete: (HistoryEntry) -> Unit)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun HistoryRow(entry: HistoryEntry, meta: String, selected: Boolean, open: () -> Unit, delete: () -> Unit) {
+private fun HistoryRow(entry: HistoryEntry, meta: String, icon: Drawable?, selected: Boolean, open: () -> Unit,
+                       addToNote: () -> Unit, delete: () -> Unit) {
     val dismiss = rememberSwipeToDismissBoxState()
     SwipeToDismissBox(dismiss, backgroundContent = {
         Box(Modifier.fillMaxSize().clip(MaterialTheme.shapes.extraSmall).background(MaterialTheme.colorScheme.errorContainer).padding(horizontal = 24.dp),
@@ -189,11 +266,39 @@ private fun HistoryRow(entry: HistoryEntry, meta: String, selected: Boolean, ope
             Icon(painterResource(R.drawable.ic_delete), null, tint = MaterialTheme.colorScheme.onErrorContainer)
         }
     }, onDismiss = { delete() }) {
-        ListItem(headlineContent = { Text(entry.text, maxLines = 2, overflow = TextOverflow.Ellipsis) }, supportingContent = { Text(meta) },
-            modifier = Modifier.clip(MaterialTheme.shapes.extraSmall).clickable(onClickLabel = "Open", onClick = open)
-                .semantics { customActions = listOf(CustomAccessibilityAction("Delete") { delete(); true }) },
-            colors = ListItemDefaults.colors(containerColor = if (selected) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceContainer))
+        var menu by remember { mutableStateOf(false) }
+        Box {
+            ListItem(headlineContent = { Text(entry.text, maxLines = 2, overflow = TextOverflow.Ellipsis) }, supportingContent = { Text(meta) },
+                leadingContent = { AppIcon(entry.app, icon) },
+                modifier = Modifier.clip(MaterialTheme.shapes.extraSmall).combinedClickable(onClickLabel = "Open", onClick = open, onLongClickLabel = "More options",
+                    onLongClick = { menu = true })
+                    .semantics { customActions = listOf(CustomAccessibilityAction("Add to note") { addToNote(); true }, CustomAccessibilityAction("Delete") { delete(); true }) },
+                colors = ListItemDefaults.colors(containerColor = if (selected) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceContainer))
+            DropdownMenu(menu, { menu = false }) {
+                DropdownMenuItem(leadingIcon = { Icon(painterResource(R.drawable.ic_notes), null) }, text = { Text("Add to note") },
+                    onClick = { menu = false; addToNote() })
+            }
+        }
     }
+}
+
+/** The target app's icon when PackageManager knows the app, else a neutral glyph in a tonal circle. */
+@Composable
+private fun AppIcon(app: String?, icon: Drawable?) {
+    if (icon != null) Box(Modifier.size(40.dp), contentAlignment = Alignment.Center) {
+        Canvas(Modifier.size(28.dp)) {
+            icon.setBounds(0, 0, size.width.toInt(), size.height.toInt())
+            icon.draw(drawContext.canvas.nativeCanvas)
+        }
+    } else Box(Modifier.size(40.dp).clip(CircleShape).background(MaterialTheme.colorScheme.surfaceContainerHighest), contentAlignment = Alignment.Center) {
+        Icon(painterResource(if (app == null) R.drawable.ic_mic else R.drawable.ic_history), null, Modifier.size(20.dp),
+            tint = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+@Composable
+private fun ButtonIcon(@DrawableRes icon: Int) {
+    Icon(painterResource(icon), null, Modifier.size(18.dp)); Spacer(Modifier.width(8.dp))
 }
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -218,11 +323,6 @@ private fun HistoryDetail(entry: HistoryEntry, now: Long, zone: ZoneId, actions:
             }
         }
     }
-}
-
-@Composable
-private fun ButtonIcon(@DrawableRes icon: Int) {
-    Icon(painterResource(icon), null, Modifier.size(18.dp)); Spacer(Modifier.width(8.dp))
 }
 
 @Composable

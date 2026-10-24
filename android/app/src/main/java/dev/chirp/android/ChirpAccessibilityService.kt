@@ -144,7 +144,10 @@ open class ChirpAccessibilityService : AccessibilityService() {
         }
         view.control("Cancel", "Cancel dictation and discard text") { cancel(); collapse() }
         view.control("Hide", "Hide panel") { cancel(); collapse() }
-        view.control("Fix setup", "Open Chirp connection and permission troubleshooting") {
+        // "Fix setup" only when setup is actually broken (spec §D): no pairing saved, or no microphone permission.
+        val setupBroken = loadPairing() == null ||
+            ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED
+        if (setupBroken) view.control("Fix setup", "Open Chirp connection and permission troubleshooting") {
             cancel(); startActivity(Intent(this, SetupActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
         }
         view.raw.setOnClickListener {

@@ -34,21 +34,24 @@ internal fun NotesSettings(sessions: NotesSessions? = null, title: String? = nul
     }
     val rows: @Composable ColumnScope.() -> Unit = {
         SwitchRow("Save battery while the screen is off", saver, { saver = it; store.notesBatterySaver = it },
-            summary = "On by default. With the screen off the phone stops drawing live text and the level meter; recording, the transcript " +
+            summary = "On by default",
+            infoTitle = "Save battery while the screen is off", infoBody = "With the screen off the phone stops drawing live text and the level meter; recording, the transcript " +
                 "and the Mac's notes keep going, so everything is up to date the moment you look.")
         SwitchRow("Keep a recovery copy until notes are saved", recovery, { on ->
             recovery = on; store.notesRecovery = on
             // Off is also a delete: the copy and its key go.
             if (!on) NotesJournal(context, store = store).delete()
-        }, summary = "On by default. If Android closes Chirp or the phone restarts during a recording, Notes reopens with what you had. " +
-            "Encrypted on this phone, never backed up or sent anywhere, and deleted when you save, discard or start new notes.")
+        }, summary = "On by default", infoTitle = "Keep a recovery copy until notes are saved",
+            infoBody = "If Android closes Chirp or the phone restarts during a recording, Notes reopens with what you had. " +
+                "Encrypted on this phone, never backed up or sent anywhere, and deleted when you save, discard or start new notes.")
         if (kept.optedOut && !keep) ActionRow("Enable notes library", { kept.enable(); keep = true })
         else SwitchRow("Keep notes on this phone", keep, { on ->
             // Off stops keeping new notes; it never deletes the ones already kept.
             if (on) kept.enable() else kept.disable()
             keep = on
-        }, summary = "On by default. Every note keeps itself, encrypted on this phone only. Never sent to your Mac, backed up or logged. " +
-            "Turning this off keeps the notes you already have; \"Delete all notes\" removes them.")
+        }, summary = "On by default · encrypted on this phone only", infoTitle = "Keep notes on this phone",
+            infoBody = "Every note keeps itself, encrypted on this phone only. Never sent to your Mac, backed up or logged. " +
+                "Turning this off keeps the notes you already have; \"Delete all notes\" removes them.")
         SettingsItem {
             Text("Delete notes older than", style = MaterialTheme.typography.bodyMedium)
             ChoiceChips(NotesRetention.entries, retention, { it.label }) { option ->
@@ -59,7 +62,8 @@ internal fun NotesSettings(sessions: NotesSessions? = null, title: String? = nul
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         SwitchRow("Keep audio with notes", keepAudio, { on -> keepAudio = on; kept.keepAudio = on },
-            summary = "Off by default. Keeps each spoken segment next to its transcript, compressed and encrypted on this phone only, so you can replay it. " +
+            summary = "Off by default", infoTitle = "Keep audio with notes",
+            infoBody = "Keeps each spoken segment next to its transcript, compressed and encrypted on this phone only, so you can replay it. " +
                 "Audio goes nowhere else.")
         if (audioBytes > 0) ActionRow("Delete kept audio (${megabytes(audioBytes)})", { confirmDeleteAudio = true }, destructive = true)
         ActionRow("Delete all notes", { confirmDeleteAll = true }, destructive = true)
