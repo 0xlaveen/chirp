@@ -104,6 +104,20 @@ class QuickDictateTest {
         shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(1)); assertTrue(activity.isFinishing)
         controller.pause().stop().destroy()
     }
+    @Test fun `Check again retries the stream and Pair Mac delivers the pairing entry`() {
+        val controller = Robolectric.buildActivity(TestQuick::class.java).setup()
+        val activity = controller.get(); val first = activity.rig.wire
+        first.failure(); assertFalse(activity.model.active)
+        activity.fix()
+        assertTrue(activity.model.active); assertNotSame(first, activity.rig.wire)
+        assertNull(shadowOf(activity).nextStartedActivity)
+        activity.model.cancel(); activity.model.status = "Pair your Mac in Chirp settings"
+        activity.fix()
+        val setup = shadowOf(activity).nextStartedActivity
+        assertEquals("pair", setup.getStringExtra("section"))
+        assertTrue(setup.flags and Intent.FLAG_ACTIVITY_CLEAR_TOP != 0)
+        controller.pause().stop().destroy()
+    }
     @Test fun `history is opt in uses this entry label and never includes other data`() {
         val off = QuickRig(app); off.model.start(); off.finish(); assertTrue(off.history.entries().isEmpty())
         val on = QuickRig(app, historyOn = true); on.model.appLabel = "Synthetic caller"; on.model.start(); on.finish()

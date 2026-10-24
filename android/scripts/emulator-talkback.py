@@ -142,7 +142,7 @@ def main():
         assert mic.get('long-clickable') == 'true', 'Mic options not exposed to TalkBack'
         # Native accessibility actions exercise the same click/long-click a screen reader invokes.
         probe('click', 'Microphone: tap to dictate')
-        wait_for('Pair your Mac in Chirp setup. Pair Mac')
+        wait_for('Pair your Mac in Chirp settings. Pair Mac')
         wait_for('Cancel dictation')
         probe('click', 'Cancel dictation')
         probe('long-click', 'Microphone: tap to dictate')

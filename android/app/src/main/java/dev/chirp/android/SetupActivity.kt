@@ -157,7 +157,11 @@ open class SetupActivity : ComponentActivity() {
         }
         consumePairingIntent(intent)
     }
-    override fun onNewIntent(intent: Intent) { super.onNewIntent(intent); consumeSection(intent); consumePairingIntent(intent) }
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        consumeSection(intent); consumePairingIntent(intent)
+    }
 
     @Composable
     private fun Shell() {
@@ -233,7 +237,9 @@ open class SetupActivity : ComponentActivity() {
     private fun open(tab: ShellTab, outside: Boolean) { state.tab = tab; state.exitOnBack = outside; state.pairFromShell = false; state.shellOpen = true }
     private fun openSettings(page: SettingsPage?, outside: Boolean = true) { state.settingsPage = page; state.settingsRequest++; open(ShellTab.Settings, outside) }
     private fun consumeSection(source: Intent) {
-        when (source.getStringExtra("section")) {
+        val section = source.getStringExtra("section")
+        source.removeExtra("section")
+        when (section) {
             "pair" -> openPairing()
             "settings" -> openSettings(null)
             "input" -> openSettings(SettingsPage.HowYouDictate, outside = false)

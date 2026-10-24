@@ -21,6 +21,8 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.*
 import androidx.compose.ui.text.buildAnnotatedString
@@ -35,10 +37,14 @@ import dev.chirp.android.ui.Ripple
 /** Clipboard entry and the external Speak-button contract share one visible microphone owner. */
 open class QuickDictateActivity : ComponentActivity() {
     internal open fun createModel() = QuickDictateModel(applicationContext)
+    internal open val tailscale: TailscaleControl by lazy { AndroidTailscale(this) }
     internal val model: QuickDictateModel by viewModels { viewModelFactory { initializer { createModel() } } }
     private val handler = Handler(Looper.getMainLooper())
     private val close = Runnable { finish() }
     private var started = false
+    private var askedPermission = false
+    private var vpnWatch: AutoCloseable? = null
+    private val vpnTimeout = Runnable { endVpnWait(); model.status = DictationAction.TAILSCALE_STALLED }
     internal val recognizing get() = intent.action == RecognizerIntent.ACTION_RECOGNIZE_SPEECH
     private val permission = registerForActivityResult(ActivityResultContracts.RequestPermission()) {
         if (it) model.start() else model.status = "Allow microphone in Chirp settings"
@@ -73,7 +79,7 @@ open class QuickDictateActivity : ComponentActivity() {
         }) else begin()
     }
     private fun begin() { started = true; model.start() }
-    override fun onStop() { handler.removeCallbacks(close); model.cancel(); super.onStop() }
+    override fun onStop() { handler.removeCallbacks(close); endVpnWait(); model.cancel(); super.onStop() }
     override fun onDestroy() { handler.removeCallbacks(close); model.completed = null; super.onDestroy() }
     override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
         if (ev.actionMasked == MotionEvent.ACTION_DOWN) touch()
@@ -105,21 +111,29 @@ open class QuickDictateActivity : ComponentActivity() {
         ScratchpadHandoff.put(model.text)
         startActivity(ScratchpadActivity.intent(this)); finish()
     }
-    private fun fix() {
+    private fun endVpnWait() { handler.removeCallbacks(vpnTimeout); vpnWatch?.close(); vpnWatch = null }
+    private fun setup(section: String) = startActivity(Intent(this, SetupActivity::class.java).putExtra("section", section)
+        .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP))
+    internal fun fix() {
         when (DictationAction.forStatus(model.status)) {
-            DictationAction.PAIR -> startActivity(Intent(this, SetupActivity::class.java).putExtra("section", "pair"))
-            DictationAction.MICROPHONE -> permission.launch(Manifest.permission.RECORD_AUDIO)
+            DictationAction.PAIR -> setup("pair")
+            DictationAction.MICROPHONE -> {
+                if (askedPermission && !shouldShowRequestPermissionRationale(Manifest.permission.RECORD_AUDIO))
+                    startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", packageName, null)))
+                else { askedPermission = true; permission.launch(Manifest.permission.RECORD_AUDIO) }
+            }
             DictationAction.TAILSCALE_ON -> {
-                val control = AndroidTailscale(this)
-                if (control.connect()) { started = false; model.status = "Connecting Tailscale…" }
-                else model.status = DictationAction.TAILSCALE_STALLED
+                endVpnWait()
+                vpnWatch = tailscale.watch { if (tailscale.connected()) { endVpnWait(); model.start() } }
+                if (tailscale.connect()) {
+                    model.status = "Connecting Tailscale…"
+                    handler.postDelayed(vpnTimeout, 12_000)
+                } else { endVpnWait(); model.status = DictationAction.TAILSCALE_STALLED }
             }
-            DictationAction.NETWORK, DictationAction.TAILSCALE_OPEN, DictationAction.TAILSCALE_SETUP -> {
-                val control = AndroidTailscale(this)
-                if (!control.open()) startActivity(Intent(Settings.ACTION_SETTINGS))
-                else started = false
+            DictationAction.TAILSCALE_OPEN, DictationAction.TAILSCALE_SETUP -> {
+                if (!tailscale.open()) setup("network")
             }
-            null -> model.start()
+            DictationAction.NETWORK, null -> model.start()
         }
     }
     companion object {
@@ -139,6 +153,8 @@ internal fun QuickDictateScreen(model: QuickDictateModel, prompt: String? = null
                                stop: () -> Unit = {}, cancel: () -> Unit = {}, retry: () -> Unit = {},
                                useRaw: () -> Unit = {}, edit: () -> Unit = {}, done: () -> Unit = {}) {
     val colors = MaterialTheme.colorScheme
+    val record = LocalChirpRoles.current.record
+    val onRecord = if (androidx.core.graphics.ColorUtils.calculateContrast(android.graphics.Color.WHITE, record.toArgb()) >= 4.5) Color.White else Color(0xFF0D1526)
     Box(Modifier.fillMaxSize().navigationBarsPadding().statusBarsPadding(), contentAlignment = Alignment.BottomCenter) {
         Surface(Modifier.widthIn(max = 560.dp).fillMaxWidth(), shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp), color = colors.surface) {
             Column(Modifier.verticalScroll(rememberScrollState()).padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally,
@@ -160,7 +176,7 @@ internal fun QuickDictateScreen(model: QuickDictateModel, prompt: String? = null
                     withStyle(SpanStyle(color = colors.onSurfaceVariant)) { append(content.removePrefix(stable)) }
                 }, Modifier.fillMaxWidth().heightIn(min = 72.dp), style = MaterialTheme.typography.bodyLarge)
                 if (model.active) Button(stop, enabled = !model.stopping,
-                    colors = ButtonDefaults.buttonColors(containerColor = LocalChirpRoles.current.record, contentColor = androidx.compose.ui.graphics.Color.White)) {
+                    colors = ButtonDefaults.buttonColors(containerColor = record, contentColor = onRecord)) {
                     Icon(painterResource(R.drawable.ic_stop), null, Modifier.size(18.dp)); Spacer(Modifier.width(8.dp)); Text("Stop")
                 } else if (model.copied && !recognizing) {
                     if (model.raw != null) OutlinedButton(useRaw, Modifier.fillMaxWidth()) { Text("Use raw") }
@@ -170,7 +186,7 @@ internal fun QuickDictateScreen(model: QuickDictateModel, prompt: String? = null
                     Button(retry, Modifier.fillMaxWidth()) { Text(when (DictationAction.forStatus(model.status)) {
                         DictationAction.PAIR -> "Pair Mac"
                         DictationAction.MICROPHONE -> "Allow"
-                        DictationAction.TAILSCALE_ON -> "Turn on Tailscale"
+                        DictationAction.TAILSCALE_ON, DictationAction.TAILSCALE_OPEN, DictationAction.TAILSCALE_SETUP -> "Turn on Tailscale"
                         else -> "Check again"
                     }) }
                     TextButton(done) { Text("Done") }

@@ -15,7 +15,7 @@ SERIAL = os.environ['ANDROID_SERIAL']
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--only', nargs='+', choices=('dictation', 'cleanup', 'notes', 'history', 'stop', 'device', 'bubble'))
+    parser.add_argument('--only', nargs='+', choices=('dictation', 'cleanup', 'notes', 'history', 'stop', 'device', 'bubble', 'quickdictate', 'release'))
     args = parser.parse_args()
     deadline = time.monotonic() + 300
     while time.monotonic() < deadline:
@@ -31,23 +31,30 @@ def main():
                '--model-dir', os.environ.get('CHIRP_MODEL_DIR', str(Path.home() / '.koi/voice-models/parakeet-mlx')),
                '--apk', str(ROOT / f'android/app/build/outputs/apk/debug/app-{abi}-debug.apk')]
     results = {}
-    for phase in args.only or ('dictation', 'cleanup', 'notes', 'history', 'stop', 'device', 'bubble'):
+    for phase in args.only or ('dictation', 'cleanup', 'notes', 'history', 'stop', 'device', 'bubble', 'quickdictate'):
         target = OUT / phase
         target.mkdir(exist_ok=True)
-        env = dict(os.environ, CHIRP_E2E_OUTPUT=str(target), CHIRP_E2E_NATIVE_EDITOR='1')
+        env = dict(os.environ, CHIRP_E2E_OUTPUT=str(target), CHIRP_E2E_NATIVE_EDITOR='0' if phase == 'release' else '1')
         flags = [] if phase == 'dictation' else ['--' + ('cleanup-only' if phase == 'cleanup' else phase + '-check')]
         print('RUN:', phase, flush=True)
+        commands = [command + flags] if phase != 'release' else [
+            ['bash', str(ROOT / 'android/scripts/emulator-smoke.sh')],
+            ['bash', str(ROOT / 'android/scripts/build-ui-probe.sh')],
+            ['python3', str(ROOT / 'android/scripts/emulator-talkback.py'), '--quickdictate-check'],
+        ]
         with (target / 'run.log').open('w') as log:
-            process = subprocess.Popen(command + flags, env=env, stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
-            try:
-                code = process.wait(timeout=1200)
-            except subprocess.TimeoutExpired:
-                os.killpg(process.pid, signal.SIGTERM)
-                try: process.wait(timeout=15)
+            for check in commands:
+                process = subprocess.Popen(check, env=env, stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
+                try:
+                    code = process.wait(timeout=1200)
                 except subprocess.TimeoutExpired:
-                    os.killpg(process.pid, signal.SIGKILL)
-                    process.wait()
-                code = 124
+                    os.killpg(process.pid, signal.SIGTERM)
+                    try: process.wait(timeout=15)
+                    except subprocess.TimeoutExpired:
+                        os.killpg(process.pid, signal.SIGKILL)
+                        process.wait()
+                    code = 124
+                if code: break
         results[phase] = 'PASS' if code == 0 else f'FAIL ({code})'
         print(phase, results[phase], flush=True)
     (OUT / 'results.json').write_text(json.dumps(results, indent=2) + '\n')

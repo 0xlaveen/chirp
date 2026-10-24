@@ -222,3 +222,11 @@ read-only instance instead, set `ANDROID_SERIAL=emulator-5600` when invoking the
 check and the UI probe builder. The fixture's six-second Ready delay applies to
 Notes streams only; ordinary dictation uses the normal two-second delay so its
 smaller pre-ready buffer is not exhausted by the Notes stress scenario.
+
+### Keyboard-free entries (#168)
+
+`QuickDictateRenderTest` renders `quick-dictate-{listening,copied,error}-{cover,inner}-{light,dark}.png`, the static `quick-dictate-widget-{1x1,2x1}-*.png` previews and `share-to-notes-dialog-*.png`. `InputModeUiTest` adds `keepkb-entry-points-*.png`, including 200% font. The new sheet is capped at 560 dp on inner screens; status, finals, raw replacement and cancellation use the existing Pond roles and Ripple.
+
+`e2e-all.sh --only quickdictate release` records the actual tile/listening/copied, network-error and Share dialog in its private evidence folder. Only reviewed synthetic screenshots are copied here; no logs or UI XML are committed. There is no previous Quick dictate surface to compare; `keepkb-settings-*.png` is the earlier Settings context.
+
+The committed `quick-dictate-emulator-{polishing,copied,error}.png` and `share-to-notes-emulator-dialog.png` come from the passing real-server entry matrix. The black backdrop is the debug probe’s secure window underneath the translucent Activity; it contains no user content. The copied capture shows Android’s sensitive clipboard overlay with its text preview hidden.

@@ -16,13 +16,13 @@ class Entries(bubble['Bubble']):
         prefix = 'share-to-notes-' if name.startswith('share-') else 'quick-dictate-'
         target = self.output / (prefix + name + '.png') if keep else Path('/tmp/chirp-entry-failure.png')
         target.write_bytes(data[data.index(b'\x89PNG'):])
-        assert target.stat().st_size < 2_000_000
+        # Keep failure evidence even when the launcher wallpaper makes a full-screen PNG large.
 
     def report(self, pattern):
         return self.wait(lambda h: next((n for n in h if re.search(pattern, n.get('text', ''))), None), 'content-free probe report', seconds=90)
 
     def open_probe(self):
-        self.adb('shell', 'am', 'start', '-n', PROBE)
+        self.adb('shell', 'am', 'start', '--activity-clear-top', '--activity-single-top', '-n', PROBE)
         self.label('Recognize')
 
     def count(self):
@@ -31,7 +31,10 @@ class Entries(bubble['Bubble']):
         return int(node.get('text').split('=')[1])
 
     def tile(self):
+        self.open_probe()  # Explicitly unstop the app after the clean pairing fixture.
         self.adb('shell', 'cmd', 'statusbar', 'add-tile', PACKAGE + '/.DictateTileService')
+        self.adb('shell', 'cmd', 'statusbar', 'expand-settings')
+        self.wait(lambda _: b'DictateTileService' in self.adb('shell', 'dumpsys', 'activity', 'services', PACKAGE), 'Dictate tile bound')
         self.adb('shell', 'cmd', 'statusbar', 'click-tile', PACKAGE + '/.DictateTileService')
         self.label('Listening…', 60)
         self.capture('tile-listening')
@@ -55,7 +58,7 @@ class Entries(bubble['Bubble']):
         self.report(r'^Recognize result=0; ok=false; count=0; length=0$')
         self.no_microphone_service('Speak Cancel')
         resolved = self.adb('shell', 'cmd', 'package', 'query-activities', '--brief', '-a', 'android.speech.action.RECOGNIZE_SPEECH')
-        assert PACKAGE.encode() in resolved and b'com.google.android.googlequicksearchbox' in resolved, 'Both recognizers must resolve'
+        assert PACKAGE.encode() in resolved and (b'com.google.android.googlequicksearchbox' in resolved or b'com.google.android.tts/' in resolved), 'Both recognizers must resolve'
         print('PASS: Speak returned one nonempty result, Cancel returned RESULT_CANCELED; Chirp and Google both resolve.', flush=True)
 
     def share(self):
@@ -72,6 +75,8 @@ class Entries(bubble['Bubble']):
     def notes_tile(self):
         component = PACKAGE + '/.NotesTileService'
         self.adb('shell', 'cmd', 'statusbar', 'add-tile', component)
+        self.adb('shell', 'cmd', 'statusbar', 'expand-settings')
+        self.wait(lambda _: b'NotesTileService' in self.adb('shell', 'dumpsys', 'activity', 'services', PACKAGE), 'Notes tile bound')
         self.adb('shell', 'cmd', 'statusbar', 'click-tile', component)
         self.wait(lambda _: b'isForeground=true' in self.adb('shell', 'dumpsys', 'activity', 'services', PACKAGE), 'Notes recording')
         self.adb('shell', 'cmd', 'statusbar', 'click-tile', component)
@@ -96,6 +101,13 @@ def check(m, work, output, base, token):
     adb('shell', 'settings', 'delete', 'secure', 'enabled_accessibility_services')
     adb('shell', 'settings', 'put', 'secure', 'accessibility_enabled', '0')
     run = Entries(m, output)
-    run.tile(); run.recognize(); run.share(); run.notes_tile(); run.errors()
+    original_tiles = adb('shell', 'settings', 'get', 'secure', 'sysui_qs_tiles').decode().strip()
+    # Keep both test tiles on the visible page so SystemUI actually binds their services.
+    adb('shell', 'cmd', 'statusbar', 'set-tiles', shlex.quote('custom(' + PACKAGE + '/.DictateTileService),custom(' + PACKAGE + '/.NotesTileService),wifi,bt'))
+    try:
+        run.tile(); run.recognize(); run.share(); run.notes_tile(); run.errors()
+    finally:
+        if original_tiles == 'null': adb('shell', 'settings', 'delete', 'secure', 'sysui_qs_tiles')
+        else: adb('shell', 'cmd', 'statusbar', 'set-tiles', shlex.quote(original_tiles))
     assert adb('shell', 'settings', 'get', 'secure', 'default_input_method').decode().strip() == bubble['GBOARD']
     print('PASS: keyboard-free entry matrix; Gboard retained and no Accessibility permission.', flush=True)

@@ -133,6 +133,21 @@ class SetupActivityTest {
         controller.newIntent(Intent(Intent.ACTION_VIEW, Uri.parse(syntheticLink)))
         assertFalse(activity.state.shellOpen); assertEquals(PAGE_PAIR, activity.state.step)
     }
+    @Test fun `new try entry is consumed and opening Settings survives recreation`() {
+        val entry = Intent().putExtra("section", "try")
+        controller.newIntent(entry)
+        assertSame(entry, activity.intent)
+        assertFalse(entry.hasExtra("section"))
+        assertEquals(ShellTab.Notes, activity.state.tab)
+        // Navigation after the entry must survive folding/rotation instead of replaying the try entry.
+        activity.state.tab = ShellTab.Settings
+        activity.state.settingsPage = SettingsPage.About
+        activity = controller.recreate().get()
+        assertTrue(activity.state.shellOpen)
+        assertEquals(ShellTab.Settings, activity.state.tab)
+        assertEquals(SettingsPage.About, activity.state.settingsPage)
+        assertFalse(activity.intent.hasExtra("section"))
+    }
     @Test fun `advancing goes to the first unmet page and finishing opens Home with the Try it card until dismissed`() {
         val state = activity.state
         state.step = PAGE_KEYBOARD; state.inputMode = InputMode.KEYBOARD; state.inputEnabled = true; state.inputSelected = true
