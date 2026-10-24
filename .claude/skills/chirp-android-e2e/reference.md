@@ -84,3 +84,20 @@ original value (delete it if previously null).
   Prefer accessibility labels/test tags over coordinates. Settings, onboarding,
   Scratchpad and keyboard-strip copy/layout may change; revisit those selectors
   when UI restyling lands.
+
+- **Killed shell probe:** an `app_process` exit 137 can be host/guest memory
+  pressure. Retain the private run evidence and report the flow as incomplete;
+  a screenshot captured before the kill does not prove final insertion. Only the
+  stop matrix accepts a teardown-killed probe, and then it independently requires
+  STOP/retirement metadata from the real server. Never accept exit 137 for an
+  ordinary click or dictation cycle.
+- **Virtual keyboard nodes:** after closing History, HeliBoard can render all
+  keys while the accessibility cache temporarily exposes only the strip. Check
+  that the panel closed and the strip returned, and inspect its screenshot.
+- **Hold control:** the default fold AVD currently has no accessible `Voice input`
+  key, while the strip's long press opens options. The sweep reports this as a
+  failure rather than silently substituting tap; tracked in issue #172.
+- **Floating mic selection:** the bubble hides intentionally when Chirp Keyboard
+  is selected. The dedicated `--bubble-check` suite selects Gboard and covers the
+  first-class bubble; the `device` phase covers onboarding, TalkBack, font and
+  hinge states separately.

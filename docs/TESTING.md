@@ -46,6 +46,24 @@ iOS CI runs the portable checks and the app's unit tests only. The UI schemes an
 
 `scripts/e2e-local.sh` and the operator steps below need a real Mac, `say` and (for the app) permissions, so they stay local.
 
+### Android emulator sweep
+
+On macOS with the Android toolchain and cached speech/clean-up models installed:
+
+```sh
+source ~/.local/share/chirp-android/env.sh
+android/scripts/e2e-all.sh
+# A focused retry still owns a fresh read-only emulator:
+android/scripts/e2e-all.sh --only notes
+```
+
+The sweep queues on one host-wide emulator lease, selects its own free even port,
+builds/installs debug, and uses a real throwaway server on 7899 with temporary
+HOME and debug-only TLS. It prints a pass/fail table and a private evidence
+folder. Never run parallel Chirp emulators across worktrees or use the server
+on 7821. See the [Android E2E skill](../.claude/skills/chirp-android-e2e/SKILL.md)
+for the script coverage table, targeted checks and recovery notes.
+
 ## 2. Operator steps
 
 Each step needs the operator's hands or approval. Do them in order.
