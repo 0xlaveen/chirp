@@ -63,6 +63,11 @@ open class ScratchpadActivity : ComponentActivity() {
         setContent {
             ChirpTheme { ScratchpadScreen(model, mic = ::mic, copy = ::copy, share = ::share, act = ::act) }
         }
+        ScratchpadHandoff.take()?.let(model::receive)
+    }
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        ScratchpadHandoff.take()?.let(model::receive)
     }
     override fun onStart() { super.onStart(); model.refresh() }
     override fun onStop() { model.pause(); super.onStop() }
@@ -101,6 +106,11 @@ open class ScratchpadActivity : ComponentActivity() {
         /** Opens the Scratchpad from outside the app (Quick Settings tile). */
         fun intent(context: Context) = Intent(context, ScratchpadActivity::class.java)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+        /** Opens the Scratchpad with the floating mic's words; the text travels in memory, never in the Intent. */
+        fun open(context: Context, text: String) {
+            ScratchpadHandoff.put(text)
+            context.startActivity(intent(context).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP))
+        }
     }
 }
 

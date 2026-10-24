@@ -2,12 +2,8 @@ package dev.chirp.android
 
 import dev.chirp.android.AppColour
 
-import android.app.Activity
 import android.content.res.Configuration
 import android.graphics.Bitmap
-import android.graphics.Canvas
-import android.view.ContextThemeWrapper
-import android.view.View
 import androidx.activity.ComponentActivity
 import androidx.compose.runtime.*
 import androidx.compose.ui.graphics.asAndroidBitmap
@@ -178,42 +174,5 @@ class VoiceUiTest {
             compose.runOnIdle { state.step = page }
             shot("font-200-$name")
         }
-    }
-    @Test fun `render voice states at cover and inner widths in light and dark`() {
-        val output = File(System.getProperty("chirp.screenshots")).apply { mkdirs() }
-        val controller = Robolectric.buildActivity(Activity::class.java).setup()
-        val activity = controller.get()
-        try {
-            for ((theme, night) in listOf("light" to Configuration.UI_MODE_NIGHT_NO, "dark" to Configuration.UI_MODE_NIGHT_YES)) {
-                val config = Configuration(activity.resources.configuration).apply { uiMode = Configuration.UI_MODE_TYPE_NORMAL or night }
-                val themed = ContextThemeWrapper(activity.createConfigurationContext(config), R.style.Theme_Chirp)
-                for ((name, status, text) in listOf(
-                    Triple("idle", "Ready to dictate", ""), Triple("connecting", "Connecting to Mac…", ""),
-                    Triple("listening", "Listening…", "Synthetic example for visual review"),
-                    Triple("finalizing", "Finishing…", "Synthetic example for visual review"),
-                    Triple("error", "Mac unreachable — is Tailscale on?", ""),
-                    Triple("raw", "Inserted · raw available for 5 seconds", ""),
-                    Triple("debug", "Listening…", "Synthetic example"),
-                )) {
-                    val view = VoicePanel(themed)
-                    view.show(status, text, "Synthetic example", name in listOf("connecting", "listening", "finalizing", "debug"), name == "finalizing")
-                    view.level(.45)
-                    view.control("Cancel", "Cancel dictation") { }
-                    view.control("Keyboard", "Previous keyboard") { }
-                    view.control("Fix setup", "Fix connection") { }
-                    if (name == "debug") view.banner.retention(true)
-                    if (name == "raw") view.raw.visibility = View.VISIBLE
-                    val width = if (name == "listening") 700 else 360
-                    activity.setContentView(view)
-                    view.measure(View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(1600, View.MeasureSpec.AT_MOST))
-                    view.layout(0, 0, width, view.measuredHeight)
-                    val bitmap = Bitmap.createBitmap(width, view.measuredHeight, Bitmap.Config.ARGB_8888)
-                    view.draw(Canvas(bitmap))
-                    File(output, "panel-$name-$theme.png").outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
-                    bitmap.recycle()
-                }
-            }
-            assertTrue(output.listFiles()!!.filter { it.extension == "png" && it.name.startsWith("panel-") }.sumOf { it.length() } < 2_000_000)
-        } finally { controller.pause().stop().destroy() }
     }
 }

@@ -200,6 +200,14 @@ class SettingsStore(context: Context) {
                 .setKeySize(256).build())
         }.generateKey()
     }
+    /** Floating mic: where the user dropped the bubble on one screen posture (an edge and a height), never text. */
+    internal fun bubbleSpot(posture: String): BubbleSpot? {
+        val edge = BubbleEdge.entries.firstOrNull { it.name == prefs.getString("bubble_edge_$posture", null) } ?: return null
+        return BubbleSpot(edge, prefs.getFloat("bubble_y_$posture", .5f).coerceIn(0f, 1f))
+    }
+    internal fun saveBubbleSpot(posture: String, spot: BubbleSpot) = prefs.edit {
+        putString("bubble_edge_$posture", spot.edge.name); putFloat("bubble_y_$posture", spot.yFraction.coerceIn(0f, 1f))
+    }
     companion object {
         internal const val FILE = "chirp"
         private val PAIRING_KEYS = listOf("url", "iv", "token", "health", "correction", "correction_explicit", "correction_suspended")

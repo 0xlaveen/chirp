@@ -288,9 +288,25 @@ The card warns that the library runs inside Chirp with Chirp's permissions, incl
 
 Choose **Keep my keyboard** at first launch or in **Settings → How you dictate**. The floating mic stays off until you explicitly enable **Chirp floating mic** in Android Accessibility. The guide explains what Chirp can see before opening that service’s own details page (or the Accessibility list if unavailable).
 
-Chirp reads only the focused editable field locally to insert text safely. Passwords and fields without safe insertion support get no bubble. The floating mic does not work in every app; selecting Chirp does not redirect Samsung Keyboard’s or Gboard’s own microphone. Only dictated audio goes to your own Mac. Idle capture, network activity and timers are absent. Recording uses a microphone foreground notification.
+Chirp reads only the focused editable field locally to insert text safely. Password and disabled fields get no bubble; a field Chirp can't fill shows the bubble with a clipboard badge, and your words wait to be copied. The floating mic does not work in every app; selecting Chirp does not redirect Samsung Keyboard’s or Gboard’s own microphone. Only dictated audio goes to your own Mac. Idle capture, network activity and timers are absent. Recording uses a microphone foreground notification.
 
 If Android blocks a sideloaded app, return to Chirp and expand **Did Android say “Restricted setting”?** Open app info, tap **⋮ → Allow restricted settings**, confirm your screen lock, then try Accessibility again. The menu appears only after a blocked attempt, and varies by phone; managed phones may disallow it. Advanced Protection can prevent activation or turn the service off. Chirp explains this and offers its keyboard or continuing without the mic. Notes and Scratchpad remain available.
+
+- **The bubble.** A 48 dp mic docked to the screen edge appears only when a text field you can dictate into has focus. It hides on focus loss, a window change, the lock screen, password and disabled fields, and while Chirp Keyboard is the input method (it has its own mic).
+  - **Tap** opens the panel and starts dictating. **Hold** (250 ms) is push-to-talk with the Ripple and a one-line preview beside the bubble; release stops.
+  - **Drag** moves it; it snaps to the nearer edge and remembers the height for each screen (cover and inner, portrait and landscape). A drag never opens the microphone.
+  - Drop it on the **✕** that appears at the bottom to hide it in the current app until you leave that app.
+  - With TalkBack, double tap dictates, and the actions menu has **Move to other side** and **Hide in this app**.
+- **The panel** shows Connecting, Listening (live words with the Ripple), Finishing or Polishing, then **Inserted**. After clean-up, **Use raw** swaps in your exact words for 5 s.
+- **Nothing you say is lost.** If the field changed, focus moved, the app refused the text, or the field can't be filled automatically (a clipboard badge on the bubble says so in advance), the words wait in the panel under **Ready to copy**.
+  - **Copy** puts them on the clipboard, marked sensitive. Samsung's clipboard history may still keep a copy.
+  - **Open in Scratchpad** opens them there, handed over in memory only.
+  - **Done** discards them.
+  - Chirp never copies on its own. The words are cleared on Done, ✕, screen off, or after 2 minutes.
+- **Errors carry one fix each:** Pair Mac, Allow (the microphone), Check again (Mac offline), Turn on (Tailscale), or Use Quick dictate if Android blocks the microphone there.
+- **Limits.** Not every app exposes its text field to Accessibility. Rich editors and some WebViews may only offer Ready to copy. Writing with `ACTION_SET_TEXT` drops the other keyboard's composing state.
+
+Design notes on this and the other input paths are in [docs/android-input-options.md](../docs/android-input-options.md#c-accessibility-floating-microphone).
 
 ### Quick dictate
 
@@ -343,7 +359,7 @@ A small pre-existing fix shipped with it: moving the cursor after a cleaned fina
 ## Privacy
 
 - **No dictation is retained by default.** Audio and transcripts live in memory for the length of an utterance; the exceptions below are the Notes recovery copy (on until you save), opt-in history and numbers-only diagnostics. No text, audio, URLs or tokens are logged; server error strings are never rendered into diagnostics. While the Mac runs with debug retention, a red **DEBUG: recordings kept on Mac** banner stays visible in the Chirp row.
-- **The mic opens only when you start dictation** (or **Record** in Notes, which shows a notification while it runs; **Pause** closes the microphone) and is released as soon as you stop. The optional floating mic declares the same rules in its accessibility description.
+- **The mic opens only when you start dictation** (or **Record** in Notes, which shows a notification while it runs; **Pause** closes the microphone) and is released as soon as you stop. The optional floating mic declares the same rules in its accessibility description. Words it couldn't insert wait in its panel, in memory only, until you copy them or 2 minutes pass. It never copies on its own.
 - **The phone's recogniser is opt-in and disclosed.** With *Use this phone's recogniser* on, an utterance dictated while the Mac is unavailable goes to Android's on-device speech service, which belongs to Google or the phone maker. Android documents it as recognising on the device, but its own terms apply and Chirp cannot audit it. The **on phone** chip shows each time. Chirp adds no session timing for these utterances and logs no text or audio.
 - **Notes keep a recovery copy until the library has them.** It is AES-GCM encrypted under its own Keystore key, excluded from backup and transfer, never logged, and deleted once the note is in the library, or on Discard or when you turn it off ([Notes](#notes)). The **notes library** (on by default) and optional **kept audio** (off by default) are sealed the same way under another key and never leave the phone; **Delete all notes** crypto-shreds them. Notes session timings are numbers only.
 - **History is opt-in and on-device.** Entries never leave the phone, are AES-GCM encrypted under a Keystore key, and are excluded from backup and device transfer.
@@ -433,6 +449,16 @@ A tiny shell-only UiAutomator probe reads all accessibility windows because Andr
 Use a disposable **read-only** `chirp-fold` instance on your own free even port. Set `ANDROID_SERIAL=emulator-<port>` or pass `--serial emulator-<port>`; every emulator helper shares the same physical-device refusal guard (default `emulator-5580`). Never select another session’s instance. The speech helper uses a throwaway HOME and cached model on `--server-port` (default 7899), deep-link pairing and debug-only synthetic audio. It suppresses credential-bearing output and removes test credentials afterward.
 
 `--keepkb-check` verifies the fresh choice, disclosure, service-details and app-info deep links, returned-off help, enable/resume, pairing without changing Gboard, Settings switching and picker, and bubble hiding with Chirp selected. It saves/restores Accessibility settings and the default IME. Run `emulator-talkback.py --keepkb-check` for the actual TalkBack radio-card contract. The debug-only `EditorProbeActivity` supplies plain, password, unsupported and WebView fields, plus clipboard/recognizer length reports. It never ships in release. Restricted sideload blocking, Advanced Protection enrollment and One UI policy require [device acceptance](../docs/android-device-acceptance.md).
+
+It then runs the floating mic bubble checks (`emulator-bubble-check.py`; `--bubble-check` runs them alone, with Gboard, the service, synthetic speech and pairing set up for you). They cover:
+
+- show and hide, a drag that never starts the microphone service, and the dropped position kept per posture;
+- dictation inserted at the caret, and Use raw after warmed clean-up;
+- a field changed while finishing ending in Ready to copy with a sensitive clip;
+- copy mode handing the words to the Scratchpad, and the WebView outcome;
+- the custom TalkBack actions, Allow (microphone revoked) and Check again (server stopped).
+
+After every case it asserts no foreground service, recording client or crash. Captures go to `docs/screenshots/android/emulator-floating-*.png`. Run `emulator-talkback.py --bubble-check` on the release APK for the bubble under actual TalkBack.
 
 ```sh
 source ~/.local/share/chirp-android/env.sh

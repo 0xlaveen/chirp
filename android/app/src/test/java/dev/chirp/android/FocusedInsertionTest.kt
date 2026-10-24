@@ -72,4 +72,43 @@ class FocusedInsertionTest {
         target.insert("Synthetic."); target.forget()
         assertFalse(target.useRaw("synthetic")); assertFalse(target.matchesFinal())
     }
+    @Test fun `eligibility separates no bubble, insert and copy mode without changing writes`() {
+        val editor = Editor()
+        assertEquals(FocusedInsertion.Eligibility.INSERT, FocusedInsertion.eligibility(editor.node))
+        editor.node.removeAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_SET_TEXT)
+        assertEquals(FocusedInsertion.Eligibility.COPY, FocusedInsertion.eligibility(editor.node))
+        val long = Editor().apply { node.text = "x".repeat(FocusedInsertion.MAX_TEXT + 1); node.setTextSelection(0, 0) }
+        assertEquals(FocusedInsertion.Eligibility.COPY, FocusedInsertion.eligibility(long.node))
+        listOf<(AccessibilityNodeInfo) -> Unit>({ it.isPassword = true }, { it.isEnabled = false }, { it.isEditable = false }, { it.isFocused = false })
+            .forEach { change -> val other = Editor(); change(other.node)
+                assertEquals(FocusedInsertion.Eligibility.NONE, FocusedInsertion.eligibility(other.node)) }
+        assertEquals(FocusedInsertion.Eligibility.NONE, FocusedInsertion.eligibility(null))
+        assertEquals(0, editor.writes)
+    }
+    @Test fun `an empty field showing its hint takes the final at the start, never the hint`() {
+        val editor = Editor().apply {
+            node.text = "Plain field"; node.isShowingHintText = true; node.setTextSelection(-1, -1)
+        }
+        assertEquals(FocusedInsertion.Eligibility.INSERT, FocusedInsertion.eligibility(editor.node))
+        val target = FocusedInsertion.from(editor.node)!!
+        // The hint flips off once there is real text; the insertion carries only the dictation.
+        editor.node.isShowingHintText = true
+        shadowOf(editor.node).setOnPerformActionListener { action, arguments ->
+            if (action == AccessibilityNodeInfo.ACTION_SET_TEXT) {
+                editor.writes++; editor.node.isShowingHintText = false
+                editor.node.text = arguments.getCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE); true
+            } else if (action == AccessibilityNodeInfo.ACTION_SET_SELECTION) {
+                editor.node.setTextSelection(arguments.getInt(AccessibilityNodeInfo.ACTION_ARGUMENT_SELECTION_START_INT),
+                    arguments.getInt(AccessibilityNodeInfo.ACTION_ARGUMENT_SELECTION_END_INT)); true
+            } else false
+        }
+        assertTrue(target.insert("Synthetic."))
+        assertEquals("Synthetic.", editor.node.text.toString()); assertEquals(10, editor.node.textSelectionStart)
+    }
+    @Test fun `a node that can no longer be refreshed gets no snapshot`() {
+        val editor = Editor()
+        shadowOf(editor.node).setRefreshReturnValue(false)
+        assertNull(FocusedInsertion.from(editor.node))
+        assertEquals(FocusedInsertion.Eligibility.NONE, FocusedInsertion.eligibility(editor.node))
+    }
 }

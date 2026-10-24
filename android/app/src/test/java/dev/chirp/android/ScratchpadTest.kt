@@ -236,6 +236,17 @@ class ScratchpadTest {
         compose.onNodeWithText("DEBUG: recordings kept on Mac").assertExists()
     }
 
+    @Test fun `floating mic hand-off arrives in memory once and appends after existing text`() {
+        val rig = Rig(context); screen(rig)
+        ScratchpadHandoff.put("Synthetic words.")
+        ScratchpadHandoff.take()?.let(rig.model::receive); compose.waitForIdle()
+        assertEquals("Synthetic words.", rig.model.field.text)
+        assertNull(ScratchpadHandoff.take())
+        rig.model.receive("More synthetic words.")
+        assertEquals("Synthetic words.\n\nMore synthetic words.", rig.model.field.text)
+        assertEquals(rig.model.field.text.length, rig.model.field.selection.start)
+    }
+
     @Test fun `nothing is persisted by default no file or preference holds the text`() {
         val rig = Rig(context); screen(rig)
         rig.speak("synthetic scratch words"); rig.wire.final("Synthetic scratch words.", "synthetic scratch words", true)

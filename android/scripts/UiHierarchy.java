@@ -54,6 +54,19 @@ public final class UiHierarchy {
                 }
                 if (!found) throw new IllegalStateException("Accessible target missing");
             }
+            if (args.length == 3 && args[0].equals("custom-action")) {
+                // Invokes a labelled custom accessibility action, as TalkBack's actions menu does.
+                for (AccessibilityWindowInfo window : automation.getWindows()) {
+                    AccessibilityNodeInfo target = find(window.getRoot(), args[1]);
+                    if (target == null) continue;
+                    for (AccessibilityNodeInfo.AccessibilityAction action : target.getActionList())
+                        if (args[2].equals(String.valueOf(action.getLabel()))) {
+                            if (!target.performAction(action.getId())) throw new IllegalStateException("Custom action rejected");
+                            return;
+                        }
+                }
+                throw new IllegalStateException("Custom action missing");
+            }
             if (args.length == 1 && args[0].equals("append-notes")) {
                 for (AccessibilityWindowInfo window : automation.getWindows()) {
                     AccessibilityNodeInfo target = find(window.getRoot(), "Notes (Markdown)");
@@ -178,6 +191,12 @@ public final class UiHierarchy {
         xml.attribute(null, "checked", String.valueOf(node.isChecked()));
         xml.attribute(null, "selected", String.valueOf(node.isSelected()));
         xml.attribute(null, "enabled", String.valueOf(node.isEnabled()));
+        // Caret position and custom action labels (the floating mic's TalkBack actions); never text.
+        xml.attribute(null, "selection", node.getTextSelectionStart() + "," + node.getTextSelectionEnd());
+        StringBuilder custom = new StringBuilder();
+        for (AccessibilityNodeInfo.AccessibilityAction action : node.getActionList())
+            if (action.getLabel() != null && action.getId() > 0x01ffffff) custom.append(custom.length() == 0 ? "" : "|").append(action.getLabel());
+        xml.attribute(null, "actions", custom.toString());
         for (int i = 0; i < node.getChildCount(); i++) {
             AccessibilityNodeInfo child = node.getChild(i);
             if (child != null) dump(xml, child);

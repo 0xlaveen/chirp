@@ -249,6 +249,7 @@ def main():
     args.add_argument("--history-check", action="store_true")
     args.add_argument("--notes-check", action="store_true")
     args.add_argument("--keepkb-check", action="store_true")
+    args.add_argument("--bubble-check", action="store_true")
     args.add_argument("--serial")
     args.add_argument("--server-port", type=int, default=7899)
     args.add_argument("--tls", action="store_true")
@@ -297,14 +298,25 @@ def main():
                 time.sleep(.1)
             token = token_path.read_text().strip()
             wait_health(token, base=base, context=context)
-            if opt.cleanup_only or opt.frames_only or opt.stop_check or opt.history_check or opt.notes_check: warm_cleanup(opt.python, token_path, env, opt.tls, opt.server_port)
+            if opt.cleanup_only or opt.frames_only or opt.stop_check or opt.history_check or opt.notes_check or opt.bubble_check: warm_cleanup(opt.python, token_path, env, opt.tls, opt.server_port)
             # Independent host-routing probe, no authentication or private response content.
             probe = adb("shell", "sh", "-c", shlex.quote("printf 'GET /v1/health HTTP/1.0\\r\\nHost: 10.0.2.2\\r\\n\\r\\n' | toybox nc -w 3 10.0.2.2 " + str(opt.server_port)))
             print("Emulator route to throwaway server:", opt.tls or b"200 OK" in probe, flush=True)
             adb("install", "-r", str(Path(opt.apk).resolve()))
-            if opt.keepkb_check:
+            if opt.keepkb_check or opt.bubble_check:
                 module = runpy.run_path(str(Path(__file__).with_name("emulator-keepkb-check.py")))
-                module["check"](dict(_probe, adb=adb), work, output, scheme + "://10.0.2.2:" + str(opt.server_port), token)
+                url = scheme + "://10.0.2.2:" + str(opt.server_port)
+                def stop_server():
+                    server.terminate(); server.wait(timeout=10)
+                probe_helpers = dict(_probe, adb=adb, stop_server=stop_server)
+                with module["secure_settings"](probe_helpers):
+                    if opt.keepkb_check:
+                        module["check"](probe_helpers, work, output, url, token)
+                    if opt.bubble_check or opt.keepkb_check:
+                        # #167: the floating mic bubble is the keep-keyboard path's primary surface, so --keepkb-check
+                        # runs it after the onboarding checks; --bubble-check runs it alone.
+                        bubble = runpy.run_path(str(Path(__file__).with_name("emulator-bubble-check.py")))
+                        bubble["check"](probe_helpers, work, output, url, token, cleanup_warm=True, standalone=True)
                 return
             adb("shell", "am", "force-stop", PACKAGE)
             if opt.stop_check:
@@ -430,7 +442,7 @@ def main():
             adb("shell", "rm", "-f", "/sdcard/chirp-check.xml", "/sdcard/chirp-check.png", "/sdcard/chirp-cleanup.mp4", "/sdcard/chirp-polishing.png", "/sdcard/chirp-cleaned.png", "/sdcard/chirp-windows.xml", "/data/local/tmp/chirp-ui-probe.jar")
             adb("shell", "am", "force-stop", PACKAGE)
             adb("shell", "run-as", PACKAGE, "rm", "-f", "shared_prefs/debug_capture.xml", "shared_prefs/chirp.xml")
-            if not opt.keepkb_check: adb("shell", "ime", "set", IME)
+            if not (opt.keepkb_check or opt.bubble_check): adb("shell", "ime", "set", IME)
 
 
 if __name__ == "__main__":
