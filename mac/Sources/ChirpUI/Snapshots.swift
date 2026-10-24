@@ -476,7 +476,7 @@ public enum Snapshots {
     /// The scenarios whose PNGs are committed under `docs/screenshots/mac`: the key HUD states, the menu in light and
     /// dark, one per Settings tab, and the setup window. The rest only render to a temporary directory for review.
     public static let committedNames: [String] = [
-        "hud-listening", "hud-listening-reduce-motion", "ripple-speech", "ripple-static",
+        "hud-listening", "ripple-speech", "ripple-static",
         "hud-flow-2-polishing", "hud-flow-3-diff", "hud-correction-use-raw",
         "hud-wordwave-listening", "hud-wordwave-long", "hud-wordwave-polishing",
         "menu-ready", "menu-cleanup-submenu",

@@ -306,7 +306,9 @@ import Testing
             return NSHostingViewSize.of(HUDView(model: m))
         }
         let base = size { _ in }
-        #expect(base.height > 40 && base.width > 150 && base.width <= 440 + 32 + 1)
+        // The Ripple glyph is narrower than the waveform bars it replaced, so a short capsule rests
+        // on the HUD's own 150 pt floor rather than rising past it.
+        #expect(base.height > 40 && base.width >= 150 && base.width <= 440 + 32 + 1)
         #expect(size { $0.reduceMotion = true } == base)
         #expect(size { $0.increaseContrast = true } == base)
     }
