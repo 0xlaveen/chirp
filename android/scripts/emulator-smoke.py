@@ -282,10 +282,9 @@ def main():
         click('Dictate')
         wait_for('Dictate, then edit here')
         focus_editor()
-        # Long press must expose options and stay idle (no capture before consent).
-        mic = wait_for('Microphone: tap to dictate, long press for options')
-        x, y = center(mic)
-        adb('shell', 'input', 'swipe', str(x), str(y), str(x), str(y), '700')
+        # The ⋯ beside the mic must expose options and stay idle (no capture before consent); a hold on the mic is push-to-talk.
+        wait_for('Microphone: tap to dictate')
+        tap(wait_for('Dictation options'))
         wait_for('Chirp settings')
         adb('shell', 'input', 'keyevent', '4')
         focus_editor()
@@ -340,7 +339,7 @@ def main():
         wait_for('Diagnostics')
         assert any('No crashes recorded' in n.get('text', '') for n in nodes()), 'Chirp crash in diagnostics'
         crash_check()
-        print('PASS: release install; state-aware setup; QR scanner open/back; editor + keyboard; mic pairing action; long-press options; inner/cover light/dark; accessible labels and bounds; autocorrect teh/the + contraction; next-word suggestions; clipboard + emoji; settings + diagnostics; no Chirp crash.')
+        print('PASS: release install; state-aware setup; QR scanner open/back; editor + keyboard; mic pairing action; ⋯ options; inner/cover light/dark; accessible labels and bounds; autocorrect teh/the + contraction; next-word suggestions; clipboard + emoji; settings + diagnostics; no Chirp crash.')
         print('Release APK bytes:', apk.stat().st_size)
     finally:
         for command, original in [('size', original_size), ('density', original_density)]:

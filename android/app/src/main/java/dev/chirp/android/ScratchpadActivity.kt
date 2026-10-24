@@ -16,10 +16,14 @@ import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -37,6 +41,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -171,18 +176,28 @@ private fun OverflowMenu(model: ScratchpadModel) {
     }
 }
 
-/** The style choice as one connected group (spec §D): Raw and the Mac's clean-up styles, above the mic. */
-@OptIn(ExperimentalMaterial3Api::class)
+/**
+ * The style choice as a single-select chip row above the mic: Raw and the Mac's clean-up styles. Chips keep their label on
+ * one line and the row scrolls sideways, so two to eight styles read at any width and at 200% font; the chosen one is
+ * scrolled into view.
+ */
 @Composable
-private fun StyleGroup(model: ScratchpadModel) {
+internal fun StyleGroup(model: ScratchpadModel) {
     val options = buildList {
-        add("Raw" to !model.cleanup)
-        model.profiles.forEach { add(it.name to (model.cleanup && model.style.id == it.id)) }
+        add(Triple("Raw", null as CorrectionProfile?, !model.cleanup))
+        model.profiles.forEach { add(Triple(it.name, it, model.cleanup && model.style.id == it.id)) }
     }
-    SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp)) {
-        options.forEachIndexed { index, (label, selected) ->
-            SegmentedButton(selected, { model.choose(if (index == 0) null else model.profiles[index - 1]) }, enabled = !model.active,
-                shape = SegmentedButtonDefaults.itemShape(index = index, count = options.size), label = { Text(label) })
+    val state = rememberLazyListState()
+    val selected = options.indexOfFirst { it.third }.coerceAtLeast(0)
+    LaunchedEffect(selected, options.size) { state.animateScrollToItem(selected) }
+    LazyRow(Modifier.fillMaxWidth().testTag("style-chips"), state = state,
+        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        itemsIndexed(options, key = { _, option -> option.second?.id ?: "raw" }) { _, (label, profile, isSelected) ->
+            FilterChip(isSelected, { model.choose(profile) }, label = { Text(label, maxLines = 1, softWrap = false) }, enabled = !model.active,
+                modifier = Modifier.semantics { role = Role.RadioButton },
+                // A small selected state may keep the koi container; unselected chips stay outlined.
+                colors = FilterChipDefaults.filterChipColors(selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                    selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer))
         }
     }
 }

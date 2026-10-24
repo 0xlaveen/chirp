@@ -139,18 +139,19 @@ def main():
             quickdictate_actions()
             return
         mic = wait_for('Microphone: tap to dictate')
-        assert mic.get('long-clickable') == 'true', 'Mic options not exposed to TalkBack'
-        # Native accessibility actions exercise the same click/long-click a screen reader invokes.
+        assert mic.get('clickable') == 'true', 'Mic start/stop not exposed to TalkBack'
+        wait_for('Dictation options')
+        # Native accessibility actions exercise the same click a screen reader invokes on the mic and on the ⋯ options button.
         probe('click', 'Microphone: tap to dictate')
         wait_for('Pair your Mac in Chirp settings. Pair Mac')
         wait_for('Cancel dictation')
         probe('click', 'Cancel dictation')
-        probe('long-click', 'Microphone: tap to dictate')
+        probe('click', 'Dictation options')
         wait_for('Chirp settings')
         adb('shell', 'input', 'keyevent', '4')
         m['crash_check']()
         m['screenshot']('talkback')
-        print('PASS: release TalkBack enabled; stock uiautomator dump; all-window mic/status/cancel labels; mic accessibility click and long-click options; no Chirp crash.')
+        print('PASS: release TalkBack enabled; stock uiautomator dump; all-window mic/status/cancel labels; mic accessibility click and ⋯ options button; no Chirp crash.')
     finally:
         for key, value in originals.items():
             if key == 'default_input_method' and value not in ('null', ''):

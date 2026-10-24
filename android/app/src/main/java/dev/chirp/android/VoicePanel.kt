@@ -35,7 +35,7 @@ internal data class VoicePalette(val background: Int, val surface: Int, val ink:
                                  val accentContainer: Int, val onAccentContainer: Int, val secondaryContainer: Int, val onSecondaryContainer: Int,
                                  val errorContainer: Int, val onErrorContainer: Int, val card: Int = background, val outline: Int = muted,
                                  val record: Int = errorContainer, val moon: Int = accent, val moonFill: Int = accentContainer,
-                                 val koiDecor: Int = accent) {
+                                 val koiDecor: Int = accent, val surfaceHigh: Int = surface) {
     companion object {
         /**
          * The panel's colours, derived from the same scheme the app uses ("App colours" →
@@ -52,7 +52,7 @@ internal data class VoicePalette(val background: Int, val surface: Int, val ink:
                     primary.toArgb(), onPrimary.toArgb(), primaryContainer.toArgb(), onPrimaryContainer.toArgb(),
                     secondaryContainer.toArgb(), onSecondaryContainer.toArgb(), errorContainer.toArgb(), onErrorContainer.toArgb(),
                     card = surface.toArgb(), outline = outlineVariant.toArgb(), record = roles.record.toArgb(), moon = roles.moon.toArgb(),
-                    moonFill = roles.moonFill.toArgb(), koiDecor = roles.koiDecor.toArgb())
+                    moonFill = roles.moonFill.toArgb(), koiDecor = roles.koiDecor.toArgb(), surfaceHigh = surfaceContainerHigh.toArgb())
             }
         }
     }
@@ -177,7 +177,9 @@ internal class VoicePanel(context: Context) : LinearLayout(context) {
     private fun tonal(label: String) = MaterialButton(context).apply {
         text = label; insetTop = 0; insetBottom = 0; minHeight = context.dp(44); cornerRadius = context.dp(22)
         minWidth = 0; minimumWidth = 0; setPadding(context.dp(16), 0, context.dp(16), 0)
-        backgroundTintList = ColorStateList.valueOf(palette.accentContainer); setTextColor(palette.onAccentContainer)
+        // A full-width button must not be the koi container (muddy brown in dark): tonal surfaceContainerHigh with a hairline.
+        backgroundTintList = ColorStateList.valueOf(palette.surfaceHigh); setTextColor(palette.ink)
+        strokeColor = ColorStateList.valueOf(palette.outline); strokeWidth = context.dp(1)
     }
 
     fun render(model: PanelModel) {

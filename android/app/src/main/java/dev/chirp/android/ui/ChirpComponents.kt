@@ -125,13 +125,14 @@ internal fun StatusBanner(kind: StatusKind, title: String, modifier: Modifier = 
     val scheme = MaterialTheme.colorScheme
     val (container, content) = when (kind) {
         StatusKind.Info -> scheme.secondaryContainer to scheme.onSecondaryContainer
-        StatusKind.Success -> scheme.primaryContainer to scheme.onPrimaryContainer
+        // A full-width card is not the koi container (muddy brown in dark): tonal surface, with the lily check carrying "success".
+        StatusKind.Success -> scheme.surfaceContainerHigh to scheme.onSurface
         StatusKind.Warning -> scheme.tertiaryContainer to scheme.onTertiaryContainer
         StatusKind.Error -> scheme.errorContainer to scheme.onErrorContainer
     }
     Surface(modifier.fillMaxWidth(), shape = MaterialTheme.shapes.large, color = container, contentColor = content) {
         Row(Modifier.padding(16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            Icon(painterResource(kind.icon), null)
+            Icon(painterResource(kind.icon), null, tint = if (kind == StatusKind.Success) LocalChirpRoles.current.lily else LocalContentColor.current)
             Column(Modifier.weight(1f).semantics(mergeDescendants = true) { if (live) liveRegion = LiveRegionMode.Polite },
                 verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(title, style = if (body == null) MaterialTheme.typography.bodyLarge else MaterialTheme.typography.titleSmall)
