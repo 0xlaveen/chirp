@@ -281,7 +281,7 @@ class ChirpAccessibilityServiceTest {
         overlay!!.bubble.performAccessibilityAction(R.id.bubble_hide_here, null); advance()
         assertFalse(bubbleShown); assertEquals("Floating mic hidden in this app", ShadowToast.getTextOfLatestToast())
         focus(); assertFalse(bubbleShown)
-        service.onAccessibilityEvent(AccessibilityEvent().apply { eventType = AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED; packageName = "com.example.other" })
+        service.onAccessibilityEvent(AccessibilityEvent().apply { eventType = AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED; packageName = "com.android.systemui" })
         focus(); assertTrue(bubbleShown)
         assertFalse(app.getSharedPreferences(SettingsStore.FILE, Context.MODE_PRIVATE).all.values.any { it.toString().contains("com.example") })
     }

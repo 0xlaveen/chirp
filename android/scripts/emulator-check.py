@@ -442,7 +442,7 @@ def main():
             adb("shell", "rm", "-f", "/sdcard/chirp-check.xml", "/sdcard/chirp-check.png", "/sdcard/chirp-cleanup.mp4", "/sdcard/chirp-polishing.png", "/sdcard/chirp-cleaned.png", "/sdcard/chirp-windows.xml", "/data/local/tmp/chirp-ui-probe.jar")
             adb("shell", "am", "force-stop", PACKAGE)
             adb("shell", "run-as", PACKAGE, "rm", "-f", "shared_prefs/debug_capture.xml", "shared_prefs/chirp.xml")
-            if not opt.keepkb_check: adb("shell", "ime", "set", IME)
+            if not (opt.keepkb_check or opt.bubble_check): adb("shell", "ime", "set", IME)
 
 
 if __name__ == "__main__":

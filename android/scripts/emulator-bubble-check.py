@@ -15,7 +15,14 @@ GBOARD = 'com.google.android.inputmethod.latin/com.android.inputmethod.latin.Lat
 SERVICE = PACKAGE + '/.ChirpAccessibilityService'
 PROBE = PACKAGE + '/.EditorProbeActivity'
 BUBBLE = 'Chirp microphone'
-COPY_MODE = 'Chirp microphone — this field can’t be filled automatically'
+COPY_MODE = "Chirp microphone — this field can't be filled automatically"
+COULDNT = "Couldn't put this in the field"
+CANT = "This field can't be filled automatically"
+
+
+def present(found):
+    """ElementTree leaves are falsy, so presence is spelled out: anything but None, False or ''."""
+    return found is not None and found is not False and found != ''
 
 
 def bounds(node):
@@ -44,7 +51,7 @@ class Bubble:
         while time.monotonic() < deadline:
             hierarchy = self.nodes()
             found = test(hierarchy)
-            if found:
+            if present(found):
                 return found
             time.sleep(.2)
         self.capture('failure-' + re.sub(r'\W+', '-', what.lower()).strip('-'), keep=False)
@@ -56,7 +63,7 @@ class Bubble:
     def gone(self, test, what, seconds=10):
         deadline = time.monotonic() + seconds
         while time.monotonic() < deadline:
-            if not test(self.nodes()):
+            if not present(test(self.nodes())):
                 return
             time.sleep(.2)
         raise AssertionError('Still shown: ' + what)
@@ -70,7 +77,8 @@ class Bubble:
     def probe_field(self, label):
         """Opens the probe and focuses one of its fields by tapping it, like a person would."""
         self.adb('shell', 'am', 'start', '-W', '-n', PROBE)
-        self.label('Probe ready')
+        # The report line changes once used; the Recognize button is always there.
+        self.label('Recognize')
         field = self.label(label)
         self.tap(field)
         return field
@@ -81,6 +89,12 @@ class Bubble:
         assert node is not None, 'Field missing: ' + label
         return len(node.get('text', '')), node.get('selection', '')
 
+    def plain_digest(self):
+        """A digest of the plain field, to tell two values apart without ever printing either."""
+        import hashlib
+        editors = [n for n in self.nodes() if n.get('class') == 'android.widget.EditText' and n.get('package') == PACKAGE]
+        return hashlib.sha256(editors[0].get('text', '').encode()).hexdigest() if editors else ''
+
     def plain_length(self):
         editors = [n for n in self.nodes() if n.get('class') == 'android.widget.EditText' and n.get('package') == PACKAGE]
         assert editors, 'Probe editor missing'
@@ -88,13 +102,24 @@ class Bubble:
         hint = node.get('text', '') == 'Plain field'
         return 0 if hint else len(node.get('text', '')), node.get('selection', '')
 
+    def click_now(self, label):
+        """One accessibility click by label, without a hierarchy round trip; False when it isn't there."""
+        try:
+            self.adb('shell', 'CLASSPATH=/data/local/tmp/chirp-ui-probe.jar', 'app_process', '/', 'dev.chirp.smoke.UiHierarchy',
+                     'click', shlex.quote(label))
+            return True
+        except RuntimeError:
+            return False
+
     def no_microphone_service(self, where):
         services = self.adb('shell', 'dumpsys', 'activity', 'services', PACKAGE)
         assert b'isForeground=true' not in services, 'Foreground service still running: ' + where
         audio = self.adb('shell', 'dumpsys', 'audio')
         recording = audio.split(b'RecordActivityMonitor', 1)[-1].split(b'\n\n', 1)[0]
         assert PACKAGE.encode() not in recording, 'Recording client still open: ' + where
-        assert not self.adb('logcat', '-b', 'crash', '-d').strip(), 'Chirp crash: ' + where
+        crash = self.adb('logcat', '-b', 'crash', '-d').decode(errors='replace')
+        # The app's own process only; the shell UI probe is dev.chirp.smoke and runs as shell.
+        assert not re.search(r'>>> dev\.chirp\.android <<<|Process: dev\.chirp\.android', crash), 'Chirp crash: ' + where
 
     def capture(self, name, keep=True):
         data = self.adb('exec-out', 'screencap', '-p')
@@ -106,11 +131,15 @@ class Bubble:
         """Tap the bubble, wait for a non-empty partial (length only), optionally Stop."""
         self.tap(self.wait(self.bubble, 'bubble'))
         self.label('Listening', 40)
-        self.wait(lambda h: any(n.get('content-desc', '') == '' and n.get('text', '') not in ('', 'Start speaking…', 'Listening', 'Cancel', 'Stop')
+        # A partial: some panel text beyond the fixed labels (and the probe's own report line); its length only.
+        fixed = ('', 'Start speaking…', 'Listening', 'Cancel', 'Stop', 'Probe ready', 'Connecting to your Mac…')
+        self.wait(lambda h: any(n.get('content-desc', '') == '' and n.get('text', '') not in fixed
+                                and not n.get('text', '').startswith(('Paste length', 'Recognize'))
                                 and n.get('package') == PACKAGE and n.get('class') == 'android.widget.TextView'
                                 and bounds(n)[1] > 0 for n in h), 'partial', 40)
-        if stop:
-            self.press('Stop dictation')
+        # The synthetic clip ends by itself, so the utterance may already be finishing: Stop only if it's still there.
+        if stop and (button := self.m['find']('Stop dictation')) is not None:
+            self.tap(button)
 
     # ---- Cases ----------------------------------------------------------------------------------------------
     def show_and_hide(self):
@@ -167,24 +196,25 @@ class Bubble:
         self.probe_field('Plain field')
         before, _ = self.plain_length()
         self.dictate('Plain field')
-        self.wait(lambda h: any(n.get('text') in ('Inserted',) for n in h), 'Inserted', 60)
+        self.wait(lambda h: self.plain_length()[0] > before, 'field grew', 60)
         after, selection = self.plain_length()
         assert after > before, 'Field did not grow'
         assert selection == f'{after},{after}', 'Caret not at the end of the insertion'
-        if self.m['find']('Use raw') is not None:
-            self.capture('polished')
-            self.press('Use raw')
+        polished = self.plain_digest()
+        # Use raw lasts 5 s and each hierarchy dump costs about a second here: click it through accessibility at once.
+        if self.click_now('Use raw'):
             time.sleep(1)
-            raw, _ = self.plain_length()
-            assert raw != after, 'Use raw changed nothing'
+            assert self.plain_digest() != polished, 'Use raw changed nothing'
             self.results.append('Use raw replaced the polished text')
         elif cleanup_warm:
             self.results.append('Use raw not offered (clean-up returned the same text)')
         self.no_microphone_service('after insert')
         # A second polished insert: Use raw goes away by itself after 5 s.
         if cleanup_warm:
+            grown = self.plain_length()[0]
             self.dictate('Plain field')
-            if self.wait(lambda h: any(n.get('text') == 'Inserted' for n in h), 'Inserted', 60) and self.m['find']('Use raw') is not None:
+            self.wait(lambda h: self.plain_length()[0] > grown, 'field grew again', 60)
+            if self.m['find']('Use raw') is not None:
                 time.sleep(5.5)
                 assert self.m['find']('Use raw') is None, 'Use raw outlived 5 s'
                 self.results.append('Use raw expired after 5 s')
@@ -193,15 +223,15 @@ class Bubble:
     def field_changed(self):
         self.probe_field('Plain field')
         self.dictate('Plain field', stop=False)
-        self.press('Stop dictation')
+        # Typing while the utterance is live: the field no longer matches the snapshot, so the final can't go in.
         self.adb('shell', 'input', 'text', 'x')
-        self.label('Couldn’t put this in the field', 60)
+        self.label(COULDNT, 60)
         self.capture('ready')
         self.press('Copy')
-        self.gone(lambda h: any(n.get('text') == 'Couldn’t put this in the field' for n in h), 'Ready to copy panel')
+        self.gone(lambda h: any(n.get('text') == COULDNT for n in h), 'Ready to copy panel')
         self.press('Paste and report length')
-        report = self.label('Paste length=')
-        text = report.get('text') or report.get('content-desc')
+        report = self.wait(lambda h: next((n for n in h if n.get('text', '').startswith('Paste length=')), None), 'paste report')
+        text = report.get('text')
         length = int(re.search(r'Paste length=(\d+)', text).group(1))
         assert length > 0 and 'sensitive=true' in text, 'Copy did not leave a sensitive clip'
         self.no_microphone_service('field changed')
@@ -212,7 +242,7 @@ class Bubble:
         self.wait(lambda h: (b := self.bubble(h)) is not None and b.get('content-desc', '').startswith(COPY_MODE) and b, 'copy-mode badge')
         self.capture('copy-mode-bubble')
         self.dictate('Editable without set text')
-        self.label('This field can’t be filled automatically', 60)
+        self.label(CANT, 60)
         self.press('Open in Scratchpad')
         self.wait(lambda h: any(n.get('package') == PACKAGE and n.get('class') == 'android.widget.EditText' and n.get('text', '') not in ('', 'Dictate, then edit here') for n in h),
                   'Scratchpad with the words', 20)
@@ -221,11 +251,23 @@ class Bubble:
         self.results.append('copy mode badge → Ready to copy → Scratchpad has the words')
 
     def web_field(self):
-        self.probe_field('Web field')
+        """Records the WebView outcome (the spec asks which); Chromium's textarea node comes and goes, so this never fails the run."""
+        self.adb('shell', 'am', 'start', '-W', '-n', PROBE)
+        self.label('Recognize')
+        def textarea(h):
+            return next((n for n in h if n.get('class') == 'android.widget.EditText' and n.get('package') == PACKAGE
+                         and n.get('content-desc', '') == ''), None)
+        try:
+            self.tap(self.wait(textarea, 'web textarea', 15))
+            bubble = self.wait(self.bubble, 'bubble on the web textarea', 15)
+        except AssertionError:
+            self.results.append('WebView textarea → no bubble (Chromium did not report it as the input focus)')
+            return
+        mode = 'copy mode' if bubble.get('content-desc', '').startswith(COPY_MODE) else 'insert'
         self.dictate('Web field')
-        state = self.wait(lambda h: next((n.get('text') for n in h if n.get('text') in ('Inserted', 'Couldn’t put this in the field', 'This field can’t be filled automatically')), None),
+        state = self.wait(lambda h: next((n.get('text') for n in h if n.get('text') in ('Inserted', COULDNT, CANT)), None),
                           'WebView outcome', 60)
-        self.results.append('WebView textarea → ' + ('inserted' if state == 'Inserted' else 'Ready to copy'))
+        self.results.append(f'WebView textarea ({mode}) → ' + ('inserted' if state == 'Inserted' else 'Ready to copy'))
         if state != 'Inserted':
             self.press('Done')
         self.no_microphone_service('web field')
@@ -267,8 +309,9 @@ class Bubble:
                     self.capture(f'idle-{screen}-{theme}')
                     self.dictate('Plain field', stop=False)
                     self.capture(f'listening-{screen}-{theme}')
-                    self.press('Stop dictation')
-                    self.wait(lambda h: any(n.get('text') in ('Inserted', 'Couldn’t put this in the field') for n in h), 'end', 60)
+                    if (button := self.m['find']('Stop dictation')) is not None:
+                        self.tap(button)
+                    self.gone(lambda h: self.m['find']('Stop dictation', h), 'live utterance', 60)
                     if self.m['find']('Done') is not None:
                         self.press('Done')
                     self.no_microphone_service('captures')
@@ -301,19 +344,17 @@ class Bubble:
 
 
 def prepare(m, base, token):
-    """Standalone setup for --bubble-check: Gboard, the service, microphone, synthetic speech and pairing."""
+    """Standalone setup for --bubble-check: pairing first, then Gboard, the service, microphone and synthetic speech."""
     import urllib.parse
     adb = m['adb']
-    adb('shell', 'am', 'force-stop', PACKAGE)
+    adb('shell', 'settings', 'delete', 'secure', 'enabled_accessibility_services')
+    # A clean app: an earlier run's pairing would otherwise satisfy the wait below before this server's lands.
+    adb('shell', 'pm', 'clear', PACKAGE)
     adb('shell', 'run-as', PACKAGE, 'mkdir', '-p', 'shared_prefs')
     adb('shell', 'run-as', PACKAGE, 'sh', '-c', shlex.quote('cat > shared_prefs/debug_capture.xml'),
         data=b'<map><boolean name="synthetic" value="true" /></map>')
     for permission in ('RECORD_AUDIO', 'ACCESS_LOCAL_NETWORK', 'POST_NOTIFICATIONS'):
         adb('shell', 'pm', 'grant', PACKAGE, 'android.permission.' + permission)
-    adb('shell', 'ime', 'enable', GBOARD)
-    adb('shell', 'ime', 'set', GBOARD)
-    adb('shell', 'settings', 'put', 'secure', 'enabled_accessibility_services', SERVICE)
-    adb('shell', 'settings', 'put', 'secure', 'accessibility_enabled', '1')
     link = 'chirp://pair?' + urllib.parse.urlencode({'url': base, 'token': token})
     # adb echoes the intent; never forward its output.
     adb('shell', 'am', 'start', '-a', 'android.intent.action.VIEW', '-d', shlex.quote(link))
@@ -322,7 +363,15 @@ def prepare(m, base, token):
     while b'name="token"' not in adb('shell', 'run-as', PACKAGE, 'sh', '-c', shlex.quote('cat shared_prefs/chirp.xml 2>/dev/null; true')):
         assert time.monotonic() < deadline, 'Pairing was not saved'
         time.sleep(.5)
+    # Close the pairing screen for good (it would come back over the probe), then turn the floating mic on.
+    time.sleep(2)
+    adb('shell', 'am', 'force-stop', PACKAGE)
     adb('shell', 'input', 'keyevent', 'KEYCODE_HOME')
+    adb('shell', 'ime', 'enable', GBOARD)
+    adb('shell', 'ime', 'set', GBOARD)
+    adb('shell', 'settings', 'put', 'secure', 'enabled_accessibility_services', SERVICE)
+    adb('shell', 'settings', 'put', 'secure', 'accessibility_enabled', '1')
+    time.sleep(2)
 
 
 def check(m, work, output, base, token, cleanup_warm=False, standalone=False):
@@ -333,7 +382,7 @@ def check(m, work, output, base, token, cleanup_warm=False, standalone=False):
     adb('logcat', '-b', 'crash', '-c')
     run = Bubble(m, output)
     for case in (run.show_and_hide, run.drag, lambda: run.dictate_insert(cleanup_warm), run.field_changed, run.copy_mode,
-                 run.web_field, run.talkback_labels, run.captures, run.errors):
+                 run.web_field, run.captures, run.errors, run.talkback_labels):
         case()
     assert adb('shell', 'settings', 'get', 'secure', 'default_input_method').decode().strip() == GBOARD, 'Gboard was replaced'
     prefs = adb('shell', 'run-as', PACKAGE, 'sh', '-c', shlex.quote('cat shared_prefs/*.xml'))

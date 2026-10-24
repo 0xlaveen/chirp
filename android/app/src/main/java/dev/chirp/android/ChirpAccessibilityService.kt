@@ -99,8 +99,11 @@ open class ChirpAccessibilityService : AccessibilityService(), FloatingMicOverla
         when (event.eventType) {
             AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED -> {
                 val foreground = event.packageName?.toString()
-                if (foreground != null && foreground != hiddenIn && foreground != packageName && foreground != SYSTEM_UI && !isKeyboard(foreground)) hiddenIn = null
                 val now = findFocus(AccessibilityNodeInfo.FOCUS_INPUT)
+                // "Hide in this app" ends when the app leaves the foreground: another app's window, or the input focus
+                // no longer in it at all (Home). A keyboard popup leaves the focus where it was, so it doesn't count.
+                if (foreground != null && foreground != hiddenIn && foreground != packageName && !isKeyboard(foreground)) hiddenIn = null
+                if (hiddenIn != null && now?.packageName?.toString() != hiddenIn && foreground?.let(::isKeyboard) != true) hiddenIn = null
                 // The same field still focused (a keyboard popup, a dialog over nothing editable): only re-place.
                 if (now != null && now == focused) { refresh(); return }
                 // A window transition never carries a final into a different app: finish what was said into Ready to copy.
@@ -112,6 +115,8 @@ open class ChirpAccessibilityService : AccessibilityService(), FloatingMicOverla
             AccessibilityEvent.TYPE_VIEW_FOCUSED -> {
                 val source = event.source
                 if (source == focused) return
+                // Only the system's input focus counts: a WebView can report focus for a textarea it doesn't hold.
+                if (source != null && source != findFocus(AccessibilityNodeInfo.FOCUS_INPUT)) return
                 if (dictating) leaveField()
                 if (state == FloatingState.POLISHED) { forgetUndo(); collapseQuietly() }
                 focused = source?.takeIf { it.isEditable }
@@ -119,7 +124,13 @@ open class ChirpAccessibilityService : AccessibilityService(), FloatingMicOverla
             }
             AccessibilityEvent.TYPE_VIEW_TEXT_CHANGED, AccessibilityEvent.TYPE_VIEW_TEXT_SELECTION_CHANGED -> {
                 if (committing) return
-                if (event.source != focused) return
+                val source = event.source
+                if (source != focused) {
+                    // A field focused before its window settled sends no focus event; a tap in it still moves the caret.
+                    if (source != null && !dictating && surface == Surface.BUBBLE && source.isFocused && source.isEditable &&
+                        source == findFocus(AccessibilityNodeInfo.FOCUS_INPUT)) { focused = source; refresh() }
+                    return
+                }
                 edited()
             }
             else -> Unit // Only the four configured event types are handled.
@@ -482,7 +493,6 @@ open class ChirpAccessibilityService : AccessibilityService(), FloatingMicOverla
         private const val START = "dev.chirp.android.START_DICTATION"
         private const val CANCEL = "dev.chirp.android.CANCEL_DICTATION"
         private const val CHANNEL = "dictation"
-        private const val SYSTEM_UI = "com.android.systemui"
         internal const val UNDO_MS = 5000L
         internal const val KEPT_MS = 120_000L
     }

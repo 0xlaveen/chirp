@@ -41,7 +41,7 @@ class EditorProbeActivity : Activity() {
         }, LinearLayout.LayoutParams(-1, 180))
         report = TextView(this).apply { text = "Probe ready" }
         column.addView(Button(this).apply {
-            text = "Paste and report length"
+            text = "Paste and report length"; isAllCaps = false
             setOnClickListener {
                 val clipboard = getSystemService(ClipboardManager::class.java)
                 val clip = clipboard.primaryClip
@@ -51,7 +51,7 @@ class EditorProbeActivity : Activity() {
             }
         })
         column.addView(Button(this).apply {
-            text = "Recognize"
+            text = "Recognize"; isAllCaps = false
             setOnClickListener {
                 val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
                 if (intent.resolveActivity(packageManager) == null) report.text = "Recognizer unavailable"
@@ -59,7 +59,8 @@ class EditorProbeActivity : Activity() {
             }
         })
         column.addView(report)
-        setContentView(ScrollView(this).apply { addView(column) })
+        // Below the status bar on edge-to-edge targets, so every field can be tapped.
+        setContentView(ScrollView(this).apply { fitsSystemWindows = true; addView(column) })
     }
     @Deprecated("Debug probe uses the external Activity result contract")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
