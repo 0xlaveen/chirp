@@ -226,7 +226,7 @@ class Bubble:
         # Typing while the utterance is live: the field no longer matches the snapshot, so the final can't go in.
         self.adb('shell', 'input', 'text', 'x')
         self.label(COULDNT, 60)
-        self.capture('ready')
+        self.capture('ready', keep=False)
         self.press('Copy')
         self.gone(lambda h: any(n.get('text') == COULDNT for n in h), 'Ready to copy panel')
         self.press('Paste and report length')
@@ -240,7 +240,7 @@ class Bubble:
     def copy_mode(self):
         self.probe_field('Editable without set text')
         self.wait(lambda h: (b := self.bubble(h)) is not None and b.get('content-desc', '').startswith(COPY_MODE) and b, 'copy-mode badge')
-        self.capture('copy-mode-bubble')
+        self.capture('copy-mode-bubble', keep=False)
         self.dictate('Editable without set text')
         self.label(CANT, 60)
         self.press('Open in Scratchpad')
@@ -289,13 +289,19 @@ class Bubble:
         self.probe_field('Plain field')
         self.tap(self.wait(self.bubble, 'bubble with the Mac offline', 40))
         self.label('Check again', 40)
-        self.capture('error-offline')
+        self.capture('error-offline', keep=False)
         self.press('Hide panel')
         self.no_microphone_service('errors')
         self.results.append('errors: Allow (mic revoked), Check again (server stopped)')
 
+    def scratchpad_field(self):
+        """Chirp's own Scratchpad as the backdrop for captures: a real editor, and unlike the probe not FLAG_SECURE."""
+        self.adb('shell', 'am', 'start', '-W', '-n', PACKAGE + '/.ScratchpadActivity')
+        field = self.label('Dictate, then edit here')
+        self.tap(field)
+
     def captures(self):
-        """Idle and listening in light and dark, on the inner screen and the cover size."""
+        """Idle, listening and Ready to copy over the Scratchpad, on the inner screen and the cover size, light and dark."""
         original = self.adb('shell', 'wm', 'size').decode()
         try:
             for screen, size in (('inner', None), ('cover', '1080x2092')):
@@ -304,22 +310,23 @@ class Bubble:
                 for night in ('no', 'yes'):
                     self.adb('shell', 'cmd', 'uimode', 'night', night); time.sleep(1.5)
                     theme = 'dark' if night == 'yes' else 'light'
-                    self.probe_field('Plain field')
+                    self.scratchpad_field()
                     self.wait(self.bubble, 'bubble'); time.sleep(.6)
                     self.capture(f'idle-{screen}-{theme}')
-                    self.dictate('Plain field', stop=False)
+                    self.dictate('Scratchpad', stop=False)
                     self.capture(f'listening-{screen}-{theme}')
-                    if (button := self.m['find']('Stop dictation')) is not None:
-                        self.tap(button)
-                    self.gone(lambda h: self.m['find']('Stop dictation', h), 'live utterance', 60)
-                    if self.m['find']('Done') is not None:
-                        self.press('Done')
+                    # Typing while live sends the final to Ready to copy, the never-lost state.
+                    self.adb('shell', 'input', 'text', 'x')
+                    self.label(COULDNT, 60); time.sleep(.4)
+                    self.capture(f'ready-{screen}-{theme}')
+                    self.press('Done')
                     self.no_microphone_service('captures')
+                    self.adb('shell', 'am', 'force-stop', PACKAGE)
         finally:
             self.adb('shell', 'cmd', 'uimode', 'night', 'no')
             override = re.search(r'Override size: (\S+)', original)
             self.adb('shell', 'wm', 'size', override.group(1) if override else 'reset')
-        self.results.append('captures: idle and listening, inner and cover, light and dark')
+        self.results.append('captures: idle, listening, Ready to copy over the Scratchpad; inner and cover; light and dark')
 
     def talkback_labels(self):
         """The bubble's TalkBack contract without TalkBack running: a button with both custom actions."""
