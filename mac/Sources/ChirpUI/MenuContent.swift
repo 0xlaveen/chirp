@@ -140,7 +140,7 @@ public enum MenuContent {
         switch m.state {
         case .connecting: return ("Connecting…", .active)
         case .listening: return ("Listening…", .active)
-        case .finalizing: return ("Finalizing…", .active)
+        case .finalizing: return ("Finishing…", .active)
         case .correcting: return ("Polishing…", .active)
         case .inserting: return ("Inserting…", .active)
         case .error(let message): return (message, .error)
@@ -151,7 +151,7 @@ public enum MenuContent {
         }
         if h.ready == false { return ("Loading model…", .warning) }
         if m.serverNotice != nil { return ("Server out of date", .warning) }
-        if m.debugRetention { return ("DEBUG recordings kept", .error) }
+        if m.debugRetention { return (debugRetention, .error) }
         if !m.hotkeyRegistered {
             // A tap-matched shortcut (⌥ on its own) fails only without Accessibility; a Carbon one, when another app owns it.
             return m.hotkey.needsEventTap && !m.accessibilityGranted ? ("Ready · hotkey needs Accessibility", .warning)
@@ -197,7 +197,10 @@ public enum MenuContent {
         return out
     }
 
-    /// Live Notes: Start/Stop with its shortcut, and a way back to the window while there are notes. Notes cannot start
+    /// The warning every surface shows while the server keeps recordings (`--debug-retain`).
+    public static let debugRetention = "DEBUG: recordings kept"
+
+    /// Live Notes: Start/Stop with its shortcut, and Open Notes, the way back to the window. Notes cannot start
     /// during a dictation, while paused, or while the last session is still finishing.
     static func notesRows(_ m: MenuInputs) -> [MenuEntry] {
         let shortcut = m.paused || !m.notesHotkeyRegistered ? nil : m.notesShortcut

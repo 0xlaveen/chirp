@@ -172,6 +172,7 @@ final class NotesWindowController: NSObject, NSWindowDelegate {
     /// AppKit lists the open windows at the bottom of the menu `NSApp.windowsMenu` points to.
     private static func windowMenuItem() -> NSMenuItem {
         let menu = NSMenu(title: "Window")
+        menu.addItem(NSMenuItem(title: "Close", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w"))
         menu.addItem(NSMenuItem(title: "Minimize", action: #selector(NSWindow.performMiniaturize(_:)), keyEquivalent: "m"))
         menu.addItem(NSMenuItem(title: "Zoom", action: #selector(NSWindow.performZoom(_:)), keyEquivalent: ""))
         menu.addItem(.separator())

@@ -128,6 +128,8 @@ import Testing
             return (h.status, h.tone)
         }
         #expect(status { _ in } == ("Ready · ⌃⌥Space", .normal))
+        // The same word as the HUD and the Notes window.
+        #expect(status { $0.state = .finalizing } == ("Finishing…", .active))
         #expect(status { $0.hotkey = .controlShiftSpace } == ("Ready · ⌃⇧Space", .normal))
         #expect(status { $0.paused = true } == ("Paused", .normal))
         #expect(status { $0.state = .listening } == ("Listening…", .active))
@@ -137,7 +139,7 @@ import Testing
         #expect(status { $0.health = nil; $0.healthError = "x" } == ("Server unreachable", .error))
         #expect(status { $0.health = nil } == ("Checking server…", .warning))
         #expect(status { $0.health = Health(ready: false) } == ("Loading model…", .warning))
-        #expect(status { $0.debugRetention = true } == ("DEBUG recordings kept", .error))
+        #expect(status { $0.debugRetention = true } == ("DEBUG: recordings kept", .error))
         #expect(status { $0.hotkeyRegistered = false }.1 == .warning)
         // What Chirp is doing wins over the server's state; the pause wins over everything.
         #expect(status { $0.state = .listening; $0.health = nil; $0.healthError = "x" } == ("Listening…", .active))

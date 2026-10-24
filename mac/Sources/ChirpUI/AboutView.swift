@@ -47,7 +47,7 @@ public final class AboutView: NSView {
         version.font = MenuStyle.secondaryFont
         version.textColor = .secondaryLabelColor
         version.setAccessibilityIdentifier("about-version")
-        let blurb = NSTextField(wrappingLabelWithString: "Dictate into any app with a hotkey. Speech is recognised by your own chirp-server; audio never leaves your Mac.")
+        let blurb = NSTextField(wrappingLabelWithString: "Dictate into any app with a hotkey. Speech is recognised by your own chirp-server; audio goes nowhere else.")
         blurb.font = MenuStyle.secondaryFont
         blurb.textColor = .secondaryLabelColor
         blurb.alignment = .center

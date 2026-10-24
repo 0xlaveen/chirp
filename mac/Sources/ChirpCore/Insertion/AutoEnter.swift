@@ -1,6 +1,6 @@
 import Foundation
 
-/// "Press Return after inserting" (Settings → General). Off by default.
+/// "Press Return after inserting" (Settings → Dictation). Off by default.
 public enum AutoEnter: String, CaseIterable, Sendable {
     case off, always, chatApps
 
