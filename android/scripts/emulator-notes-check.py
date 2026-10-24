@@ -135,8 +135,12 @@ def check(probe, work, output):
         menu('Organize')
         wait(lambda s: s['note'] == 'Nothing to organize yet — keep going', 'Organize on short notes gave no answer', 20)
         assert calls('reorganize') == organized
-        probe['click']('Edit notes')
-        tap(wait_node('Notes (Markdown)'))
+        # Exactly Edit notes: click() matches by substring, which would also hit Edit notes by voice.
+        tap(next(n for n in nodes() if n.get('content-desc') == 'Edit notes'))
+        deadline = time.monotonic() + 20
+        while not (editors := [n for n in nodes() if n.get('class') == 'android.widget.EditText']):
+            assert time.monotonic() < deadline, 'Edit did not open the editor'
+        tap(editors[0])
         adb('shell', 'input', 'keyevent', 'KEYCODE_MOVE_END'); adb('shell', 'input', 'keyevent', 'KEYCODE_ENTER')
         adb('shell', 'input', 'text', '-%sReview%sthe%sbudget%swith%sfinance%sbefore%sthe%slaunch%son%sMonday')
         adb('shell', 'input', 'keyevent', 'KEYCODE_BACK')  # hides the keyboard
@@ -148,7 +152,8 @@ def check(probe, work, output):
     assert all(code == 200 for code in server()['reorganize']), 'A reorganize call failed: ' + json.dumps(server())
     menu('Share')
     deadline = time.monotonic() + 15
-    while 'Chooser' not in adb('shell', 'dumpsys', 'activity', 'top').decode(errors='replace'):
+    # Wait until the sheet has input focus, so Back closes it rather than reaching Notes behind it on a slow host.
+    while 'Chooser' not in next((l for l in adb('shell', 'dumpsys', 'window').decode(errors='replace').splitlines() if 'mCurrentFocus' in l), ''):
         assert time.monotonic() < deadline, 'Share did not open the share sheet'
         time.sleep(.5)
     adb('shell', 'input', 'keyevent', 'KEYCODE_BACK')
