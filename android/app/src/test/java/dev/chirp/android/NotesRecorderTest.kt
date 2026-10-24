@@ -123,6 +123,30 @@ class NotesRecorderTest {
         assertTrue(rig.recorder.document.segments.none { it.failure != null })
     }
 
+    @Test fun `a socket's send queue takes a whole pre-ready buffer flushed at Ready`() {
+        // Audio held while the Mac finishes the previous segment goes out at once; a smaller queue bound dropped it.
+        assertTrue(NotesRecorder.PRE_READY_BYTES + 1280 <= NotesRecorder.MAX_QUEUED_BYTES)
+        assertTrue("the Mac answers busy after 10 s in its queue", NotesRecorder.PRE_READY_BYTES >= 16000 * 2 * 10)
+    }
+
+    @Test fun `a pause right after a cut, before the next socket is ready, still lands that segment`() {
+        val rig = NotesRig()
+        rig.recorder.start(); rig.wire.ready(); rig.idle()
+        val first = rig.wire
+        rig.speak(45.0); rig.idle()
+        val second = rig.wire
+        rig.speak(1.0)
+        rig.recorder.pause(); rig.idle()
+        assertEquals("no stop before Ready: the socket could not take it", 0, second.stops)
+        first.final("first part"); rig.idle()
+        second.ready(); rig.idle()
+        assertEquals("the held second went on, then the stop", 25, second.frames)
+        assertEquals(1, second.stops)
+        second.final("second part"); rig.idle()
+        assertEquals(listOf("first part", "second part"), rig.recorder.document.segments.map { it.text })
+        assertEquals(NotesRecorder.State.PAUSED, rig.recorder.state)
+    }
+
     @Test fun `a failed segment leaves a marked gap and recording rolls on, three in a row stop with nothing lost`() {
         val rig = NotesRig()
         rig.recorder.start(); rig.wire.ready(); rig.idle()
@@ -202,6 +226,7 @@ class NotesRecorderTest {
         rig.segment().final("first point"); rig.idle()
         rig.calls.structures[0].second.completeExceptionally(NotesHttpError(503)); rig.idle()
         assertEquals(Structuring.Failed("busy"), rig.recorder.structuring)
+        assertEquals("Diagnostics name the failure by its code only", "structure: busy", rig.recorder.problem)
         val sentences = (1..80).joinToString(" ") { "Sentence number $it is here." }
         rig.segment().final(sentences); rig.idle()
         assertEquals("busy waits out the interval, then retries with the newer text", 1, rig.calls.structures.size)
@@ -245,6 +270,18 @@ class NotesRecorderTest {
         assertFalse(rig.recorder.canUndo)
     }
 
+    @Test fun `organize on notes too short to reorganize says so instead of doing nothing, until the notes change`() {
+        val rig = NotesRig()
+        rig.recorder.userEdit(0, 0, "- Ship it Friday")
+        rig.recorder.organize(); rig.idle()
+        assertTrue(rig.calls.reorganizes.isEmpty())
+        assertEquals(Reorganizing.TooShort, rig.recorder.reorganizeStatus)
+        rig.recorder.userEdit(16, 16, "\n- Review the budget with finance before the launch review on Monday")
+        assertEquals(Reorganizing.Idle, rig.recorder.reorganizeStatus)
+        rig.recorder.organize(); rig.idle()
+        assertEquals(1, rig.calls.reorganizes.size)
+    }
+
     @Test fun `organize structures raw fallback blocks in place and a preempted reorganize is not a failure`() {
         val rig = NotesRig()
         rig.recorder.start(); rig.wire.ready(); rig.idle()
@@ -283,6 +320,7 @@ class NotesRecorderTest {
         rig.recorder.start(); rig.wire.ready(); rig.idle()
         rig.segment().final("words"); rig.idle()
         rig.calls.structures.single().second.completeExceptionally(NotesHttpError(409)); rig.idle()
+        assertEquals("structure: notes_off", rig.recorder.problem)
         assertEquals(Structuring.Off(StructuringOff.CORRECTION_OFF), rig.recorder.structuring)
         rig.recorder.userEdit(0, 0, "my own line")
         assertEquals("my own line", rig.recorder.document.text)

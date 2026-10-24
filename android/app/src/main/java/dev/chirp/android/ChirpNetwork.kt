@@ -103,6 +103,8 @@ class StreamTransport(
     private val event: (ServerEvent) -> Unit,
     private val failure: () -> Unit,
     private val opened: () -> Unit = {},
+    /** Audio queued on the socket beyond which a frame is refused (network backpressure). */
+    private val maxQueued: Long = 160000,
 ) : ImeTransport {
     @Volatile private var socket: WebSocket? = null
     @Volatile private var ready = false
@@ -194,7 +196,7 @@ class StreamTransport(
     override fun audio(bytes: ByteArray): Boolean {
         if (!active || !ready) return false
         val ws = socket ?: return false
-        if (ws.queueSize() + bytes.size > 160000) return false // Bound network backpressure as well.
+        if (ws.queueSize() + bytes.size > maxQueued) return false // Bound network backpressure as well.
         return ws.send(bytes.toByteString())
     }
     override fun stop(): Boolean = active && ready && socket?.send(Protocol.STOP) == true

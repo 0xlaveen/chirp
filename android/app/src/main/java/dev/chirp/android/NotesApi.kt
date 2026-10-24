@@ -80,9 +80,12 @@ internal interface NotesApi {
 }
 
 internal class HttpNotesApi(client: OkHttpClient, private val pairing: Pairing) : NotesApi {
-    /** The server's structure timeout (30 s) and reorganize timeout (45 s), plus a margin. */
-    private val structureClient = client.newBuilder().readTimeout(35, TimeUnit.SECONDS).callTimeout(35, TimeUnit.SECONDS).build()
-    private val reorganizeClient = client.newBuilder().readTimeout(50, TimeUnit.SECONDS).callTimeout(50, TimeUnit.SECONDS).build()
+    /**
+     * The server's structure timeout (30 s) and reorganize timeout (45 s), plus a margin. The calls are stateless, so one
+     * that went out on a kept-alive connection the Mac had just closed goes again on a fresh one.
+     */
+    private val structureClient = client.newBuilder().retryOnConnectionFailure(true).readTimeout(35, TimeUnit.SECONDS).callTimeout(35, TimeUnit.SECONDS).build()
+    private val reorganizeClient = client.newBuilder().retryOnConnectionFailure(true).readTimeout(50, TimeUnit.SECONDS).callTimeout(50, TimeUnit.SECONDS).build()
 
     override fun structure(request: NotesStructureRequest) = NotesStructureResponse.decode(post(structureClient, "v1/notes/structure", request.json()))
     override fun reorganize(request: NotesReorganizeRequest) = NotesReorganizeResponse.decode(post(reorganizeClient, "v1/notes/reorganize", request.json()))

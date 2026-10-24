@@ -72,7 +72,8 @@ internal class NotesVoiceEdit(
         val mine = ++run
         final = null; dropped = false; ready = false; stopRequested = false; stopSent = false
         lateinit var socket: ImeTransport
-        val audio = PreReadyBuffer(send = { socket.audio(it) })
+        // Like a notes segment, it is Ready only once the Mac has finished the segment before it.
+        val audio = PreReadyBuffer(send = { socket.audio(it) }, maxBytes = NotesRecorder.PRE_READY_BYTES)
         socket = try { transportFactory({ handle(mine, it) }, { ended(mine, null) }) } catch (_: RuntimeException) {
             status = VoiceEditStatus.Done(NotesEditOutcome.Failed("connection")); return
         }

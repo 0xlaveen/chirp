@@ -277,6 +277,7 @@ def main():
             command = [opt.python, str(Path(__file__).with_name("emulator-stop-server.py")),
                        "--model-dir", opt.model_dir, "--metadata", str(work / "events.json")]
             if opt.tls: command += ["--cert", str(cert), "--key", str(opt.tls_dir / "emulator-tls/key.pem")]
+            if opt.notes_check: command += ["--ready-delay", "6"]
         server = subprocess.Popen(command,
                                   env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         try:
