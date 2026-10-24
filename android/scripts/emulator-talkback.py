@@ -37,6 +37,47 @@ def choice_cards():
     print('PASS: actual TalkBack; choice cards expose radio role, full text, unchecked/checked states and click action; floating-mic disclosure reached.')
 
 
+def bubble_actions():
+    """#167: the floating mic bubble under real TalkBack: its label, double tap and both custom actions."""
+    bubble = 'Chirp microphone'
+    def custom(action):
+        adb('shell', 'CLASSPATH=/data/local/tmp/chirp-ui-probe.jar', 'app_process', '/', 'dev.chirp.smoke.UiHierarchy',
+            'custom-action', shlex.quote(bubble), shlex.quote(action))
+    adb('shell', 'am', 'start', '-n', m['PACKAGE'] + '/.ScratchpadActivity')
+    wait_for('Dictate, then edit here')
+    probe('click', 'Dictate, then edit here')
+    node = wait_for(bubble)
+    assert node.get('content-desc') == 'Chirp microphone: tap to dictate, hold to talk', 'Bubble label changed'
+    assert node.get('actions') == 'Move to other side|Hide in this app', 'Bubble custom actions missing'
+    def cx(n):
+        x1, _, x2, _ = map(int, re.findall(r'\d+', n.get('bounds')))
+        return (x1 + x2) // 2
+    width = m['size']()[0]
+    x = cx(node)
+    custom('Move to other side')
+    deadline = time.monotonic() + 10
+    while time.monotonic() < deadline:
+        moved = m['find'](bubble)
+        if moved is not None and (cx(moved) < width // 2) != (x < width // 2):
+            break
+    else:
+        raise AssertionError('Move to other side did not move the bubble')
+    custom('Move to other side')
+    # Double tap is a click: the release build is unpaired, so the panel opens on its one fix.
+    probe('click', bubble)
+    wait_for('Pair your Mac to dictate'); wait_for('Pair Mac')
+    m['screenshot']('talkback-floating-error')
+    probe('click', 'Hide panel')
+    probe('click', 'Dictate, then edit here')
+    wait_for(bubble)
+    custom('Hide in this app')
+    deadline = time.monotonic() + 10
+    while m['find'](bubble) is not None:
+        assert time.monotonic() < deadline, 'Hide in this app left the bubble up'
+    m['crash_check']()
+    print('PASS: actual TalkBack; floating mic bubble label, double tap to its one-fix panel, Move to other side and Hide in this app.')
+
+
 def main():
     originals = {key: adb('shell', 'settings', 'get', 'secure', key).decode().strip()
                  for key in ('enabled_accessibility_services', 'accessibility_enabled', 'default_input_method')}
@@ -45,7 +86,7 @@ def main():
         if m['find']('Don’t allow') is not None:
             probe('click', 'Don’t allow')
         adb('logcat', '-b', 'crash', '-c')
-        if '--keepkb-check' not in sys.argv:
+        if '--keepkb-check' not in sys.argv and '--bubble-check' not in sys.argv:
             m['fresh_editor']()
         # Stock uiautomator suppresses/restarts existing services. Run its dump before
         # enabling TalkBack; the preserving all-window probe handles the actual checks.
@@ -55,6 +96,11 @@ def main():
         services = previous.split(':') if previous not in ('null', '') else []
         if TALKBACK not in services:
             services.append(TALKBACK)
+        if '--bubble-check' in sys.argv:
+            # The floating mic beside TalkBack, with another keyboard selected so the bubble shows.
+            adb('shell', 'ime', 'set', 'com.google.android.inputmethod.latin/com.android.inputmethod.latin.LatinIME')
+            if m['PACKAGE'] + '/.ChirpAccessibilityService' not in services:
+                services.append(m['PACKAGE'] + '/.ChirpAccessibilityService')
         adb('shell', 'settings', 'put', 'secure', 'enabled_accessibility_services', ':'.join(services))
         adb('shell', 'settings', 'put', 'secure', 'accessibility_enabled', '1')
         deadline = time.monotonic() + 20
@@ -68,6 +114,9 @@ def main():
             probe('click', 'Don’t allow')
         if '--keepkb-check' in sys.argv:
             choice_cards()
+            return
+        if '--bubble-check' in sys.argv:
+            bubble_actions()
             return
         mic = wait_for('Microphone: tap to dictate')
         assert mic.get('long-clickable') == 'true', 'Mic options not exposed to TalkBack'
