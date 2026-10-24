@@ -1,6 +1,7 @@
 package dev.chirp.android
 
 import androidx.annotation.DrawableRes
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -13,6 +14,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.*
@@ -27,8 +29,9 @@ import dev.chirp.android.ui.*
 internal fun OnboardingPage(page: Int, state: SetupState, actions: OnboardingActions) {
     val next = { state.step = page + 1 }
     when (page) {
-        PAGE_WELCOME -> PageFrame("Dictate anywhere", { Illustration(R.drawable.ic_onboarding_flow, wide = true) }, PrimaryAction("Get started") { next() }) {
-            Body("Speak on your phone. Your Mac does the transcription, privately, over Tailscale, and the text appears in any app.")
+        PAGE_WELCOME -> PageFrame("Dictate anywhere", { PondHero() }, PrimaryAction("Get started") { next() }) {
+            Body("Speak on your phone and your Mac writes the words into any app, privately over Tailscale. " +
+                "Meetings and thoughts can live in Notes: a recording that transcribes and organises itself while you talk.")
         }
         PAGE_KEYBOARD -> PageFrame("Turn on Chirp Keyboard", { Illustration(R.drawable.ic_keyboard) }, when {
             !state.inputEnabled -> PrimaryAction("Enable Chirp Keyboard", onClick = actions.keyboardSettings)
@@ -53,7 +56,7 @@ internal fun OnboardingPage(page: Int, state: SetupState, actions: OnboardingAct
             else if (state.micDenied) StatusBanner(StatusKind.Warning, "Allow the microphone to dictate", action = "Open app permissions", onAction = actions.appSettings, live = true)
             Tips("What Chirp keeps", "Your microphone",
                 "The mic opens only when you start dictation and is released as soon as you stop. No recordings are saved on this phone; " +
-                    "transcripts are kept only if you turn on dictation history, and unsaved Notes keep an encrypted recovery copy until you save.")
+                "transcripts are kept only if you turn on dictation history, and unsaved Notes keep an encrypted recovery copy until you save.")
         }
         else -> PairPage(state, actions)
     }
@@ -103,25 +106,36 @@ private fun PairPage(state: SetupState, actions: OnboardingActions) {
     }
 }
 
-/** Title, hero and scrolling content, with the page's one primary button pinned below (inside the system bars, never scrolled away). */
+/**
+ * Title, hero and scrolling content, with the page's one primary button pinned below (inside the system bars, never scrolled away).
+ * The hero runs edge to edge; the text keeps the page gutter. At 200% font the content scrolls under the hero, button still pinned.
+ */
 @Composable
 private fun PageFrame(title: String, hero: @Composable () -> Unit, primary: PrimaryAction, content: @Composable ColumnScope.() -> Unit) {
     Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-            Box(Modifier.fillMaxWidth().padding(top = 8.dp), contentAlignment = Alignment.Center) { hero() }
-            Text(title, Modifier.fillMaxWidth().semantics { heading() }, style = MaterialTheme.typography.headlineMedium, textAlign = TextAlign.Center)
-            content()
+            Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.TopCenter) { hero() }
+            Column(Modifier.fillMaxWidth().padding(horizontal = 24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                Text(title, Modifier.fillMaxWidth().semantics { heading() }, style = MaterialTheme.typography.headlineMedium, textAlign = TextAlign.Center)
+                content()
+            }
         }
-        Button(primary.onClick, Modifier.fillMaxWidth().heightIn(min = 56.dp), enabled = primary.enabled) { Text(primary.label) }
+        Button(primary.onClick, Modifier.fillMaxWidth().padding(horizontal = 24.dp).heightIn(min = 56.dp), enabled = primary.enabled) { Text(primary.label) }
     }
+}
+
+/** The approved full-bleed pond artwork (spec §D), used as-is: no tiles, borders or overlays; a centre crop fills the width. */
+@Composable
+private fun PondHero() {
+    Image(painterResource(R.drawable.chirp_pond), null, Modifier.fillMaxWidth().height(300.dp), contentScale = ContentScale.Crop)
 }
 
 @Composable
 private fun Illustration(@DrawableRes icon: Int, wide: Boolean = false) {
     val scheme = MaterialTheme.colorScheme
-    if (wide) Icon(painterResource(icon), null, Modifier.padding(vertical = 8.dp), tint = scheme.primary)
-    else Box(Modifier.size(128.dp).clip(CircleShape).background(scheme.primaryContainer), contentAlignment = Alignment.Center) {
-        Icon(painterResource(icon), null, Modifier.size(64.dp), tint = scheme.onPrimaryContainer)
+    if (wide) Icon(painterResource(icon), null, Modifier.padding(horizontal = 24.dp, vertical = 8.dp), tint = scheme.primary)
+    else Box(Modifier.size(152.dp).clip(CircleShape).background(scheme.primaryContainer), contentAlignment = Alignment.Center) {
+        Icon(painterResource(icon), null, Modifier.size(72.dp), tint = scheme.onPrimaryContainer)
     }
 }
 

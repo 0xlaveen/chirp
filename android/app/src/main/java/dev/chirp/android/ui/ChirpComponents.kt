@@ -59,32 +59,52 @@ private fun SettingsRow(title: String, summary: String?, @DrawableRes icon: Int?
 
 private fun Modifier.row() = fillMaxWidth().heightIn(min = 56.dp)
 
+/** ⓘ: the paragraph behind a row (spec §D Settings), so the row itself keeps to one line. */
+@Composable
+private fun InfoIcon(title: String, body: String) {
+    var open by rememberSaveable { mutableStateOf(false) }
+    IconButton({ open = true }, Modifier.semantics { contentDescription = "About $title" }) {
+        Icon(painterResource(R.drawable.ic_info), null, Modifier.size(20.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+    if (open) InfoSheet(title, body) { open = false }
+}
+
 /** The whole row toggles (one merged node: title, summary, switch, on/off); the [Switch] itself takes no input. */
 @Composable
 internal fun SwitchRow(title: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit, modifier: Modifier = Modifier,
-                       summary: String? = null, @DrawableRes icon: Int? = null, enabled: Boolean = true) {
+                       summary: String? = null, @DrawableRes icon: Int? = null, enabled: Boolean = true,
+                       infoTitle: String? = null, infoBody: String? = null) {
     SettingsRow(title, summary, icon, modifier.row().clip(MaterialTheme.shapes.extraSmall)
         .toggleable(checked, enabled = enabled, role = Role.Switch, onValueChange = onCheckedChange)) {
-        Switch(checked, onCheckedChange = null, enabled = enabled)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            if (infoTitle != null && infoBody != null) InfoIcon(infoTitle, infoBody)
+            Switch(checked, onCheckedChange = null, enabled = enabled)
+        }
     }
 }
 
 /** Opens another screen, dialog or app: trailing chevron. */
 @Composable
 internal fun NavRow(title: String, onClick: () -> Unit, modifier: Modifier = Modifier, summary: String? = null,
-                    @DrawableRes icon: Int? = null, enabled: Boolean = true) {
+                    @DrawableRes icon: Int? = null, enabled: Boolean = true, infoTitle: String? = null, infoBody: String? = null) {
     SettingsRow(title, summary, icon, modifier.row().clip(MaterialTheme.shapes.extraSmall)
         .clickable(enabled = enabled, role = Role.Button, onClick = onClick)) {
-        Icon(painterResource(R.drawable.ic_chevron_right), null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            if (infoTitle != null && infoBody != null) InfoIcon(infoTitle, infoBody)
+            Icon(painterResource(R.drawable.ic_chevron_right), null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
     }
 }
 
 /** Does something in place. [destructive] actions use the error colour. */
 @Composable
 internal fun ActionRow(title: String, onClick: () -> Unit, modifier: Modifier = Modifier, summary: String? = null,
-                       @DrawableRes icon: Int? = null, destructive: Boolean = false, enabled: Boolean = true) {
+                       @DrawableRes icon: Int? = null, destructive: Boolean = false, enabled: Boolean = true,
+                       infoTitle: String? = null, infoBody: String? = null) {
     SettingsRow(title, summary, icon, modifier.row().clip(MaterialTheme.shapes.extraSmall)
-        .clickable(enabled = enabled, role = Role.Button, onClick = onClick), destructive)
+        .clickable(enabled = enabled, role = Role.Button, onClick = onClick), destructive) {
+        if (infoTitle != null && infoBody != null) InfoIcon(infoTitle, infoBody)
+    }
 }
 
 /** Single-select chip row (Stop dictation, Keep for, App colours). */

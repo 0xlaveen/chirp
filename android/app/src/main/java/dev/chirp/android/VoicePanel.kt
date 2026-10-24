@@ -57,7 +57,8 @@ internal fun MaterialButton.accent(colors: VoicePalette, filled: Boolean) {
 internal class VoicePanel(context: Context) : LinearLayout(context) {
     private val colors = VoicePalette.of(context)
     val banner = context.label("").apply { visibility = GONE }
-    val status = context.label("Ready to dictate", 14f)
+    /** No breadcrumb (spec §D): the panel shows a status line only when it names a problem to fix. */
+    val status = context.label("", 14f).apply { visibility = GONE }
     val transcript = context.label("Tap to dictate · hold to talk", 19f)
     val mic = MaterialButton(context).apply {
         text = "Tap to dictate"; setIconResource(R.drawable.ic_mic); minHeight = context.dp(72)
@@ -73,9 +74,10 @@ internal class VoicePanel(context: Context) : LinearLayout(context) {
         setPadding(context.dp(16), context.dp(8), context.dp(16), context.dp(8))
         background = GradientDrawable().apply { setColor(this@VoicePanel.colors.background); cornerRadius = context.dp(28).toFloat() }
         addView(banner)
-        status.setTextColor(colors.muted)
+        status.setTextColor(colors.onErrorContainer)
         status.accessibilityLiveRegion = View.ACCESSIBILITY_LIVE_REGION_POLITE
-        addView(status)
+        status.setPadding(context.dp(12), context.dp(6), context.dp(12), context.dp(6))
+        addView(status, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
         transcript.apply {
             minHeight = context.dp(56); maxLines = 3
             setPadding(context.dp(12), context.dp(8), context.dp(12), context.dp(8))
@@ -98,16 +100,12 @@ internal class VoicePanel(context: Context) : LinearLayout(context) {
         setOnClickListener { action() }
     }
     fun show(statusText: String, text: String, stable: String = "", active: Boolean = false, finalizing: Boolean = false) {
+        // Only a problem gets the line; idle and success states are the mic's and transcript's to say.
+        val problem = Cue.isError(statusText) || DictationAction.forStatus(statusText) != null
         status.text = statusText
-        // The strip's state colours: listening tints accent, a failure or prompt tints error; idle and success stay plain.
-        val (fill, ink) = when {
-            active || finalizing -> colors.accentContainer to colors.onAccentContainer
-            Cue.isError(statusText) || DictationAction.forStatus(statusText) != null -> colors.errorContainer to colors.onErrorContainer
-            else -> null to colors.muted
-        }
-        status.setTextColor(ink)
-        status.background = fill?.let { GradientDrawable().apply { setColor(it); cornerRadius = context.dp(12).toFloat() } }
-        status.setPadding(context.dp(if (fill != null) 10 else 4), context.dp(5), context.dp(4), context.dp(5))
+        status.visibility = if (problem) VISIBLE else GONE
+        status.setTextColor(if (problem) colors.onErrorContainer else colors.muted)
+        status.background = if (problem) GradientDrawable().apply { setColor(this@VoicePanel.colors.errorContainer); cornerRadius = context.dp(12).toFloat() } else null
         val content = text.ifEmpty { "Tap to dictate · hold to talk" }
         transcript.text = SpannableString(content).apply {
             if (text.isNotEmpty()) {

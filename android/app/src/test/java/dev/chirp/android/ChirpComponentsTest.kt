@@ -135,18 +135,19 @@ class ChirpComponentsTest {
         val history = DictationHistory(context, SoftwareHistoryKeys()).apply { enable() }
         val state = SetupState().apply { step = 3; paired = true; host = "mac.example.test"; health = store.health }
         val screen = mutableIntStateOf(0)
-        compose.setContent { ChirpTheme { when (screen.intValue) { 0 -> SettingsScreen(state); 1 -> ChirpSettingsSection(); else -> androidx.compose.foundation.layout.Column { HistorySettings(store = history) } } } }
+        compose.setContent { ChirpTheme { when (screen.intValue) { 0 -> SettingsScreen(state, initialPage = dev.chirp.android.settings.SettingsPage.Dictation); 1 -> ChirpSettingsSection(); else -> androidx.compose.foundation.layout.Column { HistorySettings(store = history) } } } }
         for (index in 0..2) {
             compose.runOnIdle { screen.intValue = index }
             compose.waitForIdle()
             val switches = compose.onAllNodes(isToggleable()).fetchSemanticsNodes()
-            assertTrue(switches.size >= if (index == 0) 4 else 1)
+            assertTrue(switches.size >= if (index == 0) 2 else 1)
             assertEquals("No switch nested inside another toggle", switches.size, compose.onAllNodes(isToggleable(), useUnmergedTree = true).fetchSemanticsNodes().size)
             switches.forEach { node ->
                 val label = node.config.getOrNull(SemanticsProperties.Text)
                 assertEquals(Role.Switch, node.config.getOrNull(SemanticsProperties.Role))
                 assertFalse("Switch without its own label: $label", label.isNullOrEmpty())
-                assertFalse(node.config.contains(SemanticsProperties.ContentDescription))
+                // The only description a switch row may carry is its ⓘ button's "About …" sheet link.
+                node.config.getOrNull(SemanticsProperties.ContentDescription)?.let { assertTrue(it.toString(), it.toString().startsWith("About ")) }
                 assertTrue("$label is under 48 dp", node.size.height >= 48)
             }
         }

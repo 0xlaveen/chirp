@@ -5,11 +5,13 @@ credential or personal text is included.
 
 - `keyboard-{idle,connecting,listening,countdown,polishing,final,tailscale,offline,phone,retention}-{light,dark}.png`:
   Robolectric native graphics on API 37, actual HeliBoard QWERTY keys with Chirp's production strip at 411 px
-  width (Gboard-like look, cover screen), settled with animator scale 0. `final` shows the Undo / Use raw chips,
-  `tailscale` the *Tailscale is off · Turn on* prompt, `offline` *Mac offline*, `phone` the phone-recogniser chip,
-  `retention` the debug banner. The same states are rendered for the other looks and the 673 px inner screen as
-  `keyboard-{gboard,samsung}-{cover,inner}-<state>-{light,dark}.png` (the default combination keeps the short names).
-  `KeyboardRenderTest` also asserts the strip and key-area height is identical in every state.
+  width (Gboard-like look, cover screen), settled with animator scale 0. While listening the strip shows the three
+  Pond ripple arcs stepping off the mic and Stop as a filled `record` pill (dark ink on the light dark-theme red);
+  `final` shows the Undo / Use raw chips, `tailscale` the *Tailscale is off · Turn on* prompt, `offline` *Mac offline*,
+  `phone` the phone-recogniser chip, `retention` the debug banner. The same states are rendered for the other looks
+  and the 673 px inner screen as `keyboard-{gboard,samsung}-{cover,inner}-<state>-{light,dark}.png` (the default
+  combination keeps the short names). `KeyboardRenderTest` also asserts the strip and key-area height is identical
+  in every state.
 - `emulator-keyboard-{idle,listening,final}-{light,dark}.png`: the authorized Android
   17 fold emulator (`emulator-5580`), actual IME window over the setup test field.
   A throwaway real Parakeet server receives say-generated speech through PcmCapture
@@ -20,7 +22,27 @@ credential or personal text is included.
   content scrolls; Diagnostics is reachable throughout.
 - `panel-{idle,connecting,listening,finalizing,error,raw,debug}-{light,dark}.png`:
   shared Material panel for the optional accessibility mic (700 px listening,
-  360 px other states). This optional surface is separate from the full keyboard.
+  360 px other states). No status breadcrumb: a line appears only for an error or a fix prompt, and
+  "Fix setup" is offered only when the pairing or microphone permission is actually broken.
+  This optional surface is separate from the full keyboard.
+- `settings-{top,top-font-200,connection,dictation,keyboard,feedback,notes,history,about,two-pane,two-pane-about}-*.png`:
+  the settings tree (spec §D): a top level of seven category rows in one grouped card, each with an icon and a
+  live one-line summary, and one detail page per category behind them (medium top bars collapse on scroll).
+  Paragraph help lives behind the ⓘ on the row; Notes retention and kept audio sit under Notes, dictation
+  history under Privacy & history. `two-pane` shows the Fold inner screen's list-and-detail layout.
+  Regenerate with `./gradlew -Pchirp.updateScreenshots testDebugUnitTest --tests '*SettingsRenderTest*'`.
+- `history-{list,empty,off}-{cover,inner}-{light,dark}.png`: the History tab, titled "Dictation history" with
+  one line saying what it holds. Flat list rows lead with the target app's icon (PackageManager by label, with a
+  neutral glyph fallback), long-press offers "Add to note" through the notes library, and search, day groups,
+  the raw comparison, private Copy and swipe-delete Undo are unchanged. Rendered by `ShellRenderTest`.
+- `onboarding-{welcome,keyboard,microphone,pair}-{light,dark}.png` plus `-font-200-*`, `keyboard-done-*`,
+  `pair-{failed,checking,connected}-*`: the four-page wizard. The welcome page carries the approved full-bleed
+  pond art edge to edge and introduces Notes as well as dictation; every page keeps one koi primary button and
+  the segmented progress. Rendered by `VoiceUiTest`.
+- `scratchpad-{idle,listening,text}-{light,dark}.png`: the Scratchpad as a borderless blank page — Copy/Share
+  in the top bar, "Save as note" and Clear in the overflow, the style choices as one connected group above the
+  large mic (Ripple rings while listening, Stop in `record`), and the one privacy line only while the page is
+  blank. Rendered by `ScratchpadRenderTest` with animator scale 0 (the settled ripple).
 
 Regenerate the Robolectric artifacts from `android/`:
 
@@ -37,6 +59,34 @@ UWB HAL crash loop; the helper checks specifically for Chirp Java/native crashes
 These are review artifacts, not pixel-golden assertions or Galaxy hardware battery,
 latency or microphone measurements. Samsung editor quirks and folding still need
 operator acceptance on the phone.
+
+### Secondary surfaces validation (2026-10-25, #160)
+
+Rebased on the Notes-first shell from #163. Refreshed and reviewed the Settings,
+History, onboarding, Scratchpad, keyboard and voice-panel renders, including light
+and dark, cover and inner layouts, and onboarding/Settings at 200% font. Scratchpad's
+listening fixture now disables animation and asserts the active Stop control before
+capturing, so the render cannot silently capture a connection timeout instead.
+
+`./gradlew lint testDebugUnitTest assembleDebug assembleRelease` passed: 964 test
+cases, zero failures/errors, two opt-in skips. Regression coverage includes live
+Settings summaries while the detail pane stays open, preserving note duration/name
+when appending from History, and quarantining an unreadable note while saving the
+dictation as a new note with a new ID. The smoke helper follows Notes → Dictate →
+the borderless Scratchpad, and accepts an explicit release artifact with
+`CHIRP_SMOKE_APK`.
+
+Emulator smoke and TalkBack remain **blocked**. The shared `emulator-5580` was
+unreachable and was left untouched. A separately owned read-only `chirp-fold` on
+`emulator-5600` booted. The unsigned release artifact was signed in `/tmp` with the
+standard Android debug key for this check; no keystore or signing configuration is
+part of this change. After clearing the disposable instance's Chirp install to
+resolve `INSTALL_FAILED_UPDATE_INCOMPATIBLE`, the final attempt reached onboarding
+but lost ADB during the wait for “Scan code” (`ADB operation failed: shell`).
+TalkBack could not push its probe because `emulator-5600` was no longer present.
+The owned emulator had already exited at cleanup; other instances were untouched.
+No further emulator retries were made, and no successful smoke/TalkBack result or
+new emulator captures are claimed for this change.
 
 ## Design components
 

@@ -35,7 +35,7 @@ class SettingsRenderTest {
         val first = bitmap.getPixel(0, 0)
         assertTrue("$name is blank", (0 until bitmap.height step 7).any { y -> (0 until bitmap.width step 7).any { x -> bitmap.getPixel(x, y) != first } })
         if (cropAt != null) {
-            val bottom = compose.onAllNodesWithText(cropAt).fetchSemanticsNodes().last().boundsInRoot.bottom.toInt() + 64
+            val bottom = compose.onAllNodesWithText(cropAt).fetchSemanticsNodes().lastOrNull()?.boundsInRoot?.bottom?.toInt()?.plus(64) ?: bitmap.height
             bitmap = Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, minOf(bottom, bitmap.height))
         }
         File(output, "settings-$name.png").outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
@@ -61,12 +61,12 @@ class SettingsRenderTest {
 
     @Config(qualifiers = "w411dp-h2400dp-mdpi") @Test fun `top level in light and dark`() {
         start()
-        for (night in listOf(false, true)) shot("top", null, night, cropAt = "Diagnostics")
+        for (night in listOf(false, true)) shot("top", null, night, cropAt = "About")
     }
 
     @Config(qualifiers = "w411dp-h5000dp-mdpi") @Test fun `top level at 200 percent font`() {
         start()
-        shot("top-font-200", null, false, 2f, cropAt = "Diagnostics")
+        shot("top-font-200", null, false, 2f, cropAt = "About")
     }
 
     @Test fun `every detail page in light and dark`() {
@@ -78,10 +78,10 @@ class SettingsRenderTest {
         start()
         for (night in listOf(false, true)) shot("two-pane", null, night)
         compose.onAllNodesWithContentDescription("Back").assertCountEquals(0)
-        compose.onNodeWithText("Mac connection").assertExists()
-        compose.onNodeWithText("Updates").performScrollTo().performClick()
+        assertTrue(compose.onAllNodesWithText("Connection").fetchSemanticsNodes().isNotEmpty())   // the list row; the detail title says it too
+        compose.onNodeWithText("About").performClick()
         compose.onNodeWithText("Check for updates").assertExists()
         compose.onNodeWithText("Diagnostics").assertExists()
-        shot("two-pane-updates", SettingsPage.Updates, false)
+        shot("two-pane-about", SettingsPage.About, false)
     }
 }

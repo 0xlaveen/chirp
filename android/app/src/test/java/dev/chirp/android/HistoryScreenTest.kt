@@ -145,6 +145,44 @@ class HistoryScreenTest {
         compose.waitUntil(5000) { !store.enabled && !File(context.filesDir, DictationHistory.FILE_NAME).exists() }
     }
 
+    @Test fun `long press offers add to note which creates then appends through the library`() {
+        store.enable()
+        val notes = NotesSessions(context, SoftwareHistoryKeys())
+        record("Meet at the pier at noon")
+        record("Pick up oat milk, lemons and coffee beans", at = now - hour)
+        compose.setContent { dev.chirp.android.ui.ChirpTheme(colour = AppColour.POND) { HistoryScreen(store, { now }, ZoneOffset.UTC, notes = notes) } }
+        reveal("Pick up oat milk, lemons and coffee beans")
+        compose.onNodeWithText("Meet at the pier at noon").performTouchInput { longClick() }
+        compose.onNodeWithText("Add to note").performClick()
+        compose.waitUntil(5000) { notes.entries().size == 1 }
+        assertEquals("Meet at the pier at noon", notes.entries().single().title)
+        compose.onNodeWithText("Saved as a new note").assertExists()
+        compose.onNodeWithText("Pick up oat milk, lemons and coffee beans").performTouchInput { longClick() }
+        compose.onNodeWithText("Add to note").performClick()
+        compose.waitUntil(5000) { notes.entries().single().snippet.contains("oat milk") }
+        assertEquals("Pick up oat milk, lemons and coffee beans", notes.entries().single().snippet)
+        assertEquals("One note, appended", 1, notes.entries().size)
+        val body = NotesDocument.fromJson(notes.open(notes.entries().single().id)!!.document).text
+        assertEquals("Meet at the pier at noon\n\nPick up oat milk, lemons and coffee beans", body)
+        compose.onNodeWithText("Added to your latest note").assertExists()
+    }
+
+    @Test fun `add to note through the accessibility action when the library is off says so`() {
+        store.enable()
+        val notes = NotesSessions(context, SoftwareHistoryKeys()).also { it.disable() }
+        record("Meet at the pier at noon")
+        compose.setContent { dev.chirp.android.ui.ChirpTheme(colour = AppColour.POND) { HistoryScreen(store, { now }, ZoneOffset.UTC, notes = notes) } }
+        reveal("Meet at the pier at noon")
+        val row = compose.onNode(hasText("Meet at the pier at noon") and hasClickAction()).fetchSemanticsNode()
+        compose.runOnIdle { row.config[androidx.compose.ui.semantics.SemanticsActions.CustomActions].first { it.label == "Add to note" }.action() }
+        compose.waitUntil(5000) { compose.onAllNodes(hasText("Notes are off", substring = true)).fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithText("Notes are off", substring = true).assertExists()
+        assertTrue(notes.entries().isEmpty())
+        assertPrivate("pier")
+        assertTrue(notes.entries().isEmpty())
+        assertPrivate("pier")
+    }
+
     @Test fun `the menu opens history settings with retention`() {
         store.enable()
         show()

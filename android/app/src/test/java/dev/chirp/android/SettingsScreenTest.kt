@@ -43,51 +43,88 @@ class SettingsScreenTest {
 
     private fun assertOnce(label: String) = compose.onAllNodesWithText(label).assertCountEquals(1)
 
-    /** Every control reachable before this change, by the label it had; each must exist exactly once across the whole tree. */
+    private fun open(page: SettingsPage) = compose.onNodeWithText(page.title).performScrollTo().performClick()
+
+    /** Every control reachable by the label it has, one page per category; each must exist somewhere in that page's tree. */
     private val tree = linkedMapOf<SettingsPage?, List<String>>(
-        null to listOf("Clean-up · Correction on Mac", "Styles", "Stop dictation", "Spoken commands", "Press Send after dictating", "Look", "Swipe typing",
-            "Hardware keyboard shortcut", "Larger mic on the inner screen", "Layouts, languages & typing", "Haptic cues", "Sound cues",
-            "Dictation history", "Notes", "Floating mic (Accessibility)", "Updates", "Diagnostics"),
+        null to listOf("Connection", "Dictation", "Keyboard", "Feedback & look", "Notes", "Privacy & history", "About"),
         SettingsPage.Connection to listOf("Check connection", "Change pairing", "Forget pairing", "Use this phone's recogniser"),
-        SettingsPage.Look to listOf("Keyboard look", "App colours"),
-        SettingsPage.SwipeTyping to listOf("Add gesture library…"),
-        SettingsPage.History to listOf("Keep dictation history on this phone"),
+        SettingsPage.Dictation to listOf("Clean-up · Correction on Mac", "Styles", "Stop dictation", "Spoken commands",
+            "Press Send after dictating", "Floating mic (Accessibility)"),
+        SettingsPage.Keyboard to listOf("Keyboard look", "Swipe typing", "Hardware keyboard shortcut", "Larger mic on the inner screen",
+            "Layouts, languages & typing"),
+        SettingsPage.Feedback to listOf("App colours", "Haptic cues", "Sound cues"),
         SettingsPage.Notes to listOf("Save battery while the screen is off", "Keep a recovery copy until notes are saved", "Keep notes on this phone"),
-        SettingsPage.FloatingMic to listOf("Turn on floating mic"),
-        SettingsPage.Updates to listOf("Check for updates"),
-        SettingsPage.Diagnostics to listOf("Debug overlay (timings only)", "Copy diagnostics", "Clear timings"),
+        SettingsPage.History to listOf("Keep dictation history on this phone", "What Chirp keeps"),
+        SettingsPage.About to listOf("Check for updates", "Debug overlay (timings only)", "Copy diagnostics", "Clear timings"),
     )
 
-    @Test fun `every setting is reachable from the list exactly once, and back returns to the list`() {
+    @Test fun `every setting is reachable from its category page exactly once, and back returns to the list`() {
         val (state, history, updates) = settingsFixture()
         show(state, history, updates)
-        val rows = mapOf(SettingsPage.Connection to "Connected · mac.example.test", SettingsPage.Look to "Look", SettingsPage.SwipeTyping to "Swipe typing",
-            SettingsPage.History to "Dictation history", SettingsPage.Notes to "Notes", SettingsPage.FloatingMic to "Floating mic (Accessibility)", SettingsPage.Updates to "Updates",
-            SettingsPage.Diagnostics to "Diagnostics")
         tree.getValue(null).forEach(::assertOnce)
-        for ((page, row) in rows) {
-            compose.onNodeWithText(row).performScrollTo().performClick()
+        for (page in SettingsPage.entries) {
+            open(page)
             assertTrue(compose.onAllNodes(hasText(page.title).and(SemanticsMatcher.keyIsDefined(SemanticsProperties.Heading))).fetchSemanticsNodes().isNotEmpty())
-            tree.getValue(page).forEach { label -> assertTrue("$label missing on ${page.title}", compose.onAllNodesWithText(label).fetchSemanticsNodes().isNotEmpty()) }
+            for (label in tree.getValue(page)) {
+                assertTrue("$label missing on ${page.title}", compose.onAllNodesWithText(label).fetchSemanticsNodes().isNotEmpty() ||
+                    run { compose.onNodeWithText(page.title).performScrollTo(); compose.onAllNodesWithText(label).fetchSemanticsNodes().isNotEmpty() })
+            }
             compose.onNodeWithContentDescription("Back").performClick()
             assertTrue("back from ${page.title} shows the list", compose.onAllNodesWithText("Settings").fetchSemanticsNodes().isNotEmpty())
-            assertOnce("Updates")
+            assertOnce("About")
         }
     }
 
-    @Test fun `every detail page fits one screen at 100 percent font`() {
+    @Test fun `each category row carries a live one-line summary`() {
         val (state, history, updates) = settingsFixture()
-        val shown = androidx.compose.runtime.mutableStateOf(SettingsPage.entries.first())
-        compose.setContent { ChirpTheme(colour = AppColour.POND) { androidx.compose.runtime.key(shown.value) {
-            SettingsScreen(state, SettingsActions(), shown.value, history, updates) } } }
-        for (page in SettingsPage.entries) {
-            compose.runOnIdle { shown.value = page }
-            compose.waitForIdle()
-            // Notes holds the library, retention and kept-audio controls; the settings redesign gives it sub-pages.
-            if (page == SettingsPage.Notes) continue
-            val scroll = compose.onAllNodes(SemanticsMatcher.keyIsDefined(SemanticsProperties.VerticalScrollAxisRange)).fetchSemanticsNodes().first()
-            assertEquals("${page.title} scrolls", 0f, scroll.config[SemanticsProperties.VerticalScrollAxisRange].maxValue(), 0.5f)
-        }
+        show(state, history, updates)
+        compose.onNodeWithText("Parakeet · clean-up on Mac").assertExists()                       // Connection
+        compose.onNodeWithText("Clean-up on · stops on tap").assertExists()  // Dictation
+        compose.onNodeWithText("Battery saver · recovery copy · keeps notes").assertExists()      // Notes (defaults)
+        compose.onNodeWithText("Dictation history off").assertExists()                            // Privacy & history
+        compose.onNodeWithText("Chirp ${BuildConfig.VERSION_NAME}").assertExists()                // About
+    }
+
+    @Config(qualifiers = "w840dp-h900dp-mdpi")
+    @Test fun `two pane summaries update while their detail page stays open`() {
+        val (state, history, updates) = settingsFixture()
+        show(state, history, updates)
+        open(SettingsPage.Dictation)
+        compose.onNodeWithText("Clean-up · Correction on Mac").performClick()
+        compose.onNodeWithText("Clean-up off · stops on tap").assertExists()
+        open(SettingsPage.Feedback)
+        compose.onNodeWithText("Haptic cues").performScrollTo().performClick()
+        compose.onNodeWithText("Pond · haptic cues off").assertExists()
+        open(SettingsPage.History)
+        compose.onNodeWithText("Keep dictation history on this phone").performClick()
+        compose.onNodeWithText("History on · keeps 7 days").assertExists()
+    }
+
+    @Test fun `paragraph help sits behind an info sheet, not on the row`() {
+        val (state, history, updates) = settingsFixture()
+        show(state, history, updates)
+        open(SettingsPage.Dictation)
+        compose.onNodeWithText("Off by default").assertExists()
+        compose.onNodeWithText("Ending a dictation with \"new line\" or \"new paragraph\" types a line break instead of the words.").assertDoesNotExist()
+        compose.onNodeWithContentDescription("About Spoken commands").performClick()
+        compose.onNodeWithText("Ending a dictation with \"new line\" or \"new paragraph\" types a line break instead of the words.").assertExists()
+        compose.onNodeWithText("Close").performClick()
+        compose.onNodeWithText("Ending a dictation with \"new line\" or \"new paragraph\" types a line break instead of the words.").assertDoesNotExist()
+    }
+
+    @Test fun `notes retention and audio live under Notes, history retention under Privacy and history`() {
+        val (state, history, updates) = settingsFixture()
+        show(state, history, updates)
+        open(SettingsPage.Notes)
+        compose.onNodeWithText("Delete notes older than").performScrollTo().assertExists()
+        compose.onNodeWithText("Keep audio with notes").performScrollTo().assertExists()
+        compose.onNodeWithContentDescription("Back").performClick()
+        open(SettingsPage.History)
+        compose.onNodeWithText("Keep for").assertDoesNotExist()   // history is off: only the opt-in row shows
+        compose.onNodeWithText("Keep dictation history on this phone").performClick()
+        compose.onNodeWithText("Keep for").assertExists()
+        compose.onNodeWithText("Keep audio with notes").assertDoesNotExist()
     }
 
     @Test fun `an unreachable Mac offers Open Tailscale only when it is installed`() {
@@ -129,7 +166,7 @@ class SettingsScreenTest {
         var exits = 0
         show(state, history, updates, onExit = { exits++ })
         val dispatcher = compose.activity.onBackPressedDispatcher
-        compose.onNodeWithText("Diagnostics").performScrollTo().performClick()
+        open(SettingsPage.About)
         compose.onNodeWithText("Copy diagnostics").assertExists()
         compose.runOnIdle { dispatcher.onBackPressed() }
         compose.onNodeWithText("Copy diagnostics").assertDoesNotExist()
@@ -141,20 +178,20 @@ class SettingsScreenTest {
     @Test fun `without an exit handler the list leaves back to the system`() {
         val (state, history, updates) = settingsFixture()
         show(state, history, updates)
-        compose.onNodeWithText("Floating mic (Accessibility)").performScrollTo().performClick()
+        open(SettingsPage.Dictation)
         compose.runOnIdle { assertTrue(compose.activity.onBackPressedDispatcher.hasEnabledCallbacks()) }
         compose.onNodeWithContentDescription("Back").performClick()
         compose.runOnIdle { assertFalse(compose.activity.onBackPressedDispatcher.hasEnabledCallbacks()) }
     }
 
-    @Test fun `clean-up sits at the top of the Dictation group and only its toggle records an explicit choice`() {
+    @Test fun `the clean-up switch records an explicit choice only when toggled`() {
         val (state, history, updates) = settingsFixture()
         show(state, history, updates)
+        open(SettingsPage.Dictation)
         compose.onNodeWithText("Clean-up · Correction on Mac").assertIsDisplayed().assertIsOn()
-        compose.onNodeWithText("Polishes punctuation and filler words on your Mac; text never leaves it").assertIsDisplayed()
-        compose.onNodeWithText("Haptic cues").performScrollTo().performClick()
+        compose.onNodeWithText("Polishes punctuation and filler words on your Mac").assertIsDisplayed()
         compose.runOnIdle { assertFalse(context.getSharedPreferences("chirp", 0).contains("correction_explicit")) }
-        compose.onNodeWithText("Clean-up · Correction on Mac").performScrollTo().performClick()
+        compose.onNodeWithText("Clean-up · Correction on Mac").performClick()
         compose.runOnIdle { assertFalse(SettingsStore(context).correction); assertTrue(context.getSharedPreferences("chirp", 0).getBoolean("correction_explicit", false)) }
     }
 
@@ -162,6 +199,7 @@ class SettingsScreenTest {
         val (state, history, updates) = settingsFixture()
         state.health = Health(true, false, false, false, null)
         show(state, history, updates)
+        open(SettingsPage.Dictation)
         compose.onNodeWithText("Mac has clean-up off").assertIsDisplayed()
         compose.onNodeWithText("Clean-up · Correction on Mac").assertDoesNotExist()
     }
@@ -169,6 +207,7 @@ class SettingsScreenTest {
     @Test fun `stop dictation no longer promises 119 seconds`() {
         val (state, history, updates) = settingsFixture()
         show(state, history, updates)
+        open(SettingsPage.Dictation)
         compose.onNodeWithText("Stop dictation").performScrollTo()
         compose.onNodeWithText("Learn more").performScrollTo().performClick()
         compose.onNodeWithText("Tap the stop button to finish. Either way, a countdown starts 15 seconds before the limit and dictation ends at 10 minutes.").assertExists()
