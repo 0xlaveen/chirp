@@ -312,8 +312,9 @@ def main():
                 with module["secure_settings"](probe_helpers):
                     if opt.keepkb_check:
                         module["check"](probe_helpers, work, output, url, token)
-                    if opt.bubble_check:
-                        # #167: the floating mic bubble, after (or without) the onboarding checks.
+                    if opt.bubble_check or opt.keepkb_check:
+                        # #167: the floating mic bubble is the keep-keyboard path's primary surface, so --keepkb-check
+                        # runs it after the onboarding checks; --bubble-check runs it alone.
                         bubble = runpy.run_path(str(Path(__file__).with_name("emulator-bubble-check.py")))
                         bubble["check"](probe_helpers, work, output, url, token, cleanup_warm=True, standalone=True)
                 return

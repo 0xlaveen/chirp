@@ -450,6 +450,16 @@ Use a disposable **read-only** `chirp-fold` instance on your own free even port.
 
 `--keepkb-check` verifies the fresh choice, disclosure, service-details and app-info deep links, returned-off help, enable/resume, pairing without changing Gboard, Settings switching and picker, and bubble hiding with Chirp selected. It saves/restores Accessibility settings and the default IME. Run `emulator-talkback.py --keepkb-check` for the actual TalkBack radio-card contract. The debug-only `EditorProbeActivity` supplies plain, password, unsupported and WebView fields, plus clipboard/recognizer length reports. It never ships in release. Restricted sideload blocking, Advanced Protection enrollment and One UI policy require [device acceptance](../docs/android-device-acceptance.md).
 
+It then runs the floating mic bubble checks (`emulator-bubble-check.py`; `--bubble-check` runs them alone, with Gboard, the service, synthetic speech and pairing set up for you). They cover:
+
+- show and hide, a drag that never starts the microphone service, and the dropped position kept per posture;
+- dictation inserted at the caret, and Use raw after warmed clean-up;
+- a field changed while finishing ending in Ready to copy with a sensitive clip;
+- copy mode handing the words to the Scratchpad, and the WebView outcome;
+- the custom TalkBack actions, Allow (microphone revoked) and Check again (server stopped).
+
+After every case it asserts no foreground service, recording client or crash. Captures go to `docs/screenshots/android/emulator-floating-*.png`. Run `emulator-talkback.py --bubble-check` on the release APK for the bubble under actual TalkBack.
+
 ```sh
 source ~/.local/share/chirp-android/env.sh
 python3 android/scripts/emulator-check.py \
