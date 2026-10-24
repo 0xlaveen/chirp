@@ -40,6 +40,11 @@ public enum NotesStatus {
         paused ? "\(key) to resume" : "\(key) to record · \(key) again to \(pause ? "pause" : "stop")"
     }
     public static let stopped = "Stopped"
+    /// The server cannot be reached or refused the token, so the banner offers Settings › Server (a busy or slow
+    /// server is not something Settings fixes).
+    public static func errorOpensServerSettings(_ message: String) -> Bool {
+        ["Server unreachable", "Server rejected", "token"].contains { message.contains($0) }
+    }
     /// "Server offline — keeping audio (4:12) · retrying": segments wait in memory for the server.
     public static func offline(kept: TimeInterval?) -> String {
         "Server offline — keeping audio" + (kept.map { " (\(clock($0)))" } ?? "") + " · retrying"
@@ -251,6 +256,8 @@ public final class NotesModel {
     public var onRecoveryDiscard: () -> Void = {}
     public var onManageModels: () -> Void = {}
     public var onFixServer: () -> Void = {}
+    /// The error banner's Server Settings… (Settings › Server).
+    public var onServerSettings: () -> Void = {}
     public var onStructureToggle: (Bool) -> Void = { _ in }
     public var onTabChange: (NotesTab) -> Void = { _ in }
     public var onSpeakerLabelsToggle: (Bool) -> Void = { _ in }

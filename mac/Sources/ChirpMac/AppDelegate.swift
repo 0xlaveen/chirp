@@ -80,6 +80,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         settingsWindow.serverNotice = { [serverWatch] in (serverWatch.notice, serverWatch.message) }
         settingsWindow.onFixServer = { [serverWatch] in serverWatch.fix() }
         notes.model.onFixServer = { [serverWatch] in serverWatch.fix() }
+        notes.model.onServerSettings = { [settingsWindow] in settingsWindow.show(tab: .server) }
         serverWatch.onFixed = { [controller] in Task { await controller.refreshHealth() } }
         serverWatch.onChange = { [weak self] in
             guard let self else { return }

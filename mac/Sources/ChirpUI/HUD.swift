@@ -306,6 +306,7 @@ public struct HUDView: View {
                         .background(HUDColors.badge, in: Capsule())
                         .foregroundStyle(.white)
                         .fixedSize()
+                        .help(MenuContent.debugRetentionHelp)
                 }
             }
             let shown = HUDText.tail(stable: model.stable, unstable: model.unstable)
