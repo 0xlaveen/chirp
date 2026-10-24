@@ -300,7 +300,7 @@ public struct HUDView: View {
                         .fixedSize()
                 }
                 if model.debugRetention {
-                    Text("DEBUG: recordings kept")
+                    Text(MenuContent.debugRetention)
                         .font(.system(size: 10, weight: .bold))
                         .padding(.horizontal, 6).padding(.vertical, 2)
                         .background(HUDColors.badge, in: Capsule())

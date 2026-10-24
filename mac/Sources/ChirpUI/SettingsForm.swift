@@ -18,7 +18,7 @@ public struct SettingsState: Sendable {
     public var serverURL = ServerConfig.defaultURL.absoluteString
     public var tokenPresent = true
     public var launch: LaunchState = .off
-    /// General: the HUD's word waveform (each word's audio above it). Off by default.
+    /// Dictation: the HUD's word waveform (each word's audio above it). Off by default.
     public var wordWaveform = false
     /// Notes: Live Notes keeps a recovery copy of unsaved notes (on by default).
     public var notesRecoveryCopy = true
@@ -188,7 +188,7 @@ public final class SettingsForm {
     private var shownMicrophones: [String]?
     public let serverURL = NSTextField(string: "")
     public let launch = NSButton(checkboxWithTitle: "Launch Chirp at login", target: nil, action: nil)
-    /// General: the HUD's word waveform.
+    /// Dictation: the HUD's word waveform.
     public let wordWaveform = NSButton(checkboxWithTitle: "Word waveform overlay", target: nil, action: nil)
     /// Notes: Live Notes' recovery copy of unsaved notes.
     public let notesRecoveryCopy = NSButton(checkboxWithTitle: NotesStatus.recoverySwitch, target: nil, action: nil)
@@ -215,6 +215,7 @@ public final class SettingsForm {
     /// Server: "Restart server" or "Use Chirp’s managed server instead", shown only for an out-of-date server.
     public let serverFixButton = NSButton(title: ServerFix.restart.buttonTitle, target: nil, action: nil)
     private let serverDetail = SettingsForm.help("")
+    private let modelsHelp = SettingsForm.help("")
     public let micButton = NSButton(title: "Fix…", target: nil, action: nil)
     public let accessibilityButton = NSButton(title: "Fix…", target: nil, action: nil)
     /// Under the checkbox: what it does, or why the last change failed.
@@ -227,7 +228,7 @@ public final class SettingsForm {
     public let showChanges = NSButton(checkboxWithTitle: "Show changes after clean-up", target: nil, action: nil)
     public let offerRaw = NSButton(checkboxWithTitle: "Offer “Use raw” for 5 seconds after clean-up", target: nil, action: nil)
     public let appStyles = AppStylesTable()
-    /// Clean-up: keeps the server's clean-up model in memory. Its state, memory cost and any error sit under it.
+    /// Server: keeps the server's clean-up model in memory. Its state, memory cost and any error sit under it.
     public let keepLoaded = NSButton(checkboxWithTitle: KeepLoaded.title, target: nil, action: nil)
     private let keepLoadedStatus = StatusLine()
     private let keepLoadedHelp = SettingsForm.help("")
@@ -365,7 +366,7 @@ public final class SettingsForm {
             row("Token:", tokenStatus, help: tokenHelp),
             row("Status:", serverStack),
             row("Clean-up:", keepLoadedStack),
-            row("Models:", modelsButton, help: Self.help("Download speech and local Qwen models, see progress, and start this Mac's server.")),
+            row("Models:", modelsButton, help: modelsHelp),
             row("Doctor:", doctorButton, help: Self.help("Copies the command that checks the server, to run in Terminal.")),
         ], groups: [3])
 
@@ -566,6 +567,8 @@ public final class SettingsForm {
         serverDetail.stringValue = detail
         serverDetail.isHidden = detail.isEmpty
         modelsButton.isEnabled = ServerConfig.load(urlString: s.serverURL).isLoopback
+        modelsHelp.stringValue = modelsButton.isEnabled ? "Download speech and local Qwen models, see progress, and start this Mac's server."
+                                                        : "Only for a server on this Mac: the URL above points to another host."
         fillMicrophoneMenu(s.inputs, defaultInput: s.defaultInput, chosen: s.chosenInputUID)
         speakerStatus.set(symbol: s.speakerModelDownloaded ? "checkmark.circle.fill" : "circle", tone: s.speakerModelDownloaded ? .ok : .normal,
                           text: s.speakerModelDownloaded ? "Speaker model on this Mac" : "Speaker model not downloaded")

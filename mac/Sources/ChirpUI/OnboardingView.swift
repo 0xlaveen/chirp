@@ -164,7 +164,7 @@ public final class OnboardingView: NSView {
         case .welcome:
             ("", "Press a hotkey in any app, talk, and your words appear where you’re typing. Setup takes a minute: Chirp needs the microphone, Accessibility and a speech server.")
         case .microphone:
-            ("mic.fill", "Chirp listens only while you dictate. Audio goes to your own server and is never stored.")
+            ("mic.fill", "Chirp listens only while you dictate or take Live Notes. Audio goes to your own server and is never stored.")
         case .accessibility:
             ("text.cursor", "Lets Chirp type into the app you’re using. Without it Chirp copies the text and you press ⌘V.")
         case .server:

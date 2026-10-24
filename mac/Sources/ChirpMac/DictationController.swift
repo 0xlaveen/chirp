@@ -282,6 +282,13 @@ final class DictationController {
                 guard let self, self.epoch == myEpoch else { return }
                 self.send(.silence)
             }
+        } onLimit: { [weak self] in
+            // Finish just under the server's 120 s cap, as the phones do, so the words are inserted, not lost.
+            Task { @MainActor in
+                guard let self, self.epoch == myEpoch, self.machine.state == .listening else { return }
+                chirpLog.info("dictation limit reached seconds=\(Int(CaptureSink.limitSeconds), privacy: .public)")
+                self.send(.toggle)
+            }
         }
         do {
             try capture.start(onFailure: { [weak self] in
@@ -327,7 +334,7 @@ final class DictationController {
         case .closed(let reason):
             if machine.state == .correcting { failCorrection(); return }
             if [.connecting, .listening, .finalizing].contains(machine.state) {
-                send(.failed(reason ?? "Connection closed"))
+                send(.failed(reason == "Utterance too long" ? Self.tooLong : reason ?? "Connection closed"))
             }
         }
     }
@@ -362,11 +369,14 @@ final class DictationController {
         send(.correctionFailed)
     }
 
+    /// The server's `too_long`, or the local 120 s cap tripping first.
+    static let tooLong = "Dictations are limited to 2 minutes"
+
     private static func friendly(code: String, message: String) -> String {
         switch code {
         case "auth": "Server rejected the token (check ~/.config/chirp/token)"
         case "busy": "Server is busy — try again"
-        case "too_long": "Utterance too long"
+        case "too_long": tooLong
         case "bad_audio": "Didn't catch that — try again"
         case "bad_request": "Clean-up prompt is too long"
         case "engine": "Speech engine hiccup — try again"
@@ -532,28 +542,38 @@ final class CaptureSink: @unchecked Sendable {
     private let onSilence: @Sendable () -> Void
     private let lock = NSLock()
     private let onAutoStop: @Sendable () -> Void
+    private let onLimit: @Sendable () -> Void
+    private var limitSent = false
     private var guardState = SilenceGuard()
     private var autoStop: AutoStopDetector?
     private var clock: TimeInterval = 0
 
     init(session: StreamSession, autoStop: AutoStopDetector? = nil, onLevel: @escaping @Sendable (Level) -> Void,
-         onSilence: @escaping @Sendable () -> Void, onAutoStop: @escaping @Sendable () -> Void = {}) {
+         onSilence: @escaping @Sendable () -> Void, onAutoStop: @escaping @Sendable () -> Void = {},
+         onLimit: @escaping @Sendable () -> Void = {}) {
         self.session = session
         self.autoStop = autoStop
         self.onLevel = onLevel
         self.onSilence = onSilence
         self.onAutoStop = onAutoStop
+        self.onLimit = onLimit
     }
+
+    /// Seconds of audio after which the dictation finishes by itself (the server refuses more than 120).
+    static let limitSeconds: TimeInterval = 119
 
     func handle(_ frame: Data) {
         session.sendAudio(frame)
         let level = Level(pcm16: frame)
-        let (silent, paused) = lock.withLock { () -> (Bool, Bool) in
+        let (silent, paused, limit) = lock.withLock { () -> (Bool, Bool, Bool) in
             clock += Double(frame.count / 2) / PCMConverter.sampleRate
-            return (guardState.feed(level, at: clock), autoStop?.feed(level, at: clock) ?? false)
+            let limit = !limitSent && clock >= Self.limitSeconds
+            if limit { limitSent = true }
+            return (guardState.feed(level, at: clock), autoStop?.feed(level, at: clock) ?? false, limit)
         }
         onLevel(level)
         if silent { onSilence() }
         if paused { onAutoStop() }
+        if limit { onLimit() }
     }
 }

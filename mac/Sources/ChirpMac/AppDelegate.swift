@@ -37,7 +37,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return false
     }
 
-    /// Dock menu: Open Notes, New Notes, Start/Stop Recording (the window list is AppKit's).
+    /// Dock menu: Open Notes, New Notes, Start/Stop Recording, Pause while recording (the window list is AppKit's).
     func applicationDockMenu(_ sender: NSApplication) -> NSMenu? {
         let menu = NSMenu()
         menu.addItem(NSMenuItem(title: "Open Notes", action: #selector(dockOpenNotes), keyEquivalent: ""))
@@ -48,12 +48,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                                 action: #selector(dockToggleRecording), keyEquivalent: "")
         record.isEnabled = notes.isRecording || notes.isPaused || (!notes.isActive && !controller.state.isActive)
         menu.addItem(record)
+        if notes.isRecording { menu.addItem(NSMenuItem(title: "Pause Recording", action: #selector(dockPauseRecording), keyEquivalent: "")) }
         for item in menu.items { item.target = self }
         return menu
     }
     @objc private func dockOpenNotes() { notesWindow.show() }
     @objc private func dockNewNotes() { notesWindow.newNotes() }
     @objc private func dockToggleRecording() { notes.toggle(fromHotkey: false) }
+    @objc private func dockPauseRecording() { notes.togglePauseFromHotkey() }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         menu = MenuBarController(

@@ -994,7 +994,7 @@ private struct NotesFooter: View {
                 .truncationMode(.tail)
         }
         if model.debugRetention {
-            Text("DEBUG: recording kept")
+            Text(MenuContent.debugRetention)
                 .font(.caption.weight(.bold))
                 .foregroundStyle(.white)
                 .padding(.horizontal, 6)
