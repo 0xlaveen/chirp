@@ -51,7 +51,7 @@ flowchart LR
         APP["Chirp for Mac<br/>menu bar · HUD · Live Notes"]
         APP <-->|"127.0.0.1 only"| SRV
     end
-    AND["Chirp Keyboard<br/>Android"] <-->|"your tailnet<br/>(Tailscale Serve, HTTPS)"| SRV
+    AND["Chirp for Android<br/>app + keyboard"] <-->|"your tailnet<br/>(Tailscale Serve, HTTPS)"| SRV
     IOS["Chirp for iPhone and iPad<br/>app + keyboard"] <-->|"your tailnet<br/>(Tailscale Serve, HTTPS)"| SRV
 ```
 
@@ -141,7 +141,7 @@ For iPhone or iPad, point the agent at [ios/README.md](ios/README.md) → Instal
 ```
 server/   Speech server: Python 3.13, Starlette, parakeet-mlx (uv project) + tests and benchmarks
 mac/      Chirp for Mac: Swift 6 / SwiftPM / AppKit menu-bar app
-android/  Chirp Keyboard: HeliBoard-based Android IME + setup app
+android/  Chirp for Android: the app + Chirp Keyboard (HeliBoard-based IME)
 ios/      Chirp for iPhone and iPad: SwiftUI app + dictation keyboard
 docs/     Architecture, benchmarks, privacy, testing, milestones (indexed in docs/README.md)
 scripts/  Standalone Mac installer and the cross-component end-to-end check
@@ -152,4 +152,4 @@ scripts/  Standalone Mac installer and the cross-component end-to-end check
 ## Licensing
 
 - **Chirp's own code** (server, Mac app) has no license file yet; it is a personal-use project. No license is claimed for it here.
-- **Chirp Keyboard for Android** combines GPL-3.0 HeliBoard code with Chirp's Android client. This is a personal-use build; the corresponding source is available in this repository, and upstream copyright and license notices are kept intact. See the [pinned upstream record](android/keyboard/UPSTREAM.md) and [Android build instructions](android/README.md).
+- **Chirp for Android** combines GPL-3.0 HeliBoard code with Chirp's Android client. This is a personal-use build; the corresponding source is available in this repository, and upstream copyright and license notices are kept intact. See the [pinned upstream record](android/keyboard/UPSTREAM.md) and [Android build instructions](android/README.md).

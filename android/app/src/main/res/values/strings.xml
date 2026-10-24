@@ -1,5 +1,7 @@
 <resources>
-    <string name="app_name">Chirp Keyboard</string>
+    <string name="app_name">Chirp</string>
+    <!-- The input method in Android's keyboard picker and settings; the app itself is "Chirp". -->
+    <string name="ime_name">Chirp Keyboard</string>
     <string name="debug_retention">DEBUG: recordings kept on Mac</string>
     <string name="history_title">Dictation history</string>
     <string name="scratchpad_name">Chirp Scratchpad</string>

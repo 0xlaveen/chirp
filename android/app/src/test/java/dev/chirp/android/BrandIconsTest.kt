@@ -18,6 +18,16 @@ import org.robolectric.annotation.GraphicsMode
 @Config(sdk = [31, 37])
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 class BrandIconsTest {
+    @Test fun `the app is called Chirp and only the input method Chirp Keyboard`() {
+        val app = RuntimeEnvironment.getApplication()
+        assertEquals("Chirp", app.packageManager.getApplicationLabel(app.applicationInfo).toString())
+        val launcher = app.packageManager.getActivityInfo(ComponentName(app, SetupActivity::class.java), 0)
+        assertEquals("Chirp", launcher.loadLabel(app.packageManager).toString())
+        val ime = app.packageManager.getServiceInfo(ComponentName(app, ChirpImeService::class.java), 0)
+        assertEquals("Chirp Keyboard", ime.loadLabel(app.packageManager).toString())
+        assertEquals("dev.chirp.android", app.packageName)
+    }
+
     @Test fun `launcher settings and IME picker all resolve the selected adaptive bird`() {
         val app = RuntimeEnvironment.getApplication()
         assertEquals(R.mipmap.ic_launcher, app.applicationInfo.icon)
