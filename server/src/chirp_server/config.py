@@ -14,6 +14,7 @@ from urllib.parse import urlsplit
 from uuid import uuid4
 
 from . import paths
+from .platforms import default_engine
 from .fsutil import make_private, private_mkdir
 from .profiles import LIVE_NOTES, LIVE_NOTES_ID, MAX_PROMPT_CHARS, Profile, resolve_profiles
 
@@ -158,7 +159,7 @@ class Settings:
     retain_days: int = 3
     model_dir: Path | None = None
     speech_model: str = "parakeet-v2"
-    engine: str = "mlx"
+    engine: str = field(default_factory=default_engine)
     sensevoice_num_threads: int = 4
     precision: str = "float32"
     streaming: str = "rolling"
@@ -176,7 +177,7 @@ class Settings:
         path = path or result.config_dir / "server.toml"
         if path.exists():
             data = tomllib.loads(path.read_text())
-            result.engine = data.get("engine", "mlx")
+            result.engine = data.get("engine", result.engine)
             result.sensevoice_num_threads = data.get("sensevoice", {}).get("num_threads", 4)
             debug = data.get("debug", {})
             result.debug_retain = debug.get("retain", False)
