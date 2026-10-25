@@ -21,6 +21,8 @@ internal data class NotesSegment(
     val keptOriginal: Boolean = false,
     /** Set for a gap: why this stretch of audio was not transcribed. */
     val failure: String? = null,
+    /** Who said what ("Label speakers"), in order; null when the segment is not labelled. */
+    val turns: List<SpeakerTurn>? = null,
 ) {
     val isGap get() = failure != null
     companion object { fun gap(id: Int, offset: Double, reason: String) = NotesSegment(id, offset, "", failure = reason) }
@@ -84,7 +86,7 @@ internal val String.scalars get() = codePointCount(0, length)
  * Everything a Notes session holds, in memory only: the transcript segments and one Markdown string, the notes,
  * written by the user and by structuring passes. The AI owns only a suffix, the tail (`text[tailStart..]`): an append
  * only ever replaces the tail, and any user edit that touches the tail hands it to the user. A port of the Mac's
- * `NotesDocument` (without speaker labels); nothing here is persisted or logged.
+ * `NotesDocument`, speaker labels included; nothing here is logged.
  */
 internal class NotesDocument(var startedAt: Long = System.currentTimeMillis(), text: String = "") {
     /** This document, as opposed to one New replaced: a late answer for a discarded document is never applied. */
@@ -126,6 +128,12 @@ internal class NotesDocument(var startedAt: Long = System.currentTimeMillis(), t
     private val clips = java.util.TreeMap<Int, NotesAudioClip>()
     /** Kept audio, by segment index (empty unless "Keep audio with notes" was on). Does not count as a text change. */
     val audio: List<NotesAudioClip> get() = clips.values.toList()
+    /** The note's people (names and merges), when speakers were labelled. */
+    var roster = SpeakerRoster()
+        private set
+    /** +1 on every rename, merge or separate: the note changed without its text changing. */
+    var speakerVersion = 0
+        private set
     /** Every fallback block appended, exactly as appended; one still found verbatim is one Organize may redo. */
     private val fallbackBlocks = mutableListOf<String>()
 
@@ -137,6 +145,27 @@ internal class NotesDocument(var startedAt: Long = System.currentTimeMillis(), t
     fun stampStart(time: Long) { if (committed.isEmpty()) startedAt = time }
 
     fun append(segment: NotesSegment) { committed += segment.copy(id = committed.size) }
+
+    // Speakers
+
+    /** What a segment said for structuring and fallbacks: a `Name: text` line per turn when labelled, else its text. */
+    fun spoken(segment: NotesSegment) = segment.turns?.takeIf { it.isNotEmpty() }
+        ?.joinToString("\n") { roster.displayName(it.person) + ": " + it.text } ?: segment.text
+
+    /** Some segment is labelled: the transcript shows who said what. */
+    val labelled get() = committed.any { !it.turns.isNullOrEmpty() }
+
+    fun renameSpeaker(person: Int, name: String?) { roster.rename(person, name); speakerVersion++ }
+    fun mergeSpeaker(person: Int, into: Int) { roster.merge(person, into); speakerVersion++ }
+    fun separateSpeaker(person: Int) { roster.separate(person); speakerVersion++ }
+
+    /** Places [name] appears as a whole word in the notes ("Also replace “Person 2” in the notes"). */
+    fun nameCount(name: String) = if (name.isBlank()) 0 else nameRegex(name).findAll(text).count()
+
+    /** The notes with every whole-word [old] replaced by [new]. */
+    fun replacingName(old: String, new: String) = if (old.isBlank()) text else nameRegex(old).replace(text, Regex.escapeReplacement(new))
+
+    private fun nameRegex(name: String) = Regex("(?<![\\p{L}\\p{N}])" + Regex.escape(name) + "(?![\\p{L}\\p{N}])")
 
     /** Continue recording: a capture boundary at [offset] seconds of audio, [time] wall clock. */
     fun addBoundary(offset: Double, time: Long) { boundaryList += NotesBoundary(offset, time); version++ }
@@ -180,7 +209,7 @@ internal class NotesDocument(var startedAt: Long = System.currentTimeMillis(), t
     private val windowSegments get() = if (windowStart >= committed.size) emptyList()
         else committed.subList(windowStart, committed.size).filter { !it.isGap && it.text.isNotEmpty() }
 
-    private fun windowTranscript(through: Int = Int.MAX_VALUE) = windowSegments.filter { it.id <= through }.joinToString("\n") { it.text }
+    private fun windowTranscript(through: Int = Int.MAX_VALUE) = windowSegments.filter { it.id <= through }.joinToString("\n") { spoken(it) }
 
     fun windowChars(through: Int = Int.MAX_VALUE) = windowTranscript(through).scalars
 
@@ -243,7 +272,7 @@ internal class NotesDocument(var startedAt: Long = System.currentTimeMillis(), t
     private fun appendFallback() {
         val rest = windowSegments
         if (rest.isNotEmpty()) {
-            val block = fallbackBlock(rest.joinToString("\n\n") { it.text })
+            val block = fallbackBlock(rest.joinToString("\n\n") { spoken(it) })
             fallbackBlocks += block
             text = settledText + tailSeparator + block
         }
@@ -392,7 +421,15 @@ internal class NotesDocument(var startedAt: Long = System.currentTimeMillis(), t
         for (s in committed) {
             while (pending.isNotEmpty() && pending.first().offset <= s.offset) lines += divider(pending.removeAt(0))
             val stamp = "**[${timestamp(s.offset)}]** "
+            val turns = s.turns
             lines += if (s.failure != null) stamp + "⚠︎ audio not transcribed (${s.failure})"
+            else if (!turns.isNullOrEmpty()) {
+                // A line per turn: `**[00:01:05] Maya:** text`.
+                turns.joinToString("\n\n") { t ->
+                    "**[${timestamp(t.start)}] ${roster.displayName(t.person)}:** " + (if (raw) t.raw else t.text) +
+                        if ((t.keptOriginal || s.keptOriginal) && !raw) " _(kept original)_" else ""
+                }
+            }
             else stamp + (if (raw) s.raw else s.text) + if (s.keptOriginal && !raw) " _(kept original)_" else ""
         }
         pending.forEach { lines += divider(it) }
@@ -420,9 +457,10 @@ internal class NotesDocument(var startedAt: Long = System.currentTimeMillis(), t
         .put("segments", JSONArray().apply {
             committed.forEach { s ->
                 put(JSONObject().put("offset", s.offset).put("raw", s.raw).put("text", s.text).put("corrected", s.corrected)
-                    .put("kept", s.keptOriginal).apply { s.failure?.let { put("failure", it) } })
+                    .put("kept", s.keptOriginal).apply { s.failure?.let { put("failure", it) } }
+                    .apply { s.turns?.let { turns -> put("turns", JSONArray().apply { turns.forEach { put(it.toJson()) } }) } })
             }
-        }).apply { name?.let { put("name", it) } }
+        }).apply { name?.let { put("name", it) }; if (roster.people.isNotEmpty()) put("people", roster.toJson()) }
 
     companion object {
         fun fromJson(json: JSONObject) = NotesDocument(json.getLong("startedAt"), json.getString("text")).apply {
@@ -431,8 +469,10 @@ internal class NotesDocument(var startedAt: Long = System.currentTimeMillis(), t
             val list = json.getJSONArray("segments")
             for (i in 0 until list.length()) list.getJSONObject(i).let { s ->
                 committed += NotesSegment(i, s.getDouble("offset"), s.getString("raw"), s.getString("text"), s.optBoolean("corrected"),
-                    s.optBoolean("kept"), s.optString("failure").takeIf { s.has("failure") })
+                    s.optBoolean("kept"), s.optString("failure").takeIf { s.has("failure") },
+                    s.optJSONArray("turns")?.let { a -> (0 until a.length()).map { SpeakerTurn.fromJson(a.getJSONObject(it)) } })
             }
+            roster = SpeakerRoster.fromJson(json.optJSONArray("people"))
             tailStart = json.getInt("tailStart").coerceIn(0, text.length)
             windowStart = json.getInt("windowStart").coerceIn(0, committed.size)
             structuredEnd = json.getInt("structuredEnd").coerceIn(windowStart - 1, committed.size - 1)

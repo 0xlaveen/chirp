@@ -174,7 +174,11 @@ def check(probe, work, output):
     probe['wait_for']('Dictate')
     probe['click']('Dictate')
     check_scratchpad(probe, work, output)
-    log('PASS: Live Notes: rolling segments reached the transcript, structured notes reached the editor while recording; voice edit; screen-off battery saver; pause, resume, stop; real kept-audio encode and playback; library list/search/rename/delete/undo/trash/restore/continue; Share; Scratchpad', server())
+    if probe.get('speakers_model'):
+        runpy.run_path(str(Path(__file__).with_name('emulator-speakers-check.py')))['check'](probe, work, output)
+    else:
+        log('SKIPPED speaker labels: no speaker model (set CHIRP_SPEAKER_MODEL, or run chirp-server model fetch --speakers)')
+    log('PASS: Live Notes: rolling segments reached the transcript, structured notes reached the editor while recording; voice edit; screen-off battery saver; pause, resume, stop; real kept-audio encode and playback; library list/search/rename/delete/undo/trash/restore/continue; Share; Scratchpad' + ('; speaker labels' if probe.get('speakers_model') else ''), server())
 
 
 def check_scratchpad(probe, work, output):

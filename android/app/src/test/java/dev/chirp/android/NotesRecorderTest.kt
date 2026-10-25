@@ -14,6 +14,8 @@ import org.robolectric.annotation.Config
 internal class NotesWire(val event: (ServerEvent) -> Unit, val failure: () -> Unit) : ImeTransport {
     var profile = ""
     var correction: Boolean? = null
+    /** The speaker session `start` carried (labels on), else null. */
+    var speakers: String? = null
     var frames = 0
     var stops = 0
     var closed = false
@@ -22,6 +24,9 @@ internal class NotesWire(val event: (ServerEvent) -> Unit, val failure: () -> Un
     override fun start(correction: Boolean, profile: String, instructions: String, prompt: String?): Boolean {
         this.correction = correction; this.profile = profile; return true
     }
+    override fun start(correction: Boolean, profile: String, instructions: String, prompt: String?, speakers: String?): Boolean {
+        this.speakers = speakers; return start(correction, profile, instructions, prompt)
+    }
     override fun start(correction: Boolean) = start(correction, "default", "", null)
     override fun audio(bytes: ByteArray): Boolean { if (ready && !closed) frames++; return ready && !closed }
     override fun stop(): Boolean { stops++; return ready && !closed }
@@ -29,7 +34,7 @@ internal class NotesWire(val event: (ServerEvent) -> Unit, val failure: () -> Un
     fun ready() { ready = true; event(ServerEvent.Ready(false)) }
     fun partial(text: String) = event(ServerEvent.Partial(1, text, ""))
     var finals = 0
-    fun final(text: String, raw: String = text) { finals++; event(ServerEvent.Final(text, raw, text != raw)) }
+    fun final(text: String, raw: String = text, speakers: SpeakersResult? = null) { finals++; event(ServerEvent.Final(text, raw, text != raw, speakers = speakers)) }
     fun error(code: String) = event(ServerEvent.Failure(code))
 }
 

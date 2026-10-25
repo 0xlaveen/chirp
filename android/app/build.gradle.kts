@@ -132,6 +132,8 @@ tasks.withType<Test>().configureEach {
 
 val generateDebugSyntheticAudio by tasks.registering(Exec::class) {
     commandLine("sh", rootProject.file("scripts/make-synthetic-wav.sh"))
+    // The script is the input: a changed or added asset regenerates them all.
+    inputs.file(rootProject.file("scripts/make-synthetic-wav.sh"))
     outputs.dir(layout.buildDirectory.dir("generated/chirp-debug-assets"))
 }
 val generateEmulatorTls by tasks.registering(Exec::class) {

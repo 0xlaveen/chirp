@@ -15,7 +15,7 @@ SERIAL = os.environ['ANDROID_SERIAL']
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--only', nargs='+', choices=('dictation', 'cleanup', 'notes', 'history', 'stop', 'device', 'bubble', 'quickdictate', 'visual', 'keepkb', 'release'))
+    parser.add_argument('--only', nargs='+', choices=('dictation', 'cleanup', 'notes', 'speakers', 'history', 'stop', 'device', 'bubble', 'quickdictate', 'visual', 'keepkb', 'release'))
     args = parser.parse_args()
     deadline = time.monotonic() + 300
     while time.monotonic() < deadline:
@@ -26,7 +26,8 @@ def main():
     subprocess.run(['adb', '-s', SERIAL, 'shell', 'wm', 'dismiss-keyguard'], check=True)
     subprocess.run(['adb', '-s', SERIAL, 'uninstall', 'dev.chirp.android'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     abi = subprocess.check_output(['adb', '-s', SERIAL, 'shell', 'getprop', 'ro.product.cpu.abi']).decode().strip()
-    command = ['python3', str(ROOT / 'android/scripts/emulator-check.py'), '--tls',
+    port = os.environ.get('CHIRP_E2E_PORT', '7899')  # the throwaway server's port; another run may hold 7899
+    command = ['python3', str(ROOT / 'android/scripts/emulator-check.py'), '--tls', '--server-port', port,
                '--python', str(ROOT / 'server/.venv/bin/python'),
                '--model-dir', os.environ.get('CHIRP_MODEL_DIR', str(Path.home() / '.koi/voice-models/parakeet-mlx')),
                '--apk', str(ROOT / f'android/app/build/outputs/apk/debug/app-{abi}-debug.apk')]

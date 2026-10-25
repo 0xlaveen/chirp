@@ -212,6 +212,7 @@ Full protocol details, including every message field, are in [the architecture d
 | `POST /v1/notes/structure` | bearer | Live Notes: structure a transcript window into Markdown (see [Notes structuring](#notes-structuring)) |
 | `POST /v1/notes/reorganize` | bearer | Live Notes: reorganize an edited notes document (see [Notes structuring](#notes-structuring)) |
 | `POST /v1/notes/edit` | bearer | Live Notes: apply a spoken edit instruction to the notes (see [Notes structuring](#notes-structuring)) |
+| `POST /v1/speakers/model` | bearer | Live Notes speaker labels: download (after the client's consent) or remove the speaker model (see [Speaker labels](#speaker-labels)) |
 | `POST /v1/transcribe` | bearer | 16 kHz mono PCM16 WAV body (same limits as streaming); returns the final object |
 | `WS /v1/stream` | bearer | Streaming dictation |
 
@@ -248,6 +249,7 @@ Cancel or disconnect during finalization discards the utterance: no correction r
 | `bad_request` | Invalid correction prompt/settings body (HTTP 400) |
 | `unsupported` | PUT settings outside managed mode (HTTP 409) |
 | `bad_notes` | Invalid notes-structuring, reorganize or edit request (HTTP 400) |
+| `bad_speakers` | Invalid `POST /v1/speakers/model` body (HTTP 400) |
 | `notes_off` | Notes structuring needs correction enabled (HTTP 409) |
 | `engine` | Speech engine unavailable |
 
@@ -488,6 +490,50 @@ LM Studio is installed at `/Applications/LM Studio.app`. Chirp never starts it, 
 4. LM Studio needs no API key; when none is configured no Authorization header is sent.
 
 A loopback `base_url` keeps final text on this machine (health/doctor report it as such). If LM Studio is stopped, times out or answers like an assistant, the corrector fails closed to the raw transcript and `correction_error` says why.
+
+## Speaker labels
+
+For clients that stream Live Notes here (Android; the Mac labels speakers itself). A `start` with
+`"speakers": {"session": "<16-64 of [A-Za-z0-9_-]>"}` (a random id per note) gets `speakers` on its
+final:
+
+```json
+"speakers": {"generation": "9f2c41d0a7be2e11", "turns": [
+  {"speaker": 0, "start": 0.48, "end": 3.1, "text": "We ship Friday.", "raw": "we ship friday", "approximate": false, "kept_original": false},
+  {"speaker": 1, "start": 3.4, "end": 5.02, "text": "Okay.", "raw": "okay", "approximate": false, "kept_original": false}]}
+```
+
+- `speaker` is the note's slot (0, 1… in order of first appearance); turn texts cover the final's
+  `text` in order (the raw text when clean-up was off or failed), and `start`/`end` are seconds from
+  the segment's first sample. `approximate` means the engine had no word timings, so the whole
+  segment went to its dominant voice; `kept_original` means clean-up rewrote too much to place the
+  boundary, so the turn carries raw text.
+- `generation` changes when the server no longer had this note (a restart, 6 idle hours, or more
+  than 32 notes): its slots then mean new voices, so the client starts its slot map again.
+- `{"error": "unavailable"}` means the model is not downloaded, `{"error": "failed"}` that labelling
+  failed. The text is never delayed for, or withheld because of, labels.
+- An invalid `speakers` field is `bad_audio`. Without it every message is unchanged.
+
+**How.** After the decode, outside the engine lease and beside clean-up: 1.5 s windows (0.75 s
+hop) of voiced audio are embedded with WeSpeaker ResNet34-LM (ONNX on CPU, 2 threads, Kaldi
+fbank in NumPy), clustered within the segment (average linkage, cosine ≥ 0.4; each window embeds only its voiced
+frames, so pauses never look alike), and each cluster is matched one-to-one against the note's
+speakers (cosine ≥ 0.45) or becomes a new one with at least 1.5 s of speech (at most 8). Words take the speaker of the windows they overlap, and the
+Mac's attribution and word alignment carry the turns onto the cleaned text. Tuned on `say`
+voices and two real two-person recordings; very similar voices can be merged into one person, and
+a real voice can still be split in two (the client's "Same person as" merges them).
+
+**The model** (`Wespeaker/wespeaker-voxceleb-resnet34-LM` at `f0c48c29`, one 26.5 MB ONNX file,
+CC-BY-4.0) is fetched only by `chirp-server model fetch --speakers` or by a paired client's
+`POST /v1/speakers/model {"action":"download"}` after its user agreed (202 while it runs; health's
+`speakers_model.state` is `downloading`, then `ready` or `failed`). It lands in
+`~/Library/Application Support/Chirp/models/speakers/` and is checked against its pinned SHA-256
+(a mismatch is deleted). `{"action":"remove"}` deletes it (409 while downloading). Authenticated
+health carries `"notes_speakers": true` and `"speakers_model": {"state": …, "size_bytes": …}`.
+
+**Privacy.** The per-note state is per-speaker sums of voice embeddings in this process's memory
+only: never on disk, never logged, never sent to a client. Logs say `speakers turns=N people=M
+ms=…`, never a label, name or text.
 
 ## Notes structuring
 

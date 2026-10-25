@@ -67,7 +67,9 @@ release smoke with TalkBack, and a cover/inner, light/dark main-screen capture m
 The visual phase captures evidence for human review; it does not certify visual quality.
 `--only <check…>` picks some of them. It builds and installs the debug app, boots
 its own read-only `chirp-fold` AVD on a free even port, and uses a real
-throwaway server on 7899 with a temporary HOME and debug-only TLS. It prints a
+throwaway server on 7899 (`CHIRP_E2E_PORT=7898` picks another when a parallel run holds
+7899; the debug certificate and network config are bound to `10.0.2.2`, not a port) with a
+temporary HOME and debug-only TLS. It prints a
 pass/fail table and a private evidence folder (`results.json`, a `run.log` and
 screenshots per check). Never use the server on 7821.
 

@@ -130,6 +130,9 @@ def parser():
     model.add_argument("action", choices=["fetch"])
     model.add_argument("--engine", choices=["mlx", "onnx", "sensevoice"], default=argparse.SUPPRESS)
     model.add_argument("--cleanup", nargs="?", const="", default=None, metavar="ID")
+    model.add_argument(
+        "--speakers", action="store_true", help="the Live Notes speaker-label model (27 MB)"
+    )
     debug = commands.add_parser("debug")
     debug.add_argument("action", choices=["purge"])
     check = commands.add_parser("doctor")
@@ -190,7 +193,11 @@ def main():
         except ValueError as exc:
             raise SystemExit(str(exc)) from None
     elif args.command == "model":
-        if args.cleanup is not None:
+        if args.speakers:
+            from .speakers_model import fetch
+
+            print(fetch())
+        elif args.cleanup is not None:
             from .cleanup_models import fetch
 
             print(fetch(args.cleanup))

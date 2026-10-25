@@ -4,6 +4,7 @@ import asyncio
 import contextlib
 import json
 import logging
+import re
 import secrets
 import time
 from collections import deque
@@ -26,9 +27,11 @@ from .engine import EngineWorker
 from .managed_cleanup import ManagedCleanup
 from .profiles import LIVE_NOTES_ID, MAX_PROMPT_CHARS
 from .retention import Retention
+from .speakers import SpeakerLabels
 
 log = logging.getLogger("chirp")
 MAX_CONTEXT_CHARS = 500
+SPEAKER_SESSION = re.compile(r"[A-Za-z0-9_-]{16,64}")
 MESSAGES = {
     "auth": "Authentication required",
     "busy": "Speech engine busy; retry shortly",
@@ -39,6 +42,7 @@ MESSAGES = {
     "unsupported": "keep_loaded requires managed correction mode",
     "bad_notes": "Invalid notes request",
     "notes_off": "Notes structuring needs correction enabled on the server",
+    "bad_speakers": "Invalid speakers request",
 }
 
 
@@ -66,9 +70,10 @@ def bearer(headers):
 
 
 class Utterance:
-    def __init__(self, ws, worker, settings, corrector, retention):
+    def __init__(self, ws, worker, settings, corrector, retention, speakers=None):
         self.ws, self.worker, self.settings = ws, worker, settings
         self.corrector, self.retention = corrector, retention
+        self.speakers = speakers
         self.session = uuid4().hex
         self.pcm = bytearray()
         self.started = time.perf_counter()
@@ -92,6 +97,9 @@ class Utterance:
         self.peak = self.rms = 0.0
         # Opt-in `start.word_timings`: partials, correcting and the final carry `words`.
         self.word_timings = False
+        # Opt-in `start.speakers.session`: the final carries `speakers` (Live Notes labels).
+        self.speaker_session = None
+        self.labelling = None
 
     async def start(self, control):
         if "correction_prompt" in control:
@@ -118,6 +126,17 @@ class Utterance:
         ):
             raise AudioError()
         self.word_timings = control.get("word_timings", False)
+        if "speakers" in control:
+            labels = control["speakers"]
+            if (
+                not isinstance(labels, dict)
+                or set(labels) != {"session"}
+                or not isinstance(labels["session"], str)
+                or not SPEAKER_SESSION.fullmatch(labels["session"])
+                or self.speakers is None
+            ):
+                raise AudioError()
+            self.speaker_session = labels["session"]
         helper = getattr(self.corrector, "managed", None)
         managed = helper if isinstance(helper, ManagedCleanup) else None
         if control.get("correction", False) and managed is not None:
@@ -225,6 +244,8 @@ class Utterance:
 
     def discard(self):
         # Cancelled during finalization: no correction, no retention, no final.
+        if self.labelling is not None:
+            self.labelling.cancel()
         log.info("session=%s bytes=%d cancelled_during_finalize=1", self.session, len(self.pcm))
         return None
 
@@ -242,7 +263,7 @@ class Utterance:
             await self.worker.call(self.stream.cancel)
             self.stream = None
             self.release()
-            return await make_final(
+            final = await make_final(
                 "",
                 b"",
                 self.first_partial,
@@ -254,6 +275,11 @@ class Utterance:
                 self.correction_prompt,
                 words=() if self.word_timings else None,
             )
+            if self.speaker_session:
+                final["speakers"] = await self.speakers.label(
+                    self.speaker_session, b"", None, "", ""
+                )
+            return final
         if self.offset < len(self.pcm):
             pending = samples(bytes(self.pcm[self.offset :]))
             buffer = getattr(self.stream, "buffer", self.stream.feed)
@@ -267,6 +293,12 @@ class Utterance:
         self.release()
         if self.cancelled:
             return self.discard()
+        if self.speaker_session:
+            # Off the engine lease and beside clean-up: labels rarely add to the final's latency.
+            labelled = time.perf_counter()
+            self.labelling = asyncio.create_task(
+                self.speakers.measure(self.speaker_session, bytes(self.pcm))
+            )
         enabled = self.correction and self.settings.correction.enabled and bool(raw)
         if enabled:
             self.seq += 1
@@ -299,6 +331,13 @@ class Utterance:
             self.correcting = None
         if self.cancelled:
             return self.discard()
+        if self.labelling is not None:
+            measured = await self.labelling
+            if self.cancelled:
+                return self.discard()
+            final["speakers"] = self.speakers.payload(
+                measured, transcript.words, raw, final["text"], len(self.pcm) / 32000, labelled
+            )
         self.retention.save(self.session, bytes(self.pcm), final)
         log.info(
             "session=%s bytes=%d peak=%.5f rms=%.5f finalize_ms=%.1f identity_present=%s",
@@ -318,6 +357,8 @@ class Utterance:
 
     async def close(self):
         # Let an in-flight feed finish before disposing its thread-owned context.
+        if self.labelling is not None and not self.labelling.done():
+            self.labelling.cancel()
         self.aborted = True
         self.stopping = True
         self.changed.set()
@@ -377,8 +418,9 @@ async def make_final(
     return final
 
 
-def create_app(settings=None, engine=None, token=None, corrector=None):
+def create_app(settings=None, engine=None, token=None, corrector=None, speakers=None):
     settings = settings or Settings.read()
+    speakers = speakers or SpeakerLabels()
     if engine is None:
         if settings.engine == "sensevoice":
             from .engine.sensevoice import SenseVoice
@@ -444,6 +486,7 @@ def create_app(settings=None, engine=None, token=None, corrector=None):
                 with contextlib.suppress(asyncio.CancelledError):
                     await cleanup
             await worker.close()
+            speakers.close()
             if isinstance(corrector, Corrector):
                 await corrector.close()
 
@@ -482,6 +525,9 @@ def create_app(settings=None, engine=None, token=None, corrector=None):
                 # `start`/`stop` may carry `context`, the previous segment's tail, for notes.
                 "notes_context": True,
                 "notes_edit": True,
+                # `start.speakers` labels a note's speakers; the model downloads on request.
+                "notes_speakers": True,
+                "speakers_model": speakers.health(),
                 **build.info(),
             }
         )
@@ -682,6 +728,30 @@ def create_app(settings=None, engine=None, token=None, corrector=None):
             respond,
         )
 
+    async def speakers_route(request: Request):
+        """The speaker model: `{"action":"download"}` after the client's consent prompt, or
+        `{"action":"remove"}`. The download runs in the background; health reports its state."""
+        if not authorized(credential, bearer(request.headers)):
+            return JSONResponse(
+                error("auth"), status_code=401, headers={"WWW-Authenticate": "Bearer"}
+            )
+        body = await request.body()
+        try:
+            action = json.loads(body) if len(body) <= 1024 else None
+        except ValueError:
+            action = None
+        if not isinstance(action, dict) or set(action) != {"action"}:
+            return JSONResponse(error("bad_speakers"), status_code=400)
+        if action["action"] == "download":
+            speakers.start_download()
+            status = 202 if speakers.state == "downloading" else 200
+            return JSONResponse(speakers.health(), status_code=status)
+        if action["action"] == "remove":
+            if not await speakers.remove():
+                return JSONResponse(speakers.health(), status_code=409)
+            return JSONResponse(speakers.health())
+        return JSONResponse(error("bad_speakers"), status_code=400)
+
     async def transcribe(request: Request):
         if not authorized(credential, bearer(request.headers)):
             return JSONResponse(
@@ -813,7 +883,7 @@ def create_app(settings=None, engine=None, token=None, corrector=None):
                     continue
                 kind = message.get("type")
                 if kind == "start" and utterance is None:
-                    utterance = Utterance(ws, worker, settings, corrector, retention)
+                    utterance = Utterance(ws, worker, settings, corrector, retention, speakers)
                     await utterance.start(message)
                 elif kind == "cancel" and utterance:
                     await utterance.close()
@@ -857,6 +927,7 @@ def create_app(settings=None, engine=None, token=None, corrector=None):
             Route("/v1/notes/structure", notes_structure, methods=["POST"]),
             Route("/v1/notes/reorganize", notes_reorganize, methods=["POST"]),
             Route("/v1/notes/edit", notes_edit_route, methods=["POST"]),
+            Route("/v1/speakers/model", speakers_route, methods=["POST"]),
             WebSocketRoute("/v1/stream", stream),
         ],
         lifespan=lifespan,

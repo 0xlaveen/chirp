@@ -85,6 +85,21 @@ Old clients ignore unknown message types, including `correcting`, and consume th
 Authenticated health lists every profile's `id`, `name`, `description` and boolean `rewrites`,
 even when correction is off; it never exposes prompts or client instructions.
 
+### Live Notes speaker labels (v1-compatible addition)
+
+`start` may carry `"speakers": {"session": "<16-64 of [A-Za-z0-9_-]>"}` (a random id per note, issue
+#187); its final then carries `"speakers": {"generation": "…", "turns": [{"speaker": n, "start": s,
+"end": s, "text": "…", "raw": "…", "approximate": bool, "kept_original": bool}, …]}`, or
+`{"error": "unavailable|failed"}`. Turn texts cover the final's `text` in order; `speaker` is the
+note's slot, numbered by first appearance; a new `generation` means the server lost the note (its
+slots are new voices). Any other `speakers` value is `bad_audio`; without the field nothing changes.
+`POST /v1/speakers/model` (authenticated, `{"action":"download"|"remove"}`) fetches the pinned
+speaker model after the client's consent or deletes it (200/202 with `{"state":…,"size_bytes":…}`,
+409 for remove while downloading, 400 `bad_speakers` otherwise). Authenticated health adds
+`"notes_speakers": true` (also in `capabilities`) and `"speakers_model": {"state":
+"ready|downloading|not_downloaded|failed", "size_bytes": n}`. Details in
+[server/README.md](../server/README.md#speaker-labels).
+
 ### Live Notes structuring (v1-compatible addition)
 
 `POST /v1/notes/structure` turns a window of corrected transcript into Markdown notes. The server

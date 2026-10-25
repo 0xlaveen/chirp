@@ -4,7 +4,9 @@ import java.io.IOException
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.Executor
 import java.util.concurrent.Executors
+import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
+import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.Request
 import okhttp3.Response
 import okhttp3.WebSocket
@@ -32,6 +34,23 @@ object ChirpNetwork {
         return client.newCall(request)
     }
     fun health(client: OkHttpClient, pairing: Pairing): Health = health(healthCall(client, pairing))
+    /**
+     * `POST /v1/speakers/model`: [action] `download` (only after the user agreed to it) or `remove`. The server's model state
+     * after it (`downloading`, `ready`…).
+     */
+    fun speakerModel(client: OkHttpClient, pairing: Pairing, action: String): String {
+        require(action == "download" || action == "remove")
+        val request = Request.Builder().url(pairing.endpoint("v1/speakers/model")).header("Authorization", "Bearer ${pairing.token}")
+            .post(org.json.JSONObject().put("action", action).toString().toRequestBody("application/json".toMediaType())).build()
+        client.newCall(request).execute().use { response ->
+            if (response.code !in setOf(200, 202, 409)) throw IOException("Speaker model unavailable")
+            val source = response.body.source()
+            source.request(4097)
+            if (source.buffer.size > 4096) throw IOException("Speaker model answer too large")
+            return org.json.JSONObject(source.readUtf8()).getString("state").takeIf { it.matches(Regex("[a-z_]{1,32}")) }
+                ?: throw IOException("Speaker model answer invalid")
+        }
+    }
     fun health(call: okhttp3.Call): Health {
         call.execute().use { response ->
             if (!response.isSuccessful) throw IOException("Health unavailable")
@@ -85,6 +104,9 @@ internal class NetworkHousekeeping(
 interface ImeTransport {
     fun connect()
     fun start(correction: Boolean, profile: String, instructions: String, prompt: String? = null): Boolean = start(correction)
+    /** Live Notes: [speakers] is the note's speaker session (labels on), else null. */
+    fun start(correction: Boolean, profile: String, instructions: String, prompt: String?, speakers: String?): Boolean =
+        start(correction, profile, instructions, prompt)
     fun start(correction: Boolean): Boolean
     fun audio(bytes: ByteArray): Boolean
     fun stop(): Boolean
@@ -120,6 +142,7 @@ class StreamTransport(
     private var profile = "default"
     private var instructions = ""
     private var prompt: String? = null
+    private var speakers: String? = null
     private var retried = false
     private var attempt = 0
 
@@ -170,8 +193,10 @@ class StreamTransport(
             }
         })
     }
-    override fun start(correction: Boolean, profile: String, instructions: String, prompt: String?): Boolean {
-        this.profile = profile; this.instructions = instructions; this.prompt = prompt
+    override fun start(correction: Boolean, profile: String, instructions: String, prompt: String?): Boolean =
+        start(correction, profile, instructions, prompt, null)
+    override fun start(correction: Boolean, profile: String, instructions: String, prompt: String?, speakers: String?): Boolean {
+        this.profile = profile; this.instructions = instructions; this.prompt = prompt; this.speakers = speakers
         return start(correction)
     }
     override fun start(correction: Boolean): Boolean {
@@ -182,7 +207,7 @@ class StreamTransport(
         return !closed
     }
     private fun sendStart() {
-        startSent = socket?.send(Protocol.start(correction, profile, instructions, prompt)) == true
+        startSent = socket?.send(Protocol.start(correction, profile, instructions, prompt, speakers)) == true
         if (!startSent) failed()
     }
     private fun failed() {

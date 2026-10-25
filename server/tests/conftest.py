@@ -6,6 +6,7 @@ from chirp_server.app import create_app
 from chirp_server.audio import wav_bytes
 from chirp_server.config import Settings
 from chirp_server.engine import FakeEngine
+from chirp_server.speakers import SpeakerLabels
 
 TOKEN = "synthetic-test-credential"
 HEADERS = {"Authorization": f"Bearer {TOKEN}"}
@@ -42,8 +43,14 @@ def engine():
 
 
 @pytest.fixture
-def client(settings, engine):
-    with TestClient(create_app(settings, engine, TOKEN)) as client:
+def speakers():
+    # Never the host's model cache: labels report the model as not downloaded.
+    return SpeakerLabels(downloaded=lambda: False)
+
+
+@pytest.fixture
+def client(settings, engine, speakers):
+    with TestClient(create_app(settings, engine, TOKEN, speakers=speakers)) as client:
         yield client
 
 

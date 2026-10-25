@@ -13,6 +13,7 @@ import re
 import socket
 import ssl
 import shlex
+import shutil
 import subprocess
 import tempfile
 import time
@@ -264,12 +265,15 @@ def main():
     args.add_argument("--stop-check", action="store_true")
     args.add_argument("--history-check", action="store_true")
     args.add_argument("--notes-check", action="store_true")
+    # Speaker labels alone (the notes check runs them too, at its end).
+    args.add_argument("--speakers-check", action="store_true")
     args.add_argument("--keepkb-check", action="store_true")
     args.add_argument("--visual-check", action="store_true")
     args.add_argument("--bubble-check", action="store_true")
     args.add_argument("--quickdictate-check", action="store_true")
     args.add_argument("--serial")
-    args.add_argument("--server-port", type=int, default=7899)
+    # CHIRP_E2E_PORT lets parallel runs on one host use different throwaway ports (never 7821).
+    args.add_argument("--server-port", type=int, default=int(os.environ.get("CHIRP_E2E_PORT", "7899")))
     args.add_argument("--device-check", action="store_true")
     args.add_argument("--tls", action="store_true")
     args.add_argument("--expect-crash", action="store_true")
@@ -279,6 +283,7 @@ def main():
     assert os.environ.get("ANDROID_SERIAL", SERIAL) == SERIAL
     scheme = "https" if opt.tls else "http"
     assert 1024 <= opt.server_port <= 65535, "Use an unprivileged server port"
+    assert opt.server_port != 7821, "7821 is the live server's port; use a throwaway one"
     base = scheme + "://127.0.0.1:" + str(opt.server_port)
     cert = opt.tls_dir / "generated/chirp-debug-res/raw/emulator_ca.pem"
     context = ssl.create_default_context(cafile=str(cert)) if opt.tls else None
@@ -297,11 +302,21 @@ def main():
         config = home / ".config/chirp/server.toml"
         config.parent.mkdir(parents=True)
         config.write_text('[correction]\nmode = "managed"\ntimeout = 60.0\n')
+        # Speaker labels: the server runs offline, so the check plays its Hugging Face download by copying the pinned
+        # model into the throwaway HOME once the phone's consent dialog is up (the server still verifies its hash).
+        speaker_model = Path(os.environ.get("CHIRP_SPEAKER_MODEL") or Path.home() / "Library/Application Support/Chirp/models/speakers/voxceleb_resnet34_LM.onnx")
+        speakers_model = None
+        if (opt.notes_check or opt.speakers_check) and speaker_model.is_file():
+            def speakers_model():
+                seeded = home / "Library/Application Support/Chirp/models/speakers" / speaker_model.name
+                seeded.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(speaker_model, seeded)
+        assert speakers_model or not opt.speakers_check, "--speakers-check needs the speaker model (CHIRP_SPEAKER_MODEL)"
         env = dict(os.environ, HOME=str(home), HF_HOME=str(Path.home() / ".cache/huggingface"),
                    HF_HUB_OFFLINE="1", TRANSFORMERS_OFFLINE="1", PYTHONPATH=str(opt.server_root / "src"))
         if opt.tls: env["SSL_CERT_FILE"] = str(cert)
         command = [opt.python, "-m", "chirp_server", "--port", str(opt.server_port), "--model-dir", opt.model_dir]
-        if opt.tls or opt.stop_check or opt.notes_check:
+        if opt.tls or opt.stop_check or opt.notes_check or opt.speakers_check:
             command = [opt.python, str(Path(__file__).with_name("emulator-stop-server.py")),
                        "--model-dir", opt.model_dir, "--metadata", str(work / "events.json"), "--server-port", str(opt.server_port)]
             if opt.tls: command += ["--cert", str(cert), "--key", str(opt.tls_dir / "emulator-tls/key.pem")]
@@ -398,9 +413,13 @@ def main():
                 module = runpy.run_path(str(Path(__file__).with_name("emulator-stop-check.py")))
                 module["check"](dict(_probe, adb=adb), work, opt.expect_crash)
                 return
+            if opt.speakers_check:
+                module = runpy.run_path(str(Path(__file__).with_name("emulator-speakers-check.py")))
+                module["check"](dict(_probe, adb=adb, speakers_model=speakers_model), work, output, standalone=True)
+                return
             if opt.notes_check:
                 module = runpy.run_path(str(Path(__file__).with_name("emulator-notes-check.py")))
-                module["check"](dict(_probe, adb=adb), work, output)
+                module["check"](dict(_probe, adb=adb, speakers_model=speakers_model), work, output)
                 return
             if opt.history_check:
                 module = runpy.run_path(str(Path(__file__).with_name("emulator-history-check.py")))
