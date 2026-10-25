@@ -96,7 +96,14 @@ def test_server_options_reach_loader(settings, tmp_path, monkeypatch, threads):
             self.inter_op_num_threads = 0
 
     constructor = Mock(side_effect=SessionOptions)
-    monkeypatch.setitem(sys.modules, "onnxruntime", SimpleNamespace(SessionOptions=constructor))
+    monkeypatch.setitem(
+        sys.modules,
+        "onnxruntime",
+        SimpleNamespace(
+            SessionOptions=constructor,
+            get_available_providers=lambda: ["CPUExecutionProvider"],
+        ),
+    )
     settings.engine = "onnx"
     settings.model_dir = tmp_path
     settings.onnx = threads
@@ -113,7 +120,9 @@ def test_server_options_reach_loader(settings, tmp_path, monkeypatch, threads):
     else:
         constructor.assert_called_once_with()
         options = kwargs.pop("sess_options")
-        assert vars(options) == {key: value or 0 for key, value in asdict(threads).items()}
+        assert vars(options) == {
+            key: value or 0 for key, value in asdict(threads).items() if key.endswith("_threads")
+        }
         assert set(kwargs) == {"path", "quantization", "providers"}
 
 

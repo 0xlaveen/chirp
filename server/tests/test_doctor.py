@@ -260,6 +260,7 @@ def test_warm_decode_engine_failure(monkeypatch, tmp_path):
     assert check.status == FAIL and "sensitive" not in check.detail
 
 
+@pytest.mark.usefixtures("launchd")
 def test_doctor_quick_reports_every_check(monkeypatch, tmp_path, capsys):
     use_home(monkeypatch, tmp_path)
     monkeypatch.setattr(doctor, "check_environment", lambda: Check("environment", OK, "Python"))

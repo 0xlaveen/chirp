@@ -427,6 +427,97 @@ def check_launchagent(home: Path | None = None) -> Check:
     return Check("launchagent", OK, "not installed (optional; keeps the model warm across reboots)")
 
 
+def check_service() -> Check:
+    """The platform's background service (LaunchAgent, Task Scheduler task or systemd unit)."""
+    if sys.platform == "darwin":
+        return check_launchagent()
+    from .service import backend
+
+    try:
+        state = backend().status()
+    except Exception:
+        return Check("service", OK, "background service not available on this platform")
+    if not state["installed"]:
+        return Check(
+            "service",
+            OK,
+            "not installed (optional; keeps the model warm across logons)",
+            "chirp-server service install",
+        )
+    if state["arguments"] is None:
+        return Check(
+            "service",
+            WARN,
+            f"{state['location']} does not run chirp_server",
+            "chirp-server service uninstall, then chirp-server service install",
+        )
+    if state["running"] is False:
+        return Check(
+            "service",
+            WARN,
+            f"installed ({state['location']}) but not running",
+            "chirp-server setup restart",
+        )
+    return Check("service", OK, f"installed ({state['location']}), running")
+
+
+async def check_onnx(model_dir, providers: str, quick: bool) -> Check:
+    """ONNX Parakeet: the runtime, its providers, the model and (unless quick) a warm load."""
+    try:
+        import onnx_asr  # noqa: F401
+        import onnxruntime
+
+        from .engine.onnx import ParakeetONNX, choose_providers, find_model
+
+        directory = find_model(model_dir)
+    except ImportError:
+        return Check(
+            "onnx", FAIL, "onnx-asr or onnxruntime is not installed", "uv sync --extra onnx"
+        )
+    except ValueError:
+        return Check(
+            "onnx",
+            FAIL,
+            "ONNX Parakeet model missing",
+            "uv run chirp-server model fetch --engine onnx",
+        )
+    available = onnxruntime.get_available_providers()
+    chosen = choose_providers(providers, available)
+    detail = (
+        f"onnxruntime {onnxruntime.__version__}, providers {', '.join(available)};"
+        f" using {chosen[0]} for {directory}"
+    )
+    if providers not in {"cpu", "auto"} and chosen == ["CPUExecutionProvider"]:
+        return Check(
+            "onnx",
+            WARN,
+            detail + f" ({providers} requested but not installed)",
+            "see server/README.md › Parakeet ONNX accelerators",
+        )
+    if quick:
+        return Check("onnx", OK, detail + "; load skipped (--quick)")
+    from .engine import EngineWorker
+
+    engine = ParakeetONNX(directory, providers=providers)
+    worker = EngineWorker(engine)
+    try:
+        started = time.perf_counter()
+        await worker.start()
+        elapsed = (time.perf_counter() - started) * 1000
+    except Exception:
+        return Check("onnx", FAIL, "local model load or warm decode failed", "check server startup")
+    finally:
+        await worker.close()
+    if engine.providers != chosen:
+        return Check(
+            "onnx",
+            WARN,
+            detail + f"; {chosen[0]} failed to load, fell back to CPU",
+            'update the GPU driver, or set [onnx] providers = "cpu"',
+        )
+    return Check("onnx", OK, f"{detail}; loaded and warmed in {elapsed:.0f} ms")
+
+
 async def check_sensevoice(model_dir, num_threads, quick):
     from .engine import EngineWorker
     from .engine.sensevoice import SenseVoice
@@ -464,9 +555,16 @@ def doctor(args, tailscale_status: tuple[int, str] | None = None) -> int:
     """Run every check in order; return 1 only when some check FAILs."""
     settings, config_check = load_settings(args.config)
     model_dir = args.model_dir or settings.model_dir
-    sensevoice = (getattr(args, "engine", None) or settings.engine) == "sensevoice"
+    engine = getattr(args, "engine", None) or settings.engine
+    sensevoice = engine == "sensevoice"
     checks = [check_environment()]
-    if sensevoice:
+    if engine == "onnx":
+        checks.append(
+            asyncio.run(
+                check_onnx(model_dir, settings.onnx.providers, getattr(args, "quick", False))
+            )
+        )
+    elif sensevoice:
         threads = getattr(args, "sensevoice_num_threads", None)
         checks.append(
             asyncio.run(
@@ -479,9 +577,11 @@ def doctor(args, tailscale_status: tuple[int, str] | None = None) -> int:
         )
     else:
         checks.extend([check_mlx(), check_model(model_dir)])
-    if not sensevoice and getattr(args, "quick", False):
+    if engine != "mlx":
+        pass
+    elif getattr(args, "quick", False):
         print("[SKIP] warm decode: skipped (--quick)")
-    elif not sensevoice:
+    else:
         checks.append(asyncio.run(check_warm_decode(model_dir)))
     checks.extend(
         [
@@ -492,7 +592,7 @@ def doctor(args, tailscale_status: tuple[int, str] | None = None) -> int:
             check_retention(settings),
             check_correction(settings),
             check_tailscale(tailscale_status),
-            check_launchagent(),
+            check_service(),
         ]
     )
     for check in checks:

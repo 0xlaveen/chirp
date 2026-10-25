@@ -10,6 +10,7 @@ import os
 import plistlib
 import signal
 import subprocess
+import sys
 import time
 from pathlib import Path
 
@@ -92,7 +93,53 @@ def stop(pids):
     return False
 
 
+def wait_ready(port):
+    deadline = time.monotonic() + 45
+    while time.monotonic() < deadline:
+        if server_running(port):
+            emit("restarted")
+            return 0
+        time.sleep(0.5)
+    emit("error", reason="timeout", message="The server did not become ready.")
+    return 1
+
+
+def run_portable(port, replace=False):
+    """Windows and Linux: the same flow through the platform's service backend."""
+    from .service import backend
+
+    service = backend()
+    held = service.listeners(port)
+    if held and not service.status()["running"]:
+        if not replace:
+            emit(
+                "error",
+                reason="unmanaged",
+                message="A server Chirp does not manage is using this port.",
+            )
+            return 1
+        emit("stopping")
+        if not service.stop(held):
+            emit(
+                "error", reason="stuck", message="The other server did not stop. Quit it and retry."
+            )
+            return 1
+    emit("starting")
+    try:
+        service.restart(port)
+    except Exception:
+        emit(
+            "error",
+            reason="service",
+            message="Could not restart the server. Check its configuration and try again.",
+        )
+        return 1
+    return wait_ready(port)
+
+
 def run(port, replace=False):
+    if sys.platform != "darwin":
+        return run_portable(port, replace)
     held = listeners(port)
     ours = jobs().get(LABEL)
     if held and ours not in held:
@@ -129,11 +176,4 @@ def run(port, replace=False):
             message="Could not restart the server. Check its configuration and try again.",
         )
         return 1
-    deadline = time.monotonic() + 45
-    while time.monotonic() < deadline:
-        if server_running(port):
-            emit("restarted")
-            return 0
-        time.sleep(0.5)
-    emit("error", reason="timeout", message="The server did not become ready.")
-    return 1
+    return wait_ready(port)
