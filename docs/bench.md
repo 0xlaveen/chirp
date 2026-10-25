@@ -1251,6 +1251,21 @@ uv run --no-project --with numpy python make_voice_clips.py $B/voices
 swift run -c release VoiceBench --clips $B/voices --out $B/out/voices/rates.json
 ```
 
+## Speaker labels (server, for Android Live Notes)
+
+2026-10-25, M-series Mac, shared host, issue #187. `chirp_server.speakers` with the pinned WeSpeaker ResNet34-LM
+ONNX (CPU, 2 threads). Fbank matches kaldi-native-fbank within 5e-5.
+
+- **1.5 s window similarity:** `say` voices, same voice 0.73–0.93, different voices 0.03–0.55 (Samantha vs Karen is
+  the closest pair). Two real two-person English recordings (16 s, 34 s): one person 0.35–0.85, two people under 0.25.
+- **Thresholds chosen:** clustering 0.45, note match 0.5, new person ≥ 1.5 s of speech. Cut into 8 s / 15 s
+  segments: the 16 s recording gives 2 people (truth 2); the 34 s one gives 4–5 (truth 2, a laugh-heavy stretch splits
+  off); Samantha+Karen merges at 8 s segments and separates at 15 s. Stricter thresholds (0.6/0.55) split the real
+  recordings into 4–7 people. Real voices will need merges; the Android chip menu has **Same person as**.
+- **Model test** (`uv run pytest -m model tests/test_speakers.py`, `CHIRP_SPEAKER_MODEL` set): Samantha then Daniel
+  in one segment, ≥ 90 % of the audio given the right voice, Daniel again in a later segment matched to the same
+  person; 2.2 s for the test including model load.
+
 ## Android real-device session timings
 
 Not yet measured. Android keeps content-free per-session timings (Settings → About → Diagnostics); paste the Wi-Fi and LTE summaries from the [real-device checklist](android-device-acceptance.md) here, with the device, Chirp version, engine and `battery-session.sh` rows. Until then every Android latency and battery figure is emulator-only (TBM).
