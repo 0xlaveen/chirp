@@ -332,6 +332,25 @@ public final class Preferences: @unchecked Sendable {
         get { defaults.bool(forKey: "notesVoiceProfiles") }
         set { defaults.set(newValue, forKey: "notesVoiceProfiles") }
     }
+    /// Dictation history (Settings → Dictation → History): on by default, kept on this Mac only, sealed.
+    public var historyEnabled: Bool {
+        get { defaults.object(forKey: "historyEnabled") as? Bool ?? true }
+        set { defaults.set(newValue, forKey: "historyEnabled") }
+    }
+    /// How long dictations are kept (30 days by default).
+    public var historyRetention: HistoryRetention {
+        get { defaults.string(forKey: "historyRetention").flatMap(HistoryRetention.init(rawValue:)) ?? .default }
+        set { defaults.set(newValue.rawValue, forKey: "historyRetention") }
+    }
+    /// Apps whose dictations are never kept (bundle ids). Password managers until the user edits the list; once
+    /// edited the stored list is the truth, including an empty one.
+    public var historyExcludedApps: [String] {
+        get { defaults.stringArray(forKey: "historyExcludedApps") ?? HistoryPolicy.defaultExcludedApps }
+        set {
+            var seen = Set<String>()
+            defaults.set(newValue.filter { !$0.isEmpty && seen.insert($0).inserted }, forKey: "historyExcludedApps")
+        }
+    }
     /// Set only when the first-run window is finished (never on close), so an interrupted setup shows again.
     public var didOnboard: Bool {
         get { defaults.bool(forKey: "didOnboard") }

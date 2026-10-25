@@ -26,6 +26,15 @@ final class DictationController {
     private let autoEnter = AutoEnterSender(env: SystemInsertion.autoEnterEnvironment())
     /// ⇧ was held when this dictation stopped: no Return after it (unless the hotkey itself uses ⇧).
     private var autoEnterSkipped = false
+    /// Dictation history (on by default): every committed dictation is kept here, sealed, on this Mac.
+    var history: DictationHistory?
+    /// The app that was frontmost when this dictation started (its history entry names it).
+    private var target: (bundleID: String?, name: String?) = (nil, nil)
+    /// When the microphone opened, and the seconds it stayed open.
+    private var captureStartedAt: ContinuousClock.Instant?
+    private var capturedSeconds: TimeInterval = 0
+    /// The last dictation's history entry, so "Use raw" can record what is really in the field.
+    private var lastHistoryID: UUID?
 
     private var session: StreamSession?
     private var eventTask: Task<Void, Never>?
@@ -239,7 +248,12 @@ final class DictationController {
         hud.model.status = HUDStatus.connecting
         hud.model.debugRetention = health?.debugRetention ?? false
         // The frontmost app picks the style now, before the HUD or any permission prompt can change focus.
-        startOptions = settings.startOptions(frontmostBundleID: NSWorkspace.shared.frontmostApplication?.bundleIdentifier,
+        let frontmost = NSWorkspace.shared.frontmostApplication
+        target = (frontmost?.bundleIdentifier, frontmost?.localizedName)
+        captureStartedAt = nil
+        capturedSeconds = 0
+        lastHistoryID = nil
+        startOptions = settings.startOptions(frontmostBundleID: frontmost?.bundleIdentifier,
                                              available: health?.correctionProfiles)
         hud.model.styleName = startOptions.correction ? CorrectionProfile.name(for: startOptions.correctionProfile, in: health) : nil
         hud.model.wordWaveform = startOptions.wordTimings
@@ -302,6 +316,7 @@ final class DictationController {
             send(.failed(error is CaptureError ? "No microphone input device" : "Could not start the microphone"))
             return
         }
+        captureStartedAt = .now
         eventTask = Task { [weak self] in
             await session.open()
             for await event in session.events {
@@ -399,7 +414,14 @@ final class DictationController {
         }
     }
 
-    private func stopCapture() { capture.stop() }
+    private func stopCapture() {
+        capture.stop()
+        if let start = captureStartedAt {
+            let d = (ContinuousClock.now - start).components
+            capturedSeconds = Double(d.seconds) + Double(d.attoseconds) / 1e18
+            captureStartedAt = nil
+        }
+    }
 
     private func teardown(cancelServer: Bool) {
         epoch += 1   // invalidates every in-flight callback of the old session
@@ -454,7 +476,9 @@ final class DictationController {
                 else { hud.model.settle(on: text) }
                 hud.model.status = HUDStatus.inserting
                 hud.model.indicator = .waveform
+                let secure = SystemInsertion.focusedFieldIsSecure()
                 let outcome = await inserter.insert(text, undoRaw: final.canUseRaw && settings.showRawAfterCleanup ? final.raw : nil)
+                keep(outcome, final: final, text: text, secureField: secure)
                 show(outcome, final: final)
                 await pressReturn(after: outcome)
             }
@@ -470,6 +494,7 @@ final class DictationController {
             if settings.showChangesAfterCleanup { await hud.model.playChangeHighlight(raw: final.raw, cleaned: text) }
             else { hud.model.settle(on: text) }
             if await inserter.replaceInserted(with: text) {
+                keep(early, final: final, text: text, secureField: SystemInsertion.focusedFieldIsSecure())
                 show(early, final: final)
                 await pressReturn(after: early)
                 return
@@ -482,6 +507,8 @@ final class DictationController {
             if final.canUseRaw { shown = FinalResult(text: final.raw, corrected: false, correctionError: "replace") }
             else { shown.text = final.raw }
         }
+        keep(early, final: shown, text: shown.text.trimmingCharacters(in: .whitespacesAndNewlines),
+             secureField: SystemInsertion.focusedFieldIsSecure())
         show(early, final: shown)
         await pressReturn(after: early)
     }
@@ -525,6 +552,7 @@ final class DictationController {
             guard let outcome = await inserter.useRaw() else { return }
             hud.model.isError = outcome == .refusedSecure
             hud.show()
+            if outcome != .refusedSecure, let id = lastHistoryID, let history { Task { await history.usedRaw(id) } }
             switch outcome {
             case .inserted: hud.model.status = "Inserted raw"; hud.model.indicator = .success
             case .refusedSecure: hud.model.status = "Secure field — unchanged"; hud.model.indicator = .warning
@@ -533,6 +561,39 @@ final class DictationController {
             hud.announce(hud.model.status)
             hud.hide(after: 1.5)
         }
+    }
+}
+
+// MARK: dictation history
+
+extension DictationController {
+    /// Keeps a committed dictation in the history when it is on and the policy allows (never a secure field, an
+    /// excluded app, a refused insertion or an empty text). Nothing about it is logged.
+    fileprivate func keep(_ outcome: InsertionOutcome, final: FinalResult, text: String, secureField: Bool) {
+        lastHistoryID = nil
+        guard let history, HistoryPolicy.shouldRecord(enabled: settings.historyEnabled, outcome: outcome, secureField: secureField,
+                                                      bundleID: target.bundleID, excluded: settings.historyExcludedApps, text: text)
+        else { return }
+        let raw = final.corrected ? final.raw.trimmingCharacters(in: .whitespacesAndNewlines) : nil
+        let audio = final.timings?.audio.map { $0 / 1000 } ?? capturedSeconds
+        let entry = HistoryEntry(date: Date(), text: text, raw: raw, bundleID: target.bundleID, appName: target.name,
+                                 duration: audio, style: final.corrected ? startOptions.correctionProfile : nil)
+        lastHistoryID = entry.id
+        Task { await history.record(entry) }
+    }
+
+    /// History's Insert Again: `text` into the focused field of the frontmost app the way a dictation is inserted (AX,
+    /// then paste, then a copy), with the same HUD result. Never while a dictation runs or Chirp is paused, and never
+    /// into a secure field. It is not kept again.
+    func insertAgain(_ text: String) async {
+        guard !machine.state.isActive, !isPaused else { NSSound.beep(); return }
+        inserter.forgetUndo()
+        rawOffer.close()
+        hud.cancelHide()
+        hud.model.reset()
+        hud.model.settle(on: text)
+        let outcome = await inserter.insert(text)
+        show(outcome, final: FinalResult(text: text))
     }
 }
 

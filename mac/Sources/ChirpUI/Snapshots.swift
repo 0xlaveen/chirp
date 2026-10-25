@@ -540,6 +540,7 @@ public enum Snapshots {
         "notes-empty", "notes-library", "notes-recording", "notes-search", "notes-no-results", "notes-deleted",
         "notes-continued", "notes-inspector-playing", "notes-review-sheet",
         "notes-transcript-speakers", "notes-transcript-speakers-renamed", "notes-recording-call", "notes-sources-call",
+        "history-cleaned", "history-empty", "settings-dictation-history", "menu-recent-dictations-submenu",
     ]
 
     public static var committedScenarios: [Scenario] {
@@ -1068,7 +1069,7 @@ public enum Snapshots {
 
     public static var allScenarios: [Scenario] {
         hudScenarios + rippleScenarios + wordWaveScenarios + settingsScenarios + onboardingScenarios + menuScenarios
-            + localModelsScenarios + notesScenarios + pairingScenarios
+            + localModelsScenarios + notesScenarios + pairingScenarios + historyScenarios
     }
 
     // MARK: rendering
@@ -1195,7 +1196,7 @@ private struct SnapshotBackdrop<Content: View>: View {
 /// The menu-bar menu drawn from its real views: the header (with its switch) and the rows are the same classes the
 /// live `NSMenu` uses; only the menu's own chrome (background, border, separators) is approximated, since an `NSMenu`
 /// cannot be drawn offscreen. `native` is a submenu, whose rows AppKit draws itself (checkmark column, no values).
-private final class MenuPanelView: NSView {
+final class MenuPanelView: NSView {
     private static let outer: CGFloat = 14
     private static let inner: CGFloat = 6
     private static let backdrop = NSColor(red: 0.45, green: 0.52, blue: 0.66, alpha: 1)
