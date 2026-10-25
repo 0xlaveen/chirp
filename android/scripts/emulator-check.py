@@ -170,7 +170,7 @@ def cleanup_check(output, work):
         focus_editor()
         x, y, _, _ = mic_position(night, work)
         before = editor().get("text", "")
-        if before == "Test dictation here": before = ""
+        if before in ("Test dictation here", "Synthetic E2E editor"): before = ""
         _probe["wait_for"].__globals__["nodes"] = fast_nodes
         recording = None
         if not night:
@@ -188,11 +188,18 @@ def cleanup_check(output, work):
         adb("pull", "/sdcard/chirp-polishing.png", str(output / ("emulator-cleanup-polishing-" + theme + ".png")))
         adb("shell", "CLASSPATH=/data/local/tmp/chirp-ui-probe.jar", "app_process", "/", "dev.chirp.smoke.UiHierarchy", "watch-undo", shlex.quote("Use raw"), "/sdcard/chirp-cleaned.png")
         adb("pull", "/sdcard/chirp-cleaned.png", str(output / ("emulator-cleanup-cleaned-" + theme + ".png")))
-        restored = read_editor()
-        # Accessibility can cache an earlier partial on the editor while the IME already
-        # exposes polishing. Exact raw replacement is covered with real InputConnections;
-        # here verify the native action restored the fixture fillers removed by cleanup.
-        assert len(restored) > len(before) and re.search(r"\bum\b", restored[len(before):], re.I) and re.search(r"\buh\b", restored[len(before):], re.I), "One-tap raw undo did not restore fixture fillers"
+        # The editor and IME update in different processes. Await the restored text, not just
+        # the button click; an empty native editor reports its hint through Accessibility.
+        deadline = time.monotonic() + 10
+        restored = ""
+        while time.monotonic() < deadline:
+            restored = read_editor()
+            suffix = restored[len(before):]
+            if len(restored) > len(before) and re.search(r"\bum\b", suffix, re.I) and re.search(r"\buh\b", suffix, re.I):
+                break
+            time.sleep(.1)
+        else:
+            raise AssertionError("One-tap raw undo did not restore fixture fillers")
         assert adb("shell", "settings", "get", "secure", "default_input_method").decode().strip() == IME
         if recording is not None:
             recording.wait(timeout=15)
