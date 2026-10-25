@@ -36,6 +36,15 @@ See [desktop/README.md](../desktop/README.md#build-and-test) for native and Dock
 commands. The Linux desktop workflow builds a Debian package on Ubuntu; it does
 not need microphone permissions, a model download, or a running server.
 
+### Desktop Windows
+
+`desktop-windows.yml` runs the same frontend and Rust checks on `windows-latest`,
+then `desktop/scripts/windows-smoke.py` on the runner's desktop: SendInput types
+Unicode, multiline and tab text into a real Tk text field, a long text is pasted
+and the clipboard restored, US and German layouts pick Right Alt and Right Ctrl,
+and the keyboard hook installs. It then builds the per-user NSIS installer. Real
+key presses and real apps are the operator's Windows checklist in [#214](https://github.com/araa47/chirp/issues/214).
+
 ### CI
 
 GitHub Actions (`.github/workflows/`) runs the automated checks on every pull request and on pushes to `main`. Each workflow is path-filtered, so a PR only runs the components it touches, and a newer push cancels the superseded run. No secrets, tailnet access or model downloads are involved.
@@ -44,6 +53,7 @@ GitHub Actions (`.github/workflows/`) runs the automated checks on every pull re
 |---|---|---|---|
 | `server.yml` | ubuntu | `uv sync --locked`, `ruff check`, `ruff format --check`, `pytest -q` | MLX packages are darwin-only, so Linux installs the portable set. `-m model` tests (real cached models) are deselected by `addopts`; run them on the Mac. |
 | `desktop-linux.yml` | ubuntu | frontend checks, Rust formatting/Clippy/tests, Xvfb native insertion/hotkeys, Tauri Debian package | The shared desktop client; no speech model download or live server. |
+| `desktop-windows.yml` | windows | frontend checks, Rust formatting/Clippy/tests, SendInput/clipboard/layout smoke in a real Tk window, NSIS installer | The Windows platform module; no speech model download or live server. |
 | `android.yml` | ubuntu, JDK 21, Android SDK 37.2 | `./gradlew lint testDebugUnitTest assembleDebug assembleRelease` | The release APK is unsigned (no keystore secret). Lint and test reports upload on failure. |
 | `mac.yml` | macos | `mac/scripts/ci-test.sh` (wraps `test.sh`) | Only for `mac/**` changes (macOS minutes are expensive). Can also be started by hand (`workflow_dispatch`). |
 | `ios.yml` | macos, newest installed Xcode | `ios/scripts/ci-test.sh`: `check-sources.sh`, `Shared/scripts/test.sh`, the keyboard policy package tests, then `ios/scripts/simulator.sh test` (build and unit tests of the app with its keyboard and widgets) on one iPhone simulator | Only for `ios/**`, the `mac` package sources the app links (`ChirpCore`, `ChirpSpeakers`, `Package.*`) and the workflow file. Ad-hoc simulator signing, no team or secrets. Can also be started by hand. |

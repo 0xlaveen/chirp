@@ -6,6 +6,8 @@ use std::sync::mpsc::Sender;
 pub mod linux;
 #[cfg(target_os = "windows")]
 pub mod windows;
+#[cfg(any(target_os = "windows", test))]
+pub mod windows_logic;
 
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "snake_case")]
