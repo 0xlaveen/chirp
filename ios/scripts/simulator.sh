@@ -22,6 +22,9 @@ if [ "$action" = ui ]; then operation=test; scheme=ChirpIOS-UI; fi
 # Simulator-only ad-hoc signing retains App Group/shared-Keychain entitlements.
 # No development team, Apple ID, provisioning update or physical device is used.
 # Extra arguments (e.g. -only-testing:…) go to xcodebuild.
+# CHIRP_DERIVED_DATA moves the build products (default ios/DerivedData). Keep them OUT of ~/Documents, ~/Desktop and
+# ~/Downloads: macOS privacy protection makes the simulator's unit-test host hang there ("The test runner hung
+# before establishing connection") while the same build in /tmp passes. e2e-all.sh does this for you.
 # Compare with CHIRP_SIMULATOR_SIGNING=unsigned to diagnose entitlement failures;
 # the host fixture reports a precise skip if shared storage cannot be opened.
 case "${CHIRP_SIMULATOR_SIGNING:-adhoc}" in
@@ -32,5 +35,5 @@ esac
 exec xcodebuild -project Chirp.xcodeproj -scheme "$scheme" -configuration Debug \
   -sdk iphonesimulator -destination "platform=iOS Simulator,id=$device" \
   -parallel-testing-enabled NO \
-  -derivedDataPath DerivedData $signing "$@" \
+  -derivedDataPath "${CHIRP_DERIVED_DATA:-DerivedData}" $signing "$@" \
   "$operation"

@@ -575,6 +575,8 @@ unmodified). It has already caught one real conditional-API mistake, but it
 does not validate the iOS SDK, signing, the simulator, SwiftUI view macro
 expansion, App Intents or ActivityKit, and it is not runtime evidence.
 
+**Everything at once:** `ios/scripts/e2e-all.sh` creates its own iPhone and iPad simulators, runs the portable checks, build, unit tests and the live UI scheme on each, prints a pass/fail table (one row per test, skip reasons included) and keeps screenshots and logs in one evidence directory. Keep the build products out of `~/Documents` (`CHIRP_DERIVED_DATA`; the script does): the unit-test host hangs there. See `.claude/skills/chirp-ios-e2e/`.
+
 **Live end to end on a simulator** (full Xcode, the cached model at
 `~/.koi/voice-models/parakeet-mlx`, `ffmpeg`):
 
