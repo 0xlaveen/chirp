@@ -1,0 +1,60 @@
+import XCTest
+
+/// Getting around the app shell (#192): four tabs (Notes · Dictate · History · Settings) as a tab bar on
+/// iPhone and a sidebar or top tab bar on iPad; Connection and Styles live in the Settings tab.
+extension XCUIApplication {
+    static let syntheticPairingLink = "chirp://pair?url=https%3A%2F%2Fsynthetic.test.ts.net%2Fchirp&token=synthetic-only"
+
+    /// Selects a tab by title, wherever the system put it. App controls are excluded by their `chirp.` identifiers
+    /// (the Dictate mic button is also labelled "Dictate").
+    @MainActor func selectChirpTab(_ title: String, file: StaticString = #filePath, line: UInt = #line) {
+        let symbols = ["Notes": "note.text", "Dictate": "mic", "History": "clock.arrow.circlepath", "Settings": "gearshape"]
+        let tabBar = tabBars.buttons[title]
+        if tabBar.exists { tabBar.tap(); return }
+        let notApp = NSPredicate(format: "(label == %@ OR identifier == %@) AND NOT (identifier BEGINSWITH 'chirp.')", title, symbols[title] ?? title)
+        for query in [buttons.matching(notApp), cells.matching(notApp)] {
+            let element = query.firstMatch
+            if element.waitForExistence(timeout: 2), element.isHittable { element.tap(); return }
+        }
+        XCTFail("No \(title) tab", file: file, line: line)
+    }
+
+    /// Settings → a shortcut (Connection or Styles), from any tab.
+    @MainActor func openSettingsPage(_ id: String) {
+        selectChirpTab("Settings")
+        let back = navigationBars.buttons["Settings"]
+        if back.exists { back.tap() }
+        let link = buttons[id]
+        XCTAssertTrue(link.waitForExistence(timeout: 5), "No \(id) in Settings")
+        link.tap()
+    }
+
+    @MainActor func openConnection() { openSettingsPage("chirp.settings.connection") }
+    @MainActor func openStyles() { openSettingsPage("chirp.settings.styles") }
+
+    /// The pairing link field, revealed by "Paste link instead" if needed.
+    @MainActor func pairingLinkField() -> XCUIElement {
+        let field = secureTextFields["pairingLink"]
+        if !field.exists {
+            let paste = buttons["chirp.pair.paste"]
+            if paste.waitForExistence(timeout: 5) { paste.tap() }
+        }
+        XCTAssertTrue(field.waitForExistence(timeout: 5), "No pairing link field")
+        return field
+    }
+
+    /// Settings → Connection → paste a link → Connect, then wait for the saved pairing.
+    @MainActor func pair(link: String, timeout: TimeInterval = 5) {
+        openConnection()
+        let field = pairingLinkField()
+        field.tap()
+        field.typeText(link)
+        buttons["chirp.pair.submit"].tap()
+        XCTAssertTrue(staticTexts["Mac pairing saved"].waitForExistence(timeout: timeout), "Pairing did not save")
+    }
+
+    /// End an armed session from whichever tab is showing (each tab carries its own capsule).
+    @MainActor func endChirpSession() {
+        buttons.matching(identifier: "chirp.session.end").allElementsBoundByIndex.first { $0.isHittable }?.tap()
+    }
+}

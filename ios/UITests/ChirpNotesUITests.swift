@@ -6,14 +6,7 @@ final class ChirpNotesUITests: XCTestCase {
     override func setUp() { continueAfterFailure = false; XCUIDevice.shared.orientation = .portrait }
 
     @MainActor static func openNotes(_ app: XCUIApplication) {
-        // iPad: the Notes tab (iPadOS 27's top tab strip is buttons named by symbol). iPhone: the Dictate tab's toolbar.
-        let tab = app.tabBars.buttons["Notes"]
-        if tab.exists { tab.tap(); return }
-        let entry = app.buttons["chirp.notes.open"]
-        if entry.waitForExistence(timeout: 3) { entry.tap(); return }
-        let topTab = app.buttons.matching(identifier: "note.text").firstMatch
-        XCTAssertTrue(topTab.waitForExistence(timeout: 5), "No way into Live Notes")
-        topTab.tap()
+        app.selectChirpTab("Notes")
     }
 
     @MainActor static func element(_ id: String, in app: XCUIApplication) -> XCUIElement {
@@ -37,7 +30,7 @@ final class ChirpNotesUITests: XCTestCase {
 
     @MainActor func testSyntheticRecordPauseResumeStopTranscriptAndExport() {
         let app = XCUIApplication()
-        app.launchArguments = ["--chirp-ui-test"]
+        app.launchArguments = ["--chirp-ui-test", "--chirp-skip-onboarding"]
         app.launch()
         Self.openNotes(app)
         let record = app.buttons["chirp.notes.record"]
@@ -86,14 +79,14 @@ final class ChirpNotesUITests: XCTestCase {
         let discard = app.buttons["Discard and start new"]
         XCTAssertTrue(discard.waitForExistence(timeout: 5))
         discard.tap()
-        if UIDevice.current.userInterfaceIdiom != .pad { app.buttons["Notes"].tap() }
+        if UIDevice.current.userInterfaceIdiom != .pad { app.segmentedControls.buttons["Notes"].tap() }
         XCTAssertTrue(Self.waitFor(editor, "value == '' OR value == nil", timeout: 5) || (editor.value as? String)?.isEmpty == true)
         XCTAssertTrue(Self.waitFor(status, "label == 'Ready to record'", timeout: 5), status.label)
     }
 
     @MainActor func testNotesSettingsAndRotation() {
         let app = XCUIApplication()
-        app.launchArguments = ["--chirp-ui-test"]
+        app.launchArguments = ["--chirp-ui-test", "--chirp-skip-onboarding"]
         app.launch()
         Self.openNotes(app)
         app.buttons["chirp.notes.settings"].tap()

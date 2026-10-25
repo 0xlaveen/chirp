@@ -6,14 +6,6 @@ final class ChirpHardwareKeyboardUITests: XCTestCase {
     override func setUp() { continueAfterFailure = false; XCUIDevice.shared.orientation = .portrait }
     override func tearDown() { XCUIDevice.shared.orientation = .portrait }
 
-    @MainActor func selectTab(_ title: String, symbol: String, in app: XCUIApplication) {
-        let tab = app.tabBars.buttons[title]
-        if tab.exists { tab.tap(); return }
-        let topTab = app.buttons.matching(identifier: symbol).firstMatch
-        XCTAssertTrue(topTab.waitForExistence(timeout: 5))
-        topTab.tap()
-    }
-
     @MainActor func waitFor(_ element: XCUIElement, _ format: String, _ args: Any..., timeout: TimeInterval = 5) -> Bool {
         let expectation = XCTNSPredicateExpectation(predicate: NSPredicate(format: format, argumentArray: args), object: element)
         return XCTWaiter.wait(for: [expectation], timeout: timeout) == .completed
@@ -27,16 +19,10 @@ final class ChirpHardwareKeyboardUITests: XCTestCase {
 
     @MainActor func pairedApp() -> XCUIApplication {
         let app = XCUIApplication()
-        app.launchArguments = ["--chirp-ui-test"]
+        app.launchArguments = ["--chirp-ui-test", "--chirp-skip-onboarding"]
         app.launch()
-        selectTab("Pair Mac", symbol: "qrcode.viewfinder", in: app)
-        let link = app.secureTextFields["pairingLink"]
-        XCTAssertTrue(link.waitForExistence(timeout: 5))
-        link.tap()
-        link.typeText("chirp://pair?url=https%3A%2F%2Fsynthetic.test.ts.net%2Fchirp&token=synthetic-only")
-        app.buttons["Test connection and save pairing"].tap()
-        XCTAssertTrue(app.staticTexts["Mac pairing saved"].waitForExistence(timeout: 5))
-        selectTab("Dictate", symbol: "mic", in: app)
+        app.pair(link: XCUIApplication.syntheticPairingLink)
+        app.selectChirpTab("Dictate")
         return app
     }
 
@@ -58,10 +44,10 @@ final class ChirpHardwareKeyboardUITests: XCTestCase {
         app.buttons["chirp.dictation.raw"].tap()
         XCTAssertTrue(waitFor(transcript, "label == 'synthetic words'"))
         XCUIDevice.shared.orientation = .portrait
-        XCTAssertTrue(waitFor(status, "label == 'Finished · microphone still active'"))
+        XCTAssertTrue(waitFor(status, "label == 'Finished'"))
     }
 
-    /// ⌘Return starts and stops, ⌘⇧Z uses raw, ⌘⇧C copies, ⌘. cancels, ⌘⇧E ends and ⌘⇧K arms.
+    /// ⌘Return starts and stops, ⌘⇧Z uses raw, ⌘⇧C copies, ⌘. cancels, ⌘⇧E ends, ⌘⇧K arms and ⌘1–⌘4 switch tabs.
     /// Needs a hardware keyboard connected to the simulator (Simulator → I/O → Keyboard); headless
     /// simulators drop synthesized key events, which the Esc probe detects.
     @MainActor func testDictationMenuShortcuts() throws {
@@ -70,7 +56,7 @@ final class ChirpHardwareKeyboardUITests: XCTestCase {
         app.buttons["chirp.dictation.start"].tap()
         XCTAssertTrue(waitFor(status, "label == 'Listening…'"))
         app.typeKey(.escape, modifierFlags: [])
-        guard waitFor(status, "label == 'Session armed · microphone active'", timeout: 3) else {
+        guard waitFor(status, "label == 'Ready'", timeout: 3) else {
             throw XCTSkip("Synthesized hardware key events do not reach the app: no hardware keyboard is connected to this simulator.")
         }
         app.typeKey(.return, modifierFlags: .command)
@@ -84,11 +70,17 @@ final class ChirpHardwareKeyboardUITests: XCTestCase {
         app.typeKey(.return, modifierFlags: .command)
         XCTAssertTrue(waitFor(status, "label == 'Listening…'"))
         app.typeKey(".", modifierFlags: .command)
-        XCTAssertTrue(waitFor(status, "label == 'Session armed · microphone active'"), "⌘. did not cancel")
+        XCTAssertTrue(waitFor(status, "label == 'Ready'"), "⌘. did not cancel")
         app.typeKey("e", modifierFlags: [.command, .shift])
         XCTAssertTrue(waitFor(status, "label == 'Microphone off'"), "⌘⇧E did not end the session")
         app.typeKey("k", modifierFlags: [.command, .shift])
-        XCTAssertTrue(waitFor(status, "label == 'Session armed · microphone active'"), "⌘⇧K did not arm")
+        XCTAssertTrue(waitFor(status, "label == 'Ready'"), "⌘⇧K did not arm")
+        app.typeKey("1", modifierFlags: .command)
+        XCTAssertTrue(app.buttons["chirp.notes.record"].waitForExistence(timeout: 3), "⌘1 did not open Notes")
+        app.typeKey("3", modifierFlags: .command)
+        XCTAssertTrue(app.descendants(matching: .any)["chirp.history.enabled"].waitForExistence(timeout: 3), "⌘3 did not open History")
+        app.typeKey("2", modifierFlags: .command)
+        XCTAssertTrue(waitFor(status, "label == 'Ready'"), "⌘2 did not open Dictate")
     }
 
     /// The README and in-app help send iPad users to Full Keyboard Access → Commands to give their Toggle
