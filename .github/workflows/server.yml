@@ -38,7 +38,7 @@ jobs:
 
   windows:
     runs-on: windows-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     defaults:
       run:
         shell: bash
@@ -55,9 +55,19 @@ jobs:
           enable-cache: true
           cache-dependency-glob: server/uv.lock
       - run: uv sync --locked --extra onnx
-      # Dump every thread's stack if one test runs for 2 minutes, so a hang names itself.
-      - run: uv run pytest -q -o faulthandler_timeout=120 --durations=15
-        timeout-minutes: 15
+      # Each file under its own time limit, so one hang cannot hide the others; a test that
+      # runs for a minute dumps every thread's stack.
+      - name: pytest, file by file
+        run: |
+          status=0
+          for file in tests/test_*.py; do
+            echo "::group::$file"
+            timeout -k 10 240 .venv/Scripts/python.exe -m pytest -q -p no:cacheprovider \
+              -o faulthandler_timeout=60 "$file" || { code=$?; echo "FAILED $file ($code)"; status=1; }
+            echo "::endgroup::"
+          done
+          exit $status
+        timeout-minutes: 25
       - uses: actions/cache@v4
         id: model
         with:
