@@ -2,6 +2,7 @@
   "ChirpIOS": [
     "App/ChirpApp.swift",
     "App/DebugFixtures.swift",
+    "App/DictateView.swift",
     "App/LiveNotesActivity.swift",
     "App/LiveNotesAudio.swift",
     "App/LiveNotesController.swift",
@@ -9,7 +10,10 @@
     "App/LiveNotesView.swift",
     "App/MicrophoneCapture.swift",
     "App/NetworkKind.swift",
+    "App/Onboarding.swift",
     "App/PairingScanner.swift",
+    "App/PairingView.swift",
+    "App/PondComponents.swift",
     "App/PrivacyController.swift",
     "App/RollingDictation.swift",
     "App/SessionCoordinator.swift",
@@ -36,6 +40,7 @@
     "Tests/CaptureSinkTests.swift",
     "Tests/LiveNotesControllerTests.swift",
     "Tests/LongDictationTests.swift",
+    "Tests/PondShellTests.swift",
     "Tests/SessionCoordinatorTests.swift",
     "Tests/SessionTimingTests.swift"
   ],
@@ -44,7 +49,9 @@
     "UITests/ChirpKeyboardUITests.swift",
     "UITests/ChirpLiveNotesUITests.swift",
     "UITests/ChirpLiveServerUITests.swift",
+    "UITests/ChirpNavigation.swift",
     "UITests/ChirpNotesUITests.swift",
+    "UITests/ChirpScreenshotUITests.swift",
     "UITests/ChirpUITests.swift",
     "UITests/KeyboardSetup.swift"
   ]

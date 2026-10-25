@@ -97,6 +97,17 @@ extension SessionCoordinator {
     }
 }
 
+/// UI tests pick whether first-run onboarding shows: `--chirp-onboarding` shows it, `--chirp-skip-onboarding`
+/// starts as if it was finished. Without either flag the stored state decides, as in Release.
+enum OnboardingTestMode {
+    static func apply() {
+        let args = ProcessInfo.processInfo.arguments
+        if args.contains("--chirp-onboarding") { UserDefaults.standard.set(false, forKey: Onboarding.doneKey) }
+        if args.contains("--chirp-skip-onboarding") { UserDefaults.standard.set(true, forKey: Onboarding.doneKey) }
+        if args.contains("--chirp-setup-card") { UserDefaults.standard.set(false, forKey: "chirp.setupCard.dismissed") }
+    }
+}
+
 /// Simulator-only speech source for end-to-end runs against a real local server: `--chirp-sim-audio <file>`
 /// plays an audio file (from the app's data container) through the real `CaptureSink` at real-time pace
 /// for each utterance, then silence until stop. The simulator's microphone input can hang in AudioToolbox

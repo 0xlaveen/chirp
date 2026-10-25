@@ -84,13 +84,16 @@ final class SessionCoordinator: ObservableObject {
     private var stream: StreamSession?
     private var ready = false
     private var stopRequested = false
-    private var expiresAt: Date?
+    /// When an armed session ends by itself (nil: Never); the session capsule counts down to it.
+    private(set) var expiresAt: Date?
     private var heartbeat: Task<Void, Never>?
     private var expiry: Task<Void, Never>?
     private var deadline: Task<Void, Never>?
     private var utteranceLimit: Task<Void, Never>?
     private var eventTask: Task<Void, Never>?
     private var rawExpiry: Task<Void, Never>?
+    /// When Use raw stops being offered after a final (five seconds on), for its countdown label.
+    private(set) var rawExpiresAt: Date?
     private var observation: DarwinObservation?
     private var activityTeardown: Task<Void, Never>?
     private var systemObservers: [NSObjectProtocol] = []
@@ -164,8 +167,9 @@ final class SessionCoordinator: ObservableObject {
         }
     }
 
-    func pair(link: String) async {
-        guard !working, !armed, let services else { return }
+    /// Verifies the link against the Mac and saves the pairing; true once it is saved.
+    @discardableResult func pair(link: String) async -> Bool {
+        guard !working, !armed, let services else { return false }
         working = true
         let ticket = lifecycle
         defer { working = false }
@@ -177,15 +181,17 @@ final class SessionCoordinator: ObservableObject {
                 catch { seen.issue = ConnectionIssue.classify(error); throw error }
             }
             pairedDevice = seen.device
-            guard ticket == lifecycle else { return }
+            guard ticket == lifecycle else { return false }
             config = try services.pairing.load(); paired = config != nil
             reached(checked)
             notice = "Mac verified and pairing saved."
             await loadProfiles()
+            return true
         } catch {
             let issue = (error as? CoreError) == .unauthorized ? .refused : seen.issue
             notice = issue?.message ?? "Could not verify pairing. Check the link, Tailscale and your Mac."
             connectionIssue = issue; record(issue?.diagnostic ?? .auth)
+            return false
         }
     }
 
@@ -633,6 +639,7 @@ final class SessionCoordinator: ObservableObject {
         if companion == id { copyText(whole); companion = nil; notice = "Copied final text." }
         else { notice = result.corrected ? "Cleaned. Copy or share when ready." : "Finished. Copy or share when ready." }
         for waiter in waiters.removeValue(forKey: id) ?? [] { waiter.resume() }
+        rawExpiresAt = now().addingTimeInterval(5)
         rawExpiry = Task { [weak self] in
             try? await Task.sleep(for: .seconds(5))
             guard !Task.isCancelled, self?.utterance == id else { return }
