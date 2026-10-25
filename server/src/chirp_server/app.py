@@ -447,6 +447,7 @@ def create_app(settings=None, engine=None, token=None, corrector=None, speakers=
                 settings.finalization,
                 intra_op_num_threads=settings.onnx.intra_op_num_threads,
                 inter_op_num_threads=settings.onnx.inter_op_num_threads,
+                providers=settings.onnx.providers,
             )
         else:
             from .engine.mlx import ParakeetMLX

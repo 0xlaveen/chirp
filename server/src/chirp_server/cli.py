@@ -230,7 +230,12 @@ def main():
     elif args.command == "service":
         forwarded = ["--port", str(args.port)] if args.port != 7821 else []
         forwarded += ["--root-path", args.root_path] if args.root_path else []
-        service(args.action, forwarded)
+        from .service import backend
+
+        if args.action == "install":
+            backend().install(forwarded)
+        else:
+            backend().uninstall()
     else:
         import uvicorn
 

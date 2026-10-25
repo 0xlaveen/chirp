@@ -380,6 +380,25 @@ interface. Execution mode and spinning policy keep their existing defaults. ONNX
 uses sequential execution by default, where `inter_op_num_threads` has no effect. Chirp
 does not enable parallel execution. See [ONNX Runtime thread management](https://onnxruntime.ai/docs/performance/tune-performance/threading.html).
 
+### Parakeet ONNX accelerators
+
+ONNX Parakeet runs on the CPU unless you opt in:
+
+```toml
+[onnx]
+providers = "auto"   # cpu (default), auto, cuda or directml
+```
+
+`auto` uses CUDA, then DirectML, when the installed ONNX Runtime offers it. `cuda` and
+`directml` ask for one. Chirp always keeps the CPU as a fallback, so a missing provider, an
+old driver or an unsupported operator falls back to the CPU (logged once) instead of stopping
+dictation. `chirp-server doctor` lists the available providers and the one in use.
+
+The default `onnxruntime` wheel is CPU-only. DirectML needs `onnxruntime-directml` instead of
+`onnxruntime` in the server environment (the two packages conflict), and CUDA needs
+`onnxruntime-gpu` plus a matching CUDA runtime. The pinned model is int8-quantized for the CPU,
+so measure before keeping an accelerator: it can be slower than the CPU for this model.
+
 ## Clean-up
 
 Clean-up ("correction") polishes the **final** transcript only; partials always stay raw. It requires a server mode of `managed` or `endpoint` **and** the client's `start.correction=true`. Legacy `enabled=true` still selects `endpoint` when `mode` is omitted; an explicit `mode` takes precedence.
@@ -686,6 +705,14 @@ A reference plist is in `launchd/dev.chirp.server.plist`. Only when the operator
 uv run chirp-server --root-path /chirp service install   # flags before "service" are kept in the LaunchAgent
 uv run chirp-server service uninstall
 ```
+
+On **Windows** the same commands register a per-user Task Scheduler task, **Chirp Server**,
+without administrator rights. It starts `pythonw.exe -m chirp_server` (no console window) when
+you log on, runs only while you're logged on, restarts after a failure, and has no time or
+battery limits. Like the LaunchAgent, it discards its output. Flags before `service` are kept
+in the task. `chirp-server setup start|restart|replace` and `doctor` use the task the same way
+they use the LaunchAgent on a Mac. Look at it in Task Scheduler › Task Scheduler Library ›
+Chirp Server.
 
 ### An out-of-date server
 

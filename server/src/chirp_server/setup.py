@@ -3,6 +3,7 @@
 import json
 import os
 import subprocess
+import sys
 import time
 from pathlib import Path
 from types import SimpleNamespace
@@ -196,13 +197,7 @@ def server_matches(port, wanted):
         return False
 
 
-def start_server(port, model_dir=None, engine="mlx"):
-    discover_speech(SimpleNamespace(engine=engine, model_dir=model_dir))
-    if server_running(port) and not model_catalog.pending_restart():
-        emit("started")
-        return
-    emit("starting")
-    wanted = model_catalog.read_json(model_catalog.root() / "model-selection.json")
+def start_launch_agent(port):
     label = "dev.chirp.server"
     domain = f"gui/{os.getuid()}"
     destination = Path.home() / "Library/LaunchAgents" / f"{label}.plist"
@@ -246,6 +241,38 @@ def start_server(port, model_dir=None, engine="mlx"):
         from .cli import service
 
         service("install", ["--port", str(port)] if port != 7821 else [])
+
+
+def start_service(port):
+    """Windows and Linux: (re)start the platform service under the same rules as launchd."""
+    from .service import backend, port_of
+
+    service = backend()
+    current = service.status()
+    if not current["installed"]:
+        service.install(["--port", str(port)] if port != 7821 else [])
+        return
+    arguments = current["arguments"]
+    if arguments is None:
+        raise ValueError("Unexpected local server service")
+    if model_catalog.pending_restart() and ({"--model-dir", "--engine"} & set(arguments)):
+        raise ValueError("Remove the service model/engine override before applying choices")
+    if port_of(arguments) != port:
+        raise ValueError("Local server port differs from the app setting")
+    service.restart(port)
+
+
+def start_server(port, model_dir=None, engine="mlx"):
+    discover_speech(SimpleNamespace(engine=engine, model_dir=model_dir))
+    if server_running(port) and not model_catalog.pending_restart():
+        emit("started")
+        return
+    emit("starting")
+    wanted = model_catalog.read_json(model_catalog.root() / "model-selection.json")
+    if sys.platform == "darwin":
+        start_launch_agent(port)
+    else:
+        start_service(port)
     deadline = time.monotonic() + 45
     while time.monotonic() < deadline:
         if server_running(port) and server_matches(port, wanted):

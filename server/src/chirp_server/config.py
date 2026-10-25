@@ -137,8 +137,12 @@ def persist_keep_loaded(path: Path, value: bool) -> None:
 class OnnxConfig:
     intra_op_num_threads: int | None = None
     inter_op_num_threads: int | None = None
+    # cpu (default), auto (CUDA, then DirectML, when installed), cuda or directml.
+    providers: str = "cpu"
 
     def __post_init__(self):
+        if self.providers not in {"cpu", "auto", "cuda", "directml"}:
+            raise ValueError("ONNX providers must be cpu, auto, cuda or directml")
         for name in ("intra_op_num_threads", "inter_op_num_threads"):
             value = getattr(self, name)
             if value is not None and (type(value) is not int or not 0 <= value <= 2**31 - 1):
