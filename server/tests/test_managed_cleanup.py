@@ -4,7 +4,7 @@ import time
 from pathlib import Path
 
 import pytest
-from conftest import HEADERS, PCM, START, TOKEN
+from conftest import HEADERS, PCM, START, TEST_TIMEOUT, TOKEN
 from starlette.testclient import TestClient
 from test_protocol import final
 
@@ -26,7 +26,7 @@ def service(**kwargs):
 
 
 async def test_warm_reuse_and_close():
-    corrector = service()
+    corrector = service(timeout=TEST_TIMEOUT)
     try:
         first = await corrector.process("please send the schedule")
         process = corrector.managed.process
@@ -42,21 +42,28 @@ async def test_warm_reuse_and_close():
     "raw,error", [("hang", "timeout"), ("crash", "rejected"), ("invalid", "rejected")]
 )
 async def test_failures_recover(raw, error):
-    corrector = service(timeout=0.15)
+    # Only the hang needs the short budget: its timeout is the expected result, and
+    # host load only makes it more certain. The fast failures and the restart below
+    # must not race a wall-clock budget against spawning the helper.
+    corrector = service(timeout=0.15 if raw == "hang" else TEST_TIMEOUT)
     try:
         result = await corrector.process(raw)
         assert result.error == error and result.text == raw
         assert corrector.managed.process is None
+        corrector.config.timeout = TEST_TIMEOUT
         assert (await corrector.process("hello")).corrected
     finally:
         await corrector.close()
 
 
 async def test_cancel_kills_pending_helper():
-    corrector = service()
+    corrector = service(timeout=TEST_TIMEOUT)
     pending = asyncio.create_task(corrector.process("hang"))
-    # Hand the subprocess time to finish its handshake; no real-model work here.
-    await asyncio.sleep(0.1)
+    # Wait until the helper has finished its handshake; no real-model work here.
+    deadline = time.monotonic() + TEST_TIMEOUT
+    while not corrector.managed.ready:
+        assert time.monotonic() < deadline
+        await asyncio.sleep(0.01)
     process = corrector.managed.process
     pending.cancel()
     with pytest.raises(asyncio.CancelledError):
@@ -67,7 +74,7 @@ async def test_cancel_kills_pending_helper():
 
 
 async def test_idle_unload_and_reload():
-    corrector = service(idle_seconds=0.02)
+    corrector = service(idle_seconds=0.02, timeout=TEST_TIMEOUT)
     await corrector.process("hello")
     process = corrector.managed.process
     await asyncio.wait_for(process.wait(), 2)
@@ -92,7 +99,7 @@ async def test_queue_timeout_preserves_owner():
 
 
 def test_managed_protocol(settings):
-    corrector = service()
+    corrector = service(timeout=TEST_TIMEOUT)
     settings.correction = corrector.config
     with TestClient(
         create_app(settings, FakeEngine("please send the schedule"), TOKEN, corrector)
@@ -107,7 +114,7 @@ def test_managed_protocol(settings):
             partial = ws.receive_json()
             assert partial["text"] == "please send the schedule"
             # The start itself prewarms the helper; the final reuses the warm load.
-            deadline = time.perf_counter() + 5
+            deadline = time.perf_counter() + TEST_TIMEOUT
             while not corrector.managed.loaded:
                 assert time.perf_counter() < deadline
                 time.sleep(0.01)

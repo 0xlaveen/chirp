@@ -7,6 +7,7 @@ import sys
 from pathlib import Path
 
 import pytest
+from conftest import TEST_TIMEOUT
 
 from chirp_server.config import CorrectionConfig
 from chirp_server.correction import Corrector, rejected, restore_hedges
@@ -94,7 +95,7 @@ def test_the_clean_up_restores_hedges_end_to_end():
     raw = "um so we have around, uh, I think two hundred seats"
 
     async def go():
-        config = CorrectionConfig(mode="managed", notes_timeout=5)
+        config = CorrectionConfig(mode="managed", timeout=TEST_TIMEOUT, notes_timeout=TEST_TIMEOUT)
         corrector = Corrector(config)
         command = [
             sys.executable,

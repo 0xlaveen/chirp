@@ -4,6 +4,7 @@ import sys
 from pathlib import Path
 
 import pytest
+from conftest import TEST_TIMEOUT
 
 from chirp_server.config import CorrectionConfig
 from chirp_server.correction import Corrector, rejected
@@ -90,7 +91,7 @@ def test_prompts_carry_the_rule():
 async def test_fake_helper_respelling_is_applied_and_others_fall_back(profile_id):
     raw = "um ask clawed code to fix it"
     for reply, corrected in (("Ask Claude Code to fix it.", True), ("Ask Maya to fix it.", False)):
-        config = CorrectionConfig(mode="managed")
+        config = CorrectionConfig(mode="managed", timeout=TEST_TIMEOUT, notes_timeout=TEST_TIMEOUT)
         corrector = Corrector(config)
         corrector.managed = ManagedCleanup(
             config,

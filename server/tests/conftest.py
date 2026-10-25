@@ -9,6 +9,11 @@ from chirp_server.engine import FakeEngine
 
 TOKEN = "synthetic-test-credential"
 HEADERS = {"Authorization": f"Bearer {TOKEN}"}
+# Managed-mode budgets must cover spawning the fake helper, which can take seconds on
+# a loaded host. Every call that expects a completion (or a fast non-timeout failure)
+# uses this generous test-only budget so host load cannot turn it into error='timeout';
+# only calls whose expected result IS a timeout keep a short wall-clock budget.
+TEST_TIMEOUT = 60.0
 START = {
     "type": "start",
     "sample_rate": 16000,
