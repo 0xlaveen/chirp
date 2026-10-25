@@ -290,7 +290,7 @@ def test_reorganize_timeout_is_its_own_and_validated():
     for bad in (0, -1, float("nan"), float("inf")):
         with pytest.raises(ValueError):
             CorrectionConfig(mode="managed", reorganize_timeout=bad)
-    config = CorrectionConfig(mode="managed")
+    config = CorrectionConfig(mode="managed", backend="mlx")
     assert config.reorganize_timeout == 45.0 and config.structure_timeout == 30.0
 
 

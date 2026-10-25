@@ -14,7 +14,7 @@ from .engine import models as speech_models
 from .engine import sensevoice_models
 from .fsutil import locked, private_mkdir
 
-ENGINES = {"mlx", "sensevoice"}
+ENGINES = {"mlx", "onnx", "sensevoice"}
 
 
 @dataclass(frozen=True)
@@ -31,6 +31,8 @@ class Model:
     latest: bool = False
     # Speech only. Selections written before engine switching have none and keep server.toml's.
     engine: str = ""
+    cleanup_backend: str = ""
+    filename: str = ""
 
     def __post_init__(self):
         from huggingface_hub.utils import validate_repo_id
@@ -44,6 +46,14 @@ class Model:
             raise ValueError("Invalid model metadata")
         if self.engine and (self.kind != "speech" or self.engine not in ENGINES):
             raise ValueError("Invalid model engine")
+        if self.cleanup_backend and (
+            self.kind != "cleanup" or self.cleanup_backend not in {"mlx", "llama_cpp"}
+        ):
+            raise ValueError("Invalid cleanup backend")
+        if self.cleanup_backend == "llama_cpp" and (
+            not re.fullmatch(r"[A-Za-z0-9._-]+\.gguf", self.filename)
+        ):
+            raise ValueError("Invalid GGUF filename")
 
 
 SENSEVOICE = "sensevoice-small"
@@ -84,6 +94,17 @@ def update_json(path, update):
 
 def defaults():
     result = [
+        Model(
+            speech_models.ONNX_MODEL_ID,
+            "speech",
+            "Parakeet TDT v2 · English · ONNX int8",
+            speech_models.ONNX_REPOSITORY,
+            speech_models.ONNX_REVISION,
+            661331545,
+            "English · CPU default on Intel Mac, Linux and Windows",
+            "cc-by-4.0",
+            engine="onnx",
+        ),
         Model(
             "parakeet-v2",
             "speech",
@@ -142,6 +163,22 @@ def defaults():
                 memory_mb=spec.memory_mb,
             )
         )
+    for key, spec in cleanup_models.GGUF_MODELS.items():
+        result.append(
+            Model(
+                key,
+                "cleanup",
+                "Qwen3 4B Instruct · GGUF Q4_K_M",
+                spec.repository,
+                spec.revision,
+                spec.size_bytes,
+                "Portable CPU cleanup and Notes",
+                "apache-2.0",
+                spec.memory_mb,
+                cleanup_backend=spec.backend,
+                filename=spec.filename,
+            )
+        )
     result.append(
         Model(
             "qwen3.5-4b-4bit",
@@ -191,6 +228,8 @@ def active_ids(settings):
         if settings.engine == "sensevoice"
         else speech.id
         if speech and speech.engine != "sensevoice"
+        else speech_models.ONNX_MODEL_ID
+        if settings.engine == "onnx"
         else "parakeet-v2",
         "cleanup": chosen["cleanup"].id
         if "cleanup" in chosen
@@ -205,17 +244,23 @@ def snapshot_path(model):
 
     if model.engine == "sensevoice":
         return speech_models.model_root() / SENSEVOICE
+    if model.id == speech_models.ONNX_MODEL_ID:
+        try:
+            return speech_models.discover_onnx()
+        except ValueError:
+            return speech_models.model_root() / "parakeet-onnx"
     if model.id == "parakeet-v2":
         try:
             return speech_models.discover()
         except ValueError:
             return speech_models.model_root() / "parakeet-mlx"
-    return (
+    base = (
         Path(HF_HUB_CACHE)
         / ("models--" + model.repository.replace("/", "--"))
         / "snapshots"
         / model.revision
     )
+    return base / model.filename if model.filename else base
 
 
 def directory(model):
@@ -223,20 +268,42 @@ def directory(model):
 
     if model.id == "parakeet-v2":
         return speech_models.discover()
+    if model.cleanup_backend == "llama_cpp":
+        return cleanup_models._gguf(
+            cleanup_models.CleanupModel(
+                model.repository,
+                model.revision,
+                model.memory_mb,
+                "llama_cpp",
+                model.filename,
+                model.size_bytes,
+            ),
+            cached=True,
+        )
     if model.engine == "sensevoice":
         return sensevoice_models.discover()
+    if model.id == speech_models.ONNX_MODEL_ID:
+        return speech_models.discover_onnx()
     path = Path(
         snapshot_download(
             model.repository,
             revision=model.revision,
             local_files_only=True,
-            allow_patterns=speech_models.FILES
+            allow_patterns=(
+                speech_models.ONNX_FILES if model.engine == "onnx" else speech_models.FILES
+            )
             if model.kind == "speech"
             else cleanup_models.PATTERNS,
         )
     )
     valid = (
-        speech_models.valid_tdt(path) if model.kind == "speech" else cleanup_models.complete(path)
+        (
+            speech_models.valid_onnx(path)
+            if model.engine == "onnx"
+            else speech_models.valid_tdt(path)
+        )
+        if model.kind == "speech"
+        else cleanup_models.complete(path)
     )
     if not valid:
         raise ValueError("Model files missing or incomplete")
@@ -257,9 +324,18 @@ def options(settings):
     models = catalog()
     for model in selection().values():
         models.setdefault(model.id, model)
+    from .platforms import supports_mlx
+
+    def compatible(model):
+        if model.kind == "speech":
+            return model.engine != "mlx" or supports_mlx()
+        backend = model.cleanup_backend or "mlx"
+        return backend == settings.correction.backend
+
     return [
         dict(asdict(model), ready=ready(model), active=active[model.kind] == model.id)
         for model in models.values()
+        if compatible(model) or active[model.kind] == model.id
     ]
 
 
@@ -298,6 +374,44 @@ def inspect_repository(kind, repository):
         if not re.fullmatch(r"[a-f0-9]{40}", revision):
             raise ValueError("Missing immutable model revision")
         siblings = info["siblings"]
+        gguf = next(
+            (
+                m
+                for m in catalog().values()
+                if m.kind == kind
+                and m.repository == repository
+                and m.cleanup_backend == "llama_cpp"
+            ),
+            None,
+        )
+        if gguf:
+            files = {item["rfilename"]: item.get("size", 0) for item in siblings}
+            if gguf.filename not in files:
+                raise ValueError("Repository lacks the selected GGUF file")
+            return replace(
+                gguf,
+                id=f"{repository}@{revision}",
+                revision=revision,
+                size_bytes=files[gguf.filename],
+            )
+        portable = next(
+            (
+                m
+                for m in catalog().values()
+                if m.kind == kind and m.repository == repository and m.engine == "onnx"
+            ),
+            None,
+        )
+        if portable:
+            files = {item["rfilename"]: item.get("size", 0) for item in siblings}
+            if not set(speech_models.ONNX_FILES).issubset(files):
+                raise ValueError("Repository lacks portable ONNX model files")
+            return replace(
+                portable,
+                id=f"{repository}@{revision}",
+                revision=revision,
+                size_bytes=sum(files[name] for name in speech_models.ONNX_FILES),
+            )
         patterns = speech_models.FILES if kind == "speech" else cleanup_models.PATTERNS
         files = [
             item
@@ -377,12 +491,33 @@ def verify(model):
             engine = SenseVoice(path)
             engine.load()
             engine.warm()
+        elif model.engine == "onnx":
+            from .engine.onnx import ParakeetONNX
+
+            engine = ParakeetONNX(path, intra_op_num_threads=4, inter_op_num_threads=1)
+            engine.load()
+            engine.warm()
+            engine.close()
         elif model.kind == "speech":
             from .engine.mlx import ParakeetMLX
 
             engine = ParakeetMLX(path)
             engine.load()
             engine.warm()
+        elif model.cleanup_backend == "llama_cpp":
+            from llama_cpp import Llama
+
+            helper = Llama(
+                model_path=str(path), n_ctx=4096, n_threads=4, n_gpu_layers=0, verbose=False
+            )
+            try:
+                helper.create_completion(
+                    prompt="<|im_start|>user\nhello<|im_end|>\n<|im_start|>assistant\n",
+                    max_tokens=1,
+                    temperature=0,
+                )
+            finally:
+                helper.close()
         else:
             from mlx_lm import load
 
@@ -424,4 +559,6 @@ def apply_settings(settings):
             settings.speech_model = speech.id
             settings.model_dir = snapshot_path(speech)
     if cleanup := chosen.get("cleanup"):
-        settings.correction = replace(settings.correction, mode="managed", model=cleanup.id)
+        settings.correction = settings.correction.with_model(
+            cleanup.id, cleanup.cleanup_backend or "mlx"
+        )

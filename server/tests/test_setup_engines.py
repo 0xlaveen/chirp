@@ -40,6 +40,7 @@ def test_catalog_lists_speech_models_by_engine_with_sensevoice_pinned():
     assert {m.id: m.engine for m in models.values() if m.kind == "speech"} == {
         "parakeet-v2": "mlx",
         "parakeet-v3": "mlx",
+        "parakeet-v2-onnx": "onnx",
         SENSEVOICE: "sensevoice",
     }
     option = models[SENSEVOICE]

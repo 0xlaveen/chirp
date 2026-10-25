@@ -313,6 +313,16 @@ def check_correction(settings: Settings) -> Check:
             discover(config.model)
         except ValueError:
             return Check("correction", WARN, "managed model missing", "run model fetch --cleanup")
+        if config.backend == "llama_cpp":
+            import importlib.util
+
+            if importlib.util.find_spec("llama_cpp") is None:
+                return Check(
+                    "correction",
+                    WARN,
+                    "portable cleanup runtime missing",
+                    "run uv sync --extra cleanup",
+                )
         # The effective keep_loaded is the client-persisted override, else server.toml.
         override = read_keep_loaded(settings.state_path)
         keep = override if override is not None else config.keep_loaded

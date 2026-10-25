@@ -152,7 +152,16 @@ class ManagedCleanup:
         command = self.command
         if command is None:
             directory = discover(self.config.model)
-            command = [sys.executable, "-m", "chirp_server.cleanup_worker", str(directory)]
+            command = [
+                sys.executable,
+                "-m",
+                "chirp_server.cleanup_worker",
+                "--backend",
+                self.config.backend,
+                "--threads",
+                str(self.config.llama_threads),
+                str(directory),
+            ]
         # The helper's own idle exit is a backstop for a wedged server. With keep_loaded it is
         # off (0): the server owns the lifecycle, and a closed pipe still ends the helper.
         self.launched_idle = 0 if self.keep_loaded else self.config.idle_seconds

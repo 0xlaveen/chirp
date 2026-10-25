@@ -106,7 +106,7 @@ def test_correction_managed_reports_keep_loaded_and_memory(monkeypatch, tmp_path
         config_dir=tmp_path,
         debug_dir=tmp_path / "debug",
         state_path=state,
-        correction=CorrectionConfig(mode="managed", keep_loaded=True),
+        correction=CorrectionConfig(mode="managed", backend="mlx", keep_loaded=True),
     )
     check = doctor.check_correction(settings)
     assert check.status == OK
@@ -266,7 +266,9 @@ def test_doctor_quick_reports_every_check(monkeypatch, tmp_path, capsys):
     monkeypatch.setattr(doctor, "check_environment", lambda: Check("environment", OK, "Python"))
     monkeypatch.setattr(doctor, "check_mlx", lambda: Check("mlx", OK, "available"))
     monkeypatch.setattr(doctor, "check_model", lambda model_dir=None: Check("model", OK, "cached"))
-    args = SimpleNamespace(quick=True, config=None, model_dir=None, port=0)
+    config = tmp_path / "server.toml"
+    config.write_text('engine = "mlx"\n')  # This test covers the mocked Mac/MLX checks.
+    args = SimpleNamespace(quick=True, config=config, model_dir=None, port=0)
     code = doctor.doctor(args, tailscale_status=(0, "{}"))
     out = capsys.readouterr().out
     assert code == 0

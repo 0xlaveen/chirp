@@ -15,6 +15,7 @@ from uuid import uuid4
 
 from . import paths
 from .fsutil import make_private, private_mkdir
+from .platforms import default_cleanup_backend, default_engine
 from .profiles import LIVE_NOTES, LIVE_NOTES_ID, MAX_PROMPT_CHARS, Profile, resolve_profiles
 
 
@@ -25,21 +26,24 @@ class CorrectionConfig:
     mode: str | None = None
     base_url: str = "http://127.0.0.1:1234/v1"
     model: str = ""
+    backend: str = "auto"
+    llama_threads: int = 4
     prompt: str = ""
-    timeout: float = 8.0
+    timeout: float | None = None
     # Live Notes segment correction: longer input than a dictation, and it may queue behind a
     # running structuring pass (see docs/bench.md).
-    notes_timeout: float = 15.0
-    structure_timeout: float = 30.0
+    notes_timeout: float | None = None
+    structure_timeout: float | None = None
     # A reorganize generates up to 1024 tokens: about 15 s at the cap on an M5 Pro (docs/bench.md),
     # so slower Macs need more room than structuring's 30 s.
-    reorganize_timeout: float = 45.0
+    reorganize_timeout: float | None = None
     api_key_env: str = "CHIRP_LLM_API_KEY"
     keychain_service: str = ""
     idle_seconds: float = 60.0
     keep_loaded: bool = False
     profiles: dict = field(default_factory=dict)
     resolved_profiles: dict[str, Profile] = field(init=False, repr=False)
+    _default_budgets: tuple[str, ...] = field(init=False, repr=False, compare=False)
 
     def __post_init__(self):
         if not isinstance(self.prompt, str) or len(self.prompt) > MAX_PROMPT_CHARS:
@@ -55,6 +59,40 @@ class CorrectionConfig:
         if self.mode not in {"off", "managed", "endpoint"}:
             raise ValueError("Invalid correction mode")
         self.enabled = self.mode != "off"
+        if self.backend == "auto":
+            from .cleanup_models import GGUF_MODELS, MODELS
+
+            self.backend = (
+                "llama_cpp"
+                if self.model in GGUF_MODELS
+                else "mlx"
+                if self.model in MODELS
+                else default_cleanup_backend()
+            )
+        if self.backend not in {"mlx", "llama_cpp"}:
+            raise ValueError("Correction backend must be auto, mlx or llama_cpp")
+        if type(self.llama_threads) is not int or not 1 <= self.llama_threads <= 256:
+            raise ValueError("Correction llama_threads must be an integer between 1 and 256")
+        portable = self.backend == "llama_cpp" and self.mode != "endpoint"
+        # A CPU Qwen prompt can take ~20 s including a cold load. Preserve explicit
+        # budgets and the existing MLX/endpoint defaults; make the portable default usable.
+        self._default_budgets = tuple(
+            name
+            for name in ("timeout", "notes_timeout", "structure_timeout", "reorganize_timeout")
+            if getattr(self, name) is None
+        )
+        for name, normal, cpu in (
+            ("timeout", 8.0, 30.0),
+            ("notes_timeout", 15.0, 45.0),
+            ("structure_timeout", 30.0, 90.0),
+            ("reorganize_timeout", 45.0, 120.0),
+        ):
+            if getattr(self, name) is None:
+                setattr(self, name, cpu if portable else normal)
+        if not self.model and self.backend == "llama_cpp" and self.mode != "endpoint":
+            from .cleanup_models import PORTABLE_MODEL
+
+            self.model = PORTABLE_MODEL
         if any(
             not math.isfinite(v) or v <= 0
             for v in (
@@ -77,6 +115,11 @@ class CorrectionConfig:
                 or url.fragment
             ):
                 raise ValueError("Correction requires an HTTP(S) base URL without credentials")
+
+    def with_model(self, model_id: str, backend: str):
+        """A picker changes backend defaults while retaining explicitly configured budgets."""
+        defaults = {name: None for name in self._default_budgets}
+        return replace(self, mode="managed", model=model_id, backend=backend, **defaults)
 
     def profile(self, profile_id) -> Profile | None:
         """A listed style, or the hidden Live Notes style; None for anything else."""
@@ -158,7 +201,7 @@ class Settings:
     retain_days: int = 3
     model_dir: Path | None = None
     speech_model: str = "parakeet-v2"
-    engine: str = "mlx"
+    engine: str = field(default_factory=default_engine)
     sensevoice_num_threads: int = 4
     precision: str = "float32"
     streaming: str = "rolling"
@@ -176,7 +219,7 @@ class Settings:
         path = path or result.config_dir / "server.toml"
         if path.exists():
             data = tomllib.loads(path.read_text())
-            result.engine = data.get("engine", "mlx")
+            result.engine = data.get("engine", result.engine)
             result.sensevoice_num_threads = data.get("sensevoice", {}).get("num_threads", 4)
             debug = data.get("debug", {})
             result.debug_retain = debug.get("retain", False)

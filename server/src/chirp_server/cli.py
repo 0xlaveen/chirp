@@ -220,11 +220,11 @@ def main():
         elif args.cleanup is not None:
             from .cleanup_models import fetch
 
-            print(fetch(args.cleanup))
+            print(fetch(args.cleanup or settings.correction.model))
         else:
             from .engine.models import fetch
 
-            print(fetch(args.engine or "mlx"))
+            print(fetch(args.engine or settings.engine))
     elif args.command == "debug":
         print(f"Purged {Retention(settings).purge(all_files=True)} debug files")
     elif args.command == "service":

@@ -1,11 +1,11 @@
 # Chirp desktop
 
-The shared Tauri 2 client for Linux and Windows. The native Mac app remains in
-[`mac/`](../mac/). This first phase supplies dictation, native microphone capture,
-streaming partials/finals, the Pond HUD, settings, pairing and a tray. Live Notes
-and its library follow in a separate phase. Track the Linux work in
-[#213](https://github.com/araa47/chirp/issues/213) and Windows in
-[#214](https://github.com/araa47/chirp/issues/214).
+The shared Tauri 2 client for Linux and Windows supplies dictation, native
+microphone capture, streaming partials/finals, the Pond HUD, pairing, settings,
+a tray and a local Live Notes library. X11 uses single-key holds; Wayland uses
+the shortcut approved by the desktop portal. The native Mac app remains in
+[`mac/`](../mac/). Track Linux work in [#213](https://github.com/araa47/chirp/issues/213)
+and Windows in [#214](https://github.com/araa47/chirp/issues/214).
 
 ## Linux
 

@@ -23,8 +23,8 @@ for arg in "$@"; do
     ;;
   esac
 done
-if [ "$(uname -s)" != Darwin ] || [ "$(uname -m)" != arm64 ]; then
-  echo 'Local MLX models require an Apple Silicon Mac.' >&2
+if [ "$(uname -s)" != Darwin ]; then
+  echo 'This installer requires macOS 14 or later.' >&2
   exit 1
 fi
 if ! command -v uv >/dev/null 2>&1; then
@@ -42,8 +42,12 @@ mkdir -p "$SERVER/src/chirp_server"
 rsync -a --exclude __pycache__ "$ROOT/server/src/chirp_server/" "$SERVER/src/chirp_server/"
 # Keep the optional SenseVoice runtime if the app added it; a plain sync would remove it.
 EXTRA=
+# Intel Macs use portable Parakeet; MLX wheels are installed only on arm64.
+if [ "$(uname -m)" != arm64 ]; then
+  EXTRA='--extra onnx --extra cleanup'
+fi
 if "$SERVER/.venv/bin/python" -c 'import importlib.util as u, sys; sys.exit(not u.find_spec("sherpa_onnx"))' 2>/dev/null; then
-  EXTRA='--extra sensevoice'
+  EXTRA="$EXTRA --extra sensevoice"
 fi
 # shellcheck disable=SC2086
 uv sync --project "$SERVER" --locked --no-dev $EXTRA

@@ -199,7 +199,7 @@ def test_health_and_profile_list_advertise_without_listing(settings):
 
 
 def test_notes_timeout_is_validated():
-    assert CorrectionConfig().notes_timeout == 15.0
+    assert CorrectionConfig(backend="mlx").notes_timeout == 15.0
     for value in (0, -1, float("nan"), float("inf")):
         with pytest.raises(ValueError):
             CorrectionConfig(notes_timeout=value)
