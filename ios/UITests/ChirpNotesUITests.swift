@@ -87,7 +87,7 @@ final class ChirpNotesUITests: XCTestCase {
         XCTAssertTrue(undo.waitForExistence(timeout: 5)); undo.tap()
         XCTAssertTrue(row.waitForExistence(timeout: 5))
         row.tap(); menu(app, action: "Delete")
-        app.buttons["chirp.notes.menu"].tap(); app.buttons["Recently Deleted"].tap()
+        app.buttons["chirp.notes.menu"].tap(); app.buttons["chirp.notes.deleted.menu"].tap()
         XCTAssertTrue(app.buttons["Restore"].waitForExistence(timeout: 5))
         screenshot("notes-recently-deleted", app)
         app.buttons["Restore"].tap()

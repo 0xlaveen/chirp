@@ -259,7 +259,7 @@ struct NotesLibraryView: View {
         ToolbarItemGroup(placement: .primaryAction) {
             Button("Search notes", systemImage: "magnifyingglass") { searchFocused = true }.keyboardShortcut("f", modifiers: .command)
             Menu {
-                Button("Recently Deleted", systemImage: "trash") { deleted = true }
+                Button("Recently Deleted", systemImage: "trash") { deleted = true }.accessibilityIdentifier("chirp.notes.deleted.menu")
                 Button(selecting ? "Done selecting" : "Select", systemImage: "checkmark.circle") { selecting.toggle(); selection = [] }
                 Button("Notes settings", systemImage: "gearshape") { settings = true }.accessibilityIdentifier("chirp.notes.settings")
             } label: { Label("More", systemImage: "ellipsis.circle") }.accessibilityIdentifier("chirp.notes.menu")
