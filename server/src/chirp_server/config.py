@@ -14,8 +14,8 @@ from urllib.parse import urlsplit
 from uuid import uuid4
 
 from . import paths
-from .platforms import default_engine
 from .fsutil import make_private, private_mkdir
+from .platforms import default_engine
 from .profiles import LIVE_NOTES, LIVE_NOTES_ID, MAX_PROMPT_CHARS, Profile, resolve_profiles
 
 

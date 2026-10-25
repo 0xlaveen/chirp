@@ -14,7 +14,7 @@ from .engine import models as speech_models
 from .engine import sensevoice_models
 from .fsutil import locked, private_mkdir
 
-ENGINES = {"mlx", "sensevoice"}
+ENGINES = {"mlx", "onnx", "sensevoice"}
 
 
 @dataclass(frozen=True)
@@ -84,6 +84,17 @@ def update_json(path, update):
 
 def defaults():
     result = [
+        Model(
+            speech_models.ONNX_MODEL_ID,
+            "speech",
+            "Parakeet TDT v2 · English · ONNX int8",
+            speech_models.ONNX_REPOSITORY,
+            speech_models.ONNX_REVISION,
+            661331545,
+            "English · CPU default on Intel Mac, Linux and Windows",
+            "cc-by-4.0",
+            engine="onnx",
+        ),
         Model(
             "parakeet-v2",
             "speech",
@@ -191,6 +202,8 @@ def active_ids(settings):
         if settings.engine == "sensevoice"
         else speech.id
         if speech and speech.engine != "sensevoice"
+        else speech_models.ONNX_MODEL_ID
+        if settings.engine == "onnx"
         else "parakeet-v2",
         "cleanup": chosen["cleanup"].id
         if "cleanup" in chosen
@@ -205,6 +218,11 @@ def snapshot_path(model):
 
     if model.engine == "sensevoice":
         return speech_models.model_root() / SENSEVOICE
+    if model.id == speech_models.ONNX_MODEL_ID:
+        try:
+            return speech_models.discover_onnx()
+        except ValueError:
+            return speech_models.model_root() / "parakeet-onnx"
     if model.id == "parakeet-v2":
         try:
             return speech_models.discover()
@@ -225,18 +243,28 @@ def directory(model):
         return speech_models.discover()
     if model.engine == "sensevoice":
         return sensevoice_models.discover()
+    if model.id == speech_models.ONNX_MODEL_ID:
+        return speech_models.discover_onnx()
     path = Path(
         snapshot_download(
             model.repository,
             revision=model.revision,
             local_files_only=True,
-            allow_patterns=speech_models.FILES
+            allow_patterns=(
+                speech_models.ONNX_FILES if model.engine == "onnx" else speech_models.FILES
+            )
             if model.kind == "speech"
             else cleanup_models.PATTERNS,
         )
     )
     valid = (
-        speech_models.valid_tdt(path) if model.kind == "speech" else cleanup_models.complete(path)
+        (
+            speech_models.valid_onnx(path)
+            if model.engine == "onnx"
+            else speech_models.valid_tdt(path)
+        )
+        if model.kind == "speech"
+        else cleanup_models.complete(path)
     )
     if not valid:
         raise ValueError("Model files missing or incomplete")
@@ -298,6 +326,24 @@ def inspect_repository(kind, repository):
         if not re.fullmatch(r"[a-f0-9]{40}", revision):
             raise ValueError("Missing immutable model revision")
         siblings = info["siblings"]
+        portable = next(
+            (
+                m
+                for m in catalog().values()
+                if m.kind == kind and m.repository == repository and m.engine == "onnx"
+            ),
+            None,
+        )
+        if portable:
+            files = {item["rfilename"]: item.get("size", 0) for item in siblings}
+            if not set(speech_models.ONNX_FILES).issubset(files):
+                raise ValueError("Repository lacks portable ONNX model files")
+            return replace(
+                portable,
+                id=f"{repository}@{revision}",
+                revision=revision,
+                size_bytes=sum(files[name] for name in speech_models.ONNX_FILES),
+            )
         patterns = speech_models.FILES if kind == "speech" else cleanup_models.PATTERNS
         files = [
             item
@@ -377,6 +423,13 @@ def verify(model):
             engine = SenseVoice(path)
             engine.load()
             engine.warm()
+        elif model.engine == "onnx":
+            from .engine.onnx import ParakeetONNX
+
+            engine = ParakeetONNX(path, intra_op_num_threads=4, inter_op_num_threads=1)
+            engine.load()
+            engine.warm()
+            engine.close()
         elif model.kind == "speech":
             from .engine.mlx import ParakeetMLX
 

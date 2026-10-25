@@ -8,6 +8,16 @@ from chirp_server import paths
 REPOSITORY = "mlx-community/parakeet-tdt-0.6b-v2"
 REVISION = "8ae155301e23d820d82aa60d24817c900e69e487"
 FILES = ["config.json", "model.safetensors", "tokenizer.model", "vocab.txt"]
+ONNX_REPOSITORY = "istupakov/parakeet-tdt-0.6b-v2-onnx"
+ONNX_REVISION = "0bbb45a3365852604aef28b538a8f066f4ccaa85"
+ONNX_FILES = [
+    "config.json",
+    "vocab.txt",
+    "encoder-model.int8.onnx",
+    "decoder_joint-model.int8.onnx",
+    "nemo128.onnx",
+]
+ONNX_MODEL_ID = "parakeet-v2-onnx"
 
 
 def model_root() -> Path:
@@ -50,7 +60,26 @@ def discover(explicit: Path | None = None) -> Path:
     raise ValueError("English Parakeet v2 model missing; run chirp-server model fetch")
 
 
-def fetch(engine: str = "mlx") -> Path:
+def valid_onnx(directory: Path) -> bool:
+    return all((directory / name).is_file() for name in ONNX_FILES)
+
+
+def discover_onnx(explicit: Path | None = None) -> Path:
+    candidates = (
+        [explicit]
+        if explicit
+        else [Path.home() / ".koi/voice-models/parakeet-onnx", model_root() / "parakeet-onnx"]
+    )
+    for directory in candidates:
+        if directory and valid_onnx(directory):
+            return directory
+    raise ValueError("ONNX model missing or incomplete; run chirp-server model fetch --engine onnx")
+
+
+def fetch(engine: str | None = None) -> Path:
+    from ..platforms import default_engine
+
+    engine = engine or default_engine()
     if engine == "sensevoice":
         from .sensevoice_models import fetch as fetch_sensevoice
 
@@ -60,10 +89,10 @@ def fetch(engine: str = "mlx") -> Path:
     directory = model_root() / f"parakeet-{engine}"
     if engine == "onnx":
         snapshot_download(
-            "istupakov/parakeet-tdt-0.6b-v2-onnx",
-            revision="0bbb45a3365852604aef28b538a8f066f4ccaa85",
+            ONNX_REPOSITORY,
+            revision=ONNX_REVISION,
             local_dir=directory,
-            allow_patterns=["config.json", "vocab.txt", "*-model.int8.onnx", "nemo128.onnx"],
+            allow_patterns=ONNX_FILES,
         )
     else:
         snapshot_download(REPOSITORY, revision=REVISION, local_dir=directory, allow_patterns=FILES)

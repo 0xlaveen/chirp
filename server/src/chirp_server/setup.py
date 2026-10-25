@@ -19,6 +19,8 @@ def emit(event, **values):
 
 
 def discover_speech(settings):
+    if settings.engine == "onnx":
+        return speech_models.discover_onnx(settings.model_dir)
     if settings.engine == "sensevoice":
         if not sensevoice_models.runtime_installed():
             raise ValueError("SenseVoice runtime not installed")
@@ -80,6 +82,13 @@ def download(kind, settings, choice=None):
         repository, revision = option.repository, option.revision
         patterns = speech_models.FILES if kind == "speech" else cleanup_models.PATTERNS
         local = speech_models.model_root() / "parakeet-mlx" if option.id == "parakeet-v2" else None
+        if option.engine == "onnx":
+            patterns = speech_models.ONNX_FILES
+            local = (
+                model_catalog.snapshot_path(option)
+                if option.id == speech_models.ONNX_MODEL_ID
+                else None
+            )
         if option.engine == "sensevoice":
             patterns = sensevoice_models.HUB_FILES
             local = model_catalog.snapshot_path(option)
@@ -88,10 +97,18 @@ def download(kind, settings, choice=None):
             if not model_catalog.ready(option):
                 raise ValueError("Model files missing or incomplete")
     elif kind == "speech":
-        repository, revision = speech_models.REPOSITORY, speech_models.REVISION
-        patterns = speech_models.FILES
-        local = speech_models.model_root() / "parakeet-mlx"
-        discover = speech_models.discover
+        if settings.engine == "onnx":
+            repository, revision = speech_models.ONNX_REPOSITORY, speech_models.ONNX_REVISION
+            patterns = speech_models.ONNX_FILES
+            local = speech_models.model_root() / "parakeet-onnx"
+
+            def discover():
+                return speech_models.discover_onnx(settings.model_dir)
+        else:
+            repository, revision = speech_models.REPOSITORY, speech_models.REVISION
+            patterns = speech_models.FILES
+            local = speech_models.model_root() / "parakeet-mlx"
+            discover = speech_models.discover
     else:
         model = cleanup_models.model_spec(settings.correction.model)
         repository, revision = model.repository, model.revision
