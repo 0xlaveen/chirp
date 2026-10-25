@@ -460,3 +460,208 @@ impl Platform for Windows {
         }
     }
 }
+
+/// Owner-only access for Chirp's private files (notes, transcripts): a protected DACL that
+/// allows only the current user and SYSTEM, read back and verified before returning, so callers
+/// can fail closed. A directory's entries are inherited by files created inside it. Only the
+/// path is passed to Windows; nothing is logged.
+pub fn protect_path(path: &std::path::Path, directory: bool) -> Result<(), String> {
+    let sid = acl::user_sid()?;
+    let wide = acl::wide(path.as_os_str());
+    acl::set_dacl(&wide, &logic::private_sddl(&sid, directory))?;
+    let actual = acl::dacl(&wide)?;
+    if logic::sddl_is_private(&actual, &acl::sid_forms(&sid)?) {
+        Ok(())
+    } else {
+        Err("Could not restrict access to Chirp's files".into())
+    }
+}
+
+mod acl {
+    use std::{ffi::OsStr, os::windows::ffi::OsStrExt, ptr::null_mut};
+    use windows_sys::Win32::{
+        Foundation::{CloseHandle, LocalFree, HANDLE},
+        Security::{
+            Authorization::{
+                ConvertSecurityDescriptorToStringSecurityDescriptorW, ConvertSidToStringSidW,
+                ConvertStringSecurityDescriptorToSecurityDescriptorW, GetNamedSecurityInfoW,
+                SetNamedSecurityInfoW, SDDL_REVISION_1, SE_FILE_OBJECT,
+            },
+            GetSecurityDescriptorDacl, GetTokenInformation, TokenUser, ACL,
+            DACL_SECURITY_INFORMATION, OWNER_SECURITY_INFORMATION,
+            PROTECTED_DACL_SECURITY_INFORMATION, PSECURITY_DESCRIPTOR, TOKEN_QUERY, TOKEN_USER,
+        },
+        System::Threading::{GetCurrentProcess, OpenProcessToken},
+    };
+
+    const FAILED: &str = "Could not restrict access to Chirp's files";
+
+    pub fn wide(text: &OsStr) -> Vec<u16> {
+        text.encode_wide().chain([0]).collect()
+    }
+
+    unsafe fn take_wide(pointer: *mut u16) -> String {
+        let mut length = 0;
+        while *pointer.add(length) != 0 {
+            length += 1;
+        }
+        let text = String::from_utf16_lossy(std::slice::from_raw_parts(pointer, length));
+        LocalFree(pointer as _);
+        text
+    }
+
+    /// The current user's SID, such as S-1-5-21-…-1001.
+    pub fn user_sid() -> Result<String, String> {
+        unsafe {
+            let mut token: HANDLE = null_mut();
+            if OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &mut token) == 0 {
+                return Err(FAILED.into());
+            }
+            let mut size = 0u32;
+            GetTokenInformation(token, TokenUser, null_mut(), 0, &mut size);
+            let mut buffer = vec![0u64; (size as usize).div_ceil(8)];
+            let ok =
+                GetTokenInformation(token, TokenUser, buffer.as_mut_ptr() as _, size, &mut size);
+            CloseHandle(token);
+            if ok == 0 {
+                return Err(FAILED.into());
+            }
+            let user = &*(buffer.as_ptr() as *const TOKEN_USER);
+            let mut text = null_mut();
+            if ConvertSidToStringSidW(user.User.Sid, &mut text) == 0 {
+                return Err(FAILED.into());
+            }
+            Ok(take_wide(text))
+        }
+    }
+
+    /// The SID and the alias SDDL prints it as, if any (LA for the built-in Administrator).
+    pub fn sid_forms(sid: &str) -> Result<Vec<String>, String> {
+        unsafe {
+            let descriptor = descriptor(&format!("O:{sid}"))?;
+            let mut text = null_mut();
+            let ok = ConvertSecurityDescriptorToStringSecurityDescriptorW(
+                descriptor,
+                SDDL_REVISION_1,
+                OWNER_SECURITY_INFORMATION,
+                &mut text,
+                null_mut(),
+            );
+            LocalFree(descriptor as _);
+            if ok == 0 {
+                return Err(FAILED.into());
+            }
+            let owner = take_wide(text);
+            Ok(vec![
+                sid.to_string(),
+                owner.trim_start_matches("O:").to_string(),
+            ])
+        }
+    }
+
+    unsafe fn descriptor(sddl: &str) -> Result<PSECURITY_DESCRIPTOR, String> {
+        let mut descriptor: PSECURITY_DESCRIPTOR = null_mut();
+        let text = wide(OsStr::new(sddl));
+        if ConvertStringSecurityDescriptorToSecurityDescriptorW(
+            text.as_ptr(),
+            SDDL_REVISION_1,
+            &mut descriptor,
+            null_mut(),
+        ) == 0
+        {
+            return Err(FAILED.into());
+        }
+        Ok(descriptor)
+    }
+
+    pub fn set_dacl(path: &[u16], sddl: &str) -> Result<(), String> {
+        unsafe {
+            let descriptor = descriptor(sddl)?;
+            let (mut present, mut defaulted) = (0, 0);
+            let mut dacl: *mut ACL = null_mut();
+            let ok = GetSecurityDescriptorDacl(descriptor, &mut present, &mut dacl, &mut defaulted);
+            let error = if ok == 0 {
+                1
+            } else {
+                SetNamedSecurityInfoW(
+                    path.as_ptr(),
+                    SE_FILE_OBJECT,
+                    DACL_SECURITY_INFORMATION | PROTECTED_DACL_SECURITY_INFORMATION,
+                    null_mut(),
+                    null_mut(),
+                    dacl,
+                    null_mut(),
+                )
+            };
+            LocalFree(descriptor as _);
+            if error == 0 {
+                Ok(())
+            } else {
+                Err(FAILED.into())
+            }
+        }
+    }
+
+    /// The DACL of `path` as SDDL.
+    pub fn dacl(path: &[u16]) -> Result<String, String> {
+        unsafe {
+            let mut descriptor: PSECURITY_DESCRIPTOR = null_mut();
+            let error = GetNamedSecurityInfoW(
+                path.as_ptr(),
+                SE_FILE_OBJECT,
+                DACL_SECURITY_INFORMATION,
+                null_mut(),
+                null_mut(),
+                null_mut(),
+                null_mut(),
+                &mut descriptor,
+            );
+            if error != 0 {
+                return Err(FAILED.into());
+            }
+            let mut text = null_mut();
+            let ok = ConvertSecurityDescriptorToStringSecurityDescriptorW(
+                descriptor,
+                SDDL_REVISION_1,
+                DACL_SECURITY_INFORMATION,
+                &mut text,
+                null_mut(),
+            );
+            LocalFree(descriptor as _);
+            if ok == 0 {
+                return Err(FAILED.into());
+            }
+            Ok(take_wide(text))
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn protect_path_makes_files_and_directories_owner_only() {
+        let root = std::env::temp_dir().join(format!("chirp-acl-{}", std::process::id()));
+        std::fs::create_dir_all(&root).unwrap();
+        protect_path(&root, true).unwrap();
+        let sid = acl::user_sid().unwrap();
+        let forms = acl::sid_forms(&sid).unwrap();
+        let wide = |p: &std::path::Path| acl::wide(p.as_os_str());
+        assert!(logic::sddl_is_private(
+            &acl::dacl(&wide(&root)).unwrap(),
+            &forms
+        ));
+        // A file created inside inherits owner-only access; protecting it explicitly also works.
+        let file = root.join("note.md");
+        std::fs::write(&file, b"synthetic").unwrap();
+        let inherited = acl::dacl(&wide(&file)).unwrap();
+        assert!(!inherited.contains(";;;BU)") && !inherited.contains(";;;WD)"));
+        protect_path(&file, false).unwrap();
+        assert!(logic::sddl_is_private(
+            &acl::dacl(&wide(&file)).unwrap(),
+            &forms
+        ));
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+}
