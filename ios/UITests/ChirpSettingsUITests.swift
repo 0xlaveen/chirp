@@ -6,11 +6,18 @@ import XCTest
 /// in ChirpLiveServerUITests.
 final class ChirpSettingsUITests: XCTestCase {
     override func setUp() { continueAfterFailure = false }
+    /// Terminating the app at the end avoids Xcode's multi-minute post-test diagnostics collection.
+    private var launched: XCUIApplication?
+    override func tearDown() {
+        launched?.terminate()
+        super.tearDown()
+    }
 
     @MainActor func launch(_ extra: [String] = []) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments = ["--chirp-ui-test", "--chirp-skip-onboarding"] + extra
         app.launch()
+        launched = app
         return app
     }
 

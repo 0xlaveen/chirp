@@ -40,5 +40,5 @@ fi
 exec xcodebuild -project Chirp.xcodeproj -scheme "$scheme" -configuration Debug \
   -sdk iphonesimulator -destination "platform=iOS Simulator,id=$device" \
   -parallel-testing-enabled NO \
-  -derivedDataPath "${CHIRP_DERIVED_DATA:-DerivedData}" $signing "$@" \
+  -derivedDataPath "${CHIRP_DERIVED_DATA:-DerivedData}" $signing $diagnostics "$@" \
   "$operation"

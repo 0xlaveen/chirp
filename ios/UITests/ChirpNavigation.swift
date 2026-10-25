@@ -34,7 +34,7 @@ extension XCUIApplication {
     @MainActor func openDictation() { openSettingsPage("chirp.settings.dictation") }
 
     /// The pairing link field, revealed by Connection's pairing page and "Paste link instead".
-    @MainActor func pairingLinkField() -> XCUIApplication {
+    @MainActor func pairingLinkField() -> XCUIElement {
         let field = secureTextFields["pairingLink"]
         if !field.exists {
             let change = buttons["chirp.pair.change"]
