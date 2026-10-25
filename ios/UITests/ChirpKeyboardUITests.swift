@@ -75,9 +75,11 @@ final class ChirpKeyboardUITests: XCTestCase {
             sleep(2)
             XCUIDevice.shared.press(.home) // wakes onto the lock screen without unlocking
             sleep(2)
-            // The first activity asks "Allow Live Activities from Chirp?" on the lock screen; answer it once.
-            let allow = springboard.buttons["Allow"]
-            if allow.waitForExistence(timeout: 2) { allow.tap(); sleep(1) }
+            // iOS asks "Allow Live Activities from Chirp?" and later "continue to allow" on the lock screen; answer it.
+            for label in ["Always Allow", "Allow"] {
+                let allow = springboard.buttons[label]
+                if allow.waitForExistence(timeout: 1.5) { allow.tap(); sleep(1); break }
+            }
             shot("activity-\(kind)-lock")
             XCUIDevice.shared.press(.home)
             springboard.swipeUp()
