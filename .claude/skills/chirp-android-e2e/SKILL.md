@@ -34,7 +34,7 @@ trusts its certificate for `https://10.0.2.2:7899` only in debug.
 
 | Script under `android/scripts/` | Coverage / invocation |
 | --- | --- |
-| `e2e-all.sh`, `e2e-all.py` | One-command lifecycle and pass/fail table; `--only dictation cleanup notes history stop device bubble quickdictate release` selects checks |
+| `e2e-all.sh`, `e2e-all.py` | One-command lifecycle and pass/fail table; `--only dictation cleanup notes history stop device bubble quickdictate visual keepkb release` selects checks |
 | `emulator-check.py --quickdictate-check --tls …` | Dictate tile, sensitive clipboard, Speak result/cancel/error, Share, Notes tile and widget provider; no Accessibility service |
 | `e2e-all.sh --only quickdictate release` | The entry-point matrix, release smoke and entry-point TalkBack checks in the same owned AVD |
 | `emulator-check.py` / `emulator-dictation-check.py` | Real verified pairing, native IME tap/hold, composing partial/final and light/dark; device-side listening/Ripple screenshots |

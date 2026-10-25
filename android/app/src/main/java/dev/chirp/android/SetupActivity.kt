@@ -212,7 +212,7 @@ open class SetupActivity : ComponentActivity() {
     internal fun openAccessibility() {
         if (advancedProtection.enabled()) { state.advancedProtection = true; return }
         awaitingAccessibility = true; awaitingPrerequisite = true
-        startActivity(accessibilitySettingsIntent(this))
+        openAccessibilitySettings(this)
     }
     private fun openAppSettings() { awaitingPrerequisite = true; startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, "package:$packageName".toUri())) }
     private fun openKeyboardPreferences() = startActivity(Intent(this, helium314.keyboard.settings.SettingsActivity::class.java))

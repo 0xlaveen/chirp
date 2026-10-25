@@ -330,9 +330,7 @@ def main():
         # Geometry is verified above. Return to portrait before opening Settings, so all category rows fit.
         adb('shell', 'wm', 'size', '2076x2152')
         focus_editor()
-        mic = wait_for('Microphone: tap to dictate, hold to talk')
-        x, y = center(mic)
-        adb('shell', 'input', 'swipe', str(x), str(y), str(x), str(y), '700')
+        click('Dictation options')
         click('Chirp settings')
         wait_for('How you dictate')
         click('About')

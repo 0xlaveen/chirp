@@ -112,12 +112,11 @@ class Bubble:
 
     def click_now(self, label):
         """One accessibility click by label, without a hierarchy round trip; False when it isn't there."""
-        try:
-            self.adb('shell', 'CLASSPATH=/data/local/tmp/chirp-ui-probe.jar', 'app_process', '/', 'dev.chirp.smoke.UiHierarchy',
-                     'click', shlex.quote(label))
-            return True
-        except RuntimeError:
-            return False
+        # An absent optional target is a successful probe result, not an adb failure.
+        # In particular, never turn exit 137 into a claim that clean-up changed nothing.
+        result = self.adb('shell', 'CLASSPATH=/data/local/tmp/chirp-ui-probe.jar', 'app_process', '/',
+                          'dev.chirp.smoke.UiHierarchy', 'click-if-present', shlex.quote(label))
+        return b'MISSING' not in result
 
     def no_microphone_service(self, where):
         services = self.adb('shell', 'dumpsys', 'activity', 'services', PACKAGE)

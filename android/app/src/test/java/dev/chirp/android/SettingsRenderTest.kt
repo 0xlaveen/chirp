@@ -3,11 +3,12 @@ package dev.chirp.android
 import dev.chirp.android.AppColour
 
 import android.graphics.Bitmap
+import androidx.activity.ComponentActivity
 import androidx.compose.runtime.*
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.test.*
-import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.unit.Density
 import dev.chirp.android.settings.SettingsPage
 import dev.chirp.android.settings.SettingsScreen
@@ -26,10 +27,14 @@ import org.robolectric.annotation.GraphicsMode
 @Config(sdk = [37], qualifiers = "w411dp-h891dp-mdpi")
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 class SettingsRenderTest {
-    @get:Rule val compose = createComposeRule()
+    @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
     private val output = File(System.getProperty("chirp.screenshots")).apply { mkdirs() }
 
     private fun save(name: String, cropAt: String? = null) {
+        compose.waitForIdle()
+        // Flush the native buffer after semantics settle, including the first frame.
+        compose.runOnIdle { compose.activity.window.decorView.invalidate() }
+        compose.mainClock.advanceTimeByFrame()
         compose.waitForIdle()
         var bitmap = compose.onRoot().captureToImage().asAndroidBitmap()
         val first = bitmap.getPixel(0, 0)

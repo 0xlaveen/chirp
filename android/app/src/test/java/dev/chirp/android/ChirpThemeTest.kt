@@ -22,6 +22,22 @@ import kotlin.math.abs
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [37])
 class ChirpThemeTest {
+    @Test fun `system bar icons contrast with light and dark app surfaces`() {
+        val application = RuntimeEnvironment.getApplication()
+        for (night in listOf(false, true)) {
+            val configuration = android.content.res.Configuration(application.resources.configuration).apply {
+                uiMode = (uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK.inv()) or
+                    if (night) android.content.res.Configuration.UI_MODE_NIGHT_YES else android.content.res.Configuration.UI_MODE_NIGHT_NO
+            }
+            val context = android.view.ContextThemeWrapper(application.createConfigurationContext(configuration), R.style.Theme_Chirp)
+            val attributes = context.obtainStyledAttributes(intArrayOf(android.R.attr.windowLightStatusBar, android.R.attr.windowLightNavigationBar))
+            try {
+                assertEquals("status icons, night=$night", !night, attributes.getBoolean(0, night))
+                assertEquals("navigation icons, night=$night", !night, attributes.getBoolean(1, night))
+            } finally { attributes.recycle() }
+        }
+    }
+
     private fun luminance(argb: Long): Double {
         fun lin(v: Double) = if (v <= 0.03928) v / 12.92 else Math.pow((v + 0.055) / 1.055, 2.4)
         val r = ((argb shr 16) and 0xFF) / 255.0

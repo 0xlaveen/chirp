@@ -41,6 +41,9 @@ def probe(m, action, label):
 def onboarding(m, base, token, output):
     adb, wait, click = m['adb'], m['wait_for'], m['click']
     adb('shell', 'pm', 'clear', PACKAGE)
+    adb('shell', 'run-as', PACKAGE, 'mkdir', '-p', 'shared_prefs')
+    adb('shell', 'run-as', PACKAGE, 'sh', '-c', shlex.quote('cat > shared_prefs/debug_capture.xml'),
+        data=b'<map><boolean name="synthetic" value="true" /></map>')
     adb('shell', 'settings', 'delete', 'secure', 'enabled_accessibility_services')
     adb('shell', 'settings', 'put', 'secure', 'accessibility_enabled', '0')
     adb('shell', 'ime', 'set', GBOARD)
@@ -56,13 +59,14 @@ def onboarding(m, base, token, output):
     assert m['find']('Enable Chirp Keyboard') is None
     m['screenshot']('keepkb-disclosure')
     click('Open Accessibility settings')
-    deadline = time.monotonic() + 15
+    deadline = time.monotonic() + 20
     while time.monotonic() < deadline:
-        foreground = adb('shell', 'dumpsys', 'activity', 'activities')
-        if b'mResumedActivity' in foreground and b'AccessibilityDetailsSettings' in foreground:
+        # Query the visible settings window; activity dumps can omit intent actions.
+        if any(n.get('package') == 'com.android.settings' for n in m['nodes']()):
             break
     else:
-        raise AssertionError('Accessibility details screen did not open')
+        m['screenshot']('keepkb-settings-failure')
+        raise AssertionError('System Accessibility settings did not open')
     adb('shell', 'input', 'keyevent', '4')
     wait('Turn on the floating mic')
     # Disclosure is long on the cover screen: scroll to the returned-off help.
@@ -77,25 +81,27 @@ def onboarding(m, base, token, output):
     adb('shell', 'am', 'start', '-n', PACKAGE + '/.SetupActivity')
     wait('Allow microphone')
     click('Allow microphone')
-    permission = wait('While using the app'); m['tap'](permission)
+    wait('While using the app'); probe(m, 'click', 'While using the app')
     wait('Scan code')
     adb('shell', 'pm', 'grant', PACKAGE, 'android.permission.ACCESS_LOCAL_NETWORK')
-    adb('shell', 'am', 'force-stop', PACKAGE)
-    adb('shell', 'run-as', PACKAGE, 'mkdir', '-p', 'shared_prefs')
-    adb('shell', 'run-as', PACKAGE, 'sh', '-c', shlex.quote('cat > shared_prefs/debug_capture.xml'),
-        data=b'<map><boolean name="synthetic" value="true" /></map>')
     link = 'chirp://pair?' + urllib.parse.urlencode({'url': base, 'token': token})
     adb('shell', 'am', 'start', '-a', 'android.intent.action.VIEW', '-d', shlex.quote(link))
-    wait('Finish'); click('Finish')
+    wait('Finish'); probe(m, 'click', 'Finish'); wait('Record new note')
     assert adb('shell', 'settings', 'get', 'secure', 'default_input_method').decode().strip() == GBOARD
-    print('PASS: fresh choice, disclosure, Accessibility details, restricted help/app info, enable/resume, microphone, deep-link pairing, Gboard retained.', flush=True)
+    print('PASS: fresh choice, disclosure, system Accessibility settings, restricted help/app info, enable/resume, microphone, deep-link pairing, Gboard retained.', flush=True)
 
 
 def settings(m, output):
     adb, wait, click = m['adb'], m['wait_for'], m['click']
-    adb('shell', 'am', 'start', '-n', PACKAGE + '/.SetupActivity', '--es', 'section', 'input')
-    wait('How you dictate')
+    click('Settings')
+    wait('How you dictate'); click('How you dictate')
+    wait('Use Chirp Keyboard')
     click('Use Chirp Keyboard')
+    click('Enable Chirp Keyboard')
+    wait('Keyboard apps')
+    adb('shell', 'ime', 'enable', CHIRP)
+    adb('shell', 'input', 'keyevent', 'KEYCODE_BACK')
+    wait('Choose keyboard')
     click('Choose keyboard')
     wait('Gboard'); wait('Chirp Keyboard')
     assert b'InputMethod' in adb('shell', 'dumpsys', 'window', 'windows'), 'Keyboard picker missing'
@@ -122,7 +128,15 @@ def ime_visibility(m, output):
 def check(m, work, output, base, token):
     with secure_settings(m):
         onboarding(m, base, token, output)
-        settings(m, output)
-        ime_visibility(m, output)
+        try:
+            settings(m, output)
+            ime_visibility(m, output)
+        except Exception:
+            (output / 'post-pairing-crash.txt').write_bytes(m['adb']('logcat', '-b', 'crash', '-d', '-s', 'AndroidRuntime:E'))
+            m['nodes']()
+            (output / 'post-pairing-ui.xml').write_bytes(m['adb']('shell', 'cat', '/sdcard/chirp-windows.xml'))
+            data = m['adb']('exec-out', 'screencap', '-p')
+            (output / 'post-pairing-failure.png').write_bytes(data[data.index(b'\x89PNG'):])
+            raise
         m['crash_check']()
     print('PASS: keep-keyboard checks; secure settings restored. Real restricted blocking, Advanced Protection and OEM policy need device acceptance.', flush=True)

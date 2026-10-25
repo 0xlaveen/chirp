@@ -288,21 +288,16 @@ def check(probe, work, output):
         poll(lambda: any(final in n.get('text', '') for n in nodes()), 'Entry missing from history screen')
         # Raw text is collapsed in the modern History UI; its reinsertion was verified above.
         shot('screen-light')
-        matched = False
-        for _ in range(4):
-            # A real touch focuses a Compose field; an accessibility click may not.
-            tap(poll(lambda: probe['find']('Search history'), 'Search field missing'))
-            adb('shell', 'input', 'text', 'zzqx')
-            if any(n.get('class') == 'helium314.keyboard.keyboard.Key' for n in nodes()):
-                # The open IME can cover the result list; hide it before checking.
-                adb('shell', 'input', 'keyevent', 'KEYCODE_BACK')
-            try:
-                wait_for('No matches', seconds=12)
-                matched = True
-                break
-            except AssertionError:
-                pass
-        assert matched, 'History search did not filter'
+        # The placeholder disappears as soon as text lands. Type once, then hide the IME
+        # using its strip (virtual key nodes can be absent from the accessibility cache).
+        tap(wait_for('Search history'))
+        adb('shell', 'input', 'text', 'zzqx')
+        wait_for('Clear search')
+        wait_for('Microphone: tap to dictate')
+        adb('shell', 'input', 'keyevent', 'KEYCODE_BACK')
+        poll(lambda: probe['find']('Microphone: tap to dictate') is None, 'Search IME stayed open')
+        wait_for('No matches')
+        shot('search-no-matches-light')
         adb('shell', 'input', 'keyevent', 'KEYCODE_BACK')
         adb('shell', 'input', 'keyevent', 'KEYCODE_BACK')
 
@@ -338,7 +333,7 @@ def check(probe, work, output):
             time.sleep(1)
         assert arrived, 'History settings switch did not appear'
         shot('settings-light')
-        tap(poll(lambda: next((n for n in nodes() if n.get('class') == 'android.widget.Switch' or (n.get('text') == 'Keep dictation history on this phone' and n.get('clickable') == 'true')), None), 'History switch missing'))
+        click('Keep dictation history on this phone')
         wait_for('Turn off and delete')
         click('Turn off and delete')
         poll(lambda: not stored(), 'History file survived turning history off')
