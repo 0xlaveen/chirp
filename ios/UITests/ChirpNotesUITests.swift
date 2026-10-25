@@ -5,14 +5,7 @@ final class ChirpNotesUITests: XCTestCase {
     override func setUp() { continueAfterFailure = false; XCUIDevice.shared.orientation = .portrait }
 
     @MainActor static func openNotes(_ app: XCUIApplication) {
-        let tab = app.tabBars.buttons["Notes"]
-        if tab.exists { tab.tap(); return }
-        let entry = app.buttons["chirp.notes.open"]
-        if entry.waitForExistence(timeout: 2) { entry.tap(); return }
-        let sidebar = app.buttons["Notes"]
-        if sidebar.exists { sidebar.tap(); return }
-        let top = app.buttons.matching(identifier: "note.text").firstMatch
-        if top.exists { top.tap() }
+        app.selectChirpTab("Notes")
     }
     @MainActor static func element(_ id: String, in app: XCUIApplication) -> XCUIElement {
         app.descendants(matching: .any).matching(identifier: id).firstMatch
@@ -28,7 +21,7 @@ final class ChirpNotesUITests: XCTestCase {
     }
     @MainActor private func launch(_ extra: [String] = []) -> XCUIApplication {
         let app = XCUIApplication()
-        app.launchArguments = ["--chirp-ui-test", "--chirp-notes-library-id", UUID().uuidString] + extra
+        app.launchArguments = ["--chirp-ui-test", "--chirp-skip-onboarding", "--chirp-notes-library-id", UUID().uuidString] + extra
         app.launch(); Self.openNotes(app)
         XCTAssertTrue(Self.element("chirp.notes.library", in: app).waitForExistence(timeout: 10))
         return app
@@ -118,6 +111,7 @@ final class ChirpNotesUITests: XCTestCase {
 
     /// Captures both appearances when e2e-all.sh is run with and without --dark.
     @MainActor func testLibraryReadingSearchTasksAndInspector() {
+        if UIDevice.current.userInterfaceIdiom == .pad { XCUIDevice.shared.orientation = .landscapeLeft }
         let app = launch(["--chirp-notes-gallery"])
         XCTAssertTrue(app.staticTexts["Lantern kickoff"].waitForExistence(timeout: 10))
         screenshot("notes-library-groups", app)

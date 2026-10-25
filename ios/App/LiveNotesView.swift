@@ -38,10 +38,8 @@ struct NoteDetailView: View {
                 VStack(alignment: .leading, spacing: 16) {
                     titleBlock
                     if let banner = banner {
-                        Label(banner, systemImage: notes.debugRetention ? "exclamationmark.triangle.fill" : "info.circle")
-                            .font(.subheadline).foregroundStyle(notes.debugRetention ? Color.chirp.record : .chirp.inkMuted)
-                            .padding(12).frame(maxWidth: .infinity, alignment: .leading)
-                            .background(Color.chirp.surfaceRaised, in: RoundedRectangle(cornerRadius: 10))
+                        PondBanner(kind: notes.debugRetention ? .error : .info, title: banner)
+                            .accessibilityElement(children: .combine).accessibilityLabel(banner)
                             .accessibilityIdentifier("chirp.notes.notice")
                     }
                     HStack(spacing: 12) {
@@ -356,23 +354,6 @@ struct NotesSettingsSheet: View {
     }
 }
 
-// Temporary compatibility for the shell before #192 Part 2 lands. Its Notes tab uses LiveNotesView directly.
-struct LiveNotesEntry: ViewModifier {
-    static var asTab: Bool { UIDevice.current.userInterfaceIdiom == .pad }
-    @ObservedObject var notes: LiveNotesController
-    @ObservedObject var session: SessionCoordinator
-    var pair: () -> Void = {}
-    @State private var open = false
-    func body(content: Content) -> some View {
-        content.toolbar {
-            if !Self.asTab {
-                ToolbarItem(placement: .primaryAction) {
-                    Button("Notes", systemImage: "note.text") { open = true }.accessibilityIdentifier("chirp.notes.open")
-                }
-            }
-        }.navigationDestination(isPresented: $open) { LiveNotesView(notes: notes, session: session, pair: pair) }
-    }
-}
 extension LiveNotesController {
     var statusLine: String {
         switch state {

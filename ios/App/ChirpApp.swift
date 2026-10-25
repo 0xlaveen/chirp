@@ -127,20 +127,14 @@ struct ChirpRootView: View {
     @State private var onboarding = false
     @AppStorage(Onboarding.doneKey) private var onboarded = false
     @AppStorage("chirp.setupCard.dismissed") private var setupDismissed = false
-    @State private var microphone = AVAudioApplication.shared.recordPermission == .granted
-    @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
         // The session capsule goes inside each tab's root view: inset on the TabView itself, it covered iOS 27's
         // floating tab bar (a tab tap hit End session); on the NavigationStack, it covered Dictate's own controls.
         TabView(selection: $tab) {
             Tab(ChirpTab.notes.title, systemImage: ChirpTab.notes.symbol, value: .notes) {
-                NavigationStack {
-                    LiveNotesView(notes: notes, session: model, pair: { open(.connection) })
-                        .safeAreaInset(edge: .top, spacing: 0) { setupCard }
-                        .toolbar { ToolbarItem(placement: .topBarLeading) { ConnectionChip(model: model) { open(.connection) } } }
-                        .modifier(SessionCapsule(model: model))
-                }
+                LiveNotesView(notes: notes, session: model, pair: { open(.connection) }, dictate: { tab = .dictate })
+                    .modifier(SessionCapsule(model: model))
             }
             Tab(ChirpTab.dictate.title, systemImage: ChirpTab.dictate.symbol, value: .dictate) {
                 NavigationStack {
@@ -187,33 +181,11 @@ struct ChirpRootView: View {
         .onAppear { if !onboarded && !model.paired { onboarding = true } }
         // Starting Live Notes (from the Live Activity, Shortcuts or a control) shows the note being recorded.
         .onChange(of: notes.isActive) { _, recording in if recording { tab = .notes } }
-        .onChange(of: scenePhase) { _, phase in if phase == .active { microphone = AVAudioApplication.shared.recordPermission == .granted } }
     }
 
     private func open(_ route: SettingsRoute) {
         tab = .settings
         settingsPath = [route]
-    }
-
-    @ViewBuilder private var setupCard: some View {
-        let progress = SetupProgress(paired: model.paired, microphone: microphone, keyboard: model.keyboardReady)
-        if !setupDismissed, !progress.isComplete {
-            SetupCard(progress: progress, fix: fix, dismiss: { setupDismissed = true })
-                .padding(.horizontal, ChirpSpacing.s16).padding(.vertical, ChirpSpacing.s8)
-                .frame(maxWidth: 680).frame(maxWidth: .infinity)
-        }
-    }
-
-    private func fix(_ step: SetupProgress.Step) {
-        switch step {
-        case .pair: open(.connection)
-        case .microphone:
-            if AVAudioApplication.shared.recordPermission == .undetermined {
-                Task { microphone = await AVAudioApplication.requestRecordPermission() }
-            } else if let url = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(url) }
-        case .keyboard:
-            if let url = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(url) }
-        }
     }
 
     /// Until the Settings tree (#194) lands, Connection, Styles and "Show setup again" sit above the settings.

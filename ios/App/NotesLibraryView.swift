@@ -1,3 +1,4 @@
+import AVFAudio
 import ChirpCore
 import ChirpIOSCore
 import SwiftUI
@@ -9,6 +10,9 @@ struct NotesLibraryView: View {
     var pair: () -> Void
     var dictate: () -> Void = {}
     @Environment(\.horizontalSizeClass) private var sizeClass
+    @Environment(\.scenePhase) private var scenePhase
+    @AppStorage("chirp.setupCard.dismissed") private var setupDismissed = false
+    @State private var microphone = AVAudioApplication.shared.recordPermission == .granted
     @SceneStorage("chirp.notes.selection") private var selectedID = ""
     @SceneStorage("chirp.notes.search") private var query = ""
     @SceneStorage("chirp.notes.scroll") private var scrollID = ""
@@ -54,6 +58,7 @@ struct NotesLibraryView: View {
             else { selectedID = "" }
             await notes.refreshHealth()
         }
+        .onChange(of: scenePhase) { _, phase in if phase == .active { microphone = AVAudioApplication.shared.recordPermission == .granted } }
         .onChange(of: notes.entries) { _, _ in revision += 1 }
         .task(id: query + String(revision)) {
             guard let library = notes.library else { return }
@@ -79,14 +84,12 @@ struct NotesLibraryView: View {
                         .accessibilityAddTraits(.isHeader).listRowBackground(Color.clear)
                         .listRowInsets(EdgeInsets(top: 8, leading: 0, bottom: 8, trailing: 0))
                 }
-                if !notes.paired {
+                if !setupDismissed, !SetupProgress(model: session, microphone: microphone).isComplete {
                     Section {
-                        VStack(alignment: .leading, spacing: 8) {
-                            Label("Pair your Mac", systemImage: "desktopcomputer").font(.headline)
-                            Text("Connect to your speech server to start recording.").font(.subheadline).foregroundStyle(Color.chirp.inkMuted)
-                            Button("Pair Mac", action: pair).buttonStyle(.bordered).tint(Color.chirp.koi)
-                        }.padding(4)
-                    }.listRowBackground(Color.chirp.surface)
+                        SetupCard(progress: SetupProgress(model: session, microphone: microphone), fix: fixSetup,
+                                  dismiss: { setupDismissed = true })
+                            .listRowInsets(EdgeInsets()).listRowBackground(Color.clear)
+                    }
                 }
                 if !notes.preferences.keepNotes {
                     Section {
@@ -249,8 +252,7 @@ struct NotesLibraryView: View {
 
     @ToolbarContentBuilder private var libraryToolbar: some ToolbarContent {
         ToolbarItem(placement: .topBarLeading) {
-            Button(action: pair) { Label(notes.paired ? "Mac" : "Offline", systemImage: "circle.fill").font(.caption).foregroundStyle(notes.paired ? Color.chirp.lily : .chirp.inkMuted) }
-                .accessibilityLabel("Connection settings")
+            ConnectionChip(model: session, open: pair)
         }
         ToolbarItemGroup(placement: .primaryAction) {
             Button("Search notes", systemImage: "magnifyingglass") { searchFocused = true }.keyboardShortcut("f", modifiers: .command)
@@ -259,6 +261,18 @@ struct NotesLibraryView: View {
                 Button(selecting ? "Done selecting" : "Select", systemImage: "checkmark.circle") { selecting.toggle(); selection = [] }
                 Button("Notes settings", systemImage: "gearshape") { settings = true }.accessibilityIdentifier("chirp.notes.settings")
             } label: { Label("More", systemImage: "ellipsis.circle") }.accessibilityIdentifier("chirp.notes.menu")
+        }
+    }
+
+    private func fixSetup(_ step: SetupProgress.Step) {
+        switch step {
+        case .pair: pair()
+        case .microphone:
+            if AVAudioApplication.shared.recordPermission == .undetermined {
+                Task { microphone = await AVAudioApplication.requestRecordPermission() }
+            } else if let url = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(url) }
+        case .keyboard:
+            if let url = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(url) }
         }
     }
 
