@@ -43,6 +43,11 @@ extension NotesSession {
         deps.reduceMotion = { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
         deps.registerHotkey = { onDown in HotKeyCenter.shared.register(id: Self.hotkeyID, combo: settings.notesHotkey, onDown: onDown) }
         deps.unregisterHotkey = { HotKeyCenter.shared.unregister(id: Self.hotkeyID) }
+        deps.callTap = CallAudio.makeTap()
+        let callQueue = DispatchQueue(label: "chirp.notes.call-audio.control", qos: .userInitiated)
+        deps.callAudioQueue = { callQueue.async(execute: $0) }
+        deps.callApps = { CallAudio.apps() }
+        deps.openCallAudioSettings = { Permissions.openSettings(.systemAudio) }
         self.init(deps)
     }
 

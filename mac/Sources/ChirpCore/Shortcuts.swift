@@ -18,7 +18,7 @@ public enum ChirpShortcut: String, CaseIterable, Sendable {
 
     public var defaultCombo: KeyCombo {
         switch self {
-        case .dictation: .controlOptionSpace
+        case .dictation: .defaultDictation
         case .notes: .controlOptionN
         case .openNotes: .controlOptionShiftN
         case .useRaw: .controlOptionZ

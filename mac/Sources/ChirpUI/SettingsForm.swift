@@ -3,7 +3,7 @@ import ChirpCore
 
 /// What the Settings window shows. The window controller reads it from the system; the snapshots pass fixed values.
 public struct SettingsState: Sendable {
-    public var hotkey: KeyCombo = .controlOptionSpace
+    public var hotkey: KeyCombo = .defaultDictation
     /// Shortcuts: Start/Stop Notes, Open Notes and Use raw.
     public var notesHotkey: KeyCombo = .controlOptionN
     public var openNotesHotkey: KeyCombo = .controlOptionShiftN
@@ -63,6 +63,10 @@ public struct SettingsState: Sendable {
     public var serverHost = "this Mac"
     /// Some of Live Notes' speaker-label model is on this Mac, complete or not (Remove deletes it).
     public var speakerModelDownloaded = false
+    /// Notes › Speakers: "Label speakers" (the same switch as the Notes window's ✦ menu), and whether a recording
+    /// holds it (it applies from the next Record).
+    public var speakerLabels = false
+    public var speakerLabelsLocked = false
     /// Notes › Voices: "Recognize saved voices", the voice model and the saved voices.
     public var voices = VoiceProfilesState()
     /// Dictation: every input device, the system default among them, and the one the user picked (nil follows the default).
@@ -75,7 +79,14 @@ public struct SettingsState: Sendable {
     public var notesRetention: NotesRetention = .never
     public var recentlyDeletedCount = 0
     public var notesKeepAudio = false
+    /// Notes › Sources: new notes include call audio (#211).
+    public var notesCallAudio = false
     public var notesAudioBytes = 0
+    /// Dictation › History: on (the default), how long dictations are kept, the apps never kept, and how many are kept.
+    public var historyEnabled = true
+    public var historyRetention = DictationRetention.default
+    public var historyExcludedApps = HistoryPolicy.defaultExcludedApps
+    public var historyCount = 0
     /// Notes › Export: the folder Export Markdown… opens in (nil: wherever it was last used).
     public var exportFolder: String?
     /// Notes › Smart notes: the defaults for new recordings.
@@ -130,10 +141,10 @@ public enum SettingsTab: String, CaseIterable, Sendable {
         switch self {
         case .general: ["startup", "launch at login", "dock", "permissions", "microphone", "accessibility", "setup"]
         case .dictation: ["shortcuts", "hotkey", "hold to talk", "auto-stop", "stop", "silence", "return", "word waveform",
-                          "sounds", "volume", "input device", "use raw", "new note"]
+                          "sounds", "volume", "input device", "use raw", "new note", "history", "recent dictations", "privacy"]
         case .cleanup: ["style", "prompts", "per-app", "insert raw", "review changes", "undo", "polish"]
         case .notes: ["library", "retention", "recently deleted", "audio", "storage", "export", "folder", "smart notes",
-                      "structure", "reorganize", "speakers", "voices"]
+                      "structure", "reorganize", "speakers", "voices", "call audio", "sources", "zoom", "meeting"]
         case .devices: ["phone", "pair", "paired", "android", "iphone", "token", "revoke"]
         case .advanced: ["server", "url", "token", "models", "doctor", "keep loaded", "status"]
         case .about: ["version", "notices", "licenses"]
@@ -159,6 +170,8 @@ public final class SettingsContentView: NSView {
 /// as tall as its content. All controls live here and are exposed so the owner can attach targets and actions.
 @MainActor
 public final class SettingsForm {
+    /// Notes › Sources: what "Include call audio" records, said before macOS asks for the permission.
+    public static let callAudioHelp = "Records what your Mac plays (the other people on a call) beside your microphone, so both sides are transcribed. Your microphone is labelled “You”. macOS asks once for Screen & System Audio Recording. Audio stays on this Mac and your Chirp server."
     static let margin: CGFloat = ChirpSpacing.gutter
     /// The width a control that fills its row may take.
     static let controlWidth: CGFloat = SettingsLayout.rowWidth
@@ -190,7 +203,7 @@ public final class SettingsForm {
     public let autoEnter = NSPopUpButton(frame: .zero, pullsDown: false)
     private let modeHelp = SettingsForm.help("")
     private let offerRawHelp = SettingsForm.help("")
-    private var shownHotkey = KeyCombo.controlOptionSpace
+    private var shownHotkey = KeyCombo.defaultDictation
     public let sounds = NSButton(checkboxWithTitle: "Play start and stop sounds", target: nil, action: nil)
     /// Sounds: the pack, ▶ previews, the volume, and (for the Custom pack) the user's files.
     public let soundPack = NSPopUpButton(frame: .zero, pullsDown: false)
@@ -227,6 +240,7 @@ public final class SettingsForm {
     public let emptyDeleted = NSButton(title: "Empty…", target: nil, action: nil)
     private let deletedStatus = NSTextField(labelWithString: "")
     public let keepAudio = NSButton(checkboxWithTitle: "Keep audio with notes", target: nil, action: nil)
+    public let callAudio = NSButton(checkboxWithTitle: "Include call audio in new notes", target: nil, action: nil)
     public let deleteAudio = NSButton(title: "Delete…", target: nil, action: nil)
     private let audioStatus = NSTextField(labelWithString: "")
     public let chooseExport = NSButton(title: "Choose…", target: nil, action: nil)
@@ -234,6 +248,13 @@ public final class SettingsForm {
     private let exportFolder = NSTextField(labelWithString: "")
     public let structureNotes = NSButton(checkboxWithTitle: "Structure notes", target: nil, action: nil)
     public let autoReorganize = NSButton(checkboxWithTitle: "Auto-reorganize", target: nil, action: nil)
+    /// Dictation › History: keep dictations (on by default), for how long, the apps never kept, and the window/Clear.
+    public let historyEnabled = NSButton(checkboxWithTitle: HistorySettingsText.keep, target: nil, action: nil)
+    public let historyRetention = NSPopUpButton(frame: .zero, pullsDown: false)
+    public let historyApps = HistoryAppsList()
+    public let openHistory = NSButton(title: "Open History…", target: nil, action: nil)
+    public let clearHistory = NSButton(title: "Clear…", target: nil, action: nil)
+    private let historyStatus = NSTextField(labelWithString: "")
     /// General: reopens the setup walk-through.
     public let setupButton = NSButton(title: "Set Up Chirp…", target: nil, action: nil)
     /// Server: puts the chirp-server doctor command on the pasteboard.
@@ -244,6 +265,8 @@ public final class SettingsForm {
     /// Devices: the phones paired with their own token, each with Revoke; and the advanced shared-token rotation.
     public let devicesView = DevicesView()
     public let rotateButton = NSButton(title: "Rotate Shared Token…", target: nil, action: nil)
+    /// Notes: "Label speakers"; turning it on the first time asks before the one-time model download.
+    public let labelSpeakers = NSButton(checkboxWithTitle: "Label speakers", target: nil, action: nil)
     /// Notes: deletes Live Notes' on-device speaker model (shown beside its status while it is on this Mac).
     public let removeSpeakerModel = NSButton(title: "Remove", target: nil, action: nil)
     private let speakerStatus = StatusLine()
@@ -350,9 +373,11 @@ public final class SettingsForm {
             notesRetention.addItem(withTitle: Self.retentionTitle(r))
             notesRetention.lastItem?.representedObject = r.rawValue
         }
+        labelSpeakers.setAccessibilityLabel("Label speakers in Live Notes")
         structureNotes.setAccessibilityLabel("Structure notes by default")
         autoReorganize.setAccessibilityLabel("Auto-reorganize by default")
         keepAudio.setAccessibilityLabel("Keep audio with notes")
+        callAudio.setAccessibilityLabel("Include call audio in new notes")
 
         build(.general, [
             SettingsSection("Startup", [row(nil, launch, help: launchHelp), row(nil, alwaysInDock)]),
@@ -370,6 +395,17 @@ public final class SettingsForm {
         let stopRow = row("Stop sound", Self.fileRow(stopFile, choose: chooseStop, remove: removeStop),
                           help: Self.help("Plays after you stop talking, up to \(SoundTiming.stopLimit) s."))
         customRows = [startRow, stopRow]
+        for button in [openHistory, clearHistory] { button.bezelStyle = .rounded; button.controlSize = .small }
+        historyStatus.font = MenuStyle.font
+        historyStatus.textColor = .secondaryLabelColor
+        historyEnabled.setAccessibilityLabel(HistorySettingsText.keep)
+        historyRetention.setAccessibilityLabel("Keep dictations for")
+        openHistory.setAccessibilityLabel("Open Dictation History")
+        clearHistory.setAccessibilityLabel("Clear dictation history")
+        for r in DictationRetention.allCases {
+            historyRetention.addItem(withTitle: r.title)
+            historyRetention.lastItem?.representedObject = r.rawValue
+        }
         build(.dictation, [
             SettingsSection("Shortcuts", [
                 row("Dictation", hotkeyRow, help: hotkeyHelp), fnRow,
@@ -387,6 +423,12 @@ public final class SettingsForm {
             SettingsSection("Sounds", [
                 row(nil, sounds, help: Self.help("Quiet sounds when dictation starts and stops. Off keeps Chirp silent.")),
                 row("Pack", packRow, help: packHelp), row("Volume", volumeRow), startRow, stopRow,
+            ]),
+            SettingsSection("History", [
+                row(nil, historyEnabled, help: Self.help(HistorySettingsText.keepHelp)),
+                row("Keep for", historyRetention, help: Self.help(HistorySettingsText.retentionHelp)),
+                row("Never keep", historyApps.view, help: Self.help(HistorySettingsText.appsHelp)),
+                row("Kept", line([historyStatus, openHistory, clearHistory])),
             ]),
         ])
 
@@ -409,6 +451,9 @@ public final class SettingsForm {
                     help: Self.help("Never by default. Older notes move to Recently Deleted when Chirp opens, and stay there for 30 days.")),
                 row("Recently Deleted", line([deletedStatus, emptyDeleted])),
             ]),
+            SettingsSection("Sources", [
+                row(nil, callAudio, help: Self.help(SettingsForm.callAudioHelp)),
+            ], footnote: Self.help("Each note can change it from Sources in the Notes toolbar. Mac only: iPhone and Android can’t record other apps’ audio.")),
             SettingsSection("Audio", [
                 row(nil, keepAudio, help: Self.help("Keeps each spoken segment with its note so you can replay it. Off by default; the audio never leaves this Mac.")),
                 row("Kept audio", line([audioStatus, deleteAudio])),
@@ -422,6 +467,7 @@ public final class SettingsForm {
                 row(nil, autoReorganize, help: Self.help("Tidies the notes in the background as they grow.")),
             ], footnote: Self.help("Defaults for new recordings. The ✦ menu in the Notes window changes them while you record.")),
             SettingsSection("Speakers", [
+                row(nil, labelSpeakers, help: Self.help("Shows who said what as Person 1, Person 2… in the transcript, the notes and exports. Voices are told apart on this Mac only.")),
                 row(nil, stack([speakerStatus, speakerHelp])),
                 row("Saved voices", voicesView, stacked: true),
             ]),
@@ -591,7 +637,11 @@ public final class SettingsForm {
             wordWaveform.state = s.wordWaveform ? .on : .off
             notesRecoveryCopy.state = s.notesRecoveryCopy ? .on : .off
             if let i = NotesRetention.allCases.firstIndex(of: s.notesRetention) { notesRetention.selectItem(at: i) }
+            historyEnabled.state = s.historyEnabled ? .on : .off
+            if let i = DictationRetention.allCases.firstIndex(of: s.historyRetention) { historyRetention.selectItem(at: i) }
+            historyApps.setApps(s.historyExcludedApps)
             keepAudio.state = s.notesKeepAudio ? .on : .off
+            callAudio.state = s.notesCallAudio ? .on : .off
             structureNotes.state = s.structureNotes ? .on : .off
             autoReorganize.state = s.autoReorganize ? .on : .off
             exportFolder.stringValue = s.exportFolder.map { Self.displayPath($0) } ?? "Last used"
@@ -622,6 +672,7 @@ public final class SettingsForm {
             shownCatalog = s.catalog
         }
         showLibrary(deleted: s.recentlyDeletedCount, audioBytes: s.notesAudioBytes)
+        showHistory(enabled: s.historyEnabled, count: s.historyCount)
         showKeepLoaded(s.keepLoaded, host: s.serverHost)
         cleanupHelp.stringValue = s.cleanupDetail
         cleanupEnabled.isEnabled = s.cleanupAvailable
@@ -645,10 +696,14 @@ public final class SettingsForm {
         speakerStatus.set(symbol: s.speakerModelDownloaded ? "checkmark.circle.fill" : "circle", tone: s.speakerModelDownloaded ? .ok : .normal,
                           text: s.speakerModelDownloaded ? "Speaker model on this Mac" : "Speaker model not downloaded")
         removeSpeakerModel.isHidden = !s.speakerModelDownloaded
+        // Every refresh: the ✦ menu, a consent or Remove can flip it while Settings is open.
+        labelSpeakers.state = s.speakerLabels ? .on : .off
+        labelSpeakers.isEnabled = !s.speakerLabelsLocked
+        labelSpeakers.toolTip = s.speakerLabelsLocked ? "Applies from the next recording: stop the current one to change it." : nil
         voicesView.apply(s.voices)
         speakerHelp.stringValue = s.speakerModelDownloaded
             ? "Labels who is talking in Live Notes, on this Mac. Removing it turns labels off until you download it again."
-            : "Live Notes downloads it only when you turn on Label speakers in the Notes window, and asks first."
+            : "Downloaded only when you turn on Label speakers (here or in the Notes window's ✦ menu), after you agree."
         micStatus.set(symbol: s.micGranted ? "checkmark.circle.fill" : "exclamationmark.triangle.fill",
                       tone: s.micGranted ? .ok : .warning, text: s.micGranted ? "Microphone allowed" : "Microphone not allowed")
         accessibilityStatus.set(symbol: s.accessibilityGranted ? "checkmark.circle.fill" : "exclamationmark.triangle.fill",
@@ -665,6 +720,14 @@ public final class SettingsForm {
         emptyDeleted.isEnabled = deleted > 0
         audioStatus.stringValue = audioBytes == 0 ? "None" : Self.sizeText(audioBytes)
         deleteAudio.isEnabled = audioBytes > 0
+    }
+
+    /// History's on/off state follows the menu or an alert; the count changes as dictations come and go.
+    public func showHistory(enabled: Bool, count: Int) {
+        historyEnabled.state = enabled ? .on : .off
+        historyRetention.isEnabled = enabled
+        historyStatus.stringValue = HistorySettingsText.count(count)
+        clearHistory.isEnabled = count > 0
     }
 
     /// "Never", "After 1 year", … as the retention popup reads.
@@ -795,13 +858,16 @@ public final class SettingsForm {
     /// Selects `mode` and the auto-stop pause (the nearest offered one), which only matters in auto-stop.
     public func showMode(_ m: ActivationMode, silence seconds: TimeInterval) {
         if let i = mode.itemArray.firstIndex(where: { $0.representedObject as? String == m.rawValue }) { mode.selectItem(at: i) }
-        modeHelp.stringValue = m.help
+        modeHelp.stringValue = m.help(singleModifierKey: shownHotkey.isSingleModifierKey)
         let nearest = AutoStopDetector.silenceChoices.enumerated().min { abs($0.element - seconds) < abs($1.element - seconds) }
         if let nearest { silence.selectItem(at: nearest.offset) }
         silence.isEnabled = m == .autoStop
     }
 
     private func refreshHotkeyHelp() {
+        if let raw = mode.selectedItem?.representedObject as? String, let m = ActivationMode(rawValue: raw) {
+            modeHelp.stringValue = m.help(singleModifierKey: shownHotkey.isSingleModifierKey)
+        }
         fnKeySetupRow?.isHidden = !(shownHotkey.isModifierOnly && shownHotkey.modifiers == ModifierKeys.fn)
         hotkeyHelp.textColor = .secondaryLabelColor
         switch recorder.status {

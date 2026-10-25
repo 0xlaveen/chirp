@@ -44,6 +44,14 @@ public enum SystemInsertion {
         return (focused as! AXUIElement)
     }
 
+    /// Secure input is on, or the focused field is a password field: history never keeps what goes there.
+    public static func focusedFieldIsSecure() -> Bool {
+        if IsSecureEventInputEnabled() { return true }
+        guard AXIsProcessTrusted(), let element = focusedElement() else { return false }
+        let role = copy(element, "AXRole") as? String, subrole = copy(element, "AXSubrole") as? String
+        return role == "AXSecureTextField" || subrole == "AXSecureTextField"
+    }
+
     private static func selectedTextSettable(_ element: AXUIElement) -> Bool {
         var settable: DarwinBoolean = false
         return AXUIElementIsAttributeSettable(element, "AXSelectedText" as CFString, &settable) == .success && settable.boolValue

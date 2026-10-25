@@ -120,7 +120,7 @@ class Utterance:
         if (
             control.get("sample_rate") != 16000
             or control.get("encoding") != "pcm_s16le"
-            or control.get("client") not in {"mac", "android", "ios"}
+            or control.get("client") not in {"mac", "android", "ios", "desktop"}
             or not isinstance(control.get("correction", False), bool)
             or not isinstance(control.get("word_timings", False), bool)
         ):

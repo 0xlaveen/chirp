@@ -4,13 +4,52 @@ import Testing
 
 @MainActor
 @Suite struct HotKeyTests {
-    @Test func presetsAreUniqueAndDefaultIsControlOptionSpace() {
+    @Test func presetsAreUniqueAndDefaultIsRightOption() {
         let ids = KeyCombo.presets.map(\.id)
         #expect(Set(ids).count == ids.count)
-        #expect(KeyCombo.presets.first == .controlOptionSpace)
+        #expect(KeyCombo.presets.first == .rightOption && KeyCombo.defaultDictation == .rightOption)
         #expect(KeyCombo.preset(id: "control-shift-space") == .controlShiftSpace)
-        #expect(KeyCombo.preset(id: "nonsense") == .controlOptionSpace)
-        #expect(KeyCombo.preset(id: nil) == .controlOptionSpace)
+        #expect(KeyCombo.preset(id: "control-option-space") == .controlOptionSpace)   // still offered
+        #expect(KeyCombo.preset(id: "nonsense") == .rightOption)
+        #expect(KeyCombo.preset(id: nil) == .rightOption)
+    }
+
+    /// Right ⌥ is one physical key, so the left ⌥ (é, ü, ⌥-shortcuts) never reaches it; ⌥ either side and key
+    /// combinations are not single keys.
+    @Test func onlyAOneSidedModifierIsASingleModifierKey() {
+        #expect(KeyCombo.rightOption.isSingleModifierKey)
+        #expect(!KeyCombo.option.isSingleModifierKey && !KeyCombo.controlOptionSpace.isSingleModifierKey)
+        #expect(!KeyCombo.custom(keyCode: KeyCombo.anyModifierKey, modifiers: ModifierKeys.fn).isSingleModifierKey)
+        #expect(KeyCombo.custom(keyCode: UInt32(kVK_RightCommand), modifiers: UInt32(cmdKey)).isSingleModifierKey)
+    }
+
+    /// Nothing stored means the user never chose a shortcut, so they follow the default (Right ⌥); anyone who picked
+    /// one, ⌃⌥Space included, keeps it.
+    @Test func theDefaultFollowsWhoNeverChoseAndKeepsWhoDid() throws {
+        let suite = "chirp-test-\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let prefs = Preferences(defaults: defaults)
+        #expect(prefs.hotkey == .rightOption && defaults.object(forKey: "hotkey") == nil)   // reading stores nothing
+        #expect(prefs[shortcut: .dictation] == .rightOption)
+        for chosen in [KeyCombo.controlOptionSpace, .option, .controlShiftSpace, .controlOptionCommandSpace, .rightOption,
+                       .custom(keyCode: UInt32(kVK_ANSI_R), modifiers: UInt32(controlKey | cmdKey))] {
+            prefs.hotkey = chosen
+            #expect(Preferences(defaults: defaults).hotkey == chosen)
+        }
+        // A stored ⌃⌥Space from before the default changed is an explicit choice.
+        defaults.set("control-option-space", forKey: "hotkey")
+        #expect(prefs.hotkey == .controlOptionSpace)
+        defaults.removeObject(forKey: "hotkey")
+        #expect(prefs.hotkey == .rightOption)
+        // The other shortcuts keep their defaults.
+        #expect(prefs.notesHotkey == .controlOptionN && prefs.openNotesHotkey == .controlOptionShiftN)
+    }
+
+    @Test func rightOptionNeedsTheEventTapAndIsValidAsRecorded() throws {
+        #expect(KeyCombo.rightOption.needsEventTap && KeyCombo.rightOption.isModifierOnly)
+        #expect(try HotKeyValidation.validate(keyCode: UInt32(kVK_RightOption), modifiers: UInt32(optionKey)).get() == .rightOption)
+        #expect(KeyCombo.rightOption.title == "Right ⌥ Option")
     }
 
     /// macOS 15+ silently ignores Carbon hot keys with only ⌥/⇧ modifiers, so those come from the event tap; ⌃Space
@@ -22,8 +61,9 @@ import Testing
             #expect(KeyCombo.resolve(id: combo.id) == combo)
         }
         #expect(KeyCombo.preset(id: "option") == .option && KeyCombo.preset(id: "right-option") == .rightOption)
-        #expect(KeyCombo.preset(id: "option-space") == .controlOptionSpace)
-        #expect(KeyCombo.preset(id: "option-shift-space") == .controlOptionSpace)
+        // Retired ids fall back to the default.
+        #expect(KeyCombo.preset(id: "option-space") == .defaultDictation)
+        #expect(KeyCombo.preset(id: "option-shift-space") == .defaultDictation)
     }
 
     @Test func dispatchRoutesPressAndRelease() {

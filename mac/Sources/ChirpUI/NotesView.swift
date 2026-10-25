@@ -232,6 +232,7 @@ struct NotesToolbar: ToolbarContent {
             let note = library.selection != .recentlyDeleted
             if note || model.state.isActive { RecordControl(model: model, library: library) }
             if model.state.isLive { PauseButton(model: model) }
+            if model.callAudioAvailable, note || model.state.isActive { SourcesButton(model: model) }
             if note, shown.voiceEditAvailable { VoiceEditButton(model: shown) }
             if note {
                 SmartNotesMenu(model: shown, recorder: model)
@@ -263,9 +264,17 @@ struct RecordControl: View {
                         if model.isPaused {
                             Image(systemName: "pause.circle.fill").foregroundStyle(Color.chirp.record)
                         } else {
-                            Ripple(level: Double(model.level), reduceMotion: model.reduceMotion, color: .chirp.record,
-                                   staticColor: .chirp.record, side: 18)
+                            Ripple(level: Double(model.level), reduceMotion: model.reduceMotion, phase: model.ripplePhase,
+                                   color: .chirp.record, staticColor: .chirp.record, side: 18)
                                 .overlay(Circle().fill(Color.chirp.record).frame(width: 7, height: 7))
+                            if model.capturingCall {
+                                // The call side's own ripple: both sources show they are heard.
+                                Ripple(level: Double(model.callLevel), reduceMotion: model.reduceMotion, phase: model.ripplePhase,
+                                       side: 18)
+                                    .overlay(Image(systemName: "speaker.wave.2.fill").font(.system(size: 7, weight: .bold))
+                                        .foregroundStyle(Color.chirp.koi))
+                                    .help(NotesSourcesText.capturing(model.sources))
+                            }
                         }
                         Text(model.displayTitle)
                             .font(.callout.weight(.medium))
@@ -280,7 +289,7 @@ struct RecordControl: View {
                     .onGeometryChange(for: CGSize.self, of: \.size) { model.probe.recordLabel = $0 }
                 }
                 .help("Go to the recording note")
-                .accessibilityLabel("Recording \(model.displayTitle), \(model.elapsedText). Go to the recording note")
+                .accessibilityLabel("Recording \(model.displayTitle)\(model.capturingCall ? " with call audio" : ""), \(model.elapsedText). Go to the recording note")
                 Button(action: model.onRecordToggle) {
                     Image(systemName: "stop.fill").foregroundStyle(Color.chirp.record)
                 }
@@ -467,6 +476,7 @@ struct NotesEmptyState: View {
 /// The shortcut's modifiers and key, one keycap each ("⌃", "⌥", "N").
 enum KeycapRow {
     static func keys(_ title: String) -> [String] {
+        if ModifierKeys.isNamedTitle(title) { return [title] }   // "Right ⌥ Option" is one key
         let symbols = title.prefix { "⌃⌥⇧⌘".contains($0) }.map(String.init)
         let rest = title.dropFirst(symbols.count).trimmingCharacters(in: .whitespaces)
         return symbols + (rest.isEmpty ? [] : [String(rest.split(separator: " ").first ?? Substring(rest))])
@@ -641,8 +651,9 @@ private struct NotesStatusLines: View {
 
     var body: some View {
         let notes = [model.micNote, model.retryNote, model.reorganizeNote, model.voiceEditNote].compactMap { $0 }
-        if !notes.isEmpty {
+        if !notes.isEmpty || model.callNote != nil {
             VStack(alignment: .leading, spacing: 4) {
+                if let call = model.callNote { CallNoticeLine(model: model, text: call) }
                 ForEach(notes, id: \.self) { note in
                     let success = note == model.reorganizeNote && model.reorganizeNoteIsSuccess
                     Label(note, systemImage: success ? "checkmark.circle" : note == model.micNote ? "mic.slash" : "arrow.clockwise")
@@ -717,8 +728,10 @@ private struct NotesMetaBar: View {
 
     var body: some View {
         let keep = model.keepSaving.text
-        if model.structuringHost != nil || keep != nil || model.debugRetention || model.speakerStatus != nil || model.lagText != nil {
+        let call = model.capturingCall || (model.sources.callAudio && model.callAudioAvailable && !model.state.isActive)
+        if model.structuringHost != nil || keep != nil || model.debugRetention || model.speakerStatus != nil || model.lagText != nil || call {
             HStack(spacing: 10) {
+                if call { SourcesChip(sources: model.sources) }
                 if let lag = model.lagText { LagChip(model: model, text: lag) }
                 if let host = model.structuringHost { StructuringChip(model: model, host: host) }
                 if let keep {

@@ -58,7 +58,7 @@ The token is either the shared one or a per-device token minted by `chirp-server
 - `POST /v1/notes/edit` (authenticated, JSON): stateless voice edit of a Live Notes document (notes + a spoken instruction → edited notes), specified [below](#live-notes-edit-v1-compatible-addition).
 - `POST /v1/transcribe`: the body is 16 kHz mono PCM16 WAV, capped at 120 s. It returns the same object as a `final` message. Used for tests and as a fallback.
 - `WS /v1/stream`:
-  - client → `{"type":"start","sample_rate":16000,"encoding":"pcm_s16le","client":"mac|android|ios","correction":false,"correction_profile":"default","correction_instructions":"","context":"…"}` (`correction_prompt`, `word_timings` and `context` are optional)
+  - client → `{"type":"start","sample_rate":16000,"encoding":"pcm_s16le","client":"mac|android|ios|desktop","correction":false,"correction_profile":"default","correction_instructions":"","context":"…"}` (`correction_prompt`, `word_timings` and `context` are optional)
   - client → binary frames: raw PCM16LE mono at 16 kHz, 20–100 ms per frame
   - client → `{"type":"stop"}` (finalize; may carry the optional `context`, see Live Notes below) or `{"type":"cancel"}` (discard, no final). The server keeps reading control/disconnect frames during finalization; cancel or disconnect discards the utterance (no correction request — an in-flight one is cancelled, no retained debug files). A cancelled utterance sends no final and no error, and the socket stays usable for the next start; a disconnect has nobody to tell.
   - server → `{"type":"ready","session":"<random id>","engine":"…","debug_retention":bool}`
@@ -417,7 +417,7 @@ Version additions preserve existing fields. A breaking change becomes `/v2`.
 
 ## 6. Interaction model (Koi parity)
 
-- **Auto-stop or hold to talk (Mac).** Auto-stop: a press starts, a pause (or the next press) stops. Hold to talk: talk while held, release finishes; a press shorter than 300 ms is dropped. Esc on Mac, or ✕ on Android, cancels and inserts nothing.
+- **Auto-stop or hold to talk (Mac).** Auto-stop: a press starts, a pause (or the next press) stops. Hold to talk: talk while held, release finishes; a press shorter than 300 ms is dropped. Right ⌥ (the default) does both in auto-stop: a tap toggles, a hold talks until let go. Esc on Mac, or ✕ on Android, cancels and inserts nothing.
 - **Live text while speaking:**
   - Mac: a non-activating floating HUD at the bottom centre of the screen shows the partial text and a level meter.
   - Android: partials are shown as **composing text** (underlined) in the target field, via `setComposingText`. The final replaces them with `commitText`.

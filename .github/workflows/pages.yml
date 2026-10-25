@@ -9,12 +9,14 @@ on:
       - "site/**"
       - "docs/screenshots/**"
       - "docs/assets/**"
+      - "android/artwork/chirp-icons/approved*.png"
       - ".github/workflows/pages.yml"
   pull_request:
     paths:
       - "site/**"
       - "docs/screenshots/**"
       - "docs/assets/**"
+      - "android/artwork/chirp-icons/approved*.png"
       - ".github/workflows/pages.yml"
   workflow_dispatch:
 
@@ -35,6 +37,10 @@ jobs:
           python-version: "3.13"
       - name: Build site
         run: python3 site/build.py --out _site
+      - name: Test public-site guardrails
+        env:
+          CHIRP_SITE_TEST_OUTPUT: _site
+        run: python3 -m unittest discover -s site -p 'test_*.py'
       - uses: actions/upload-pages-artifact@v3
         if: github.event_name != 'pull_request'
         with:

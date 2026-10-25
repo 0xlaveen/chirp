@@ -18,17 +18,9 @@ final class ChirpLiveServerUITests: XCTestCase {
 
     @MainActor func launch(audio file: String? = nil) -> XCUIApplication {
         let app = XCUIApplication()
-        app.launchArguments = ["--chirp-sim-audio", file ?? audio]
+        app.launchArguments = ["--chirp-sim-audio", file ?? audio, "--chirp-skip-onboarding"]
         app.launch()
         return app
-    }
-
-    @MainActor func selectTab(_ title: String, symbol: String, in app: XCUIApplication) {
-        let tab = app.tabBars.buttons[title]
-        if tab.exists { tab.tap(); return }
-        let topTab = app.buttons.matching(identifier: symbol).firstMatch
-        XCTAssertTrue(topTab.waitForExistence(timeout: 5))
-        topTab.tap()
     }
 
     @MainActor func element(_ id: String, in app: XCUIApplication) -> XCUIElement {
@@ -55,14 +47,13 @@ final class ChirpLiveServerUITests: XCTestCase {
 
     /// Forget, paste the secret link, verify against the live server, save.
     @MainActor func pair(_ app: XCUIApplication) {
-        selectTab("Pair Mac", symbol: "qrcode.viewfinder", in: app)
+        app.openConnection()
         endSession(app)
         forgetPairing(app)
-        let field = app.secureTextFields["pairingLink"]
-        XCTAssertTrue(field.waitForExistence(timeout: 5))
+        let field = app.pairingLinkField()
         field.tap()
         field.typeText(link)
-        app.buttons["Test connection and save pairing"].tap()
+        app.buttons["chirp.pair.submit"].tap()
         XCTAssertTrue(app.staticTexts["Mac pairing saved"].waitForExistence(timeout: 15), "Live server pairing failed")
         XCTAssertTrue(app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS '127.0.0.1'")).firstMatch.exists)
         XCTAssertTrue(app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS 'Chirp simulator'")).firstMatch.exists,
@@ -82,7 +73,7 @@ final class ChirpLiveServerUITests: XCTestCase {
 
     /// The QR's secret link opened by iOS: the system asks "Open in Chirp?" before Chirp verifies and saves.
     @MainActor func pairByDeepLink(_ app: XCUIApplication) throws {
-        selectTab("Pair Mac", symbol: "qrcode.viewfinder", in: app)
+        app.openConnection()
         endSession(app)
         forgetPairing(app)
         XCTAssertFalse(app.staticTexts["Mac pairing saved"].waitForExistence(timeout: 2))
@@ -97,7 +88,7 @@ final class ChirpLiveServerUITests: XCTestCase {
         pair(app)
         screenshot("Paired with local server", app)
 
-        selectTab("Styles", symbol: "sparkles", in: app)
+        app.openStyles()
         XCTAssertTrue(app.staticTexts["Clean-up runs on your Mac."].waitForExistence(timeout: 5))
         let cleanup = element("chirp.cleanup.enabled", in: app)
         XCTAssertTrue(cleanup.waitForExistence(timeout: 5))
@@ -110,13 +101,13 @@ final class ChirpLiveServerUITests: XCTestCase {
         XCTAssertTrue(waitFor(cleanup, "value == '1'", timeout: 5))
         XCTAssertTrue(app.staticTexts["Default · Selected"].waitForExistence(timeout: 10), "Server styles did not load")
 
-        selectTab("History", symbol: "clock", in: app)
+        app.selectChirpTab("History")
         let history = element("chirp.history.enabled", in: app)
         XCTAssertTrue(history.waitForExistence(timeout: 5))
         if history.value as? String != "1" { history.switches.firstMatch.exists ? history.switches.firstMatch.tap() : history.tap() }
         XCTAssertTrue(waitFor(history, "value == '1'", timeout: 5))
 
-        selectTab("Dictate", symbol: "mic", in: app)
+        app.selectChirpTab("Dictate")
         app.buttons["chirp.dictation.start"].tap()
         allowSystemAlert()
         let stop = app.buttons["chirp.dictation.stop"]
@@ -133,15 +124,15 @@ final class ChirpLiveServerUITests: XCTestCase {
         screenshot("Cleaned final", app)
         raw.tap()
         XCTAssertTrue(waitFor(transcript, "label CONTAINS[c] 'um,'", timeout: 3), transcript.label)
-        XCTAssertTrue(app.staticTexts["Finished · microphone still active"].exists)
+        XCTAssertTrue(app.staticTexts["Finished"].exists)
 
-        selectTab("History", symbol: "clock", in: app)
+        app.selectChirpTab("History")
         let entry = app.staticTexts.matching(NSPredicate(format: "label CONTAINS[c] 'design group'")).firstMatch
         XCTAssertTrue(entry.waitForExistence(timeout: 5), "History did not record the final")
         screenshot("History entry", app)
 
         endSession(app)
-        selectTab("Dictate", symbol: "mic", in: app)
+        app.selectChirpTab("Dictate")
         XCTAssertTrue(app.staticTexts["Microphone off"].waitForExistence(timeout: 5))
         XCTAssertFalse(transcript.exists)
     }
@@ -166,10 +157,10 @@ final class ChirpLiveServerUITests: XCTestCase {
         app.activate()
         XCTAssertTrue(app.wait(for: .runningForeground, timeout: 10))
         let start = app.buttons["Start keyboard session"]
-        for _ in 0..<3 where !start.waitForExistence(timeout: 3) { selectTab("Dictate", symbol: "mic", in: app) }
+        for _ in 0..<3 where !start.waitForExistence(timeout: 3) { app.selectChirpTab("Dictate") }
         start.tap()
         allowSystemAlert()
-        XCTAssertTrue(app.staticTexts["Session armed · microphone active"].waitForExistence(timeout: 15))
+        XCTAssertTrue(app.staticTexts["Ready"].waitForExistence(timeout: 15))
 
         let messages = XCUIApplication(bundleIdentifier: "com.apple.MobileSMS")
         messages.launch()
@@ -219,10 +210,10 @@ final class ChirpLiveServerUITests: XCTestCase {
     @MainActor func testLiveToggleShortcutFromSpotlightThenPaste() throws {
         let app = launch()
         pair(app)
-        selectTab("Dictate", symbol: "mic", in: app)
+        app.selectChirpTab("Dictate")
         app.buttons["Start keyboard session"].tap()
         allowSystemAlert()
-        XCTAssertTrue(app.staticTexts["Session armed · microphone active"].waitForExistence(timeout: 15))
+        XCTAssertTrue(app.staticTexts["Ready"].waitForExistence(timeout: 15))
         let messages = XCUIApplication(bundleIdentifier: "com.apple.MobileSMS")
         defer { app.activate(); endSession(app); app.terminate(); messages.terminate() }
 
@@ -281,10 +272,10 @@ final class ChirpLiveServerUITests: XCTestCase {
     @MainActor func testLiveActivityOnLockScreen() throws {
         let app = launch()
         pair(app)
-        selectTab("Dictate", symbol: "mic", in: app)
+        app.selectChirpTab("Dictate")
         app.buttons["Start keyboard session"].tap()
         allowSystemAlert()
-        XCTAssertTrue(app.staticTexts["Session armed · microphone active"].waitForExistence(timeout: 15))
+        XCTAssertTrue(app.staticTexts["Ready"].waitForExistence(timeout: 15))
         defer { app.activate(); endSession(app); app.terminate() }
         let lock = NSSelectorFromString("pressLockButton")
         guard XCUIDevice.shared.responds(to: lock) else { throw XCTSkip("This XCTest cannot lock the simulator") }
@@ -316,10 +307,10 @@ final class ChirpLiveServerUITests: XCTestCase {
         app.activate()
         XCTAssertTrue(app.wait(for: .runningForeground, timeout: 10))
         let start = app.buttons["Start keyboard session"]
-        for _ in 0..<3 where !start.waitForExistence(timeout: 3) { selectTab("Dictate", symbol: "mic", in: app) }
+        for _ in 0..<3 where !start.waitForExistence(timeout: 3) { app.selectChirpTab("Dictate") }
         start.tap()
         allowSystemAlert()
-        XCTAssertTrue(app.staticTexts["Session armed · microphone active"].waitForExistence(timeout: 15))
+        XCTAssertTrue(app.staticTexts["Ready"].waitForExistence(timeout: 15))
         let messages = XCUIApplication(bundleIdentifier: "com.apple.MobileSMS")
         messages.launch()
         defer { app.activate(); endSession(app); app.terminate(); messages.terminate() }

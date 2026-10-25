@@ -332,6 +332,12 @@ public enum Snapshots {
                 $0.structureNotes = true; $0.autoReorganize = true
             },
             form("downloaded", .notes) { $0.speakerModelDownloaded = true },
+            // The whole Notes page, down to Speakers (the real window scrolls to it).
+            Scenario(name: "settings-notes-speakers") {
+                var state = SettingsState()
+                state.speakerModelDownloaded = true; state.speakerLabels = true
+                return settingsWindow(state, .notes, full: true)
+            },
             form("not-downloaded", .notes) { _ in },
             form("ready", .advanced) { styled(&$0) },
             form("unreachable", .advanced) {
@@ -533,6 +539,8 @@ public enum Snapshots {
         "settings-devices-ready", "settings-advanced-ready", "settings-about-ready", "onboarding-welcome",
         "notes-empty", "notes-library", "notes-recording", "notes-search", "notes-no-results", "notes-deleted",
         "notes-continued", "notes-inspector-playing", "notes-review-sheet",
+        "notes-transcript-speakers", "notes-transcript-speakers-renamed", "notes-recording-call", "notes-sources-call",
+        "history-cleaned", "history-empty", "menu-recent-dictations-submenu",
     ]
 
     public static var committedScenarios: [Scenario] {
@@ -654,6 +662,40 @@ public enum Snapshots {
         return d
     }
 
+    /// The speaker demo as a call recording (#211): the microphone's person is "You", the call's are Person N.
+    static func demoCall() -> NotesDocument {
+        var d = NotesDocument(startedAt: Date(timeIntervalSince1970: 1_792_504_980))
+        for var segment in demoSpeakers().segments {
+            let turns = segment.turns ?? []
+            segment.turns = nil
+            d.append(segment)
+            let slots = turns.map { t -> SpeakerAttribution.Turn in
+                let slot = t.person == 1 ? SpeakerRoster.youSlot : t.person
+                return SpeakerAttribution.Turn(slot: slot, start: t.start, text: t.text, raw: t.raw, approximate: t.approximate)
+            }
+            d.attachSpeakers(slots, toSegment: segment.id)
+        }
+        d.livePartial = "the beta itself should start in the second week"
+        return d
+    }
+
+    static let demoCallApps = [
+        CallAudioApp(bundleID: "us.zoom.xos", name: "zoom.us"), CallAudioApp(bundleID: "com.apple.FaceTime", name: "FaceTime"),
+        CallAudioApp(bundleID: "com.google.Chrome", name: "Google Chrome"), CallAudioApp(bundleID: "com.tinyspeck.slackmacgap", name: "Slack"),
+    ]
+
+    /// The Sources popover's content on its own (a popover cannot be drawn offscreen).
+    static func sources(_ name: String, _ configure: @escaping (NotesModel) -> Void) -> Scenario {
+        Scenario(name: "notes-sources-\(name)") {
+            let model = NotesModel()
+            model.callAudioAvailable = true
+            model.callApps = demoCallApps
+            model.state = .idle
+            configure(model)
+            return NSHostingView(rootView: SourcesPanel(model: model))
+        }
+    }
+
     /// Forty minutes into a long session: segments that run on without a pause read as one paragraph, sections
     /// remember when they were said, and 1:30 of speech waits for the notes.
     static func demoLong() -> NotesDocument {
@@ -773,6 +815,11 @@ public enum Snapshots {
         return d
     }
 
+    /// A live session's own Notes window, drawn offscreen (the call selftest's `--snapshot`).
+    public static func notesScenario(_ name: String, model: NotesModel, library: NotesLibraryModel) -> Scenario {
+        Scenario(name: name, window: { notesWindow(model, library) })
+    }
+
     /// The Notes window as it is on screen, in a window that is never shown: the toolbar, sidebar and inspector are
     /// window chrome, which only a window draws.
     static func notesWindow(_ model: NotesModel, _ library: NotesLibraryModel, size: CGSize = CGSize(width: 1000, height: 620)) -> NSWindow {
@@ -784,6 +831,14 @@ public enum Snapshots {
         window.contentViewController = NSHostingController(rootView: NotesView(model: model, library: library))
         window.setContentSize(size)
         return window
+    }
+
+    /// A live session's Notes window (the selftest's `--snapshot`): what the real window shows after a recording.
+    public static func notesWindow(_ session: NotesSession, name: String, inspector: Bool = true) -> Scenario {
+        Scenario(name: name, window: {
+            if inspector { session.window.showsInspector = true }
+            return notesWindow(session.model, session.window, size: CGSize(width: 1200, height: 720))
+        })
     }
 
     /// A Notes window scenario: the demo meeting open in a populated library, recording, 3:12 in.
@@ -919,8 +974,51 @@ public enum Snapshots {
             notes("mic-silent") { model, _ in model.micNotice = .silent },
             notes("paused") { model, _ in model.state = .paused; model.elapsed = 754; model.document.livePartial = "" },
             notes("transcript") { model, library in model.document = demoNotes(gap: true); library.showsInspector = true },
+            notes("recording-call") { model, library in
+                model.callAudioAvailable = true
+                model.sources = NotesSources(callAudio: true, app: demoCallApps[0])
+                model.capturingCall = true
+                model.callLevel = 0.6
+                model.document = demoCall(); model.speakerLabels = true; model.speakerModel = .ready
+                library.showsInspector = true
+            },
+            notes("call-silent") { model, _ in
+                model.callAudioAvailable = true
+                model.sources = NotesSources(callAudio: true)
+                model.capturingCall = true
+                model.callNotice = .silent
+            },
+            // The toolbar's Recording capsule with both ripples (the window's toolbar is overflowed at snapshot width).
+            Scenario(name: "notes-record-call") {
+                let model = NotesModel()
+                model.state = .recording
+                model.document = demoCall()
+                model.elapsed = 192
+                model.level = 0.55
+                model.callLevel = 0.8
+                model.ripplePhase = 0.35
+                model.capturingCall = true
+                model.sources = NotesSources(callAudio: true, app: demoCallApps[0])
+                return NSHostingView(rootView: SnapshotBackdrop { RecordControl(model: model, library: NotesLibraryModel()) })
+            },
+            sources("mic") { _ in },
+            sources("call") { $0.sources = NotesSources(callAudio: true, app: demoCallApps[0]) },
+            sources("explain") { $0.explainingCallAudio = NotesSources(callAudio: true) },
+            sources("locked") { $0.state = .recording; $0.sources = NotesSources(callAudio: true) },
             notes("transcript-speakers") { model, library in
                 model.document = demoSpeakers(); model.speakerLabels = true; model.speakerModel = .ready
+                library.showsInspector = true
+            },
+            // Person 2 renamed to Maya: every turn of theirs follows, and the banner offers the notes' two mentions.
+            notes("transcript-speakers-renamed") { model, library in
+                var d = demoSpeakers()
+                d.livePartial = ""
+                d.userEdit(NSRange(location: 0, length: 0), "## Lantern kickoff\n- Launch target moved to **March 3** (**Person 2** confirmed)\n- [ ] **Person 2** to send the draft spec by **Friday**\n")
+                d.renameSpeaker(2, to: "Maya")
+                model.document = d
+                model.state = .stopped
+                model.speakerLabels = true; model.speakerModel = .ready
+                model.speakerBanner = SpeakerBanner(document: d.id, kind: .offerReplace(old: "Person 2", new: "Maya", count: 2))
                 library.showsInspector = true
             },
             notes("structuring-off-editable") { model, _ in
@@ -971,7 +1069,7 @@ public enum Snapshots {
 
     public static var allScenarios: [Scenario] {
         hudScenarios + rippleScenarios + wordWaveScenarios + settingsScenarios + onboardingScenarios + menuScenarios
-            + localModelsScenarios + notesScenarios + pairingScenarios
+            + localModelsScenarios + notesScenarios + pairingScenarios + historyScenarios
     }
 
     // MARK: rendering
@@ -1098,7 +1196,7 @@ private struct SnapshotBackdrop<Content: View>: View {
 /// The menu-bar menu drawn from its real views: the header (with its switch) and the rows are the same classes the
 /// live `NSMenu` uses; only the menu's own chrome (background, border, separators) is approximated, since an `NSMenu`
 /// cannot be drawn offscreen. `native` is a submenu, whose rows AppKit draws itself (checkmark column, no values).
-private final class MenuPanelView: NSView {
+final class MenuPanelView: NSView {
     private static let outer: CGFloat = 14
     private static let inner: CGFloat = 6
     private static let backdrop = NSColor(red: 0.45, green: 0.52, blue: 0.66, alpha: 1)

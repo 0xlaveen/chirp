@@ -22,21 +22,18 @@ final class ChirpLiveNotesUITests: XCTestCase {
     @MainActor func testLiveNotesRecordStructureStop() {
         let env = ProcessInfo.processInfo.environment
         let app = XCUIApplication()
-        app.launchArguments = ["--chirp-sim-audio", env["CHIRP_LIVE_AUDIO"]!]
+        app.launchArguments = ["--chirp-sim-audio", env["CHIRP_LIVE_AUDIO"]!, "--chirp-skip-onboarding"]
         app.launch()
-        // Pair through the Pair Mac tab like the dictation live test.
-        let tab = app.tabBars.buttons["Pair Mac"]
-        if tab.exists { tab.tap() } else { app.buttons.matching(identifier: "qrcode.viewfinder").firstMatch.tap() }
-        app.buttons.matching(identifier: "chirp.session.end").allElementsBoundByIndex.first { $0.isHittable }?.tap()
+        // Pair through Settings → Connection like the dictation live test.
+        app.openConnection()
+        app.endChirpSession()
         if app.buttons["Forget pairing"].exists { app.buttons["Forget pairing"].tap() }
-        let field = app.secureTextFields["pairingLink"]
-        XCTAssertTrue(field.waitForExistence(timeout: 5))
+        let field = app.pairingLinkField()
         field.tap(); field.typeText(env["CHIRP_LIVE_LINK"]!)
-        app.buttons["Test connection and save pairing"].tap()
+        app.buttons["chirp.pair.submit"].tap()
         XCTAssertTrue(app.staticTexts["Mac pairing saved"].waitForExistence(timeout: 15))
         // Clean-up on, so segments are cleaned and Show raw has something to show (pairing again turned it off).
-        let styles = app.tabBars.buttons["Styles"]
-        if styles.exists { styles.tap() } else { app.buttons.matching(identifier: "sparkles").firstMatch.tap() }
+        app.openStyles()
         let cleanup = ChirpNotesUITests.element("chirp.cleanup.enabled", in: app)
         XCTAssertTrue(cleanup.waitForExistence(timeout: 5))
         if cleanup.value as? String != "1" {
@@ -45,8 +42,6 @@ final class ChirpLiveNotesUITests: XCTestCase {
             if enable.waitForExistence(timeout: 3) { enable.tap() }
         }
         XCTAssertTrue(ChirpNotesUITests.waitFor(cleanup, "value == '1'", timeout: 5))
-        let dictate = app.tabBars.buttons["Dictate"]
-        if dictate.exists { dictate.tap() } else { app.buttons.matching(identifier: "mic").firstMatch.tap() }
 
         ChirpNotesUITests.openNotes(app)
         let record = app.buttons["chirp.notes.record"]

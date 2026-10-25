@@ -33,6 +33,13 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         /// A server older than the app, what the last fix said, and the fix.
         var serverNotice: () -> (notice: ServerNotice?, message: String?) = { (nil, nil) }
         var fixServer: () -> Void = {}
+        /// Dictation history: the window (on a dictation when given), whether it is on, the newest dictations, and
+        /// one dictation's Insert Again and Copy (by id).
+        var showHistory: (String?) -> Void = { _ in }
+        var historyEnabled: () -> Bool = { false }
+        var recentDictations: () -> [RecentDictation] = { [] }
+        var insertDictation: (String) -> Void = { _ in }
+        var copyDictation: (String) -> Void = { _ in }
     }
 
     /// What the menu and the icon need from Live Notes.
@@ -176,6 +183,8 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         inputs.notesElapsed = notes.elapsed
         inputs.notesTitle = notes.title
         inputs.recentNotes = actions.recentNotes()
+        inputs.historyEnabled = actions.historyEnabled()
+        inputs.recentDictations = actions.recentDictations()
         inputs.now = Date()
         inputs.notesHasDocument = notes.hasDocument
         inputs.notesHotkeyRegistered = notes.hotkeyRegistered
@@ -228,7 +237,8 @@ final class MenuBarController: NSObject, NSMenuDelegate {
             let m = NSMenu()
             for e in sub { m.addItem(item(for: e)) }
             i.submenu = m
-        } else if let detail = entry.value, entry.action != nil {
+        }
+        if let detail = entry.value, entry.action != nil || entry.submenu != nil {
             // A submenu row with a value (Recent Notes: the note's age): the title, then the value in secondary grey.
             let style = NSMutableParagraphStyle()
             style.tabStops = [NSTextTab(textAlignment: .right, location: Self.submenuValueColumn)]
@@ -260,6 +270,10 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         case .editStyles: #selector(editStyles)
         case .showSetup: #selector(showSetup)
         case .quit: #selector(quit)
+        case .showHistory: #selector(showHistory)
+        case .insertDictation: #selector(insertDictation(_:))
+        case .copyDictation: #selector(copyDictation(_:))
+        case .openDictation: #selector(openDictation(_:))
         }
     }
 
@@ -284,6 +298,16 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     @objc private func editStyles() { actions.openSettings(.cleanup) }
     @objc private func showSetup() { actions.openSetup() }
     @objc private func quit() { NSApp.terminate(nil) }
+    @objc private func showHistory() { actions.showHistory(nil) }
+    @objc private func insertDictation(_ sender: NSMenuItem) {
+        if let id = sender.representedObject as? String { actions.insertDictation(id) }
+    }
+    @objc private func copyDictation(_ sender: NSMenuItem) {
+        if let id = sender.representedObject as? String { actions.copyDictation(id) }
+    }
+    @objc private func openDictation(_ sender: NSMenuItem) {
+        if let id = sender.representedObject as? String { actions.showHistory(id) }
+    }
 }
 
 /// The bird glyphs (template images in Contents/Resources). The waves are the listening glyph minus the idle bird, so

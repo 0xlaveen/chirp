@@ -100,12 +100,12 @@ import Testing
         let combo = KeyCombo.custom(keyCode: UInt32(kVK_ANSI_R), modifiers: UInt32(controlKey | optionKey))
         #expect(KeyCombo.resolve(id: combo.id) == combo)
         #expect(KeyCombo.resolve(id: "control-shift-space") == .controlShiftSpace)
-        #expect(KeyCombo.resolve(id: nil) == .controlOptionSpace)
+        #expect(KeyCombo.resolve(id: nil) == .rightOption)
         // Hand-edited or stale defaults that can never fire, or that are malformed, use the default.
-        #expect(KeyCombo.resolve(id: "custom:\(kVK_Space):\(shiftKey)") == .controlOptionSpace)
-        #expect(KeyCombo.resolve(id: "custom:\(kVK_Space):\(controlKey)") == .controlOptionSpace)
-        #expect(KeyCombo.resolve(id: "custom:abc") == .controlOptionSpace)
-        #expect(KeyCombo.resolve(id: "custom:1:2:3") == .controlOptionSpace)
+        #expect(KeyCombo.resolve(id: "custom:\(kVK_Space):\(shiftKey)") == .rightOption)
+        #expect(KeyCombo.resolve(id: "custom:\(kVK_Space):\(controlKey)") == .rightOption)
+        #expect(KeyCombo.resolve(id: "custom:abc") == .rightOption)
+        #expect(KeyCombo.resolve(id: "custom:1:2:3") == .rightOption)
     }
 
     @Test func preferencesPersistACustomHotkeyAndSoundsDefaultOff() throws {
@@ -119,7 +119,7 @@ import Testing
         prefs.soundsEnabled = true
         #expect(Preferences(defaults: defaults).hotkey == combo && Preferences(defaults: defaults).soundsEnabled)
         defaults.set("custom:\(kVK_Space):\(shiftKey)", forKey: "hotkey")
-        #expect(prefs.hotkey == .controlOptionSpace)
+        #expect(prefs.hotkey == .rightOption)
     }
 }
 
@@ -170,6 +170,8 @@ import Testing
 
     @Test func settingsShowsTheReasonUnderTheHotkey() {
         let form = SettingsForm(SettingsState())
+        #expect(form.hotkeyHelp.stringValue.hasPrefix("Only on its own"))   // the default is Right ⌥
+        form.fillHotkeyMenu(selecting: .controlOptionSpace)
         #expect(form.hotkeyHelp.stringValue.hasPrefix("Any key combination"))
         form.recorder.start()
         form.recorder.apply(.rejected(.shiftAlone))
@@ -209,7 +211,7 @@ import Testing
             #expect(form.hotkeyHelp.stringValue == HotKeyValidation.Rejection.shiftAlone.reason)
             form.recorder.stop()
 
-            for other in [KeyCombo.controlOptionSpace, .option,
+            for other in [KeyCombo.rightOption, .controlOptionSpace, .option,
                           .custom(keyCode: KeyCombo.anyModifierKey, modifiers: ModifierKeys.fn | UInt32(cmdKey))] {
                 form.fillHotkeyMenu(selecting: other)
                 #expect(form.keyboardSettingsButton.isHiddenOrHasHiddenAncestor)
@@ -471,9 +473,9 @@ enum NSHostingViewSize {
             return find(view)
         }
         view.apply(OnboardingState(step: .tryIt))
-        #expect(status() == "Waiting for ⌃⌥Space…" && view.primary.title == "Skip")
+        #expect(status() == "Waiting for Right ⌥ Option…" && view.primary.title == "Skip")
         view.apply(OnboardingState(step: .tryIt, heardHotkey: true))
-        #expect(status() == "It works — Chirp heard ⌃⌥Space" && view.primary.title == "Done")
+        #expect(status() == "It works — Chirp heard Right ⌥ Option" && view.primary.title == "Done")
         // The dictation target survives step changes (it is one field, not rebuilt text).
         view.tryField.stringValue = "hello"
         view.apply(OnboardingState(step: .tryIt, heardHotkey: true))

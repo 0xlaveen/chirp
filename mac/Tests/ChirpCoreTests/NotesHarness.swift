@@ -499,6 +499,7 @@ final class NotesHarness {
         var announcements: [String] = []
         var beeps = 0
         var settingsOpened = 0
+        var callSettingsOpened = 0
         var tick: (@MainActor () -> Void)?
 
         func requestMicrophone() async -> Bool {
@@ -518,7 +519,7 @@ final class NotesHarness {
     init(health: Health? = NotesHarness.defaultHealth, silence: TimeInterval = 1.5, speakers: SpeakerModelStore? = nil,
          voiceModel: VoiceModelStore? = nil, profiles: VoiceProfileStore? = nil,
          library: NotesLibrary? = nil, journalDirectory: URL? = nil, keptAudio: TimeInterval = NotesRecorder.maxKeptAudio,
-         silencePause: TimeInterval = NotesCaptureSink.pauseAfter,
+         silencePause: TimeInterval = NotesCaptureSink.pauseAfter, callTap: SystemAudioTap? = nil,
          finalText: @escaping @Sendable (Int) -> String = { "Segment \($0)." }) {
         let clock = self.clock, edges = self.edges
         let streams = ScriptedStreams(sleep: { await clock.sleep($0) }, finalText: finalText)
@@ -546,6 +547,8 @@ final class NotesHarness {
         deps.workspaceNotifications = workspace
         deps.keptAudio = keptAudio
         deps.silencePause = silencePause
+        deps.callTap = callTap
+        deps.openCallAudioSettings = { edges.callSettingsOpened += 1 }
         deps.now = { clock.now }
         deps.sleep = { await clock.sleep($0) }
         deps.startTicker = { tick in edges.tick = tick; return { edges.tick = nil } }

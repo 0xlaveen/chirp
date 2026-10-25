@@ -49,6 +49,16 @@ public struct NotesSessionDependencies {
     /// Registers the Start/Stop Notes shortcut (⌃⌥N by default); false when another app owns it.
     public var registerHotkey: (_ onDown: @escaping () -> Void) -> Bool = { _ in false }
     public var unregisterHotkey: () -> Void = {}
+    /// Call audio (#211): what the Mac plays, beside the microphone (nil: not on this Mac); the apps it can record
+    /// on their own; and the Screen & System Audio Recording pane.
+    public var callTap: SystemAudioTap?
+    public var callApps: () -> [CallAudioApp] = { [] }
+    public var openCallAudioSettings: () -> Void = {}
+    /// A call recording that heard nothing but digital silence this long says so (a refused permission, a muted app).
+    public var callSilenceNotice: TimeInterval = 20
+    /// Where the call side starts and stops: off the main thread in the app, since the system can hold the first
+    /// start while its permission prompt is up. Tests run it in place.
+    public var callAudioQueue: (@escaping @Sendable () -> Void) -> Void = { $0() }
 
     public init(settings: Preferences, engine: CaptureEngine, makeSession: @escaping (StartOptions) -> StreamSession,
                 structure: @escaping NotesRecorder.Structure, reorganize: @escaping NotesRecorder.Reorganize,
@@ -112,6 +122,11 @@ public final class NotesSession {
     private var recoverable: [NotesJournalRecord] = []
 
     private let capture: AudioCapture
+    /// This note's sources (the Settings default for a new note) and, while recording with call audio, its capture.
+    public private(set) var sources: NotesSources
+    private var callCapture: CallAudioCapture?
+    private var callWatch: Task<Void, Never>?
+    private var callNotice: NotesCallNotice?
     private var stopTick: (() -> Void)?
     /// A start that failed before the recorder ran (permission, no input device).
     private var restoringDocument = false
@@ -145,6 +160,7 @@ public final class NotesSession {
         self.deps = deps
         let settings = deps.settings
         capture = AudioCapture(engine: deps.engine)
+        sources = settings.notesSources
         recorder = NotesRecorder(
             makeSession: deps.makeSession, structure: deps.structure, reorganize: deps.reorganize, edit: deps.edit,
             now: deps.now, sleep: deps.sleep,
@@ -205,6 +221,10 @@ public final class NotesSession {
         model.onReorganize = { [weak self] in self?.recorder.reorganizeNow() }
         model.onEditorFocus = { [weak self] inTail, composing in self?.recorder.setEditorFocus(inTail: inTail, composing: composing) }
         model.onSpeakerLabelsToggle = { [weak self] on in self?.setSpeakerLabels(on) }
+        model.onSourcesChange = { [weak self] sources in self?.setSources(sources) }
+        model.onCallAudioExplained = { [weak self] proceed in self?.callAudioExplained(proceed) }
+        model.onRefreshCallApps = { [weak self] in self?.refreshCallApps() }
+        model.onOpenCallAudioSettings = { [weak self] in self?.deps.openCallAudioSettings() }
         model.onSpeakerEdit = { [weak self] edit in self?.editSpeakers(edit) }
         journal.onWrite = { bytes, ms in
             chirpLog.info("notes journal bytes=\(bytes ?? -1, privacy: .public) ms=\(ms, privacy: .public)")
@@ -289,14 +309,15 @@ public final class NotesSession {
         let diarizer = speakers.readyDiarizer()
         let labels = diarizer != nil
         diarizer?.attachEmbedder(voices.readyEmbedder)
-        recorder.speakers = diarizer
+        // With call audio the microphone is "You" and only the call is diarized.
+        recorder.speakers = usesCallAudio ? diarizer.map { CallSpeakers(remote: $0) } : diarizer
         recorder.options = settings.notesStartOptions(health: health)
         recorder.serverHost = settings.serverConfig().host
         applyAvailability(health)
         if model.structuring == .off(.correctionOff) || model.structuring == .off(.unsupported), recorder.document.isEmpty {
             window.setInspector(true)   // structuring unavailable: the transcript is the useful view
         }
-        chirpLog.info("notes start microphone=\(self.deps.microphoneStatus(), privacy: .public) correction=\(self.recorder.options.correction, privacy: .public) structuring=\(String(describing: self.recorder.structuring), privacy: .public) speakers=\(labels, privacy: .public)")
+        chirpLog.info("notes start microphone=\(self.deps.microphoneStatus(), privacy: .public) correction=\(self.recorder.options.correction, privacy: .public) structuring=\(String(describing: self.recorder.structuring), privacy: .public) speakers=\(labels, privacy: .public) call=\(self.usesCallAudio, privacy: .public)")
         if settings.soundsEnabled { deps.play(.start) }
         let micMayOpen = deps.now() + deps.soundStartDelay()
         recorder.start()
@@ -315,6 +336,7 @@ public final class NotesSession {
 
     private func openMicrophone() {
         micNotice = nil
+        let call = openCallAudio()
         let sink = NotesCaptureSink(recorder: recorder, warnAfter: deps.silenceGuard().window, pauseAfter: deps.silencePause,
                                     onLevel: { [weak self] level in
             Task { @MainActor in if self?.isRecording == true { self?.model.level = UtteranceLevels.normalize(rms: level.rms) } }
@@ -324,10 +346,127 @@ public final class NotesSession {
         do {
             try capture.start(onInput: { [weak self] event in
                 Task { @MainActor in self?.inputChanged(event) }
-            }) { sink.handle($0) }
+            }) { [weak self] frame in
+                guard let call else { sink.handle(frame); return }
+                let mixed = call.mixer.mix(mic: frame)
+                sink.handle(mixed.mix, call: mixed)
+                let level = UtteranceLevels.normalize(rms: mixed.remoteLevel.rms)
+                Task { @MainActor in if self?.isRecording == true { self?.model.callLevel = level } }
+            }
         } catch {
+            closeCallAudio()
             Task { await fail(error is CaptureError ? "No microphone input device" : "Could not start the microphone") }
         }
+    }
+
+    // MARK: call audio
+
+    /// This recording takes call audio: the note asks for it and this Mac can capture it.
+    var usesCallAudio: Bool { sources.callAudio && deps.callTap != nil }
+
+    /// Starts the call side before the microphone, so the mix has it from the first frame; nil records the microphone
+    /// only (call audio off, or the system refused: said once, and recording goes on).
+    private func openCallAudio() -> CallAudioCapture? {
+        closeCallAudio()
+        callNotice = nil
+        guard usesCallAudio, let tap = deps.callTap else { return nil }
+        let call = CallAudioCapture(tap: tap)
+        let app = sources.app
+        callCapture = call
+        // The mix plays silence for the call side until the tap runs.
+        deps.callAudioQueue { [weak self] in
+            do {
+                try call.start(app: app)
+                chirpLog.info("notes call audio kind=\(call.kind.rawValue, privacy: .public) app=\(app != nil, privacy: .public)")
+            } catch {
+                Task { @MainActor in self?.callAudioFailed(call) }
+            }
+        }
+        watch(call)
+        return call
+    }
+
+    /// The system refused call audio: the recording goes on with the microphone only, and says so.
+    private func callAudioFailed(_ call: CallAudioCapture) {
+        guard callCapture === call else { return }
+        chirpLog.info("notes call audio unavailable")
+        closeCallAudio()
+        callNotice = .unavailable
+        sync()
+    }
+
+    /// Nothing but digital silence for `callSilenceNotice` says so (macOS delivers silence when the permission was
+    /// refused); the notice goes as soon as the call is heard.
+    private func watch(_ call: CallAudioCapture) {
+        callWatch?.cancel()
+        let sleep = deps.sleep, wait = deps.callSilenceNotice
+        callWatch = Task { [weak self] in
+            await sleep(.seconds(wait))
+            while !Task.isCancelled {
+                guard let self, self.callCapture === call else { return }
+                if call.hasHeardAudio {
+                    if self.callNotice == .silent { self.callNotice = nil; self.sync() }
+                    return
+                }
+                if self.callNotice == nil {
+                    self.callNotice = .silent
+                    chirpLog.info("notes call audio silent")
+                    self.sync()
+                }
+                await sleep(.seconds(2))
+            }
+        }
+    }
+
+    private func closeCallAudio() {
+        callWatch?.cancel()
+        callWatch = nil
+        if let call = callCapture { deps.callAudioQueue { call.stop() } }
+        callCapture = nil
+        if model.callLevel != 0 { model.callLevel = 0 }
+    }
+
+    /// The microphone and the call audio close together.
+    private func closeCapture() {
+        capture.stop()
+        closeCallAudio()
+    }
+
+    /// The window's source picker: applies from the next Record (locked while one runs). Turning call audio on the
+    /// first time explains what is recorded before anything else happens.
+    func setSources(_ new: NotesSources) {
+        guard !isActive else { deps.beep(); return }
+        if new.callAudio, !sources.callAudio, !settings.notesCallAudioExplained {
+            model.explainingCallAudio = new
+            return
+        }
+        sources = new
+        if new.callAudio { settings.notesCallAudioApp = new.app }
+        callNotice = nil
+        chirpLog.info("notes sources call=\(new.callAudio, privacy: .public) app=\(new.app != nil, privacy: .public)")
+        sync()
+    }
+
+    /// The explanation's Continue (true) or Not Now.
+    private func callAudioExplained(_ proceed: Bool) {
+        guard let pending = model.explainingCallAudio else { return }
+        model.explainingCallAudio = nil
+        guard proceed else { return }
+        settings.notesCallAudioExplained = true
+        setSources(pending)
+    }
+
+    /// Settings › Notes › Sources changed the default: a blank note that is not recording takes it.
+    public func defaultSourcesChanged() {
+        guard !isActive, recorder.document.isEmpty else { return }
+        sources = settings.notesSources
+        sync()
+    }
+
+    private func refreshCallApps() {
+        var apps = CallAudioApp.sorted(deps.callApps())
+        if let chosen = sources.app, !apps.contains(where: { $0.bundleID == chosen.bundleID }) { apps.append(chosen) }
+        model.callApps = apps
     }
 
     // MARK: voice edit
@@ -394,7 +533,7 @@ public final class NotesSession {
     /// Stop: the microphone closes at once, then the last segment finalizes and the final pass runs.
     public func stop() async {
         guard isRecording || isPaused else { return }
-        capture.stop()
+        closeCapture()
         if settings.soundsEnabled { deps.play(.stop) }
         await recorder.stop()
     }
@@ -403,7 +542,7 @@ public final class NotesSession {
     /// silence) replaces the plain "Paused" in the status.
     public func pause(reason: String? = nil) async {
         guard isRecording, recorder.state == .recording else { return }
-        capture.stop()
+        closeCapture()
         if settings.soundsEnabled { deps.play(.stop) }
         await recorder.pause(reason: reason)
         chirpLog.info("notes paused reason=\(reason != nil, privacy: .public)")
@@ -429,7 +568,7 @@ public final class NotesSession {
     }
 
     private func fail(_ message: String) async {
-        capture.stop()
+        closeCapture()
         if isRecording {
             await recorder.fail(message)
         } else if NotesModel.acceptsStartError(recorder.state) {
@@ -442,7 +581,7 @@ public final class NotesSession {
     /// Quit: finish gracefully for at most `limit`, then drop what is still in flight.
     public func stopForQuit(limit: Duration = .seconds(5)) async {
         guard isActive else { return }
-        capture.stop()
+        closeCapture()
         let finished = AsyncStream<Void>.makeStream()
         let sleep = deps.sleep
         Task { if self.isRecording || self.isPaused { await self.recorder.stop() } else { await self.waitWhileStopping() }; finished.continuation.yield() }
@@ -464,6 +603,8 @@ public final class NotesSession {
         speakers.reset()
         voices.reset()
         recorder.speakers = nil
+        sources = settings.notesSources
+        callNotice = nil
         model.snapshots.removeAll()
         model.closeReview()
         model.longRunAcknowledged = 0
@@ -529,9 +670,9 @@ public final class NotesSession {
 
     // MARK: speaker labels
 
-    /// The footer's "Label speakers" switch (applies from the next Record).
-    private func setSpeakerLabels(_ on: Bool) {
-        guard !isActive else { return }
+    /// "Label speakers", from the ✦ menu or Settings › Notes (applies from the next Record; refused while recording).
+    public func setSpeakerLabels(_ on: Bool) {
+        guard !isActive else { deps.beep(); return }
         speakers.setEnabled(on, documentHasLabels: recorder.document.speakerCount > 0)
         if !speakers.enabled, speakers.diarizer == nil { recorder.speakers = nil }
     }
@@ -662,9 +803,9 @@ public final class NotesSession {
         if state != lastState {
             chirpLog.info("notes \(String(describing: self.lastState.logName), privacy: .public) -> \(state.logName, privacy: .public) segments=\(self.recorder.document.segments.count, privacy: .public) chars=\(self.recorder.document.text.utf16.count, privacy: .public) tail=\(self.recorder.document.tail.utf16.count, privacy: .public)")
             lastState = state
-            if !recorder.state.isCapturing { capture.stop() }
+            if !recorder.state.isCapturing { closeCapture() }
         }
-        if !recorder.state.isCapturing { micNotice = nil }
+        if !recorder.state.isCapturing { micNotice = nil; callNotice = nil }
         model.state = state
         let changes = recorder.takePendingChanges()
         model.snapshots.record(changes, from: model.document.text, result: recorder.document.text, at: Date())
@@ -672,6 +813,10 @@ public final class NotesSession {
         model.document = recorder.document
         model.structuring = recorder.structuring
         model.speakerLabels = speakers.enabled
+        model.sources = sources
+        model.callAudioAvailable = deps.callTap != nil
+        model.capturingCall = callCapture != nil
+        model.callNotice = callNotice
         model.speakerModel = speakers.model
         model.voices = voiceState()
         let reorganize = recorder.reorganizeStatus
@@ -1004,11 +1149,29 @@ final class NotesBrowsedNote {
         model.onCopy = recorder.onCopy
         model.onSave = recorder.onSave
         model.onUserEdit = { [weak self] range, text, kind in self?.edit(range, text, kind) }
+        // Its speakers can be renamed, merged and reassigned as the recorder's note's are (saved like typing).
+        model.onSpeakerEdit = { [weak self] edit in self?.editSpeakers(edit) }
     }
 
     private func edit(_ range: NSRange, _ text: String, _ kind: NotesTextChange.Kind) {
         _ = model.document.userEdit(range, text, kind: kind == .toggleTask ? .toggleTask : .user)
         if model.state == .idle, !model.document.isEmpty { model.state = .stopped }
+        changed()
+    }
+
+    /// A speaker fix-up from its transcript; a replace in the notes reaches its editor like an AI change. No voice
+    /// suggestions here: they belong to the recording.
+    func editSpeakers(_ edit: SpeakerEdit) {
+        let model = model
+        let banner = SpeakerEditing.apply(edit, banner: model.visibleSpeakerBanner?.kind, document: { model.document }) { body in
+            let changes = body(&model.document)
+            model.enqueue(changes)
+        }
+        model.speakerBanner = banner.map { SpeakerBanner(document: model.document.id, kind: $0) }
+        if edit != .dismiss { changed() }
+    }
+
+    private func changed() {
         dirty = true
         pending?.cancel()
         pending = Task {
@@ -1074,7 +1237,7 @@ public final class NotesCaptureSink: @unchecked Sendable {
         self.pauseAfter = pauseAfter
     }
 
-    public func handle(_ frame: Data) {
+    public func handle(_ frame: Data, call: CallFrame? = nil) {
         let level = Level(pcm16: frame)
         let event = lock.withLock { () -> NotesSilenceEvent? in
             clock += Double(frame.count / 2) / PCMConverter.sampleRate
@@ -1090,8 +1253,8 @@ public final class NotesCaptureSink: @unchecked Sendable {
             if !paused, clock - since >= pauseAfter { paused = true; return .long }
             return nil
         }
-        recorder.handleFrame(frame, level: level)
-        onLevel?(level)
+        recorder.handleFrame(frame, level: level, call: call)
+        onLevel?(call?.micLevel ?? level)
         if let event { onSilence(event) }
     }
 }

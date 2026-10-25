@@ -12,6 +12,20 @@
 <meta property="og:title" content="{{title}}">
 <meta property="og:description" content="{{description}}">
 <meta property="og:type" content="website">
+<meta property="og:url" content="{{canonical}}">
+<meta property="og:site_name" content="Chirp">
+<meta property="og:image" content="{{social_image}}">
+<meta property="og:image:width" content="1024">
+<meta property="og:image:height" content="1024">
+<meta property="og:image:alt" content="Chirp’s approved pond artwork: a koi-patterned songbird on a lily pad">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="{{title}}">
+<meta name="twitter:description" content="{{description}}">
+<meta name="twitter:image" content="{{social_image}}">
+<meta name="twitter:image:alt" content="Chirp’s approved pond artwork: a koi-patterned songbird on a lily pad">
+<meta name="robots" content="{{robots}}">
+<link rel="canonical" href="{{canonical}}">
+{{preload}}
 <link rel="icon" type="image/png" href="{{root}}assets/chirp-icon.png">
 <link rel="apple-touch-icon" href="{{root}}assets/chirp-icon.png">
 <link rel="stylesheet" href="{{root}}assets/style.css">
@@ -24,16 +38,17 @@
   <nav class="wrap nav" aria-label="Main">
     <a class="brand" href="{{root}}index.html"{{current_home}}><span class="glyph" aria-hidden="true"></span><span>Chirp</span></a>
     <ul class="nav-links">
-      <li class="hide-sm"><a href="{{root}}index.html#dictate">Dictate</a></li>
-      <li class="hide-sm"><a href="{{root}}index.html#notes">Notes</a></li>
-      <li class="hide-sm"><a href="{{root}}index.html#privacy">Privacy</a></li>
+      <li class="hide-md"><a href="{{root}}index.html#how">How it works</a></li>
+      <li class="hide-sm"><a href="{{root}}index.html#compare">Compare</a></li>
+      <li class="hide-md"><a href="{{root}}index.html#privacy">Privacy</a></li>
       <li><a href="{{root}}guides/index.html"{{current_guides}}>Guides</a></li>
-      <li><a href="{{repo}}" rel="noopener">GitHub</a></li>
+      <li class="hide-sm"><a href="{{root}}changelog.html"{{current_changelog}}>What’s new</a></li>
+      <li><a class="nav-cta" href="{{root}}get.html"{{current_get}}>Get Chirp</a></li>
       <li><button class="theme-toggle" type="button" aria-label="Colour theme: system" data-theme-toggle><svg viewBox="0 0 24 24" aria-hidden="true" width="20" height="20"><circle cx="12" cy="12" r="4.2"/><path class="sun-rays" d="M12 2.5v2.2M12 19.3v2.2M2.5 12h2.2M19.3 12h2.2M5.3 5.3l1.6 1.6M17.1 17.1l1.6 1.6M5.3 18.7l1.6-1.6M17.1 6.9l1.6-1.6"/></svg></button></li>
     </ul>
   </nav>
 </header>
-<main id="main">
+<main id="main" tabindex="-1">
 {{content}}
 </main>
 <footer class="footer">
@@ -41,13 +56,15 @@
     <div>
       <p class="brand"><span class="glyph" aria-hidden="true"></span><span>Chirp</span></p>
       <p class="muted">Private dictation and live notes. Your Mac does the listening.</p>
+      <p class="footer-status"><span class="status-dot" aria-hidden="true"></span>Packaged apps are coming soon. Today everything is self-serve: <a href="{{root}}get.html">build from source</a> or <a href="{{root}}guides/coding-agent.html">use a coding agent</a>.</p>
     </div>
     <ul class="footer-links">
+      <li><a href="{{root}}get.html">Get Chirp</a></li>
       <li><a href="{{root}}guides/index.html">Guides</a></li>
       <li><a href="{{repo}}">Source on GitHub</a></li>
       <li><a href="{{repo}}/blob/main/docs/bench.md">Benchmarks</a></li>
       <li><a href="{{repo}}/blob/main/docs/architecture.md">Architecture</a></li>
-      <li><a href="{{repo}}/issues">Issues</a></li>
+      <li><a href="{{root}}changelog.html">What’s new</a></li>
     </ul>
     <p class="muted small">This site has no analytics, cookies or third-party requests. Screenshots are the apps' own captures, made with synthetic speech and sample notes; the pond art is the app icon's artwork. Chirp is a personal-use project; the Android keyboard is based on HeliBoard (GPL-3.0).</p>
   </div>

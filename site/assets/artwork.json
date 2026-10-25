@@ -1,0 +1,32 @@
+{
+  "pond.webp": {
+    "source": "approved-pond-fullbleed.png",
+    "sha256": "33434aecc4612cfc5ad243bceba54dcdca4035fb550f4792b52541b500f812e6",
+    "width": 1024,
+    "height": 1024
+  },
+  "glyph.webp": {
+    "source": "approved-glyph.png",
+    "sha256": "13ebaf0404c3bdd018cd8f8aff7f1d5f125357ee332e83b7fea27b653ec09066",
+    "width": 1024,
+    "height": 1024
+  },
+  "pond-128.webp": {
+    "source": "approved-pond-fullbleed.png",
+    "sha256": "33434aecc4612cfc5ad243bceba54dcdca4035fb550f4792b52541b500f812e6",
+    "width": 128,
+    "height": 128
+  },
+  "pond-256.webp": {
+    "source": "approved-pond-fullbleed.png",
+    "sha256": "33434aecc4612cfc5ad243bceba54dcdca4035fb550f4792b52541b500f812e6",
+    "width": 256,
+    "height": 256
+  },
+  "pond-640.webp": {
+    "source": "approved-pond-fullbleed.png",
+    "sha256": "33434aecc4612cfc5ad243bceba54dcdca4035fb550f4792b52541b500f812e6",
+    "width": 640,
+    "height": 640
+  }
+}

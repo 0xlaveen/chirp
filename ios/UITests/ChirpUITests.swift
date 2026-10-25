@@ -1,57 +1,130 @@
 import XCTest
 
 final class ChirpUITests: XCTestCase {
-    @MainActor private func selectTab(_ title: String, symbol: String, in app: XCUIApplication) {
-        // iPadOS 27 exposes its top tab strip as buttons rather than a TabBar.
-        let tab = app.tabBars.buttons[title]
-        if tab.exists {
-            tab.tap()
-        } else {
-            let topTab = app.buttons.matching(identifier: symbol).firstMatch
-            XCTAssertTrue(topTab.waitForExistence(timeout: 5))
-            topTab.tap()
-        }
+    override func setUp() { continueAfterFailure = false }
+
+    @MainActor func launch(_ extra: [String] = ["--chirp-skip-onboarding"]) -> XCUIApplication {
+        let app = XCUIApplication()
+        app.launchArguments = ["--chirp-ui-test"] + extra
+        app.launch()
+        return app
     }
 
     @MainActor func pairedApp() -> XCUIApplication {
-        let app = XCUIApplication()
-        app.launchArguments = ["--chirp-ui-test"]
-        app.launch()
-        selectTab("Pair Mac", symbol: "qrcode.viewfinder", in: app)
-        let link = app.secureTextFields["pairingLink"]
-        XCTAssertTrue(link.waitForExistence(timeout: 5))
-        link.tap()
-        link.typeText("chirp://pair?url=https%3A%2F%2Fsynthetic.test.ts.net%2Fchirp&token=synthetic-only")
-        app.buttons["Test connection and save pairing"].tap()
-        XCTAssertTrue(app.staticTexts["Mac pairing saved"].waitForExistence(timeout: 5))
+        let app = launch()
+        app.pair(link: XCUIApplication.syntheticPairingLink)
         return app
+    }
+
+    @MainActor func waitFor(_ element: XCUIElement, _ format: String, timeout: TimeInterval = 5) -> Bool {
+        XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: NSPredicate(format: format), object: element)], timeout: timeout) == .completed
+    }
+
+    @MainActor func screenshot(_ name: String, _ app: XCUIApplication) {
+        let shot = XCTAttachment(screenshot: app.screenshot())
+        shot.name = name; shot.lifetime = .keepAlways
+        add(shot)
+    }
+
+    /// Four tabs, Notes first, no "More" and no Notes toolbar button; Pair Mac and Styles are no longer tabs.
+    @MainActor func testShellHasFourTabsStartingOnNotes() {
+        let app = launch()
+        XCTAssertTrue(app.buttons["chirp.notes.record"].waitForExistence(timeout: 5), "Notes is the start tab")
+        XCTAssertFalse(app.buttons["chirp.notes.open"].exists, "No Notes toolbar workaround")
+        XCTAssertTrue(app.buttons["chirp.connection.chip"].exists)
+        XCTAssertEqual(app.buttons["chirp.connection.chip"].label, "Connection: Not paired. Open connection settings")
+        if app.tabBars.firstMatch.exists {
+            for title in ["Notes", "Dictate", "History", "Settings"] { XCTAssertTrue(app.tabBars.buttons[title].exists, title) }
+            for gone in ["More", "Pair Mac", "Styles"] { XCTAssertFalse(app.tabBars.buttons[gone].exists, gone) }
+        }
+        screenshot("Notes with the setup card", app)
+        app.buttons["chirp.connection.chip"].tap()
+        XCTAssertTrue(app.buttons["chirp.pair.scan"].waitForExistence(timeout: 5), "The chip opens Settings → Connection")
+        app.selectChirpTab("Dictate")
+        XCTAssertTrue(app.staticTexts["sessionStatus"].waitForExistence(timeout: 5))
+        XCTAssertEqual(app.staticTexts["sessionStatus"].label, "Microphone off")
+        XCTAssertFalse(app.buttons["chirp.dictation.start"].isEnabled, "Dictate needs a paired Mac")
+        XCTAssertTrue(app.buttons["chirp.pair.open"].exists, "One banner names the missing pairing")
+        screenshot("Dictate unpaired", app)
+    }
+
+    /// First launch shows onboarding; Skip for now walks through to Notes with the setup card.
+    @MainActor func testOnboardingSkipLandsOnNotesWithSetupCard() {
+        let app = launch(["--chirp-onboarding", "--chirp-setup-card"])
+        let next = app.buttons["chirp.onboarding.next"], skip = app.buttons["chirp.onboarding.skip"]
+        XCTAssertTrue(next.waitForExistence(timeout: 5), "First launch shows onboarding")
+        XCTAssertEqual(next.label, "Get started")
+        screenshot("Onboarding 1 welcome", app)
+        next.tap()
+        XCTAssertTrue(app.buttons["chirp.pair.scan"].waitForExistence(timeout: 5))
+        screenshot("Onboarding 2 pair", app)
+        app.buttons["chirp.pair.paste"].tap()
+        XCTAssertTrue(app.secureTextFields["pairingLink"].waitForExistence(timeout: 5))
+        skip.tap()
+        XCTAssertTrue(app.staticTexts["Allow the microphone"].waitForExistence(timeout: 5))
+        screenshot("Onboarding 3 microphone", app)
+        skip.tap()
+        XCTAssertTrue(app.staticTexts["Chirp Keyboard"].waitForExistence(timeout: 5))
+        screenshot("Onboarding 4 keyboard", app)
+        skip.tap()
+        XCTAssertTrue(app.descendants(matching: .any)["chirp.setup"].waitForExistence(timeout: 5), "Skip lands on Notes with the setup card")
+        XCTAssertTrue(app.buttons["chirp.notes.record"].exists)
+        XCTAssertEqual(app.buttons["chirp.setup.fix"].label, "Pair Mac")
+        screenshot("Notes setup card after Skip", app)
+        // Finished onboarding stays finished.
+        app.terminate()
+        let again = launch([])
+        XCTAssertTrue(again.buttons["chirp.notes.record"].waitForExistence(timeout: 5))
+        XCTAssertFalse(again.buttons["chirp.onboarding.next"].exists, "Onboarding never comes back by itself")
+    }
+
+    /// Pairing from onboarding saves on submit (no second "save" tap) and moves on to the microphone page.
+    @MainActor func testOnboardingPairsWithoutASecondTap() {
+        let app = launch(["--chirp-onboarding"])
+        app.buttons["chirp.onboarding.next"].tap()
+        let field = app.pairingLinkField()
+        field.tap()
+        field.typeText(XCUIApplication.syntheticPairingLink + "\n")
+        XCTAssertTrue(app.descendants(matching: .any)["chirp.pair.connected"].waitForExistence(timeout: 5), "Submit verifies and saves")
+        XCTAssertEqual(app.buttons["chirp.onboarding.next"].label, "Continue")
+        screenshot("Onboarding 2 pair connected", app)
+        app.buttons["chirp.onboarding.next"].tap()
+        XCTAssertTrue(app.staticTexts["Allow the microphone"].waitForExistence(timeout: 5))
     }
 
     @MainActor func testSyntheticPairDictateRawAndEnd() {
         let app = pairedApp()
-        selectTab("Dictate", symbol: "mic", in: app)
+        app.selectChirpTab("Dictate")
+        XCTAssertEqual(app.buttons["chirp.connection.chip"].label, "Connection: Mac. Open connection settings")
+        screenshot("Dictate idle", app)
         app.buttons["chirp.dictation.start"].tap()
         XCTAssertTrue(app.buttons["chirp.dictation.stop"].waitForExistence(timeout: 5))
+        XCTAssertTrue(waitFor(app.staticTexts["transcript"], "label == 'synthetic words'"))
+        screenshot("Dictate listening", app)
         app.buttons["chirp.dictation.stop"].tap()
         XCTAssertTrue(app.buttons["chirp.dictation.raw"].waitForExistence(timeout: 5))
         XCTAssertEqual(app.staticTexts["transcript"].label, "Synthetic words.")
+        XCTAssertEqual(app.staticTexts["sessionStatus"].label, "Finished")
+        XCTAssertTrue(app.buttons["chirp.dictation.raw"].label.hasPrefix("Use raw"))
+        XCTAssertTrue(app.buttons["chirp.session.end"].exists, "The session capsule shows while armed")
+        screenshot("Dictate finished", app)
         app.buttons["chirp.dictation.raw"].tap()
         XCTAssertEqual(app.staticTexts["transcript"].label, "synthetic words")
         // Regression: the armed session bar covered iOS 27's tab bar, so a tab tap ended the session.
-        selectTab("History", symbol: "clock", in: app)
+        app.selectChirpTab("History")
         XCTAssertTrue(app.descendants(matching: .any).matching(identifier: "chirp.history.enabled").firstMatch.waitForExistence(timeout: 5))
         XCTAssertTrue(app.buttons["chirp.session.end"].exists, "Switching tabs must not end the session")
-        selectTab("Dictate", symbol: "mic", in: app)
-        XCTAssertTrue(app.staticTexts["Finished · microphone still active"].exists)
-        // Each tab carries its own session bar; only the visible one is hittable.
-        app.buttons.matching(identifier: "chirp.session.end").allElementsBoundByIndex.first { $0.isHittable }?.tap()
+        screenshot("Session capsule", app)
+        app.selectChirpTab("Dictate")
+        XCTAssertTrue(app.staticTexts["Finished"].exists)
+        app.endChirpSession()
         XCTAssertTrue(app.staticTexts["Microphone off"].waitForExistence(timeout: 5))
         XCTAssertFalse(app.staticTexts["transcript"].exists)
     }
 
     @MainActor func testHistoryOffAndAdaptiveOrientation() {
         let app = pairedApp()
-        selectTab("History", symbol: "clock", in: app)
+        app.selectChirpTab("History")
         // SwiftUI's iOS 27 toggle can be exposed as a different element type.
         let history = app.descendants(matching: .any).matching(identifier: "chirp.history.enabled").firstMatch
         XCTAssertTrue(history.waitForExistence(timeout: 5))
@@ -61,7 +134,9 @@ final class ChirpUITests: XCTestCase {
         XCTAssertTrue(history.waitForExistence(timeout: 5))
         XCTAssertEqual(history.value as? String, "0")
         XCUIDevice.shared.orientation = .portrait
-        selectTab("Settings", symbol: "gear", in: app)
-        XCTAssertTrue(app.staticTexts["Microphone session"].exists)
+        app.selectChirpTab("Settings")
+        let back = app.navigationBars.buttons["Settings"]
+        if back.exists { back.tap() }
+        XCTAssertTrue(app.staticTexts["Microphone session"].waitForExistence(timeout: 5))
     }
 }

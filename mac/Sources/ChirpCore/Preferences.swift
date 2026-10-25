@@ -15,7 +15,8 @@ public final class Preferences: @unchecked Sendable {
         set { defaults.set(newValue, forKey: "serverURL") }
     }
     #if os(macOS)
-    /// One of `KeyCombo.presets` (⌃⌥Space by default) or a recorded shortcut that passed `HotKeyValidation`.
+    /// One of `KeyCombo.presets` (Right ⌥ by default) or a recorded shortcut that passed `HotKeyValidation`. Nothing
+    /// stored means the user never chose one, so they follow the default; a stored choice (⌃⌥Space included) stays.
     public var hotkey: KeyCombo {
         get { KeyCombo.resolve(id: defaults.string(forKey: "hotkey")) }
         set { defaults.set(newValue.id, forKey: "hotkey") }
@@ -302,11 +303,53 @@ public final class Preferences: @unchecked Sendable {
         get { defaults.bool(forKey: "notesSpeakerLabels") }
         set { defaults.set(newValue, forKey: "notesSpeakerLabels") }
     }
+    /// Settings › Notes › Sources: new notes include call audio (#211). Off by default; each note can change it.
+    public var notesCallAudio: Bool {
+        get { defaults.bool(forKey: "notesCallAudio") }
+        set { defaults.set(newValue, forKey: "notesCallAudio") }
+    }
+    /// The one app call audio comes from (its bundle id and name); nil records everything the Mac plays.
+    public var notesCallAudioApp: CallAudioApp? {
+        get {
+            guard let id = defaults.string(forKey: "notesCallAudioApp"), !id.isEmpty else { return nil }
+            return CallAudioApp(bundleID: id, name: defaults.string(forKey: "notesCallAudioAppName") ?? id)
+        }
+        set {
+            defaults.set(newValue?.bundleID, forKey: "notesCallAudioApp")
+            defaults.set(newValue?.name, forKey: "notesCallAudioAppName")
+        }
+    }
+    /// The sources a new note starts with.
+    public var notesSources: NotesSources { NotesSources(callAudio: notesCallAudio, app: notesCallAudioApp) }
+    /// The user read what "Include call audio" records and continued (asked once, before the system prompt).
+    public var notesCallAudioExplained: Bool {
+        get { defaults.bool(forKey: "notesCallAudioExplained") }
+        set { defaults.set(newValue, forKey: "notesCallAudioExplained") }
+    }
     /// Settings › Notes › "Recognize saved voices" (off by default). A preference only: voiceprints live in the
     /// Keychain, never here.
     public var notesVoiceProfiles: Bool {
         get { defaults.bool(forKey: "notesVoiceProfiles") }
         set { defaults.set(newValue, forKey: "notesVoiceProfiles") }
+    }
+    /// Dictation history (Settings → Dictation → History): on by default, kept on this Mac only, sealed.
+    public var historyEnabled: Bool {
+        get { defaults.object(forKey: "historyEnabled") as? Bool ?? true }
+        set { defaults.set(newValue, forKey: "historyEnabled") }
+    }
+    /// How long dictations are kept (30 days by default).
+    public var historyRetention: DictationRetention {
+        get { defaults.string(forKey: "historyRetention").flatMap(DictationRetention.init(rawValue:)) ?? .default }
+        set { defaults.set(newValue.rawValue, forKey: "historyRetention") }
+    }
+    /// Apps whose dictations are never kept (bundle ids). Password managers until the user edits the list; once
+    /// edited the stored list is the truth, including an empty one.
+    public var historyExcludedApps: [String] {
+        get { defaults.stringArray(forKey: "historyExcludedApps") ?? HistoryPolicy.defaultExcludedApps }
+        set {
+            var seen = Set<String>()
+            defaults.set(newValue.filter { !$0.isEmpty && seen.insert($0).inserted }, forKey: "historyExcludedApps")
+        }
     }
     /// Set only when the first-run window is finished (never on close), so an interrupted setup shows again.
     public var didOnboard: Bool {

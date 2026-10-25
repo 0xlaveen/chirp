@@ -173,6 +173,13 @@ installation is Xcode's Run action, performed by you.
    not reliably removed on uninstall, so do not count on uninstall deleting the
    token or history key either.
 
+9. **First launch** shows a short setup in four pages: **Welcome**, **Pair your
+   Mac**, **Microphone** and **Chirp Keyboard** (optional). Each page has one
+   orange button and **Skip for now**. Skipping lands on Notes with a small
+   "Finish setting up" card that names the next missing step. Setup does not
+   come back by itself once you are paired; **Settings → Show setup again**
+   reopens it.
+
 Sign-in, provisioning and device trust are operator-only actions; no worker
 performs Apple ID login. Free Personal Team profiles expire after **seven
 days**, after which the app stops launching on device — rebuild and Run again
@@ -197,18 +204,22 @@ profiles; nothing here is validated for that path.
    uv run chirp-server pair --name "My iPad" --url https://<your-mac>.<tailnet>.ts.net/chirp
    ```
 
-3. In Chirp, open the **Pair Mac** tab → **Scan pairing QR**. Grant camera
-   permission when asked; if it is denied, the scanner tells you and you can
-   paste the secret link into **Secret pairing link** and tap **Test connection
-   and save pairing** instead.
-4. Chirp verifies the authenticated connection before saving anything: the
-   **Saved pairing** section then shows "Mac pairing saved" with the Mac's
+3. In Chirp's first-run setup (or later **Settings → Connection**), tap **Scan
+   code**. Grant camera permission when asked. A successful scan verifies the
+   connection and saves the pairing at once; there is no separate save step.
+   If the camera is denied, tap **Paste link instead**: pasting the secret link
+   connects right away (or type it and tap **Connect**). The link field is a
+   secure field, capped at 16 KiB and cleared after use.
+4. Chirp verifies the authenticated connection before saving anything:
+   **Settings → Connection** then shows "Mac pairing saved" with the Mac's
    tailnet host and recognition engine, so you can confirm you paired the
    right machine, and **This device** with the name you gave it. A device
    paired with the shared token shows how to switch to a named pairing. If the
    pairing is revoked, Chirp says "Your Mac refused this device. Pair again
    in Chirp." The token itself is stored in the iOS Keychain. **Check Mac
-   connection** re-verifies later; **Forget pairing** clears the token.
+   connection** re-verifies later; **Forget pairing** clears the token. The
+   **● Mac / ● Offline / ● Not paired** chip at the top of Notes and Dictate
+   opens this page.
 
 Accepted links are exactly `chirp://pair?url=…&token=…` with an HTTPS
 `*.ts.net` host and a simple unencoded base path such as `/chirp` (nondefault
@@ -218,15 +229,14 @@ supported way to point iOS at a public server.
 
 ## Enable the keyboard
 
-The **Dictate** tab has a **Set up Chirp Keyboard** checklist: pair your Mac,
-turn on the keyboard, start a session. Each step shows a check mark when done.
+The last page of first-run setup, and the setup card on Notes, take you there.
 
-1. Tap **Open Chirp in Settings** (also in the Settings tab). In Settings →
+1. Tap **Open Settings** (also in the Settings tab). In Settings →
    Chirp → **Keyboards**, turn on **Chirp Keyboard** and **Allow Full Access**.
    The long way also works: Settings → General → Keyboard → Keyboards → Add
    New Keyboard → Chirp.
 2. Open Chirp Keyboard once in any app (globe key). With Full Access it writes
-   a content-free timestamp to the App Group, so the checklist marks the step
+   a content-free timestamp to the App Group, so setup marks the step
    done. Without Full Access it cannot, and the step stays open.
 
 Full Access is required because the keyboard talks to the app through the
@@ -238,11 +248,19 @@ custom keyboards automatically use Apple's keyboard.
 
 ## Dictate in the app
 
-The **Dictate** tab is the session owner. **Start keyboard session** arms the
-microphone for the keyboard; **Dictate** starts an in-app utterance directly.
-Status line and Live Activity show the phase: Session armed · microphone
-active, Connecting…, Listening…, Polishing…, Finished · microphone still
-active.
+The app has four tabs: **Notes** (the start tab), **Dictate**, **History** and
+**Settings**. On iPhone they are a tab bar; on iPad, a sidebar that turns into a
+tab bar in a narrow window (the selected tab survives). Pairing lives in
+Settings → Connection and clean-up styles in Settings → Styles.
+
+**Dictate** is a blank page with one big orange mic: tap it to dictate, and it
+becomes a red Stop with rings rippling around it (a steady ring with Reduce
+Motion). **Cancel** sits under it while you dictate. When no session is armed,
+**Start keyboard session** under the mic arms the microphone for Chirp Keyboard
+(ⓘ explains it, with the ways to dictate in other apps). The status line on top
+says Microphone off, Ready, Connecting…, Listening…, Polishing… or Finished,
+with a timer while you speak. While a session is armed a small capsule above
+the tab bar shows **Mic on · 4:12 left** and **End**, on every tab.
 
 Honest microphone behavior: during an armed session the app keeps its capture
 engine running so it is ready when a keyboard command arrives. Idle audio is
@@ -267,14 +285,15 @@ microphone off.
 Connection problems are named by cause: this device is offline, the Mac
 can't be found on the tailnet, the Mac may be asleep or Chirp isn't running on
 it, a secure connection failed, or the Mac refused this device (for example a
-revoked device pairing; the Dictate tab offers **Pair again**). While nothing
-answers, the Dictate tab shows **Mac offline** with **Check again**; a Mac that
-answers but is still loading its speech model shows **Mac loading its model**
-with **Check again**, not a network error.
+revoked device pairing). Dictate shows one banner at a time, with one fix:
+**Pair your Mac to dictate · Pair**, **Mac refused this device · Pair again**,
+**Mac offline · Check again**, or, for a Mac that answers but is still loading
+its speech model, **Mac loading its model · Check again** (not a network error).
 
-While dictating: **Stop dictation** finalizes. After the final you get
-explicit **Copy**, **Share** and — when clean-up changed the text — **Use raw**
-for 5 seconds; the original transcript is expandable below.
+While dictating, Stop finalizes. After the final you get **Copy**, **Share**
+and, when clean-up changed the text, **Use raw** with its countdown ("Use raw
+(4s)") for 5 seconds. The transcript before clean-up is under **Before
+clean-up**.
 
 Hardware keyboard shortcuts in the app live in a **Dictation** menu, so they work
 from every tab and show in the iPad's hold-⌘ overlay and menu bar:
@@ -287,6 +306,7 @@ from every tab and show in the iPad's hold-⌘ overlay and menu bar:
 | ⌘⇧Z | Use raw transcript |
 | ⌘⇧K | Start keyboard session |
 | ⌘⇧E | End session |
+| ⌘1 – ⌘4 | Notes, Dictate, History, Settings (the **Go** menu) |
 
 The app never writes the clipboard by
 itself. **Long dictation** runs past the server's
@@ -300,22 +320,24 @@ part, and a part that fails keeps what it heard. A dictation stops just under
 If the server runs with `--debug-retain`, a persistent red banner "DEBUG: Mac
 keeps recordings" stays on screen in the app, keyboard and Live Activity.
 
+![Dictate listening, light](../docs/screenshots/ios/iphone-dictate-listening.png)
+![Dictate finished, dark](../docs/screenshots/ios/iphone-dark-dictate-finished.png)
+
 ## Live Notes
 
 Long-form notes from speech: talk through a meeting, a lecture or a walk, and
-Chirp keeps a transcript and turns it into Markdown notes as you go. On iPad
-Live Notes has its own **Notes** tab with notes and transcript side by side; on
-iPhone open it with **Live Notes** at the top of the Dictate tab (a picker
-switches between Notes and Transcript). It uses the same Mac server as
+Chirp keeps a transcript and turns it into Markdown notes as you go. Live Notes is
+the **Notes** tab, the app's start tab: on iPad notes and transcript sit side by
+side; on iPhone a picker switches between Notes and Transcript. It uses the same Mac server as
 dictation and needs no keyboard session — the two never hold the microphone at
 the same time (end the keyboard session first, and a keyboard session cannot
 start while notes record).
 
 - **Record** opens the microphone (until a Mac is paired, **Pair Mac** beside
-  it opens the Pair Mac tab). Speech goes to your Mac in rolling segments
+  it opens Settings → Connection). Speech goes to your Mac in rolling segments
   of at most 45 seconds (cut at pauses, ordinary `/v1/stream` utterances), and
   the live partial shows under the notes. Clean-up applies when you turned it
-  on in Styles, using the Mac's notes style.
+  on in Settings → Styles, using the Mac's notes style.
 - **Structuring** runs on your Mac (`/v1/notes/structure`): finished segments
   become headings, bullets, tasks, decisions and questions. It is on when
   clean-up stays on your Mac; if your Mac's clean-up sends text elsewhere,
@@ -465,6 +487,13 @@ bytes — oversized input is refused before any edit rather than half-written.
 
 See the [Android and iPad shortcut comparison](../android/README.md#in-app-hardware-keyboard-shortcuts) for both in-app key tables.
 
+In Chirp itself, the sidebar lists Notes, Dictate, History and Settings; ⌘1–⌘4
+switch between them and Dictate shows "⌘Return to dictate · ⌘. to cancel"
+under the mic while a hardware keyboard is attached. Hold ⌘ to see every
+shortcut.
+
+![iPad sidebar with Dictate](../docs/screenshots/ios/ipad-sidebar-dictate.png)
+
 Two iPadOS limits shape this: iPadOS hides on-screen keyboards, including Chirp
 Keyboard, while a hardware keyboard is attached; and keyboard extensions never
 receive hardware key presses. So there are two ways to dictate into another app:
@@ -584,10 +613,10 @@ when it matters; surrounding editor text is never collected.
 | "Connection failed. Check Tailscale and your Mac." | Tailnet down or server not running the updated source; use Check Mac connection after fixing. |
 | "Can't find your Mac on the tailnet…" | The Mac's tailnet name didn't resolve: the Mac is off the tailnet, or Tailscale is off on this device. |
 | "Your Mac may be asleep, or Chirp isn't running on it." | Nothing answered at the Mac's address. Wake the Mac, check chirp-server, then tap Check again. |
-| "Your Mac refused this device. Pair again in Chirp." | The pairing was revoked or replaced (`chirp-server devices revoke`). Pair again from the Pair Mac tab. |
+| "Your Mac refused this device. Pair again in Chirp." | The pairing was revoked or replaced (`chirp-server devices revoke`). Pair again from Settings → Connection. |
 | "Kept what was heard" | Dictation failed partway; the text heard so far was inserted without clean-up. Undo removes it for 5 s. |
 | "The Mac did not finish in time." | Finalization/clean-up deadline hit; raw text is kept when possible. |
-| Arming fails or the session ends immediately | Check microphone permission, that Live Activities are enabled for Chirp, and Tailscale; the Dictate tab shows the local error. |
+| Arming fails or the session ends immediately | Check microphone permission, that Live Activities are enabled for Chirp, and Tailscale; Dictate shows the local error. |
 
 ## Develop and test
 

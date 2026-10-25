@@ -6,20 +6,22 @@ section: guides
 <div class="narrow guide-hero">
   <p class="crumbs"><a href="index.html">Guides</a> / 03</p>
   <h1>Use Chirp on iPhone and iPad</h1>
-  <p class="lede">A native app plus a dictation keyboard for iOS and iPadOS 18. Like Android, it sends your voice to the Chirp server on your Mac.</p>
+  <p class="lede">A native app plus a dictation keyboard for iOS and iPadOS 18. Like Android, it sends your voice to the Chirp server on your Mac. There’s no App Store or TestFlight build yet — both are coming soon; this guide is the personal-install route today.</p>
   <div class="meta-row"><span>Needs: full Xcode, an Apple ID, Tailscale</span><span>Status: early</span></div>
 </div>
 <article class="narrow prose">
-  <div class="callout warn"><b>Early: not yet tried on a real device.</b><p>The app, keyboard and widgets build and pass their tests on iPhone and iPad simulators, including a test that dictates through the real keyboard. Nobody has installed it on a physical iPhone or iPad yet, so expect rough edges — and please <a href="{{repo}}/issues">report what you find</a>.</p></div>
+  <div class="callout warn"><b>Early: first iPad install verified.</b><p>The app, keyboard and widgets build and pass their tests on iPhone and iPad simulators, including a test that dictates through the real keyboard. An iPad personal install was verified on October 25, 2026; iPhone installation, microphone quality and Live Notes on hardware are still unverified. Expect rough edges — and please <a href="{{repo}}/issues">report what you find</a>. Packaged iOS builds are coming soon; there is no App Store or TestFlight download yet.</p></div>
   <nav class="toc" aria-label="On this page"><b>On this page</b>
     <ol><li><a href="#before">Before you start</a></li><li><a href="#build">Build and install</a></li><li><a href="#pair">Pair with your Mac</a></li><li><a href="#keyboard">Turn on the keyboard</a></li><li><a href="#dictate">Dictate</a></li><li><a href="#mic">About the mic indicator</a></li></ol>
   </nav>
 
+  <div class="ios-captures guide-ios-captures"><figure><!--shot:ios/iphone-dictate-listening|The Pond iPhone Dictate screen listening, with the timed keyboard session visible--><figcaption>Dictate on iPhone.</figcaption></figure><figure><!--shot:ios/iphone-onboarding-2-pair-connected|Guided onboarding confirms the Mac connection before continuing--><figcaption>Pair, then enable the microphone.</figcaption></figure></div>
+  <figure class="shot"><div class="frame"><!--shot:ios/ipad-sidebar-dictate|The iPad Pond sidebar with Notes, Dictate, History and Settings beside the Dictate screen--></div><figcaption>A sidebar on iPad; a tab bar on iPhone.</figcaption></figure>
   <h2 id="before">Before you start</h2>
   <ul>
     <li>Chirp running on your Mac (<a href="mac.html">Mac guide</a>) and Tailscale on the Mac and the iPhone or iPad, signed in to the same account (<a href="android.html#tailscale">how</a>).</li>
     <li><strong>Full Xcode</strong> from the Mac App Store, opened once so it finishes installing. The Command Line Tools alone can't build iOS apps.</li>
-    <li>An Apple ID signed in to Xcode (Xcode → Settings → Accounts). A free account works, but its apps stop launching after seven days until you build again.</li>
+    <li>An Apple ID signed in to Xcode (Xcode → Settings → Accounts). Free Personal Team profiles expire after seven days, requiring another build. App Groups and shared Keychain capabilities are not guaranteed on free accounts; check the actual provisioning profiles.</li>
   </ul>
 
   <h2 id="build">Build and install</h2>
@@ -27,8 +29,9 @@ section: guides
     <li><strong>Check the toolchain</strong>
 <pre data-copy="Copy command"><code>ios/scripts/toolchain.sh</code></pre>
       <p>If it says <code>BLOCKED</code>, point the tools at Xcode: <code>sudo xcode-select -s /Applications/Xcode.app</code>.</p></li>
-    <li><strong>Set your team</strong><p>Copy <code>ios/Config/Local.example.xcconfig</code> to <code>ios/Config/Local.xcconfig</code> and set <code>DEVELOPMENT_TEAM</code> to your team ID (shown in Xcode → Settings → Accounts). This file stays on your Mac.</p></li>
+    <li><strong>Set your team</strong><p>Copy <code>ios/Config/Local.example.xcconfig</code> to <code>ios/Config/Local.xcconfig</code> and set <code>DEVELOPMENT_TEAM</code> to your team ID (shown in Xcode → Settings → Accounts). Keep the same signing team, App Group and keychain access group on the app, keyboard and widgets. This file stays on your Mac.</p></li>
     <li><strong>Open the project</strong><p>Open <code>ios/Chirp.xcodeproj</code>. For the ChirpIOS, ChirpKeyboard and ChirpWidgets targets, choose your team under Signing.</p></li>
+    <li><strong>Complete the README’s iPhone and iPad simulator gates</strong><p>Before a personal hardware install, follow the build, unit and UI checks in the <a href="{{repo}}/blob/main/ios/README.md#install-operator-steps">iOS README</a> on both device families.</p></li>
     <li><strong>Run it on your device</strong><p>Plug in the iPhone, trust the computer and turn on <strong>Developer Mode</strong> (Settings → Privacy &amp; Security). Pick the device and the <strong>ChirpIOS</strong> scheme, then press <kbd>⌘R</kbd>. Same for an iPad — it's one universal app.</p></li>
   </ol>
   <p>The <a href="{{repo}}/blob/main/ios/README.md">iOS README</a> also describes simulator test runs to do before installing on hardware.</p>
@@ -36,7 +39,7 @@ section: guides
   <h2 id="pair">Pair with your Mac</h2>
   <ol class="steps">
     <li><strong>Show the code on the Mac</strong><p>Chirp for Mac → <strong>Settings → Devices → Pair a Phone…</strong></p></li>
-    <li><strong>Scan it</strong><p>In Chirp on the iPhone, open the <strong>Pair Mac</strong> tab and tap <strong>Scan pairing QR</strong>. Chirp checks the connection before saving, then shows which Mac you paired.</p></li>
+    <li><strong>Scan it</strong><p>In Chirp on the iPhone, use <strong>Pair your Mac</strong> during onboarding, or <strong>Settings → Connection</strong>, and tap <strong>Scan pairing QR</strong>. Chirp checks the connection before saving, then shows which Mac you paired.</p></li>
   </ol>
   <p>The iPhone app only accepts private tailnet addresses, so it can never be pointed at a public server.</p>
 
@@ -49,7 +52,7 @@ section: guides
 
   <h2 id="dictate">Dictate</h2>
   <ul>
-    <li><strong>In the app:</strong> the <strong>Dictate</strong> tab records directly. Afterwards you get <strong>Copy</strong>, <strong>Share</strong> and, if clean-up changed something, <strong>Use raw</strong>.</li>
+    <li><strong>In the app:</strong> the <strong>Dictate</strong> screen records directly. Afterwards you get <strong>Copy</strong>, <strong>Share</strong> and, if clean-up changed something, <strong>Use raw</strong>.</li>
     <li><strong>In other apps:</strong> tap <strong>Start keyboard session</strong> in Chirp (or use the Action Button, Control Center or Shortcuts), switch to the app you want, pick Chirp Keyboard with the globe key and dictate from it.</li>
     <li><strong>On iPad with a keyboard:</strong> <kbd>⌘Return</kbd> starts and stops, <kbd>⌘.</kbd> cancels.</li>
   </ul>

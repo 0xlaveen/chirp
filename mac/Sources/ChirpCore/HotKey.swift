@@ -27,12 +27,16 @@ public struct KeyCombo: Sendable, Equatable, Identifiable {
     /// "Open Notes" default: brings the Notes window forward without recording (⌃⌥N records).
     public static let controlOptionShiftN = KeyCombo(id: "control-option-shift-n", title: "⌃⌥⇧N", keyCode: UInt32(kVK_ANSI_N), modifiers: UInt32(controlKey | optionKey | shiftKey))
 
+    /// The dictation shortcut for anyone who has not picked one: Right ⌥ on its own, hold to talk or tap to toggle.
+    /// ⌃⌥Space was the default before.
+    public static let defaultDictation = KeyCombo.rightOption
+
     /// Selectable dictation hotkeys; the first is the default. ⌃Space alone is Raycast's default and the system
     /// input-source switcher, so it is not offered.
-    public static let presets: [KeyCombo] = [.controlOptionSpace, .option, .rightOption, .controlShiftSpace, .controlOptionCommandSpace]
+    public static let presets: [KeyCombo] = [.rightOption, .controlOptionSpace, .option, .controlShiftSpace, .controlOptionCommandSpace]
 
     /// Unknown ids, including the retired "option-space" and "option-shift-space", fall back to the default.
-    public static func preset(id: String?) -> KeyCombo { presets.first { $0.id == id } ?? .controlOptionSpace }
+    public static func preset(id: String?) -> KeyCombo { presets.first { $0.id == id } ?? defaultDictation }
 
     // MARK: custom shortcuts
 
@@ -50,6 +54,10 @@ public struct KeyCombo: Sendable, Equatable, Identifiable {
     /// A modifier pressed and released on its own, with no other key.
     public var isModifierOnly: Bool { ModifierKeys.isModifierOnly(keyCode) }
 
+    /// A modifier-only shortcut bound to one physical key (Right ⌥, Right ⌘…), not either side's. Pressing the other
+    /// side's key never reaches it, so it is safe to start a dictation on a hold (see `HotkeyGesture`).
+    public var isSingleModifierKey: Bool { isModifierOnly && keyCode != KeyCombo.anyModifierKey && ModifierKeys.isModifierKey(keyCode) }
+
     /// Carbon cannot deliver it: a modifier on its own, or a key with only ⌥ (or ⌥⇧), which since macOS 15 registers
     /// without error and never fires. These are matched from a session event tap instead, which needs Accessibility.
     public var needsEventTap: Bool {
@@ -58,7 +66,7 @@ public struct KeyCombo: Sendable, Equatable, Identifiable {
 
     /// The stored id back to a combo: a preset, or a custom shortcut that still passes validation. Anything else
     /// (unknown ids, a custom id that can never fire, such as one saved by hand) falls back to the default.
-    public static func resolve(id: String?, fallback: KeyCombo = .controlOptionSpace) -> KeyCombo {
+    public static func resolve(id: String?, fallback: KeyCombo = .defaultDictation) -> KeyCombo {
         guard let id else { return fallback }
         if id == fallback.id { return fallback }
         guard id.hasPrefix(customPrefix) else { return presets.first { $0.id == id } ?? fallback }
@@ -112,6 +120,14 @@ public enum ModifierKeys {
         return cgFlags & key.deviceBit != 0
     }
 
+    /// Whether the other side's key of `keyCode`'s modifier is held too (Left ⌥ with Right ⌥); false for fn and for
+    /// `anyModifierKey`.
+    static func otherSideHeld(_ keyCode: UInt32, cgFlags: UInt64) -> Bool {
+        guard let key = keys.first(where: { $0.code == Int(keyCode) }), key.side != nil,
+              let other = keys.first(where: { $0.modifier == key.modifier && $0.code != key.code }) else { return false }
+        return cgFlags & other.deviceBit != 0
+    }
+
     /// `CGEventFlags` to Carbon flags (⌃⌥⇧⌘, plus `fn` when asked: a key event on a laptop's arrow or F-key carries fn).
     public static func carbon(cgFlags: UInt64, includingFn: Bool) -> UInt32 {
         var m = 0
@@ -120,6 +136,11 @@ public enum ModifierKeys {
         if cgFlags & cgShift != 0 { m |= shiftKey }
         if cgFlags & cgCommand != 0 { m |= cmdKey }
         return UInt32(m) | (includingFn && cgFlags & cgFn != 0 ? fn : 0)
+    }
+
+    /// A modifier-only title such as "⌥ Option" or "Right ⌥ Option": one keycap, not a glyph and a word.
+    public static func isNamedTitle(_ title: String) -> Bool {
+        ["Control", "Option", "Shift", "Command"].contains { title.hasSuffix(" \($0)") }
     }
 
     /// "⌥ Option", "Right ⌥ Option", "fn", or the symbols when several modifiers make up the shortcut ("⌃⌥").
@@ -300,7 +321,8 @@ public struct ShortcutMatcher: Sendable {
         let mods = ModifierKeys.carbon(cgFlags: cgFlags, includingFn: true)
         let side = ModifierKeys.sideHeld(combo.keyCode, cgFlags: cgFlags)
         let holdsAll = mods & combo.modifiers == combo.modifiers && side
-        let exact = mods == combo.modifiers && side
+        // Right ⌥ with Left ⌥ already held is not Right ⌥ alone: the left one is typing é or a shortcut.
+        let exact = mods == combo.modifiers && side && !ModifierKeys.otherSideHeld(combo.keyCode, cgFlags: cgFlags)
         switch phase {
         case .idle:
             // Only pressing one of its own modifiers starts it: letting go of ⌘ in ⌘⌥ leaves ⌥ held, but that is not a press.
@@ -311,6 +333,7 @@ public struct ShortcutMatcher: Sendable {
             }
             // Its modifier held together with another one (⌘ then ⌥): wait until they are let go.
             if mods & combo.modifiers != 0, mods & ~combo.modifiers != 0 { phase = .spoiled }
+            if holdsAll, !exact { phase = .spoiled }
         case .pressed:
             if exact { return .none }
             if holdsAll {

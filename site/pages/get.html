@@ -1,0 +1,111 @@
+<!--
+title: Get Chirp — packaged apps coming soon, build from source today
+description: Packaged Chirp apps for macOS, Linux, Windows, Android and iOS are coming soon. Today Chirp is self-serve: build it from source, or point a coding agent at the repository.
+section: get
+-->
+<div class="wrap get-hero">
+  <p class="eyebrow"><span class="status-dot" aria-hidden="true"></span> Packaged apps coming soon</p>
+  <h1>Get Chirp today.<br><em>Build it from source.</em></h1>
+  <p class="lede">Chirp is private dictation and live meeting notes, powered by your own Mac. There isn’t a download yet. Packaged apps for <strong>macOS, Linux and Windows</strong> are on the way, along with an <strong>Android APK</strong> and an <strong>iOS app</strong>. Until they land, everything is self-serve: you build Chirp from source, on your own Mac.</p>
+  <p class="lede">The easiest route is to <strong>point a coding agent at the repository</strong> and work through it together. Prefer to do it yourself? The guides take it one step at a time.</p>
+  <div class="actions"><a class="btn btn-primary" href="guides/coding-agent.html">Use a coding agent <span aria-hidden="true">↗</span></a><a class="btn btn-ghost" href="#platforms">See what’s available today</a></div>
+  <p class="setup-note">Free and open source · No Chirp account or subscription<br>An Apple Silicon Mac is required for the speech engine</p>
+</div>
+<div class="wrap get-body">
+  <div class="callout info"><b>Why build it yourself for now?</b><p>Packaging takes signing, notarizing, store review and support across OS versions. Instead of rushing a half-finished installer, the source is public and usable today. No waiting list, no account, no telemetry.</p></div>
+
+  <h2 id="platforms">What’s available today</h2>
+  <p>Everything below is built from the same repository. <strong>None of the packaged apps are downloadable yet.</strong></p>
+  <div class="status-grid">
+    <article class="status-card">
+      <span class="tag tag-soon">Packaged app coming soon</span>
+      <h3>macOS</h3>
+      <p>The engine and the Mac app. Build it with one script, then use it like any Mac app.</p>
+      <a href="guides/mac.html">Build the Mac app <span aria-hidden="true">↗</span></a>
+    </article>
+    <article class="status-card">
+      <span class="tag tag-soon">APK coming soon</span>
+      <h3>Android</h3>
+      <p>Android 12+. Build and sign the arm64 APK on your Mac, then sideload it.</p>
+      <a href="guides/android.html">Build the Android APK <span aria-hidden="true">↗</span></a>
+    </article>
+    <article class="status-card">
+      <span class="tag tag-soon">App Store build coming soon</span>
+      <h3>iPhone &amp; iPad</h3>
+      <p>iOS/iPadOS 18+. Install it on your own device with Xcode. Early, and improving.</p>
+      <a href="guides/iphone.html">Install on iPhone or iPad <span aria-hidden="true">↗</span></a>
+    </article>
+    <article class="status-card">
+      <span class="tag tag-soon">Packaged app coming soon</span>
+      <h3>Linux</h3>
+      <p>A packaged desktop app is planned. There’s no Linux build to install today.</p>
+      <a href="{{repo}}">Watch the repository <span aria-hidden="true">↗</span></a>
+    </article>
+    <article class="status-card">
+      <span class="tag tag-soon">Packaged app coming soon</span>
+      <h3>Windows</h3>
+      <p>A packaged desktop app is planned. There’s no Windows build to install today.</p>
+      <a href="{{repo}}">Watch the repository <span aria-hidden="true">↗</span></a>
+    </article>
+    <article class="status-card status-card-note">
+      <span class="tag tag-source">Available today</span>
+      <h3>The source</h3>
+      <p>Every platform above starts from this repository. It’s public, inspectable and free.</p>
+      <a href="{{repo}}">Open the repository <span aria-hidden="true">↗</span></a>
+    </article>
+  </div>
+  <p class="footnote">No dates yet, and we won’t invent one. The <a href="changelog.html">changelog</a> and the repository are where packaged builds will be announced first.</p>
+
+  <h2 id="start">Two ways to start</h2>
+  <div class="path-grid">
+    <article class="path-card path-card-agent">
+      <span class="reason-number">01 / Recommended today</span>
+      <h3>Point a coding agent at the repo</h3>
+      <p>If you already use a coding agent in Terminal, this is the least fiddly path. Paste the prompt below and answer its questions. The agent clones the repository, runs the installer, and stops for the parts only you can do.</p>
+      <pre class="prompt" data-copy="Copy the coding agent prompt"><code>Help me install Chirp on this Mac from source:
+https://github.com/araa47/chirp
+
+Read README.md and mac/README.md, then run ./scripts/install-mac.sh
+from the repository root and explain each step as you go.
+
+Ask before installing anything, changing system settings, approving the
+signing identity or granting permissions. Stop for the steps only I can
+do — signing, choosing models, and pairing a phone. Never print or share
+the pairing token, QR code or link. Never enable Tailscale Funnel or
+expose the server beyond 127.0.0.1 or my tailnet.</code></pre>
+      <a href="guides/coding-agent.html">All agent prompts, including Android <span aria-hidden="true">↗</span></a>
+    </article>
+    <article class="path-card">
+      <span class="reason-number">02 / By hand</span>
+      <h3>Follow the guides yourself</h3>
+      <p>No agent needed. Start with the Mac — it runs the speech model every other device uses. Each guide says what you need, what to type, and what to click.</p>
+      <ol class="mini-steps">
+        <li><a href="guides/mac.html">Set up the Mac app</a><span>About 15 minutes, mostly downloads.</span></li>
+        <li><a href="guides/android.html">Add an Android phone</a><span>Build the APK, pair with a QR code.</span></li>
+        <li><a href="guides/iphone.html">Add an iPhone or iPad</a><span>Xcode, signing and the keyboard.</span></li>
+        <li><a href="guides/live-notes.html">Take notes</a><span>Turn a meeting into Markdown.</span></li>
+      </ol>
+    </article>
+  </div>
+
+  <h2 id="need">What you need</h2>
+  <ul class="ticks need-list">
+    <li><strong>An Apple Silicon Mac (M1 or newer)</strong> on macOS 15 or later, on and reachable whenever you dictate.</li>
+    <li><strong>About 15 minutes</strong> for the Mac. Add a phone when you’re ready; each phone takes a little longer.</li>
+    <li><strong>Tailscale</strong> on the Mac and phone, if you want to dictate from a phone.</li>
+    <li><strong>Full Xcode</strong> for iPhone or iPad; the Command Line Tools are enough for the Mac.</li>
+    <li><strong>Comfort with Terminal — or an agent.</strong> You don’t need to write code. You do need to run a few commands.</li>
+  </ul>
+
+  <h2 id="questions">Questions</h2>
+  <div class="faq-list">
+    <details open><summary>Is there a download?</summary><p>Not yet. Packaged apps for macOS, Linux, Windows, Android and iOS are coming soon. Today Chirp is self-serve: everything is built from the source in the repository. The <a href="guides/coding-agent.html">coding agent guide</a> is the quickest route.</p></details>
+    <details><summary>When will the packaged apps be out?</summary><p>Soon, but there’s no date to give you yet. Signing, notarizing and store review take time. When a packaged build is ready it will appear in the <a href="changelog.html">changelog</a> and the <a href="{{repo}}">repository</a> first.</p></details>
+    <details><summary>Do I need to know how to code?</summary><p>No. You need to run commands in Terminal, or let a coding agent run them with you. The guides spell out every command, and the agent prompts tell the agent to ask before it changes anything.</p></details>
+    <details><summary>What does “point an agent at the repo” mean?</summary><p>Open the coding agent you already use — Claude Code, Codex, Cursor, or another agent that can run shell commands on your Mac — and paste the prompt from <a href="guides/coding-agent.html">the agent guide</a>. The agent reads the READMEs, runs the build, and stops for the decisions that need you.</p></details>
+    <details><summary>Can I use Chirp on Windows or Linux today?</summary><p>Not the app. The speech engine currently runs on an Apple Silicon Mac, and the source install is for macOS. Packaged desktop apps for macOS, Linux and Windows are planned; there is nothing to install on Linux or Windows yet.</p></details>
+    <details><summary>Is Chirp really free?</summary><p>Yes. There’s no subscription, usage fee or Chirp account. You supply the Mac, electricity, and any network or developer services you choose. The source is public; the Android keyboard incorporates GPL-3.0 HeliBoard.</p></details>
+  </div>
+
+  <div class="next"><a href="guides/index.html">← All guides</a><a href="guides/coding-agent.html">Next: build with an agent →</a></div>
+</div>

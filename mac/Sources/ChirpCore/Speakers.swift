@@ -73,6 +73,9 @@ public protocol SpeakerDiarizing: AnyObject, Sendable {
     /// One capture frame (16 kHz mono PCM16) that starts at `documentTime`; any thread, returns at once. A jump in
     /// `documentTime` (a stopped interval, dropped audio) is the implementation's to map, so spans stay in document time.
     func feed(_ pcm16: Data, at documentTime: TimeInterval)
+    /// A call recording's frame (#211): the microphone and the call audio apart. Without its own handling the mix is
+    /// fed as one frame.
+    func feed(_ frame: CallFrame, at documentTime: TimeInterval)
     /// Stop: let the tail settle (pad silence and drain), keeping the session so a later Record continues it.
     func flush() async
     var snapshot: SpeakerTimeline { get }
@@ -86,6 +89,7 @@ public protocol SpeakerDiarizing: AnyObject, Sendable {
 }
 
 extension SpeakerDiarizing {
+    public func feed(_ frame: CallFrame, at documentTime: TimeInterval) { feed(frame.mix, at: documentTime) }
     public func attachEmbedder(_ embedder: (any VoiceEmbedder)?) {}
     public var voiceprints: [Int: Voiceprint] { [:] }
 }
@@ -129,7 +133,13 @@ public struct SpeakerRoster: Equatable, Sendable, Codable {
         public var name: String?
         /// Set once this person was merged into another.
         public var mergedInto: Int?
+        /// The microphone's side of a call recording: shown as "You" until renamed.
+        public var local: Bool?
     }
+
+    /// The slot `CallSpeakers` gives the microphone side of a call recording (diarizer slots are small numbers).
+    public static let youSlot = 1_000
+    public static let youName = "You"
 
     public private(set) var people: [Person] = []
     /// Diarizer slot → person id. A merge points the slot at the target, so future audio follows it.
@@ -143,7 +153,13 @@ public struct SpeakerRoster: Equatable, Sendable, Codable {
     /// The id a slot was numbered as (before merges): what a turn stores, so undoing a merge gives it back.
     public mutating func id(forSlot slot: Int) -> Int {
         if let id = slots[slot] { return id }
+        // The microphone side is one person across recordings of the note (a recovered session forgets the slots).
+        if slot == Self.youSlot, let you = people.first(where: { $0.local == true }) {
+            slots[slot] = you.id
+            return you.id
+        }
         let id = addPerson()
+        if slot == Self.youSlot { people[id - 1].local = true }
         slots[slot] = id
         return id
     }
@@ -177,7 +193,19 @@ public struct SpeakerRoster: Equatable, Sendable, Codable {
     public func displayName(_ id: Int) -> String {
         let target = resolve(id)
         if let name = person(id: target)?.name?.trimmingCharacters(in: .whitespacesAndNewlines), !name.isEmpty { return name }
-        return "Person \(target)"
+        return defaultName(target)
+    }
+
+    /// `id`'s own name, without following merges ("Separate ▸" lists the people merged away).
+    public func ownName(_ id: Int) -> String {
+        if let name = person(id: id)?.name, !name.isEmpty { return name }
+        return defaultName(id)
+    }
+
+    /// "You" for the microphone's person, else "Person N", numbered without it (the call's voices are Person 1, 2…).
+    func defaultName(_ id: Int) -> String {
+        guard person(id: id)?.local != true else { return Self.youName }
+        return "Person \(id - people.prefix(max(0, id - 1)).filter { $0.local == true }.count)"
     }
 
     /// A stable colour slot for `id` (after merges).
