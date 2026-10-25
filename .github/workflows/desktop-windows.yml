@@ -1,0 +1,57 @@
+name: desktop-windows
+
+on:
+  pull_request:
+    paths: ["desktop/**", ".github/workflows/desktop-windows.yml"]
+  push:
+    branches: [main]
+    paths: ["desktop/**", ".github/workflows/desktop-windows.yml"]
+  workflow_dispatch:
+
+concurrency:
+  group: desktop-windows-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 40
+    defaults:
+      run:
+        shell: bash
+        working-directory: desktop
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: desktop/src-tauri
+      - run: npm ci
+      - run: npm run check && npm test
+      - run: cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
+      - run: cargo clippy --locked --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
+      # Includes platform/windows_logic.rs, the Windows rules that also run on every other OS.
+      - run: cargo test --locked --manifest-path src-tauri/Cargo.toml
+      - run: cargo build --locked --manifest-path src-tauri/Cargo.toml --example platform-smoke
+      # The runner has an interactive desktop: type and paste into a real Tk text field, check the
+      # clipboard is restored, the AltGr default key per layout and that the hook installs.
+      - name: Windows native insertion smoke
+        run: python scripts/windows-smoke.py
+        timeout-minutes: 5
+      # Per-user NSIS installer (no admin); unsigned, so SmartScreen warns on first run.
+      - run: npm run build -- --bundles nsis
+      - uses: actions/upload-artifact@v4
+        with:
+          name: chirp-windows-x64-setup
+          path: desktop/src-tauri/target/release/bundle/nsis/*-setup.exe
+          if-no-files-found: error
