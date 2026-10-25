@@ -7,9 +7,9 @@ exact heard -> term respelling, nothing free-form, and never an added word. All 
 import logging
 
 import pytest
+import test_correction_server
 from conftest import HEADERS, PCM, START, TOKEN
 from starlette.testclient import TestClient
-from test_correction_server import corrector, fake_lm  # noqa: F401 - the fixture
 from test_protocol import final
 
 from chirp_server.app import create_app
@@ -19,6 +19,9 @@ from chirp_server.engine import FakeEngine
 from chirp_server.known_terms import UserTerm, parse_user_terms, respell
 from chirp_server.learned import Learned, learned_prompt, parse_learned
 from chirp_server.profiles import BUILTINS, LIVE_NOTES, system_prompt
+
+# The loopback OpenAI-compatible endpoint the correction-server tests use.
+fake_lm = test_correction_server.fake_lm
 
 KUBE = UserTerm("Kubernetes", ("cooper netties",))
 ANTHROPIC = UserTerm("Anthropic", ("and throw pick",))
