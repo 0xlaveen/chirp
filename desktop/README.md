@@ -3,8 +3,9 @@
 The shared Tauri 2 client for Linux and Windows. The native Mac app remains in
 [`mac/`](../mac/). This first phase supplies dictation, native microphone capture,
 streaming partials/finals, the Pond HUD, settings, pairing and a tray. Live Notes
-and its library follow in a separate phase; Windows integration is coordinated
-in its own platform PR. Track the Linux work in [#213](https://github.com/araa47/chirp/issues/213).
+and its library follow in a separate phase. Track the Linux work in
+[#213](https://github.com/araa47/chirp/issues/213) and Windows in
+[#214](https://github.com/araa47/chirp/issues/214).
 
 ## Linux
 
@@ -50,6 +51,52 @@ The server must accept `start.client = "desktop"` (this PR adds it). Dictations
 are limited to 120 seconds. Disconnects, mic failures and an overloaded audio
 queue fail visibly rather than inserting incomplete audio. A failed insertion
 keeps the transcript in the HUD. Escape in a focused Chirp window cancels.
+
+## Windows
+
+`src-tauri/src/platform/windows.rs` implements the platform contract with Win32
+(`windows-sys`); its rules live in `platform/windows_logic.rs`, which is plain
+Rust and tested on every OS.
+
+- **Hotkey.** A `WH_KEYBOARD_LL` hook on its own thread reports Right Alt or Right
+  Ctrl and "another key is down" changes. It ignores injected input (including
+  Chirp's own typing) and the synthetic Left Ctrl that Windows sends before AltGr,
+  and re-checks missed releases with `GetAsyncKeyState`. A lone Right Alt gets a
+  menu-mask key so releasing it doesn't open the focused app's menu bar. The hook
+  never blocks or logs keys.
+- **Default key.** The foreground keyboard layout is probed with `ToUnicodeEx`
+  under Ctrl+Alt. If anything types (AltGr), the default is Right Ctrl, otherwise
+  Right Alt.
+- **Insertion.** `SendInput` with `KEYEVENTF_UNICODE` in batches that never split a
+  surrogate pair; line breaks and tabs are Enter and Tab. Text over 2000 UTF-16
+  units, or what remains when typing is refused, is pasted with Ctrl+V and the
+  previous clipboard text restored. Chirp's clipboard writes are excluded from
+  clipboard history, cloud clipboard and clipboard monitors. Windows blocks
+  synthetic input to apps running as administrator (UIPI), so those get the text
+  on the clipboard (`InsertionOutcome::Clipboard`).
+- **Bundle.** `tauri.windows.conf.json` builds a per-user NSIS installer (no
+  administrator rights). It is unsigned, so SmartScreen warns on first run.
+
+Build on Windows with Rust (rustup, MSVC toolchain), Node 22+ and WebView2 (built
+into Windows 11):
+
+```powershell
+npm ci
+npm run build -- --bundles nsis
+```
+
+The native check types into a real Tk text field with SendInput, pastes a long text
+and checks the clipboard is restored, checks the US and German default keys and
+that the keyboard hook installs:
+
+```powershell
+cargo build --locked --manifest-path src-tauri/Cargo.toml --example platform-smoke
+python scripts/windows-smoke.py
+```
+
+The hook ignores synthetic key presses by design, so holding the key itself,
+typing into Notepad, Word and a browser, and elevated apps are on the manual
+acceptance checklist in [#214](https://github.com/araa47/chirp/issues/214).
 
 ## Build and test
 
