@@ -263,6 +263,15 @@ Cancel or disconnect during finalization discards the utterance: no correction r
 - `--streaming incremental` uses upstream's documented cached context and one-second chunks, with full re-decoding for final quality. The measured rolling path stays the default.
 - `--precision float16|bfloat16` enables experiments. Spectral preprocessing stays fp32 because upstream 0.5.3's reduced-precision FFT view has an invalid shape.
 
+### Learned terms and app preferences (opt-in)
+
+A client may send `"learned"` in `start` (version 1; health has `"learned": 1`): the user's own terms with the exact
+phrases they were heard as, per-app style ids (`lowercase_start`, `no_final_period`) and up to three of the user's
+own before/after examples. `learned.py` validates it (`bad_request` when malformed, a newer `v` ignored), `profiles.py`
+adds it to the prompt inside the core rules, and `known_terms.respell` licenses exactly those heard → term respellings
+in every guard, as it does the built-in terms. Nothing in the block is logged. See
+[architecture.md](../docs/architecture.md) for the limits.
+
 ### Word timings (opt-in)
 
 A client that sends `"word_timings": true` in `start` gets `words` on every partial, on

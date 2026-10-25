@@ -11,6 +11,7 @@ import httpx
 
 from .config import CorrectionConfig
 from .known_terms import respell
+from .learned import Learned
 from .managed_cleanup import ManagedCleanup
 from .profiles import DEFAULT_PROMPT as DEFAULT_PROMPT
 from .profiles import LIVE_NOTES_ID, MAX_PROMPT_CHARS, system_prompt
@@ -36,7 +37,7 @@ class CorrectionResult:
     error: str | None = None
 
 
-def rejected(raw: str, text: str, finish, profile=None) -> bool:
+def rejected(raw: str, text: str, finish, profile=None, user_terms=()) -> bool:
     if not text or finish not in {"stop", "eos"}:
         return True
     if any(
@@ -56,8 +57,9 @@ def rejected(raw: str, text: str, finish, profile=None) -> bool:
     source = re.sub(r"^(?:(?:um|uh|er|ah|like|you know)[\s,]+)+", "", raw.lower())
     if any(text.lower().startswith(op) and not source.startswith(op) for op in OPENERS):
         return True
-    # A known-term respelling ("clawed code" -> "Claude Code") is the one licensed substitution.
-    fixed = respell(raw)
+    # A known-term respelling ("clawed code" -> "Claude Code"), or one of the user's own exact
+    # heard -> term respellings, is the one licensed substitution.
+    fixed = respell(raw, user_terms)
     return not (_guard(raw, text, profile) or (fixed != raw and _guard(fixed, text, profile)))
 
 
@@ -550,7 +552,10 @@ class Corrector:
         instructions: str = "",
         correction_prompt: str | None = None,
         context: str | None = None,
+        learned: Learned | None = None,
     ) -> CorrectionResult:
+        """`learned` (dictation only, never Live Notes) adds the user's own terms and app
+        preferences to the prompt, and licenses exactly those respellings in the guard."""
         if not raw or not self.config.enabled:
             return CorrectionResult(raw)
         selected = self.config.profile(profile)
@@ -567,9 +572,11 @@ class Corrector:
             )
         ):
             return CorrectionResult(raw, error="rejected")
-        prompt = system_prompt(selected, instructions, correction_prompt)
         if selected.id == LIVE_NOTES_ID:
+            prompt = system_prompt(selected, instructions, correction_prompt)
             return await self._process_notes(raw, prompt, selected, context)
+        prompt = system_prompt(selected, instructions, correction_prompt, learned)
+        user_terms = learned.terms if learned else ()
         try:
             async with asyncio.timeout(self.config.timeout):
                 text, finish = await self.complete(
@@ -578,7 +585,7 @@ class Corrector:
                     512,
                     legacy_text=raw,
                 )
-                if rejected(raw, text, finish, selected):
+                if rejected(raw, text, finish, selected, user_terms):
                     return CorrectionResult(raw, error="rejected")
                 return CorrectionResult(text, text != raw)
         except (TimeoutError, httpx.TimeoutException):

@@ -24,6 +24,7 @@ from .config import Settings, load_token, persist_keep_loaded, read_keep_loaded
 from .correction import CorrectionResult, Corrector
 from .devices import Credentials
 from .engine import EngineWorker
+from .learned import parse_learned
 from .managed_cleanup import ManagedCleanup
 from .profiles import LIVE_NOTES_ID, MAX_PROMPT_CHARS
 from .retention import Retention
@@ -88,6 +89,8 @@ class Utterance:
         self.profile = "default"
         self.instructions = ""
         self.correction_prompt = None
+        # Opt-in `start.learned` (#220): the user's own terms and app preferences. Never logged.
+        self.learned = None
         self.context = None
         self.leased = False
         self.failure = False
@@ -108,6 +111,11 @@ class Utterance:
                 raise AudioError("bad_request")
             self.correction_prompt = prompt
         self.set_context(control)
+        if "learned" in control:
+            try:
+                self.learned = parse_learned(control["learned"]) or None
+            except ValueError:
+                raise AudioError("bad_request") from None
         profile = control.get("correction_profile", "default")
         instructions = control.get("correction_instructions", "")
         if (
@@ -321,6 +329,7 @@ class Utterance:
                 self.correction_prompt,
                 words=words,
                 context=self.context,
+                learned=self.learned,
             )
         )
         try:
@@ -386,12 +395,15 @@ async def make_final(
     correction_prompt=None,
     words=None,
     context=None,
+    learned=None,
 ):
     finalized = (time.perf_counter() - started) * 1000
     correction_started = time.perf_counter()
     if enabled:
         args = (raw, profile, instructions)
         extra = {"context": context} if context and profile == LIVE_NOTES_ID else {}
+        if learned and profile != LIVE_NOTES_ID:
+            extra["learned"] = learned
         result = (
             await corrector.process(*args, correction_prompt, **extra)
             if correction_prompt is not None
@@ -527,6 +539,8 @@ def create_app(settings=None, engine=None, token=None, corrector=None, speakers=
                 "notes_edit": True,
                 # `start.speakers` labels a note's speakers; the model downloads on request.
                 "notes_speakers": True,
+                # `start.learned` (version 1): the user's own terms and per-app preferences.
+                "learned": 1,
                 "speakers_model": speakers.health(),
                 **build.info(),
             }

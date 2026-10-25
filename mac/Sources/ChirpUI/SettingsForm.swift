@@ -87,6 +87,9 @@ public struct SettingsState: Sendable {
     public var historyRetention = DictationRetention.default
     public var historyExcludedApps = HistoryPolicy.defaultExcludedApps
     public var historyCount = 0
+    /// Dictation › Learn from my edits: on by default (only while history is on), and what it has learned.
+    public var learnFromEdits = true
+    public var learnedSummary = "Nothing yet"
     /// Notes › Export: the folder Export Markdown… opens in (nil: wherever it was last used).
     public var exportFolder: String?
     /// Notes › Smart notes: the defaults for new recordings.
@@ -141,7 +144,8 @@ public enum SettingsTab: String, CaseIterable, Sendable {
         switch self {
         case .general: ["startup", "launch at login", "dock", "permissions", "microphone", "accessibility", "setup"]
         case .dictation: ["shortcuts", "hotkey", "hold to talk", "auto-stop", "stop", "silence", "return", "word waveform",
-                          "sounds", "volume", "input device", "use raw", "new note", "history", "recent dictations", "privacy"]
+                          "sounds", "volume", "input device", "use raw", "new note", "history", "recent dictations", "privacy",
+                          "learn", "learned", "edits", "vocabulary", "terms"]
         case .cleanup: ["style", "prompts", "per-app", "insert raw", "review changes", "undo", "polish"]
         case .notes: ["library", "retention", "recently deleted", "audio", "storage", "export", "folder", "smart notes",
                       "structure", "reorganize", "speakers", "voices", "call audio", "sources", "zoom", "meeting"]
@@ -255,6 +259,11 @@ public final class SettingsForm {
     public let openHistory = NSButton(title: "Open History…", target: nil, action: nil)
     public let clearHistory = NSButton(title: "Clear…", target: nil, action: nil)
     private let historyStatus = NSTextField(labelWithString: "")
+    /// Dictation › Learn from my edits: the switch and the Learned list.
+    public let learnFromEdits = NSButton(checkboxWithTitle: LearnedText.toggle, target: nil, action: nil)
+    public let showLearned = NSButton(title: "Show Learned…", target: nil, action: nil)
+    private let learnedStatus = NSTextField(labelWithString: "")
+    private let learnHelp = SettingsForm.help(LearnedText.help)
     /// General: reopens the setup walk-through.
     public let setupButton = NSButton(title: "Set Up Chirp…", target: nil, action: nil)
     /// Server: puts the chirp-server doctor command on the pasteboard.
@@ -402,6 +411,11 @@ public final class SettingsForm {
         historyRetention.setAccessibilityLabel("Keep dictations for")
         openHistory.setAccessibilityLabel("Open Dictation History")
         clearHistory.setAccessibilityLabel("Clear dictation history")
+        showLearned.bezelStyle = .rounded; showLearned.controlSize = .small
+        showLearned.setAccessibilityLabel("Show what Chirp learned from your edits")
+        learnFromEdits.setAccessibilityLabel(LearnedText.toggle)
+        learnedStatus.font = MenuStyle.font
+        learnedStatus.textColor = .secondaryLabelColor
         for r in DictationRetention.allCases {
             historyRetention.addItem(withTitle: r.title)
             historyRetention.lastItem?.representedObject = r.rawValue
@@ -429,6 +443,10 @@ public final class SettingsForm {
                 row("Keep for", historyRetention, help: Self.help(HistorySettingsText.retentionHelp)),
                 row("Never keep", historyApps.view, help: Self.help(HistorySettingsText.appsHelp)),
                 row("Kept", line([historyStatus, openHistory, clearHistory])),
+            ]),
+            SettingsSection(LearnedText.toggle, [
+                row(nil, learnFromEdits, help: learnHelp),
+                row("Learned", line([learnedStatus, showLearned])),
             ]),
         ])
 
@@ -640,6 +658,7 @@ public final class SettingsForm {
             historyEnabled.state = s.historyEnabled ? .on : .off
             if let i = DictationRetention.allCases.firstIndex(of: s.historyRetention) { historyRetention.selectItem(at: i) }
             historyApps.setApps(s.historyExcludedApps)
+            learnFromEdits.state = s.learnFromEdits ? .on : .off
             keepAudio.state = s.notesKeepAudio ? .on : .off
             callAudio.state = s.notesCallAudio ? .on : .off
             structureNotes.state = s.structureNotes ? .on : .off
@@ -673,6 +692,7 @@ public final class SettingsForm {
         }
         showLibrary(deleted: s.recentlyDeletedCount, audioBytes: s.notesAudioBytes)
         showHistory(enabled: s.historyEnabled, count: s.historyCount)
+        showLearning(on: s.learnFromEdits, historyOn: s.historyEnabled, summary: s.learnedSummary)
         showKeepLoaded(s.keepLoaded, host: s.serverHost)
         cleanupHelp.stringValue = s.cleanupDetail
         cleanupEnabled.isEnabled = s.cleanupAvailable
@@ -728,6 +748,14 @@ public final class SettingsForm {
         historyRetention.isEnabled = enabled
         historyStatus.stringValue = HistorySettingsText.count(count)
         clearHistory.isEnabled = count > 0
+    }
+
+    /// Learning runs only while history is on; the switch says so instead of pretending.
+    public func showLearning(on: Bool, historyOn: Bool, summary: String) {
+        learnFromEdits.isEnabled = historyOn
+        learnFromEdits.state = on && historyOn ? .on : .off
+        learnHelp.stringValue = historyOn ? LearnedText.help : LearnedText.offWithoutHistory
+        learnedStatus.stringValue = summary
     }
 
     /// "Never", "After 1 year", … as the retention popup reads.

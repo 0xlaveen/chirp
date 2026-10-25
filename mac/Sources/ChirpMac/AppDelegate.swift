@@ -12,6 +12,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let serverWatch = ServerWatch()
     private lazy var notesWindow = NotesWindowController(notes: notes)
     private let history = DictationHistory()
+    private let learning = EditLearning()
     private lazy var historyWindow = HistoryWindowController(history: history)
     private let dock = DockController()
     private let openNotesHotkey = OpenNotesHotkey()
@@ -73,6 +74,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// at launch and every few hours.
     private func setUpHistory() {
         controller.history = history
+        controller.learning = learning
+        learning.onLearned = { [controller] items in controller.showLearned(items) }
+        learning.onChange = { [settingsWindow] in settingsWindow.learnedChanged() }
+        settingsWindow.learning = learning
+        historyWindow.onTeach = { [learning] entry, wanted in
+            await learning.teach(inserted: entry.text, wanted: wanted, raw: entry.raw ?? entry.text, bundleID: entry.bundleID,
+                                 appName: entry.appName).map(\.correction.title)
+        }
+        Task { [learning] in await learning.reload() }
         history.onChange = { [weak self] in self?.historyWindow.historyChanged() }
         historyWindow.onInsertAgain = { [controller] text in await controller.insertAgain(text) }
         historyWindow.onAddToNotes = { [weak self] entry in self?.addToNotes(entry) }

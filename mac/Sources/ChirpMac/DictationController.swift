@@ -35,6 +35,8 @@ final class DictationController {
     private var capturedSeconds: TimeInterval = 0
     /// The last dictation's history entry, so "Use raw" can record what is really in the field.
     private var lastHistoryID: UUID?
+    /// Learn from my edits (on while history is on): watches the field after an insertion, and shapes the next `start`.
+    var learning: EditLearning?
 
     private var session: StreamSession?
     private var eventTask: Task<Void, Never>?
@@ -253,8 +255,13 @@ final class DictationController {
         captureStartedAt = nil
         capturedSeconds = 0
         lastHistoryID = nil
+        // A new dictation ends the last one's edit window (what the user changed so far is learned).
+        learning?.watcher.finish()
         startOptions = settings.startOptions(frontmostBundleID: frontmost?.bundleIdentifier,
                                              available: health?.correctionProfiles)
+        if settings.learningEnabled, let learning, !Self.excludedFromHistory(target.bundleID) {
+            startOptions.learned = learning.payload(for: target.bundleID)
+        }
         hud.model.styleName = startOptions.correction ? CorrectionProfile.name(for: startOptions.correctionProfile, in: health) : nil
         hud.model.wordWaveform = startOptions.wordTimings
         hud.show()
@@ -448,7 +455,9 @@ final class DictationController {
         polishingRaw = nil
         let rawFirst = rawInsertTask
         rawInsertTask = nil
-        let text = final.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        // What was learned applies to the text itself too, so it works with clean-up off or an older server.
+        let trimmed = final.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let text = startOptions.learned?.apply(to: trimmed) ?? trimmed
         let s = session
         session = nil
         eventTask?.cancel(); eventTask = nil
@@ -479,6 +488,7 @@ final class DictationController {
                 let secure = SystemInsertion.focusedFieldIsSecure()
                 let outcome = await inserter.insert(text, undoRaw: final.canUseRaw && settings.showRawAfterCleanup ? final.raw : nil)
                 keep(outcome, final: final, text: text, secureField: secure)
+                watchEdits(outcome, text: text, raw: final.raw, secureField: secure)
                 show(outcome, final: final)
                 await pressReturn(after: outcome)
             }
@@ -494,7 +504,9 @@ final class DictationController {
             if settings.showChangesAfterCleanup { await hud.model.playChangeHighlight(raw: final.raw, cleaned: text) }
             else { hud.model.settle(on: text) }
             if await inserter.replaceInserted(with: text) {
-                keep(early, final: final, text: text, secureField: SystemInsertion.focusedFieldIsSecure())
+                let secure = SystemInsertion.focusedFieldIsSecure()
+                keep(early, final: final, text: text, secureField: secure)
+                watchEdits(early, text: text, raw: final.raw, secureField: secure)
                 show(early, final: final)
                 await pressReturn(after: early)
                 return
@@ -549,6 +561,8 @@ final class DictationController {
         hud.model.cleaned = false
         hud.model.stable = ""
         Task {
+            // Chirp is about to change the field itself: that is not the user's edit.
+            learning?.watcher.cancel()
             guard let outcome = await inserter.useRaw() else { return }
             hud.model.isError = outcome == .refusedSecure
             hud.show()
@@ -580,6 +594,33 @@ extension DictationController {
                                  duration: audio, style: final.corrected ? startOptions.correctionProfile : nil)
         lastHistoryID = entry.id
         Task { await history.record(entry) }
+    }
+
+    static func excludedFromHistory(_ bundleID: String?) -> Bool {
+        bundleID.map(settings.historyExcludedApps.contains) ?? false
+    }
+
+    /// Learn from my edits: after a verified AX insertion whose span is known, watch that field for the user's fixes.
+    /// Never a secure field, an excluded app, or while learning (or history) is off.
+    fileprivate func watchEdits(_ outcome: InsertionOutcome, text: String, raw: String, secureField: Bool) {
+        guard let learning, settings.learningEnabled, outcome == .inserted(.ax), !secureField,
+              !Self.excludedFromHistory(target.bundleID), let range = inserter.lastAXRange,
+              let field = AXWatchedField.focused() else { return }
+        learning.watcher.watch(field, inserted: text, range: range, raw: raw, bundleID: target.bundleID, appName: target.name)
+    }
+
+    /// The HUD's small "Learned: Kubernetes" the first time a correction becomes active (never over a dictation).
+    func showLearned(_ items: [LearnedItem]) {
+        guard let first = items.first, !machine.state.isActive else { return }
+        let more = items.count > 1 ? " +\(items.count - 1)" : ""
+        hud.cancelHide()
+        hud.model.reset()
+        hud.model.status = "Learned: \(first.correction.title)\(more)"
+        hud.model.indicator = .sparkle
+        hud.model.silence()
+        hud.show()
+        hud.announce(hud.model.status)
+        hud.hide(after: 2)
     }
 
     /// History's Insert Again: `text` into the focused field of the frontmost app the way a dictation is inserted (AX,

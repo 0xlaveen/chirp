@@ -74,6 +74,9 @@ public final class TextInserter {
     private var undo: Undo?
     private var undoExpiry: Task<Void, Never>?
     private var undoGeneration = 0
+    /// Where the last insertion landed (UTF-16) when it was a verified AX write that reported its range; nil otherwise.
+    /// Learn from my edits watches that span.
+    public private(set) var lastAXRange: NSRange?
 
     public init(env: InsertionEnvironment, pasteboard: PasteboardClient) {
         self.env = env
@@ -84,6 +87,7 @@ public final class TextInserter {
     /// this insertion (including the raw transcript) is forgotten.
     public func insert(_ text: String, undoRaw: String? = nil, undoWindow: Duration = TextInserter.undoWindow) async -> InsertionOutcome {
         forgetUndo()
+        lastAXRange = nil
         let bundle = env.frontmostBundleID()
         func remember(_ kind: Undo.Kind) {
             guard let undoRaw else { return }
@@ -97,6 +101,7 @@ public final class TextInserter {
             case .ax:
                 switch await env.axInsert(text) {
                 case .verified(let range):
+                    lastAXRange = range
                     remember(.ax(range, text))
                     return .inserted(.ax)
                 case .unverified:
@@ -152,8 +157,10 @@ public final class TextInserter {
     public func replaceInserted(with text: String, undoWindow: Duration = TextInserter.undoWindow) async -> Bool {
         guard let undo, case .ax(let range?, let inserted) = undo.kind else { forgetUndo(); return false }
         forgetUndo()
+        lastAXRange = nil
         guard !env.secureInputEnabled(), env.frontmostBundleID() == undo.bundleID,
               await env.axReplace(range, inserted, text) else { return false }
+        lastAXRange = NSRange(location: range.location, length: text.utf16.count)
         self.undo = Undo(kind: .ax(NSRange(location: range.location, length: text.utf16.count), text),
                          bundleID: undo.bundleID, raw: undo.raw)
         armExpiry(after: undoWindow)

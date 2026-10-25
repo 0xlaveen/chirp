@@ -28,6 +28,9 @@ public struct HistoryView: View {
         .navigationTitle(HistoryText.windowTitle)
         .frame(minWidth: HistoryViewMetrics.minimumSize.width, minHeight: HistoryViewMetrics.minimumSize.height)
         .overlay(alignment: .bottom) { if let toast = model.toast { HistoryToastView(model: model, toast: toast) } }
+        .sheet(isPresented: Binding(get: { model.teaching != nil }, set: { if !$0 { model.teaching = nil } })) {
+            TeachSheet(model: model)
+        }
         .tint(Color.chirp.koi)
     }
 }
@@ -68,6 +71,7 @@ private struct HistorySidebar: View {
         Button(HistoryText.copy) { model.copy(entry) }
         if entry.cleaned { Button(HistoryText.copyRaw) { model.copy(entry, raw: true) } }
         Button(HistoryText.addToNotes) { model.onAddToNotes(entry) }
+        if model.canTeach { Button(HistoryText.teach) { model.beginTeaching(entry) } }
         Divider()
         Button(HistoryText.delete, role: .destructive) { model.delete(entry.id) }
     }
@@ -194,6 +198,9 @@ private struct HistoryMessage: View {
 
 private struct HistoryDetail: View {
     @Bindable var model: HistoryModel
+    @Environment(\.colorSchemeContrast) private var colorSchemeContrast
+
+    private var contrast: Bool { colorSchemeContrast == .increased }
 
     var body: some View {
         if let entry = model.selected {
@@ -201,10 +208,17 @@ private struct HistoryDetail: View {
                 VStack(alignment: .leading, spacing: 18) {
                     header(entry)
                     actions(entry)
-                    TextCard(title: HistoryText.inserted, text: Text(entry.text))
+                    TextCard(title: HistoryText.inserted) { Text(entry.text) }
                     if let raw = entry.raw {
-                        TextCard(title: HistoryText.changes, text: Text(HistoryDiff.attributed(raw: raw, cleaned: entry.text)),
-                                 footnote: HistoryText.changesFootnote)
+                        TextCard(title: HistoryText.changes, footnote: HistoryText.changesFootnote) {
+                            if let segments = WordDiff.segments(raw: raw, cleaned: entry.text) {
+                                // The HUD's colour-blind-safe diff: removed words struck through in inkMuted, added
+                                // or changed words underlined in moon.
+                                DiffText(segments: segments, fade: 0, contrast: contrast, font: ChirpType.body, lineLimit: nil)
+                            } else {
+                                Text(raw)
+                            }
+                        }
                     }
                 }
                 .padding(.horizontal, 28)
@@ -246,14 +260,21 @@ private struct HistoryDetail: View {
             Button(HistoryText.copy) { model.copy(entry) }
                 .fixedSize()
                 .keyboardShortcut("c", modifiers: [.command, .shift])
-            if entry.cleaned {
-                Button(HistoryText.copyRaw) { model.copy(entry, raw: true) }
-                    .fixedSize()
-                    .help("Copies what you said, before clean-up")
+            Menu {
+                if entry.cleaned {
+                    Button(HistoryText.copyRaw) { model.copy(entry, raw: true) }
+                }
+                Button(HistoryText.addToNotes) { model.onAddToNotes(entry) }
+                if model.canTeach {
+                    Divider()
+                    Button(HistoryText.teach) { model.beginTeaching(entry) }
+                }
+            } label: {
+                Label("More", systemImage: "ellipsis.circle")
             }
-            Button(HistoryText.addToNotes) { model.onAddToNotes(entry) }
-                .fixedSize()
-                .help("Saves this dictation as a new note in the Notes library")
+            .menuStyle(.button)
+            .fixedSize()
+            .help("Copy Original, Add to Notes\(model.canTeach ? " and Teach Chirp" : "")")
             Spacer(minLength: 8)
             if let flash = model.flash {
                 Text(flash).font(ChirpType.meta).foregroundStyle(Color.chirp.lily)
@@ -275,15 +296,21 @@ private struct HistoryDetail: View {
     }
 }
 
-private struct TextCard: View {
+private struct TextCard<Content: View>: View {
     let title: String
-    let text: Text
     var footnote: String?
+    @ViewBuilder let content: Content
+
+    init(title: String, footnote: String? = nil, @ViewBuilder content: () -> Content) {
+        self.title = title
+        self.footnote = footnote
+        self.content = content()
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(title).font(.system(size: 12.5, weight: .semibold, design: .serif)).foregroundStyle(NotesInk.secondary)
-            text
+            content
                 .font(ChirpType.body)
                 .lineSpacing(4)
                 .foregroundStyle(NotesInk.primary)
@@ -297,28 +324,33 @@ private struct TextCard: View {
     }
 }
 
-/// What clean-up changed, word by word: removed words struck through, added or changed ones on the koi tint.
-enum HistoryDiff {
-    static func attributed(raw: String, cleaned: String) -> AttributedString {
-        guard let segments = WordDiff.segments(raw: raw, cleaned: cleaned) else { return AttributedString(raw) }
-        var out = AttributedString()
-        for (i, segment) in segments.enumerated() {
-            var word = AttributedString((i == 0 ? "" : " ") + segment.text)
-            let body = word.characters.index(word.startIndex, offsetBy: i == 0 ? 0 : 1)
-            switch segment.kind {
-            case .same: break
-            case .removed:
-                word[body...].strikethroughStyle = .single
-                word[body...].foregroundColor = Color.chirp.record
-            case .added:
-                word[body...].foregroundColor = Color.chirp.onKoiContainer
-                word[body...].backgroundColor = Color.chirp.koiContainer
-            case .changed:
-                word[body...].foregroundColor = Color.chirp.koi
+/// Teach Chirp: the dictation in an editor; Teach learns from the difference at once.
+struct TeachSheet: View {
+    @Bindable var model: HistoryModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(HistoryText.teachTitle).font(ChirpType.h2)
+            Text(HistoryText.teachDetail).font(ChirpType.meta).foregroundStyle(NotesInk.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            TextEditor(text: $model.teachText)
+                .font(ChirpType.body)
+                .scrollContentBackground(.hidden)
+                .padding(8)
+                .background(RoundedRectangle(cornerRadius: ChirpRadius.control).fill(Color.chirp.surface))
+                .overlay(RoundedRectangle(cornerRadius: ChirpRadius.control).strokeBorder(NotesInk.tertiary.opacity(0.35)))
+                .frame(minHeight: 120)
+            HStack {
+                Spacer()
+                Button("Cancel", role: .cancel) { model.teaching = nil }.keyboardShortcut(.cancelAction)
+                Button("Teach") { model.commitTeaching() }
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(model.teachText == model.teaching?.text)
             }
-            out += word
         }
-        return out
+        .padding(20)
+        .frame(width: 460)
+        .tint(Color.chirp.koi)
     }
 }
 

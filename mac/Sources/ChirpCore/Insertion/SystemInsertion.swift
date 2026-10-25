@@ -26,7 +26,7 @@ public enum SystemInsertion {
 
     // MARK: AX
 
-    private static func copy(_ element: AXUIElement, _ attribute: String) -> CFTypeRef? {
+    fileprivate static func copy(_ element: AXUIElement, _ attribute: String) -> CFTypeRef? {
         var ref: CFTypeRef?
         return AXUIElementCopyAttributeValue(element, attribute as CFString, &ref) == .success ? ref : nil
     }
@@ -37,7 +37,7 @@ public enum SystemInsertion {
         return AXValueGetValue(v as! AXValue, .cfRange, &r) ? r : nil
     }
 
-    private static func focusedElement() -> AXUIElement? {
+    fileprivate static func focusedElement() -> AXUIElement? {
         let system = AXUIElementCreateSystemWide()
         AXUIElementSetMessagingTimeout(system, 0.5)
         guard let focused = copy(system, "AXFocusedUIElement"), CFGetTypeID(focused) == AXUIElementGetTypeID() else { return nil }
@@ -123,6 +123,35 @@ public enum SystemInsertion {
         down.post(tap: .cghidEventTap)
         up.post(tap: .cghidEventTap)
         return true
+    }
+}
+
+/// The focused text field Chirp just inserted into, for Learn from my edits: read only while it stays focused, never
+/// when it is a password field or secure input is on.
+@MainActor
+public final class AXWatchedField: WatchedField {
+    private let element: AXUIElement
+
+    private init(_ element: AXUIElement) { self.element = element }
+
+    /// The focused element, when Accessibility is granted and it has a readable text value.
+    public static func focused() -> AXWatchedField? {
+        guard AXIsProcessTrusted(), let element = SystemInsertion.focusedElement(),
+              SystemInsertion.copy(element, "AXValue") is String else { return nil }
+        return AXWatchedField(element)
+    }
+
+    public func value() -> String? { SystemInsertion.copy(element, "AXValue") as? String }
+
+    public var isFocused: Bool {
+        guard let now = SystemInsertion.focusedElement() else { return false }
+        return CFEqual(now, element)
+    }
+
+    public var isSecure: Bool {
+        if IsSecureEventInputEnabled() { return true }
+        let role = SystemInsertion.copy(element, "AXRole") as? String, subrole = SystemInsertion.copy(element, "AXSubrole") as? String
+        return role == "AXSecureTextField" || subrole == "AXSecureTextField"
     }
 }
 
