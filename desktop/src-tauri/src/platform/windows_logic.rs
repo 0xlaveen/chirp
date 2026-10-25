@@ -195,6 +195,42 @@ pub fn route(units: usize, target_elevated: bool, self_elevated: bool) -> Route 
     }
 }
 
+/// A protected DACL granting full control to the user and SYSTEM only; a directory's entries
+/// are inherited by everything created inside it.
+pub fn private_sddl(user_sid: &str, directory: bool) -> String {
+    let flags = if directory { "OICI" } else { "" };
+    format!("D:P(A;{flags};FA;;;{user_sid})(A;{flags};FA;;;SY)")
+}
+
+/// True when the DACL in `sddl` is protected from inheritance and every allow entry names
+/// the user (in any form SDDL prints it, such as LA for the built-in Administrator) or SYSTEM.
+pub fn sddl_is_private(sddl: &str, user_forms: &[String]) -> bool {
+    let Some(dacl) = sddl.split_once("D:").map(|(_, rest)| rest) else {
+        return false;
+    };
+    let dacl = dacl.split("S:").next().unwrap_or("");
+    let flags = dacl.split('(').next().unwrap_or("");
+    if !flags.contains('P') || flags.contains("NO_ACCESS_CONTROL") {
+        return false;
+    }
+    let mut allowed = 0;
+    for ace in dacl.split('(').skip(1) {
+        let fields: Vec<&str> = ace.trim_end_matches(')').split(';').collect();
+        if fields.len() < 6 {
+            return false;
+        }
+        if matches!(fields[0], "A" | "OA" | "XA" | "ZA") {
+            let trustee = fields[5];
+            if trustee != "SY" && trustee != "S-1-5-18" && !user_forms.iter().any(|f| f == trustee)
+            {
+                return false;
+            }
+            allowed += 1;
+        }
+    }
+    allowed > 0
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -333,6 +369,34 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn private_dacls_allow_only_the_user_and_system() {
+        let user = "S-1-5-21-1-2-3-1001".to_string();
+        let forms = vec![user.clone()];
+        assert_eq!(
+            private_sddl(&user, false),
+            format!("D:P(A;;FA;;;{user})(A;;FA;;;SY)")
+        );
+        assert!(sddl_is_private(&private_sddl(&user, true), &forms));
+        // Not protected: inherited entries could widen it later.
+        assert!(!sddl_is_private(&format!("D:(A;;FA;;;{user})"), &forms));
+        assert!(!sddl_is_private(
+            &format!("D:P(A;;FA;;;{user})(A;;FR;;;BU)"),
+            &forms
+        ));
+        assert!(!sddl_is_private("D:P(A;;FA;;;S-1-5-21-1-2-3-1002)", &forms));
+        assert!(!sddl_is_private("D:NO_ACCESS_CONTROL", &forms));
+        assert!(!sddl_is_private("O:BA", &forms));
+        // The built-in Administrator's SID prints as LA.
+        let admin = vec![user.clone(), "LA".to_string()];
+        assert!(sddl_is_private("D:PAI(A;;FA;;;LA)(A;;FA;;;SY)", &admin));
+        // A deny entry never widens access.
+        assert!(sddl_is_private(
+            &format!("D:P(D;;FA;;;WD)(A;;FA;;;{user})"),
+            &forms
+        ));
     }
 
     #[test]
