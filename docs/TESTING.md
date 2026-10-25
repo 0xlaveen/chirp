@@ -29,6 +29,13 @@ Live Notes has two more checks of its own:
 
 Latency figures from these runs are observations on a shared, loaded host, not targets. Measured engine numbers are in [bench.md](bench.md).
 
+### Desktop Linux
+
+The Tauri client has native Rust session/hotkey/audio tests and frontend state tests.
+See [desktop/README.md](../desktop/README.md#build-and-test) for native and Docker
+commands. The Linux desktop workflow builds a Debian package on Ubuntu; it does
+not need microphone permissions, a model download, or a running server.
+
 ### CI
 
 GitHub Actions (`.github/workflows/`) runs the automated checks on every pull request and on pushes to `main`. Each workflow is path-filtered, so a PR only runs the components it touches, and a newer push cancels the superseded run. No secrets, tailnet access or model downloads are involved.
@@ -36,6 +43,7 @@ GitHub Actions (`.github/workflows/`) runs the automated checks on every pull re
 | Workflow | Runner | Runs | Notes |
 |---|---|---|---|
 | `server.yml` | ubuntu | `uv sync --locked`, `ruff check`, `ruff format --check`, `pytest -q` | MLX packages are darwin-only, so Linux installs the portable set. `-m model` tests (real cached models) are deselected by `addopts`; run them on the Mac. |
+| `desktop-linux.yml` | ubuntu | frontend checks, Rust formatting/Clippy/tests, Xvfb native insertion/hotkeys, Tauri Debian package | The shared desktop client; no speech model download or live server. |
 | `android.yml` | ubuntu, JDK 21, Android SDK 37.2 | `./gradlew lint testDebugUnitTest assembleDebug assembleRelease` | The release APK is unsigned (no keystore secret). Lint and test reports upload on failure. |
 | `mac.yml` | macos | `mac/scripts/ci-test.sh` (wraps `test.sh`) | Only for `mac/**` changes (macOS minutes are expensive). Can also be started by hand (`workflow_dispatch`). |
 | `ios.yml` | macos, newest installed Xcode | `ios/scripts/ci-test.sh`: `check-sources.sh`, `Shared/scripts/test.sh`, the keyboard policy package tests, then `ios/scripts/simulator.sh test` (build and unit tests of the app with its keyboard and widgets) on one iPhone simulator | Only for `ios/**`, the `mac` package sources the app links (`ChirpCore`, `ChirpSpeakers`, `Package.*`) and the workflow file. Ad-hoc simulator signing, no team or secrets. Can also be started by hand. |

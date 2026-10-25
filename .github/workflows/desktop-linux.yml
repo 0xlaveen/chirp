@@ -1,0 +1,55 @@
+name: desktop-linux
+
+on:
+  pull_request:
+    paths: ["desktop/**", ".github/workflows/desktop-linux.yml"]
+  push:
+    branches: [main]
+    paths: ["desktop/**", ".github/workflows/desktop-linux.yml"]
+  workflow_dispatch:
+
+concurrency:
+  group: desktop-linux-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: desktop
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: desktop/src-tauri
+      - name: Install native dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev libasound2-dev xvfb xauth x11-xkb-utils xdotool xclip python3-gi gir1.2-gtk-3.0
+      - run: npm ci
+      - run: npm run check && npm test
+      - run: cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
+      - run: cargo clippy --locked --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
+      - run: cargo test --locked --manifest-path src-tauri/Cargo.toml
+      - run: cargo build --locked --manifest-path src-tauri/Cargo.toml --example platform-smoke
+      - name: X11 native insertion and hotkey smoke
+        run: xvfb-run -a env CHIRP_PLATFORM_SMOKE=src-tauri/target/debug/examples/platform-smoke python3 scripts/x11-smoke.py
+      - run: npm run build -- --bundles deb
+      - uses: actions/upload-artifact@v4
+        with:
+          name: chirp-linux-amd64
+          path: desktop/src-tauri/target/release/bundle/deb/*.deb
+          if-no-files-found: error

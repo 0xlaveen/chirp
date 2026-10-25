@@ -1,0 +1,16 @@
+{
+  "name": "chirp-desktop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Chirp desktop for Linux and Windows",
+  "scripts": {
+    "tauri": "tauri",
+    "dev": "tauri dev",
+    "build": "tauri build",
+    "test": "node --test ui/*.test.cjs",
+    "check": "node --check ui/app.js"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.0.0"
+  }
+}
