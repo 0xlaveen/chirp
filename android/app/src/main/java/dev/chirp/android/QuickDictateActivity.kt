@@ -19,6 +19,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -152,6 +153,19 @@ internal fun sensitiveCopy(context: Context, text: String) {
 internal fun QuickDictateScreen(model: QuickDictateModel, prompt: String? = null, recognizing: Boolean = false,
                                stop: () -> Unit = {}, cancel: () -> Unit = {}, retry: () -> Unit = {},
                                useRaw: () -> Unit = {}, edit: () -> Unit = {}, done: () -> Unit = {}) {
+    val deadline = model.closeAt
+    val view = androidx.compose.ui.platform.LocalView.current
+    androidx.compose.runtime.LaunchedEffect(model.raw) {
+        if (model.raw != null && deadline != null) view.announceForAccessibility("Use raw, available for 4 seconds")
+    }
+    val seconds by androidx.compose.runtime.produceState(deadline?.let { actionSeconds(it, SystemClock.elapsedRealtime()) }, deadline) {
+        value = deadline?.let { actionSeconds(it, SystemClock.elapsedRealtime()) }
+        while (deadline != null) {
+            value = actionSeconds(deadline, SystemClock.elapsedRealtime())
+            if (value == 0) break
+            kotlinx.coroutines.delay(200)
+        }
+    }
     val colors = MaterialTheme.colorScheme
     val record = LocalChirpRoles.current.record
     val onRecord = if (androidx.core.graphics.ColorUtils.calculateContrast(android.graphics.Color.WHITE, record.toArgb()) >= 4.5) Color.White else Color(0xFF0D1526)
@@ -179,7 +193,10 @@ internal fun QuickDictateScreen(model: QuickDictateModel, prompt: String? = null
                     colors = ButtonDefaults.buttonColors(containerColor = record, contentColor = onRecord)) {
                     Icon(painterResource(R.drawable.ic_stop), null, Modifier.size(18.dp)); Spacer(Modifier.width(8.dp)); Text("Stop")
                 } else if (model.copied && !recognizing) {
-                    if (model.raw != null) OutlinedButton(useRaw, Modifier.fillMaxWidth()) { Text("Use raw") }
+                    if (model.raw != null && seconds != 0) OutlinedButton(useRaw, Modifier.fillMaxWidth().semantics {
+                        contentDescription = if (deadline == null) "Use raw" else "Use raw, available for 4 seconds"
+                    }) { Text(if (seconds != null) "Use raw (${seconds}s)" else "Use raw",
+                        Modifier.clearAndSetSemantics { }, style = MaterialTheme.typography.labelLarge.copy(fontFeatureSettings = "tnum")) }
                     OutlinedButton(edit, Modifier.fillMaxWidth()) { Text("Edit in Scratchpad") }
                     Button(done, Modifier.fillMaxWidth()) { Text("Done") }
                 } else {

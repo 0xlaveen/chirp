@@ -18,6 +18,10 @@ enum class AppColour { POND, DYNAMIC }
 
 class SettingsStore(context: Context) {
     private val prefs = context.getSharedPreferences(FILE, Context.MODE_PRIVATE)
+    init { PrivateSession.initialize(context) }
+    var privateSession: Boolean
+        get() = PrivateSession.enabled
+        set(value) { PrivateSession.set(value) }
     /** Non-sensitive choice; null means the fresh-install choice page is still unanswered. */
     var inputMode: InputMode?
         get() = prefs.getString("input_mode", null)?.let { saved -> InputMode.entries.firstOrNull { it.name == saved } }
@@ -217,5 +221,56 @@ class SettingsStore(context: Context) {
         internal const val FILE = "chirp"
         private val PAIRING_KEYS = listOf("url", "iv", "token", "health", "correction", "correction_explicit", "correction_suspended")
         private const val KEY_ALIAS = "chirp_pairing_v1"
+    }
+}
+
+/** Memory-only, shared by every entry point. Process death also ends a private session. */
+internal object PrivateSession {
+    const val LIMIT_MS = 3_600_000L
+    const val HELP = "Exclude dictations from history until the screen locks or 1 hour passes. Clean-up and the Mac connection work as usual."
+    private val main = android.os.Handler(android.os.Looper.getMainLooper())
+    @Volatile private var until = 0L
+    private var app: android.app.Application? = null
+    private val mutable = kotlinx.coroutines.flow.MutableStateFlow(false)
+    val state: kotlinx.coroutines.flow.StateFlow<Boolean> = mutable
+    private val observers = mutableSetOf<() -> Unit>()
+    private val expiry = Runnable { set(false) }
+    private val lock = object : android.content.BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: android.content.Intent) {
+            if (intent.action == android.content.Intent.ACTION_SCREEN_OFF) set(false)
+        }
+    }
+    @Synchronized fun initialize(context: Context) {
+        val application = context.applicationContext as android.app.Application
+        if (app === application) return
+        app?.let { runCatching { it.unregisterReceiver(lock) } }
+        val filter = android.content.IntentFilter(android.content.Intent.ACTION_SCREEN_OFF)
+        if (android.os.Build.VERSION.SDK_INT >= 33) application.registerReceiver(lock, filter, Context.RECEIVER_NOT_EXPORTED)
+        else application.registerReceiver(lock, filter) // Protected system broadcast; no app-supplied events.
+        app = application
+    }
+    val enabled: Boolean get() {
+        if (until == 0L) return false
+        if (android.os.SystemClock.elapsedRealtime() >= until ||
+            app?.getSystemService(android.app.KeyguardManager::class.java)?.isKeyguardLocked == true) { set(false); return false }
+        return true
+    }
+    fun set(value: Boolean) {
+        main.removeCallbacks(expiry)
+        until = if (value) android.os.SystemClock.elapsedRealtime() + LIMIT_MS else 0L
+        mutable.value = value
+        if (value) main.postDelayed(expiry, LIMIT_MS)
+        val notify = { observers.toList().forEach { it() } }
+        if (android.os.Looper.myLooper() == android.os.Looper.getMainLooper()) notify() else main.post { notify() }
+    }
+    /** Observe only while attached; no keyboard or overlay View is retained after removal. */
+    fun observe(view: android.view.View, changed: () -> Unit) {
+        initialize(view.context)
+        changed()
+        view.addOnAttachStateChangeListener(object : android.view.View.OnAttachStateChangeListener {
+            override fun onViewAttachedToWindow(v: android.view.View) { observers.add(changed); changed() }
+            override fun onViewDetachedFromWindow(v: android.view.View) { observers.remove(changed) }
+        })
+        if (view.isAttachedToWindow) observers.add(changed)
     }
 }

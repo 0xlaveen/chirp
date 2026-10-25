@@ -84,10 +84,27 @@ internal class ScratchpadModel(
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var client: OkHttpClient? = null
     private var session: DictationStream? = null
+    private var privateUtterance = false
     private var refreshing = 0
     /** The notes library for "Save as note"; built lazily so merely opening the Scratchpad touches no storage. */
     private val library by lazy { notes ?: NotesSessions(app) }
 
+    private var rawBase: TextFieldValue? = null
+    private var rawInserted: TextFieldValue? = null
+    private var rawWords: String? = null
+    private var rawHistoryId: String? = null
+    var rawUntil by mutableStateOf<Long?>(null)
+        private set
+    val rawAvailable get() = rawUntil?.let { android.os.SystemClock.elapsedRealtime() < it } == true && field == rawInserted
+    fun useRaw() {
+        if (!rawAvailable) return
+        val before = rawBase ?: return
+        val words = rawWords ?: return
+        field = ScratchpadText.insert(before, words, store.spokenCommands)
+        rawHistoryId?.let { id -> io { history.usedRaw(id) } }
+        clearRaw(); status = "Kept what was heard"
+    }
+    private fun clearRaw() { rawBase = null; rawInserted = null; rawWords = null; rawUntil = null; rawHistoryId = null }
     var field by mutableStateOf(TextFieldValue(""))
     var status by mutableStateOf(IDLE)
         internal set
@@ -151,8 +168,10 @@ internal class ScratchpadModel(
 
     fun start() {
         if (active) return
+        clearRaw()
         if (!micGranted()) { status = "Allow microphone in Chirp settings"; return }
         val paired = pairing().also { this.paired = it != null } ?: run { status = "Pair your Mac in Chirp settings"; return }
+        privateUtterance = PrivateSession.enabled
         val chosen = style
         partial = ""; level = 0.0
         val stream = DictationStream(
@@ -167,13 +186,17 @@ internal class ScratchpadModel(
             level = { level = it },
             retention = { retained = it; store.health = store.health?.copy(debugRetention = it) },
             final = { result ->
-                field = ScratchpadText.insert(field, result.text, store.spokenCommands)
-                io { history.record(result.text, result.raw.takeIf { result.corrected }, "Scratchpad", HISTORY_EDITOR) }
-                status = when {
-                    result.correctionError != null -> "kept original"
-                    result.corrected -> "cleaned"
-                    else -> "Added · tap mic to dictate again"
+                val base = field
+                field = ScratchpadText.insert(base, result.text, store.spokenCommands)
+                val id = java.util.UUID.randomUUID().toString()
+                if (!privateUtterance && !PrivateSession.enabled) io { history.record(result.text, result.raw.takeIf { result.corrected }, "Scratchpad", HISTORY_EDITOR, id) }
+                if (result.corrected && result.raw != result.text) {
+                    rawBase = base; rawInserted = field; rawWords = result.raw; rawHistoryId = id
+                    val deadline = android.os.SystemClock.elapsedRealtime() + 5000
+                    rawUntil = deadline
+                    scope.launch { kotlinx.coroutines.delay(5000); if (rawUntil == deadline) clearRaw() }
                 }
+                status = if (result.correctionError != null) "Kept what was heard" else "Finished"
             },
             ended = { session = null; partial = ""; level = 0.0; sync(); client?.let(ChirpNetwork::release) },
         )
@@ -190,7 +213,7 @@ internal class ScratchpadModel(
     fun pause() { if (active && !stopping) cancel() }
 
     fun clear() {
-        if (!active) { field = TextFieldValue(""); status = IDLE }
+        if (!active) { clearRaw(); field = TextFieldValue(""); status = IDLE }
     }
 
     /** Text handed over by the floating mic's "Open in Scratchpad": it becomes the page, or a new paragraph after what is there. */

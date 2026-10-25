@@ -98,6 +98,15 @@ internal fun NotesScreen(model: NotesModel, record: () -> Unit, copy: () -> Unit
         }
         focus.clearFocus(); editing = false
     }
+    AppShortcutActions(
+        AppCommand.Record to { record(); true },
+        AppCommand.Pause to { if (model.state.live) { model.togglePause(); true } else false },
+        AppCommand.Edit to { if (editing) read() else editing = true; true },
+        AppCommand.Escape to {
+            when { settings -> { settings = false; true }; transcript -> { transcript = false; true }
+                renaming -> { renaming = false; true }; editing -> { read(); true }; else -> false }
+        },
+    )
     BackHandler(enabled = handleBack) { model.keepSession(); leave(false) }
     BackHandler(enabled = editing) { read() }
     if (settings) ModalBottomSheet({ settings = false }) {

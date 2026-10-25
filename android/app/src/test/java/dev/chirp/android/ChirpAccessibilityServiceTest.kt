@@ -56,7 +56,7 @@ class ChirpAccessibilityServiceTest {
     private val bubbleShown get() = overlay?.bubbleShown == true
     private fun descendants(root: View): List<View> = listOf(root) + if (root is ViewGroup)
         (0 until root.childCount).flatMap { descendants(root.getChildAt(it)) } else emptyList()
-    private fun button(text: String) = descendants(panel!!).filterIsInstance<Button>().single { it.text.toString() == text && it.visibility == View.VISIBLE }
+    private fun button(text: String) = descendants(panel!!).filterIsInstance<Button>().single { (it.text.toString() == text || it.text.toString().startsWith("$text (")) && it.visibility == View.VISIBLE }
     private fun visibleButtons() = descendants(panel!!).filterIsInstance<Button>().filter { it.isShown }.map { it.text.toString() }
     private fun shows(text: String) = panel?.let { p -> descendants(p).filterIsInstance<TextView>().any { it.isShown && it.text.toString().contains(text) } } == true
     private fun advance(ms: Long = 0) { shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(ms)) }
@@ -123,7 +123,7 @@ class ChirpAccessibilityServiceTest {
         assertEquals(17, node.textSelectionStart)
         assertTrue(service.captures.last().released); assertTrue(service.streams.last().closed)
         assertTrue(shadowOf(service).isForegroundStopped)
-        assertTrue(shows("Inserted"))
+        assertTrue(shows("Finished"))
         advance(1200)
         assertNull(panel); assertTrue(bubbleShown)
     }

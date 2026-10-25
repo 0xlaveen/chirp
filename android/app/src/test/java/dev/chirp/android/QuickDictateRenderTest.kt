@@ -52,7 +52,7 @@ class QuickDictateRenderTest {
             write(compose.onRoot().captureToImage().asAndroidBitmap(), "quick-dictate-listening-$screen-${if (dark) "dark" else "light"}")
             compose.runOnIdle { current.value.model.stop(); org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle(); current.value.wire.final("Synthetic words appear as you speak.", "synthetic words", true) }
             compose.onNodeWithText("Copied — paste anywhere").assertExists()
-            compose.onNodeWithText("Use raw").assertExists()
+            compose.onNodeWithContentDescription("Use raw, available for 4 seconds").assertExists()
             write(compose.onRoot().captureToImage().asAndroidBitmap(), "quick-dictate-copied-$screen-${if (dark) "dark" else "light"}")
             compose.runOnIdle { current.value = QuickRig(app, paired = false); current.value.model.start() }
             compose.onNodeWithText("Pair Mac").assertExists()
@@ -75,4 +75,15 @@ class QuickDictateRenderTest {
     }
     @Test fun `cover light and dark entry surfaces`() = render("cover")
     @Test @Config(qualifiers = "w720dp-h840dp-mdpi") fun `inner light and dark entry surfaces`() = render("inner")
+    @Test fun `canceling auto close removes the countdown from the retained raw action`() {
+        android.provider.Settings.Global.putFloat(app.contentResolver, android.provider.Settings.Global.ANIMATOR_DURATION_SCALE, 0f)
+        val rig = QuickRig(app)
+        compose.setContent { ChirpTheme { QuickDictateScreen(rig.model) } }
+        compose.runOnIdle { rig.model.start(); rig.finish() }
+        compose.onNodeWithContentDescription("Use raw, available for 4 seconds").assertExists()
+        compose.runOnIdle { rig.model.closeAt = null }
+        compose.onNodeWithContentDescription("Use raw").assertExists()
+        compose.onAllNodesWithText("Use raw (4s)").assertCountEquals(0)
+    }
+
 }

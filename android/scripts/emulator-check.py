@@ -154,16 +154,23 @@ def cleanup_check(output, work):
         focus_editor()
         x, y, _, _ = mic_position(night, work)
         _probe["click"]("Dictation options")
-        _probe["wait_for"]("Custom", 20)
+        _probe["wait_for"]("Private session", 20)
         hierarchy = nodes()
-        assert any(n.get("text") == "Custom" for n in hierarchy), "Custom style missing"
-        assert any(n.get("text") == "Chat" for n in hierarchy), "Health profiles missing"
+        # Private session adds a row above Styles; Custom may be below the scroll viewport.
+        if not any(n.get("text") == "Custom" for n in hierarchy):
+            screenshot(output / ("emulator-cleanup-menu-before-scroll-" + theme + ".png"))
+            (output / ("cleanup-menu-" + theme + ".xml")).write_bytes(adb("shell", "cat", "/sdcard/chirp-windows.xml"))
+            popup = next(n for n in hierarchy if n.get("class") == "android.widget.ScrollView")
+            x1, y1, x2, y2 = _probe["bounds"](popup)
+            adb("shell", "input", "swipe", str((x1 + x2) // 2), str(y2 - 20), str((x1 + x2) // 2), str(y1 + 20), "300")
+        _probe["wait_for"]("Custom", 20)
+        assert any(n.get("text") == "Chat" for n in nodes()), "Health profiles missing"
         screenshot(output / ("emulator-cleanup-styles-" + theme + ".png"))
         adb("shell", "input", "keyevent", "4")
         focus_editor()
         x, y, _, _ = mic_position(night, work)
         before = editor().get("text", "")
-        if before == "Test dictation here": before = ""
+        if before in ("Test dictation here", "Synthetic E2E editor"): before = ""
         _probe["wait_for"].__globals__["nodes"] = fast_nodes
         recording = None
         if not night:
@@ -181,11 +188,18 @@ def cleanup_check(output, work):
         adb("pull", "/sdcard/chirp-polishing.png", str(output / ("emulator-cleanup-polishing-" + theme + ".png")))
         adb("shell", "CLASSPATH=/data/local/tmp/chirp-ui-probe.jar", "app_process", "/", "dev.chirp.smoke.UiHierarchy", "watch-undo", shlex.quote("Use raw"), "/sdcard/chirp-cleaned.png")
         adb("pull", "/sdcard/chirp-cleaned.png", str(output / ("emulator-cleanup-cleaned-" + theme + ".png")))
-        restored = read_editor()
-        # Accessibility can cache an earlier partial on the editor while the IME already
-        # exposes polishing. Exact raw replacement is covered with real InputConnections;
-        # here verify the native action restored the fixture fillers removed by cleanup.
-        assert len(restored) > len(before) and re.search(r"\bum\b", restored[len(before):], re.I) and re.search(r"\buh\b", restored[len(before):], re.I), "One-tap raw undo did not restore fixture fillers"
+        # The editor and IME update in different processes. Await the restored text, not just
+        # the button click; an empty native editor reports its hint through Accessibility.
+        deadline = time.monotonic() + 10
+        restored = ""
+        while time.monotonic() < deadline:
+            restored = read_editor()
+            suffix = restored[len(before):]
+            if len(restored) > len(before) and re.search(r"\bum\b", suffix, re.I) and re.search(r"\buh\b", suffix, re.I):
+                break
+            time.sleep(.1)
+        else:
+            raise AssertionError("One-tap raw undo did not restore fixture fillers")
         assert adb("shell", "settings", "get", "secure", "default_input_method").decode().strip() == IME
         if recording is not None:
             recording.wait(timeout=15)

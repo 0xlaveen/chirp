@@ -42,6 +42,7 @@ internal class DictationHistory(
     private val keys: HistoryKeys = KeystoreHistoryKeys,
     private val clock: () -> Long = System::currentTimeMillis,
 ) {
+    private val settings = SettingsStore(context)
     private val deviceProtected = context.isDeviceProtectedStorage
     private val app = context.applicationContext ?: context
     private val prefs = app.getSharedPreferences("chirp_history", Context.MODE_PRIVATE)
@@ -77,13 +78,13 @@ internal class DictationHistory(
     /** Returns the stored entry, or null when history is off, unavailable or the editor is excluded. */
     fun record(text: String, raw: String?, appLabel: String?, info: EditorInfo?, id: String = UUID.randomUUID().toString(),
                partial: Boolean = false): HistoryEntry? {
-        if (!enabled || !available || !allowed(info)) return null
+        if (!enabled || !available || settings.privateSession || !allowed(info)) return null
         val inserted = text.trim()
         if (inserted.isEmpty() || inserted.length > MAX_CHARS) return null
         val original = raw?.trim()?.takeIf { it.isNotEmpty() && it != inserted && it.length <= MAX_CHARS }
         val entry = HistoryEntry(id, clock(), inserted, original, appLabel?.trim()?.take(80)?.takeIf { it.isNotEmpty() }, partial)
         synchronized(LOCK) {
-            if (!enabled) return null // Turned off while this write was queued.
+            if (!enabled || settings.privateSession) return null // Re-check while holding the write lock.
             save(load() + entry)
         }
         return entry

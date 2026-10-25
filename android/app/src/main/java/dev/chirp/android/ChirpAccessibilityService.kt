@@ -344,6 +344,7 @@ open class ChirpAccessibilityService : AccessibilityService(), FloatingMicOverla
         if (!inserted) { target?.forget(); target = null; keep(result.text, FloatingState.READY_TO_COPY); return }
         if (result.corrected && result.text != result.raw) {
             raw = result.raw; state = FloatingState.POLISHED
+            actionUntil = SystemClock.elapsedRealtime() + UNDO_MS
             handler.removeCallbacks(undoExpiry); handler.postDelayed(undoExpiry, UNDO_MS)
         } else {
             target?.forget(); target = null; state = FloatingState.INSERTED
@@ -446,6 +447,7 @@ open class ChirpAccessibilityService : AccessibilityService(), FloatingMicOverla
         StreamTransport(client, pairing, dispatch = { callback -> handler.post { callback() } }, event = event, failure = failure)
     private fun haptic() { if (store.haptics) overlay?.bubble?.performHapticFeedback(HapticFeedbackConstants.CONFIRM) }
 
+    private var actionUntil: Long? = null
     private fun render() {
         val model = PanelModel(state, status,
             text = if (state == FloatingState.READY_TO_COPY || state == FloatingState.ERROR) kept else partial,
@@ -454,7 +456,7 @@ open class ChirpAccessibilityService : AccessibilityService(), FloatingMicOverla
         when (surface) {
             Surface.PANEL -> overlay?.panel?.let { panel ->
                 val wasPolished = panel.countdown.isVisible
-                panel.render(model)
+                panel.render(model, actionUntil)
                 if (state == FloatingState.POLISHED && !wasPolished) panel.countdown.run(UNDO_MS)
                 overlay?.placePanel()
             }

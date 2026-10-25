@@ -89,4 +89,10 @@ class SettingsRenderTest {
         compose.onNodeWithText("Diagnostics").assertExists()
         shot("two-pane-about", SettingsPage.About, false)
     }
+    @Config(qualifiers = "w840dp-h1200dp-mdpi") @Test fun `two panes at 200 percent font`() {
+        start()
+        for (night in listOf(false, true)) shot("two-pane-font-200", null, night, 2f)
+        compose.onAllNodesWithText("Privacy & history").assertCountEquals(1)
+    }
+
 }

@@ -26,6 +26,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
@@ -123,6 +124,7 @@ private val LIST_DETAIL = 600.dp
 internal fun HistoryScreen(store: DictationHistory? = null, now: () -> Long = System::currentTimeMillis, zone: ZoneId = ZoneId.systemDefault(),
                            selected: String? = null, select: ((String?) -> Unit)? = null, notes: NotesSessions? = null) {
     val context = LocalContext.current
+    val searchFocus = remember { androidx.compose.ui.focus.FocusRequester() }
     val history = store ?: remember { DictationHistory(context) }
     val library = notes ?: remember { NotesSessions(context) }
     val scope = rememberCoroutineScope()
@@ -138,6 +140,9 @@ internal fun HistoryScreen(store: DictationHistory? = null, now: () -> Long = Sy
     var own by rememberSaveable { mutableStateOf<String?>(null) }
     val open = if (select == null) own else selected
     val choose: (String?) -> Unit = select ?: { own = it }
+    dev.chirp.android.AppShortcutActions(dev.chirp.android.AppCommand.Search to {
+        if (enabled) { searchFocus.requestFocus(); true } else false
+    })
     LaunchedEffect(reload, enabled) { entries = withContext(Dispatchers.IO) { history.entries() } }
     // New dictations arrive from the keyboard while this screen is in the background.
     LifecycleResumeEffect(history) { enabled = history.enabled; reload++; onPauseOrDispose { } }
@@ -196,7 +201,7 @@ internal fun HistoryScreen(store: DictationHistory? = null, now: () -> Long = Sy
                     }
                     if (enabled) DockedSearchBar(inputField = {
                         SearchBarDefaults.InputField(query, { query = it }, { }, expanded = false, onExpandedChange = { },
-                            placeholder = { Text("Search history") }, leadingIcon = { Icon(painterResource(R.drawable.ic_search), null) },
+                            modifier = Modifier.focusRequester(searchFocus), placeholder = { Text("Search history") }, leadingIcon = { Icon(painterResource(R.drawable.ic_search), null) },
                             trailingIcon = if (query.isEmpty()) null else ({ IconButton({ query = "" }) { Icon(painterResource(R.drawable.ic_close), "Clear search") } }))
                     }, expanded = false, onExpandedChange = { }, modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) { }
                     when {

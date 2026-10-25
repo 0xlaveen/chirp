@@ -51,9 +51,9 @@ private fun rowColors(destructive: Boolean = false) = ListItemDefaults.colors(
 
 @Composable
 private fun SettingsRow(title: String, summary: String?, @DrawableRes icon: Int?, modifier: Modifier, destructive: Boolean = false,
-                trailing: (@Composable () -> Unit)? = null) {
-    ListItem(headlineContent = { Text(title) }, modifier = modifier,
-        supportingContent = summary?.let { { Text(it) } },
+                summaryMaxLines: Int = Int.MAX_VALUE, titleMaxLines: Int = Int.MAX_VALUE, trailing: (@Composable () -> Unit)? = null) {
+    ListItem(headlineContent = { Text(title, maxLines = titleMaxLines, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis) }, modifier = modifier,
+        supportingContent = summary?.let { { Text(it, maxLines = summaryMaxLines, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis) } },
         leadingContent = icon?.let { { Icon(painterResource(it), null) } },
         trailingContent = trailing, colors = rowColors(destructive))
 }
@@ -85,11 +85,15 @@ internal fun SwitchRow(title: String, checked: Boolean, onCheckedChange: (Boolea
 }
 
 /** Opens another screen, dialog or app: trailing chevron. */
+internal val LocalNavSummaryLines = staticCompositionLocalOf { Int.MAX_VALUE }
+
 @Composable
 internal fun NavRow(title: String, onClick: () -> Unit, modifier: Modifier = Modifier, summary: String? = null,
-                    @DrawableRes icon: Int? = null, enabled: Boolean = true, infoTitle: String? = null, infoBody: String? = null) {
+                    @DrawableRes icon: Int? = null, enabled: Boolean = true, infoTitle: String? = null, infoBody: String? = null,
+                    summaryMaxLines: Int = LocalNavSummaryLines.current) {
     SettingsRow(title, summary, icon, modifier.row().clip(MaterialTheme.shapes.extraSmall)
-        .clickable(enabled = enabled, role = Role.Button, onClick = onClick)) {
+        .clickable(enabled = enabled, role = Role.Button, onClick = onClick),
+        summaryMaxLines = summaryMaxLines, titleMaxLines = if (summaryMaxLines == 1) 1 else Int.MAX_VALUE) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             if (infoTitle != null && infoBody != null) InfoIcon(infoTitle, infoBody)
             Icon(painterResource(R.drawable.ic_chevron_right), null, tint = MaterialTheme.colorScheme.onSurfaceVariant)

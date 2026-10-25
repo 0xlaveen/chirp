@@ -78,3 +78,50 @@ internal fun elapsedSpoken(millis: Long): String {
         else -> unit(seconds / 60, "minute") + " " + unit(seconds % 60, "second")
     }
 }
+
+internal fun dictationDisplayStatus(status: String): String = when {
+    status == "Tap mic" || status.startsWith("Tap mic ·") -> "Ready"
+    status == "kept original" -> "Kept what was heard"
+    status.startsWith("cleaned") -> "Finished" + status.removePrefix("cleaned")
+    status.startsWith("Inserted") -> "Finished" + status.removePrefix("Inserted")
+    status == ConnectionFailure.OFFLINE -> "Mac offline · Check again"
+    status.startsWith("Mac is loading") || status.startsWith("Mac loading") -> "Mac loading its model"
+    else -> status
+}
+
+internal fun actionSeconds(deadline: Long, now: Long): Int = ((deadline - now + 999) / 1000).toInt().coerceAtLeast(0)
+
+/** Text ticks silently; the stable accessible name announces the offer once. */
+@android.annotation.SuppressLint("SetTextI18n")
+internal class ActionCountdown(private val button: android.widget.TextView, private val label: String,
+                               private val now: () -> Long = android.os.SystemClock::elapsedRealtime) {
+    private var until: Long? = null
+    private val handler = android.os.Handler(android.os.Looper.getMainLooper())
+    private val tick = object : Runnable {
+        override fun run() {
+            val left = until?.let { actionSeconds(it, now()) } ?: return
+            button.text = "$label (${left}s)"
+            if (left > 0) handler.postDelayed(this, 200)
+        }
+    }
+    init {
+        button.fontFeatureSettings = "tnum"
+        button.accessibilityLiveRegion = android.view.View.ACCESSIBILITY_LIVE_REGION_NONE
+        button.addOnAttachStateChangeListener(object : android.view.View.OnAttachStateChangeListener {
+            override fun onViewAttachedToWindow(v: android.view.View) { handler.removeCallbacks(tick); if (until != null) tick.run() }
+            override fun onViewDetachedFromWindow(v: android.view.View) { handler.removeCallbacks(tick) }
+        })
+    }
+    fun show(available: Boolean, deadline: Long? = null) {
+        if (!available) {
+            until = null; handler.removeCallbacks(tick); button.text = label; button.contentDescription = label
+            return
+        }
+        val next = deadline ?: until ?: (now() + 5000)
+        if (next == until) return
+        until = next
+        button.contentDescription = "$label, available for ${actionSeconds(next, now())} seconds"
+        if (button.isAttachedToWindow) button.announceForAccessibility(button.contentDescription)
+        handler.removeCallbacks(tick); tick.run()
+    }
+}

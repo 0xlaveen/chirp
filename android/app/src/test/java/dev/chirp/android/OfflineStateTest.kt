@@ -55,7 +55,7 @@ class OfflineStateTest {
     private fun tap() { voice.touch(MotionEvent.ACTION_DOWN); advance(40); voice.touch(MotionEvent.ACTION_UP) }
     private fun assertOfflineRow() {
         assertEquals(View.VISIBLE, strip.status.visibility)
-        assertEquals("Mac offline · tap to retry", strip.status.text.toString())
+        assertEquals("Mac offline · Check again", strip.status.text.toString())
         assertEquals("Mac offline, double-tap to retry", strip.status.contentDescription.toString())
         assertTrue(strip.status.isClickable); assertTrue(strip.cancel.isEnabled)
         assertEquals(View.GONE, strip.action.visibility)

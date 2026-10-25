@@ -85,7 +85,11 @@ class KeyboardRenderTest {
                 val colors = StripColors.of(app)
                 var idleHeight = 0
                 for (state in fixtures) {
+                    PrivateSession.set(state.name == "final")
+                    strip.privateChip.visibility = if (state.name == "final") View.VISIBLE else View.GONE
                     state.show(strip)
+                    if (state.name == "final") strip.show("cleaned", "", false, false, true, false, notice = true, undoable = true,
+                        actionUntil = android.os.SystemClock.elapsedRealtime() + 4000)
                     assertEquals("${state.name} ${look.name} $size $name", state.kind, strip.stripKind)
                     root.measure(View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(900, View.MeasureSpec.AT_MOST))
                     root.layout(0, 0, width, root.measuredHeight)
@@ -94,7 +98,7 @@ class KeyboardRenderTest {
                     else assertEquals("Dictation must reuse the suggestion row height (${state.name})", idleHeight, root.measuredHeight)
                     assertFalse("Partial belongs only in the editor", strip.status.text.contains("Synthetic example"))
                     if (state.name == "countdown") assertEquals("Listening… · 15 s left", strip.status.text.toString())
-                    if (state.name == "final") assertEquals("Inserted", strip.status.text.toString())
+                    if (state.name == "final") assertEquals("Finished", strip.status.text.toString())
                     assertNotNull(KeyboardSwitcher.getInstance().keyboard?.getKey('a'.code))
                     colors.tints.of(state.kind)?.let { tint ->
                         assertTrue("${state.name} text on tint", androidx.core.graphics.ColorUtils.calculateContrast(tint.text, tint.fill) >= StripTints.TEXT)
@@ -108,7 +112,7 @@ class KeyboardRenderTest {
                     bitmap.recycle()
                 }
             }
-        } finally { applyKeyboardLook(keyboardPrefs(app), KeyboardLook.DEFAULT); service.destroy() }
+        } finally { PrivateSession.set(false); applyKeyboardLook(keyboardPrefs(app), KeyboardLook.DEFAULT); service.destroy() }
     }
     @Test fun `render Chirp keyboard looks with the Chirp row in both themes`() {
         val app = RuntimeEnvironment.getApplication()
@@ -142,7 +146,7 @@ class KeyboardRenderTest {
                     }
                 }
             }
-        } finally { applyKeyboardLook(keyboardPrefs(app), KeyboardLook.DEFAULT); service.destroy() }
+        } finally { PrivateSession.set(false); applyKeyboardLook(keyboardPrefs(app), KeyboardLook.DEFAULT); service.destroy() }
     }
 
     @Test fun `parent input view delivers real mic touches to Chirp instead of suggestion padding`() {        val app = RuntimeEnvironment.getApplication()

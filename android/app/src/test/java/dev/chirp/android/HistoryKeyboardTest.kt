@@ -147,8 +147,8 @@ class HistoryKeyboardTest {
         panel.close.performClick(); assertFalse(history.open)
         strip.history.performClick(); advance(0); assertTrue(history.open)
         tap(); assertTrue(voice.active)
-        // The slot stays reserved while dictating so the mic never moves under a tap.
-        assertFalse(history.open); assertEquals(View.INVISIBLE, strip.history.visibility)
+        // Timed actions use the idle-control space; the mic remains at the trailing edge.
+        assertFalse(history.open); assertEquals(View.GONE, strip.history.visibility)
         voice.cancel()
         assertEquals(View.VISIBLE, strip.history.visibility)
     }

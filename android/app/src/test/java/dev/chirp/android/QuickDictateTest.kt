@@ -41,6 +41,16 @@ class QuickDictateTest {
         internal lateinit var rig: QuickRig
         override fun createModel() = QuickRig(applicationContext).also { rig = it }.model
     }
+    @Test fun `private utterance stays out of history after session expiry`() {
+        val rig = QuickRig(app, historyOn = true)
+        PrivateSession.set(true)
+        rig.model.start()
+        PrivateSession.set(false)
+        rig.finish()
+        assertTrue(rig.history.entries().isEmpty())
+        assertEquals("Synthetic words.", rig.model.text)
+    }
+
     @Test fun `open starts capture and final copies sensitive text with raw undo`() {
         val controller = Robolectric.buildActivity(TestQuick::class.java).setup()
         val activity = controller.get()
