@@ -9,7 +9,7 @@ section: get
   <p class="lede">Chirp is private dictation and live meeting notes, powered by your own Mac. There isn’t a download yet. Packaged apps for <strong>macOS, Linux and Windows</strong> are on the way, along with an <strong>Android APK</strong> and an <strong>iOS app</strong>. Until they land, everything is self-serve: you build Chirp from source, on your own Mac.</p>
   <p class="lede">The easiest route is to <strong>point a coding agent at the repository</strong> and work through it together. Prefer to do it yourself? The guides take it one step at a time.</p>
   <div class="actions"><a class="btn btn-primary" href="guides/coding-agent.html">Use a coding agent <span aria-hidden="true">↗</span></a><a class="btn btn-ghost" href="#platforms">See what’s available today</a></div>
-  <p class="setup-note">Free and open source · No Chirp account or subscription<br>An Apple Silicon Mac is required for the speech engine</p>
+  <p class="setup-note">Free and open source · No Chirp account or subscription<br>macOS 14+ · Apple Silicon uses MLX (fastest); Intel uses ONNX Parakeet</p>
 </div>
 <div class="wrap get-body">
   <div class="callout info"><b>Why build it yourself for now?</b><p>Packaging takes signing, notarizing, store review and support across OS versions. Instead of rushing a half-finished installer, the source is public and usable today. No waiting list, no account, no telemetry.</p></div>
@@ -90,7 +90,7 @@ expose the server beyond 127.0.0.1 or my tailnet.</code></pre>
 
   <h2 id="need">What you need</h2>
   <ul class="ticks need-list">
-    <li><strong>An Apple Silicon Mac (M1 or newer)</strong> on macOS 15 or later, on and reachable whenever you dictate.</li>
+    <li><strong>An Apple Silicon or Intel Mac</strong> on macOS 14 or later, on and reachable whenever you dictate.</li>
     <li><strong>About 15 minutes</strong> for the Mac. Add a phone when you’re ready; each phone takes a little longer.</li>
     <li><strong>Tailscale</strong> on the Mac and phone, if you want to dictate from a phone.</li>
     <li><strong>Full Xcode</strong> for iPhone or iPad; the Command Line Tools are enough for the Mac.</li>
@@ -103,7 +103,7 @@ expose the server beyond 127.0.0.1 or my tailnet.</code></pre>
     <details><summary>When will the packaged apps be out?</summary><p>Soon, but there’s no date to give you yet. Signing, notarizing and store review take time. When a packaged build is ready it will appear in the <a href="changelog.html">changelog</a> and the <a href="{{repo}}">repository</a> first.</p></details>
     <details><summary>Do I need to know how to code?</summary><p>No. You need to run commands in Terminal, or let a coding agent run them with you. The guides spell out every command, and the agent prompts tell the agent to ask before it changes anything.</p></details>
     <details><summary>What does “point an agent at the repo” mean?</summary><p>Open the coding agent you already use — Claude Code, Codex, Cursor, or another agent that can run shell commands on your Mac — and paste the prompt from <a href="guides/coding-agent.html">the agent guide</a>. The agent reads the READMEs, runs the build, and stops for the decisions that need you.</p></details>
-    <details><summary>Can I use Chirp on Windows or Linux today?</summary><p>Not the app. The speech engine currently runs on an Apple Silicon Mac, and the source install is for macOS. Packaged desktop apps for macOS, Linux and Windows are planned; there is nothing to install on Linux or Windows yet.</p></details>
+    <details><summary>Can I use Chirp on Windows or Linux today?</summary><p>Windows and Linux support is in progress. The source installer described here supports macOS 14+ on Apple Silicon (MLX, fastest) and Intel (ONNX Parakeet). Packaged desktop apps are coming soon.</p></details>
     <details><summary>Is Chirp really free?</summary><p>Yes. There’s no subscription, usage fee or Chirp account. You supply the Mac, electricity, and any network or developer services you choose. The source is public; the Android keyboard incorporates GPL-3.0 HeliBoard.</p></details>
   </div>
 

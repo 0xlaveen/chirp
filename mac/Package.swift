@@ -3,7 +3,7 @@ import PackageDescription
 
 let package = Package(
     name: "ChirpMac",
-    platforms: [.macOS(.v15), .iOS(.v18)],
+    platforms: [.macOS(.v14), .iOS(.v18)],
     products: [
         .executable(name: "ChirpMac", targets: ["ChirpMac"]),
         .library(name: "ChirpCore", targets: ["ChirpCore"]),

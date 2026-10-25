@@ -7,8 +7,11 @@ cd "$(dirname "$0")/.."
 IDENTITY="Chirp Local Dev"
 APP="build/Chirp.app"
 
-swift build -c release
-BIN=$(swift build -c release --show-bin-path)
+# SwiftPM combines both architectures, including dependency resources, into one universal product.
+# A scratch directory outside ~/Documents avoids privacy prompts on unattended builds.
+SCRATCH=${CHIRP_MAC_SCRATCH:-.build}
+swift build -c release --arch arm64 --arch x86_64 --scratch-path "$SCRATCH"
+BIN=$(swift build -c release --arch arm64 --arch x86_64 --scratch-path "$SCRATCH" --show-bin-path)
 
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
@@ -33,7 +36,7 @@ cp Assets/ChirpGlyph.png "$APP/Contents/Resources/"
 # and Notes system controls pick it up. actool ships with Xcode, so a Command Line Tools-only build
 # skips this and the app falls back to the system accent.
 if ACTOOL=$(xcrun --find actool 2>/dev/null); then
-    "$ACTOOL" --compile "$APP/Contents/Resources" --platform macosx --minimum-deployment-target 15.0 \
+    "$ACTOOL" --compile "$APP/Contents/Resources" --platform macosx --minimum-deployment-target 14.0 \
         --output-partial-info-plist "$(mktemp)" "$PWD/Assets.xcassets" >/dev/null
 fi
 # Third-party notices: FluidAudio's Apache-2.0 licence (and those it vendors) and the speaker model's CC BY 4.0
@@ -57,7 +60,7 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
     <key>CFBundlePackageType</key><string>APPL</string>
     <key>CFBundleShortVersionString</key><string>0.1.0</string>
     <key>CFBundleVersion</key><string>1</string>
-    <key>LSMinimumSystemVersion</key><string>15.0</string>
+    <key>LSMinimumSystemVersion</key><string>14.0</string>
     <key>LSUIElement</key><true/>
     <key>NSHighResolutionCapable</key><true/>
     <key>NSMicrophoneUsageDescription</key>

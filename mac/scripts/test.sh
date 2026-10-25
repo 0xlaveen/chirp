@@ -12,6 +12,10 @@ fi
 DEV=$(xcode-select -p)
 PLUGINS="$DEV/usr/lib/swift/host/plugins/testing"
 run() {
+    # Keep the no-argument full gate (including the isolated soak) usable outside ~/Documents and under Rosetta.
+    [ -z "${CHIRP_MAC_SCRATCH:-}" ] || set -- --scratch-path "$CHIRP_MAC_SCRATCH" "$@"
+    [ -z "${CHIRP_MAC_ARCH:-}" ] || set -- --arch "$CHIRP_MAC_ARCH" "$@"
+    [ "${CHIRP_MAC_SERIAL:-0}" != 1 ] || set -- --no-parallel "$@"
     if [ "$DEV" = "/Library/Developer/CommandLineTools" ] && [ -d "$PLUGINS" ]; then
         swift test -Xswiftc -plugin-path -Xswiftc "$PLUGINS" "$@"
     else
@@ -22,6 +26,6 @@ run() {
 # minutes where the snapshot renderer holds the main actor.
 if [ $# -eq 0 ]; then
     run --skip NotesSoakTests
-    exec "$0" --skip-build --filter NotesSoakTests
+    exec ./scripts/test.sh --skip-build --filter NotesSoakTests
 fi
 run "$@"

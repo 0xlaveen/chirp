@@ -57,49 +57,52 @@ private struct TranscriptList: View {
     }
 
     var body: some View {
-        ScrollViewReader { proxy in
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 4) {
-                    if model.document.segments.isEmpty && model.document.livePartial.isEmpty {
-                        Text(model.state.isLive ? "Segments appear here as you talk." : "No transcript — this note was typed.")
-                            .font(.callout)
-                            .foregroundStyle(NotesInk.tertiary)
-                            .padding(.vertical, 8)
-                    }
-                    ForEach(items) { item in
-                        if let date = item.continued { ContinuedDivider(date: date) }
-                        TranscriptRowView(model: model, player: player, row: item.row)
-                    }
-                    if !model.document.livePartial.isEmpty {
-                        HStack(alignment: .firstTextBaseline, spacing: 10) {
-                            Text(model.document.livePartial)
-                                .font(.system(size: 13))
+        GeometryReader { viewport in
+            ScrollViewReader { proxy in
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 4) {
+                        if model.document.segments.isEmpty && model.document.livePartial.isEmpty {
+                            Text(model.state.isLive ? "Segments appear here as you talk." : "No transcript — this note was typed.")
+                                .font(.callout)
                                 .foregroundStyle(NotesInk.tertiary)
-                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(.vertical, 8)
                         }
-                        .padding(.horizontal, 8)
+                        ForEach(items) { item in
+                            if let date = item.continued { ContinuedDivider(date: date) }
+                            TranscriptRowView(model: model, player: player, row: item.row)
+                        }
+                        if !model.document.livePartial.isEmpty {
+                            HStack(alignment: .firstTextBaseline, spacing: 10) {
+                                Text(model.document.livePartial)
+                                    .font(.system(size: 13))
+                                    .foregroundStyle(NotesInk.tertiary)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                            }
+                            .padding(.horizontal, 8)
+                        }
+                        Color.clear.frame(height: 1).id("bottom")
                     }
-                    Color.clear.frame(height: 1).id("bottom")
+                    .textSelection(.enabled)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 10)
+                    .onGeometryChange(for: CGFloat.self, of: { $0.frame(in: .named("transcriptScroll")).maxY }) { bottom in
+                        model.transcriptAtBottom = bottom <= viewport.size.height + 40
+                    }
                 }
-                .textSelection(.enabled)
-                .padding(.horizontal, 8)
-                .padding(.vertical, 10)
-            }
-            .onScrollGeometryChange(for: Bool.self) { g in
-                g.contentOffset.y + g.containerSize.height >= g.contentSize.height - 40
-            } action: { _, bottom in model.transcriptAtBottom = bottom }
-            .onChange(of: model.document) {
-                if model.transcriptAtBottom, model.highlightedParagraph == nil, model.state.isLive { proxy.scrollTo("bottom", anchor: .bottom) }
-            }
-            .onChange(of: model.transcriptJump) {
-                guard let id = model.highlightedParagraph else { return }
-                proxy.scrollTo(id, anchor: .top)
-            }
-            .onAppear { if let id = model.highlightedParagraph { proxy.scrollTo(id, anchor: .top) } }
-            .task(id: model.transcriptJump) {
-                guard model.highlightedParagraph != nil else { return }
-                try? await Task.sleep(for: .seconds(3))
-                if !Task.isCancelled { model.highlightedParagraph = nil }
+                .coordinateSpace(name: "transcriptScroll")
+                .onChange(of: model.document) {
+                    if model.transcriptAtBottom, model.highlightedParagraph == nil, model.state.isLive { proxy.scrollTo("bottom", anchor: .bottom) }
+                }
+                .onChange(of: model.transcriptJump) {
+                    guard let id = model.highlightedParagraph else { return }
+                    proxy.scrollTo(id, anchor: .top)
+                }
+                .onAppear { if let id = model.highlightedParagraph { proxy.scrollTo(id, anchor: .top) } }
+                .task(id: model.transcriptJump) {
+                    guard model.highlightedParagraph != nil else { return }
+                    try? await Task.sleep(for: .seconds(3))
+                    if !Task.isCancelled { model.highlightedParagraph = nil }
+                }
             }
         }
     }

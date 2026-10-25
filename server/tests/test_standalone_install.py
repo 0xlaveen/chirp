@@ -22,10 +22,13 @@ def test_server_install_requires_no_dotfiles_and_preserves_configuration(tmp_pat
     (fake_bin / "uname").write_text(
         f'#!/bin/sh\ncase "$1" in -s) echo Darwin;; -m) echo {machine};; esac\n'
     )
-    (fake_bin / "uv").write_text('#!/bin/sh\nprintf "%s\\n" "$@" > "$TRACE"\n')
+    (fake_bin / "uv").write_text(
+        '#!/bin/sh\nprintf "%s\\n" "$@" > "$TRACE"\nprintf "%s" "$CMAKE_ARGS" > "$CMAKE_TRACE"\n'
+    )
     for tool in fake_bin.iterdir():
         tool.chmod(0o755)
     trace = tmp_path / "trace"
+    cmake_trace = tmp_path / "cmake-trace"
     script = Path(__file__).resolve().parents[2] / "scripts/install-mac.sh"
     result = subprocess.run(
         [str(script), "--server-only"],
@@ -35,6 +38,8 @@ def test_server_install_requires_no_dotfiles_and_preserves_configuration(tmp_pat
             **os.environ,
             "HOME": str(home),
             "TRACE": str(trace),
+            "CMAKE_TRACE": str(cmake_trace),
+            "CMAKE_ARGS": "-DUSER_OPTION=ON",
             "CHIRP_PORT": "1",  # never look at, or restart, the real server on 7821
             "PATH": str(fake_bin) + ":" + os.environ["PATH"],
         },
@@ -51,6 +56,9 @@ def test_server_install_requires_no_dotfiles_and_preserves_configuration(tmp_pat
         "--no-dev",
         *(["--extra", "onnx", "--extra", "cleanup"] if machine == "x86_64" else []),
     ]
+    assert cmake_trace.read_text() == "-DUSER_OPTION=ON" + (
+        " -DGGML_NATIVE=OFF -DLLAMA_OPENSSL=OFF" if machine == "x86_64" else ""
+    )
     assert config.read_text() == '[correction]\nmode = "off"\n'
     assert not (home / ".dotfiles").exists()
 

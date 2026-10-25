@@ -45,6 +45,11 @@ EXTRA=
 # Intel Macs use portable Parakeet; MLX wheels are installed only on arm64.
 if [ "$(uname -m)" != arm64 ]; then
   EXTRA='--extra onnx --extra cleanup'
+  # Under Rosetta an arm64 clang interprets -march=native as an Apple CPU even
+  # when building x86_64. Use llama.cpp's portable x86 CPU flags instead.
+  # Chirp downloads through Python; llama.cpp needs no HTTPS/OpenSSL dependency
+  # (which can otherwise resolve to an incompatible arm64 Homebrew library).
+  export CMAKE_ARGS="${CMAKE_ARGS:-} -DGGML_NATIVE=OFF -DLLAMA_OPENSSL=OFF"
 fi
 if "$SERVER/.venv/bin/python" -c 'import importlib.util as u, sys; sys.exit(not u.find_spec("sherpa_onnx"))' 2>/dev/null; then
   EXTRA="$EXTRA --extra sensevoice"

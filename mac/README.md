@@ -2,6 +2,8 @@
 
 `Chirp.app` is a small menu-bar app. Press a hotkey in any app, talk, and the text appears in the focused field. A floating HUD shows the live partial text while you speak. Audio streams to your local `chirp-server` over `ws://127.0.0.1:7821/v1/stream`.
 
+Requires **macOS 14+**, on Apple Silicon or Intel. Apple Silicon uses MLX Parakeet (fastest); Intel uses ONNX Parakeet. Windows and Linux support is in progress. Clean-up is optional: Intel uses portable llama.cpp or a local OpenAI-compatible endpoint. The source installer includes the Intel CPU runtime; model weights still require an explicit download. CPU cleanup can be slow; keep it off or use a local endpoint if it is impractical on your Mac.
+
 Native Swift 6, SwiftPM, AppKit. No Xcode needed — the Command Line Tools are enough. See [docs/architecture.md](../docs/architecture.md) for the protocol and privacy rules, and [docs/screenshots/mac](../docs/screenshots/mac) for curated light/dark captures.
 
 **Contents**
@@ -18,10 +20,21 @@ Native Swift 6, SwiftPM, AppKit. No Xcode needed — the Command Line Tools are 
 cd mac
 swift build            # debug build
 ./scripts/test.sh      # unit tests (see "Develop and test")
-./scripts/bundle.sh    # release build → build/Chirp.app, signed
+./scripts/bundle.sh    # universal arm64 + x86_64 release build → build/Chirp.app, signed
 ./scripts/install.sh   # copy to ~/Applications/Chirp.app
 open ~/Applications/Chirp.app
 ```
+
+`bundle.sh` builds both arm64 and x86_64, including FluidAudio. Check with
+`lipo -info build/Chirp.app/Contents/MacOS/ChirpMac`. Set `CHIRP_MAC_SCRATCH=/tmp/chirp-mac-build`
+for an unattended build outside a privacy-protected checkout. `test.sh` also
+accepts `CHIRP_MAC_SCRATCH` and `CHIRP_MAC_ARCH` for a separate architecture build.
+Set `CHIRP_MAC_SERIAL=1` to run the full unit gate serially on a busy host.
+The reproducible Intel/Rosetta acceptance commands and timings are in
+[the benchmark](../docs/bench.md#intel-compatibility-under-rosetta-2026-10-26-226).
+Speaker labels use local CoreML; if a speaker model cannot load, Notes continues
+with the transcript and reports the label error. macOS 14.0–14.1 uses
+ScreenCaptureKit for call audio; Core Audio process taps start at macOS 14.2.
 
 ### Signing (do this once)
 
@@ -37,7 +50,7 @@ It creates a self-signed "Chirp Local Dev" code-signing certificate in your logi
 
 For a standalone install use `./scripts/install-mac.sh` from the repository root. It installs the server in Application Support and the app in `~/Applications`, then restarts Chirp's own server if it was running (or says what else owns the port; `--no-restart` only reports); it does not require dotfiles or Nix. The app finds this server without relying on the terminal's PATH. Existing CLI/Nix-managed installations remain supported.
 
-Open **Settings → Advanced → Manage Local Models…**, or **Set Up Models…** on the setup window's server step. Pick a speech model — English Parakeet v2 or multilingual v3 (MLX), or SenseVoice Small for Mandarin, Cantonese, English and mixed speech (CPU; the picker groups them by engine) — and a local correction model (Qwen3 4B Instruct, Qwen3.5 0.8B/2B/4B). Model sizes appear in the picker; details describe the default or alternative. Smaller correction models scored lower in Chirp's evaluations; compatibility alone does not guarantee quality.
+Open **Settings → Advanced → Manage Local Models…**, or **Set Up Models…** on the setup window's server step. Pick a speech model — English Parakeet v2 (MLX on Apple Silicon, ONNX on Intel), multilingual v3 (MLX on Apple Silicon), or SenseVoice Small for Mandarin, Cantonese, English and mixed speech (CPU; the picker groups them by engine) — and a local correction model (Qwen3 4B Instruct, Qwen3.5 0.8B/2B/4B). Model sizes appear in the picker; details describe the default or alternative. Smaller correction models scored lower in Chirp's evaluations; compatibility alone does not guarantee quality.
 
 **Download** shows byte progress and percentage. **Pause**, **Resume**, and **Retry** preserve partial downloads; closing the window keeps them running. The first SenseVoice download also installs its 12 MB runtime into the server environment ("Installing the SenseVoice runtime…"). **Use Model** checks that downloaded weights load before saving the choice; choosing SenseVoice or switching back to Parakeet changes the server's engine on the next **Apply & Restart Server** without editing server.toml (see [server/README.md](../server/README.md#sensevoice-cpu-backend)). A failed check keeps the previous selection. Downloading by itself never replaces the running model. **Apply & Restart Server** activates saved choices; schedule this between dictations because restarting ends existing sessions. **Start Local Server** installs a user launch agent for a standalone installation, or reuses an existing managed agent.
 

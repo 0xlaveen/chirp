@@ -40,7 +40,8 @@ struct NotesEditorProbe: Equatable {
         continuousSpellChecking = v.isContinuousSpellCheckingEnabled
         spellingCorrection = v.isAutomaticSpellingCorrectionEnabled
         textCompletion = v.isAutomaticTextCompletionEnabled
-        writingToolsOff = v.writingToolsBehavior == .none
+        if #available(macOS 15, *) { writingToolsOff = v.writingToolsBehavior == .none }
+        else { writingToolsOff = true }
         pasteTypes = v.readablePasteboardTypes
     }
 }
@@ -380,7 +381,7 @@ final class NotesEditorCoordinator: NSObject, NSTextViewDelegate {
         v.isGrammarCheckingEnabled = false
         v.isAutomaticTextCompletionEnabled = false
         v.inlinePredictionType = .no
-        v.writingToolsBehavior = .none
+        if #available(macOS 15, *) { v.writingToolsBehavior = .none }
         v.usesInspectorBar = false
         v.usesRuler = false
         v.drawsBackground = false

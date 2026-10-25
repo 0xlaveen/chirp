@@ -17,7 +17,7 @@ section: guides
 <pre class="prompt" data-copy="Copy Mac prompt"><code>Help me install Chirp, a local-first voice dictation app, on this Mac from source.
 Repository: https://github.com/araa47/chirp
 
-1. Check this is an Apple Silicon Mac. If it isn't, stop and tell me.
+1. Check this Mac runs macOS 14+. Apple Silicon uses MLX (fastest); Intel uses ONNX Parakeet. Windows and Linux support is in progress.
 2. Clone the repository (or update it if I already have it) and read README.md,
    mac/README.md and server/README.md before running anything.
 3. Make sure Apple's Command Line Tools and uv are installed. Ask me before
@@ -25,8 +25,10 @@ Repository: https://github.com/araa47/chirp
 4. From the repository root run ./scripts/install-mac.sh and explain what it is
    doing as it runs.
 5. When the Models on this Mac window opens, tell me to download Parakeet v2
-   (English) or v3 (multilingual), optionally the Qwen3 4B clean-up model, and
-   to click Start Local Server. Wait for me to confirm.
+   (MLX on Apple Silicon, ONNX on Intel), or v3 (multilingual, Apple Silicon).
+   Clean-up is optional: MLX on Apple Silicon, portable llama.cpp or a local
+   OpenAI-compatible endpoint on Intel. Dictation works without it.
+   Tell me to click Start Local Server. Wait for me to confirm.
 6. Tell me to grant Microphone and Accessibility in the Set Up Chirp window.
    Wait for me.
 7. Verify the server with its doctor command from server/README.md and tell me
