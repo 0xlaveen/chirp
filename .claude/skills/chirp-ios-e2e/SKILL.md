@@ -59,6 +59,18 @@ It creates its own `iPhone chirp-e2e-<pid>` / `iPad chirp-e2e-<pid>` (simulator.
 | iPad layouts, rotation | `ChirpUITests.testHistoryOffAndAdaptiveOrientation`, `ChirpNotesUITests.testNotesSettingsAndRotation`, `ChirpHardwareKeyboardUITests.testRotationDuringDictationKeepsUtterance`; everything runs on the iPad too | Split View/Stage Manager resizing is not automatable |
 | Hardware-keyboard shortcuts | `ChirpHardwareKeyboardUITests` | Skips unless a hardware keyboard is connected |
 
+## Faster shared-host runs
+
+- `simulator.sh test` and `ui` pass `-collect-test-diagnostics never` by default. XCTest results and screenshot
+  attachments remain available; only verbose simulator diagnostics (which can hang for ten minutes even on success)
+  are disabled. Set `CHIRP_TEST_DIAGNOSTICS=on-failure` when investigating a simulator failure.
+- Run one device per shared-host lock window (`e2e-all.sh --phone-only` or `--ipad-only`), release it, and let queued
+  workers interleave. Keep the lock wait and the test command inside one `koi run`; never leave a detached lock holder.
+- Notes screenshot helpers use the public `XCUIDevice.shared.appearance` API (iOS 15+) to capture light and dark inside
+  the same test. Batch the whole `ChirpNotesUITests` class in one invocation per device instead of rebuilding for each
+  image. Simulator teardown can still take five minutes per method; do not turn a successful test into a timeout just
+  to shorten that overhead.
+
 ## Evidence
 
 - Each test attaches screenshots (`keepAlways`). `e2e-all.sh` exports them: `$OUT/<device>-attachments/` (+ `manifest.json`). Manual: `xcrun xcresulttool export attachments --path X.xcresult --output-path DIR`.

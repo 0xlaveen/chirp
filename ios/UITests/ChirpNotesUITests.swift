@@ -17,8 +17,17 @@ final class ChirpNotesUITests: XCTestCase {
     @MainActor static func flip(_ toggle: XCUIElement) {
         toggle.coordinate(withNormalizedOffset: CGVector(dx: 0.93, dy: 0.5)).tap()
     }
+    /// Both appearances in one test invocation; no separate simulator configuration or app relaunch is needed.
     @MainActor func screenshot(_ name: String, _ app: XCUIApplication) {
-        let shot = XCTAttachment(screenshot: app.screenshot()); shot.name = name; shot.lifetime = .keepAlways; add(shot)
+        let original = XCUIDevice.shared.appearance
+        defer { XCUIDevice.shared.appearance = original }
+        for appearance in [XCUIDevice.Appearance.light, .dark] {
+            XCUIDevice.shared.appearance = appearance
+            let shot = XCTAttachment(screenshot: app.screenshot())
+            shot.name = name + (appearance == .dark ? "-dark" : "-light")
+            shot.lifetime = .keepAlways
+            add(shot)
+        }
     }
     @MainActor private func launch(_ extra: [String] = []) -> XCUIApplication {
         let app = XCUIApplication()
@@ -110,7 +119,7 @@ final class ChirpNotesUITests: XCTestCase {
         screenshot("notes-library-landscape", app)
     }
 
-    /// Captures both appearances when e2e-all.sh is run with and without --dark.
+    /// Reading, tasks, rename, local search and the inspector, with both appearances captured in this run.
     @MainActor func testLibraryReadingSearchTasksAndInspector() {
         if UIDevice.current.userInterfaceIdiom == .pad { XCUIDevice.shared.orientation = .landscapeLeft }
         let app = launch(["--chirp-notes-gallery"])
@@ -147,6 +156,7 @@ final class ChirpNotesUITests: XCTestCase {
             XCTAssertTrue(Self.waitFor(search, "value == '\(prefix)'", timeout: 3))
         }
         XCTAssertTrue(app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'chirp.notes.row.' AND label CONTAINS 'March'")).firstMatch.waitForExistence(timeout: 5))
+        search.typeText("\n")
         screenshot("notes-search", app)
     }
 

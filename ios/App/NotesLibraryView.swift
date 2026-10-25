@@ -87,7 +87,7 @@ struct NotesLibraryView: View {
                         .accessibilityAddTraits(.isHeader).listRowBackground(Color.clear)
                         .listRowInsets(EdgeInsets(top: 8, leading: 0, bottom: 8, trailing: 0))
                 }
-                if !setupDismissed, !SetupProgress(model: session, microphone: microphone).isComplete {
+                if query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, !setupDismissed, !SetupProgress(model: session, microphone: microphone).isComplete {
                     Section {
                         SetupCard(progress: SetupProgress(model: session, microphone: microphone), fix: fixSetup,
                                   dismiss: { setupDismissed = true })
@@ -130,7 +130,7 @@ struct NotesLibraryView: View {
                     }
                     ForEach(groups, id: \.title) { group in
                         Section {
-                            ForEach(group.entries) { entry in libraryRow(entry, snippet: plain(entry.snippet)) }
+                            ForEach(group.entries) { entry in libraryRow(entry, snippet: notesSnippet(entry.snippet)) }
                         } header: { sectionHeader(group.title) }
                     }
                     if notes.entries.isEmpty && notes.recordingID == nil {
@@ -157,6 +157,7 @@ struct NotesLibraryView: View {
             .listStyle(.insetGrouped).scrollContentBackground(.hidden).background(Color.chirp.background)
             .navigationTitle("").navigationBarTitleDisplayMode(.inline)
             .searchable(text: $query, prompt: "Search notes").searchFocused($searchFocused)
+            .onSubmit(of: .search) { searchFocused = false }
             .toolbar { libraryToolbar }
             .safeAreaInset(edge: .bottom) { libraryDock }
             .onAppear { if !scrollID.isEmpty { proxy.scrollTo(scrollID, anchor: .top) } }
@@ -285,9 +286,6 @@ struct NotesLibraryView: View {
         selectedID = id.uuidString; scrollID = id.uuidString
     }
     private func clock(_ value: TimeInterval) -> String { ChirpNotesActivityAttributes.ContentState.clock(value) }
-    private func plain(_ value: String) -> String {
-        value.replacingOccurrences(of: #"(^|\s)(#{1,6}|[-*+](\s\[[ xX]\])?)\s"#, with: "$1", options: .regularExpression)
-    }
     private func highlight(_ value: String) -> AttributedString {
         var text = AttributedString(value)
         let search = query.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -347,7 +345,7 @@ private struct RecentlyDeletedView: View {
                     HStack(alignment: .top, spacing: 12) {
                         VStack(alignment: .leading, spacing: 8) {
                             Text(entry.title).font(.system(.headline, design: .serif))
-                            Text(entry.snippet).font(.subheadline).foregroundStyle(Color.chirp.inkMuted).lineLimit(2)
+                            Text(notesSnippet(entry.snippet)).font(.subheadline).foregroundStyle(Color.chirp.inkMuted).lineLimit(2)
                             if let date = entry.deletedAt { Text("\(max(0, 30 - Int(Date().timeIntervalSince(date) / 86400))) days left").font(.footnote).foregroundStyle(Color.chirp.inkMuted) }
                         }
                         Spacer()
@@ -378,4 +376,9 @@ private struct NotesShareSheet: UIViewControllerRepresentable {
     let text: String
     func makeUIViewController(context: Context) -> UIActivityViewController { UIActivityViewController(activityItems: [text], applicationActivities: nil) }
     func updateUIViewController(_ controller: UIActivityViewController, context: Context) {}
+}
+
+private func notesSnippet(_ value: String) -> String {
+    value.replacingOccurrences(of: #"(^|\s)(#{1,6}|[-*+](\s\[[ xX]\])?)\s"#, with: "$1", options: .regularExpression)
+        .replacingOccurrences(of: "**", with: "")
 }

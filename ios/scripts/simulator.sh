@@ -32,6 +32,11 @@ case "${CHIRP_SIMULATOR_SIGNING:-adhoc}" in
   unsigned) signing='CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO' ;;
   *) echo 'CHIRP_SIMULATOR_SIGNING must be adhoc or unsigned' >&2; exit 2 ;;
 esac
+# Simulator diagnostics can stall ten minutes even after a successful run. Keep XCTest results/attachments,
+# and opt into verbose sysdiagnose collection only when investigating a simulator failure.
+if [ "$action" != build ]; then
+  set -- -collect-test-diagnostics "${CHIRP_TEST_DIAGNOSTICS:-never}" "$@"
+fi
 exec xcodebuild -project Chirp.xcodeproj -scheme "$scheme" -configuration Debug \
   -sdk iphonesimulator -destination "platform=iOS Simulator,id=$device" \
   -parallel-testing-enabled NO \
