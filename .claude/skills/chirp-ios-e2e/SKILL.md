@@ -84,6 +84,9 @@ It creates its own `iPhone chirp-e2e-<pid>` / `iPad chirp-e2e-<pid>` (simulator.
 ## Known pitfalls (short list; more in reference.md)
 
 - **Unit tests "The test runner hung before establishing connection" (5-6 min, then exit 65)** while the same code passes elsewhere: the build products sit under `~/Documents` (macOS privacy protection). Set `CHIRP_DERIVED_DATA=/tmp/...` (`simulator.sh` honours it, `e2e-all.sh` does it by default). Do not bisect the source first.
+- **MLX wheel error mentioning x86_64 on Apple Silicon**: the harness selects native CPython 3.13 explicitly, even
+  when a newer Intel interpreter is on PATH. Override with `CHIRP_E2E_PYTHON` when needed. Startup failures clean up the
+  stand-in before retrying, so a failed dependency sync cannot leave the port occupied.
 - **Port 7899 "in use"**: other agents share the Mac. `e2e-all.sh` picks 7899 or the next free pair right before each live stage; pin one with `CHIRP_E2E_PORT`.
 - **`simulator.sh` only accepts devices named `iPhone…`/`iPad…`**; name your own simulators that way.
 

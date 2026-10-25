@@ -9,11 +9,24 @@ device="${1:-}"; [ -n "$device" ] || { echo 'Usage: simulator-e2e.sh SIMULATOR-U
 shift
 PORT=${CHIRP_E2E_PORT:-7899}; CLEANUP_PORT=$((PORT - 1))
 MODEL_DIR=${CHIRP_MODEL_DIR:-$HOME/.koi/voice-models/parakeet-mlx}
+# A separately installed Intel Python can be newer than the native interpreter. MLX needs native arm64 wheels.
+if [ -n "${CHIRP_E2E_PYTHON:-}" ]; then
+  UV_PYTHON=$CHIRP_E2E_PYTHON; export UV_PYTHON
+elif [ "$(uname -m)" = arm64 ]; then
+  UV_PYTHON=cpython-3.13-macos-aarch64-none; export UV_PYTHON
+fi
 for p in "$PORT" "$CLEANUP_PORT"; do
   if lsof -nP -iTCP:"$p" -sTCP:LISTEN >/dev/null 2>&1; then echo "port $p is in use; set CHIRP_E2E_PORT" >&2; exit 1; fi
 done
 WORK=$(mktemp -d /tmp/chirp-ios-e2e.XXXX)
 echo "work dir (synthetic audio, throwaway token, server log): $WORK"
+SERVER=""; CLEANUP=""
+stop() {
+  if [ -n "$SERVER" ]; then pkill -P "$SERVER" 2>/dev/null || true; kill "$SERVER" 2>/dev/null || true; fi
+  if [ -n "$CLEANUP" ]; then kill "$CLEANUP" 2>/dev/null || true; fi
+}
+# Register before the first background process: uv sync/startup failures must not leak the stand-in's port.
+trap stop EXIT INT TERM
 say -o "$WORK/s.aiff" "So, um, schedule the team review for Tuesday morning and invite the whole design group."
 ffmpeg -loglevel error -i "$WORK/s.aiff" -ar 16000 -ac 1 -c:a pcm_s16le "$WORK/s.wav"
 # Long dictation: about 50 s of speech, a 1.5 s pause (the segment cut), then a closing sentence.
@@ -27,8 +40,6 @@ cd "$ROOT/server"
 uv sync --locked -q
 HOME="$WORK" UV_CACHE_DIR="${UV_CACHE_DIR:-$HOME/.cache/uv}" \
   uv run chirp-server --port "$PORT" --model-dir "$MODEL_DIR" > "$WORK/server.log" 2>&1 & SERVER=$!
-stop() { kill "$SERVER" "$CLEANUP" 2>/dev/null || true; pkill -P "$SERVER" 2>/dev/null || true; }
-trap stop EXIT
 for _ in $(seq 1 120); do curl -s -m 1 "http://127.0.0.1:$PORT/v1/health" >/dev/null 2>&1 && break; sleep 1; done
 [ -s "$WORK/.config/chirp/token" ] || { echo "server did not start; see $WORK/server.log" >&2; exit 1; }
 # A per-device pairing, as the README recommends; the app shows its name.
