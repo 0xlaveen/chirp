@@ -233,6 +233,21 @@ struct LiveNotesControllerTests {
         #expect(f.notes.entries.contains { $0.id == older })
     }
 
+    @Test func explicitHistoryHandoffCreatesOrAppendsWithoutMovingTheRecording() async throws {
+        let f = try fixture(); defer { f.clean() }
+        await f.notes.record()
+        try await eventually("recording") { f.notes.state == .recording }
+        let active = f.notes.document.id
+        let destination = try #require(await f.notes.addToNote("A thought from dictation"))
+        #expect(destination != active && f.notes.recordingID == active && f.audio.isRunning)
+        #expect(f.notes.requestedSelection == destination)
+        #expect(await f.notes.addToNote("A second thought", id: destination) == destination)
+        #expect(f.notes.document.text == "A thought from dictation\n\nA second thought")
+        #expect(try await f.store.libraryStore.record(destination).document.text == f.notes.document.text)
+        #expect(await f.notes.addToNote("  ") == nil)
+        await f.notes.stop()
+    }
+
     actor OrganizeGate {
         private var continuation: CheckedContinuation<NotesReorganizeResponse, Never>?
         private var released = false

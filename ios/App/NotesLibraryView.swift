@@ -54,11 +54,15 @@ struct NotesLibraryView: View {
         .sheet(isPresented: $settings) { NotesSettingsSheet(notes: notes) }
         .task {
             await notes.ready()
-            if let id = UUID(uuidString: selectedID), notes.entries.contains(where: { $0.id == id }) { await notes.open(id) }
+            if let requested = notes.requestedSelection { await open(requested); notes.didNavigateToNote() }
+            else if let id = UUID(uuidString: selectedID), notes.entries.contains(where: { $0.id == id }) { await notes.open(id) }
             else { selectedID = "" }
             await notes.refreshHealth()
         }
         .onChange(of: scenePhase) { _, phase in if phase == .active { microphone = AVAudioApplication.shared.recordPermission == .granted } }
+        .onChange(of: notes.requestedSelection) { _, id in
+            if let id { Task { await open(id); notes.didNavigateToNote() } }
+        }
         .onChange(of: notes.entries) { _, _ in revision += 1 }
         .task(id: query + String(revision)) {
             guard let library = notes.library else { return }

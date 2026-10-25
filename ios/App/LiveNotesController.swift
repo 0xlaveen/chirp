@@ -81,6 +81,7 @@ final class LiveNotesController: ObservableObject {
     @Published private(set) var totalAudioBytes = 0
     @Published private(set) var libraryReady = false
     @Published private(set) var undoDeleted: [UUID] = []
+    @Published private(set) var requestedSelection: UUID?
     let library: NotesLibrary?
     @Published private(set) var health: Health?
     @Published private(set) var notice = ""
@@ -236,6 +237,26 @@ final class LiveNotesController: ObservableObject {
         newNotes()
         await record()
     }
+
+    /// Explicit History hand-off. Nothing is copied automatically; capture stays with its own note.
+    /// Returns the destination id, or nil for empty input / an unavailable destination.
+    @discardableResult
+    func addToNote(_ text: String, id: UUID? = nil) async -> UUID? {
+        let value = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !value.isEmpty else { return nil }
+        await ready()
+        if let id {
+            await open(id)
+            guard document.id == id else { return nil }
+        } else { newNotes() }
+        edit(document.text + (document.text.isEmpty ? "" : "\n\n") + value)
+        let destination = document.id
+        await settleJournal()
+        requestedSelection = destination
+        return destination
+    }
+
+    func didNavigateToNote() { requestedSelection = nil }
 
     func rename(_ title: String) async {
         let context = selected!, id = recorder.document.id
