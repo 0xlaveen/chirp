@@ -18,7 +18,8 @@ on a real PC. Everything installs from source; nothing is code-signed yet.
 | Background service | A per-user Task Scheduler task, **Chirp Server**, started at logon; no administrator rights |
 | Config | `%APPDATA%\Chirp` (`server.toml`, `token`, `devices.json`), owner-only access |
 | Models, state, debug | `%LOCALAPPDATA%\Chirp` (never roams or syncs) |
-| Desktop app | Chirp desktop (Tauri): tray icon, hold-to-talk key, live HUD, typed or pasted text |
+| Desktop app | Chirp desktop (Tauri): tray icon, hold-to-talk key, live HUD, typed or pasted text, and a Notes library |
+| Desktop notes | `%LOCALAPPDATA%\chirp-desktop\notes`, written only after an owner-only access list is verified |
 
 ## Install the server
 
@@ -121,12 +122,16 @@ Run these on a real Windows 11 PC (and Windows 10 if you have one) and record th
    starts dictation; pressing a letter while holding the key cancels.
 6. **Elevated app.** Run Notepad as administrator, dictate into it, and check Chirp says the
    text is on the clipboard and Ctrl+V pastes it.
-7. **Live Notes** (once the desktop app ships it; phase 2 of the desktop client). Record a note of about two minutes, check headings and to-dos appear, quit and
-   reopen the app, and check the note is in the library.
+7. **Live Notes.** Open **Notes** from the tray, create a note and **Record** about two minutes
+   of speech (segments save every 45 seconds). With **Structure new segments** on and clean-up
+   configured, check headings and to-dos appear; without it, the plain transcript is appended.
+   Quit and reopen the app and check the note is in the library and searchable. Check
+   `icacls %LOCALAPPDATA%\chirp-desktop\notes` lists only you and SYSTEM.
 8. **Privacy.** With dictation and notes done, check `%LOCALAPPDATA%\Chirp\debug` does not exist
    (debug retention is off by default) and that clipboard history (Win+V) holds no dictation.
 9. **Uninstall.** Uninstall the desktop app from Settings › Apps, run `service uninstall`, and
-   delete `%APPDATA%\Chirp` and `%LOCALAPPDATA%\Chirp` if you want your data gone.
+   delete `%APPDATA%\Chirp`, `%LOCALAPPDATA%\Chirp` and `%LOCALAPPDATA%\chirp-desktop` if you
+   want your data gone.
 
 ## Troubleshooting
 
