@@ -494,3 +494,7 @@ summary {cursor:pointer;color:var(--ink);}
 .capability-matrix{table-layout:fixed;}
 .capability-matrix tr>:first-child{width:270px;}
 @media(max-width:760px){.capability-matrix tr>:first-child{width:160px;}}
+/* The approved scene sits behind the real UI, fading into the midnight pond. */
+.product-stage{isolation:isolate;}
+.product-stage .pond-art{inset:50% auto auto 50%;transform:translate(-50%,-50%);width:110%;max-width:none;height:auto;opacity:.28;z-index:-1;border-radius:0;box-shadow:none;mask-image:radial-gradient(ellipse,#000 8%,transparent 70%);-webkit-mask-image:radial-gradient(ellipse,#000 8%,transparent 70%);}
+.product-hero .stage-label{max-width:none;}

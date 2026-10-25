@@ -108,7 +108,7 @@ def render(layout, page, manifest, used):
     canonical = PUBLIC + ('' if out == 'index.html' else out)
     preload = ''
     if out == 'index.html':
-        preload = '<link rel="preload" as="image" href="assets/pond-256.webp" imagesrcset="assets/pond-128.webp 128w, assets/pond-256.webp 256w" imagesizes="(max-width: 760px) 46px, 88px">\n'
+        preload = '<link rel="preload" as="image" href="assets/pond-640.webp" imagesrcset="assets/pond-256.webp 256w, assets/pond-640.webp 640w, assets/pond.webp 1024w" imagesizes="(max-width: 760px) 100vw, 640px">\n'
         main, dark = shot_sources('mac/notes-library')
         for name, media in [(main, '(prefers-color-scheme: light)'), (dark, '(prefers-color-scheme: dark)')]:
             if name:

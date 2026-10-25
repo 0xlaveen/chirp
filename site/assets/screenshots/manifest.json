@@ -528,7 +528,7 @@
     ]
   },
   "ios/iphone-dark-dictate-listening.png": {
-    "sha256": "aa602e0267e0a8ee4c785ea03cc8f7c10dcc8aa0389ce99acfaba5efb0fe1d52",
+    "sha256": "ca70d0b4711bef3d53a2227901d86bd0e5ac44c43f0e009669f9c585ec6ca7c8",
     "width": 690,
     "height": 1500,
     "variants": [
@@ -550,7 +550,7 @@
     ]
   },
   "ios/iphone-dark-onboarding-1-welcome.png": {
-    "sha256": "92cfe4e47baf41ff56c183135a370a23929a9b524fbd8e0eeb8edb0b5d39c876",
+    "sha256": "5987e494242a18158aa68110f3a9bb43b8a2377c144c9721c9b5df1a5c226e07",
     "width": 690,
     "height": 1500,
     "variants": [
@@ -572,7 +572,7 @@
     ]
   },
   "ios/iphone-dark-onboarding-2-pair-connected.png": {
-    "sha256": "239151b492172529195780295cb4dea6e798cd668900a4dafef3cfbb440a9fc5",
+    "sha256": "96139d2d180d49d3214c45aff265bb26cfa20597c3edafdebdc433e8ba44168e",
     "width": 690,
     "height": 1500,
     "variants": [

@@ -22,5 +22,11 @@
     "sha256": "33434aecc4612cfc5ad243bceba54dcdca4035fb550f4792b52541b500f812e6",
     "width": 256,
     "height": 256
+  },
+  "pond-640.webp": {
+    "source": "approved-pond-fullbleed.png",
+    "sha256": "33434aecc4612cfc5ad243bceba54dcdca4035fb550f4792b52541b500f812e6",
+    "width": 640,
+    "height": 640
   }
 }

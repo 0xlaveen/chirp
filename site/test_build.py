@@ -61,7 +61,7 @@ class PublicSiteChecks(unittest.TestCase):
         self.assertIn('robots.txt:', errors)
 
     def test_missing_dimensions_and_duplicate_ids_fail(self):
-        self.change('index.html', 'width="256"', 'width="0"')
+        self.change('index.html', 'width="1024"', 'width="0"')
         with (self.site / 'index.html').open('a') as file:
             file.write('<div id="main"></div>')
         errors = '\n'.join(build.check(self.site))

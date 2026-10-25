@@ -12,16 +12,16 @@ Same Lighthouse version, default mobile simulation and throttling, local static 
 
 | Metric | Before | After |
 | --- | --- | --- |
-| Performance | 73 | 98 |
+| Performance | 73 | 97 |
 | Accessibility | 100 | 100 |
 | Best practices | 100 | 100 |
 | SEO | 100 | 100 |
-| Largest contentful paint | 9.3 s | 2.5 s |
+| Largest contentful paint | 9.3 s | 2.6 s |
 | Cumulative layout shift | 0 | 0 |
 | Total blocking time | 180 ms | 0 ms |
-| Initial transfer | Total size was 1,664 KiB | Total size was 312 KiB |
+| Initial transfer | Total size was 1,664 KiB | Total size was 396 KiB |
 
-Built site: 6.7 MB → 4.26 MB; 8 → 9 pages. Largest deployed image: 113,658 bytes (400,000-byte budget). Responsive screenshot and artwork assets retain their source hashes.
+Built site: 6.7 MB → 4.31 MB; 8 → 9 pages. Largest deployed image: 113,658 bytes (400,000-byte budget). Responsive screenshot and artwork assets retain their source hashes.
 
 [Before Lighthouse JSON](before/lighthouse.report.json) · [After Lighthouse JSON](after/lighthouse.report.json) · [Score summary](scores.json)
 
@@ -72,4 +72,6 @@ Passed: skip link is first and focuses main; theme toggle updates captures and p
 
 The applicable local path for this website change is `python3 site/build.py` plus `python3 -m unittest discover -s site -p 'test_*.py'`. All seven guardrail regressions pass, including mutations for broken anchors, responsive candidates, private content, external resources, oversized images, invalid encoded dimensions, sitemap/robots drift, missing dimensions and duplicate IDs. Browser checks cover all public pages and the 404. Application code was not changed, and no mobile emulator or simulator was used.
 
-Competitor facts are linked to official vendor documentation in the comparison and dated October 26, 2026. Mac speaker issue #207 remained open at the final check. The changelog includes merged PRs #190, #191, #198, #200, #202, #204 and #206 after #188.
+Competitor facts are linked to official vendor documentation in the comparison and dated October 26, 2026. Mac speaker issue #207 remained open at the final check. The changelog includes merged PRs #190, #191, #198, #200, #202, #204, #206 and #209 after #188.
+
+The final visual sweep used an isolated headless Chrome through CDP; the initial audit used Ego. Both used the same Mac system fonts and explicit CSS viewport widths. The branch was refreshed onto `6328ecd` after #209 updated iOS screenshots; assets were regenerated, preserving the source-freshness check. The final hero uses the approved pond scene as a large faded backdrop and removes the redundant audience paragraph.

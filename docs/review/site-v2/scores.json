@@ -17,18 +17,18 @@
   },
   "after": {
     "scores": {
-      "performance": 98,
+      "performance": 97,
       "accessibility": 100,
       "best-practices": 100,
       "seo": 100
     },
     "metrics": {
-      "largest-contentful-paint": "2.5\u00a0s",
+      "largest-contentful-paint": "2.6\u00a0s",
       "cumulative-layout-shift": "0",
       "total-blocking-time": "0\u00a0ms",
-      "total-byte-weight": "Total size was 312\u00a0KiB"
+      "total-byte-weight": "Total size was 396\u00a0KiB"
     },
     "lighthouseVersion": "13.5.0",
-    "fetchTime": "2026-10-25T18:03:19.058Z"
+    "fetchTime": "2026-10-25T18:12:02.437Z"
   }
 }

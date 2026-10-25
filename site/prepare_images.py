@@ -38,7 +38,7 @@ def main():
         image.save(target, 'WEBP', lossless=lossless, quality=86, method=4)
         artwork[target_name] = {'source': source_name, 'sha256': hashlib.sha256(source.read_bytes()).hexdigest(), 'width': image.width, 'height': image.height}
     pond = Image.open(ROOT / 'android/artwork/chirp-icons/approved-pond-fullbleed.png')
-    for size in (128, 256):
+    for size in (128, 256, 640):
         name = f'pond-{size}.webp'
         pond.resize((size, size), Image.Resampling.LANCZOS).save(ROOT / 'site/assets' / name, 'WEBP', quality=86, method=4)
         artwork[name] = dict(artwork['pond.webp'], width=size, height=size)
