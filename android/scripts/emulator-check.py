@@ -152,7 +152,7 @@ def cleanup_check(output, work):
         adb("shell", "cmd", "uimode", "night", "yes" if night else "no")
         focus_editor()
         x, y, _, _ = mic_position(night, work)
-        adb("shell", "input", "swipe", str(x), str(y), str(x), str(y), "700")
+        _probe["click"]("Dictation options")
         _probe["wait_for"]("Custom", 20)
         hierarchy = nodes()
         assert any(n.get("text") == "Custom" for n in hierarchy), "Custom style missing"
@@ -199,7 +199,7 @@ def cleanup_check(output, work):
             gfx = adb("shell", "dumpsys", "gfxinfo", PACKAGE).decode(errors="replace")
             metrics = [line.strip() for line in gfx.splitlines() if re.match(r"\s*(Total frames rendered:|Janky frames:|50th percentile:|90th percentile:|95th percentile:|99th percentile:)", line)]
             assert any(line.startswith("Total frames rendered:") and int(line.split(":")[1]) > 0 for line in metrics), "No frame metrics recorded"
-            (output / "emulator-cleanup-gfxinfo.txt").write_text("emulator-5580 · debug synthetic cleanup, screen recording enabled\n" + "\n".join(metrics) + "\n")
+            (output / "emulator-cleanup-gfxinfo.txt").write_text(SERIAL + " · debug synthetic cleanup, screen recording enabled\n" + "\n".join(metrics) + "\n")
             print("Frame metrics:", "; ".join(metrics), flush=True)
         _probe["wait_for"].__globals__["nodes"] = normal_nodes
         adb("shell", "input", "keyevent", "4")
@@ -265,6 +265,7 @@ def main():
     args.add_argument("--history-check", action="store_true")
     args.add_argument("--notes-check", action="store_true")
     args.add_argument("--keepkb-check", action="store_true")
+    args.add_argument("--visual-check", action="store_true")
     args.add_argument("--bubble-check", action="store_true")
     args.add_argument("--quickdictate-check", action="store_true")
     args.add_argument("--serial")
@@ -386,6 +387,9 @@ def main():
             adb("shell", "am", "start", "-n", PACKAGE + "/.SetupActivity", "--es", "section", "try")
             _probe["wait_for"]("Dictate", 60)
             safe_capture = True
+            if opt.visual_check:
+                runpy.run_path(str(Path(__file__).with_name("emulator-visual-check.py")))["check"](dict(_probe, adb=adb), work, output)
+                return
             if opt.device_check:
                 module = runpy.run_path(str(Path(__file__).with_name("emulator-device-check.py")))
                 module["check"](dict(_probe, adb=adb), work, output)

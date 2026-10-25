@@ -146,6 +146,11 @@ class VoiceUiTest {
         fontScaled(font) { dev.chirp.android.ui.ChirpTheme(dark.value, colour = AppColour.POND) { Onboarding(state) } }
         fun shot(name: String) {
             compose.waitForIdle()
+            // Compose semantics may settle before Robolectric draws the native window buffer.
+            // Schedule a real draw before capture, as in the keep-keyboard render suite.
+            compose.runOnIdle { compose.activity.window.decorView.invalidate() }
+            compose.mainClock.advanceTimeByFrame()
+            compose.waitForIdle()
             val bitmap = compose.onRoot().captureToImage().asAndroidBitmap()
             val colours = HashSet<Int>()
             for (y in 0 until bitmap.height step 5) for (x in 0 until bitmap.width step 5) colours += bitmap.getPixel(x, y)

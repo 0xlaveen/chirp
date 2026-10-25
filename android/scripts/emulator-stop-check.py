@@ -43,7 +43,7 @@ def check(probe, work, expect_crash=False):
         before = probe['editor_text']()
         x, y = probe['center'](mic)
         # The first menu item must expose the default without toggling it on.
-        adb('shell', 'input', 'swipe', str(x), str(y), str(x), str(y), '700')
+        click('Dictation options')
         if expect_crash:
             # The pre-fix Android baseline predates the default and menu-label change.
             off = probe['find']('Clean-up off · Correction on Mac')

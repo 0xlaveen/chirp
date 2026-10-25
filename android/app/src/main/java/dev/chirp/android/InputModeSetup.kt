@@ -23,6 +23,17 @@ internal fun accessibilitySettingsIntent(context: Context): Intent {
     return if (details.resolveActivity(context.packageManager) != null) details else Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
 }
 
+internal fun openAccessibilitySettings(context: Context) {
+    try {
+        context.startActivity(accessibilitySettingsIntent(context))
+    } catch (_: SecurityException) {
+        // Some system images resolve the service-details action but restrict its caller.
+        context.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+    } catch (_: android.content.ActivityNotFoundException) {
+        context.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+    }
+}
+
 /** A single selectable radio node per card, including its explanation and selected state. */
 @Composable
 internal fun InputModeCards(state: SetupState, choose: (InputMode) -> Unit) {

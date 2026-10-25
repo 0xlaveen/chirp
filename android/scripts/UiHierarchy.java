@@ -26,7 +26,7 @@ public final class UiHierarchy {
             AccessibilityServiceInfo info = automation.getServiceInfo();
             info.flags |= AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS | AccessibilityServiceInfo.FLAG_REPORT_VIEW_IDS;
             automation.setServiceInfo(info);
-            if (args.length > 0 && (args[0].equals("dictation-cycle") || args[0].equals("click") || args[0].equals("long-click") || args[0].equals("tap") || args[0].equals("append-notes"))) {
+            if (args.length > 0 && (args[0].equals("dictation-cycle") || args[0].equals("click") || args[0].equals("click-if-present") || args[0].equals("long-click") || args[0].equals("tap") || args[0].equals("append-notes"))) {
                 try { automation.waitForIdle(200, 2000); } catch (java.util.concurrent.TimeoutException ignored) { }
             }
             if (args.length == 5 && args[0].equals("dictation-cycle")) {
@@ -47,19 +47,22 @@ public final class UiHierarchy {
                     event.recycle();
                 }
             }
-            if (args.length == 2 && (args[0].equals("click") || args[0].equals("long-click"))) {
+            if (args.length == 2 && (args[0].equals("click") || args[0].equals("click-if-present") || args[0].equals("long-click"))) {
                 boolean found = false;
                 for (AccessibilityWindowInfo window : automation.getWindows()) {
                     AccessibilityNodeInfo target = find(window.getRoot(), args[1]);
                     if (target != null) {
-                        while (target != null && !(args[0].equals("click") ? target.isClickable() : target.isLongClickable())) target = target.getParent();
+                        while (target != null && !(args[0].equals("long-click") ? target.isLongClickable() : target.isClickable())) target = target.getParent();
                         if (target == null) throw new IllegalStateException("Accessible action missing");
-                        int action = args[0].equals("click") ? AccessibilityNodeInfo.ACTION_CLICK : AccessibilityNodeInfo.ACTION_LONG_CLICK;
+                        int action = args[0].equals("long-click") ? AccessibilityNodeInfo.ACTION_LONG_CLICK : AccessibilityNodeInfo.ACTION_CLICK;
                         if (!target.performAction(action)) throw new IllegalStateException("Accessibility action rejected");
                         found = true; break;
                     }
                 }
-                if (!found) throw new IllegalStateException("Accessible target missing");
+                if (!found) {
+                    if (args[0].equals("click-if-present")) { System.out.println("MISSING"); return; }
+                    throw new IllegalStateException("Accessible target missing");
+                }
             }
             if (args.length == 3 && args[0].equals("custom-action")) {
                 // Invokes a labelled custom accessibility action, as TalkBack's actions menu does.
@@ -165,7 +168,12 @@ public final class UiHierarchy {
                 xml.startTag(null, "hierarchy");
                 for (AccessibilityWindowInfo window : automation.getWindows()) {
                     AccessibilityNodeInfo root = window.getRoot();
-                    if (root != null) dump(xml, root);
+                    if (root != null) {
+                        xml.startTag(null, "window");
+                        xml.attribute(null, "type", String.valueOf(window.getType()));
+                        dump(xml, root);
+                        xml.endTag(null, "window");
+                    }
                 }
                 xml.endTag(null, "hierarchy");
                 xml.endDocument();
@@ -233,15 +241,25 @@ public final class UiHierarchy {
         }
     }
     private static boolean has(UiAutomation automation, String label) {
-        for (AccessibilityWindowInfo window : automation.getWindows())
-            if (find(window.getRoot(), label) != null) return true;
+        // Ask the framework for matching text instead of materializing every virtual
+        // key at 10 Hz. Full-tree traversal can exhaust the shell JVM on API 37.
+        for (AccessibilityWindowInfo window : automation.getWindows()) {
+            AccessibilityNodeInfo root = window.getRoot();
+            if (root == null) continue;
+            for (AccessibilityNodeInfo node : root.findAccessibilityNodeInfosByText(label)) {
+                if (node.isVisibleToUser() && (safe(node.getText()).equals(label)
+                        || safe(node.getContentDescription()).startsWith(label))) return true;
+            }
+        }
         return false;
     }
     private static void await(UiAutomation automation, String label) {
         long deadline = android.os.SystemClock.uptimeMillis() + 35000;
         while (android.os.SystemClock.uptimeMillis() < deadline) {
+            // Retire stale virtual-key trees between observations and bound traversal pressure.
+            automation.clearCache();
             if (has(automation, label)) return;
-            android.os.SystemClock.sleep(16);
+            android.os.SystemClock.sleep(100);
         }
         throw new IllegalStateException("Stop scenario state missing: " + label);
     }
