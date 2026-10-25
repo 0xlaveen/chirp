@@ -65,7 +65,8 @@ jobs:
               with tempfile.TemporaryFile() as out:
                   started = time.monotonic()
                   process = subprocess.Popen(
-                      [".venv/Scripts/python.exe", "-m", "pytest", "-q", "-p", "no:cacheprovider",
+                      [".venv/Scripts/python.exe", "-m", "pytest", "-q", "-rfE", "--tb=short",
+                       "-p", "no:cacheprovider",
                        "-o", "faulthandler_timeout=45", name],
                       stdout=out, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL,
                   )
@@ -78,7 +79,7 @@ jobs:
                   out.seek(0)
                   text = out.read().decode(errors="replace")
               print(f"::group::{name} -> {code} in {time.monotonic() - started:.0f}s", flush=True)
-              print(text[-12000:], flush=True)
+              print(text if code not in (0, 5) else text[-2000:], flush=True)
               print("::endgroup::", flush=True)
               if code not in (0, 5):
                   failed.append(f"{name}: {code}")

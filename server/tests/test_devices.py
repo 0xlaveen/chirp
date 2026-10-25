@@ -1,24 +1,18 @@
 import hashlib
 import json
 import logging
-import os
-import stat
 import sys
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
 import pytest
-from conftest import HEADERS, START, TOKEN
+from conftest import HEADERS, START, TOKEN, has_mode
 from starlette.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
 from chirp_server import cli, devices, paths
 from chirp_server.app import create_app
 from chirp_server.devices import Credentials, DeviceStore
-
-
-def mode(path):
-    return stat.S_IMODE(path.lstat().st_mode)
 
 
 def rejected(ws):
@@ -52,8 +46,8 @@ def test_mint_is_hashed_at_rest_with_private_modes(store):
     text = store.path.read_text()
     assert token not in text
     assert hashlib.sha256(token.encode()).hexdigest() in text
-    assert mode(store.path) == 0o600 and mode(store.directory / "devices.lock") == 0o600
-    assert mode(store.directory) == 0o700
+    assert has_mode(store.path, 0o600) and has_mode(store.directory / "devices.lock", 0o600)
+    assert has_mode(store.directory, 0o700)
     assert not [p for p in store.directory.iterdir() if p.name.endswith(".tmp")]
     other, second = store.mint("iPhone")
     assert second != token and other["id"] != device["id"]
@@ -94,7 +88,7 @@ def test_revoke_by_id_and_unknown(store):
 def test_insecure_or_invalid_file(store):
     store.mint("Pixel")
     store.path.chmod(0o644)
-    assert store.entries() and mode(store.path) == 0o600
+    assert store.entries() and has_mode(store.path, 0o600)
     store.path.write_text("{not json")
     with pytest.raises(ValueError):
         store.entries()
@@ -311,4 +305,4 @@ def test_cli_pair_rejects_bad_url_before_minting(home, monkeypatch, capsys):
         run(monkeypatch, capsys, "pair", "--name", "pixel")
     assert "already paired" in str(exc.value)
     assert len(DeviceStore(home).entries()) == 1
-    assert os.stat(home / "devices.json").st_mode & 0o077 == 0
+    assert has_mode(home / "devices.json", 0o600)

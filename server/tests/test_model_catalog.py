@@ -1,12 +1,12 @@
 """Choices are pinned, explicit, offline at startup, and do not edit managed config."""
 
 import json
-import stat
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict, replace
 
 import httpx
 import pytest
+from conftest import has_mode
 
 from chirp_server import model_catalog as catalog
 from chirp_server import setup
@@ -48,7 +48,7 @@ def test_selection_loads_before_writing_and_preserves_previous_choice(monkeypatc
     chosen = catalog.choose("parakeet-v2", "speech")
     state = catalog.root() / "model-selection.json"
     previous = state.read_bytes()
-    assert stat.S_IMODE(state.stat().st_mode) == 0o600
+    assert has_mode(state, 0o600)
     assert catalog.pending_restart()
     assert catalog.selection()["speech"] == chosen
 

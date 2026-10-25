@@ -10,10 +10,12 @@ import contextlib
 import os
 import re
 import stat
-import sys
 import time
 from pathlib import Path
 
+# The real OS, not sys.platform: tests fake sys.platform to exercise other platforms' code, but
+# locks and access lists are what this machine actually has.
+WINDOWS = os.name == "nt"
 # Windows has no O_NOFOLLOW; callers still reject non-regular files after fstat.
 NOFOLLOW = getattr(os, "O_NOFOLLOW", 0)
 
@@ -26,7 +28,7 @@ _ACE = re.compile(r"\(([^;()]*);[^;()]*;[^;()]*;[^;()]*;[^;()]*;([^;()]*)(?:;[^(
 @contextlib.contextmanager
 def locked(fd: int, blocking: bool = True):
     """Hold an exclusive lock on `fd`; non-blocking contention raises BlockingIOError."""
-    if sys.platform == "win32":
+    if WINDOWS:
         import msvcrt
 
         while True:
@@ -79,7 +81,7 @@ def sddl_is_private(sddl: str, user) -> bool:
 def make_private(path: Path) -> None:
     """Restrict `path` to the current user (0600 files, 0700 directories on POSIX)."""
     path = Path(path)
-    if sys.platform == "win32":
+    if WINDOWS:
         _windows().set_dacl(str(path), private_sddl(_windows().user_sid(), path.is_dir()))
     else:
         path.chmod(0o700 if path.is_dir() else 0o600)
@@ -87,7 +89,7 @@ def make_private(path: Path) -> None:
 
 def is_private(path: Path) -> bool:
     path = Path(path)
-    if sys.platform == "win32":
+    if WINDOWS:
         windows = _windows()
         return sddl_is_private(windows.get_dacl(str(path)), windows.user_sid_forms())
     return not stat.S_IMODE(path.stat().st_mode) & 0o077
@@ -100,9 +102,9 @@ def private_mkdir(path: Path) -> Path:
     path = Path(path)
     if not path.is_dir():
         path.mkdir(parents=True, exist_ok=True, mode=0o700)
-        if sys.platform == "win32":
+        if WINDOWS:
             make_private(path)
-    elif sys.platform == "win32" and not is_private(path):
+    elif WINDOWS and not is_private(path):
         make_private(path)
     return path
 

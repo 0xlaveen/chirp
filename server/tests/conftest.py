@@ -41,7 +41,10 @@ def _home_relative_dirs(monkeypatch):
 def launchd(monkeypatch):
     """Exercise the macOS LaunchAgent code on any host; launchctl itself is always faked."""
     monkeypatch.setattr(sys, "platform", "darwin")
-    monkeypatch.setattr(os, "getuid", lambda: 501, raising=False)
+    if not hasattr(os, "getuid"):
+        # Only builds gui/<uid> strings; 0 matches what Windows reports as st_uid, which
+        # pytest's temporary-directory ownership check compares against.
+        monkeypatch.setattr(os, "getuid", lambda: 0, raising=False)
 
 
 def has_mode(path, mode) -> bool:

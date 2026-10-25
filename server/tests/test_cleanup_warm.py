@@ -3,13 +3,12 @@
 import asyncio
 import json
 import os
-import stat
 import sys
 import time
 from pathlib import Path
 
 import pytest
-from conftest import HEADERS, PCM, START, TEST_TIMEOUT, TOKEN
+from conftest import HEADERS, PCM, START, TEST_TIMEOUT, TOKEN, has_mode
 from starlette.testclient import TestClient
 from test_protocol import final
 
@@ -290,7 +289,7 @@ def test_keep_loaded_persists_and_overrides_toml(settings):
             ).status_code
             == 200
         )
-    assert stat.S_IMODE(settings.state_path.stat().st_mode) == 0o600
+    assert has_mode(settings.state_path, 0o600)
     assert json.loads(settings.state_path.read_text()) == {"correction_keep_loaded": True}
     assert read_keep_loaded(settings.state_path) is True
     # A restarted server applies the persisted override over the toml default and
