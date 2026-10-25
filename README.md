@@ -38,7 +38,7 @@ Press a hotkey on your Mac, or the mic on your phone, and talk. Your words appea
 |---|---|
 | **Mac** · [mac/README.md](mac/README.md) | Menu-bar app with a floating HUD, the Notes library window (library sidebar, live-preview editor, transcript inspector with replay), System Settings-style Settings, a model manager and **Pair a Phone**. |
 | **Android** · [android/README.md](android/README.md) | A Notes-first app (Notes · History · Settings), Chirp Keyboard or the floating mic, the Scratchpad for long text, opt-in encrypted dictation history, updates from your Mac over the tailnet. |
-| **iPhone and iPad** · [ios/README.md](ios/README.md) | A SwiftUI app plus a dictation-first keyboard for iOS/iPadOS 18. Early: it passes its simulator tests but hasn't run on a device yet. |
+| **iPhone and iPad** · [ios/README.md](ios/README.md) | A SwiftUI app plus a dictation-first keyboard for iOS/iPadOS 18. Early: simulator-tested, with a first iPad install done; iPhone installation and on-device dictation are still unverified. |
 | **Server** · [server/README.md](server/README.md) | Parakeet TDT v2 (English) or v3 (multilingual) on MLX, optional local Qwen clean-up and notes structuring, revocable per-device tokens and a `doctor` check. |
 
 **Honest limits.** You need an Apple Silicon Mac that's on and reachable whenever you dictate. Phones connect only through Tailscale. Everything installs from source: there's no notarized Mac download, Play Store build or App Store build.
@@ -117,5 +117,5 @@ scripts/  Standalone Mac installer and the cross-component end-to-end check
 
 ## Licensing
 
-- **Chirp's own code** (server, Mac app) has no license file yet; it is a personal-use project. No license is claimed for it here.
+- **Chirp's own code** (server, Mac and iOS apps) has no license file yet; it is a personal-use project. No license is claimed for it here.
 - **Chirp for Android** combines GPL-3.0 HeliBoard code with Chirp's Android client. This is a personal-use build; the corresponding source is available in this repository, and upstream copyright and license notices are kept intact. See the [pinned upstream record](android/keyboard/UPSTREAM.md) and [Android build instructions](android/README.md).
