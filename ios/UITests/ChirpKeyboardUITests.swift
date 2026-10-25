@@ -45,6 +45,49 @@ final class ChirpKeyboardUITests: XCTestCase {
         XCTAssertFalse(app.buttons["chirp.keyboard.undo"].exists, "Nothing to undo once sent")
     }
 
+    /// Screenshots of the Live Activity on the lock screen and in the Dynamic Island, from synthetic sample activities
+    /// (Debug simulator builds). Attachments only; it fails only if the app cannot start.
+    @MainActor func testLiveActivityScreenshots() throws {
+        continueAfterFailure = true
+        XCUIDevice.shared.orientation = .portrait
+        let lock = NSSelectorFromString("pressLockButton")
+        guard XCUIDevice.shared.responds(to: lock) else { throw XCTSkip("This XCTest cannot lock the simulator") }
+        let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
+        for kind in ["session-listening", "session-ready", "session-stale", "session-debug", "notes-recording", "notes-paused"] {
+            let app = XCUIApplication()
+            app.launchArguments = ["--chirp-ui-test", "--chirp-keyboard-host", "--chirp-activity-preview", kind]
+            app.launch()
+            XCTAssertTrue(app.staticTexts["chirp.host.setup"].waitForExistence(timeout: 10))
+            sleep(3)
+            // Background the app: the Dynamic Island shows the compact activity; a long press expands it.
+            XCUIDevice.shared.press(.home)
+            sleep(2)
+            shot("activity-\(kind)-island-compact")
+            if kind == "session-listening" || kind == "notes-recording" {
+                let top = springboard.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.028))
+                top.press(forDuration: 1.2)
+                sleep(1)
+                shot("activity-\(kind)-island-expanded")
+                XCUIDevice.shared.press(.home)
+            }
+            XCUIDevice.shared.perform(lock)
+            sleep(2)
+            XCUIDevice.shared.press(.home) // wakes onto the lock screen without unlocking
+            sleep(2)
+            shot("activity-\(kind)-lock")
+            XCUIDevice.shared.press(.home)
+            springboard.swipeUp()
+            app.terminate()
+        }
+    }
+
+    @MainActor private func shot(_ name: String) {
+        let attachment = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+        attachment.name = name
+        attachment.lifetime = .keepAlways
+        add(attachment)
+    }
+
     @MainActor private func runSyntheticDictation(prefix: String, extraArguments: [String]) throws {
         continueAfterFailure = false
         XCUIDevice.shared.orientation = .portrait

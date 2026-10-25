@@ -46,7 +46,7 @@ private func inputs(_ phase: KeyboardPhase? = .armed, access: Bool = true, lease
         #expect(s.primary.kind == .fullAccess && s.primary.style == .tonal && !s.primary.isEnabled && s.primary.symbol == "lock.fill")
         #expect(s.primary.title == "Full Access required")
         #expect(s.chips.isEmpty && !s.endEnabled)
-        #expect(s.phaseText == "Dictation needs Full Access" && s.glyph == .warning && s.trailing == nil)
+        #expect(s.phaseText == "Needs Full Access" && s.glyph == .warning && s.trailing == nil)
         #expect(s.detail?.contains("Allow Full Access") == true, "ⓘ explains how to turn it on")
     }
 

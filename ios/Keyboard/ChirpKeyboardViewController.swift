@@ -565,7 +565,10 @@ final class ChirpKeyboardViewController: UIInputViewController {
         primary.configuration?.image = UIImage(systemName: action.symbol)
         primary.accessibilityLabel = action.accessibilityLabel
         primary.accessibilityHint = action.hint
-        primary.isEnabled = action.isEnabled
+        // Polishing is a status, not a dimmed button: it stays "enabled" so it keeps its moon fill, and VoiceOver
+        // still reads it as dimmed. primaryTapped ignores the tap.
+        primary.isEnabled = action.isEnabled || action.kind == .polishing
+        if action.kind == .polishing { primary.accessibilityTraits.insert(.notEnabled) } else { primary.accessibilityTraits.remove(.notEnabled) }
         chips.apply(screen)
         // Rebuilding the menu while it is open would dismiss it, so only replace it when items change.
         if screen.styleItems != styleItems || screen.privacyOn != privacyOn {

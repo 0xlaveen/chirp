@@ -195,7 +195,7 @@ public enum KeyboardPresenter {
     /// the fix is the guidance.
     private static func text(_ i: KeyboardInputs, live: Bool, phase: KeyboardPhase?) -> Line {
         guard i.hasFullAccess else {
-            return Line(label: "Dictation needs Full Access", glyph: .warning,
+            return Line(label: "Needs Full Access", glyph: .warning,
                         detail: "Open Settings → Chirp → Keyboards and turn on Allow Full Access, then start a session in Chirp. Space, delete, return and next keyboard work here.")
         }
         if let fallback = i.fallback { return Line(label: "Open Chirp", glyph: .warning, detail: fallback) }

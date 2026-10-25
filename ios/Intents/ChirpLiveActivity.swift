@@ -51,3 +51,34 @@ enum ChirpLiveActivity {
         await ending?.end(nil, dismissalPolicy: .immediate)
     }
 }
+
+#if DEBUG && targetEnvironment(simulator)
+extension ChirpLiveActivity {
+    /// Simulator-only, for screenshots: starts a sample Live Activity (`session-listening`, `session-ready`,
+    /// `session-stale`, `session-debug`, `notes-recording`, `notes-paused`) with synthetic, content-free state, after
+    /// ending any left over. Never compiled into a device or Release build.
+    static func preview(_ kind: String) {
+        Task {
+            for old in Activity<ChirpActivityAttributes>.activities { await old.end(nil, dismissalPolicy: .immediate) }
+            for old in Activity<ChirpNotesActivityAttributes>.activities { await old.end(nil, dismissalPolicy: .immediate) }
+            let now = Date()
+            do {
+                if kind.hasPrefix("notes") {
+                    let paused = kind == "notes-paused"
+                    let state = ChirpNotesActivityAttributes.ContentState(
+                        status: paused ? .paused : .recording, startedAt: now.addingTimeInterval(-192), elapsed: 192,
+                        debugRetention: false, title: "Design review notes")
+                    _ = try Activity.request(attributes: ChirpNotesActivityAttributes(), content: ActivityContent(state: state, staleDate: nil), pushType: nil)
+                } else {
+                    let listening = kind == "session-listening"
+                    let state = ChirpActivityAttributes.ContentState(
+                        phase: listening ? .listening : .armed, debugRetention: kind == "session-debug",
+                        listeningSince: listening ? now.addingTimeInterval(-72) : nil)
+                    let stale: Date? = kind == "session-stale" ? now.addingTimeInterval(-1) : nil
+                    _ = try Activity.request(attributes: ChirpActivityAttributes(), content: ActivityContent(state: state, staleDate: stale ?? now.addingTimeInterval(3600)), pushType: nil)
+                }
+            } catch {}
+        }
+    }
+}
+#endif
