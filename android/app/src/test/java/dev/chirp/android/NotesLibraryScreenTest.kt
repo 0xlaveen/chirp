@@ -85,6 +85,10 @@ class NotesLibraryScreenTest {
     private fun open(title: String) = compose.onNode(hasText(title) and hasClickAction()).performClick()
     private fun trash() { compose.onNodeWithContentDescription("Library options").performClick(); compose.onNodeWithText("Recently Deleted").performClick() }
     private fun loaded(title: String) { compose.waitUntil(5000) { compose.onAllNodesWithContentDescription("Rename notes: $title").fetchSemanticsNodes().isNotEmpty() } }
+    private fun displayed(text: String) {
+        // IO completion and the snackbar's first visible frame are independent of Compose idleness.
+        compose.waitUntil(5000) { compose.onNodeWithText(text).isDisplayed() }
+    }
 
     @Test fun `Ctrl F closes a cover detail and focuses library search`() {
         note("Garden plans", "A synthetic page")
@@ -121,14 +125,15 @@ class NotesLibraryScreenTest {
         val id = note("Garden plans", "- Buy seeds")
         show()
         compose.onNode(hasText("Garden plans") and hasClickAction()).performTouchInput { swipeLeft() }
-        compose.onNodeWithText("Note deleted").assertIsDisplayed()
+        displayed("Note deleted")
         compose.onNodeWithText("Undo").performClick()
-        compose.onNodeWithText("Garden plans").assertIsDisplayed()
+        displayed("Garden plans")
         compose.runOnIdle { assertFalse(library.open(id)!!.entry.deleted) }
         compose.onNode(hasText("Garden plans") and hasClickAction()).performTouchInput { swipeLeft() }
+        displayed("Note deleted")
         trash()
         compose.onNodeWithText("Restore").performClick()
-        compose.onNodeWithText("Nothing recently deleted").assertExists()
+        displayed("Nothing recently deleted")
         compose.runOnIdle { assertFalse(library.open(id)!!.entry.deleted) }
     }
 
