@@ -10,7 +10,7 @@ import pytest
 from conftest import use_home
 
 from chirp_server import model_catalog as catalog
-from chirp_server import setup
+from chirp_server import paths, setup
 from chirp_server.config import Settings
 from chirp_server.engine import sensevoice_models
 
@@ -207,10 +207,7 @@ def sensevoice_download(monkeypatch, tmp_path, installed):
         assert repository == sensevoice_models.REPOSITORY
         assert kwargs["revision"] == sensevoice_models.REVISION
         assert kwargs["allow_patterns"] == sensevoice_models.HUB_FILES
-        assert (
-            kwargs["local_dir"]
-            == tmp_path / "Library/Application Support/Chirp/models" / SENSEVOICE
-        )
+        assert kwargs["local_dir"] == paths.model_root() / SENSEVOICE
         return plan
 
     monkeypatch.setattr(huggingface_hub, "snapshot_download", dry_run)

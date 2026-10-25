@@ -12,7 +12,7 @@ from conftest import HEADERS, START, TOKEN
 from starlette.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
-from chirp_server import cli, devices
+from chirp_server import cli, devices, paths
 from chirp_server.app import create_app
 from chirp_server.devices import Credentials, DeviceStore
 
@@ -256,7 +256,7 @@ def run(monkeypatch, capsys, *argv):
 @pytest.fixture
 def home(tmp_path, monkeypatch):
     monkeypatch.setattr(Path, "home", lambda: tmp_path)
-    return tmp_path / ".config/chirp"
+    return paths.config_dir()
 
 
 def token_of(uri):
