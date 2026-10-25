@@ -110,6 +110,7 @@ final class ChirpSettingsUITests: XCTestCase {
         cleanup.switches.firstMatch.exists ? cleanup.switches.firstMatch.tap() : cleanup.tap()
         let enable = app.buttons["Enable for this destination"]
         XCTAssertTrue(enable.waitForExistence(timeout: 5), "No consent dialog")
+        XCTAssertTrue(app.buttons["Cancel"].waitForExistence(timeout: 5))
         app.buttons["Cancel"].tap()
         XCTAssertTrue(waitFor(cleanup, "value == '0'"), "A cancelled consent leaves clean-up off")
         cleanup.switches.firstMatch.exists ? cleanup.switches.firstMatch.tap() : cleanup.tap()
@@ -233,6 +234,8 @@ final class ChirpSettingsUITests: XCTestCase {
         XCTAssertTrue(waitFor(toggle, "value == '1'"))
         toggle.switches.firstMatch.exists ? toggle.switches.firstMatch.tap() : toggle.tap()
         XCTAssertTrue(app.buttons["Turn off and delete"].waitForExistence(timeout: 5), "No turn-off confirmation")
+        // A dialog's cancel button can appear a beat after its destructive one.
+        XCTAssertTrue(app.buttons["Keep history"].waitForExistence(timeout: 5), "No cancel in the turn-off dialog")
         app.buttons["Keep history"].tap()
         XCTAssertTrue(waitFor(toggle, "value == '1'"), "Keep history must leave it on")
         toggle.switches.firstMatch.exists ? toggle.switches.firstMatch.tap() : toggle.tap()
