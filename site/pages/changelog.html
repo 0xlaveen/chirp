@@ -1,10 +1,13 @@
 <!--
 title: What’s new — Chirp
-description: Shipped Chirp updates since the Pond redesign: Android speaker labels and shortcuts, plus the new iPhone and iPad Dictate screen and onboarding.
+description: Shipped Chirp updates since the Pond redesign: Windows and Linux support, Android speaker labels and shortcuts, plus the new iPhone and iPad Dictate screen and onboarding.
 section: changelog
 -->
 <div class="narrow guide-hero"><p class="eyebrow">What’s new</p><h1>A quieter place for your voice.</h1><p class="lede">Shipped changes since the Pond redesign in #188. Based on merged pull requests, checked October 26, 2026.</p></div>
 <article class="narrow prose">
+<h2>October 26, 2026</h2>
+<h3>Chirp comes to Windows and Linux</h3><p>The speech server now runs on Windows 10/11 and Linux, with a background service on each (a per-user Task Scheduler task on Windows, a systemd user unit on Linux), ONNX Parakeet on the CPU with opt-in CUDA/DirectML, and a shared Tauri desktop app: tray icon, hold-to-talk key, live HUD, typed or pasted insertion and a local Notes library with owner-only file permissions. On Linux, X11 gets single-key holds and Wayland uses the desktop’s Global Shortcuts portal. It’s early: Windows is verified in CI, with a manual acceptance pass on real PCs still pending, and CPU clean-up without a GPU is slow.</p><p><a href="{{repo}}/pull/216">#216 · Portable paths and locks</a> · <a href="{{repo}}/pull/218">#218 · Desktop foundation</a> · <a href="{{repo}}/pull/219">#219 · Windows desktop</a> · <a href="{{repo}}/pull/228">#228 · Windows service and doctor</a> · <a href="{{repo}}/pull/229">#229 · Portable backends and systemd</a> · <a href="{{repo}}/pull/232">#232 · Wayland portal shortcuts</a> · <a href="{{repo}}/pull/235">#235 · Desktop Notes</a></p>
+<p>New here? Start with the <a href="guides/windows.html">Windows guide</a> or the <a href="guides/linux.html">Linux guide</a>.</p>
 <h2>October 25, 2026</h2>
 <h3>A more consistent iOS dark appearance</h3><p>Dark tonal fills now follow the raised Pond surfaces. Setup can be reopened from its reminder card, and new large-type and Reduce Motion captures document those states.</p><p><a href="{{repo}}/pull/209">#209 · iOS Pond refinements</a></p>
 <h3>iPhone and iPad get their Pond shell</h3><p>A dedicated Dictate screen, iPad sidebar and guided onboarding for pairing, microphone access and the keyboard. The shared foundation brings Pond colors, the Ripple and the Chirp glyph to iOS. Personal install through Xcode; early hardware validation.</p><p><a href="{{repo}}/pull/206">#206 · App shell, Dictate and onboarding</a> · <a href="{{repo}}/pull/204">#204 · Pond foundation</a></p>

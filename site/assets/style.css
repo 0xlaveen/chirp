@@ -509,8 +509,10 @@ summary {cursor:pointer;color:var(--ink);}
 .tag { display: inline-flex; align-items: center; width: max-content; max-width: 100%; padding: 5px 11px; border-radius: 999px; font: 600 .68rem/1.25 var(--sans); letter-spacing: .01em; }
 .tag-soon { background: color-mix(in srgb, var(--moon-fill) 22%, transparent); color: var(--moon); border: 1px solid color-mix(in srgb, var(--moon-fill) 45%, transparent); }
 .tag-source { background: var(--lily-soft); color: var(--lily); border: 1px solid color-mix(in srgb, var(--lily) 32%, transparent); }
+.tag-early { background: color-mix(in srgb, var(--koi-decor) 14%, transparent); color: var(--koi); border: 1px solid color-mix(in srgb, var(--koi-decor) 38%, transparent); }
 .product-hero .tag-soon { background: #3a2a10; color: #f5c566; border-color: #5a4218; }
 .product-hero .tag-source { background: #17352a; color: #7ccb9b; border-color: #2c5b45; }
+.product-hero .tag-early { background: #38200f; color: #ff9c66; border-color: #5a3418; }
 
 .hero-notice { display: grid; gap: 8px; max-width: 40em; margin: 26px 0 4px; padding: 16px 18px; border: 1px solid #35425b; border-radius: 16px; background: rgb(255 255 255 / 4%); }
 .hero-notice p { margin: 0; color: #c7cfdc; font-size: .9rem; line-height: 1.55; }

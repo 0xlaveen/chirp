@@ -4,8 +4,15 @@ The shared Tauri 2 client for Linux and Windows supplies dictation, native
 microphone capture, streaming partials/finals, the Pond HUD, pairing, settings,
 a tray and a local Live Notes library. X11 uses single-key holds; Wayland uses
 the shortcut approved by the desktop portal. The native Mac app remains in
-[`mac/`](../mac/). Track Linux work in [#213](https://github.com/araa47/chirp/issues/213)
-and Windows in [#214](https://github.com/araa47/chirp/issues/214).
+[`mac/`](../mac/). Linux design: [#213](https://github.com/araa47/chirp/issues/213);
+the Windows manual acceptance checklist: [#214](https://github.com/araa47/chirp/issues/214).
+
+**Status: early.** Linux and Windows both build and pass their tests in CI
+(Linux in an arm64 container with real X11/Wayland checks; Windows on
+`windows-latest`, including a real typing smoke test and the NSIS build).
+Windows has not yet had its manual acceptance pass on a real PC (the checklist
+is in [docs/windows.md](../docs/windows.md)); on Wayland, global shortcuts
+depend on your compositor's xdg-desktop-portal backend.
 
 ## Linux
 
@@ -53,7 +60,7 @@ for compositors supporting the virtual-keyboard protocol; otherwise install
 `wl-clipboard` and paste the result yourself. Xwayland alone does not grant global
 access to native Wayland applications.
 
-The server must accept `start.client = "desktop"` (this PR adds it). Dictations
+The server must accept `start.client = "desktop"`. Dictations
 are limited to 120 seconds. Disconnects, mic failures and an overloaded audio
 queue fail visibly rather than inserting incomplete audio. A failed insertion
 keeps the transcript in the HUD. Escape in a focused Chirp window cancels.
@@ -216,8 +223,8 @@ cannot keep up stops recording visibly. Server debug retention is shown when
 reported by the stream. Smart notes can still finish after recording stops.
 
 For an explicit real ONNX + pinned GGUF Notes test on a Docker macOS host,
-first run `server/scripts/linux-container-smoke.sh` from the portable-server
-branch to build `chirp-linux-server:test`, then build `--example notes-smoke`
+first run `server/scripts/linux-container-smoke.sh` to build
+`chirp-linux-server:test`, then build `--example notes-smoke`
 with `desktop/scripts/linux-container.sh`. Set
 `CHIRP_DESKTOP_EVIDENCE_CONTAINER` to its printed container ID and
 `CHIRP_GGUF_FILE` to the explicitly fetched catalog model, then run

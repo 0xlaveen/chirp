@@ -4,7 +4,7 @@
 
 <h1 align="center">Chirp</h1>
 
-<p align="center"><strong>Private dictation and live notes. Your Mac does the listening.</strong></p>
+<p align="center"><strong>Private dictation and live notes. Your own computer does the listening.</strong></p>
 
 <p align="center">
   <a href="https://github.com/araa47/chirp/actions/workflows/server.yml"><img src="https://github.com/araa47/chirp/actions/workflows/server.yml/badge.svg" alt="server"></a>
@@ -24,11 +24,13 @@
   </tr>
 </table>
 
-Press a hotkey on your Mac, or the mic on your phone, and talk. Your words appear live in whatever text field you're using, and on the Mac the final text replaces them about a tenth of a second after you stop. Leave the mic open in a meeting and Chirp writes headings, to-dos and decisions as you talk, into a notes library you can search and replay. Everything runs on a Mac you own. Your phone reaches it over your own Tailscale network, and no other server is involved.
+Press a hotkey on your Mac, PC or Linux desktop, or the mic on your phone, and talk. Your words appear live in whatever text field you're using, and on the Mac the final text replaces them about a tenth of a second after you stop. Leave the mic open in a meeting and Chirp writes headings, to-dos and decisions as you talk, into a notes library you can search and replay. Everything runs on a machine you own. Your phone reaches it over your own Tailscale network, and no other server is involved.
 
-Linux and Windows desktop support is being added in [`desktop/`](desktop/README.md),
-with a shared Tauri client and portable speech server. Linux design and progress:
-[#213](https://github.com/araa47/chirp/issues/213).
+Windows and Linux are supported, early: the server and a shared Tauri desktop app
+(hold-to-talk key, live HUD, text insertion and a local Notes library) build and pass
+their tests in [`desktop/`](desktop/README.md) and the server's CI. See what's early
+at the end of this README, and in [docs/windows.md](docs/windows.md) and
+[docs/linux.md](docs/linux.md).
 
 ## What you get
 
@@ -46,30 +48,32 @@ with a shared Tauri client and portable speech server. Linux design and progress
 | **Linux / Windows desktop** · [desktop/README.md](desktop/README.md) | Shared Tauri app with native dictation, layout-aware shortcuts, text insertion and a local editable Notes library. Server setup: [Linux](docs/linux.md), [Windows](docs/windows.md). |
 | **Server** · [server/README.md](server/README.md) | Parakeet TDT on MLX (Apple Silicon) or ONNX (Intel and other platforms), optional local Qwen clean-up and notes structuring, revocable per-device tokens and a `doctor` check. |
 
-**Honest limits.** You need a Mac on macOS 14+ (Apple Silicon or Intel) that's on and reachable whenever you dictate. Apple Silicon uses MLX, the fastest option; Intel uses ONNX Parakeet. Windows and Linux support is in progress. Phones connect only through Tailscale. Everything installs from source: there's no notarized Mac download, Play Store build or App Store build.
+**Honest limits.** You need the server machine — a Mac on macOS 14+ (Apple Silicon uses MLX, the fastest option; Intel uses ONNX Parakeet), a PC on Windows 10/11, or a Linux desktop (X11, or Wayland) — on and reachable whenever you dictate. Windows and Linux are new and early: Windows is verified in CI, including a real transcription smoke test, but a manual acceptance pass on real PCs is still pending; on Wayland, global shortcuts depend on your compositor's portal; and clean-up on a CPU, without a GPU, is slow (dictation works without it). Phones connect only through Tailscale. Everything installs from source: there's no notarized Mac download, Play Store build, App Store build or signed Windows/Linux installer.
 
 **Intel Macs.** Built-in clean-up and Notes structuring run on CPU and can be slow. Dictation works without them. Use an OpenAI-compatible local endpoint such as Ollama or LM Studio, or turn clean-up off. Notes can still keep a plain transcript with **Structure notes** off. Performance depends on your Mac and model.
 
-**How it compares.** Cloud dictation tools such as Wispr Flow and Typeless, and meeting-notes services such as Otter and Granola, process your audio on their own servers and generally charge a subscription. Apple Dictation and Gboard voice typing are free but tied to one platform, without Chirp's clean-up styles or notes. Superwhisper also runs locally, but it's closed source with paid tiers. Chirp's bet is that one Mac you already own can do all of this, privately, for every device you type on.
+**How it compares.** Cloud dictation tools such as Wispr Flow and Typeless, and meeting-notes services such as Otter and Granola, process your audio on their own servers and generally charge a subscription. Apple Dictation and Gboard voice typing are free but tied to one platform, without Chirp's clean-up styles or notes. Superwhisper also runs locally, but it's closed source with paid tiers. Chirp's bet is that one computer you already own can do all of this, privately, for every device you type on.
 
 ## How it works
 
 ```mermaid
 flowchart LR
-    subgraph MAC["Your Mac (Apple Silicon or Intel)"]
+    subgraph MAC["Your computer (Mac, Windows PC or Linux box)"]
         SRV["chirp-server<br/>Parakeet speech recognition (MLX / ONNX)<br/>+ optional Qwen clean-up and notes"]
         APP["Chirp for Mac<br/>menu bar · HUD · Notes library"]
+        DESK["Chirp desktop<br/>tray · HUD · Notes library"]
         APP <-->|"127.0.0.1 only"| SRV
+        DESK <-->|"127.0.0.1 only"| SRV
     end
     AND["Chirp for Android<br/>Notes · keyboard or floating mic"] <-->|"your tailnet<br/>(Tailscale Serve, HTTPS)"| SRV
     IOS["Chirp for iPhone and iPad<br/>app + keyboard"] <-->|"your tailnet<br/>(Tailscale Serve, HTTPS)"| SRV
 ```
 
-The Mac runs one speech server that listens only on `127.0.0.1`. The phone apps record audio, stream it, and insert the text that comes back, reaching the server through `tailscale serve`, never the public internet. Measured on an Apple M5 Pro: first live words in **196–244 ms**, stop → final text in **96–107 ms**, recognition at **88–113× real time**, and clean-up in about **400 ms** warm ([docs/bench.md](docs/bench.md); observations on synthetic clips, not guarantees). Protocol and rules: [docs/architecture.md](docs/architecture.md).
+The server machine runs one speech server that listens only on `127.0.0.1` — the Mac app and the Windows/Linux desktop app connect to it locally, and the phone apps record audio, stream it, and insert the text that comes back, reaching the server through `tailscale serve`, never the public internet. Measured on an Apple M5 Pro: first live words in **196–244 ms**, stop → final text in **96–107 ms**, recognition at **88–113× real time**, and clean-up in about **400 ms** warm ([docs/bench.md](docs/bench.md); observations on synthetic clips, not guarantees). Protocol and rules: [docs/architecture.md](docs/architecture.md).
 
 ## Get it running
 
-You need macOS 14+ on an Apple Silicon or Intel Mac. Apple Silicon uses MLX (fastest); Intel uses ONNX Parakeet. Windows and Linux support is in progress. For a phone you also need [Tailscale](https://tailscale.com) on both the Mac and the phone. The [website guides](https://araa47.github.io/chirp/guides/index.html) walk through each step.
+The server runs on macOS 14+ (Apple Silicon uses MLX, fastest; Intel uses ONNX Parakeet), Windows 10/11, or Linux (X11 or Wayland) — Windows and Linux early, see [docs/windows.md](docs/windows.md) and [docs/linux.md](docs/linux.md). For a phone you also need [Tailscale](https://tailscale.com) on both the server machine and the phone. The [website guides](https://araa47.github.io/chirp/guides/index.html) walk through each step.
 
 ### Build it with your coding agent
 
@@ -95,24 +99,27 @@ For iPhone or iPad, point the agent at [ios/README.md](ios/README.md) → Instal
    ```
    Onboarding asks how you'll dictate (Chirp Keyboard, or keep your own keyboard with the floating mic), then pairs by scanning the QR code from the Mac's **Pair a Phone…**. Full guide: [android/README.md](android/README.md).
 3. **iPhone / iPad.** See [ios/README.md](ios/README.md) for requirements, same-team signing, Full Access and pairing.
+4. **Windows.** Server, Task Scheduler service and desktop app: [docs/windows.md](docs/windows.md), or the [website's Windows guide](https://araa47.github.io/chirp/guides/windows.html).
+5. **Linux.** Server, systemd user service and desktop app: [docs/linux.md](docs/linux.md) and [desktop/README.md](desktop/README.md), or the [website's Linux guide](https://araa47.github.io/chirp/guides/linux.html).
 
 ## Privacy
 
-**Your data stays yours.** Chirp has no servers of its own: your Mac is the server. Audio and text travel only between your own devices, over your own Tailscale network, and are never sent to us or any third party.
+**Your data stays yours.** Chirp has no servers of its own: your own computer is the server. Audio and text travel only between your own devices, over your own Tailscale network, and are never sent to us or any third party.
 
 - **Dictation is transient.** Audio and text live in memory for one dictation, then they're gone. Logs hold timings and error codes, never what you said.
-- **Notes stay on the device that recorded them**, kept until you delete them (or after 1 year, 90 or 30 days if you choose). They're never synced or indexed; on Android they're encrypted with a Keystore key, and on the Mac the files are readable only by your user account.
-- **Audio with notes is opt-in** (off by default) and never leaves the device.
+- **Notes stay on the device that recorded them**, kept until you delete them (or after 1 year, 90 or 30 days if you choose). They're never synced or indexed; on Android they're encrypted with a Keystore key, and on the Mac and the desktop app the files are readable only by your user account.
+- **Audio with notes is opt-in** (off by default) and never leaves the device. (Desktop Notes keep text only; they don't store audio.)
 - **Dictation history is opt-in**, encrypted on the phone, kept for 24 hours, 7 days or 30 days.
-- The speech server listens only on your Mac's loopback address, phones reach it only through your tailnet, and every phone pairs with its own revocable token. Clean-up runs on the same Mac; if you point it elsewhere, every client says where text goes.
+- The speech server listens only on your machine's loopback address, phones reach it only through your tailnet, and every phone pairs with its own revocable token. Clean-up runs on the same machine; if you point it elsewhere, every client says where text goes.
 
 Full details: [docs/privacy.md](docs/privacy.md).
 
 ## Repository and docs
 
 ```
-server/   Speech server: Python 3.13, Starlette, parakeet-mlx (uv project) + tests and benchmarks
+server/   Speech server: Python 3.13, Starlette, Parakeet (MLX / ONNX) (uv project) + tests and benchmarks
 mac/      Chirp for Mac: Swift 6 / SwiftPM / AppKit + SwiftUI menu-bar app
+desktop/  Chirp desktop for Linux and Windows: Tauri 2 app (dictation, HUD, Notes library)
 android/  Chirp for Android: the app + Chirp Keyboard (HeliBoard-based IME)
 ios/      Chirp for iPhone and iPad: SwiftUI app + dictation keyboard
 site/     The website (stdlib-only generator; python3 site/build.py)
@@ -120,7 +127,7 @@ docs/     Architecture, benchmarks, privacy, testing, milestones (indexed in doc
 scripts/  Standalone Mac installer and the cross-component end-to-end check
 ```
 
-[Architecture](docs/architecture.md) · [Benchmarks](docs/bench.md) · [Privacy](docs/privacy.md) · [Testing](docs/TESTING.md) · [Milestones](docs/milestones/README.md) · [All docs](docs/README.md) · Screenshots: [Mac](docs/screenshots/mac/) · [Android](docs/screenshots/android/)
+[Architecture](docs/architecture.md) · [Benchmarks](docs/bench.md) · [Privacy](docs/privacy.md) · [Testing](docs/TESTING.md) · [Milestones](docs/milestones/README.md) · [All docs](docs/README.md) · Screenshots: [Mac](docs/screenshots/mac/) · [Desktop](docs/screenshots/desktop/) · [Android](docs/screenshots/android/)
 
 ## Licensing
 

@@ -31,20 +31,28 @@ class PublicSiteChecks(unittest.TestCase):
         index = (self.site / 'index.html').read_text()
         get = (self.site / 'get.html').read_text()
         self.assertIn('Packaged apps coming soon', index)
-        self.assertIn('Packaged macOS, Linux and Windows apps', index)
+        self.assertIn('Windows and Linux are here — early', index)
         self.assertIn('Android APK', index)
         self.assertIn('point a coding agent at the repo', index)
         self.assertIn('self-serve', index)
         self.assertIn('href="get.html"', index)
         self.assertIn('Packaged apps are coming soon', index)
+        # Windows and Linux must stay honestly labeled as early.
+        self.assertIn('manual acceptance pass on real PCs', index)
+        self.assertIn('depend on your compositor’s portal', index)
         for phrase in [
             'macOS, Linux, Windows, Android and iOS',
             'build Chirp from source',
             'point a coding agent at the repository',
             'APK coming soon',
             'App Store build coming soon',
+            'Early · build from source',
         ]:
             self.assertIn(phrase, get)
+        # The Windows and Linux guides exist and keep the early warning.
+        for guide in ['windows', 'linux']:
+            page = (self.site / f'guides/{guide}.html').read_text()
+            self.assertIn('is early', page, guide)
         # Every rendered page repeats the availability status in its footer.
         for page in self.site.rglob('*.html'):
             text = page.read_text()
