@@ -7,7 +7,7 @@ import time
 from types import SimpleNamespace
 
 import pytest
-from conftest import PCM
+from conftest import PCM, use_home
 
 from chirp_server import doctor
 from chirp_server.audio import wav_bytes
@@ -254,7 +254,7 @@ def test_warm_decode_engine_failure(monkeypatch, tmp_path):
 
 
 def test_doctor_quick_reports_every_check(monkeypatch, tmp_path, capsys):
-    monkeypatch.setenv("HOME", str(tmp_path))
+    use_home(monkeypatch, tmp_path)
     monkeypatch.setattr(doctor, "check_environment", lambda: Check("environment", OK, "Python"))
     monkeypatch.setattr(doctor, "check_mlx", lambda: Check("mlx", OK, "available"))
     monkeypatch.setattr(doctor, "check_model", lambda model_dir=None: Check("model", OK, "cached"))
@@ -281,7 +281,7 @@ def test_doctor_quick_reports_every_check(monkeypatch, tmp_path, capsys):
 
 
 def test_doctor_exits_1_only_on_fail(monkeypatch, tmp_path, capsys):
-    monkeypatch.setenv("HOME", str(tmp_path))
+    use_home(monkeypatch, tmp_path)
     monkeypatch.setattr(
         doctor, "check_model", lambda model_dir=None: Check("model", FAIL, "missing", "fetch")
     )

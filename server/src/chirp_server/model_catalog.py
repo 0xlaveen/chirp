@@ -1,7 +1,6 @@
 """Local, revision-pinned choices. Only explicit refresh/add/download use the network."""
 
 import contextlib
-import fcntl
 import fnmatch
 import json
 import os
@@ -10,9 +9,10 @@ from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 from uuid import uuid4
 
-from . import cleanup_models
+from . import cleanup_models, paths
 from .engine import models as speech_models
 from .engine import sensevoice_models
+from .fsutil import locked, private_mkdir
 
 ENGINES = {"mlx", "sensevoice"}
 
@@ -50,7 +50,7 @@ SENSEVOICE = "sensevoice-small"
 
 
 def root():
-    return Path.home() / ".config/chirp"
+    return paths.config_dir()
 
 
 def read_json(path):
@@ -67,9 +67,8 @@ def read_json(path):
 
 def update_json(path, update):
     """Serialize concurrent CLI/UI writers and replace atomically; never edit server.toml."""
-    path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-    with path.with_suffix(".lock").open("a") as lock:
-        fcntl.flock(lock, fcntl.LOCK_EX)
+    private_mkdir(path.parent)
+    with path.with_suffix(".lock").open("a") as lock, locked(lock.fileno()):
         value = update(read_json(path))
         temporary = path.with_name(f".{path.name}.{uuid4().hex}.tmp")
         fd = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)

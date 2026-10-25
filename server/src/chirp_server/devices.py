@@ -2,7 +2,6 @@
 logged or printed (pairing prints a new token once, locally)."""
 
 import contextlib
-import fcntl
 import hashlib
 import json
 import logging
@@ -15,6 +14,8 @@ import time
 import unicodedata
 from datetime import UTC, datetime
 from pathlib import Path
+
+from .fsutil import NOFOLLOW, locked, private_mkdir
 
 log = logging.getLogger("chirp")
 FILE = "devices.json"
@@ -76,17 +77,17 @@ class DeviceStore:
 
     @contextlib.contextmanager
     def locked(self, blocking=True):
-        self.directory.mkdir(parents=True, exist_ok=True, mode=0o700)
-        fd = os.open(self.directory / "devices.lock", os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
+        private_mkdir(self.directory)
+        fd = os.open(self.directory / "devices.lock", os.O_CREAT | os.O_RDWR | NOFOLLOW, 0o600)
         try:
-            fcntl.flock(fd, fcntl.LOCK_EX | (0 if blocking else fcntl.LOCK_NB))
-            yield
+            with locked(fd, blocking):
+                yield
         finally:
             os.close(fd)
 
     def read(self) -> list[dict]:
         try:
-            fd = os.open(self.path, os.O_RDONLY | os.O_NOFOLLOW)
+            fd = os.open(self.path, os.O_RDONLY | NOFOLLOW)
         except FileNotFoundError:
             return []
         except OSError:
@@ -95,7 +96,8 @@ class DeviceStore:
             info = os.fstat(fd)
             if not stat.S_ISREG(info.st_mode):
                 raise ValueError("Device token file must be a regular file")
-            if stat.S_IMODE(info.st_mode) != 0o600:
+            # Windows has no mode bits; the private config directory's ACL covers the file.
+            if os.name == "posix" and stat.S_IMODE(info.st_mode) != 0o600:
                 os.fchmod(fd, 0o600)
             try:
                 data = json.loads(stream.read())
@@ -108,7 +110,7 @@ class DeviceStore:
 
     def write(self, devices: list[dict]):
         temporary = self.directory / f".{FILE}.{secrets.token_hex(4)}.tmp"
-        fd = os.open(temporary, os.O_CREAT | os.O_EXCL | os.O_WRONLY | os.O_NOFOLLOW, 0o600)
+        fd = os.open(temporary, os.O_CREAT | os.O_EXCL | os.O_WRONLY | NOFOLLOW, 0o600)
         try:
             with os.fdopen(fd, "w") as stream:
                 json.dump({"version": 1, "devices": devices}, stream, indent=2)

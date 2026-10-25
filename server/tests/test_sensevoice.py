@@ -6,7 +6,7 @@ from types import SimpleNamespace
 
 import numpy as np
 import pytest
-from conftest import HEADERS, PCM, START, TOKEN
+from conftest import HEADERS, PCM, START, TOKEN, use_home
 from starlette.testclient import TestClient
 from test_protocol import final
 
@@ -145,7 +145,7 @@ def test_fetch_pins_model_and_rejects_vad_replacement(tmp_path, monkeypatch):
 
 
 def test_config_and_cli_select_optional_backend_without_changing_default(tmp_path, monkeypatch):
-    monkeypatch.setenv("HOME", str(tmp_path))
+    use_home(monkeypatch, tmp_path)
     assert Settings.read().engine == "mlx"
     config = tmp_path / "server.toml"
     config.write_text('engine = "sensevoice"\n[sensevoice]\nnum_threads = 2\n')
@@ -186,7 +186,7 @@ def test_cli_overrides_config_and_separates_mlx_selection(tmp_path, monkeypatch)
 
     from chirp_server import app, model_catalog
 
-    monkeypatch.setenv("HOME", str(tmp_path))
+    use_home(monkeypatch, tmp_path)
 
     def selection(settings):
         settings.model_dir = tmp_path / "mlx-selection"
@@ -256,7 +256,7 @@ def test_sensevoice_doctor_never_requires_mlx(settings, monkeypatch, capsys):
 def test_fetch_engine_option_before_or_after_subcommand(tmp_path, monkeypatch, arguments, expected):
     from chirp_server.engine import models as speech_models
 
-    monkeypatch.setenv("HOME", str(tmp_path))
+    use_home(monkeypatch, tmp_path)
     requested = []
     monkeypatch.setattr(speech_models, "fetch", lambda engine: requested.append(engine))
     monkeypatch.setattr(sys, "argv", ["chirp-server", *arguments])

@@ -7,6 +7,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from conftest import use_home
 
 from chirp_server import model_catalog as catalog
 from chirp_server import setup
@@ -18,7 +19,7 @@ SENSEVOICE = "sensevoice-small"
 
 @pytest.fixture(autouse=True)
 def isolated(tmp_path, monkeypatch):
-    monkeypatch.setenv("HOME", str(tmp_path))
+    use_home(monkeypatch, tmp_path)
     monkeypatch.setattr(catalog, "verify", lambda _: None)
     monkeypatch.setattr(sensevoice_models, "runtime_installed", lambda: True)
 
@@ -134,7 +135,7 @@ def test_verify_loads_sensevoice_on_cpu_before_saving(tmp_path, monkeypatch):
     from chirp_server.engine import sensevoice
 
     monkeypatch.undo()
-    monkeypatch.setenv("HOME", str(tmp_path))
+    use_home(monkeypatch, tmp_path)
     calls = []
 
     class Engine:

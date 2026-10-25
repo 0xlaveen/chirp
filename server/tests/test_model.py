@@ -17,12 +17,13 @@ from chirp_server.config import CorrectionConfig
 from chirp_server.engine import EngineWorker
 from chirp_server.engine.mlx import ParakeetMLX
 from chirp_server.managed_cleanup import ManagedCleanup
+from chirp_server.paths import fixtures_dir
 
 pytestmark = pytest.mark.model
 
 
 def fixture_directory():
-    path = Path.home() / "Library/Caches/Chirp/fixtures"
+    path = fixtures_dir()
     if not (path / "manifest.json").exists():
         spec = importlib.util.spec_from_file_location(
             "generate_fixtures",

@@ -6,6 +6,8 @@ import subprocess
 import wave
 from pathlib import Path
 
+from chirp_server.paths import fixtures_dir
+
 TEXT = (
     "The quick brown fox jumps over the lazy dog. "
     "Please send the updated project schedule tomorrow morning. "
@@ -90,9 +92,7 @@ def generate(directory: Path, pause_ms: int = 0):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument(
-        "--output", type=Path, default=Path.home() / "Library/Caches/Chirp/fixtures"
-    )
+    parser.add_argument("--output", type=Path, default=fixtures_dir())
     parser.add_argument("--pause-ms", type=int, default=0)
     args = parser.parse_args()
     generate(args.output, args.pause_ms)

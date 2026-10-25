@@ -25,6 +25,19 @@ START = {
 PCM = (np.sin(np.arange(8000) * 0.1) * 10000).astype("<i2").tobytes()
 
 
+@pytest.fixture(autouse=True)
+def _home_relative_dirs(monkeypatch):
+    """Every platform location (paths.py) follows the home directory in tests."""
+    for name in ("APPDATA", "LOCALAPPDATA", "XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_CACHE_HOME"):
+        monkeypatch.delenv(name, raising=False)
+
+
+def use_home(monkeypatch, path):
+    """Point Path.home() at `path`: HOME on POSIX, USERPROFILE on Windows."""
+    monkeypatch.setenv("HOME", str(path))
+    monkeypatch.setenv("USERPROFILE", str(path))
+
+
 @pytest.fixture
 def settings(tmp_path):
     return Settings(

@@ -3,7 +3,7 @@ import os
 import time
 from pathlib import Path
 
-from conftest import HEADERS, PCM, START, TOKEN
+from conftest import HEADERS, PCM, START, TOKEN, use_home
 from starlette.testclient import TestClient
 from test_protocol import final
 
@@ -17,7 +17,7 @@ def test_no_retention(settings, monkeypatch, tmp_path, caplog):
     home, temp = tmp_path / "home", tmp_path / "temp"
     home.mkdir()
     temp.mkdir()
-    monkeypatch.setenv("HOME", str(home))
+    use_home(monkeypatch, home)
     monkeypatch.setenv("TMPDIR", str(temp))
     engine = FakeEngine("Private synthetic sentinel zyxwvu.")
     caplog.set_level(logging.INFO)

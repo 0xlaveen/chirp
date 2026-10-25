@@ -2,6 +2,7 @@
 
 import contextlib
 import json
+import os
 import select
 import sys
 
@@ -90,7 +91,7 @@ def generate(line, model, tokenizer, sampler):
 def main():
     # Suppress library diagnostics: neither exception text nor generated text is a log.
     with (
-        open("/dev/null", "w") as sink,
+        open(os.devnull, "w") as sink,
         contextlib.redirect_stdout(sink),
         contextlib.redirect_stderr(sink),
     ):
