@@ -2,7 +2,13 @@
 
 import os
 import subprocess
+import sys
 from pathlib import Path
+
+import pytest
+
+# install-mac.sh is a POSIX shell script.
+pytestmark = pytest.mark.skipif(sys.platform == "win32", reason="POSIX shell installer")
 
 
 def test_server_install_requires_no_dotfiles_and_preserves_configuration(tmp_path):

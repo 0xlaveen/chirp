@@ -35,3 +35,65 @@ jobs:
       - run: uv run ruff format --check .
       # pyproject's addopts already deselects `-m model` tests (real cached models, Apple Silicon only).
       - run: uv run pytest -q
+
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 25
+    defaults:
+      run:
+        shell: bash
+        working-directory: server
+    env:
+      PYTHONUTF8: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.13"
+          enable-cache: true
+          cache-dependency-glob: server/uv.lock
+      - run: uv sync --locked --extra onnx
+      # pyproject deselects -m model; the real ONNX server runs in windows-onnx below.
+      - run: uv run pytest -q
+        timeout-minutes: 15
+
+  windows-onnx:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
+        working-directory: server
+    env:
+      # Pinned by engine/models.py; the cache key carries the revision.
+      CHIRP_ONNX_MODEL_DIR: ${{ github.workspace }}\onnx-model\parakeet-onnx
+      PYTHONUTF8: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.13"
+          enable-cache: true
+          cache-dependency-glob: server/uv.lock
+      - run: uv sync --locked --extra onnx
+      - uses: actions/cache@v4
+        id: model
+        with:
+          path: onnx-model
+          key: onnx-parakeet-tdt-0.6b-v2-0bbb45a3365852604aef28b538a8f066f4ccaa85
+      - name: Fetch the pinned ONNX Parakeet model
+        if: steps.model.outputs.cache-hit != 'true'
+        run: |
+          uv run python -c "
+          import os
+          from huggingface_hub import snapshot_download
+          snapshot_download(
+              'istupakov/parakeet-tdt-0.6b-v2-onnx',
+              revision='0bbb45a3365852604aef28b538a8f066f4ccaa85',
+              local_dir=os.environ['CHIRP_ONNX_MODEL_DIR'],
+              allow_patterns=['config.json', 'vocab.txt', '*-model.int8.onnx', 'nemo128.onnx'],
+          )"
+      # A real chirp-server process on a free port with a throwaway home: ONNX Parakeet
+      # transcribes the committed synthetic clip over /v1/transcribe and /v1/stream.
+      - run: uv run pytest -q -m onnx -rs
+        timeout-minutes: 10

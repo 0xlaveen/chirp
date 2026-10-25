@@ -12,6 +12,7 @@ import shutil
 from pathlib import Path
 
 from .engine.models import model_root
+from .fsutil import private_mkdir
 
 REPOSITORY = "Wespeaker/wespeaker-voxceleb-resnet34-LM"
 REVISION = "f0c48c298fd835726c27956a5d617bad7115627e"
@@ -59,7 +60,7 @@ def fetch() -> Path:
     if is_downloaded() and verify(path()):
         return path()
     target = directory()
-    target.mkdir(parents=True, exist_ok=True, mode=0o700)
+    private_mkdir(target)
     downloaded = Path(hf_hub_download(REPOSITORY, FILE, revision=REVISION, local_dir=target))
     if not verify(downloaded):
         remove()

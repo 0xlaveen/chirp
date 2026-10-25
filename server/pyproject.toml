@@ -27,8 +27,11 @@ build-backend = "hatchling.build"
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
-addopts = "-m 'not model'"
-markers = ["model: real cached model integration tests"]
+addopts = "-m 'not model and not onnx'"
+markers = [
+  "model: real cached model integration tests",
+  "onnx: real ONNX Parakeet server smoke test (pytest -m onnx; needs the ONNX model)",
+]
 
 [tool.ruff]
 line-length = 100

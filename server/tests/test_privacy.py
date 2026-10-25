@@ -3,7 +3,7 @@ import os
 import time
 from pathlib import Path
 
-from conftest import HEADERS, PCM, START, TOKEN
+from conftest import HEADERS, PCM, START, TOKEN, has_mode, use_home
 from starlette.testclient import TestClient
 from test_protocol import final
 
@@ -17,7 +17,7 @@ def test_no_retention(settings, monkeypatch, tmp_path, caplog):
     home, temp = tmp_path / "home", tmp_path / "temp"
     home.mkdir()
     temp.mkdir()
-    monkeypatch.setenv("HOME", str(home))
+    use_home(monkeypatch, home)
     monkeypatch.setenv("TMPDIR", str(temp))
     engine = FakeEngine("Private synthetic sentinel zyxwvu.")
     caplog.set_level(logging.INFO)
@@ -75,8 +75,8 @@ def test_debug_visibility_permissions_purge(settings):
             final(ws)
     files = list(settings.debug_dir.iterdir())
     assert len(files) == 2
-    assert settings.debug_dir.stat().st_mode & 0o777 == 0o700
-    assert all(p.stat().st_mode & 0o777 == 0o600 for p in files)
+    assert has_mode(settings.debug_dir, 0o700)
+    assert all(has_mode(p, 0o600) for p in files)
     for path in files:
         os.utime(path, (time.time() - 4 * 86400,) * 2)
     assert Retention(settings).purge() == 2
@@ -98,10 +98,10 @@ def test_cancel_not_retained(settings):
 def test_token_permissions(tmp_path):
     token = load_token(tmp_path)
     assert len(token) >= 32
-    assert (tmp_path / "token").stat().st_mode & 0o777 == 0o600
+    assert has_mode(tmp_path / "token", 0o600)
     (tmp_path / "token").chmod(0o644)
     assert load_token(tmp_path) == token
-    assert (tmp_path / "token").stat().st_mode & 0o777 == 0o600
+    assert has_mode(tmp_path / "token", 0o600)
 
 
 def test_external_correction_health(settings):

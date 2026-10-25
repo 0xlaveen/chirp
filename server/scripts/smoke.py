@@ -17,6 +17,7 @@ import uvicorn
 from chirp_server.app import create_app
 from chirp_server.config import Settings
 from chirp_server.engine.mlx import ParakeetMLX
+from chirp_server.paths import fixtures_dir
 
 MODULE_PATH = Path(__file__).resolve().parents[1] / "tests/client_sim.py"
 
@@ -53,7 +54,7 @@ async def smoke():
             credential.write_text(token)
             result = await client_sim.run(
                 SimpleNamespace(
-                    wav=Path.home() / "Library/Caches/Chirp/fixtures/synthetic-5s.wav",
+                    wav=fixtures_dir() / "synthetic-5s.wav",
                     token_file=credential,
                     url=f"http://127.0.0.1:{port}",
                     correction=False,

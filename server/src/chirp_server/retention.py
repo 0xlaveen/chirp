@@ -6,6 +6,7 @@ import time
 
 from .audio import wav_bytes
 from .config import Settings
+from .fsutil import make_private, private_mkdir
 
 
 class Retention:
@@ -29,8 +30,8 @@ class Retention:
         if not self.settings.debug_retain:
             return
         directory = self.settings.debug_dir
-        directory.mkdir(parents=True, exist_ok=True, mode=0o700)
-        directory.chmod(0o700)
+        private_mkdir(directory)
+        make_private(directory)
         for suffix, data in [("wav", wav_bytes(pcm)), ("json", json.dumps(final).encode())]:
             fd = os.open(
                 directory / f"{session}.{suffix}", os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600

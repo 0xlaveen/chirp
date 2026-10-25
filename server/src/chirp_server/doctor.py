@@ -17,11 +17,13 @@ from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import urlsplit
 
+from . import paths
 from .cli import LABEL
 from .config import Settings, read_keep_loaded
+from .fsutil import is_private
 
 OK, WARN, FAIL = "OK", "WARN", "FAIL"
-DEFAULT_FIXTURE = Path.home() / "Library/Caches/Chirp/fixtures/synthetic-5s.wav"
+DEFAULT_FIXTURE = paths.fixtures_dir() / "synthetic-5s.wav"
 
 
 @dataclass(frozen=True)
@@ -166,6 +168,19 @@ def check_token(config_dir: Path) -> Check:
             f"{path} must be a regular file",
             f"remove {path}; the server regenerates it",
         )
+    if sys.platform == "win32":
+        try:
+            private = is_private(path)
+        except OSError:
+            private = False
+        if not private:
+            return Check(
+                "token",
+                WARN,
+                f"{path} is readable by other accounts",
+                "restart the server; it restores owner-only access at startup",
+            )
+        return Check("token", OK, f"{path} present, owner-only access; value not printed")
     mode = stat.S_IMODE(info.st_mode)
     if mode & 0o077:
         return Check(

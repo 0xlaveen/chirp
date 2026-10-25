@@ -291,6 +291,21 @@ grouping is a linear pass over at most a few hundred pieces: measured per-partia
 
 ## Configure
 
+### Where files live
+
+Paths in this README are the macOS ones. On other platforms (`chirp_server/paths.py`):
+
+| What | macOS | Windows | Linux |
+|---|---|---|---|
+| Config: `server.toml`, `token`, `devices.json`, model choices | `~/.config/chirp` | `%APPDATA%\Chirp` | `$XDG_CONFIG_HOME/chirp` (`~/.config/chirp`) |
+| Models, `server-state.json`, `debug/` | `~/Library/Application Support/Chirp` | `%LOCALAPPDATA%\Chirp` | `$XDG_DATA_HOME/chirp` (`~/.local/share/chirp`) |
+| Caches (synthetic fixtures) | `~/Library/Caches/Chirp` | `%LOCALAPPDATA%\Chirp\Cache` | `$XDG_CACHE_HOME/chirp` (`~/.cache/chirp`) |
+
+"Mode 0600/0700" means owner-only. On Windows, which has no mode bits, the server gives the config
+and debug directories (and the token) a protected access list that allows only your account and
+SYSTEM, and files created inside inherit it.
+
+
 Optional `~/.config/chirp/server.toml` (or `--config /path/to/server.toml`). Restart the server after editing it.
 
 ```toml

@@ -95,6 +95,7 @@ def test_start_reuses_a_running_server_without_touching_launchd(monkeypatch, cap
     assert events(capsys) == [{"event": "started"}]
 
 
+@pytest.mark.usefixtures("launchd")
 def test_start_reloads_managed_plist_without_rewriting_it(tmp_path, monkeypatch, capsys):
     import plistlib
 
@@ -135,6 +136,7 @@ def test_download_uses_verified_http_and_honors_explicit_ca(monkeypatch):
     assert setup.os.environ["SSL_CERT_FILE"] == "/custom/trusted.pem"
 
 
+@pytest.mark.usefixtures("launchd")
 def test_start_retries_bootstrap_while_bootout_settles(tmp_path, monkeypatch, capsys):
     import plistlib
     import subprocess

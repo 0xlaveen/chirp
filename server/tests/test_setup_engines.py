@@ -1,15 +1,17 @@
 """The Mac picker switches between MLX Parakeet and SenseVoice without editing server.toml."""
 
 import json
+import os
 import sys
 import tomllib
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from conftest import use_home
 
 from chirp_server import model_catalog as catalog
-from chirp_server import setup
+from chirp_server import paths, setup
 from chirp_server.config import Settings
 from chirp_server.engine import sensevoice_models
 
@@ -18,7 +20,7 @@ SENSEVOICE = "sensevoice-small"
 
 @pytest.fixture(autouse=True)
 def isolated(tmp_path, monkeypatch):
-    monkeypatch.setenv("HOME", str(tmp_path))
+    use_home(monkeypatch, tmp_path)
     monkeypatch.setattr(catalog, "verify", lambda _: None)
     monkeypatch.setattr(sensevoice_models, "runtime_installed", lambda: True)
 
@@ -134,7 +136,7 @@ def test_verify_loads_sensevoice_on_cpu_before_saving(tmp_path, monkeypatch):
     from chirp_server.engine import sensevoice
 
     monkeypatch.undo()
-    monkeypatch.setenv("HOME", str(tmp_path))
+    use_home(monkeypatch, tmp_path)
     calls = []
 
     class Engine:
@@ -168,6 +170,7 @@ def test_start_needs_the_sensevoice_runtime_and_files_not_mlx(monkeypatch, capsy
         setup.start_server(7899, None, "sensevoice")
 
 
+@pytest.mark.usefixtures("launchd")
 def test_start_refuses_a_service_that_pins_the_engine(tmp_path, monkeypatch):
     import plistlib
 
@@ -206,10 +209,7 @@ def sensevoice_download(monkeypatch, tmp_path, installed):
         assert repository == sensevoice_models.REPOSITORY
         assert kwargs["revision"] == sensevoice_models.REVISION
         assert kwargs["allow_patterns"] == sensevoice_models.HUB_FILES
-        assert (
-            kwargs["local_dir"]
-            == tmp_path / "Library/Application Support/Chirp/models" / SENSEVOICE
-        )
+        assert kwargs["local_dir"] == paths.model_root() / SENSEVOICE
         return plan
 
     monkeypatch.setattr(huggingface_hub, "snapshot_download", dry_run)
@@ -278,11 +278,12 @@ def test_install_command_uses_the_lock_or_pinned_requirements(tmp_path, monkeypa
     command = sensevoice_models.install_command()
     assert command[:3] == ["/bin/uv", "pip", "install"]
     assert command[-2:] == list(sensevoice_models.REQUIREMENTS)
-    (project / ".venv").chmod(0o555)
-    try:
-        assert sensevoice_models.install_command() is None
-    finally:
-        (project / ".venv").chmod(0o755)
+    if os.name == "posix":  # Windows has no read-only directories
+        (project / ".venv").chmod(0o555)
+        try:
+            assert sensevoice_models.install_command() is None
+        finally:
+            (project / ".venv").chmod(0o755)
 
 
 def test_installer_failure_hides_output_and_reports_a_generic_error(tmp_path, monkeypatch, capsys):

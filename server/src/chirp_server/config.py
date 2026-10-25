@@ -13,6 +13,8 @@ from pathlib import Path
 from urllib.parse import urlsplit
 from uuid import uuid4
 
+from . import paths
+from .fsutil import make_private, private_mkdir
 from .profiles import LIVE_NOTES, LIVE_NOTES_ID, MAX_PROMPT_CHARS, Profile, resolve_profiles
 
 
@@ -100,7 +102,7 @@ class CorrectionConfig:
 
 
 def default_state_path() -> Path:
-    return Path.home() / "Library/Application Support/Chirp/server-state.json"
+    return paths.state_path()
 
 
 def read_keep_loaded(path: Path) -> bool | None:
@@ -118,7 +120,7 @@ def read_keep_loaded(path: Path) -> bool | None:
 def persist_keep_loaded(path: Path, value: bool) -> None:
     """Atomically rewrite the 0600 state file; server.toml is never rewritten."""
     path = Path(path)
-    path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    private_mkdir(path.parent)
     temporary = path.with_name(f".{path.name}.{uuid4().hex}.tmp")
     fd = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
     try:
@@ -145,10 +147,8 @@ class OnnxConfig:
 
 @dataclass
 class Settings:
-    config_dir: Path = field(default_factory=lambda: Path.home() / ".config/chirp")
-    debug_dir: Path = field(
-        default_factory=lambda: Path.home() / "Library/Application Support/Chirp/debug"
-    )
+    config_dir: Path = field(default_factory=paths.config_dir)
+    debug_dir: Path = field(default_factory=paths.debug_dir)
     state_path: Path = field(default_factory=default_state_path)
     debug_retain: bool = False
     retain_days: int = 3
@@ -199,14 +199,14 @@ class Settings:
 
 
 def load_token(directory: Path) -> str:
-    directory.mkdir(parents=True, exist_ok=True, mode=0o700)
+    private_mkdir(directory)
     path = directory / "token"
     try:
         fd = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
     except FileExistsError:
         if path.is_symlink() or not stat.S_ISREG(path.stat().st_mode):
             raise ValueError("Token must be a regular file") from None
-        path.chmod(0o600)
+        make_private(path)
         token = path.read_text().strip()
         if not token:
             raise ValueError("Token file is empty") from None
@@ -214,4 +214,5 @@ def load_token(directory: Path) -> str:
     with os.fdopen(fd, "w") as stream:
         token = secrets.token_urlsafe(32)
         stream.write(token + "\n")
+    make_private(path)
     return token

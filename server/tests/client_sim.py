@@ -9,6 +9,7 @@ from pathlib import Path
 import websockets
 
 from chirp_server.audio import decode_wav
+from chirp_server.paths import config_dir
 
 
 async def run(args):
@@ -82,7 +83,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("wav", type=Path)
     parser.add_argument("--url", default="http://127.0.0.1:7821")
-    parser.add_argument("--token-file", type=Path, default=Path.home() / ".config/chirp/token")
+    parser.add_argument("--token-file", type=Path, default=config_dir() / "token")
     parser.add_argument("--correction", action="store_true")
     parser.add_argument("--fast", action="store_true")
     parser.add_argument(

@@ -3,11 +3,12 @@
 import asyncio
 import json
 import socket
+import sys
 import time
 from types import SimpleNamespace
 
 import pytest
-from conftest import PCM
+from conftest import PCM, use_home
 
 from chirp_server import doctor
 from chirp_server.audio import wav_bytes
@@ -25,6 +26,11 @@ PUBLISHED_JSON = {
         }
     },
 }
+
+
+# Mode bits, symlinks and the lsof/ps listener lookup are POSIX mechanics; Windows checks the
+# token's access list (test_fsutil.py) and has no listener lookup.
+POSIX = pytest.mark.skipif(sys.platform == "win32", reason="POSIX-only mechanics")
 
 
 def test_render_includes_fix_hint():
@@ -50,6 +56,7 @@ def test_token_missing_is_ok(tmp_path):
     assert "generated on first server run" in check.detail
 
 
+@POSIX
 def test_token_mode_and_type(tmp_path):
     path = tmp_path / "token"
     path.write_text("synthetic-credential\n")
@@ -254,7 +261,7 @@ def test_warm_decode_engine_failure(monkeypatch, tmp_path):
 
 
 def test_doctor_quick_reports_every_check(monkeypatch, tmp_path, capsys):
-    monkeypatch.setenv("HOME", str(tmp_path))
+    use_home(monkeypatch, tmp_path)
     monkeypatch.setattr(doctor, "check_environment", lambda: Check("environment", OK, "Python"))
     monkeypatch.setattr(doctor, "check_mlx", lambda: Check("mlx", OK, "available"))
     monkeypatch.setattr(doctor, "check_model", lambda model_dir=None: Check("model", OK, "cached"))
@@ -281,7 +288,7 @@ def test_doctor_quick_reports_every_check(monkeypatch, tmp_path, capsys):
 
 
 def test_doctor_exits_1_only_on_fail(monkeypatch, tmp_path, capsys):
-    monkeypatch.setenv("HOME", str(tmp_path))
+    use_home(monkeypatch, tmp_path)
     monkeypatch.setattr(
         doctor, "check_model", lambda model_dir=None: Check("model", FAIL, "missing", "fetch")
     )
@@ -297,6 +304,7 @@ def _server_tree(tmp_path):
     return tmp_path / "server"
 
 
+@POSIX
 def test_server_version_flags_server_older_than_its_code(monkeypatch, tmp_path):
     monkeypatch.setattr(doctor, "_listening", lambda port: True)
     server = _server_tree(tmp_path)
@@ -309,6 +317,7 @@ def test_server_version_flags_server_older_than_its_code(monkeypatch, tmp_path):
     )
 
 
+@POSIX
 def test_server_version_handles_a_path_with_a_space(monkeypatch, tmp_path):
     monkeypatch.setattr(doctor, "_listening", lambda port: True)
     server = _server_tree(tmp_path / "Application Support")

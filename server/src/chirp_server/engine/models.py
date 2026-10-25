@@ -3,13 +3,15 @@
 import json
 from pathlib import Path
 
+from chirp_server import paths
+
 REPOSITORY = "mlx-community/parakeet-tdt-0.6b-v2"
 REVISION = "8ae155301e23d820d82aa60d24817c900e69e487"
 FILES = ["config.json", "model.safetensors", "tokenizer.model", "vocab.txt"]
 
 
 def model_root() -> Path:
-    return Path.home() / "Library/Application Support/Chirp/models"
+    return paths.model_root()
 
 
 def valid_tdt(directory: Path) -> bool:
