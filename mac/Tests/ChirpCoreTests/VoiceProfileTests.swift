@@ -187,9 +187,11 @@ final class FakeVoiceModelStore: VoiceModelStore, @unchecked Sendable {
     /// A component no other number in a session has: if it shows up in text, a voiceprint leaked.
     static let marker: Float = 0.4242
 
-    private func harness(_ profiles: [VoiceProfile]) async -> (NotesHarness, FakeDiarizer, MemoryVoiceProfileStore) {
+    private func harness(_ profiles: [VoiceProfile], directory: URL? = nil) async -> (NotesHarness, FakeDiarizer, MemoryVoiceProfileStore) {
         let store = MemoryVoiceProfileStore(profiles)
-        let h = NotesHarness(speakers: FakeModelStore(downloaded: true), voiceModel: FakeVoiceModelStore(downloaded: true), profiles: store)
+        let h = NotesHarness(speakers: FakeModelStore(downloaded: true), voiceModel: FakeVoiceModelStore(downloaded: true), profiles: store,
+                             library: directory.map { NotesLibrary(store: NotesLibraryStore(directory: $0.appendingPathComponent("library"))) },
+                             journalDirectory: directory?.appendingPathComponent("journal"))
         _ = await h.session.voices.prepare()
         let fake = FakeDiarizer(script: [])
         fake.attachEmbedder(h.session.voices.readyEmbedder)
@@ -241,10 +243,29 @@ final class FakeVoiceModelStore: VoiceModelStore, @unchecked Sendable {
 
     /// Privacy: voiceprints never reach the document, the journal, an export, a structuring request or a file.
     @Test func noVoiceprintLeavesTheProfileStore() async throws {
-        let before = SpeakerPrivacyTests.footprint()
-        let (h, _, store) = await harness([])
+        let fm = FileManager.default
+        let directory = fm.temporaryDirectory.appendingPathComponent("chirp-voice-privacy-\(UUID().uuidString)")
+        try fm.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? fm.removeItem(at: directory) }
+        func files() throws -> [URL: Data] {
+            let walk = try #require(fm.enumerator(at: directory, includingPropertiesForKeys: [.isRegularFileKey]))
+            var result: [URL: Data] = [:]
+            for case let file as URL in walk where try file.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile == true {
+                result[file] = try Data(contentsOf: file)
+            }
+            return result
+        }
+        let (h, _, store) = await harness([], directory: directory)
         h.model.onSpeakerEdit(.rename(1, to: "Maya"))
+        h.session.journal.flush()
+        await h.session.journal.settle()
+        let before = try files()
         h.session.confirmRememberVoice = { _, done in done(true) }
+        // A refused voiceprint must change neither the profile store nor Chirp's on-disk stores.
+        h.model.onSpeakerEdit(.rememberVoice(1))
+        #expect(try store.load().isEmpty)
+        await h.session.journal.settle()
+        #expect(try files() == before)
         // 14 s is not enough to remember; give Maya more of the marked voice.
         var mayaish = near(0, 9, 0.9)
         mayaish[20] = Self.marker
@@ -258,7 +279,15 @@ final class FakeVoiceModelStore: VoiceModelStore, @unchecked Sendable {
         let texts = [h.document.exportMarkdown(), String(data: try JSONEncoder().encode(h.document), encoding: .utf8)!,
                      h.document.nextStructureRequest().map { String(data: try! JSONEncoder().encode($0), encoding: .utf8)! } ?? ""]
         for text in texts { #expect(!text.contains(marker) && !text.contains("embedding")) }
-        #expect(SpeakerPrivacyTests.footprint() == before)
+        // Exercise the real on-disk stores too, isolated from other apps and other test sessions.
+        h.session.journal.flush()
+        await h.session.journal.settle()
+        let stored = try files()
+        #expect(!stored.isEmpty)
+        for data in stored.values {
+            let text = String(decoding: data, as: UTF8.self)
+            #expect(!text.contains(marker) && !text.contains("embedding"))
+        }
     }
 }
 

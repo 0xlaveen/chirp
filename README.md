@@ -44,9 +44,11 @@ with a shared Tauri client and portable speech server. Linux design and progress
 | **Android** · [android/README.md](android/README.md) | A Notes-first app (Notes · History · Settings), Chirp Keyboard or the floating mic, the Scratchpad for long text, opt-in encrypted dictation history, updates from your Mac over the tailnet. |
 | **iPhone and iPad** · [ios/README.md](ios/README.md) | A SwiftUI app plus a dictation-first keyboard for iOS/iPadOS 18. Early: simulator-tested, with a first iPad install done; iPhone installation and on-device dictation are still unverified. |
 | **Linux / Windows desktop** · [desktop/README.md](desktop/README.md) | Shared Tauri app with native dictation, layout-aware shortcuts, text insertion and a local editable Notes library. Server setup: [Linux](docs/linux.md), [Windows](docs/windows.md). |
-| **Server** · [server/README.md](server/README.md) | Parakeet TDT v2 (English) or v3 (multilingual) on MLX, optional local Qwen clean-up and notes structuring, revocable per-device tokens and a `doctor` check. |
+| **Server** · [server/README.md](server/README.md) | Parakeet TDT on MLX (Apple Silicon) or ONNX (Intel and other platforms), optional local Qwen clean-up and notes structuring, revocable per-device tokens and a `doctor` check. |
 
-**Honest limits.** You need an Apple Silicon Mac that's on and reachable whenever you dictate. Phones connect only through Tailscale. Everything installs from source: there's no notarized Mac download, Play Store build or App Store build.
+**Honest limits.** You need a Mac on macOS 14+ (Apple Silicon or Intel) that's on and reachable whenever you dictate. Apple Silicon uses MLX, the fastest option; Intel uses ONNX Parakeet. Windows and Linux support is in progress. Phones connect only through Tailscale. Everything installs from source: there's no notarized Mac download, Play Store build or App Store build.
+
+**Intel Macs.** Built-in clean-up and Notes structuring run on CPU and can be slow. Dictation works without them. Use an OpenAI-compatible local endpoint such as Ollama or LM Studio, or turn clean-up off. Notes can still keep a plain transcript with **Structure notes** off. Performance depends on your Mac and model.
 
 **How it compares.** Cloud dictation tools such as Wispr Flow and Typeless, and meeting-notes services such as Otter and Granola, process your audio on their own servers and generally charge a subscription. Apple Dictation and Gboard voice typing are free but tied to one platform, without Chirp's clean-up styles or notes. Superwhisper also runs locally, but it's closed source with paid tiers. Chirp's bet is that one Mac you already own can do all of this, privately, for every device you type on.
 
@@ -54,8 +56,8 @@ with a shared Tauri client and portable speech server. Linux design and progress
 
 ```mermaid
 flowchart LR
-    subgraph MAC["Your Mac (Apple Silicon)"]
-        SRV["chirp-server<br/>Parakeet speech recognition (MLX)<br/>+ optional Qwen clean-up and notes"]
+    subgraph MAC["Your Mac (Apple Silicon or Intel)"]
+        SRV["chirp-server<br/>Parakeet speech recognition (MLX / ONNX)<br/>+ optional Qwen clean-up and notes"]
         APP["Chirp for Mac<br/>menu bar · HUD · Notes library"]
         APP <-->|"127.0.0.1 only"| SRV
     end
@@ -67,7 +69,7 @@ The Mac runs one speech server that listens only on `127.0.0.1`. The phone apps 
 
 ## Get it running
 
-You need an Apple Silicon Mac. For a phone you also need [Tailscale](https://tailscale.com) on both the Mac and the phone. The [website guides](https://araa47.github.io/chirp/guides/index.html) walk through each step.
+You need macOS 14+ on an Apple Silicon or Intel Mac. Apple Silicon uses MLX (fastest); Intel uses ONNX Parakeet. Windows and Linux support is in progress. For a phone you also need [Tailscale](https://tailscale.com) on both the Mac and the phone. The [website guides](https://araa47.github.io/chirp/guides/index.html) walk through each step.
 
 ### Build it with your coding agent
 

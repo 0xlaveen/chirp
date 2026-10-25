@@ -1297,3 +1297,96 @@ The budgets in the test are 2× the worst of six runs:
 The test takes 31–82 s here (its limit is 2 minutes). Most of the time was the per-frame `Level(pcm16:)` loop, which runs as unspecialized generic code in a debug build: 70 % of the main thread, 131 s for the run. It now uses vDSP in `Double`, which is exact for PCM16 and matches the old loop bit for bit (`AudioTests.levelMatchesAPerSampleLoopExactly`).
 
 The longest single editor update was 108–280 ms, the restyle of a large reorganize on a loaded host, so it is reported but not asserted. The recorder-level budgets for long sessions (restyle at 30 000 characters, speaker lookups) are #64's, in their own section.
+
+## Intel compatibility under Rosetta (2026-10-26, #226)
+
+Chirp supports macOS 14+ on Apple Silicon and Intel. Apple Silicon uses MLX
+(fastest); Intel uses ONNX Parakeet. Windows and Linux support is in progress.
+These compatibility measurements ran **x86_64 under Rosetta 2 on Apple M5 Pro**,
+64 GiB, macOS 27.0.1, on a shared host. **They are not native Intel results** and
+must not be used to predict the speed of an Intel Mac.
+
+Python 3.13.17 x86_64, onnx-asr 0.12.0 and ONNX Runtime 1.23.2 used the pinned
+Parakeet v2 int8 ONNX model (`0bbb45a3365852604aef28b538a8f066f4ccaa85`) with
+CPUExecutionProvider and default thread settings. ONNX Runtime 1.23.2 is the last
+upstream version shipping a Python 3.13 Intel macOS wheel. Newer locked runtimes
+remain enabled on Apple Silicon, Linux and Windows.
+
+| Check | Observed result (Rosetta x86_64) |
+|---|---|
+| Synthetic `say` WAV | 4.19 s, 16 kHz mono PCM16 |
+| Server startup, including model load and warmup | 4,391 ms |
+| Three warm HTTP full transcriptions | 3,274 / 3,792 / 2,862 ms (median 3,274 ms; 0.78 × audio duration) |
+| Mac `--selftest`, burst feed (`--fast`) | PASS; 4,650 ms client stop-to-final, 4,460 ms server finalization |
+| Mac `--notes-selftest`, burst feed | PASS; one segment, no gaps, transcript retained; clean-up off |
+| Real server smoke (`pytest -m onnx`) | PASS: HTTP, paced WebSocket partial/final, authentication, private token, no transcript in logs |
+
+The app and FluidAudio dependency compiled for x86_64 with a macOS 14 deployment
+target. The app's dictation and Notes selftests above actually executed through
+`arch -x86_64`. The host's Swift 6.4/Xcode 27 SwiftPM test-discovery and test-runner
+helpers contain only arm64 code: they cannot load cross-built x86_64 test bundles.
+This is a host test-toolchain limitation; it is not a passing x86_64 unit-test run.
+The full Mac unit gate is run natively on this host instead.
+
+Reproduce from the repository root on Apple Silicon with Rosetta installed (on a
+native Intel Mac these same commands run without translation). Download the model
+explicitly first if it is not already cached; no model download occurs at startup.
+
+```sh
+UV_PYTHON_INSTALL_DIR=/tmp/chirp-x86-python \
+  uv python install --no-bin cpython-3.13.17-macos-x86_64-none
+(cd server && UV_PROJECT_ENVIRONMENT=/tmp/chirp-intel-python \
+  uv sync --locked --python /tmp/chirp-x86-python/cpython-3.13.17-macos-x86_64-none/bin/python3.13)
+swift build --package-path mac --arch x86_64 --scratch-path /tmp/chirp-intel-mac-build
+python3 scripts/test-intel-mac.py --python /tmp/chirp-intel-python/bin/python \
+  --mac "$(swift build --package-path mac --arch x86_64 \
+    --scratch-path /tmp/chirp-intel-mac-build --show-bin-path)/ChirpMac" \
+  --model-dir "$HOME/.koi/voice-models/parakeet-onnx"
+```
+
+`test-intel-mac.py` creates a temporary HOME and chooses a free loopback port,
+verifies the Intel default engine without `--engine`, generates a fresh synthetic
+WAV, checks three HTTP transcriptions, runs both x86_64 app selftests and stops
+only its own server. Its private temporary evidence includes `bench.json` with
+content-free timing results. It never uses port 7821 or the installed runtime.
+
+For the optional Intel cleanup runtime, use the same setting as the source
+installer: `CMAKE_ARGS="${CMAKE_ARGS:-} -DGGML_NATIVE=OFF -DLLAMA_OPENSSL=OFF"` with
+`uv sync --locked --extra cleanup` in the x86_64 environment. This prevents an
+arm64-only clang under Rosetta from interpreting `-march=native` as an Apple
+CPU while compiling x86_64. Apple Silicon builds keep their native settings.
+The installer also disables llama.cpp's optional OpenSSL integration on Intel:
+model downloads use Python's HTTPS client, and an x86_64 build must not link an
+arm64 Homebrew OpenSSL. This does not disable TLS for Chirp's downloads or API.
+
+### Optional cleanup runtime under Rosetta
+
+The locked `cleanup` extra built and imported **llama-cpp-python 0.3.36 x86_64**
+with `-DGGML_NATIVE=OFF -DLLAMA_OPENSSL=OFF`; the three installer regression tests
+passed. Runtime inspection reported SSE3, SSSE3, BMI2, Accelerate and LLAMAFILE.
+The pinned Qwen3 4B Instruct Q4_K_M GGUF (2,497,280,448 bytes, SHA-256
+`8cdb57cbb880d313736a9bc4e3d3d2485f145b5e19cf33783746e753e82641fc`)
+ran locally through the private helper, with four CPU threads and a temporary
+HOME. No new model download or endpoint was involved.
+
+| Cleanup check (Rosetta x86_64) | Result |
+|---|---|
+| Short prompt, up to 24 output tokens, cold helper | PASS, 32,890 ms, normal stop; negation preserved |
+| Short Notes prompt, up to 32 output tokens, warm helper | PASS, 24,025 ms; production Notes guard accepted; negation preserved |
+| Full production Corrector prompt, explicit 120 s budget | TIMEOUT; original raw text retained |
+
+The short prompts are backend sanity checks, **not production cleanup/Notes
+acceptance**. The full Notes structuring prompt was not validated under Rosetta.
+These results are not native Intel measurements. The production CPU defaults
+remain 30/45/90/120 seconds for dictation cleanup/Notes cleanup/structuring/Organize;
+slow hosts may need larger explicit budgets, a local compatible endpoint, or
+cleanup off. Plain speech dictation was verified separately without cleanup.
+Only timing, pass/fail and guard outcomes were recorded; no input or generated
+text was logged by these helper checks.
+
+Keep Intel interpreters outside uv's shared installation directory and pass their
+absolute path. Installing a newer x86_64 patch into uv's shared managed directory
+can change `uv python find 3.13` on Apple Silicon even with an arm64 PATH symlink;
+`--no-bin` alone does not isolate managed discovery. The isolated install above
+avoids changing other environments. The test host's original arm64 discovery and
+PATH link were restored after this was observed during validation.

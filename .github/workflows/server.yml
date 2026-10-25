@@ -29,7 +29,7 @@ jobs:
           python-version: "3.13"
           enable-cache: true
           cache-dependency-glob: server/uv.lock
-      # MLX packages are darwin-only in pyproject, so Linux installs the portable dependencies.
+      # MLX packages are Apple Silicon-only in pyproject, so Linux installs the portable dependencies.
       - run: uv sync --locked
       - run: uv run ruff check .
       - run: uv run ruff format --check .
@@ -97,3 +97,51 @@ jobs:
       # transcribes the committed synthetic clip over /v1/transcribe and /v1/stream.
       - run: uv run pytest -q -m onnx -rs
         timeout-minutes: 10
+
+  intel-mac:
+    runs-on: macos-15-intel
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: server
+    env:
+      CHIRP_ONNX_MODEL_DIR: ${{ github.workspace }}/onnx-model/parakeet-onnx
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.13"
+          enable-cache: true
+          cache-dependency-glob: server/uv.lock
+      # No optional speech extra: the default Intel install must supply ONNX and omit MLX.
+      - run: uv sync --locked
+      - name: Check Intel defaults and runtime
+        run: |
+          uv run python -c "import platform, importlib.util, onnxruntime; from chirp_server.config import Settings; assert platform.machine() == 'x86_64'; assert Settings().engine == 'onnx'; assert importlib.util.find_spec('mlx') is None; print(onnxruntime.__version__)"
+          uv run pytest -q tests/test_platform_defaults.py
+      - uses: actions/cache@v4
+        id: model
+        with:
+          path: onnx-model
+          key: onnx-parakeet-tdt-0.6b-v2-0bbb45a3365852604aef28b538a8f066f4ccaa85
+      - name: Fetch the pinned ONNX Parakeet model
+        if: steps.model.outputs.cache-hit != 'true'
+        run: |
+          uv run python -c "
+          import os
+          from huggingface_hub import snapshot_download
+          snapshot_download(
+              'istupakov/parakeet-tdt-0.6b-v2-onnx',
+              revision='0bbb45a3365852604aef28b538a8f066f4ccaa85',
+              local_dir=os.environ['CHIRP_ONNX_MODEL_DIR'],
+              allow_patterns=['config.json', 'vocab.txt', '*-model.int8.onnx', 'nemo128.onnx'],
+          )"
+      - name: Real ONNX server smoke (temporary home, free port, synthetic WAV)
+        run: uv run pytest -q -m onnx -rs
+        timeout-minutes: 10
+      - name: Build the optional Intel cleanup runtime
+        env:
+          CMAKE_ARGS: -DGGML_NATIVE=OFF -DLLAMA_OPENSSL=OFF
+        run: |
+          uv sync --locked --extra cleanup
+          uv run --extra cleanup python -c "import llama_cpp; print(llama_cpp.__version__)"

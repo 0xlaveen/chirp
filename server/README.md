@@ -1,11 +1,11 @@
 # Chirp server
 
-Local streaming speech-to-text for Chirp. Python 3.13, Starlette and Parakeet MLX on Apple Silicon, managed by [uv](https://docs.astral.sh/uv/).
+Local streaming speech-to-text for Chirp. Python 3.13, Starlette and Parakeet: MLX on Apple Silicon (fastest), ONNX on Intel Macs and other platforms, managed by [uv](https://docs.astral.sh/uv/).
 
 | At a glance | |
 |---|---|
 | Binds to | `127.0.0.1:7821` only — never the network |
-| Engine | Selectable Parakeet TDT via MLX (English v2 default, multilingual v3 available); ONNX v2 int8 alternative |
+| Engine | Apple Silicon: MLX Parakeet (fastest, English v2 or multilingual v3); Intel Mac / Linux / Windows: ONNX Parakeet v2 int8 by default |
 | Auth | Bearer token, constant-time comparison; audio is rejected before authentication |
 | Retention | Nothing written by default; debug retention is opt-in, local and loudly visible |
 | Clean-up ("correction") | Off by default; optional on-Mac Qwen model or external OpenAI-compatible endpoint |
@@ -30,6 +30,8 @@ cd server
 uv sync --locked
 ```
 
+On macOS 14+, both Apple Silicon and Intel are supported. MLX dependencies install only on Apple Silicon; ONNX Parakeet installs by default elsewhere. Intel macOS uses ONNX Runtime 1.23.2, the last upstream release with an Intel macOS wheel; other platforms retain the latest locked runtime. Windows and Linux desktop support is in progress. On Intel Macs, built-in clean-up and Notes structuring use the portable llama.cpp backend on CPU and can be slow. Dictation works without them. Turn clean-up off, or use an OpenAI-compatible local endpoint such as Ollama or LM Studio; performance depends on the Mac and model.
+
 This installs the Python package only. It starts no service, publishes nothing, and downloads no model.
 
 ## Run
@@ -38,7 +40,7 @@ This installs the Python package only. It starts no service, publishes nothing, 
 uv run chirp-server
 ```
 
-The server validates and reuses the cached English TDT v2 model at `~/.koi/voice-models/parakeet-mlx`. If that cache is missing, run the explicit download instead (pinned Hugging Face revision):
+On Apple Silicon the server validates and reuses the cached English TDT v2 model at `~/.koi/voice-models/parakeet-mlx`; Intel uses the ONNX Parakeet cache/store. If that cache is missing, run the explicit download instead (pinned Hugging Face revision):
 
 ```sh
 uv run chirp-server model fetch
@@ -66,7 +68,7 @@ Useful flags:
 
 SenseVoice Small is an optional local backend for Mandarin and English, with automatic language
 detection and Simplified Chinese output for Mandarin in the public fixtures. The default remains
-Parakeet MLX. Existing Mac and Android clients use the same v1 protocol and pairing credentials.
+Parakeet (MLX on Apple Silicon, ONNX elsewhere). Existing Mac and Android clients use the same v1 protocol and pairing credentials.
 
 From `server/`, with Python 3.13:
 
@@ -79,7 +81,7 @@ python3.13 -m venv .venv
 
 With an existing uv installation, use `uv sync --locked --extra sensevoice` and
 `uv run chirp-server model fetch --engine sensevoice`, then `uv run chirp-server --engine sensevoice`.
-MLX dependencies install only on macOS. SenseVoice needs neither MLX nor the Parakeet ONNX extra
+MLX dependencies install only on Apple Silicon macOS. SenseVoice needs neither MLX nor the Parakeet ONNX extra
 on Linux. No system service or network publication is part of this setup.
 
 Model acquisition is explicit. The download selects full-precision `model.onnx` and `tokens.txt`
@@ -112,7 +114,7 @@ keeps the extra on later reinstalls) or `uv pip install` of the pinned packages 
 downloads the same pinned files with progress, pause and resume. A read-only environment, such as
 a Nix store, reports how to add the extra instead. **Use Model** loads and warms the model before
 saving the choice; **Apply & Restart Server** switches the engine. Choosing a Parakeet model
-switches back to MLX. The choice is stored with the model in `model-selection.json` and overrides
+switches to the selected Parakeet engine (MLX or ONNX). The choice is stored with the model in `model-selection.json` and overrides
 `engine` in server.toml, which is never rewritten; selections saved before this change keep the
 file's engine. Threads stay in `[sensevoice]`. A service whose arguments pin `--engine` or
 `--model-dir` must drop them before a choice can be applied. The engine name appears in `/v1/health`,
@@ -412,10 +414,27 @@ Enabled external correction reports `correction_leaves_machine=true` and `correc
 
 ### Private managed cleanup
 
-Managed cleanup runs a Qwen model in MLX on Apple Silicon, in a supervised child process. Fetch a model explicitly (this is the only download):
+Managed cleanup runs Qwen in a supervised child process: MLX on Apple Silicon,
+CPU llama.cpp on Intel Macs and other platforms. The Intel source installer
+includes the optional `cleanup` runtime; for a manual environment use
+`uv sync --locked --extra cleanup`. On Intel/Rosetta, the installer builds it with
+`CMAKE_ARGS="${CMAKE_ARGS:-} -DGGML_NATIVE=OFF -DLLAMA_OPENSSL=OFF"` so the compiler
+uses portable x86 CPU flags and does not link an arm64 Homebrew OpenSSL.
+The native llama.cpp helper has no built-in HTTPS support in this build; Chirp
+still downloads models securely through Python's HTTPS client. Apple Silicon
+builds retain their existing native settings.
+
+CPU default budgets are 30 seconds for dictation cleanup, 45 for Notes cleanup,
+90 for structuring and 120 for Organize. Explicit configuration values win;
+MLX and endpoint defaults remain 8/15/30/45 seconds. Skip cleanup for plain
+speech dictation, or point endpoint mode at a local OpenAI-compatible server.
+
+Fetch a model explicitly (this is the only download):
 
 ```sh
 uv run chirp-server model fetch --cleanup
+# Intel/portable pinned GGUF (the default there):
+uv run chirp-server model fetch --cleanup qwen3-4b-instruct-2507-q4-k-m-gguf
 # Or select a pinned catalog entry explicitly:
 uv run chirp-server model fetch --cleanup qwen3.5-2b-4bit
 uv run chirp-server model fetch --cleanup qwen3.5-0.8b-4bit

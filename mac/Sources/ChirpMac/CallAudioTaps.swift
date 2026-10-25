@@ -11,12 +11,17 @@ import ScreenCaptureKit
 /// OSStatus codes.
 enum CallAudio {
     /// The app's tap: process taps first, then ScreenCaptureKit.
-    static func makeTap() -> SystemAudioTap { FallbackAudioTap([ProcessAudioTap(), ScreenCaptureAudioTap()]) }
+    static func makeTap() -> SystemAudioTap {
+        if #available(macOS 14.2, *) { return FallbackAudioTap([ProcessAudioTap(), ScreenCaptureAudioTap()]) }
+        return ScreenCaptureAudioTap()
+    }
 
     /// Apps whose audio can be recorded on their own: running, regular apps that already have an audio process
     /// (a call app does once it joins), and every running call app.
     static func apps() -> [CallAudioApp] {
-        let audio = Set(AudioProcesses.all().compactMap(\.bundleID))
+        let audio: Set<String>
+        if #available(macOS 14.2, *) { audio = Set(AudioProcesses.all().compactMap(\.bundleID)) }
+        else { audio = [] }
         let own = Bundle.main.bundleIdentifier
         let apps = NSWorkspace.shared.runningApplications.compactMap { app -> CallAudioApp? in
             guard app.activationPolicy == .regular, let id = app.bundleIdentifier, id != own else { return nil }
@@ -47,6 +52,7 @@ enum AudioProcesses {
         processBundle == app || processBundle.hasPrefix(app + ".") || (aliases[app] ?? []).contains(processBundle)
     }
 
+    @available(macOS 14.2, *)
     static func all() -> [Process] {
         var address = AudioObjectPropertyAddress(mSelector: kAudioHardwarePropertyProcessObjectList,
                                                  mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
@@ -58,11 +64,13 @@ enum AudioProcesses {
     }
 
     /// The process objects of `app` (and its helpers).
+    @available(macOS 14.2, *)
     static func objects(for app: String) -> [AudioObjectID] {
         all().filter { $0.bundleID.map { matches($0, app: app) } ?? false }.map(\.id)
     }
 
     /// This process's object, if it has played audio (the start and stop sounds).
+    @available(macOS 14.2, *)
     static func object(pid: pid_t) -> AudioObjectID? {
         var address = AudioObjectPropertyAddress(mSelector: kAudioHardwarePropertyTranslatePIDToProcessObject,
                                                  mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
@@ -84,6 +92,7 @@ enum AudioProcesses {
         return s.isEmpty ? nil : s
     }
 
+    @available(macOS 14.2, *)
     private static func pid(_ object: AudioObjectID) -> pid_t {
         var address = AudioObjectPropertyAddress(mSelector: kAudioProcessPropertyPID, mScope: kAudioObjectPropertyScopeGlobal,
                                                  mElement: kAudioObjectPropertyElementMain)
@@ -96,6 +105,7 @@ enum AudioProcesses {
 
 /// A Core Audio process tap (macOS 14.2+) read through a private, tap-only aggregate device. Everything the Mac plays
 /// except Chirp itself, or one app's processes. The tap is unmuted, so the call still plays as usual.
+@available(macOS 14.2, *)
 final class ProcessAudioTap: SystemAudioTap, @unchecked Sendable {
     let kind = CallAudioKind.processTap
     private let lock = NSLock()
