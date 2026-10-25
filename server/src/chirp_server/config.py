@@ -29,20 +29,21 @@ class CorrectionConfig:
     backend: str = "auto"
     llama_threads: int = 4
     prompt: str = ""
-    timeout: float = 8.0
+    timeout: float | None = None
     # Live Notes segment correction: longer input than a dictation, and it may queue behind a
     # running structuring pass (see docs/bench.md).
-    notes_timeout: float = 15.0
-    structure_timeout: float = 30.0
+    notes_timeout: float | None = None
+    structure_timeout: float | None = None
     # A reorganize generates up to 1024 tokens: about 15 s at the cap on an M5 Pro (docs/bench.md),
     # so slower Macs need more room than structuring's 30 s.
-    reorganize_timeout: float = 45.0
+    reorganize_timeout: float | None = None
     api_key_env: str = "CHIRP_LLM_API_KEY"
     keychain_service: str = ""
     idle_seconds: float = 60.0
     keep_loaded: bool = False
     profiles: dict = field(default_factory=dict)
     resolved_profiles: dict[str, Profile] = field(init=False, repr=False)
+    _default_budgets: tuple[str, ...] = field(init=False, repr=False, compare=False)
 
     def __post_init__(self):
         if not isinstance(self.prompt, str) or len(self.prompt) > MAX_PROMPT_CHARS:
@@ -72,6 +73,22 @@ class CorrectionConfig:
             raise ValueError("Correction backend must be auto, mlx or llama_cpp")
         if type(self.llama_threads) is not int or not 1 <= self.llama_threads <= 256:
             raise ValueError("Correction llama_threads must be an integer between 1 and 256")
+        portable = self.backend == "llama_cpp" and self.mode != "endpoint"
+        # A CPU Qwen prompt can take ~20 s including a cold load. Preserve explicit
+        # budgets and the existing MLX/endpoint defaults; make the portable default usable.
+        self._default_budgets = tuple(
+            name
+            for name in ("timeout", "notes_timeout", "structure_timeout", "reorganize_timeout")
+            if getattr(self, name) is None
+        )
+        for name, normal, cpu in (
+            ("timeout", 8.0, 30.0),
+            ("notes_timeout", 15.0, 45.0),
+            ("structure_timeout", 30.0, 90.0),
+            ("reorganize_timeout", 45.0, 120.0),
+        ):
+            if getattr(self, name) is None:
+                setattr(self, name, cpu if portable else normal)
         if not self.model and self.backend == "llama_cpp" and self.mode != "endpoint":
             from .cleanup_models import PORTABLE_MODEL
 
@@ -98,6 +115,11 @@ class CorrectionConfig:
                 or url.fragment
             ):
                 raise ValueError("Correction requires an HTTP(S) base URL without credentials")
+
+    def with_model(self, model_id: str, backend: str):
+        """A picker changes backend defaults while retaining explicitly configured budgets."""
+        defaults = {name: None for name in self._default_budgets}
+        return replace(self, mode="managed", model=model_id, backend=backend, **defaults)
 
     def profile(self, profile_id) -> Profile | None:
         """A listed style, or the hidden Live Notes style; None for anything else."""

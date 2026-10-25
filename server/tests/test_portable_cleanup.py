@@ -134,3 +134,31 @@ def test_portable_picker_excludes_unsupported_mlx_choices(monkeypatch):
         option["kind"] != "cleanup" or option["cleanup_backend"] == "llama_cpp"
         for option in options
     )
+
+
+def test_cpu_budgets_preserve_explicit_values_and_mlx_endpoint_defaults():
+    cpu = CorrectionConfig(mode="managed", backend="llama_cpp")
+    assert (cpu.timeout, cpu.notes_timeout, cpu.structure_timeout, cpu.reorganize_timeout) == (
+        30,
+        45,
+        90,
+        120,
+    )
+    mlx = CorrectionConfig(mode="managed", backend="mlx")
+    endpoint = CorrectionConfig(mode="endpoint")
+    assert (mlx.timeout, mlx.notes_timeout, mlx.structure_timeout, mlx.reorganize_timeout) == (
+        8,
+        15,
+        30,
+        45,
+    )
+    assert endpoint.timeout == 8
+    assert CorrectionConfig(mode="managed", backend="llama_cpp", timeout=2.5).timeout == 2.5
+
+
+def test_picker_switches_backend_defaults_but_keeps_explicit_budgets():
+    config = CorrectionConfig(mode="endpoint", timeout=3.0)
+    cpu = config.with_model(cleanup_models.PORTABLE_MODEL, "llama_cpp")
+    assert cpu.timeout == 3 and cpu.structure_timeout == 90
+    mlx = cpu.with_model(cleanup_models.DEFAULT_MODEL, "mlx")
+    assert mlx.timeout == 3 and mlx.structure_timeout == 30

@@ -559,9 +559,6 @@ def apply_settings(settings):
             settings.speech_model = speech.id
             settings.model_dir = snapshot_path(speech)
     if cleanup := chosen.get("cleanup"):
-        settings.correction = replace(
-            settings.correction,
-            mode="managed",
-            model=cleanup.id,
-            backend=cleanup.cleanup_backend or "mlx",
+        settings.correction = settings.correction.with_model(
+            cleanup.id, cleanup.cleanup_backend or "mlx"
         )

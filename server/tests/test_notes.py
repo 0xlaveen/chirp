@@ -266,7 +266,7 @@ def test_structure_timeout_is_validated():
     for bad in (0, -1, float("nan"), float("inf")):
         with pytest.raises(ValueError):
             CorrectionConfig(mode="managed", structure_timeout=bad)
-    assert CorrectionConfig(mode="managed").structure_timeout == 30.0
+    assert CorrectionConfig(mode="managed", backend="mlx").structure_timeout == 30.0
 
 
 # --- concurrency ---------------------------------------------------------------------------
