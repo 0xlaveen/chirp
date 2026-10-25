@@ -39,13 +39,19 @@ insertion fails, the result stays on the clipboard and the HUD asks you to paste
 shell command. Clipboard fallback replaces the clipboard and leaves the result
 there for you to paste.
 
-**Wayland currently supports the Record button, not global shortcuts.** Portal
-shortcut integration is a subsequent Linux phase. The planned portal shortcut
-uses a compositor-approved chord unless single-key holds are supported. Chirp
-does not read `/dev/input` or require membership in the input group. Install
-`wtype` for compositors supporting the virtual-keyboard protocol; otherwise
-install `wl-clipboard` and paste the result yourself. Xwayland alone does not
-grant global access to native Wayland applications.
+**Wayland shortcuts use your desktop’s Global Shortcuts portal.** In settings,
+check **Enable a global shortcut through my desktop**, then Save. Choose the
+binding in the system dialog. Chirp suggests Ctrl+Alt+Space and shows the binding
+your desktop approves. Single-key holds are available only when the portal allows
+them; X11 supplies the full Right Alt/Right Ctrl experience. Hold and tap-to-toggle
+modes both use the portal’s press/release events. Disabling the option closes the
+session. Declining permission or an unavailable portal leaves Record usable.
+
+Portal support depends on the installed desktop and portal backend. Chirp does
+not read `/dev/input` or require membership in the input group. Install `wtype`
+for compositors supporting the virtual-keyboard protocol; otherwise install
+`wl-clipboard` and paste the result yourself. Xwayland alone does not grant global
+access to native Wayland applications.
 
 The server must accept `start.client = "desktop"` (this PR adds it). Dictations
 are limited to 120 seconds. Disconnects, mic failures and an overloaded audio
@@ -129,14 +135,26 @@ cargo build --locked --manifest-path src-tauri/Cargo.toml --example platform-smo
 xvfb-run -a env CHIRP_PLATFORM_SMOKE=src-tauri/target/debug/examples/platform-smoke python3 scripts/x11-smoke.py
 ```
 
-The smoke uses a real GTK text field and physical XTest events, and checks Unicode,
+The X11 smoke uses a real GTK text field and physical XTest events, and checks Unicode,
 multiline paste, US/German layout defaults and hold/chord cancellation. Linux
 arm64 Docker validation has passed these checks, nine Rust tests, Clippy, the
 frontend tests and a release application build.
 
-X11 insertion checks use Xvfb;
-Wayland checks need a headless compositor with virtual-keyboard support. The
-container has Xvfb, Weston, wtype and clipboard helpers installed. No test uses
+Wayland checks use a real GTK field under headless Sway, with Unicode/multiline
+wtype insertion and the wl-copy fallback. Portal tests use a private D-Bus session
+to check approved/declined bindings, session/action scoping, release and cleanup,
+and a missing-service case. They do not change your desktop’s shortcuts. Actual
+portal dialog appearance and availability depend on the compositor.
+
+```sh
+cargo build --locked --manifest-path src-tauri/Cargo.toml --example portal-smoke
+dbus-run-session -- env CHIRP_PORTAL_SMOKE=src-tauri/target/debug/examples/portal-smoke python3 scripts/portal-smoke.py
+dbus-run-session -- src-tauri/target/debug/examples/portal-smoke --unavailable
+CHIRP_PLATFORM_SMOKE=src-tauri/target/debug/examples/platform-smoke scripts/wayland-insertion-smoke.sh
+```
+
+Install `python3-dbus`, `sway`, `wtype` and `wl-clipboard` for these checks. The
+container includes these along with Xvfb and Weston. No test uses
 the live server, port 7821, a real microphone, phone, or emulator.
 
 ## Shared platform contract

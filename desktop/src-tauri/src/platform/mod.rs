@@ -4,6 +4,8 @@ use std::sync::mpsc::Sender;
 
 #[cfg(target_os = "linux")]
 pub mod linux;
+#[cfg(target_os = "linux")]
+pub mod wayland;
 #[cfg(target_os = "windows")]
 pub mod windows;
 #[cfg(any(target_os = "windows", test))]
@@ -38,9 +40,27 @@ impl Drop for HotkeyHandle {
     }
 }
 
+pub type HotkeyReport = Box<dyn Fn(Result<String, String>) + Send + Sync>;
+
 pub trait Platform: Send + Sync {
     fn default_hotkey(&self) -> HotKey;
     fn start_hotkey(&self, key: HotKey, tx: Sender<KeyEvent>) -> Result<HotkeyHandle, String>;
+    fn start_hotkey_with_status(
+        &self,
+        key: HotKey,
+        tx: Sender<KeyEvent>,
+        _preferred: String,
+        report: HotkeyReport,
+    ) -> Result<HotkeyHandle, String> {
+        let result = self.start_hotkey(key, tx);
+        report(
+            result
+                .as_ref()
+                .map(|_| "Shortcut ready".into())
+                .map_err(Clone::clone),
+        );
+        result
+    }
     fn insert_text(&self, text: &str) -> Result<InsertionOutcome, String>;
     fn capabilities(&self) -> Capabilities;
 }

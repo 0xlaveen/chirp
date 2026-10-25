@@ -26,6 +26,7 @@ keyring = { version = "3", features = ["apple-native", "windows-native", "sync-s
 
 [target.'cfg(target_os = "linux")'.dependencies]
 x11rb = { version = "0.13", features = ["xkb"] }
+ashpd = { version = "0.13", default-features = false, features = ["tokio", "global_shortcuts"] }
 
 [profile.dev]
 debug = 0

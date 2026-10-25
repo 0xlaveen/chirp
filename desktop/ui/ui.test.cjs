@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 const source = fs.readFileSync(__dirname + '/app.js', 'utf8');
 function ui() {
-  const nodes = new Map(); let callback; const calls = [];
+  const nodes = new Map(); const callbacks = new Map(); const calls = [];
   const element = id => {
     if (!nodes.has(id)) nodes.set(id, { value:'', textContent:'', checked:false, hidden:false, disabled:false, classList:{add(){},toggle(){}} });
     return nodes.get(id);
@@ -13,12 +13,12 @@ function ui() {
     window: { __TAURI__: { core: { invoke: async (command, args) => {
       calls.push([command, args]);
       if (command === 'preferences') return { settings:{url:'http://localhost:7899',hotkey:'RightCtrl',mode:'Hold',correction:false},capabilities:{detail:'X11'},paired:true };
-    } }, event:{listen: (_, cb) => { callback = cb; }} } },
+    } }, event:{listen: (name, cb) => { callbacks.set(name, cb); }} } },
     document:{getElementById:element,body:element('body'),addEventListener(){}},
     location:{search:'?hud'}, URLSearchParams,
   });
   vm.runInContext(source, context);
-  return { element, calls, update: payload => callback({payload}) };
+  return { element, calls, update: payload => callbacks.get('dictation')({payload}), shortcut: payload => callbacks.get('shortcut-status')({payload}) };
 }
 test('server text is rendered as text, including HTML-like dictation', () => {
   const app = ui();
@@ -39,4 +39,12 @@ test('pairing secrets are cleared after successful native save', async () => {
   assert.equal(app.calls[0][0], 'save_preferences');
   assert.equal(app.calls[0][1].pairingLink, 'chirp://pair?token=test');
   assert.equal(app.element('pairing').value, ''); assert.equal(app.element('token').value, '');
+});
+test('shortcut status remains separate from the current dictation', () => {
+  const app = ui();
+  app.update({state:'listening',text:'Synthetic speech',detail:'Listening',debug_retention:false});
+  app.shortcut({available:false,requested:false,detail:'Portal unavailable — use Record'});
+  assert.equal(app.element('hud-text').textContent, 'Synthetic speech');
+  assert.equal(app.element('status').textContent, 'Listening');
+  assert.equal(app.element('shortcut-status').textContent, 'Portal unavailable — use Record');
 });
