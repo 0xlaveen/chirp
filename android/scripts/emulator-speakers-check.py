@@ -71,6 +71,7 @@ def check(probe, work, output, standalone=False):
     labelled = server().get('labelled', 0)
     wait(lambda: server().get('labelled', 0) >= labelled + 2 and len(server().get('slots', [])) >= 2,
          'Two labelled segments with two distinct speakers did not arrive', 180)
+    assert server()['slots'] == [0, 1], 'Two voices must be exactly two people: ' + json.dumps(server())
     assert not server().get('label_errors'), 'The server could not label: ' + json.dumps(server())
     probe['click']('Stop recording notes')
     probe['wait_for']('Stopped', 90)
@@ -82,7 +83,7 @@ def check(probe, work, output, standalone=False):
         assert time.monotonic() < deadline, 'The transcript does not show two speakers: ' + json.dumps(chips())
         time.sleep(1)
     people = chips()
-    assert {'Person 1', 'Person 2'} <= set(people), 'Unexpected speakers: ' + json.dumps(people)
+    assert people == ['Person 1', 'Person 2'], 'Two voices must be exactly two people: ' + json.dumps(people)
     screenshot('emulator-speakers-transcript.png')
     log('Transcript speakers: %s' % people)
 

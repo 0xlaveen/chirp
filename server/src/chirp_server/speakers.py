@@ -35,16 +35,18 @@ WINDOW = int(1.5 * RATE)
 HOP = int(0.75 * RATE)
 # Windows within one segment join while their average similarity is at least this. Tuned on
 # `say` voices and two real two-person recordings (docs/bench.md): real voices' 1.5 s windows
-# of one person score 0.35-0.85, of two people under 0.25.
-LOCAL_THRESHOLD = 0.45
+# of one person score 0.35-0.85, of two people under 0.25; very similar voices merge.
+LOCAL_THRESHOLD = 0.4
 # A segment's cluster is the note's speaker when their centroids are at least this similar.
-MATCH_THRESHOLD = 0.5
+MATCH_THRESHOLD = 0.45
 # A cluster that matches nobody needs this much speech to be a new person; less goes to the
 # most similar one (a cough, a short noisy window).
 NEW_SPEAKER_SECONDS = 1.5
 MAX_SPEAKERS = 8
 # A segment shorter than this has no speaker of its own: it is embedded whole.
 MIN_EMBED = int(0.5 * RATE)
+# A window needs this share of voiced frames (0.5 s of its 1.5 s) to be embedded.
+VOICED_SHARE = 1 / 3
 
 # Attribution (the Mac's `SpeakerAttribution` constants).
 NEAREST_WITHIN = 1.0
@@ -138,8 +140,9 @@ def voiced(audio: np.ndarray) -> np.ndarray:
 
 
 def windows(audio: np.ndarray) -> list[tuple[int, int]]:
-    """Sample ranges to embed: 1.5 s windows every 0.75 s with at least 30 % voiced frames.
-    A segment shorter than a window is one window (if it is long enough to say anything)."""
+    """Sample ranges to embed: 1.5 s windows every 0.75 s with at least a third voiced
+    (0.5 s of speech). A segment shorter than a window is one window (if it is long enough to
+    say anything)."""
     if len(audio) < MIN_EMBED:
         return []
     if len(audio) < WINDOW + HOP // 2:
@@ -148,14 +151,22 @@ def windows(audio: np.ndarray) -> list[tuple[int, int]]:
     out = []
     for start in range(0, len(audio) - WINDOW + 1, HOP):
         frames = loud[start // 160 : (start + WINDOW) // 160]
-        if frames.size and frames.mean() >= 0.3:
+        if frames.size and frames.mean() >= VOICED_SHARE:
             out.append((start, start + WINDOW))
     # The tail past the last full window, when it holds speech of its own.
     last = out[-1][1] if out else 0
     if len(audio) - last >= HOP // 2 and (tail := loud[(len(audio) - WINDOW) // 160 :]).size:
-        if tail.mean() >= 0.3:
+        if tail.mean() >= VOICED_SHARE:
             out.append((len(audio) - WINDOW, len(audio)))
     return out
+
+
+def speech(audio: np.ndarray, start: int, end: int) -> np.ndarray:
+    """A window's voiced 10 ms frames only: silence and the pause between two people would
+    otherwise pull windows together that share nothing but quiet."""
+    loud = voiced(audio[start:end])
+    frames = audio[start : start + len(loud) * 160].reshape(-1, 160)[loud].reshape(-1)
+    return frames if len(frames) >= MIN_EMBED else audio[start:end]
 
 
 def cluster(embeddings: np.ndarray, threshold: float = LOCAL_THRESHOLD) -> list[int]:
@@ -605,7 +616,8 @@ class SpeakerLabels:
             note = self.sessions.get(session)
             if not ranges:
                 return note, []
-            embeddings = await self.call(self._embed, [audio[a:b] for a, b in ranges])
+            clips = [speech(audio, a, b) for a, b in ranges]
+            embeddings = await self.call(self._embed, clips)
             labels = cluster(embeddings)
             seconds = (ranges[0][1] - ranges[0][0]) / RATE if len(ranges) == 1 else HOP / RATE
             slots = note.assign(embeddings, labels, seconds)

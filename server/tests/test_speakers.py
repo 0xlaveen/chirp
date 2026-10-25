@@ -521,9 +521,11 @@ def test_real_model_tells_two_voices_apart(tmp_path):
     reply = "That works for me. I can send the spec tomorrow morning and check the budget."
     first = say(tmp_path, "Samantha", sentence)
     second = say(tmp_path, "Daniel", reply)
-    gap = np.zeros(int(0.3 * sp.RATE), dtype=np.float32)
-    audio = np.concatenate([first, gap, second])
+    gap = np.zeros(int(0.6 * sp.RATE), dtype=np.float32)
+    # The pause between them and a trailing pause (as Notes cuts segments) are no third person.
+    audio = np.concatenate([first, gap, second, np.zeros(2 * sp.RATE, dtype=np.float32)])
     cut = (len(first) + len(gap) / 2) / sp.RATE
+    speech_end = (len(first) + len(gap) + len(second)) / sp.RATE
     service = sp.SpeakerLabels(
         embedder_factory=lambda: sp.OnnxEmbedder(path), downloaded=lambda: True
     )
@@ -540,7 +542,7 @@ def test_real_model_tells_two_voices_apart(tmp_path):
     # Seconds of audio given the right voice: at least 90 %.
     total = right = 0.0
     for span in spans:
-        for t in np.arange(span.start, span.end, 0.05):
+        for t in np.arange(span.start, min(span.end, speech_end), 0.05):
             total += 0.05
             right += 0.05 * ((t < cut) == (span.slot == 0))
     assert right / total >= 0.9

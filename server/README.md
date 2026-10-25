@@ -516,12 +516,12 @@ final:
 
 **How.** After the decode, outside the engine lease and beside clean-up: 1.5 s windows (0.75 s
 hop) of voiced audio are embedded with WeSpeaker ResNet34-LM (ONNX on CPU, 2 threads, Kaldi
-fbank in NumPy), clustered within the segment (average linkage, cosine ≥ 0.45), and each cluster
-is matched one-to-one against the note's speakers (cosine ≥ 0.5) or becomes a new one with at
-least 1.5 s of speech (at most 8). Words take the speaker of the windows they overlap, and the
+fbank in NumPy), clustered within the segment (average linkage, cosine ≥ 0.4; each window embeds only its voiced
+frames, so pauses never look alike), and each cluster is matched one-to-one against the note's
+speakers (cosine ≥ 0.45) or becomes a new one with at least 1.5 s of speech (at most 8). Words take the speaker of the windows they overlap, and the
 Mac's attribution and word alignment carry the turns onto the cleaned text. Tuned on `say`
-voices and two real two-person recordings; real voices can still be split in two (the client's
-"Same person as" merges them) or, when similar, merged.
+voices and two real two-person recordings; very similar voices can be merged into one person, and
+a real voice can still be split in two (the client's "Same person as" merges them).
 
 **The model** (`Wespeaker/wespeaker-voxceleb-resnet34-LM` at `f0c48c29`, one 26.5 MB ONNX file,
 CC-BY-4.0) is fetched only by `chirp-server model fetch --speakers` or by a paired client's
