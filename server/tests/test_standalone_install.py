@@ -11,7 +11,9 @@ import pytest
 pytestmark = pytest.mark.skipif(sys.platform == "win32", reason="POSIX shell installer")
 
 
-def test_server_install_requires_no_dotfiles_and_preserves_configuration(tmp_path):
+
+@pytest.mark.parametrize("machine", ["arm64", "x86_64"])
+def test_server_install_requires_no_dotfiles_and_preserves_configuration(tmp_path, machine):
     home = tmp_path / "home with spaces"
     config = home / ".config/chirp/server.toml"
     config.parent.mkdir(parents=True)
@@ -19,7 +21,7 @@ def test_server_install_requires_no_dotfiles_and_preserves_configuration(tmp_pat
     fake_bin = tmp_path / "bin"
     fake_bin.mkdir()
     (fake_bin / "uname").write_text(
-        '#!/bin/sh\ncase "$1" in -s) echo Darwin;; -m) echo arm64;; esac\n'
+        f'#!/bin/sh\ncase "$1" in -s) echo Darwin;; -m) echo {machine};; esac\n'
     )
     (fake_bin / "uv").write_text('#!/bin/sh\nprintf "%s\\n" "$@" > "$TRACE"\n')
     for tool in fake_bin.iterdir():
@@ -48,6 +50,7 @@ def test_server_install_requires_no_dotfiles_and_preserves_configuration(tmp_pat
         str(server),
         "--locked",
         "--no-dev",
+        *(["--extra", "onnx", "--extra", "cleanup"] if machine == "x86_64" else []),
     ]
     assert config.read_text() == '[correction]\nmode = "off"\n'
     assert not (home / ".dotfiles").exists()
@@ -76,6 +79,7 @@ def test_reinstall_keeps_the_sensevoice_runtime_the_app_added(tmp_path):
             **os.environ,
             "HOME": str(home),
             "TRACE": str(trace),
+            "CHIRP_PORT": "1",
             "PATH": str(fake_bin) + ":" + os.environ["PATH"],
         },
     )
