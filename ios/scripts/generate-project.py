@@ -94,10 +94,13 @@ for name, paths in memberships.items():
         links.append(add('link:KeyboardPolicy', isa='PBXBuildFile', productRef=dep))
     phases.append(add('frameworks:' + name, isa='PBXFrameworksBuildPhase', buildActionMask=2147483647, files=links, runOnlyForDeploymentPostprocessing=0))
     resources = []
-    if name == 'ChirpIOS':
+    # The app's catalog (AppIcon, the koi AccentColor, the ChirpGlyph brand glyph, PondArt) also ships in the
+    # keyboard, so the keyboard shows the same verbatim glyph rather than an SF Symbol stand-in. The keyboard
+    # does not set the accent name: its look is its own (#195).
+    if name in ('ChirpIOS', 'ChirpKeyboard'):
         assets = file('App/Assets.xcassets', 'folder.assetcatalog')
-        all_files.append(assets)
-        resources.append(add('resource:AppAssets', isa='PBXBuildFile', fileRef=assets))
+        if assets not in all_files: all_files.append(assets)
+        resources.append(add(f'resource:AppAssets:{name}', isa='PBXBuildFile', fileRef=assets))
     phases.append(add('resources:' + name, isa='PBXResourcesBuildPhase', buildActionMask=2147483647, files=resources, runOnlyForDeploymentPostprocessing=0))
     dependencies = []
     if name == 'ChirpIOS':
@@ -122,7 +125,8 @@ for name, paths in memberships.items():
         settings.update(INFOPLIST_FILE=f'Config/{prefix}-Info.plist', CODE_SIGN_ENTITLEMENTS=f'Config/{prefix}.entitlements',
                         GENERATE_INFOPLIST_FILE='NO', SKIP_INSTALL='YES' if extension else 'NO')
         if extension: settings.update(APPLICATION_EXTENSION_API_ONLY='YES')
-        if name == 'ChirpIOS': settings.update(SWIFT_ACTIVE_COMPILATION_CONDITIONS='$(inherited) CHIRP_APP', ASSETCATALOG_COMPILER_APPICON_NAME='AppIcon')
+        if name == 'ChirpIOS': settings.update(SWIFT_ACTIVE_COMPILATION_CONDITIONS='$(inherited) CHIRP_APP', ASSETCATALOG_COMPILER_APPICON_NAME='AppIcon',
+                                               ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME='AccentColor')
     product_type = 'com.apple.product-type.app-extension' if extension else ('com.apple.product-type.bundle.ui-testing' if name == 'ChirpIOSUITests' else 'com.apple.product-type.bundle.unit-test') if test else 'com.apple.product-type.application'
     add('target:' + name, isa='PBXNativeTarget', name=name, productName=name, productReference=product,
         productType=product_type, buildConfigurationList=configs(name, settings), buildPhases=phases,

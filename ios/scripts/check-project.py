@@ -37,8 +37,15 @@ for name in targets:
 assert all(s['TEST_HOST'] == '$(BUILT_PRODUCTS_DIR)/ChirpIOS.app/ChirpIOS' for s in settings('ChirpIOSTests'))
 assert all(s['ASSETCATALOG_COMPILER_APPICON_NAME'] == 'AppIcon' for s in settings('ChirpIOS'))
 assert hashlib.sha256((root/'App/Assets.xcassets/AppIcon.appiconset/AppIcon.png').read_bytes()).digest() == hashlib.sha256((root.parent/'mac/Assets/AppIcon.png').read_bytes()).digest()
-resources = [objects[x] for x in targets['ChirpIOS']['buildPhases'] if objects[x]['isa'] == 'PBXResourcesBuildPhase']
-assert any(objects[objects[f]['fileRef']]['path'] == 'App/Assets.xcassets' for f in resources[0]['files'])
+assert all(s['ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME'] == 'AccentColor' for s in settings('ChirpIOS'))
+# The brand artwork ships verbatim (#151): the approved glyph and the icon's pond art, never redrawn.
+assets = root/'App/Assets.xcassets'
+assert (assets/'ChirpGlyph.imageset/ChirpGlyph.png').read_bytes() == (root.parent/'mac/Assets/ChirpGlyph.png').read_bytes()
+assert (assets/'PondArt.imageset/PondArt.png').read_bytes() == (root.parent/'mac/Assets/AppIcon.png').read_bytes()
+assert json.loads((assets/'ChirpGlyph.imageset/Contents.json').read_text())['properties']['template-rendering-intent'] == 'template'
+for target in ('ChirpIOS', 'ChirpKeyboard'):
+    resources = [objects[x] for x in targets[target]['buildPhases'] if objects[x]['isa'] == 'PBXResourcesBuildPhase']
+    assert any(objects[objects[f]['fileRef']]['path'] == 'App/Assets.xcassets' for f in resources[0]['files']), target
 
 app = targets['ChirpIOS']
 embed = [objects[x] for x in app['buildPhases'] if objects[x]['isa'] == 'PBXCopyFilesBuildPhase']
