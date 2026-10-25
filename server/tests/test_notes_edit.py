@@ -12,7 +12,7 @@ from pathlib import Path
 
 import httpx
 import pytest
-from conftest import HEADERS, TOKEN
+from conftest import HEADERS, TEST_TIMEOUT, TOKEN
 from starlette.testclient import TestClient
 from test_notes import COMMAND, endpoint_corrector, read_log, reply, wait_for
 
@@ -273,8 +273,13 @@ def test_endpoint_timeout_uses_the_reorganize_budget(settings):
 
 @pytest.mark.parametrize("text,error", [("hang", "timeout"), ("crash", "rejected")])
 def test_managed_failures_fail_closed(settings, text, error):
-    with run(settings, service(timeout=1, reorganize_timeout=1.5)) as client:
+    # Only the hang needs the short budget: its timeout is the expected result, and
+    # host load only makes it more certain. The fast failures and the restart below
+    # must not race a wall-clock budget against spawning the helper.
+    corrector = service(reorganize_timeout=1.5 if text == "hang" else TEST_TIMEOUT)
+    with run(settings, corrector) as client:
         response = post(client, {"notes": text, "instruction": "clean that up"})
+        corrector.config.reorganize_timeout = TEST_TIMEOUT
         again = post(client, VALID)
     assert response.json()["edited"] is False and response.json()["error"] == error
     assert again.json()["edited"] is True  # the helper restarts after a failure
@@ -306,14 +311,16 @@ async def test_edit_shares_the_notes_lock(settings):
 
 async def test_a_queued_correction_preempts_a_running_edit(tmp_path):
     log = tmp_path / "requests.jsonl"
-    corrector = service("--slow-structure", "3.0", "--log", str(log), timeout=8)
+    # The slow pass is far longer than the correction needs, so the timing bound
+    # below separates preemption from waiting it out even on a loaded host.
+    corrector = service("--slow-structure", "30", "--log", str(log), timeout=TEST_TIMEOUT)
     try:
         request = notes_edit.EditRequest(NOTES, DELETE)
         running = asyncio.create_task(notes_edit.edit(corrector, request))
         await wait_for(log, 1)
         started = time.monotonic()
         assert (await corrector.process("please send the schedule")).corrected
-        assert time.monotonic() - started < 2.5
+        assert time.monotonic() - started < 15
         assert await running == notes_edit.EditResult(None, False, False, "preempted")
         assert [entry["kind"] for entry in read_log(log)] == ["edit", "correction"]
     finally:

@@ -4,6 +4,7 @@ import sys
 from pathlib import Path
 
 import pytest
+from conftest import TEST_TIMEOUT
 
 from chirp_server.cleanup_eval import load_cases, score
 from chirp_server.config import CorrectionConfig
@@ -84,7 +85,7 @@ def test_near_match_is_bounded_and_does_not_override_must_keep():
     ],
 )
 async def test_fake_helper_rejects_unfaithful_edits(raw, reply):
-    config = CorrectionConfig(mode="managed")
+    config = CorrectionConfig(mode="managed", timeout=TEST_TIMEOUT)
     corrector = Corrector(config)
     corrector.managed = ManagedCleanup(
         config,

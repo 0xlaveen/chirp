@@ -6,7 +6,7 @@ from pathlib import Path
 
 import httpx
 import pytest
-from conftest import HEADERS, PCM, START, TOKEN
+from conftest import HEADERS, PCM, START, TEST_TIMEOUT, TOKEN
 from starlette.testclient import TestClient
 from starlette.websockets import WebSocket
 
@@ -149,7 +149,10 @@ def test_invalid_start_profile(settings, fields):
 @pytest.mark.parametrize("enabled", [True, False])
 def test_correcting_precedes_helper_and_old_client_ignores_it(settings, enabled, monkeypatch):
     raw = "please send the schedule"
-    config = CorrectionConfig(mode="managed" if enabled else "off")
+    config = CorrectionConfig(
+        mode="managed" if enabled else "off",
+        timeout=TEST_TIMEOUT,
+    )
     corrector = Corrector(config)
     corrector.managed = ManagedCleanup(
         config,

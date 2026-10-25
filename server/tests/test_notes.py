@@ -14,7 +14,7 @@ from pathlib import Path
 
 import httpx
 import pytest
-from conftest import HEADERS, PCM, START, TOKEN
+from conftest import HEADERS, PCM, START, TEST_TIMEOUT, TOKEN
 from starlette.testclient import TestClient
 from test_protocol import final
 
@@ -162,7 +162,7 @@ def test_correction_requests_keep_their_shape(tmp_path):
     log = tmp_path / "requests.jsonl"
 
     async def go():
-        corrector = service("--log", str(log))
+        corrector = service("--log", str(log), timeout=TEST_TIMEOUT)
         try:
             return await corrector.process("please send the schedule")
         finally:
@@ -177,9 +177,13 @@ def test_correction_requests_keep_their_shape(tmp_path):
     [("hang", "timeout"), ("crash", "rejected"), ("invalid", "rejected"), ("fail", "rejected")],
 )
 def test_managed_failures_fail_closed(settings, transcript, error):
-    corrector = service(timeout=1, structure_timeout=1.5)
+    # Only the hang needs the short budget: its timeout is the expected result, and
+    # host load only makes it more certain. The fast failures and the restart below
+    # must not race a wall-clock budget against spawning the helper.
+    corrector = service(structure_timeout=1.5 if transcript == "hang" else TEST_TIMEOUT)
     with run(settings, corrector) as client:
         response = post(client, {"transcript": transcript})
+        corrector.config.structure_timeout = TEST_TIMEOUT
         again = post(client, {"transcript": TRANSCRIPT})
     assert response.status_code == 200
     assert response.json()["markdown"] is None
@@ -300,7 +304,7 @@ async def wait_for(path, count, seconds=10):
 
 async def test_corrections_overtake_queued_structuring(tmp_path):
     log = tmp_path / "requests.jsonl"
-    corrector = service("--slow-structure", "0.5", "--log", str(log), timeout=8)
+    corrector = service("--slow-structure", "0.5", "--log", str(log), timeout=TEST_TIMEOUT)
     try:
         first = asyncio.create_task(notes.structure(corrector, TRANSCRIPT, []))
         await wait_for(log, 1)  # the first pass is running inside the helper
@@ -321,7 +325,7 @@ async def test_corrections_overtake_queued_structuring(tmp_path):
 
 async def test_priority_counter_recovers_after_cancellation(tmp_path):
     log = tmp_path / "requests.jsonl"
-    corrector = service("--slow-structure", "1.0", "--log", str(log), timeout=8)
+    corrector = service("--slow-structure", "1.0", "--log", str(log), timeout=TEST_TIMEOUT)
     managed = corrector.managed
     try:
         running = asyncio.create_task(notes.structure(corrector, TRANSCRIPT, []))

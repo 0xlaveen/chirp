@@ -13,7 +13,7 @@ from pathlib import Path
 
 import httpx
 import pytest
-from conftest import HEADERS, PCM, START, TOKEN
+from conftest import HEADERS, PCM, START, TEST_TIMEOUT, TOKEN
 from starlette.testclient import TestClient
 from test_notes import COMMAND, endpoint_corrector, read_log, reply, wait_for
 from test_protocol import final
@@ -210,9 +210,13 @@ def test_identical_reply_is_unchanged(settings):
     [("hang", "timeout"), ("crash", "rejected"), ("invalid", "rejected"), ("fail", "rejected")],
 )
 def test_managed_failures_fail_closed(settings, text, error):
-    corrector = service(timeout=1, structure_timeout=1.5)
+    # Only the hang needs the short budget: its timeout is the expected result, and
+    # host load only makes it more certain. The fast failures and the restart below
+    # must not race a wall-clock budget against spawning the helper.
+    corrector = service(reorganize_timeout=1.5 if text == "hang" else TEST_TIMEOUT)
     with run(settings, corrector) as client:
         response = post(client, {"notes": text})
+        corrector.config.reorganize_timeout = TEST_TIMEOUT
         again = post(client, {"notes": NOTES})
     assert response.status_code == 200
     assert response.json()["markdown"] is None and response.json()["changed"] is False
@@ -340,7 +344,9 @@ async def test_notes_passes_share_one_lock(
 
 async def test_a_queued_correction_preempts_a_running_reorganize(tmp_path):
     log = tmp_path / "requests.jsonl"
-    corrector = service("--slow-structure", "3.0", "--log", str(log), timeout=8)
+    # The slow pass is far longer than the correction needs, so the timing bound
+    # below separates preemption from waiting it out even on a loaded host.
+    corrector = service("--slow-structure", "30", "--log", str(log), timeout=TEST_TIMEOUT)
     try:
         running = asyncio.create_task(notes.reorganize(corrector, NOTES, []))
         await wait_for(log, 1)  # the reorganize is generating inside the helper
@@ -348,7 +354,7 @@ async def test_a_queued_correction_preempts_a_running_reorganize(tmp_path):
         corrected = await corrector.process("please send the schedule")
         waited = time.monotonic() - started
         result = await running
-        assert corrected.corrected and waited < 2.5  # not the 3 s the reorganize had left
+        assert corrected.corrected and waited < 15  # not the ~30 s the reorganize had left
         assert result == notes.ReorganizeResult(None, False, False, "preempted")
         assert [entry["kind"] for entry in read_log(log)] == ["reorganize", "correction"]
         assert (await notes.reorganize(corrector, NOTES, [])).reorganized  # helper restarted
@@ -358,7 +364,7 @@ async def test_a_queued_correction_preempts_a_running_reorganize(tmp_path):
 
 async def test_a_queued_reorganize_waits_for_corrections(tmp_path):
     log = tmp_path / "requests.jsonl"
-    corrector = service("--slow-structure", "0.5", "--log", str(log), timeout=8)
+    corrector = service("--slow-structure", "0.5", "--log", str(log), timeout=TEST_TIMEOUT)
     try:
         first = asyncio.create_task(notes.structure(corrector, TRANSCRIPT, []))
         await wait_for(log, 1)  # a structuring pass (never preempted) is running
@@ -378,7 +384,7 @@ async def test_a_queued_reorganize_waits_for_corrections(tmp_path):
 
 async def test_a_preempted_reorganize_is_reported_as_preempted(settings, tmp_path, caplog):
     log = tmp_path / "requests.jsonl"
-    corrector = service("--slow-structure", "3.0", "--log", str(log), timeout=8)
+    corrector = service("--slow-structure", "3.0", "--log", str(log), timeout=TEST_TIMEOUT)
     app = create_app(settings, FakeEngine(), TOKEN, corrector=corrector)
     caplog.set_level(logging.INFO)
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://t") as c:

@@ -9,7 +9,7 @@ import time
 from pathlib import Path
 
 import pytest
-from conftest import HEADERS, PCM, START, TOKEN
+from conftest import HEADERS, PCM, START, TEST_TIMEOUT, TOKEN
 from starlette.testclient import TestClient
 from test_protocol import final
 
@@ -49,7 +49,7 @@ def counted_spawns(managed):
     return spawns
 
 
-def wait_until(condition, timeout=6.0):
+def wait_until(condition, timeout=TEST_TIMEOUT):
     deadline = time.perf_counter() + timeout
     while not condition():
         assert time.perf_counter() < deadline, "timed out waiting for helper state"
@@ -58,7 +58,7 @@ def wait_until(condition, timeout=6.0):
 
 
 def test_start_prewarms_without_delaying_ack_or_partials(settings):
-    corrector = service(command=DELAYED)
+    corrector = service(command=DELAYED, timeout=TEST_TIMEOUT)
     settings.correction = corrector.config
     engine = FakeEngine("please send the schedule")
     with TestClient(create_app(settings, engine, TOKEN, corrector)) as client:
@@ -115,7 +115,7 @@ def test_prewarm_failure_falls_back_to_raw(settings):
 
 
 def test_final_waits_for_inflight_prewarm(settings):
-    corrector = service(command=DELAYED)
+    corrector = service(command=DELAYED, timeout=TEST_TIMEOUT)
     spawns = counted_spawns(corrector.managed)
     settings.correction = corrector.config
     with TestClient(
@@ -155,6 +155,9 @@ def test_timed_out_final_keeps_shared_prewarm_load(settings):
         # The load outlived the timed-out final and completes (a live pid alone
         # would still be mid-load; the load task must be done).
         assert wait_until(lambda: corrector.managed.loaded and not corrector.managed.loading)
+        # The warm final reuses the shared load: it must not race the 0.5 s budget
+        # that produced the intended timeout above.
+        corrector.config.timeout = TEST_TIMEOUT
         with client.websocket_connect("/v1/stream", headers=HEADERS) as ws:
             ws.send_json({**START, "correction": True})
             assert ws.receive_json()["type"] == "ready"
@@ -168,7 +171,7 @@ def test_timed_out_final_keeps_shared_prewarm_load(settings):
 async def test_one_timed_out_final_does_not_cancel_shared_load():
     # (b) Two finals wait on one in-flight load; the one that times out must not
     # cancel the load the other is still waiting on.
-    corrector = service(command=DELAYED, timeout=10)
+    corrector = service(command=DELAYED, timeout=TEST_TIMEOUT)
     managed = corrector.managed
     spawns = counted_spawns(managed)
     first = asyncio.create_task(managed.generate("first", "p"))
@@ -185,7 +188,7 @@ async def test_one_timed_out_final_does_not_cancel_shared_load():
 def test_cancel_during_prewarm_wait_suppresses_only_that_final(settings):
     # (c) An utterance cancel while the final waits on the prewarm suppresses only
     # that final; the shared load survives and warms the next utterance.
-    corrector = service(command=DELAYED)
+    corrector = service(command=DELAYED, timeout=TEST_TIMEOUT)
     settings.correction = corrector.config
     with TestClient(create_app(settings, FakeEngine("hello there"), TOKEN, corrector)) as client:
         with client.websocket_connect("/v1/stream", headers=HEADERS) as ws:

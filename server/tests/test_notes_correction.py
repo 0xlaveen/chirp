@@ -13,7 +13,7 @@ from pathlib import Path
 
 import httpx
 import pytest
-from conftest import HEADERS, PCM, START, TOKEN
+from conftest import HEADERS, PCM, START, TEST_TIMEOUT, TOKEN
 from starlette.testclient import TestClient
 
 from chirp_server.app import create_app
@@ -226,7 +226,14 @@ def test_managed_request_carries_the_notes_message_and_cap(tmp_path):
     raw = "um so the the launch is in march"
 
     async def go():
-        corrector = managed("--log", str(log), "--reply", "So the launch is in March.")
+        corrector = managed(
+            "--log",
+            str(log),
+            "--reply",
+            "So the launch is in March.",
+            timeout=TEST_TIMEOUT,
+            notes_timeout=TEST_TIMEOUT,
+        )
         try:
             return await corrector.process(raw, LIVE_NOTES_ID)
         finally:
@@ -244,7 +251,9 @@ def test_managed_rejection_keeps_the_raw_segment():
     raw = "we will not ship on friday"
 
     async def go():
-        corrector = managed("--reply", "We will ship on Friday.")
+        corrector = managed(
+            "--reply", "We will ship on Friday.", timeout=TEST_TIMEOUT, notes_timeout=TEST_TIMEOUT
+        )
         try:
             return await corrector.process(raw, LIVE_NOTES_ID)
         finally:
@@ -291,7 +300,7 @@ def test_endpoint_request_uses_the_notes_budget_and_cap():
 
 def test_stream_accepts_the_hidden_style(settings):
     raw = "um the the launch is in march"
-    config = CorrectionConfig(mode="managed")
+    config = CorrectionConfig(mode="managed", timeout=TEST_TIMEOUT, notes_timeout=TEST_TIMEOUT)
     corrector = Corrector(config)
     corrector.managed = ManagedCleanup(
         config, command=[sys.executable, "-u", str(HELPER), "--reply", "The launch is in March."]
