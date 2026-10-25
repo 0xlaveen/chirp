@@ -1,0 +1,1128 @@
+{
+  "android/floating-listening-cover-dark.png": {
+    "sha256": "47df693035a3516b5ed873ec96cbc0215798ce4cd78b32490e83d7fc83df8fdd",
+    "width": 720,
+    "height": 648,
+    "variants": [
+      {
+        "file": "android/floating-listening-cover-dark-320.webp",
+        "width": 320,
+        "height": 288
+      },
+      {
+        "file": "android/floating-listening-cover-dark-640.webp",
+        "width": 640,
+        "height": 576
+      },
+      {
+        "file": "android/floating-listening-cover-dark-720.webp",
+        "width": 720,
+        "height": 648
+      }
+    ]
+  },
+  "android/floating-listening-cover-light.png": {
+    "sha256": "5d3f4af6802984ae7e6fa9ff4c6a8176ff4bd600b579c4898fb094a1ae7bcf04",
+    "width": 720,
+    "height": 648,
+    "variants": [
+      {
+        "file": "android/floating-listening-cover-light-320.webp",
+        "width": 320,
+        "height": 288
+      },
+      {
+        "file": "android/floating-listening-cover-light-640.webp",
+        "width": 640,
+        "height": 576
+      },
+      {
+        "file": "android/floating-listening-cover-light-720.webp",
+        "width": 720,
+        "height": 648
+      }
+    ]
+  },
+  "android/gaps/launcher-widget-default-light.png": {
+    "sha256": "5bdcd076af17d3179ba5a7f9f0746d687092bbb494b4297b5300c22ea2ca7ca4",
+    "width": 733,
+    "height": 760,
+    "variants": [
+      {
+        "file": "android/gaps/launcher-widget-default-light-320.webp",
+        "width": 320,
+        "height": 332
+      },
+      {
+        "file": "android/gaps/launcher-widget-default-light-640.webp",
+        "width": 640,
+        "height": 664
+      },
+      {
+        "file": "android/gaps/launcher-widget-default-light-733.webp",
+        "width": 733,
+        "height": 760
+      }
+    ]
+  },
+  "android/keepkb-choice-cover-dark.png": {
+    "sha256": "a32ec59eaaa582e2ced15d7b9db11d016e2403e2fc5e69f62c45ef08a39f7905",
+    "width": 411,
+    "height": 891,
+    "variants": [
+      {
+        "file": "android/keepkb-choice-cover-dark-320.webp",
+        "width": 320,
+        "height": 694
+      },
+      {
+        "file": "android/keepkb-choice-cover-dark-411.webp",
+        "width": 411,
+        "height": 891
+      }
+    ]
+  },
+  "android/keepkb-choice-cover-light.png": {
+    "sha256": "a0dd046f6f52b0c204705c67caa3539f1bdc64caa005016d01a1dff36d948855",
+    "width": 411,
+    "height": 891,
+    "variants": [
+      {
+        "file": "android/keepkb-choice-cover-light-320.webp",
+        "width": 320,
+        "height": 694
+      },
+      {
+        "file": "android/keepkb-choice-cover-light-411.webp",
+        "width": 411,
+        "height": 891
+      }
+    ]
+  },
+  "android/keepkb-floating-cover-dark.png": {
+    "sha256": "ec3f841f2c81c3f7301fd4a37290a04d48073af675294e7034925936d3c488cd",
+    "width": 411,
+    "height": 891,
+    "variants": [
+      {
+        "file": "android/keepkb-floating-cover-dark-320.webp",
+        "width": 320,
+        "height": 694
+      },
+      {
+        "file": "android/keepkb-floating-cover-dark-411.webp",
+        "width": 411,
+        "height": 891
+      }
+    ]
+  },
+  "android/keepkb-floating-cover-light.png": {
+    "sha256": "36af933fd230470c943b4b81d644b56cfd1a0a85d442110a276ad316fddafd94",
+    "width": 411,
+    "height": 891,
+    "variants": [
+      {
+        "file": "android/keepkb-floating-cover-light-320.webp",
+        "width": 320,
+        "height": 694
+      },
+      {
+        "file": "android/keepkb-floating-cover-light-411.webp",
+        "width": 411,
+        "height": 891
+      }
+    ]
+  },
+  "android/keyboard-final-dark.png": {
+    "sha256": "cab439e1bbceeffe9b52cecd8ca5bf566d0673d7b281a6c9492d064fbeef5b00",
+    "width": 411,
+    "height": 293,
+    "variants": [
+      {
+        "file": "android/keyboard-final-dark-320.webp",
+        "width": 320,
+        "height": 228
+      },
+      {
+        "file": "android/keyboard-final-dark-411.webp",
+        "width": 411,
+        "height": 293
+      }
+    ]
+  },
+  "android/keyboard-final-light.png": {
+    "sha256": "b0b12a0297f1969131fa0c91c69fc9dad187948064a347ef6947d934cc1e5e5a",
+    "width": 411,
+    "height": 293,
+    "variants": [
+      {
+        "file": "android/keyboard-final-light-320.webp",
+        "width": 320,
+        "height": 228
+      },
+      {
+        "file": "android/keyboard-final-light-411.webp",
+        "width": 411,
+        "height": 293
+      }
+    ]
+  },
+  "android/keyboard-listening-dark.png": {
+    "sha256": "891fa4f5963fb3795bed70289670c717afb094ab8824848d763952240aedfb55",
+    "width": 411,
+    "height": 293,
+    "variants": [
+      {
+        "file": "android/keyboard-listening-dark-320.webp",
+        "width": 320,
+        "height": 228
+      },
+      {
+        "file": "android/keyboard-listening-dark-411.webp",
+        "width": 411,
+        "height": 293
+      }
+    ]
+  },
+  "android/keyboard-listening-light.png": {
+    "sha256": "889ed22d7fb5e8ecce977122dbae72b223cdd435638327f6881d332d8109583e",
+    "width": 411,
+    "height": 293,
+    "variants": [
+      {
+        "file": "android/keyboard-listening-light-320.webp",
+        "width": 320,
+        "height": 228
+      },
+      {
+        "file": "android/keyboard-listening-light-411.webp",
+        "width": 411,
+        "height": 293
+      }
+    ]
+  },
+  "android/keyboard-look-gboard-listening-dark.png": {
+    "sha256": "3e5d9be9cb051346a8e6bd68c746b330d2dcd433915054b01e71d7a6b26ef95a",
+    "width": 411,
+    "height": 293,
+    "variants": [
+      {
+        "file": "android/keyboard-look-gboard-listening-dark-320.webp",
+        "width": 320,
+        "height": 228
+      },
+      {
+        "file": "android/keyboard-look-gboard-listening-dark-411.webp",
+        "width": 411,
+        "height": 293
+      }
+    ]
+  },
+  "android/keyboard-look-gboard-listening-light.png": {
+    "sha256": "dfe62fd0a5a675a0e98c396b18ba324e2dfd94788e4eca958c6acfec21b4a4d3",
+    "width": 411,
+    "height": 293,
+    "variants": [
+      {
+        "file": "android/keyboard-look-gboard-listening-light-320.webp",
+        "width": 320,
+        "height": 228
+      },
+      {
+        "file": "android/keyboard-look-gboard-listening-light-411.webp",
+        "width": 411,
+        "height": 293
+      }
+    ]
+  },
+  "android/notes-library-cover-detail-dark.png": {
+    "sha256": "bc9bf8742450241c3099c5374cda470a2238f02be924c634c06c276c716408d4",
+    "width": 411,
+    "height": 891,
+    "variants": [
+      {
+        "file": "android/notes-library-cover-detail-dark-320.webp",
+        "width": 320,
+        "height": 694
+      },
+      {
+        "file": "android/notes-library-cover-detail-dark-411.webp",
+        "width": 411,
+        "height": 891
+      }
+    ]
+  },
+  "android/notes-library-cover-detail-light.png": {
+    "sha256": "31644a3ef87767a3776c783d9adb36b202ca8ec1f05030e7d279e1115c62c023",
+    "width": 411,
+    "height": 891,
+    "variants": [
+      {
+        "file": "android/notes-library-cover-detail-light-320.webp",
+        "width": 320,
+        "height": 694
+      },
+      {
+        "file": "android/notes-library-cover-detail-light-411.webp",
+        "width": 411,
+        "height": 891
+      }
+    ]
+  },
+  "android/notes-library-cover-recording-dark.png": {
+    "sha256": "7562d96628b276261718344048ae3ca98239110740c19c484e69e5e34a80060a",
+    "width": 411,
+    "height": 891,
+    "variants": [
+      {
+        "file": "android/notes-library-cover-recording-dark-320.webp",
+        "width": 320,
+        "height": 694
+      },
+      {
+        "file": "android/notes-library-cover-recording-dark-411.webp",
+        "width": 411,
+        "height": 891
+      }
+    ]
+  },
+  "android/notes-library-cover-recording-light.png": {
+    "sha256": "87bcd02391b2f862186736693411d48f5aefd64ac5947daeb7344a73342ef829",
+    "width": 411,
+    "height": 891,
+    "variants": [
+      {
+        "file": "android/notes-library-cover-recording-light-320.webp",
+        "width": 320,
+        "height": 694
+      },
+      {
+        "file": "android/notes-library-cover-recording-light-411.webp",
+        "width": 411,
+        "height": 891
+      }
+    ]
+  },
+  "android/onboarding-pair-dark.png": {
+    "sha256": "e8782b8a22fa5aa4faa9472ce4cf8c05639124798144e0c2844d9ef02fbef931",
+    "width": 411,
+    "height": 891,
+    "variants": [
+      {
+        "file": "android/onboarding-pair-dark-320.webp",
+        "width": 320,
+        "height": 694
+      },
+      {
+        "file": "android/onboarding-pair-dark-411.webp",
+        "width": 411,
+        "height": 891
+      }
+    ]
+  },
+  "android/onboarding-pair-light.png": {
+    "sha256": "feddc43b3af80b8702373c1e8e6c4ecdd51fa56477ef1bcf3ef350df8e473509",
+    "width": 411,
+    "height": 891,
+    "variants": [
+      {
+        "file": "android/onboarding-pair-light-320.webp",
+        "width": 320,
+        "height": 694
+      },
+      {
+        "file": "android/onboarding-pair-light-411.webp",
+        "width": 411,
+        "height": 891
+      }
+    ]
+  },
+  "android/quick-dictate-listening-cover-dark.png": {
+    "sha256": "ee0782311fc593ed84c07f585ad4507ae0b2ebdae3f6167ac82e5e198beb835f",
+    "width": 360,
+    "height": 800,
+    "variants": [
+      {
+        "file": "android/quick-dictate-listening-cover-dark-320.webp",
+        "width": 320,
+        "height": 711
+      },
+      {
+        "file": "android/quick-dictate-listening-cover-dark-360.webp",
+        "width": 360,
+        "height": 800
+      }
+    ]
+  },
+  "android/quick-dictate-listening-cover-light.png": {
+    "sha256": "95849670b4eb096d172c8a6e3cd4eb5ce9447643e571dd2eabff76d289d1b1ab",
+    "width": 360,
+    "height": 800,
+    "variants": [
+      {
+        "file": "android/quick-dictate-listening-cover-light-320.webp",
+        "width": 320,
+        "height": 711
+      },
+      {
+        "file": "android/quick-dictate-listening-cover-light-360.webp",
+        "width": 360,
+        "height": 800
+      }
+    ]
+  },
+  "android/scratchpad-idle-dark.png": {
+    "sha256": "6a00a4a366b5edf166685c25f93780fc3680ede2af28a8c100ba7402ec7f34fe",
+    "width": 411,
+    "height": 891,
+    "variants": [
+      {
+        "file": "android/scratchpad-idle-dark-320.webp",
+        "width": 320,
+        "height": 694
+      },
+      {
+        "file": "android/scratchpad-idle-dark-411.webp",
+        "width": 411,
+        "height": 891
+      }
+    ]
+  },
+  "android/scratchpad-idle-light.png": {
+    "sha256": "e0ffe07f74effdf20f7f1c977b08d9a9603080e3dc6e481dcc73b56be2348396",
+    "width": 411,
+    "height": 891,
+    "variants": [
+      {
+        "file": "android/scratchpad-idle-light-320.webp",
+        "width": 320,
+        "height": 694
+      },
+      {
+        "file": "android/scratchpad-idle-light-411.webp",
+        "width": 411,
+        "height": 891
+      }
+    ]
+  },
+  "android/scratchpad-text-dark.png": {
+    "sha256": "bed4c4fd750e65d08b0104d6feffec3229e3ffaa7ae3c04bcda657a6b8b1a32b",
+    "width": 411,
+    "height": 891,
+    "variants": [
+      {
+        "file": "android/scratchpad-text-dark-320.webp",
+        "width": 320,
+        "height": 694
+      },
+      {
+        "file": "android/scratchpad-text-dark-411.webp",
+        "width": 411,
+        "height": 891
+      }
+    ]
+  },
+  "android/scratchpad-text-light.png": {
+    "sha256": "6b1c12c0a4140fe8418e122431986db52e4d8fe1f7dfc15c72990277172e36f5",
+    "width": 411,
+    "height": 891,
+    "variants": [
+      {
+        "file": "android/scratchpad-text-light-320.webp",
+        "width": 320,
+        "height": 694
+      },
+      {
+        "file": "android/scratchpad-text-light-411.webp",
+        "width": 411,
+        "height": 891
+      }
+    ]
+  },
+  "android/share-to-notes-dialog-cover-dark.png": {
+    "sha256": "c1b25f7287ac860f908c8e14dd92443a9a47e28d244c9f1c032f783dda6c3b72",
+    "width": 360,
+    "height": 268,
+    "variants": [
+      {
+        "file": "android/share-to-notes-dialog-cover-dark-320.webp",
+        "width": 320,
+        "height": 238
+      },
+      {
+        "file": "android/share-to-notes-dialog-cover-dark-360.webp",
+        "width": 360,
+        "height": 268
+      }
+    ]
+  },
+  "android/share-to-notes-dialog-cover-light.png": {
+    "sha256": "2c98bc619d5ac75e895939685798e6417724fb4d0585dff4c723ec63d8d4910c",
+    "width": 360,
+    "height": 268,
+    "variants": [
+      {
+        "file": "android/share-to-notes-dialog-cover-light-320.webp",
+        "width": 320,
+        "height": 238
+      },
+      {
+        "file": "android/share-to-notes-dialog-cover-light-360.webp",
+        "width": 360,
+        "height": 268
+      }
+    ]
+  },
+  "ios/ipad-dark-sidebar-dictate.png": {
+    "sha256": "c49a3ad151111c33c34846c7b7277b7fffdd97f4536e8734e81d3ae182a25d5c",
+    "width": 1500,
+    "height": 1125,
+    "variants": [
+      {
+        "file": "ios/ipad-dark-sidebar-dictate-320.webp",
+        "width": 320,
+        "height": 240
+      },
+      {
+        "file": "ios/ipad-dark-sidebar-dictate-640.webp",
+        "width": 640,
+        "height": 480
+      },
+      {
+        "file": "ios/ipad-dark-sidebar-dictate-960.webp",
+        "width": 960,
+        "height": 720
+      },
+      {
+        "file": "ios/ipad-dark-sidebar-dictate-1440.webp",
+        "width": 1440,
+        "height": 1080
+      }
+    ]
+  },
+  "ios/ipad-sidebar-dictate.png": {
+    "sha256": "793711e0be542fc7587259d90a1fa71b3ddfc6ad6b21c5fd67b7dcd9f904d495",
+    "width": 1500,
+    "height": 1125,
+    "variants": [
+      {
+        "file": "ios/ipad-sidebar-dictate-320.webp",
+        "width": 320,
+        "height": 240
+      },
+      {
+        "file": "ios/ipad-sidebar-dictate-640.webp",
+        "width": 640,
+        "height": 480
+      },
+      {
+        "file": "ios/ipad-sidebar-dictate-960.webp",
+        "width": 960,
+        "height": 720
+      },
+      {
+        "file": "ios/ipad-sidebar-dictate-1440.webp",
+        "width": 1440,
+        "height": 1080
+      }
+    ]
+  },
+  "ios/iphone-dark-dictate-listening.png": {
+    "sha256": "ca70d0b4711bef3d53a2227901d86bd0e5ac44c43f0e009669f9c585ec6ca7c8",
+    "width": 690,
+    "height": 1500,
+    "variants": [
+      {
+        "file": "ios/iphone-dark-dictate-listening-320.webp",
+        "width": 320,
+        "height": 696
+      },
+      {
+        "file": "ios/iphone-dark-dictate-listening-640.webp",
+        "width": 640,
+        "height": 1391
+      },
+      {
+        "file": "ios/iphone-dark-dictate-listening-690.webp",
+        "width": 690,
+        "height": 1500
+      }
+    ]
+  },
+  "ios/iphone-dark-onboarding-1-welcome.png": {
+    "sha256": "5987e494242a18158aa68110f3a9bb43b8a2377c144c9721c9b5df1a5c226e07",
+    "width": 690,
+    "height": 1500,
+    "variants": [
+      {
+        "file": "ios/iphone-dark-onboarding-1-welcome-320.webp",
+        "width": 320,
+        "height": 696
+      },
+      {
+        "file": "ios/iphone-dark-onboarding-1-welcome-640.webp",
+        "width": 640,
+        "height": 1391
+      },
+      {
+        "file": "ios/iphone-dark-onboarding-1-welcome-690.webp",
+        "width": 690,
+        "height": 1500
+      }
+    ]
+  },
+  "ios/iphone-dark-onboarding-2-pair-connected.png": {
+    "sha256": "96139d2d180d49d3214c45aff265bb26cfa20597c3edafdebdc433e8ba44168e",
+    "width": 690,
+    "height": 1500,
+    "variants": [
+      {
+        "file": "ios/iphone-dark-onboarding-2-pair-connected-320.webp",
+        "width": 320,
+        "height": 696
+      },
+      {
+        "file": "ios/iphone-dark-onboarding-2-pair-connected-640.webp",
+        "width": 640,
+        "height": 1391
+      },
+      {
+        "file": "ios/iphone-dark-onboarding-2-pair-connected-690.webp",
+        "width": 690,
+        "height": 1500
+      }
+    ]
+  },
+  "ios/iphone-dictate-listening.png": {
+    "sha256": "68d63c3e5b706adb48a317865ee41f66ca698fe5cb8199a6bb774e97c595ca27",
+    "width": 690,
+    "height": 1500,
+    "variants": [
+      {
+        "file": "ios/iphone-dictate-listening-320.webp",
+        "width": 320,
+        "height": 696
+      },
+      {
+        "file": "ios/iphone-dictate-listening-640.webp",
+        "width": 640,
+        "height": 1391
+      },
+      {
+        "file": "ios/iphone-dictate-listening-690.webp",
+        "width": 690,
+        "height": 1500
+      }
+    ]
+  },
+  "ios/iphone-onboarding-1-welcome.png": {
+    "sha256": "c4a80d4dd0f22ac8c687163997d979be9eb3c19f5f43a92e7b7c790a71a79a3b",
+    "width": 690,
+    "height": 1500,
+    "variants": [
+      {
+        "file": "ios/iphone-onboarding-1-welcome-320.webp",
+        "width": 320,
+        "height": 696
+      },
+      {
+        "file": "ios/iphone-onboarding-1-welcome-640.webp",
+        "width": 640,
+        "height": 1391
+      },
+      {
+        "file": "ios/iphone-onboarding-1-welcome-690.webp",
+        "width": 690,
+        "height": 1500
+      }
+    ]
+  },
+  "ios/iphone-onboarding-2-pair-connected.png": {
+    "sha256": "7eaa964fe769cc96f0e844de6203cac2c5d43b3e268d169e09900f7bc9d11d97",
+    "width": 690,
+    "height": 1500,
+    "variants": [
+      {
+        "file": "ios/iphone-onboarding-2-pair-connected-320.webp",
+        "width": 320,
+        "height": 696
+      },
+      {
+        "file": "ios/iphone-onboarding-2-pair-connected-640.webp",
+        "width": 640,
+        "height": 1391
+      },
+      {
+        "file": "ios/iphone-onboarding-2-pair-connected-690.webp",
+        "width": 690,
+        "height": 1500
+      }
+    ]
+  },
+  "mac/hud-flow-3-diff-dark.png": {
+    "sha256": "45efdfb87058487c0a9f1995674384d9a7a8cf40d4f23fa9ea0656fd05591831",
+    "width": 776,
+    "height": 236,
+    "variants": [
+      {
+        "file": "mac/hud-flow-3-diff-dark-320.webp",
+        "width": 320,
+        "height": 97
+      },
+      {
+        "file": "mac/hud-flow-3-diff-dark-640.webp",
+        "width": 640,
+        "height": 195
+      },
+      {
+        "file": "mac/hud-flow-3-diff-dark-776.webp",
+        "width": 776,
+        "height": 236
+      }
+    ]
+  },
+  "mac/hud-flow-3-diff-light.png": {
+    "sha256": "02e957717fa2c732aafd7f04f5aa1389719cc206941cd90a599d53751c8131ec",
+    "width": 776,
+    "height": 236,
+    "variants": [
+      {
+        "file": "mac/hud-flow-3-diff-light-320.webp",
+        "width": 320,
+        "height": 97
+      },
+      {
+        "file": "mac/hud-flow-3-diff-light-640.webp",
+        "width": 640,
+        "height": 195
+      },
+      {
+        "file": "mac/hud-flow-3-diff-light-776.webp",
+        "width": 776,
+        "height": 236
+      }
+    ]
+  },
+  "mac/hud-listening-dark.png": {
+    "sha256": "e7a39ed0b1837f3e64664b1548da40c5150762a45a8fd7d3e6268aaa77907076",
+    "width": 776,
+    "height": 236,
+    "variants": [
+      {
+        "file": "mac/hud-listening-dark-320.webp",
+        "width": 320,
+        "height": 97
+      },
+      {
+        "file": "mac/hud-listening-dark-640.webp",
+        "width": 640,
+        "height": 195
+      },
+      {
+        "file": "mac/hud-listening-dark-776.webp",
+        "width": 776,
+        "height": 236
+      }
+    ]
+  },
+  "mac/hud-listening-light.png": {
+    "sha256": "a786c1b60351bc7c2b6d896057686328a596ef4e43bea1bd37f2fbc6d393da11",
+    "width": 776,
+    "height": 236,
+    "variants": [
+      {
+        "file": "mac/hud-listening-light-320.webp",
+        "width": 320,
+        "height": 97
+      },
+      {
+        "file": "mac/hud-listening-light-640.webp",
+        "width": 640,
+        "height": 195
+      },
+      {
+        "file": "mac/hud-listening-light-776.webp",
+        "width": 776,
+        "height": 236
+      }
+    ]
+  },
+  "mac/notes-inspector-playing-dark.png": {
+    "sha256": "6aa78600ffddf3c2a14cd6a6e96ef190e1e3aa43b5070a9406c3aaca0383afdc",
+    "width": 2000,
+    "height": 1240,
+    "variants": [
+      {
+        "file": "mac/notes-inspector-playing-dark-320.webp",
+        "width": 320,
+        "height": 198
+      },
+      {
+        "file": "mac/notes-inspector-playing-dark-640.webp",
+        "width": 640,
+        "height": 397
+      },
+      {
+        "file": "mac/notes-inspector-playing-dark-960.webp",
+        "width": 960,
+        "height": 595
+      },
+      {
+        "file": "mac/notes-inspector-playing-dark-1440.webp",
+        "width": 1440,
+        "height": 893
+      }
+    ]
+  },
+  "mac/notes-inspector-playing-light.png": {
+    "sha256": "85121feca04063386ecfed4ced8ae0624a18765ee71a8c9d82fbe7f4e91fb173",
+    "width": 2000,
+    "height": 1240,
+    "variants": [
+      {
+        "file": "mac/notes-inspector-playing-light-320.webp",
+        "width": 320,
+        "height": 198
+      },
+      {
+        "file": "mac/notes-inspector-playing-light-640.webp",
+        "width": 640,
+        "height": 397
+      },
+      {
+        "file": "mac/notes-inspector-playing-light-960.webp",
+        "width": 960,
+        "height": 595
+      },
+      {
+        "file": "mac/notes-inspector-playing-light-1440.webp",
+        "width": 1440,
+        "height": 893
+      }
+    ]
+  },
+  "mac/notes-library-dark.png": {
+    "sha256": "a498183081f81f2f7edfeaf0ec7cadcceadb0dc66abff955ffd05d6822c757e7",
+    "width": 2000,
+    "height": 1240,
+    "variants": [
+      {
+        "file": "mac/notes-library-dark-320.webp",
+        "width": 320,
+        "height": 198
+      },
+      {
+        "file": "mac/notes-library-dark-640.webp",
+        "width": 640,
+        "height": 397
+      },
+      {
+        "file": "mac/notes-library-dark-960.webp",
+        "width": 960,
+        "height": 595
+      },
+      {
+        "file": "mac/notes-library-dark-1440.webp",
+        "width": 1440,
+        "height": 893
+      }
+    ]
+  },
+  "mac/notes-library-light.png": {
+    "sha256": "3bad04f10f3b11903d074e7844cecf7ea1a7ee475dfd3ccb44798774399634b5",
+    "width": 2000,
+    "height": 1240,
+    "variants": [
+      {
+        "file": "mac/notes-library-light-320.webp",
+        "width": 320,
+        "height": 198
+      },
+      {
+        "file": "mac/notes-library-light-640.webp",
+        "width": 640,
+        "height": 397
+      },
+      {
+        "file": "mac/notes-library-light-960.webp",
+        "width": 960,
+        "height": 595
+      },
+      {
+        "file": "mac/notes-library-light-1440.webp",
+        "width": 1440,
+        "height": 893
+      }
+    ]
+  },
+  "mac/notes-recording-dark.png": {
+    "sha256": "74d7d7eb1e1faaf9a04e40bae4513f3359a38c655379c5b60afba68d4692096e",
+    "width": 2000,
+    "height": 1240,
+    "variants": [
+      {
+        "file": "mac/notes-recording-dark-320.webp",
+        "width": 320,
+        "height": 198
+      },
+      {
+        "file": "mac/notes-recording-dark-640.webp",
+        "width": 640,
+        "height": 397
+      },
+      {
+        "file": "mac/notes-recording-dark-960.webp",
+        "width": 960,
+        "height": 595
+      },
+      {
+        "file": "mac/notes-recording-dark-1440.webp",
+        "width": 1440,
+        "height": 893
+      }
+    ]
+  },
+  "mac/notes-recording-light.png": {
+    "sha256": "f19b2f2865b009e9e3cfdaf57948e1928ddb0377d209fedc863086a41a8cbd3d",
+    "width": 2000,
+    "height": 1240,
+    "variants": [
+      {
+        "file": "mac/notes-recording-light-320.webp",
+        "width": 320,
+        "height": 198
+      },
+      {
+        "file": "mac/notes-recording-light-640.webp",
+        "width": 640,
+        "height": 397
+      },
+      {
+        "file": "mac/notes-recording-light-960.webp",
+        "width": 960,
+        "height": 595
+      },
+      {
+        "file": "mac/notes-recording-light-1440.webp",
+        "width": 1440,
+        "height": 893
+      }
+    ]
+  },
+  "mac/notes-search-dark.png": {
+    "sha256": "305bcd4c5fd32bb10eb876c8b5219b5c66c680d4a40ab9d45338d5cccf409f20",
+    "width": 2000,
+    "height": 1240,
+    "variants": [
+      {
+        "file": "mac/notes-search-dark-320.webp",
+        "width": 320,
+        "height": 198
+      },
+      {
+        "file": "mac/notes-search-dark-640.webp",
+        "width": 640,
+        "height": 397
+      },
+      {
+        "file": "mac/notes-search-dark-960.webp",
+        "width": 960,
+        "height": 595
+      },
+      {
+        "file": "mac/notes-search-dark-1440.webp",
+        "width": 1440,
+        "height": 893
+      }
+    ]
+  },
+  "mac/notes-search-light.png": {
+    "sha256": "2a2d8d0441fa316eb6bfc2bebe17d50a248500ce78d97da5ae2ffe94b107ec62",
+    "width": 2000,
+    "height": 1240,
+    "variants": [
+      {
+        "file": "mac/notes-search-light-320.webp",
+        "width": 320,
+        "height": 198
+      },
+      {
+        "file": "mac/notes-search-light-640.webp",
+        "width": 640,
+        "height": 397
+      },
+      {
+        "file": "mac/notes-search-light-960.webp",
+        "width": 960,
+        "height": 595
+      },
+      {
+        "file": "mac/notes-search-light-1440.webp",
+        "width": 1440,
+        "height": 893
+      }
+    ]
+  },
+  "mac/onboarding-welcome-dark.png": {
+    "sha256": "4d8aff0b02b1c97f915705dc6e9c4bb52a3eda28fdd6762d5144212fc7ba4523",
+    "width": 1440,
+    "height": 920,
+    "variants": [
+      {
+        "file": "mac/onboarding-welcome-dark-320.webp",
+        "width": 320,
+        "height": 204
+      },
+      {
+        "file": "mac/onboarding-welcome-dark-640.webp",
+        "width": 640,
+        "height": 409
+      },
+      {
+        "file": "mac/onboarding-welcome-dark-960.webp",
+        "width": 960,
+        "height": 613
+      },
+      {
+        "file": "mac/onboarding-welcome-dark-1440.webp",
+        "width": 1440,
+        "height": 920
+      }
+    ]
+  },
+  "mac/onboarding-welcome-light.png": {
+    "sha256": "dea44859208082e770ff8fdfe1e148080f0e799f7050c069d8a10be6ecfe1e12",
+    "width": 1440,
+    "height": 920,
+    "variants": [
+      {
+        "file": "mac/onboarding-welcome-light-320.webp",
+        "width": 320,
+        "height": 204
+      },
+      {
+        "file": "mac/onboarding-welcome-light-640.webp",
+        "width": 640,
+        "height": 409
+      },
+      {
+        "file": "mac/onboarding-welcome-light-960.webp",
+        "width": 960,
+        "height": 613
+      },
+      {
+        "file": "mac/onboarding-welcome-light-1440.webp",
+        "width": 1440,
+        "height": 920
+      }
+    ]
+  },
+  "mac/settings-advanced-ready-dark.png": {
+    "sha256": "e05ad5d71f887307db8e07002f62525a8e9254087b7adddf0ca63a59835659e8",
+    "width": 1440,
+    "height": 1040,
+    "variants": [
+      {
+        "file": "mac/settings-advanced-ready-dark-320.webp",
+        "width": 320,
+        "height": 231
+      },
+      {
+        "file": "mac/settings-advanced-ready-dark-640.webp",
+        "width": 640,
+        "height": 462
+      },
+      {
+        "file": "mac/settings-advanced-ready-dark-960.webp",
+        "width": 960,
+        "height": 693
+      },
+      {
+        "file": "mac/settings-advanced-ready-dark-1440.webp",
+        "width": 1440,
+        "height": 1040
+      }
+    ]
+  },
+  "mac/settings-advanced-ready-light.png": {
+    "sha256": "cd35e87cee8c88202c076345c240bb85916cb89565223801e84815b67dbf252e",
+    "width": 1440,
+    "height": 1040,
+    "variants": [
+      {
+        "file": "mac/settings-advanced-ready-light-320.webp",
+        "width": 320,
+        "height": 231
+      },
+      {
+        "file": "mac/settings-advanced-ready-light-640.webp",
+        "width": 640,
+        "height": 462
+      },
+      {
+        "file": "mac/settings-advanced-ready-light-960.webp",
+        "width": 960,
+        "height": 693
+      },
+      {
+        "file": "mac/settings-advanced-ready-light-1440.webp",
+        "width": 1440,
+        "height": 1040
+      }
+    ]
+  },
+  "mac/settings-devices-ready-dark.png": {
+    "sha256": "462c6ce7bef88fb5f11daf68aa33f3dab11c0efdd58a1f9536f9ff0524a07f2d",
+    "width": 1440,
+    "height": 1040,
+    "variants": [
+      {
+        "file": "mac/settings-devices-ready-dark-320.webp",
+        "width": 320,
+        "height": 231
+      },
+      {
+        "file": "mac/settings-devices-ready-dark-640.webp",
+        "width": 640,
+        "height": 462
+      },
+      {
+        "file": "mac/settings-devices-ready-dark-960.webp",
+        "width": 960,
+        "height": 693
+      },
+      {
+        "file": "mac/settings-devices-ready-dark-1440.webp",
+        "width": 1440,
+        "height": 1040
+      }
+    ]
+  },
+  "mac/settings-devices-ready-light.png": {
+    "sha256": "f445ad1a554fa59cb5eeeb87812c208b439e3c20610dd7f911bf292a9909e0d5",
+    "width": 1440,
+    "height": 1040,
+    "variants": [
+      {
+        "file": "mac/settings-devices-ready-light-320.webp",
+        "width": 320,
+        "height": 231
+      },
+      {
+        "file": "mac/settings-devices-ready-light-640.webp",
+        "width": 640,
+        "height": 462
+      },
+      {
+        "file": "mac/settings-devices-ready-light-960.webp",
+        "width": 960,
+        "height": 693
+      },
+      {
+        "file": "mac/settings-devices-ready-light-1440.webp",
+        "width": 1440,
+        "height": 1040
+      }
+    ]
+  }
+}
