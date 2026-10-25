@@ -245,6 +245,8 @@ final class FileCaptureEngine: CaptureEngine, @unchecked Sendable {
     private var block: (@Sendable (AVAudioPCMBuffer) -> Void)?
     private var feeder: Task<Void, Never>?
     private let done = AsyncStream<Void>.makeStream()
+    /// Runs before each buffer, on the feeder (the call selftest's file-backed tap plays in step with it).
+    var beforeBuffer: (@Sendable () -> Void)?
     let inputFormat: AVAudioFormat? = AVAudioFormat(standardFormatWithSampleRate: PCMConverter.sampleRate, channels: 1)
 
     init(frames: [Data], fast: Bool, clock: AudioClock) {
@@ -270,11 +272,12 @@ final class FileCaptureEngine: CaptureEngine, @unchecked Sendable {
 
     func start() throws {
         guard lock.withLock({ feeder == nil }) else { return }
-        let (buffers, fast, clock, done) = (self.buffers, self.fast, self.clock, self.done.continuation)
+        let (buffers, fast, clock, done, before) = (self.buffers, self.fast, self.clock, self.done.continuation, self.beforeBuffer)
         let task = Task.detached { [weak self] in
             let start = ContinuousClock.now
             for (i, buffer) in buffers.enumerated() {
                 guard let self, let block = self.lock.withLock({ self.block }) else { break }
+                before?()
                 block(buffer)
                 clock.advance(Double(buffer.frameLength) / PCMConverter.sampleRate)
                 try? await Task.sleep(until: start + .milliseconds((fast ? 5 : 50) * (i + 1)), clock: .continuous)

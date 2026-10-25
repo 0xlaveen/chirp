@@ -111,14 +111,16 @@ final class NotesFrameRouter: @unchecked Sendable {
     /// Speaker labels: the diarizer hears exactly the frames the sockets get, stamped on the same clock.
     private var speakers: SpeakerDiarizing?
 
-    /// Sends the frame on; true when the segmenter wants a cut (asked once until the next swap).
-    func route(_ frame: Data, level: Level) -> Bool {
+    /// Sends the frame on; true when the segmenter wants a cut (asked once until the next swap). `call` is the same
+    /// step of a call recording with each side apart (`frame` is its mix): the diarizer gets the sides.
+    func route(_ frame: Data, level: Level, call: CallFrame? = nil) -> Bool {
         lock.withLock {
             guard target != nil || audio != nil else { return false }
             target?.sendAudio(frame)
             audio?.append(frame)
             recent.append(frame)
-            speakers?.feed(frame, at: Double(bytes) / (PCMConverter.sampleRate * 2))
+            let time = Double(bytes) / (PCMConverter.sampleRate * 2)
+            if let call { speakers?.feed(call, at: time) } else { speakers?.feed(frame, at: time) }
             bytes += frame.count
             let duration = Double(frame.count / 2) / PCMConverter.sampleRate
             if level.rms < NotesSegmenter.quietRMS {
@@ -476,8 +478,9 @@ public final class NotesRecorder {
     }
 
     /// One capture frame, from the audio thread: it goes to the current segment's socket and through the segmenter.
-    public nonisolated func handleFrame(_ data: Data, level: Level) {
-        if router.route(data, level: level) {
+    /// A call recording passes both sides too (`data` is their mix).
+    public nonisolated func handleFrame(_ data: Data, level: Level, call: CallFrame? = nil) {
+        if router.route(data, level: level, call: call) {
             Task { @MainActor in await self.cut() }
         }
     }

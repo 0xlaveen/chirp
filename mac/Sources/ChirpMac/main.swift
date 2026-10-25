@@ -9,6 +9,8 @@ case .selftest:
     exit(await SelfTest.run(Array(arguments.dropFirst())))
 case .notesSelftest:
     exit(await NotesSelfTest.run(Array(arguments.dropFirst())))
+case .callSelftest:
+    exit(await CallAudioSelfTest.run(Array(arguments.dropFirst())))
 case .renderSnapshots(let directory, let curated):
     // Draws offscreen only: no delegate, no run loop, no onboarding, no permission or pasteboard access.
     do {
