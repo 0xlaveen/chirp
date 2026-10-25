@@ -37,6 +37,17 @@ for name in targets:
 assert all(s['TEST_HOST'] == '$(BUILT_PRODUCTS_DIR)/ChirpIOS.app/ChirpIOS' for s in settings('ChirpIOSTests'))
 assert all(s['ASSETCATALOG_COMPILER_APPICON_NAME'] == 'AppIcon' for s in settings('ChirpIOS'))
 assert hashlib.sha256((root/'App/Assets.xcassets/AppIcon.appiconset/AppIcon.png').read_bytes()).digest() == hashlib.sha256((root.parent/'mac/Assets/AppIcon.png').read_bytes()).digest()
+# Pond brand assets ship in the app's catalog: the glyph and pond art are the Mac's pixels, verbatim. The keyboard
+# extension has no catalog (it draws its mark with SF Symbols) and must not pick up the app's 1 MB artwork.
+catalog = root/'App/Assets.xcassets'
+assert hashlib.sha256((catalog/'ChirpGlyph.imageset/ChirpGlyph.png').read_bytes()).digest() == hashlib.sha256((root.parent/'mac/Assets/ChirpGlyph.png').read_bytes()).digest()
+assert hashlib.sha256((catalog/'PondArt.imageset/PondArt.png').read_bytes()).digest() == hashlib.sha256((root.parent/'mac/Assets/AppIcon.png').read_bytes()).digest()
+assert json.loads((catalog/'ChirpGlyph.imageset/Contents.json').read_text())['properties']['template-rendering-intent'] == 'template'
+accent = json.loads((catalog/'AccentColor.colorset/Contents.json').read_text())['colors']
+assert [c['color']['components']['red'] for c in accent] == ['0xC2', '0xFF'] and 'appearances' in accent[1]
+for ext in ('ChirpKeyboard', 'ChirpWidgets'):
+    for phase in (objects[x] for x in targets[ext]['buildPhases'] if objects[x]['isa'] == 'PBXResourcesBuildPhase'):
+        assert not phase['files'], f'{ext} must not bundle the app asset catalog'
 resources = [objects[x] for x in targets['ChirpIOS']['buildPhases'] if objects[x]['isa'] == 'PBXResourcesBuildPhase']
 assert any(objects[objects[f]['fileRef']]['path'] == 'App/Assets.xcassets' for f in resources[0]['files'])
 
