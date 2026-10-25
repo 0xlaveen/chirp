@@ -93,7 +93,7 @@ import Testing
     // MARK: the structure
 
     @Test func readyMenuHasTheTargetStructure() {
-        #expect(groups(inputs()) == [["Start Dictation", "New Note"], ["Recent Notes", "Notes Library…"], ["Clean-up", "Microphone"],
+        #expect(groups(inputs()) == [["Start Dictation", "New Note"], ["Recent Dictations", "Dictation History…"], ["Recent Notes", "Notes Library…"], ["Clean-up", "Microphone"],
                                       ["Settings…"], ["Quit Chirp"]])
         #expect(MenuContent.header(inputs()).title == "Chirp")
     }
@@ -104,8 +104,8 @@ import Testing
             #expect(!e.title.isEmpty && !e.title.contains("\n"))
             #expect(e.value == nil || e.shortcut == nil)
         }
-        // Under the header, around the notes rows, below Notes, around Settings and above Quit.
-        #expect(MenuContent.entries(inputs()).filter(\.isSeparator).count == 5)
+        // Under the header, around the history rows and the notes rows, around Settings and above Quit.
+        #expect(MenuContent.entries(inputs()).filter(\.isSeparator).count == 6)
     }
 
     @Test func setOncePreferencesLiveOnlyInSettings() {
@@ -117,7 +117,7 @@ import Testing
 
     @Test func useRawIsItsOwnGroupUnderTheStartRows() {
         let m = inputs { $0.rawOfferOpen = true; $0.rawOfferKey = "⌃⌥Z" }
-        #expect(groups(m) == [["Start Dictation", "New Note"], ["Recent Notes", "Notes Library…"], ["Use Raw for Last Dictation"],
+        #expect(groups(m) == [["Start Dictation", "New Note"], ["Recent Dictations", "Dictation History…"], ["Recent Notes", "Notes Library…"], ["Use Raw for Last Dictation"],
                               ["Clean-up", "Microphone"], ["Settings…"], ["Quit Chirp"]])
     }
 
@@ -182,7 +182,7 @@ import Testing
         let open = try #require(entry(inputs { $0.rawOfferOpen = true; $0.rawOfferKey = "⌃⌥Z" }, .useRaw))
         #expect(open.title == "Use Raw for Last Dictation" && open.shortcut == "⌃⌥Z")
         #expect(try #require(entry(inputs { $0.rawOfferOpen = true }, .useRaw)).shortcut == nil)
-        #expect(groups(inputs { $0.rawOfferOpen = true })[2] == ["Use Raw for Last Dictation"])
+        #expect(groups(inputs { $0.rawOfferOpen = true })[3] == ["Use Raw for Last Dictation"])
     }
 
     // MARK: Clean-up
@@ -318,7 +318,7 @@ import Testing
 
     @Test func setUpChirpSitsBetweenTheSeparatorAndSettings() {
         let m = inputs { $0.micGranted = false }
-        #expect(groups(m)[3] == ["Set Up Chirp…", "Settings…"])
+        #expect(groups(m)[4] == ["Set Up Chirp…", "Settings…"])
     }
 
     @Test func footerHasSettingsAndQuitWithTheirKeys() {
@@ -362,7 +362,7 @@ import Testing
         let new = try #require(entry(inputs(), .newNote))
         #expect(new.title == "New Note" && new.shortcut == "⌃⌥N")
         // The library window is always there, with ⌥⌘L as a real key equivalent; it never starts recording.
-        #expect(groups(inputs())[0] == ["Start Dictation", "New Note"] && groups(inputs())[1] == ["Recent Notes", "Notes Library…"])
+        #expect(groups(inputs())[0] == ["Start Dictation", "New Note"] && groups(inputs())[2] == ["Recent Notes", "Notes Library…"])
         let library = try #require(entry(inputs(), "Notes Library…"))
         #expect(library.action == .showNotes && library.shortcut == "⌥⌘L")
         #expect(library.keyEquivalent == "l" && library.keyEquivalentOption)
@@ -664,5 +664,44 @@ import Testing
         #expect(MenuContent.header(inputs()).status == "Paused" && !MenuContent.header(inputs()).isOn)
         fake.gate.resume()
         #expect(MenuContent.header(inputs()).status == "Ready · Right ⌥ Option")
+    }
+}
+
+/// Dictation history in the menu: the window on ⌥⌘H and the last three dictations, each with its actions.
+@MainActor struct MenuHistoryTests {
+    private func inputs(_ configure: (inout MenuInputs) -> Void = { _ in }) -> MenuInputs {
+        var m = MenuInputs()
+        m.health = Health(engine: "p", ready: true)
+        m.now = Date(timeIntervalSince1970: 1_800_000_000)
+        configure(&m)
+        return m
+    }
+    private func entry(_ m: MenuInputs, _ title: String) -> MenuEntry? { MenuContent.entries(m).first { $0.title == title } }
+
+    @Test func theHistoryWindowHasARealKeyEquivalent() throws {
+        let row = try #require(entry(inputs(), "Dictation History…"))
+        #expect(row.action == .showHistory && row.shortcut == "⌥⌘H" && row.keyEquivalent == "h" && row.keyEquivalentOption)
+    }
+
+    @Test func recentDictationsListsTheNewestThreeWithInsertCopyAndShow() throws {
+        let m = inputs { m in
+            m.recentDictations = (0..<5).map { RecentDictation(id: "id\($0)", preview: "Dictation number \($0) with a long tail of words after it",
+                                                               date: m.now.addingTimeInterval(Double(-$0) * 600)) }
+        }
+        let recent = try #require(entry(m, "Recent Dictations")?.submenu)
+        #expect(recent.count == 3)
+        #expect(recent[0].title.hasSuffix("…") && recent[0].title.count <= 36)
+        #expect(recent.map(\.value) == ["Just now", "10 min ago", "20 min ago"])
+        #expect(recent[1].submenu?.map(\.action) == [.insertDictation("id1"), .copyDictation("id1"), .openDictation("id1")])
+        #expect(MenuAction.insertDictation("id1").payload == "id1")
+    }
+
+    @Test func emptyOffAndBusyStates() throws {
+        #expect(entry(inputs(), "Recent Dictations")?.submenu?.map(\.title) == ["No dictations yet"])
+        #expect(entry(inputs { $0.historyEnabled = false }, "Recent Dictations")?.submenu?.map(\.title) == ["History is off"])
+        // Insert Again waits while a dictation runs or Chirp is paused; Copy and Show still work.
+        let busy = inputs { m in m.state = .listening; m.recentDictations = [RecentDictation(id: "a", preview: "hi", date: m.now)] }
+        let actions = try #require(entry(busy, "Recent Dictations")?.submenu?.first?.submenu)
+        #expect(actions.map(\.isEnabled) == [false, true, true])
     }
 }

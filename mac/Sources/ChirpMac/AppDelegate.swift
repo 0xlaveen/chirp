@@ -11,11 +11,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let notes = NotesController()
     private let serverWatch = ServerWatch()
     private lazy var notesWindow = NotesWindowController(notes: notes)
+    private let history = DictationHistory()
+    private lazy var historyWindow = HistoryWindowController(history: history)
     private let dock = DockController()
     private let openNotesHotkey = OpenNotesHotkey()
     private lazy var onboardingWindow = OnboardingWindowController(controller: controller)
     private var menu: MenuBarController?
     private var healthTimer: Timer?
+    private var historyTimer: Timer?
 
     func applicationWillTerminate(_ notification: Notification) { localModelsWindow.stop() }
 
@@ -66,6 +69,37 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func dockToggleRecording() { notes.toggle(fromHotkey: false) }
     @objc private func dockPauseRecording() { notes.togglePauseFromHotkey() }
 
+    /// Dictation history: the controller keeps each dictation, the window and Settings show them, and retention runs
+    /// at launch and every few hours.
+    private func setUpHistory() {
+        controller.history = history
+        history.onChange = { [weak self] in self?.historyWindow.historyChanged() }
+        historyWindow.onInsertAgain = { [controller] text in await controller.insertAgain(text) }
+        historyWindow.onAddToNotes = { [weak self] entry in self?.addToNotes(entry) }
+        historyWindow.onOpenSettings = { [settingsWindow] in settingsWindow.show(tab: .dictation) }
+        settingsWindow.history = history
+        settingsWindow.onOpenHistory = { [weak self] in self?.historyWindow.show() }
+        Task { [history] in await history.maintain(retention: settings.historyRetention) }
+        historyTimer = Timer.scheduledTimer(withTimeInterval: 6 * 3600, repeats: true) { [history] _ in
+            Task { @MainActor in await history.maintain(retention: settings.historyRetention) }
+        }
+    }
+
+    /// History's Add to Notes: the dictation becomes a new note in the library, shown in the Notes window.
+    private func addToNotes(_ entry: DictationEntry) {
+        guard let library = notes.library else { return }
+        let document = NotesDocument(startedAt: Date(), text: entry.text)
+        Task {
+            do {
+                try await library.write(NotesJournalRecord(document: document, elapsed: 0))
+                notes.showNote(document.id.uuidString)
+                notesWindow.show()
+            } catch {
+                NSSound.beep()
+            }
+        }
+    }
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         menu = MenuBarController(
             controller: controller,
@@ -79,7 +113,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                            notes: { [notes, openNotesHotkey] in var state = notes.menuState; state.openShortcut = openNotesHotkey.title; return state },
                            setRunning: { [notes, openNotesHotkey] in notes.setRunning($0); openNotesHotkey.setRunning($0) },
                            serverNotice: { [serverWatch] in (serverWatch.notice, serverWatch.message) },
-                           fixServer: { [serverWatch] in serverWatch.fix() }))
+                           fixServer: { [serverWatch] in serverWatch.fix() },
+                           showHistory: { [weak self] id in self?.historyWindow.show(selecting: id) },
+                           historyEnabled: { settings.historyEnabled },
+                           recentDictations: { [history] in
+                               history.recent(MenuContent.recentDictationLimit).map {
+                                   RecentDictation(id: $0.id.uuidString, preview: HistoryText.menuTitle($0, limit: 60), date: $0.date)
+                               }
+                           },
+                           insertDictation: { [weak self] id in
+                               guard let self, let entry = self.history.entries.first(where: { $0.id.uuidString == id }) else { return }
+                               self.historyWindow.insertAgain(entry.text)
+                           },
+                           copyDictation: { [history] id in
+                               guard let entry = history.entries.first(where: { $0.id.uuidString == id }) else { return }
+                               NSPasteboard.general.clearContents()
+                               NSPasteboard.general.setString(entry.text, forType: .string)
+                           }))
+        setUpHistory()
         settingsWindow.library = notes.library
         settingsWindow.onOpenSetup = { [onboardingWindow] in onboardingWindow.show() }
         settingsWindow.onOpenModels = { [localModelsWindow] in localModelsWindow.show() }

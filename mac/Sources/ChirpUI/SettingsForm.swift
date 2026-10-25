@@ -82,6 +82,11 @@ public struct SettingsState: Sendable {
     /// Notes › Sources: new notes include call audio (#211).
     public var notesCallAudio = false
     public var notesAudioBytes = 0
+    /// Dictation › History: on (the default), how long dictations are kept, the apps never kept, and how many are kept.
+    public var historyEnabled = true
+    public var historyRetention = DictationRetention.default
+    public var historyExcludedApps = HistoryPolicy.defaultExcludedApps
+    public var historyCount = 0
     /// Notes › Export: the folder Export Markdown… opens in (nil: wherever it was last used).
     public var exportFolder: String?
     /// Notes › Smart notes: the defaults for new recordings.
@@ -136,7 +141,7 @@ public enum SettingsTab: String, CaseIterable, Sendable {
         switch self {
         case .general: ["startup", "launch at login", "dock", "permissions", "microphone", "accessibility", "setup"]
         case .dictation: ["shortcuts", "hotkey", "hold to talk", "auto-stop", "stop", "silence", "return", "word waveform",
-                          "sounds", "volume", "input device", "use raw", "new note"]
+                          "sounds", "volume", "input device", "use raw", "new note", "history", "recent dictations", "privacy"]
         case .cleanup: ["style", "prompts", "per-app", "insert raw", "review changes", "undo", "polish"]
         case .notes: ["library", "retention", "recently deleted", "audio", "storage", "export", "folder", "smart notes",
                       "structure", "reorganize", "speakers", "voices", "call audio", "sources", "zoom", "meeting"]
@@ -243,6 +248,13 @@ public final class SettingsForm {
     private let exportFolder = NSTextField(labelWithString: "")
     public let structureNotes = NSButton(checkboxWithTitle: "Structure notes", target: nil, action: nil)
     public let autoReorganize = NSButton(checkboxWithTitle: "Auto-reorganize", target: nil, action: nil)
+    /// Dictation › History: keep dictations (on by default), for how long, the apps never kept, and the window/Clear.
+    public let historyEnabled = NSButton(checkboxWithTitle: HistorySettingsText.keep, target: nil, action: nil)
+    public let historyRetention = NSPopUpButton(frame: .zero, pullsDown: false)
+    public let historyApps = HistoryAppsList()
+    public let openHistory = NSButton(title: "Open History…", target: nil, action: nil)
+    public let clearHistory = NSButton(title: "Clear…", target: nil, action: nil)
+    private let historyStatus = NSTextField(labelWithString: "")
     /// General: reopens the setup walk-through.
     public let setupButton = NSButton(title: "Set Up Chirp…", target: nil, action: nil)
     /// Server: puts the chirp-server doctor command on the pasteboard.
@@ -383,6 +395,17 @@ public final class SettingsForm {
         let stopRow = row("Stop sound", Self.fileRow(stopFile, choose: chooseStop, remove: removeStop),
                           help: Self.help("Plays after you stop talking, up to \(SoundTiming.stopLimit) s."))
         customRows = [startRow, stopRow]
+        for button in [openHistory, clearHistory] { button.bezelStyle = .rounded; button.controlSize = .small }
+        historyStatus.font = MenuStyle.font
+        historyStatus.textColor = .secondaryLabelColor
+        historyEnabled.setAccessibilityLabel(HistorySettingsText.keep)
+        historyRetention.setAccessibilityLabel("Keep dictations for")
+        openHistory.setAccessibilityLabel("Open Dictation History")
+        clearHistory.setAccessibilityLabel("Clear dictation history")
+        for r in DictationRetention.allCases {
+            historyRetention.addItem(withTitle: r.title)
+            historyRetention.lastItem?.representedObject = r.rawValue
+        }
         build(.dictation, [
             SettingsSection("Shortcuts", [
                 row("Dictation", hotkeyRow, help: hotkeyHelp), fnRow,
@@ -400,6 +423,12 @@ public final class SettingsForm {
             SettingsSection("Sounds", [
                 row(nil, sounds, help: Self.help("Quiet sounds when dictation starts and stops. Off keeps Chirp silent.")),
                 row("Pack", packRow, help: packHelp), row("Volume", volumeRow), startRow, stopRow,
+            ]),
+            SettingsSection("History", [
+                row(nil, historyEnabled, help: Self.help(HistorySettingsText.keepHelp)),
+                row("Keep for", historyRetention, help: Self.help(HistorySettingsText.retentionHelp)),
+                row("Never keep", historyApps.view, help: Self.help(HistorySettingsText.appsHelp)),
+                row("Kept", line([historyStatus, openHistory, clearHistory])),
             ]),
         ])
 
@@ -608,6 +637,9 @@ public final class SettingsForm {
             wordWaveform.state = s.wordWaveform ? .on : .off
             notesRecoveryCopy.state = s.notesRecoveryCopy ? .on : .off
             if let i = NotesRetention.allCases.firstIndex(of: s.notesRetention) { notesRetention.selectItem(at: i) }
+            historyEnabled.state = s.historyEnabled ? .on : .off
+            if let i = DictationRetention.allCases.firstIndex(of: s.historyRetention) { historyRetention.selectItem(at: i) }
+            historyApps.setApps(s.historyExcludedApps)
             keepAudio.state = s.notesKeepAudio ? .on : .off
             callAudio.state = s.notesCallAudio ? .on : .off
             structureNotes.state = s.structureNotes ? .on : .off
@@ -640,6 +672,7 @@ public final class SettingsForm {
             shownCatalog = s.catalog
         }
         showLibrary(deleted: s.recentlyDeletedCount, audioBytes: s.notesAudioBytes)
+        showHistory(enabled: s.historyEnabled, count: s.historyCount)
         showKeepLoaded(s.keepLoaded, host: s.serverHost)
         cleanupHelp.stringValue = s.cleanupDetail
         cleanupEnabled.isEnabled = s.cleanupAvailable
@@ -687,6 +720,14 @@ public final class SettingsForm {
         emptyDeleted.isEnabled = deleted > 0
         audioStatus.stringValue = audioBytes == 0 ? "None" : Self.sizeText(audioBytes)
         deleteAudio.isEnabled = audioBytes > 0
+    }
+
+    /// History's on/off state follows the menu or an alert; the count changes as dictations come and go.
+    public func showHistory(enabled: Bool, count: Int) {
+        historyEnabled.state = enabled ? .on : .off
+        historyRetention.isEnabled = enabled
+        historyStatus.stringValue = HistorySettingsText.count(count)
+        clearHistory.isEnabled = count > 0
     }
 
     /// "Never", "After 1 year", … as the retention popup reads.

@@ -14,6 +14,8 @@ public enum AppNames {
         "com.mitchellh.ghostty": "Ghostty", "com.microsoft.VSCode": "Visual Studio Code",
         "com.todesktop.230313mzl4w4u92": "Cursor", "com.apple.dt.Xcode": "Xcode", "dev.zed.Zed": "Zed",
         "com.apple.Notes": "Notes", "md.obsidian": "Obsidian", "notion.id": "Notion",
+        "com.1password.1password": "1Password", "com.agilebits.onepassword7": "1Password 7", "com.bitwarden.desktop": "Bitwarden",
+        "com.apple.Passwords": "Passwords", "com.apple.keychainaccess": "Keychain Access", "com.apple.TextEdit": "TextEdit",
     ]
 
     @MainActor
@@ -193,7 +195,7 @@ public final class StylePromptsEditor: NSObject, NSTextViewDelegate {
     }
 }
 
-private final class FlippedStack: NSStackView {
+final class FlippedStack: NSStackView {
     override var isFlipped: Bool { true }
 }
 

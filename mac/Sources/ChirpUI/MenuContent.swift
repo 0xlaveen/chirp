@@ -12,6 +12,8 @@ public enum MenuAction: Equatable, Sendable {
     /// `toggleNotes` starts, stops or resumes the recording; `newNote` always starts a new one; `openNote` carries a note id.
     case toggleDictation, toggleNotes, newNote, showNotes, openNote(String), useRaw, pickInput(String?), toggleCleanup, pickStyle(String)
     case fixServer, showSettings, editStyles, showSetup, quit
+    /// Dictation history: the window, and one recent dictation's Insert Again, Copy and Show in History (its id).
+    case showHistory, insertDictation(String), copyDictation(String), openDictation(String)
 
     /// What the AppKit item carries to its action method.
     public var payload: String? {
@@ -19,6 +21,7 @@ public enum MenuAction: Equatable, Sendable {
         case .pickInput(let uid): uid
         case .pickStyle(let id): id
         case .openNote(let id): id
+        case .insertDictation(let id), .copyDictation(let id), .openDictation(let id): id
         default: nil
         }
     }
@@ -68,6 +71,17 @@ public struct RecentNote: Equatable, Sendable {
 
     public init(id: String, title: String, updatedAt: Date) {
         self.id = id; self.title = title; self.updatedAt = updatedAt
+    }
+}
+
+/// A dictation in the Recent Dictations submenu: a one-line preview, never logged.
+public struct RecentDictation: Equatable, Sendable {
+    public var id: String
+    public var preview: String
+    public var date: Date
+
+    public init(id: String, preview: String, date: Date) {
+        self.id = id; self.preview = preview; self.date = date
     }
 }
 
@@ -131,6 +145,9 @@ public struct MenuInputs: Sendable {
     public var openNotesShortcut: String?
     /// The library's newest notes (most recently modified first); the menu shows the top `MenuContent.recentLimit`.
     public var recentNotes: [RecentNote] = []
+    /// Dictation history is on, and its newest dictations (the menu shows `MenuContent.recentDictationLimit`).
+    public var historyEnabled = true
+    public var recentDictations: [RecentDictation] = []
     /// The moment relative dates in Recent Notes are measured from.
     public var now = Date()
     public var calendar = Calendar.current
@@ -227,6 +244,8 @@ public enum MenuContent {
         let notes = notesRows(m)
         out.append(notes[0])
         out.append(.separator)
+        out += historyRows(m)
+        out.append(.separator)
         out += notes.dropFirst()
         out.append(.separator)
         if m.rawOfferOpen {
@@ -287,6 +306,31 @@ public enum MenuContent {
             MenuEntry(title: "New Note", shortcut: shortcut, action: canStart ? .newNote : nil),
             recentNotesMenu(m),
             MenuEntry(title: "Notes Library…", shortcut: "⌥⌘L", action: .showNotes, keyEquivalent: "l", keyEquivalentOption: true),
+        ]
+    }
+
+    /// How many dictations Recent Dictations lists.
+    public static let recentDictationLimit = 3
+
+    /// Dictation history: "Recent Dictations ▸" (each with Insert Again, Copy and Show in History) and the window.
+    static func historyRows(_ m: MenuInputs) -> [MenuEntry] {
+        var recent: [MenuEntry]
+        if !m.historyEnabled {
+            recent = [MenuEntry(title: "History is off")]
+        } else if m.recentDictations.isEmpty {
+            recent = [MenuEntry(title: "No dictations yet")]
+        } else {
+            recent = m.recentDictations.prefix(recentDictationLimit).map { d in
+                MenuEntry(title: truncated(d.preview, limit: 36), value: relativeDate(d.date, now: m.now, calendar: m.calendar), submenu: [
+                    MenuEntry(title: "Insert Again", action: m.paused || m.state.isActive ? nil : .insertDictation(d.id)),
+                    MenuEntry(title: "Copy", action: .copyDictation(d.id)),
+                    MenuEntry(title: "Show in History", action: .openDictation(d.id)),
+                ])
+            }
+        }
+        return [
+            MenuEntry(title: "Recent Dictations", submenu: recent),
+            MenuEntry(title: "Dictation History…", shortcut: "⌥⌘H", action: .showHistory, keyEquivalent: "h", keyEquivalentOption: true),
         ]
     }
 

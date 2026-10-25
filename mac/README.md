@@ -212,6 +212,20 @@ Live Notes keeps the microphone open for a long session — a meeting, a lecture
 | <a href="../docs/screenshots/mac/notes-sources-call-light.png"><img src="../docs/screenshots/mac/notes-sources-call-light.png" width="300" alt="The Sources popover: Microphone, or Microphone + call audio from zoom.us, with the privacy line"></a> | <a href="../docs/screenshots/mac/notes-recording-call-light.png"><img src="../docs/screenshots/mac/notes-recording-call-light.png" width="400" alt="A call recording: the transcript labels You, Person 1 and Person 2, and the footer says Mic + zoom.us"></a> |
 - **Dictation and Notes.** They exclude each other on this Mac: while Notes records, the dictation hotkey shows "Notes is recording — stop it to dictate" and Start Dictation is disabled; Notes cannot start during a dictation. Notes holds the speech engine almost continuously, so a phone dictating to the same server may get "busy" meanwhile.
 
+## Dictation history
+
+Every dictation you insert is kept on this Mac, so you can find it, copy it or put it in again. History is **on by default**, local only and encrypted: turn it off, change how long it is kept, or list apps it must never keep in **Settings → Dictation → History**.
+
+- **Open it** from the menu bar: **Dictation History…** (⌥⌘H while the menu is open), **Recent Dictations ▸** (the last three, each with **Insert Again**, **Copy** and **Show in History**), or Settings → Dictation → History → **Open History…**. It is its own window, not a section of the Notes library: a dictation is a short piece of text that belongs to another app, its main action hands the keyboard back to that app, and history is there for people who never open Notes.
+- **The window.** A search field (it matches what was inserted, what you said and the app), the dictations by day (Today, Yesterday, then the date), each row led by the target app's icon with a two-line preview, the time and a **Cleaned** badge when clean-up changed the words. The detail shows what was inserted, what clean-up changed (removed words struck through, added words highlighted), the app, time, length and style, with **Insert Again** (Chirp steps aside, the app you were in comes back, and the text goes into its focused field the way a dictation does), **Copy**, **Copy Original** (before clean-up), **Add to Notes** (a new note in the Notes library) and Delete (⌫, with **Undo** for a few seconds).
+- **What is kept:** the inserted text, the raw transcript when clean-up changed it, the app (bundle id and name), the time, its length and the style. After **Use raw**, the entry keeps the raw text that is now in the field.
+- **Never kept:** dictations into a password field (secure input or a secure text field), cancelled dictations, empty ones, and apps on the **Never keep** list (1Password, Bitwarden, Passwords and Keychain Access to begin with; **Restore Defaults** brings them back).
+- **Privacy.** `~/Library/Application Support/Chirp/History/`, one file per day sealed with AES-GCM; the 256-bit key is one item in this Mac's Keychain (service "Chirp Dictation History", never synchronizable). The folder is `0700`, files `0600`, Spotlight never indexes it, and nothing is synced, uploaded or logged. If the key is lost the files can never be opened again, so they are deleted. **Keep for** 1, 7, 30 (the default) or 90 days, or forever; older entries go when Chirp opens and every few hours. **Clear…** deletes every entry and the key. Unticking **Keep dictation history** asks whether to delete what is already kept.
+
+| History | What clean-up changed (dark) | Before the first dictation |
+| :---: | :---: | :---: |
+| <a href="../docs/screenshots/mac/history-cleaned-light.png"><img src="../docs/screenshots/mac/history-cleaned-light.png" width="260" alt="Dictation History: dictations by day with app icons and Cleaned badges, and the selected email with what was inserted and what clean-up changed"></a> | <a href="../docs/screenshots/mac/history-cleaned-dark.png"><img src="../docs/screenshots/mac/history-cleaned-dark.png" width="260" alt="Dictation History in dark appearance"></a> | <a href="../docs/screenshots/mac/history-empty-light.png"><img src="../docs/screenshots/mac/history-empty-light.png" width="260" alt="Dictation History before the first dictation: No dictations yet, and the footer saying history is kept on this Mac for 30 days, encrypted"></a> |
+
 ## The menu-bar menu
 
 Click the bird in the menu bar. The menu holds what you do now and the two choices people change between dictations; set-once preferences live in [Settings](#settings). It follows the system's own status menus: a header, single-line rows with the current value right-aligned in secondary grey and a chevron for submenus, almost no icons, no section headers.
@@ -228,6 +242,9 @@ Chirp                                   [switch]
 ─────────────
 Start Dictation                  Right ⌥ Option
 New Note                                     ⌃⌥N
+─────────────
+Recent Dictations                                ›     the last three: Insert Again, Copy, Show in History
+Dictation History…                           ⌥⌘H
 ─────────────
 Recent Notes                                     ›     the five most recently edited notes
 Notes Library…                               ⌥⌘L
@@ -251,6 +268,8 @@ Quit Chirp                                    ⌘Q
 | Start / Stop Dictation | Starts a dictation or finishes the one under way, in either mode (the combo is shown at the right; not while paused or when another app owns the shortcut). Disabled while a note records. |
 | New Note | Always starts a new note and records (⌃⌥N by default, shown unless paused or owned by another app). Disabled during a dictation, while paused, and while a note records, is paused or finishes. |
 | Recent Notes | A submenu of the five most recently edited notes, each with a relative date ("12 min ago", "Yesterday", "Oct 3"); choosing one opens it in the Notes window. "No notes yet" while the library is empty. |
+| Recent Dictations | The last three dictations, each with a relative time and a submenu: **Insert Again** (into the frontmost app's field; not during a dictation or while paused), **Copy** and **Show in History**. "No dictations yet", or "History is off". |
+| Dictation History… | Opens the [Dictation History](#dictation-history) window (⌥⌘H while the menu is open). |
 | Notes Library… | Brings the Notes window forward without recording (⌥⌘L while the menu is open; the global Notes library shortcut is ⌃⌥⇧N). |
 | Use Raw for Last Dictation | Its own group for 5 s after a cleaned insertion, with its shortcut (⌃⌥Z by default) when that hotkey is free. |
 | Clean-up | Value: the default style, or Off. Submenu: Clean up Text (checkmark), the styles (checkmark on the default) and Clean-up Settings…. A server with clean-up off shows "Unavailable" and one explanatory line. |
@@ -269,7 +288,7 @@ Settings is one window laid out like System Settings: a sidebar with a search fi
 | Page | Contents |
 |---|---|
 | General | Startup: Launch Chirp at login, Always show Chirp in the Dock. Permissions: Microphone and Accessibility status, with a Fix… button only for one that is missing. Setup: Set Up Chirp… |
-| Dictation | Shortcuts: Dictation (presets and Record Shortcut…, plus the fn/🌐 setup note when fn alone is chosen), New note, Notes library and Use raw, each with Record Shortcut… and Reset. Dictating: Mode (Auto-stop or Hold to talk), Stop after (the auto-stop pause), Microphone (the menu's picker), Word waveform overlay, Press Return (Off, Always, In chat apps only). Sounds: cues on/off, pack with ▶ previews, volume, the Custom pack's start and stop files. |
+| Dictation | Shortcuts: Dictation (presets and Record Shortcut…, plus the fn/🌐 setup note when fn alone is chosen), New note, Notes library and Use raw, each with Record Shortcut… and Reset. Dictating: Mode (Auto-stop or Hold to talk), Stop after (the auto-stop pause), Microphone (the menu's picker), Word waveform overlay, Press Return (Off, Always, In chat apps only). Sounds: cues on/off, pack with ▶ previews, volume, the Custom pack's start and stop files. History: Keep dictation history (on by default), Keep for (1, 7, 30, 90 days or Forever), Never keep (apps whose dictations are never kept), and how many are kept with Open History… and Clear…. |
 | Clean-up | Clean up dictated text and the default style; Style prompts (the per-style prompt editor); Per-app styles with Test; After clean-up: Insert raw immediately, Show changes after clean-up, Offer Use raw for 5 seconds. |
 | Notes | Library: Open Notes Library, Delete notes older than (Never by default, 1 year, 90 days, 30 days), Recently Deleted (how many, Empty…). Audio: Keep audio with notes (off by default), Kept audio (total size, Delete…). Export: Export folder (Choose…, Reset). Smart notes: Structure notes and Auto-reorganize, the defaults for new recordings (the ✦ menu in the Notes window changes them while you record). Speakers: the speaker model (on this Mac or not, with Remove), Recognize saved voices and the saved voices with Forget…. |
 | Devices | Phones: Pair a Phone…, and the phones paired with their own token (name, when paired, last seen) with Revoke…. Advanced: Rotate Shared Token… (see [Pair a phone](#pair-a-phone)). |

@@ -38,6 +38,9 @@ final class SettingsWindowController: NSObject, NSTextFieldDelegate {
     var onNotesRecoveryCopyChange: (() -> Void)?
     /// Notes › Sources: the call-audio default changed.
     var onCallAudioDefaultChange: (() -> Void)?
+    /// Dictation history: the kept dictations (count, Clear), and the History window.
+    var history: DictationHistory?
+    var onOpenHistory: (() -> Void)?
     /// "Always show in the Dock" flipped.
     var onAlwaysShowInDockChange: ((Bool) -> Void)?
     private lazy var devices: DevicesModel = {
@@ -78,6 +81,10 @@ final class SettingsWindowController: NSObject, NSTextFieldDelegate {
         s.recentlyDeletedCount = library?.recentlyDeleted.count ?? 0
         s.notesAudioBytes = library?.totalAudioBytes ?? 0
         s.exportFolder = settings.notesExportFolder
+        s.historyEnabled = settings.historyEnabled
+        s.historyRetention = settings.historyRetention
+        s.historyExcludedApps = settings.historyExcludedApps
+        s.historyCount = history?.entries.count ?? 0
         s.autoReorganize = settings.notesAutoReorganize
         s.soundsEnabled = settings.soundsEnabled
         s.soundPack = settings.soundPack
@@ -334,6 +341,18 @@ final class SettingsWindowController: NSObject, NSTextFieldDelegate {
         form.insertRawFirst.action = #selector(toggleRawFirst(_:))
         form.appStyles.onChange = { settings.appStyles = $0 }
         form.appStyles.onAdd = { [weak self] button in self?.showAppChooser(from: button) }
+        form.historyEnabled.target = self
+        form.historyEnabled.action = #selector(toggleHistory(_:))
+        form.historyRetention.target = self
+        form.historyRetention.action = #selector(historyRetentionChanged(_:))
+        form.openHistory.target = self
+        form.openHistory.action = #selector(openHistory)
+        form.clearHistory.target = self
+        form.clearHistory.action = #selector(clearHistory)
+        form.historyApps.onChange = { settings.historyExcludedApps = $0 }
+        form.historyApps.onAdd = { [weak self] button in
+            self?.showAppChooser(from: button, have: Set(settings.historyExcludedApps)) { self?.form?.historyApps.add(bundleID: $0) }
+        }
         form.serverURL.delegate = self
         form.launch.target = self
         form.launch.action = #selector(toggleLaunch(_:))
@@ -664,8 +683,16 @@ final class SettingsWindowController: NSObject, NSTextFieldDelegate {
 
     /// "+": the running apps that have no rule yet, then a file chooser for any other app.
     private func showAppChooser(from button: NSView) {
+        showAppChooser(from: button, have: Set(settings.appStyles.map(\.bundleID))) { [weak self] in self?.form?.appStyles.add(bundleID: $0) }
+    }
+
+    /// Where the app chooser's pick goes (the per-app styles, or History's excluded apps).
+    private var addPickedApp: (String) -> Void = { _ in }
+
+    /// The running apps not in `have`, then a file chooser for any other app; the pick goes to `add`.
+    private func showAppChooser(from button: NSView, have: Set<String>, add: @escaping (String) -> Void) {
+        addPickedApp = add
         let menu = NSMenu()
-        let have = Set(settings.appStyles.map(\.bundleID))
         let running = NSWorkspace.shared.runningApplications
             .filter { $0.activationPolicy == .regular && $0.bundleIdentifier != nil && $0.bundleIdentifier != Bundle.main.bundleIdentifier }
             .filter { !have.contains($0.bundleIdentifier!) }
@@ -689,7 +716,7 @@ final class SettingsWindowController: NSObject, NSTextFieldDelegate {
     }
 
     @objc private func addApp(_ sender: NSMenuItem) {
-        if let id = sender.representedObject as? String { form?.appStyles.add(bundleID: id) }
+        if let id = sender.representedObject as? String { addPickedApp(id) }
     }
 
     @objc private func chooseApp() {
@@ -699,7 +726,63 @@ final class SettingsWindowController: NSObject, NSTextFieldDelegate {
         panel.allowsMultipleSelection = false
         panel.prompt = "Choose"
         guard panel.runModal() == .OK, let url = panel.url, let id = Bundle(url: url)?.bundleIdentifier else { return }
-        form?.appStyles.add(bundleID: id)
+        addPickedApp(id)
+    }
+
+    // MARK: dictation history
+
+    /// On keeps new dictations at once. Off asks whether to delete what is already kept (Cancel leaves it on).
+    @objc private func toggleHistory(_ sender: NSButton) {
+        guard sender.state == .off else { settings.historyEnabled = true; refresh(); return }
+        let count = history?.entries.count ?? 0
+        guard count > 0, let window else { settings.historyEnabled = false; refresh(); return }
+        let alert = NSAlert()
+        alert.messageText = HistorySettingsText.turnOffTitle
+        alert.informativeText = HistorySettingsText.turnOffDetail(count)
+        alert.addButton(withTitle: "Turn Off and Delete")
+        alert.addButton(withTitle: "Turn Off, Keep History")
+        alert.addButton(withTitle: "Cancel")
+        alert.buttons[0].hasDestructiveAction = true
+        alert.beginSheetModal(for: window) { [weak self] response in
+            guard let self else { return }
+            switch response {
+            case .alertFirstButtonReturn:
+                settings.historyEnabled = false
+                Task { await self.history?.clear(); self.refresh() }
+            case .alertSecondButtonReturn:
+                settings.historyEnabled = false
+            default:
+                break
+            }
+            self.refresh()
+        }
+    }
+
+    @objc private func historyRetentionChanged(_ sender: NSPopUpButton) {
+        guard let raw = sender.selectedItem?.representedObject as? String, let retention = DictationRetention(rawValue: raw) else { return }
+        settings.historyRetention = retention
+        Task { [weak self] in
+            await self?.history?.maintain(retention: retention)
+            self?.refresh()
+        }
+    }
+
+    @objc private func openHistory() { onOpenHistory?() }
+
+    @objc private func clearHistory() {
+        let count = history?.entries.count ?? 0
+        guard count > 0, let window else { return }
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = HistorySettingsText.clearTitle
+        alert.informativeText = HistorySettingsText.clearDetail(count)
+        alert.addButton(withTitle: "Clear History")
+        alert.addButton(withTitle: "Cancel")
+        alert.buttons[0].hasDestructiveAction = true
+        alert.beginSheetModal(for: window) { [weak self] response in
+            guard response == .alertFirstButtonReturn, let self else { return }
+            Task { await self.history?.clear(); self.refresh() }
+        }
     }
 
     @objc private func toggleSounds(_ sender: NSButton) {

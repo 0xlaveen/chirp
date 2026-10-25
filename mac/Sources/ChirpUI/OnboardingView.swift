@@ -252,9 +252,9 @@ public final class OnboardingView: NSView {
         content.addArrangedSubview(titleLabel("Welcome to Chirp"))
         let features = NSStackView(views: [
             feature("mic.fill", "Dictate into any app",
-                    state.hotkey.isSingleModifierKey
-                        ? "Hold \(state.hotkey.title) anywhere and talk, then let go, and your words appear where you’re typing."
-                        : "Press \(state.hotkey.title) anywhere, talk, and your words appear where you’re typing."),
+                    (state.hotkey.isSingleModifierKey
+                        ? "Hold \(state.hotkey.title) anywhere and talk, then let go, and your words appear where you’re typing. "
+                        : "Press \(state.hotkey.title) anywhere, talk, and your words appear where you’re typing. ") + HistoryText.onboarding),
             feature("note.text", "Keep conversations in Notes",
                     "Press \(state.notesHotkey.title) to start a note. Chirp writes it as you talk and keeps every note on this Mac."),
         ])
