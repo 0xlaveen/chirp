@@ -52,7 +52,7 @@ GitHub Actions (`.github/workflows/`) runs the automated checks on every pull re
 | Workflow | Runner | Runs | Notes |
 |---|---|---|---|
 | `server.yml` | ubuntu | `uv sync --locked`, `ruff check`, `ruff format --check`, `pytest -q` | MLX packages are darwin-only, so Linux installs the portable set. `-m model` tests (real cached models) are deselected by `addopts`; run them on the Mac. |
-| `desktop-linux.yml` | ubuntu | frontend checks, Rust formatting/Clippy/tests, Xvfb native insertion/hotkeys, Tauri Debian package | The shared desktop client; no speech model download or live server. |
+| `desktop-linux.yml` | ubuntu | frontend checks, Rust formatting/Clippy/tests, Xvfb insertion/hotkeys, private-bus portal lifecycle, headless Sway insertion/fallback, Tauri Debian package | The shared desktop client; no speech model download or live server. |
 | `desktop-windows.yml` | windows | frontend checks, Rust formatting/Clippy/tests, SendInput/clipboard/layout smoke in a real Tk window, NSIS installer | The Windows platform module; no speech model download or live server. |
 | `android.yml` | ubuntu, JDK 21, Android SDK 37.2 | `./gradlew lint testDebugUnitTest assembleDebug assembleRelease` | The release APK is unsigned (no keystore secret). Lint and test reports upload on failure. |
 | `mac.yml` | macos | `mac/scripts/ci-test.sh` (wraps `test.sh`) | Only for `mac/**` changes (macOS minutes are expensive). Can also be started by hand (`workflow_dispatch`). |

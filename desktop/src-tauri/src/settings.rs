@@ -14,6 +14,8 @@ pub struct Settings {
     pub hotkey: HotKey,
     pub mode: HotkeyMode,
     pub correction: bool,
+    pub portal_enabled: bool,
+    pub portal_shortcut: String,
 }
 impl Default for Settings {
     fn default() -> Self {
@@ -22,6 +24,8 @@ impl Default for Settings {
             hotkey: platform::native().default_hotkey(),
             mode: HotkeyMode::Hold,
             correction: false,
+            portal_enabled: false,
+            portal_shortcut: "CTRL+ALT+space".into(),
         }
     }
 }
@@ -41,6 +45,18 @@ pub fn stream_url(value: &str) -> Result<Url, String> {
     url.set_scheme(scheme).map_err(|_| "Invalid server URL")?;
     url.set_path(&format!("{}/v1/stream", url.path().trim_end_matches('/')));
     Ok(url)
+}
+
+pub fn validate_portal_trigger(value: &str) -> Result<(), String> {
+    if value.is_empty()
+        || value.len() > 80
+        || !value
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b"+_-".contains(&b))
+    {
+        return Err("Use an XDG shortcut such as CTRL+ALT+space".into());
+    }
+    Ok(())
 }
 
 pub fn pairing(value: &str) -> Result<(String, String), String> {
@@ -88,6 +104,7 @@ impl Settings {
     }
     pub fn save(&self) -> Result<(), String> {
         stream_url(&self.url)?;
+        validate_portal_trigger(&self.portal_shortcut)?;
         let path = path()?;
         std::fs::create_dir_all(path.parent().ok_or("Invalid settings directory")?)
             .map_err(|_| "Could not create settings directory")?;
@@ -142,5 +159,26 @@ mod tests {
         assert!(!serde_json::to_string(&Settings::default())
             .unwrap()
             .contains("token"));
+    }
+}
+
+#[cfg(test)]
+mod portal_tests {
+    use super::*;
+    #[test]
+    fn old_preferences_keep_native_defaults_and_do_not_open_a_portal_dialog() {
+        let settings: Settings = serde_json::from_str(r#"{"url":"http://localhost:7899","hotkey":"RightAlt","mode":"Hold","correction":false}"#).unwrap();
+        assert!(!settings.portal_enabled);
+        assert_eq!(settings.portal_shortcut, "CTRL+ALT+space");
+        assert_eq!(settings.hotkey, HotKey::RightAlt);
+    }
+    #[test]
+    fn shortcut_hint_accepts_xdg_keys_but_rejects_control_or_unbounded_input() {
+        assert!(validate_portal_trigger("CTRL+ALT+space").is_ok());
+        assert!(validate_portal_trigger("Control_R").is_ok());
+        for value in ["", "CTRL+\nspace", "CTRL+ALT+<script>"] {
+            assert!(validate_portal_trigger(value).is_err());
+        }
+        assert!(validate_portal_trigger(&"A".repeat(81)).is_err());
     }
 }

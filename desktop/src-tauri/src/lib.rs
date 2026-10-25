@@ -19,6 +19,15 @@ struct Runtime {
     active: Mutex<Option<(u64, watch::Sender<Control>)>>,
     hotkey: Mutex<Option<platform::HotkeyHandle>>,
     sequence: AtomicU64,
+    hotkey_sequence: AtomicU64,
+    shortcut: Mutex<ShortcutStatus>,
+}
+
+#[derive(Clone, Serialize)]
+struct ShortcutStatus {
+    available: bool,
+    requested: bool,
+    detail: String,
 }
 
 #[derive(Serialize)]
@@ -26,19 +35,28 @@ struct Preferences {
     settings: settings::Settings,
     capabilities: platform::Capabilities,
     paired: bool,
+    shortcut: ShortcutStatus,
 }
 #[tauri::command]
 fn preferences(state: tauri::State<Runtime>) -> Result<Preferences, String> {
+    let settings = state
+        .settings
+        .lock()
+        .map_err(|_| "Settings unavailable")?
+        .clone();
+    let shortcut = state
+        .shortcut
+        .lock()
+        .map_err(|_| "Shortcut status unavailable")?
+        .clone();
     Ok(Preferences {
-        settings: state
-            .settings
-            .lock()
-            .map_err(|_| "Settings unavailable")?
-            .clone(),
+        settings,
         capabilities: platform::native().capabilities(),
         paired: settings::token().is_ok(),
+        shortcut,
     })
 }
+
 #[tauri::command]
 fn save_preferences(
     app: tauri::AppHandle,
@@ -57,6 +75,7 @@ fn save_preferences(
     }
     let mut settings = settings;
     settings::stream_url(&settings.url)?;
+    settings::validate_portal_trigger(&settings.portal_shortcut)?;
     let mut token = token;
     if let Some(link) = pairing_link.filter(|s| !s.trim().is_empty()) {
         let (url, secret) = settings::pairing(&link)?;
@@ -66,8 +85,12 @@ fn save_preferences(
     if let Some(token) = token.filter(|t| !t.is_empty()) {
         settings::save_token(&token)?;
     }
-    settings.save()?;
-    *state.settings.lock().map_err(|_| "Settings unavailable")? = settings;
+    {
+        let mut current = state.settings.lock().map_err(|_| "Settings unavailable")?;
+        settings.save()?;
+        state.hotkey_sequence.fetch_add(1, Ordering::SeqCst);
+        *current = settings;
+    }
     register_hotkey(&app);
     Ok(())
 }
@@ -192,23 +215,101 @@ fn dictate_cancel(app: tauri::AppHandle) {
     signal(&app, Control::Cancel);
 }
 
+fn shortcut_status(
+    app: &tauri::AppHandle,
+    registration: u64,
+    wayland: bool,
+    status: ShortcutStatus,
+) {
+    let state = app.state::<Runtime>();
+    if state.hotkey_sequence.load(Ordering::SeqCst) != registration {
+        return;
+    }
+    if wayland && !status.available && !status.requested {
+        if let Ok(mut settings) = state.settings.lock() {
+            if state.hotkey_sequence.load(Ordering::SeqCst) != registration {
+                return;
+            }
+            if settings.portal_enabled {
+                settings.portal_enabled = false;
+                let _ = settings.save();
+            }
+        }
+    }
+    if let Ok(mut current) = state.shortcut.lock() {
+        if state.hotkey_sequence.load(Ordering::SeqCst) != registration {
+            return;
+        }
+        *current = status.clone();
+        let _ = app.emit("shortcut-status", status);
+    };
+}
+
 fn register_hotkey(app: &tauri::AppHandle) {
     let state = app.state::<Runtime>();
     let Ok(settings) = state.settings.lock().map(|s| s.clone()) else {
         return;
     };
+    let registration = state.hotkey_sequence.fetch_add(1, Ordering::SeqCst) + 1;
     let Ok(mut handle) = state.hotkey.lock() else {
         return;
     };
     handle.take();
+    let native = platform::native();
+    let wayland = native.capabilities().session == "wayland";
+    if wayland && !settings.portal_enabled {
+        shortcut_status(app, registration, true, ShortcutStatus { available: false, requested: false,
+            detail: "Use Record, or enable a desktop shortcut below. Wayland uses the binding approved by your desktop.".into() });
+        return;
+    }
+    if wayland {
+        shortcut_status(
+            app,
+            registration,
+            true,
+            ShortcutStatus {
+                available: false,
+                requested: true,
+                detail: "Choose your shortcut in the desktop dialog…".into(),
+            },
+        );
+    }
+    let report_app = app.clone();
+    let report: platform::HotkeyReport = Box::new(move |result| {
+        let available = result.is_ok();
+        let detail = result.unwrap_or_else(|error| error);
+        shortcut_status(
+            &report_app,
+            registration,
+            wayland,
+            ShortcutStatus {
+                available,
+                requested: available,
+                detail,
+            },
+        );
+    });
     let (tx, rx) = std::sync::mpsc::channel();
-    match platform::native().start_hotkey(settings.hotkey, tx) {
+    match native.start_hotkey_with_status(
+        settings.hotkey,
+        tx,
+        settings.portal_shortcut.clone(),
+        report,
+    ) {
         Ok(hook) => {
             *handle = Some(hook);
             let app = app.clone();
             std::thread::spawn(move || {
                 let mut hotkey = HotkeyState::new(settings.hotkey, settings.mode);
                 for event in rx {
+                    if app
+                        .state::<Runtime>()
+                        .hotkey_sequence
+                        .load(Ordering::SeqCst)
+                        != registration
+                    {
+                        break;
+                    }
                     let recording = app
                         .state::<Runtime>()
                         .active
@@ -229,7 +330,16 @@ fn register_hotkey(app: &tauri::AppHandle) {
                 }
             });
         }
-        Err(detail) => emit(app, Update::new("idle", "", &detail)),
+        Err(detail) => shortcut_status(
+            app,
+            registration,
+            wayland,
+            ShortcutStatus {
+                available: false,
+                requested: false,
+                detail,
+            },
+        ),
     }
 }
 
@@ -240,6 +350,12 @@ pub fn run() {
             active: Mutex::new(None),
             hotkey: Mutex::new(None),
             sequence: AtomicU64::new(0),
+            hotkey_sequence: AtomicU64::new(0),
+            shortcut: Mutex::new(ShortcutStatus {
+                available: false,
+                requested: false,
+                detail: "Shortcut not registered yet".into(),
+            }),
         })
         .invoke_handler(tauri::generate_handler![
             preferences,

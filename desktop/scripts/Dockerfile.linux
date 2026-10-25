@@ -9,3 +9,5 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /workspace/desktop
 ENV CARGO_TARGET_DIR=/cargo-target
 RUN rustup component add rustfmt clippy
+RUN apt-get update && apt-get install -y --no-install-recommends python3-dbus sway \
+    && rm -rf /var/lib/apt/lists/*

@@ -145,6 +145,26 @@ impl Platform for Linux {
         }))
     }
 
+    fn start_hotkey_with_status(
+        &self,
+        key: HotKey,
+        tx: Sender<KeyEvent>,
+        preferred: String,
+        report: HotkeyReport,
+    ) -> Result<HotkeyHandle, String> {
+        if wayland() {
+            return super::wayland::start(key, tx, preferred, report);
+        }
+        let result = self.start_hotkey(key, tx);
+        report(
+            result
+                .as_ref()
+                .map(|_| "Shortcut ready".into())
+                .map_err(Clone::clone),
+        );
+        result
+    }
+
     fn insert_text(&self, text: &str) -> Result<InsertionOutcome, String> {
         if text.is_empty() {
             return Ok(InsertionOutcome::Typed);
@@ -220,8 +240,8 @@ impl Platform for Linux {
         .map(str::to_owned)
         .collect();
         Capabilities { session: if wl { "wayland" } else { "x11" }.into(), insertion,
-            hotkey: !wl && std::env::var_os("DISPLAY").is_some(),
-            detail: if wl { "Wayland: use Record until portal shortcuts are available. wtype needs compositor virtual-keyboard support; otherwise the result is copied for you to paste." }
+            hotkey: if wl { super::wayland::is_active() } else { std::env::var_os("DISPLAY").is_some() },
+            detail: if wl { "Wayland uses a compositor-approved portal shortcut. Enable it in settings and choose the binding in your desktop’s dialog. wtype needs virtual-keyboard support; otherwise the result is copied for you to paste." }
                 else { "Hold the selected right modifier alone to dictate. Chords cancel dictation. X11 inserts using xdotool, with a clipboard fallback." }.into() }
     }
 }

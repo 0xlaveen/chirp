@@ -13,9 +13,14 @@
     <label>Pairing link<input id="pairing" type="password" placeholder="Paste chirp://pair…" autocomplete="off" spellcheck="false"></label>
     <details><summary>Enter a token instead</summary><label>Server token<input id="token" type="password" autocomplete="off" spellcheck="false"></label></details>
     <p class="muted">Your token is saved in your system credential store.</p>
-    <div class="columns"><label>Dictation key<select id="hotkey"><option value="RightAlt">Right Alt</option><option value="RightCtrl">Right Ctrl</option></select></label>
+    <div class="columns"><label id="native-key">Dictation key<select id="hotkey"><option value="RightAlt">Right Alt</option><option value="RightCtrl">Right Ctrl</option></select></label>
       <label>How it works<select id="mode"><option value="Hold">Hold to talk</option><option value="Toggle">Tap to start / stop</option></select></label></div>
-    <p class="muted">The default key follows your keyboard layout. AltGr layouts use Right Ctrl. Press the key alone; chords cancel dictation.</p>
+    <fieldset id="portal-settings" class="portal-controls" hidden><legend>Wayland shortcut</legend>
+      <label class="check"><input id="portal-enabled" type="checkbox"> Enable a global shortcut through my desktop</label>
+      <p class="muted">Save to choose a shortcut in your desktop’s dialog. Ctrl+Alt+Space is suggested. Single-key holds depend on your desktop’s support.</p>
+    </fieldset>
+    <p id="shortcut-status" role="status" class="muted"></p>
+    <p id="native-shortcut-hint" class="muted">The default key follows your keyboard layout. AltGr layouts use Right Ctrl. Press the key alone; chords cancel dictation.</p>
     <label class="check"><input id="correction" type="checkbox"> Polish dictation with the server’s configured cleanup model</label>
     <button type="submit">Save settings</button><span id="saved" role="status"></span>
   </form>
