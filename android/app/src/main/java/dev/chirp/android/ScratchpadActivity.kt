@@ -38,6 +38,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
@@ -53,7 +54,15 @@ import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 
 /** Dictate long-form text on the phone, edit it, copy or share it. Memory only: the text leaves with the screen. */
-open class ScratchpadActivity : ComponentActivity() {
+open class ScratchpadActivity : ComponentActivity(), AppShortcutHost {
+    override val appShortcuts = AppShortcuts()
+    @android.annotation.SuppressLint("RestrictedApi") // Override of the public Activity callback, forwarded by AndroidX.
+    override fun dispatchKeyEvent(event: android.view.KeyEvent): Boolean = appShortcuts.dispatch(event) || super.dispatchKeyEvent(event)
+    override fun onKeyShortcut(keyCode: Int, event: android.view.KeyEvent): Boolean = appShortcuts.dispatch(event) || super.onKeyShortcut(keyCode, event)
+    override fun onProvideKeyboardShortcuts(groups: MutableList<android.view.KeyboardShortcutGroup>, menu: android.view.Menu?, deviceId: Int) {
+        super.onProvideKeyboardShortcuts(groups, menu, deviceId)
+        appShortcuts.provide(groups)
+    }
     internal open fun createModel(): ScratchpadModel = ScratchpadModel(applicationContext)
     internal open val tailscale: TailscaleControl by lazy { AndroidTailscale(this) }
     internal val model: ScratchpadModel by viewModels { viewModelFactory { initializer { createModel() } } }
@@ -122,6 +131,24 @@ open class ScratchpadActivity : ComponentActivity() {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun ScratchpadScreen(model: ScratchpadModel, mic: () -> Unit, copy: () -> Unit, share: () -> Unit, act: (DictationAction) -> Unit) {
+    AppShortcutActions(
+        AppCommand.Dictate to { if (!model.stopping) mic(); true },
+        AppCommand.Raw to { if (model.rawAvailable) { model.useRaw(); true } else false },
+        AppCommand.Copy to { if (model.hasText) copy(); true },
+        AppCommand.Escape to { if (model.active) { model.cancel(); true } else false },
+    )
+    val view = androidx.compose.ui.platform.LocalView.current
+    LaunchedEffect(model.rawUntil) {
+        if (model.rawAvailable) view.announceForAccessibility("Use raw, available for 5 seconds")
+    }
+    val rawSeconds by androidx.compose.runtime.produceState(5, model.rawUntil) {
+        val deadline = model.rawUntil
+        while (deadline != null) {
+            value = actionSeconds(deadline, android.os.SystemClock.elapsedRealtime())
+            if (value == 0) break
+            kotlinx.coroutines.delay(200)
+        }
+    }
     val action = DictationAction.forStatus(model.status)
     Surface(Modifier.fillMaxSize()) {
         Box(Modifier.fillMaxSize().safeDrawingPadding(), contentAlignment = Alignment.TopCenter) {
@@ -146,7 +173,11 @@ internal fun ScratchpadScreen(model: ScratchpadModel, mic: () -> Unit, copy: () 
                     if (model.active && model.partial.isNotEmpty()) Text(model.partial, Modifier.fillMaxWidth(), color = MaterialTheme.colorScheme.onSurfaceVariant,
                         style = MaterialTheme.typography.bodyMedium, maxLines = 3)
                     Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text(model.status, Modifier.weight(1f).semantics { liveRegion = LiveRegionMode.Polite }, style = MaterialTheme.typography.bodyMedium)
+                        Text(dictationDisplayStatus(model.status), Modifier.weight(1f).semantics { liveRegion = LiveRegionMode.Polite }, style = MaterialTheme.typography.bodyMedium)
+                        if (model.rawAvailable && rawSeconds > 0) TextButton(model::useRaw, Modifier.semantics {
+                            contentDescription = "Use raw, available for 5 seconds"
+                        }) { Text("Use raw (${rawSeconds}s)", Modifier.clearAndSetSemantics { },
+                            style = MaterialTheme.typography.labelLarge.copy(fontFeatureSettings = "tnum")) }
                         if (action != null) TextButton({ act(action) }) { Text(action.label) }
                     }
                     if (model.cleanupAvailable) StyleGroup(model)
@@ -165,6 +196,7 @@ internal fun ScratchpadScreen(model: ScratchpadModel, mic: () -> Unit, copy: () 
 @Composable
 private fun OverflowMenu(model: ScratchpadModel) {
     var menu by remember { mutableStateOf(false) }
+    AppShortcutActions(AppCommand.Escape to { if (menu && !model.active) { menu = false; true } else false })
     Box {
         IconButton({ menu = true }) { Icon(painterResource(R.drawable.ic_more_vert), "More options") }
         DropdownMenu(menu, { menu = false }) {

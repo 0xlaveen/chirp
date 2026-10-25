@@ -34,13 +34,39 @@ class DictationHistoryTest {
     private val text = EditorInfo().apply { inputType = InputType.TYPE_CLASS_TEXT }
     private fun editor(type: Int, options: Int = 0) = EditorInfo().apply { inputType = type; imeOptions = options }
 
-    @Before fun reset() { history.disable() }
+    @Before fun reset() { PrivateSession.set(false); history.disable() }
 
     @Test fun `history is off by default and stores nothing`() {
         assertFalse(history.enabled)
         assertNull(history.record("Meet at noon", null, "Slack", text))
         assertFalse(file.exists()); assertNull(keys.key)
         assertTrue(history.entries().isEmpty())
+    }
+
+    @Test fun `private session skips every final and preserves existing history`() {
+        assertFalse(SettingsStore(context).privateSession)
+        history.enable()
+        history.record("Earlier", null, "Scratchpad", text)
+        val before = file.readBytes()
+        SettingsStore(context).privateSession = true
+        assertNull(history.record("Synthetic private text", "raw words", "Keyboard", text))
+        assertNull(DictationHistory(context, keys).record("Other entry point", null, "Quick dictate", text, partial = true))
+        assertArrayEquals(before, file.readBytes())
+        SettingsStore(context).privateSession = false
+        assertNotNull(history.record("After", null, "Floating mic", text))
+        assertEquals(listOf("After", "Earlier"), history.entries().map { it.text })
+    }
+
+    @Test fun `private session expires on screen off or one hour`() {
+        SettingsStore(context).privateSession = true
+        context.sendBroadcast(android.content.Intent(android.content.Intent.ACTION_SCREEN_OFF))
+        shadowOf(android.os.Looper.getMainLooper()).idle()
+        assertFalse(SettingsStore(context).privateSession)
+        SettingsStore(context).privateSession = true
+        shadowOf(android.os.Looper.getMainLooper()).idleFor(java.time.Duration.ofMinutes(59))
+        assertTrue(SettingsStore(context).privateSession)
+        shadowOf(android.os.Looper.getMainLooper()).idleFor(java.time.Duration.ofMinutes(1))
+        assertFalse(SettingsStore(context).privateSession)
     }
 
     @Test fun `entries round trip through AES-GCM and the file never holds plaintext`() {

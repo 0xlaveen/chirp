@@ -19,6 +19,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.platform.LocalDensity
@@ -94,6 +95,10 @@ internal fun NotesLibraryScreen(
     now: () -> Long = System::currentTimeMillis,
     initialDetail: Boolean = false,
 ) {
+    val searchFocus = remember { androidx.compose.ui.focus.FocusRequester() }
+    var searchRequest by remember { mutableIntStateOf(0) }
+    val setup = state?.let { dev.chirp.android.shell.setupProgress(it.paired, it.mic, it.inputEnabled, it.inputSelected,
+        it.bubbleEnabled, it.inputMode == InputMode.OWN_KEYBOARD) }
     val library = live.library
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -170,6 +175,28 @@ internal fun NotesLibraryScreen(
         if (recording && id != liveId) { if (id == null) pendingNew = true else pendingRecord = id; return }
         reader.keepSession(); record(id); selected = if (id == null) live.document.uid else id
     }
+    AppShortcutActions(
+        AppCommand.NewNote to { if (!trash) { start(null); true } else false },
+        AppCommand.Search to { if (selected != null) close(); searchRequest++; true },
+        AppCommand.Escape to {
+            when {
+                pendingNew || pendingRecord != null -> { pendingNew = false; pendingRecord = null; true }
+                emptyTrash -> { emptyTrash = false; true }
+                menu -> { menu = false; true }
+                selection.isNotEmpty() -> { selection = emptyList(); true }
+                trash -> { trash = false; true }
+                selected != null -> { close(); true }
+                else -> false
+            }
+        },
+    )
+    LaunchedEffect(searchRequest) {
+        if (searchRequest > 0) {
+            // On the cover, the list and its search field must mount after closing the detail.
+            withFrameNanos { }
+            searchFocus.requestFocus()
+        }
+    }
     // A new recording/continued note can finish loading asynchronously; follow it once it owns the microphone.
     LaunchedEffect(live.document.uid, live.state.active) { if (live.state.active && selected != null && (pendingRecord == null && !pendingNew)) selected = live.document.uid }
     if (pendingNew || pendingRecord != null) AlertDialog(onDismissRequest = { pendingNew = false; pendingRecord = null },
@@ -220,7 +247,7 @@ internal fun NotesLibraryScreen(
                                 }, scrollBehavior = scrollBehavior, expandedHeight = 104.dp,
                                 colors = TopAppBarDefaults.largeTopAppBarColors(containerColor = MaterialTheme.colorScheme.background, scrolledContainerColor = MaterialTheme.colorScheme.background))
                             DockedSearchBar(inputField = { SearchBarDefaults.InputField(query, { query = it }, { focus.clearFocus() }, false, {},
-                                placeholder = { Text("Search notes") }, leadingIcon = { Icon(painterResource(R.drawable.ic_search), null) },
+                                modifier = Modifier.focusRequester(searchFocus), placeholder = { Text("Search notes") }, leadingIcon = { Icon(painterResource(R.drawable.ic_search), null) },
                                 trailingIcon = if (query.isEmpty()) null else ({ IconButton({ query = "" }) { Icon(painterResource(R.drawable.ic_close), "Clear search") } })) },
                                 expanded = false, onExpandedChange = {}, modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(bottom = 12.dp)) { }
                             if (!trash && recording) Column(Modifier.padding(horizontal = 16.dp).padding(bottom = 12.dp)) {
@@ -240,9 +267,9 @@ internal fun NotesLibraryScreen(
                         val captureInset = if (!trash && selection.isEmpty()) 72.dp else 0.dp
                         LazyColumn(Modifier.fillMaxSize().padding(padding).padding(bottom = captureInset).testTag("notes-library-list"), if (trash) trashList else list,
                             contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 16.dp)) {
-                            if (!trash && !setupDismissed && state != null && (!state.mic || !state.paired || (if (state.inputMode == InputMode.OWN_KEYBOARD) !state.bubbleEnabled else !state.inputEnabled) || state.tryIt)) item(key = "setup") {
-                                SetupCard(if (state.inputMode == InputMode.OWN_KEYBOARD && !state.bubbleEnabled) ({ context.startActivity(android.content.Intent(context, SetupActivity::class.java).putExtra("section", "input")) }) else connection,
-                                    floatingMic = state.inputMode == InputMode.OWN_KEYBOARD && !state.bubbleEnabled, dismiss = { setupDismissed = true; state.tryIt = false; SettingsStore(context).tryItDismissed = true })
+                            if (!trash && !setupDismissed && setup?.missing != null) item(key = "setup") {
+                                SetupCard(setup, fix = { context.startActivity(android.content.Intent(context, SetupActivity::class.java).putExtra("section", setup.missing.section)) },
+                                    dismiss = { setupDismissed = true; state?.tryIt = false; SettingsStore(context).tryItDismissed = true })
                             }
                             if (!trash && !enabled) item(key = "opt-out") {
                                 Surface(shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.surfaceContainer) {
@@ -312,13 +339,13 @@ private fun ConnectionChip(state: SetupState?, click: () -> Unit) {
 }
 
 @Composable
-private fun SetupCard(fix: () -> Unit, floatingMic: Boolean = false, dismiss: () -> Unit) {
+private fun SetupCard(progress: dev.chirp.android.shell.SetupProgress, fix: () -> Unit, dismiss: () -> Unit) {
     Surface(Modifier.fillMaxWidth().padding(bottom = 8.dp), shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.surfaceContainer) {
         Row(Modifier.padding(start = 16.dp, top = 8.dp, bottom = 8.dp, end = 4.dp), verticalAlignment = Alignment.Top) {
             Column(Modifier.weight(1f).padding(top = 8.dp)) {
-                Text("Make yourself at home", style = MaterialTheme.typography.titleMedium)
-                Text("Finish setting up Chirp to record and dictate.", Modifier.padding(top = 4.dp), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                TextButton(fix, contentPadding = PaddingValues(vertical = 8.dp)) { Text(if (floatingMic) "Turn on the floating mic" else "Finish setup") }
+                Text(progress.missing!!.title, style = MaterialTheme.typography.titleMedium)
+                Text("${progress.done} of 3 done", Modifier.padding(top = 4.dp), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                TextButton(fix, contentPadding = PaddingValues(vertical = 8.dp)) { Text(progress.missing!!.action) }
             }
             IconButton(dismiss) { Icon(painterResource(R.drawable.ic_close), "Dismiss setup") }
         }
@@ -383,9 +410,9 @@ private fun NoteLibraryRow(entry: NotesIndexEntry, query: String, snippet: Strin
                     }
                     Text(highlightedNote(snippet, query), style = MaterialTheme.typography.bodyMedium, color = scheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Text(notesDuration(entry.duration), style = MaterialTheme.typography.bodyMedium, color = scheme.onSurfaceVariant)
+                        if (entry.duration >= 1) Text(notesDuration(entry.duration), style = MaterialTheme.typography.bodyMedium, color = scheme.onSurfaceVariant)
                         if (entry.openTodos > 0) {
-                            Text("·", color = scheme.outline)
+                            if (entry.duration >= 1) Text("·", color = scheme.outline)
                             Text("☐ ${entry.openTodos} open", style = MaterialTheme.typography.bodyMedium, color = scheme.onSurfaceVariant)
                         }
                         if (entry.recovered) Text("Recovered", style = MaterialTheme.typography.bodyMedium, color = LocalChirpRoles.current.moon)

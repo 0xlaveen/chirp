@@ -55,7 +55,8 @@ class FloatingMicRenderTest {
         var panel: VoicePanel? = null
         var panelHeight = 0
         if (shot.model != null) {
-            panel = VoicePanel(context).apply { render(shot.model) }
+            PrivateSession.set(shot.name == "polished")
+            panel = VoicePanel(context).apply { render(shot.model, android.os.SystemClock.elapsedRealtime() + 4000) }
             if (shot.model.state == FloatingState.POLISHED) panel.countdown.fraction = .6f
             val panelWidth = minOf(context.dp(360), width - context.dp(32))
             panel.measure(View.MeasureSpec.makeMeasureSpec(panelWidth, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED))
@@ -113,7 +114,7 @@ class FloatingMicRenderTest {
             }
             val files = output.listFiles()!!.filter { it.name.startsWith("floating-") && it.extension == "png" }
             assertTrue(files.all { it.length() < 2_000_000 })
-        } finally { controller.pause().stop().destroy() }
+        } finally { PrivateSession.set(false); controller.pause().stop().destroy() }
     }
 
     @Test fun `the panel is never full width on the inner screen and keeps 16 dp from the edges`() {

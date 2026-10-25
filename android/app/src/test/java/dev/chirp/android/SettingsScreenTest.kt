@@ -80,7 +80,7 @@ class SettingsScreenTest {
     @Test fun `each category row carries a live one-line summary`() {
         val (state, history, updates) = settingsFixture()
         show(state, history, updates)
-        compose.onNodeWithText("Parakeet · clean-up on Mac").assertExists()                       // Connection
+        compose.onNodeWithText("Connected · mac.example.test").assertExists()                       // Connection
         compose.onNodeWithText("Clean-up on · stops on tap").assertExists()  // Dictation
         compose.onNodeWithText("Battery saver · recovery copy · keeps notes").assertExists()      // Notes (defaults)
         compose.onNodeWithText("Dictation history off").assertExists()                            // Privacy & history

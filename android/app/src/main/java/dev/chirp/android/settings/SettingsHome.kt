@@ -33,7 +33,7 @@ internal fun SettingsList(state: SetupState, actions: SettingsActions, history: 
         // The list stays composed beside its detail page on a Fold: preference changes must refresh its summaries.
         key(revision) { SettingsGroup {
             NavRow(SettingsPage.Connection.title, { open(SettingsPage.Connection) },
-                summary = connection.summary ?: "Pair your Mac to dictate", icon = R.drawable.ic_devices)
+                summary = if (state.paired) connection.title else "Pair your Mac to dictate", icon = R.drawable.ic_devices)
             NavRow(SettingsPage.HowYouDictate.title, { open(SettingsPage.HowYouDictate) }, summary = inputModeSummary(state), icon = R.drawable.ic_mic)
             NavRow(SettingsPage.Dictation.title, { open(SettingsPage.Dictation) }, summary = dictationSummary(context, state), icon = R.drawable.ic_tune)
             NavRow(SettingsPage.Keyboard.title, { open(SettingsPage.Keyboard) }, summary = if (state.inputMode == InputMode.OWN_KEYBOARD) "Not in use — you’re keeping ${state.keyboardLabel ?: "your keyboard"}" else keyboardSummary(context, prefs), icon = R.drawable.ic_keyboard)

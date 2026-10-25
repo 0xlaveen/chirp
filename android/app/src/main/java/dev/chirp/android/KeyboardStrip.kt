@@ -47,9 +47,20 @@ internal class KeyboardStrip(context: Context, private val now: () -> Long = Sys
     val options = control("Dictation options").apply { setIconResource(R.drawable.ic_more_vert) }
     val mic = control(MIC_IDLE).apply { setIconResource(R.drawable.ic_mic) }
     val cancel = control("Cancel dictation").apply { text = "✕" }
-    val raw = control("Use raw dictation").apply { text = "Use raw"; visibility = GONE }
-    val revert = control("Undo last dictation").apply { text = "Undo"; visibility = GONE }
+    val raw = control("Use raw dictation").apply { textSize = 12f; text = "Use raw"; visibility = GONE }
+    val revert = control("Undo last dictation").apply { textSize = 12f; text = "Undo"; visibility = GONE }
     /** The button for prompt actions such as turning on Tailscale; the status keeps the explanation. */
+    private val rawCountdown = ActionCountdown(raw, "Use raw", now)
+    private val undoCountdown = ActionCountdown(revert, "Undo", now)
+    val privateChip = context.label("Private", 11f).apply {
+        val lock = androidx.core.content.ContextCompat.getDrawable(context, R.drawable.ic_lock)?.mutate()?.apply {
+            setBounds(0, 0, context.dp(12), context.dp(12)); setTint(palette.muted)
+        }
+        setCompoundDrawablesRelative(lock, null, null, null)
+        compoundDrawablePadding = context.dp(3)
+        setPadding(context.dp(4), 0, context.dp(4), 0)
+        contentDescription = "Private session · exclude history"
+    }
     val action = control("").apply { visibility = GONE; setPadding(context.dp(12), 0, context.dp(12), 0); minWidth = context.dp(48); minimumWidth = context.dp(48) }
     val style = context.label("", 12f).apply {
         maxLines = 1; ellipsize = TextUtils.TruncateAt.END
@@ -97,14 +108,20 @@ internal class KeyboardStrip(context: Context, private val now: () -> Long = Sys
         }
         // Chips look 32 dp tall; the touch target stays the full row.
         for (chip in listOf(raw, revert, action)) { chip.insetTop = context.dp(4); chip.insetBottom = context.dp(4) }
+        PrivateSession.observe(this) {
+            privateChip.visibility = if (PrivateSession.enabled) VISIBLE else GONE
+            if (!expanded) (layoutParams as? RelativeLayout.LayoutParams)?.let { it.width = idleWidth(); layoutParams = it }
+            (suggestions?.layoutParams as? RelativeLayout.LayoutParams)?.let { it.marginEnd = idleWidth(); suggestions?.layoutParams = it }
+        }
+        addView(privateChip, LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT))
         addView(cancel, LayoutParams(context.dp(48), LayoutParams.MATCH_PARENT))
         addView(levels, LayoutParams(context.dp(72), LayoutParams.MATCH_PARENT))
         addView(busy, LayoutParams(context.dp(40), LayoutParams.MATCH_PARENT))
         addView(status, LayoutParams(0, LayoutParams.MATCH_PARENT, 1f).apply { status.gravity = Gravity.CENTER_VERTICAL })
         addView(timer, LayoutParams(LayoutParams.WRAP_CONTENT, context.dp(28)).apply { marginEnd = context.dp(4) })
         addView(style, LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT).apply { marginEnd = context.dp(4) })
-        addView(revert, LayoutParams(context.dp(72), LayoutParams.MATCH_PARENT).apply { marginEnd = context.dp(4) })
-        addView(raw, LayoutParams(context.dp(88), LayoutParams.MATCH_PARENT).apply { marginEnd = context.dp(4) })
+        addView(revert, LayoutParams(context.dp(80), LayoutParams.MATCH_PARENT).apply { marginEnd = context.dp(4) })
+        addView(raw, LayoutParams(context.dp(100), LayoutParams.MATCH_PARENT).apply { marginEnd = context.dp(4) })
         addView(action, LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.MATCH_PARENT).apply { marginEnd = context.dp(4) })
         addView(history, LayoutParams(context.dp(48), LayoutParams.MATCH_PARENT))
         addView(options, LayoutParams(context.dp(OPTIONS_WIDTH), LayoutParams.MATCH_PARENT))
@@ -127,7 +144,7 @@ internal class KeyboardStrip(context: Context, private val now: () -> Long = Sys
     }
     fun show(message: String, @Suppress("UNUSED_PARAMETER") text: String, active: Boolean, finishing: Boolean, undo: Boolean, retention: Boolean,
              polishing: Boolean = false, style: String = "", notice: Boolean = false, undoable: Boolean = false, offline: Boolean = false, countdown: Boolean = false,
-             phone: String? = null) {
+             phone: String? = null, actionUntil: Long? = null) {
         val recovery = DictationAction.forStatus(message)
         val offlineRow = message == ConnectionFailure.OFFLINE
         val error = recovery != null || offlineRow
@@ -160,7 +177,7 @@ internal class KeyboardStrip(context: Context, private val now: () -> Long = Sys
             stage = nextStage
         }
         // The final's "tap mic to dictate again" hint is gone: the chips are the actions that matter.
-        status.text = if (retention) "Debug retention on · $message" else recovery?.takeUnless { it.prompt }?.label ?: message.replace(HINT, "")
+        status.text = if (retention) "Debug retention on · $message" else dictationDisplayStatus(recovery?.takeUnless { it.prompt }?.label ?: message.replace(HINT, ""))
         status.visibility = if (full) VISIBLE else GONE
         val ink = if (retention) tints.solidError.text else tint?.text ?: palette.ink
         status.setTextColor(ink)
@@ -168,7 +185,7 @@ internal class KeyboardStrip(context: Context, private val now: () -> Long = Sys
         status.contentDescription = status.text
         lead(when {
             kind == StripKind.POLISHING -> R.drawable.ic_sparkle
-            kind == StripKind.SUCCESS -> R.drawable.ic_check
+            kind == StripKind.SUCCESS && !PrivateSession.enabled -> R.drawable.ic_check
             offlineRow -> R.drawable.ic_mic_off
             kind == StripKind.ERROR -> R.drawable.ic_warning
             else -> 0
@@ -177,14 +194,16 @@ internal class KeyboardStrip(context: Context, private val now: () -> Long = Sys
         // The time-limit countdown is the one thing spoken while listening; its description changes only at a few marks.
         status.accessibilityLiveRegion = if (active && !countdown) View.ACCESSIBILITY_LIVE_REGION_NONE else View.ACCESSIBILITY_LIVE_REGION_POLITE
         cancel.visibility = if (full) VISIBLE else GONE
-        // INVISIBLE, not GONE: the mic must never slide into the history slot mid-transition.
-        history.visibility = if (full) INVISIBLE else VISIBLE
-        options.visibility = if (full) INVISIBLE else VISIBLE
+        // Full-row actions use the available width; the mic stays anchored at the trailing edge.
+        history.visibility = if (full) GONE else VISIBLE
+        options.visibility = if (full) GONE else VISIBLE
         cancel.isEnabled = active || undo || undoable || error
         levels.visibility = if (kind == StripKind.LISTENING) VISIBLE else GONE
         busy.visibility = if (kind == StripKind.CONNECTING) VISIBLE else GONE
         raw.visibility = if (undo) VISIBLE else GONE
         revert.visibility = if (undoable && !active) VISIBLE else GONE
+        rawCountdown.show(undo, actionUntil)
+        undoCountdown.show(undoable && !active, actionUntil)
         action.visibility = if (recovery?.prompt == true && !active) VISIBLE else GONE
         action.text = recovery?.label ?: ""
         action.contentDescription = recovery?.label ?: ""
@@ -334,7 +353,7 @@ internal class KeyboardStrip(context: Context, private val now: () -> Long = Sys
         options.backgroundTintList = ColorStateList.valueOf(Color.TRANSPARENT)
         options.iconTint = ColorStateList.valueOf(palette.highlight)
     }
-    private fun idleWidth() = context.dp(48 + OPTIONS_WIDTH) + micWidth
+    private fun idleWidth() = context.dp(48 + OPTIONS_WIDTH + if (PrivateSession.enabled) 76 else 0) + micWidth
     private companion object {
         const val OPTIONS_WIDTH = 36
         const val MIC_IDLE = "Microphone: tap to dictate, hold to talk"

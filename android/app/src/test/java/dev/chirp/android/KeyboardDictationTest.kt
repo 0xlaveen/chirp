@@ -121,7 +121,7 @@ class KeyboardDictationTest {
         assertTrue(strip.mic.contentDescription.toString().contains("hold to talk"))
         strip.options.performClick(); assertFalse(voice.active) // opening options never starts capture
         voice.toggle(); stream.ready(); advance(0)
-        assertEquals(android.view.View.INVISIBLE, strip.options.visibility) // out of the way while listening, like history
+        assertEquals(android.view.View.GONE, strip.options.visibility) // out of the way while listening, like history
     }
     @Test fun `hold before ready waits for release and cancel rejects late results`() {
         voice.touch(MotionEvent.ACTION_DOWN); capture.frame(byteArrayOf(1, 2)); advance(350)
@@ -208,7 +208,7 @@ class KeyboardDictationTest {
         assertEquals("Polishing…", strip.status.text.toString())
         assertEquals(android.view.View.VISIBLE, strip.style.visibility)
         stream.event(ServerEvent.Final("Synthetic.", "synthetic raw", true)); advance(450)
-        assertEquals("Synthetic.", host.editor.committed); assertEquals("cleaned", strip.status.text.toString())
+        assertEquals("Synthetic.", host.editor.committed); assertEquals("Finished", strip.status.text.toString())
         assertEquals(android.view.View.VISIBLE, strip.raw.visibility)
         strip.raw.performClick(); assertEquals("synthetic raw", host.editor.committed)
     }
@@ -218,7 +218,7 @@ class KeyboardDictationTest {
         advance(500); assertEquals(1f, strip.status.alpha)
         advance(12000)
         assertEquals("synthetic raw", host.editor.committed); assertFalse(voice.active)
-        assertEquals("kept original", strip.status.text.toString())
+        assertEquals("Kept what was heard", strip.status.text.toString())
         advance(5000); assertEquals(android.view.View.GONE, strip.status.visibility)
     }
 

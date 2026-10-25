@@ -31,6 +31,7 @@ internal class QuickDictateModel(
     private val app = context.applicationContext as android.app.Application
     private var client: OkHttpClient? = null
     private var stream: DictationStream? = null
+    private var privateUtterance = false
     var status by mutableStateOf("Connecting to Mac…")
         internal set
     var partial by mutableStateOf("")
@@ -53,7 +54,7 @@ internal class QuickDictateModel(
         private set
     var completed: ((String) -> Unit)? = null
     var appLabel: String = "Quick dictate"
-    var closeAt: Long? = null
+    var closeAt by mutableStateOf<Long?>(null)
     val copied get() = text.isNotBlank()
 
     private fun sync() { active = stream != null; stopping = stream?.stopping == true }
@@ -62,6 +63,7 @@ internal class QuickDictateModel(
         errorCode = null
         if (!micGranted()) { fail("Allow microphone in Chirp settings", RecognizerIntent.RESULT_AUDIO_ERROR); return }
         val paired = pairing() ?: run { fail("Pair your Mac in Chirp settings", RecognizerIntent.RESULT_SERVER_ERROR); return }
+        privateUtterance = PrivateSession.enabled
         partial = ""; stable = ""
         val http = client ?: ChirpNetwork.client(app).also { client = it }
         val session = DictationStream(
@@ -83,7 +85,7 @@ internal class QuickDictateModel(
                 closeAt = android.os.SystemClock.elapsedRealtime() + 4_000
                 val label = appLabel
                 val original = raw
-                io { history.record(result.text, original, label, EditorInfo().apply { inputType = InputType.TYPE_CLASS_TEXT }) }
+                if (!privateUtterance && !PrivateSession.enabled) io { history.record(result.text, original, label, EditorInfo().apply { inputType = InputType.TYPE_CLASS_TEXT }) }
                 completed?.invoke(text)
             },
             ended = {
@@ -101,6 +103,7 @@ internal class QuickDictateModel(
     /** Every departure cancels, including a final still being polished. */
     fun cancel() {
         val old = stream; stream = null; old?.cancel()
+        privateUtterance = PrivateSession.enabled
         partial = ""; stable = ""; level = 0.0; sync()
     }
     fun useRaw() { raw?.let { text = it; raw = null; completed?.invoke(it) } }

@@ -131,6 +131,21 @@ internal class VoicePanel(context: Context) : LinearLayout(context) {
         text = "Copy"; setIconResource(R.drawable.ic_copy); iconPadding = context.dp(6); insetTop = 0; insetBottom = 0
         minHeight = context.dp(44); cornerRadius = context.dp(22); accent(palette, filled = true)
     }
+    private val rawCountdown = ActionCountdown(raw, "Use raw")
+    val privateChip = context.label("Private", 12f).apply {
+        val lock = androidx.core.content.ContextCompat.getDrawable(context, R.drawable.ic_lock)?.mutate()?.apply {
+            setBounds(0, 0, context.dp(12), context.dp(12)); setTint(palette.muted)
+        }
+        setCompoundDrawables(lock, null, null, null)
+        compoundDrawablePadding = context.dp(4)
+        setTextColor(palette.muted)
+        contentDescription = "Private session · exclude history"
+    }
+    val options = ImageButton(context).apply {
+        setImageResource(R.drawable.ic_more_vert); imageTintList = ColorStateList.valueOf(palette.muted)
+        contentDescription = "Dictation options"; background = null
+        setOnClickListener { StripMenu(this).apply { show() } }
+    }
     private val actions = LinearLayout(context)
 
     init {
@@ -141,6 +156,7 @@ internal class VoicePanel(context: Context) : LinearLayout(context) {
             setColor(palette.card); cornerRadius = context.dp(16).toFloat(); setStroke(context.dp(1), palette.outline)
         }
         elevation = context.dp(3).toFloat()
+        PrivateSession.observe(this) { privateChip.visibility = if (PrivateSession.enabled) VISIBLE else GONE }
         addView(banner)
         addView(LinearLayout(context).apply {
             gravity = Gravity.CENTER_VERTICAL
@@ -149,6 +165,7 @@ internal class VoicePanel(context: Context) : LinearLayout(context) {
             addView(headline, LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f))
             addView(polished, LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT).apply { marginStart = context.dp(8) })
             addView(spacer, LayoutParams(0, 0, 1f))
+            addView(options, LayoutParams(context.dp(44), context.dp(44)))
             addView(hide, LayoutParams(context.dp(44), context.dp(44)))
         }, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
         val inner = LinearLayout(context).apply {
@@ -156,6 +173,7 @@ internal class VoicePanel(context: Context) : LinearLayout(context) {
             setPadding(0, 0, context.dp(10), 0)
         }
         addView(inner, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
+        inner.addView(privateChip, LayoutParams(LayoutParams.WRAP_CONTENT, context.dp(24)).apply { bottomMargin = context.dp(8) })
         error.addView(errorText, LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f))
         error.addView(fix, LayoutParams(LayoutParams.WRAP_CONTENT, context.dp(40)))
         inner.addView(error, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT).apply { bottomMargin = context.dp(8) })
@@ -182,10 +200,16 @@ internal class VoicePanel(context: Context) : LinearLayout(context) {
         strokeColor = ColorStateList.valueOf(palette.outline); strokeWidth = context.dp(1)
     }
 
-    fun render(model: PanelModel) {
+    fun render(model: PanelModel, actionUntil: Long? = null) {
         val state = model.state
         banner.retention(model.retention)
-        headline.text = if (state == FloatingState.ERROR) "Couldn't dictate" else model.headline
+        headline.text = when (state) {
+            FloatingState.ERROR -> "Couldn't dictate"
+            FloatingState.IDLE -> if (model.copyMode) model.headline else "Ready"
+            FloatingState.LISTENING -> "Listening…"
+            FloatingState.INSERTED, FloatingState.POLISHED -> "Finished"
+            else -> model.headline
+        }
         val chip = state == FloatingState.POLISHED
         polished.visibility = if (chip) VISIBLE else GONE
         spacer.visibility = if (chip) VISIBLE else GONE
@@ -241,6 +265,7 @@ internal class VoicePanel(context: Context) : LinearLayout(context) {
         ripple.level = if (state == FloatingState.LISTENING) model.level.toFloat() else 0f
         countdown.visibility = if (state == FloatingState.POLISHED) VISIBLE else GONE
         if (state != FloatingState.POLISHED) countdown.stop()
+        rawCountdown.show(state == FloatingState.POLISHED, actionUntil)
         raw.visibility = if (state == FloatingState.POLISHED) VISIBLE else GONE
         copy.contentDescription = "Copy your words"
         arrange(state, keeps && text.isNotEmpty())

@@ -13,7 +13,15 @@ import androidx.activity.compose.setContent
  * transcript fills in beside them. Saved automatically to the sealed local notes library.
  * The screen itself is [NotesScreen], which the app shell also hosts as its Notes tab; both share one session ([NotesSessionHolder]).
  */
-open class NotesActivity : ComponentActivity() {
+open class NotesActivity : ComponentActivity(), AppShortcutHost {
+    override val appShortcuts = AppShortcuts()
+    @android.annotation.SuppressLint("RestrictedApi") // Override of the public Activity callback, forwarded by AndroidX.
+    override fun dispatchKeyEvent(event: android.view.KeyEvent): Boolean = appShortcuts.dispatch(event) || super.dispatchKeyEvent(event)
+    override fun onKeyShortcut(keyCode: Int, event: android.view.KeyEvent): Boolean = appShortcuts.dispatch(event) || super.onKeyShortcut(keyCode, event)
+    override fun onProvideKeyboardShortcuts(groups: MutableList<android.view.KeyboardShortcutGroup>, menu: android.view.Menu?, deviceId: Int) {
+        super.onProvideKeyboardShortcuts(groups, menu, deviceId)
+        appShortcuts.provide(groups)
+    }
     internal open fun createModel(): NotesModel = NotesModel(applicationContext)
     internal open val tailscale: TailscaleControl by lazy { AndroidTailscale(this) }
     internal val model: NotesModel by lazy { NotesSessionHolder.model(this, ::createModel) }

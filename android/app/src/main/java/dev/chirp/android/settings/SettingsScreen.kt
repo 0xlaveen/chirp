@@ -56,14 +56,17 @@ internal fun SettingsScreen(state: SetupState, actions: SettingsActions = Settin
             val scroll = rememberSaveable(twoPane, shown, saver = ScrollState.Saver) { ScrollState(0) }
             if (twoPane) Row(Modifier.fillMaxSize()) {
                 // The category column is not inside a Scaffold, so it keeps clear of the status and gesture areas itself (#181).
-                Column(Modifier.weight(.38f).widthIn(max = 380.dp).fillMaxHeight().windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Vertical))
+                Column(Modifier.widthIn(min = 320.dp, max = 400.dp).width(400.dp).fillMaxHeight().windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Vertical))
                     .verticalScroll(rememberScrollState())
                     .padding(start = 24.dp, end = 16.dp, top = 32.dp, bottom = 24.dp)) {
                     Text("Settings", Modifier.padding(bottom = 16.dp).semantics { heading() }, style = MaterialTheme.typography.titleLarge)
                     // Keyed on the open page so the summaries re-read the store after something changes beside them.
-                    key(page) { SettingsList(state, actions, history) { page = it } }
+                    CompositionLocalProvider(dev.chirp.android.ui.LocalNavSummaryLines provides
+                        if (androidx.compose.ui.platform.LocalDensity.current.fontScale >= 1.5f) 2 else 1) {
+                        key(page) { SettingsList(state, actions, history) { page = it } }
+                    }
                 }
-                PageScaffold(shown!!.title, back = null, scroll, Modifier.weight(.62f).fillMaxHeight()) {
+                PageScaffold(shown!!.title, back = null, scroll, Modifier.weight(1f).fillMaxHeight()) {
                     SettingsDetail(shown, state, actions, history, updates)
                 }
             } else if (shown == null) PageScaffold("Settings", back = null, scroll, Modifier.widthIn(max = 600.dp).fillMaxSize()) {

@@ -38,6 +38,7 @@ class NotesGroupsTest {
 @Config(sdk = [37], qualifiers = "w411dp-h891dp-mdpi")
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 class NotesLibraryScreenTest {
+
     @org.junit.Before fun noMotion() {
         android.provider.Settings.Global.putFloat(RuntimeEnvironment.getApplication().contentResolver, android.provider.Settings.Global.ANIMATOR_DURATION_SCALE, 0f)
     }
@@ -50,39 +51,52 @@ class NotesLibraryScreenTest {
     private val library by lazy { NotesSessions(context, keys, { time }) }
     private val live by lazy { NotesModelRig(context, sessions = library) }
     private val reader by lazy { NotesModelRig(context, sessions = library) }
+    private val shortcuts = AppShortcuts()
     private val dark = mutableStateOf(false)
     private val tab = mutableStateOf(ShellTab.Notes)
-    private val setup = SetupState().apply { mic = true; paired = true; reachable = true; inputEnabled = true }
+    private val setup = SetupState().apply { mic = true; paired = true; reachable = true; inputEnabled = true; inputSelected = true }
     private var connections = 0
     private var dictations = 0
 
-    private fun note(title: String, text: String, hoursAgo: Int = 0, transcript: String = "", audio: Boolean = false): String {
+    private fun note(title: String, text: String, hoursAgo: Int = 0, transcript: String = "", audio: Boolean = false, duration: Double = 732.0): String {
         time = now - hoursAgo * 3_600_000L
         val doc = NotesDocument().apply {
             name = title; userEdit(0, 0, text)
             if (transcript.isNotBlank()) append(NotesSegment(0, 0.0, transcript))
         }
-        library.put(doc.uid, doc.toJson().put("elapsed", 732.0))
+        library.put(doc.uid, doc.toJson().put("elapsed", duration))
         if (audio) library.storeClip(doc.uid, 0, 0.0, 32000, byteArrayOf(1, 2, 3))
         return doc.uid
     }
 
     private fun show() {
         library.refresh()
-        compose.setContent { ChirpTheme(dark.value) {
+        compose.setContent { CompositionLocalProvider(LocalAppShortcuts provides shortcuts) { ChirpTheme(dark.value) {
             AppShell(tab.value, { tab.value = it }) {
                 if (it == ShellTab.Notes) NotesLibraryScreen(live.model, reader.model,
                     record = { id -> if (id == null) { live.model.keepSession(); live.model.clear(); live.model.start() } else live.model.continueRecording(id, stopCurrent = true) },
                     copy = {}, share = {}, save = {}, act = {}, state = setup, connection = { connections++ }, dictate = { dictations++ }, now = { now })
                 else androidx.compose.material3.Text("Other tab")
             }
-        } }
+        } } }
     }
     private fun search(text: String) = compose.onNode(hasSetTextAction()).performTextReplacement(text)
     private fun back() = compose.runOnIdle { compose.activity.onBackPressedDispatcher.onBackPressed() }
     private fun open(title: String) = compose.onNode(hasText(title) and hasClickAction()).performClick()
     private fun trash() { compose.onNodeWithContentDescription("Library options").performClick(); compose.onNodeWithText("Recently Deleted").performClick() }
     private fun loaded(title: String) { compose.waitUntil(5000) { compose.onAllNodesWithContentDescription("Rename notes: $title").fetchSemanticsNodes().isNotEmpty() } }
+
+    @Test fun `Ctrl F closes a cover detail and focuses library search`() {
+        note("Garden plans", "A synthetic page")
+        show(); open("Garden plans"); loaded("Garden plans")
+        compose.runOnIdle {
+            assertTrue(shortcuts.dispatch(android.view.KeyEvent(0, 0, android.view.KeyEvent.ACTION_DOWN,
+                android.view.KeyEvent.KEYCODE_F, 0, android.view.KeyEvent.META_CTRL_ON)))
+        }
+        compose.waitForIdle()
+        compose.onNode(hasSetTextAction()).assertIsFocused()
+        compose.onNodeWithContentDescription("Edit notes").assertDoesNotExist()
+    }
 
     @Test fun `full transcript search highlights results and Back preserves the query and list position`() {
         val id = note("Garden plans", "- Buy seeds", transcript = "A quiet pond beside the terrace")
@@ -157,9 +171,9 @@ class NotesLibraryScreenTest {
         assertEquals(1, connections)
         compose.onNodeWithContentDescription("Dictate").performClick()
         assertEquals(1, dictations)
-        compose.onNodeWithText("Make yourself at home").assertExists()
+        compose.onNodeWithText("Allow the microphone").assertExists()
         compose.onNodeWithContentDescription("Dismiss setup").performClick()
-        compose.onNodeWithText("Make yourself at home").assertDoesNotExist()
+        compose.onNodeWithText("Allow the microphone").assertDoesNotExist()
         assertTrue(SettingsStore(context).tryItDismissed)
     }
 
@@ -193,6 +207,7 @@ class NotesLibraryScreenTest {
     }
 
     private fun render(width: String) {
+        setup.mic = false
         show()
         val output = File(System.getProperty("chirp.screenshots")).apply { mkdirs() }
         fun shot(state: String) {
@@ -207,11 +222,12 @@ class NotesLibraryScreenTest {
         }
         shot("empty")
         val first = note("Launch sync", "## A smaller, better beta\nThe first release goes to ten design partners.\n- [ ] Draft the invitation\n- [ ] Check pricing with finance", transcript = "The beta goes to ten design partners. We agreed to ship on Friday.", audio = true)
-        note("A walk by the water", "A quiet morning, a notebook, and a little room to think.", 5)
+        note("A walk by the water", "A quiet morning, a notebook, and a little room to think.", 5, duration = 0.0)
         note("Ideas for the studio", "- A long table by the window\n- [ ] Find a reading lamp", 25)
         val deleted = note("An earlier draft", "A few thoughts worth returning to.", 50)
         library.trash(deleted); time = now
         compose.onNodeWithText("☐ 0 open").assertDoesNotExist()
+        compose.onNodeWithText("0 sec").assertDoesNotExist()
         val listBottom = compose.onNodeWithTag("notes-library-list").fetchSemanticsNode().boundsInRoot.bottom
         val fabTop = compose.onNodeWithContentDescription("Record new note").fetchSemanticsNode().boundsInRoot.top
         assertTrue("list viewport stays above the capture controls", listBottom <= fabTop)

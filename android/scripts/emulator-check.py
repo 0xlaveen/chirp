@@ -154,10 +154,14 @@ def cleanup_check(output, work):
         focus_editor()
         x, y, _, _ = mic_position(night, work)
         _probe["click"]("Dictation options")
-        _probe["wait_for"]("Custom", 20)
         hierarchy = nodes()
-        assert any(n.get("text") == "Custom" for n in hierarchy), "Custom style missing"
-        assert any(n.get("text") == "Chat" for n in hierarchy), "Health profiles missing"
+        # Private session adds a row above Styles; Custom may be below the scroll viewport.
+        if not any(n.get("text") == "Custom" for n in hierarchy):
+            popup = next(n for n in hierarchy if n.get("class") == "android.widget.ScrollView")
+            x1, y1, x2, y2 = _probe["bounds"](popup)
+            adb("shell", "input", "swipe", str((x1 + x2) // 2), str(y2 - 20), str((x1 + x2) // 2), str(y1 + 20), "300")
+        _probe["wait_for"]("Custom", 20)
+        assert any(n.get("text") == "Chat" for n in nodes()), "Health profiles missing"
         screenshot(output / ("emulator-cleanup-styles-" + theme + ".png"))
         adb("shell", "input", "keyevent", "4")
         focus_editor()

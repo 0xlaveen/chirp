@@ -42,6 +42,8 @@ class ScratchpadRenderTest {
             compose.onNodeWithContentDescription("Microphone: stop dictation").assertIsEnabled()
             compose.onNodeWithText("Synthetic example for visual review").assertExists()
             shot("listening")
+            compose.runOnIdle { rig.model.stop(); rig.idle(); rig.wire.final("Synthetic example for visual review.", "synthetic um example for visual review", true) }
+            shot("use-raw")
             compose.runOnIdle { rig.model.cancel(); rig.model.field = TextFieldValue("Synthetic example for visual review.") }
             shot("text")
             compose.runOnIdle { rig.model.clear() }

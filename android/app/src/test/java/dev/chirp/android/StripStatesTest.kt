@@ -61,7 +61,7 @@ class StripStatesTest {
         strip.show("Listening…", "", true, false, false, false)
         assertEquals(StripKind.LISTENING, strip.stripKind); assertNotEquals(0, Color.alpha(strip.tintColor))
         strip.show("Inserted · tap mic to dictate again", "", false, false, true, false, notice = true, undoable = true)
-        assertEquals(StripKind.SUCCESS, strip.stripKind); assertEquals("Inserted", strip.status.text.toString())
+        assertEquals(StripKind.SUCCESS, strip.stripKind); assertEquals("Finished", strip.status.text.toString())
         strip.show("Tap mic · hold to talk", "", false, false, false, false)
         assertEquals(StripKind.IDLE, strip.stripKind); assertEquals(0, Color.alpha(strip.tintColor))
         strip.show(DictationAction.TAILSCALE_OFF, "", false, false, false, false)
@@ -127,7 +127,7 @@ class StripStatesTest {
         strip.show("cleaned", "", false, false, true, false, notice = true, undoable = true)
         assertEquals(View.VISIBLE, strip.raw.visibility); assertEquals(View.VISIBLE, strip.revert.visibility)
         assertTrue(strip.indexOfChild(strip.revert) < strip.indexOfChild(strip.raw))
-        assertEquals("cleaned", strip.status.text.toString())
+        assertEquals("Finished", strip.status.text.toString())
         assertEquals(StripKind.SUCCESS, strip.stripKind)
     }
 
@@ -162,8 +162,10 @@ class StripStatesTest {
             section("Chirp")
             item(R.drawable.ic_settings, "Chirp settings") { opened = true }
         }
-        val rows = descendants(menu.content).filter { it.isClickable }
-        assertEquals(4, rows.size)
+        val all = descendants(menu.content).filter { it.isClickable }
+        assertEquals(5, all.size)
+        assertTrue(all.first().contentDescription.toString().startsWith("Private session"))
+        val rows = all.drop(1)
         fun info(view: View) = android.view.accessibility.AccessibilityNodeInfo.obtain().also { view.onInitializeAccessibilityNodeInfo(it) }
         assertEquals("android.widget.Switch", info(rows[0]).className.toString()); assertTrue(info(rows[0]).isChecked)
         assertEquals("android.widget.RadioButton", info(rows[1]).className.toString()); assertTrue(info(rows[1]).isChecked)
@@ -174,4 +176,24 @@ class StripStatesTest {
         rows[3].performClick(); assertTrue(opened)
         assertTrue(descendants(menu.content).filterIsInstance<TextView>().any { it.text == "Style" && androidx.core.view.ViewCompat.isAccessibilityHeading(it) })
     }
+    @Test fun `action digits tick but TalkBack description stays fixed and offers never restart`() {
+        val app = org.robolectric.RuntimeEnvironment.getApplication()
+        val button = android.widget.TextView(app)
+        var now = 0L
+        val countdown = ActionCountdown(button, "Use raw") { now }
+        countdown.show(true, 5000)
+        assertEquals("Use raw (5s)", button.text.toString())
+        val spoken = button.contentDescription
+        now = 1000
+        org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idleFor(java.time.Duration.ofMillis(200))
+        assertEquals("Use raw (4s)", button.text.toString())
+        assertEquals(spoken, button.contentDescription)
+        countdown.show(true, 5000)
+        assertEquals("Use raw (4s)", button.text.toString())
+        countdown.show(false)
+        now = 4000
+        org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idleFor(java.time.Duration.ofSeconds(1))
+        assertEquals("Use raw", button.text.toString())
+    }
+
 }

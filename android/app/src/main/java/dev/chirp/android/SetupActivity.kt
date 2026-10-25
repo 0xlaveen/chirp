@@ -85,7 +85,15 @@ internal class SetupState {
     var historyEntry by mutableStateOf<String?>(null)
 }
 
-open class SetupActivity : ComponentActivity() {
+open class SetupActivity : ComponentActivity(), AppShortcutHost {
+    override val appShortcuts = AppShortcuts()
+    @android.annotation.SuppressLint("RestrictedApi") // Override of the public Activity callback, forwarded by AndroidX.
+    override fun dispatchKeyEvent(event: android.view.KeyEvent): Boolean = appShortcuts.dispatch(event) || super.dispatchKeyEvent(event)
+    override fun onKeyShortcut(keyCode: Int, event: android.view.KeyEvent): Boolean = appShortcuts.dispatch(event) || super.onKeyShortcut(keyCode, event)
+    override fun onProvideKeyboardShortcuts(groups: MutableList<android.view.KeyboardShortcutGroup>, menu: android.view.Menu?, deviceId: Int) {
+        super.onProvideKeyboardShortcuts(groups, menu, deviceId)
+        appShortcuts.provide(groups)
+    }
     private lateinit var store: SettingsStore
     internal val state = SetupState()
     private var awaitingPrerequisite = false
@@ -165,6 +173,11 @@ open class SetupActivity : ComponentActivity() {
 
     @Composable
     private fun Shell() {
+        AppShortcutActions(
+            AppCommand.Notes to { selectTab(ShellTab.Notes); true },
+            AppCommand.History to { selectTab(ShellTab.History); true },
+            AppCommand.Settings to { selectTab(ShellTab.Settings); true },
+        )
         AppShell(state.tab, ::selectTab, state.exitOnBack) { tab ->
             when (tab) {
                 ShellTab.Notes -> {
@@ -241,6 +254,7 @@ open class SetupActivity : ComponentActivity() {
         source.removeExtra("section")
         when (section) {
             "pair" -> openPairing()
+            "microphone" -> fix(HomeFix.Microphone)
             "settings" -> openSettings(null)
             "input" -> openSettings(SettingsPage.HowYouDictate, outside = false)
             "try" -> { state.tryIt = true; open(ShellTab.Notes, outside = false) }

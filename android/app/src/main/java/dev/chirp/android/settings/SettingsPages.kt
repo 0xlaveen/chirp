@@ -107,6 +107,13 @@ private fun FeedbackPage() {
 /** History retention and clear, separate from Notes retention (spec §D). */
 @Composable
 private fun HistoryPage(history: DictationHistory?) {
+    val context = LocalContext.current
+    val store = remember { SettingsStore(context) }
+    val privateSession by PrivateSession.state.collectAsState()
+    SettingsGroup {
+        SwitchRow("Private session", privateSession, { store.privateSession = it }, summary = "Exclude history",
+            infoTitle = "Private session", infoBody = PrivateSession.HELP)
+    }
     HistorySettings(showOpen = true, store = history, title = null)   // the page already says "Privacy & history"
     SettingsGroup("What Chirp keeps") {
         SettingsItem {

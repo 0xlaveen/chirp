@@ -314,6 +314,29 @@ Design notes on this and the other input paths are in [docs/android-input-option
 
 Notes and the Scratchpad tile already work with any keyboard. A dedicated Dictate-to-clipboard tile, Speak-button handler and widget are planned separately; this setup change does not add them. Input-path decisions and sources are in [android-input-options.md](../docs/android-input-options.md).
 
+## In-app hardware keyboard shortcuts
+
+Android lists the **Chirp** group in the system **Meta+/** helper. Commands apply to the visible screen; note controls require an open note. These mirror iPad's Command shortcuts with Ctrl on Android.
+
+| Action | Android | iPad |
+|---|---|---|
+| New recording note | Ctrl+N (Notes) | ⌘N |
+| Focus search | Ctrl+F (Notes / History) | ⌘F |
+| Record / Stop open note | Ctrl+Shift+R | ⌘⇧R |
+| Pause / Resume recording | Ctrl+Shift+P | ⌘⇧P |
+| Edit / Done | Ctrl+E | ⌘E |
+| Start / Stop dictation | Ctrl+Enter (Scratchpad) | ⌘Return |
+| Cancel dictation / close sheet | Esc | ⌘. / Esc |
+| Copy result | Ctrl+Shift+C (Scratchpad) | ⌘⇧C |
+| Use raw, while offered | Ctrl+Shift+Z (Scratchpad) | ⌘⇧Z |
+| Notes / History / Settings | Ctrl+1 / 2 / 3 (app shell) | ⌘1 / 2 / 3 |
+
+The separate keyboard shortcut **Ctrl+Alt+Space** still toggles dictation in other apps; Esc cancels. The in-app commands never start a recording from History or Settings.
+
+**Private session** in **Settings → Privacy & history**, the keyboard's **⋯ Dictation options**, or the floating panel's **⋯** excludes new dictations from history. A small lock **Private** chip marks the strip and panel. It is off by default and ends when the screen locks, after **1 hour**, or if the app process exits. Existing history, notes, clean-up, and the Mac connection retain their settings.
+
+Time-limited **Use raw (4s)** and **Undo (4s)** actions count down with tabular digits. TalkBack receives a stable availability description once; the changing digits are silent. Quick dictate shows time while its automatic-close timer runs; interaction cancels that timer, so the retained action no longer has a countdown.
+
 ## Scratchpad
 
 A place to dictate long-form text outside any text field, edit it, then **Copy** or **Share** it. It uses the same streaming client, pairing and clean-up as the keyboard (`DictationStream`, `StreamTransport`, `PcmCapture`), so dictation behaves identically: tap the big mic to start, tap again to finish, and errors offer the same **Pair Mac**, **Open mic settings** and **Check Tailscale** actions.
@@ -390,13 +413,13 @@ Chirp settings → About → **Diagnostics** shows the session timings and the b
 | "Clean-up prompt too long — shorten it in Chirp settings" | Server `bad_request` on the prompt | Edit the style prompt |
 | "Mac speech engine unavailable — try again" | Unknown server error | Retry; check the server |
 | "Mac took too long to finish — try again" | Final timed out locally | Retry; check the Mac's load |
-| "Mac offline · tap to retry" (mic drawn with a slash) | The last health check or prewarm failed in the past 30 s | Tap the mic or the row: it re-checks for up to 3 s, then dictates or names the reason |
+| "Mac offline · Check again" (mic drawn with a slash) | The last health check or prewarm failed in the past 30 s | Tap the mic or the row: it re-checks for up to 3 s, then dictates or names the reason |
 | "Can't find your Mac on the tailnet — is it online?" | DNS lookup of the pairing host failed | Check Tailscale on the phone; check the Mac is online and signed in to the same tailnet |
 | "Mac may be asleep, or Chirp isn't running" | Connect timeout or refused connection, or no Ready within 7 s | Wake the Mac; check Chirp is running (see the Mac tip below) |
 | "Couldn't make a secure connection to your Mac" | TLS handshake or certificate error | Check the pairing URL is the Mac's `tailscale serve` HTTPS address; re-pair if it changed |
 | "Mac connection is too slow — try again" | Transport stalled | Check Tailscale (**Check Tailscale**) |
 | "Connection lost — kept what I heard" (or another reason) | The socket dropped, the Mac errored or timed out after partials arrived | The last partial was inserted as plain text; tap **Undo** to remove it |
-| "kept original" after Polishing… | Clean-up failed, timed out (12 s) or the socket dropped | Raw text was inserted; edit the style or check the Mac |
+| "Kept what was heard" after Polishing… | Clean-up failed, timed out (12 s) or the socket dropped | Raw text was inserted; edit the style or check the Mac |
 | "Listening on phone…" / "on phone" chip | *Use this phone's recogniser* is on and the Mac is unreachable | Expected; the text is recognised on the phone, raw. Turn the setting off to keep dictation Mac-only |
 | "Phone has no offline speech for this language" | The on-device recogniser lacks a language pack | Download the language in the phone's speech/voice-input settings, or dictate with the Mac |
 | "Phone recogniser failed — try again" (or "…is busy") | The phone's speech service errored or didn't finish within 5 s of stop | Retry; anything already heard was kept |
@@ -418,7 +441,7 @@ In 0.7.0 and earlier nothing spoken reached Notes against a real Mac ([#134](htt
 
 **Mac tip:** on the Mac, turn on System Settings → Battery → Options → *Wake for network access* and let Chirp launch at login, so the phone can reach it while the Mac is idle.
 
-**Offline mic.** Failure reasons come from exception classes only (no messages, hosts or URLs are kept) and are worded as possibilities, since Android sees the symptom, not the cause. A failed health check or prewarm marks the Mac offline for 30 seconds: the suggestion row shows **Mac offline · tap to retry** and the mic is drawn with a slash, with TalkBack reading "Mac offline, double-tap to retry". ✕ or typing hides the row; the slash stays until the Mac answers or 30 seconds pass. Tapping never waits: it re-checks health for at most 3 seconds, then dictates, or shows the specific reason; a second tap during the check dictates at once. A Mac that answers over HTTP (even with an error) is not offline. **Tailscale is off** keeps priority over this row. Dictation gives up on a Mac that is not Ready within 7 seconds (the pre-Ready buffer holds only 5 seconds of audio).
+**Offline mic.** Failure reasons come from exception classes only (no messages, hosts or URLs are kept) and are worded as possibilities, since Android sees the symptom, not the cause. A failed health check or prewarm marks the Mac offline for 30 seconds: the suggestion row shows **Mac offline · Check again** and the mic is drawn with a slash, with TalkBack reading "Mac offline, double-tap to retry". ✕ or typing hides the row; the slash stays until the Mac answers or 30 seconds pass. Tapping never waits: it re-checks health for at most 3 seconds, then dictates, or shows the specific reason; a second tap during the check dictates at once. A Mac that answers over HTTP (even with an error) is not offline. **Tailscale is off** keeps priority over this row. Dictation gives up on a Mac that is not Ready within 7 seconds (the pre-Ready buffer holds only 5 seconds of audio).
 
 Recoverable errors also offer **Pair Mac**, **Open mic settings** and **Check Tailscale** actions. With a tailnet pairing and no VPN up, the row shows **Tailscale is off** with **Turn on** instead (see [Tailscale off when the keyboard opens](#tailscale-off-when-the-keyboard-opens)). A historical note: a reproducible 0.5.1-era crash (`NetworkOnMainThreadException` during TLS teardown on stop/keyboard-hide) was fixed by moving all HTTP cancellation, pool eviction and dispatcher shutdown to one process-wide background queue — see the [validation record](#051-stop-crash-fix-2026-10-17). If an editor disconnected during the raw composing-region replacement, older builds could crash; all editor calls in `ComposingSession` now fail safely without exposing editor exceptions, losing the corrected text on a rejected replacement, or allowing late callbacks to insert into another field (lifecycle coverage: final, repeated utterances, hide/unbind/destroy, stale capture/transport callbacks, cancel and raw expiry). The first regression test for that crash failed before the fix; the original installed emulator crash buffer was empty, which does **not** establish that the operator's phone hit that same exception.
 

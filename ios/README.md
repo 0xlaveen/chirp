@@ -440,6 +440,8 @@ bytes — oversized input is refused before any edit rather than half-written.
 
 ## iPad with a hardware keyboard
 
+See the [Android and iPad shortcut comparison](../android/README.md#in-app-hardware-keyboard-shortcuts) for both in-app key tables.
+
 Two iPadOS limits shape this: iPadOS hides on-screen keyboards, including Chirp
 Keyboard, while a hardware keyboard is attached; and keyboard extensions never
 receive hardware key presses. So there are two ways to dictate into another app:

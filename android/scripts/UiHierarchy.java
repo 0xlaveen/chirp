@@ -29,6 +29,37 @@ public final class UiHierarchy {
             if (args.length > 0 && (args[0].equals("dictation-cycle") || args[0].equals("click") || args[0].equals("click-if-present") || args[0].equals("long-click") || args[0].equals("tap") || args[0].equals("append-notes"))) {
                 try { automation.waitForIdle(200, 2000); } catch (java.util.concurrent.TimeoutException ignored) { }
             }
+            if (args.length == 2 && args[0].equals("shortcut-helper")) {
+                Runtime.getRuntime().exec(new String[]{"input", "keycombination", "117", "76"}).waitFor();
+                android.os.SystemClock.sleep(2500);
+                // Hide Search's IME only when present; Back otherwise dismisses the helper.
+                for (AccessibilityWindowInfo window : automation.getWindows()) {
+                    if (window.getType() == AccessibilityWindowInfo.TYPE_INPUT_METHOD) {
+                        Runtime.getRuntime().exec(new String[]{"input", "keyevent", "4"}).waitFor();
+                        android.os.SystemClock.sleep(750);
+                        break;
+                    }
+                }
+                for (AccessibilityWindowInfo window : automation.getWindows()) {
+                    AccessibilityNodeInfo target = find(window.getRoot(), "App shortcuts");
+                    while (target != null && !target.isClickable()) target = target.getParent();
+                    if (target != null) { target.performAction(AccessibilityNodeInfo.ACTION_CLICK); break; }
+                }
+                android.os.SystemClock.sleep(1500);
+                for (AccessibilityWindowInfo window : automation.getWindows()) {
+                    AccessibilityNodeInfo root = window.getRoot();
+                    AccessibilityNodeInfo target = find(root, "Chirp");
+                    if (target != null) {
+                        while (target != null && !target.isClickable()) target = target.getParent();
+                        if (target != null) target.performAction(AccessibilityNodeInfo.ACTION_CLICK);
+                    }
+                }
+                android.os.SystemClock.sleep(1500);
+                screenshot(automation, args[1]);
+                if (!has(automation, "Chirp") || !has(automation, "New recording note"))
+                    throw new IllegalStateException("Chirp's shortcut group was not visible; enable the AVD hardware keyboard");
+                System.out.println("PASS: Chirp group and new-note shortcut in the system helper");
+            }
             if (args.length == 5 && args[0].equals("dictation-cycle")) {
                 dictationCycle(automation, args[1], Float.parseFloat(args[2]), Float.parseFloat(args[3]), args[4]);
                 return;
@@ -109,7 +140,7 @@ public final class UiHierarchy {
                     if (trackedStatus != null && trackedStatus.refresh()) {
                         String state = safe(trackedStatus.getText());
                         listening |= state.equals("Listening…"); polished |= state.equals("Polishing…");
-                        cleaned |= state.equals("cleaned"); raw |= state.equals("kept original");
+                        cleaned |= state.equals("Finished"); raw |= state.equals("Kept what was heard");
                         if (state.equals(args[1])) {
                             matched = true;
                             capturedRoots.clear();
@@ -134,8 +165,8 @@ public final class UiHierarchy {
                         }
                         listening |= find(root, "Listening…") != null;
                         polished |= find(root, "Polishing…") != null;
-                        cleaned |= find(root, "cleaned") != null;
-                        raw |= find(root, "kept original") != null;
+                        cleaned |= find(root, "Finished") != null;
+                        raw |= find(root, "Kept what was heard") != null;
                         if (find(root, args[1]) != null) matched = true;
                     }
                     if (!matched) android.os.SystemClock.sleep(16);

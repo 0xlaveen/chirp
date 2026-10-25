@@ -15,7 +15,7 @@ object ConnectionFailure {
         TLS("Couldn't make a secure connection to your Mac", false),
         OTHER("Mac unreachable — is Tailscale on?", false),
     }
-    const val OFFLINE = "Mac offline · tap to retry"
+    const val OFFLINE = "Mac offline · Check again"
     const val OFFLINE_DESCRIPTION = "Mac offline, double-tap to retry"
     const val CHECKING = "Checking Mac…"
 

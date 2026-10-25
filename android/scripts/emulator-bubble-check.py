@@ -137,7 +137,7 @@ class Bubble:
     def dictate(self, field_label, stop=True):
         """Tap the bubble, wait for a non-empty partial (length only), optionally Stop."""
         self.tap(self.wait(self.bubble, 'bubble'))
-        self.label('Listening', 40)
+        self.label('Listening…', 40)
         # A partial: some panel text beyond the fixed labels (and the probe's own report line); its length only.
         fixed = ('', 'Start speaking…', 'Listening', 'Cancel', 'Stop', 'Probe ready', 'Connecting to your Mac…')
         self.wait(lambda h: any(n.get('content-desc', '') == '' and n.get('text', '') not in fixed
@@ -302,10 +302,10 @@ class Bubble:
             return
         mode = 'copy mode' if bubble.get('content-desc', '').startswith(COPY_MODE) else 'insert'
         self.dictate('Web field')
-        state = self.wait(lambda h: next((n.get('text') for n in h if n.get('text') in ('Inserted', COULDNT, CANT)), None),
+        state = self.wait(lambda h: next((n.get('text') for n in h if n.get('text') in ('Finished', COULDNT, CANT)), None),
                           'WebView outcome', 60)
-        self.results.append(f'WebView textarea ({mode}) → ' + ('inserted' if state == 'Inserted' else 'Ready to copy'))
-        if state != 'Inserted':
+        self.results.append(f'WebView textarea ({mode}) → ' + ('inserted' if state == 'Finished' else 'Ready to copy'))
+        if state != 'Finished':
             self.press('Done')
         self.no_microphone_service('web field')
 
@@ -355,7 +355,7 @@ class Bubble:
                     self.capture(f'idle-{screen}-{theme}')
                     # Typing while live sends the final to Ready to copy, the never-lost state.
                     self.change_while_live()
-                    self.label('Listening', 40)
+                    self.label('Listening…', 40)
                     self.capture(f'listening-{screen}-{theme}')
                     self.label(COULDNT, 90); time.sleep(.4)
                     self.capture(f'ready-{screen}-{theme}')

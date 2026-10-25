@@ -47,6 +47,10 @@ internal class StripMenu(private val anchor: View) {
         clipToOutline = true; outlineProvider = ViewOutlineProvider.BACKGROUND; elevation = context.dp(8).toFloat()
     }
 
+    init {
+        toggle("Private session", "Exclude history · ends on lock or after 1 hour", PrivateSession.enabled) { PrivateSession.set(it) }
+    }
+
     private fun text(value: String, size: Float, color: Int) = TextView(context).apply {
         text = value; textSize = size; setTextColor(color); isSaveEnabled = false
     }

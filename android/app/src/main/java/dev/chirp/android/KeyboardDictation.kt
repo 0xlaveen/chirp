@@ -78,6 +78,7 @@ internal class KeyboardDictation(
     private var message = "Tap mic · hold to talk"
     private var text = ""
     private var undo = false
+    private var actionUntil: Long? = null
     private var notice = false
     private var targetPackage: String? = null
     private var styleOverride: String? = null
@@ -94,6 +95,7 @@ internal class KeyboardDictation(
     private var firstPartial: Long? = null
     private var stopAt: Long? = null
     private var finalLatency: Long? = null
+    private var privateUtterance = false
     private var historyInfo: EditorInfo? = null
     private var historyId: String? = null
     private var words = 0
@@ -338,6 +340,7 @@ internal class KeyboardDictation(
         checking = false
         val connection = host.currentInputConnection ?: return
         forgetUndo(); notice = false; words = 0; started(); prepare(); policy.dictated(targetPackage)
+        privateUtterance = PrivateSession.enabled
         historyInfo = info; historyId = null
         currentStyle = CleanupStyles.profiles(store.health).firstOrNull { it.id == styleOverride } ?: store.style(targetPackage)
         insertionStart = minOf(selectionStart, selectionEnd).takeIf { it >= 0 } ?: minOf(info.initialSelStart, info.initialSelEnd)
@@ -441,7 +444,7 @@ internal class KeyboardDictation(
         val sent = inserted && reason == null && !moved && session?.landingLast != false && pressEnter(result.text)
         // A long dictation announces its words once, after the last segment, and stays quiet between segments.
         notice = inserted; words = if (inserted && reason == null) words + result.text.trim().split(Regex("\\s+")).size else 0
-        historyId = if (inserted) history?.record(result.text, result.raw.takeIf { result.corrected }, historyInfo, partial = reason != null) else null
+        historyId = if (inserted && !privateUtterance) history?.record(result.text, result.raw.takeIf { result.corrected }, historyInfo, partial = reason != null) else null
         if (inserted && session?.landingLast != false) { haptic(); cue(Cue.INSERTED) }
         message = if (!inserted) reason ?: "Text field unavailable — try again"
             else if (reason != null) keptStatus(reason)
@@ -451,6 +454,7 @@ internal class KeyboardDictation(
         if (sent) message += " · ${AutoEnter.SENT}"
         text = ""; finalLatency = stopAt?.let { SystemClock.elapsedRealtime() - it }
         undo = inserted && !sent && (target?.spanEnd ?: -1) >= 0
+        actionUntil = SystemClock.elapsedRealtime() + 5000
         if (notice) handler.postDelayed(expiry, 5000)
         if (!undo) { composing?.forgetUndo(); composing = null }
     }
@@ -519,7 +523,7 @@ internal class KeyboardDictation(
         val old = session; session = null; old?.cancel()
         notice = false; words = 0; message = status; text = ""; render()
     }
-    private fun forgetUndo() { handler.removeCallbacks(expiry); undo = false; composing?.forgetUndo(); if (!active) composing = null }
+    private fun forgetUndo() { actionUntil = null; handler.removeCallbacks(expiry); undo = false; composing?.forgetUndo(); if (!active) composing = null }
     fun hidden() {
         visible = false; ++version; checking = false; ChirpNetwork.cancel(healthCall); healthCall = null
         tailscaleWatch?.close(); tailscaleWatch = null; handler.removeCallbacks(tailscaleTimeout)
@@ -549,7 +553,7 @@ internal class KeyboardDictation(
         val status = if (store.debugOverlay) "$shown · first ${firstPartial ?: "—"} ms · final ${finalLatency ?: "—"} ms" else shown
         val raw = undo && composing?.rawAvailable == true
         strip?.show(action()?.takeUnless { it.prompt }?.let { "$status · ${it.label}" } ?: status, "", active, session?.stopping == true, raw, retained || store.health?.debugRetention == true,
-            polishing = session?.polishing == true, style = currentStyle.name, notice = notice, undoable = undo, offline = offline.active(), countdown = left != null,
+            actionUntil = actionUntil, polishing = session?.polishing == true, style = currentStyle.name, notice = notice, undoable = undo, offline = offline.active(), countdown = left != null,
             phone = fallback.disclosure.takeIf { onPhone && (active || notice) })
         strip?.status?.isClickable = action() != null || message == ConnectionFailure.OFFLINE
         val disclosure = if (retained || store.health?.debugRetention == true) "Debug retention on. " else ""

@@ -113,7 +113,7 @@ class ScratchpadTest {
         assertEquals("Hello world.", rig.model.field.text)
         assertFalse(rig.model.active)
         assertTrue(rig.wire.closed)
-        compose.onNodeWithText("Added · tap mic to dictate again").assertExists()
+        compose.onNodeWithText("Finished").assertExists()
         compose.onNodeWithText("hello wor").assertDoesNotExist()
         compose.onNodeWithContentDescription("Copy").assertIsEnabled(); compose.onNodeWithContentDescription("Share").assertIsEnabled()
         assertTrue(rig.capture.released)
@@ -176,9 +176,42 @@ class ScratchpadTest {
     @Test fun `cleaned final reports it and an unavailable clean-up keeps the original`() {
         val rig = Rig(context); screen(rig)
         rig.speak(); rig.wire.final("Clean text.", "clean uh text", corrected = true); compose.waitForIdle()
-        compose.onNodeWithText("cleaned").assertExists(); assertEquals("Clean text.", rig.model.field.text)
+        compose.onNodeWithText("Finished").assertExists(); assertEquals("Clean text.", rig.model.field.text)
         rig.speak(); rig.wire.event(ServerEvent.Final("Raw text.", "raw text", false, "unavailable")); compose.waitForIdle()
-        compose.onNodeWithText("kept original").assertExists()
+        compose.onNodeWithText("Kept what was heard").assertExists()
+    }
+
+    @Test fun `a private utterance stays excluded when lock ends the session before final`() {
+        val rig = Rig(context, historyOn = true)
+        PrivateSession.set(true)
+        rig.speak()
+        context.sendBroadcast(Intent(Intent.ACTION_SCREEN_OFF))
+        rig.idle()
+        assertFalse(PrivateSession.enabled)
+        rig.wire.final("Synthetic private final.")
+        assertTrue(rig.history.entries().isEmpty())
+        assertEquals("Synthetic private final.", rig.model.field.text)
+    }
+
+    @Test fun `Use raw replaces only its unchanged insertion and expires without changing text`() {
+        val rig = Rig(context, historyOn = true)
+        rig.model.field = TextFieldValue("Earlier. ", TextRange(9))
+        rig.speak(); rig.wire.final("Clean words.", "raw um words", true)
+        assertTrue(rig.model.rawAvailable)
+        rig.model.useRaw()
+        assertEquals("Earlier. raw um words", rig.model.field.text)
+        assertFalse(rig.model.rawAvailable)
+        assertEquals("raw um words", rig.history.entries().single().text)
+        rig.speak(); rig.wire.final("Next clean.", "next um", true)
+        rig.model.field = TextFieldValue("My edit")
+        rig.model.useRaw()
+        assertEquals("My edit", rig.model.field.text)
+        rig.speak(); rig.wire.final("Last clean.", "last um", true)
+        val clean = rig.model.field.text
+        shadowOf(Looper.getMainLooper()).idleFor(java.time.Duration.ofSeconds(5))
+        assertFalse(rig.model.rawAvailable)
+        rig.model.useRaw()
+        assertEquals(clean, rig.model.field.text)
     }
 
     @Test fun `errors from the Mac show local text and offer the matching action`() {
