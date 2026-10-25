@@ -36,6 +36,12 @@ public enum ActivationMode: String, CaseIterable, Sendable {
         case .holdToTalk: "Hold the hotkey while you talk; let go to finish."
         }
     }
+
+    /// `help`, for a shortcut that is one modifier key (Right ⌥): auto-stop there also lets you hold it to talk.
+    public func help(singleModifierKey: Bool) -> String {
+        guard singleModifierKey, self == .autoStop else { return help }
+        return "Tap once and talk; Chirp stops when you pause, or when you tap again. Or hold the key while you talk and let go to finish."
+    }
 }
 
 public enum DictationEvent: Sendable, Equatable {
@@ -43,6 +49,9 @@ public enum DictationEvent: Sendable, Equatable {
     case hotkeyUp(at: TimeInterval)
     /// The hotkey, a modifier on its own, was part of another shortcut (⌥←): a dictation it just started is dropped.
     case hotkeyChord
+    /// Auto-stop with a modifier held to talk (`HotkeyGesture.holdOrTap`): the press that started this dictation was
+    /// held, and let go, past a tap. Finishes it; ignored when that press did not start the dictation.
+    case holdEnd
     /// "Start/Stop Dictation" in the menu: starts a dictation, or finishes the one under way, in either mode.
     case toggle
     /// Auto-stop: the speaker paused long enough, or never spoke.
@@ -118,6 +127,12 @@ public struct DictationMachine: Sendable {
                 state = .error(Self.holdHint)
                 return [.abort(Self.holdHint)]
             }
+            state = .finalizing
+            return [.finalize]
+
+        case (.connecting, .holdEnd), (.listening, .holdEnd):
+            guard pressStart != nil else { return [] }
+            pressStart = nil
             state = .finalizing
             return [.finalize]
 

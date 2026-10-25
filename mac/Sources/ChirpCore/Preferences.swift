@@ -15,7 +15,8 @@ public final class Preferences: @unchecked Sendable {
         set { defaults.set(newValue, forKey: "serverURL") }
     }
     #if os(macOS)
-    /// One of `KeyCombo.presets` (⌃⌥Space by default) or a recorded shortcut that passed `HotKeyValidation`.
+    /// One of `KeyCombo.presets` (Right ⌥ by default) or a recorded shortcut that passed `HotKeyValidation`. Nothing
+    /// stored means the user never chose one, so they follow the default; a stored choice (⌃⌥Space included) stays.
     public var hotkey: KeyCombo {
         get { KeyCombo.resolve(id: defaults.string(forKey: "hotkey")) }
         set { defaults.set(newValue.id, forKey: "hotkey") }

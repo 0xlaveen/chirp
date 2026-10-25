@@ -467,6 +467,7 @@ struct NotesEmptyState: View {
 /// The shortcut's modifiers and key, one keycap each ("⌃", "⌥", "N").
 enum KeycapRow {
     static func keys(_ title: String) -> [String] {
+        if ModifierKeys.isNamedTitle(title) { return [title] }   // "Right ⌥ Option" is one key
         let symbols = title.prefix { "⌃⌥⇧⌘".contains($0) }.map(String.init)
         let rest = title.dropFirst(symbols.count).trimmingCharacters(in: .whitespaces)
         return symbols + (rest.isEmpty ? [] : [String(rest.split(separator: " ").first ?? Substring(rest))])

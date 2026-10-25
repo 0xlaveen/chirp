@@ -140,6 +140,6 @@ import Testing
         #expect(prefs.openNotesHotkey == .controlOptionShiftN)
         // The dictation hotkey's own fallback is unchanged.
         defaults.set("bogus", forKey: "hotkey")
-        #expect(prefs.hotkey == .controlOptionSpace)
+        #expect(prefs.hotkey == .defaultDictation)
     }
 }

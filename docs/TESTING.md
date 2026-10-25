@@ -116,7 +116,8 @@ Each step needs the operator's hands or approval. Do them in order.
 4. **Build and install:** `./scripts/bundle.sh && ./scripts/install.sh && open ~/Applications/Chirp.app`.
 5. **Grant permissions.** On first launch the app asks for **Microphone** and **Accessibility**; grant both in System Settings → Privacy & Security. Input Monitoring is not needed.
 6. **Dictate:**
-   - Focus any text field, press ⌃⌥Space, speak, then press ⌃⌥Space again. Holding ⌃⌥Space is push-to-talk; Esc cancels.
+   - Focus any text field, hold Right ⌥ Option, speak, then let go: that is push-to-talk. A quick tap starts a hands-free dictation that ends on a pause or the next tap; Esc cancels. The shortcut needs Accessibility (Settings → Dictation shows ⌃⌥Space as an alternative that does not).
+   - Right ⌥ must not get in the way: Left ⌥ + E still types é, Right ⌥ + a key (or a click) does not start dictation, and ⌥-shortcuts in other apps still work.
    - Check that live text appears in the HUD and the final text lands in the field.
    - Try TextEdit, Safari, Slack or VS Code (these paste), and Terminal.
 

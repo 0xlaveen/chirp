@@ -42,7 +42,7 @@ import Testing
         let (defaults, name) = makeDefaults()
         defer { defaults.removePersistentDomain(forName: name) }
         let prefs = Preferences(defaults: defaults)
-        #expect(prefs.hotkey == .controlOptionSpace && prefs.serverURL == ServerConfig.defaultURL.absoluteString)
+        #expect(prefs.hotkey == .rightOption && prefs.serverURL == ServerConfig.defaultURL.absoluteString)
         defaults.set("control-shift-space", forKey: "hotkey")
         defaults.set(true, forKey: "correction")
         #expect(prefs.hotkey == .controlShiftSpace && prefs.correction)
@@ -128,7 +128,7 @@ import Testing
             let h = MenuContent.header(inputs(configure))
             return (h.status, h.tone)
         }
-        #expect(status { _ in } == ("Ready · ⌃⌥Space", .normal))
+        #expect(status { _ in } == ("Ready · Right ⌥ Option", .normal))
         // The same word as the HUD and the Notes window.
         #expect(status { $0.state = .finalizing } == ("Finishing…", .active))
         #expect(status { $0.hotkey = .controlShiftSpace } == ("Ready · ⌃⇧Space", .normal))
@@ -153,7 +153,7 @@ import Testing
     }
 
     @Test func headerReadsAsOneLabelForVoiceOver() {
-        #expect(MenuContent.header(inputs()).accessibilityLabel == "Chirp, Ready · ⌃⌥Space")
+        #expect(MenuContent.header(inputs()).accessibilityLabel == "Chirp, Ready · Right ⌥ Option")
         #expect(MenuContent.header(inputs { $0.paused = true }).accessibilityLabel == "Chirp, Paused")
     }
 
@@ -161,7 +161,7 @@ import Testing
 
     @Test func startDictationShowsTheHotkeyAndTurnsIntoStop() {
         let idle = entry(inputs(), .toggleDictation)
-        #expect(idle?.title == "Start Dictation" && idle?.shortcut == "⌃⌥Space" && idle?.keyEquivalent == nil)
+        #expect(idle?.title == "Start Dictation" && idle?.shortcut == "Right ⌥ Option" && idle?.keyEquivalent == nil)
         #expect(entry(inputs { $0.hotkey = .controlShiftSpace }, .toggleDictation)?.shortcut == "⌃⇧Space")
         #expect(entry(inputs { $0.state = .listening }, .toggleDictation)?.title == "Stop Dictation")
         #expect(entry(inputs { $0.state = .error("x") }, .toggleDictation)?.title == "Start Dictation")
@@ -301,7 +301,7 @@ import Testing
     @Test func rowsKeepOnlyTheirTitleWhenThereIsNoValue() {
         #expect(entry(inputs { $0.micGranted = false }, "Set Up Chirp…")?.accessibilityLabel == "Set Up Chirp…")
         #expect(entry(inputs(), "Settings…")?.accessibilityLabel == "Settings…, ⌘,")
-        #expect(entry(inputs(), "Start Dictation")?.accessibilityLabel == "Start Dictation, ⌃⌥Space")
+        #expect(entry(inputs(), "Start Dictation")?.accessibilityLabel == "Start Dictation, Right ⌥ Option")
     }
 
     // MARK: Set Up Chirp…, footer
@@ -659,10 +659,10 @@ import Testing
             m.hotkeyRegistered = fake.gate.hotkeyRegistered
             return m
         }
-        #expect(MenuContent.header(inputs()).status == "Ready · ⌃⌥Space" && MenuContent.header(inputs()).isOn)
+        #expect(MenuContent.header(inputs()).status == "Ready · Right ⌥ Option" && MenuContent.header(inputs()).isOn)
         fake.gate.pause()
         #expect(MenuContent.header(inputs()).status == "Paused" && !MenuContent.header(inputs()).isOn)
         fake.gate.resume()
-        #expect(MenuContent.header(inputs()).status == "Ready · ⌃⌥Space")
+        #expect(MenuContent.header(inputs()).status == "Ready · Right ⌥ Option")
     }
 }

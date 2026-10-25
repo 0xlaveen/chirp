@@ -28,7 +28,7 @@ Press a hotkey on your Mac, or the mic on your phone, and talk. Your words appea
 
 ## What you get
 
-**Dictate anywhere.** ⌃⌥Space (or any shortcut you record) in any Mac app; auto-stop when you pause, or hold to talk. Optional clean-up on your Mac removes fillers and fixes punctuation, with chat, email, code and notes styles chosen per app, and **Use raw** puts back exactly what you said. On Android, use **Chirp Keyboard** (a full HeliBoard keyboard with a mic key) or **keep Gboard or Samsung Keyboard** and dictate with a floating mic.
+**Dictate anywhere.** Hold **Right ⌥ Option** and talk (or tap it to start, tap again to stop) in any Mac app, or record any shortcut you like; auto-stop when you pause, or hold to talk. Optional clean-up on your Mac removes fillers and fixes punctuation, with chat, email, code and notes styles chosen per app, and **Use raw** puts back exactly what you said. On Android, use **Chirp Keyboard** (a full HeliBoard keyboard with a mic key) or **keep Gboard or Samsung Keyboard** and dictate with a floating mic.
 
 **Notes that remember.** ⌃⌥N on the Mac, or **Record** on Android, turns a long conversation into editable Markdown notes next to the transcript. Every note saves itself into a local library (no Save step), kept until you delete it, with search across notes and transcripts, Recently Deleted, Continue recording and Markdown export. Opt in to **Keep audio with notes** to replay what was said, segment by segment.
 
@@ -78,7 +78,7 @@ For iPhone or iPad, point the agent at [ios/README.md](ios/README.md) → Instal
    ```sh
    ./scripts/install-mac.sh          # server in ~/Library/Application Support/Chirp, Chirp.app in ~/Applications
    ```
-   In **Models on this Mac**, download a speech model (optionally a clean-up model too) and click **Start Local Server**. Grant Microphone and Accessibility in Set Up Chirp, then press **⌃⌥Space** in any text field, or **⌃⌥N** to start a note. Re-running the installer updates the server and restarts Chirp's own LaunchAgent; it never touches a server you started yourself. Details, including `--server-only`: [mac/README.md](mac/README.md#install) and [server/README.md](server/README.md).
+   In **Models on this Mac**, download a speech model (optionally a clean-up model too) and click **Start Local Server**. Grant Microphone and Accessibility in Set Up Chirp, then hold **Right ⌥ Option** in any text field and talk (tap it to start hands-free), or **⌃⌥N** to start a note. Re-running the installer updates the server and restarts Chirp's own LaunchAgent; it never touches a server you started yourself. Details, including `--server-only`: [mac/README.md](mac/README.md#install) and [server/README.md](server/README.md).
 2. **Android.** Build the signed release APK and install the arm64 split:
    ```sh
    android/scripts/setup-toolchain.sh && source ~/.local/share/chirp-android/env.sh

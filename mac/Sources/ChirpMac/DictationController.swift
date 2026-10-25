@@ -62,7 +62,8 @@ final class DictationController {
         register: { [weak self] in
             guard let self else { return false }
             let combo = settings.hotkey
-            self.gesture = HotkeyGesture(mode: settings.activationMode, modifierOnly: combo.isModifierOnly)
+            self.gesture = HotkeyGesture(mode: settings.activationMode, modifierOnly: combo.isModifierOnly,
+                                         singleKey: combo.isSingleModifierKey)
             self.machine.mode = settings.activationMode
             return HotKeyCenter.shared.register(id: Self.dictateID, combo: combo,
                                                 onDown: { [weak self] in self?.hotkeyDown() },

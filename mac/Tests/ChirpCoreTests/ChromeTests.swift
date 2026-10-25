@@ -44,6 +44,9 @@ import Testing
         #expect(OnboardingView.keySymbols("⌃⌥Space") == ["⌃", "⌥", "Space"])
         #expect(OnboardingView.keySymbols("⌃⌥⇧N") == ["⌃", "⌥", "⇧", "N"])
         #expect(OnboardingView.keySymbols("⌥") == ["⌥"])
+        // A modifier on its own is one keycap, named for its side.
+        #expect(OnboardingView.keySymbols("Right ⌥ Option") == ["Right ⌥ Option"])
+        #expect(OnboardingView.keySymbols("⌥ Option") == ["⌥ Option"])
     }
 
     @Test func theWelcomeIntroducesDictationAndNotesAndTheLastStepOffersOpenNotes() {

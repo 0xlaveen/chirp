@@ -110,7 +110,7 @@ public struct MenuInputs: Sendable {
     public var rawOfferKey: String?
     /// The default clean-up style (a profile id); a per-app rule can override it for one dictation.
     public var styleID = CorrectionProfile.defaultID
-    public var hotkey: KeyCombo = .controlOptionSpace
+    public var hotkey: KeyCombo = .defaultDictation
     public var micGranted = true
     public var accessibilityGranted = true
     /// Live Notes is recording (starting or listening); `notesElapsed` is its `mm:ss`.
