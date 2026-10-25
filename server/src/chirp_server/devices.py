@@ -86,6 +86,9 @@ class DeviceStore:
             os.close(fd)
 
     def read(self) -> list[dict]:
+        # Without O_NOFOLLOW (Windows), refuse a symlink explicitly, as the open would on POSIX.
+        if not NOFOLLOW and self.path.is_symlink():
+            raise ValueError("Device token file must be a regular file")
         try:
             fd = os.open(self.path, os.O_RDONLY | NOFOLLOW)
         except FileNotFoundError:

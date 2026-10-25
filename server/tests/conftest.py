@@ -47,6 +47,14 @@ def launchd(monkeypatch):
         monkeypatch.setattr(os, "getuid", lambda: 0, raising=False)
 
 
+def pytest_make_parametrize_id(config, val, argname):
+    """Short ids for long string/bytes parameters: pytest puts the test id in the
+    PYTEST_CURRENT_TEST variable, and Windows caps environment variables at 32,767 characters."""
+    if isinstance(val, str | bytes) and len(val) > 80:
+        return f"{type(val).__name__}-{len(val)}"
+    return None
+
+
 def has_mode(path, mode) -> bool:
     """Owner-only access: exactly `mode` on POSIX; an owner-only access list on Windows, which
     has no mode bits."""

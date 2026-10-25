@@ -38,7 +38,7 @@ jobs:
 
   windows:
     runs-on: windows-latest
-    timeout-minutes: 40
+    timeout-minutes: 25
     defaults:
       run:
         shell: bash
@@ -53,13 +53,9 @@ jobs:
           enable-cache: true
           cache-dependency-glob: server/uv.lock
       - run: uv sync --locked --extra onnx
-      # Each file in its own Job Object (process/memory caps, kill on close) so a runaway test
-      # cannot wedge the runner; reports processes and peak memory per file.
-      - name: pytest, file by file
-        run: >-
-          .venv/Scripts/python.exe scripts/windows_test_driver.py -q -rfE --tb=short
-          -p no:cacheprovider -o faulthandler_timeout=45
-        timeout-minutes: 30
+      # pyproject deselects -m model; the real ONNX server runs in windows-onnx below.
+      - run: uv run pytest -q
+        timeout-minutes: 15
 
   windows-onnx:
     runs-on: windows-latest
@@ -99,5 +95,5 @@ jobs:
           )"
       # A real chirp-server process on a free port with a throwaway home: ONNX Parakeet
       # transcribes the committed synthetic clip over /v1/transcribe and /v1/stream.
-      - run: timeout -k 10 480 .venv/Scripts/python.exe -m pytest -v -m onnx -rs -o faulthandler_timeout=240 tests/test_onnx_smoke.py
+      - run: uv run pytest -q -m onnx -rs
         timeout-minutes: 10
