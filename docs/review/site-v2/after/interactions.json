@@ -1,0 +1,11 @@
+{
+  "skipFirst": true,
+  "skipWorks": true,
+  "themeDark": true,
+  "themePersists": true,
+  "reducedMotion": true,
+  "matrixKeyboardScroll": true,
+  "comparisonDisclosure": true,
+  "faqKeyboard": true,
+  "noOverflow": true
+}

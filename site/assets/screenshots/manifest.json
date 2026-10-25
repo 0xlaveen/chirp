@@ -43,6 +43,28 @@
       }
     ]
   },
+  "android/gaps/launcher-widget-default-light.png": {
+    "sha256": "5bdcd076af17d3179ba5a7f9f0746d687092bbb494b4297b5300c22ea2ca7ca4",
+    "width": 733,
+    "height": 760,
+    "variants": [
+      {
+        "file": "android/gaps/launcher-widget-default-light-320.webp",
+        "width": 320,
+        "height": 332
+      },
+      {
+        "file": "android/gaps/launcher-widget-default-light-640.webp",
+        "width": 640,
+        "height": 664
+      },
+      {
+        "file": "android/gaps/launcher-widget-default-light-733.webp",
+        "width": 733,
+        "height": 760
+      }
+    ]
+  },
   "android/keepkb-choice-cover-dark.png": {
     "sha256": "a32ec59eaaa582e2ced15d7b9db11d016e2403e2fc5e69f62c45ef08a39f7905",
     "width": 411,
@@ -448,6 +470,60 @@
         "file": "android/share-to-notes-dialog-cover-light-360.webp",
         "width": 360,
         "height": 268
+      }
+    ]
+  },
+  "ios/ipad-dark-sidebar-dictate.png": {
+    "sha256": "c49a3ad151111c33c34846c7b7277b7fffdd97f4536e8734e81d3ae182a25d5c",
+    "width": 1500,
+    "height": 1125,
+    "variants": [
+      {
+        "file": "ios/ipad-dark-sidebar-dictate-320.webp",
+        "width": 320,
+        "height": 240
+      },
+      {
+        "file": "ios/ipad-dark-sidebar-dictate-640.webp",
+        "width": 640,
+        "height": 480
+      },
+      {
+        "file": "ios/ipad-dark-sidebar-dictate-960.webp",
+        "width": 960,
+        "height": 720
+      },
+      {
+        "file": "ios/ipad-dark-sidebar-dictate-1440.webp",
+        "width": 1440,
+        "height": 1080
+      }
+    ]
+  },
+  "ios/ipad-sidebar-dictate.png": {
+    "sha256": "793711e0be542fc7587259d90a1fa71b3ddfc6ad6b21c5fd67b7dcd9f904d495",
+    "width": 1500,
+    "height": 1125,
+    "variants": [
+      {
+        "file": "ios/ipad-sidebar-dictate-320.webp",
+        "width": 320,
+        "height": 240
+      },
+      {
+        "file": "ios/ipad-sidebar-dictate-640.webp",
+        "width": 640,
+        "height": 480
+      },
+      {
+        "file": "ios/ipad-sidebar-dictate-960.webp",
+        "width": 960,
+        "height": 720
+      },
+      {
+        "file": "ios/ipad-sidebar-dictate-1440.webp",
+        "width": 1440,
+        "height": 1080
       }
     ]
   },

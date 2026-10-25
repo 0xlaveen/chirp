@@ -33,7 +33,7 @@ FORBIDDEN = [
     (re.compile(r"/(?:Users|home)/[A-Za-z]"), "personal path"),
     (re.compile(r"token=(?!…|&hellip;|&lt;)[A-Za-z0-9_-]"), "pairing token"),
     (re.compile(r"\b100\.(?:6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.\d+\.\d+\b"), "tailnet address"),
-    (re.compile(r"\b(?:(?:192\.168|10)\.\d+\.\d+(?:\.\d+)?|172\.(?:1[6-9]|2\d|3[01])\.\d+\.\d+)\b"), "private address"),
+    (re.compile(r"\b(?:192\.168\.\d+\.\d+|10\.\d+\.\d+\.\d+|172\.(?:1[6-9]|2\d|3[01])\.\d+\.\d+)\b"), "private address"),
     (re.compile(r"@import|url\((?:[\"']?)(?:https?:)?//", re.I), "external CSS resource"),
     (re.compile(r"google-analytics|googletagmanager|plausible|gtag\(", re.I), "tracker"),
 ]
@@ -108,12 +108,13 @@ def render(layout, page, manifest, used):
     canonical = PUBLIC + ('' if out == 'index.html' else out)
     preload = ''
     if out == 'index.html':
+        preload = '<link rel="preload" as="image" href="assets/pond-256.webp" imagesrcset="assets/pond-128.webp 128w, assets/pond-256.webp 256w" imagesizes="(max-width: 760px) 46px, 88px">\n'
         main, dark = shot_sources('mac/notes-library')
         for name, media in [(main, '(prefers-color-scheme: light)'), (dark, '(prefers-color-scheme: dark)')]:
             if name:
                 entry = manifest[name]
                 preload += f'<link rel="preload" as="image" href="{root}assets/screenshots/{entry["variants"][-1]["file"]}" imagesrcset="{srcset(entry, root)}" imagesizes="(max-width: 760px) calc(100vw - 48px), (max-width: 1050px) 44vw, 560px" media="{media}">\n'
-    values = {'content': body.strip(), 'title': html.escape(meta['title']), 'description': html.escape(meta['description'], quote=True), 'root': root, 'repo': REPO, 'body_class': meta.get('class', ''), 'canonical': canonical, 'social_image': PUBLIC + 'assets/chirp-icon.png', 'preload': preload, 'robots': 'noindex' if out == '404.html' else 'index, follow'}
+    values = {'content': body.strip(), 'title': html.escape(meta['title']), 'description': html.escape(meta['description'], quote=True), 'root': root, 'repo': REPO, 'body_class': meta.get('class', ''), 'canonical': canonical, 'social_image': PUBLIC + 'assets/pond.webp', 'preload': preload, 'robots': 'noindex' if out == '404.html' else 'index, follow'}
     doc = layout
     for name in ('home', 'guides', 'changelog'):
         values[f'current_{name}'] = ' aria-current="page"' if meta.get('section') == name else ''
@@ -145,6 +146,7 @@ class Document(HTMLParser):
 
 
 def check(out_dir):
+    out_dir = out_dir.resolve()
     errors = []
     docs = {p.resolve(): Document(p.read_text()) for p in out_dir.rglob('*.html')}
     def local(ref, parent):
@@ -181,7 +183,11 @@ def check(out_dir):
                 if attrs.get('decoding') != 'async' or attrs.get('loading') not in {'lazy', 'eager'}:
                     errors.append(f'{name}: image needs explicit loading and async decoding')
             fetch = attrs.get('src') if tag in {'script', 'img', 'source', 'iframe', 'video', 'audio'} else attrs.get('href') if tag == 'link' and attrs.get('rel') in {'stylesheet', 'preload', 'icon', 'apple-touch-icon'} else None
-            if fetch and (urlsplit(fetch).scheme or fetch.startswith('//')):
+            resources = [fetch] if fetch else []
+            if tag in {'img', 'source'} or (tag == 'link' and attrs.get('rel') == 'preload'):
+                for key in ('srcset', 'imagesrcset'):
+                    resources.extend(item.strip().split()[0] for item in attrs.get(key, '').split(',') if item.strip())
+            if any(urlsplit(resource).scheme or resource.startswith('//') for resource in resources):
                 errors.append(f'{name}: external request from {tag}')
         for ref in doc.refs:
             target, anchor = (path, ref[1:]) if ref.startswith('#') else local(ref, path.parent)
@@ -233,10 +239,15 @@ def main():
         if hashlib.sha256((SHOTS / source).read_bytes()).hexdigest() != entry['sha256']:
             raise SystemExit(f'Stale screenshot: {source}; run site/prepare_images.py')
     shutil.copytree(SITE / 'assets', out_dir / 'assets')
+    (out_dir / '.nojekyll').write_text('')
     shutil.copy2(ICON, out_dir / 'assets/chirp-icon.png')
-    # Use the approved glyph and the committed 256px pond icon byte for byte.
-    # The full 1024px artwork is over the site's image budget and is not shipped.
-    shutil.copy2(ART / 'approved-glyph.png', out_dir / 'assets/glyph.png')
+    # Artwork is converted for delivery without cropping or redrawing; source hashes prevent drift.
+    artwork = json.loads((SITE / 'assets/artwork.json').read_text())
+    for name, entry in artwork.items():
+        if hashlib.sha256((ART / entry['source']).read_bytes()).hexdigest() != entry['sha256']:
+            raise SystemExit('Stale approved artwork; run site/prepare_images.py')
+        if webp_size(out_dir / 'assets' / name) != (entry['width'], entry['height']):
+            raise SystemExit('Artwork dimensions differ from the approved source')
     layout = (SITE / 'layout.html').read_text()
     used = set()
     urls = []
