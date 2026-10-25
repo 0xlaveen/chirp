@@ -27,6 +27,10 @@ final class SettingsWindowController: NSObject, NSTextFieldDelegate {
     var onPairPhone: (() -> Void)?
     var onOpenNotes: (() -> Void)?
     var onRemoveSpeakerModel: (() -> Void)?
+    /// Notes › Speakers › Label speakers flipped (the Notes session asks before any download).
+    var onSpeakerLabels: ((Bool) -> Void)?
+    /// A Live Notes recording is running: Label speakers waits for the next one.
+    var notesRecording: () -> Bool = { false }
     /// Live Notes voice profiles (Settings › Notes › Voices).
     var voices: SpeakerVoices?
     /// The Notes library: Recently Deleted's count and the kept-audio total, and the two bulk actions on them.
@@ -97,6 +101,8 @@ final class SettingsWindowController: NSObject, NSTextFieldDelegate {
         s.serverOffersStyles = health == nil || health?.correctionProfiles != nil
         s.keepLoaded = keepLoaded
         s.speakerModelDownloaded = SpeakerModel.hasFiles()
+        s.speakerLabels = settings.notesSpeakerLabels
+        s.speakerLabelsLocked = notesRecording()
         s.voices = voicesState
         s.inputs = InputDevice.all().map(\.input)
         s.defaultInput = InputDevice.systemDefault()?.input
@@ -348,6 +354,8 @@ final class SettingsWindowController: NSObject, NSTextFieldDelegate {
         form.chooseExport.action = #selector(chooseExportFolder)
         form.resetExport.target = self
         form.resetExport.action = #selector(resetExportFolder)
+        form.labelSpeakers.target = self
+        form.labelSpeakers.action = #selector(toggleSpeakerLabels(_:))
         form.structureNotes.target = self
         form.structureNotes.action = #selector(toggleStructureNotes(_:))
         form.autoReorganize.target = self
@@ -541,6 +549,12 @@ final class SettingsWindowController: NSObject, NSTextFieldDelegate {
 
     @objc private func toggleStructureNotes(_ sender: NSButton) {
         settings.setNotesStructure(sender.state == .on, health: health())
+    }
+
+    @objc private func toggleSpeakerLabels(_ sender: NSButton) {
+        onSpeakerLabels?(sender.state == .on)
+        // On waits for the consent (and download); the box shows what the switch is now.
+        refresh()
     }
 
     @objc private func toggleAutoReorganize(_ sender: NSButton) {

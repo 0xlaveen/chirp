@@ -150,6 +150,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         notesWindow.onOpenModels = { [localModelsWindow] in localModelsWindow.show() }
         settingsWindow.onRemoveSpeakerModel = { [notes] in notes.removeSpeakerModel() }
+        settingsWindow.onSpeakerLabels = { [notes] on in notes.setSpeakerLabels(on) }
+        settingsWindow.notesRecording = { [notes] in notes.isActive }
         notes.onSpeakerModelChange = { [settingsWindow] in settingsWindow.speakerModelChanged() }
         settingsWindow.voices = notes.voices
         notes.voices.confirm = { [settingsWindow] prompt, done in settingsWindow.confirmVoiceDownload(prompt, done: done) }

@@ -248,7 +248,8 @@ final class NotesWindowController: NSObject, NSWindowDelegate {
         }
     }
 
-    /// The one-time speaker model download asks first: nothing downloads without "Download".
+    /// The one-time speaker model download asks first: nothing downloads without "Download". A sheet on the Notes
+    /// window when the switch was flipped there, else a dialog of its own (Settings › Notes).
     private func confirmSpeakerDownload(_ message: String, done: @escaping (Bool) -> Void) {
         let alert = NSAlert()
         alert.messageText = "Download the speaker model?"
@@ -256,7 +257,7 @@ final class NotesWindowController: NSObject, NSWindowDelegate {
         alert.addButton(withTitle: "Download")
         alert.addButton(withTitle: "Cancel")
         let handle: (NSApplication.ModalResponse) -> Void = { done($0 == .alertFirstButtonReturn) }
-        if let window, window.isVisible {
+        if let window, window.isVisible, window.isKeyWindow || !NSApp.isActive {
             alert.beginSheetModal(for: window, completionHandler: handle)
         } else {
             handle(alert.runModal())

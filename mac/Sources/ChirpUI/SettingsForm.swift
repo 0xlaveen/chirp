@@ -63,6 +63,10 @@ public struct SettingsState: Sendable {
     public var serverHost = "this Mac"
     /// Some of Live Notes' speaker-label model is on this Mac, complete or not (Remove deletes it).
     public var speakerModelDownloaded = false
+    /// Notes › Speakers: "Label speakers" (the same switch as the Notes window's ✦ menu), and whether a recording
+    /// holds it (it applies from the next Record).
+    public var speakerLabels = false
+    public var speakerLabelsLocked = false
     /// Notes › Voices: "Recognize saved voices", the voice model and the saved voices.
     public var voices = VoiceProfilesState()
     /// Dictation: every input device, the system default among them, and the one the user picked (nil follows the default).
@@ -244,6 +248,8 @@ public final class SettingsForm {
     /// Devices: the phones paired with their own token, each with Revoke; and the advanced shared-token rotation.
     public let devicesView = DevicesView()
     public let rotateButton = NSButton(title: "Rotate Shared Token…", target: nil, action: nil)
+    /// Notes: "Label speakers"; turning it on the first time asks before the one-time model download.
+    public let labelSpeakers = NSButton(checkboxWithTitle: "Label speakers", target: nil, action: nil)
     /// Notes: deletes Live Notes' on-device speaker model (shown beside its status while it is on this Mac).
     public let removeSpeakerModel = NSButton(title: "Remove", target: nil, action: nil)
     private let speakerStatus = StatusLine()
@@ -350,6 +356,7 @@ public final class SettingsForm {
             notesRetention.addItem(withTitle: Self.retentionTitle(r))
             notesRetention.lastItem?.representedObject = r.rawValue
         }
+        labelSpeakers.setAccessibilityLabel("Label speakers in Live Notes")
         structureNotes.setAccessibilityLabel("Structure notes by default")
         autoReorganize.setAccessibilityLabel("Auto-reorganize by default")
         keepAudio.setAccessibilityLabel("Keep audio with notes")
@@ -422,6 +429,7 @@ public final class SettingsForm {
                 row(nil, autoReorganize, help: Self.help("Tidies the notes in the background as they grow.")),
             ], footnote: Self.help("Defaults for new recordings. The ✦ menu in the Notes window changes them while you record.")),
             SettingsSection("Speakers", [
+                row(nil, labelSpeakers, help: Self.help("Shows who said what as Person 1, Person 2… in the transcript, the notes and exports. Voices are told apart on this Mac only.")),
                 row(nil, stack([speakerStatus, speakerHelp])),
                 row("Saved voices", voicesView, stacked: true),
             ]),
@@ -645,10 +653,14 @@ public final class SettingsForm {
         speakerStatus.set(symbol: s.speakerModelDownloaded ? "checkmark.circle.fill" : "circle", tone: s.speakerModelDownloaded ? .ok : .normal,
                           text: s.speakerModelDownloaded ? "Speaker model on this Mac" : "Speaker model not downloaded")
         removeSpeakerModel.isHidden = !s.speakerModelDownloaded
+        // Every refresh: the ✦ menu, a consent or Remove can flip it while Settings is open.
+        labelSpeakers.state = s.speakerLabels ? .on : .off
+        labelSpeakers.isEnabled = !s.speakerLabelsLocked
+        labelSpeakers.toolTip = s.speakerLabelsLocked ? "Applies from the next recording: stop the current one to change it." : nil
         voicesView.apply(s.voices)
         speakerHelp.stringValue = s.speakerModelDownloaded
             ? "Labels who is talking in Live Notes, on this Mac. Removing it turns labels off until you download it again."
-            : "Live Notes downloads it only when you turn on Label speakers in the Notes window, and asks first."
+            : "Downloaded only when you turn on Label speakers (here or in the Notes window's ✦ menu), after you agree."
         micStatus.set(symbol: s.micGranted ? "checkmark.circle.fill" : "exclamationmark.triangle.fill",
                       tone: s.micGranted ? .ok : .warning, text: s.micGranted ? "Microphone allowed" : "Microphone not allowed")
         accessibilityStatus.set(symbol: s.accessibilityGranted ? "checkmark.circle.fill" : "exclamationmark.triangle.fill",
