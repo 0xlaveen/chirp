@@ -77,6 +77,7 @@ final class LiveNotesController: ObservableObject {
     @Published private(set) var recentlyDeleted: [NotesLibraryEntry] = []
     @Published private(set) var recordingID: UUID?
     @Published private(set) var recordingElapsed: TimeInterval = 0
+    @Published private(set) var recordingPreview = ""
     @Published private(set) var totalAudioBytes = 0
     @Published private(set) var libraryReady = false
     @Published private(set) var undoDeleted: [UUID] = []
@@ -151,15 +152,7 @@ final class LiveNotesController: ObservableObject {
         if let record { recorder.restore(record.document, elapsed: record.elapsed) }
         let context = NoteSession(recorder)
         context.textBefore = recorder.document.text
-        if let store = deps.store {
-            context.journal = NotesJournal(store: store.journalStore, enabled: false,
-                library: preferences.keepNotes ? library : nil, sleep: deps.sleep)
-            context.journal?.onWrite = { [weak self] bytes, _ in
-                guard let self else { return }
-                if bytes == nil { self.notice = "Notes could not be kept. Unlock this device and try again." }
-                self.refreshRows()
-            }
-        }
+        context.journal = makeJournal()
         recorder.onChange = { [weak self, weak context] in
             guard let context else { return }
             self?.sync(context)
@@ -173,6 +166,25 @@ final class LiveNotesController: ObservableObject {
         }
         sessions[recorder.document.id] = context
         return context
+    }
+
+    private func makeJournal() -> NotesJournal? {
+        guard let store = deps.store else { return nil }
+        let journal = NotesJournal(store: store.journalStore, enabled: false,
+            library: preferences.keepNotes ? library : nil, sleep: deps.sleep)
+        journal.onWrite = { [weak self] bytes, _ in
+            guard let self else { return }
+            if bytes == nil { self.notice = "Notes could not be kept. Unlock this device and try again." }
+            self.refreshRows()
+        }
+        return journal
+    }
+
+    func shutdown() {
+        for context in sessions.values { context.recorder.onChange = nil; context.recorder.cancel() }
+        deps.audio.stop()
+        stopTick?(); stopTick = nil
+        observers.forEach(NotificationCenter.default.removeObserver); observers = []
     }
 
     private func loadLibrary() async {
@@ -322,6 +334,7 @@ final class LiveNotesController: ObservableObject {
         configure()
         notice = ""
         await endingActivity?.value
+        recordingPreview = recorder.document.snippet()
         recordingID = recorder.document.id
         library?.setRecordingNote(recordingID)
         recorder.start()
@@ -480,9 +493,7 @@ final class LiveNotesController: ObservableObject {
         preferences.keepNotes = on
         for context in sessions.values {
             context.journal?.flush()
-            context.journal = deps.store.map {
-                NotesJournal(store: $0.journalStore, enabled: false, library: on ? library : nil, sleep: deps.sleep)
-            }
+            context.journal = makeJournal()
         }
         save()
         sync()
@@ -579,6 +590,7 @@ final class LiveNotesController: ObservableObject {
                 if state != .paused { pausedForInterruption = false }
             }
             recordingElapsed = recorder.elapsed
+            if recordingPreview.isEmpty { recordingPreview = recorder.document.snippet() }
             updateActivity()
             if !state.isActive { recordingID = nil; library?.setRecordingNote(nil) }
         }

@@ -159,7 +159,7 @@ struct NoteDetailView: View {
                 .buttonStyle(.bordered).buttonBorderShape(.capsule).keyboardShortcut("p", modifiers: [.command, .shift])
                 .accessibilityIdentifier("chirp.notes.pause")
             Button("Stop", systemImage: "stop.fill") { Task { await notes.stop() } }
-                .buttonStyle(.borderedProminent).buttonBorderShape(.capsule).tint(Color.chirp.record)
+                .buttonStyle(.borderedProminent).buttonBorderShape(.capsule).tint(Color.chirp.record).foregroundStyle(Color.chirp.onKoi)
                 .keyboardShortcut("r", modifiers: [.command, .shift]).accessibilityIdentifier("chirp.notes.stop")
         } else if notes.state == .stopping {
             ProgressView("Finishing…").accessibilityIdentifier("chirp.notes.finishing")
@@ -168,6 +168,7 @@ struct NoteDetailView: View {
                 Button("Pair Mac", systemImage: "qrcode.viewfinder", action: pair).buttonStyle(.bordered).accessibilityIdentifier("chirp.notes.pair")
             }
             Button(notes.document.sessions.isEmpty ? "Record" : "Continue recording", systemImage: "record.circle") {
+                player.stop()
                 if notes.isActive { confirmSwitch = true } else { Task { await notes.record() } }
             }.buttonStyle(.borderedProminent).buttonBorderShape(.capsule).tint(Color.chirp.koi).foregroundStyle(Color.chirp.onKoi)
                 .disabled(!notes.paired || notes.starting || session.armed)
@@ -219,11 +220,20 @@ struct NoteDetailView: View {
                                 Spacer()
                                 if notes.hasAudio(index) {
                                     Button(player.segment == index ? "Stop replay" : "Play segment", systemImage: player.segment == index ? "stop.fill" : "play.fill") {
-                                        Task {
-                                            if player.segment == index { player.stop() }
-                                            else if let data = try? await notes.audioData(segment: index) { player.play(data, segment: index) }
+                                        if player.segment == index { player.stop() }
+                                        else {
+                                            let request = player.beginLoading(), id = notes.document.id
+                                            Task {
+                                                do {
+                                                    let data = try await notes.audioData(segment: index)
+                                                    guard notes.document.id == id, player.accepts(request), !notes.isActive, !session.armed else { return }
+                                                    if let data { player.play(data, segment: index) } else { player.failed() }
+                                                } catch { if player.accepts(request) { player.failed() } }
+                                            }
                                         }
                                     }.font(.caption).buttonStyle(.bordered).buttonBorderShape(.capsule)
+                                        .disabled(notes.isActive || session.armed)
+                                        .accessibilityHint(notes.isActive || session.armed ? "Stop recording to replay kept audio" : "Plays this speech segment")
                                         .accessibilityIdentifier("chirp.notes.play.\(index)")
                                 }
                             }
@@ -265,16 +275,22 @@ private final class NotesSegmentPlayer: NSObject, ObservableObject, AVAudioPlaye
     @Published private(set) var segment: Int?
     @Published private(set) var error: String?
     private var player: AVAudioPlayer?
+    private var request = 0
+    func beginLoading() -> Int { stop(); error = nil; return request }
+    func accepts(_ value: Int) -> Bool { request == value }
+    func failed() { stop(); error = "This audio could not be played. Try another segment." }
     func play(_ data: Data, segment: Int) {
         stop()
         do {
+            try AVAudioSession.sharedInstance().setCategory(.playback, options: .mixWithOthers)
+            try AVAudioSession.sharedInstance().setActive(true)
             let player = try AVAudioPlayer(data: data)
             self.player = player; player.delegate = self
             guard player.play() else { throw SessionFailure.audio }
             self.segment = segment
-        } catch { self.error = "This audio could not be played."; stop() }
+        } catch { failed() }
     }
-    func stop() { player?.stop(); player = nil; segment = nil }
+    func stop() { request += 1; player?.stop(); player = nil; segment = nil }
     nonisolated func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
         Task { @MainActor in if self.player === player { self.stop() } }
     }

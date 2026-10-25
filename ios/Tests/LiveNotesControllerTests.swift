@@ -21,7 +21,7 @@ struct LiveNotesControllerTests {
         let values: Values
         let store: NotesStore
         let root: URL
-        func clean() { notes.recorder.cancel(); audio.stop(); try? FileManager.default.removeItem(at: root) }
+        func clean() { notes.shutdown(); audio.stop(); try? FileManager.default.removeItem(at: root) }
         /// Journal files on disk (polling `recoverable()` would delete a write's temp file mid-write).
         var journalFiles: [String] {
             ((try? FileManager.default.contentsOfDirectory(atPath: store.recoveryDirectory.path)) ?? []).filter { $0.hasSuffix(".json") }

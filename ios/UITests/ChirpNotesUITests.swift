@@ -53,6 +53,10 @@ final class ChirpNotesUITests: XCTestCase {
         XCTAssertTrue(Self.waitFor(status, "label == 'Recording'"))
         XCTAssertTrue(Self.waitFor(Self.element("chirp.notes.partial", in: app), "label == 'synthetic words'"))
         screenshot("notes-recording", app)
+        backToLibrary(app)
+        XCTAssertTrue(app.buttons["chirp.notes.recordingRow"].waitForExistence(timeout: 5))
+        screenshot("notes-library-recording", app)
+        app.buttons["chirp.notes.recordingRow"].tap()
         app.buttons["chirp.notes.pause"].tap()
         XCTAssertTrue(Self.waitFor(status, "label BEGINSWITH 'Paused'"))
         XCTAssertTrue(app.staticTexts["Synthetic words."].waitForExistence(timeout: 15))
@@ -131,6 +135,13 @@ final class ChirpNotesUITests: XCTestCase {
         else { app.buttons["chirp.notes.transcript.open"].tap() }
         app.buttons["chirp.notes.edit"].tap(); screenshot("notes-reading-edit", app)
         app.buttons["chirp.notes.edit"].tap()
+        app.buttons["chirp.notes.title"].tap()
+        let title = app.textFields["chirp.notes.title.editor"]
+        XCTAssertTrue(title.waitForExistence(timeout: 5))
+        title.tap()
+        title.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: 64) + "Launch notes")
+        app.buttons["Done"].firstMatch.tap()
+        XCTAssertTrue(app.buttons["chirp.notes.title"].waitForExistence(timeout: 5))
         backToLibrary(app)
         app.buttons["Search notes"].tap()
         let search = app.searchFields.firstMatch

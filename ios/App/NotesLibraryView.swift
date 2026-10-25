@@ -20,6 +20,7 @@ struct NotesLibraryView: View {
     @State private var settings = false
     @State private var selecting = false
     @State private var selection = Set<UUID>()
+    @State private var visibleRows = Set<UUID>()
     @FocusState private var searchFocused: Bool
     @FocusState private var listFocused: Bool
 
@@ -113,7 +114,7 @@ struct NotesLibraryView: View {
                                     VStack(alignment: .leading, spacing: 8) {
                                         Text(notes.recordingTitle).font(.system(.headline, design: .serif)).foregroundStyle(Color.chirp.ink)
                                         Text(clock(notes.recordingElapsed)).font(ChirpType.timer()).foregroundStyle(Color.chirp.record)
-                                        Text(notes.entries.first { $0.id == id }?.snippet ?? "Listening…")
+                                        Text(notes.recordingPreview.isEmpty ? "Listening…" : notes.recordingPreview)
                                             .font(.subheadline).foregroundStyle(Color.chirp.inkMuted).lineLimit(2)
                                     }
                                 }.padding(.vertical, 8)
@@ -191,7 +192,13 @@ struct NotesLibraryView: View {
         }.buttonStyle(.plain)
             .listRowBackground(selectedID == entry.id.uuidString ? Color.chirp.koiContainer : .chirp.surface)
             .listRowSeparator(.hidden).listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
-            .id(entry.id.uuidString).accessibilityElement(children: .combine)
+            .id(entry.id.uuidString)
+            .onScrollVisibilityChange(threshold: 0.5) { visible in
+                if visible { visibleRows.insert(entry.id) } else { visibleRows.remove(entry.id) }
+                let ordered = query.isEmpty ? notes.entries : results.map(\.entry)
+                if let first = ordered.first(where: { visibleRows.contains($0.id) }) { scrollID = first.id.uuidString }
+            }
+            .accessibilityElement(children: .combine)
             .accessibilityIdentifier("chirp.notes.row.\(entry.id.uuidString)")
             .accessibilityAction(named: "Delete") { Task { await notes.delete([entry.id]) } }
             .accessibilityAction(named: "Select") { selecting = true; selection.insert(entry.id) }
