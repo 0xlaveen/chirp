@@ -66,18 +66,20 @@ The Mac mini has no built-in microphone. Chirp follows the system default input 
 
 ### Hotkey
 
-- **⌃⌥Space** by default; pick **⌥ Option**, **Right ⌥ Option**, ⌃⇧Space or ⌃⌥⌘Space in Settings → Dictation → Shortcuts, or press **Record Shortcut…** there and type your own — any key combination, a bare F-key, or a modifier pressed and released on its own (⌥, Right ⌥, ⌘, fn, ⌃⌥…). The hotkey lives only in Settings; the menu just shows it.
+- **Right ⌥ Option** by default, on its own: hold it to talk, or tap it to start and tap again to stop. Anyone who already picked a shortcut keeps it, and a Mac that never chose one starts using Right ⌥ after the update. Pick **⌃⌥Space**, **⌥ Option**, ⌃⇧Space or ⌃⌥⌘Space in Settings → Dictation → Shortcuts, or press **Record Shortcut…** there and type your own — any key combination, a bare F-key, or a modifier pressed and released on its own (⌥, Right ⌥, ⌘, fn, ⌃⌥…). The hotkey lives only in Settings; the menu just shows it.
 - **fn / 🌐 alone:** in macOS System Settings → Keyboard, set **Press 🌐 key to → Do Nothing** so macOS does not also open emoji, switch input sources or start Apple Dictation. Chirp shows this setup step and an **Open Keyboard Settings…** button when fn alone is selected; Chirp does not change the system setting for you.
 - **Mode** (Settings → Dictation):
   - **Auto-stop** (default): press once and talk; Chirp stops after a pause (1–5 s of quiet, 2 s by default, judged against the room's noise floor) or when you press again. With nothing said it stops after 10 s.
   - **Hold to talk**: hold the hotkey while you talk, let go to finish. A press shorter than 300 ms is dropped with a "Hold the hotkey while you talk" hint.
-- A modifier on its own only counts when used alone: with another key or a click (⌥←, ⌥-click) it does nothing, and a dictation that press started is dropped. Hold to talk starts once it has been held alone for 200 ms; auto-stop takes a clean tap under 0.5 s.
+- A modifier on its own only counts when used alone: with another key or a click (⌥←, ⌥-click) it does nothing, and a dictation that press started is dropped. Hold to talk starts once it has been held alone for 200 ms; auto-stop takes a clean tap under 0.5 s. A modifier that is one physical key (Right ⌥, the default, or Right ⌘…) does both in auto-stop: a tap starts a hands-free dictation, a hold talks until let go. The other side's key never counts, so Left ⌥ still types é and ⌥-shortcuts in other apps still work; Right ⌥ + another key, or a click, is not a press.
 
-  | With a modifier alone (⌥) | Auto-stop | Hold to talk |
-  | --- | --- | --- |
-  | Tap under 200 ms | starts, or stops the dictation under way | nothing |
-  | Held alone 200–500 ms | starts, or stops the dictation under way | starts at 200 ms, then is dropped with the hint (under 300 ms after it started) |
-  | Held alone 0.5 s or longer | nothing (not a tap) | dictates until let go |
+  | With a modifier alone | Auto-stop (⌥ either side) | Auto-stop (one key, Right ⌥) | Hold to talk |
+  | --- | --- | --- | --- |
+  | Tap under 200 ms | starts, or stops the dictation under way | starts, or stops the dictation under way | nothing |
+  | Held alone 200–500 ms | starts, or stops the dictation under way | starts at 200 ms and keeps running after the release (a slow tap) | starts at 200 ms, then is dropped with the hint (under 300 ms after it started) |
+  | Held alone 0.5 s or longer | nothing (not a tap) | dictates until let go | dictates until let go |
+
+  Right ⌥ is matched from an event tap, so it needs Accessibility (the menu says "hotkey needs Accessibility" until it is granted); ⌃⌥Space does not.
   | Another key, modifier or click while held (⌥←, ⌥⌫, ⌥E, ⌥⌘…, ⌥-click), including key repeat | nothing | before 200 ms nothing; after, the dictation is dropped |
   | ⌘ or another modifier already held when ⌥ goes down | nothing until ⌥ is let go | nothing until ⌥ is let go |
   | macOS turns the event tap off (`tapDisabledByTimeout`, secure input) | back on at once, and a release it missed still ends the press, so the next tap counts | same; a dictation whose release was missed stops when the tap is back |
@@ -209,11 +211,11 @@ Click the bird in the menu bar. The menu holds what you do now and the two choic
 
 ```
 Chirp                                   [switch]
-● Ready · ⌃⌥Space                                      dot: lily ready, moon loading, red error, ring paused
+● Ready · Right ⌥ Option                                      dot: lily ready, moon loading, red error, ring paused
 ─────────────
 ◉ Recording "Standup" 03:12 — Stop                     only while a note records (⏸ Paused … — Resume while paused)
 ─────────────
-Start Dictation                          ⌃⌥Space
+Start Dictation                  Right ⌥ Option
 New Note                                     ⌃⌥N
 ─────────────
 Recent Notes                                     ›     the five most recently edited notes
@@ -233,7 +235,7 @@ Quit Chirp                                    ⌘Q
 | Row | What it does |
 |---|---|
 | Header switch | Pauses and resumes Chirp. Off releases the dictation hotkey (and the Use raw, New Note and Notes library shortcuts), ends a dictation under way, stops a recording note (keeping it), disables Start Dictation and dims the menu-bar bird; on registers the hotkey again. Nothing else, including the shortcut recorder or a changed shortcut, brings the hotkey back while paused. The pause is not remembered: a relaunch resumes. |
-| Status line | Under the name, after a status dot (lily = ready, moon = loading or checking, red = error, a hollow ring = paused): `Ready · ⌃⌥Space`, `Paused`, `Notes · 12:34` while a note records, `Notes · Paused 12:34` while it is paused, `Listening…` (also Connecting…, Finishing…, Polishing…), `Loading model…`, `Server out of date`, `Server unreachable` (red), the current error (red), or `DEBUG: recordings kept` (red) while the server keeps recordings. |
+| Status line | Under the name, after a status dot (lily = ready, moon = loading or checking, red = error, a hollow ring = paused): `Ready · Right ⌥ Option`, `Paused`, `Notes · 12:34` while a note records, `Notes · Paused 12:34` while it is paused, `Listening…` (also Connecting…, Finishing…, Polishing…), `Loading model…`, `Server out of date`, `Server unreachable` (red), the current error (red), or `DEBUG: recordings kept` (red) while the server keeps recordings. |
 | Recording row | While a note records, the first row is `◉ Recording "<title>" 03:12 — Stop` and stops it; while it is paused, `⏸ Paused "<title>" 12:34 — Resume`; while the last segment finishes, `◉ Finishing "<title>"…` (disabled). |
 | Start / Stop Dictation | Starts a dictation or finishes the one under way, in either mode (the combo is shown at the right; not while paused or when another app owns the shortcut). Disabled while a note records. |
 | New Note | Always starts a new note and records (⌃⌥N by default, shown unless paused or owned by another app). Disabled during a dictation, while paused, and while a note records, is paused or finishes. |

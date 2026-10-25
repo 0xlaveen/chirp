@@ -66,6 +66,57 @@ private enum Flags {
         #expect(m.flagsChanged(keyCode: UInt16(kVK_RightOption), cgFlags: 0).action == .up)
     }
 
+    /// The default dictation key: pressed alone it fires, with any other key or modifier it is a chord, and the left ⌥
+    /// (é, ü, ⌥-shortcuts in other apps) is never seen as it, nor swallowed.
+    @Test func rightOptionAloneFiresAndEverythingElseIsAChordOrIgnored() {
+        var m = ShortcutMatcher(combo: .defaultDictation)
+        #expect(m.flagsChanged(keyCode: UInt16(kVK_RightOption), cgFlags: Flags.rightOption).action == .down)
+        let key = m.keyDown(keyCode: UInt16(kVK_ANSI_E), cgFlags: Flags.rightOption, isRepeat: false)
+        #expect(key.action == .chord && !key.swallow)   // Right ⌥ + E types é for the app, dictation drops
+        #expect(m.flagsChanged(keyCode: UInt16(kVK_RightOption), cgFlags: 0).action == nil)
+
+        // The left ⌥ on its own, with a key, then released: no event for dictation, and the key reaches the app.
+        #expect(m.flagsChanged(keyCode: UInt16(kVK_Option), cgFlags: Flags.leftOption).action == nil)
+        let typed = m.keyDown(keyCode: UInt16(kVK_ANSI_E), cgFlags: Flags.leftOption, isRepeat: false)
+        #expect(typed.action == nil && !typed.swallow)
+        #expect(m.flagsChanged(keyCode: UInt16(kVK_Option), cgFlags: 0).action == nil)
+
+        // Both ⌥ held: the right one was not pressed alone.
+        #expect(m.flagsChanged(keyCode: UInt16(kVK_Option), cgFlags: Flags.leftOption).action == nil)
+        #expect(m.flagsChanged(keyCode: UInt16(kVK_RightOption), cgFlags: Flags.leftOption | Flags.rightOption).action == nil)
+        #expect(m.flagsChanged(keyCode: UInt16(kVK_Option), cgFlags: Flags.rightOption).action == nil)
+        #expect(m.flagsChanged(keyCode: UInt16(kVK_RightOption), cgFlags: 0).action == nil)
+
+        // ⌘ then Right ⌥ is a chord; a click with it held is one too.
+        #expect(m.flagsChanged(keyCode: UInt16(kVK_Command), cgFlags: Flags.leftCommand).action == nil)
+        #expect(m.flagsChanged(keyCode: UInt16(kVK_RightOption), cgFlags: Flags.leftCommand | Flags.rightOption).action == nil)
+        #expect(m.flagsChanged(keyCode: UInt16(kVK_RightOption), cgFlags: Flags.leftCommand).action == nil)
+        _ = m.flagsChanged(keyCode: UInt16(kVK_Command), cgFlags: 0)
+        #expect(m.flagsChanged(keyCode: UInt16(kVK_RightOption), cgFlags: Flags.rightOption).action == .down)
+        #expect(m.mouseDown().action == .chord)
+        _ = m.flagsChanged(keyCode: UInt16(kVK_RightOption), cgFlags: 0)
+
+        // The left ⌥ joining a held Right ⌥ is a chord, not a release.
+        #expect(m.flagsChanged(keyCode: UInt16(kVK_RightOption), cgFlags: Flags.rightOption).action == .down)
+        #expect(m.flagsChanged(keyCode: UInt16(kVK_Option), cgFlags: Flags.leftOption | Flags.rightOption).action == .chord)
+    }
+
+    /// The center routes the tap's events to the handlers: a hold and release, then a chord.
+    @MainActor @Test func theCenterDeliversRightOptionHoldAndChord() {
+        var log: [String] = []
+        let center = HotKeyCenter.shared
+        center.addTapForTesting(id: 9100, combo: .defaultDictation, onDown: { log.append("down") }, onUp: { log.append("up") },
+                                onChord: { log.append("chord") })
+        defer { center.unregister(id: 9100) }
+        for handler in center.route(.flagsChanged(keyCode: UInt16(kVK_RightOption), cgFlags: Flags.rightOption)).handlers { handler() }
+        for handler in center.route(.flagsChanged(keyCode: UInt16(kVK_RightOption), cgFlags: 0)).handlers { handler() }
+        #expect(log == ["down", "up"])
+        for handler in center.route(.flagsChanged(keyCode: UInt16(kVK_RightOption), cgFlags: Flags.rightOption)).handlers { handler() }
+        let chord = center.route(.keyDown(keyCode: UInt16(kVK_LeftArrow), cgFlags: Flags.rightOption, isRepeat: false))
+        for handler in chord.handlers { handler() }
+        #expect(!chord.swallow && log == ["down", "up", "down", "chord"])
+    }
+
     @Test func fnAloneAndModifierPairs() throws {
         var fn = ShortcutMatcher(combo: try HotKeyValidation.validate(keyCode: UInt32(kVK_Function), modifiers: 0).get())
         #expect(fn.flagsChanged(keyCode: UInt16(kVK_Function), cgFlags: Flags.fn).action == .down)
@@ -180,6 +231,123 @@ private enum Flags {
         var effects: [DictationEffect] = []
         for e in g.up(at: 3.1) { effects += m.handle(e) }
         #expect(effects == [.finalize] && m.state == .finalizing)
+    }
+}
+
+/// Right ⌥ (one physical modifier key) in auto-stop: hold to talk, or tap to toggle hands-free.
+@Suite struct HoldOrTapGestureTests {
+    private func gesture() -> HotkeyGesture { HotkeyGesture(mode: .autoStop, modifierOnly: true, singleKey: true) }
+
+    @Test func onlyASingleKeyInAutoStopHoldsToTalk() {
+        #expect(gesture().holdOrTap && gesture().needsArmTimer)
+        #expect(!HotkeyGesture(mode: .autoStop, modifierOnly: true).holdOrTap)                       // ⌥ either side: tap only
+        #expect(!HotkeyGesture(mode: .autoStop, modifierOnly: false, singleKey: true).holdOrTap)     // a key shortcut
+        #expect(!HotkeyGesture(mode: .holdToTalk, modifierOnly: true, singleKey: true).holdOrTap)    // already hold-only
+    }
+
+    @Test func aQuickTapStartsOnReleaseAndStaysOn() {
+        var g = gesture()
+        #expect(g.down(at: 1) == [])
+        #expect(g.up(at: 1.1) == [.hotkeyDown(at: 1.1), .hotkeyUp(at: 1.1)])
+        #expect(g.armDue(pressedAt: 1, at: 1.2) == [])   // the timer of a press already let go
+    }
+
+    @Test func aHoldStartsAfterTheArmDelayAndEndsOnRelease() {
+        var g = gesture()
+        _ = g.down(at: 1)
+        #expect(g.armDue(pressedAt: 1, at: 1.2) == [.hotkeyDown(at: 1.2)])
+        #expect(g.up(at: 4) == [.holdEnd])
+    }
+
+    @Test func aTapHeldPastTheArmDelayStillLeavesItRunning() {
+        var g = gesture()
+        _ = g.down(at: 1)
+        _ = g.armDue(pressedAt: 1, at: 1.2)
+        #expect(g.up(at: 1.4) == [.hotkeyUp(at: 1.4)])   // not `.holdEnd`: a slow tap is still a tap
+    }
+
+    @Test func aChordNeverStartsAndAChordWhileHeldDropsTheDictation() {
+        var g = gesture()
+        _ = g.down(at: 1)
+        #expect(g.chord() == [])                          // Right ⌥ + a key before the arm delay: nothing started
+        #expect(g.armDue(pressedAt: 1, at: 1.2) == [])
+        #expect(g.up(at: 1.3) == [])
+        _ = g.down(at: 2)
+        _ = g.armDue(pressedAt: 2, at: 2.2)
+        #expect(g.chord() == [.hotkeyChord])
+        #expect(g.up(at: 2.6) == [])
+    }
+
+    private func run(_ events: [DictationEvent], _ m: inout DictationMachine) -> [DictationEffect] {
+        var effects: [DictationEffect] = []
+        for e in events { effects += m.handle(e) }
+        return effects
+    }
+
+    /// Through the machine: a hold records for as long as it is down.
+    @Test func holdingTalksAndLettingGoFinishes() {
+        var g = gesture()
+        var m = DictationMachine(mode: .autoStop)
+        _ = g.down(at: 0)
+        #expect(run(g.armDue(pressedAt: 0, at: 0.2), &m) == [.start])
+        m.handle(.serverReady)
+        #expect(m.state == .listening)
+        #expect(run(g.up(at: 5), &m) == [.finalize] && m.state == .finalizing)
+    }
+
+    /// Tap to start, talk hands-free, tap again to stop.
+    @Test func tappingTogglesHandsFree() {
+        var g = gesture()
+        var m = DictationMachine(mode: .autoStop)
+        _ = g.down(at: 0)
+        #expect(run(g.up(at: 0.1), &m) == [.start])
+        m.handle(.serverReady)
+        _ = g.down(at: 6)
+        #expect(run(g.up(at: 6.1), &m) == [.finalize] && m.state == .finalizing)
+    }
+
+    /// A tap that outlasts the arm delay starts on the timer, stays running after the release, and the next tap stops it.
+    @Test func aSlowTapStartsHandsFreeAndTheNextPressStops() {
+        var g = gesture()
+        var m = DictationMachine(mode: .autoStop)
+        _ = g.down(at: 0)
+        #expect(run(g.armDue(pressedAt: 0, at: 0.2), &m) == [.start])
+        #expect(run(g.up(at: 0.4), &m) == [] && m.state == .connecting)
+        m.handle(.serverReady)
+        _ = g.down(at: 3)
+        #expect(run(g.up(at: 3.1), &m) == [.finalize])
+    }
+
+    /// Holding the key to stop a hands-free dictation must not start another one on release.
+    @Test func holdingToStopDoesNotRestart() {
+        var g = gesture()
+        var m = DictationMachine(mode: .autoStop)
+        m.handle(.toggle)
+        m.handle(.serverReady)
+        _ = g.down(at: 10)
+        #expect(run(g.armDue(pressedAt: 10, at: 10.2), &m) == [.finalize])
+        for e in [DictationEvent.finalReceived, .insertionFinished] { m.handle(e) }
+        #expect(m.state == .idle)
+        #expect(run(g.up(at: 12), &m) == [] && m.state == .idle)
+    }
+
+    @Test func aChordAfterHoldingDropsTheDictation() {
+        var g = gesture()
+        var m = DictationMachine(mode: .autoStop)
+        _ = g.down(at: 0)
+        _ = run(g.armDue(pressedAt: 0, at: 0.2), &m)
+        m.handle(.serverReady)
+        #expect(run(g.chord(), &m) == [.cancel] && m.state == .idle)
+    }
+
+    /// The release of a hold means nothing once the dictation ended another way (a failure, Esc).
+    @Test func aReleaseAfterEscapeIsIgnored() {
+        var g = gesture()
+        var m = DictationMachine(mode: .autoStop)
+        _ = g.down(at: 0)
+        _ = run(g.armDue(pressedAt: 0, at: 0.2), &m)
+        m.handle(.escape)
+        #expect(run(g.up(at: 2), &m) == [] && m.state == .idle)
     }
 }
 

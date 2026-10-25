@@ -49,6 +49,7 @@ import Testing
     @Test func theShortcutBecomesKeycaps() {
         #expect(KeycapRow.keys("⌃⌥N") == ["⌃", "⌥", "N"])
         #expect(KeycapRow.keys("⌃⌥Space") == ["⌃", "⌥", "Space"])
+        #expect(KeycapRow.keys("Right ⌥ Option") == ["Right ⌥ Option"])
     }
 
     @Test func theRecordingNoteIsPinnedAndAPendingNoteIsListed() {

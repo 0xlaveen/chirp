@@ -5,7 +5,7 @@ import ChirpCore
 public struct OnboardingState: Sendable {
     public var flow = OnboardingFlow()
     public var checks = OnboardingChecks()
-    public var hotkey: KeyCombo = .controlOptionSpace
+    public var hotkey: KeyCombo = .defaultDictation
     /// New Note's shortcut, shown with the dictation one on the last step.
     public var notesHotkey: KeyCombo = .controlOptionN
     public var activationMode: ActivationMode = .autoStop
@@ -13,7 +13,7 @@ public struct OnboardingState: Sendable {
 
     public init() {}
     public init(step: OnboardingStep, checks: OnboardingChecks = OnboardingChecks(), heardHotkey: Bool = false,
-                hotkey: KeyCombo = .controlOptionSpace) {
+                hotkey: KeyCombo = .defaultDictation) {
         var flow = OnboardingFlow()
         while flow.step != step { flow.advance(markDone: {}) }
         flow.heardHotkey = heardHotkey
@@ -222,6 +222,8 @@ public final class OnboardingView: NSView {
             ("server.rack", "Chirp sends audio to chirp-server, which runs on this Mac unless you point Chirp elsewhere in Settings.")
         case .tryIt:
             switch mode {
+            case .autoStop where hotkey.isSingleModifierKey:
+                ("waveform", "Click the box, hold \(hotkey.title) and say something, then let go. Or tap it once and Chirp stops when you pause.")
             case .autoStop: ("waveform", "Click the box, press \(hotkey.title) and say something. Chirp stops when you pause.")
             case .holdToTalk: ("waveform", "Click the box, hold \(hotkey.title) and say something, then let go.")
             }
@@ -250,7 +252,9 @@ public final class OnboardingView: NSView {
         content.addArrangedSubview(titleLabel("Welcome to Chirp"))
         let features = NSStackView(views: [
             feature("mic.fill", "Dictate into any app",
-                    "Press \(state.hotkey.title) anywhere, talk, and your words appear where you’re typing."),
+                    state.hotkey.isSingleModifierKey
+                        ? "Hold \(state.hotkey.title) anywhere and talk, then let go, and your words appear where you’re typing."
+                        : "Press \(state.hotkey.title) anywhere, talk, and your words appear where you’re typing."),
             feature("note.text", "Keep conversations in Notes",
                     "Press \(state.notesHotkey.title) to start a note. Chirp writes it as you talk and keeps every note on this Mac."),
         ])
@@ -369,6 +373,7 @@ public final class OnboardingView: NSView {
 
     /// "⌃⌥Space" → ["⌃", "⌥", "Space"]: each modifier glyph on its own, then the rest.
     static func keySymbols(_ title: String) -> [String] {
+        if ModifierKeys.isNamedTitle(title) { return [title] }   // "Right ⌥ Option" is one key
         let modifiers = Set("⌃⌥⇧⌘")
         let mods = title.prefix { modifiers.contains($0) }.map(String.init)
         let key = String(title.dropFirst(mods.count))

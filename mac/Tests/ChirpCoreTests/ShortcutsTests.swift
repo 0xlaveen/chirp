@@ -11,9 +11,10 @@ import Testing
 
     @Test func theDefaultsAreValidDistinctCarbonHotKeys() throws {
         let defaults = ChirpShortcut.allCases.map(\.defaultCombo)
-        #expect(defaults.map(\.title) == ["⌃⌥Space", "⌃⌥N", "⌃⌥⇧N", "⌃⌥Z"])
+        #expect(defaults.map(\.title) == ["Right ⌥ Option", "⌃⌥N", "⌃⌥⇧N", "⌃⌥Z"])
         for (i, d) in defaults.enumerated() {
-            #expect(!d.needsEventTap, "\(d.title)")   // no Accessibility needed
+            // Only dictation's Right ⌥ needs Accessibility (the event tap); the others are Carbon hot keys.
+            #expect(d.needsEventTap == (ChirpShortcut.allCases[i] == .dictation), "\(d.title)")
             #expect(try combo(Int(d.keyCode), Int(d.modifiers)).sameKeys(d))
             #expect(defaults.enumerated().allSatisfy { $0.offset == i || !$0.element.sameKeys(d) })
             #expect(ChirpShortcut.allCases[i].conflict(d) { $0.defaultCombo } == nil)
@@ -62,7 +63,7 @@ import Testing
         var registered: [KeyCombo] = []
         let offer = RawOffer(sleep: { _ in }, hotkey: { u }, register: { combo, _ in registered.append(combo); return true },
                              unregister: {}, use: {})
-        offer.open(avoiding: .controlOptionSpace)
+        offer.open(avoiding: .defaultDictation)
         #expect(registered == [u] && offer.hotkeyActive)
         offer.close()
         // The dictation hotkey has the same keys (stored as a recorded shortcut): the menu is the only way.
@@ -118,7 +119,7 @@ import Testing
         c.recorder.conflict = { shortcut.conflict($0) { $0.defaultCombo } }
         c.recorder.onCapture = { captured = $0 }
         c.recorder.start()
-        c.recorder.apply(.accepted(.controlOptionSpace))
+        c.recorder.apply(.accepted(.defaultDictation))
         #expect(c.recorder.status == .rejected(.inUse("dictation")) && c.recorder.isRecording && captured == nil)
         #expect(c.helpText == HotKeyValidation.Rejection.inUse("dictation").reason)
         let free = try HotKeyValidation.validate(keyCode: UInt32(kVK_ANSI_K), modifiers: UInt32(controlKey | optionKey)).get()

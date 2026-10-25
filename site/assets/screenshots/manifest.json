@@ -856,7 +856,7 @@
     ]
   },
   "mac/notes-recording-dark.png": {
-    "sha256": "74d7d7eb1e1faaf9a04e40bae4513f3359a38c655379c5b60afba68d4692096e",
+    "sha256": "a3d3783606f19158842c8098f4c08aeb167ad3d55ad2cc10f183b5b43dc96add",
     "width": 2000,
     "height": 1240,
     "variants": [
@@ -883,7 +883,7 @@
     ]
   },
   "mac/notes-recording-light.png": {
-    "sha256": "f19b2f2865b009e9e3cfdaf57948e1928ddb0377d209fedc863086a41a8cbd3d",
+    "sha256": "e1c9b9116eb3f0dae5984c8658934aaf05133c16a7fa3d6d5ca2b338265df482",
     "width": 2000,
     "height": 1240,
     "variants": [
@@ -964,7 +964,7 @@
     ]
   },
   "mac/onboarding-welcome-dark.png": {
-    "sha256": "4d8aff0b02b1c97f915705dc6e9c4bb52a3eda28fdd6762d5144212fc7ba4523",
+    "sha256": "dc182c87da450551072cf5adba8f532a19d77e84613e10b220a08f23f5ebff6d",
     "width": 1440,
     "height": 920,
     "variants": [
@@ -991,7 +991,7 @@
     ]
   },
   "mac/onboarding-welcome-light.png": {
-    "sha256": "dea44859208082e770ff8fdfe1e148080f0e799f7050c069d8a10be6ecfe1e12",
+    "sha256": "926fcf7fc5d638749bc07ee43c67db5ab9a3267b36cc22bed55f70d009964f55",
     "width": 1440,
     "height": 920,
     "variants": [

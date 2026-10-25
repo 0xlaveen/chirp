@@ -3,7 +3,7 @@ import ChirpCore
 
 /// What the Settings window shows. The window controller reads it from the system; the snapshots pass fixed values.
 public struct SettingsState: Sendable {
-    public var hotkey: KeyCombo = .controlOptionSpace
+    public var hotkey: KeyCombo = .defaultDictation
     /// Shortcuts: Start/Stop Notes, Open Notes and Use raw.
     public var notesHotkey: KeyCombo = .controlOptionN
     public var openNotesHotkey: KeyCombo = .controlOptionShiftN
@@ -194,7 +194,7 @@ public final class SettingsForm {
     public let autoEnter = NSPopUpButton(frame: .zero, pullsDown: false)
     private let modeHelp = SettingsForm.help("")
     private let offerRawHelp = SettingsForm.help("")
-    private var shownHotkey = KeyCombo.controlOptionSpace
+    private var shownHotkey = KeyCombo.defaultDictation
     public let sounds = NSButton(checkboxWithTitle: "Play start and stop sounds", target: nil, action: nil)
     /// Sounds: the pack, ▶ previews, the volume, and (for the Custom pack) the user's files.
     public let soundPack = NSPopUpButton(frame: .zero, pullsDown: false)
@@ -807,13 +807,16 @@ public final class SettingsForm {
     /// Selects `mode` and the auto-stop pause (the nearest offered one), which only matters in auto-stop.
     public func showMode(_ m: ActivationMode, silence seconds: TimeInterval) {
         if let i = mode.itemArray.firstIndex(where: { $0.representedObject as? String == m.rawValue }) { mode.selectItem(at: i) }
-        modeHelp.stringValue = m.help
+        modeHelp.stringValue = m.help(singleModifierKey: shownHotkey.isSingleModifierKey)
         let nearest = AutoStopDetector.silenceChoices.enumerated().min { abs($0.element - seconds) < abs($1.element - seconds) }
         if let nearest { silence.selectItem(at: nearest.offset) }
         silence.isEnabled = m == .autoStop
     }
 
     private func refreshHotkeyHelp() {
+        if let raw = mode.selectedItem?.representedObject as? String, let m = ActivationMode(rawValue: raw) {
+            modeHelp.stringValue = m.help(singleModifierKey: shownHotkey.isSingleModifierKey)
+        }
         fnKeySetupRow?.isHidden = !(shownHotkey.isModifierOnly && shownHotkey.modifiers == ModifierKeys.fn)
         hotkeyHelp.textColor = .secondaryLabelColor
         switch recorder.status {

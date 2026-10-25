@@ -3,6 +3,8 @@ import Foundation
 /// Turns the hotkey's raw presses into `DictationMachine` events for the chosen mode. A key shortcut passes straight
 /// through. A modifier on its own (⌥) is also part of every ⌥← and ⌥-click, so it only counts when used alone: in
 /// hold-to-talk it starts once it has been held alone for `armDelay`, and in auto-stop a quick clean tap toggles.
+/// A modifier bound to one physical key (Right ⌥) does both in auto-stop: a tap starts a hands-free dictation that
+/// ends on a pause or the next tap, while holding it past `tapLimit` talks like hold-to-talk, and letting go finishes.
 public struct HotkeyGesture: Sendable {
     /// Hold-to-talk with a modifier: how long it must be held alone before the dictation starts.
     public static let armDelay: TimeInterval = 0.2
@@ -11,17 +13,22 @@ public struct HotkeyGesture: Sendable {
 
     public let mode: ActivationMode
     public let modifierOnly: Bool
+    /// Auto-stop with one side's modifier: the dictation starts once held alone, and a long hold ends on release.
+    public let holdOrTap: Bool
     private var pressedAt: TimeInterval?
     /// Hold-to-talk with a modifier: the delayed press has reached the machine.
     private var armed = false
 
-    public init(mode: ActivationMode = .autoStop, modifierOnly: Bool = false) {
+    /// `singleKey`: the shortcut is one physical modifier key (`KeyCombo.isSingleModifierKey`), so the other side's key,
+    /// which types special characters, never reaches it.
+    public init(mode: ActivationMode = .autoStop, modifierOnly: Bool = false, singleKey: Bool = false) {
         self.mode = mode
         self.modifierOnly = modifierOnly
+        holdOrTap = modifierOnly && singleKey && mode == .autoStop
     }
 
     /// The owner calls `armDue(pressedAt:at:)` `armDelay` after a press.
-    public var needsArmTimer: Bool { modifierOnly && mode == .holdToTalk }
+    public var needsArmTimer: Bool { modifierOnly && (mode == .holdToTalk || holdOrTap) }
 
     public mutating func down(at t: TimeInterval) -> [DictationEvent] {
         guard modifierOnly else { return [.hotkeyDown(at: t)] }
@@ -43,7 +50,12 @@ public struct HotkeyGesture: Sendable {
         guard let start = pressedAt else { return [] }
         switch mode {
         case .holdToTalk: return armed ? [.hotkeyUp(at: t)] : []
-        case .autoStop: return t - start <= Self.tapLimit ? [.hotkeyDown(at: t), .hotkeyUp(at: t)] : []
+        case .autoStop:
+            if holdOrTap, armed {
+                // A tap leaves the dictation running (the release only ends the press); a longer hold finishes it.
+                return t - start <= Self.tapLimit ? [.hotkeyUp(at: t)] : [.holdEnd]
+            }
+            return t - start <= Self.tapLimit ? [.hotkeyDown(at: t), .hotkeyUp(at: t)] : []
         }
     }
 
