@@ -302,14 +302,16 @@ def main():
         config = home / ".config/chirp/server.toml"
         config.parent.mkdir(parents=True)
         config.write_text('[correction]\nmode = "managed"\ntimeout = 60.0\n')
-        # Speaker labels: the throwaway HOME gets a copy of the pinned speaker model (the server is offline here).
+        # Speaker labels: the server runs offline, so the check plays its Hugging Face download by copying the pinned
+        # model into the throwaway HOME once the phone's consent dialog is up (the server still verifies its hash).
         speaker_model = Path(os.environ.get("CHIRP_SPEAKER_MODEL") or Path.home() / "Library/Application Support/Chirp/models/speakers/voxceleb_resnet34_LM.onnx")
-        speakers_model = (opt.notes_check or opt.speakers_check) and speaker_model.is_file()
+        speakers_model = None
+        if (opt.notes_check or opt.speakers_check) and speaker_model.is_file():
+            def speakers_model():
+                seeded = home / "Library/Application Support/Chirp/models/speakers" / speaker_model.name
+                seeded.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(speaker_model, seeded)
         assert speakers_model or not opt.speakers_check, "--speakers-check needs the speaker model (CHIRP_SPEAKER_MODEL)"
-        if speakers_model:
-            seeded = home / "Library/Application Support/Chirp/models/speakers" / speaker_model.name
-            seeded.parent.mkdir(parents=True)
-            shutil.copyfile(speaker_model, seeded)
         env = dict(os.environ, HOME=str(home), HF_HOME=str(Path.home() / ".cache/huggingface"),
                    HF_HUB_OFFLINE="1", TRANSFORMERS_OFFLINE="1", PYTHONPATH=str(opt.server_root / "src"))
         if opt.tls: env["SSL_CERT_FILE"] = str(cert)
@@ -413,7 +415,7 @@ def main():
                 return
             if opt.speakers_check:
                 module = runpy.run_path(str(Path(__file__).with_name("emulator-speakers-check.py")))
-                module["check"](dict(_probe, adb=adb), work, output, standalone=True)
+                module["check"](dict(_probe, adb=adb, speakers_model=speakers_model), work, output, standalone=True)
                 return
             if opt.notes_check:
                 module = runpy.run_path(str(Path(__file__).with_name("emulator-notes-check.py")))

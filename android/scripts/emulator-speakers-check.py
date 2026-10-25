@@ -2,7 +2,7 @@
 """Speaker labels end to end (#187), run by emulator-notes-check.py: two synthetic voices (macOS `say`,
 Samantha then Daniel, looped with silence) through the real NotesCapture and rolling /v1/stream sockets
 to the throwaway server's WeSpeaker model. Turns Label speakers on from the note's menu through the
-consent dialog, then requires two distinct people in the transcript, a rename from a chip that lands
+consent dialog (the offline server's download played by a file copy), then requires two distinct people in the transcript, a rename from a chip that lands
 everywhere, and kept-audio replay of a labelled segment. Prints states and counts, never text."""
 import json
 import shlex
@@ -60,11 +60,12 @@ def check(probe, work, output, standalone=False):
     before = server().get('finals', 0)
     tap('Record new note')
     wait(lambda: server().get('finals', 0) >= before + 1, 'The two-voice recording did not reach the transcript')
-    # Smart options: Label speakers asks before the Mac downloads its model (the throwaway server has it already).
+    # Smart options: the Mac has no speaker model yet, so Label speakers asks before it downloads one.
     probe['click']('More options')
     tap('Label speakers')
     probe['wait_for']('Label speakers?', 20)
     screenshot('emulator-speakers-consent.png')
+    probe['speakers_model']()  # the download's stand-in: the pinned file arrives in the server's model cache
     tap('Download')
     wait(lambda: 200 in server().get('model', []), 'The consented download never reached /v1/speakers/model', 30)
     labelled = server().get('labelled', 0)
