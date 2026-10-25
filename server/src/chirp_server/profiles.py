@@ -5,6 +5,7 @@ import re
 from dataclasses import asdict, dataclass, replace
 
 from .known_terms import TERMS_EXAMPLES, TERMS_RULE
+from .learned import learned_prompt
 
 MAX_PROMPT_CHARS = 4000
 
@@ -251,7 +252,7 @@ def resolve_profiles(overrides=None):
 
 # Fixed transcript handling is separate from the editable style. Preserve the
 # established default assembly so existing clients keep the same model behavior.
-def system_prompt(profile, instructions="", correction_prompt=None):
+def system_prompt(profile, instructions="", correction_prompt=None, learned=None):
     style = profile.prompt if correction_prompt is None else correction_prompt
     if profile.id == "custom":
         style = CUSTOM_RULES
@@ -268,4 +269,8 @@ def system_prompt(profile, instructions="", correction_prompt=None):
         if profile.id == "custom"
         else ""
     )
+    # What the client learned from the user's edits (#220): absent, the prompt is byte-identical.
+    section = learned_prompt(learned)
+    if section:
+        preferences += "\n\n" + section
     return CORE_RULES + "\n\nStyle:\n" + style + preferences + "\n\n" + CORE_RULES
