@@ -7,6 +7,7 @@ import os
 import plistlib
 import subprocess
 import sys
+import time
 from dataclasses import replace
 from pathlib import Path
 from urllib.parse import urlencode, urlsplit
@@ -37,7 +38,7 @@ def service(action, arguments=()):
         )
         destination.unlink(missing_ok=True)
         return
-    # Explicit user command only; never called on server startup or by tests.
+    # Explicit user command only; never called on server startup.
     executable = str(Path(sys.executable).absolute())
     destination.parent.mkdir(parents=True, exist_ok=True)
     with destination.open("wb") as stream:
@@ -53,7 +54,26 @@ def service(action, arguments=()):
             },
             stream,
         )
-    subprocess.run(["launchctl", "bootstrap", target, str(destination)], check=True)
+    # bootstrap fails when the label is already loaded. Boot out first so re-running install
+    # updates an existing agent instead of failing; launchd may briefly reject the new
+    # bootstrap while the bootout settles, so retry as setup.restart does.
+    subprocess.run(
+        ["launchctl", "bootout", target + "/" + LABEL],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        check=False,
+    )
+    for attempt in range(3):
+        result = subprocess.run(
+            ["launchctl", "bootstrap", target, str(destination)],
+            capture_output=True,
+            check=False,
+        )
+        if result.returncode == 0:
+            break
+        if attempt == 2:
+            raise SystemExit("Could not install the LaunchAgent; check Console for launchd errors")
+        time.sleep(0.5)
 
 
 def pair_uri(url, token):
