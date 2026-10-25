@@ -17,6 +17,7 @@ from chirp_server.config import Settings
 from chirp_server.engine import Transcript
 from chirp_server.engine import sensevoice_models as models
 from chirp_server.engine.sensevoice import MAX_SAMPLES, SenseVoice, join_text
+from chirp_server.platforms import default_engine
 
 
 class Detector:
@@ -146,7 +147,7 @@ def test_fetch_pins_model_and_rejects_vad_replacement(tmp_path, monkeypatch):
 
 def test_config_and_cli_select_optional_backend_without_changing_default(tmp_path, monkeypatch):
     use_home(monkeypatch, tmp_path)
-    assert Settings.read().engine == "mlx"
+    assert Settings.read().engine == default_engine()
     config = tmp_path / "server.toml"
     config.write_text('engine = "sensevoice"\n[sensevoice]\nnum_threads = 2\n')
     settings = Settings.read(config)
@@ -246,7 +247,7 @@ def test_sensevoice_doctor_never_requires_mlx(settings, monkeypatch, capsys):
 @pytest.mark.parametrize(
     "arguments, expected",
     [
-        (["model", "fetch"], "mlx"),
+        (["model", "fetch"], None),
         (["--engine", "sensevoice", "model", "fetch"], "sensevoice"),
         (["model", "fetch", "--engine", "sensevoice"], "sensevoice"),
         (["--engine", "onnx", "model", "fetch"], "onnx"),
@@ -261,7 +262,7 @@ def test_fetch_engine_option_before_or_after_subcommand(tmp_path, monkeypatch, a
     monkeypatch.setattr(speech_models, "fetch", lambda engine: requested.append(engine))
     monkeypatch.setattr(sys, "argv", ["chirp-server", *arguments])
     cli.main()
-    assert requested == [expected]
+    assert requested == [expected or default_engine()]
 
 
 @pytest.mark.parametrize("client_name", ["mac", "android"])

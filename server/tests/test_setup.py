@@ -12,6 +12,7 @@ def events(capsys):
 
 def test_status_is_offline_and_reports_both_models(settings, monkeypatch):
     monkeypatch.setattr(setup.speech_models, "discover", lambda: "/cached/speech")
+    monkeypatch.setattr(setup.speech_models, "discover_onnx", lambda *_: "/cached/speech")
     monkeypatch.setattr(
         setup.cleanup_models, "discover", lambda *_: (_ for _ in ()).throw(ValueError())
     )
@@ -24,6 +25,7 @@ def test_cached_download_does_not_contact_hub(settings, monkeypatch, capsys):
 
     monkeypatch.setattr(setup, "configure_downloads", lambda: None)
     monkeypatch.setattr(setup.speech_models, "discover", lambda: "/cached/speech")
+    monkeypatch.setattr(setup.speech_models, "discover_onnx", lambda *_: "/cached/speech")
     monkeypatch.setattr(
         huggingface_hub,
         "snapshot_download",
@@ -39,7 +41,7 @@ def test_byte_progress_includes_cached_files_and_resume_offset(settings, monkeyp
     monkeypatch.setattr(setup, "configure_downloads", lambda: None)
     calls = 0
 
-    def discover():
+    def discover(*_):
         nonlocal calls
         calls += 1
         if calls == 1:
@@ -47,6 +49,7 @@ def test_byte_progress_includes_cached_files_and_resume_offset(settings, monkeyp
         return "/cached/speech"
 
     monkeypatch.setattr(setup.speech_models, "discover", discover)
+    monkeypatch.setattr(setup.speech_models, "discover_onnx", discover)
     plan = [
         SimpleNamespace(file_size=10, will_download=False, filename="config.json"),
         SimpleNamespace(file_size=100, will_download=True, filename="model.safetensors"),
@@ -54,8 +57,18 @@ def test_byte_progress_includes_cached_files_and_resume_offset(settings, monkeyp
     monkeypatch.setattr(huggingface_hub, "snapshot_download", lambda *a, **k: plan)
 
     def fetch(repo, filename, **kwargs):
-        assert repo == setup.speech_models.REPOSITORY
-        assert kwargs["revision"] == setup.speech_models.REVISION
+        expected_repo = (
+            setup.speech_models.ONNX_REPOSITORY
+            if settings.engine == "onnx"
+            else setup.speech_models.REPOSITORY
+        )
+        expected_revision = (
+            setup.speech_models.ONNX_REVISION
+            if settings.engine == "onnx"
+            else setup.speech_models.REVISION
+        )
+        assert repo == expected_repo
+        assert kwargs["revision"] == expected_revision
         with kwargs["tqdm_class"](total=100, initial=40) as bar:
             bar.update(60)
 
@@ -87,6 +100,7 @@ def test_failed_or_interrupted_download_never_reports_complete(settings, monkeyp
 
 def test_start_reuses_a_running_server_without_touching_launchd(monkeypatch, capsys):
     monkeypatch.setattr(setup.speech_models, "discover", lambda: "/cached/speech")
+    monkeypatch.setattr(setup.speech_models, "discover_onnx", lambda *_: "/cached/speech")
     monkeypatch.setattr(setup, "server_running", lambda _: True)
     monkeypatch.setattr(
         setup.subprocess, "run", lambda *a, **k: pytest.fail("unexpected service restart")
@@ -101,6 +115,7 @@ def test_start_reloads_managed_plist_without_rewriting_it(tmp_path, monkeypatch,
 
     monkeypatch.setattr(setup.Path, "home", lambda: tmp_path)
     monkeypatch.setattr(setup.speech_models, "discover", lambda: "/cached/speech")
+    monkeypatch.setattr(setup.speech_models, "discover_onnx", lambda *_: "/cached/speech")
     replies = iter([False, True])
     monkeypatch.setattr(setup, "server_running", lambda _: next(replies))
     path = tmp_path / "Library/LaunchAgents/dev.chirp.server.plist"
@@ -143,6 +158,7 @@ def test_start_retries_bootstrap_while_bootout_settles(tmp_path, monkeypatch, ca
 
     monkeypatch.setattr(setup.Path, "home", lambda: tmp_path)
     monkeypatch.setattr(setup.speech_models, "discover", lambda: "/cached/speech")
+    monkeypatch.setattr(setup.speech_models, "discover_onnx", lambda *_: "/cached/speech")
     replies = iter([False, True])
     monkeypatch.setattr(setup, "server_running", lambda _: next(replies))
     monkeypatch.setattr(setup.time, "sleep", lambda _: None)
