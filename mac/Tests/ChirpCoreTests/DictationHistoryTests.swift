@@ -2,6 +2,7 @@ import CryptoKit
 import Foundation
 import Testing
 @testable import ChirpCore
+@testable import ChirpUI
 
 private final class HistoryClock: @unchecked Sendable {
     private let lock = NSLock()
@@ -286,7 +287,7 @@ private struct FailingKeys: HistoryKeyStore {
     @Test func words() {
         let e = entries()[0]
         #expect(HistoryText.meta(HistoryEntry(date: now.addingTimeInterval(-60), text: "x", duration: 4.2, style: "email"), now: now, calendar: utc)
-                == "Today at 5:45 PM · 4.2 s · Email style")
+                    .replacingOccurrences(of: "\u{202F}", with: " ") == "Today at 5:45 PM · 4.2 s · Email style")
         #expect(HistoryText.duration(65) == "1 min 5 s" && HistoryText.duration(120) == "2 min" && HistoryText.duration(3) == "3 s")
         #expect(HistoryText.keptFor(.thirtyDays) == "Kept on this Mac for 30 days · encrypted")
         #expect(HistoryText.keptFor(.forever).hasPrefix("Kept on this Mac until you delete them"))
