@@ -43,6 +43,8 @@ def test_health_redaction(client):
         "notes_reorganize": True,
         "notes_context": True,
         "notes_edit": True,
+        "notes_speakers": True,
+        "speakers_model": {"state": "not_downloaded", "size_bytes": 26530309},
         **build.info(),
     }
 

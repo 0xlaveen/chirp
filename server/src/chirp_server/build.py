@@ -20,6 +20,7 @@ CAPABILITIES = (
     "notes_reorganize",
     "notes_context",
     "notes_edit",
+    "notes_speakers",
 )
 # Written next to the code by scripts/install-mac.sh, whose copy has no .git to ask.
 COMMIT_FILE = "BUILD_COMMIT"
