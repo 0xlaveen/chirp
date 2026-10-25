@@ -32,17 +32,58 @@ struct NotesStoreTests {
         #expect(NotesJournalStore(directory: store.recoveryDirectory).recoverable().isEmpty)
     }
 
-    @Test func turningRecoveryOffDeletesTheFilesAndTheKey() throws {
+    @Test func deletingLegacyRecoveryPreservesTheSharedLibraryKey() throws {
         let root = try notesRoot(); defer { try? FileManager.default.removeItem(at: root) }
         let secrets = MemorySecretStore()
         let store = try NotesStore(root: root, secrets: secrets)
         try store.journalStore.write(NotesJournalRecord(document: NotesDocument(text: "x"), elapsed: 1))
         try store.deleteRecovery()
         #expect(try FileManager.default.contentsOfDirectory(atPath: store.recoveryDirectory.path).isEmpty)
-        #expect(try secrets.read(account: NotesStore.keyAccount) == nil)
-        // A new copy after that gets a new key.
+        #expect(try secrets.read(account: NotesStore.keyAccount)?.count == 32)
+        // The shared library key remains available for both stores.
         try store.journalStore.write(NotesJournalRecord(document: NotesDocument(text: "y"), elapsed: 1))
         #expect(store.journalStore.recoverable().count == 1)
+    }
+
+    @Test func sealedLibraryMigratesRecoveryOnceAndQuarantinesCorruption() async throws {
+        let root = try notesRoot(); defer { try? FileManager.default.removeItem(at: root) }
+        let secrets = MemorySecretStore()
+        let store = try NotesStore(root: root, secrets: secrets)
+        var document = NotesDocument(text: "## Secret plan\n- [ ] Send invitation")
+        document.append(NotesSegment(id: 0, offset: 4, raw: "private raw transcript"))
+        let record = NotesJournalRecord(document: document, elapsed: 14)
+        try store.journalStore.write(record)
+        let corrupt = store.recoveryDirectory.appendingPathComponent(UUID().uuidString + ".json")
+        try Data("invalid sealed record".utf8).write(to: corrupt)
+        try await store.migrateRecovery()
+        try await store.libraryStore.rename(document.id, title: "Chosen title")
+        try store.journalStore.write(record)
+        try await store.migrateRecovery()
+        #expect(try await store.libraryStore.list().map(\.title) == ["Chosen title"])
+        #expect(try await store.libraryStore.record(document.id).recovered == true)
+        #expect(!FileManager.default.fileExists(atPath: corrupt.path))
+        let quarantine = store.recoveryDirectory.appendingPathComponent("quarantine")
+        #expect(try FileManager.default.contentsOfDirectory(atPath: quarantine.path).count == 1)
+        for url in [store.libraryStore.directory.appendingPathComponent("index.json"), store.libraryStore.noteDirectory(document.id).appendingPathComponent("note.json")] {
+            let data = try Data(contentsOf: url)
+            #expect((try? JSONSerialization.jsonObject(with: data)) == nil)
+            #expect(!String(decoding: data, as: UTF8.self).contains("Secret plan"))
+            #expect(try FileManager.default.attributesOfItem(atPath: url.path)[.posixPermissions] as? Int == 0o600)
+            #if os(iOS)
+            #expect(try FileManager.default.attributesOfItem(atPath: url.path)[.protectionKey] as? FileProtectionType == .complete)
+            #endif
+        }
+        let relaunched = try NotesStore(root: root, secrets: secrets)
+        #expect(try await relaunched.libraryStore.record(document.id).document.text == document.text)
+        #expect(try await relaunched.libraryStore.search("private raw").count == 1)
+        #expect(!String(describing: try await relaunched.libraryStore.record(document.id)).contains("Secret"))
+    }
+
+    @Test func upgradePreservesOptOutAndAudioIsOffByDefault() throws {
+        let preferences = try JSONDecoder().decode(NotesPreferences.self, from: Data(#"{"recoveryCopy":false}"#.utf8))
+        #expect(!preferences.keepNotes && preferences.libraryUpgradeNotice)
+        #expect(!preferences.keepAudio && preferences.retention == .never)
+        #expect(try JSONDecoder().decode(NotesPreferences.self, from: Data("{}".utf8)).keepNotes)
     }
 
     @Test func preferencesKeepDefaultsForMissingFieldsAndRoundTrip() throws {

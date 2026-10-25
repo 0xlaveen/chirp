@@ -7,6 +7,12 @@ enum NotesAtomicFile {
         try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true,
                                                 attributes: [.posixPermissions: 0o700])
         try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: url.path)
+        #if os(iOS)
+        try FileManager.default.setAttributes([.protectionKey: FileProtectionType.complete], ofItemAtPath: url.path)
+        var protectedURL = url
+        var values = URLResourceValues(); values.isExcludedFromBackup = true
+        try protectedURL.setResourceValues(values)
+        #endif
     }
 
     static func write(_ data: Data, to final: URL) throws {
@@ -16,6 +22,9 @@ enum NotesAtomicFile {
         guard fd >= 0 else { throw CocoaError(.fileWriteUnknown) }
         defer { close(fd); try? FileManager.default.removeItem(at: temp) }
         guard fchmod(fd, 0o600) == 0 else { throw CocoaError(.fileWriteNoPermission) }
+        #if os(iOS)
+        try FileManager.default.setAttributes([.protectionKey: FileProtectionType.complete], ofItemAtPath: temp.path)
+        #endif
         try data.withUnsafeBytes { buffer in
             var offset = 0
             while offset < buffer.count {
@@ -156,6 +165,7 @@ public enum NotesLibraryError: Error { case missing, recording, deleted, unsuppo
 public actor NotesLibraryStore {
     public nonisolated let directory: URL
     private let now: @Sendable () -> Date
+    private let codec: NotesJournalCodec?
     private var entries: [UUID: NotesLibraryEntry]?
     private var recordingIDs: Set<UUID> = []
     private var purgedIDs: Set<UUID> = []
@@ -164,8 +174,8 @@ public actor NotesLibraryStore {
         NotesJournalStore.defaultDirectory.deletingLastPathComponent().appendingPathComponent("Notes", isDirectory: true)
     }
 
-    public init(directory: URL = NotesLibraryStore.defaultDirectory, now: @escaping @Sendable () -> Date = { Date() }) {
-        self.directory = directory; self.now = now
+    public init(directory: URL = NotesLibraryStore.defaultDirectory, codec: NotesJournalCodec? = nil, now: @escaping @Sendable () -> Date = { Date() }) {
+        self.directory = directory; self.codec = codec; self.now = now
     }
 
     public nonisolated func noteDirectory(_ id: UUID) -> URL { directory.appendingPathComponent(id.uuidString, isDirectory: true) }
@@ -175,7 +185,8 @@ public actor NotesLibraryStore {
     private func file(_ id: UUID) -> URL { noteDirectory(id).appendingPathComponent("note.json") }
 
     public func record(_ id: UUID) throws -> NotesJournalRecord {
-        let data = try Data(contentsOf: file(id))
+        let stored = try Data(contentsOf: file(id))
+        let data = try codec?.open(stored) ?? stored
         struct Header: Decodable { var schema: Int }
         guard [1, 2].contains(try JSONDecoder().decode(Header.self, from: data).schema) else { throw NotesLibraryError.unsupportedSchema }
         return try JSONDecoder().decode(NotesJournalRecord.self, from: data)
@@ -184,7 +195,10 @@ public actor NotesLibraryStore {
     private func loadIndex() throws {
         guard entries == nil else { return }
         let index = directory.appendingPathComponent("index.json")
-        let cached = (try? Data(contentsOf: index)).flatMap { try? JSONDecoder().decode([NotesLibraryEntry].self, from: $0) }
+        let cached = (try? Data(contentsOf: index)).flatMap { stored -> [NotesLibraryEntry]? in
+            guard let data = try? codec?.open(stored) ?? stored else { return nil }
+            return try? JSONDecoder().decode([NotesLibraryEntry].self, from: data)
+        }
         entries = Dictionary((cached ?? []).map { ($0.id, $0) }, uniquingKeysWith: { _, last in last })
         let indexedAt = (try? index.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate ?? .distantPast
         let folders = (try? FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)) ?? []
@@ -195,20 +209,37 @@ public actor NotesLibraryStore {
             let modified = (try? file(id).resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate ?? .distantFuture
             // Decode only records absent/stale in the index, and captures that need crash recovery.
             guard cached == nil || entries?[id] == nil || entries?[id]?.recording == true || modified >= indexedAt else { continue }
-            guard var r = try? record(id) else { entries?[id] = nil; continue }
-            if r.recording == true {
-                r.recording = false; r.recovered = true
-                try NotesAtomicFile.write(JSONEncoder().encode(r), to: file(id))
+            let r: NotesJournalRecord
+            do { r = try record(id) }
+            catch {
+                // Only sealed clients quarantine corrupt bytes. Future schemas and temporarily locked files stay put.
+                if codec != nil, !(error is NotesLibraryError),
+                   (try? Data(contentsOf: file(id))) != nil {
+                    let quarantine = directory.appendingPathComponent("quarantine", isDirectory: true)
+                    try NotesAtomicFile.directory(quarantine)
+                    try FileManager.default.moveItem(at: url, to: quarantine.appendingPathComponent(id.uuidString + "-" + UUID().uuidString))
+                }
+                entries?[id] = nil
+                continue
             }
-            entries?[id] = NotesLibraryEntry(r)
+            var recovered = r
+            if recovered.recording == true {
+                recovered.recording = false; recovered.recovered = true
+                try writeBytes(JSONEncoder().encode(recovered), to: file(id))
+            }
+            entries?[id] = NotesLibraryEntry(recovered)
         }
         entries = entries?.filter { found.contains($0.key) }
         try saveIndex()
     }
 
+    private func writeBytes(_ plain: Data, to url: URL) throws {
+        try NotesAtomicFile.write(codec?.seal(plain) ?? plain, to: url)
+    }
+
     private func saveIndex() throws {
         if directory == Self.defaultDirectory { try NotesAtomicFile.directory(directory.deletingLastPathComponent()) }
-        try NotesAtomicFile.write(JSONEncoder().encode(Array((entries ?? [:]).values)), to: directory.appendingPathComponent("index.json"))
+        try writeBytes(JSONEncoder().encode(Array((entries ?? [:]).values)), to: directory.appendingPathComponent("index.json"))
     }
 
     public func list(deleted: Bool = false) throws -> [NotesLibraryEntry] {
@@ -255,7 +286,7 @@ public actor NotesLibraryStore {
     @discardableResult private func persist(_ record: NotesJournalRecord) throws -> Int {
         let data = try JSONEncoder().encode(record)
         try NotesAtomicFile.directory(directory)
-        try NotesAtomicFile.write(data, to: file(record.document.id))
+        try writeBytes(data, to: file(record.document.id))
         entries?[record.document.id] = NotesLibraryEntry(record)
         try saveIndex()
         return data.count
@@ -339,13 +370,19 @@ public actor NotesLibraryStore {
         try loadIndex()
         var r = try record(id)
         guard r.document.deletedAt == nil, r.document.segments.indices.contains(segment) else { throw NotesLibraryError.deleted }
-        let bytes = try NotesAudioEncoder.write(frames, sampleRate: sampleRate, to: audioURL(id, segment: segment))
+        let bytes = try NotesAudioEncoder.write(frames, sampleRate: sampleRate, to: audioURL(id, segment: segment), codec: codec)
         r.document.ensureMetadata()
         r.document.libraryMetadata?.audio.removeAll { $0.id == segment }
         r.document.libraryMetadata?.audio.append(NotesAudioReference(id: segment, offset: offset,
             duration: Double(frames.reduce(0) { $0 + $1.count }) / (sampleRate * 2), sampleRate: sampleRate, bytes: bytes))
         r.document.libraryMetadata?.audio.sort { $0.id < $1.id }
         try persist(r)
+    }
+
+    /// Opens kept audio in memory; mobile clients never need a plaintext playback file.
+    public func audioData(_ id: UUID, segment: Int) throws -> Data {
+        let stored = try Data(contentsOf: audioURL(id, segment: segment))
+        return try codec?.open(stored) ?? stored
     }
 
     public func deleteAudio(_ id: UUID) throws {
@@ -399,4 +436,14 @@ public actor NotesLibraryStore {
     public func keepAudio(_ id: UUID, segment: Int, frames: [Data], offset: TimeInterval, sampleRate: Double) async throws {
         try await store.keepAudio(id, segment: segment, frames: frames, offset: offset, sampleRate: sampleRate); try await reload()
     }
+}
+
+// String interpolation must never disclose note content, including in diagnostic failures.
+extension NotesLibraryEntry: CustomStringConvertible, CustomDebugStringConvertible {
+    public var description: String { "NotesLibraryEntry(<redacted>)" }
+    public var debugDescription: String { description }
+}
+extension NotesJournalRecord: CustomStringConvertible, CustomDebugStringConvertible {
+    public var description: String { "NotesJournalRecord(<redacted>)" }
+    public var debugDescription: String { description }
 }

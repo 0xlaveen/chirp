@@ -97,7 +97,11 @@ extension LiveNotesController {
     /// UI-test controller: synthetic sockets (ready and a partial on start, a final on stop), a structuring stand-in that
     /// bullets the transcript, quiet synthetic capture and a throwaway encrypted store.
     static func synthetic(coordinator: SessionCoordinator) -> LiveNotesController {
-        let root = FileManager.default.temporaryDirectory.appendingPathComponent("chirp-notes-ui-" + UUID().uuidString)
+        let args = ProcessInfo.processInfo.arguments
+        let suite = args.firstIndex(of: "--chirp-notes-library-id").flatMap { $0 + 1 < args.count ? args[$0 + 1] : nil }
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("chirp-notes-ui-" + (suite ?? UUID().uuidString))
+        let secrets: any SecretStore = suite == nil ? MemorySecretStore() : KeychainSecretStore()
+        let store = try? NotesStore(root: root, secrets: secrets)
         let config = URLSessionConfiguration.ephemeral; config.protocolClasses = [SyntheticHTTP.self]
         let deps = Dependencies(
             server: { ServerConfig(baseURL: URL(string: "https://synthetic.test.ts.net/chirp")!, token: "synthetic-only") },
@@ -109,7 +113,7 @@ extension LiveNotesController {
             structure: { _, _, request in syntheticStructure(request) },
             reorganize: { _, _, request in syntheticReorganize(request) },
             audio: SyntheticNotesAudio(), requestPermission: { true }, activity: .none,
-            store: try? NotesStore(root: root, secrets: MemorySecretStore()))
+            store: store)
         return LiveNotesController(deps)
     }
 
@@ -124,5 +128,35 @@ extension LiveNotesController {
         let organized = (lines.filter { !$0.hasPrefix("- ") } + lines.filter { $0.hasPrefix("- ") }.sorted()).joined(separator: "\n")
         return NotesReorganizeResponse(markdown: organized, reorganized: true, changed: organized != request.notes)
     }
+    /// Synthetic documents for reproducible screenshots; the real sealed store and library are still exercised.
+    func seedLibrary() async throws {
+        guard let library, try await library.store.list().isEmpty else { return }
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("chirp-notes-gallery-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let seed = try NotesStore(root: root, secrets: MemorySecretStore())
+        let samples: [(Int, String, TimeInterval)] = [
+            (0, "## Lantern kickoff\n\n### Agenda\n- Review the launch plan\n- [x] Share the design brief\n\n### Next steps\n- [ ] Send the updated proposal by Friday\n- [ ] Book the next design review\n\n> **Decision:** Keep the launch in March.\n\n> **Question:** Who will lead the beta?", 192),
+            (1, "## Design review\n\nWalk through the new onboarding flow and leave room for questions.\n- [ ] Share the revised sketches", 360),
+            (5, "## Weekend ideas\n\nA walk by the lake, a good book, and a little time to think.", 75),
+            (18, "## Garden plans\n\n- Plant herbs by the kitchen window\n- [ ] Pick up potting soil", 120),
+            (50, "## Reading list\n\nA few things to come back to this autumn.", 0)
+        ]
+        for (days, text, elapsed) in samples {
+            let date = Calendar.current.date(byAdding: .day, value: -days, to: Date())!
+            var document = NotesDocument(startedAt: date, text: text)
+            document.append(NotesSegment(id: 0, offset: 12, raw: "We will keep the launch in March and send the proposal by Friday.", text: "Keep the launch in March. Send the proposal by Friday."))
+            var record = NotesJournalRecord(document: document, elapsed: elapsed, writtenAt: date)
+            record.recovered = days == 1
+            try seed.journalStore.write(record)
+            try await library.store.migrate(from: seed.journalStore)
+            var migrated = try await library.store.record(document.id)
+            migrated.recovered = days == 1
+            try await library.store.write(migrated)
+            if days == 0 {
+                try await library.store.keepAudio(document.id, segment: 0, frames: [Data(count: 64_000)], offset: 12, sampleRate: 16_000)
+            }
+        }
+    }
+
 }
 #endif

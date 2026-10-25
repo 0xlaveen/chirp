@@ -17,8 +17,8 @@ final class NotesServerBox: @unchecked Sendable {
 }
 
 /// Live Notes on iPhone and iPad: ChirpCore's `NotesRecorder` (rolling ≤45 s segments over `/v1/stream`, structuring
-/// via `/v1/notes/structure` and `/v1/notes/reorganize` on the Mac) wired to its own microphone capture, the encrypted
-/// recovery journal, the Live Activity and the app's lifecycle. Notes and a keyboard session never hold the microphone
+/// via `/v1/notes/structure` and `/v1/notes/reorganize` on the Mac) wired to its own microphone capture, the sealed
+/// document library, the Live Activity and the app's lifecycle. Notes and a keyboard session never hold the microphone
 /// together. Nothing here logs or exports text.
 @MainActor
 final class LiveNotesController: ObservableObject {
@@ -73,7 +73,14 @@ final class LiveNotesController: ObservableObject {
     @Published private(set) var pauseReason: String?
     @Published private(set) var debugRetention = false
     @Published private(set) var snapshots = NotesSnapshots()
-    @Published private(set) var recovery: NotesJournalRecord?
+    @Published private(set) var entries: [NotesLibraryEntry] = []
+    @Published private(set) var recentlyDeleted: [NotesLibraryEntry] = []
+    @Published private(set) var recordingID: UUID?
+    @Published private(set) var recordingElapsed: TimeInterval = 0
+    @Published private(set) var totalAudioBytes = 0
+    @Published private(set) var libraryReady = false
+    @Published private(set) var undoDeleted: [UUID] = []
+    let library: NotesLibrary?
     @Published private(set) var health: Health?
     @Published private(set) var notice = ""
     @Published private(set) var preferences = NotesPreferences()
@@ -81,14 +88,29 @@ final class LiveNotesController: ObservableObject {
     /// Screen updates skipped while locked in battery saver (for the tests and the status line).
     private(set) var skippedUpdates = 0
 
-    let recorder: NotesRecorder
+    /// Each open document owns its recorder and journal. In-flight AI work always updates its original document.
+    private final class NoteSession {
+        let recorder: NotesRecorder
+        var journal: NotesJournal?
+        var snaps = NotesSnapshots()
+        var textBefore = ""
+        var lastState: NotesRecorderState = .idle
+        init(_ recorder: NotesRecorder) { self.recorder = recorder }
+    }
+    private var sessions: [UUID: NoteSession] = [:]
+    private var selected: NoteSession!
+    var recorder: NotesRecorder { selected.recorder }
+    private var captureRecorder: NotesRecorder? { recordingID.flatMap { sessions[$0]?.recorder } }
+    private var journal: NotesJournal? { selected.journal }
+    private var snaps: NotesSnapshots {
+        get { selected.snaps }
+        set { selected.snaps = newValue }
+    }
     private var deps: Dependencies
     private let serverBox: NotesServerBox
-    private let journal: NotesJournal?
-    private var recoverable: [NotesJournalRecord] = []
-    private var snaps = NotesSnapshots()
-    private var textBefore = ""
-    private var lastState: NotesRecorderState = .idle
+    private var loading: Task<Void, Never>?
+    private var openGeneration = 0
+    private var endingActivity: Task<Void, Never>?
     private var lastActivity: ChirpNotesActivityAttributes.ContentState?
     private var activityLive = false
     private var stopTick: (() -> Void)?
@@ -102,11 +124,19 @@ final class LiveNotesController: ObservableObject {
         self.deps = deps
         let box = NotesServerBox()
         serverBox = box
-        let http = deps.http, structure = deps.structure, reorganize = deps.reorganize, makeStream = deps.makeStream
         let preferences = (try? deps.store?.loadPreferences()) ?? NotesPreferences()
         self.preferences = preferences
-        recorder = NotesRecorder(
-            // Never reached unpaired: Record needs a pairing, and the box keeps the last one.
+        library = deps.store.map { NotesLibrary(store: $0.libraryStore) }
+        selected = makeSession()
+        if deps.observeLifecycle { observeApp() }
+        sync()
+        loading = Task { [weak self] in await self?.loadLibrary() }
+    }
+
+    private func makeSession(record: NotesJournalRecord? = nil) -> NoteSession {
+        let box = serverBox
+        let http = deps.http, structure = deps.structure, reorganize = deps.reorganize, makeStream = deps.makeStream
+        let recorder = NotesRecorder(
             makeSession: { options in makeStream(box.config ?? ServerConfig(baseURL: URL(string: "https://unpaired.invalid")!), options, http) },
             structure: { request in
                 guard let config = box.config else { throw NotesStructureError.unsupported(404) }
@@ -118,67 +148,215 @@ final class LiveNotesController: ObservableObject {
             },
             now: deps.now, sleep: deps.sleep, options: StartOptions(client: "ios", wordTimings: true), structuring: false,
             autoReorganize: preferences.autoReorganize, keptAudio: deps.keptAudio)
-        let sleep = deps.sleep
-        journal = deps.store.map { NotesJournal(store: $0.journalStore, enabled: preferences.recoveryCopy, sleep: sleep) }
-        recorder.onChange = { [weak self] in self?.sync() }
-        journal?.onKeepSaved = { [weak self] in self?.recorder.markSaved() }
-        if preferences.recoveryCopy, let store = deps.store {
-            recoverable = store.journalStore.recoverable()
-            recovery = recoverable.first
+        if let record { recorder.restore(record.document, elapsed: record.elapsed) }
+        let context = NoteSession(recorder)
+        context.textBefore = recorder.document.text
+        if let store = deps.store {
+            context.journal = NotesJournal(store: store.journalStore, enabled: false,
+                library: preferences.keepNotes ? library : nil, sleep: deps.sleep)
+            context.journal?.onWrite = { [weak self] bytes, _ in
+                guard let self else { return }
+                if bytes == nil { self.notice = "Notes could not be kept. Unlock this device and try again." }
+                self.refreshRows()
+            }
         }
-        if deps.observeLifecycle { observeApp() }
-        sync()
+        recorder.onChange = { [weak self, weak context] in
+            guard let context else { return }
+            self?.sync(context)
+        }
+        recorder.shouldKeepAudio = { [weak self] in self?.preferences.keepNotes == true && self?.preferences.keepAudio == true }
+        recorder.onSegmentAudio = { [weak self, weak context] id, segment, frames, offset in
+            guard let context else { return }
+            self?.sync(context)
+            context.journal?.flush()
+            context.journal?.keepAudio(id, segment: segment, frames: frames, offset: offset, sampleRate: PCMConverter.sampleRate)
+        }
+        sessions[recorder.document.id] = context
+        return context
     }
 
-    var isActive: Bool { recorder.state.isActive }
+    private func loadLibrary() async {
+        defer { libraryReady = true }
+        guard let store = deps.store, let library else { return }
+        do {
+            try await store.migrateRecovery()
+            #if DEBUG
+            if ProcessInfo.processInfo.arguments.contains("--chirp-notes-gallery") { try await seedLibrary() }
+            #endif
+            try await library.maintain(retention: preferences.retention)
+            refreshRows()
+        } catch { notice = "Notes storage is unavailable. Unlock this device and try again." }
+    }
+
+    func ready() async { await loading?.value }
+
+    private func refreshRows() {
+        entries = library?.notes ?? []
+        recentlyDeleted = library?.recentlyDeleted ?? []
+        totalAudioBytes = library?.totalAudioBytes ?? 0
+    }
+
+    func open(_ id: UUID) async {
+        openGeneration += 1
+        let generation = openGeneration
+        await ready()
+        guard generation == openGeneration, id != recorder.document.id else { return }
+        journal?.flush()
+        if let existing = sessions[id] { selected = existing }
+        else if let library {
+            do {
+                let record = try await library.record(id)
+                guard generation == openGeneration else { return }
+                selected = makeSession(record: record)
+            } catch { notice = "This note could not be opened."; return }
+        } else { return }
+        notice = ""
+        configure()
+        publish()
+    }
+
+    func newRecording() async {
+        await ready()
+        guard !isActive else {
+            if let recordingID { await open(recordingID) }
+            return
+        }
+        newNotes()
+        await record()
+    }
+
+    func rename(_ title: String) async {
+        let context = selected!, id = recorder.document.id
+        context.recorder.rename(title)
+        context.journal?.update(context.recorder.document, elapsed: context.recorder.elapsed, urgent: true, recording: context.recorder.state.isActive)
+        await context.journal?.settle()
+        refreshRows()
+        if let library, entries.contains(where: { $0.id == id }) {
+            do { try await library.rename(id, title: title); refreshRows() }
+            catch { notice = "The note could not be renamed." }
+        }
+    }
+
+    func delete(_ ids: [UUID]) async {
+        await settleJournal()
+        guard let library else { return }
+        var deleted: [UUID] = []
+        for id in ids where id != recordingID {
+            do {
+                // Flush and retire this editor before moving its durable record to Recently Deleted.
+                sessions[id]?.journal?.flush()
+                await sessions[id]?.journal?.settle()
+                try await library.trash(id)
+                sessions[id]?.recorder.onChange = nil
+                sessions[id]?.recorder.cancel()
+                sessions[id] = nil
+                deleted.append(id)
+            } catch { notice = "Stop recording before deleting a note." }
+        }
+        undoDeleted = deleted
+        if !deleted.isEmpty { notice = deleted.count == 1 ? "Note deleted" : "Notes deleted" }
+        if deleted.contains(document.id) { selected = makeSession(); publish() }
+        refreshRows()
+    }
+
+    func restore(_ ids: [UUID]) async {
+        guard let library else { return }
+        for id in ids {
+            do { try await library.restore(id) } catch { notice = "The note could not be restored." }
+        }
+        undoDeleted = []; refreshRows()
+    }
+
+    func emptyRecentlyDeleted() async {
+        guard let library else { return }
+        for entry in recentlyDeleted {
+            do { try await library.purge(entry.id) } catch { notice = "Some notes could not be deleted." }
+        }
+        undoDeleted = []; refreshRows()
+    }
+
+    func deleteAudio(all: Bool = false) async {
+        guard let library else { return }
+        let ids = all ? (entries + recentlyDeleted).filter { $0.hasAudio }.map(\.id) : [document.id]
+        for id in ids {
+            do { try await library.deleteAudio(id) } catch { notice = "Some audio could not be deleted." }
+        }
+        refreshRows()
+    }
+
+    func audioData(segment: Int) async throws -> Data? {
+        try await library?.store.audioData(document.id, segment: segment)
+    }
+
+    var recordingTitle: String { recordingID.flatMap { sessions[$0]?.recorder.document.title } ?? "Notes" }
+    var selectedAudioBytes: Int { entries.first { $0.id == document.id }?.audioBytes ?? 0 }
+    func hasAudio(_ segment: Int) -> Bool {
+        (audioSegments[document.id] ?? Set(document.audio.map(\.id))).contains(segment)
+    }
+    private var audioSegments: [UUID: Set<Int>] = [:]
+    func refreshAudio() async {
+        guard let library, let record = try? await library.record(document.id) else { return }
+        audioSegments[document.id] = Set(record.document.audio.map(\.id))
+        objectWillChange.send()
+    }
+
+    var isActive: Bool { recordingID != nil || starting }
     var isPaused: Bool { recorder.state == .paused }
     var paired: Bool { deps.server() != nil }
 
     // MARK: recording
 
     func record() async {
-        guard !recorder.state.isActive, !starting else { return }
+        await ready()
+        guard !starting, !recorder.state.isActive else { return }
+        guard recordingID == nil else { notice = "Stop current and continue here."; return }
         guard let config = deps.server() else { notice = "Pair your Mac first."; return }
         guard !deps.otherCaptureActive() else { notice = "End the keyboard session to record notes."; return }
+        let target = selected
         starting = true
         defer { starting = false }
         guard await deps.requestPermission() else { notice = SessionFailure.permission.localizedDescription; return }
         serverBox.config = config
         if let fresh = try? await deps.fetchHealth(config, deps.http), fresh.ok { health = fresh; recorder.serverAvailable() }
-        guard !recorder.state.isActive, !deps.otherCaptureActive() else { return }
+        guard selected === target, !recorder.state.isActive, recordingID == nil, !deps.otherCaptureActive() else { return }
         configure()
         notice = ""
+        await endingActivity?.value
+        recordingID = recorder.document.id
+        library?.setRecordingNote(recordingID)
         recorder.start()
         guard openMicrophone() else { await recorder.fail("Microphone unavailable"); return }
         beginActivity()
     }
 
     func pause(reason: String? = nil) async {
-        guard recorder.state == .recording else { return }
+        guard let active = captureRecorder, active.state == .recording else { return }
         deps.audio.stop()
-        await recorder.pause(reason: reason)
+        await active.pause(reason: reason)
     }
 
     func resume() async {
-        guard recorder.state == .paused else { return }
+        guard let active = captureRecorder, active.state == .paused else { return }
         guard !deps.otherCaptureActive() else { notice = "End the keyboard session to record notes."; return }
         pausedForInterruption = false
-        configure()
-        await recorder.resume()
-        guard recorder.state == .recording else { return }
-        if !openMicrophone() { await recorder.pause(reason: Self.lostReason) }
+        configure(sessions[active.document.id])
+        await active.resume()
+        guard active.state == .recording else { return }
+        if !openMicrophone() { await active.pause(reason: Self.lostReason) }
     }
 
-    func togglePause() async { if isPaused { await resume() } else { await pause() } }
+    func togglePause() async { if captureRecorder?.state == .paused { await resume() } else { await pause() } }
 
     /// Stop: the microphone closes at once, the last segment finalizes and the final pass runs on the Mac. A background
     /// task keeps a locked phone awake for that.
     func stop() async {
-        guard recorder.state.isLive else { return }
+        guard let active = captureRecorder, active.state.isLive else { return }
         deps.audio.stop()
         endBackgroundTask?()
-        endBackgroundTask = deps.backgroundTask { [weak self] in self?.recorder.cancel() }
-        await recorder.stop()
+        endBackgroundTask = deps.backgroundTask { [weak self] in self?.captureRecorder?.cancel() }
+        await active.stop()
+        await sessions[active.document.id]?.journal?.settle()
+        refreshRows()
         endBackgroundTask?(); endBackgroundTask = nil
     }
 
@@ -188,11 +366,11 @@ final class LiveNotesController: ObservableObject {
             await record()
             return recorder.state.isActive ? "Recording notes." : (notice.isEmpty ? "Open Chirp to start Live Notes." : notice)
         case .togglePause:
-            guard recorder.state.isLive else { return "Live Notes is not recording." }
+            guard captureRecorder?.state.isLive == true else { return "Live Notes is not recording." }
             await togglePause()
-            return isPaused ? "Live Notes paused. Microphone off." : "Live Notes recording."
+            return captureRecorder?.state == .paused ? "Live Notes paused. Microphone off." : "Live Notes recording."
         case .stop:
-            guard recorder.state.isLive else { return "Live Notes is not recording." }
+            guard captureRecorder?.state.isLive == true else { return "Live Notes is not recording." }
             await stop()
             return "Live Notes stopped. Your notes are in Chirp."
         }
@@ -200,7 +378,7 @@ final class LiveNotesController: ObservableObject {
 
     @discardableResult
     private func openMicrophone() -> Bool {
-        let recorder = self.recorder
+        let recorder = captureRecorder ?? self.recorder
         do {
             try deps.audio.start(frame: { data in recorder.handleFrame(data, level: Level(pcm16: data)) },
                                  event: { [weak self] event in Task { @MainActor in await self?.audioEvent(event) } })
@@ -211,26 +389,31 @@ final class LiveNotesController: ObservableObject {
     private func audioEvent(_ event: NotesAudioEvent) async {
         switch event {
         case .interrupted:
-            guard recorder.state == .recording else { return }
+            guard captureRecorder?.state == .recording else { return }
             pausedForInterruption = true
             await pause(reason: Self.interruptedReason)
         case .resumable:
-            guard pausedForInterruption, recorder.state == .paused else { return }
+            guard pausedForInterruption, captureRecorder?.state == .paused else { return }
             await resume()
         case .lost:
-            guard recorder.state == .recording else { return }
+            guard captureRecorder?.state == .recording else { return }
             await pause(reason: Self.lostReason)
         }
     }
 
-    /// New: an empty document (the view asks first when the notes are unsaved).
+    /// A blank note is never retained unless the user types, renames it, or starts recording.
     func newNotes() {
-        guard !recorder.state.isActive else { return }
-        recorder.reset()
-        snaps.removeAll()
-        textBefore = ""
+        openGeneration += 1
+        journal?.flush()
+        selected = makeSession()
         notice = ""
-        sync()
+        configure()
+        publish()
+    }
+
+    func stopAndContinue() async {
+        await stop()
+        await record()
     }
 
     // MARK: editing and Organize
@@ -275,30 +458,13 @@ final class LiveNotesController: ObservableObject {
 
     func copy() { deps.copyText(markdown); notice = "Copied notes and transcript." }
 
-    /// Save to Files wrote the export: the notes are saved, so the recovery copy goes.
-    func didExport() { recorder.markSaved(); notice = "Saved to Files." }
+    func didExport() { notice = "Markdown exported." }
 
-    // MARK: recovery
-
-    func keepRecovered() {
-        guard !recorder.state.isActive, !recoverable.isEmpty else { return }
-        let record = recoverable.removeFirst()
-        journal?.discard()
-        journal?.adopt(record)
-        recorder.restore(record.document, elapsed: record.elapsed)
-        snaps.removeAll()
-        textBefore = recorder.document.text
-        recovery = nil
-        sync()
-    }
-
-    /// Waits for the queued journal writes (tests).
-    func settleJournal() async { await journal?.settle() }
-
-    func discardRecovered() {
-        guard !recoverable.isEmpty else { return }
-        journal?.discard(recoverable.removeFirst().document.id)
-        recovery = recoverable.first
+    /// Flushes debounced edits before navigation, backgrounding, and tests.
+    func settleJournal() async {
+        for context in sessions.values { context.journal?.flush() }
+        for context in sessions.values { await context.journal?.settle() }
+        refreshRows()
     }
 
     // MARK: preferences
@@ -308,23 +474,31 @@ final class LiveNotesController: ObservableObject {
         preferences.structureConsentHost = on && health?.correctionLeavesMachine == true ? health?.correctionHost : nil
         save()
     }
-    func setAutoReorganize(_ on: Bool) { preferences.autoReorganize = on; recorder.setAutoReorganize(on); save() }
+    func setAutoReorganize(_ on: Bool) { preferences.autoReorganize = on; for context in sessions.values { context.recorder.setAutoReorganize(on) }; save() }
     func setBatterySaver(_ on: Bool) { preferences.batterySaver = on; save() }
-    func setRecoveryCopy(_ on: Bool) {
-        preferences.recoveryCopy = on
-        journal?.setEnabled(on)
-        if !on {
-            Task { [journal, store = deps.store] in
-                await journal?.settle()
-                try? store?.deleteRecovery()
+    func setKeepNotes(_ on: Bool) {
+        preferences.keepNotes = on
+        for context in sessions.values {
+            context.journal?.flush()
+            context.journal = deps.store.map {
+                NotesJournal(store: $0.journalStore, enabled: false, library: on ? library : nil, sleep: deps.sleep)
             }
-            recoverable.removeAll(); recovery = nil
         }
         save()
+        sync()
     }
+    func setKeepAudio(_ on: Bool) { preferences.keepAudio = on; save() }
+    func setRetention(_ retention: NotesRetention) {
+        preferences.retention = retention; save()
+        Task {
+            do { try await library?.maintain(retention: retention); refreshRows() }
+            catch { notice = "Retention could not be applied." }
+        }
+    }
+    func dismissUpgradeNotice() { preferences.libraryUpgradeNotice = false; save() }
     private func save() {
         do { try deps.store?.save(preferences) } catch { notice = SessionFailure.storage.localizedDescription }
-        configure()
+        for context in sessions.values { configure(context) }
     }
 
     /// Where structuring sends text, for the disclosure line.
@@ -346,12 +520,12 @@ final class LiveNotesController: ObservableObject {
         serverBox.config = config
         guard let fresh = try? await deps.fetchHealth(config, deps.http), fresh.ok else { return }
         health = fresh
-        recorder.serverAvailable()
-        configure()
+        for context in sessions.values { context.recorder.serverAvailable(); configure(context) }
     }
 
     /// The `start` options and the structuring switch for this server (the Mac's hidden `live_notes` style when it has one).
-    private func configure() {
+    private func configure(_ context: NoteSession? = nil) {
+        let recorder = (context ?? selected!).recorder
         let h = health
         let correction = h.map(deps.correctionAllowed) ?? false
         recorder.options = h?.notesCorrection == true
@@ -379,32 +553,41 @@ final class LiveNotesController: ObservableObject {
         guard value != background else { return }
         background = value
         if !value {
-            recorder.serverAvailable()
-            Task { await refreshHealth() }
+            captureRecorder?.serverAvailable()
+            Task { await refreshHealth(); await settleJournal() }
         }
         sync()
+        if value { Task { await settleJournal() } }
     }
 
     private var quiet: Bool { background && preferences.batterySaver }
 
     // MARK: sync
 
-    func sync() {
+    func sync() { sync(selected) }
+
+    private func sync(_ context: NoteSession) {
+        let recorder = context.recorder
         let changes = recorder.takePendingChanges()
-        snaps.record(changes, from: textBefore, result: recorder.document.text, at: Date())
-        textBefore = recorder.document.text
+        context.snaps.record(changes, from: context.textBefore, result: recorder.document.text, at: Date())
+        context.textBefore = recorder.document.text
         let state = recorder.state
-        let leftCapture = state != lastState && !state.isCapturing
-        if state != lastState {
-            lastState = state
-            if !state.isCapturing { deps.audio.stop() }
-            if state != .paused { pausedForInterruption = false }
+        let leftCapture = state != context.lastState && !state.isCapturing
+        if recorder.document.id == recordingID {
+            if state != context.lastState {
+                if !state.isCapturing { deps.audio.stop() }
+                if state != .paused { pausedForInterruption = false }
+            }
+            recordingElapsed = recorder.elapsed
+            updateActivity()
+            if !state.isActive { recordingID = nil; library?.setRecordingNote(nil) }
         }
-        journal?.update(recorder.document, elapsed: recorder.elapsed, urgent: !changes.isEmpty || leftCapture)
-        updateActivity()
-        setTicking(state.isCapturing && !quiet)
+        context.lastState = state
+        context.journal?.update(recorder.document, elapsed: recorder.elapsed,
+            urgent: !changes.isEmpty || leftCapture, recording: state.isActive)
+        setTicking(captureRecorder?.state.isCapturing == true && !quiet)
         if quiet { skippedUpdates += 1; return }
-        publish()
+        if context === selected { publish() }
     }
 
     private func publish() {
@@ -425,6 +608,7 @@ final class LiveNotesController: ObservableObject {
         guard on else { return }
         stopTick = deps.startTicker { [weak self] in
             guard let self, !self.quiet else { return }
+            self.recordingElapsed = self.captureRecorder?.elapsed ?? 0
             self.elapsed = self.recorder.elapsed
             self.connection = self.recorder.connection
         }
@@ -433,6 +617,7 @@ final class LiveNotesController: ObservableObject {
     // MARK: Live Activity
 
     private var activityState: ChirpNotesActivityAttributes.ContentState? {
+        guard let recorder = captureRecorder else { return nil }
         let status: ChirpNotesActivityAttributes.Status
         switch recorder.state {
         case .starting, .recording:
@@ -445,7 +630,7 @@ final class LiveNotesController: ObservableObject {
         // Whole seconds, so an update with the same state does not move the start date by a fraction.
         let started = Date(timeIntervalSince1970: (Date().timeIntervalSince1970 - elapsed).rounded())
         return .init(status: status, startedAt: started, elapsed: elapsed.rounded(.down),
-                     debugRetention: recorder.debugRetention || health?.debugRetention == true)
+                     debugRetention: recorder.debugRetention || health?.debugRetention == true, title: String(recorder.document.title.prefix(60)))
     }
 
     private func beginActivity() {
@@ -462,10 +647,10 @@ final class LiveNotesController: ObservableObject {
         guard activityLive else { return }
         guard let state = activityState else {
             activityLive = false; lastActivity = nil
-            Task { await deps.activity.end() }
+            endingActivity = Task { await deps.activity.end() }
             return
         }
-        guard state.status != lastActivity?.status || state.debugRetention != lastActivity?.debugRetention else { return }
+        guard state.status != lastActivity?.status || state.debugRetention != lastActivity?.debugRetention || state.title != lastActivity?.title else { return }
         lastActivity = state
         Task { await deps.activity.update(state) }
     }
@@ -506,7 +691,7 @@ extension LiveNotesController {
             requestPermission: { await AVAudioApplication.requestRecordPermission() },
             activity: .system, store: store)
         let made = LiveNotesController(deps)
-        if store == nil { made.notice = "Protected storage unavailable, so no recovery copy is kept." }
+        if store == nil { made.notice = "Protected storage unavailable, so notes cannot be kept on this device." }
         return made
     }
 }

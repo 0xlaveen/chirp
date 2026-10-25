@@ -10,6 +10,8 @@
     "App/LiveNotesView.swift",
     "App/MicrophoneCapture.swift",
     "App/NetworkKind.swift",
+    "App/NotesBlocksView.swift",
+    "App/NotesLibraryView.swift",
     "App/Onboarding.swift",
     "App/PairingScanner.swift",
     "App/PairingView.swift",

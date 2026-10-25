@@ -28,7 +28,8 @@ struct LiveNotesControllerTests {
         }
     }
 
-    func fixture(root: URL? = nil, secrets: MemorySecretStore = MemorySecretStore(), health: Health = LiveNotesController.syntheticHealth) throws -> Fixture {
+    func fixture(root: URL? = nil, secrets: MemorySecretStore = MemorySecretStore(), health: Health = LiveNotesController.syntheticHealth,
+                 reorganize: @escaping @Sendable (NotesReorganizeRequest) async throws -> NotesReorganizeResponse = { LiveNotesController.syntheticReorganize($0) }) throws -> Fixture {
         let root = root ?? FileManager.default.temporaryDirectory.appendingPathComponent("chirp-notes-unit-" + UUID().uuidString)
         let store = try NotesStore(root: root, secrets: secrets)
         let values = Values(), audio = SyntheticNotesAudio()
@@ -40,7 +41,7 @@ struct LiveNotesControllerTests {
             fetchHealth: { _, _ in health },
             makeStream: { _, options, _ in StreamSession(transport: SyntheticTransport(automatic: true), options: options) },
             structure: { _, _, request in LiveNotesController.syntheticStructure(request) },
-            reorganize: { _, _, request in LiveNotesController.syntheticReorganize(request) },
+            reorganize: { _, _, request in try await reorganize(request) },
             audio: audio, requestPermission: { values.permission },
             activity: NotesActivityControl(begin: { state in
                 guard values.activityEnabled else { throw NotesLiveActivity.Unavailable.disabled }
@@ -167,38 +168,126 @@ struct LiveNotesControllerTests {
         #expect(f.notes.document.text == typed && !f.notes.canUndoOrganize)
     }
 
-    @Test func anUnsavedSessionIsOfferedAgainAndKeptOrDiscarded() async throws {
+    @Test func stoppedNotesPersistAcrossRelaunchAndExportDoesNotDeleteThem() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("chirp-notes-unit-" + UUID().uuidString)
         let secrets = MemorySecretStore()
         let first = try fixture(root: root, secrets: secrets)
         await first.notes.record()
         try await eventually("recording") { first.notes.state == .recording }
         await first.notes.stop()
-        try await eventually("stopped and structured") { first.notes.state == .stopped && first.notes.document.text.contains("Synthetic words.") }
         await first.notes.settleJournal()
-        #expect(!first.journalFiles.isEmpty)
-        let text = first.notes.recorder.document.text
+        let id = first.notes.document.id, text = first.notes.document.text
+        #expect(first.notes.entries.map(\.id) == [id])
+        first.notes.didExport()
+        await first.notes.settleJournal()
         first.notes.recorder.cancel(); first.audio.stop()
 
         let second = try fixture(root: root, secrets: secrets); defer { second.clean() }
-        #expect(second.notes.recovery?.document.text == text)
-        second.notes.keepRecovered()
-        #expect(second.notes.document.text == text && second.notes.state == .stopped && second.notes.recovery == nil)
-        second.notes.didExport()
-        try await eventually("a saved document has no recovery copy") { second.journalFiles.isEmpty }
+        await second.notes.ready()
+        #expect(second.notes.entries.map(\.id) == [id])
+        await second.notes.open(id)
+        #expect(second.notes.document.text == text && second.notes.state == .stopped)
+        #expect(second.notes.entries.first?.recovered == false)
     }
 
-    @Test func turningTheRecoveryCopyOffDeletesItAndItsKey() async throws {
-        let secrets = MemorySecretStore()
-        let f = try fixture(secrets: secrets); defer { f.clean() }
-        f.notes.edit("A line typed by hand")
-        try await eventually("journal written") { !f.journalFiles.isEmpty }
-        f.notes.setRecoveryCopy(false)
-        try await eventually("deleted") {
-            (try? FileManager.default.contentsOfDirectory(atPath: f.store.recoveryDirectory.path).isEmpty) == true
-                && (try? secrets.read(account: "notes-recovery-key")) == nil
+    @Test func explicitOptOutStopsNewWritesAndCanBeEnabledAgain() async throws {
+        let f = try fixture(); defer { f.clean() }
+        await f.notes.ready()
+        f.notes.setKeepNotes(false)
+        f.notes.edit("A private transient thought")
+        await f.notes.settleJournal()
+        #expect(f.notes.entries.isEmpty)
+        #expect(try f.store.loadPreferences().keepNotes == false)
+        f.notes.setKeepNotes(true)
+        await f.notes.settleJournal()
+        #expect(f.notes.entries.count == 1)
+    }
+
+    @Test func browsingKeepsRecordingPinnedAndContinueAppendsABoundary() async throws {
+        let f = try fixture(); defer { f.clean() }
+        await f.notes.ready()
+        f.notes.edit("## Older note\n- [ ] Review")
+        await f.notes.settleJournal()
+        let older = f.notes.document.id
+        await f.notes.newRecording()
+        try await eventually("recording") { f.notes.state == .recording }
+        let active = f.notes.document.id
+        await f.notes.open(older)
+        #expect(f.notes.document.id == older && f.notes.recordingID == active && f.notes.isActive)
+        #expect(f.audio.isRunning)
+        await f.notes.delete([active])
+        #expect(f.notes.entries.contains { $0.id == active })
+        await f.notes.stop()
+        #expect(!f.notes.isActive && f.notes.document.id == older)
+        await f.notes.open(active)
+        let elapsed = f.notes.elapsed
+        await f.notes.record()
+        try await eventually("continued") { f.notes.state == .recording }
+        #expect(f.notes.document.sessions.count == 2)
+        #expect(f.notes.document.sessions.last?.offset == elapsed)
+        await f.notes.stop()
+        await f.notes.delete([older])
+        #expect(f.notes.recentlyDeleted.map(\.id) == [older])
+        await f.notes.restore([older])
+        #expect(f.notes.entries.contains { $0.id == older })
+    }
+
+    actor OrganizeGate {
+        private var continuation: CheckedContinuation<NotesReorganizeResponse, Never>?
+        private var released = false
+        private var response: NotesReorganizeResponse { NotesReorganizeResponse(markdown: "## Organized original\n- First note only", reorganized: true, changed: true) }
+        func respond(_ request: NotesReorganizeRequest) async -> NotesReorganizeResponse {
+            if released { return response }
+            return await withCheckedContinuation { continuation = $0 }
         }
-        #expect(try f.store.loadPreferences().recoveryCopy == false)
+        func release() {
+            released = true
+            continuation?.resume(returning: response)
+            continuation = nil
+        }
+    }
+
+    @Test func lateOrganizeUpdatesItsOriginalNoteWhileAnotherIsOpen() async throws {
+        let gate = OrganizeGate()
+        let f = try fixture(reorganize: { await gate.respond($0) }); defer { f.clean() }
+        await f.notes.ready()
+        await f.notes.refreshHealth()
+        f.notes.setAutoReorganize(false)
+        f.notes.edit("## Original\n- We reviewed the next quarter budget and agreed to send the updated contract on Thursday.")
+        await f.notes.settleJournal()
+        let original = f.notes.document.id
+        let originalRecorder = f.notes.recorder
+        f.notes.organize()
+        try await eventually("organize pending") { f.notes.reorganize.isRunning }
+        f.notes.newNotes()
+        f.notes.edit("## Other\n- Keep exactly these words")
+        let other = f.notes.document
+        await gate.release()
+        try await eventually("original organize finished") { !originalRecorder.reorganizeStatus.isRunning }
+        await f.notes.settleJournal()
+        #expect(f.notes.document.id == other.id && f.notes.document.text == other.text)
+        #expect(try await f.store.libraryStore.record(original).document.text.contains("Organized original"))
+    }
+
+    @Test func audioIsOptInAndStoredAfterItsSegment() async throws {
+        let f = try fixture(); defer { f.clean() }
+        await f.notes.record()
+        try await eventually("recording") { f.notes.state == .recording }
+        await f.notes.stop()
+        #expect(f.notes.totalAudioBytes == 0)
+        f.notes.setKeepAudio(true)
+        await f.notes.record()
+        try await eventually("recording again") { f.notes.state == .recording }
+        try await Task.sleep(for: .milliseconds(250))
+        await f.notes.stop()
+        await f.notes.settleJournal()
+        #expect(f.notes.totalAudioBytes > 0)
+        let record = try await f.store.libraryStore.record(f.notes.document.id)
+        let reference = try #require(record.document.audio.first)
+        #expect(reference.id == 1)
+        #expect(try await f.notes.audioData(segment: reference.id)?.isEmpty == false)
+        await f.notes.deleteAudio()
+        #expect(f.notes.totalAudioBytes == 0 && !f.notes.document.text.isEmpty)
     }
 
     @Test func structuringNeedsConsentForAnOffMacDestination() async throws {
