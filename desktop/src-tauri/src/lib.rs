@@ -1,5 +1,8 @@
 pub mod audio;
+pub mod files;
 pub mod hotkey;
+pub mod library;
+pub mod notes;
 pub mod platform;
 pub mod protocol;
 pub mod settings;
@@ -65,13 +68,17 @@ fn save_preferences(
     pairing_link: Option<String>,
 ) -> Result<(), String> {
     let state = app.state::<Runtime>();
-    if state
+    let dictation_guard = state.active.lock().map_err(|_| "Session unavailable")?;
+    if dictation_guard.is_some() {
+        return Err("Stop dictation before changing settings".into());
+    }
+    let notes_state = app.state::<notes::NotesRuntime>();
+    let notes_guard = notes_state
         .active
         .lock()
-        .map_err(|_| "Session unavailable")?
-        .is_some()
-    {
-        return Err("Stop dictation before changing settings".into());
+        .map_err(|_| "Recording unavailable")?;
+    if notes_guard.is_some() {
+        return Err("Stop the note before changing settings".into());
     }
     let mut settings = settings;
     settings::stream_url(&settings.url)?;
@@ -104,6 +111,15 @@ fn start(app: &tauri::AppHandle) -> Result<(), String> {
     let mut active = state.active.lock().map_err(|_| "Session unavailable")?;
     if active.is_some() {
         return Ok(());
+    }
+    if app
+        .state::<notes::NotesRuntime>()
+        .active
+        .lock()
+        .map_err(|_| "Recording unavailable")?
+        .is_some()
+    {
+        return Err("Stop the note before dictating into another app".into());
     }
     let settings = state
         .settings
@@ -345,6 +361,8 @@ fn register_hotkey(app: &tauri::AppHandle) {
 
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
+        .manage(notes::NotesRuntime::default())
         .manage(Runtime {
             settings: Mutex::new(settings::Settings::read()),
             active: Mutex::new(None),
@@ -362,7 +380,20 @@ pub fn run() {
             save_preferences,
             dictate_start,
             dictate_stop,
-            dictate_cancel
+            dictate_cancel,
+            notes::notes_list,
+            notes::notes_create,
+            notes::notes_get,
+            notes::notes_edit,
+            notes::notes_trash,
+            notes::notes_empty_trash,
+            notes::notes_discard_blank,
+            notes::notes_record,
+            notes::notes_stop,
+            notes::notes_organize,
+            notes::notes_undo_organize,
+            notes::notes_export,
+            notes::notes_apply_organize, notes::notes_flush_complete
         ])
         .setup(|app| {
             use tauri::{
@@ -370,23 +401,47 @@ pub fn run() {
                 tray::TrayIconBuilder,
             };
             let open = MenuItem::with_id(app, "open", "Open Chirp", true, None::<&str>)?;
-            let stop = MenuItem::with_id(app, "stop", "Stop dictation", true, None::<&str>)?;
+            let notes = MenuItem::with_id(app, "notes", "Notes library…", true, None::<&str>)?;
+            let stop = MenuItem::with_id(app, "stop", "Stop recording", true, None::<&str>)?;
             let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
-            let menu = Menu::with_items(app, &[&open, &stop, &quit])?;
+            let menu = Menu::with_items(app, &[&open, &notes, &stop, &quit])?;
             let mut tray = TrayIconBuilder::new()
                 .menu(&menu)
                 .tooltip("Chirp")
                 .on_menu_event(|app, event| match event.id.as_ref() {
-                    "open" => {
+                    "open" | "notes" => {
+                        if event.id.as_ref() == "notes" {
+                            let _ = app.emit("open-notes", ());
+                        }
                         if let Some(window) = app.get_webview_window("main") {
                             let _ = window.show();
                             let _ = window.set_focus();
                         }
                     }
-                    "stop" => signal(app, Control::Stop),
+                    "stop" => {
+                        signal(app, Control::Stop);
+                        let app = app.clone();
+                        tauri::async_runtime::spawn(async move {
+                            let _ = notes::notes_stop(app, false, None).await;
+                        });
+                    }
                     "quit" => {
                         signal(app, Control::Cancel);
-                        app.exit(0);
+                        let app = app.clone();
+                        tauri::async_runtime::spawn(async move {
+                            let saved=notes::flush_before_quit(&app).await;
+                            if let Err(detail)=saved {
+                                if let Some(window)=app.get_webview_window("main"){let _=window.show();let _=window.set_focus();}
+                                let _=app.emit("notes-status",serde_json::json!({"id":"","detail":detail}));
+                                return;
+                            }
+                            let stopped = tokio::time::timeout(
+                                std::time::Duration::from_secs(90),
+                                notes::notes_stop(app.clone(), false, None),
+                            ).await;
+                            if !matches!(stopped,Ok(Ok(()))){let _=app.emit("notes-status",serde_json::json!({"id":"","detail":"Notes is still finishing. Try Quit again when recording stops."}));return;}
+                            app.exit(0);
+                        });
                     }
                     _ => {}
                 });

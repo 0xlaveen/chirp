@@ -29,3 +29,19 @@ A Speak-button request receives only its single final and an unavailable-confide
 The launcher widget contains static controls only: no note text, dictated words or periodic refresh. Quick dictate is excluded from Recents, disables its screenshot thumbnail where supported, and cancels microphone/network work when left. Scratchpad hand-off is a one-use, expiring in-process value, never a text Intent extra, preference, log or notification.
 
 Plain-text shares into Notes are saved in the existing sealed, local library or appended as the user’s own edit to the same recording/paused note. Sharing alone makes no speech-server request. The text is sent for processing only if the user later chooses Organize. Oversized and non-text shares are refused. The receiver does not return any library data to the sharing app.
+
+## Linux and Windows desktop Notes
+
+Desktop Notes stores text documents and an index locally under the app's per-user
+data directory. Linux uses private 0700 folders and 0600 files; Windows verifies a
+protected user + SYSTEM ACL before writing note content. These files are not
+encrypted, synced or registered with a desktop search index. Notes stay until you
+delete them; Recently Deleted keeps them for 30 days unless explicitly emptied.
+Export Markdown writes a separate file to the destination you choose.
+
+The desktop streams microphone audio only to your paired Chirp server. It does
+not keep audio on disk. Optional smart notes sends each completed transcript to
+the same server's configured cleanup model; Organize sends the notes text there.
+The server's existing debug-retention and cleanup endpoint settings still apply.
+The app reports debug retention when the server advertises it. Tokens stay in
+the system credential store; note text, audio and credentials are never logged.

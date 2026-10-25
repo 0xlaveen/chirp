@@ -175,3 +175,59 @@ Preferences contain no token; keyring uses native Windows Credential Manager,
 Apple Keychain (development only), and Linux Secret Service. Spoken text is
 memory-only and is never logged. The only committed image assets are copies of
 the approved Pond artwork and glyph, plus the existing generated app icon.
+
+
+## Notes library
+
+Open **Notes** from the window or tray. New note makes an editable document;
+Record starts streaming the microphone to your paired server. Completed 45-second
+segments save automatically. Pause finishes queued audio; Resume continues the
+same capture, while Continue recording adds a dated boundary. You can browse and
+edit another note while recording. The recording control returns to its document.
+Dictation and Notes share the microphone, so stop one before starting the other.
+
+Notes are kept indefinitely on this computer. Search includes titles, the notes
+body and transcript. A rename stays in place when AI text arrives. Delete moves a
+stopped note to Recently Deleted for 30 days; Undo and Restore recover it. Emptying
+Recently Deleted asks for confirmation. Untouched blank documents are discarded
+when you leave them. Export Markdown creates a separate file; the library keeps
+saving the original document.
+
+**Structure new segments** is opt-in and uses your server's configured cleanup
+model. Each transcript segment saves before this request. If it fails, its plain
+text is appended instead. Pending work stays tied to its original note when you
+switch documents. Organize works on up to 3,500 characters, applies only if the
+note has not changed, and offers Undo until the next edit. Notes remain editable
+while requests run; no AI request is allowed to replace newer edits.
+
+Storage is `$XDG_DATA_HOME/chirp-desktop/notes` (default
+`~/.local/share/chirp-desktop/notes`) on Linux and
+`%LOCALAPPDATA%\chirp-desktop\notes` on Windows. Files are local JSON, not encrypted:
+Linux folders/files use 0700/0600; Windows verifies a protected user + SYSTEM ACL
+before writing content. Atomic replacement and an exclusive process lock protect
+records. Interrupted recordings reopen as Recovered, without starting the mic.
+Unreadable or newer-format files are kept; the list reports a warning.
+
+This desktop phase captures microphone audio only. It does not retain audio,
+identify speakers, replay recordings, capture system sound or offer voice edits.
+The transcript contains completed segments; unfinished or queued audio can be
+lost if the app crashes or its connection fails. Queues are bounded; a server that
+cannot keep up stops recording visibly. Server debug retention is shown when
+reported by the stream. Smart notes can still finish after recording stops.
+
+For an explicit real ONNX + pinned GGUF Notes test on a Docker macOS host,
+first run `server/scripts/linux-container-smoke.sh` from the portable-server
+branch to build `chirp-linux-server:test`, then build `--example notes-smoke`
+with `desktop/scripts/linux-container.sh`. Set
+`CHIRP_DESKTOP_EVIDENCE_CONTAINER` to its printed container ID and
+`CHIRP_GGUF_FILE` to the explicitly fetched catalog model, then run
+`desktop/scripts/notes-container-smoke.sh`. It uses synthetic `say` speech,
+throwaway tokens/home/library and private container networking. It verifies
+real segmented streaming, Stop drain, smart structure, durable edits, search,
+export, trash/restore and absence of transcript words in server logs.
+
+Frontend review fixtures (synthetic content, mocked native commands):
+
+![Notes editor in Pond dark colors](../docs/screenshots/desktop/notes-dark.png)
+
+![Notes search in a narrow light window](../docs/screenshots/desktop/notes-light-narrow.png)
