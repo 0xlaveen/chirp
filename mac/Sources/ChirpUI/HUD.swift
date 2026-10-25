@@ -467,6 +467,9 @@ struct DiffText: View {
     let segments: [WordDiff.Segment]
     let fade: Double
     let contrast: Bool
+    /// The HUD's 15 pt and line cap; the History window passes its body font and no cap.
+    var font: Font = .system(size: 15)
+    var lineLimit: Int? = HUDViewMetrics.transcriptLines
 
     /// The text without the removed words (the width the HUD settles at); removed words add width while visible.
     static func plain(_ segments: [WordDiff.Segment]) -> String { segments.map(\.text).joined(separator: " ") }
@@ -487,8 +490,8 @@ struct DiffText: View {
                     .foregroundStyle(Color.chirp.inkMuted.opacity((contrast ? 1 : 0.9) * (1 - fade)))
             }
         }
-        .font(.system(size: 15))
-        .lineLimit(HUDViewMetrics.transcriptLines)
+        .font(font)
+        .lineLimit(lineLimit)
     }
 }
 

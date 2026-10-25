@@ -21,7 +21,7 @@ public enum HistoryText {
     public static let unavailableDetail = "Chirp could not read its key from the Keychain. Unlock the Mac's login keychain and reopen this window."
     public static let cleaned = "Cleaned"
     public static let changes = "What clean-up changed"
-    public static let changesFootnote = "Struck-through words are what you said that clean-up removed; highlighted words were added, tinted ones only changed case or punctuation."
+    public static let changesFootnote = "Struck-through words are what you said that clean-up removed; underlined words were added or changed."
     public static let inserted = "What was inserted"
     public static let insertAgain = "Insert Again"
     public static let copy = "Copy"
