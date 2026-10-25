@@ -14,6 +14,8 @@ source ~/.local/share/chirp-android/env.sh
 android/scripts/e2e-all.sh
 # Optional focused retry, still on a fresh owned AVD:
 android/scripts/e2e-all.sh --only notes
+# Speaker labels alone (needs the speaker model; another run holds 7899 → CHIRP_E2E_PORT=7898):
+CHIRP_SPEAKER_MODEL=/path/to/voxceleb_resnet34_LM.onnx android/scripts/e2e-all.sh --only speakers
 ```
 
 **One emulator at a time across the entire host. Queue; do not parallelise.**
@@ -25,12 +27,13 @@ Other emulator scripts must use the same lease; see `reference.md`.
 The wrapper builds debug, syncs the server environment, reserves a free even
 console port and its adjacent adb port, launches `chirp-fold` **read-only**, waits
 for boot, and traps exit to stop only its own emulator PID. Never reuse or kill
-another instance. Each server check refuses an occupied **7899**, uses temporary
+another instance. Each server check refuses an occupied **7899** (or `CHIRP_E2E_PORT`:
+when another run on the host holds 7899, pick a free port such as 7898; never 7821), uses temporary
 HOME and its own token, and terminates its own server. Never use 7821.
 `CHIRP_MODEL_DIR` can select an already downloaded Parakeet model directory.
 Debug build generates a disposable TLS certificate with
 `android/scripts/make-emulator-tls.sh`; the server uses its key and the APK
-trusts its certificate for `https://10.0.2.2:7899` only in debug.
+trusts its certificate for `https://10.0.2.2` (any port) only in debug.
 
 | Script under `android/scripts/` | Coverage / invocation |
 | --- | --- |

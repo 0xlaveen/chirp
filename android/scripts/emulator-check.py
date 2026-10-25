@@ -272,7 +272,8 @@ def main():
     args.add_argument("--bubble-check", action="store_true")
     args.add_argument("--quickdictate-check", action="store_true")
     args.add_argument("--serial")
-    args.add_argument("--server-port", type=int, default=7899)
+    # CHIRP_E2E_PORT lets parallel runs on one host use different throwaway ports (never 7821).
+    args.add_argument("--server-port", type=int, default=int(os.environ.get("CHIRP_E2E_PORT", "7899")))
     args.add_argument("--device-check", action="store_true")
     args.add_argument("--tls", action="store_true")
     args.add_argument("--expect-crash", action="store_true")
@@ -282,6 +283,7 @@ def main():
     assert os.environ.get("ANDROID_SERIAL", SERIAL) == SERIAL
     scheme = "https" if opt.tls else "http"
     assert 1024 <= opt.server_port <= 65535, "Use an unprivileged server port"
+    assert opt.server_port != 7821, "7821 is the live server's port; use a throwaway one"
     base = scheme + "://127.0.0.1:" + str(opt.server_port)
     cert = opt.tls_dir / "generated/chirp-debug-res/raw/emulator_ca.pem"
     context = ssl.create_default_context(cafile=str(cert)) if opt.tls else None
