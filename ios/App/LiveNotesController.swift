@@ -586,7 +586,7 @@ final class LiveNotesController: ObservableObject {
         background = value
         if !value {
             captureRecorder?.serverAvailable()
-            Task { await refreshHealth(); await settleJournal() }
+            Task { await loadLibrary(); await refreshHealth(); await settleJournal() }
         }
         sync()
         if value { Task { await settleJournal() } }

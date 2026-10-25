@@ -47,6 +47,33 @@ private func libraryDirectory() -> URL {
         #expect(try await opened.totalAudioBytes() == 0)
     }
 
+    private final class CodecAvailability: @unchecked Sendable {
+        private let lock = NSLock()
+        private var available = true
+        func set(_ value: Bool) { lock.withLock { available = value } }
+        func check() throws { try lock.withLock { if !available { throw CocoaError(.fileWriteNoPermission) } } }
+    }
+
+    @Test func sealedIndexFailureRetriesFromDiskAfterStorageBecomesAvailable() async throws {
+        let dir = libraryDirectory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let key = SymmetricKey(size: .bits256), availability = CodecAvailability()
+        let codec = NotesJournalCodec(seal: {
+            try availability.check()
+            return try AES.GCM.seal($0, using: key).combined!
+        }, open: { try AES.GCM.open(AES.GCM.SealedBox(combined: $0), using: key) })
+        let writer = NotesLibraryStore(directory: dir, codec: codec)
+        let first = NotesJournalRecord(document: NotesDocument(text: "Already kept"), elapsed: 0)
+        try await writer.write(first)
+        let retrying = NotesLibraryStore(directory: dir, codec: codec)
+        availability.set(false)
+        await #expect(throws: CocoaError.self) { try await retrying.list() }
+        availability.set(true)
+        let second = NotesJournalRecord(document: NotesDocument(text: "Kept while reader waited"), elapsed: 0)
+        try await writer.write(second)
+        #expect(Set(try await retrying.list().map(\.id)) == [first.document.id, second.document.id])
+    }
+
     @Test func schemaOneMigratesOnceAndUnknownSchemasRemainUntouched() async throws {
         let root = libraryDirectory()
         defer { try? FileManager.default.removeItem(at: root) }

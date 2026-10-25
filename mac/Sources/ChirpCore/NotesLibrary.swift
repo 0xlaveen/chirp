@@ -194,6 +194,10 @@ public actor NotesLibraryStore {
 
     private func loadIndex() throws {
         guard entries == nil else { return }
+        var loaded = false
+        // A sealed mobile directory can be temporarily unavailable while locked. Retry from disk after unlock.
+        // Keep the existing plaintext Mac path unchanged.
+        defer { if codec != nil && !loaded { entries = nil } }
         let index = directory.appendingPathComponent("index.json")
         let cached = (try? Data(contentsOf: index)).flatMap { stored -> [NotesLibraryEntry]? in
             guard let data = try? codec?.open(stored) ?? stored else { return nil }
@@ -223,7 +227,7 @@ public actor NotesLibraryStore {
                 continue
             }
             var recovered = r
-            if recovered.recording == true {
+            if recovered.recording == true && !recordingIDs.contains(id) {
                 recovered.recording = false; recovered.recovered = true
                 try writeBytes(JSONEncoder().encode(recovered), to: file(id))
             }
@@ -231,6 +235,7 @@ public actor NotesLibraryStore {
         }
         entries = entries?.filter { found.contains($0.key) }
         try saveIndex()
+        loaded = true
     }
 
     private func writeBytes(_ plain: Data, to url: URL) throws {
