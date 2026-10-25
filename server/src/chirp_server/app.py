@@ -809,7 +809,9 @@ def create_app(settings=None, engine=None, token=None, corrector=None, speakers=
         Cancel or disconnect during finalization marks the utterance cancelled, which
         suppresses correction, retention and final delivery; native inference still
         drains on its owning thread. Frames racing with finalization are returned for
-        normal dispatch afterwards.
+        normal dispatch afterwards, and a read still in flight is returned rather than
+        cancelled: cancelling it could drop a frame it had already taken off the socket (a
+        `start` sent right after `cancel`).
         """
         finisher = asyncio.create_task(utterance.finish())
         raced = []
@@ -817,13 +819,12 @@ def create_app(settings=None, engine=None, token=None, corrector=None, speakers=
             reader = asyncio.create_task(receive(ws))
             done, _ = await asyncio.wait({finisher, reader}, return_when=asyncio.FIRST_COMPLETED)
             if finisher in done:
+                if not reader.done():
+                    return finisher.result(), raced, reader
                 # A completed reader's frame must not be lost; keep it for re-dispatch.
-                if reader.done() and not reader.cancelled():
-                    with contextlib.suppress(Exception, asyncio.CancelledError):
+                if not reader.cancelled():
+                    with contextlib.suppress(Exception):
                         raced.append(reader.result())
-                reader.cancel()
-                with contextlib.suppress(Exception, asyncio.CancelledError):
-                    await reader
                 break
             try:
                 message = reader.result()
@@ -843,11 +844,12 @@ def create_app(settings=None, engine=None, token=None, corrector=None, speakers=
                 utterance.cancel()
             else:
                 raced.append(message)
-        return finisher.result(), raced
+        return finisher.result(), raced, None
 
     async def stream(ws: WebSocket):
         nonlocal pending_auth
         utterance = None
+        pending = None  # A read finalize() left in flight; the next frame comes from it.
         await ws.accept()
         try:
             valid = authorized(credential, bearer(ws.headers))
@@ -875,7 +877,18 @@ def create_app(settings=None, engine=None, token=None, corrector=None, speakers=
                 return
             carry = deque()
             while True:
-                message = carry.popleft() if carry else await receive(ws)
+                if carry:
+                    message = carry.popleft()
+                elif pending is not None:
+                    reader, pending = pending, None
+                    try:
+                        message = await reader
+                    except TimeoutError:
+                        # Its idle deadline started during finalization; give the client a
+                        # full one from now.
+                        message = await receive(ws)
+                else:
+                    message = await receive(ws)
                 if isinstance(message, bytes):
                     if utterance is None:
                         raise AudioError()
@@ -890,7 +903,7 @@ def create_app(settings=None, engine=None, token=None, corrector=None, speakers=
                     utterance = None
                 elif kind == "stop" and utterance:
                     utterance.set_context(message)
-                    final, raced = await finalize(ws, utterance)
+                    final, raced, pending = await finalize(ws, utterance)
                     # A cancelled utterance sends nothing: no final, no error; the
                     # socket stays usable for the next start.
                     if final is not None:
@@ -915,6 +928,8 @@ def create_app(settings=None, engine=None, token=None, corrector=None, speakers=
                 await ws.send_json(error("engine"))
                 await ws.close(code=1011)
         finally:
+            if pending is not None:
+                pending.cancel()
             if utterance:
                 await utterance.close()
 
