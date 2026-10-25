@@ -23,15 +23,17 @@ struct PondPrimaryButtonStyle: ButtonStyle {
     }
 }
 
-/// A tonal (koiContainer) capsule: secondary actions that still matter, such as Start keyboard session.
+/// A tonal capsule for secondary actions that still matter (Start keyboard session, a setup fix): koiContainer
+/// in light; in dark a raised pond surface with koi text, as on Mac and Android (the dark koiContainer reads muddy).
 struct PondTonalButtonStyle: ButtonStyle {
     @Environment(\.isEnabled) private var enabled
+    @Environment(\.colorScheme) private var scheme
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(.body.weight(.semibold)).multilineTextAlignment(.center)
-            .foregroundStyle(Color.chirp.onKoiContainer)
+            .foregroundStyle(scheme == .dark ? Color.chirp.koi : Color.chirp.onKoiContainer)
             .frame(minHeight: 44).padding(.horizontal, ChirpSpacing.s16).padding(.vertical, ChirpSpacing.s4)
-            .background(Color.chirp.koiContainer, in: Capsule())
+            .background(scheme == .dark ? Color.chirp.surfaceRaised : Color.chirp.koiContainer, in: Capsule())
             .opacity(enabled ? (configuration.isPressed ? 0.8 : 1) : 0.45)
             .contentShape(Capsule())
     }

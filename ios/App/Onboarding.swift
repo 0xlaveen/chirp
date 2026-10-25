@@ -20,6 +20,7 @@ struct Onboarding: View {
     @Environment(\.horizontalSizeClass) private var sizeClass
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.dynamicTypeSize) private var typeSize
+    @Environment(\.colorScheme) private var scheme
 
     var body: some View {
         GeometryReader { proxy in
@@ -211,9 +212,9 @@ struct Onboarding: View {
 
     private func badge(_ symbol: String, done: Bool) -> some View {
         Image(systemName: symbol).font(.system(size: 30, weight: .semibold))
-            .foregroundStyle(done ? Color.chirp.lily : Color.chirp.onKoiContainer)
+            .foregroundStyle(done ? Color.chirp.lily : scheme == .dark ? Color.chirp.koi : Color.chirp.onKoiContainer)
             .frame(width: 72, height: 72)
-            .background(done ? Color.chirp.lily.opacity(0.16) : Color.chirp.koiContainer, in: Circle())
+            .background(done ? Color.chirp.lily.opacity(0.16) : scheme == .dark ? Color.chirp.surfaceRaised : Color.chirp.koiContainer, in: Circle())
             .accessibilityHidden(true)
     }
 

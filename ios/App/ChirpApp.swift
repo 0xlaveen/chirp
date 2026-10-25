@@ -224,7 +224,7 @@ struct ChirpRootView: View {
                     .buttonStyle(.capsuleChip).accessibilityIdentifier("chirp.settings.connection")
                 NavigationLink(value: SettingsRoute.styles) { Label("Styles", systemImage: "sparkles") }
                     .buttonStyle(.capsuleChip).accessibilityIdentifier("chirp.settings.styles")
-                Button("Show setup again", systemImage: "arrow.counterclockwise") { onboarding = true }
+                Button("Show setup again", systemImage: "arrow.counterclockwise") { setupDismissed = false; onboarding = true }
                     .buttonStyle(.capsuleChip).accessibilityIdentifier("chirp.settings.showSetup")
             }
             .padding(.horizontal, ChirpSpacing.s16).padding(.vertical, ChirpSpacing.s8)
