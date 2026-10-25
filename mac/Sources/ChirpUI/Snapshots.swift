@@ -540,7 +540,7 @@ public enum Snapshots {
         "notes-empty", "notes-library", "notes-recording", "notes-search", "notes-no-results", "notes-deleted",
         "notes-continued", "notes-inspector-playing", "notes-review-sheet",
         "notes-transcript-speakers", "notes-transcript-speakers-renamed", "notes-recording-call", "notes-sources-call",
-        "history-cleaned", "history-empty", "settings-dictation-history", "menu-recent-dictations-submenu",
+        "history-cleaned", "history-empty", "menu-recent-dictations-submenu",
     ]
 
     public static var committedScenarios: [Scenario] {

@@ -253,7 +253,7 @@ import Testing
         let page = try #require(form.view(for: .dictation).subviews[0] as? NSStackView)
         #expect(page.arrangedSubviews.first is SettingsPageTitle)
         let sections = page.arrangedSubviews.dropFirst()
-        #expect(sections.count == 3)   // Shortcuts, Dictating, Sounds
+        #expect(sections.count == 4)   // Shortcuts, Dictating, Sounds, History
         #expect(sections.allSatisfy { ($0 as? NSStackView)?.arrangedSubviews.contains { $0 is SettingsCard } == true })
     }
 
@@ -526,7 +526,7 @@ import Testing
         let names = Snapshots.committedNames
         let all = Set(Snapshots.allScenarios.map(\.name))
         #expect(names.allSatisfy { all.contains($0) } && Set(names).count == names.count)
-        #expect(names.count * 2 <= 80)  // 40 states: every Settings page, the 720 × 520 windows and the Notes window states
+        #expect(names.count * 2 <= 82)  // 41 states: every Settings page, the 720 × 520 windows, the Notes window states and History
         // The menu in light and dark, one per Settings tab, setup, the key HUD states and the Notes window.
         #expect(["notes-empty", "notes-library", "notes-recording", "notes-search", "notes-no-results", "notes-deleted",
                  "notes-continued", "notes-inspector-playing", "notes-review-sheet"].allSatisfy(names.contains))
