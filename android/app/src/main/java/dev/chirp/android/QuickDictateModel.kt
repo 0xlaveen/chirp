@@ -103,7 +103,6 @@ internal class QuickDictateModel(
     /** Every departure cancels, including a final still being polished. */
     fun cancel() {
         val old = stream; stream = null; old?.cancel()
-        privateUtterance = PrivateSession.enabled
         partial = ""; stable = ""; level = 0.0; sync()
     }
     fun useRaw() { raw?.let { text = it; raw = null; completed?.invoke(it) } }

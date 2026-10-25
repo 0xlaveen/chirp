@@ -142,6 +142,8 @@ class NotesLibraryScreenTest {
         open("A second thought")
         compose.onNodeWithText("2 selected").assertExists()
         compose.onNodeWithContentDescription("Delete selected notes").performClick()
+        // Deletion runs on IO; Compose idleness alone does not await the storage operation.
+        compose.waitUntil(5000) { compose.onAllNodesWithText("2 notes deleted").fetchSemanticsNodes().isNotEmpty() }
         compose.onNodeWithText("2 notes deleted").assertExists()
         assertTrue(live.model.state.active)
         compose.runOnIdle { assertTrue(library.open(id)!!.entry.deleted) }

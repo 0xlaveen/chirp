@@ -154,9 +154,12 @@ def cleanup_check(output, work):
         focus_editor()
         x, y, _, _ = mic_position(night, work)
         _probe["click"]("Dictation options")
+        _probe["wait_for"]("Private session", 20)
         hierarchy = nodes()
         # Private session adds a row above Styles; Custom may be below the scroll viewport.
         if not any(n.get("text") == "Custom" for n in hierarchy):
+            screenshot(output / ("emulator-cleanup-menu-before-scroll-" + theme + ".png"))
+            (output / ("cleanup-menu-" + theme + ".xml")).write_bytes(adb("shell", "cat", "/sdcard/chirp-windows.xml"))
             popup = next(n for n in hierarchy if n.get("class") == "android.widget.ScrollView")
             x1, y1, x2, y2 = _probe["bounds"](popup)
             adb("shell", "input", "swipe", str((x1 + x2) // 2), str(y2 - 20), str((x1 + x2) // 2), str(y1 + 20), "300")
