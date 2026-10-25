@@ -529,9 +529,9 @@ public final class NotesSession {
 
     // MARK: speaker labels
 
-    /// The footer's "Label speakers" switch (applies from the next Record).
-    private func setSpeakerLabels(_ on: Bool) {
-        guard !isActive else { return }
+    /// "Label speakers", from the ✦ menu or Settings › Notes (applies from the next Record; refused while recording).
+    public func setSpeakerLabels(_ on: Bool) {
+        guard !isActive else { deps.beep(); return }
         speakers.setEnabled(on, documentHasLabels: recorder.document.speakerCount > 0)
         if !speakers.enabled, speakers.diarizer == nil { recorder.speakers = nil }
     }
@@ -1004,11 +1004,29 @@ final class NotesBrowsedNote {
         model.onCopy = recorder.onCopy
         model.onSave = recorder.onSave
         model.onUserEdit = { [weak self] range, text, kind in self?.edit(range, text, kind) }
+        // Its speakers can be renamed, merged and reassigned as the recorder's note's are (saved like typing).
+        model.onSpeakerEdit = { [weak self] edit in self?.editSpeakers(edit) }
     }
 
     private func edit(_ range: NSRange, _ text: String, _ kind: NotesTextChange.Kind) {
         _ = model.document.userEdit(range, text, kind: kind == .toggleTask ? .toggleTask : .user)
         if model.state == .idle, !model.document.isEmpty { model.state = .stopped }
+        changed()
+    }
+
+    /// A speaker fix-up from its transcript; a replace in the notes reaches its editor like an AI change. No voice
+    /// suggestions here: they belong to the recording.
+    func editSpeakers(_ edit: SpeakerEdit) {
+        let model = model
+        let banner = SpeakerEditing.apply(edit, banner: model.visibleSpeakerBanner?.kind, document: { model.document }) { body in
+            let changes = body(&model.document)
+            model.enqueue(changes)
+        }
+        model.speakerBanner = banner.map { SpeakerBanner(document: model.document.id, kind: $0) }
+        if edit != .dismiss { changed() }
+    }
+
+    private func changed() {
         dirty = true
         pending?.cancel()
         pending = Task {

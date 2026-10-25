@@ -332,6 +332,12 @@ public enum Snapshots {
                 $0.structureNotes = true; $0.autoReorganize = true
             },
             form("downloaded", .notes) { $0.speakerModelDownloaded = true },
+            // The whole Notes page, down to Speakers (the real window scrolls to it).
+            Scenario(name: "settings-notes-speakers") {
+                var state = SettingsState()
+                state.speakerModelDownloaded = true; state.speakerLabels = true
+                return settingsWindow(state, .notes, full: true)
+            },
             form("not-downloaded", .notes) { _ in },
             form("ready", .advanced) { styled(&$0) },
             form("unreachable", .advanced) {
@@ -533,6 +539,7 @@ public enum Snapshots {
         "settings-devices-ready", "settings-advanced-ready", "settings-about-ready", "onboarding-welcome",
         "notes-empty", "notes-library", "notes-recording", "notes-search", "notes-no-results", "notes-deleted",
         "notes-continued", "notes-inspector-playing", "notes-review-sheet",
+        "notes-transcript-speakers", "notes-transcript-speakers-renamed",
     ]
 
     public static var committedScenarios: [Scenario] {
@@ -786,6 +793,14 @@ public enum Snapshots {
         return window
     }
 
+    /// A live session's Notes window (the selftest's `--snapshot`): what the real window shows after a recording.
+    public static func notesWindow(_ session: NotesSession, name: String, inspector: Bool = true) -> Scenario {
+        Scenario(name: name, window: {
+            if inspector { session.window.showsInspector = true }
+            return notesWindow(session.model, session.window, size: CGSize(width: 1200, height: 720))
+        })
+    }
+
     /// A Notes window scenario: the demo meeting open in a populated library, recording, 3:12 in.
     static func notes(_ name: String, _ configure: @escaping (NotesModel, NotesLibraryModel) -> Void) -> Scenario {
         Scenario(name: "notes-\(name)", window: {
@@ -921,6 +936,18 @@ public enum Snapshots {
             notes("transcript") { model, library in model.document = demoNotes(gap: true); library.showsInspector = true },
             notes("transcript-speakers") { model, library in
                 model.document = demoSpeakers(); model.speakerLabels = true; model.speakerModel = .ready
+                library.showsInspector = true
+            },
+            // Person 2 renamed to Maya: every turn of theirs follows, and the banner offers the notes' two mentions.
+            notes("transcript-speakers-renamed") { model, library in
+                var d = demoSpeakers()
+                d.livePartial = ""
+                d.userEdit(NSRange(location: 0, length: 0), "## Lantern kickoff\n- Launch target moved to **March 3** (**Person 2** confirmed)\n- [ ] **Person 2** to send the draft spec by **Friday**\n")
+                d.renameSpeaker(2, to: "Maya")
+                model.document = d
+                model.state = .stopped
+                model.speakerLabels = true; model.speakerModel = .ready
+                model.speakerBanner = SpeakerBanner(document: d.id, kind: .offerReplace(old: "Person 2", new: "Maya", count: 2))
                 library.showsInspector = true
             },
             notes("structuring-off-editable") { model, _ in

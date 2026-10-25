@@ -248,7 +248,7 @@ public struct NotesDocument: Equatable, Sendable, Codable {
     }
 
     /// A segment's text as passes see it: one `Person 2: …` line per turn when labelled, else the text.
-    func labelledText(_ s: NotesSegment, separator: String = "\n") -> String {
+    public func labelledText(_ s: NotesSegment, separator: String = "\n") -> String {
         guard let turns = s.turns, !turns.isEmpty else { return s.text }
         return turns.map { roster.displayName($0.person) + ": " + $0.text }.joined(separator: separator)
     }

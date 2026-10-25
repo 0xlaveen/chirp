@@ -4,11 +4,14 @@ import ChirpSpeakers
 import ChirpUI
 import Foundation
 
-/// `ChirpMac --notes-selftest <audio> [--url URL] [--token-file PATH] [--correction] [--expect WORD]… [--fault PLAN] [--fast]`
+/// `ChirpMac --notes-selftest <audio> [--url URL] [--token-file PATH] [--correction] [--expect WORD]… [--fault PLAN] [--fast]
+/// [--speakers N] [--library] [--voices] [--snapshot DIR]`
 /// Plays an audio file through the real `NotesSession` (segments over rolling sockets, structuring, Organize) against a
 /// server, with no microphone, window or TCC. Preferences live in a throwaway suite and the recovery journal is off,
 /// so the app's own state is never touched. Segments, status changes and the final Markdown go to stdout (the
-/// operator asked for them); counts go to stderr. `--fault` loses sockets on the client by audio time.
+/// operator asked for them); counts go to stderr. `--fault` loses sockets on the client by audio time. `--speakers N`
+/// turns on speaker labels with the on-device model already on this Mac (it never downloads), expects exactly N
+/// people, then renames Person 2 and checks the name reaches every turn, the export and the structuring transcript.
 @MainActor
 enum NotesSelfTest {
     static func run(_ args: [String]) async -> Int32 {
@@ -52,7 +55,19 @@ enum NotesSelfTest {
         prefs.serverURL = config.baseURL.absoluteString
         prefs.correction = args.contains("--correction")
         prefs.notesRecoveryCopy = false
-        prefs.notesSpeakerLabels = false
+        let expectSpeakers = value("--speakers").flatMap(Int.init)
+        if args.contains("--speakers"), expectSpeakers == nil { return usage() }
+        if expectSpeakers != nil, !SpeakerModel.isDownloaded() {
+            print("notes-selftest: FAILED — --speakers needs the speaker model on this Mac (turn on Label speakers once)")
+            return 5
+        }
+        prefs.notesSpeakerLabels = expectSpeakers != nil
+        // `--library`: the app's notes library in the throwaway directory, as the window uses it (journal writes, the
+        // hotkey's new note, reopening a stored note).
+        let useLibrary = args.contains("--library")
+        // `--voices`: saved-voice suggestions on too (the embedder rides on the diarizer), with profiles in memory only.
+        prefs.notesVoiceProfiles = args.contains("--voices")
+        if useLibrary { prefs.notesRecoveryCopy = true }
 
         let clock = AudioClock()
         let engine = FileCaptureEngine(frames: frames, fast: args.contains("--fast"), clock: clock)
@@ -68,6 +83,8 @@ enum NotesSelfTest {
             reorganize: { passes.add(); return try await server.reorganizeNotes($0, timeout: NotesController.reorganizeTimeout) },
             speakerStore: SortformerModelStore(), journalStore: NotesJournalStore(directory: journal))
         deps.startTicker = { _ in {} }
+        if args.contains("--voices") { deps.voiceModelStore = WeSpeakerModelStore() }
+        if useLibrary { deps.library = NotesLibrary(store: NotesLibraryStore(directory: journal.appendingPathComponent("library"))) }
         let session = NotesSession(deps)
         session.health = { health }
         session.healthChanged()
@@ -84,6 +101,8 @@ enum NotesSelfTest {
                 print("  \(stamp()) status: \(status)")
             }
             lastStatus = status
+            // The window reads the rows on every change: the incremental row cache sees each step as it would.
+            if expectSpeakers != nil { _ = session.model.transcriptRows }
             let segments = session.recorder.document.segments
             while printed < segments.count {
                 let s = segments[printed]
@@ -114,12 +133,86 @@ enum NotesSelfTest {
         let heard = (transcript + " " + document.text).lowercased()
         let missing = expects.filter { !heard.contains($0.lowercased()) }
         if !missing.isEmpty { print("notes-selftest: FAILED — missing expected words: \(missing.joined(separator: ", "))"); return 3 }
+        if let expectSpeakers, let code = checkSpeakers(session, expect: expectSpeakers) { return code }
+        if let dir = value("--snapshot") {
+            // The real window over the session's own models, drawn offscreen (never shown), light and dark.
+            let files = (try? Snapshots.render(to: URL(fileURLWithPath: dir), scenarios: [Snapshots.notesWindow(session, name: "notes-selftest")])) ?? []
+            FileHandle.standardError.write(Data("notes-selftest: snapshots=\(files.count)\n".utf8))
+        }
+        if useLibrary, let code = await checkLibrary(session, expectSpeakers: expectSpeakers) { return code }
         print("notes-selftest: OK")
         return 0
     }
 
+    /// `--speakers N`: exactly N people, then a rename of Person 2 that reaches every one of their turns. Counts only.
+    private static func checkSpeakers(_ session: NotesSession, expect: Int) -> Int32? {
+        var document = session.recorder.document
+        let labelled = document.segments.filter { $0.turns?.isEmpty == false }
+        let turns = labelled.flatMap { $0.turns ?? [] }
+        let people = Set(turns.map { document.roster.resolve($0.person) }).sorted()
+        let changes = zip(turns, turns.dropFirst()).filter { document.roster.resolve($0.person) != document.roster.resolve($1.person) }.count
+        FileHandle.standardError.write(Data("notes-selftest: speakers people=\(people.count) labelled=\(labelled.count)/\(document.segments.count) turns=\(turns.count) changes=\(changes) approximate=\(turns.filter(\.approximate).count)\n".utf8))
+        guard people.count == expect else {
+            print("notes-selftest: FAILED — expected \(expect) speakers, heard \(people.count)")
+            return 6
+        }
+        // The live (incrementally cached) rows show what a fresh build shows.
+        let fresh = NotesModel()
+        fresh.document = document
+        let live = session.model.transcriptRows.map { $0.chip?.name ?? "" }, built = fresh.transcriptRows.map { $0.chip?.name ?? "" }
+        let liveChips = Set(live.filter { !$0.isEmpty }).count
+        FileHandle.standardError.write(Data("notes-selftest: rows live=\(live.count) chips=\(liveChips) fresh=\(built.count) chips=\(Set(built.filter { !$0.isEmpty }).count)\n".utf8))
+        guard live == built, liveChips == expect else {
+            print("notes-selftest: FAILED — the live transcript shows \(liveChips) speaker chips, expected \(expect)")
+            return 11
+        }
+        guard expect >= 2 else { return nil }
+        let name = "Maya"
+        session.editSpeakers(.rename(2, to: name))
+        document = session.recorder.document
+        let theirs = document.segments.flatMap { $0.turns ?? [] }.filter { document.roster.resolve($0.person) == 2 }
+        let export = document.exportMarkdown()
+        let lines = document.transcriptLines()
+        let named = lines.filter { $0.contains(" \(name):**") }.count
+        let structuring = document.segments.map { document.labelledText($0) }.joined(separator: "\n")
+        FileHandle.standardError.write(Data("notes-selftest: rename turns=\(theirs.count) lines=\(named) leftover=\(lines.filter { $0.contains(" Person 2:**") }.count)\n".utf8))
+        guard !theirs.isEmpty, named > 0, !export.contains("Person 2:"), export.contains("\(name):**"),
+              structuring.contains("\(name): "), !structuring.contains("Person 2: ") else {
+            print("notes-selftest: FAILED — the rename did not reach every turn, the export and the structuring transcript")
+            return 7
+        }
+        return nil
+    }
+
+    /// `--library`: the note as stored is the note as recorded (speakers, names), and it opens again with them.
+    private static func checkLibrary(_ session: NotesSession, expectSpeakers: Int?) async -> Int32? {
+        guard let library = session.library else { return nil }
+        let recorded = session.recorder.document
+        session.newNote()
+        do { try await session.openNote(recorded.id) } catch {
+            print("notes-selftest: FAILED — the note did not open from the library (\(error))")
+            return 8
+        }
+        let stored = try? await library.record(recorded.id).document
+        let opened = session.recorder.document
+        let people = { (d: NotesDocument) in Set(d.segments.flatMap { $0.turns ?? [] }.map { d.roster.resolve($0.person) }).count }
+        let chips = Set(session.model.transcriptRows.compactMap { $0.chip?.name }).count
+        FileHandle.standardError.write(Data("notes-selftest: library stored=\(stored.map(people) ?? -1) opened=\(people(opened)) chips=\(chips)\n".utf8))
+        guard let stored, stored.segments.map(\.turns) == recorded.segments.map(\.turns),
+              (0..<people(recorded)).allSatisfy({ stored.roster.displayName($0 + 1) == recorded.roster.displayName($0 + 1) }),
+              opened.segments.map(\.turns) == recorded.segments.map(\.turns) else {
+            print("notes-selftest: FAILED — the library lost the speaker labels")
+            return 9
+        }
+        if let expectSpeakers, chips != expectSpeakers {
+            print("notes-selftest: FAILED — the reopened note shows \(chips) speaker chips, expected \(expectSpeakers)")
+            return 10
+        }
+        return nil
+    }
+
     private static func usage() -> Int32 {
-        print("usage: ChirpMac --notes-selftest <file.wav> [--url URL] [--token-file PATH] [--correction] [--expect WORD]… [--fault \(NotesFaultPlan.syntax)] [--fast]")
+        print("usage: ChirpMac --notes-selftest <file.wav> [--url URL] [--token-file PATH] [--correction] [--expect WORD]… [--fault \(NotesFaultPlan.syntax)] [--fast] [--speakers N] [--library] [--voices] [--snapshot DIR]")
         return 64
     }
 }

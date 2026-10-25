@@ -83,43 +83,61 @@ extension NotesModel {
     }
 }
 
-extension NotesSession {
-    /// Applies a fix-up to the document and sets the banner that follows it.
-    public func editSpeakers(_ edit: SpeakerEdit) {
-        let roster = recorder.document.roster
-        var banner: SpeakerBanner.Kind?
+/// A speaker fix-up on whichever note is on screen: the recorder's, or a note opened beside a recording.
+public enum SpeakerEditing {
+    /// Applies `edit` through `change` (which runs a document change on the note and passes on the notes changes it
+    /// made) and returns the banner that follows. `banner` is the one showing now, `document` reads the note. Voice
+    /// edits are not handled here.
+    @MainActor
+    public static func apply(_ edit: SpeakerEdit, banner: SpeakerBanner.Kind?, document: () -> NotesDocument,
+                             change: ((inout NotesDocument) -> [NotesTextChange]) -> Void) -> SpeakerBanner.Kind? {
+        let roster = document().roster
         switch edit {
         case .rename(let id, let name):
             let old = roster.displayName(id)
-            recorder.editSpeakers { $0.renameSpeaker(id, to: name); return [] }
-            let new = recorder.document.roster.displayName(id), count = recorder.document.nameCount(old)
-            if new != old, count > 0 { banner = .offerReplace(old: old, new: new, count: count) }
+            change { $0.renameSpeaker(id, to: name); return [] }
+            let after = document()
+            let new = after.roster.displayName(id), count = after.nameCount(old)
+            return new != old && count > 0 ? .offerReplace(old: old, new: new, count: count) : nil
         case .merge(let id, let target):
             let name = roster.displayName(id), into = roster.displayName(target)
-            recorder.editSpeakers { $0.mergeSpeaker(id, into: target); return [] }
-            banner = .merged(person: roster.resolve(id), name: name, into: into)
+            change { $0.mergeSpeaker(id, into: target); return [] }
+            return .merged(person: roster.resolve(id), name: name, into: into)
         case .separate(let id):
-            recorder.editSpeakers { $0.separateSpeaker(id); return [] }
+            change { $0.separateSpeaker(id); return [] }
         case .reassign(let refs, let person):
-            recorder.editSpeakers { $0.reassignTurns(refs, to: person); return [] }
+            change { $0.reassignTurns(refs, to: person); return [] }
         case .replaceInNotes:
-            guard case .offerReplace(let old, let new, _) = model.visibleSpeakerBanner?.kind else { return }
+            guard case .offerReplace(let old, let new, _) = banner else { return banner }
             var done: SpeakerNameReplacement?
-            recorder.editSpeakers { d in
+            change { d in
                 done = d.replaceSpeakerName(old, with: new)
                 return done?.changes ?? []
             }
-            banner = done.map { .replaced($0) }
+            return done.map { .replaced($0) }
         case .undo:
-            switch model.visibleSpeakerBanner?.kind {
-            case .replaced(let r): recorder.editSpeakers { $0.revert(r) ?? [] }
-            case .merged(let person, _, _): recorder.editSpeakers { $0.separateSpeaker(person); return [] }
+            switch banner {
+            case .replaced(let r): change { $0.revert(r) ?? [] }
+            case .merged(let person, _, _): change { $0.separateSpeaker(person); return [] }
             default: break
             }
-        case .dismiss: break
+        case .dismiss, .acceptVoice, .declineVoice, .rememberVoice, .updateVoice: break
+        }
+        return nil
+    }
+}
+
+extension NotesSession {
+    /// Applies a fix-up to the document and sets the banner that follows it.
+    public func editSpeakers(_ edit: SpeakerEdit) {
+        switch edit {
         case .acceptVoice, .declineVoice, .rememberVoice, .updateVoice:
             editVoices(edit)
             return
+        default: break
+        }
+        let banner = SpeakerEditing.apply(edit, banner: model.visibleSpeakerBanner?.kind, document: { recorder.document }) {
+            recorder.editSpeakers($0)
         }
         model.speakerBanner = banner.map { SpeakerBanner(document: recorder.document.id, kind: $0) }
     }
