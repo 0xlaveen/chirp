@@ -55,7 +55,9 @@ jobs:
           enable-cache: true
           cache-dependency-glob: server/uv.lock
       - run: uv sync --locked --extra onnx
-      - run: uv run pytest -q
+      # Dump every thread's stack if one test runs for 2 minutes, so a hang names itself.
+      - run: uv run pytest -q -o faulthandler_timeout=120 --durations=15
+        timeout-minutes: 15
       - uses: actions/cache@v4
         id: model
         with:
@@ -75,4 +77,5 @@ jobs:
           )"
       # A real chirp-server process on a free port with a throwaway home: ONNX Parakeet
       # transcribes the committed synthetic clip over /v1/transcribe and /v1/stream.
-      - run: uv run pytest -q -m onnx -rs
+      - run: uv run pytest -q -m onnx -rs -o faulthandler_timeout=240
+        timeout-minutes: 10
