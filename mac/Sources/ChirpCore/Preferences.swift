@@ -351,6 +351,12 @@ public final class Preferences: @unchecked Sendable {
             defaults.set(newValue.filter { !$0.isEmpty && seen.insert($0).inserted }, forKey: "historyExcludedApps")
         }
     }
+    /// Learn from my edits (Settings → Dictation): on by default; it only runs while history is on.
+    public var learnFromEdits: Bool {
+        get { defaults.object(forKey: "learnFromEdits") as? Bool ?? true }
+        set { defaults.set(newValue, forKey: "learnFromEdits") }
+    }
+    public var learningEnabled: Bool { historyEnabled && learnFromEdits }
     /// Set only when the first-run window is finished (never on close), so an interrupted setup shows again.
     public var didOnboard: Bool {
         get { defaults.bool(forKey: "didOnboard") }

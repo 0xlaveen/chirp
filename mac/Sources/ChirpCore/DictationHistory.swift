@@ -115,10 +115,16 @@ public final class MemoryHistoryKeyStore: HistoryKeyStore, @unchecked Sendable {
 /// which iCloud Keychain never syncs. The same rules as `KeychainVoiceProfileStore`.
 public struct KeychainHistoryKeyStore: HistoryKeyStore {
     public static let service = "Chirp Dictation History"
+    /// The history's key, and Learn from my edits' own (so Clear history leaves what was learned).
+    public static let historyAccount = "history-key-v1"
+    public static let learnedAccount = "learned-key-v1"
     let service: String
-    let account = "history-key-v1"
+    let account: String
 
-    public init(service: String = KeychainHistoryKeyStore.service) { self.service = service }
+    public init(service: String = KeychainHistoryKeyStore.service, account: String = KeychainHistoryKeyStore.historyAccount) {
+        self.service = service
+        self.account = account
+    }
 
     public enum KeychainError: Error, Equatable { case status(OSStatus) }
 

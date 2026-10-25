@@ -28,6 +28,11 @@ public enum HistoryText {
     public static let copyRaw = "Copy Original"
     public static let addToNotes = "Add to Notes"
     public static let delete = "Delete"
+    public static let teach = "Teach Chirp…"
+    public static let teachTitle = "Teach Chirp"
+    public static let teachDetail = "Edit this to what you wanted. Chirp learns the names and words you fix, and this app’s style, and uses them from the next dictation."
+    public static let nothingToLearn = "Nothing to learn — fix a word or the style"
+    public static func learned(_ titles: [String]) -> String { "Learned: " + titles.joined(separator: ", ") }
     public static let deleted = "Dictation deleted"
     public static let noSelection = "Select a dictation"
     /// The one-line privacy disclosure (the window's footer, Settings and onboarding).
@@ -114,6 +119,13 @@ public struct HistoryToast: Equatable, Sendable {
     @ObservationIgnored public var onDelete: (UUID) -> Void = { _ in }
     @ObservationIgnored public var onRestore: (DictationEntry) -> Void = { _ in }
     @ObservationIgnored public var onOpenSettings: () -> Void = {}
+    /// Teach Chirp: the entry, and what the user says it should have been.
+    @ObservationIgnored public var onTeach: (HistoryEntry, String) -> Void = { _, _ in }
+    /// Learn from my edits is on (Teach Chirp is offered).
+    public var canTeach = false
+    /// The Teach Chirp sheet: the dictation being taught and the text being edited.
+    public var teaching: HistoryEntry?
+    public var teachText = ""
 
     public init() {}
 
@@ -145,6 +157,22 @@ public struct HistoryToast: Equatable, Sendable {
     public func copy(_ entry: DictationEntry, raw: Bool = false) {
         onCopy(raw ? entry.raw ?? entry.text : entry.text)
         flash = "Copied"
+    }
+
+    public func beginTeaching(_ entry: HistoryEntry) {
+        teachText = entry.text
+        teaching = entry
+    }
+
+    public func commitTeaching() {
+        guard let entry = teaching else { return }
+        teaching = nil
+        onTeach(entry, teachText)
+    }
+
+    /// What Teach Chirp learned, for the flash beside the actions.
+    public func taught(_ titles: [String]) {
+        flash = titles.isEmpty ? HistoryText.nothingToLearn : HistoryText.learned(titles)
     }
 
     public func delete(_ id: UUID) {

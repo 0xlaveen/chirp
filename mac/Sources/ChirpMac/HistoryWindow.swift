@@ -17,6 +17,8 @@ final class HistoryWindowController: NSObject, NSWindowDelegate {
     var onInsertAgain: (String) async -> Void = { _ in }
     var onAddToNotes: (DictationEntry) -> Void = { _ in }
     var onOpenSettings: () -> Void = {}
+    /// Teach Chirp: learn from what the user says the dictation should have been; returns what became active.
+    var onTeach: (HistoryEntry, String) async -> [String] = { _, _ in [] }
 
     init(history: DictationHistory) {
         self.history = history
@@ -30,6 +32,12 @@ final class HistoryWindowController: NSObject, NSWindowDelegate {
         model.onDelete = { [history] id in Task { await history.delete(id) } }
         model.onRestore = { [history] entry in Task { await history.restore(entry) } }
         model.onOpenSettings = { [weak self] in self?.onOpenSettings() }
+        model.onTeach = { [weak self] entry, wanted in
+            Task { @MainActor in
+                guard let self else { return }
+                self.model.taught(await self.onTeach(entry, wanted))
+            }
+        }
         NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didActivateApplicationNotification, object: nil,
                                                           queue: .main) { [weak self] note in
             let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
@@ -49,6 +57,7 @@ final class HistoryWindowController: NSObject, NSWindowDelegate {
         model.unavailable = history.unavailable
         model.enabled = settings.historyEnabled
         model.retention = settings.historyRetention
+        model.canTeach = settings.learningEnabled
     }
 
     /// Shows the window, on the dictation `id` when given.

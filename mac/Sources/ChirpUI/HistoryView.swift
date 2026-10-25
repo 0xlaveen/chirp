@@ -28,6 +28,9 @@ public struct HistoryView: View {
         .navigationTitle(HistoryText.windowTitle)
         .frame(minWidth: HistoryViewMetrics.minimumSize.width, minHeight: HistoryViewMetrics.minimumSize.height)
         .overlay(alignment: .bottom) { if let toast = model.toast { HistoryToastView(model: model, toast: toast) } }
+        .sheet(isPresented: Binding(get: { model.teaching != nil }, set: { if !$0 { model.teaching = nil } })) {
+            TeachSheet(model: model)
+        }
         .tint(Color.chirp.koi)
     }
 }
@@ -68,6 +71,7 @@ private struct HistorySidebar: View {
         Button(HistoryText.copy) { model.copy(entry) }
         if entry.cleaned { Button(HistoryText.copyRaw) { model.copy(entry, raw: true) } }
         Button(HistoryText.addToNotes) { model.onAddToNotes(entry) }
+        if model.canTeach { Button(HistoryText.teach) { model.beginTeaching(entry) } }
         Divider()
         Button(HistoryText.delete, role: .destructive) { model.delete(entry.id) }
     }
@@ -256,14 +260,21 @@ private struct HistoryDetail: View {
             Button(HistoryText.copy) { model.copy(entry) }
                 .fixedSize()
                 .keyboardShortcut("c", modifiers: [.command, .shift])
-            if entry.cleaned {
-                Button(HistoryText.copyRaw) { model.copy(entry, raw: true) }
-                    .fixedSize()
-                    .help("Copies what you said, before clean-up")
+            Menu {
+                if entry.cleaned {
+                    Button(HistoryText.copyRaw) { model.copy(entry, raw: true) }
+                }
+                Button(HistoryText.addToNotes) { model.onAddToNotes(entry) }
+                if model.canTeach {
+                    Divider()
+                    Button(HistoryText.teach) { model.beginTeaching(entry) }
+                }
+            } label: {
+                Label("More", systemImage: "ellipsis.circle")
             }
-            Button(HistoryText.addToNotes) { model.onAddToNotes(entry) }
-                .fixedSize()
-                .help("Saves this dictation as a new note in the Notes library")
+            .menuStyle(.button)
+            .fixedSize()
+            .help("Copy Original, Add to Notes\(model.canTeach ? " and Teach Chirp" : "")")
             Spacer(minLength: 8)
             if let flash = model.flash {
                 Text(flash).font(ChirpType.meta).foregroundStyle(Color.chirp.lily)
@@ -310,6 +321,36 @@ private struct TextCard<Content: View>: View {
                 .overlay(RoundedRectangle(cornerRadius: ChirpRadius.row).strokeBorder(NotesInk.tertiary.opacity(0.25)))
             if let footnote { Text(footnote).font(.system(size: 11)).foregroundStyle(NotesInk.tertiary) }
         }
+    }
+}
+
+/// Teach Chirp: the dictation in an editor; Teach learns from the difference at once.
+struct TeachSheet: View {
+    @Bindable var model: HistoryModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(HistoryText.teachTitle).font(ChirpType.h2)
+            Text(HistoryText.teachDetail).font(ChirpType.meta).foregroundStyle(NotesInk.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            TextEditor(text: $model.teachText)
+                .font(ChirpType.body)
+                .scrollContentBackground(.hidden)
+                .padding(8)
+                .background(RoundedRectangle(cornerRadius: ChirpRadius.control).fill(Color.chirp.surface))
+                .overlay(RoundedRectangle(cornerRadius: ChirpRadius.control).strokeBorder(NotesInk.tertiary.opacity(0.35)))
+                .frame(minHeight: 120)
+            HStack {
+                Spacer()
+                Button("Cancel", role: .cancel) { model.teaching = nil }.keyboardShortcut(.cancelAction)
+                Button("Teach") { model.commitTeaching() }
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(model.teachText == model.teaching?.text)
+            }
+        }
+        .padding(20)
+        .frame(width: 460)
+        .tint(Color.chirp.koi)
     }
 }
 

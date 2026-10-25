@@ -52,6 +52,25 @@ extension Snapshots {
         ]
     }
 
+    static func demoLearned() -> [LearnedItem] {
+        func id(_ n: Int) -> UUID { UUID(uuidString: String(format: "00000000-0000-0000-0000-%012d", 950 + n))! }
+        func ago(_ hours: Double) -> Date { historyNow.addingTimeInterval(-hours * 3600) }
+        return [
+            LearnedItem(id: id(1), correction: .term(heard: "cooper netties", term: "Kubernetes"), bundleID: "com.apple.TextEdit",
+                        appName: "TextEdit", state: .active, count: 2, firstSeen: ago(30), lastSeen: ago(1),
+                        inserted: "Ship the cooper netties upgrade on Monday.", edited: "Ship the Kubernetes upgrade on Monday."),
+            LearnedItem(id: id(2), correction: .term(heard: "and throw pick", term: "Anthropic"), bundleID: "com.apple.TextEdit",
+                        appName: "TextEdit", state: .learning, count: 1, firstSeen: ago(3), lastSeen: ago(3),
+                        inserted: "Thanks to the and throw pick team.", edited: "Thanks to the Anthropic team."),
+            LearnedItem(id: id(3), correction: .style(.lowercaseStart), bundleID: "com.tinyspeck.slackmacgap", appName: "Slack",
+                        state: .active, count: 3, firstSeen: ago(48), lastSeen: ago(0.2),
+                        inserted: "Sounds good, I'll push it.", edited: "sounds good, I'll push it", said: "sounds good I'll push it"),
+            LearnedItem(id: id(4), correction: .style(.noFinalPeriod), bundleID: "com.tinyspeck.slackmacgap", appName: "Slack",
+                        state: .off, count: 2, firstSeen: ago(48), lastSeen: ago(0.2),
+                        inserted: "Sounds good, I'll push it.", edited: "sounds good, I'll push it", said: "sounds good I'll push it"),
+        ]
+    }
+
     static func historyWindow(_ model: HistoryModel, size: CGSize = HistoryViewMetrics.defaultSize) -> NSWindow {
         let window = NSWindow(contentRect: NSRect(origin: .zero, size: size),
                               styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
@@ -79,12 +98,14 @@ extension Snapshots {
         settings.launch = .on; settings.serverStatus = "parakeet-mlx:tdt-0.6b-v2"
         settings.about = AboutInfo(version: "0.1.0", build: "1")
         settings.historyCount = 128
+        settings.learnedSummary = LearnedText.summary(demoLearned())
         let state = settings
         var off = settings
         off.historyEnabled = false; off.historyCount = 0
         let stateOff = off
         return [
             window("cleaned") { $0.selection = demoHistory()[1].id },
+            window("cleaned-teach") { $0.canTeach = true; $0.selection = demoHistory()[1].id; $0.flash = HistoryText.learned(["Kubernetes"]) },
             window("plain") { $0.selection = demoHistory()[2].id },
             window("search") { $0.query = "kubernetes"; $0.selection = demoHistory()[5].id },
             window("no-results") { $0.query = "invoice"; $0.selection = nil },
@@ -92,6 +113,22 @@ extension Snapshots {
             window("off") { $0.enabled = false; $0.show([]) },
             window("deleted") { $0.selection = demoHistory()[0].id; $0.delete(demoHistory()[0].id) },
             Scenario(name: "settings-dictation-history") { settingsWindow(state, .dictation, full: true) },
+            Scenario(name: "learned-list") {
+                let model = LearnedModel()
+                model.icon = { demoIcon($0) }
+                model.items = demoLearned()
+                return NSHostingView(rootView: LearnedView(model: model))
+            },
+            Scenario(name: "learned-empty") { NSHostingView(rootView: LearnedView(model: LearnedModel())) },
+            hud("learned") { $0.status = "Learned: Kubernetes"; $0.indicator = .sparkle },
+            Scenario(name: "history-teach-sheet") {
+                let m = HistoryModel()
+                var heard = demoHistory()[5]
+                heard.text = heard.raw ?? heard.text
+                m.beginTeaching(heard)
+                m.teachText = "Ship the Kubernetes upgrade on Monday once the canary is green."
+                return NSHostingView(rootView: TeachSheet(model: m).background(Color.chirp.background))
+            },
             Scenario(name: "settings-dictation-history-off") { settingsWindow(stateOff, .dictation, full: true) },
             Scenario(name: "menu-recent-dictations-submenu") {
                 var inputs = MenuInputs()

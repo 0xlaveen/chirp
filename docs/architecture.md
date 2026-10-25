@@ -58,7 +58,7 @@ The token is either the shared one or a per-device token minted by `chirp-server
 - `POST /v1/notes/edit` (authenticated, JSON): stateless voice edit of a Live Notes document (notes + a spoken instruction → edited notes), specified [below](#live-notes-edit-v1-compatible-addition).
 - `POST /v1/transcribe`: the body is 16 kHz mono PCM16 WAV, capped at 120 s. It returns the same object as a `final` message. Used for tests and as a fallback.
 - `WS /v1/stream`:
-  - client → `{"type":"start","sample_rate":16000,"encoding":"pcm_s16le","client":"mac|android|ios|desktop","correction":false,"correction_profile":"default","correction_instructions":"","context":"…"}` (`correction_prompt`, `word_timings` and `context` are optional)
+  - client → `{"type":"start","sample_rate":16000,"encoding":"pcm_s16le","client":"mac|android|ios|desktop","correction":false,"correction_profile":"default","correction_instructions":"","context":"…"}` (`correction_prompt`, `word_timings`, `context` and `learned` are optional)
   - client → binary frames: raw PCM16LE mono at 16 kHz, 20–100 ms per frame
   - client → `{"type":"stop"}` (finalize; may carry the optional `context`, see Live Notes below) or `{"type":"cancel"}` (discard, no final). The server keeps reading control/disconnect frames during finalization; cancel or disconnect discards the utterance (no correction request — an in-flight one is cancelled, no retained debug files). A cancelled utterance sends no final and no error, and the socket stays usable for the next start; a disconnect has nobody to tell.
   - server → `{"type":"ready","session":"<random id>","engine":"…","debug_retention":bool}`
@@ -347,6 +347,16 @@ JSON-quoted untrusted preferences between immutable core rules: never answer, ex
 facts; output text only. No tools or network calls are available to the managed helper.
 Editable prompts cannot change the fixed wrapper or the selected profile's output guards.
 These heuristic guards cannot prove semantic equivalence for arbitrary text or punctuation.
+
+`start.learned` (optional, versioned; health advertises `"learned": 1`) carries what a client learned from the
+user's own edits for this dictation (#220): `{"v":1,"terms":[{"term":"Kubernetes","heard":["cooper netties"]}],
+"style":["lowercase_start","no_final_period"],"examples":[{"said":"…","wanted":"…"}]}`. Limits: 100 terms
+(48 characters, up to 4 heard phrases of 64 each, no control characters), style ids from that fixed list only (the
+server maps each to its own prompt line, so no free-form instruction is sent), up to 3 examples of 300 characters a
+side. A malformed v1 block is `bad_request`; a higher `v` is ignored, and an older server ignores the key. The block
+only matters when clean-up runs on a dictation style (never `live_notes`): it adds a "Learned from this user's own
+edits" section inside the core rules, and the guards license exactly the user's heard → term respellings, whole words
+only, the way they license the built-in known terms. A user term never licenses an added word. Never logged.
 
 `start.word_timings` (optional boolean, default false; any other type is `bad_audio`) asks for
 per-word timings. When set, every `partial`, `correcting` and `final` adds `words`: one entry per

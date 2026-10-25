@@ -122,8 +122,12 @@ public struct StartOptions: Sendable, Equatable {
     public var correctionPrompt: String?
     /// Ask for per-word timings on partials and finals (the HUD's word waveform). Off leaves the start message as it was.
     public var wordTimings: Bool
+    /// What Learn from my edits learned for this app (`start.learned`, version 1); nil or empty sends nothing. Never logged.
+    public var learned: LearnedPayload?
     public init(client: String = "mac", correction: Bool = false, correctionProfile: String = CorrectionProfile.defaultID,
-                correctionInstructions: String? = nil, correctionPrompt: String? = nil, wordTimings: Bool = false) {
+                correctionInstructions: String? = nil, correctionPrompt: String? = nil, wordTimings: Bool = false,
+                learned: LearnedPayload? = nil) {
+        self.learned = learned
         self.client = client
         self.correction = correction
         self.correctionProfile = correctionProfile
@@ -147,6 +151,7 @@ public enum ClientMessage {
             message["correction_prompt"] = CorrectionProfile.clampPrompt(prompt)
         }
         if o.wordTimings { message["word_timings"] = true }
+        if let learned = o.learned, !learned.isEmpty { message["learned"] = learned.wire }
         return json(message)
     }
     public static let stop = json(["type": "stop"])

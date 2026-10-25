@@ -3,6 +3,7 @@ import UniformTypeIdentifiers
 import ChirpCore
 import ChirpSpeakers
 import ChirpUI
+import SwiftUI
 
 @MainActor
 final class SettingsWindowController: NSObject, NSTextFieldDelegate {
@@ -41,6 +42,10 @@ final class SettingsWindowController: NSObject, NSTextFieldDelegate {
     /// Dictation history: the kept dictations (count, Clear), and the History window.
     var history: DictationHistory?
     var onOpenHistory: (() -> Void)?
+    /// Learn from my edits: what was learned, shown in the Learned sheet.
+    var learning: EditLearning?
+    private let learnedModel = LearnedModel()
+    private var learnedSheet: NSWindow?
     /// "Always show in the Dock" flipped.
     var onAlwaysShowInDockChange: ((Bool) -> Void)?
     private lazy var devices: DevicesModel = {
@@ -85,6 +90,8 @@ final class SettingsWindowController: NSObject, NSTextFieldDelegate {
         s.historyRetention = settings.historyRetention
         s.historyExcludedApps = settings.historyExcludedApps
         s.historyCount = history?.entries.count ?? 0
+        s.learnFromEdits = settings.learnFromEdits
+        s.learnedSummary = LearnedText.summary(learning?.items ?? [])
         s.autoReorganize = settings.notesAutoReorganize
         s.soundsEnabled = settings.soundsEnabled
         s.soundPack = settings.soundPack
@@ -350,6 +357,10 @@ final class SettingsWindowController: NSObject, NSTextFieldDelegate {
         form.clearHistory.target = self
         form.clearHistory.action = #selector(clearHistory)
         form.historyApps.onChange = { settings.historyExcludedApps = $0 }
+        form.learnFromEdits.target = self
+        form.learnFromEdits.action = #selector(toggleLearning(_:))
+        form.showLearned.target = self
+        form.showLearned.action = #selector(showLearned)
         form.historyApps.onAdd = { [weak self] button in
             self?.showAppChooser(from: button, have: Set(settings.historyExcludedApps)) { self?.form?.historyApps.add(bundleID: $0) }
         }
@@ -768,6 +779,52 @@ final class SettingsWindowController: NSObject, NSTextFieldDelegate {
     }
 
     @objc private func openHistory() { onOpenHistory?() }
+
+    // MARK: learn from my edits
+
+    @objc private func toggleLearning(_ sender: NSButton) {
+        settings.learnFromEdits = sender.state == .on
+        if !settings.learnFromEdits { learning?.watcher.cancel() }
+        refresh()
+    }
+
+    /// The Learned list as a sheet on Settings; it follows the store while open.
+    @objc private func showLearned() {
+        guard let window, learnedSheet == nil, let learning else { return }
+        learnedModel.items = learning.items
+        learnedModel.onSet = { [weak self] id, state in Task { await learning.set(id, state: state); self?.learnedChanged() } }
+        learnedModel.onDelete = { [weak self] id in Task { await learning.delete(id); self?.learnedChanged() } }
+        learnedModel.onReset = { [weak self] bundleID in self?.confirmReset(bundleID) }
+        learnedModel.onDone = { [weak self] in
+            guard let self, let sheet = self.learnedSheet else { return }
+            window.endSheet(sheet)
+            self.learnedSheet = nil
+        }
+        let sheet = NSWindow(contentViewController: NSHostingController(rootView: LearnedView(model: learnedModel)))
+        sheet.setContentSize(LearnedView.size)
+        learnedSheet = sheet
+        window.beginSheet(sheet)
+    }
+
+    /// The store changed (an edit was learned, or the sheet changed something): the sheet and the summary follow.
+    func learnedChanged() {
+        learnedModel.items = learning?.items ?? []
+        refresh()
+    }
+
+    private func confirmReset(_ bundleID: String?) {
+        guard let sheet = learnedSheet, let learning else { return }
+        let alert = NSAlert()
+        alert.messageText = "Reset what Chirp learned in \(bundleID.map { AppNames.name(for: $0) } ?? "every app")?"
+        alert.informativeText = "Everything learned from your edits there is forgotten. Chirp starts learning again from your next edit."
+        alert.addButton(withTitle: "Reset")
+        alert.addButton(withTitle: "Cancel")
+        alert.buttons[0].hasDestructiveAction = true
+        alert.beginSheetModal(for: sheet) { [weak self] response in
+            guard response == .alertFirstButtonReturn else { return }
+            Task { await learning.reset(bundleID: bundleID); self?.learnedChanged() }
+        }
+    }
 
     @objc private func clearHistory() {
         let count = history?.entries.count ?? 0

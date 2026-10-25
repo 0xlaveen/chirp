@@ -253,7 +253,7 @@ import Testing
         let page = try #require(form.view(for: .dictation).subviews[0] as? NSStackView)
         #expect(page.arrangedSubviews.first is SettingsPageTitle)
         let sections = page.arrangedSubviews.dropFirst()
-        #expect(sections.count == 4)   // Shortcuts, Dictating, Sounds, History
+        #expect(sections.count == 5)   // Shortcuts, Dictating, Sounds, History, Learn from my edits
         #expect(sections.allSatisfy { ($0 as? NSStackView)?.arrangedSubviews.contains { $0 is SettingsCard } == true })
     }
 
