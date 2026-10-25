@@ -464,13 +464,18 @@ impl Platform for Windows {
 /// Owner-only access for Chirp's private files (notes, transcripts): a protected DACL that
 /// allows only the current user and SYSTEM, read back and verified before returning, so callers
 /// can fail closed. A directory's entries are inherited by files created inside it. Only the
-/// path is passed to Windows; nothing is logged.
+/// path is passed to Windows; nothing is logged. A path that is already owner-only is left
+/// alone: setting a directory's DACL makes Windows walk every file under it.
 pub fn protect_path(path: &std::path::Path, directory: bool) -> Result<(), String> {
     let sid = acl::user_sid()?;
+    let forms = acl::sid_forms(&sid)?;
     let wide = acl::wide(path.as_os_str());
+    if logic::sddl_is_private(&acl::dacl(&wide)?, &forms) {
+        return Ok(());
+    }
     acl::set_dacl(&wide, &logic::private_sddl(&sid, directory))?;
     let actual = acl::dacl(&wide)?;
-    if logic::sddl_is_private(&actual, &acl::sid_forms(&sid)?) {
+    if logic::sddl_is_private(&actual, &forms) {
         Ok(())
     } else {
         Err("Could not restrict access to Chirp's files".into())
@@ -662,6 +667,10 @@ mod tests {
             &acl::dacl(&wide(&file)).unwrap(),
             &forms
         ));
+        // Already owner-only: a second call leaves the DACL alone and still succeeds.
+        let before = acl::dacl(&wide(&root)).unwrap();
+        protect_path(&root, true).unwrap();
+        assert_eq!(acl::dacl(&wide(&root)).unwrap(), before);
         std::fs::remove_dir_all(&root).unwrap();
     }
 }
