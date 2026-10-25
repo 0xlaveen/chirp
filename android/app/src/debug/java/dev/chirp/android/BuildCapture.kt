@@ -14,12 +14,15 @@ internal fun captureForBuild(context: Context, frame: (ByteArray) -> Boolean, le
         PcmCapture(frame, level, done, SyntheticPcmInput(context))
     else PcmCapture(frame, level, done)
 /** Notes and its voice commands: the synthetic asset repeats with [NOTES_GAP_MS] of silence between, like a meeting. */
-internal fun notesInputForBuild(context: Context): PcmInput =
-    if (context.getSharedPreferences("debug_capture", 0).getBoolean("synthetic", false)) SyntheticPcmInput(context, loop = true) else MicrophoneInput()
+internal fun notesInputForBuild(context: Context): PcmInput = context.getSharedPreferences("debug_capture", 0).let { prefs ->
+    // `notes_asset`: another generated asset for Notes (the speaker-labels check's two voices).
+    if (prefs.getBoolean("synthetic", false)) SyntheticPcmInput(context, loop = true, asset = prefs.getString("notes_asset", null) ?: "synthetic.wav")
+    else MicrophoneInput()
+}
 private const val NOTES_GAP_MS = 4000L
 
 /** Debug only: generated speech asset, paced in real time through PcmCapture's real framing loop. */
-private class SyntheticPcmInput(private val context: Context, private val loop: Boolean = false) : PcmInput {
+private class SyntheticPcmInput(private val context: Context, private val loop: Boolean = false, private val asset: String = "synthetic.wav") : PcmInput {
     private var stream: DataInputStream? = null
     private var left = 0
     @Volatile private var stopped = false
@@ -29,7 +32,7 @@ private class SyntheticPcmInput(private val context: Context, private val loop: 
     override fun start() { open() }
     private fun open() {
         stream?.close()
-        val input = DataInputStream(context.assets.open("synthetic.wav")); stream = input
+        val input = DataInputStream(context.assets.open(asset)); stream = input
         check(input.readInt() == 0x52494646); input.skipBytes(4); check(input.readInt() == 0x57415645)
         while (true) {
             val type = input.readInt(); val length = Integer.reverseBytes(input.readInt())

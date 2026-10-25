@@ -46,6 +46,10 @@ internal class NotesModel(
     private val fetchHealth: (OkHttpClient, Pairing) -> Health? = { client, paired ->
         try { ChirpNetwork.health(client, paired) } catch (_: Exception) { null }
     },
+    /** `POST /v1/speakers/model` (download only after the user agreed); the model's state after it, null when it failed. */
+    private val speakerModel: (OkHttpClient, Pairing, String) -> String? = { client, paired, action ->
+        try { ChirpNetwork.speakerModel(client, paired, action) } catch (_: Exception) { null }
+    },
     private val tailscale: TailscaleControl = AndroidTailscale(context.applicationContext),
     /** Starts or stops the microphone foreground service; the recording itself lives here. */
     private val foreground: (Boolean) -> Unit = { on -> NotesService.set(context.applicationContext, on) },
@@ -99,6 +103,12 @@ internal class NotesModel(
         private set
     /** "Structure notes": on by default only while structuring stays on the Mac (text never leaves it). */
     var structureEnabled by mutableStateOf(health?.correctionLeavesMachine != true)
+        private set
+    /** "Label speakers": off by default; on, each segment asks the Mac who spoke. */
+    var labelSpeakers by mutableStateOf(store.notesLabelSpeakers)
+        private set
+    /** Turning "Label speakers" on needs the Mac's speaker model: the consent dialog is open. */
+    var speakerConsent by mutableStateOf(false)
         private set
     /** "Recovered unsaved notes from 14:03 · 52 min", until the user saves, discards or records. */
     var recovered by mutableStateOf<String?>(null)
@@ -182,7 +192,7 @@ internal class NotesModel(
     val busy get() = state == NotesRecorder.State.STOPPING
     val paused get() = state == NotesRecorder.State.PAUSED
     val hasContent get() = !document.isEmpty
-    private fun key() = recorder.document.let { listOf(it.id, it.version, it.segments.size, it.name, recorder.state.active) }
+    private fun key() = recorder.document.let { listOf(it.id, it.version, it.segments.size, it.name, it.speakerVersion, recorder.state.active) }
     /** Content that no Save has written as it is now: leaving or New asks first, and the recovery copy keeps it. */
     val dirty get() = revision.let { hasContent && savedKey != key() }
     val title get() = document.title().removePrefix("# ")
@@ -286,11 +296,68 @@ internal class NotesModel(
             store.health = latest; health = latest
             if (first) structureEnabled = !latest.correctionLeavesMachine
             recorder.configure(structureEnabled, latest)
+            if (recorder.state.active) recorder.labelSpeakers = labelSpeakers && speakersAvailable
+            // The Mac downloading its speaker model: look again shortly.
+            if (latest.speakersModel == "downloading") scope.launch { delay(3000); if (id == refreshing) refresh() }
             if (!recorder.state.active) recorder.options = options()
         }
     }
 
     fun setStructure(on: Boolean) { structureEnabled = on; recorder.configure(on, health) }
+
+    // Speaker labels.
+    /** The Mac's server can label speakers (health); an older one cannot. */
+    val speakersAvailable get() = health?.notesSpeakers == true
+    /** The Mac's speaker model: `ready`, `downloading`, `not_downloaded` or `failed` (null: unknown). */
+    val speakerModelState get() = health?.speakersModel
+    /** Why speakers are not being labelled although the switch is on, for the transcript. */
+    val speakerNote: String? get() = revision.let {
+        when {
+            !labelSpeakers -> null
+            health != null && !speakersAvailable -> "Update Chirp on your Mac to label speakers."
+            speakerModelState == "downloading" -> "Downloading the speaker model on your Mac…"
+            recorder.speakerError == "unavailable" || speakerModelState == "not_downloaded" || speakerModelState == "failed" ->
+                "The speaker model isn’t on your Mac. Turn Label speakers off and on to download it."
+            recorder.speakerError != null -> "Couldn’t label the last segment’s speakers."
+            else -> null
+        }
+    }
+
+    /** The switch: off at once; on asks first unless the Mac already has the model. Applies from the next segment. */
+    fun setSpeakerLabels(on: Boolean) {
+        if (on && speakerModelState.let { it != "ready" && it != "downloading" }) { speakerConsent = true; return }
+        labelSpeakers = on; store.notesLabelSpeakers = on
+        recorder.labelSpeakers = on && speakersAvailable
+    }
+
+    /** The consent dialog's Download: the Mac fetches its model (once), and labels start with the next segment. */
+    fun confirmSpeakerDownload() {
+        speakerConsent = false
+        labelSpeakers = true; store.notesLabelSpeakers = true
+        recorder.labelSpeakers = speakersAvailable
+        val paired = pairing() ?: return
+        scope.launch {
+            var state: String? = null
+            io { state = speakerModel(http(), paired, "download") }
+            if (state == null) message = "Couldn’t reach your Mac to download the speaker model"
+            refresh()
+        }
+    }
+
+    fun dismissSpeakerConsent() { speakerConsent = false }
+
+    /** Rename a person everywhere in the note; [replaceInNotes] also swaps their old name in the notes' text. */
+    fun renameSpeaker(person: Int, name: String, replaceInNotes: Boolean = false) {
+        val document = recorder.document
+        val old = document.roster.displayName(person)
+        document.renameSpeaker(person, name)
+        val new = document.roster.displayName(person)
+        if (replaceInNotes && new != old) edit(TextFieldValue(document.replacingName(old, new)))
+        sync(); keep(now = true)
+    }
+
+    fun mergeSpeaker(person: Int, into: Int) { recorder.document.mergeSpeaker(person, into); sync(); keep(now = true) }
+    fun separateSpeaker(person: Int) { recorder.document.separateSpeaker(person); sync(); keep(now = true) }
     fun setAuto(on: Boolean) = recorder.setAuto(on)
     val auto get() = revision.let { recorder.autoReorganize }
 
@@ -305,6 +372,8 @@ internal class NotesModel(
         recorder.options = options()
         recorder.configure(structureEnabled, health)
         recorder.keepAudio = sessions?.let { it.enabled && it.keepAudio } == true
+        labelSpeakers = store.notesLabelSpeakers
+        recorder.labelSpeakers = labelSpeakers && speakersAvailable
         // Recording into a finished note continues it: a quiet divider marks where, and the audio clock goes on.
         if (recorder.state.let { it == NotesRecorder.State.STOPPED || it == NotesRecorder.State.ERROR } && document.segments.isNotEmpty())
             recorder.document.addBoundary(recorder.elapsed, System.currentTimeMillis())

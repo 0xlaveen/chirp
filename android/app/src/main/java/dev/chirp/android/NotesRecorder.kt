@@ -50,8 +50,8 @@ internal sealed interface Reorganizing {
 
 /**
  * A Notes session: one long recording cut into ordinary `/v1/stream` utterances over rolling sockets, plus the
- * structuring passes that turn the transcript into Markdown. A port of the Mac's `NotesRecorder` (without speaker
- * labels). Every edge (sockets, microphone, the notes calls, time) is injected; runs on the main thread. Nothing here
+ * structuring passes that turn the transcript into Markdown. A port of the Mac's `NotesRecorder`; speaker labels come from
+ * the Mac's server with each final ([labelSpeakers]). Every edge (sockets, microphone, the notes calls, time) is injected; runs on the main thread. Nothing here
  * is logged or persisted.
  */
 internal class NotesRecorder(
@@ -116,6 +116,13 @@ internal class NotesRecorder(
      * mono 16 kHz bytes (the receiver owns them). Called on the main thread; encode and store off it.
      */
     var audioSink: ((documentId: Long, segment: Int, offset: Double, pcm: ByteArray) -> Unit)? = null
+    /** "Label speakers": segments ask the server who spoke (read at each segment's start). */
+    var labelSpeakers = false
+    /** Why the last segment came without labels (`unavailable`: no speaker model on the Mac), else null. */
+    var speakerError: String? = null
+        private set
+    /** This note's speaker session on the server: random, memory only, new for every document. */
+    private var speakerSession = newSpeakerSession()
 
     private inner class Segment(val transport: ImeTransport, val buffer: PreReadyBuffer, val pcm: java.io.ByteArrayOutputStream? = null) {
         var seq = -1
@@ -139,6 +146,8 @@ internal class NotesRecorder(
     private val segments = HashMap<Int, Segment>()
     /** Finished segments waiting for an earlier one, so the transcript stays in order. A null value: an empty final. */
     private val results = HashMap<Int, NotesSegment?>()
+    /** Speaker labels of finished segments waiting for their turn: people are numbered in transcript order. */
+    private val labels = HashMap<Int, SpeakersResult>()
     /** Audio of finished segments waiting for their turn to commit (only with [keepAudio]). */
     private val finishedAudio = HashMap<Int, ByteArray>()
     private var nextSeq = 0
@@ -258,6 +267,7 @@ internal class NotesRecorder(
         if (state.active) return
         reset()
         document = restored
+        speakerSession = newSpeakerSession()
         router.resetTime(seconds)
         state = if (restored.isEmpty) State.IDLE else State.STOPPED
         changed()
@@ -275,8 +285,11 @@ internal class NotesRecorder(
             { problem -> scope.launch { if (capture === made) captureEnded(problem) } })
         capture = made
         made.start()
-        if (!segment.transport.start(options.correction, options.profile, "", options.prompt)) segmentFailed(segment, ConnectionFailure.status(segment.transport.failureKind))
+        if (!startSegment(segment)) segmentFailed(segment, ConnectionFailure.status(segment.transport.failureKind))
     }
+
+    private fun startSegment(segment: Segment) =
+        segment.transport.start(options.correction, options.profile, "", options.prompt, speakerSession.takeIf { labelSpeakers })
 
     private fun open(): Segment {
         lateinit var segment: Segment
@@ -332,7 +345,7 @@ internal class NotesRecorder(
         stopCapture()
         router.swap(null); diverted = null
         segments.values.forEach { close(it, cancel = true) }
-        segments.clear(); results.clear(); wipeAudio(); nextCommit = nextSeq; current = null; resuming = false
+        segments.clear(); results.clear(); labels.clear(); wipeAudio(); nextCommit = nextSeq; current = null; resuming = false
         passJob?.cancel(); passJob = null
         timer?.cancel(); timer = null
         waiting = false; manualReorganize = false
@@ -354,6 +367,7 @@ internal class NotesRecorder(
         passJob?.cancel(); passJob = null; passKind = null; manualReorganize = false
         timer?.cancel(); timer = null; timerDeadline = null; waiting = false
         document = NotesDocument()
+        speakerSession = newSpeakerSession(); speakerError = null; labels.clear()
         wipeAudio()
         router.resetTime()
         failureStreak = 0; pending.clear(); dropHeld()
@@ -379,7 +393,7 @@ internal class NotesRecorder(
     private fun cut() {
         if (state != State.RECORDING || diverted != null) return
         val next = open()
-        if (!next.transport.start(options.correction, options.profile, "", options.prompt)) {
+        if (!startSegment(next)) {
             close(next, cancel = true)
             // The current socket keeps the audio meanwhile; a server that stays down ends the session.
             val myEpoch = epoch
@@ -425,6 +439,7 @@ internal class NotesRecorder(
                 val text = event.text.trim(); val raw = event.raw.trim()
                 val kept = options.correction && !event.corrected && event.correctionError != null
                 failureStreak = 0
+                event.speakers?.let { labels[segment.seq] = it }
                 finish(segment.seq, if (text.isEmpty()) null else NotesSegment(segment.seq, segment.offset, raw.ifEmpty { text }, text, event.corrected, kept))
             }
             is ServerEvent.Failure -> segmentFailed(segment, friendly(event.code))
@@ -444,7 +459,7 @@ internal class NotesRecorder(
         if (state == State.STARTING && resuming && seq == current) { abandonResume(seq, reason); return }
         if (state == State.STARTING && !sawReady && seq == current) {
             // The very first socket never got going: nothing is recording yet.
-            drop(seq); stopCapture(); router.swap(null); current = null; results.clear(); wipeAudio(); nextCommit = nextSeq
+            drop(seq); stopCapture(); router.swap(null); current = null; results.clear(); labels.clear(); wipeAudio(); nextCommit = nextSeq
             error = reason; state = State.ERROR
             changed()
             return
@@ -469,7 +484,8 @@ internal class NotesRecorder(
         drop(seq)
         results[seq] = segment
         while (results.containsKey(nextCommit)) {
-            val done = results.remove(nextCommit)
+            val done = results.remove(nextCommit)?.let { labelled(it, labels[nextCommit]) }
+            labels.remove(nextCommit)
             val pcm = finishedAudio.remove(nextCommit)
             if (done != null) {
                 val index = document.segments.size
@@ -482,6 +498,23 @@ internal class NotesRecorder(
         updateLivePartial()
         schedule()
         changed()
+    }
+
+    /** The segment with its turns: the server's slots become the note's people, numbered in transcript order. */
+    private fun labelled(segment: NotesSegment, result: SpeakersResult?): NotesSegment {
+        result ?: return segment
+        speakerError = result.error
+        if (result.error != null || segment.isGap) return segment
+        val turns = mutableListOf<SpeakerTurn>()
+        for (t in result.turns) {
+            val text = t.text.trim().takeIf { it.isNotEmpty() } ?: continue
+            val person = document.roster.id(t.speaker, result.generation)
+            val last = turns.lastOrNull()
+            // Turns of one person in a row are one turn.
+            if (last != null && last.person == person) turns[turns.size - 1] = last.copy(text = last.text + " " + text, raw = (last.raw + " " + t.raw.trim()).trim())
+            else turns += SpeakerTurn(person, segment.offset + t.start, text, t.raw.trim(), t.approximate, t.keptOriginal)
+        }
+        return if (turns.isEmpty()) segment else segment.copy(turns = turns)
     }
 
     private fun updateLivePartial() {
@@ -974,6 +1007,9 @@ internal class NotesRecorder(
     }
 
     companion object {
+        private val random = java.security.SecureRandom()
+        /** 32 hex characters: what `start.speakers.session` accepts. */
+        fun newSpeakerSession(): String = ByteArray(16).also(random::nextBytes).joinToString("") { "%02x".format(it) }
         /** A pass starts at most this often (from the end of the last one). */
         const val MIN_INTERVAL_MS = 15000L
         /** How long a segment may take from `stop` to its final. */

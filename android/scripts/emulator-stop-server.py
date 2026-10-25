@@ -25,7 +25,7 @@ notes = {}
 
 
 async def observed(scope, receive, send):
-    if scope['type'] == 'http' and scope['path'].startswith('/v1/notes/'):
+    if scope['type'] == 'http' and scope['path'].startswith(('/v1/notes/', '/v1/speakers/')):
         # Content-free: only the endpoint and its status, for the Notes check.
         async def answer(event):
             if event['type'] == 'http.response.start':
@@ -63,6 +63,13 @@ async def observed(scope, receive, send):
             if kind == 'final': state['empty'] = not frame.get('text', '').strip()
             if kind == 'final' and not state['empty']:
                 notes['finals'] = notes.get('finals', 0) + 1
+                # Speaker labels: how many finals were labelled and which slots spoke (numbers, never text).
+                labels = frame.get('speakers')
+                if isinstance(labels, dict) and labels.get('turns'):
+                    notes['labelled'] = notes.get('labelled', 0) + 1
+                    notes['slots'] = sorted(set(notes.get('slots', [])) | {t['speaker'] for t in labels['turns']})
+                elif isinstance(labels, dict) and labels.get('error'):
+                    notes['label_errors'] = notes.get('label_errors', []) + [labels['error']]
                 args.metadata.with_name('notes.json').write_text(json.dumps(notes))
             if kind == 'error': state['error'] = frame.get('code')
             save()

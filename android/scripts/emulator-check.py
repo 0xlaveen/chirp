@@ -13,6 +13,7 @@ import re
 import socket
 import ssl
 import shlex
+import shutil
 import subprocess
 import tempfile
 import time
@@ -297,6 +298,13 @@ def main():
         config = home / ".config/chirp/server.toml"
         config.parent.mkdir(parents=True)
         config.write_text('[correction]\nmode = "managed"\ntimeout = 60.0\n')
+        # Speaker labels: the throwaway HOME gets a copy of the pinned speaker model (the server is offline here).
+        speaker_model = Path(os.environ.get("CHIRP_SPEAKER_MODEL") or Path.home() / "Library/Application Support/Chirp/models/speakers/voxceleb_resnet34_LM.onnx")
+        speakers_model = opt.notes_check and speaker_model.is_file()
+        if speakers_model:
+            seeded = home / "Library/Application Support/Chirp/models/speakers" / speaker_model.name
+            seeded.parent.mkdir(parents=True)
+            shutil.copyfile(speaker_model, seeded)
         env = dict(os.environ, HOME=str(home), HF_HOME=str(Path.home() / ".cache/huggingface"),
                    HF_HUB_OFFLINE="1", TRANSFORMERS_OFFLINE="1", PYTHONPATH=str(opt.server_root / "src"))
         if opt.tls: env["SSL_CERT_FILE"] = str(cert)
@@ -400,7 +408,7 @@ def main():
                 return
             if opt.notes_check:
                 module = runpy.run_path(str(Path(__file__).with_name("emulator-notes-check.py")))
-                module["check"](dict(_probe, adb=adb), work, output)
+                module["check"](dict(_probe, adb=adb, speakers_model=speakers_model), work, output)
                 return
             if opt.history_check:
                 module = runpy.run_path(str(Path(__file__).with_name("emulator-history-check.py")))

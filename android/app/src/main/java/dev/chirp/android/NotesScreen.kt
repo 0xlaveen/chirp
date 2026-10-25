@@ -103,6 +103,7 @@ internal fun NotesScreen(model: NotesModel, record: () -> Unit, copy: () -> Unit
     if (settings) ModalBottomSheet({ settings = false }) {
         Column(Modifier.padding(start = 16.dp, end = 16.dp, bottom = 24.dp)) { NotesSettings(title = "Notes settings") }
     }
+    if (model.speakerConsent) SpeakerConsentDialog(model::confirmSpeakerDownload, model::dismissSpeakerConsent)
     if (transcript && !externalTranscript) ModalBottomSheet({ transcript = false }, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         TranscriptPane(model, Modifier.fillMaxWidth().fillMaxHeight(.85f).padding(horizontal = 24.dp), close = { transcript = false })
     }
@@ -226,7 +227,8 @@ private fun NotesMenu(model: NotesModel, actions: NotesMenuActions) {
             }
             if (model.structureAvailable) toggle("Structure notes", model.structureEnabled, model.structureHost?.let { "Sends text to $it" }) { model.setStructure(it) }
             if (model.reorganizing !is Reorganizing.Unavailable) toggle("Auto-organize", model.auto) { model.setAuto(it) }
-            if (model.reorganizing !is Reorganizing.Unavailable || model.structureAvailable) HorizontalDivider()
+            if (model.speakersAvailable) toggle("Label speakers", model.labelSpeakers, "Who said what · voices compared on your Mac") { model.setSpeakerLabels(it) }
+            if (model.reorganizing !is Reorganizing.Unavailable || model.structureAvailable || model.speakersAvailable) HorizontalDivider()
             item("Copy", R.drawable.ic_copy, model.hasContent, run = actions.copy)
             item("Share", R.drawable.ic_share, model.hasContent, run = actions.share)
             item("Export Markdown", R.drawable.ic_download, model.hasContent, run = actions.save)
@@ -464,9 +466,24 @@ internal fun TranscriptPane(model: NotesModel, modifier: Modifier, titled: Boole
             if (close != null) IconButton(close) { Icon(painterResource(R.drawable.ic_close), "Close transcript") }
         }
         if (playbackFailed) Text("Couldn’t play kept audio. Try another segment.", Modifier.padding(vertical = 8.dp), color = scheme.error, style = MaterialTheme.typography.bodyMedium)
+        model.speakerNote?.let { Text(it, Modifier.padding(vertical = 4.dp), color = scheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall) }
         val document = model.document
+        val roster = document.roster
+        var renaming by remember { mutableStateOf<Int?>(null) }
+        renaming?.let { person ->
+            RenameSpeakerDialog(document, person, { renaming = null }) { name, replace -> renaming = null; model.renameSpeaker(person, name, replace) }
+        }
         // A copy: the document's list is the same object as it grows, which the lazy list would not see change.
         val rows = document.segments.toList()
+        // A chip where the speaker changes (after merges), so one person's run of turns reads as one.
+        val chips = HashSet<Pair<Int, Int>>().apply {
+            var last: Int? = null
+            for (s in rows) {
+                val turns = s.turns
+                if (turns.isNullOrEmpty()) { if (s.text.isNotEmpty()) last = null; continue }
+                turns.forEachIndexed { i, t -> val p = roster.resolve(t.person); if (p != last) add(s.id to i); last = p }
+            }
+        }
         val list = rememberLazyListState()
         LaunchedEffect(rows.size) { if (rows.isNotEmpty() && !list.canScrollForward) list.animateScrollToItem(rows.size) }
         LazyColumn(Modifier.fillMaxWidth().weight(1f), list, contentPadding = PaddingValues(top = 4.dp, bottom = 128.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -485,7 +502,22 @@ internal fun TranscriptPane(model: NotesModel, modifier: Modifier, titled: Boole
                     Text(NotesDocument.timestamp(segment.offset), Modifier.padding(top = 2.dp), style = MaterialTheme.typography.labelSmall, fontFamily = FontFamily.Monospace,
                         color = scheme.outline)
                     val failure = segment.failure
+                    val turns = segment.turns
                     if (failure != null) Text("⚠︎ audio not transcribed ($failure)", color = scheme.error, style = MaterialTheme.typography.bodyMedium)
+                    else if (!turns.isNullOrEmpty()) Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        turns.forEachIndexed { i, turn ->
+                            if (segment.id to i in chips) {
+                                var menu by remember { mutableStateOf(false) }
+                                Box {
+                                    SpeakerChip(roster.displayName(turn.person), roster.colorIndex(turn.person), { menu = true })
+                                    SpeakerMenu(menu, { menu = false }, roster, turn.person, rename = { renaming = roster.resolve(turn.person) },
+                                        merge = { into -> model.mergeSpeaker(turn.person, into) }, separate = model::separateSpeaker)
+                                }
+                            }
+                            Text((if (model.raw) turn.raw else turn.text) + if ((turn.keptOriginal || segment.keptOriginal) && !model.raw) " (kept original)" else "",
+                                style = MaterialTheme.typography.bodyMedium)
+                        }
+                    }
                     else Text((if (model.raw) segment.raw else segment.text) + if (segment.keptOriginal && !model.raw) " (kept original)" else "",
                         modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
                 }
