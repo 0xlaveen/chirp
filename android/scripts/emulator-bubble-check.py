@@ -199,6 +199,52 @@ class Bubble:
         self.wait(lambda h: (b := self.bubble(h)) is not None and center(b)[0] > self.m['size']()[0] // 2, 'bubble back right')
         self.results.append('drag: no FGS/recording, snap, persisted, separate posture')
 
+    FILLERS = re.compile(r'\b(?:um|uh)\b', re.I)
+
+    def has_fillers(self, hierarchy=None):
+        """Whether the plain field holds a spoken filler of the synthetic fixture (a boolean; the text is never kept)."""
+        editors = [n for n in (hierarchy or self.nodes()) if n.get('class') == 'android.widget.EditText' and n.get('package') == PACKAGE]
+        return bool(editors) and bool(self.FILLERS.search(editors[0].get('text', '')))
+
+    def await_action(self, mode, label, seconds):
+        """#183: one tight-polling probe for the transient action; a probe failure raises instead of reading as 'not offered'."""
+        result = self.adb('shell', 'CLASSPATH=/data/local/tmp/chirp-ui-probe.jar', 'app_process', '/', 'dev.chirp.smoke.UiHierarchy',
+                          'await-action', mode, shlex.quote(label), str(seconds * 1000)).decode().strip()
+        assert result.split(' ')[0] in ('PRESENT', 'CLICKED', 'EXPIRED'), 'Probe returned no verdict: ' + result[:80]
+        return result
+
+    def use_raw_replacement(self):
+        """Native bubble: Use raw replaces a cleaned insertion with the raw words, deterministically.
+
+        The synthetic fixture says "Um … a, a … Uh … the, the", and managed clean-up (warmed, asserted corrected) removes
+        them, so the cleaned final always differs from the raw. The probe starts before the final exists and clicks the
+        instant the 5 s action appears, so no hierarchy dump can eat the window; each failure says which thing went wrong.
+        """
+        self.probe_field('Plain field')
+        assert not self.has_fillers(), 'Fixture: the field must start without fillers'
+        self.tap(self.wait(self.bubble, 'bubble'))
+        result = self.await_action('click', 'Use raw', 90)
+        if result.startswith('EXPIRED'):
+            if 'fillers_before=true' in result:
+                raise AssertionError('Clean-up returned the raw text: the fixture was not corrected (not a Use raw failure)')
+            raise AssertionError('Clean-up changed the text but Use raw was never offered')
+        assert result == 'CLICKED fillers_before=false', 'Use raw was offered over uncleaned text: ' + result
+        self.wait(self.has_fillers, 'raw words back in the field', 20)
+        self.no_microphone_service('after Use raw')
+        self.results.append('Use raw (cleaned differed from raw) replaced the cleaned text with the raw words')
+
+    def use_raw_expiry(self):
+        """The same fixture, left alone: Use raw goes away after 5 s and the cleaned text stays (expired, not unchanged)."""
+        self.probe_field('Plain field')
+        self.tap(self.wait(self.bubble, 'bubble'))
+        result = self.await_action('observe', 'Use raw', 90)
+        assert result == 'PRESENT fillers_before=false', 'Use raw not offered over cleaned text: ' + result
+        time.sleep(5.5)
+        assert not self.click_now('Use raw'), 'Use raw outlived 5 s'
+        assert not self.has_fillers(), 'Expiry must keep the cleaned text'
+        self.no_microphone_service('after Use raw expiry')
+        self.results.append('Use raw expired after 5 s and kept the cleaned text')
+
     def dictate_insert(self, cleanup_warm):
         self.probe_field('Plain field')
         before, _ = self.plain_length()
@@ -207,25 +253,11 @@ class Bubble:
         after, selection = self.plain_length()
         assert after > before, 'Field did not grow'
         assert selection == f'{after},{after}', 'Caret not at the end of the insertion'
-        polished = self.plain_digest()
-        # Use raw lasts 5 s and each hierarchy dump costs about a second here: click it through accessibility at once.
-        if self.click_now('Use raw'):
-            time.sleep(1)
-            assert self.plain_digest() != polished, 'Use raw changed nothing'
-            self.results.append('Use raw replaced the polished text')
-        elif cleanup_warm:
-            self.results.append('Use raw not offered (clean-up returned the same text)')
         self.no_microphone_service('after insert')
-        # A second polished insert: Use raw goes away by itself after 5 s.
-        if cleanup_warm:
-            grown = self.plain_length()[0]
-            self.dictate('Plain field')
-            self.wait(lambda h: self.plain_length()[0] > grown, 'field grew again', 60)
-            if self.m['find']('Use raw') is not None:
-                time.sleep(5.5)
-                assert self.m['find']('Use raw') is None, 'Use raw outlived 5 s'
-                self.results.append('Use raw expired after 5 s')
         self.results.append('dictate: Listening, partial, inserted at caret')
+        if cleanup_warm:
+            self.use_raw_replacement()
+            self.use_raw_expiry()
 
     def field_changed(self):
         self.probe_field('Plain field')

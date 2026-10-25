@@ -55,7 +55,9 @@ internal fun SettingsScreen(state: SetupState, actions: SettingsActions = Settin
             val shown = if (twoPane) (page ?: SettingsPage.Connection) else page
             val scroll = rememberSaveable(twoPane, shown, saver = ScrollState.Saver) { ScrollState(0) }
             if (twoPane) Row(Modifier.fillMaxSize()) {
-                Column(Modifier.weight(.38f).widthIn(max = 380.dp).fillMaxHeight().verticalScroll(rememberScrollState())
+                // The category column is not inside a Scaffold, so it keeps clear of the status and gesture areas itself (#181).
+                Column(Modifier.weight(.38f).widthIn(max = 380.dp).fillMaxHeight().windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Vertical))
+                    .verticalScroll(rememberScrollState())
                     .padding(start = 24.dp, end = 16.dp, top = 32.dp, bottom = 24.dp)) {
                     Text("Settings", Modifier.padding(bottom = 16.dp).semantics { heading() }, style = MaterialTheme.typography.titleLarge)
                     // Keyed on the open page so the summaries re-read the store after something changes beside them.

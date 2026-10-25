@@ -225,4 +225,46 @@ class SettingsScreenTest {
         assertEquals("Mac unreachable · mac.example.test", down.title); assertNotNull(down.hint)
         assertEquals("Mac is loading its speech model", connectionSummary(true, "m", null, false, health.copy(ready = false)).summary)
     }
+
+    /** #181: dispatches a 48 dp status bar and a 40 dp gesture area over the window, as an edge-to-edge activity receives them. */
+    private fun withSystemBars(): Pair<Float, Float> {
+        val density = context.resources.displayMetrics.density
+        val (top, bottom) = 48 * density to 40 * density
+        compose.runOnUiThread {
+            androidx.core.view.WindowCompat.setDecorFitsSystemWindows(compose.activity.window, false)
+            androidx.core.view.ViewCompat.dispatchApplyWindowInsets(compose.activity.window.decorView,
+                androidx.core.view.WindowInsetsCompat.Builder().setInsets(androidx.core.view.WindowInsetsCompat.Type.systemBars(),
+                    androidx.core.graphics.Insets.of(0, top.toInt(), 0, bottom.toInt())).build())
+        }
+        compose.waitForIdle()
+        return top to bottom
+    }
+
+    private fun assertClearOfSystemBars(first: String, last: String) {
+        val (top, bottom) = withSystemBars()
+        val height = compose.onRoot().fetchSemanticsNode().boundsInRoot.height
+        assertTrue("$first starts below the status bar", compose.onNodeWithText(first).fetchSemanticsNode().boundsInRoot.top >= top)
+        compose.onNodeWithText(last).performScrollTo()
+        assertTrue("$last ends above the gesture area", compose.onNodeWithText(last).fetchSemanticsNode().boundsInRoot.bottom <= height - bottom)
+        compose.onNodeWithText(last).assertIsDisplayed().assertHasClickAction()
+    }
+
+    @Config(qualifiers = "w840dp-h900dp-mdpi")
+    @Test fun `the inner screen's category column keeps clear of the system bars`() {
+        val (state, history, updates) = settingsFixture()
+        show(state, history, updates)
+        assertClearOfSystemBars("Settings", "About")
+        open(SettingsPage.About) // Still tappable after scrolling to the last row.
+        compose.onNodeWithText("Check for updates").assertExists()
+    }
+
+    @Test fun `the cover screen's list keeps clear of the system bars`() {
+        val (state, history, updates) = settingsFixture()
+        show(state, history, updates)
+        val (top, bottom) = withSystemBars()
+        val height = compose.onRoot().fetchSemanticsNode().boundsInRoot.height
+        assertTrue(compose.onAllNodes(hasText("Settings").and(SemanticsMatcher.keyIsDefined(SemanticsProperties.Heading))).fetchSemanticsNodes().single().boundsInRoot.top >= top - 1f)
+        compose.onNodeWithText("About").performScrollTo()
+        assertTrue(compose.onNodeWithText("About").fetchSemanticsNode().boundsInRoot.bottom <= height - bottom)
+    }
 }

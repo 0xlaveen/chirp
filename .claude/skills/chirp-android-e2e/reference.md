@@ -101,3 +101,9 @@ original value (delete it if previously null).
   is selected. The dedicated `--bubble-check` suite selects Gboard and covers the
   first-class bubble; the `device` phase covers onboarding, TalkBack, font and
   hinge states separately.
+
+- **Launcher widget:** the Pixel launcher ignores an accessibility click on *Add to home screen*; tap its
+  coordinates. Its resize handles are not reliably exposed as nodes: long-press the widget, then swipe from its right
+  edge at mid-height. Retry placement only after looking for an already placed widget, or a slow launcher gets two.
+- **Use raw:** the action lasts 5 s, longer than a hierarchy dump round trip. Start `await-action` right after the
+  bubble tap (one UiAutomation connection at a time, so no concurrent dumps) instead of polling from Python.

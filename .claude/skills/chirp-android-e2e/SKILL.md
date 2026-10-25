@@ -35,10 +35,11 @@ trusts its certificate for `https://10.0.2.2:7899` only in debug.
 | Script under `android/scripts/` | Coverage / invocation |
 | --- | --- |
 | `e2e-all.sh`, `e2e-all.py` | One-command lifecycle and pass/fail table; `--only dictation cleanup notes history stop device bubble quickdictate visual keepkb release` selects checks |
-| `emulator-check.py --quickdictate-check --tls …` | Dictate tile, sensitive clipboard, Speak result/cancel/error, Share, Notes tile and widget provider; no Accessibility service |
+| `emulator-check.py --quickdictate-check --tls …` | Dictate tile, sensitive clipboard, Speak result/cancel/error, Share, Notes tile and a **real launcher widget** (pinned through the probe's *Pin widget* button, tapped, resized to one and four cells, light/dark/200% font); no Accessibility service |
 | `e2e-all.sh --only quickdictate release` | The entry-point matrix, release smoke and entry-point TalkBack checks in the same owned AVD |
 | `emulator-check.py` / `emulator-dictation-check.py` | Real verified pairing, native IME tap/hold, composing partial/final and light/dark; device-side listening/Ripple screenshots |
 | `emulator-check.py --cleanup-only --tls …` | Managed clean-up, Polishing, cleaned final, Use raw, frame metrics |
+| `UiHierarchy.java await-action click\|observe <label> <ms>` | Tight-polling probe for a transient action (Use raw's 5 s window); prints `PRESENT`/`CLICKED`/`EXPIRED` and whether the editor held fixture fillers, so an expired action is told apart from unchanged clean-up |
 | `emulator-check.py --notes-check --tls …` / `emulator-notes-check.py`, `emulator-library-check.py` | Notes segments/structure, voice edit, screen-off, pause/resume/stop; list/search/rename/delete/undo/Recently Deleted/restore/continue; kept AAC replay, Share, Scratchpad |
 | `emulator-check.py --history-check --tls …` / `emulator-history-check.py` | History opt-in, encrypted storage, raw/clean reinsertion, cover/inner UI, opt-out |
 | `emulator-check.py --stop-check --tls …` / `emulator-stop-check.py` | Immediate/partial/polishing/double stop, hide/focus/unbind, crash checks; deliberately delayed ready fixture |

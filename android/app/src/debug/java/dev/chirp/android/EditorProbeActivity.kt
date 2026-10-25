@@ -68,6 +68,11 @@ class EditorProbeActivity : Activity() {
                 }.start()
             }
         })
+        // #184: the same request the Settings "Add Widget" row makes, so the launcher shows its real placement prompt.
+        column.addView(Button(this).apply {
+            text = "Pin widget"; isAllCaps = false
+            setOnClickListener { report.text = "Pin widget: " + DictationEntryRequests(applicationContext).widget() }
+        })
         // Below the status bar on edge-to-edge targets, so every field can be tapped.
         setContentView(ScrollView(this).apply { fitsSystemWindows = true; addView(column) })
     }

@@ -37,6 +37,10 @@ public final class UiHierarchy {
                 stopCase(automation, args[1], Float.parseFloat(args[2]), Float.parseFloat(args[3]));
                 return;
             }
+            if (args.length == 4 && args[0].equals("await-action")) {
+                awaitAction(automation, args[1].equals("click"), args[2], Long.parseLong(args[3]));
+                return;
+            }
             if (args.length == 3 && args[0].equals("tap")) {
                 long now = android.os.SystemClock.uptimeMillis();
                 float x = Float.parseFloat(args[1]), y = Float.parseFloat(args[2]);
@@ -182,6 +186,51 @@ public final class UiHierarchy {
             if (automation != null) UiAutomation.class.getMethod("disconnect").invoke(automation);
             thread.quitSafely();
         }
+    }
+    /**
+     * Tight-polls (20 ms, no hierarchy dump) for a transient action such as "Use raw", whose window is only 5 s, and
+     * clicks it the moment it is visible ("click") or only reports it ("observe"). Prints PRESENT/CLICKED/EXPIRED followed by
+     * fillers_before=true|false: whether the app's editor held a spoken filler (um/uh) at that instant. A boolean only, never text.
+     */
+    private static void awaitAction(UiAutomation automation, boolean click, String label, long timeoutMs) {
+        long deadline = android.os.SystemClock.uptimeMillis() + timeoutMs;
+        while (android.os.SystemClock.uptimeMillis() < deadline) {
+            for (AccessibilityWindowInfo window : automation.getWindows()) {
+                AccessibilityNodeInfo root = window.getRoot();
+                if (root == null) continue;
+                for (AccessibilityNodeInfo node : root.findAccessibilityNodeInfosByText(label)) {
+                    if (!node.isVisibleToUser() || !(safe(node.getText()).equals(label) || safe(node.getContentDescription()).startsWith(label))) continue;
+                    String state = " fillers_before=" + hasFillers(automation);
+                    if (!click) { System.out.println("PRESENT" + state); return; }
+                    AccessibilityNodeInfo target = node;
+                    while (target != null && !target.isClickable()) target = target.getParent();
+                    if (target == null || !target.performAction(AccessibilityNodeInfo.ACTION_CLICK)) throw new IllegalStateException("Accessibility action rejected");
+                    System.out.println("CLICKED" + state);
+                    return;
+                }
+            }
+            android.os.SystemClock.sleep(20);
+        }
+        System.out.println("EXPIRED fillers_before=" + hasFillers(automation));
+    }
+    private static boolean hasFillers(UiAutomation automation) {
+        return java.util.regex.Pattern.compile("(?i)\\b(um|uh)\\b").matcher(appEditorText(automation)).find();
+    }
+    private static String appEditorText(UiAutomation automation) {
+        for (AccessibilityWindowInfo window : automation.getWindows()) {
+            AccessibilityNodeInfo field = appEditor(window.getRoot());
+            if (field != null) return safe(field.getText());
+        }
+        return "";
+    }
+    private static AccessibilityNodeInfo appEditor(AccessibilityNodeInfo node) {
+        if (node == null) return null;
+        if ("android.widget.EditText".contentEquals(node.getClassName()) && "dev.chirp.android".contentEquals(safe(node.getPackageName()))) return node;
+        for (int i = 0; i < node.getChildCount(); i++) {
+            AccessibilityNodeInfo result = appEditor(node.getChild(i));
+            if (result != null) return result;
+        }
+        return null;
     }
     private static AccessibilityNodeInfo editable(AccessibilityNodeInfo node) {
         if (node == null) return null;
