@@ -89,7 +89,7 @@ Agent workflows for these checks live under [`.claude/skills/`](../.claude/skill
 |---|---|
 | [`chirp-android-e2e`](../.claude/skills/chirp-android-e2e/SKILL.md) | "test android", "run the emulator", "check notes on android": the `e2e-all.sh` sweep, the script coverage table, targeted UI checks, safe evidence collection and recovery from emulator or harness failures ([reference.md](../.claude/skills/chirp-android-e2e/reference.md)). |
 
-An iOS simulator skill is planned; until it lands, use `ios/scripts/simulator-e2e.sh` as described above.
+The iOS skill is `.claude/skills/chirp-ios-e2e/SKILL.md`; `ios/scripts/e2e-all.sh` runs the whole iPhone and iPad sweep (portable checks, build, unit tests, live UI) with one command and prints a pass/fail table.
 
 ## 2. Operator steps
 
