@@ -86,7 +86,7 @@ final class ChirpHardwareKeyboardUITests: XCTestCase {
         app.typeKey("1", modifierFlags: .command)
         XCTAssertTrue(app.buttons["chirp.notes.record"].waitForExistence(timeout: 3), "⌘1 did not open Notes")
         app.typeKey("3", modifierFlags: .command)
-        XCTAssertTrue(app.descendants(matching: .any)["chirp.history.enabled"].waitForExistence(timeout: 3), "⌘3 did not open History")
+        XCTAssertTrue(app.navigationBars["Dictation history"].waitForExistence(timeout: 3), "⌘3 did not open History")
         app.typeKey("2", modifierFlags: .command)
         XCTAssertTrue(waitFor(status, "label == 'Ready'"), "⌘2 did not open Dictate")
     }

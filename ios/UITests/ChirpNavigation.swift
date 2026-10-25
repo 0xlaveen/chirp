@@ -19,7 +19,7 @@ extension XCUIApplication {
         XCTFail("No \(title) tab", file: file, line: line)
     }
 
-    /// Settings → a shortcut (Connection or Styles), from any tab.
+    /// Settings → a category row, from any tab.
     @MainActor func openSettingsPage(_ id: String) {
         selectChirpTab("Settings")
         let back = navigationBars.buttons["Settings"]
@@ -30,12 +30,15 @@ extension XCUIApplication {
     }
 
     @MainActor func openConnection() { openSettingsPage("chirp.settings.connection") }
-    @MainActor func openStyles() { openSettingsPage("chirp.settings.styles") }
+    /// Settings → Dictation (Styles, clean-up, spoken commands and Press Return live there).
+    @MainActor func openDictation() { openSettingsPage("chirp.settings.dictation") }
 
-    /// The pairing link field, revealed by "Paste link instead" if needed.
-    @MainActor func pairingLinkField() -> XCUIElement {
+    /// The pairing link field, revealed by Connection's pairing page and "Paste link instead".
+    @MainActor func pairingLinkField() -> XCUIApplication {
         let field = secureTextFields["pairingLink"]
         if !field.exists {
+            let change = buttons["chirp.pair.change"]
+            if change.waitForExistence(timeout: 5) { change.tap() }
             let paste = buttons["chirp.pair.paste"]
             if paste.waitForExistence(timeout: 5) { paste.tap() }
         }
@@ -43,14 +46,15 @@ extension XCUIApplication {
         return field
     }
 
-    /// Settings → Connection → paste a link → Connect, then wait for the saved pairing.
+    /// Settings → Connection → Pair Mac → paste a link → Connect. A success pops back to Connection,
+    /// whose status banner is the saved-pairing marker.
     @MainActor func pair(link: String, timeout: TimeInterval = 5) {
         openConnection()
         let field = pairingLinkField()
         field.tap()
         field.typeText(link)
         buttons["chirp.pair.submit"].tap()
-        XCTAssertTrue(staticTexts["Mac pairing saved"].waitForExistence(timeout: timeout), "Pairing did not save")
+        XCTAssertTrue(descendants(matching: .any).matching(identifier: "chirp.connection.banner").firstMatch.waitForExistence(timeout: timeout), "Pairing did not save")
     }
 
     /// End an armed session from whichever tab is showing (each tab carries its own capsule).

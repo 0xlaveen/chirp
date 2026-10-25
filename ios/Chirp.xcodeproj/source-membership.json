@@ -19,7 +19,11 @@
     "App/PrivacyController.swift",
     "App/RollingDictation.swift",
     "App/SessionCoordinator.swift",
-    "App/SettingsViews.swift",
+    "App/Settings/HistoryView.swift",
+    "App/Settings/SettingsHome.swift",
+    "App/Settings/SettingsPages.swift",
+    "App/Settings/SettingsRows.swift",
+    "App/Settings/StylesViews.swift",
     "App/SpeakerViews.swift",
     "Intents/ChirpActivityAttributes.swift",
     "Intents/ChirpLiveActivity.swift",
@@ -63,6 +67,7 @@
     "UITests/ChirpNavigation.swift",
     "UITests/ChirpNotesUITests.swift",
     "UITests/ChirpScreenshotUITests.swift",
+    "UITests/ChirpSettingsUITests.swift",
     "UITests/ChirpUITests.swift",
     "UITests/KeyboardSetup.swift"
   ]
