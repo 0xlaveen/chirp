@@ -18,7 +18,8 @@ final class ChirpKeyboardUITests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments = ["--chirp-ui-test", "--chirp-keyboard-host", "--chirp-keyboard-host-send", "--chirp-auto-enter", "actionKeys"]
         app.launch()
-        defer { app.activate(); if app.buttons["chirp.host.end"].exists { app.buttons["chirp.host.end"].tap() } }
+        // Terminating the app at the end keeps Xcode's post-test diagnostics collection short.
+        defer { app.activate(); if app.buttons["chirp.host.end"].exists { app.buttons["chirp.host.end"].tap() }; app.terminate() }
         let setup = app.staticTexts["chirp.host.setup"]
         XCTAssertTrue(setup.waitForExistence(timeout: 10))
         let prepared = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label != %@", "Preparing synthetic shared session"), object: setup)
@@ -58,7 +59,7 @@ final class ChirpKeyboardUITests: XCTestCase {
             app.launchArguments = ["--chirp-ui-test", "--chirp-keyboard-host", "--chirp-activity-preview", kind]
             app.launch()
             XCTAssertTrue(app.staticTexts["chirp.host.setup"].waitForExistence(timeout: 10))
-            sleep(3)
+            sleep(kind == "session-stale" ? 7 : 3)
             // Background the app: the Dynamic Island shows the compact activity; a long press expands it.
             XCUIDevice.shared.press(.home)
             sleep(2)
@@ -74,6 +75,9 @@ final class ChirpKeyboardUITests: XCTestCase {
             sleep(2)
             XCUIDevice.shared.press(.home) // wakes onto the lock screen without unlocking
             sleep(2)
+            // The first activity asks "Allow Live Activities from Chirp?" on the lock screen; answer it once.
+            let allow = springboard.buttons["Allow"]
+            if allow.waitForExistence(timeout: 2) { allow.tap(); sleep(1) }
             shot("activity-\(kind)-lock")
             XCUIDevice.shared.press(.home)
             springboard.swipeUp()
@@ -98,6 +102,7 @@ final class ChirpKeyboardUITests: XCTestCase {
             app.activate()
             if app.buttons["chirp.host.end"].exists { app.buttons["chirp.host.end"].tap() }
             XCUIDevice.shared.orientation = .portrait
+            app.terminate()
         }
         XCTAssertTrue(app.textViews["chirp.host.text"].waitForExistence(timeout: 10))
         let setup = app.staticTexts["chirp.host.setup"]

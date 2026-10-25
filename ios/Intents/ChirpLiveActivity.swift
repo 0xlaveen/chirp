@@ -74,8 +74,9 @@ extension ChirpLiveActivity {
                     let state = ChirpActivityAttributes.ContentState(
                         phase: listening ? .listening : .armed, debugRetention: kind == "session-debug",
                         listeningSince: listening ? now.addingTimeInterval(-72) : nil)
-                    let stale: Date? = kind == "session-stale" ? now.addingTimeInterval(-1) : nil
-                    _ = try Activity.request(attributes: ChirpActivityAttributes(), content: ActivityContent(state: state, staleDate: stale ?? now.addingTimeInterval(3600)), pushType: nil)
+                    // A stale sample goes stale a few seconds after it starts, as a real one does when updates stop.
+                    let stale = now.addingTimeInterval(kind == "session-stale" ? 4 : 3600)
+                    _ = try Activity.request(attributes: ChirpActivityAttributes(), content: ActivityContent(state: state, staleDate: stale), pushType: nil)
                 }
             } catch {}
         }
