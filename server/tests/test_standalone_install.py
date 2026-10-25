@@ -11,7 +11,6 @@ import pytest
 pytestmark = pytest.mark.skipif(sys.platform == "win32", reason="POSIX shell installer")
 
 
-
 @pytest.mark.parametrize("machine", ["arm64", "x86_64"])
 def test_server_install_requires_no_dotfiles_and_preserves_configuration(tmp_path, machine):
     home = tmp_path / "home with spaces"

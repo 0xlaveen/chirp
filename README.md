@@ -29,6 +29,7 @@ Press a hotkey on your Mac, or the mic on your phone, and talk. Your words appea
 Linux and Windows desktop support is being added in [`desktop/`](desktop/README.md),
 with a shared Tauri client and portable speech server. Linux design and progress:
 [#213](https://github.com/araa47/chirp/issues/213).
+For Linux server and desktop setup, see [Chirp on Linux](docs/linux.md).
 
 ## What you get
 

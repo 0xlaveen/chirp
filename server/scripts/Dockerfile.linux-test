@@ -1,0 +1,20 @@
+# Native Linux speech/cleanup validation; no live service or host directory mounts.
+FROM ghcr.io/astral-sh/uv:python3.13-bookworm-slim
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential cmake libgomp1 systemd \
+    && rm -rf /var/lib/apt/lists/*
+RUN mkdir -p /models
+WORKDIR /workspace/server
+ENV UV_LINK_MODE=copy CMAKE_BUILD_PARALLEL_LEVEL=3 CMAKE_ARGS="-DGGML_NATIVE=OFF"
+COPY pyproject.toml uv.lock ./
+RUN uv sync --locked --extra onnx --extra cleanup --no-install-project
+RUN apt-get update && apt-get install -y --no-install-recommends rsync && rm -rf /var/lib/apt/lists/*
+COPY src ./src
+COPY tests ./tests
+COPY scripts ./scripts
+COPY repository-scripts /workspace/scripts
+RUN uv sync --locked --extra onnx --extra cleanup \
+    && useradd --create-home --uid 1000 chirptest \
+    && chown -R chirptest:chirptest /workspace /models
+USER chirptest
+ENV HOME=/home/chirptest

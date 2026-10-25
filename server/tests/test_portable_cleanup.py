@@ -162,3 +162,16 @@ def test_picker_switches_backend_defaults_but_keeps_explicit_budgets():
     assert cpu.timeout == 3 and cpu.structure_timeout == 90
     mlx = cpu.with_model(cleanup_models.DEFAULT_MODEL, "mlx")
     assert mlx.timeout == 3 and mlx.structure_timeout == 30
+
+
+def test_doctor_distinguishes_cached_gguf_from_missing_runtime(monkeypatch, tmp_path):
+    import importlib.util
+
+    from chirp_server import doctor
+
+    monkeypatch.setattr(cleanup_models, "discover", lambda _: tmp_path / "model.gguf")
+    monkeypatch.setattr(importlib.util, "find_spec", lambda _: None)
+    config = CorrectionConfig(mode="managed", backend="llama_cpp")
+    check = doctor.check_correction(Settings(correction=config))
+    assert check.status == doctor.WARN and "runtime missing" in check.detail
+    assert "--extra cleanup" in check.fix

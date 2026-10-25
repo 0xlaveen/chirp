@@ -106,7 +106,7 @@ def test_correction_managed_reports_keep_loaded_and_memory(monkeypatch, tmp_path
         config_dir=tmp_path,
         debug_dir=tmp_path / "debug",
         state_path=state,
-        correction=CorrectionConfig(mode="managed", keep_loaded=True),
+        correction=CorrectionConfig(mode="managed", backend="mlx", keep_loaded=True),
     )
     check = doctor.check_correction(settings)
     assert check.status == OK

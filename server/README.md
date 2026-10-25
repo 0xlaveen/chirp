@@ -20,6 +20,9 @@ No service, network publication or model download happens on installation.
 - [Doctor](#doctor) · [Privacy and debugging](#privacy-and-debugging) · [Optional LaunchAgent](#optional-launchagent-operator-action)
 - [Develop and test](#develop-and-test) · [Explicit downloads and cleanup](#explicit-optional-downloads-and-cleanup)
 
+Linux setup, XDG paths, the systemd user service and portable cleanup are covered
+in [Chirp on Linux](../docs/linux.md).
+
 ## Install
 
 ```sh
