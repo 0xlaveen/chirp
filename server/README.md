@@ -30,7 +30,7 @@ cd server
 uv sync --locked
 ```
 
-On macOS 14+, both Apple Silicon and Intel are supported. MLX dependencies install only on Apple Silicon; ONNX Parakeet installs by default elsewhere. Intel macOS uses ONNX Runtime 1.23.2, the last upstream release with an Intel macOS wheel; other platforms retain the latest locked runtime. Windows and Linux desktop support is in progress. Intel clean-up uses the portable llama.cpp backend or a local OpenAI-compatible endpoint; dictation works without clean-up.
+On macOS 14+, both Apple Silicon and Intel are supported. MLX dependencies install only on Apple Silicon; ONNX Parakeet installs by default elsewhere. Intel macOS uses ONNX Runtime 1.23.2, the last upstream release with an Intel macOS wheel; other platforms retain the latest locked runtime. Windows and Linux desktop support is in progress. On Intel Macs, built-in clean-up and Notes structuring use the portable llama.cpp backend on CPU and can be slow. Dictation works without them. Turn clean-up off, or use an OpenAI-compatible local endpoint such as Ollama or LM Studio; performance depends on the Mac and model.
 
 This installs the Python package only. It starts no service, publishes nothing, and downloads no model.
 

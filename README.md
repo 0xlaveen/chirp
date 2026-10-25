@@ -48,6 +48,8 @@ with a shared Tauri client and portable speech server. Linux design and progress
 
 **Honest limits.** You need a Mac on macOS 14+ (Apple Silicon or Intel) that's on and reachable whenever you dictate. Apple Silicon uses MLX, the fastest option; Intel uses ONNX Parakeet. Windows and Linux support is in progress. Phones connect only through Tailscale. Everything installs from source: there's no notarized Mac download, Play Store build or App Store build.
 
+**Intel Macs.** Built-in clean-up and Notes structuring run on CPU and can be slow. Dictation works without them. Use an OpenAI-compatible local endpoint such as Ollama or LM Studio, or turn clean-up off. Notes can still keep a plain transcript with **Structure notes** off. Performance depends on your Mac and model.
+
 **How it compares.** Cloud dictation tools such as Wispr Flow and Typeless, and meeting-notes services such as Otter and Granola, process your audio on their own servers and generally charge a subscription. Apple Dictation and Gboard voice typing are free but tied to one platform, without Chirp's clean-up styles or notes. Superwhisper also runs locally, but it's closed source with paid tiers. Chirp's bet is that one Mac you already own can do all of this, privately, for every device you type on.
 
 ## How it works

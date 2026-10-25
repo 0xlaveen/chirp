@@ -2,7 +2,7 @@
 
 `Chirp.app` is a small menu-bar app. Press a hotkey in any app, talk, and the text appears in the focused field. A floating HUD shows the live partial text while you speak. Audio streams to your local `chirp-server` over `ws://127.0.0.1:7821/v1/stream`.
 
-Requires **macOS 14+**, on Apple Silicon or Intel. Apple Silicon uses MLX Parakeet (fastest); Intel uses ONNX Parakeet. Windows and Linux support is in progress. Clean-up is optional: Intel uses portable llama.cpp or a local OpenAI-compatible endpoint. The source installer includes the Intel CPU runtime; model weights still require an explicit download. CPU cleanup can be slow; keep it off or use a local endpoint if it is impractical on your Mac.
+Requires **macOS 14+**, on Apple Silicon or Intel. Apple Silicon uses MLX Parakeet (fastest); Intel uses ONNX Parakeet. Windows and Linux support is in progress. Clean-up is optional: Intel uses portable llama.cpp or a local OpenAI-compatible endpoint. The source installer includes the Intel CPU runtime; model weights still require an explicit download. On Intel Macs, built-in clean-up and Notes structuring run on CPU and can be slow. Dictation works without them: turn clean-up off, or use an OpenAI-compatible local endpoint such as Ollama or LM Studio. Turn **Structure notes** off to keep Notes as a plain transcript.
 
 Native Swift 6, SwiftPM, AppKit. No Xcode needed — the Command Line Tools are enough. See [docs/architecture.md](../docs/architecture.md) for the protocol and privacy rules, and [docs/screenshots/mac](../docs/screenshots/mac) for curated light/dark captures.
 
