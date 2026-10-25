@@ -24,10 +24,16 @@ pub struct Capabilities {
 
 pub struct HotkeyHandle(Option<Box<dyn FnOnce() + Send>>);
 impl HotkeyHandle {
-    pub fn new(stop: impl FnOnce() + Send + 'static) -> Self { Self(Some(Box::new(stop))) }
+    pub fn new(stop: impl FnOnce() + Send + 'static) -> Self {
+        Self(Some(Box::new(stop)))
+    }
 }
 impl Drop for HotkeyHandle {
-    fn drop(&mut self) { if let Some(stop) = self.0.take() { stop(); } }
+    fn drop(&mut self) {
+        if let Some(stop) = self.0.take() {
+            stop();
+        }
+    }
 }
 
 pub trait Platform: Send + Sync {
@@ -39,18 +45,26 @@ pub trait Platform: Send + Sync {
 
 pub fn native() -> Box<dyn Platform> {
     #[cfg(target_os = "linux")]
-    { Box::new(linux::Linux) }
+    {
+        Box::new(linux::Linux)
+    }
     #[cfg(target_os = "windows")]
-    { Box::new(windows::Windows) }
+    {
+        Box::new(windows::Windows)
+    }
     #[cfg(not(any(target_os = "linux", target_os = "windows")))]
-    { Box::new(Unsupported) }
+    {
+        Box::new(Unsupported)
+    }
 }
 
 #[cfg(not(any(target_os = "linux", target_os = "windows")))]
 struct Unsupported;
 #[cfg(not(any(target_os = "linux", target_os = "windows")))]
 impl Platform for Unsupported {
-    fn default_hotkey(&self) -> HotKey { HotKey::RightOption }
+    fn default_hotkey(&self) -> HotKey {
+        HotKey::RightOption
+    }
     fn start_hotkey(&self, _: HotKey, _: Sender<KeyEvent>) -> Result<HotkeyHandle, String> {
         Err("Use the native Chirp Mac app for global dictation on macOS".into())
     }
@@ -58,7 +72,11 @@ impl Platform for Unsupported {
         Err("Use the native Chirp Mac app for text insertion on macOS".into())
     }
     fn capabilities(&self) -> Capabilities {
-        Capabilities { session: "unsupported".into(), insertion: vec![], hotkey: false,
-            detail: "The native Chirp Mac app remains the supported macOS client.".into() }
+        Capabilities {
+            session: "unsupported".into(),
+            insertion: vec![],
+            hotkey: false,
+            detail: "The native Chirp Mac app remains the supported macOS client.".into(),
+        }
     }
 }

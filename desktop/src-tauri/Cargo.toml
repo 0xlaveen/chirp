@@ -25,7 +25,7 @@ cpal = "0.16"
 keyring = { version = "3", features = ["apple-native", "windows-native", "sync-secret-service", "crypto-rust"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
-x11rb = "0.13"
+x11rb = { version = "0.13", features = ["xkb"] }
 
 [profile.dev]
 debug = 0

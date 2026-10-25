@@ -38,11 +38,23 @@ pub struct HotkeyState {
 
 impl HotkeyState {
     pub fn new(key: HotKey, mode: HotkeyMode) -> Self {
-        Self { key, mode, down: false, blocked: false, recording: false }
+        Self {
+            key,
+            mode,
+            down: false,
+            blocked: false,
+            recording: false,
+        }
+    }
+
+    pub fn set_recording(&mut self, recording: bool) {
+        self.recording = recording;
     }
 
     pub fn event(&mut self, event: KeyEvent) -> Option<Action> {
-        if event.key != self.key { return None; }
+        if event.key != self.key {
+            return None;
+        }
         if event.other_key_down {
             self.blocked = event.down;
             self.down = event.down;
@@ -52,7 +64,9 @@ impl HotkeyState {
             }
             return None;
         }
-        if event.down == self.down { return None; }
+        if event.down == self.down {
+            return None;
+        }
         self.down = event.down;
         if event.down {
             self.blocked = false;
@@ -63,7 +77,11 @@ impl HotkeyState {
         } else if !self.blocked {
             if self.mode == HotkeyMode::Toggle {
                 self.recording = !self.recording;
-                return Some(if self.recording { Action::Start } else { Action::Stop });
+                return Some(if self.recording {
+                    Action::Start
+                } else {
+                    Action::Stop
+                });
             }
             if self.recording {
                 self.recording = false;
@@ -78,7 +96,11 @@ impl HotkeyState {
 mod tests {
     use super::*;
     fn event(down: bool, chord: bool) -> KeyEvent {
-        KeyEvent { key: HotKey::RightCtrl, down, other_key_down: chord }
+        KeyEvent {
+            key: HotKey::RightCtrl,
+            down,
+            other_key_down: chord,
+        }
     }
     #[test]
     fn hold_rejects_chords_and_repeat() {

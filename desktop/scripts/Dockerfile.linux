@@ -3,8 +3,9 @@ FROM rust:1-bookworm
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential curl ca-certificates pkg-config libwebkit2gtk-4.1-dev \
     libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev libasound2-dev \
-    xvfb xauth xdotool xclip x11-utils weston wtype wl-clipboard dbus-x11 \
+    xvfb xauth x11-xkb-utils xdotool xclip x11-utils weston wtype wl-clipboard dbus-x11 \
     python3 python3-gi gir1.2-gtk-3.0 nodejs npm fonts-dejavu-core \
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /workspace/desktop
 ENV CARGO_TARGET_DIR=/cargo-target
+RUN rustup component add rustfmt clippy

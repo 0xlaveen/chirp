@@ -1,14 +1,24 @@
 //! Frozen Chirp v1 client. No transcript, URL credentials or tokens enter logs.
-use crate::{audio, settings::{stream_url, Settings}};
+use crate::{
+    audio,
+    settings::{stream_url, Settings},
+};
 use futures_util::{SinkExt, StreamExt};
 use serde::Serialize;
 use serde_json::{json, Value};
 use std::time::Duration;
 use tokio::sync::{mpsc, watch};
-use tokio_tungstenite::{connect_async, tungstenite::{client::IntoClientRequest, Message}};
+use tokio_tungstenite::{
+    connect_async,
+    tungstenite::{client::IntoClientRequest, Message},
+};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
-pub enum Control { Running, Stop, Cancel }
+pub enum Control {
+    Running,
+    Stop,
+    Cancel,
+}
 
 #[derive(Clone, Serialize)]
 pub struct Update {
@@ -19,23 +29,32 @@ pub struct Update {
 }
 impl Update {
     pub fn new(state: &str, text: &str, detail: &str) -> Self {
-        Self { state: state.into(), text: text.into(), detail: detail.into(), debug_retention: false }
+        Self {
+            state: state.into(),
+            text: text.into(),
+            detail: detail.into(),
+            debug_retention: false,
+        }
     }
 }
 
 async fn receive<S>(socket: &mut S) -> Result<Value, String>
-where S: futures_util::Stream<Item=Result<Message, tokio_tungstenite::tungstenite::Error>> + Unpin {
+where
+    S: futures_util::Stream<Item = Result<Message, tokio_tungstenite::tungstenite::Error>> + Unpin,
+{
     loop {
         match socket.next().await {
             Some(Ok(Message::Text(text))) if text.len() < 1024 * 1024 => {
-                let value: Value = serde_json::from_str(&text).map_err(|_| "Server sent an invalid response")?;
+                let value: Value =
+                    serde_json::from_str(&text).map_err(|_| "Server sent an invalid response")?;
                 if value["type"] == "error" {
                     return Err(match value["code"].as_str() {
                         Some("auth") => "Pairing was refused. Pair with your server again.",
                         Some("busy") => "The server is busy. Try again.",
                         Some("too_long") => "This dictation reached the server duration limit.",
                         _ => "The server could not transcribe this dictation.",
-                    }.into());
+                    }
+                    .into());
                 }
                 return Ok(value);
             }
@@ -53,23 +72,43 @@ pub async fn dictate(
     emit: impl Fn(Update),
 ) -> Result<String, String> {
     let url = stream_url(&settings.url)?;
-    let mut request = url.as_str().into_client_request().map_err(|_| "Invalid server URL")?;
-    request.headers_mut().insert("Authorization", format!("Bearer {token}").parse().map_err(|_| "Invalid server token")?);
+    let mut request = url
+        .as_str()
+        .into_client_request()
+        .map_err(|_| "Invalid server URL")?;
+    request.headers_mut().insert(
+        "Authorization",
+        format!("Bearer {token}")
+            .parse()
+            .map_err(|_| "Invalid server token")?,
+    );
     emit(Update::new("connecting", "", "Connecting to your server…"));
     let connecting = async {
-        let (mut socket, _) = connect_async(request).await.map_err(|_| "Could not connect to your server")?;
-        socket.send(Message::Text(json!({"type":"start", "sample_rate":16000,
-            "encoding":"pcm_s16le", "client":"desktop", "correction": settings.correction}).to_string().into()))
-            .await.map_err(|_| "Could not start dictation")?;
+        let (mut socket, _) = connect_async(request)
+            .await
+            .map_err(|_| "Could not connect to your server")?;
+        socket
+            .send(Message::Text(
+                json!({"type":"start", "sample_rate":16000,
+            "encoding":"pcm_s16le", "client":"desktop", "correction": settings.correction})
+                .to_string()
+                .into(),
+            ))
+            .await
+            .map_err(|_| "Could not start dictation")?;
         let ready = receive(&mut socket).await?;
-        if ready["type"] != "ready" { return Err("Server did not accept dictation".into()); }
+        if ready["type"] != "ready" {
+            return Err("Server did not accept dictation".into());
+        }
         Ok::<_, String>((socket, ready["debug_retention"].as_bool().unwrap_or(false)))
     };
     let (mut socket, debug) = tokio::select! {
         result = tokio::time::timeout(Duration::from_secs(30), connecting) => result.map_err(|_| "Server connection timed out")??,
         _ = control.changed() => return Err("cancelled".into()),
     };
-    if *control.borrow() != Control::Running { return Err("cancelled".into()); }
+    if *control.borrow() != Control::Running {
+        return Err("cancelled".into());
+    }
     let mut audio = match fixture {
         Some(rx) => rx,
         None => {
@@ -78,7 +117,9 @@ pub async fn dictate(
             rx
         }
     };
-    let mut update = Update::new("listening", "", "Listening…"); update.debug_retention = debug; emit(update);
+    let mut update = Update::new("listening", "", "Listening…");
+    update.debug_retention = debug;
+    emit(update);
     let mut stopped = false;
     let mut total_bytes = 0usize;
     let mut deadline = tokio::time::Instant::now() + Duration::from_secs(120);
@@ -138,26 +179,108 @@ mod tests {
             let (tcp, _) = listener.accept().await.unwrap();
             let mut ws = accept_async(tcp).await.unwrap();
             let start = receive(&mut ws).await.unwrap();
-            assert_eq!(start["client"], "desktop"); assert_eq!(start["sample_rate"], 16000);
-            ws.send(Message::Text(json!({"type":"ready"}).to_string().into())).await.unwrap();
+            assert_eq!(start["client"], "desktop");
+            assert_eq!(start["sample_rate"], 16000);
+            ws.send(Message::Text(json!({"type":"ready"}).to_string().into()))
+                .await
+                .unwrap();
             assert_eq!(ws.next().await.unwrap().unwrap().into_data().len(), 1600);
             assert_eq!(receive(&mut ws).await.unwrap()["type"], "stop");
-            ws.send(Message::Text(json!({"type":"partial","text":"test"}).to_string().into())).await.unwrap();
-            ws.send(Message::Text(json!({"type":"final","text":"Test sentence."}).to_string().into())).await.unwrap();
+            ws.send(Message::Text(
+                json!({"type":"partial","text":"test"}).to_string().into(),
+            ))
+            .await
+            .unwrap();
+            ws.send(Message::Text(
+                json!({"type":"final","text":"Test sentence."})
+                    .to_string()
+                    .into(),
+            ))
+            .await
+            .unwrap();
         });
-        let settings = Settings { url: format!("http://127.0.0.1:{port}"), ..Settings::default() };
-        let (tx, rx) = mpsc::channel(4); tx.send(Ok(vec![0;1600])).await.unwrap(); drop(tx);
+        let settings = Settings {
+            url: format!("http://127.0.0.1:{port}"),
+            ..Settings::default()
+        };
+        let (tx, rx) = mpsc::channel(4);
+        tx.send(Ok(vec![0; 1600])).await.unwrap();
+        drop(tx);
         let (_control, receiver) = watch::channel(Control::Running);
-        assert_eq!(dictate(settings, "synthetic-test-token".into(), receiver, Some(rx), |_| {}).await.unwrap(), "Test sentence.");
+        assert_eq!(
+            dictate(
+                settings,
+                "synthetic-test-token".into(),
+                receiver,
+                Some(rx),
+                |_| {}
+            )
+            .await
+            .unwrap(),
+            "Test sentence."
+        );
         server.await.unwrap();
     }
     #[tokio::test]
     async fn cancellation_during_connect_is_bounded() {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let settings = Settings { url: format!("http://{}", listener.local_addr().unwrap()), ..Settings::default() };
+        let settings = Settings {
+            url: format!("http://{}", listener.local_addr().unwrap()),
+            ..Settings::default()
+        };
         let (control, rx) = watch::channel(Control::Running);
         let run = tokio::spawn(dictate(settings, "test".into(), rx, None, |_| {}));
         control.send(Control::Cancel).unwrap();
-        assert!(tokio::time::timeout(Duration::from_secs(1), run).await.unwrap().unwrap().is_err());
+        assert!(tokio::time::timeout(Duration::from_secs(1), run)
+            .await
+            .unwrap()
+            .unwrap()
+            .is_err());
+    }
+    #[tokio::test]
+    async fn cancel_while_waiting_for_final_never_returns_text() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let (finalizing, ready) = tokio::sync::oneshot::channel();
+        let server = tokio::spawn(async move {
+            let (tcp, _) = listener.accept().await.unwrap();
+            let mut ws = accept_async(tcp).await.unwrap();
+            receive(&mut ws).await.unwrap();
+            ws.send(Message::Text(json!({"type":"ready"}).to_string().into()))
+                .await
+                .unwrap();
+            assert_eq!(receive(&mut ws).await.unwrap()["type"], "stop");
+            finalizing.send(()).unwrap();
+            while let Some(Ok(message)) = ws.next().await {
+                if message.is_close() {
+                    return;
+                }
+            }
+        });
+        let settings = Settings {
+            url: format!("http://127.0.0.1:{port}"),
+            ..Settings::default()
+        };
+        let (tx, audio) = mpsc::channel(1);
+        drop(tx);
+        let (control, receiver) = watch::channel(Control::Running);
+        let run = tokio::spawn(dictate(
+            settings,
+            "test".into(),
+            receiver,
+            Some(audio),
+            |_| {},
+        ));
+        ready.await.unwrap();
+        control.send(Control::Cancel).unwrap();
+        assert_eq!(
+            tokio::time::timeout(Duration::from_secs(1), run)
+                .await
+                .unwrap()
+                .unwrap()
+                .unwrap_err(),
+            "cancelled"
+        );
+        server.await.unwrap();
     }
 }

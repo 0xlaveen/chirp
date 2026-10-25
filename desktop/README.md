@@ -31,8 +31,10 @@ applications; Chirp observes its state without grabbing the keyboard. Focus a
 text field before dictating. The Record button hides the main window to return
 focus to your previous app; the HUD does not request focus.
 
-Text insertion uses `xdotool` on X11. If insertion fails, `xclip` puts the result
-on the clipboard and the HUD asks you to paste it. Text is pipe input, never a
+Text insertion uses `xdotool` on X11. Multiline results use `xclip` and the
+focused application’s paste shortcut, because XTest typing can lose newlines.
+Known terminals use Ctrl+Shift+V; other applications use Ctrl+V. If automatic
+insertion fails, the result stays on the clipboard and the HUD asks you to paste it. Text is pipe input, never a
 shell command. Clipboard fallback replaces the clipboard and leaves the result
 there for you to paste.
 
@@ -64,11 +66,28 @@ On a macOS host with Docker, use an actual Linux arm64 environment:
 
 ```sh
 docker build -t chirp-linux-desktop:dev -f desktop/scripts/Dockerfile.linux desktop
-docker run --rm -v "$PWD:/workspace" -v chirp-linux-target:/cargo-target \
-  chirp-linux-desktop:dev sh -c 'npm ci && npm run check && npm test && cargo test --manifest-path src-tauri/Cargo.toml && npm run build -- --no-bundle'
+desktop/scripts/linux-container.sh sh -c 'npm ci && npm run check && npm test && cargo test --manifest-path src-tauri/Cargo.toml && npm run build -- --no-bundle'
 ```
 
-No display is needed for core tests or builds. X11 insertion checks use Xvfb;
+The harness snapshots source under `/tmp` and copies it into Docker. On macOS,
+a direct bind mount from Documents can hang in the Created state because of
+privacy permissions. Keep container fixtures and build snapshots outside protected
+folders; a Docker process that never starts is not a compiler failure. The harness uses `docker cp` to avoid host bind mounts entirely. It retains the
+snapshot and stopped container for evidence and copies the generated Cargo lockfile back.
+
+No display is needed for core tests or builds. Run the native X11 checks with:
+
+```sh
+cargo build --locked --manifest-path src-tauri/Cargo.toml --example platform-smoke
+xvfb-run -a env CHIRP_PLATFORM_SMOKE=src-tauri/target/debug/examples/platform-smoke python3 scripts/x11-smoke.py
+```
+
+The smoke uses a real GTK text field and physical XTest events, and checks Unicode,
+multiline paste, US/German layout defaults and hold/chord cancellation. Linux
+arm64 Docker validation has passed these checks, nine Rust tests, Clippy, the
+frontend tests and a release application build.
+
+X11 insertion checks use Xvfb;
 Wayland checks need a headless compositor with virtual-keyboard support. The
 container has Xvfb, Weston, wtype and clipboard helpers installed. No test uses
 the live server, port 7821, a real microphone, phone, or emulator.
