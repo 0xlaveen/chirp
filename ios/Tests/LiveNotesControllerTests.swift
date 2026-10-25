@@ -29,7 +29,8 @@ struct LiveNotesControllerTests {
     }
 
     func fixture(root: URL? = nil, secrets: MemorySecretStore = MemorySecretStore(), health: Health = LiveNotesController.syntheticHealth,
-                 reorganize: @escaping @Sendable (NotesReorganizeRequest) async throws -> NotesReorganizeResponse = { LiveNotesController.syntheticReorganize($0) }) throws -> Fixture {
+                 reorganize: @escaping @Sendable (NotesReorganizeRequest) async throws -> NotesReorganizeResponse = { LiveNotesController.syntheticReorganize($0) },
+                 structure: @escaping @Sendable (NotesStructureRequest) async throws -> NotesStructureResponse = { LiveNotesController.syntheticStructure($0) }) throws -> Fixture {
         let root = root ?? FileManager.default.temporaryDirectory.appendingPathComponent("chirp-notes-unit-" + UUID().uuidString)
         let store = try NotesStore(root: root, secrets: secrets)
         let values = Values(), audio = SyntheticNotesAudio()
@@ -40,7 +41,7 @@ struct LiveNotesControllerTests {
             http: URLSession(configuration: .ephemeral),
             fetchHealth: { _, _ in health },
             makeStream: { _, options, _ in StreamSession(transport: SyntheticTransport(automatic: true), options: options) },
-            structure: { _, _, request in LiveNotesController.syntheticStructure(request) },
+            structure: { _, _, request in try await structure(request) },
             reorganize: { _, _, request in try await reorganize(request) },
             audio: audio, requestPermission: { values.permission },
             activity: NotesActivityControl(begin: { state in
@@ -267,6 +268,37 @@ struct LiveNotesControllerTests {
         await f.notes.settleJournal()
         #expect(f.notes.document.id == other.id && f.notes.document.text == other.text)
         #expect(try await f.store.libraryStore.record(original).document.text.contains("Organized original"))
+    }
+
+    actor StructureGate {
+        private var continuation: CheckedContinuation<NotesStructureResponse, Never>?
+        private var released = false
+        private var response: NotesStructureResponse { NotesStructureResponse(markdown: "## Structured original\n- Original recording only", structured: true) }
+        func respond(_ request: NotesStructureRequest) async -> NotesStructureResponse {
+            if released { return response }
+            return await withCheckedContinuation { continuation = $0 }
+        }
+        func release() { released = true; continuation?.resume(returning: response); continuation = nil }
+    }
+
+    @Test func lateStructureUpdatesThePausedRecordingWhileAnotherNoteIsEdited() async throws {
+        let gate = StructureGate()
+        let f = try fixture(structure: { await gate.respond($0) }); defer { f.clean() }
+        await f.notes.record()
+        try await eventually("recording") { f.notes.state == .recording }
+        let original = f.notes.recorder, id = f.notes.document.id
+        await f.notes.pause()
+        try await eventually("structure pending") { original.structuring == .running }
+        f.notes.newNotes()
+        f.notes.edit("## Another thought\n- Keep this note unchanged")
+        let other = f.notes.document
+        await gate.release()
+        try await eventually("original structured") { original.document.text.contains("Structured original") }
+        await f.notes.settleJournal()
+        #expect(f.notes.document == other)
+        #expect(f.notes.recordingID == id && f.notes.isActive)
+        #expect(try await f.store.libraryStore.record(id).document.text.contains("Original recording only"))
+        await f.notes.stop()
     }
 
     @Test func audioIsOptInAndStoredAfterItsSegment() async throws {
