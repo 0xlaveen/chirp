@@ -140,8 +140,12 @@ struct PrivacyShield: ViewModifier {
         content.overlay {
             if phase != .active {
                 ZStack {
-                    Color(uiColor: .systemBackground).ignoresSafeArea()
-                    Label("Chirp", systemImage: "mic").font(.largeTitle.bold())
+                    Color.chirp.background.ignoresSafeArea()
+                    VStack(spacing: ChirpSpacing.s16) {
+                        ChirpBrand.glyph.resizable().scaledToFit().frame(width: 96, height: 96)
+                            .foregroundStyle(Color.chirp.koi).accessibilityHidden(true)
+                        Text("Chirp").font(.largeTitle.bold())
+                    }
                 }.accessibilityIdentifier("privacyShield")
             }
         }
