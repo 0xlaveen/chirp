@@ -18,7 +18,7 @@ final class HistoryWindowController: NSObject, NSWindowDelegate {
     var onAddToNotes: (DictationEntry) -> Void = { _ in }
     var onOpenSettings: () -> Void = {}
     /// Teach Chirp: learn from what the user says the dictation should have been; returns what became active.
-    var onTeach: (HistoryEntry, String) async -> [String] = { _, _ in [] }
+    var onTeach: (DictationEntry, String) async -> [String] = { _, _ in [] }
 
     init(history: DictationHistory) {
         self.history = history

@@ -120,11 +120,11 @@ public struct HistoryToast: Equatable, Sendable {
     @ObservationIgnored public var onRestore: (DictationEntry) -> Void = { _ in }
     @ObservationIgnored public var onOpenSettings: () -> Void = {}
     /// Teach Chirp: the entry, and what the user says it should have been.
-    @ObservationIgnored public var onTeach: (HistoryEntry, String) -> Void = { _, _ in }
+    @ObservationIgnored public var onTeach: (DictationEntry, String) -> Void = { _, _ in }
     /// Learn from my edits is on (Teach Chirp is offered).
     public var canTeach = false
     /// The Teach Chirp sheet: the dictation being taught and the text being edited.
-    public var teaching: HistoryEntry?
+    public var teaching: DictationEntry?
     public var teachText = ""
 
     public init() {}
@@ -159,7 +159,7 @@ public struct HistoryToast: Equatable, Sendable {
         flash = "Copied"
     }
 
-    public func beginTeaching(_ entry: HistoryEntry) {
+    public func beginTeaching(_ entry: DictationEntry) {
         teachText = entry.text
         teaching = entry
     }
