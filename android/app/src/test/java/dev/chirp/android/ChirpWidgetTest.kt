@@ -60,3 +60,29 @@ class ChirpWidgetTest {
         assertTrue(request.widget().contains("Widgets"))
     }
 }
+
+/** #184: at 200% font the widget's labels shrink to fit on one line instead of wrapping mid-word (needs real text metrics). */
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [37], qualifiers = "mdpi")
+@org.robolectric.annotation.GraphicsMode(org.robolectric.annotation.GraphicsMode.Mode.NATIVE)
+class ChirpWidgetFontTest {
+    private fun labelsFit(font: Float, cellWidthDp: Int, minWidth: Int) {
+        val configuration = android.content.res.Configuration(RuntimeEnvironment.getApplication().resources.configuration).apply { fontScale = font }
+        val context = RuntimeEnvironment.getApplication().createConfigurationContext(configuration)
+        // What the Pixel launcher gave the real widget: ~83 dp tall, 8 dp padding, one cell wide or two.
+        val width = cellWidthDp; val height = 83
+        val root = ChirpWidgetProvider.views(context, minWidth).apply(context, FrameLayout(context))
+        root.measure(View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(height, View.MeasureSpec.EXACTLY))
+        root.layout(0, 0, width, height)
+        listOf(R.id.widget_dictate, R.id.widget_record).map { root.findViewById<Button>(it) }.filter { it.visibility == View.VISIBLE }.forEach { button ->
+            val layout = button.layout
+            assertEquals("${button.text} stays on one line at font $font", 1, layout.lineCount)
+            assertTrue("${button.text} fits its button at font $font", layout.getLineWidth(0) <= button.width - button.paddingLeft - button.paddingRight + 1f)
+            assertTrue("${button.text} keeps a 48 dp hit rectangle", button.width >= 48 && button.height >= 48)
+        }
+    }
+    @Test fun `one cell at 200 percent font`() = labelsFit(2f, 81, 80)
+    @Test fun `two cells at 200 percent font`() = labelsFit(2f, 176, 176)
+    @Test fun `two cells at the default font`() = labelsFit(1f, 176, 176)
+}
+

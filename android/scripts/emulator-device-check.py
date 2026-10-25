@@ -100,6 +100,34 @@ def check(p, work, output):
         click('Dictate'); p['wait_for_editor'](); shot('font200-scratchpad')
         assert p['find']('Microphone: tap to dictate') is not None, 'Scratchpad mic missing at 200%'
 
+    def font200_rail():
+        """#182: on the inner screen the rail keeps Notes / History / Settings whole and separately usable at 200% font."""
+        w, h = p['size']()
+        text = adb('shell', 'wm', 'density').decode()
+        density = int((re.search(r'Override density: (\d+)', text) or re.search(r'Physical density: (\d+)', text)).group(1))
+        original_night = adb('shell', 'cmd', 'uimode', 'night').decode()
+        for night in (False, True):
+            adb('shell', 'cmd', 'uimode', 'night', 'yes' if night else 'no')
+            adb('shell', 'settings', 'put', 'system', 'font_scale', '2.0')
+            adb('shell', 'am', 'force-stop', p['PACKAGE'])
+            adb('shell', 'am', 'start', '-n', p['PACKAGE'] + '/.SetupActivity', '--es', 'section', 'try')
+            wait('Record new note')
+            items = {}
+            for label in ('Notes', 'History', 'Settings'):
+                # The rail item is the selectable node carrying the label, in the left strip.
+                node = next(n for n in nodes() if n.get('text') == label and p['center'](n)[0] < w * .2)
+                items[label] = p['bounds'](node)
+            widest = max(b[2] - b[0] for b in items.values())
+            # The stock rail is a fixed 80 dp (64 dp inside its padding): this label needs more, so the rail must have grown.
+            assert widest > 64 * density / 160, 'Rail did not grow for the 200% labels'
+            assert all(b[0] >= 0 and b[2] <= w * .2 for b in items.values()), 'Rail item leaves the rail strip'
+            ordered = sorted(items.values(), key=lambda b: b[1])
+            assert all(a[3] <= b[1] for a, b in zip(ordered, ordered[1:])), 'Rail items overlap'
+            shot('font200-rail-' + ('dark' if night else 'light'))
+            # Each destination is usable on its own at this size.
+            click('History'); wait('Dictation history'); click('Settings'); wait('How you dictate'); click('Notes'); wait('Record new note')
+        adb('shell', 'cmd', 'uimode', 'night', 'yes' if 'yes' in original_night else 'auto' if 'auto' in original_night else 'no')
+
     def fold():
         adb('shell', 'settings', 'put', 'system', 'font_scale', '1.0')
         adb('shell', 'am', 'force-stop', p['PACKAGE'])
@@ -122,6 +150,7 @@ def check(p, work, output):
         for key, value in original.items():
             adb('shell', 'settings', 'put', 'secure', key, value if value != 'null' else ':')
         attempt('font200', font200)
+        attempt('font200-rail', font200_rail)
         attempt('fold', fold)
     finally:
         adb('shell', 'cmd', 'device_state', 'state', 'reset')

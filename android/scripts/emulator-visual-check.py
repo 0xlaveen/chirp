@@ -5,6 +5,7 @@ Run through e2e-all.sh so screenshots share its owned emulator and private evide
 This checks navigation and captures evidence; it does not certify visual quality.
 """
 import json
+import re
 import shlex
 import time
 import xml.etree.ElementTree as ET
@@ -42,6 +43,31 @@ def check(p, work, output):
         captures.append(name)
         print('CAPTURE:', name, flush=True)
 
+    def bars():
+        """Status-bar bottom and navigation-bar top in pixels, as the window manager reports them."""
+        dump = adb('shell', 'dumpsys', 'window').decode(errors='replace')
+        status = re.search(r'type=statusBars frame=\[\d+,\d+\]\[\d+,(\d+)\]', dump)
+        navigation = re.search(r'type=navigationBars frame=\[\d+,(\d+)\]\[\d+,\d+\]', dump)
+        assert status and navigation, 'System bar insets unavailable'
+        return int(status.group(1)), int(navigation.group(1))
+
+    def assert_settings_column_clear():
+        """#181: the inner screen's category column neither starts under the clock nor ends under the gesture handle."""
+        w, h = p['size']()
+        status_bottom, navigation_top = bars()
+        def column():
+            return [n for n in p['nodes']() if n.get('package') == package and n.get('text') and w * .15 < p['center'](n)[0] < w * .45
+                    and p['bounds'](n)[3] > p['bounds'](n)[1]]
+        first = column()
+        assert min(p['bounds'](n)[1] for n in first) >= status_bottom, 'Settings column starts under the status bar'
+        shot('settings-column-top')
+        for _ in range(8):
+            adb('shell', 'input', 'swipe', str(w // 4), str(h * 3 // 4), str(w // 4), str(h // 5), '250')
+        last = column()
+        assert any(n.get('text') == 'About' for n in last), 'Scrolling did not reach About'
+        assert max(p['bounds'](n)[3] for n in last) <= navigation_top, 'Settings column ends under the gesture area'
+        shot('settings-column-end')
+
     originals = {key: adb('shell', 'wm', key).decode() for key in ('size', 'density')}
     night = adb('shell', 'cmd', 'uimode', 'night').decode()
     font = adb('shell', 'settings', 'get', 'system', 'font_scale').decode().strip()
@@ -63,6 +89,8 @@ def check(p, work, output):
                 click('Visual review'); wait('Review the launch checklist.'); shot('note-detail')
                 click('Transcript'); wait('Transcript'); shot('note-transcript')
                 start(section='history'); wait('Dictation history'); shot('history')
+                if form == 'inner':
+                    start(section='settings'); wait('How you dictate'); assert_settings_column_clear()
                 for label, slug in ((None, 'home'), ('Connection', 'connection'),
                                     ('How you dictate', 'input'), ('Dictation', 'dictation'),
                                     ('Keyboard', 'keyboard'), ('Feedback & look', 'feedback'),
@@ -119,7 +147,6 @@ def check(p, work, output):
                 wait('Scan code'); shot('onboarding-pair')
         p['crash_check']()
     finally:
-        import re
         for key, value in originals.items():
             override = re.search(r'Override (?:size|density): (\S+)', value)
             adb('shell', 'wm', key, override.group(1) if override else 'reset')

@@ -15,6 +15,7 @@ import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.layout.requiredWidth
 import dev.chirp.android.shell.*
 import dev.chirp.android.ui.ChirpTheme
 import dev.chirp.android.ui.StatusKind
@@ -131,11 +132,14 @@ class AppShellTest {
     private val exit = mutableStateOf(false)
     private val page = mutableStateOf(false)
 
-    private fun show() = compose.setContent {
-        ChirpTheme(colour = AppColour.POND) {
-            AppShell(tab.value, { tab.value = it; exit.value = false }, exit.value) { shown ->
-                if (shown == ShellTab.Settings) BackHandler(enabled = page.value) { page.value = false }
-                Text("${shown.label} content" + if (page.value) " page" else "")
+    private fun show(font: Float = 1f, dark: Boolean = false) = compose.setContent {
+        androidx.compose.runtime.CompositionLocalProvider(
+            androidx.compose.ui.platform.LocalDensity provides androidx.compose.ui.unit.Density(androidx.compose.ui.platform.LocalDensity.current.density, font)) {
+            ChirpTheme(dark, colour = AppColour.POND) {
+                AppShell(tab.value, { tab.value = it; exit.value = false }, exit.value) { shown ->
+                    if (shown == ShellTab.Settings) BackHandler(enabled = page.value) { page.value = false }
+                    Text("${shown.label} content" + if (page.value) " page" else "")
+                }
             }
         }
     }
@@ -169,11 +173,75 @@ class AppShellTest {
         back(); assertTrue(compose.activity.isFinishing)
     }
 
+    /** Folding or unfolding swaps the bar and the rail: the open screen must keep its state (the fold e2e lost its recording screen). */
+    @Test fun `the screen keeps its state when the bar becomes a rail`() {
+        val width = mutableStateOf(411.dp)
+        var created = 0
+        compose.setContent {
+            ChirpTheme(colour = AppColour.POND) {
+                androidx.compose.foundation.layout.Box(androidx.compose.ui.Modifier.requiredWidth(width.value)) {
+                    AppShell(tab.value, { tab.value = it }) { _ -> remember { created++; Any() }; Text("Notes content") }
+                }
+            }
+        }
+        compose.onNodeWithText("Notes content").assertExists()
+        assertEquals(1, created)
+        compose.runOnIdle { width.value = 840.dp }
+        compose.onNodeWithText("Notes content").assertExists()
+        compose.runOnIdle { width.value = 411.dp }
+        compose.onNodeWithText("Notes content").assertExists()
+        assertEquals("the open screen was rebuilt when the layout changed", 1, created)
+    }
+
     @Config(qualifiers = "w840dp-h900dp-mdpi") @Test fun `the inner screen has a rail`() {
         show()
         val home = item("Notes").fetchSemanticsNode().boundsInRoot
         val settings = item("Settings").fetchSemanticsNode().boundsInRoot
         assertTrue("a rail down the start edge", home.right < 120f && settings.top > home.bottom)
         assertTrue("content beside the rail", compose.onNodeWithText("Notes content").fetchSemanticsNode().boundsInRoot.left >= home.right)
+    }
+}
+
+/** #182 needs real text metrics, so it renders natively rather than with the legacy stub measurements. */
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [37], qualifiers = "w840dp-h900dp-mdpi")
+@org.robolectric.annotation.GraphicsMode(org.robolectric.annotation.GraphicsMode.Mode.NATIVE)
+class ShellLargeFontTest {
+    @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
+    private val tab = mutableStateOf(ShellTab.Notes)
+
+    private fun show(font: Float = 1f, dark: Boolean = false) = compose.setContent {
+        androidx.compose.runtime.CompositionLocalProvider(
+            androidx.compose.ui.platform.LocalDensity provides androidx.compose.ui.unit.Density(androidx.compose.ui.platform.LocalDensity.current.density, font)) {
+            ChirpTheme(dark, colour = AppColour.POND) { AppShell(tab.value, { tab.value = it }) { shown -> Text("${shown.label} content") } }
+        }
+    }
+    private fun item(label: String) = compose.onNode(hasText(label) and isSelectable())
+
+    /** #182: at 200% font every destination's label stays on one line, whole, inside its own target, and the content keeps clear of the rail. */
+    private fun assertLabelsReadable(font: Float, dark: Boolean) {
+        show(font, dark)
+        val items = ShellTab.entries.map { item(it.label).fetchSemanticsNode().boundsInRoot }
+        ShellTab.entries.forEach { tabEntry ->
+            val label = compose.onNode(hasText(tabEntry.label) and !isSelectable(), useUnmergedTree = true).fetchSemanticsNode()
+            val results = mutableListOf<androidx.compose.ui.text.TextLayoutResult>()
+            label.config[androidx.compose.ui.semantics.SemanticsActions.GetTextLayoutResult].action?.invoke(results)
+            assertEquals("${tabEntry.label} stays on one line", 1, results.single().lineCount)
+            // The label's box is at least as wide as its text (the layout's own overflow flag is always set for softWrap = false).
+            assertTrue("${tabEntry.label} is not clipped", label.boundsInRoot.width >= results.single().getLineRight(0) - 1f && !results.single().didOverflowHeight)
+            val target = items[tabEntry.ordinal]
+            assertTrue("${tabEntry.label} is inside its target", label.boundsInRoot.left >= target.left - 1f && label.boundsInRoot.right <= target.right + 1f)
+            compose.onNode(hasText(tabEntry.label) and isSelectable()).assertHasClickAction()
+        }
+        assertTrue("separate, non-overlapping targets", items.zipWithNext().all { (a, b) -> a.bottom <= b.top + 1f })
+        val rail = items.maxOf { it.right }
+        assertTrue("content beside the rail", compose.onNodeWithText("Notes content").fetchSemanticsNode().boundsInRoot.left >= rail - 1f)
+    }
+
+    @Test fun `the rail's labels are whole at 200 percent font in light`() = assertLabelsReadable(2f, false)
+    @Test fun `the rail's labels are whole at 200 percent font in dark`() = assertLabelsReadable(2f, true)
+    @Test fun `the rail stays compact at the default font`() {
+        show()
+        assertTrue(item("Settings").fetchSemanticsNode().boundsInRoot.right < 120f)
     }
 }
