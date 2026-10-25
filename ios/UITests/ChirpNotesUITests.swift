@@ -3,6 +3,7 @@ import XCTest
 /// The Notes library through the real sealed store, with synthetic capture and server responses.
 final class ChirpNotesUITests: XCTestCase {
     override func setUp() { continueAfterFailure = false; XCUIDevice.shared.orientation = .portrait }
+    override func tearDown() async throws { await MainActor.run { XCUIApplication().terminate() } }
 
     @MainActor static func openNotes(_ app: XCUIApplication) {
         app.selectChirpTab("Notes")
