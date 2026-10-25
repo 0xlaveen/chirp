@@ -5,6 +5,27 @@ public enum KeyboardError: String, Sendable, CaseIterable {
     case auth, busy, tooLong, badAudio, badRequest, engine, unreachable, timeout, permission, interrupted, storage, unknown
     case offline, notFound, secure
 
+    /// The one-line cause shown in the strip, with the fix behind the ⓘ (`guidance`). Fixed and content-free too.
+    public var cause: String {
+        switch self {
+        case .unreachable: "Mac offline"
+        case .offline: "Device offline"
+        case .notFound: "Mac not found"
+        case .secure: "Connection not secure"
+        case .timeout: "Server timed out"
+        case .auth: "Mac refused this device"
+        case .permission: "Microphone is off"
+        case .interrupted: "Recording interrupted"
+        case .busy: "Server busy"
+        case .tooLong: "Length limit reached"
+        case .storage: "Shared storage unavailable"
+        case .badAudio: "Audio wasn't usable"
+        case .badRequest: "Clean-up prompt too long"
+        case .engine: "Speech engine failed"
+        case .unknown: "Dictation failed"
+        }
+    }
+
     /// Short, fixed, content-free guidance. Never includes transcript, host or server text.
     public var guidance: String {
         switch self {

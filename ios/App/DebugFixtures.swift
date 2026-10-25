@@ -233,6 +233,10 @@ struct LiveKeyboardHost: UIViewRepresentable {
         view.autocorrectionType = .no
         view.spellCheckingType = .no
         view.selectedRange = NSRange(location: view.text.utf16.count, length: 0)
+        // Screenshot runs: show the keyboard without a tap (the system keeps the last-used keyboard).
+        if ProcessInfo.processInfo.arguments.contains("--chirp-keyboard-host-focus") {
+            DispatchQueue.main.async { view.becomeFirstResponder() }
+        }
         return view
     }
     func updateUIView(_ view: UITextView, context: Context) {}

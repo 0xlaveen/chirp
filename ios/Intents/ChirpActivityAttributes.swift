@@ -10,6 +10,19 @@ struct ChirpActivityAttributes: ActivityAttributes, Sendable {
             self = Self(rawValue: coordinatorPhase) ?? .armed
         }
 
+        /// The short phase name, the same vocabulary as the keyboard's status strip.
+        var headline: String {
+            switch self {
+            case .armed: "Ready"
+            case .connecting: "Connecting…"
+            case .listening: "Listening…"
+            case .correcting: "Polishing…"
+            case .finished: "Finished"
+            case .failed: "Needs attention"
+            }
+        }
+
+        /// The full status, always saying the microphone is active (and read by VoiceOver).
         var label: String {
             switch self {
             case .armed: "Microphone active · idle audio discarded"
@@ -25,5 +38,7 @@ struct ChirpActivityAttributes: ActivityAttributes, Sendable {
     struct ContentState: Codable, Hashable, Sendable {
         var phase: Phase
         var debugRetention: Bool
+        /// When the current utterance started, so the system counts the time by itself. Nil outside connecting/listening.
+        var listeningSince: Date? = nil
     }
 }

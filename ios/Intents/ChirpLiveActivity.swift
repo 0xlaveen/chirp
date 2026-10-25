@@ -9,6 +9,8 @@ import Foundation
 @MainActor
 enum ChirpLiveActivity {
     private static var activity: Activity<ChirpActivityAttributes>?
+    /// When the current utterance began: set on the first connecting/listening update, kept across the two, cleared after.
+    private static var listeningSince: Date?
 
     enum Unavailable: LocalizedError {
         case disabled
@@ -30,8 +32,11 @@ enum ChirpLiveActivity {
     }
 
     static func update(phase: String, debugRetention: Bool) async {
+        let next = ChirpActivityAttributes.Phase(coordinatorPhase: phase)
+        if next == .connecting || next == .listening { listeningSince = listeningSince ?? Date() } else { listeningSince = nil }
         await activity?.update(ActivityContent(
-            state: .init(phase: .init(coordinatorPhase: phase), debugRetention: debugRetention), staleDate: Date().addingTimeInterval(15)
+            state: .init(phase: next, debugRetention: debugRetention, listeningSince: listeningSince),
+            staleDate: Date().addingTimeInterval(15)
         ))
     }
 
@@ -42,7 +47,7 @@ enum ChirpLiveActivity {
 
     static func end() async {
         let ending = activity
-        activity = nil
+        activity = nil; listeningSince = nil
         await ending?.end(nil, dismissalPolicy: .immediate)
     }
 }

@@ -32,7 +32,7 @@ final class ChirpKeyboardUITests: XCTestCase {
         try selectChirpKeyboard(in: app)
         let status = app.staticTexts["chirp.keyboard.status"]
         XCTAssertTrue(status.waitForExistence(timeout: 10))
-        let armed = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label BEGINSWITH %@", "Session armed"), object: status)
+        let armed = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label == %@", "Ready"), object: status)
         XCTAssertEqual(XCTWaiter.wait(for: [armed], timeout: 10), .completed)
         let primary = app.buttons["chirp.keyboard.primary"]
         primary.tap()
@@ -78,16 +78,36 @@ final class ChirpKeyboardUITests: XCTestCase {
         guard status.waitForExistence(timeout: 10) else {
             throw XCTSkip("Installed keyboard has no chirp.keyboard.status yet; waiting for the parallel keyboard identifier change.")
         }
-        for id in ["primary", "detail", "cancel", "raw", "style", "end", "space", "delete", "return"] {
+        // Idle keyboard: one status line, no paragraph. Chips that don't apply are hidden, so only Style is on screen.
+        for id in ["primary", "info", "style", "end", "space", "delete", "return"] {
             XCTAssertTrue(app.descendants(matching: .any)["chirp.keyboard." + id].exists, "Missing keyboard identifier: \(id)")
         }
+        for id in ["cancel", "raw", "undo", "detail"] {
+            XCTAssertFalse(app.descendants(matching: .any)["chirp.keyboard." + id].exists, "\(id) must be hidden while armed")
+        }
+        // The Style chip names the style, never "Style:…" as its visible title.
+        let styleChip = app.buttons["chirp.keyboard.style"]
+        XCTAssertEqual(styleChip.label, "Style: Default")
+        XCTAssertFalse(styleChip.staticTexts.allElementsBoundByIndex.contains { $0.label.contains("Style:") })
+        // The long guidance sits behind the ⓘ and opens over the keys without moving them.
+        let spaceBefore = app.buttons["chirp.keyboard.space"].frame
+        let primaryBefore = primaryButton(in: app).frame
+        app.buttons["chirp.keyboard.info"].tap()
+        let detail = app.staticTexts["chirp.keyboard.detail"]
+        XCTAssertTrue(detail.waitForExistence(timeout: 3), "ⓘ must open the guidance")
+        XCTAssertTrue(detail.label.contains("Microphone stays active in Chirp"), detail.label)
+        keep(app, "keyboard-info-open")
+        app.buttons["chirp.keyboard.info.close"].tap()
+        XCTAssertTrue(waitForAbsence(detail))
+        XCTAssertEqual(app.buttons["chirp.keyboard.space"].frame, spaceBefore)
         if setup.label.contains("unavailable") || setup.label.contains("could not arm") {
             throw XCTSkip(setup.label)
         }
-        let armed = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label == %@ OR label BEGINSWITH %@", "Session armed", "Session armed · "), object: status)
+        let armed = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label == %@", "Ready"), object: status)
         XCTAssertEqual(XCTWaiter.wait(for: [armed], timeout: 10), .completed)
         let primary = app.buttons["chirp.keyboard.primary"]
         XCTAssertTrue(primary.isEnabled)
+        keep(app, "keyboard-armed")
         primary.tap()
         let partialArrived = wait(for: field, key: "value", equalTo: prefix + "synthetic words")
         let observed = XCTAttachment(string: "Host text after partial: " + String(describing: field.value))
@@ -95,15 +115,23 @@ final class ChirpKeyboardUITests: XCTestCase {
         observed.lifetime = .keepAlways
         add(observed)
         XCTAssertTrue(partialArrived, "Real mailbox partial must reach the editor; host text was \(String(describing: field.value))")
+        // Height never changes: the primary and the typing row stay exactly where they were while listening.
+        XCTAssertEqual(primary.frame, primaryBefore, "The keyboard must not change height while listening")
+        XCTAssertEqual(app.buttons["chirp.keyboard.space"].frame, spaceBefore)
+        XCTAssertEqual(primary.label, "Stop dictation")
+        XCTAssertTrue(app.buttons["chirp.keyboard.cancel"].exists, "Cancel is a chip while listening")
+        keep(app, "keyboard-listening")
         primary.tap()
         XCTAssertTrue(wait(for: field, key: "value", equalTo: prefix + "Synthetic words."), "Final must replace only the keyboard-owned partial")
         // For 5 seconds after the final, the Cancel slot is Undo and removes exactly the dictation.
         let undo = app.buttons["chirp.keyboard.undo"]
         XCTAssertTrue(undo.waitForExistence(timeout: 3), "Undo must be offered after the final lands")
+        XCTAssertEqual(app.buttons["chirp.keyboard.space"].frame, spaceBefore, "The keyboard must not change height after the final")
+        keep(app, "keyboard-finished")
         undo.tap()
         XCTAssertTrue(wait(for: field, key: "value", equalTo: prefix), "Undo must restore the field exactly; was \(String(describing: field.value))")
         XCTAssertTrue(status.label.hasPrefix("Dictation removed"), status.label)
-        XCTAssertTrue(app.buttons["chirp.keyboard.cancel"].waitForExistence(timeout: 3))
+        XCTAssertTrue(waitForAbsence(undo), "Undo goes away once used")
         app.buttons["chirp.keyboard.end"].tap()
         XCTAssertTrue(wait(for: app.staticTexts["chirp.host.phase"], key: "label", equalTo: "idle"))
         XCTAssertEqual(field.value as? String ?? "", prefix)
@@ -117,6 +145,16 @@ final class ChirpKeyboardUITests: XCTestCase {
         XCTAssertTrue(waitForAbsence(status), "Chirp Keyboard must not appear in a secure field")
         XCTAssertTrue(app.keys["space"].waitForExistence(timeout: 5), "Apple's keyboard must take over in the secure field")
         XCTAssertEqual(field.value as? String ?? "", prefix)
+    }
+
+    private func primaryButton(in app: XCUIApplication) -> XCUIElement { app.buttons["chirp.keyboard.primary"] }
+
+    /// A named screenshot of the keyboard area, kept with the result bundle (synthetic text only).
+    @MainActor private func keep(_ app: XCUIApplication, _ name: String) {
+        let shot = XCTAttachment(screenshot: app.screenshot())
+        shot.name = name
+        shot.lifetime = .keepAlways
+        add(shot)
     }
 
     @MainActor private func waitForAbsence(_ element: XCUIElement) -> Bool {
