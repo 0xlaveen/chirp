@@ -265,6 +265,8 @@ def main():
     args.add_argument("--stop-check", action="store_true")
     args.add_argument("--history-check", action="store_true")
     args.add_argument("--notes-check", action="store_true")
+    # Speaker labels alone (the notes check runs them too, at its end).
+    args.add_argument("--speakers-check", action="store_true")
     args.add_argument("--keepkb-check", action="store_true")
     args.add_argument("--visual-check", action="store_true")
     args.add_argument("--bubble-check", action="store_true")
@@ -300,7 +302,8 @@ def main():
         config.write_text('[correction]\nmode = "managed"\ntimeout = 60.0\n')
         # Speaker labels: the throwaway HOME gets a copy of the pinned speaker model (the server is offline here).
         speaker_model = Path(os.environ.get("CHIRP_SPEAKER_MODEL") or Path.home() / "Library/Application Support/Chirp/models/speakers/voxceleb_resnet34_LM.onnx")
-        speakers_model = opt.notes_check and speaker_model.is_file()
+        speakers_model = (opt.notes_check or opt.speakers_check) and speaker_model.is_file()
+        assert speakers_model or not opt.speakers_check, "--speakers-check needs the speaker model (CHIRP_SPEAKER_MODEL)"
         if speakers_model:
             seeded = home / "Library/Application Support/Chirp/models/speakers" / speaker_model.name
             seeded.parent.mkdir(parents=True)
@@ -309,7 +312,7 @@ def main():
                    HF_HUB_OFFLINE="1", TRANSFORMERS_OFFLINE="1", PYTHONPATH=str(opt.server_root / "src"))
         if opt.tls: env["SSL_CERT_FILE"] = str(cert)
         command = [opt.python, "-m", "chirp_server", "--port", str(opt.server_port), "--model-dir", opt.model_dir]
-        if opt.tls or opt.stop_check or opt.notes_check:
+        if opt.tls or opt.stop_check or opt.notes_check or opt.speakers_check:
             command = [opt.python, str(Path(__file__).with_name("emulator-stop-server.py")),
                        "--model-dir", opt.model_dir, "--metadata", str(work / "events.json"), "--server-port", str(opt.server_port)]
             if opt.tls: command += ["--cert", str(cert), "--key", str(opt.tls_dir / "emulator-tls/key.pem")]
@@ -405,6 +408,10 @@ def main():
             if opt.stop_check:
                 module = runpy.run_path(str(Path(__file__).with_name("emulator-stop-check.py")))
                 module["check"](dict(_probe, adb=adb), work, opt.expect_crash)
+                return
+            if opt.speakers_check:
+                module = runpy.run_path(str(Path(__file__).with_name("emulator-speakers-check.py")))
+                module["check"](dict(_probe, adb=adb), work, output, standalone=True)
                 return
             if opt.notes_check:
                 module = runpy.run_path(str(Path(__file__).with_name("emulator-notes-check.py")))

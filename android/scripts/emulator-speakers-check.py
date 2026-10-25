@@ -17,7 +17,7 @@ def log(*args):
 CHIP = '. Rename or merge this speaker'
 
 
-def check(probe, work, output):
+def check(probe, work, output, standalone=False):
     adb, nodes = probe['adb'], probe['nodes']
     package = probe['PACKAGE']
     counts = work / 'notes.json'
@@ -47,6 +47,11 @@ def check(probe, work, output):
 
     # The two-voice asset, read by a fresh process (preferences are cached per process).
     adb('shell', 'am', 'force-stop', package)
+    if standalone:
+        # What the notes check sets up first: notifications, the library on with kept audio.
+        adb('shell', 'pm', 'grant', package, 'android.permission.POST_NOTIFICATIONS')
+        adb('shell', 'run-as', package, 'sh', '-c', shlex.quote('cat > shared_prefs/chirp_notes_sessions.xml'),
+            data=b'<map><boolean name="enabled" value="true"/><boolean name="keep_audio" value="true"/></map>')
     adb('shell', 'run-as', package, 'sh', '-c', shlex.quote('cat > shared_prefs/debug_capture.xml'),
         data=b'<?xml version="1.0" encoding="utf-8"?><map><boolean name="synthetic" value="true" />'
              b'<string name="notes_asset">synthetic-two.wav</string></map>')
