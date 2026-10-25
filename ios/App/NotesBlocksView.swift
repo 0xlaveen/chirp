@@ -4,13 +4,20 @@ import SwiftUI
 /// Reading-first Markdown. Task actions edit the original line, keeping the recorder's edit protection intact.
 struct NotesBlocksView: View {
     let text: String
+    var title: String?
     var toggleTask: ((Int) -> Void)?
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             ForEach(Array(text.components(separatedBy: "\n").enumerated()), id: \.offset) { index, line in
-                row(line, index: index)
+                if !isTitle(line, index: index) { row(line, index: index) }
             }
         }.frame(maxWidth: .infinity, alignment: .leading).lineSpacing(5)
+    }
+
+    private func isTitle(_ line: String, index: Int) -> Bool {
+        guard let title, line.hasPrefix("#"),
+              text.components(separatedBy: "\n").prefix(index).allSatisfy({ $0.trimmingCharacters(in: .whitespaces).isEmpty }) else { return false }
+        return line.drop(while: { $0 == "#" || $0.isWhitespace }) == title
     }
 
     @ViewBuilder private func row(_ line: String, index: Int) -> some View {

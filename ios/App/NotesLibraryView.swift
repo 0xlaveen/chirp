@@ -26,7 +26,6 @@ struct NotesLibraryView: View {
     @State private var selection = Set<UUID>()
     @State private var visibleRows = Set<UUID>()
     @FocusState private var searchFocused: Bool
-    @FocusState private var listFocused: Bool
 
     var body: some View {
         Group {
@@ -154,13 +153,13 @@ struct NotesLibraryView: View {
                         .foregroundStyle(Color.chirp.inkMuted).accessibilityIdentifier("chirp.notes.deleted")
                 }.listRowBackground(Color.chirp.surface)
             }
+            .accessibilityIdentifier("chirp.notes.library")
             .listStyle(.insetGrouped).scrollContentBackground(.hidden).background(Color.chirp.background)
             .navigationTitle("").navigationBarTitleDisplayMode(.inline)
             .searchable(text: $query, prompt: "Search notes").searchFocused($searchFocused)
             .toolbar { libraryToolbar }
             .safeAreaInset(edge: .bottom) { libraryDock }
             .onAppear { if !scrollID.isEmpty { proxy.scrollTo(scrollID, anchor: .top) } }
-            .focusable().focused($listFocused)
             .onKeyPress(keys: [.upArrow, .downArrow]) { key in
                 guard !searchFocused else { return .ignored }
                 let entries = query.isEmpty ? notes.entries : results.map(\.entry)
@@ -170,7 +169,6 @@ struct NotesLibraryView: View {
                 Task { await open(entries[next].id) }
                 return .handled
             }
-            .accessibilityIdentifier("chirp.notes.library")
         }
     }
 

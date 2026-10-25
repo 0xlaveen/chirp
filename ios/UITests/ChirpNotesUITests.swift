@@ -133,14 +133,19 @@ final class ChirpNotesUITests: XCTestCase {
         let title = app.textFields["chirp.notes.title.editor"]
         XCTAssertTrue(title.waitForExistence(timeout: 5))
         title.tap()
-        title.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: 64) + "Launch notes")
+        title.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: (title.value as? String)?.count ?? 32) + "Launch notes")
         app.buttons["Done"].firstMatch.tap()
         XCTAssertTrue(app.buttons["chirp.notes.title"].waitForExistence(timeout: 5))
         backToLibrary(app)
         app.buttons["Search notes"].tap()
         let search = app.searchFields.firstMatch
-        XCTAssertTrue(search.waitForExistence(timeout: 5)); search.tap(); search.typeText("March")
-        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'Keep the launch in March'")).firstMatch.waitForExistence(timeout: 5))
+        XCTAssertTrue(search.waitForExistence(timeout: 5)); search.tap()
+        var prefix = ""
+        for character in "March" {
+            search.typeText(String(character)); prefix.append(character)
+            XCTAssertTrue(Self.waitFor(search, "value == '\(prefix)'", timeout: 3))
+        }
+        XCTAssertTrue(app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'chirp.notes.row.' AND label CONTAINS 'March'")).firstMatch.waitForExistence(timeout: 5))
         screenshot("notes-search", app)
     }
 

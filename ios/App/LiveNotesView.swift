@@ -62,8 +62,8 @@ struct NoteDetailView: View {
                                 .foregroundStyle(Color.chirp.inkMuted)
                         }.padding(.vertical, 24)
                     } else {
-                        NotesBlocksView(text: notes.document.text, toggleTask: toggleTask)
-                            .textSelection(.enabled).accessibilityIdentifier("chirp.notes.preview")
+                        NotesBlocksView(text: notes.document.text, title: notes.document.title, toggleTask: toggleTask)
+                            .textSelection(.enabled).accessibilityElement(children: .contain).accessibilityIdentifier("chirp.notes.preview")
                     }
                     if !notes.document.livePartial.isEmpty {
                         Divider()
@@ -144,7 +144,7 @@ struct NoteDetailView: View {
             HStack(spacing: 16) { dockButtons }
             VStack(spacing: 12) { dockButtons }
         }.padding(16).frame(maxWidth: 680).background(.regularMaterial, in: RoundedRectangle(cornerRadius: typeSize.isAccessibilitySize ? 24 : 40))
-            .modifier(NotesDockGlass()).accessibilityIdentifier("chirp.notes.dock")
+            .modifier(NotesDockGlass())
     }
 
     @ViewBuilder private var dockButtons: some View {
@@ -165,7 +165,7 @@ struct NoteDetailView: View {
             if !notes.paired {
                 Button("Pair Mac", systemImage: "qrcode.viewfinder", action: pair).buttonStyle(.bordered).accessibilityIdentifier("chirp.notes.pair")
             }
-            Button(notes.document.sessions.isEmpty ? "Record" : "Continue recording", systemImage: "record.circle") {
+            Button(notes.document.sessions.isEmpty && notes.document.segments.isEmpty && notes.elapsed == 0 ? "Record" : "Continue recording", systemImage: "record.circle") {
                 player.stop()
                 if notes.isActive { confirmSwitch = true } else { Task { await notes.record() } }
             }.buttonStyle(.borderedProminent).buttonBorderShape(.capsule).tint(Color.chirp.koi).foregroundStyle(Color.chirp.onKoi)
