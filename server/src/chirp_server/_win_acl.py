@@ -5,6 +5,7 @@ import functools
 from ctypes import wintypes
 
 SE_FILE_OBJECT = 1
+OWNER_SECURITY_INFORMATION = 0x1
 DACL_SECURITY_INFORMATION = 0x4
 PROTECTED_DACL_SECURITY_INFORMATION = 0x80000000
 SDDL_REVISION_1 = 1
@@ -98,6 +99,32 @@ def user_sid() -> str:
             _kernel32.LocalFree(ctypes.cast(text, ctypes.c_void_p))
     finally:
         _kernel32.CloseHandle(token)
+
+
+@functools.cache
+def user_sid_forms() -> frozenset[str]:
+    """The user's SID and the alias SDDL prints for it, if any (LA for the built-in
+    Administrator), found by round-tripping an owner-only descriptor."""
+    sid = user_sid()
+    descriptor = ctypes.c_void_p()
+    _check(
+        _advapi32.ConvertStringSecurityDescriptorToSecurityDescriptorW(
+            f"O:{sid}", SDDL_REVISION_1, ctypes.byref(descriptor), None
+        )
+    )
+    try:
+        text = wintypes.LPWSTR()
+        _check(
+            _advapi32.ConvertSecurityDescriptorToStringSecurityDescriptorW(
+                descriptor, SDDL_REVISION_1, OWNER_SECURITY_INFORMATION, ctypes.byref(text), None
+            )
+        )
+        try:
+            return frozenset({sid, text.value.removeprefix("O:")})
+        finally:
+            _kernel32.LocalFree(ctypes.cast(text, ctypes.c_void_p))
+    finally:
+        _kernel32.LocalFree(descriptor)
 
 
 def set_dacl(path: str, sddl: str) -> None:

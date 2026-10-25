@@ -31,12 +31,19 @@ def test_private_sddl_grants_only_the_user_and_system():
         (f"D:P(A;;FA;;;{USER})(A;;0x1200a9;;;WD)", False),
         (f"D:(A;;FA;;;{USER})(A;;FA;;;S-1-5-21-1111111111-2222222222-3333333333-1002)", False),
         (f"D:P(D;;FA;;;WD)(A;;FA;;;{USER})", True),
+        # The built-in Administrator's SID is printed as the alias LA.
+        ("D:PAI(A;;FA;;;LA)(A;;FA;;;SY)", False),
         ("D:NO_ACCESS_CONTROL", False),
         ("O:BAG:SY", False),
     ],
 )
 def test_sddl_is_private(sddl, private):
     assert fsutil.sddl_is_private(sddl, USER) is private
+
+
+def test_sddl_accepts_every_form_of_the_user():
+    assert fsutil.sddl_is_private("D:PAI(A;;FA;;;LA)(A;;FA;;;SY)", {USER, "LA"})
+    assert not fsutil.sddl_is_private("D:PAI(A;;FA;;;LA)(A;;FA;;;BU)", {USER, "LA"})
 
 
 def test_lock_excludes_a_second_holder(tmp_path):
@@ -100,7 +107,7 @@ def test_windows_acl_round_trip(tmp_path):
     fsutil.make_private(path)
     sddl = _win_acl.get_dacl(str(path))
     assert sddl.startswith("D:P")
-    assert _win_acl.user_sid() in sddl
+    assert any(form in sddl for form in _win_acl.user_sid_forms())
     assert fsutil.is_private(path)
     # A file created inside a private directory inherits owner-only access.
     directory = fsutil.private_mkdir(tmp_path / "private")

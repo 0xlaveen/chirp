@@ -4,8 +4,10 @@ import json
 import os
 import plistlib
 import time
+from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
 from conftest import HEADERS
 
 from chirp_server import build, restart, setup
@@ -52,7 +54,7 @@ def test_commit_is_none_without_file_or_git(tmp_path, monkeypatch):
 def test_source_shortens_the_home_folder(tmp_path, monkeypatch):
     monkeypatch.setattr(build.Path, "home", lambda: tmp_path)
     monkeypatch.setattr(build, "PACKAGE", tmp_path / "work/chirp/server/src/chirp_server")
-    assert build.source() == "~/work/chirp/server"
+    assert build.source() == str(Path("~/work/chirp/server"))
 
 
 def events(capsys):
@@ -81,6 +83,7 @@ def fake_launchd(monkeypatch, tmp_path, *, held, jobs, plist=True):
     return calls
 
 
+@pytest.mark.usefixtures("launchd")
 def test_restart_reloads_the_managed_agent(monkeypatch, tmp_path, capsys):
     calls = fake_launchd(monkeypatch, tmp_path, held=[7], jobs={"dev.chirp.server": 7})
     assert restart.run(7821) == 0
@@ -88,6 +91,7 @@ def test_restart_reloads_the_managed_agent(monkeypatch, tmp_path, capsys):
     assert [e["event"] for e in events(capsys)] == ["starting", "restarted"]
 
 
+@pytest.mark.usefixtures("launchd")
 def test_restart_refuses_a_server_another_agent_owns(monkeypatch, tmp_path, capsys):
     calls = fake_launchd(
         monkeypatch, tmp_path, held=[9], jobs={"dev.chirp.server": 0, "org.example.chirp": 9}
@@ -98,12 +102,14 @@ def test_restart_refuses_a_server_another_agent_owns(monkeypatch, tmp_path, caps
     assert "launchctl bootout" in error["message"] and calls == []
 
 
+@pytest.mark.usefixtures("launchd")
 def test_restart_needs_replace_for_a_hand_started_server(monkeypatch, tmp_path, capsys):
     calls = fake_launchd(monkeypatch, tmp_path, held=[9], jobs={})
     assert restart.run(7821) == 1
     assert events(capsys)[-1]["reason"] == "unmanaged" and calls == []
 
 
+@pytest.mark.usefixtures("launchd")
 def test_replace_stops_the_hand_started_server_then_starts_ours(monkeypatch, tmp_path, capsys):
     calls = fake_launchd(monkeypatch, tmp_path, held=[9], jobs={})
     stopped = []

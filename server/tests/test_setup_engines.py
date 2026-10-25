@@ -1,6 +1,7 @@
 """The Mac picker switches between MLX Parakeet and SenseVoice without editing server.toml."""
 
 import json
+import os
 import sys
 import tomllib
 from pathlib import Path
@@ -169,6 +170,7 @@ def test_start_needs_the_sensevoice_runtime_and_files_not_mlx(monkeypatch, capsy
         setup.start_server(7899, None, "sensevoice")
 
 
+@pytest.mark.usefixtures("launchd")
 def test_start_refuses_a_service_that_pins_the_engine(tmp_path, monkeypatch):
     import plistlib
 
@@ -276,11 +278,12 @@ def test_install_command_uses_the_lock_or_pinned_requirements(tmp_path, monkeypa
     command = sensevoice_models.install_command()
     assert command[:3] == ["/bin/uv", "pip", "install"]
     assert command[-2:] == list(sensevoice_models.REQUIREMENTS)
-    (project / ".venv").chmod(0o555)
-    try:
-        assert sensevoice_models.install_command() is None
-    finally:
-        (project / ".venv").chmod(0o755)
+    if os.name == "posix":  # Windows has no read-only directories
+        (project / ".venv").chmod(0o555)
+        try:
+            assert sensevoice_models.install_command() is None
+        finally:
+            (project / ".venv").chmod(0o755)
 
 
 def test_installer_failure_hides_output_and_reports_a_generic_error(tmp_path, monkeypatch, capsys):

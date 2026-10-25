@@ -37,14 +37,8 @@ jobs:
       - run: uv run pytest -q
 
   windows:
-    # Temporary bisect: four runners share the files, so the one that wedges names itself
-    # while the others finish with logs.
     runs-on: windows-latest
-    timeout-minutes: 30
-    strategy:
-      fail-fast: false
-      matrix:
-        part: [0, 1, 2, 3]
+    timeout-minutes: 40
     defaults:
       run:
         shell: bash
@@ -59,22 +53,38 @@ jobs:
           enable-cache: true
           cache-dependency-glob: server/uv.lock
       - run: uv sync --locked --extra onnx
-      - name: pytest, part ${{ matrix.part }} of 4, file by file
+      # Temporary while finding a Windows-only hang: each file runs with its output in a file
+      # (no shared pipe for an orphaned child to hold open) and its whole process tree is
+      # killed after 150 s; a test that runs 45 s dumps every thread's stack.
+      - name: pytest, file by file
+        shell: python
         run: |
-          status=0
-          index=0
-          for file in tests/test_*.py; do
-            if [ $((index % 4)) -eq ${{ matrix.part }} ]; then
-              echo "::group::$file"
-              date -u +%T
-              timeout -k 10 180 .venv/Scripts/python.exe -m pytest -v -p no:cacheprovider \
-                -o faulthandler_timeout=45 "$file" || { echo "FAILED $file ($?)"; status=1; }
-              echo "::endgroup::"
-            fi
-            index=$((index + 1))
-          done
-          exit $status
-        timeout-minutes: 20
+          import glob, os, subprocess, sys, tempfile, time
+          failed = []
+          for name in sorted(glob.glob("tests/test_*.py")):
+              with tempfile.TemporaryFile() as out:
+                  started = time.monotonic()
+                  process = subprocess.Popen(
+                      [".venv/Scripts/python.exe", "-m", "pytest", "-q", "-p", "no:cacheprovider",
+                       "-o", "faulthandler_timeout=45", name],
+                      stdout=out, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL,
+                  )
+                  try:
+                      code = process.wait(150)
+                  except subprocess.TimeoutExpired:
+                      subprocess.run(["taskkill", "/T", "/F", "/PID", str(process.pid)],
+                                     capture_output=True)
+                      code = "timeout"
+                  out.seek(0)
+                  text = out.read().decode(errors="replace")
+              print(f"::group::{name} -> {code} in {time.monotonic() - started:.0f}s", flush=True)
+              print(text[-12000:], flush=True)
+              print("::endgroup::", flush=True)
+              if code not in (0, 5):
+                  failed.append(f"{name}: {code}")
+          print("\n".join(failed) or "all files passed", flush=True)
+          sys.exit(1 if failed else 0)
+        timeout-minutes: 30
 
   windows-onnx:
     runs-on: windows-latest

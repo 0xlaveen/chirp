@@ -2,9 +2,12 @@ import plistlib
 import sys
 from types import SimpleNamespace
 
+import pytest
+
 from chirp_server import cli
 
 
+@pytest.mark.usefixtures("launchd")
 def test_service_install_reloads_an_existing_agent(tmp_path, monkeypatch):
     calls = []
     monkeypatch.setattr(cli.Path, "home", lambda: tmp_path)
@@ -30,6 +33,7 @@ def test_service_install_reloads_an_existing_agent(tmp_path, monkeypatch):
     assert [call[1] for call in calls] == ["bootout", "bootstrap", "bootout", "bootstrap"]
 
 
+@pytest.mark.usefixtures("launchd")
 def test_service_install_retries_while_bootout_settles(tmp_path, monkeypatch):
     attempts, sleeps = [], []
 

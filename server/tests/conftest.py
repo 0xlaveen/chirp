@@ -1,3 +1,8 @@
+import os
+import stat
+import sys
+from pathlib import Path
+
 import numpy as np
 import pytest
 from starlette.testclient import TestClient
@@ -30,6 +35,23 @@ def _home_relative_dirs(monkeypatch):
     """Every platform location (paths.py) follows the home directory in tests."""
     for name in ("APPDATA", "LOCALAPPDATA", "XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_CACHE_HOME"):
         monkeypatch.delenv(name, raising=False)
+
+
+@pytest.fixture
+def launchd(monkeypatch):
+    """Exercise the macOS LaunchAgent code on any host; launchctl itself is always faked."""
+    monkeypatch.setattr(sys, "platform", "darwin")
+    monkeypatch.setattr(os, "getuid", lambda: 501, raising=False)
+
+
+def has_mode(path, mode) -> bool:
+    """Owner-only access: exactly `mode` on POSIX; an owner-only access list on Windows, which
+    has no mode bits."""
+    if sys.platform == "win32":
+        from chirp_server.fsutil import is_private
+
+        return is_private(path)
+    return stat.S_IMODE(Path(path).lstat().st_mode) == mode
 
 
 def use_home(monkeypatch, path):

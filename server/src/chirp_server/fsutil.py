@@ -61,13 +61,16 @@ def private_sddl(user_sid: str, directory: bool) -> str:
     return f"D:P(A;{flags};FA;;;{user_sid})(A;{flags};FA;;;SY)"
 
 
-def sddl_is_private(sddl: str, user_sid: str) -> bool:
-    """True when no allow ACE in the DACL names anyone but the user or a trusted system SID."""
+def sddl_is_private(sddl: str, user) -> bool:
+    """True when no allow ACE in the DACL names anyone but the user or a trusted system SID.
+    `user` is the user's SID, or every form SDDL may print it in (a well-known account such as
+    the built-in Administrator appears as an alias like LA)."""
+    users = {user} if isinstance(user, str) else set(user)
     dacl = sddl.partition("D:")[2].split("S:", 1)[0]
     if not sddl.count("D:") or dacl.startswith("NO_ACCESS_CONTROL"):
         return False
     return all(
-        trustee in _TRUSTED or trustee == user_sid
+        trustee in _TRUSTED or trustee in users
         for kind, trustee in _ACE.findall(dacl)
         if kind in {"A", "OA", "XA", "ZA"}
     )
@@ -86,7 +89,7 @@ def is_private(path: Path) -> bool:
     path = Path(path)
     if sys.platform == "win32":
         windows = _windows()
-        return sddl_is_private(windows.get_dacl(str(path)), windows.user_sid())
+        return sddl_is_private(windows.get_dacl(str(path)), windows.user_sid_forms())
     return not stat.S_IMODE(path.stat().st_mode) & 0o077
 
 
