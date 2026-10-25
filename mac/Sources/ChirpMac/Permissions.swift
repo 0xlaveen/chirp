@@ -6,6 +6,8 @@ enum Permissions {
     enum Pane: String {
         case microphone = "Privacy_Microphone"
         case accessibility = "Privacy_Accessibility"
+        /// Screen & System Audio Recording: Live Notes call audio.
+        case systemAudio = "Privacy_ScreenCapture"
     }
 
     static var microphone: AVAuthorizationStatus { AVCaptureDevice.authorizationStatus(for: .audio) }

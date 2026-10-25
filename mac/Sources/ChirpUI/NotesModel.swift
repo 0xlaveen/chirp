@@ -254,6 +254,28 @@ public final class NotesModel {
     /// The title field changed (a rename, saved after a pause in typing).
     public var onTitleEdit: (String) -> Void = { _ in }
     public var onSpeakerLabelsToggle: (Bool) -> Void = { _ in }
+    /// Call audio (#211): this note's sources, whether this Mac can capture call audio, the apps it can record, the
+    /// explanation waiting for Continue, the call side's level and capture while recording, and what went wrong.
+    public var sources = NotesSources()
+    public var callAudioAvailable = false
+    public var callApps: [CallAudioApp] = []
+    public var explainingCallAudio: NotesSources?
+    public var callLevel: Float = 0
+    public var capturingCall = false
+    public var callNotice: NotesCallNotice?
+    /// The toolbar's Sources popover is open.
+    public var showsSources = false
+    public var onSourcesChange: (NotesSources) -> Void = { _ in }
+    public var onCallAudioExplained: (Bool) -> Void = { _ in }
+    public var onRefreshCallApps: () -> Void = {}
+    public var onOpenCallAudioSettings: () -> Void = {}
+    /// The source picker can change: only between recordings.
+    public var canChangeSources: Bool { !state.isActive }
+    /// The call notice under the toolbar while recording.
+    public var callNote: String? {
+        guard state.isCapturing, let callNotice else { return nil }
+        return NotesSourcesText.notice(callNotice)
+    }
     public var onSpeakerEdit: (SpeakerEdit) -> Void = { _ in }
     /// The editor changed the text: the range (UTF-16, in the old text) and its replacement.
     @ObservationIgnored public var onUserEdit: (NSRange, String, NotesTextChange.Kind) -> Void = { _, _, _ in }
@@ -615,6 +637,53 @@ public final class NotesModel {
 }
 
 /// What the microphone is doing, when Live Notes should say so.
+/// What went wrong with call audio while recording.
+public enum NotesCallNotice: Equatable, Sendable {
+    /// The system refused to capture it: the recording has the microphone only.
+    case unavailable
+    /// Nothing but digital silence so far (what a refused permission delivers).
+    case silent
+}
+
+/// The source picker's and call audio's wording (#211).
+public enum NotesSourcesText {
+    public static let title = "Sources"
+    public static let microphone = "Microphone"
+    public static let microphoneDetail = "Your voice and the room"
+    public static let call = "Microphone + call audio"
+    public static let callDetail = "Both sides of a call, with speaker labels"
+    public static let from = "Call audio from"
+    public static let allAudio = "All Mac audio"
+    public static let locked = "Sources change between recordings."
+    public static let unavailable = "Call audio isn’t available on this Mac."
+    public static let privacy = "Audio stays on this Mac and your Chirp server, and is never logged. Kept audio follows Settings › Notes › Audio."
+    public static let youLabel = "Your microphone is labelled “You”; voices from the call are Person 1, Person 2…"
+    public static let explainTitle = "Include call audio?"
+    public static let explainBody = "Chirp also records what your Mac plays (the other people on a call) beside your microphone, so both sides of a meeting are transcribed."
+    public static let explainPermission = "macOS asks once to allow Chirp under Screen & System Audio Recording. Chirp only records audio while a note is recording, never the screen."
+    public static let notNow = "Not Now"
+    public static let continueLabel = "Continue"
+    public static let openSettings = "Open System Settings"
+    public static let toolbarHelp = "Sources: microphone only, or with call audio"
+
+    /// The chip beside the record control and the meta bar: "Mic + call audio", "Mic + Zoom".
+    public static func chip(_ sources: NotesSources) -> String {
+        sources.callAudio ? "Mic + " + (sources.app?.name ?? "call audio") : "Mic only"
+    }
+
+    /// What the meta bar says is being captured.
+    public static func capturing(_ sources: NotesSources) -> String {
+        "Recording your microphone and " + (sources.app.map { "\($0.name)’s audio" } ?? "the Mac’s audio")
+    }
+
+    public static func notice(_ notice: NotesCallNotice) -> String {
+        switch notice {
+        case .unavailable: "Call audio is off: macOS refused it, so only the microphone records."
+        case .silent: "No call audio yet. If others are talking, allow Chirp under Screen & System Audio Recording."
+        }
+    }
+}
+
 public enum NotesMicNotice: Equatable, Sendable {
     /// Digital zeros (a hardware mute): recording goes on.
     case silent

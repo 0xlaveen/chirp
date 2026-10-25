@@ -79,6 +79,8 @@ public struct SettingsState: Sendable {
     public var notesRetention: NotesRetention = .never
     public var recentlyDeletedCount = 0
     public var notesKeepAudio = false
+    /// Notes › Sources: new notes include call audio (#211).
+    public var notesCallAudio = false
     public var notesAudioBytes = 0
     /// Notes › Export: the folder Export Markdown… opens in (nil: wherever it was last used).
     public var exportFolder: String?
@@ -137,7 +139,7 @@ public enum SettingsTab: String, CaseIterable, Sendable {
                           "sounds", "volume", "input device", "use raw", "new note"]
         case .cleanup: ["style", "prompts", "per-app", "insert raw", "review changes", "undo", "polish"]
         case .notes: ["library", "retention", "recently deleted", "audio", "storage", "export", "folder", "smart notes",
-                      "structure", "reorganize", "speakers", "voices"]
+                      "structure", "reorganize", "speakers", "voices", "call audio", "sources", "zoom", "meeting"]
         case .devices: ["phone", "pair", "paired", "android", "iphone", "token", "revoke"]
         case .advanced: ["server", "url", "token", "models", "doctor", "keep loaded", "status"]
         case .about: ["version", "notices", "licenses"]
@@ -163,6 +165,8 @@ public final class SettingsContentView: NSView {
 /// as tall as its content. All controls live here and are exposed so the owner can attach targets and actions.
 @MainActor
 public final class SettingsForm {
+    /// Notes › Sources: what "Include call audio" records, said before macOS asks for the permission.
+    public static let callAudioHelp = "Records what your Mac plays (the other people on a call) beside your microphone, so both sides are transcribed. Your microphone is labelled “You”. macOS asks once for Screen & System Audio Recording. Audio stays on this Mac and your Chirp server."
     static let margin: CGFloat = ChirpSpacing.gutter
     /// The width a control that fills its row may take.
     static let controlWidth: CGFloat = SettingsLayout.rowWidth
@@ -231,6 +235,7 @@ public final class SettingsForm {
     public let emptyDeleted = NSButton(title: "Empty…", target: nil, action: nil)
     private let deletedStatus = NSTextField(labelWithString: "")
     public let keepAudio = NSButton(checkboxWithTitle: "Keep audio with notes", target: nil, action: nil)
+    public let callAudio = NSButton(checkboxWithTitle: "Include call audio in new notes", target: nil, action: nil)
     public let deleteAudio = NSButton(title: "Delete…", target: nil, action: nil)
     private let audioStatus = NSTextField(labelWithString: "")
     public let chooseExport = NSButton(title: "Choose…", target: nil, action: nil)
@@ -360,6 +365,7 @@ public final class SettingsForm {
         structureNotes.setAccessibilityLabel("Structure notes by default")
         autoReorganize.setAccessibilityLabel("Auto-reorganize by default")
         keepAudio.setAccessibilityLabel("Keep audio with notes")
+        callAudio.setAccessibilityLabel("Include call audio in new notes")
 
         build(.general, [
             SettingsSection("Startup", [row(nil, launch, help: launchHelp), row(nil, alwaysInDock)]),
@@ -416,6 +422,9 @@ public final class SettingsForm {
                     help: Self.help("Never by default. Older notes move to Recently Deleted when Chirp opens, and stay there for 30 days.")),
                 row("Recently Deleted", line([deletedStatus, emptyDeleted])),
             ]),
+            SettingsSection("Sources", [
+                row(nil, callAudio, help: Self.help(SettingsForm.callAudioHelp)),
+            ], footnote: Self.help("Each note can change it from Sources in the Notes toolbar. Mac only: iPhone and Android can’t record other apps’ audio.")),
             SettingsSection("Audio", [
                 row(nil, keepAudio, help: Self.help("Keeps each spoken segment with its note so you can replay it. Off by default; the audio never leaves this Mac.")),
                 row("Kept audio", line([audioStatus, deleteAudio])),
@@ -600,6 +609,7 @@ public final class SettingsForm {
             notesRecoveryCopy.state = s.notesRecoveryCopy ? .on : .off
             if let i = NotesRetention.allCases.firstIndex(of: s.notesRetention) { notesRetention.selectItem(at: i) }
             keepAudio.state = s.notesKeepAudio ? .on : .off
+            callAudio.state = s.notesCallAudio ? .on : .off
             structureNotes.state = s.structureNotes ? .on : .off
             autoReorganize.state = s.autoReorganize ? .on : .off
             exportFolder.stringValue = s.exportFolder.map { Self.displayPath($0) } ?? "Last used"

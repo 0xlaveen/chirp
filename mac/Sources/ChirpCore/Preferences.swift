@@ -303,6 +303,29 @@ public final class Preferences: @unchecked Sendable {
         get { defaults.bool(forKey: "notesSpeakerLabels") }
         set { defaults.set(newValue, forKey: "notesSpeakerLabels") }
     }
+    /// Settings › Notes › Sources: new notes include call audio (#211). Off by default; each note can change it.
+    public var notesCallAudio: Bool {
+        get { defaults.bool(forKey: "notesCallAudio") }
+        set { defaults.set(newValue, forKey: "notesCallAudio") }
+    }
+    /// The one app call audio comes from (its bundle id and name); nil records everything the Mac plays.
+    public var notesCallAudioApp: CallAudioApp? {
+        get {
+            guard let id = defaults.string(forKey: "notesCallAudioApp"), !id.isEmpty else { return nil }
+            return CallAudioApp(bundleID: id, name: defaults.string(forKey: "notesCallAudioAppName") ?? id)
+        }
+        set {
+            defaults.set(newValue?.bundleID, forKey: "notesCallAudioApp")
+            defaults.set(newValue?.name, forKey: "notesCallAudioAppName")
+        }
+    }
+    /// The sources a new note starts with.
+    public var notesSources: NotesSources { NotesSources(callAudio: notesCallAudio, app: notesCallAudioApp) }
+    /// The user read what "Include call audio" records and continued (asked once, before the system prompt).
+    public var notesCallAudioExplained: Bool {
+        get { defaults.bool(forKey: "notesCallAudioExplained") }
+        set { defaults.set(newValue, forKey: "notesCallAudioExplained") }
+    }
     /// Settings › Notes › "Recognize saved voices" (off by default). A preference only: voiceprints live in the
     /// Keychain, never here.
     public var notesVoiceProfiles: Bool {

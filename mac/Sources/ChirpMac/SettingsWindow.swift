@@ -36,6 +36,8 @@ final class SettingsWindowController: NSObject, NSTextFieldDelegate {
     /// The Notes library: Recently Deleted's count and the kept-audio total, and the two bulk actions on them.
     var library: NotesLibrary?
     var onNotesRecoveryCopyChange: (() -> Void)?
+    /// Notes › Sources: the call-audio default changed.
+    var onCallAudioDefaultChange: (() -> Void)?
     /// "Always show in the Dock" flipped.
     var onAlwaysShowInDockChange: ((Bool) -> Void)?
     private lazy var devices: DevicesModel = {
@@ -72,6 +74,7 @@ final class SettingsWindowController: NSObject, NSTextFieldDelegate {
         s.notesRecoveryCopy = settings.notesRecoveryCopy
         s.notesRetention = settings.notesRetention
         s.notesKeepAudio = settings.notesKeepAudio
+        s.notesCallAudio = settings.notesCallAudio
         s.recentlyDeletedCount = library?.recentlyDeleted.count ?? 0
         s.notesAudioBytes = library?.totalAudioBytes ?? 0
         s.exportFolder = settings.notesExportFolder
@@ -346,6 +349,8 @@ final class SettingsWindowController: NSObject, NSTextFieldDelegate {
         form.notesRetention.action = #selector(retentionChanged(_:))
         form.keepAudio.target = self
         form.keepAudio.action = #selector(toggleKeepAudio(_:))
+        form.callAudio.target = self
+        form.callAudio.action = #selector(toggleCallAudio(_:))
         form.deleteAudio.target = self
         form.deleteAudio.action = #selector(confirmDeleteAudio)
         form.emptyDeleted.target = self
@@ -484,6 +489,13 @@ final class SettingsWindowController: NSObject, NSTextFieldDelegate {
     }
 
     /// On keeps audio for new notes. Off stops that, and offers to delete what is already kept.
+    /// The default for new notes; the help above the switch is the explanation, so turning it on here counts as read.
+    @objc private func toggleCallAudio(_ sender: NSButton) {
+        settings.notesCallAudio = sender.state == .on
+        if sender.state == .on { settings.notesCallAudioExplained = true }
+        onCallAudioDefaultChange?()
+    }
+
     @objc private func toggleKeepAudio(_ sender: NSButton) {
         settings.notesKeepAudio = sender.state == .on
         if sender.state == .off, (library?.totalAudioBytes ?? 0) > 0 { confirmDeleteAudio() }

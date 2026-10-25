@@ -174,7 +174,7 @@ struct SpeakerMenuItems: View {
         if !merged.isEmpty {
             Menu("Separate") {
                 ForEach(merged, id: \.self) { id in
-                    Button(roster.person(id: id)?.name ?? "Person \(id)") { model.onSpeakerEdit(.separate(id)) }
+                    Button(roster.ownName(id)) { model.onSpeakerEdit(.separate(id)) }
                 }
             }
         }

@@ -62,6 +62,8 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
     <key>NSHighResolutionCapable</key><true/>
     <key>NSMicrophoneUsageDescription</key>
     <string>Chirp streams your voice to your own speech server to type what you say. Audio is not stored.</string>
+    <key>NSAudioCaptureUsageDescription</key>
+    <string>With “Include call audio” on, Live Notes records what your Mac plays (the other people on a call) so both sides are transcribed by your own speech server. Audio stays on this Mac and your server.</string>
 </dict>
 </plist>
 PLIST
