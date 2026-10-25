@@ -116,7 +116,7 @@ def render(layout, page, manifest, used):
                 preload += f'<link rel="preload" as="image" href="{root}assets/screenshots/{entry["variants"][-1]["file"]}" imagesrcset="{srcset(entry, root)}" imagesizes="(max-width: 760px) calc(100vw - 48px), (max-width: 1050px) 44vw, 560px" media="{media}">\n'
     values = {'content': body.strip(), 'title': html.escape(meta['title']), 'description': html.escape(meta['description'], quote=True), 'root': root, 'repo': REPO, 'body_class': meta.get('class', ''), 'canonical': canonical, 'social_image': PUBLIC + 'assets/pond.webp', 'preload': preload, 'robots': 'noindex' if out == '404.html' else 'index, follow'}
     doc = layout
-    for name in ('home', 'guides', 'changelog'):
+    for name in ('home', 'guides', 'changelog', 'get'):
         values[f'current_{name}'] = ' aria-current="page"' if meta.get('section') == name else ''
     for key, value in values.items():
         doc = doc.replace('{{' + key + '}}', value)

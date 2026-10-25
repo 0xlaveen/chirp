@@ -6,7 +6,7 @@ section: guides
 <div class="narrow guide-hero">
   <p class="crumbs"><a href="index.html">Guides</a> / 01</p>
   <h1>Set up Chirp on your Mac</h1>
-  <p class="lede">Install Chirp from source, download a speech model, grant two permissions and dictate into any app. About 15 minutes, most of it waiting for downloads.</p>
+  <p class="lede">Build Chirp from source, download a speech model, grant two permissions and dictate into any app. About 15 minutes, most of it waiting for downloads. A packaged Mac app is coming soon; this is how you install it today.</p>
   <div class="meta-row"><span>Needs: Apple Silicon (M1 or newer), macOS 15+</span><span>Uses: Terminal, once</span></div>
 </div>
 <article class="narrow prose">
@@ -31,7 +31,7 @@ cd chirp</code></pre></li>
 <pre data-copy="Copy command"><code>./scripts/install-mac.sh</code></pre>
       <p>It installs the speech server in your Application Support folder, builds and signs <strong>Chirp.app</strong>, copies it to your Applications folder in your home folder, and opens the model picker. macOS may ask you to approve the local signing identity — allow it, so the permissions you grant survive future updates.</p></li>
   </ol>
-  <div class="callout warn"><b>This is a source install.</b><p>There is no notarized download yet; the installer builds Chirp on your Mac from the code you just cloned.</p></div>
+  <div class="callout warn"><b>This is a source install for now.</b><p>There’s no notarized download yet — a packaged Mac app is coming soon. This installer builds Chirp on your Mac from the code you just cloned. Prefer an agent to do it with you? Use the <a href="coding-agent.html">coding agent prompts</a>. For every platform, see <a href="../get.html">Get Chirp</a>.</p></div>
 
   <h2 id="models">Choose a model</h2>
   <p>The <strong>Models on this Mac</strong> window opens by itself. You can find it again any time under <strong>Settings → Advanced → Manage Local Models…</strong></p>
