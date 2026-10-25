@@ -1,0 +1,91 @@
+<!--
+title: Set up Chirp on Linux — Chirp
+description: An early, honest guide to running the Chirp speech server on Linux with a systemd user service, building the desktop app, and dictating on X11 or through your Wayland desktop's shortcut portal.
+section: guides
+-->
+<div class="narrow guide-hero">
+  <p class="crumbs"><a href="index.html">Guides</a> / 05</p>
+  <h1>Set up Chirp on Linux</h1>
+  <p class="lede">Install the speech server, run it as a systemd user service, build the desktop app, then hold a key and talk into any app. About 30 minutes, most of it downloads. This is new, early software — read the note below before you start.</p>
+  <div class="meta-row"><span>Needs: Linux with X11 or Wayland · Python 3.13, uv · Rust &amp; Node 22+ for the desktop app</span><span>Uses: Terminal</span></div>
+</div>
+<article class="narrow prose">
+  <nav class="toc" aria-label="On this page"><b>On this page</b>
+    <ol><li><a href="#before">Before you start</a></li><li><a href="#server">Install the server</a></li><li><a href="#service">Keep it running</a></li><li><a href="#desktop">Install the desktop app</a></li><li><a href="#dictate">Dictate</a></li><li><a href="#notes">Notes</a></li><li><a href="#phone">Pair a phone or the desktop</a></li><li><a href="#cleanup">Clean-up (optional, slow on CPU)</a></li><li><a href="#trouble">If something's off</a></li></ol>
+  </nav>
+
+  <h2 id="before">Before you start</h2>
+  <p>Chirp on Linux runs the same engine as Intel Macs and Windows: Parakeet TDT v2 through ONNX Runtime, int8 on the CPU by default, with CUDA opt-in. Speech recognition stays on this machine; the server listens on <code>127.0.0.1:7821</code> only.</p>
+  <div class="callout warn"><b>Linux support is early — here's exactly what that means.</b><p>The server and the desktop app pass their checks in a real Linux environment (unit tests, a real ONNX server transcribing synthetic speech, X11 and Wayland insertion tests, systemd unit validation) — but on Wayland, global shortcuts depend on your desktop's Global Shortcuts portal, so what you get depends on GNOME, KDE or your compositor. Clean-up and Notes structuring run on the CPU and can be slow without a GPU; dictation works without them. The full details live in the repository's <a href="{{repo}}/blob/main/docs/linux.md">Linux guide</a>.</p></div>
+  <p>On <strong>X11</strong>, Chirp observes a single key (Right Alt by default) without grabbing the keyboard, and inserts text with <code>xdotool</code>. On <strong>Wayland</strong>, you approve a binding in your desktop's shortcut dialog — Chirp suggests <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>Space</kbd> — and insertion uses <code>wtype</code> or the clipboard. Xwayland alone doesn't grant global shortcuts for native Wayland apps.</p>
+
+  <h2 id="server">Install the server</h2>
+  <ol class="steps">
+    <li><strong>Get the prerequisites</strong>
+      <p>Python 3.13, <a href="https://docs.astral.sh/uv/">uv</a> and Git. Then:</p>
+<pre data-copy="Copy commands"><code>git clone https://github.com/araa47/chirp.git
+cd chirp/server
+uv sync --locked --extra onnx</code></pre></li>
+    <li><strong>Download the speech model</strong>
+<pre data-copy="Copy command"><code>uv run chirp-server model fetch --engine onnx</code></pre>
+      <p>A pinned, quantized model. Starting the server never downloads weights.</p></li>
+    <li><strong>Try it, then check it</strong>
+<pre data-copy="Copy commands"><code>uv run chirp-server
+uv run chirp-server doctor</code></pre>
+      <p><kbd>Ctrl</kbd>+<kbd>C</kbd> stops the foreground server. For another port use <code>--port 7899</code>.</p></li>
+  </ol>
+  <p>Files follow XDG: preferences and the token in <code>~/.config/chirp/</code>, models and server state in <code>~/.local/share/chirp/</code>, cache in <code>~/.cache/chirp/</code>. Token files are private to your user; the foreground server never logs spoken words.</p>
+
+  <h2 id="service">Keep it running</h2>
+<pre data-copy="Copy commands"><code>uv run chirp-server service install
+systemctl --user status dev.chirp.server.service</code></pre>
+  <p>This renders a private systemd user unit that starts at login, restarts after a crash, and never rewrites your <code>server.toml</code>. Undo it with <code>uv run chirp-server service uninstall</code>. To keep the server running after you log out, an administrator may need to enable lingering for your account — Chirp doesn't change that policy. On machines without a systemd user manager, run the server in a terminal or under your own supervisor.</p>
+
+  <h2 id="desktop">Install the desktop app</h2>
+  <p>The desktop app is the same Tauri client Windows uses: a tray icon, a live HUD, typed or pasted text insertion and a local Notes library. Install the build dependencies (Debian/Ubuntu shown; see the <a href="{{repo}}/blob/main/desktop/README.md">desktop README</a> for other distros), then build:</p>
+<pre data-copy="Copy commands"><code>sudo apt install build-essential curl pkg-config libwebkit2gtk-4.1-dev libxdo-dev \
+  libssl-dev libayatana-appindicator3-dev librsvg2-dev libasound2-dev xdotool xclip
+cd desktop
+npm ci
+npm run build -- --bundles deb</code></pre>
+  <p>For development, <code>npm run dev</code> runs it unpackaged. On Wayland, also install <code>wtype</code> for compositors that support the virtual-keyboard protocol, or <code>wl-clipboard</code> and paste the result yourself. A Secret Service implementation (GNOME Keyring or KWallet) stores the server token — unlock it before pairing. Chirp never falls back to saving credentials in a preferences file.</p>
+
+  <h2 id="dictate">Dictate</h2>
+  <ol class="steps">
+    <li><strong>Click into any text field</strong><p>Focus a text field first; the HUD doesn't take focus.</p></li>
+    <li><strong>Hold <kbd>Right Alt</kbd> and talk</strong><p>On X11. An AltGr layout (German, French and others) gets <strong>Right Ctrl</strong> instead, so AltGr keeps typing its characters. Change the key or switch to tap-to-toggle in settings. The key stays available to other applications; chords cancel dictation.</p></li>
+    <li><strong>Release, and it's inserted</strong><p>X11 types through <code>xdotool</code>. Multiline results are pasted with <code>xclip</code> and the focused app's paste shortcut, because XTest typing can lose newlines. If automatic insertion fails, the result stays on the clipboard and the HUD asks you to paste it.</p></li>
+  </ol>
+  <div class="callout"><b>On Wayland, turn the shortcut on once.</b><p>In settings, tick <strong>Enable a global shortcut through my desktop</strong>, save, then choose the binding in your desktop's dialog. Chirp shows the binding your desktop approves; single-key holds are available only when the portal allows them. Declining the permission or having no portal leaves Record in the app fully usable.</p></div>
+
+  <h2 id="notes">Notes</h2>
+  <p>Open <strong>Notes</strong> from the window or tray. Record turns a long conversation into an editable Markdown document beside the transcript; completed 45-second segments save continuously, search covers titles, bodies and transcripts, deleted notes wait 30 days in Recently Deleted, and <strong>Export Markdown</strong> writes a separate file. Notes are kept only on this computer, under <code>~/.local/share/chirp-desktop/notes</code>, with 0700/0600 permissions. Desktop Notes store text, never audio.</p>
+  <figure class="shot"><div class="frame"><!--shot:desktop/notes-light-narrow|The Chirp desktop Notes window in a narrow light layout, showing search over the notes library--></div><figcaption>Searching the desktop Notes library (early capture, synthetic content).</figcaption></figure>
+  <p><strong>Structure new segments</strong> is opt-in and needs a clean-up model on the server (below). Without one — or with it off — Notes still keep the plain transcript.</p>
+
+  <h2 id="phone">Pair a phone or the desktop</h2>
+  <p>The desktop app pairs locally: run <code>uv run chirp-server pair</code> and paste the printed <code>chirp://pair</code> link into the app's <strong>Connection &amp; shortcuts</strong> settings. The link is a secret; paste it directly, never into chat or logs.</p>
+  <p>Phones reach a Linux server exactly like a Mac, over your own tailnet and never the public internet:</p>
+<pre data-copy="Copy commands"><code>tailscale serve --bg --set-path /chirp http://127.0.0.1:7821
+uv run chirp-server pair --url https://&lt;your-host&gt;.&lt;tailnet&gt;.ts.net/chirp</code></pre>
+
+  <h2 id="cleanup">Clean-up (optional, slow on CPU)</h2>
+  <p>Clean-up is off by default. Two local options, both with the server's safety checks (a timeout or rejected rewrite always preserves the original text):</p>
+  <ul>
+    <li><strong>A managed local model</strong> — the pinned Qwen3 4B GGUF through llama.cpp (<code>uv sync --locked --extra onnx --extra cleanup</code>, then <code>uv run chirp-server model fetch --cleanup qwen3-4b-instruct-2507-q4-k-m-gguf</code>). On CPU this is slow: a shared-host container measured about 17–20 seconds per clean-up or structuring pass. Dictation itself never waits on it.</li>
+    <li><strong>A local OpenAI-compatible endpoint</strong> such as Ollama or LM Studio — usually the nicer option on CPU. Point <code>[correction]</code> at <code>http://127.0.0.1:11434/v1</code> (Ollama) or port 1234 (LM Studio). Only final text is sent there, never audio.</li>
+  </ul>
+  <p>The exact <code>server.toml</code> blocks for both are in the repository's <a href="{{repo}}/blob/main/docs/linux.md#cleanup-and-smart-notes">Linux guide</a>.</p>
+
+  <h2 id="trouble">If something's off</h2>
+  <ul>
+    <li><strong><code>doctor</code> FAILs:</strong> it prints a remediation hint per line; the ONNX check wants <code>--extra onnx</code> and the fetched model.</li>
+    <li><strong>The service didn't start:</strong> run <code>uv run chirp-server</code> in the foreground to see the error; on Wayland sessions check <code>systemctl --user</code> is available.</li>
+    <li><strong>The shortcut does nothing on Wayland:</strong> re-check the portal binding in settings; single-key holds need compositor permission. <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>Space</kbd> is the suggested binding.</li>
+    <li><strong>Text isn't inserted:</strong> on X11 check <code>xdotool</code> and <code>xclip</code> are installed; on Wayland install <code>wtype</code> or <code>wl-clipboard</code>.</li>
+    <li><strong>Pairing fails:</strong> the Secret Service (Keyring/KWallet) must be unlocked first.</li>
+  </ul>
+  <p>Paths, service details and container validation are documented in the repository's <a href="{{repo}}/blob/main/docs/linux.md">Linux guide</a> and <a href="{{repo}}/blob/main/desktop/README.md">desktop README</a>.</p>
+
+  <div class="next"><a href="index.html">← All guides</a><a href="live-notes.html">Next: Take notes →</a></div>
+</article>

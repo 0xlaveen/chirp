@@ -1,0 +1,81 @@
+<!--
+title: Set up Chirp on Windows — Chirp
+description: An early, honest guide to running the Chirp speech server on Windows 10 or 11, installing the desktop app, dictating with a hold-to-talk key and keeping local notes.
+section: guides
+-->
+<div class="narrow guide-hero">
+  <p class="crumbs"><a href="index.html">Guides</a> / 04</p>
+  <h1>Set up Chirp on Windows</h1>
+  <p class="lede">Install the speech server, run it as a background task at logon, build the desktop app, then hold a key and talk into any program. About 30 minutes, most of it downloads. This is new, early software — read the note below before you start.</p>
+  <div class="meta-row"><span>Needs: Windows 10 or 11 · uv · Rust &amp; Node 22+ for the desktop app</span><span>Uses: PowerShell</span></div>
+</div>
+<article class="narrow prose">
+  <nav class="toc" aria-label="On this page"><b>On this page</b>
+    <ol><li><a href="#before">Before you start</a></li><li><a href="#server">Install the server</a></li><li><a href="#service">Keep it running</a></li><li><a href="#desktop">Install the desktop app</a></li><li><a href="#dictate">Dictate</a></li><li><a href="#notes">Notes</a></li><li><a href="#phone">Pair a phone</a></li><li><a href="#trouble">If something's off</a></li></ol>
+  </nav>
+
+  <h2 id="before">Before you start</h2>
+  <p>Chirp on Windows 10/11 runs the same speech engine as the Mac: Parakeet TDT v2 through ONNX Runtime, int8 on the CPU by default, with CUDA and DirectML as opt-in accelerators. Speech recognition stays on this PC; the server listens on <code>127.0.0.1:7821</code> only.</p>
+  <div class="callout warn"><b>Windows support is early — here's exactly what that means.</b><p>Everything builds and passes its automated tests on GitHub's Windows runners, including a real server transcribing a synthetic clip — but a manual acceptance pass on real PCs (typing into Notepad, Word and browsers, the logon service, phone pairing) is still pending, and nothing is code-signed yet. Clean-up and Notes structuring run on the CPU and can be slow without a GPU; dictation works without them. If you hit a snag, the <a href="{{repo}}/blob/main/docs/windows.md">full Windows guide in the repository</a> has a troubleshooting table and that acceptance checklist.</p></div>
+  <p>You need <a href="https://docs.astral.sh/uv/getting-started/installation/">uv</a> and Git for the server, and later <a href="https://rustup.rs/">Rust</a> (MSVC toolchain), Node 22+ and WebView2 (built into Windows 11) for the desktop app.</p>
+
+  <h2 id="server">Install the server</h2>
+  <ol class="steps">
+    <li><strong>Get the code and the environment</strong>
+<pre data-copy="Copy commands"><code>git clone https://github.com/araa47/chirp.git
+cd chirp\server
+uv sync --locked --extra onnx</code></pre></li>
+    <li><strong>Download the speech model</strong>
+<pre data-copy="Copy command"><code>uv run chirp-server model fetch --engine onnx</code></pre>
+      <p>About 650 MB, a pinned revision. Starting the server never downloads anything by itself.</p></li>
+    <li><strong>Choose the ONNX engine</strong>
+      <p>Put <code>engine = "onnx"</code> in <code>%APPDATA%\Chirp\server.toml</code> so both the foreground server and the background task use it.</p></li>
+    <li><strong>Try it, then check it</strong>
+<pre data-copy="Copy commands"><code>uv run chirp-server
+uv run chirp-server doctor</code></pre>
+      <p><kbd>Ctrl</kbd>+<kbd>C</kbd> stops the foreground server. <code>doctor</code> reports the ONNX Runtime providers, the model, the token's access list, the port and the service, one OK/WARN/FAIL line per check.</p></li>
+  </ol>
+  <p>Configuration, the pairing token and device list live in <code>%APPDATA%\Chirp</code>, readable only by your user account; models and server state live in <code>%LOCALAPPDATA%\Chirp</code>, which never roams or syncs. Windows Firewall needs no rule, because the server binds to loopback only.</p>
+
+  <h2 id="service">Keep it running</h2>
+<pre data-copy="Copy command"><code>uv run chirp-server service install</code></pre>
+  <p>This registers a per-user Task Scheduler task, <strong>Chirp Server</strong> — no administrator rights. It starts <code>pythonw.exe</code> (no console window) when you log on, runs only while you're logged on, restarts after a failure, and never stops on battery. You'll find it in Task Scheduler › Task Scheduler Library. Undo it with <code>uv run chirp-server service uninstall</code>. Flags placed before <code>service</code> (like <code>--port</code>) are kept in the task.</p>
+
+  <h2 id="desktop">Install the desktop app</h2>
+  <p>The desktop app is the same Tauri client Linux uses: a tray icon, a live HUD, typed or pasted text insertion and a local Notes library. Build it from the same clone:</p>
+<pre data-copy="Copy commands"><code>cd chirp\desktop
+npm ci
+npm run build -- --bundles nsis</code></pre>
+  <p>The installer is per-user. It's unsigned, so SmartScreen shows <strong>Windows protected your PC</strong>: choose <strong>More info › Run anyway</strong>. Open Chirp from the tray and pair it to <code>http://127.0.0.1:7821</code> (or a pairing link from <code>uv run chirp-server pair</code>). The token is stored in Windows Credential Manager, never in a settings file.</p>
+
+  <h2 id="dictate">Dictate</h2>
+  <ol class="steps">
+    <li><strong>Click into any text field</strong><p>Notepad, Word, a browser — anywhere you can type.</p></li>
+    <li><strong>Hold <kbd>Right Alt</kbd> and talk</strong><p>Release to insert. On layouts where Right Alt is <strong>AltGr</strong> (German, French, Polish and many others), Chirp detects it at setup and uses <strong>Right Ctrl</strong> instead, so AltGr keeps typing <code>@</code>, <code>€</code> and friends. Setup says which key it chose; change it in Settings, and tap-to-toggle is available too.</p></li>
+    <li><strong>Release, and it's typed</strong><p>Text is typed with SendInput. Long dictations (over 2000 characters) are pasted instead, and your previous clipboard text is restored; Chirp's clipboard writes stay out of clipboard history and cloud clipboard. Pressing any other key while holding cancels; key combinations never start dictation.</p></li>
+  </ol>
+  <div class="callout"><b>Apps running as administrator.</b><p>Windows blocks synthetic input to elevated apps. Chirp notices, leaves the text on the clipboard, and tells you to press <kbd>Ctrl</kbd>+<kbd>V</kbd>.</p></div>
+
+  <h2 id="notes">Notes</h2>
+  <p>Open <strong>Notes</strong> from the tray or window. Record turns a long conversation into an editable Markdown document next to the transcript; completed 45-second segments save continuously, search covers titles, bodies and transcripts, deleted notes wait 30 days in Recently Deleted, and <strong>Export Markdown</strong> writes a separate file. Notes are kept only on this PC, under <code>%LOCALAPPDATA%\chirp-desktop\notes</code>, written only after Windows confirms an owner-only access list. Desktop Notes store text, never audio.</p>
+  <figure class="shot"><div class="frame"><!--shot:desktop/notes-dark|The Chirp desktop Notes window in dark Pond colors: the library beside an editable note with tasks and callouts--></div><figcaption>The desktop Notes library (early capture, synthetic content).</figcaption></figure>
+  <p><strong>Structure new segments</strong> is opt-in and needs a clean-up model on the server. Without one — or with it off — Notes still keep the plain transcript.</p>
+
+  <h2 id="phone">Pair a phone</h2>
+  <p>Phones reach a Windows server exactly like a Mac: over your own tailnet, never the public internet. Install <a href="https://tailscale.com/download/windows">Tailscale</a> on the PC and the phone, then publish the loopback server to your tailnet only (never Funnel):</p>
+<pre data-copy="Copy commands"><code>tailscale serve --bg --set-path /chirp http://127.0.0.1:7821
+uv run chirp-server pair --name "My phone" --url https://&lt;your-pc&gt;.&lt;tailnet&gt;.ts.net/chirp</code></pre>
+  <p>Scan the QR code with Chirp for Android or iPhone. The pairing link is a secret: don't paste it into chat or logs. Revoke a phone any time with <code>uv run chirp-server devices revoke "My phone"</code>.</p>
+
+  <h2 id="trouble">If something's off</h2>
+  <ul>
+    <li><strong><code>doctor</code> FAILs the onnx check:</strong> rerun <code>uv sync --locked --extra onnx</code>, then <code>uv run chirp-server model fetch --engine onnx</code>.</li>
+    <li><strong>Service installed but not running:</strong> run <code>uv run chirp-server</code> in the foreground to see the startup error, then <code>uv run chirp-server setup restart</code>.</li>
+    <li><strong>Nothing is typed:</strong> the target app may run as administrator (see above), or another tool holds a keyboard hook. Try Notepad first.</li>
+    <li><strong>Releasing Right Alt opens a menu:</strong> choose Right Ctrl in Settings and report your keyboard layout.</li>
+    <li><strong>Phone can't connect:</strong> <code>tailscale serve status</code> should show <code>/chirp</code> proxying to <code>http://127.0.0.1:7821</code>.</li>
+  </ul>
+  <p>Every setting and path is documented in the repository's <a href="{{repo}}/blob/main/docs/windows.md">Windows guide</a> and the <a href="{{repo}}/blob/main/desktop/README.md">desktop README</a>.</p>
+
+  <div class="next"><a href="index.html">← All guides</a><a href="linux.html">Next: Set up Chirp on Linux →</a></div>
+</article>

@@ -6,10 +6,10 @@ section: get
 <div class="wrap get-hero">
   <p class="eyebrow"><span class="status-dot" aria-hidden="true"></span> Packaged apps coming soon</p>
   <h1>Get Chirp today.<br><em>Build it from source.</em></h1>
-  <p class="lede">Chirp is private dictation and live meeting notes, powered by your own Mac. There isn’t a download yet. Packaged apps for <strong>macOS, Linux and Windows</strong> are on the way, along with an <strong>Android APK</strong> and an <strong>iOS app</strong>. Until they land, everything is self-serve: you build Chirp from source, on your own Mac.</p>
+  <p class="lede">Chirp is private dictation and live meeting notes, powered by your own computer — a Mac, a Windows PC or a Linux box. There isn’t a download yet. Packaged apps for <strong>macOS, Linux and Windows</strong> are on the way, along with an <strong>Android APK</strong> and an <strong>iOS app</strong>. Until they land, everything is self-serve: you build Chirp from source, on the machine you already own.</p>
   <p class="lede">The easiest route is to <strong>point a coding agent at the repository</strong> and work through it together. Prefer to do it yourself? The guides take it one step at a time.</p>
   <div class="actions"><a class="btn btn-primary" href="guides/coding-agent.html">Use a coding agent <span aria-hidden="true">↗</span></a><a class="btn btn-ghost" href="#platforms">See what’s available today</a></div>
-  <p class="setup-note">Free and open source · No Chirp account or subscription<br>macOS 14+ · Apple Silicon uses MLX (fastest); Intel uses ONNX Parakeet</p>
+  <p class="setup-note">Free and open source · No Chirp account or subscription<br>macOS 14+ (Apple Silicon: MLX, fastest; Intel: ONNX) · Windows 10/11 · Linux (X11 / Wayland) — desktop platforms beyond macOS are early</p>
 </div>
 <div class="wrap get-body">
   <div class="callout info"><b>Why build it yourself for now?</b><p>Packaging takes signing, notarizing, store review and support across OS versions. Instead of rushing a half-finished installer, the source is public and usable today. No waiting list, no account, no telemetry.</p></div>
@@ -36,16 +36,16 @@ section: get
       <a href="guides/iphone.html">Install on iPhone or iPad <span aria-hidden="true">↗</span></a>
     </article>
     <article class="status-card">
-      <span class="tag tag-soon">Packaged app coming soon</span>
+      <span class="tag tag-early">Early · build from source</span>
       <h3>Linux</h3>
-      <p>A packaged desktop app is planned. There’s no Linux build to install today.</p>
-      <a href="{{repo}}">Watch the repository <span aria-hidden="true">↗</span></a>
+      <p>The speech server and a desktop app for X11 and Wayland (portal shortcuts), with dictation and a Notes library. Verified in a Linux container; build the app yourself.</p>
+      <a href="guides/linux.html">Set up Chirp on Linux <span aria-hidden="true">↗</span></a>
     </article>
     <article class="status-card">
-      <span class="tag tag-soon">Packaged app coming soon</span>
+      <span class="tag tag-early">Early · build from source</span>
       <h3>Windows</h3>
-      <p>A packaged desktop app is planned. There’s no Windows build to install today.</p>
-      <a href="{{repo}}">Watch the repository <span aria-hidden="true">↗</span></a>
+      <p>The speech server and a desktop app (hold-to-talk key, HUD, Notes) on Windows 10/11. Verified in CI; a manual acceptance pass on real PCs is pending. Build the app yourself.</p>
+      <a href="guides/windows.html">Set up Chirp on Windows <span aria-hidden="true">↗</span></a>
     </article>
     <article class="status-card status-card-note">
       <span class="tag tag-source">Available today</span>
@@ -81,6 +81,8 @@ expose the server beyond 127.0.0.1 or my tailnet.</code></pre>
       <p>No agent needed. Start with the Mac — it runs the speech model every other device uses. Each guide says what you need, what to type, and what to click.</p>
       <ol class="mini-steps">
         <li><a href="guides/mac.html">Set up the Mac app</a><span>About 15 minutes, mostly downloads.</span></li>
+        <li><a href="guides/windows.html">Add a Windows PC</a><span>Server, service and desktop app. Early.</span></li>
+        <li><a href="guides/linux.html">Add a Linux box</a><span>Server, systemd service and desktop app. Early.</span></li>
         <li><a href="guides/android.html">Add an Android phone</a><span>Build the APK, pair with a QR code.</span></li>
         <li><a href="guides/iphone.html">Add an iPhone or iPad</a><span>Xcode, signing and the keyboard.</span></li>
         <li><a href="guides/live-notes.html">Take notes</a><span>Turn a meeting into Markdown.</span></li>
@@ -90,14 +92,14 @@ expose the server beyond 127.0.0.1 or my tailnet.</code></pre>
 
   <h2 id="need">What you need</h2>
   <ul class="ticks need-list">
-    <li><strong>An Apple Silicon or Intel Mac</strong> on macOS 14 or later, on and reachable whenever you dictate.</li>
-    <li><strong>About 15 minutes</strong> for the Mac. Add a phone when you’re ready; each phone takes a little longer.</li>
-    <li><strong>Tailscale</strong> on the Mac and phone, if you want to dictate from a phone.</li>
-    <li><strong>Full Xcode</strong> for iPhone or iPad; the Command Line Tools are enough for the Mac.</li>
+    <li><strong>A machine to run the server</strong>, on and reachable whenever you dictate: a Mac on macOS 14 or later (Apple Silicon uses MLX, fastest; Intel uses ONNX Parakeet), a PC on Windows 10 or 11, or a Linux desktop (X11 or Wayland). The desktop apps are the native Mac app (most polished) and the shared Windows/Linux app (early).</li>
+    <li><strong>About 15 minutes</strong> for the Mac. Add other devices when you’re ready; each takes a little longer.</li>
+    <li><strong>Tailscale</strong> on the server machine and phone, if you want to dictate from a phone.</li>
+    <li><strong>Full Xcode</strong> for iPhone or iPad; the Command Line Tools are enough for the Mac. Windows and Linux need Rust and Node 22+ for the desktop app.</li>
     <li><strong>Comfort with Terminal — or an agent.</strong> You don’t need to write code. You do need to run a few commands.</li>
   </ul>
 
-  <p><strong>On Intel Macs, built-in clean-up and Notes structuring run on CPU and can be slow.</strong> Dictation works without them. Turn clean-up off, or use an OpenAI-compatible local endpoint such as Ollama or LM Studio. Notes can keep a plain transcript with <strong>Structure notes</strong> off.</p>
+  <p><strong>Without a GPU — Intel Macs and most Windows/Linux machines — built-in clean-up and Notes structuring run on CPU and can be slow.</strong> Dictation works without them. Turn clean-up off, or use an OpenAI-compatible local endpoint such as Ollama or LM Studio. Notes can keep a plain transcript with <strong>Structure notes</strong> off.</p>
 
   <h2 id="questions">Questions</h2>
   <div class="faq-list">
@@ -105,7 +107,7 @@ expose the server beyond 127.0.0.1 or my tailnet.</code></pre>
     <details><summary>When will the packaged apps be out?</summary><p>Soon, but there’s no date to give you yet. Signing, notarizing and store review take time. When a packaged build is ready it will appear in the <a href="changelog.html">changelog</a> and the <a href="{{repo}}">repository</a> first.</p></details>
     <details><summary>Do I need to know how to code?</summary><p>No. You need to run commands in Terminal, or let a coding agent run them with you. The guides spell out every command, and the agent prompts tell the agent to ask before it changes anything.</p></details>
     <details><summary>What does “point an agent at the repo” mean?</summary><p>Open the coding agent you already use — Claude Code, Codex, Cursor, or another agent that can run shell commands on your Mac — and paste the prompt from <a href="guides/coding-agent.html">the agent guide</a>. The agent reads the READMEs, runs the build, and stops for the decisions that need you.</p></details>
-    <details><summary>Can I use Chirp on Windows or Linux today?</summary><p>Windows and Linux support is in progress. The source installer described here supports macOS 14+ on Apple Silicon (MLX, fastest) and Intel (ONNX Parakeet). Packaged desktop apps are coming soon.</p></details>
+    <details><summary>Can I use Chirp on Windows or Linux today?</summary><p>Yes — early, and from source. The speech server and a desktop app run on Windows 10/11 and Linux (X11, or Wayland through your desktop’s Global Shortcuts portal). Windows is verified in CI, with a manual acceptance pass on real PCs still pending. See the <a href="guides/windows.html">Windows guide</a> and the <a href="guides/linux.html">Linux guide</a>. Packaged downloads are coming later.</p></details>
     <details><summary>Is Chirp really free?</summary><p>Yes. There’s no subscription, usage fee or Chirp account. You supply the Mac, electricity, and any network or developer services you choose. The source is public; the Android keyboard incorporates GPL-3.0 HeliBoard.</p></details>
   </div>
 

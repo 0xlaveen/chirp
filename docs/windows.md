@@ -14,7 +14,7 @@ on a real PC. Everything installs from source; nothing is code-signed yet.
 | | Windows |
 |---|---|
 | Speech recognition | Parakeet TDT v2 on ONNX Runtime (`--engine onnx`), int8 on the CPU. CUDA and DirectML are opt-in ([accelerators](../server/README.md#parakeet-onnx-accelerators)) |
-| Clean-up and notes | Optional. The managed MLX helper is Mac-only; point `[correction]` at a local OpenAI-compatible server such as LM Studio or Ollama ([server/README.md](../server/README.md#pointing-correction-at-lm-studio-operator-steps)) |
+| Clean-up and notes | Optional. The managed llama.cpp (GGUF) backend runs on CPU and can be slow; or point `[correction]` at a local OpenAI-compatible server such as LM Studio or Ollama ([server/README.md](../server/README.md#pointing-correction-at-lm-studio-operator-steps), [Linux guide](linux.md#cleanup-and-smart-notes)) |
 | Background service | A per-user Task Scheduler task, **Chirp Server**, started at logon; no administrator rights |
 | Config | `%APPDATA%\Chirp` (`server.toml`, `token`, `devices.json`), owner-only access |
 | Models, state, debug | `%LOCALAPPDATA%\Chirp` (never roams or syncs) |

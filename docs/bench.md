@@ -1301,7 +1301,8 @@ The longest single editor update was 108–280 ms, the restyle of a large reorga
 ## Intel compatibility under Rosetta (2026-10-26, #226)
 
 Chirp supports macOS 14+ on Apple Silicon and Intel. Apple Silicon uses MLX
-(fastest); Intel uses ONNX Parakeet. Windows and Linux support is in progress.
+(fastest); Intel uses ONNX Parakeet. Windows 10/11 and Linux are also supported,
+early — see [windows.md](windows.md) and [linux.md](linux.md).
 These compatibility measurements ran **x86_64 under Rosetta 2 on Apple M5 Pro**,
 64 GiB, macOS 27.0.1, on a shared host. **They are not native Intel results** and
 must not be used to predict the speed of an Intel Mac.

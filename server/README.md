@@ -8,7 +8,7 @@ Local streaming speech-to-text for Chirp. Python 3.13, Starlette and Parakeet: M
 | Engine | Apple Silicon: MLX Parakeet (fastest, English v2 or multilingual v3); Intel Mac / Linux / Windows: ONNX Parakeet v2 int8 by default |
 | Auth | Bearer token, constant-time comparison; audio is rejected before authentication |
 | Retention | Nothing written by default; debug retention is opt-in, local and loudly visible |
-| Clean-up ("correction") | Off by default; optional on-Mac Qwen model or external OpenAI-compatible endpoint |
+| Clean-up ("correction") | Off by default; optional local Qwen model (MLX on Apple Silicon, llama.cpp GGUF on Intel Macs, Linux and Windows) or external OpenAI-compatible endpoint |
 
 No service, network publication or model download happens on installation.
 
@@ -17,7 +17,7 @@ No service, network publication or model download happens on installation.
 - [Install](#install) · [Run](#run) · [Pair a device](#pair-a-device)
 - [The API](#the-api) — endpoints, auth, limits, error codes, streaming modes
 - [Configure](#configure) · [Clean-up](#clean-up) — modes, managed model, keep_loaded, profiles, LM Studio
-- [Doctor](#doctor) · [Privacy and debugging](#privacy-and-debugging) · [Optional LaunchAgent](#optional-launchagent-operator-action)
+- [Doctor](#doctor) · [Privacy and debugging](#privacy-and-debugging) · [Background service](#optional-launchagent-operator-action)
 - [Develop and test](#develop-and-test) · [Explicit downloads and cleanup](#explicit-optional-downloads-and-cleanup)
 
 Linux setup, XDG paths, the systemd user service and portable cleanup are covered
@@ -30,7 +30,7 @@ cd server
 uv sync --locked
 ```
 
-On macOS 14+, both Apple Silicon and Intel are supported. MLX dependencies install only on Apple Silicon; ONNX Parakeet installs by default elsewhere. Intel macOS uses ONNX Runtime 1.23.2, the last upstream release with an Intel macOS wheel; other platforms retain the latest locked runtime. Windows and Linux desktop support is in progress. On Intel Macs, built-in clean-up and Notes structuring use the portable llama.cpp backend on CPU and can be slow. Dictation works without them. Turn clean-up off, or use an OpenAI-compatible local endpoint such as Ollama or LM Studio; performance depends on the Mac and model.
+On macOS 14+, both Apple Silicon and Intel are supported. MLX dependencies install only on Apple Silicon; ONNX Parakeet installs by default elsewhere. Intel macOS uses ONNX Runtime 1.23.2, the last upstream release with an Intel macOS wheel; other platforms retain the latest locked runtime. The server also runs on Windows 10/11 and Linux (XDG paths, systemd user service, Task Scheduler): see [Chirp on Windows](../docs/windows.md) and [Chirp on Linux](../docs/linux.md). Off Apple Silicon, built-in clean-up and Notes structuring use the portable llama.cpp backend on CPU and can be slow without a GPU. Dictation works without them. Turn clean-up off, or use an OpenAI-compatible local endpoint such as Ollama or LM Studio; performance depends on the machine and model.
 
 This installs the Python package only. It starts no service, publishes nothing, and downloads no model.
 
@@ -721,7 +721,7 @@ uv run chirp-server debug purge   # delete retained files now
 
 ## Optional LaunchAgent (operator action)
 
-A reference plist is in `launchd/dev.chirp.server.plist`. Only when the operator chooses:
+A reference plist is in `launchd/dev.chirp.server.plist`. On Linux the same commands render a systemd user unit instead ([Chirp on Linux](../docs/linux.md#user-service)). Only when the operator chooses:
 
 ```sh
 uv run chirp-server --root-path /chirp service install   # flags before "service" are kept in the LaunchAgent

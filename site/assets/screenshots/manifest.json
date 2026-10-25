@@ -473,6 +473,50 @@
       }
     ]
   },
+  "desktop/notes-dark.png": {
+    "sha256": "eab959a1218f5499f5d4c7f4ff48d2c852c181503c9acc21a4caa033d5245f42",
+    "width": 1669,
+    "height": 975,
+    "variants": [
+      {
+        "file": "desktop/notes-dark-320.webp",
+        "width": 320,
+        "height": 187
+      },
+      {
+        "file": "desktop/notes-dark-640.webp",
+        "width": 640,
+        "height": 374
+      },
+      {
+        "file": "desktop/notes-dark-960.webp",
+        "width": 960,
+        "height": 561
+      },
+      {
+        "file": "desktop/notes-dark-1440.webp",
+        "width": 1440,
+        "height": 841
+      }
+    ]
+  },
+  "desktop/notes-light-narrow.png": {
+    "sha256": "a11dc4b2a2d472d41d3cc71c4248b42f70ea2c2e6ef76c4fb69f983658da5a90",
+    "width": 600,
+    "height": 850,
+    "variants": [
+      {
+        "file": "desktop/notes-light-narrow-320.webp",
+        "width": 320,
+        "height": 453
+      },
+      {
+        "file": "desktop/notes-light-narrow-600.webp",
+        "width": 600,
+        "height": 850
+      }
+    ]
+  },
   "ios/ipad-dark-sidebar-dictate.png": {
     "sha256": "c49a3ad151111c33c34846c7b7277b7fffdd97f4536e8734e81d3ae182a25d5c",
     "width": 1500,
