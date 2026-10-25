@@ -53,38 +53,12 @@ jobs:
           enable-cache: true
           cache-dependency-glob: server/uv.lock
       - run: uv sync --locked --extra onnx
-      # Temporary while finding a Windows-only hang: each file runs with its output in a file
-      # (no shared pipe for an orphaned child to hold open) and its whole process tree is
-      # killed after 150 s; a test that runs 45 s dumps every thread's stack.
+      # Each file in its own Job Object (process/memory caps, kill on close) so a runaway test
+      # cannot wedge the runner; reports processes and peak memory per file.
       - name: pytest, file by file
-        shell: python
-        run: |
-          import glob, os, subprocess, sys, tempfile, time
-          failed = []
-          for name in sorted(glob.glob("tests/test_*.py")):
-              with tempfile.TemporaryFile() as out:
-                  started = time.monotonic()
-                  process = subprocess.Popen(
-                      [".venv/Scripts/python.exe", "-m", "pytest", "-q", "-rfE", "--tb=short",
-                       "-p", "no:cacheprovider",
-                       "-o", "faulthandler_timeout=45", name],
-                      stdout=out, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL,
-                  )
-                  try:
-                      code = process.wait(150)
-                  except subprocess.TimeoutExpired:
-                      subprocess.run(["taskkill", "/T", "/F", "/PID", str(process.pid)],
-                                     capture_output=True)
-                      code = "timeout"
-                  out.seek(0)
-                  text = out.read().decode(errors="replace")
-              print(f"::group::{name} -> {code} in {time.monotonic() - started:.0f}s", flush=True)
-              print(text if code not in (0, 5) else text[-2000:], flush=True)
-              print("::endgroup::", flush=True)
-              if code not in (0, 5):
-                  failed.append(f"{name}: {code}")
-          print("\n".join(failed) or "all files passed", flush=True)
-          sys.exit(1 if failed else 0)
+        run: >-
+          .venv/Scripts/python.exe scripts/windows_test_driver.py -q -rfE --tb=short
+          -p no:cacheprovider -o faulthandler_timeout=45
         timeout-minutes: 30
 
   windows-onnx:
