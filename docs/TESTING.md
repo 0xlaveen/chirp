@@ -32,6 +32,10 @@ Latency figures from these runs are observations on a shared, loaded host, not t
 ### Desktop Linux
 
 The Tauri client has native Rust session/hotkey/audio tests and frontend state tests.
+Its Notes tests cover private durable storage, exclusive access, crash recovery,
+search/trash, edit-version conflicts and draining Stop across stream boundaries.
+Frontend tests cover typing during automatic saves, stale Organize responses,
+late events after changing notes and delete/Undo.
 See [desktop/README.md](../desktop/README.md#build-and-test) for native and Docker
 commands. The Linux desktop workflow builds a Debian package on Ubuntu; it does
 not need microphone permissions, a model download, or a running server.

@@ -8,7 +8,7 @@
     "dev": "tauri dev",
     "build": "tauri build",
     "test": "node --test ui/*.test.cjs",
-    "check": "node --check ui/app.js"
+    "check": "node --check ui/app.js && node --check ui/notes.js"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.0.0"

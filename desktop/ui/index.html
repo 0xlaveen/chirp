@@ -1,9 +1,35 @@
 <!doctype html>
 <html lang="en">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Chirp</title><link rel="stylesheet" href="style.css"><script src="app.js" defer></script></head>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Chirp</title><link rel="stylesheet" href="style.css"><script src="app.js" defer></script><script src="notes.js" defer></script></head>
 <body>
 <main id="main">
   <header><img src="assets/pond.png" width="64" height="64" alt="Chirp bird on a moonlit pond"><div><h1>Chirp</h1><p>Your voice, in your words.</p></div></header>
+  <nav aria-label="Chirp views"><button id="show-notes">Notes</button><button id="show-dictation" class="quiet">Dictation &amp; settings</button></nav>
+  <div id="notes-view">
+    <div class="notes-toolbar"><h2>Your notes</h2><button id="new-note">New note</button><button id="jump-recording" class="tonal" hidden></button></div>
+    <p class="muted">Notes stay on this computer. Audio is streamed to your server and is not kept.</p>
+    <p id="notes-message" role="status" aria-live="polite"></p>
+    <div class="notes-layout">
+      <aside class="library" aria-label="Notes library"><label>Search notes<input id="notes-search" type="search" placeholder="Title, notes or transcript"></label>
+        <button id="show-trash" class="quiet">Recently Deleted</button><button id="empty-trash" class="quiet" hidden>Empty Recently Deleted…</button>
+        <div id="note-list"></div><p id="notes-empty" class="muted">Your notes will live here.</p>
+      </aside>
+      <section id="note-editor" hidden aria-label="Note editor">
+        <label class="note-title-label">Title<input id="note-title" placeholder="Untitled note" maxlength="160"></label>
+        <p id="note-meta" class="muted"></p>
+        <div class="actions note-actions"><button id="note-record">Record</button><button id="note-pause" class="tonal" hidden>Pause</button><button id="note-stop" class="stop" hidden>Stop</button><button id="note-restore" class="tonal" hidden>Restore</button></div>
+        <label class="check"><input id="note-structure" type="checkbox"> Structure new segments with my server’s cleanup model</label>
+        <p id="note-live" aria-live="polite"></p>
+        <label>Notes<textarea id="note-body" rows="14" placeholder="Write here, or record to begin…" spellcheck="true"></textarea></label>
+        <p id="note-save-state" class="muted" role="status">Saved on this computer</p>
+        <div class="actions note-actions"><button id="note-organize" class="tonal">Organize</button><button id="note-undo" class="quiet" hidden>Undo Organize</button><button id="note-export" class="quiet">Export Markdown…</button><button id="note-delete" class="quiet">Delete</button></div>
+        <details id="note-transcript"><summary>Transcript</summary><div id="note-segments"></div></details>
+      </section>
+    </div>
+    <dialog id="trash-confirm"><form method="dialog"><h2>Delete these notes permanently?</h2><p>This empties Recently Deleted. It cannot be undone.</p><button value="cancel" class="quiet">Cancel</button><button id="trash-confirm-delete" value="delete" class="stop">Delete permanently</button></form></dialog>
+    <div id="note-deleted" hidden role="status">Moved to Recently Deleted. <button id="note-undo-delete" class="quiet">Undo</button></div>
+  </div>
+  <div id="dictation-view" hidden>
   <section aria-labelledby="dictate-title"><h2 id="dictate-title">Dictate anywhere</h2><p id="shortcut-help"></p><p id="capabilities" class="muted"></p>
     <div class="actions"><button id="record">Record</button><button id="stop" class="tonal">Stop</button><button id="cancel" class="quiet">Cancel</button></div>
     <p id="status" role="status" aria-live="polite">Pair with your server to begin.</p><p id="transcript"></p>
@@ -24,6 +50,7 @@
     <label class="check"><input id="correction" type="checkbox"> Polish dictation with the server’s configured cleanup model</label>
     <button type="submit">Save settings</button><span id="saved" role="status"></span>
   </form>
+  </div>
 </main>
 <aside id="hud" hidden aria-label="Chirp dictation"><div class="hud-head"><div class="ripple" aria-hidden="true"><i></i><i></i><i></i><img src="assets/glyph.png" alt=""></div><strong id="hud-status">Listening…</strong><span id="debug" hidden>DEBUG</span></div><p id="hud-text"></p><div class="hud-actions"><button id="hud-stop" class="quiet">Stop</button><button id="hud-cancel" class="quiet">Cancel</button></div></aside>
 </body></html>
