@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "desktop",
+  "description": "Local Chirp windows may receive session updates. Credentials and network remain in Rust.",
+  "windows": ["main", "hud"],
+  "permissions": ["core:default"]
+}

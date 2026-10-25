@@ -29,6 +29,13 @@ Live Notes has two more checks of its own:
 
 Latency figures from these runs are observations on a shared, loaded host, not targets. Measured engine numbers are in [bench.md](bench.md).
 
+### Desktop Linux
+
+The Tauri client has native Rust session/hotkey/audio tests and frontend state tests.
+See [desktop/README.md](../desktop/README.md#build-and-test) for native and Docker
+commands. The Linux desktop workflow builds a Debian package on Ubuntu; it does
+not need microphone permissions, a model download, or a running server.
+
 ### CI
 
 GitHub Actions (`.github/workflows/`) runs the automated checks on every pull request and on pushes to `main`. Each workflow is path-filtered, so a PR only runs the components it touches, and a newer push cancels the superseded run. No secrets, tailnet access or model downloads are involved.

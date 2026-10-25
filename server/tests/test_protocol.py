@@ -88,7 +88,7 @@ def test_ws_auth(client, headers, first):
 
 
 @pytest.mark.parametrize("header", [True, False])
-@pytest.mark.parametrize("client_name", ["mac", "android", "ios"])
+@pytest.mark.parametrize("client_name", ["mac", "android", "ios", "desktop"])
 def test_stream_partials_final_reuse(client, engine, header, client_name):
     with client.websocket_connect("/v1/stream", headers=HEADERS if header else {}) as ws:
         if not header:

@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Chirp</title><link rel="stylesheet" href="style.css"><script src="app.js" defer></script></head>
+<body>
+<main id="main">
+  <header><img src="assets/pond.png" width="64" height="64" alt="Chirp bird on a moonlit pond"><div><h1>Chirp</h1><p>Your voice, in your words.</p></div></header>
+  <section aria-labelledby="dictate-title"><h2 id="dictate-title">Dictate anywhere</h2><p id="shortcut-help"></p><p id="capabilities" class="muted"></p>
+    <div class="actions"><button id="record">Record</button><button id="stop" class="tonal">Stop</button><button id="cancel" class="quiet">Cancel</button></div>
+    <p id="status" role="status" aria-live="polite">Pair with your server to begin.</p><p id="transcript"></p>
+  </section>
+  <form id="settings"><h2>Connection &amp; shortcuts</h2>
+    <label>Server URL<input id="url" type="url" required placeholder="http://127.0.0.1:7821" autocomplete="off"></label>
+    <label>Pairing link<input id="pairing" type="password" placeholder="Paste chirp://pair…" autocomplete="off" spellcheck="false"></label>
+    <details><summary>Enter a token instead</summary><label>Server token<input id="token" type="password" autocomplete="off" spellcheck="false"></label></details>
+    <p class="muted">Your token is saved in your system credential store.</p>
+    <div class="columns"><label>Dictation key<select id="hotkey"><option value="RightAlt">Right Alt</option><option value="RightCtrl">Right Ctrl</option></select></label>
+      <label>How it works<select id="mode"><option value="Hold">Hold to talk</option><option value="Toggle">Tap to start / stop</option></select></label></div>
+    <p class="muted">The default key follows your keyboard layout. AltGr layouts use Right Ctrl. Press the key alone; chords cancel dictation.</p>
+    <label class="check"><input id="correction" type="checkbox"> Polish dictation with the server’s configured cleanup model</label>
+    <button type="submit">Save settings</button><span id="saved" role="status"></span>
+  </form>
+</main>
+<aside id="hud" hidden aria-label="Chirp dictation"><div class="hud-head"><div class="ripple" aria-hidden="true"><i></i><i></i><i></i><img src="assets/glyph.png" alt=""></div><strong id="hud-status">Listening…</strong><span id="debug" hidden>DEBUG</span></div><p id="hud-text"></p><div class="hud-actions"><button id="hud-stop" class="quiet">Stop</button><button id="hud-cancel" class="quiet">Cancel</button></div></aside>
+</body></html>

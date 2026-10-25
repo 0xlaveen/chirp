@@ -26,6 +26,10 @@
 
 Press a hotkey on your Mac, or the mic on your phone, and talk. Your words appear live in whatever text field you're using, and on the Mac the final text replaces them about a tenth of a second after you stop. Leave the mic open in a meeting and Chirp writes headings, to-dos and decisions as you talk, into a notes library you can search and replay. Everything runs on a Mac you own. Your phone reaches it over your own Tailscale network, and no other server is involved.
 
+Linux and Windows desktop support is being added in [`desktop/`](desktop/README.md),
+with a shared Tauri client and portable speech server. Linux design and progress:
+[#213](https://github.com/araa47/chirp/issues/213).
+
 ## What you get
 
 **Dictate anywhere.** ⌃⌥Space (or any shortcut you record) in any Mac app; auto-stop when you pause, or hold to talk. Optional clean-up on your Mac removes fillers and fixes punctuation, with chat, email, code and notes styles chosen per app, and **Use raw** puts back exactly what you said. On Android, use **Chirp Keyboard** (a full HeliBoard keyboard with a mic key) or **keep Gboard or Samsung Keyboard** and dictate with a floating mic.
