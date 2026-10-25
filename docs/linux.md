@@ -2,8 +2,9 @@
 
 Chirp runs its speech server on a Linux PC or box and pairs with the desktop,
 Android and iOS clients using the same v1 protocol. Speech and managed cleanup
-stay on that machine. The desktop client’s first phase supports dictation;
-Live Notes/library and Wayland portal shortcuts are subsequent phases.
+stay on that machine. The shared desktop client supports dictation and a local
+Live Notes library. X11 uses a single-key hold; Wayland uses an approved Global
+Shortcuts portal binding. See [desktop setup and Notes](../desktop/README.md).
 
 ## Speech server
 
