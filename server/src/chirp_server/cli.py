@@ -220,7 +220,7 @@ def main():
         elif args.cleanup is not None:
             from .cleanup_models import fetch
 
-            print(fetch(args.cleanup))
+            print(fetch(args.cleanup or settings.correction.model))
         else:
             from .engine.models import fetch
 

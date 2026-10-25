@@ -39,7 +39,7 @@ def test_status_reads_cached_catalog_without_checking_for_updates(monkeypatch, c
     events = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
     event = next(e for e in events if e["event"] == "catalog")
     assert event["active_models"]["cleanup"] == ""  # No accidental enable on a fresh install.
-    assert len(event["options"]) >= 6
+    assert {option["kind"] for option in event["options"]} == {"speech", "cleanup"}
     assert not (catalog.root() / "model-selection.json").exists()
 
 

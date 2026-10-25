@@ -80,7 +80,15 @@ def download(kind, settings, choice=None):
     if choice:
         option = model_catalog.resolve(choice, kind)
         repository, revision = option.repository, option.revision
-        patterns = speech_models.FILES if kind == "speech" else cleanup_models.PATTERNS
+        patterns = (
+            speech_models.FILES
+            if kind == "speech"
+            else (
+                [option.filename]
+                if option.cleanup_backend == "llama_cpp"
+                else cleanup_models.PATTERNS
+            )
+        )
         local = speech_models.model_root() / "parakeet-mlx" if option.id == "parakeet-v2" else None
         if option.engine == "onnx":
             patterns = speech_models.ONNX_FILES
@@ -112,7 +120,10 @@ def download(kind, settings, choice=None):
     else:
         model = cleanup_models.model_spec(settings.correction.model)
         repository, revision = model.repository, model.revision
-        patterns, local = cleanup_models.PATTERNS, None
+        patterns, local = (
+            ([model.filename] if model.backend == "llama_cpp" else cleanup_models.PATTERNS),
+            None,
+        )
 
         def discover():
             return cleanup_models.discover(settings.correction.model)

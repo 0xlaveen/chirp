@@ -9,6 +9,7 @@ from starlette.websockets import WebSocketDisconnect
 from chirp_server import build
 from chirp_server.app import authorized, create_app
 from chirp_server.audio import MAX_FRAME, MAX_PCM
+from chirp_server.cleanup_models import DEFAULT_MODEL
 from chirp_server.engine import FakeEngine
 from chirp_server.profiles import BUILTINS
 
@@ -20,7 +21,7 @@ def final(ws):
             return message
 
 
-def test_health_redaction(client):
+def test_health_redaction(client, settings):
     for headers in ({}, {"Authorization": "Bearer wrong"}, {"Authorization": "Basic bad"}):
         assert client.get("/v1/health", headers=headers).json() == {"ok": True}
     health = client.get("/v1/health", headers=HEADERS).json()
@@ -28,7 +29,7 @@ def test_health_redaction(client):
         "ok": True,
         "engine": "fake",
         "speech_model": "parakeet-v2",
-        "correction_model": "qwen3-4b-instruct-2507-4bit",
+        "correction_model": settings.correction.model or DEFAULT_MODEL,
         "ready": True,
         "debug_retention": False,
         "correction": "off",

@@ -13,6 +13,9 @@ class CleanupModel:
     # docs/bench.md) on the reference M5 Pro; the estimate reported before this
     # server has measured one of its own loads.
     memory_mb: int
+    backend: str = "mlx"
+    filename: str = ""
+    size_bytes: int = 0
 
 
 MODELS = {
@@ -33,12 +36,23 @@ MODELS = {
     ),
 }
 DEFAULT_MODEL = "qwen3-4b-instruct-2507-4bit"
+PORTABLE_MODEL = "qwen3-4b-instruct-2507-q4-k-m-gguf"
+GGUF_MODELS = {
+    PORTABLE_MODEL: CleanupModel(
+        "lmstudio-community/Qwen3-4B-Instruct-2507-GGUF",
+        "4edb920b6f14e3b9284d4502a6485103d72cde05",
+        3200,  # Estimate including context; measured RSS replaces it after loading.
+        "llama_cpp",
+        "Qwen3-4B-Instruct-2507-Q4_K_M.gguf",
+        2497280448,
+    ),
+}
 PATTERNS = ["*.json", "*.safetensors", "*.jinja", "*.model", "merges.txt"]
 
 
 def model_spec(model_id: str = "") -> CleanupModel:
     try:
-        return MODELS[model_id or DEFAULT_MODEL]
+        return (MODELS | GGUF_MODELS)[model_id or DEFAULT_MODEL]
     except KeyError:
         from .model_catalog import resolve, selection
 
@@ -48,6 +62,9 @@ def model_spec(model_id: str = "") -> CleanupModel:
             model.repository,
             model.revision,
             model.memory_mb or round(model.size_bytes / 1048576 * 1.25),
+            model.cleanup_backend or "mlx",
+            model.filename,
+            model.size_bytes,
         )
 
 
@@ -65,10 +82,37 @@ def complete(path: Path) -> bool:
         return False
 
 
+def complete_gguf(path: Path) -> bool:
+    try:
+        with path.open("rb") as stream:
+            return path.stat().st_size >= 16 and stream.read(4) == b"GGUF"
+    except OSError:
+        return False
+
+
+def _gguf(model, *, cached):
+    from huggingface_hub import hf_hub_download
+
+    options = {"local_files_only": True} if cached else {}
+    try:
+        path = Path(
+            hf_hub_download(model.repository, model.filename, revision=model.revision, **options)
+        )
+    except OSError:
+        raise ValueError(
+            "GGUF cleanup model missing; run chirp-server model fetch --cleanup " + PORTABLE_MODEL
+        ) from None
+    if not complete_gguf(path):
+        raise ValueError("GGUF cleanup model incomplete; fetch it again")
+    return path
+
+
 def discover(model_id: str = "") -> Path:
     from huggingface_hub import snapshot_download
 
     model = model_spec(model_id)
+    if model.backend == "llama_cpp":
+        return _gguf(model, cached=True)
     try:
         directory = Path(
             snapshot_download(
@@ -89,6 +133,8 @@ def fetch(model_id: str = "") -> Path:
     from huggingface_hub import snapshot_download
 
     model = model_spec(model_id)
+    if model.backend == "llama_cpp":
+        return _gguf(model, cached=False)
     # Shared HF snapshots avoid duplicating already cached weights. No server call reaches here.
     directory = Path(
         snapshot_download(

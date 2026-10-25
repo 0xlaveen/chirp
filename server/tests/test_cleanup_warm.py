@@ -13,7 +13,7 @@ from starlette.testclient import TestClient
 from test_protocol import final
 
 from chirp_server.app import create_app
-from chirp_server.cleanup_models import DEFAULT_MODEL, MODELS
+from chirp_server.cleanup_models import DEFAULT_MODEL, model_spec
 from chirp_server.config import CorrectionConfig, persist_keep_loaded, read_keep_loaded
 from chirp_server.correction import Corrector
 from chirp_server.engine import FakeEngine
@@ -249,8 +249,8 @@ def test_keep_loaded_settings_lifecycle(settings):
             "keep_loaded": False,
             "loaded": False,
             "loading": False,
-            "model": DEFAULT_MODEL,
-            "memory_mb": MODELS[DEFAULT_MODEL].memory_mb,
+            "model": corrector.config.model or DEFAULT_MODEL,
+            "memory_mb": model_spec(corrector.config.model).memory_mb,
             "memory_estimated": True,
             "mode": "managed",
         }

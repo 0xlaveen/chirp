@@ -15,7 +15,7 @@ from uuid import uuid4
 
 from . import paths
 from .fsutil import make_private, private_mkdir
-from .platforms import default_engine
+from .platforms import default_cleanup_backend, default_engine
 from .profiles import LIVE_NOTES, LIVE_NOTES_ID, MAX_PROMPT_CHARS, Profile, resolve_profiles
 
 
@@ -26,6 +26,8 @@ class CorrectionConfig:
     mode: str | None = None
     base_url: str = "http://127.0.0.1:1234/v1"
     model: str = ""
+    backend: str = "auto"
+    llama_threads: int = 4
     prompt: str = ""
     timeout: float = 8.0
     # Live Notes segment correction: longer input than a dictation, and it may queue behind a
@@ -56,6 +58,24 @@ class CorrectionConfig:
         if self.mode not in {"off", "managed", "endpoint"}:
             raise ValueError("Invalid correction mode")
         self.enabled = self.mode != "off"
+        if self.backend == "auto":
+            from .cleanup_models import GGUF_MODELS, MODELS
+
+            self.backend = (
+                "llama_cpp"
+                if self.model in GGUF_MODELS
+                else "mlx"
+                if self.model in MODELS
+                else default_cleanup_backend()
+            )
+        if self.backend not in {"mlx", "llama_cpp"}:
+            raise ValueError("Correction backend must be auto, mlx or llama_cpp")
+        if type(self.llama_threads) is not int or not 1 <= self.llama_threads <= 256:
+            raise ValueError("Correction llama_threads must be an integer between 1 and 256")
+        if not self.model and self.backend == "llama_cpp" and self.mode != "endpoint":
+            from .cleanup_models import PORTABLE_MODEL
+
+            self.model = PORTABLE_MODEL
         if any(
             not math.isfinite(v) or v <= 0
             for v in (
