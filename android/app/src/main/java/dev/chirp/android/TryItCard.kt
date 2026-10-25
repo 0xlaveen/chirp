@@ -28,7 +28,7 @@ internal fun TryItCard(store: SettingsStore, onDismiss: () -> Unit) {
     Surface(Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.surfaceContainer) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text("Try it", Modifier.semantics { heading() }, style = MaterialTheme.typography.titleLarge)
-            Text("Tap the field, type on Chirp Keyboard, then tap its mic to dictate. Tap ✓ to finish (or pause, if you chose When I pause); long press the mic for quick options.",
+            Text(if (store.inputMode == InputMode.OWN_KEYBOARD) "Tap a text field, then the floating Chirp mic" else "Tap the field, type on Chirp Keyboard, then tap its mic to dictate. Tap ✓ to finish (or pause, if you chose When I pause); hold the mic to talk, or tap ⋯ for quick options.",
                 style = MaterialTheme.typography.bodyMedium)
             // Deliberately a real native editor: exercises the same InputConnection/accessibility path as other apps.
             val editorInk = MaterialTheme.colorScheme.onSurface.toArgb()
@@ -47,7 +47,7 @@ internal fun TryItCard(store: SettingsStore, onDismiss: () -> Unit) {
                 editor.setTextColor(editorInk); editor.setHintTextColor(editorHint)
                 editor.backgroundTintList = ColorStateList.valueOf(editorAccent)
             }, modifier = Modifier.fillMaxWidth().bringIntoViewRequester(bringEditor))
-            SettingsGroup {
+            if (store.inputMode != InputMode.OWN_KEYBOARD) SettingsGroup {
                 NavRow("Choose keyboard", { context.getSystemService(android.view.inputmethod.InputMethodManager::class.java).showInputMethodPicker() })
             }
             TextButton({ store.tryItDismissed = true; onDismiss() }, Modifier.align(Alignment.End)) { Text("Dismiss") }

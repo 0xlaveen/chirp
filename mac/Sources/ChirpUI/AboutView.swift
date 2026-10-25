@@ -36,7 +36,9 @@ public final class AboutView: NSView {
         super.init(frame: .zero)
         let iconView = NSImageView(image: icon ?? NSImage())
         iconView.imageScaling = .scaleProportionallyUpOrDown
-        iconView.setAccessibilityLabel("Chirp app icon")
+        // The brand glyph arrives as a template image; the tint leaves plain images untouched.
+        iconView.contentTintColor = .chirpKoi
+        iconView.setAccessibilityLabel("Chirp")
         NSLayoutConstraint.activate([
             iconView.widthAnchor.constraint(equalToConstant: 96), iconView.heightAnchor.constraint(equalToConstant: 96),
         ])

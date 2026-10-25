@@ -4,8 +4,12 @@ import ChirpCore
 /// The Notes window's own shortcuts. They live in the main menu (so Help search finds them) and work only while the
 /// Notes window is key; this is the list the menu is built from and the tests check.
 public enum NotesCommand: CaseIterable, Sendable {
-    case record, pause, showNotes, showTranscript, showSplit, togglePreview, copyMarkdown, save, new
+    case newNote, record, pause, renameNote, deleteNote, findNotes, copyMarkdown, export
+    case toggleInspector, showMarkdown
     case restoreOrganize
+
+    /// Which main-menu menu the command sits in.
+    public enum Menu: Sendable { case notes, view, edit }
 
     public struct Item: Equatable, Sendable {
         public var command: NotesCommand
@@ -13,63 +17,90 @@ public enum NotesCommand: CaseIterable, Sendable {
         public var key: String
         public var modifiers: NSEvent.ModifierFlags
         public var enabled: Bool
-        /// A check mark: the layout or view that is showing.
+        /// A check mark: Show Markdown is on.
         public var checked: Bool
     }
 
-    static let shiftCommand: NSEvent.ModifierFlags = [.command, .shift]
+    public var menu: Menu {
+        switch self {
+        case .toggleInspector, .showMarkdown: .view
+        case .restoreOrganize: .edit
+        default: .notes
+        }
+    }
 
-    /// The menu rows for `model`. Everything is disabled unless `windowIsKey`.
+    static let shiftCommand: NSEvent.ModifierFlags = [.command, .shift]
+    static let optionCommand: NSEvent.ModifierFlags = [.command, .option]
+    /// ⌫ as a key equivalent.
+    static let backspace = String(UnicodeScalar(NSBackspaceCharacter)!)
+
+    /// The menu rows. `model` is the recorder's note; `library` (the window) knows the note on screen when another
+    /// one records. Everything is disabled unless `windowIsKey`.
     @MainActor
-    public static func items(for model: NotesModel, windowIsKey: Bool) -> [Item] {
-        allCases.map { c in
+    public static func items(for model: NotesModel, library: NotesLibraryModel? = nil, windowIsKey: Bool) -> [Item] {
+        let shown = library?.displayed(model) ?? model
+        let onRecorder = shown === model
+        let selected = library?.selection?.noteID
+        return allCases.map { c in
             let on = windowIsKey
             switch c {
+            case .newNote:
+                return Item(command: c, title: NotesLibraryText.newNote, key: "n", modifiers: .command, enabled: on, checked: false)
             case .record:
-                return Item(command: c, title: model.state.isActive ? "Stop Recording" : "Start Recording", key: "r", modifiers: shiftCommand,
-                            enabled: on && model.canToggle, checked: false)
+                let title: String
+                if onRecorder {
+                    title = model.state.isActive ? "Stop Recording" : model.isBlank ? "Start Recording" : NotesLibraryText.continueRecording
+                } else {
+                    title = model.state.isActive ? "Continue Recording Here…" : NotesLibraryText.continueRecording
+                }
+                return Item(command: c, title: title, key: "r", modifiers: shiftCommand,
+                            enabled: on && model.canToggle && (onRecorder || shown.document.deletedAt == nil), checked: false)
             case .pause:
                 return Item(command: c, title: model.isPaused ? "Resume Recording" : "Pause Recording", key: "p", modifiers: shiftCommand,
                             enabled: on && (model.isPaused || model.state == .recording), checked: false)
-            case .showNotes: return Item(command: c, title: "Notes", key: "1", modifiers: .command, enabled: on, checked: model.tab == .notes)
-            case .showTranscript:
-                return Item(command: c, title: "Transcript", key: "2", modifiers: .command, enabled: on, checked: model.tab == .transcript)
-            case .showSplit: return Item(command: c, title: "Split", key: "3", modifiers: .command, enabled: on, checked: model.tab == .split)
-            case .togglePreview:
-                return Item(command: c, title: model.preview ? "Edit Notes" : "Preview Notes", key: "e", modifiers: [.command, .option],
-                            enabled: on && model.tab != .transcript, checked: false)
+            case .renameNote:
+                return Item(command: c, title: "Rename Note", key: "", modifiers: [],
+                            enabled: on && selected.map { library?.entry($0) != nil } == true, checked: false)
+            case .deleteNote:
+                return Item(command: c, title: "Delete Note", key: backspace, modifiers: .command,
+                            enabled: on && library?.canTrash(selected) == true, checked: false)
+            case .findNotes:
+                return Item(command: c, title: "Search Notes", key: "f", modifiers: optionCommand, enabled: on && library != nil, checked: false)
             case .copyMarkdown:
-                return Item(command: c, title: "Copy Markdown", key: "c", modifiers: shiftCommand, enabled: on && model.canExport, checked: false)
-            case .save: return Item(command: c, title: "Save…", key: "s", modifiers: .command, enabled: on && model.canExport, checked: false)
-            case .new: return Item(command: c, title: "New", key: "n", modifiers: .command, enabled: on && model.canNew, checked: false)
+                return Item(command: c, title: "Copy Markdown", key: "c", modifiers: shiftCommand, enabled: on && shown.canExport, checked: false)
+            case .export:
+                return Item(command: c, title: model.exportTitle, key: "s", modifiers: shiftCommand, enabled: on && shown.canExport, checked: false)
+            case .toggleInspector:
+                let showing = library?.showsInspector == true
+                return Item(command: c, title: showing ? "Hide Transcript" : "Show Transcript", key: "t", modifiers: optionCommand,
+                            enabled: on && library != nil, checked: false)
+            case .showMarkdown:
+                return Item(command: c, title: "Show Markdown", key: "m", modifiers: shiftCommand,
+                            enabled: on && library != nil, checked: library?.showMarkdown == true)
             case .restoreOrganize:
-                return Item(command: c, title: "Restore Notes Before Organize…", key: "", modifiers: [], enabled: on && model.canRestore, checked: false)
+                return Item(command: c, title: "Restore Notes Before Organize…", key: "", modifiers: [], enabled: on && shown.canRestore, checked: false)
             }
         }
     }
 }
 
 extension NotesModel {
-    /// Runs a menu command (the same actions as the header's buttons).
-    public func perform(_ command: NotesCommand) {
+    /// Runs a menu command (the same actions as the toolbar's buttons). `library` is the window around the note.
+    public func perform(_ command: NotesCommand, library: NotesLibraryModel? = nil) {
+        let shown = library?.displayed(self) ?? self
         switch command {
-        case .record: onRecordToggle()
+        case .newNote: library?.onNew() ?? onNew()
+        case .record:
+            if shown === self { onRecordToggle() } else { library?.onContinue(shown.document.id) }
         case .pause: onPauseToggle()
-        case .showNotes: select(.notes)
-        case .showTranscript: select(.transcript)
-        case .showSplit: select(.split)
-        case .togglePreview:
-            preview.toggle()
-            onPreviewToggle(preview)
-        case .copyMarkdown: onCopy()
-        case .save: onSave()
-        case .new: onNew()
-        case .restoreOrganize: review()
+        case .renameNote: if let id = library?.selection?.noteID { library?.beginRename(id) }
+        case .deleteNote: if let id = library?.selection?.noteID, library?.canTrash(id) == true { library?.onTrash(id) }
+        case .findNotes: library?.onFocusSearch()
+        case .copyMarkdown: shown.onCopy()
+        case .export: shown.onSave()
+        case .toggleInspector: library.map { $0.setInspector(!$0.showsInspector) }
+        case .showMarkdown: library.map { $0.setShowMarkdown(!$0.showMarkdown) }
+        case .restoreOrganize: shown.review()
         }
-    }
-
-    public func select(_ next: NotesTab) {
-        tab = next
-        onTabChange(next)
     }
 }

@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- The floating mic bubble's TalkBack custom actions. -->
+    <item name="bubble_move_side" type="id" />
+    <item name="bubble_hide_here" type="id" />
+</resources>

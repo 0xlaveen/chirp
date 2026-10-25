@@ -22,6 +22,8 @@ import org.robolectric.android.controller.ActivityController
 @Config(sdk = [31, 37])
 class SetupActivityTest {
     class TestSetup : SetupActivity() {
+        override val advancedProtection = AdvancedProtection { protectedMode }
+        var protectedMode = false
         lateinit var received: (String?) -> Unit
         lateinit var cancelled: () -> Unit
         lateinit var failed: () -> Unit
@@ -120,7 +122,7 @@ class SetupActivityTest {
         controller.newIntent(Intent().putExtra("section", "connection"))
         assertTrue(activity.state.shellOpen); assertEquals(SettingsPage.Connection, activity.state.settingsPage)
         controller.newIntent(Intent().putExtra("section", "try"))
-        assertTrue(activity.state.tryIt); assertEquals(ShellTab.Home, activity.state.tab); assertFalse(activity.state.exitOnBack)
+        assertTrue(activity.state.tryIt); assertEquals(ShellTab.Notes, activity.state.tab); assertFalse(activity.state.exitOnBack)
         controller.newIntent(Intent().putExtra("section", "network"))
         assertEquals(SettingsPage.Connection, activity.state.settingsPage); assertEquals(false, activity.state.reachable)
         controller.newIntent(Intent().putExtra("section", "history"))
@@ -131,14 +133,29 @@ class SetupActivityTest {
         controller.newIntent(Intent(Intent.ACTION_VIEW, Uri.parse(syntheticLink)))
         assertFalse(activity.state.shellOpen); assertEquals(PAGE_PAIR, activity.state.step)
     }
+    @Test fun `new try entry is consumed and opening Settings survives recreation`() {
+        val entry = Intent().putExtra("section", "try")
+        controller.newIntent(entry)
+        assertSame(entry, activity.intent)
+        assertFalse(entry.hasExtra("section"))
+        assertEquals(ShellTab.Notes, activity.state.tab)
+        // Navigation after the entry must survive folding/rotation instead of replaying the try entry.
+        activity.state.tab = ShellTab.Settings
+        activity.state.settingsPage = SettingsPage.About
+        activity = controller.recreate().get()
+        assertTrue(activity.state.shellOpen)
+        assertEquals(ShellTab.Settings, activity.state.tab)
+        assertEquals(SettingsPage.About, activity.state.settingsPage)
+        assertFalse(activity.intent.hasExtra("section"))
+    }
     @Test fun `advancing goes to the first unmet page and finishing opens Home with the Try it card until dismissed`() {
         val state = activity.state
-        state.step = PAGE_KEYBOARD; state.inputEnabled = true; state.inputSelected = true
+        state.step = PAGE_KEYBOARD; state.inputMode = InputMode.KEYBOARD; state.inputEnabled = true; state.inputSelected = true
         activity.advance(); assertEquals(PAGE_MIC, state.step); assertFalse(state.shellOpen)
         state.mic = true; activity.advance(); assertEquals(PAGE_PAIR, state.step)
         assertFalse(SettingsStore(activity).onboarded)
         state.paired = true; activity.advance()
-        assertTrue(state.shellOpen); assertEquals(ShellTab.Home, state.tab); assertNull(state.settingsPage); assertTrue(state.tryIt)
+        assertTrue(state.shellOpen); assertEquals(ShellTab.Notes, state.tab); assertNull(state.settingsPage); assertTrue(state.tryIt)
         assertTrue("the launcher opens Home from now on", SettingsStore(activity).onboarded)
         state.shellOpen = false; state.tryIt = false
         SettingsStore(activity).tryItDismissed = true
@@ -161,6 +178,53 @@ class SetupActivityTest {
         assertTrue(shows("Checking Mac"))
         assertFalse(activity.state.wifiPermissionNeeded)
         assertFalse(activity.getSharedPreferences("chirp", 0).contains("token"))
+    }
+
+    @Test fun `mode migration persists once and explicit choice survives a keyboard switch`() {
+        val store = SettingsStore(activity)
+        assertNull(store.migrateInputMode(false, false, false))
+        assertEquals(InputMode.OWN_KEYBOARD, store.migrateInputMode(true, false, true))
+        assertEquals(InputMode.OWN_KEYBOARD, store.migrateInputMode(true, true, false))
+        activity.chooseMode(InputMode.KEYBOARD)
+        assertEquals(InputMode.KEYBOARD, store.inputMode)
+        activity.chooseMode(InputMode.OWN_KEYBOARD)
+        assertEquals(InputMode.OWN_KEYBOARD, store.inputMode)
+    }
+    @Test fun `completed onboarding never reopens when changing mode or losing permissions`() {
+        SettingsStore(activity).apply { onboarded = true; inputMode = InputMode.OWN_KEYBOARD }
+        controller.pause().stop().destroy()
+        controller = Robolectric.buildActivity(TestSetup::class.java).setup(); activity = controller.get()
+        assertTrue(activity.state.shellOpen)
+    }
+    @Test fun `Advanced Protection blocks even a direct Accessibility action`() {
+        activity.protectedMode = true
+        activity.openAccessibility()
+        assertTrue(activity.state.advancedProtection)
+        assertNull(shadowOf(activity).nextStartedActivity)
+    }
+    @Test fun `own keyboard mode skips the keyboard and accepts the explicit floating mic skip`() {
+        activity.chooseMode(InputMode.OWN_KEYBOARD)
+        activity.state.floatingMicSkipped = true
+        activity.advance()
+        assertEquals(PAGE_MIC, activity.state.step)
+        assertFalse(activity.state.inputEnabled); assertFalse(activity.state.inputSelected)
+    }
+    @Test fun `returning from Accessibility while still off offers restricted settings help`() {
+        activity.chooseMode(InputMode.OWN_KEYBOARD); activity.state.step = PAGE_KEYBOARD
+        activity.openAccessibility()
+        assertEquals(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS, shadowOf(activity).nextStartedActivity.action)
+        activity.onWindowFocusChanged(true)
+        assertEquals(1, activity.state.accessibilityReturns)
+        assertEquals(PAGE_KEYBOARD, activity.state.step)
+    }
+    @Test fun `Accessibility return auto advances once enabled without selecting Chirp Keyboard`() {
+        activity.chooseMode(InputMode.OWN_KEYBOARD); activity.state.step = PAGE_KEYBOARD
+        activity.openAccessibility()
+        android.provider.Settings.Secure.putString(activity.contentResolver, android.provider.Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES, "dev.chirp.android/.ChirpAccessibilityService")
+        activity.onWindowFocusChanged(true)
+        assertTrue(activity.state.bubbleEnabled)
+        assertEquals(PAGE_MIC, activity.state.step)
+        assertFalse(activity.state.inputSelected)
     }
 
 }

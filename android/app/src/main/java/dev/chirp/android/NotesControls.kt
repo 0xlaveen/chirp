@@ -17,6 +17,9 @@ internal object NotesControls {
         val quiet: Boolean
         /** Voice edit: null when the Mac cannot edit by voice, else whether a command is listening. */
         val commanding: Boolean?
+        /** Share sheet hand-off stays in process and is accepted only by a live note. */
+        val shareTitle: String? get() = null
+        fun appendShared(text: String): Boolean = false
         fun pause()
         fun resume()
         fun stop()

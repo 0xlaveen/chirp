@@ -121,10 +121,24 @@ internal class KeyboardDictation(
     val active get() = session != null
     val ownsComposition get() = active || applying
 
+    // The touch listener owns real presses; accessibility services reach the mic through the click listener below.
+    @android.annotation.SuppressLint("ClickableViewAccessibility")
     fun attach(view: KeyboardStrip) {
         strip = view
+        // Real touches are push-to-talk: press starts, a short tap keeps listening (tap again to stop), a hold stops on release.
+        // Click stays for accessibility services, which activate the mic without touch events.
         view.mic.setOnClickListener { toggle() }
-        view.mic.setOnLongClickListener { if (!active) { quickOptions(); true } else false }
+        view.mic.setOnTouchListener { v, event ->
+            when (event.actionMasked) {
+                MotionEvent.ACTION_DOWN -> { v.isPressed = true; touch(MotionEvent.ACTION_DOWN); true }
+                MotionEvent.ACTION_UP -> { v.isPressed = false; touch(MotionEvent.ACTION_UP); true }
+                MotionEvent.ACTION_CANCEL -> { v.isPressed = false; touch(MotionEvent.ACTION_CANCEL); true }
+                else -> true
+            }
+        }
+        // Options moved off the mic's long press to the ⋯ beside it; TalkBack also gets them as an action on the mic.
+        view.options.setOnClickListener { if (!active) quickOptions() }
+        androidx.core.view.ViewCompat.addAccessibilityAction(view.mic, "Dictation options") { _, _ -> if (!active) { quickOptions(); true } else false }
         view.status.setOnClickListener { val next = action(); if (next != null) openAction(next) else if (message == ConnectionFailure.OFFLINE) start() }
         view.action.setOnClickListener { action()?.let(::openAction) }
         view.cancel.setOnClickListener {
@@ -250,7 +264,7 @@ internal class KeyboardDictation(
         }
         when (command) {
             MicGesture.Action.START -> start()
-            MicGesture.Action.STOP -> stop()
+            MicGesture.Action.STOP -> if (active) stop()
             MicGesture.Action.CANCEL -> cancel("Cancelled")
             MicGesture.Action.NONE -> Unit
         }

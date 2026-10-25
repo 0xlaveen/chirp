@@ -10,6 +10,7 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.TextFieldValue
 import org.junit.After
+import org.junit.Before
 import org.junit.Assert.*
 import org.junit.Rule
 import org.junit.Test
@@ -46,7 +47,8 @@ private val mac = Health(true, false, true, false, null, "synthetic",
     listOf(CorrectionProfile("default", "Default"), CorrectionProfile("chat", "Chat")))
 
 internal class Rig(context: Context, paired: Boolean = true, mic: Boolean = true, health: Health? = mac, historyOn: Boolean = false, url: String = "https://mac.example.test/chirp",
-                  val tailscale: TailscalePromptTest.FakeTailscale = TailscalePromptTest.FakeTailscale()) {
+                  val tailscale: TailscalePromptTest.FakeTailscale = TailscalePromptTest.FakeTailscale(),
+                  val notes: NotesSessions? = NotesSessions(context, SoftwareHistoryKeys())) {
     val order = mutableListOf<String>()
     val wires = mutableListOf<Wire>()
     val captures = mutableListOf<ChirpImeServiceTest.FakeCapture>()
@@ -61,7 +63,7 @@ internal class Rig(context: Context, paired: Boolean = true, mic: Boolean = true
             transportFactory = { _, _, event, failure -> Wire(event, failure).also { wires += it } },
             micGranted = { mic },
             pairing = { if (paired) Pairing.from(url, "synthetic") else null },
-            fetchHealth = { _, _ -> null }, tailscale = tailscale, io = { it(); recorded.clear() })
+            fetchHealth = { _, _ -> null }, tailscale = tailscale, io = { it(); recorded.clear() }, notes = notes)
     }
     val wire get() = wires.last()
     val capture get() = captures.last()
@@ -77,6 +79,11 @@ internal class Rig(context: Context, paired: Boolean = true, mic: Boolean = true
 class ScratchpadTest {
     @get:Rule val compose = createComposeRule()
     private val context get() = RuntimeEnvironment.getApplication()
+    @Before fun settleAnimations() {
+        // The mic's Ripple would run a frame loop that sweeps the test clock past the stream's connect deadline.
+        // Settled states suit these tests; the reduce-motion ring still renders.
+        android.provider.Settings.Global.putFloat(context.contentResolver, android.provider.Settings.Global.ANIMATOR_DURATION_SCALE, 0f)
+    }
     private fun screen(rig: Rig, actions: MutableList<DictationAction> = mutableListOf()) =
         compose.setContent { ChirpTheme { ScratchpadScreen(rig.model, mic = rig.model::toggle, copy = {}, share = {}, act = { actions += it }) } }
     private fun mic(active: Boolean = false) = compose.onNodeWithContentDescription(if (active) "Microphone: stop dictation" else "Microphone: tap to dictate")
@@ -85,8 +92,8 @@ class ScratchpadTest {
         val rig = Rig(context); screen(rig)
         mic().assertIsEnabled()
         compose.onNodeWithText("Tap the mic to dictate").assertExists()
-        compose.onNodeWithText("Copy").assertIsNotEnabled(); compose.onNodeWithText("Share").assertIsNotEnabled()
-        compose.onNodeWithText("Nothing is saved. This text is gone when you leave the Scratchpad.").assertExists()
+        compose.onNodeWithContentDescription("Copy").assertIsNotEnabled(); compose.onNodeWithContentDescription("Share").assertIsNotEnabled()
+        compose.onNodeWithText("Nothing is saved. This text is gone when you leave.").assertExists()
     }
 
     @Test fun `dictation walks connecting listening finishing and inserts the final into the text`() {
@@ -108,7 +115,7 @@ class ScratchpadTest {
         assertTrue(rig.wire.closed)
         compose.onNodeWithText("Added · tap mic to dictate again").assertExists()
         compose.onNodeWithText("hello wor").assertDoesNotExist()
-        compose.onNodeWithText("Copy").assertIsEnabled(); compose.onNodeWithText("Share").assertIsEnabled()
+        compose.onNodeWithContentDescription("Copy").assertIsEnabled(); compose.onNodeWithContentDescription("Share").assertIsEnabled()
         assertTrue(rig.capture.released)
     }
 
@@ -118,7 +125,7 @@ class ScratchpadTest {
         assertEquals("typed note", rig.model.field.text)
         rig.model.toggle(); rig.wire.ready(); compose.waitForIdle()
         compose.onNode(hasSetTextAction()).assertDoesNotExist()
-        compose.onNodeWithText("Scratchpad text", substring = true).assertExists()
+        compose.onNodeWithText("typed note").assertExists()
     }
 
     @Test fun `final lands at the cursor with spacing and mid sentence casing`() {
@@ -220,10 +227,24 @@ class ScratchpadTest {
     @Test fun `clear empties the text and a debug retention notice is shown`() {
         val rig = Rig(context); screen(rig)
         rig.model.field = TextFieldValue("something"); compose.waitForIdle()
+        compose.onNodeWithContentDescription("More options").performClick()
         compose.onNodeWithText("Clear").performClick(); compose.waitForIdle()
-        assertEquals("", rig.model.field.text); compose.onNodeWithText("Clear").assertIsNotEnabled()
+        assertEquals("", rig.model.field.text)
+        compose.onNodeWithContentDescription("More options").performClick()
+        compose.onNodeWithText("Clear").assertIsNotEnabled()
         rig.model.toggle(); rig.wire.event(ServerEvent.Ready(true)); compose.waitForIdle()
         compose.onNodeWithText("DEBUG: recordings kept on Mac").assertExists()
+    }
+
+    @Test fun `floating mic hand-off arrives in memory once and appends after existing text`() {
+        val rig = Rig(context); screen(rig)
+        ScratchpadHandoff.put("Synthetic words.")
+        ScratchpadHandoff.take()?.let(rig.model::receive); compose.waitForIdle()
+        assertEquals("Synthetic words.", rig.model.field.text)
+        assertNull(ScratchpadHandoff.take())
+        rig.model.receive("More synthetic words.")
+        assertEquals("Synthetic words.\n\nMore synthetic words.", rig.model.field.text)
+        assertEquals(rig.model.field.text.length, rig.model.field.selection.start)
     }
 
     @Test fun `nothing is persisted by default no file or preference holds the text`() {
@@ -257,7 +278,32 @@ class ScratchpadTest {
 
     @Test fun `history notice appears only when history is on`() {
         val on = Rig(context, historyOn = true); screen(on)
-        compose.onNodeWithText("Dictation history is on: each dictation is also saved, encrypted, on this phone. The text above is not.").assertExists()
+        compose.onNodeWithText("Each dictation is also saved to history, encrypted on this phone. The text above is not.").assertExists()
+        on.model.field = TextFieldValue("now there is text")
+        compose.waitForIdle()
+        compose.onNodeWithText("Each dictation is also saved to history, encrypted on this phone. The text above is not.").assertDoesNotExist()
+    }
+
+    @Test fun `save as note puts the whole text into the notes library once`() {
+        val rig = Rig(context); screen(rig)
+        compose.onNodeWithContentDescription("More options").performClick()
+        compose.onNodeWithText("Save as note").assertIsNotEnabled()
+        rig.model.field = TextFieldValue("Whole page of dictated text."); compose.waitForIdle()
+        compose.onNodeWithContentDescription("More options").performClick()
+        compose.onNodeWithText("Save as note").performClick()
+        compose.waitUntil(5000) { rig.notes!!.entries().isNotEmpty() }
+        assertEquals(listOf("Whole page of dictated text."), rig.notes!!.entries().map { it.title })
+        compose.onNodeWithText("Saved as note").assertExists()
+        assertTrue(rig.notes!!.entries().single().title.isNotEmpty())
+    }
+
+    @Test fun `save as note says so when the library is off`() {
+        val rig = Rig(context, notes = NotesSessions(context, SoftwareHistoryKeys()).also { it.disable() }); screen(rig)
+        rig.model.field = TextFieldValue("Text with nowhere to go."); compose.waitForIdle()
+        compose.onNodeWithContentDescription("More options").performClick()
+        compose.onNodeWithText("Save as note").performClick()
+        compose.waitUntil(5000) { compose.onAllNodesWithText("Notes are off", substring = true).fetchSemanticsNodes().isNotEmpty() }
+        assertTrue(rig.notes!!.entries().isEmpty())
     }
 
     private fun assertNoTrace(context: Context, vararg needles: String) {

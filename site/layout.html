@@ -6,8 +6,8 @@
 <title>{{title}}</title>
 <meta name="description" content="{{description}}">
 <meta name="color-scheme" content="light dark">
-<meta name="theme-color" content="#f6f2e8" media="(prefers-color-scheme: light)">
-<meta name="theme-color" content="#0a1120" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#f6f7fa" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0d1526" media="(prefers-color-scheme: dark)">
 <meta name="referrer" content="no-referrer">
 <meta property="og:title" content="{{title}}">
 <meta property="og:description" content="{{description}}">
@@ -22,9 +22,10 @@
 <a class="skip" href="#main">Skip to content</a>
 <header class="topbar">
   <nav class="wrap nav" aria-label="Main">
-    <a class="brand" href="{{root}}index.html"{{current_home}}><img src="{{root}}assets/chirp-icon.png" alt="" width="32" height="32"><span>Chirp</span></a>
+    <a class="brand" href="{{root}}index.html"{{current_home}}><span class="glyph" aria-hidden="true"></span><span>Chirp</span></a>
     <ul class="nav-links">
-      <li class="hide-sm"><a href="{{root}}index.html#how">How it works</a></li>
+      <li class="hide-sm"><a href="{{root}}index.html#dictate">Dictate</a></li>
+      <li class="hide-sm"><a href="{{root}}index.html#notes">Notes</a></li>
       <li class="hide-sm"><a href="{{root}}index.html#privacy">Privacy</a></li>
       <li><a href="{{root}}guides/index.html"{{current_guides}}>Guides</a></li>
       <li><a href="{{repo}}" rel="noopener">GitHub</a></li>
@@ -38,8 +39,8 @@
 <footer class="footer">
   <div class="wrap footer-grid">
     <div>
-      <p class="brand"><img src="{{root}}assets/chirp-icon.png" alt="" width="28" height="28"><span>Chirp</span></p>
-      <p class="muted">Local-first voice dictation. Your Mac does the listening.</p>
+      <p class="brand"><span class="glyph" aria-hidden="true"></span><span>Chirp</span></p>
+      <p class="muted">Private dictation and live notes. Your Mac does the listening.</p>
     </div>
     <ul class="footer-links">
       <li><a href="{{root}}guides/index.html">Guides</a></li>
@@ -48,7 +49,7 @@
       <li><a href="{{repo}}/blob/main/docs/architecture.md">Architecture</a></li>
       <li><a href="{{repo}}/issues">Issues</a></li>
     </ul>
-    <p class="muted small">This site has no analytics, cookies or third-party requests. Screenshots are the project's own captures, made with synthetic speech. Chirp is a personal-use project; the Android keyboard is based on HeliBoard (GPL-3.0).</p>
+    <p class="muted small">This site has no analytics, cookies or third-party requests. Screenshots are the apps' own captures, made with synthetic speech and sample notes; the pond art is the app icon's artwork. Chirp is a personal-use project; the Android keyboard is based on HeliBoard (GPL-3.0).</p>
   </div>
 </footer>
 </body>

@@ -7,8 +7,9 @@ import SwiftUI
 /// `NotesTextChange`s replayed onto the text storage, each one undo group.
 struct NotesEditor: NSViewRepresentable {
     let model: NotesModel
+    var library: NotesLibraryModel?
 
-    func makeCoordinator() -> NotesEditorCoordinator { NotesEditorCoordinator(model: model) }
+    func makeCoordinator() -> NotesEditorCoordinator { NotesEditorCoordinator(model: model, library: library) }
 
     func makeNSView(context: Context) -> NSScrollView { context.coordinator.scrollView }
 
@@ -51,25 +52,129 @@ final class NotesTextView: NSTextView {
     /// The AI tail to tint, UTF-16; empty when the user owns everything.
     var tint = NSRange(location: 0, length: 0) { didSet { if tint != oldValue { needsDisplay = true } } }
     var placeholder = NotesStatus.placeholder() { didSet { if placeholder != oldValue { needsDisplay = true } } }
+    /// Live preview: syntax hidden outside `raw` (the caret's paragraphs, while focused).
+    var hidesMarkup = true { didSet { if hidesMarkup != oldValue { needsDisplay = true } } }
+    var raw: NSRange? { didSet { if raw != oldValue { needsDisplay = true } } }
+    /// The title page above the text (`NotesTitleHeader`): it scrolls with the notes.
+    var header: NSView? {
+        didSet {
+            oldValue?.removeFromSuperview()
+            if let header { addSubview(header) }
+            layoutHeader()
+        }
+    }
 
-    static let readingWidth: CGFloat = 720
-    static let minInset: CGFloat = 28
+    static let readingWidth: CGFloat = NotesViewMetrics.readingWidth
+    static let minInset: CGFloat = 32
+    static let bottomInset: CGFloat = 28
 
     override var readablePasteboardTypes: [NSPasteboard.PasteboardType] { [.string] }
 
     override func setFrameSize(_ newSize: NSSize) {
         super.setFrameSize(newSize)
-        let inset = max(Self.minInset, (newSize.width - Self.readingWidth) / 2)
-        if textContainerInset.width != inset { textContainerInset = NSSize(width: inset, height: 22) }
+        layoutHeader()
+    }
+
+    /// The measure (about 680 pt, centred) and the title page above the first line.
+    func layoutHeader() {
+        let inset = max(Self.minInset, (frame.width - Self.readingWidth) / 2)
+        var top = Self.bottomInset
+        if let header {
+            // Sized by hand, and only set when it changed: the header is not part of any constraint layout.
+            let width = max(0, frame.width - 2 * inset)
+            let height = ceil(header.fittingSize.height)
+            let target = NSRect(x: inset, y: 0, width: width, height: height)
+            if header.frame != target { header.frame = target }
+            top = height
+        }
+        let size = NSSize(width: inset, height: top)
+        if textContainerInset != size { textContainerInset = size }
     }
 
     override func drawBackground(in rect: NSRect) {
         super.drawBackground(in: rect)
-        guard let frame = tintFrame(), frame.intersects(rect) else { return }
-        NSColor.controlAccentColor.withAlphaComponent(0.06).setFill()
-        frame.fill()
-        NSColor.controlAccentColor.withAlphaComponent(0.35).setFill()
-        NSRect(x: frame.minX, y: frame.minY, width: 2, height: frame.height).fill()
+        drawCallouts(in: rect)
+        if let frame = tintFrame(), frame.intersects(rect) {
+            // The AI tail, which Chirp may still rewrite: a faint moon wash with a moon rule.
+            NotesEditorDecorations.moonFill.withAlphaComponent(0.09).setFill()
+            NSBezierPath(roundedRect: frame, xRadius: 6, yRadius: 6).fill()
+            NotesEditorDecorations.moon.withAlphaComponent(0.55).setFill()
+            NSRect(x: frame.minX, y: frame.minY + 4, width: 2, height: frame.height - 8).fill()
+        }
+        drawMarks(in: rect)
+    }
+
+    // MARK: live preview marks
+
+    private var decorationCache: (text: String, hide: Bool, raw: NSRange?, items: [NotesEditorDecorations.Item])?
+
+    var decorations: [NotesEditorDecorations.Item] {
+        if let c = decorationCache, c.hide == hidesMarkup, c.raw == raw, c.text == string { return c.items }
+        let items = NotesEditorDecorations.items(string, hide: hidesMarkup, raw: raw)
+        decorationCache = (string, hidesMarkup, raw, items)
+        return items
+    }
+
+    /// The frame of `range`'s first line fragment segment, in view coordinates.
+    func rect(of range: NSRange) -> NSRect? {
+        guard let tlm = textLayoutManager, let tcm = tlm.textContentManager,
+              let start = tcm.location(tcm.documentRange.location, offsetBy: range.location),
+              let end = tcm.location(start, offsetBy: range.length),
+              let textRange = NSTextRange(location: start, end: end) else { return nil }
+        var union = NSRect.null
+        tlm.enumerateTextSegments(in: textRange, type: .standard, options: []) { _, frame, _, _ in
+            union = union.union(frame)
+            return true
+        }
+        guard !union.isNull else { return nil }
+        let origin = textContainerOrigin
+        return union.offsetBy(dx: origin.x, dy: origin.y)
+    }
+
+    /// Decision and Question callouts: a tinted block behind the line, as on Android.
+    private func drawCallouts(in dirty: NSRect) {
+        guard let container = textContainer else { return }
+        for item in decorations where item.kind == .decision || item.kind == .question {
+            guard let line = rect(of: item.line), let mark = rect(of: item.mark) else { continue }
+            let block = NSRect(x: mark.minX - 8, y: line.minY - 4, width: textContainerOrigin.x + container.size.width - mark.minX + 16,
+                               height: line.height + 8)
+            guard block.intersects(dirty) else { continue }
+            let dark = effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+            let tint = item.kind == .decision ? NotesEditorDecorations.lily : NotesEditorDecorations.moonFill
+            tint.withAlphaComponent(dark ? 0.16 : (item.kind == .decision ? 0.10 : 0.18)).setFill()
+            NSBezierPath(roundedRect: block, xRadius: ChirpRadius.row, yRadius: ChirpRadius.row).fill()
+        }
+    }
+
+    /// Bullets, check boxes and callout icons where live preview hid the dash or the box.
+    private func drawMarks(in dirty: NSRect) {
+        for item in decorations where item.concealed {
+            guard let mark = rect(of: item.mark), mark.insetBy(dx: -20, dy: -4).intersects(dirty) else { continue }
+            let image: NSImage?
+            switch item.kind {
+            case .bullet(let nested):
+                let dot = nested ? "◦" : "•"
+                let attrs: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: 17, weight: .bold),
+                                                            .foregroundColor: NSColor.secondaryLabelColor]
+                let size = (dot as NSString).size(withAttributes: attrs)
+                (dot as NSString).draw(at: NSPoint(x: mark.midX - size.width / 2 + 1, y: mark.midY - size.height / 2 - 0.5), withAttributes: attrs)
+                continue
+            case .task(let checked):
+                image = checked
+                    ? NotesEditorDecorations.symbol("checkmark.square.fill", size: 14, colors: [.white, .chirpKoi], weight: .medium)
+                    : NotesEditorDecorations.symbol("square", size: 14, color: .secondaryLabelColor, weight: .regular)
+            case .decision:
+                image = NotesEditorDecorations.symbol("checkmark.circle.fill", size: 15, colors: [.white, NotesEditorDecorations.lily])
+            case .question:
+                image = NotesEditorDecorations.symbol("questionmark.circle.fill", size: 15, colors: [.white, NotesEditorDecorations.moon])
+            }
+            guard let image else { continue }
+            let size = image.size
+            let x = item.kind == .decision || item.kind == .question ? mark.minX : item.kind == .bullet(nested: false) || item.kind == .bullet(nested: true)
+                ? mark.midX - size.width / 2 : mark.minX + (mark.width - size.width) / 2
+            image.draw(in: NSRect(x: x, y: mark.midY - size.height / 2, width: size.width, height: size.height),
+                       from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
+        }
     }
 
     /// The tail's lines, full reading width, in view coordinates.
@@ -186,9 +291,12 @@ final class NotesEditorCoordinator: NSObject, NSTextViewDelegate {
     static let restoreAction = "Restore Notes"
 
     let model: NotesModel
+    let library: NotesLibraryModel?
     let scrollView: NSScrollView
     let textView: NotesTextView
     let undo = UndoManager()
+    /// The title page's host (nil for an editor without a library window).
+    private var header: NSHostingView<NotesTitleHeader>?
     /// Whether the editor has keyboard focus; tests replace it (there is no window offscreen).
     var isFocused: () -> Bool
     private(set) var isApplyingModelChange = false
@@ -204,8 +312,9 @@ final class NotesEditorCoordinator: NSObject, NSTextViewDelegate {
     /// composition are both relative to.
     private var syncedText = ""
 
-    init(model: NotesModel) {
+    init(model: NotesModel, library: NotesLibraryModel? = nil) {
         self.model = model
+        self.library = library
         scrollView = NSScrollView()
         let textView = NotesTextView(usingTextLayoutManager: true)
         self.textView = textView
@@ -228,6 +337,13 @@ final class NotesEditorCoordinator: NSObject, NSTextViewDelegate {
         textView.textContainer?.widthTracksTextView = true
         // Sized by the clip view (autoresizing): a preset width would be added to the clip view's own.
         textView.frame = NSRect(origin: .zero, size: scrollView.contentSize)
+        if let library {
+            let header = NSHostingView(rootView: NotesTitleHeader(model: model, library: library))
+            header.safeAreaRegions = []
+            self.header = header
+            textView.header = header
+        }
+        textView.hidesMarkup = !(library?.showMarkdown ?? false)
         load()
         model.editorOwner = ObjectIdentifier(self)
         model.onPendingChanges = { [weak self] in self?.pendingChangesArrived() }
@@ -290,7 +406,7 @@ final class NotesEditorCoordinator: NSObject, NSTextViewDelegate {
     func load() {
         isApplyingModelChange = true
         textView.string = model.document.text
-        if let storage = textView.textStorage { NotesEditorStyle.restyle(storage) }
+        restyle(nil)
         isApplyingModelChange = false
         undo.removeAllActions()
         _ = model.takePendingChanges()
@@ -309,6 +425,11 @@ final class NotesEditorCoordinator: NSObject, NSTextViewDelegate {
             load()
         }
         updateTint()
+        let hides = !(library?.showMarkdown ?? false)
+        if hides != textView.hidesMarkup {
+            textView.hidesMarkup = hides
+            restyle(nil)
+        }
         textView.placeholder = NotesStatus.placeholder(key: model.notesKey)
         if model.focusRequest != lastFocusRequest {
             lastFocusRequest = model.focusRequest
@@ -354,20 +475,43 @@ final class NotesEditorCoordinator: NSObject, NSTextViewDelegate {
         model.onUserEdit(edit.range, edit.string, pendingKind)
         reporting = false
         syncedText = model.document.text
-        if let storage = textView.textStorage {
-            NotesEditorStyle.restyle(storage, range: NSRange(location: edit.range.location, length: edit.string.utf16.count))
-        }
+        restyle(NSRange(location: edit.range.location, length: edit.string.utf16.count))
         if needsDrain { drain() }
         updateTint()
         reportFocus()
     }
 
-    func textViewDidChangeSelection(_ notification: Notification) { reportFocus() }
+    func textViewDidChangeSelection(_ notification: Notification) {
+        reportFocus()
+        updateRaw()
+    }
+
+    // MARK: live preview
+
+    /// The caret's paragraphs show their Markdown; everything else hides it (unless Show Markdown is on).
+    func updateRaw(focused: Bool? = nil) {
+        guard !textView.hasMarkedText() else { return }
+        let ns = textView.string as NSString
+        let selection = textView.selectedRange()
+        let next: NSRange? = (focused ?? isFocused()) && selection.location <= ns.length ? ns.lineRange(for: selection) : nil
+        let old = textView.raw
+        guard next != old else { return }
+        textView.raw = next
+        guard textView.hidesMarkup else { return }
+        for range in [old, next].compactMap({ $0 }) where NSMaxRange(range) <= ns.length { restyle(range) }
+    }
+
+    /// Restyles the paragraphs `range` touches (all of them when nil), hiding syntax off the caret's lines.
+    func restyle(_ range: NSRange?) {
+        guard let storage = textView.textStorage else { return }
+        NotesEditorStyle.restyle(storage, range: range, hide: textView.hidesMarkup, raw: textView.raw)
+    }
 
     /// Tells the recorder whether an append would land under the caret: focus with the selection touching the tail,
     /// or IME composing.
     func reportFocus(resigning: Bool = false) {
         let focused = !resigning && isFocused()
+        if resigning || focused != (textView.raw != nil) { updateRaw(focused: focused) }
         let document = model.document
         // Touching the tail as an edit would claim it; the end of the user's own last line does not.
         let inTail = focused && textView.selectedRanges.contains {
@@ -496,7 +640,7 @@ final class NotesEditorCoordinator: NSObject, NSTextViewDelegate {
         organizeRun = nil
         guard let storage = textView.textStorage, let d = NotesDocument.diff(current, text, kind: .user) else { return }
         storage.replaceCharacters(in: d.range, with: d.replacement)
-        NotesEditorStyle.restyle(storage, range: NSRange(location: d.range.location, length: d.replacement.utf16.count))
+        restyle(NSRange(location: d.range.location, length: d.replacement.utf16.count))
         textView.setSelectedRange(NSRange(location: min(d.range.location, storage.length), length: 0))
     }
 
@@ -521,7 +665,7 @@ final class NotesEditorCoordinator: NSObject, NSTextViewDelegate {
             undo.endUndoGrouping()
         }
         // Only the paragraphs it replaced: a reorganize late in a long document leaves the rest alone.
-        NotesEditorStyle.restyle(storage, range: NSRange(location: change.range.location, length: change.replacement.utf16.count))
+        restyle(NSRange(location: change.range.location, length: change.replacement.utf16.count))
         isApplyingModelChange = false
         if reorganize, let caret {
             textView.setSelectedRange(NSRange(location: min(mapCaret(caret, change: change), storage.length), length: 0))

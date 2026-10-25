@@ -4,9 +4,9 @@ import ChirpUI
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// The Live Notes window. It is never restored and never an `NSDocument`: the notes reach disk through Save… to a path
-/// the user picks (kept up to date only if they ask), as the recovery journal until they are saved, and the pasteboard
-/// only through Copy Markdown.
+/// The Live Notes window: the library sidebar, the note and its transcript inspector under a unified toolbar. Notes
+/// save continuously to the local library, so there is no Save step and nothing to discard; Markdown export is
+/// separate and may be kept up to date at a user-chosen path. Window restoration stores geometry only.
 @MainActor
 final class NotesWindowController: NSObject, NSWindowDelegate {
     private let notes: NotesController
@@ -25,6 +25,7 @@ final class NotesWindowController: NSObject, NSWindowDelegate {
         model.onCopy = { [weak self] in self?.copy() }
         model.onSave = { [weak self] in _ = self?.save() }
         model.onNew = { [weak self] in self?.new() }
+        notes.window.onFocusSearch = { [weak self] in self?.focusSearch() }
         model.onRecoveryKeep = { [weak self] in self?.keepRecovered() }
         model.onRecoverySave = { [weak self] in self?.saveRecovered() }
         model.onRecoveryDiscard = { [weak self] in self?.notes.dropRecovered() }
@@ -32,7 +33,9 @@ final class NotesWindowController: NSObject, NSWindowDelegate {
         notes.confirmRememberVoice = { [weak self] name, done in self?.confirmRememberVoice(name, done: done) }
         model.onManageModels = { [weak self] in self?.onOpenModels() }
         NotesMenuTarget.shared.model = model
+        NotesMenuTarget.shared.library = notes.library == nil ? nil : notes.window
         NotesMenuTarget.shared.windowIsKey = { [weak self] in NSApp.isActive && self?.window?.isKeyWindow == true }
+        NotesMenuTarget.shared.textHasFocus = { [weak self] in self?.window?.firstResponder is NSText }
     }
 
     var isVisible: Bool { window?.isVisible ?? false }
@@ -59,9 +62,12 @@ final class NotesWindowController: NSObject, NSWindowDelegate {
         Self.installEditMenu()
         let size = NotesViewMetrics.defaultSize
         let w = NSWindow(contentRect: NSRect(origin: .zero, size: size),
-                         styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
+                         styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView], backing: .buffered, defer: false)
         w.title = "Chirp Notes"
-        w.contentView = NSHostingView(rootView: NotesView(model: notes.model))
+        w.toolbarStyle = .unified
+        // The title is the note's (`navigationTitle`), so the Window menu lists it by name.
+        w.contentViewController = NSHostingController(rootView: NotesView(model: notes.model, library: notes.window))
+        w.setContentSize(size)
         w.contentMinSize = NotesViewMetrics.minimumSize
         w.isReleasedWhenClosed = false
         w.isRestorable = false
@@ -88,10 +94,22 @@ final class NotesWindowController: NSObject, NSWindowDelegate {
         }
     }
 
-    /// New Notes from the Dock menu: the window, then the usual keep-or-discard question.
+    /// New Note from the Dock menu: the window, with a blank note.
     func newNotes() {
         show()
         new()
+    }
+
+    /// Search Notes (⌥⌘F): the sidebar's search field takes the keyboard.
+    private func focusSearch() {
+        guard let window, let field = Self.searchField(in: window.contentView?.superview ?? NSView()) else { return }
+        window.makeFirstResponder(field)
+    }
+
+    private static func searchField(in view: NSView) -> NSSearchField? {
+        if let field = view as? NSSearchField { return field }
+        for sub in view.subviews { if let field = searchField(in: sub) { return field } }
+        return nil
     }
 
     func windowWillClose(_ notification: Notification) { setPresence(.closed) }
@@ -143,6 +161,7 @@ final class NotesWindowController: NSObject, NSWindowDelegate {
         editItem.submenu = edit
         main.addItem(editItem)
         main.addItem(NotesMenuTarget.shared.menuItem())
+        main.addItem(NotesMenuTarget.shared.viewItem())
         main.addItem(windowMenuItem())
         NSApp.mainMenu = main
     }
@@ -183,11 +202,14 @@ final class NotesWindowController: NSObject, NSWindowDelegate {
         return item
     }
 
-    // MARK: closing and the dirty guard
+    // MARK: closing
 
     func windowShouldClose(_ sender: NSWindow) -> Bool {
         // While recording, closing only hides the window; the menu icon keeps showing the open microphone.
         if notes.isActive { sender.orderOut(nil); setPresence(.hidden); return false }
+        notes.journal.flush()
+        notes.window.player.stop()
+        if notes.library != nil { return true }
         guard notes.model.document.isDirty else { return true }
         confirmDiscard(in: sender) { [weak self] discard in
             guard discard else { return }
@@ -200,6 +222,7 @@ final class NotesWindowController: NSObject, NSWindowDelegate {
     /// Save… / Discard / Cancel for a dirty document. `done(true)` means it is safe to drop the document (saved or
     /// discarded). As a sheet on `window` when it is visible, else app-modal (quit with the window closed).
     func confirmDiscard(in window: NSWindow? = nil, done: @escaping (Bool) -> Void) {
+        if notes.library != nil { notes.journal.flush(); done(true); return }
         guard notes.model.document.isDirty else { done(true); return }
         let alert = NSAlert()
         alert.messageText = "Save your notes?"
@@ -255,7 +278,9 @@ final class NotesWindowController: NSObject, NSWindowDelegate {
 
     // MARK: actions
 
+    /// New Note: with the library there is nothing to confirm (a blank note is simply not kept).
     private func new() {
+        if notes.library != nil { notes.newNote(); return }
         guard !notes.isActive else { return }
         confirmDiscard(in: window) { [weak self] ok in if ok { self?.notes.reset() } }
     }
@@ -274,7 +299,7 @@ final class NotesWindowController: NSObject, NSWindowDelegate {
     }
 
     private func copy() {
-        let text = notes.model.copyText
+        let text = notes.displayedModel.copyText
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(text, forType: .string)
         chirpLog.info("notes copy chars=\(text.count, privacy: .public)")
@@ -288,6 +313,7 @@ final class NotesWindowController: NSObject, NSWindowDelegate {
         panel.canCreateDirectories = true
         panel.isExtensionHidden = false
         if let last = notes.journal.savedFile { panel.directoryURL = last.deletingLastPathComponent() }
+        else if let folder = settings.notesExportFolder { panel.directoryURL = URL(fileURLWithPath: folder) }
         let keep = NSButton(checkboxWithTitle: NotesStatus.keepSavingCheckbox, target: nil, action: nil)
         if offerKeeping {
             keep.state = notes.journal.keepStatus.isSaving ? .on : .off
@@ -309,13 +335,16 @@ final class NotesWindowController: NSObject, NSWindowDelegate {
         }
     }
 
-    /// Save…: the notes and the transcript to a `.md` the user picks. Returns whether it was written.
+    /// Export Markdown…: the notes and the transcript to a `.md` the user picks. Returns whether it was written. The
+    /// recorder's note may keep the file updated; a note opened beside a recording is exported once.
     @discardableResult
     func save() -> Bool {
-        guard let (url, keep) = choosePath(name: notes.model.document.suggestedFileName(), offerKeeping: true) else { return false }
-        let text = notes.model.saveText
+        let shown = notes.displayedModel
+        let onRecorder = shown === notes.model
+        guard let (url, keep) = choosePath(name: shown.document.suggestedFileName(), offerKeeping: onRecorder) else { return false }
+        let text = shown.saveText
         guard write(text, to: url) else { return false }
-        notes.didSave(to: url, keep: keep)
+        if onRecorder { notes.didSave(to: url, keep: keep) }
         chirpLog.info("notes saved chars=\(text.count, privacy: .public)")
         return true
     }

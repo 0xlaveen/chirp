@@ -8,10 +8,24 @@ public enum MenuStyle {
     public static let semiboldFont = NSFont.systemFont(ofSize: NSFont.systemFontSize, weight: .semibold)
     public static let secondaryFont = NSFont.systemFont(ofSize: NSFont.smallSystemFontSize)
 
+    /// The Pond status colours as dynamic AppKit colours: lily = ready, moon = loading or attention, record = error.
+    public static let lily = ChirpColor.dynamic(ChirpColor.Pond.lily.light, ChirpColor.Pond.lily.dark)
+    public static let moon = ChirpColor.dynamic(ChirpColor.Pond.moon.light, ChirpColor.Pond.moon.dark)
+    public static let record = ChirpColor.dynamic(ChirpColor.Pond.record.light, ChirpColor.Pond.record.dark)
+
+    public static func color(_ dot: MenuDot) -> NSColor {
+        switch dot {
+        case .ready: lily
+        case .loading: moon
+        case .error: record
+        case .paused: .tertiaryLabelColor
+        }
+    }
+
     public static func textColor(_ tone: MenuEntry.Tone) -> NSColor {
         switch tone {
-        case .error: .systemRed
-        case .warning: .systemOrange
+        case .error: record
+        case .warning: moon
         default: .labelColor
         }
     }
@@ -19,8 +33,8 @@ public enum MenuStyle {
     /// The status line's colour: secondary grey, red or orange when something is wrong.
     public static func secondaryTextColor(_ tone: MenuEntry.Tone) -> NSColor {
         switch tone {
-        case .error: .systemRed
-        case .warning: .systemOrange
+        case .error: record
+        case .warning: moon
         default: .secondaryLabelColor
         }
     }
@@ -28,10 +42,10 @@ public enum MenuStyle {
     public static func tint(_ tone: MenuEntry.Tone) -> NSColor? {
         switch tone {
         case .normal: nil
-        case .ok: .systemGreen
-        case .active: .controlAccentColor
-        case .warning: .systemOrange
-        case .error: .systemRed
+        case .ok: lily
+        case .active: .chirpKoi
+        case .warning: moon
+        case .error: record
         }
     }
 

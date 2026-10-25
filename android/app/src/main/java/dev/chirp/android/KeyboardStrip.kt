@@ -5,9 +5,11 @@ import android.animation.ValueAnimator
 import android.annotation.SuppressLint
 import android.content.Context
 import android.content.res.ColorStateList
+import android.content.res.Configuration
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
+import android.graphics.RectF
 import android.graphics.drawable.GradientDrawable
 import android.os.Handler
 import android.os.Looper
@@ -21,13 +23,18 @@ import android.widget.LinearLayout
 import android.widget.RelativeLayout
 import androidx.core.graphics.ColorUtils
 import androidx.core.graphics.drawable.toDrawable
+import androidx.compose.ui.graphics.toArgb
 import com.google.android.material.button.MaterialButton
+import dev.chirp.android.ui.chirpRoles
+import dev.chirp.android.ui.ripplePeriod
 
 /** Shares HeliBoard's suggestion row: idle mic at the end, status replaces suggestions. */
 @SuppressLint("SetTextI18n", "ViewConstructor")
 internal class KeyboardStrip(context: Context, private val now: () -> Long = SystemClock::elapsedRealtime) : LinearLayout(context) {
     private val palette = StripColors.of(context)
     private val tints = palette.tints
+    /** The fixed record red (spec §C): Stop's pill colour, the same in every keyboard look. */
+    private val record = chirpRoles(context.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK == Configuration.UI_MODE_NIGHT_YES).record.toArgb()
     val status = context.label("Tap mic", 14f).apply {
         maxLines = 1; ellipsize = TextUtils.TruncateAt.END
         accessibilityLiveRegion = View.ACCESSIBILITY_LIVE_REGION_POLITE
@@ -36,7 +43,9 @@ internal class KeyboardStrip(context: Context, private val now: () -> Long = Sys
     private val large = SettingsStore(context).largerMic && context.resources.configuration.smallestScreenWidthDp >= 600
     private val micWidth = context.dp(if (large) 56 else 48)
     val history = control("Dictation history").apply { setIconResource(R.drawable.ic_history) }
-    val mic = control("Microphone: tap to dictate, long press for options").apply { setIconResource(R.drawable.ic_mic) }
+    /** The ⋯ beside the mic: dictation options now that press-and-hold on the mic is push-to-talk. */
+    val options = control("Dictation options").apply { setIconResource(R.drawable.ic_more_vert) }
+    val mic = control(MIC_IDLE).apply { setIconResource(R.drawable.ic_mic) }
     val cancel = control("Cancel dictation").apply { text = "✕" }
     val raw = control("Use raw dictation").apply { text = "Use raw"; visibility = GONE }
     val revert = control("Undo last dictation").apply { text = "Undo"; visibility = GONE }
@@ -60,13 +69,16 @@ internal class KeyboardStrip(context: Context, private val now: () -> Long = Sys
     private var pulsingPolish = false
     private var stage = ""
     private var kind = StripKind.IDLE
-    private val levels = LevelBars(context).apply { color = palette.highlight }
+    private val levels = RippleArcs(context).apply { color = palette.highlight }
     private val busy = ImageView(context).apply { importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_NO; visibility = GONE }
     private val busyShape = LoadingDrawable(context.dp(24), palette.highlight).also { busy.setImageDrawable(it) }
     private val micShape = LoadingDrawable(context.dp(24), palette.onAccent)
     private val rowTint = Color.TRANSPARENT.toDrawable()
     private var rowFill = Color.TRANSPARENT
     private var stopShape = 0f
+    /** The mic's base fill colour while stopped: the fixed record red, or the keyboard's accent. */
+    private var micFill = Color.RED
+    private var micRecord = false
     private var morph: ValueAnimator? = null
     private var morphGoal = 0f to 0
     private var listenStart = -1L
@@ -79,7 +91,7 @@ internal class KeyboardStrip(context: Context, private val now: () -> Long = Sys
         // Transparent when idle: HeliBoard's own suggestion-row background (colour or image) shows through; states tint over it.
         background = rowTint
         cancel.backgroundTintList = ColorStateList.valueOf(Color.TRANSPARENT); cancel.setTextColor(palette.ink)
-        for (button in listOf(mic, cancel, raw, revert, action)) {
+        for (button in listOf(mic, cancel, raw, revert, action, options)) {
             button.cornerRadius = context.dp(20)
             button.rippleColor = ColorStateList.valueOf(palette.ink and 0x00ffffff or 0x22000000)
         }
@@ -95,6 +107,7 @@ internal class KeyboardStrip(context: Context, private val now: () -> Long = Sys
         addView(raw, LayoutParams(context.dp(88), LayoutParams.MATCH_PARENT).apply { marginEnd = context.dp(4) })
         addView(action, LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.MATCH_PARENT).apply { marginEnd = context.dp(4) })
         addView(history, LayoutParams(context.dp(48), LayoutParams.MATCH_PARENT))
+        addView(options, LayoutParams(context.dp(OPTIONS_WIDTH), LayoutParams.MATCH_PARENT))
         addView(mic, LayoutParams(micWidth, LayoutParams.MATCH_PARENT))
         show("Tap mic", "", false, false, false, false)
         historyOpen(false)
@@ -166,6 +179,7 @@ internal class KeyboardStrip(context: Context, private val now: () -> Long = Sys
         cancel.visibility = if (full) VISIBLE else GONE
         // INVISIBLE, not GONE: the mic must never slide into the history slot mid-transition.
         history.visibility = if (full) INVISIBLE else VISIBLE
+        options.visibility = if (full) INVISIBLE else VISIBLE
         cancel.isEnabled = active || undo || undoable || error
         levels.visibility = if (kind == StripKind.LISTENING) VISIBLE else GONE
         busy.visibility = if (kind == StripKind.CONNECTING) VISIBLE else GONE
@@ -213,24 +227,27 @@ internal class KeyboardStrip(context: Context, private val now: () -> Long = Sys
             else -> mic.setIconResource(R.drawable.ic_mic)
         }
         mic.isEnabled = !finishing
-        mic.contentDescription = if (polishing) "Polishing dictation" else if (active) "Stop dictation" else if (offline) ConnectionFailure.OFFLINE_DESCRIPTION else "Microphone: tap to dictate, long press for options"
-        transition(if (active) 1f else 0f, tint, offline && !active)
+        mic.contentDescription = if (polishing) "Polishing dictation" else if (active) "Stop dictation" else if (offline) ConnectionFailure.OFFLINE_DESCRIPTION else MIC_IDLE
+        // Stop is a filled record pill while it stops something; polishing keeps the accent (it isn't a stop control).
+        transition(if (active) 1f else 0f, tint, offline && !active, active && !polishing)
         if (!active || finishing) level(0.0)
     }
-    /** Circle → rounded square, the row tint and the stop fill share one 200 ms emphasised curve; instant when animations are off. */
-    private fun transition(shape: Float, tint: StripTint?, muted: Boolean) {
+    /** Circle → record pill, the row tint and the stop fill share one 200 ms emphasised curve; instant when animations are off. */
+    private fun transition(shape: Float, tint: StripTint?, muted: Boolean, recordPill: Boolean) {
         val target = tint?.fill ?: (rowFill and 0x00ffffff)
         val from = if (Color.alpha(rowFill) == 0) target and 0x00ffffff else rowFill
         val fromShape = stopShape
         if (morph != null && morphGoal == shape to target) return // render() runs on every partial; let the running morph finish.
         morph?.cancel(); morph = null; morphGoal = shape to target
-        if (!motionAllowed() || (fromShape == shape && from == target)) { applyShape(shape, muted); rowFill = target; rowTint.color = target; return }
+        if (!motionAllowed() || (fromShape == shape && from == target && micRecord == recordPill)) {
+            applyShape(shape, muted, recordPill); rowFill = target; rowTint.color = target; return
+        }
         val evaluator = ArgbEvaluator()
         morph = ValueAnimator.ofFloat(0f, 1f).apply {
             duration = 200; interpolator = PathInterpolator(.3f, 0f, 0f, 1f)
             addUpdateListener {
                 val f = it.animatedValue as Float
-                applyShape(fromShape + (shape - fromShape) * f, muted)
+                applyShape(fromShape + (shape - fromShape) * f, muted, recordPill)
                 rowFill = evaluator.evaluate(f, from, target) as Int; rowTint.color = rowFill
             }
             addListener(object : android.animation.AnimatorListenerAdapter() {
@@ -239,12 +256,16 @@ internal class KeyboardStrip(context: Context, private val now: () -> Long = Sys
             start()
         }
     }
-    private fun applyShape(progress: Float, muted: Boolean) {
+    private fun applyShape(progress: Float, muted: Boolean, recordPill: Boolean) {
         stopShape = progress
+        micRecord = recordPill
         val round = context.dp(if (large) 24 else 20); val square = context.dp(12)
         mic.cornerRadius = round + ((square - round) * progress).toInt()
-        mic.backgroundTintList = ColorStateList.valueOf(ColorUtils.setAlphaComponent(palette.accent, (progress * 255).toInt()))
-        val icon = ColorUtils.blendARGB(if (muted) palette.muted else palette.highlight, palette.onAccent, progress)
+        micFill = if (recordPill) record else palette.accent
+        mic.backgroundTintList = ColorStateList.valueOf(ColorUtils.setAlphaComponent(micFill, (progress * 255).toInt()))
+        // On the record red the glyph flips to pond ink when the red runs light (dark theme), so Stop always reads.
+        val onFill = StripTints.readableOn(micFill or 0xFF000000.toInt(), palette.onAccent)
+        val icon = ColorUtils.blendARGB(if (muted) palette.muted else palette.highlight, onFill, progress)
         mic.iconTint = ColorStateList.valueOf(icon); mic.setTextColor(icon)
         micShape.color = palette.onAccent
     }
@@ -310,42 +331,76 @@ internal class KeyboardStrip(context: Context, private val now: () -> Long = Sys
         history.backgroundTintList = ColorStateList.valueOf(fill)
         history.iconTint = ColorStateList.valueOf(if (open) StripTints.readableOn(fill, palette.ink) else palette.highlight)
         history.contentDescription = if (open) "Close dictation history" else "Dictation history"
+        options.backgroundTintList = ColorStateList.valueOf(Color.TRANSPARENT)
+        options.iconTint = ColorStateList.valueOf(palette.highlight)
     }
-    private fun idleWidth() = context.dp(48) + micWidth
+    private fun idleWidth() = context.dp(48 + OPTIONS_WIDTH) + micWidth
     private companion object {
+        const val OPTIONS_WIDTH = 36
+        const val MIC_IDLE = "Microphone: tap to dictate, hold to talk"
         const val CONNECTING = "Connecting"
         const val HINT = " · tap mic to dictate again"
         val POSITIVE = listOf("Inserted", "cleaned", "Used raw", "Dictation removed", "Tailscale connected")
     }
 }
 
-/** Recent input levels as bars, newest on the right; only invalidates when a bar is pushed. */
-private class LevelBars(context: Context) : View(context) {
-    private val values = FloatArray(BARS)
-    private var last = 0L
+/**
+ * The Pond Ripple as the strip's meter (spec §D): three arcs stepping off the mic, each expanding and fading,
+ * staggered by a third, with the level-driven period of [ripplePeriod]. Reduces (animator scale 0) to one static
+ * arc whose stroke follows the level. Only invalidates while listening: a GONE view's draw loop stops itself.
+ */
+private class RippleArcs(context: Context) : View(context) {
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply { strokeCap = Paint.Cap.ROUND }
+    private val oval = RectF()
+    private val phases = FloatArray(3) { it / 3f }
+    private var last = 0L
+    private var animate = true
     var color: Int
         get() = paint.color
         set(value) { if (paint.color != value) { paint.color = value; invalidate() } }
+    var level = 0f
+        set(value) { field = value.coerceIn(0f, 1f); invalidate() }
+
     init { contentDescription = "Microphone level"; importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_NO }
-    fun push(level: Double) {
-        if (level == 0.0) { values.fill(0f); last = 0; invalidate(); return }
-        val time = SystemClock.uptimeMillis()
-        if (time - last < STEP) { values[BARS - 1] = maxOf(values[BARS - 1], level.toFloat()); invalidate(); return }
-        last = time
-        System.arraycopy(values, 1, values, 0, BARS - 1)
-        values[BARS - 1] = level.toFloat()
-        invalidate()
+
+    fun push(value: Double) {
+        animate = android.provider.Settings.Global.getFloat(context.contentResolver,
+            android.provider.Settings.Global.ANIMATOR_DURATION_SCALE, 1f) > 0f
+        level = value.toFloat()
     }
+
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
-        val bar = context.dp(3).toFloat(); val gap = (width - BARS * bar) / BARS
-        paint.strokeWidth = bar
-        for (index in 0 until BARS) {
-            val x = gap / 2 + bar / 2 + index * (bar + gap)
-            val amplitude = height * (.06f + values[index] * .34f)
-            canvas.drawLine(x, height / 2f - amplitude, x, height / 2f + amplitude, paint)
+        val now = SystemClock.uptimeMillis()
+        val dt = if (last == 0L) 0f else (now - last) / 1000f
+        last = now
+        val cy = height / 2f
+        val stroke = maxOf(context.dp(3).toFloat(), height * 0.10f)
+        paint.style = Paint.Style.STROKE
+        paint.strokeWidth = stroke
+        // Arcs radiate from the mic at the row's end: centres on the right edge, bulging left over the status.
+        val centreX = width.toFloat() + stroke
+        // The meter is much wider than it is tall. A width-sized radius
+        // puts the left side of every steady arc outside this short viewport.
+        val span = minOf(width * .45f, height * .44f)
+        if (animate) {
+            val period = ripplePeriod(level)
+            for (index in 0..2) {
+                val phase = (phases[index] + dt / period) % 1f
+                phases[index] = phase
+                val radius = span * (0.30f + 0.70f * phase)
+                oval.set(centreX - 2 * radius, cy - radius, centreX + 2 * radius, cy + radius)
+                paint.alpha = (255 * 0.55f * (1f - phase)).toInt()
+                canvas.drawArc(oval, 125f, 110f, false, paint)
+            }
+            postInvalidateOnAnimation()
+        } else {
+            // Reduce Motion: one steady arc whose stroke weight answers the level instead.
+            paint.strokeWidth = stroke + height * 0.16f * level
+            val radius = span * 0.5f
+            oval.set(centreX - 2 * radius, cy - radius, centreX + 2 * radius, cy + radius)
+            paint.alpha = 200
+            canvas.drawArc(oval, 125f, 110f, false, paint)
         }
     }
-    private companion object { const val BARS = 12; const val STEP = 70L }
 }

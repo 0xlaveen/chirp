@@ -2,6 +2,7 @@ package dev.chirp.android.settings
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
@@ -9,6 +10,7 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
@@ -18,14 +20,17 @@ import dev.chirp.android.R
 import dev.chirp.android.SetupState
 import dev.chirp.android.UpdateController
 
+/** The seven categories (spec §D): each row opens one detail page. */
 internal enum class SettingsPage(val title: String) {
-    Connection("Mac connection"), Look("Look"), SwipeTyping("Swipe typing"), History("Dictation history"),
-    Notes("Notes"), FloatingMic("Floating mic"), Updates("Updates"), Diagnostics("Diagnostics"),
+    Connection("Connection"), HowYouDictate("How you dictate"), Dictation("Dictation"), Keyboard("Keyboard"), Feedback("Feedback & look"),
+    Notes("Notes"), History("Privacy & history"), About("About"),
 }
 
 internal class SettingsActions(
     val checkConnection: () -> Unit = {}, val changePairing: () -> Unit = {}, val forgetPairing: () -> Unit = {},
     val allowWifi: () -> Unit = {}, val floatingMicSettings: () -> Unit = {}, val keyboardPreferences: () -> Unit = {},
+    val chooseMode: (dev.chirp.android.InputMode) -> Unit = {}, val picker: () -> Unit = {},
+    val appSettings: () -> Unit = {}, val keyboardSettings: () -> Unit = {},
     /** Opens the Tailscale app; null when it is not installed. */
     val openTailscale: (() -> Unit)? = null,
 )
@@ -33,43 +38,58 @@ internal class SettingsActions(
 private val TWO_PANE = 600.dp
 
 /**
- * The one Chirp settings destination: a list of groups with a detail page behind each row. From 600 dp wide the list stays on the left and
- * the detail shows on the right; narrower, rows push a page and back returns to the list. [onExit] runs on back from the list (null: let the system leave).
+ * The one Chirp settings destination: seven category rows with a live one-line summary each, and the detail behind them.
+ * From 600 dp wide the list stays on the left and the detail shows on the right; narrower, rows push a page and back
+ * returns to the list. Every screen's large top bar collapses as its content scrolls. [onExit] runs on back from the
+ * list (null: let the system leave).
  */
 @Composable
 internal fun SettingsScreen(state: SetupState, actions: SettingsActions = SettingsActions(), initialPage: SettingsPage? = null,
                             history: DictationHistory? = null, updates: UpdateController? = null, onExit: (() -> Unit)? = null) {
     var page by rememberSaveable { mutableStateOf(initialPage) }
     Surface(Modifier.fillMaxSize()) {
-        BoxWithConstraints(Modifier.fillMaxSize().safeDrawingPadding(), contentAlignment = Alignment.TopCenter) {
+        BoxWithConstraints(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
             val twoPane = maxWidth >= TWO_PANE
             BackHandler(enabled = onExit != null || (page != null && !twoPane)) { if (page != null && !twoPane) page = null else onExit?.invoke() }
+            // One scroll position per page: a long page (Notes) must not keep the list's offset, nor leave it behind on Back.
+            val shown = if (twoPane) (page ?: SettingsPage.Connection) else page
+            val scroll = rememberSaveable(twoPane, shown, saver = ScrollState.Saver) { ScrollState(0) }
             if (twoPane) Row(Modifier.fillMaxSize()) {
-                Column(Modifier.weight(.4f).widthIn(max = 420.dp).fillMaxHeight().verticalScroll(rememberScrollState()).padding(24.dp)) {
-                    SettingsHome(state, actions, history, { page = it })
+                // The category column is not inside a Scaffold, so it keeps clear of the status and gesture areas itself (#181).
+                Column(Modifier.weight(.38f).widthIn(max = 380.dp).fillMaxHeight().windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Vertical))
+                    .verticalScroll(rememberScrollState())
+                    .padding(start = 24.dp, end = 16.dp, top = 32.dp, bottom = 24.dp)) {
+                    Text("Settings", Modifier.padding(bottom = 16.dp).semantics { heading() }, style = MaterialTheme.typography.titleLarge)
+                    // Keyed on the open page so the summaries re-read the store after something changes beside them.
+                    key(page) { SettingsList(state, actions, history) { page = it } }
                 }
-                Column(Modifier.weight(.6f).fillMaxHeight().verticalScroll(rememberScrollState()).padding(24.dp),
-                    verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                    val shown = page ?: SettingsPage.Connection
-                    PageTitle(shown.title, null)
+                PageScaffold(shown!!.title, back = null, scroll, Modifier.weight(.62f).fillMaxHeight()) {
                     SettingsDetail(shown, state, actions, history, updates)
                 }
-            } else {
-                val shown = page
-                Column(Modifier.widthIn(max = 600.dp).fillMaxSize().verticalScroll(rememberScrollState()).padding(24.dp),
-                    verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                    if (shown == null) SettingsHome(state, actions, history, { page = it })
-                    else { PageTitle(shown.title) { page = null }; SettingsDetail(shown, state, actions, history, updates) }
-                }
+            } else if (shown == null) PageScaffold("Settings", back = null, scroll, Modifier.widthIn(max = 600.dp).fillMaxSize()) {
+                SettingsList(state, actions, history) { page = it }
+            } else PageScaffold(shown.title, back = { page = null }, scroll, Modifier.widthIn(max = 600.dp).fillMaxSize()) {
+                SettingsDetail(shown, state, actions, history, updates)
             }
         }
     }
 }
 
+/** A page: large title that collapses as the rows scroll under it, with Back on the cover screen. */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun PageTitle(title: String, back: (() -> Unit)?) {
-    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        if (back != null) IconButton(back) { Icon(painterResource(R.drawable.ic_arrow_back), "Back") }
-        Text(title, Modifier.semantics { heading() }, style = MaterialTheme.typography.headlineMedium)
+private fun PageScaffold(title: String, back: (() -> Unit)?, scroll: ScrollState, modifier: Modifier = Modifier,
+                         content: @Composable ColumnScope.() -> Unit) {
+    val behaviour = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
+    Scaffold(modifier, topBar = {
+        MediumTopAppBar(
+            title = { Text(title, Modifier.semantics { heading() }) },
+            navigationIcon = { if (back != null) IconButton(back) { Icon(painterResource(R.drawable.ic_arrow_back), "Back") } },
+            scrollBehavior = behaviour,
+        )
+    }) { padding ->
+        Column(Modifier.fillMaxSize().nestedScroll(behaviour.nestedScrollConnection).verticalScroll(scroll)
+            .padding(padding).padding(start = 24.dp, end = 24.dp, bottom = 24.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp), content = content)
     }
 }

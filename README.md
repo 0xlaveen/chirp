@@ -1,10 +1,10 @@
 <p align="center">
-  <img src="docs/assets/chirp-app-icon-256.png" width="144" alt="Chirp app icon — a songbird on a lily pad under the moon">
+  <img src="docs/assets/chirp-app-icon-256.png" width="144" alt="Chirp app icon: a koi-patterned songbird on a lily pad under the moon">
 </p>
 
 <h1 align="center">Chirp</h1>
 
-<p align="center"><strong>Talk anywhere. Type nowhere.</strong></p>
+<p align="center"><strong>Private dictation and live notes. Your Mac does the listening.</strong></p>
 
 <p align="center">
   <a href="https://github.com/araa47/chirp/actions/workflows/server.yml"><img src="https://github.com/araa47/chirp/actions/workflows/server.yml/badge.svg" alt="server"></a>
@@ -13,34 +13,37 @@
   <a href="https://github.com/araa47/chirp/actions/workflows/ios.yml"><img src="https://github.com/araa47/chirp/actions/workflows/ios.yml/badge.svg" alt="ios"></a>
 </p>
 
-<p align="center">Local-first voice dictation for your Mac, Android and iPhone — speech recognition runs on your own Mac. Your words stay yours.</p>
-
-<p align="center"><a href="https://araa47.github.io/chirp/">Website</a> · <a href="#get-it-running">Get it running</a> · <a href="#how-fast">How fast</a> · <a href="docs/README.md">Docs</a></p>
+<p align="center"><a href="https://araa47.github.io/chirp/">Website</a> · <a href="#get-it-running">Get it running</a> · <a href="#privacy">Privacy</a> · <a href="docs/README.md">Docs</a></p>
 
 <table>
   <tr>
-    <td align="center" width="25%"><a href="docs/screenshots/mac/hud-listening-light.png"><img src="docs/screenshots/mac/hud-listening-light.png" alt="Mac dictation HUD showing the live transcript and a waveform"></a><br><sub>Mac · dictate in any app</sub></td>
-    <td align="center" width="25%"><a href="docs/screenshots/mac/notes-split-dark.png"><img src="docs/screenshots/mac/notes-split-dark.png" alt="Chirp Notes window: live Markdown notes next to the transcript"></a><br><sub>Mac · Live Notes</sub></td>
-    <td align="center" width="25%"><a href="docs/screenshots/android/keyboard-look-gboard-listening-light.png"><img src="docs/screenshots/android/keyboard-look-gboard-listening-light.png" alt="Chirp Keyboard on Android while listening"></a><br><sub>Android · keyboard</sub></td>
-    <td align="center" width="25%"><a href="docs/screenshots/android/scratchpad-text-light.png"><img src="docs/screenshots/android/scratchpad-text-light.png" alt="Android Scratchpad with dictated text and Copy and Share buttons"></a><br><sub>Android · Scratchpad</sub></td>
+    <td align="center" width="34%"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/mac/notes-library-dark.png"><img src="docs/screenshots/mac/notes-library-light.png" alt="The Chirp Notes window on a Mac: the library grouped by day and a note with to-dos and Decision and Question callouts"></picture><br><sub>Mac · Notes library</sub></td>
+    <td align="center" width="22%"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/mac/hud-listening-dark.png"><img src="docs/screenshots/mac/hud-listening-light.png" alt="The Mac dictation HUD while listening, with the live transcript"></picture><br><sub>Mac · dictate in any app</sub><br><br><picture><source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/mac/hud-flow-3-diff-dark.png"><img src="docs/screenshots/mac/hud-flow-3-diff-light.png" alt="The HUD after clean-up, showing what changed"></picture><br><sub>Optional clean-up</sub></td>
+    <td align="center" width="22%"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/android/notes-library-cover-populated-dark.png"><img src="docs/screenshots/android/notes-library-cover-populated-light.png" alt="Chirp Notes on an Android phone: the notes library grouped by day"></picture><br><sub>Android · Notes</sub></td>
+    <td align="center" width="22%"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/android/floating-listening-cover-dark.png"><img src="docs/screenshots/android/floating-listening-cover-light.png" alt="The Android floating mic panel while listening"></picture><br><sub>Android · keep your keyboard</sub><br><br><picture><source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/android/keyboard-listening-dark.png"><img src="docs/screenshots/android/keyboard-listening-light.png" alt="Chirp Keyboard on Android while listening"></picture><br><sub>…or use Chirp Keyboard</sub></td>
   </tr>
 </table>
 
-Press a hotkey on your Mac, or the mic key on your phone, and talk. Your words appear live in whatever text field you're using, and on the Mac the final text replaces them about a tenth of a second after you stop. You can have a local model tidy up fillers and punctuation, or leave the mic open in a meeting and get structured Markdown notes. Everything runs on a Mac you own. Your phone reaches that Mac over your own Tailscale network, and no other server is involved.
+Press a hotkey on your Mac, or the mic on your phone, and talk. Your words appear live in whatever text field you're using, and on the Mac the final text replaces them about a tenth of a second after you stop. Leave the mic open in a meeting and Chirp writes headings, to-dos and decisions as you talk, into a notes library you can search and replay. Everything runs on a Mac you own. Your phone reaches it over your own Tailscale network, and no other server is involved.
 
-## Why Chirp
+## What you get
 
-| | Chirp |
+**Dictate anywhere.** ⌃⌥Space (or any shortcut you record) in any Mac app; auto-stop when you pause, or hold to talk. Optional clean-up on your Mac removes fillers and fixes punctuation, with chat, email, code and notes styles chosen per app, and **Use raw** puts back exactly what you said. On Android, use **Chirp Keyboard** (a full HeliBoard keyboard with a mic key) or **keep Gboard or Samsung Keyboard** and dictate with a floating mic.
+
+**Notes that remember.** ⌃⌥N on the Mac, or **Record** on Android, turns a long conversation into editable Markdown notes next to the transcript. Every note saves itself into a local library (no Save step), kept until you delete it, with search across notes and transcripts, Recently Deleted, Continue recording and Markdown export. Opt in to **Keep audio with notes** to replay what was said, segment by segment.
+
+**Private by design.** No Chirp cloud, no account, no telemetry. Speech recognition and clean-up run on your Mac; phones pair by QR code over your tailnet.
+
+| | |
 |---|---|
-| **Your data stays yours** | Everything runs on devices you own. There's no Chirp cloud, no account and no telemetry, so your audio and text are never sent to us or anyone else. You decide what's kept: no history at all (the default), or an encrypted history on your phone for 24 hours, 7 days or 30 days. |
-| **No subscription, no account** | Open source models (Parakeet for speech, an optional Qwen model for clean-up) run on your Apple Silicon Mac. |
-| **Your phone too** | An Android keyboard and an iPhone/iPad app use the same Mac, so you get the same accuracy and the same clean-up styles on every device. |
-| **Notes, not just dictation** | Live Notes turns a long conversation into headings, bullets, to-dos and decisions you can edit while it writes. |
-| **Yours to build and change** | The Mac installs from source with one script. Prompts, styles, hotkeys and models are all editable. |
+| **Mac** · [mac/README.md](mac/README.md) | Menu-bar app with a floating HUD, the Notes library window (library sidebar, live-preview editor, transcript inspector with replay), System Settings-style Settings, a model manager and **Pair a Phone**. |
+| **Android** · [android/README.md](android/README.md) | A Notes-first app (Notes · History · Settings), Chirp Keyboard or the floating mic, the Scratchpad for long text, opt-in encrypted dictation history, updates from your Mac over the tailnet. |
+| **iPhone and iPad** · [ios/README.md](ios/README.md) | A SwiftUI app plus a dictation-first keyboard for iOS/iPadOS 18. Early: it passes its simulator tests but hasn't run on a device yet. |
+| **Server** · [server/README.md](server/README.md) | Parakeet TDT v2 (English) or v3 (multilingual) on MLX, optional local Qwen clean-up and notes structuring, revocable per-device tokens and a `doctor` check. |
 
-**How it compares.** Cloud dictation tools such as Wispr Flow and Typeless, and meeting-notes services such as Otter and Granola, process your audio on their own servers and generally charge a subscription. Apple Dictation and Gboard voice typing are free, but they're tied to one platform and don't offer Chirp's clean-up styles or live notes. Superwhisper also runs locally, but it's closed source with paid tiers. Chirp's bet is that one Mac you already own can do all of this, privately, for every device you type on.
+**Honest limits.** You need an Apple Silicon Mac that's on and reachable whenever you dictate. Phones connect only through Tailscale. Everything installs from source: there's no notarized Mac download, Play Store build or App Store build.
 
-**Honest limits.** You need an Apple Silicon Mac that's on and reachable whenever you dictate. Phones connect only through Tailscale. Everything is installed from source: there's no notarized Mac download, no Play Store build and no App Store build. The iPhone/iPad app passes its simulator tests but hasn't been run on a real device yet.
+**How it compares.** Cloud dictation tools such as Wispr Flow and Typeless, and meeting-notes services such as Otter and Granola, process your audio on their own servers and generally charge a subscription. Apple Dictation and Gboard voice typing are free but tied to one platform, without Chirp's clean-up styles or notes. Superwhisper also runs locally, but it's closed source with paid tiers. Chirp's bet is that one Mac you already own can do all of this, privately, for every device you type on.
 
 ## How it works
 
@@ -48,61 +51,22 @@ Press a hotkey on your Mac, or the mic key on your phone, and talk. Your words a
 flowchart LR
     subgraph MAC["Your Mac (Apple Silicon)"]
         SRV["chirp-server<br/>Parakeet speech recognition (MLX)<br/>+ optional Qwen clean-up and notes"]
-        APP["Chirp for Mac<br/>menu bar · HUD · Live Notes"]
+        APP["Chirp for Mac<br/>menu bar · HUD · Notes library"]
         APP <-->|"127.0.0.1 only"| SRV
     end
-    AND["Chirp for Android<br/>app + keyboard"] <-->|"your tailnet<br/>(Tailscale Serve, HTTPS)"| SRV
+    AND["Chirp for Android<br/>Notes · keyboard or floating mic"] <-->|"your tailnet<br/>(Tailscale Serve, HTTPS)"| SRV
     IOS["Chirp for iPhone and iPad<br/>app + keyboard"] <-->|"your tailnet<br/>(Tailscale Serve, HTTPS)"| SRV
 ```
 
-The Mac runs one speech server that listens only on `127.0.0.1`. The Mac app streams microphone audio to it directly. The phone apps only record audio, stream it, and insert the text that comes back. They reach the server through `tailscale serve`, which keeps it on your private tailnet, never the public internet. Pairing is a secret QR code shown on the Mac. Protocol and privacy rules: [docs/architecture.md](docs/architecture.md).
-
-## How fast
-
-Measured on an Apple M5 Pro (64 GB, macOS 27) through the real WebSocket path with Chirp's default models. These are observed results, not guarantees. Sources and methods: [docs/bench.md](docs/bench.md).
-
-| What | Measured |
-|---|---|
-| First live words on screen | **196–244 ms** after audio starts streaming (5.85 s clip, contended vs. quiet host) |
-| Stop → final text | **96–107 ms** (same clip); full re-decode of a 15 s utterance: 222 ms median |
-| Speech recognition speed | **88–113× real time** when warm (Parakeet v2, MLX) |
-| Clean-up, model already loaded | **~400 ms** median (Qwen3 4B, 59 test cases, 100% passed) |
-| Clean-up, first use after idle | **~1.7 s** median on a busy host, because the model starts loading while you're still talking |
-| Live Notes update | **2.2 s** median for ~800 characters of transcript, **5.2 s** for ~2,400 |
-
-Phone latency over Tailscale hasn't been measured on a real device yet. The Android keyboard keeps content-free per-session timings in Settings → About → Diagnostics, and [docs/android-device-acceptance.md](docs/android-device-acceptance.md) is the checklist for recording them.
-
-## Features
-
-**Mac** — [mac/README.md](mac/README.md)
-- Dictate into any app with ⌃⌥Space or any shortcut you record, including ⌥ or fn on its own. Choose auto-stop when you pause, or hold to talk. Esc cancels.
-- A floating HUD shows the live transcript. Text is typed straight into the field, or pasted, or copied if neither works.
-- Optional clean-up with styles for chat, email, code and notes, per-app styles and editable prompts. **Use raw** puts back the original with one keystroke.
-- **Live Notes** (⌃⌥N) turns a meeting into editable Markdown notes next to the transcript, with automatic organizing and optional on-device speaker labels. Save or copy them; until then a text-only recovery copy stays on this Mac (never audio), so a crash doesn't lose the meeting, and Save or Discard deletes it.
-- A model manager downloads, switches and updates speech and clean-up models. **Pair a Phone** checks Tailscale Serve and shows the pairing QR code.
-
-**Android** — [android/README.md](android/README.md)
-- A full HeliBoard keyboard with a mic key. Live text appears underlined, and the final replaces it. Looks like Gboard by default, with a Samsung-style option and a layout tuned for the Galaxy Z Fold.
-- Dictated text is never lost: if a dictation fails, the keyboard keeps what it heard, and Undo and Use raw are one tap away. Long dictations run up to 10 minutes. You can stop on pause, use spoken "new line" commands, and start or stop with Ctrl+Alt+Space on a hardware keyboard.
-- **Scratchpad** for long-form dictation outside any text field, opened from a Quick Settings tile or the launcher shortcut. Copy or share the result.
-- Shows when the Mac is offline, offers a "Tailscale is off · Turn on" prompt, can install updates from your Mac over the tailnet, and keeps opt-in dictation history encrypted on the phone.
-
-**iPhone and iPad** — [ios/README.md](ios/README.md)
-- A SwiftUI app plus a dictation-first custom keyboard for iOS/iPadOS 18, paired by QR to the same Mac.
-- Companion controls (Action Button, Control Center, Shortcuts, Live Activity), shortcuts for iPad hardware keyboards, and opt-in encrypted history.
-- Status: builds and passes its unit and UI tests on iPhone and iPad simulators. It hasn't been signed or run on a device yet.
-
-**Server** — [server/README.md](server/README.md)
-- Parakeet TDT v2 (English, default) or v3 (multilingual) via MLX. An ONNX CPU engine and a SenseVoice backend for Mandarin and English are also available.
-- Named, revocable per-device pairing tokens, a `doctor` health check, and a documented streaming API.
+The Mac runs one speech server that listens only on `127.0.0.1`. The phone apps record audio, stream it, and insert the text that comes back, reaching the server through `tailscale serve`, never the public internet. Measured on an Apple M5 Pro: first live words in **196–244 ms**, stop → final text in **96–107 ms**, recognition at **88–113× real time**, and clean-up in about **400 ms** warm ([docs/bench.md](docs/bench.md); observations on synthetic clips, not guarantees). Protocol and rules: [docs/architecture.md](docs/architecture.md).
 
 ## Get it running
 
-You need an Apple Silicon Mac. For a phone you also need [Tailscale](https://tailscale.com) on both the Mac and the phone.
+You need an Apple Silicon Mac. For a phone you also need [Tailscale](https://tailscale.com) on both the Mac and the phone. The [website guides](https://araa47.github.io/chirp/guides/index.html) walk through each step.
 
 ### Build it with your coding agent
 
-The fastest path is to open this repository in a coding agent such as Claude Code or Codex and paste:
+Open this repository in a coding agent such as Claude Code or Codex and paste:
 
 > Install Chirp on this Mac from this checkout. Follow `README.md` → "Get it running", `mac/README.md` and `scripts/install-mac.sh`. Install any prerequisites that are missing (uv, Command Line Tools), run the installer, then tell me what to click in **Models on this Mac** and which permissions to grant. Then set up my Android phone: follow `android/README.md` → Install, using `android/scripts/setup-toolchain.sh`, a one-time signing key from `android/scripts/make-keystore.sh` and `./gradlew assembleRelease`, and install the **arm64** APK with `adb install -r` (or Taildrop). Finally, have me open Chirp → Settings → Devices → **Pair a Phone…** on the Mac and scan the QR code. Ask before changing Tailscale settings, never enable Funnel, and never paste pairing links or tokens into chat or logs.
 
@@ -114,7 +78,7 @@ For iPhone or iPad, point the agent at [ios/README.md](ios/README.md) → Instal
    ```sh
    ./scripts/install-mac.sh          # server in ~/Library/Application Support/Chirp, Chirp.app in ~/Applications
    ```
-   In **Models on this Mac**, download a speech model (optionally a clean-up model too), then click **Start Local Server**. Grant Microphone and Accessibility in Set Up Chirp, then press **⌃⌥Space** in any text field. The installer doesn't need Nix, dotfiles or Tailscale, and it doesn't download any models until you choose them. Re-running it updates the server files and then looks at port 7821: if Chirp's own LaunchAgent is running it, the script restarts it so the new code takes effect; if another LaunchAgent or a process you started owns the port, it says exactly what is running and how to switch (`--no-restart` only reports). Details, including `--server-only`: [mac/README.md](mac/README.md#install) and [server/README.md](server/README.md).
+   In **Models on this Mac**, download a speech model (optionally a clean-up model too) and click **Start Local Server**. Grant Microphone and Accessibility in Set Up Chirp, then press **⌃⌥Space** in any text field, or **⌃⌥N** to start a note. Re-running the installer updates the server and restarts Chirp's own LaunchAgent; it never touches a server you started yourself. Details, including `--server-only`: [mac/README.md](mac/README.md#install) and [server/README.md](server/README.md).
 2. **Android.** Build the signed release APK and install the arm64 split:
    ```sh
    android/scripts/setup-toolchain.sh && source ~/.local/share/chirp-android/env.sh
@@ -122,27 +86,29 @@ For iPhone or iPad, point the agent at [ios/README.md](ios/README.md) → Instal
    ./gradlew assembleRelease
    adb install -r app/build/outputs/apk/release/app-arm64-v8a-release.apk
    ```
-   On the phone, enable Chirp Keyboard and allow the microphone. Then pair by scanning the QR code from the Mac's **Pair a Phone…** (or from `uv run chirp-server pair --name "My phone" --url https://<your-mac>.<tailnet>.ts.net/chirp`). Full guide: [android/README.md](android/README.md).
+   Onboarding asks how you'll dictate (Chirp Keyboard, or keep your own keyboard with the floating mic), then pairs by scanning the QR code from the Mac's **Pair a Phone…**. Full guide: [android/README.md](android/README.md).
 3. **iPhone / iPad.** See [ios/README.md](ios/README.md) for requirements, same-team signing, Full Access and pairing.
 
 ## Privacy
 
-**Your data stays yours.** Chirp has no servers of its own: your Mac is the server. Audio and transcripts travel only between your own devices, over your own private Tailscale network, and are never sent to us or any third party. There's no account and no telemetry.
+**Your data stays yours.** Chirp has no servers of its own: your Mac is the server. Audio and text travel only between your own devices, over your own Tailscale network, and are never sent to us or any third party.
 
-**You choose what's kept.**
-- **Nothing** — the default. Audio and text live in memory for one dictation, then they're gone.
-- **Recent history on your phone** — turn it on to reinsert past dictations; it's encrypted on the device and kept for 24 hours, 7 days or 30 days, up to 200 entries. Clear it any time.
-- **Live Notes** stay in the window until you save or copy them; a crash-recovery copy on your Mac (on by default, deleted when you save) means a crash doesn't cost you a meeting.
+- **Dictation is transient.** Audio and text live in memory for one dictation, then they're gone. Logs hold timings and error codes, never what you said.
+- **Notes stay on the device that recorded them**, kept until you delete them (or after 1 year, 90 or 30 days if you choose). They're never synced or indexed; on Android they're encrypted with a Keystore key, and on the Mac the files are readable only by your user account.
+- **Audio with notes is opt-in** (off by default) and never leaves the device.
+- **Dictation history is opt-in**, encrypted on the phone, kept for 24 hours, 7 days or 30 days.
+- The speech server listens only on your Mac's loopback address, phones reach it only through your tailnet, and every phone pairs with its own revocable token. Clean-up runs on the same Mac; if you point it elsewhere, every client says where text goes.
 
-**Under the hood.** The speech server listens only on your Mac's loopback address, phones reach it only through your tailnet, and every device is paired with a secret token that you can revoke per device. Clean-up runs on the same Mac; if you deliberately point it at another endpoint, every client says where text is going. A debug mode that keeps recordings exists for troubleshooting, is off unless you start it, and shows a red warning everywhere while it's on. Full details: [docs/privacy.md](docs/privacy.md).
+Full details: [docs/privacy.md](docs/privacy.md).
 
 ## Repository and docs
 
 ```
 server/   Speech server: Python 3.13, Starlette, parakeet-mlx (uv project) + tests and benchmarks
-mac/      Chirp for Mac: Swift 6 / SwiftPM / AppKit menu-bar app
+mac/      Chirp for Mac: Swift 6 / SwiftPM / AppKit + SwiftUI menu-bar app
 android/  Chirp for Android: the app + Chirp Keyboard (HeliBoard-based IME)
 ios/      Chirp for iPhone and iPad: SwiftUI app + dictation keyboard
+site/     The website (stdlib-only generator; python3 site/build.py)
 docs/     Architecture, benchmarks, privacy, testing, milestones (indexed in docs/README.md)
 scripts/  Standalone Mac installer and the cross-component end-to-end check
 ```

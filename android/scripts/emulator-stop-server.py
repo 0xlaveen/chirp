@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Disposable real-model server with content-free stop-order observations. Port 7899 only."""
+"""Disposable real-model server with content-free stop-order observations. Configurable throwaway port."""
 import argparse
 import asyncio
 import json
@@ -13,6 +13,7 @@ parser.add_argument('--model-dir', type=Path, required=True)
 parser.add_argument('--metadata', type=Path, required=True)
 parser.add_argument('--cert')
 parser.add_argument('--key')
+parser.add_argument('--server-port', type=int, default=7899)
 # Seconds each `ready` is held back: the Notes check makes it long enough that audio waits past 5 s before Ready.
 parser.add_argument('--ready-delay', type=float, default=2)
 args = parser.parse_args()
@@ -44,6 +45,7 @@ async def observed(scope, receive, send):
             if control.get('type') == 'start':
                 state['started'] = True
                 state['correction_requested'] = control.get('correction', False)
+                state['notes_stream'] = control.get('correction_profile') == 'live_notes'
                 save()
             if control.get('type') == 'stop': state['stop'] = True; save()
         return event
@@ -52,7 +54,8 @@ async def observed(scope, receive, send):
             frame = json.loads(event['text'])
             kind = frame.get('type')
             # Makes a native immediate double tap deterministically precede Ready.
-            if kind == 'ready': await asyncio.sleep(args.ready_delay)
+            # Only Notes has the enlarged pre-ready buffer being stressed by the six-second fixture.
+            if kind == 'ready': await asyncio.sleep(args.ready_delay if state.get('notes_stream') else min(args.ready_delay, 2))
             if kind == 'partial': state['partials'] += 1
             if kind == 'correcting': state['correcting'] = True
             # Keep the real managed correction transition observable on a slow AVD.
@@ -71,5 +74,5 @@ async def observed(scope, receive, send):
             state['retired'] = True
             save()
 
-uvicorn.run(observed, host='127.0.0.1', port=7899, access_log=False, log_level='critical',
+uvicorn.run(observed, host='127.0.0.1', port=args.server_port, access_log=False, log_level='critical',
             ssl_certfile=args.cert, ssl_keyfile=args.key)

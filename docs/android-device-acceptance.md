@@ -75,3 +75,47 @@ It resets batterystats, asks you to start **Record** in Notes and turn the scree
 4. Check that the notes were current the moment the screen came on, with no catch-up delay, and that `dumpsys power | grep -i wake` showed no Chirp wake lock during the run.
 
 Record both rows in [bench.md](bench.md). Emulator numbers are not battery truth; leave the rows out until the phone run is done.
+
+## Keep your keyboard: onboarding and Settings
+
+Use a test phone with Gboard or Samsung Keyboard selected. Finish Welcome, confirm neither choice card is selected and Continue is disabled, choose Keep, and confirm no Chirp Keyboard requirement appears. Read the disclosure before opening Accessibility. Check the deep link opens Chirp’s service details (or the Accessibility list where unsupported).
+
+- **Sideload restriction (hardware):** after a blocked enable attempt, return and check the Restricted setting help. Open app info, verify the overflow option appears only after the blocked attempt, unlock to allow restricted settings, retry Accessibility and enable. Returning should advance to Microphone. Repeat a second unsuccessful return and confirm help opens automatically. Menus vary by One UI version; capture the actual path without personal information.
+- **Advanced Protection (hardware):** on an enrolled supported device, verify the warning and two alternatives appear, and no Accessibility enable action is offered. Choose Continue without it and finish pairing without changing keyboards. If Protection disables a previously enabled service, Settings must say Turned off by Advanced Protection. A managed phone may block the feature independently. Emulator tests fake Protection and exercise the UI; they do not prove enrollment or OEM policy.
+- **Switch later:** Settings → How you dictate reflects current service and IME state after leaving and returning. Switch both ways; open Choose keyboard and dismiss it. With Chirp still selected, Keep offers Switch back to your keyboard. Keyboard category explains it is not in use and the hardware shortcut requires Chirp Keyboard.
+- **Other surfaces:** Notes, Scratchpad, History and existing tiles work in either mode. A skipped floating mic leaves a dismissible Turn on the floating mic reminder in Notes. With Chirp Keyboard selected, there must be no second floating mic; with another keyboard and an eligible field, it returns. Check passwords and apps with custom editors separately; no universal insertion claim is made.
+- **Accessibility and layout:** with TalkBack, each choice is one radio node with its full explanation and selected state. Check cover and inner screens in light/dark and at 200% font. The bottom primary action stays visible and all guide content scrolls into view.
+
+Automated reproduction: launch your own `chirp-fold -read-only -no-snapshot-save -port <free-even-port>`, set `ANDROID_SERIAL`, run `emulator-smoke.sh`, then debug `emulator-check.py --keepkb-check --server-port <free-port>` with a cached model and debug APK. Rebuild the all-window probe and run `emulator-talkback.py --keepkb-check`. The editor probe exists only in debug and reports lengths/states without printing text.
+
+Implementation verification: the bounded keep-keyboard emulator attempt reached the choice page, then the read-only emulator hung and disconnected while waiting for the floating-mic page (`ADB operation failed: shell`). The throwaway server stopped and the emulator process exited; secure-setting restoration could not finish after the disconnect, and no snapshot was saved. Full runtime acceptance, release smoke and the new TalkBack path remain pending. Advanced Protection and real sideload restrictions are covered by fakeable/UI tests and the hardware steps above, not claimed as emulator coverage.
+
+## Keep your keyboard: the floating mic
+
+The emulator can't reproduce One UI's foreground-service and app-op rules for a microphone started from an Accessibility service, or Samsung's own editors. Check them here with Samsung Keyboard (or Gboard) still selected, using synthetic speech only.
+
+1. Turn on Android Settings → Accessibility → Installed apps → **Chirp floating microphone**. If Android says "Restricted setting", allow it under Apps → Chirp → ⋮ first.
+2. **Samsung Notes.** Focus a note body. The bubble appears at the right edge, clear of the text. Tap it, read a sentence, tap **Stop**. Record whether the text was **Inserted** or ended in **Ready to copy** (rich editors may refuse `ACTION_SET_TEXT`). If it was Ready to copy, **Copy**, long-press the note and paste.
+3. **Samsung Internet or Chrome.** Repeat in a web page's text area, and record Inserted or Ready to copy.
+4. **Microphone start.** During each dictation, check that the green privacy dot and the "Chirp is listening" notification appear, and that both go away after Stop, Cancel, ✕ and an error. If the panel says "Android blocked the microphone here", record the One UI version: that is the FGS restriction this check exists for.
+5. **Low field.** In a chat app with the message field at the bottom and the keyboard up, check that the bubble sits above the field, not over the keyboard. The emulator could not show this.
+6. **Hold and drag.** Hold the bubble (push-to-talk) and release. Drag it to the other edge and confirm no privacy dot flashes. Fold and unfold: each screen keeps its own position.
+7. **Clipboard history.** After a Copy, open Samsung Keyboard's clipboard panel and note whether the dictated text appears. The clip is marked sensitive, but One UI may keep it anyway.
+
+Record the One UI version and each result. Mark anything skipped as not verified.
+
+## Quick dictate, Speak buttons, widget and Share into Notes (#168)
+
+With your normal keyboard still selected, and floating-mic Accessibility turned off:
+
+1. Settings → How you dictate → Other ways to dictate: Add Dictate tile and Add Notes tile. Accept each Android prompt. On Android 12, follow the displayed shade/Edit instructions. Open Dictate while locked and confirm unlock is required before recording.
+2. Dictate from the tile. Confirm live partials, Stop, sensitive clipboard final and “Copied — paste anywhere.” Paste in another app. Repeat with clean-up: Use raw must replace the clipboard. Touch the final to keep it open; leave another final untouched and confirm it closes after four seconds. Edit in Scratchpad must retain the words without a text-bearing Intent. Confirm the microphone indicator disappears on final, Cancel, Back, Home, error and leaving while polishing.
+3. Launch an app’s Speak button. If Android offers a chooser, choose Chirp Just once or Always. Confirm only one final reaches that app, including polished text; Cancel inserts nothing. Try the caller’s language, partial-results and offline options without expecting them to alter the Mac engine or provide on-device recognition. Disconnect the server, abandon the displayed error with Done, and confirm the caller receives an error rather than success. Neither Samsung’s nor Gboard’s own mic is promised to route here.
+4. Add Widget in Chirp, then place its 2×1 widget on the launcher. Dictate must open clipboard capture; Record must start Notes. Resize to 1×1: only Dictate remains. Check light/dark and Match wallpaper, including Samsung’s launcher. Widget placement is an operator check; automation asserts its RemoteViews launch intents.
+5. Share plain text from another app. Save as new note must add exactly one local note with the subject/first-line title. While a note records, then while paused, share again and Add to that note; confirm the text appends, the title stays, and recording continues. Stop that note while the dialog is open: a late Add must never target a replacement recording. Cancel, non-text and >100,000-character shares must create nothing.
+6. Keep dictation history off, then enable it and repeat the tile/Speak cases. Only the enabled cases should appear, labelled Quick dictate or the caller’s app. Check Samsung clipboard history separately; the sensitive flag is not a guarantee that the OEM deletes it.
+7. With TalkBack, navigate the Quick dictate status, Stop, Cancel, one error fix, Use raw, Edit in Scratchpad and Done; activate the Share dialog’s save/append/cancel actions and both widget buttons. Repeat on cover/inner screens with large fonts and reduced motion. Confirm all actions remain reachable.
+
+Emulator automation covers synthetic capture, chooser resolution, result/cancellation/error, sensitive clipboard lengths, Notes tile, text share, provider discovery, resource teardown and TalkBack labels. OEM launchers, Samsung clipboard retention and real microphone indicators require these hardware steps.
+
+Automated evidence for #168 (2026-10-25): the real-server Quick dictate matrix and release smoke/TalkBack phases passed in one host-locked, read-only Fold AVD (2 cores, 3072 MB). Gboard stayed selected; Accessibility was disabled for the entry matrix. Both Chirp and Google resolved the Speak intent (this Play image provides Google’s handler through `com.google.android.tts`). Every tested end state had no Chirp recording client or foreground service. Launcher placement and OEM clipboard retention remain the operator steps above.

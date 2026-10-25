@@ -58,7 +58,9 @@ import Testing
         send(r, frames: 5)
         await r.pause()
         await eventually("segment committed") { r.document.segments.count == 1 }
-        await eventually("append pass") { !stub.requests.isEmpty }
+        // Wait for the pass to have landed in the document, not just for its request: the request is recorded
+        // before the reply comes back, and reading the tail in that gap raced (it read empty in a full run).
+        await eventually("append pass applied") { !stub.requests.isEmpty && !r.document.tail.isEmpty }
         #expect(stub.requests.allSatisfy { !$0.final })
         #expect(r.document.tail.isEmpty == false || r.document.text.isEmpty == false)
         // Frozen text would have no tail window left to extend.

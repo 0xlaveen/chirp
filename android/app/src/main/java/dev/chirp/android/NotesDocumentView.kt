@@ -51,7 +51,7 @@ internal val NOTES_READING_WIDTH = 680.dp
 internal object NotesType {
     val body @Composable get() = MaterialTheme.typography.bodyLarge.copy(fontSize = 17.sp, lineHeight = 27.sp)
     @Composable fun heading(level: Int): TextStyle = when (level) {
-        1 -> MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.SemiBold)
+        1 -> MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.SemiBold, fontFamily = FontFamily.Serif)
         2 -> MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.SemiBold, fontSize = 22.sp, lineHeight = 30.sp)
         3 -> MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold, fontSize = 18.sp, lineHeight = 26.sp)
         else -> MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold, fontSize = 16.sp, lineHeight = 24.sp)
@@ -100,7 +100,7 @@ internal fun NotesBlockView(block: NotesBlock, edit: (NotesBlock) -> Unit, toggl
         }
         is NotesBlock.Callout -> {
             val decision = block.kind == NotesBlock.Callout.Kind.DECISION
-            val accent = if (decision) scheme.primary else scheme.tertiary
+            val accent = if (decision) dev.chirp.android.ui.LocalChirpRoles.current.lily else dev.chirp.android.ui.LocalChirpRoles.current.moon
             // A tint of the accent over the page, the same weight in light and dark and with any wallpaper colours.
             val tint = accent.copy(alpha = if (scheme.surface.luminance() < .5f) .16f else .10f)
             Row(modifier.then(indent).padding(vertical = 6.dp).clip(MaterialTheme.shapes.medium).background(tint).then(tap)
@@ -170,8 +170,8 @@ internal fun NotesEmpty(recording: Boolean, type: () -> Unit, modifier: Modifier
     val scheme = MaterialTheme.colorScheme
     Column(modifier.clickable(onClickLabel = "Type notes", onClick = type).padding(top = 56.dp, bottom = 24.dp, start = 24.dp, end = 24.dp),
         horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Box(Modifier.size(72.dp).clip(CircleShape).background(scheme.primaryContainer), contentAlignment = Alignment.Center) {
-            Icon(painterResource(R.drawable.ic_notes_tab), null, Modifier.size(32.dp), tint = scheme.onPrimaryContainer)
+        Box(Modifier.size(72.dp).clip(CircleShape).background(scheme.surfaceContainerHigh), contentAlignment = Alignment.Center) {
+            Icon(painterResource(R.drawable.ic_notes_tab), null, Modifier.size(32.dp), tint = scheme.primary)
         }
         Text(if (recording) "Notes appear as you talk" else "Your notes appear here", style = MaterialTheme.typography.titleLarge, textAlign = TextAlign.Center)
         Text(if (recording) "Headings, lists and to-dos land here a moment after each pause." else "Tap Record and talk. Chirp turns it into headings, lists and to-dos. Or tap here to type.",

@@ -3,279 +3,530 @@ import SwiftUI
 
 /// Sizes the Notes window and its snapshots share.
 public enum NotesViewMetrics {
-    public static let defaultSize = CGSize(width: 900, height: 640)
-    public static let minimumSize = CGSize(width: 560, height: 400)
+    public static let defaultSize = CGSize(width: 1120, height: 720)
+    public static let minimumSize = CGSize(width: 760, height: 460)
     /// Notes read best at a comfortable measure, however wide the window.
-    static let readingWidth: CGFloat = 720
+    static let readingWidth: CGFloat = 680
+    /// The library sidebar's width range, and the transcript inspector's.
+    static let sidebar = (min: CGFloat(260), ideal: CGFloat(280), max: CGFloat(320))
+    static let inspector = (min: CGFloat(260), ideal: CGFloat(300), max: CGFloat(420))
 }
 
-/// The Live Notes window: a header with Record/Stop, the status, Edit/Preview, the layout switch, Reorganize and the
-/// export buttons; the notes and/or transcript; and a footer with the privacy line and the "Structure notes" and
-/// "Auto-reorganize" toggles.
+/// Label colours as AppKit's semantic colours: they follow Increase Contrast like `.primary`/`.secondary`, and keep
+/// their value inside vibrant sidebars, selected rows and the inspector, where a hierarchical style can turn dark.
+enum NotesInk {
+    static let primary = Color(nsColor: .labelColor)
+    static let secondary = Color(nsColor: .secondaryLabelColor)
+    static let tertiary = Color(nsColor: .tertiaryLabelColor)
+}
+
+/// The Live Notes window: the notes library as the sidebar, the note as the detail, and its transcript as a trailing
+/// inspector, under one unified toolbar (search, New Note, the Recording capsule, ✦ Smart notes, Share/Export).
+/// `model` is the recorder's note; `library` is everything around it (`NotesLibraryModel`).
 public struct NotesView: View {
     @Bindable var model: NotesModel
+    @Bindable var library: NotesLibraryModel
 
-    public init(model: NotesModel) { self.model = model }
+    public init(model: NotesModel, library: NotesLibraryModel = NotesLibraryModel()) {
+        self.model = model
+        self.library = library
+    }
+
+    private var shown: NotesModel { library.displayed(model) }
 
     public var body: some View {
-        VStack(spacing: 0) {
-            NotesHeader(model: model)
-            Divider()
-            if let message = model.errorText {
-                ErrorBanner(text: message, action: NotesStatus.errorOpensServerSettings(message) ? ("Server Settings…", model.onServerSettings) : nil)
-            }
-            if let offer = model.recovery { RecoveryBanner(model: model, offer: offer) }
-            if model.showsLongRunNotice { LongRunNotice(model: model) }
-            content
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-            Divider()
-            NotesFooter(model: model)
+        NavigationSplitView {
+            NotesSidebar(model: model, library: library)
+                // The sidebar sits on `surfaceRaised` (under the toolbar too), so it belongs to the Pond beside the
+                // editor instead of the grey system material.
+                .background(Color.chirp.surfaceRaised.ignoresSafeArea())
+                .navigationSplitViewColumnWidth(min: NotesViewMetrics.sidebar.min, ideal: NotesViewMetrics.sidebar.ideal,
+                                                max: NotesViewMetrics.sidebar.max)
+        } detail: {
+            detail
+                .inspector(isPresented: Binding(get: { library.showsInspector }, set: { library.setInspector($0) })) {
+                    NotesInspector(model: shown, library: library)
+                        .inspectorColumnWidth(min: NotesViewMetrics.inspector.min, ideal: NotesViewMetrics.inspector.ideal,
+                                              max: NotesViewMetrics.inspector.max)
+                }
         }
+        .searchable(text: $library.query, placement: .sidebar, prompt: "Search notes")
+        .toolbar { NotesToolbar(model: model, library: library) }
+        .navigationTitle(library.selection == .recentlyDeleted ? NotesLibraryText.recentlyDeleted : shown.displayTitle)
+        .navigationSubtitle(subtitle)
         .frame(minWidth: NotesViewMetrics.minimumSize.width, minHeight: NotesViewMetrics.minimumSize.height)
-        .background(Color(nsColor: .textBackgroundColor))
-        .sheet(isPresented: Binding(get: { model.reviewing != nil }, set: { if !$0 { model.closeReview() } })) {
-            OrganizeReviewSheet(model: model)
+        .overlay(alignment: .bottom) { if let toast = library.toast { NotesToastView(library: library, toast: toast) } }
+        .sheet(isPresented: Binding(get: { shown.reviewing != nil }, set: { if !$0 { shown.closeReview() } })) {
+            OrganizeReviewSheet(model: shown)
         }
+        .alert(NotesLibraryText.switchPrompt(model.displayTitle),
+               isPresented: Binding(get: { library.confirmingSwitch != nil }, set: { if !$0 { library.confirmingSwitch = nil } })) {
+            Button(NotesLibraryText.stopAndContinue) {
+                if let id = library.confirmingSwitch { library.onStopAndContinue(id) }
+                library.confirmingSwitch = nil
+            }
+            Button("Cancel", role: .cancel) { library.confirmingSwitch = nil }
+        } message: {
+            Text("Only one note records at a time. The recording note keeps everything it has so far.")
+        }
+        .alert("Empty Recently Deleted?", isPresented: $library.confirmingEmpty) {
+            Button("Empty", role: .destructive) { library.onEmptyTrash() }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("\(NotesLibraryText.results(library.deleted.count)) will be deleted for good, with their audio. This can’t be undone.")
+        }
+        // The app accent (koi): system controls in Notes follow it, bundled or not.
+        .tint(Color.chirp.koi)
     }
 
-    @ViewBuilder private var content: some View {
-        switch model.tab {
-        case .notes: NotesPane(model: model)
-        case .transcript: TranscriptPane(model: model)
-        case .split:
-            HSplitView {
-                VStack(spacing: 0) {
-                    PaneHeader(title: "Notes") { EditPreviewPicker(model: model).controlSize(.small) }
-                    Divider()
-                    NotesPane(model: model)
-                }
-                .frame(minWidth: 280)
-                TranscriptPane(model: model).frame(minWidth: 240)
-            }
+    /// The toolbar's second line: what the recorder is doing, or when the note was last edited.
+    private var subtitle: String {
+        if library.selection == .recentlyDeleted { return NotesLibraryText.trashHelp }
+        if shown === model, !model.headerStatusText.isEmpty, model.state != .stopped { return model.headerStatusText }
+        guard !shown.isBlank else { return "" }
+        let edited = library.entry(shown.document.id)?.updatedAt ?? shown.document.updatedAt
+        return "Edited " + NotesLibraryText.relative(edited, now: library.now(), calendar: library.calendar).lowercasedIfTime
+    }
+
+    @ViewBuilder private var detail: some View {
+        if library.selection == .recentlyDeleted {
+            RecentlyDeletedView(library: library)
+        } else if library.isEmpty, shown === model, model.showsEmptyState {
+            NotesEmptyState(model: model, library: library)
+        } else {
+            NotesDetail(model: shown, active: model, library: library)
         }
     }
 }
 
-// MARK: header
+private extension String {
+    /// "Edited 3:12 PM" reads as is; "Edited Yesterday" becomes "Edited yesterday".
+    var lowercasedIfTime: String { self == "Yesterday" ? "yesterday" : self }
+}
 
-private struct NotesHeader: View {
+// MARK: detail
+
+/// The note: banners for what needs attention, the title and editor (one scrolling page), the status lines, the
+/// Hearing strip while recording, and the quiet meta bar (where structuring sends text, kept exports).
+struct NotesDetail: View {
     @Bindable var model: NotesModel
+    let active: NotesModel
+    @Bindable var library: NotesLibraryModel
 
-    private enum Tier { case full, noHint, icons, compact }
+    private var isRecorder: Bool { model === active }
 
     var body: some View {
-        // The widest layout that fits: the shortcut hint goes first, then the Pause and Organize labels, and at the
-        // narrowest the layout switch becomes a menu and the other actions fold into one. The Record label never wraps.
-        ViewThatFits(in: .horizontal) {
-            row(.full)
-            row(.noHint)
-            row(.icons)
-            row(.compact)
-        }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 10)
-        .background(.bar)
-    }
-
-    private func row(_ tier: Tier) -> some View {
-        HStack(spacing: 12) {
-            RecordButton(model: model)
-            if model.state.isLive { PauseButton(model: model, iconOnly: tier == .icons || tier == .compact) }
-            status
-            if tier == .full, let hint = model.hotkeyHint {
-                Text(hint).font(.caption).foregroundStyle(.tertiary).lineLimit(1).layoutPriority(-2)
-            }
-            Spacer(minLength: 8)
-            if tier == .compact {
-                layoutPicker.pickerStyle(.menu).fixedSize()
-                moreMenu
-            } else {
-                if model.tab == .notes { EditPreviewPicker(model: model) }
-                layoutPicker.pickerStyle(.segmented).fixedSize()
-                HStack(spacing: 2) {
-                    if model.voiceEditAvailable { VoiceEditButton(model: model) }
-                    if !model.reorganizeHidden { reorganizeButton(iconOnly: tier == .icons) }
-                    iconButton("doc.on.doc", label: "Copy Markdown", enabled: model.canExport, action: model.onCopy)
-                    iconButton("square.and.arrow.down", label: "Save…", enabled: model.canExport, action: model.onSave)
-                    iconButton("square.and.pencil", label: "New", enabled: model.canNew, action: model.onNew)
+        VStack(spacing: 0) {
+            if isRecorder {
+                if let message = model.errorText {
+                    ErrorBanner(text: message, action: NotesStatus.errorOpensServerSettings(message) ? ("Server Settings…", model.onServerSettings) : nil)
                 }
+                if let offer = model.recovery { RecoveryBanner(model: model, offer: offer) }
+                if model.showsLongRunNotice { LongRunNotice(model: model) }
+                if let explanation = model.explanation { ExplanationBanner(model: model, text: explanation) }
             }
+            ZStack(alignment: .topTrailing) {
+                NotesEditor(model: model, library: library)
+                    .id(ObjectIdentifier(model))
+                VStack(alignment: .trailing, spacing: 6) {
+                    if model.showEditedChip { EditedChip(model: model) }
+                    if model.showUndoChip { UndoChip(model: model) }
+                    if model.isUpdating { UpdatingBadge() }
+                }
+                .padding(.top, 12)
+                .padding(.trailing, 16)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            NotesStatusLines(model: model)
+            if isRecorder, model.state.isLive, !model.hearingText.isEmpty { HearingStrip(parts: model.hearingParts, text: model.hearingText) }
+            NotesMetaBar(model: model)
         }
+        // Under the toolbar too, so the title bar sits on the page.
+        .background(Color.chirp.surface.ignoresSafeArea())
+    }
+}
+
+/// The title page above the notes: a large serif title field and one quiet line of facts about the note.
+struct NotesTitleHeader: View {
+    @Bindable var model: NotesModel
+    let library: NotesLibraryModel
+
+    private var created: DateFormatter {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.timeZone = library.calendar.timeZone
+        f.dateFormat = "MMMM d, yyyy 'at' h:mm a"
+        return f
     }
 
-    private var layoutPicker: some View {
-        Picker("Layout", selection: Binding(get: { model.tab }, set: { model.select($0) })) {
-            ForEach(NotesTab.allCases, id: \.self) { Text($0.title).tag($0) }
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            TextField(NotesLibraryText.untitled, text: Binding(
+                get: { model.titleDraft ?? (model.isBlank && model.document.userTitle == nil ? "" : model.document.title) },
+                set: { model.titleDraft = $0; model.onTitleEdit($0) }))
+                .textFieldStyle(.plain)
+                .font(ChirpType.noteTitle(26))
+                .foregroundStyle(NotesInk.primary)
+                .onSubmit { model.focusRequest += 1 }
+                .accessibilityLabel("Title")
+            meta
         }
-        .labelsHidden()
+        .padding(.top, 30)
+        .padding(.bottom, 18)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    /// The narrow header's other actions.
-    private var moreMenu: some View {
-        Menu {
-            if model.tab != .transcript {
-                Button(model.preview ? "Edit Notes" : "Preview Notes") { model.perform(.togglePreview) }
+    private var meta: some View {
+        let d = model.document
+        let entry = library.entry(d.id)
+        var facts: [String] = [created.string(from: d.createdAt)]
+        if let length = NotesLibraryText.duration(model.elapsed) { facts.append(length) }
+        let open = d.openTodoCount()
+        if open > 0 { facts.append("☐ " + NotesLibraryText.open(open)) }
+        if let bytes = entry?.audioBytes, bytes > 0 { facts.append("Audio " + NotesLibraryText.size(bytes)) }
+        return HStack(spacing: 8) {
+            if model.state.isLive {
+                Circle().fill(Color.chirp.record).frame(width: 7, height: 7).accessibilityHidden(true)
+                Text(model.isPaused ? NotesStatus.paused : NotesLibraryText.recording)
+                    .font(ChirpType.meta.weight(.semibold))
+                    .foregroundStyle(Color.chirp.record)
             }
-            if model.voiceEditAvailable { Button("Edit Notes by Voice", action: model.onVoiceEdit).disabled(!model.canVoiceEdit) }
-            if !model.reorganizeHidden {
-                Button(NotesStatus.organizeLabel, action: model.onReorganize).disabled(!model.canReorganize)
-            }
-            Button("Copy Markdown", action: model.onCopy).disabled(!model.canExport)
-            Button("Save…", action: model.onSave).disabled(!model.canExport)
-            Button("New", action: model.onNew).disabled(!model.canNew)
-        } label: {
-            Image(systemName: "ellipsis.circle").font(.system(size: 14))
-        }
-        .menuStyle(.borderlessButton)
-        .menuIndicator(.hidden)
-        .fixedSize()
-        .help("More")
-        .accessibilityLabel("More actions")
-    }
-
-    private var status: some View {
-        HStack(spacing: 6) {
-            if model.isError {
-                Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.red)
-            } else if model.voiceEdit.isListening {
-                Image(systemName: "mic.fill").foregroundStyle(.red).accessibilityHidden(true)
-            } else if model.isUpdating || model.isReorganizing || model.isBusy || model.isVoiceEditing || model.state == .starting {
-                ProgressView().controlSize(.small).scaleEffect(0.8)
-            }
-            Text(model.headerStatusText)
-                .font(.callout)
-                .foregroundStyle(model.isError ? AnyShapeStyle(Color.red) : AnyShapeStyle(.secondary))
+            if entry?.recovered == true { RecoveredBadge() }
+            Text(facts.joined(separator: "  ·  "))
+                .font(ChirpType.meta)
+                .foregroundStyle(NotesInk.secondary)
                 .lineLimit(1)
-                .truncationMode(.tail)
-                .help(model.statusText)
-            if let lag = model.lagText { LagChip(model: model, text: lag) }
         }
-        .layoutPriority(-1)
     }
+}
 
-    private func reorganizeButton(iconOnly: Bool) -> some View {
-        Button(action: model.onReorganize) {
-            HStack(spacing: 5) {
-                Group {
-                    if model.isReorganizing {
-                        ProgressView().controlSize(.small).scaleEffect(0.6)
-                    } else {
-                        Image(systemName: "wand.and.stars").font(.system(size: 13, weight: .regular))
-                    }
-                }
-                .frame(width: 16, height: 16)
-                if !iconOnly { Text(NotesStatus.organizeLabel).font(.callout) }
-            }
+/// "Recovered": a capture that never received Stop, found at launch. No modal, just this mark.
+struct RecoveredBadge: View {
+    /// The selected sidebar row in dark draws a solid koi pill the badge sits on.
+    var onPill = false
+
+    var body: some View {
+        Text(NotesLibraryText.recovered)
+            .font(.system(size: 10.5, weight: .semibold))
+            .foregroundStyle(onPill ? Color.chirp.onKoi : Color.chirp.moon)
             .padding(.horizontal, 6)
-            .frame(height: 24)
+            .padding(.vertical, 1)
+            .background(Capsule().fill(onPill ? Color.chirp.onKoi.opacity(0.14) : Color.chirp.moonFill.opacity(0.22)))
             .fixedSize()
-        }
-        .buttonStyle(.borderless)
-        .disabled(!model.canReorganize)
-        .help(NotesStatus.organizeHelp)
-        .accessibilityLabel(NotesStatus.organizeHelp)
-    }
-
-    private func iconButton(_ symbol: String, label: String, enabled: Bool, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Image(systemName: symbol)
-                .font(.system(size: 14, weight: .regular))
-                .frame(width: 30, height: 24)
-        }
-        .buttonStyle(.borderless)
-        .disabled(!enabled)
-        .help(label)
-        .accessibilityLabel(label)
+            .help("Chirp found this note after it quit unexpectedly. Everything it had is here.")
     }
 }
 
-/// Record (a red dot) or Stop (a red square) with the elapsed time beside it, and the input level while recording.
-/// The label never wraps: the pill keeps its natural width and the status gives way.
-private struct RecordButton: View {
-    @Bindable var model: NotesModel
+// MARK: toolbar
 
-    private var stops: Bool { model.isRecording || model.isPaused }
-
-    var body: some View {
-        Button(action: model.onRecordToggle) {
-            HStack(spacing: 8) {
-                ZStack {
-                    Circle().fill(Color.red.opacity(model.isRecording ? 0.18 : 0)).frame(width: 22, height: 22)
-                    if stops {
-                        RoundedRectangle(cornerRadius: 2.5).fill(Color.red).frame(width: 10, height: 10)
-                    } else {
-                        Circle().fill(Color.red).frame(width: 11, height: 11)
-                    }
-                }
-                Text(stops ? NotesStatus.stopRecording : "Record")
-                    .font(.callout.weight(.medium))
-                    .lineLimit(1)
-                    .fixedSize()
-                    .onGeometryChange(for: CGSize.self, of: \.size) { model.probe.recordLabel = $0 }
-                if model.isRecording || model.elapsed > 0 {
-                    Text(model.elapsedText)
-                        .font(.callout.monospacedDigit())
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                        .fixedSize()
-                }
-                if model.isRecording { LevelMeter(model: model) }
-            }
-            .padding(.leading, 4)
-            .padding(.trailing, 10)
-            .padding(.vertical, 3)
-            .background(Capsule().fill(Color.primary.opacity(0.06)))
-            .contentShape(Capsule())
-        }
-        .buttonStyle(.plain)
-        .disabled(!model.canToggle)
-        .help(model.isPaused ? "Stop and finish the notes" : stops ? "Stop recording (⌘⇧R)" : "Start recording (⌘⇧R)")
-        .accessibilityLabel(stops ? "Stop notes" : "Start notes")
-        .accessibilityValue(model.isRecording || model.isPaused ? model.elapsedText : "")
-    }
-}
-
-/// One bar that rises with the microphone level (the HUD's decibel mapping), so sound arriving is visible.
-private struct LevelMeter: View {
+/// The unified toolbar's trailing items: the record control (or the Recording capsule), ✦ Smart notes, Share/Export and
+/// the transcript inspector. New Note sits over the sidebar.
+struct NotesToolbar: ToolbarContent {
     let model: NotesModel
+    let library: NotesLibraryModel
 
-    var body: some View {
-        let level = CGFloat(max(0, min(1, model.level)))
-        RoundedRectangle(cornerRadius: 1.5)
-            .fill(Color.red.opacity(0.35 + 0.65 * level))
-            .frame(width: 3, height: 5 + 11 * level)
-            .frame(width: 3, height: 16, alignment: .bottom)
-            .animation(model.reduceMotion ? nil : .easeOut(duration: 0.08), value: level)
-            .accessibilityHidden(true)
+    private var shown: NotesModel { library.displayed(model) }
+
+    var body: some ToolbarContent {
+        ToolbarItemGroup(placement: .primaryAction) {
+            let note = library.selection != .recentlyDeleted
+            if note || model.state.isActive { RecordControl(model: model, library: library) }
+            if model.state.isLive { PauseButton(model: model) }
+            if note, shown.voiceEditAvailable { VoiceEditButton(model: shown) }
+            if note {
+                SmartNotesMenu(model: shown, recorder: model)
+                ShareMenu(model: shown)
+            }
+            Button {
+                library.setInspector(!library.showsInspector)
+            } label: {
+                Label("Transcript", systemImage: "sidebar.right")
+            }
+            .help(library.showsInspector ? "Hide the transcript (⌥⌘T)" : "Show the transcript (⌥⌘T)")
+        }
     }
 }
 
-/// Pause (closes the microphone, keeps the notes open) or Resume, beside Record/Stop.
+/// Not recording: Record (a new note) or Continue (a finished one). Recording: the capsule `◉ <title> 03:12`, which
+/// jumps back to the recording note from anywhere in the library, with Stop beside it.
+struct RecordControl: View {
+    let model: NotesModel
+    let library: NotesLibraryModel
+
+    var body: some View {
+        if model.state.isActive {
+            HStack(spacing: 6) {
+                Button {
+                    library.select(.note(model.document.id))
+                } label: {
+                    HStack(spacing: 7) {
+                        if model.isPaused {
+                            Image(systemName: "pause.circle.fill").foregroundStyle(Color.chirp.record)
+                        } else {
+                            Ripple(level: Double(model.level), reduceMotion: model.reduceMotion, color: .chirp.record,
+                                   staticColor: .chirp.record, side: 18)
+                                .overlay(Circle().fill(Color.chirp.record).frame(width: 7, height: 7))
+                        }
+                        Text(model.displayTitle)
+                            .font(.callout.weight(.medium))
+                            .lineLimit(1)
+                            .frame(maxWidth: 170, alignment: .leading)
+                            .fixedSize(horizontal: true, vertical: false)
+                        Text(model.elapsedText)
+                            .font(ChirpType.timer(13))
+                            .foregroundStyle(NotesInk.secondary)
+                    }
+                    .padding(.horizontal, 4)
+                    .onGeometryChange(for: CGSize.self, of: \.size) { model.probe.recordLabel = $0 }
+                }
+                .help("Go to the recording note")
+                .accessibilityLabel("Recording \(model.displayTitle), \(model.elapsedText). Go to the recording note")
+                Button(action: model.onRecordToggle) {
+                    Image(systemName: "stop.fill").foregroundStyle(Color.chirp.record)
+                }
+                .disabled(!model.canToggle)
+                .help(model.isPaused ? "Stop and finish the notes" : "Stop recording (⌘⇧R)")
+                .accessibilityLabel("Stop notes")
+            }
+        } else {
+            let shown = library.displayed(model)
+            let continues = !shown.isBlank
+            Button {
+                if shown === model { model.onRecordToggle() } else { library.onContinue(shown.document.id) }
+            } label: {
+                Label {
+                    Text(continues ? "Continue" : "Record")
+                        .onGeometryChange(for: CGSize.self, of: \.size) { model.probe.recordLabel = $0 }
+                } icon: {
+                    Image(systemName: "record.circle").foregroundStyle(Color.chirp.record)
+                }
+                .labelStyle(.titleAndIcon)
+            }
+            .disabled(!model.canToggle)
+            .help(continues ? "Continue recording into this note (⌘⇧R)" : "Start recording (⌘⇧R)")
+            .accessibilityLabel(continues ? NotesLibraryText.continueRecording : "Start notes")
+        }
+    }
+}
+
+/// Pause (closes the microphone, keeps the notes open) or Resume.
 private struct PauseButton: View {
     @Bindable var model: NotesModel
-    var iconOnly = false
 
     var body: some View {
         Button(action: model.onPauseToggle) {
-            HStack(spacing: 5) {
-                Image(systemName: model.isPaused ? "play.fill" : "pause.fill").font(.system(size: 11))
-                if !iconOnly {
-                    Text(model.isPaused ? NotesStatus.resume : NotesStatus.pause).font(.callout.weight(.medium)).lineLimit(1).fixedSize()
-                }
-            }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 4)
-            .background(Capsule().fill(Color.primary.opacity(0.06)))
-            .contentShape(Capsule())
+            Label(model.isPaused ? NotesStatus.resume : NotesStatus.pause, systemImage: model.isPaused ? "play.fill" : "pause.fill")
         }
-        .buttonStyle(.plain)
         .disabled(!(model.isPaused || model.state == .recording))
         .help(model.isPaused ? "Resume recording into the same notes (⌘⇧P)" : "Pause: the microphone closes, the notes stay open (⌘⇧P)")
         .accessibilityLabel(model.isPaused ? "Resume notes" : "Pause notes")
     }
 }
 
-/// What went wrong, under the header (the header itself only says there is a problem).
+/// ✦ Smart notes: the switches that used to sit in the footer, and Organize.
+struct SmartNotesMenu: View {
+    @Bindable var model: NotesModel
+    /// The recorder's model: the switches are the session's, whichever note is on screen.
+    let recorder: NotesModel
+
+    var body: some View {
+        Menu {
+            if !model.reorganizeHidden {
+                Button(NotesStatus.organizeLabel + " Now", action: model.onReorganize).disabled(!model.canReorganize)
+                Button("Restore Notes Before Organize…") { model.review() }.disabled(!model.canRestore)
+                Divider()
+            }
+            // On while downloading too, so switching it off cancels the download.
+            Toggle(NotesStatus.speakerLabels, isOn: Binding(get: { recorder.speakerLabels || recorder.speakerModel.isDownloading },
+                                                             set: { recorder.onSpeakerLabelsToggle($0) }))
+                .disabled(recorder.state.isActive)
+            Toggle("Structure notes", isOn: Binding(get: { recorder.structureEnabled },
+                                                    set: { recorder.structureEnabled = $0; recorder.onStructureToggle($0) }))
+                .disabled(!recorder.structuringAvailable && recorder.structuring != .off(.disabled))
+            Toggle("Auto-reorganize", isOn: Binding(get: { recorder.autoReorganize && recorder.autoReorganizeAvailable },
+                                                    set: { recorder.autoReorganize = $0; recorder.onAutoReorganizeToggle($0) }))
+                .disabled(!recorder.autoReorganizeAvailable)
+            if let status = recorder.speakerStatus {
+                Divider()
+                Text(status)
+            }
+        } label: {
+            Label("Smart notes", systemImage: model.isReorganizing ? "sparkles" : "sparkles")
+                .foregroundStyle(Color.chirp.moon)
+        }
+        .help("Smart notes: Organize, speaker labels, structuring")
+    }
+}
+
+/// Share/Export: Export Markdown… (with the "keep this file updated" option), Copy Markdown and the share sheet.
+struct ShareMenu: View {
+    let model: NotesModel
+
+    var body: some View {
+        Menu {
+            Button(model.exportTitle, action: model.onSave).disabled(!model.canExport)
+            Button("Copy Markdown", action: model.onCopy).disabled(!model.canExport)
+            Divider()
+            ShareLink(item: model.saveText) { Text("Share…") }.disabled(!model.canExport)
+        } label: {
+            Label("Share", systemImage: "square.and.arrow.up")
+        }
+        .help("Share or export this note as Markdown")
+    }
+}
+
+/// Edit by Voice: starts a spoken edit; while it listens (a check in the record colour), pressing it again ends it.
+private struct VoiceEditButton: View {
+    let model: NotesModel
+
+    var body: some View {
+        let listening = model.voiceEdit.isListening
+        Button(action: model.onVoiceEdit) {
+            Label("Edit by Voice", systemImage: listening ? "checkmark.circle.fill" : "mic.badge.plus")
+                .foregroundStyle(listening ? AnyShapeStyle(Color.chirp.record) : AnyShapeStyle(.primary))
+        }
+        .disabled(!model.canVoiceEdit)
+        .help(listening ? NotesStatus.voiceEditDoneHelp : NotesStatus.voiceEditHelp)
+        .accessibilityLabel(listening ? NotesStatus.voiceEditDoneHelp : NotesStatus.voiceEditHelp)
+    }
+}
+
+// MARK: empty state
+
+/// No notes yet: the Chirp glyph in its rings, what Notes is for, the shortcut as keycaps, and New note / Record.
+struct NotesEmptyState: View {
+    let model: NotesModel
+    let library: NotesLibraryModel
+    @Environment(\.colorScheme) private var scheme
+
+    var body: some View {
+        VStack(spacing: 0) {
+            ZStack {
+                ForEach(0..<3) { i in
+                    Circle()
+                        .strokeBorder(Color.chirp.koiDecor.opacity(0.34 - Double(i) * 0.1), lineWidth: 1.5)
+                        .frame(width: 92 + CGFloat(i) * 40, height: 92 + CGFloat(i) * 40)
+                }
+                // The pale koi disc in light; in dark a raised surface disc (the dark koi container reads as a
+                // muddy brown block at this size).
+                Circle().fill(scheme == .dark ? Color.chirp.surfaceRaised : Color.chirp.koiContainer)
+                    .frame(width: 84, height: 84)
+                if let glyph = ChirpBrand.tinted(.chirp.koi, size: 50) {
+                    Image(nsImage: glyph)
+                } else {
+                    Image(systemName: "note.text").font(.system(size: 34, weight: .light)).foregroundStyle(Color.chirp.koi)
+                }
+            }
+            .frame(height: 180)
+            .accessibilityHidden(true)
+            Text(NotesLibraryText.emptyTitle)
+                .font(ChirpType.noteTitle(24))
+                .foregroundStyle(NotesInk.primary)
+                .padding(.top, 18)
+            Text(NotesLibraryText.emptyBody)
+                .font(.system(size: 13))
+                .foregroundStyle(NotesInk.secondary)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: 340)
+                .padding(.top, 8)
+            HStack(spacing: 6) {
+                ForEach(KeycapRow.keys(model.notesKey), id: \.self) { NotesKeycap(key: $0) }
+                Text("starts a note from any app")
+                    .font(.system(size: 12))
+                    .foregroundStyle(NotesInk.secondary)
+                    .padding(.leading, 4)
+            }
+            .padding(.top, 18)
+            HStack(spacing: 10) {
+                Button {
+                    library.onNew()
+                    model.focusRequest += 1
+                } label: {
+                    Label("New Note", systemImage: "square.and.pencil").padding(.horizontal, 4)
+                }
+                .controlSize(.large)
+                Button(action: model.onRecordToggle) {
+                    Label("Record", systemImage: "record.circle").padding(.horizontal, 4)
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
+                .keyboardShortcut(.defaultAction)
+            }
+            .padding(.top, 24)
+            Label(NotesLibraryText.emptyPrivacy, systemImage: "lock.fill")
+                .font(.system(size: 11.5))
+                .foregroundStyle(NotesInk.tertiary)
+                .padding(.top, 28)
+        }
+        .padding(32)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color.chirp.surface.ignoresSafeArea())
+    }
+}
+
+/// The shortcut's modifiers and key, one keycap each ("⌃", "⌥", "N").
+enum KeycapRow {
+    static func keys(_ title: String) -> [String] {
+        let symbols = title.prefix { "⌃⌥⇧⌘".contains($0) }.map(String.init)
+        let rest = title.dropFirst(symbols.count).trimmingCharacters(in: .whitespaces)
+        return symbols + (rest.isEmpty ? [] : [String(rest.split(separator: " ").first ?? Substring(rest))])
+    }
+}
+
+struct NotesKeycap: View {
+    let key: String
+
+    var body: some View {
+        Text(key)
+            .font(.system(size: 12.5, weight: .medium, design: .rounded))
+            .foregroundStyle(NotesInk.primary)
+            .frame(minWidth: 24, minHeight: 24)
+            .padding(.horizontal, key.count > 1 ? 6 : 0)
+            .background(RoundedRectangle(cornerRadius: ChirpRadius.control).fill(Color.chirp.surfaceRaised))
+            .overlay(RoundedRectangle(cornerRadius: ChirpRadius.control).strokeBorder(NotesInk.tertiary.opacity(0.6)))
+            .shadow(color: .black.opacity(0.12), radius: 0, y: 1)
+    }
+}
+
+// MARK: toast
+
+/// "Note deleted · Undo" for a few seconds at the bottom of the window.
+struct NotesToastView: View {
+    let library: NotesLibraryModel
+    let toast: NotesToast
+
+    var body: some View {
+        HStack(spacing: 14) {
+            Text(toast.text).font(.callout).foregroundStyle(NotesInk.primary)
+            if let id = toast.undo {
+                Button("Undo") {
+                    library.onRestore(id)
+                    library.toast = nil
+                }
+                .buttonStyle(.plain)
+                .font(.callout.weight(.semibold))
+                .foregroundStyle(Color.chirp.koi)
+                .keyboardShortcut("z", modifiers: .command)
+            }
+        }
+        .padding(.horizontal, 18)
+        .padding(.vertical, 10)
+        .background(Capsule().fill(Color.chirp.surfaceRaised))
+        .overlay(Capsule().strokeBorder(NotesInk.tertiary.opacity(0.35)))
+        .shadow(color: .black.opacity(0.18), radius: 12, y: 4)
+        .padding(.bottom, 22)
+        .transition(.move(edge: .bottom).combined(with: .opacity))
+        .task(id: toast.serial) {
+            try? await Task.sleep(for: .seconds(6))
+            if !Task.isCancelled, library.toast?.serial == toast.serial { library.toast = nil }
+        }
+        .accessibilityElement(children: .contain)
+    }
+}
+
+// MARK: banners
+
+/// What went wrong, under the toolbar (the subtitle only says there is a problem).
 struct ErrorBanner: View {
     let text: String
     /// A way to fix it, when there is one (the server or its token: Settings › Server).
@@ -283,7 +534,7 @@ struct ErrorBanner: View {
 
     var body: some View {
         HStack(alignment: .center, spacing: 10) {
-            Image(systemName: "exclamationmark.triangle.fill").font(.system(size: 14)).foregroundStyle(.red).accessibilityHidden(true)
+            Image(systemName: "exclamationmark.triangle.fill").font(.system(size: 14)).foregroundStyle(Color.chirp.record).accessibilityHidden(true)
             Text(text)
                 .font(.callout)
                 .fixedSize(horizontal: false, vertical: true)
@@ -292,71 +543,99 @@ struct ErrorBanner: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 8)
-        .background(Color.red.opacity(0.08))
+        .background(Color.chirp.record.opacity(0.08))
         .overlay(alignment: .bottom) { Divider() }
         .accessibilityElement(children: action == nil ? .combine : .contain)
     }
 }
 
-// MARK: notes
-
-/// The notes: the explanation banner, the editor (or Preview), the status lines and the Hearing strip.
-private struct NotesPane: View {
-    @Bindable var model: NotesModel
+/// After every 2 h of recording, once: a reminder that the microphone is still open. It never stops anything itself.
+private struct LongRunNotice: View {
+    let model: NotesModel
 
     var body: some View {
-        VStack(spacing: 0) {
-            if let explanation = model.explanation {
-                ExplanationBanner(model: model, text: explanation)
-            }
-            ZStack(alignment: .topTrailing) {
-                if model.preview {
-                    NotesPreview(model: model)
-                } else {
-                    NotesEditor(model: model)
-                    if model.showsEmptyState { emptyState }
-                }
-                VStack(alignment: .trailing, spacing: 6) {
-                    if model.showEditedChip { EditedChip(model: model) }
-                    if model.showUndoChip { UndoChip(model: model) }
-                    if model.isUpdating { UpdatingBadge() }
-                }
-                .padding(.top, 10)
-                .padding(.trailing, 14)
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            NotesStatusLines(model: model)
-            if !model.hearingText.isEmpty { HearingStrip(parts: model.hearingParts, text: model.hearingText) }
-        }
-    }
-
-    private var emptyState: some View {
-        VStack(spacing: 12) {
-            Image(systemName: "note.text")
-                .font(.system(size: 36, weight: .light))
-                .foregroundStyle(.tertiary)
-            Text(NotesStatus.empty(key: model.notesKey))
-                .font(.title3)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-            Text("Or click to type your own notes.")
+        HStack(spacing: 10) {
+            Image(systemName: "clock.badge.exclamationmark").foregroundStyle(Color.chirp.moon).accessibilityHidden(true)
+            Text(NotesStatus.longRun(hours: model.longRunHours) + " — the microphone is still open.")
                 .font(.callout)
-                .foregroundStyle(.tertiary)
-            Text(NotesStatus.shortcutsHint)
-                .font(.caption)
-                .foregroundStyle(.tertiary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            Button(NotesStatus.stopRecording, action: model.onRecordToggle).controlSize(.small)
+            Button(NotesStatus.keepGoing) { model.keepGoing() }.controlSize(.small).keyboardShortcut(.defaultAction)
         }
-        .padding(32)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color(nsColor: .textBackgroundColor))
-        .contentShape(Rectangle())
-        .onTapGesture { model.focusRequest += 1 }
-        .accessibilityAddTraits(.isButton)
-        .accessibilityLabel("Start typing notes")
+        .padding(.horizontal, 14)
+        .padding(.vertical, 8)
+        .background(Color.chirp.moonFill.opacity(0.12))
+        .overlay(alignment: .bottom) { Divider() }
+        .accessibilityElement(children: .contain)
     }
 }
 
-/// The retry note for appends and the reorganize note, in v1's place and style.
+/// A session the legacy journal found at launch (clients without a library): Keep restores it as a stopped document.
+private struct RecoveryBanner: View {
+    @Bindable var model: NotesModel
+    let offer: RecoveryOffer
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 10) {
+            Image(systemName: "arrow.counterclockwise.circle.fill")
+                .font(.system(size: 15))
+                .foregroundStyle(Color.chirp.koi)
+                .accessibilityHidden(true)
+            Text(offer.text)
+                .font(.callout)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            Button("Keep", action: model.onRecoveryKeep)
+                .keyboardShortcut(.defaultAction)
+                .controlSize(.small)
+                .disabled(model.isBusy || model.state.isActive)
+            Button("Save…", action: model.onRecoverySave)
+                .controlSize(.small)
+            Button("Discard", role: .destructive, action: model.onRecoveryDiscard)
+                .controlSize(.small)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .background(Color.chirp.koi.opacity(0.1))
+        .overlay(alignment: .bottom) { Divider() }
+        .accessibilityElement(children: .contain)
+    }
+}
+
+/// Why structuring is off, above the editor (which stays editable).
+private struct ExplanationBanner: View {
+    @Bindable var model: NotesModel
+    let text: String
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 10) {
+            Image(systemName: "text.badge.star")
+                .font(.system(size: 15))
+                .foregroundStyle(Color.chirp.moon)
+            Text(text)
+                .font(.callout)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            if model.offersModels {
+                Button("Manage Local Models…", action: model.onManageModels)
+                    .controlSize(.small)
+            }
+            if let fix = model.serverFix {
+                Button(fix.buttonTitle, action: model.onFixServer)
+                    .controlSize(.small)
+                    .disabled(model.serverFixMessage?.hasSuffix("…") == true)
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .background(Color.chirp.moonFill.opacity(0.1))
+        .overlay(alignment: .bottom) { Divider() }
+    }
+}
+
+// MARK: under the notes
+
+/// The retry note for appends, the reorganize note and the microphone warning, under the notes.
 private struct NotesStatusLines: View {
     let model: NotesModel
 
@@ -368,7 +647,7 @@ private struct NotesStatusLines: View {
                     let success = note == model.reorganizeNote && model.reorganizeNoteIsSuccess
                     Label(note, systemImage: success ? "checkmark.circle" : note == model.micNote ? "mic.slash" : "arrow.clockwise")
                         .font(.caption)
-                        .foregroundStyle(success ? AnyShapeStyle(.secondary) : AnyShapeStyle(Color.orange))
+                        .foregroundStyle(success ? AnyShapeStyle(Color.chirp.lily) : AnyShapeStyle(Color.chirp.moon))
                 }
             }
             .frame(maxWidth: NotesViewMetrics.readingWidth, alignment: .leading)
@@ -389,6 +668,7 @@ private struct NotesStatusLines: View {
 private struct HearingStrip: View {
     let parts: [HearingPart]
     let text: String
+    @Environment(\.colorScheme) private var scheme
 
     /// The words, with each speaker's name in their colour where the speaker changes (labels on).
     private var line: Text {
@@ -406,26 +686,73 @@ private struct HearingStrip: View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
             Image(systemName: "waveform")
                 .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(Color.accentColor)
+                .foregroundStyle(Color.chirp.koi)
                 .accessibilityHidden(true)
             Text("Hearing")
                 .font(.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(NotesInk.secondary)
             line
                 .font(.system(size: 13))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(NotesInk.secondary)
                 .lineLimit(2)
                 .truncationMode(.head)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
         .frame(maxWidth: NotesViewMetrics.readingWidth, alignment: .leading)
         .padding(.horizontal, 28)
-        .padding(.vertical, 9)
+        .padding(.vertical, 10)
         .frame(maxWidth: .infinity)
-        .background(Color.primary.opacity(0.035))
+        // The pale koi container wash in light; in dark a light koi wash (the dark container reads muddy this wide).
+        .background(scheme == .dark ? Color.chirp.koi.opacity(0.1) : Color.chirp.koiContainer.opacity(0.35))
         .overlay(alignment: .top) { Divider().opacity(0.6) }
         .accessibilityElement(children: .combine)
         .accessibilityLabel("Hearing: \(text)")
+    }
+}
+
+/// The few facts that must stay visible but need no space of their own: where structuring sends the text, a kept
+/// export, the speaker model, the debug-retention warning, and how far the notes lag.
+private struct NotesMetaBar: View {
+    @Bindable var model: NotesModel
+
+    var body: some View {
+        let keep = model.keepSaving.text
+        if model.structuringHost != nil || keep != nil || model.debugRetention || model.speakerStatus != nil || model.lagText != nil {
+            HStack(spacing: 10) {
+                if let lag = model.lagText { LagChip(model: model, text: lag) }
+                if let host = model.structuringHost { StructuringChip(model: model, host: host) }
+                if let keep {
+                    Label(keep, systemImage: model.keepSaving.isSaving ? "arrow.triangle.2.circlepath" : "exclamationmark.triangle")
+                        .font(.caption)
+                        .foregroundStyle(model.keepSaving.isSaving ? AnyShapeStyle(NotesInk.secondary) : AnyShapeStyle(Color.chirp.moon))
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+                if let status = model.speakerStatus {
+                    HStack(spacing: 4) {
+                        if model.speakerModel.isDownloading { ProgressView().controlSize(.mini) }
+                        Text(status)
+                            .font(.caption)
+                            .foregroundStyle(model.speakerModel.isFailure ? AnyShapeStyle(Color.chirp.moon) : AnyShapeStyle(NotesInk.secondary))
+                            .lineLimit(1)
+                    }
+                }
+                Spacer(minLength: 0)
+                if model.debugRetention {
+                    Text(MenuContent.debugRetention)
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 1)
+                        .background(Capsule().fill(Color.chirp.record))
+                        .fixedSize()
+                        .help(MenuContent.debugRetentionHelp)
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 7)
+            .overlay(alignment: .top) { Divider().opacity(0.6) }
+        }
     }
 }
 
@@ -440,15 +767,14 @@ private struct LagChip: View {
                 .font(.caption.weight(.medium).monospacedDigit())
                 .padding(.horizontal, 8)
                 .padding(.vertical, 2)
-                .background(Capsule().fill(Color.orange.opacity(0.14)))
-                .overlay(Capsule().strokeBorder(Color.orange.opacity(0.45)))
-                .foregroundStyle(.orange)
+                .background(Capsule().fill(Color.chirp.moonFill.opacity(0.2)))
+                .foregroundStyle(Color.chirp.moon)
         }
         .buttonStyle(.plain)
         .fixedSize()
         .help("Speech the notes have not caught up with yet")
         .accessibilityHint("Shows the speech that is not in the notes yet")
-        .popover(isPresented: $model.showsBacklog, arrowEdge: .bottom) {
+        .popover(isPresented: $model.showsBacklog, arrowEdge: .top) {
             ScrollView {
                 Text(model.hearingText)
                     .font(.system(size: 13))
@@ -458,590 +784,6 @@ private struct LagChip: View {
             }
             .frame(width: 380, height: 240)
         }
-    }
-}
-
-/// After every 2 h of recording, once: a reminder that the microphone is still open. It never stops anything itself.
-private struct LongRunNotice: View {
-    let model: NotesModel
-
-    var body: some View {
-        HStack(spacing: 10) {
-            Image(systemName: "clock.badge.exclamationmark").foregroundStyle(.orange).accessibilityHidden(true)
-            Text(NotesStatus.longRun(hours: model.longRunHours) + " — the microphone is still open.")
-                .font(.callout)
-                .frame(maxWidth: .infinity, alignment: .leading)
-            Button(NotesStatus.stopRecording, action: model.onRecordToggle).controlSize(.small)
-            Button(NotesStatus.keepGoing) { model.keepGoing() }.controlSize(.small).keyboardShortcut(.defaultAction)
-        }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 8)
-        .background(Color.orange.opacity(0.08))
-        .overlay(alignment: .bottom) { Divider() }
-        .accessibilityElement(children: .contain)
-    }
-}
-
-/// Edit by Voice: starts a spoken edit; while it listens (a red check), pressing it again ends it.
-private struct VoiceEditButton: View {
-    let model: NotesModel
-
-    var body: some View {
-        let listening = model.voiceEdit.isListening
-        Button(action: model.onVoiceEdit) {
-            Image(systemName: listening ? "checkmark.circle.fill" : "mic.badge.plus")
-                .font(.system(size: 14, weight: .regular))
-                .foregroundStyle(listening ? AnyShapeStyle(Color.red) : AnyShapeStyle(.primary))
-                .frame(width: 30, height: 24)
-        }
-        .buttonStyle(.borderless)
-        .disabled(!model.canVoiceEdit)
-        .help(listening ? NotesStatus.voiceEditDoneHelp : NotesStatus.voiceEditHelp)
-        .accessibilityLabel(listening ? NotesStatus.voiceEditDoneHelp : NotesStatus.voiceEditHelp)
-    }
-}
-
-/// "Edited · Undo", for 20 s after a voice edit (or until the next edit or a click).
-private struct EditedChip: View {
-    let model: NotesModel
-
-    var body: some View {
-        HStack(spacing: 6) {
-            Image(systemName: "mic.badge.plus").font(.caption)
-            Text(NotesStatus.edited).font(.caption.weight(.medium))
-            Text("·").font(.caption).foregroundStyle(.secondary)
-            Button {
-                model.undoEdit()
-                model.onVoiceEditDismiss()
-            } label: {
-                Text("Undo").font(.caption.weight(.semibold))
-            }
-            .buttonStyle(.plain)
-            .foregroundStyle(Color.accentColor)
-            .accessibilityLabel("Undo the spoken edit")
-        }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 5)
-        .background(Capsule().fill(.regularMaterial))
-        .overlay(Capsule().strokeBorder(Color.primary.opacity(0.1)))
-        .shadow(color: .black.opacity(0.08), radius: 3, y: 1)
-        .task(id: model.voiceEdit) {
-            try? await Task.sleep(for: .seconds(20))
-            if !Task.isCancelled { model.onVoiceEditDismiss() }
-        }
-    }
-}
-
-/// "Organized · Undo", for 20 s after a reorganize (or until the next edit or append).
-private struct UndoChip: View {
-    let model: NotesModel
-
-    var body: some View {
-        HStack(spacing: 6) {
-            Image(systemName: "wand.and.stars").font(.caption)
-            Text(NotesStatus.organized).font(.caption.weight(.medium))
-            Text("·").font(.caption).foregroundStyle(.secondary)
-            if model.snapshots.latest != nil {
-                Button {
-                    model.review()
-                } label: {
-                    Text("Show changes").font(.caption.weight(.semibold))
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(Color.accentColor)
-                .accessibilityLabel("Show what organize changed")
-                Text("·").font(.caption).foregroundStyle(.secondary)
-            }
-            Button {
-                model.undoReorganize()
-                model.dismissUndoChip()
-            } label: {
-                Text("Undo").font(.caption.weight(.semibold))
-            }
-            .buttonStyle(.plain)
-            .foregroundStyle(Color.accentColor)
-            .accessibilityLabel("Undo organize")
-        }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 5)
-        .background(Capsule().fill(.regularMaterial))
-        .overlay(Capsule().strokeBorder(Color.primary.opacity(0.1)))
-        .shadow(color: .black.opacity(0.08), radius: 3, y: 1)
-        .task(id: model.reorganizeStatus) {
-            try? await Task.sleep(for: .seconds(20))
-            if !Task.isCancelled { model.dismissUndoChip() }
-        }
-    }
-}
-
-/// Preview: the same text, read-only, rendered line by line (v1's renderer).
-struct NotesPreview: View {
-    let model: NotesModel
-
-    var body: some View {
-        ScrollView {
-            BlockView(markdown: model.document.text, leading: true, sectionOffset: { model.document.sectionOffset($0) },
-                      jump: { model.jumpToTranscript(at: $0) })
-                .textSelection(.enabled)
-                .frame(maxWidth: NotesViewMetrics.readingWidth, alignment: .leading)
-                .padding(.horizontal, 28)
-                .padding(.vertical, 22)
-                .frame(maxWidth: .infinity)
-        }
-    }
-}
-
-/// Markdown, line by line. The fallback header and the paragraphs under it are drawn secondary.
-private struct BlockView: View {
-    let markdown: String
-    /// The first block in the pane: no space above its first heading.
-    var leading = false
-    /// When a heading's section was said (from speech), and the jump to it in the transcript.
-    var sectionOffset: (String) -> TimeInterval? = { _ in nil }
-    var jump: (TimeInterval) -> Void = { _ in }
-
-    var body: some View {
-        let blocks = NotesMarkdown.blocks(markdown)
-        VStack(alignment: .leading, spacing: 5) {
-            ForEach(Array(blocks.enumerated()), id: \.offset) { i, block in
-                line(block, first: i == 0)
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    @ViewBuilder private func line(_ block: NotesMarkdownBlock, first: Bool) -> some View {
-        switch block {
-        case .heading(let level, let text):
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text(NotesMarkdown.inline(text))
-                    .font(level == 1 ? .system(size: 22, weight: .bold) : level == 2 ? .title3.bold() : .headline)
-                    .accessibilityAddTraits(.isHeader)
-                if level == 2, let offset = sectionOffset(text) {
-                    Button("[\(NotesDocument.timestamp(offset))]") { jump(offset) }
-                        .buttonStyle(.plain)
-                        .font(.caption.monospacedDigit())
-                        .foregroundStyle(.secondary)
-                        .help("Show in the transcript")
-                        .accessibilityLabel("Show in the transcript, at \(NotesDocument.timestamp(offset))")
-                }
-            }
-            .padding(.top, first && leading ? 0 : level == 3 ? 8 : 18)
-            .padding(.bottom, 2)
-        case .bullet(let indent, let text, let task, let checked):
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                marker(text: text, task: task, checked: checked, nested: indent > 0)
-                Text(NotesMarkdown.inline(text))
-                    .font(.system(size: 14))
-                    .strikethrough(checked)
-                    .foregroundStyle(checked ? .secondary : .primary)
-                    .lineSpacing(2)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            .padding(.leading, CGFloat(indent) * 22)
-        case .paragraph(let text) where text == NotesDocument.fallbackHeader:
-            Text("Not structured — see transcript")
-                .font(.callout.italic())
-                .foregroundStyle(.secondary)
-                .padding(.top, first ? 0 : 10)
-        case .paragraph(let text):
-            Text(NotesMarkdown.inline(text))
-                .font(.system(size: 14))
-                .lineSpacing(3)
-                .padding(.top, first ? 0 : 4)
-                .fixedSize(horizontal: false, vertical: true)
-        case .placeholder:
-            Text("Nothing to note yet")
-                .font(.callout.italic())
-                .foregroundStyle(.tertiary)
-        }
-    }
-
-    /// A bullet, a task box, or a small symbol for decisions and open questions; fixed width for a hanging indent.
-    @ViewBuilder private func marker(text: String, task: Bool, checked: Bool, nested: Bool) -> some View {
-        Group {
-            if task {
-                Image(systemName: checked ? "checkmark.square" : "square").font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(.secondary)
-                    .accessibilityLabel(checked ? "Done" : "To-do")
-            } else if text.hasPrefix("**Decision:**") {
-                Image(systemName: "checkmark.seal.fill").font(.system(size: 11)).foregroundStyle(.green)
-                    .accessibilityHidden(true)
-            } else if text.hasPrefix("**Question:**") {
-                Image(systemName: "questionmark.circle.fill").font(.system(size: 11)).foregroundStyle(.orange)
-                    .accessibilityHidden(true)
-            } else {
-                Text(nested ? "◦" : "•").font(.system(size: 14, weight: .bold)).foregroundStyle(.secondary)
-                    .accessibilityHidden(true)
-            }
-        }
-        .frame(width: 14, alignment: .center)
-    }
-}
-
-private struct UpdatingBadge: View {
-    var body: some View {
-        Label("Updating", systemImage: "sparkles")
-            .font(.caption.weight(.medium))
-            .foregroundStyle(Color.accentColor)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 3)
-            .background(Capsule().fill(.regularMaterial))
-            .overlay(Capsule().fill(Color.accentColor.opacity(0.1)))
-    }
-}
-
-/// A session the journal found at launch: Keep restores it as a stopped, unsaved document.
-private struct RecoveryBanner: View {
-    @Bindable var model: NotesModel
-    let offer: RecoveryOffer
-
-    var body: some View {
-        HStack(alignment: .center, spacing: 10) {
-            Image(systemName: "arrow.counterclockwise.circle.fill")
-                .font(.system(size: 15))
-                .foregroundStyle(Color.accentColor)
-                .accessibilityHidden(true)
-            Text(offer.text)
-                .font(.callout)
-                .fixedSize(horizontal: false, vertical: true)
-                .frame(maxWidth: .infinity, alignment: .leading)
-            Button("Keep", action: model.onRecoveryKeep)
-                .keyboardShortcut(.defaultAction)
-                .controlSize(.small)
-                .disabled(model.isBusy || model.state.isActive)
-            Button("Save…", action: model.onRecoverySave)
-                .controlSize(.small)
-            Button("Discard", role: .destructive, action: model.onRecoveryDiscard)
-                .controlSize(.small)
-        }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 10)
-        .background(Color.accentColor.opacity(0.1))
-        .overlay(alignment: .bottom) { Divider() }
-        .accessibilityElement(children: .contain)
-    }
-}
-
-/// Why structuring is off, above the editor (which stays editable).
-private struct ExplanationBanner: View {
-    @Bindable var model: NotesModel
-    let text: String
-
-    var body: some View {
-        HStack(alignment: .center, spacing: 10) {
-            Image(systemName: "text.badge.star")
-                .font(.system(size: 15))
-                .foregroundStyle(Color.accentColor)
-            Text(text)
-                .font(.callout)
-                .fixedSize(horizontal: false, vertical: true)
-                .frame(maxWidth: .infinity, alignment: .leading)
-            if model.offersModels {
-                Button("Manage Local Models…", action: model.onManageModels)
-                    .controlSize(.small)
-            }
-            if let fix = model.serverFix {
-                Button(fix.buttonTitle, action: model.onFixServer)
-                    .controlSize(.small)
-                    .disabled(model.serverFixMessage?.hasSuffix("…") == true)
-            }
-        }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 10)
-        .background(Color.accentColor.opacity(0.07))
-        .overlay(alignment: .bottom) { Divider() }
-    }
-}
-
-/// Edit | Preview, as two small icons.
-private struct EditPreviewPicker: View {
-    @Bindable var model: NotesModel
-
-    var body: some View {
-        Picker("Notes view", selection: Binding(get: { model.preview }, set: { model.preview = $0; model.onPreviewToggle($0) })) {
-            Image(systemName: "pencil").help("Edit").accessibilityLabel("Edit").tag(false)
-            Image(systemName: "eye").help("Preview").accessibilityLabel("Preview").tag(true)
-        }
-        .pickerStyle(.segmented)
-        .labelsHidden()
-        .fixedSize()
-        .help(model.preview ? "Preview (read-only)" : "Edit")
-    }
-}
-
-// MARK: transcript
-
-private struct TranscriptPane: View {
-    @Bindable var model: NotesModel
-
-    var body: some View {
-        VStack(spacing: 0) {
-            PaneHeader(title: "Transcript") {
-                Toggle("Show raw", isOn: $model.showRaw)
-                    .toggleStyle(.checkbox)
-                    .controlSize(.small)
-            }
-            Divider()
-            if let banner = model.visibleSpeakerBanner { SpeakerBannerView(model: model, banner: banner) }
-            ScrollViewReader { proxy in
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 12) {
-                        if model.document.segments.isEmpty && model.document.livePartial.isEmpty {
-                            Text("Segments appear here as you talk.")
-                                .font(.callout)
-                                .foregroundStyle(.tertiary)
-                        }
-                        ForEach(model.transcriptRows) { row in
-                            self.row(row)
-                        }
-                        if !model.document.livePartial.isEmpty {
-                            HStack(alignment: .firstTextBaseline, spacing: 12) {
-                                stamp(model.elapsed).hidden()
-                                Text(model.document.livePartial)
-                                    .font(.system(size: 13))
-                                    .foregroundStyle(.tertiary)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                            }
-                        }
-                        Color.clear.frame(height: 1).id("bottom")
-                    }
-                    .textSelection(.enabled)
-                    .padding(16)
-                }
-                .onScrollGeometryChange(for: Bool.self) { g in
-                    g.contentOffset.y + g.containerSize.height >= g.contentSize.height - 40
-                } action: { _, bottom in model.transcriptAtBottom = bottom }
-                .onChange(of: model.document) {
-                    if model.transcriptAtBottom, model.highlightedParagraph == nil { proxy.scrollTo("bottom", anchor: .bottom) }
-                }
-                .onChange(of: model.transcriptJump) {
-                    guard let id = model.highlightedParagraph else { return }
-                    proxy.scrollTo(id, anchor: .top)
-                }
-                .onAppear { if let id = model.highlightedParagraph { proxy.scrollTo(id, anchor: .top) } }
-                .task(id: model.transcriptJump) {
-                    guard model.highlightedParagraph != nil else { return }
-                    try? await Task.sleep(for: .seconds(3))
-                    if !Task.isCancelled { model.highlightedParagraph = nil }
-                }
-            }
-        }
-    }
-
-    private func stamp(_ offset: TimeInterval) -> some View {
-        Text("[\(NotesDocument.timestamp(offset))]")
-            .font(.caption.monospacedDigit())
-            .foregroundStyle(.secondary)
-    }
-
-    @ViewBuilder private func row(_ r: TranscriptRow) -> some View {
-        let p = r.paragraph
-        HStack(alignment: .firstTextBaseline, spacing: 12) {
-            stamp(r.offset)
-            VStack(alignment: .leading, spacing: 3) {
-                if let failure = p.failure {
-                    Text("⚠︎ audio not transcribed (\(failure))")
-                        .font(.system(size: 13))
-                        .foregroundStyle(.orange)
-                } else {
-                    HStack(alignment: .firstTextBaseline, spacing: 8) {
-                        if let chip = r.chip, let person = p.person {
-                            Menu { SpeakerMenuItems(model: model, row: p.id, person: person, turns: NotesDocument.turnRefs(p)) } label: {
-                                SpeakerChip(name: chip.name, color: chip.color, approximate: chip.approximate)
-                            }
-                            .menuStyle(.button)
-                            .buttonStyle(.plain)
-                            .menuIndicator(.hidden)
-                            .fixedSize()
-                            .help(SpeakerMenuItems.help)
-                            .accessibilityLabel("Speaker: \(chip.name)")
-                            .accessibilityHint(SpeakerMenuItems.help)
-                        }
-                        if r.chip != nil, let person = p.person, let name = model.voices.suggestions[person] {
-                            VoiceSuggestionChip(model: model, person: person, name: name)
-                        }
-                        paragraphText(p, hovered: model.hoveredParagraph == p.id)
-                            .font(.system(size: 13))
-                            .lineSpacing(2)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                    if p.parts.contains(where: \.keptOriginal) && !model.showRaw { keptOriginal }
-                }
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-        }
-        .padding(.vertical, 2)
-        .background(RoundedRectangle(cornerRadius: 4).fill(Color.accentColor.opacity(model.highlightedParagraph == p.id ? 0.12 : 0)))
-        .modifier(SpeakerRowMenu(model: model, paragraph: p))
-        .popover(isPresented: Binding(get: { model.renaming?.row == p.id }, set: { if !$0 { model.renaming = nil } }),
-                 arrowEdge: .bottom) {
-            if let r = model.renaming { SpeakerRenameField(model: model, person: r.person) }
-        }
-        .id(p.id)
-        .onHover { inside in
-            if inside { model.hoveredParagraph = p.id } else if model.hoveredParagraph == p.id { model.hoveredParagraph = nil }
-        }
-    }
-
-    /// The paragraph's segments as one text; while hovered, each later segment shows its own `[hh:mm:ss]` in place.
-    private func paragraphText(_ p: TranscriptParagraph, hovered: Bool) -> Text {
-        p.parts.enumerated().reduce(Text("")) { text, item in
-            let (i, part) = item
-            let body = Text((i == 0 ? "" : " ") + part.text(model.showRaw))
-            guard hovered, i > 0 else { return text + body }
-            return text + Text(" [\(NotesDocument.timestamp(part.offset))]").font(.caption2.monospacedDigit()).foregroundColor(.secondary) + body
-        }
-    }
-
-    private var keptOriginal: some View {
-        Text("kept original")
-            .font(.caption2.weight(.medium))
-            .foregroundStyle(.secondary)
-            .padding(.horizontal, 5)
-            .padding(.vertical, 1)
-            .background(Capsule().strokeBorder(Color.secondary.opacity(0.4)))
-    }
-}
-
-/// A person's colour, the same in the transcript and wherever a chip shows. System colours, so both themes keep
-/// their contrast.
-enum SpeakerPalette {
-    static let colors: [Color] = [.blue, .orange, .green, .purple, .pink, .teal, .brown, .indigo]
-    static func color(_ index: Int) -> Color { colors[((index % colors.count) + colors.count) % colors.count] }
-}
-
-/// "Person 2" (or a name) on a capsule of the person's colour; dotted when the label is approximate (no word timings).
-struct SpeakerChip: View {
-    let name: String
-    let color: Int
-    var approximate = false
-
-    var body: some View {
-        let tint = SpeakerPalette.color(color)
-        Text(name)
-            .font(.caption.weight(.semibold))
-            .foregroundStyle(tint)
-            .lineLimit(1)
-            .padding(.horizontal, 7)
-            .padding(.vertical, 1)
-            .background(Capsule().fill(tint.opacity(0.14)))
-            .overlay(Capsule().strokeBorder(tint.opacity(0.55), style: StrokeStyle(lineWidth: 1, dash: approximate ? [2, 2] : [])))
-            .fixedSize()
-            .accessibilityLabel("Speaker: \(name)" + (approximate ? ", approximate" : ""))
-    }
-}
-
-/// A pane's title row, with an optional control at the right; the same height in both halves of Split.
-private struct PaneHeader<Trailing: View>: View {
-    let title: String
-    @ViewBuilder var trailing: Trailing
-
-    var body: some View {
-        HStack {
-            Text(title).font(.headline).accessibilityAddTraits(.isHeader)
-            Spacer()
-            trailing
-        }
-        .frame(height: 22)
-        .padding(.horizontal, 16)
-        .padding(.vertical, 8)
-    }
-}
-
-// MARK: footer
-
-private struct NotesFooter: View {
-    @Bindable var model: NotesModel
-
-    var body: some View {
-        // Wide: one row. Narrow (the minimum window): the privacy line and the chip above, the switches below, so
-        // nothing needs to be cut short.
-        ViewThatFits(in: .horizontal) {
-            HStack(spacing: 10) {
-                notices
-                Spacer(minLength: 8)
-                switches
-            }
-            VStack(alignment: .leading, spacing: 6) {
-                HStack(spacing: 10) {
-                    notices
-                    Spacer(minLength: 0)
-                }
-                HStack(spacing: 10) {
-                    Spacer(minLength: 0)
-                    switches
-                }
-            }
-        }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 7)
-        .background(.bar)
-    }
-
-    @ViewBuilder private var notices: some View {
-        Image(systemName: "lock.fill")
-            .font(.caption)
-            .foregroundStyle(.secondary)
-            .accessibilityHidden(true)
-        Text(model.privacyLine)
-            .font(.caption)
-            .foregroundStyle(.secondary)
-            .lineLimit(1)
-            .truncationMode(.tail)
-            .help(model.privacyHelp)
-        if let host = model.structuringHost { StructuringChip(model: model, host: host) }
-        if let keep = model.keepSaving.text {
-            Text(keep)
-                .font(.caption)
-                .foregroundStyle(model.keepSaving.isSaving ? AnyShapeStyle(.secondary) : AnyShapeStyle(Color.orange))
-                .lineLimit(1)
-                .truncationMode(.tail)
-        }
-        if model.debugRetention {
-            Text(MenuContent.debugRetention)
-                .font(.caption.weight(.bold))
-                .foregroundStyle(.white)
-                .padding(.horizontal, 6)
-                .padding(.vertical, 1)
-                .background(Capsule().fill(Color.red))
-                .fixedSize()
-                .help(MenuContent.debugRetentionHelp)
-        }
-    }
-
-    @ViewBuilder private var switches: some View {
-        if let status = model.speakerStatus {
-            HStack(spacing: 4) {
-                if case .downloading = model.speakerModel { ProgressView().controlSize(.mini) }
-                if case .loading = model.speakerModel { ProgressView().controlSize(.mini) }
-                Text(status)
-                    .font(.caption)
-                    .foregroundStyle(model.speakerModel.isFailure ? AnyShapeStyle(Color.orange) : AnyShapeStyle(.secondary))
-                    .lineLimit(1)
-            }
-        }
-        // On while downloading too, so switching it off cancels the download.
-        Toggle(NotesStatus.speakerLabels, isOn: Binding(get: { model.speakerLabels || model.speakerModel.isDownloading },
-                                                         set: { model.onSpeakerLabelsToggle($0) }))
-            .toggleStyle(.switch)
-            .controlSize(.mini)
-            .font(.caption)
-            .help(NotesStatus.speakerHelp)
-            .disabled(model.state.isActive)
-        Toggle("Structure notes", isOn: Binding(get: { model.structureEnabled },
-                                                set: { model.structureEnabled = $0; model.onStructureToggle($0) }))
-            .toggleStyle(.switch)
-            .controlSize(.mini)
-            .font(.caption)
-            .disabled(!model.structuringAvailable && model.structuring != .off(.disabled))
-        Toggle("Auto-reorganize", isOn: Binding(get: { model.autoReorganize && model.autoReorganizeAvailable },
-                                                set: { model.autoReorganize = $0; model.onAutoReorganizeToggle($0) }))
-            .toggleStyle(.switch)
-            .controlSize(.mini)
-            .font(.caption)
-            .disabled(!model.autoReorganizeAvailable)
-            .help(model.reorganizeHidden ? "Needs a newer Chirp server" : "Tidy the notes every few minutes while you record")
     }
 }
 
@@ -1055,113 +797,103 @@ struct StructuringChip: View {
         Label(NotesStatus.structuringChip(host), systemImage: "arrow.up.forward.circle")
             .labelStyle(.titleAndIcon)
             .font(.caption.weight(.medium))
-            .foregroundStyle(Color.orange)
+            .foregroundStyle(Color.chirp.moon)
             .lineLimit(1)
             .fixedSize()
             .padding(.horizontal, 7)
             .padding(.vertical, 1)
-            .background(Capsule().fill(Color.orange.opacity(0.12)))
-            .overlay(Capsule().strokeBorder(Color.orange.opacity(0.4)))
+            .background(Capsule().fill(Color.chirp.moonFill.opacity(0.16)))
+            .overlay(Capsule().strokeBorder(Color.chirp.moon.opacity(0.4)))
             .onGeometryChange(for: CGSize.self, of: \.size) { model.probe.structuringChip = $0 }
             .help("Structuring sends the notes text to \(host). Audio stays on the server you chose.")
     }
 }
 
-// MARK: organize review
+// MARK: chips over the notes
 
-/// What Organize changed, as a word diff, with Restore previous and Keep. The same sheet opens from the chip's Show
-/// changes and from Edit ▸ Restore Notes Before Organize…, where the snapshots are listed by time.
-struct OrganizeReviewSheet: View {
-    @Bindable var model: NotesModel
-
-    private static let time: DateFormatter = {
-        let f = DateFormatter()
-        f.dateFormat = "HH:mm:ss"
-        return f
-    }()
+/// "Edited · Undo", for 20 s after a voice edit (or until the next edit or a click).
+private struct EditedChip: View {
+    let model: NotesModel
 
     var body: some View {
-        let snapshot = model.reviewing.flatMap { model.snapshots.snapshot($0) }
-        VStack(alignment: .leading, spacing: 12) {
-            Text("What Organize changed").font(.headline)
-            if model.snapshots.items.count > 1 {
-                Picker("Before", selection: Binding(get: { model.reviewing ?? -1 }, set: { model.review($0) })) {
-                    ForEach(model.snapshots.items.reversed()) { item in
-                        Text("Before the change at \(Self.time.string(from: item.at))").tag(item.id)
-                    }
-                }
-                .labelsHidden()
+        HStack(spacing: 6) {
+            Image(systemName: "mic.badge.plus").font(.caption).foregroundStyle(Color.chirp.moon)
+            Text(NotesStatus.edited).font(.caption.weight(.medium))
+            Text("·").font(.caption).foregroundStyle(NotesInk.secondary)
+            Button {
+                model.undoEdit()
+                model.onVoiceEditDismiss()
+            } label: {
+                Text("Undo").font(.caption.weight(.semibold))
             }
-            if let snapshot { diff(snapshot) }
-            if model.confirmingRestore != nil {
-                Label("Notes you typed since sit among the changed lines. Restoring replaces the notes with the earlier text and loses them.",
-                      systemImage: "exclamationmark.triangle.fill")
-                    .font(.callout)
-                    .foregroundStyle(.orange)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            HStack {
-                Spacer()
-                Button("Keep") { model.closeReview() }.keyboardShortcut(.cancelAction)
-                if let id = model.reviewing {
-                    if model.confirmingRestore == id {
-                        Button("Replace notes (your later edits will be lost)", role: .destructive) { model.onRestoreSnapshot(id, true) }
-                    } else {
-                        Button("Restore previous") { model.onRestoreSnapshot(id, false) }
-                            .keyboardShortcut(.defaultAction)
-                            .disabled(!model.canRestore)
-                    }
-                }
-            }
+            .buttonStyle(.plain)
+            .foregroundStyle(Color.chirp.koi)
+            .accessibilityLabel("Undo the spoken edit")
         }
-        .padding(18)
-        .frame(width: 520)
-    }
-
-    @ViewBuilder private func diff(_ snapshot: NotesSnapshot) -> some View {
-        ScrollView {
-            Group {
-                if let segments = NotesSnapshots.diff(snapshot) {
-                    OrganizeDiffText(segments: segments)
-                } else {
-                    Text("Too long to compare word by word.").foregroundStyle(.secondary)
-                }
-            }
-            .font(.system(size: 13))
-            .lineSpacing(3)
-            .textSelection(.enabled)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(10)
+        .modifier(ChipStyle())
+        .task(id: model.voiceEdit) {
+            try? await Task.sleep(for: .seconds(20))
+            if !Task.isCancelled { model.onVoiceEditDismiss() }
         }
-        .frame(height: 220)
-        .background(RoundedRectangle(cornerRadius: 6).fill(Color.primary.opacity(0.04)))
-        .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(Color.primary.opacity(0.1)))
     }
 }
 
-/// The diff as one text: removed words struck through in red, added words in green.
-struct OrganizeDiffText: View {
-    let segments: [WordDiff.Segment]
+/// "Organized · Show changes · Undo", for 20 s after a reorganize (or until the next edit or append).
+private struct UndoChip: View {
+    let model: NotesModel
 
     var body: some View {
-        segments.enumerated().reduce(Text("")) { text, item in
-            let (i, seg) = item
-            let word = Text((i == 0 ? "" : " ") + seg.text)
-            switch seg.kind {
-            case .same: return text + word
-            case .removed: return text + word.strikethrough().foregroundColor(.red)
-            case .added: return text + word.foregroundColor(.green).bold()
-            case .changed: return text + word.foregroundColor(.orange)
+        HStack(spacing: 6) {
+            Image(systemName: "sparkles").font(.caption).foregroundStyle(Color.chirp.moon)
+            Text(NotesStatus.organized).font(.caption.weight(.medium))
+            Text("·").font(.caption).foregroundStyle(NotesInk.secondary)
+            if model.snapshots.latest != nil {
+                Button {
+                    model.review()
+                } label: {
+                    Text("Show changes").font(.caption.weight(.semibold))
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(Color.chirp.koi)
+                .accessibilityLabel("Show what organize changed")
+                Text("·").font(.caption).foregroundStyle(NotesInk.secondary)
             }
+            Button {
+                model.undoReorganize()
+                model.dismissUndoChip()
+            } label: {
+                Text("Undo").font(.caption.weight(.semibold))
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(Color.chirp.koi)
+            .accessibilityLabel("Undo organize")
         }
-        .accessibilityLabel(segments.map { seg in
-            switch seg.kind {
-            case .same: seg.text
-            case .removed: "removed: \(seg.text)"
-            case .added: "added: \(seg.text)"
-            case .changed: "changed: \(seg.text)"
-            }
-        }.joined(separator: " "))
+        .modifier(ChipStyle())
+        .task(id: model.reorganizeStatus) {
+            try? await Task.sleep(for: .seconds(20))
+            if !Task.isCancelled { model.dismissUndoChip() }
+        }
+    }
+}
+
+private struct UpdatingBadge: View {
+    var body: some View {
+        Label("Updating", systemImage: "sparkles")
+            .font(.caption.weight(.medium))
+            .foregroundStyle(Color.chirp.moon)
+            .modifier(ChipStyle())
+    }
+}
+
+/// A small floating capsule over the notes (solid, so it reads over any text).
+private struct ChipStyle: ViewModifier {
+    func body(content: Content) -> some View {
+        content
+            .padding(.horizontal, 10)
+            .padding(.vertical, 5)
+            .background(Capsule().fill(Color.chirp.surfaceRaised))
+            .overlay(Capsule().strokeBorder(NotesInk.tertiary.opacity(0.3)))
+            .shadow(color: .black.opacity(0.08), radius: 3, y: 1)
     }
 }
 

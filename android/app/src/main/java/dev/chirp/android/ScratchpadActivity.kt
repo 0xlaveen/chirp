@@ -15,18 +15,24 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
-import androidx.compose.animation.core.animateDpAsState
-import androidx.compose.foundation.background
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
@@ -35,8 +41,12 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.input.KeyboardCapitalization
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import dev.chirp.android.ui.LocalChirpRoles
+import dev.chirp.android.ui.Ripple
 import dev.chirp.android.ui.StatusBanner
 import dev.chirp.android.ui.StatusKind
 import androidx.lifecycle.viewmodel.initializer
@@ -58,6 +68,11 @@ open class ScratchpadActivity : ComponentActivity() {
         setContent {
             ChirpTheme { ScratchpadScreen(model, mic = ::mic, copy = ::copy, share = ::share, act = ::act) }
         }
+        ScratchpadHandoff.take()?.let(model::receive)
+    }
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        ScratchpadHandoff.take()?.let(model::receive)
     }
     override fun onStart() { super.onStart(); model.refresh() }
     override fun onStop() { model.pause(); super.onStop() }
@@ -96,59 +111,115 @@ open class ScratchpadActivity : ComponentActivity() {
         /** Opens the Scratchpad from outside the app (Quick Settings tile). */
         fun intent(context: Context) = Intent(context, ScratchpadActivity::class.java)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+        /** Opens the Scratchpad with the floating mic's words; the text travels in memory, never in the Intent. */
+        fun open(context: Context, text: String) {
+            ScratchpadHandoff.put(text)
+            context.startActivity(intent(context).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP))
+        }
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun ScratchpadScreen(model: ScratchpadModel, mic: () -> Unit, copy: () -> Unit, share: () -> Unit, act: (DictationAction) -> Unit) {
     val action = DictationAction.forStatus(model.status)
     Surface(Modifier.fillMaxSize()) {
         Box(Modifier.fillMaxSize().safeDrawingPadding(), contentAlignment = Alignment.TopCenter) {
-            Column(Modifier.widthIn(max = 600.dp).fillMaxSize().padding(horizontal = 24.dp, vertical = 16.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text("CHIRP  /  SCRATCHPAD", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
-                if (model.retained) StatusBanner(StatusKind.Error, stringResource(R.string.debug_retention))
-                OutlinedTextField(model.field, { if (!model.active) model.field = it }, Modifier.fillMaxWidth().weight(1f).heightIn(min = 120.dp),
-                    label = { Text("Scratchpad text") }, placeholder = { Text("Dictate, then edit here") }, readOnly = model.active,
-                    keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences))
-                if (model.active && model.partial.isNotEmpty()) Text(model.partial, Modifier.fillMaxWidth(), color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    style = MaterialTheme.typography.bodyMedium, maxLines = 3)
-                if (model.cleanupAvailable) Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    FilterChip(!model.cleanup, { model.choose(null) }, label = { Text("Raw") }, enabled = !model.active)
-                    model.profiles.forEach { profile ->
-                        FilterChip(model.cleanup && model.style.id == profile.id, { model.choose(profile) },
-                            label = { Text(profile.name) }, enabled = !model.active)
+                Column(Modifier.widthIn(max = 600.dp).fillMaxSize().padding(horizontal = 16.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    // Copy/Share in the top bar (spec §D); Save as note and Clear sit in the overflow.
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Spacer(Modifier.weight(1f))
+                        IconButton(copy, enabled = model.hasText) { Icon(painterResource(R.drawable.ic_copy), "Copy") }
+                        IconButton(share, enabled = model.hasText) { Icon(painterResource(R.drawable.ic_share), "Share") }
+                        OverflowMenu(model)
                     }
+                    if (model.retained) StatusBanner(StatusKind.Error, stringResource(R.string.debug_retention))
+                    // The borderless blank page: no label, no outline, just text.
+                    TextField(model.field, { if (!model.active) model.field = it }, Modifier.fillMaxWidth().weight(1f).heightIn(min = 120.dp),
+                        placeholder = { Text("Dictate, then edit here") }, readOnly = model.active,
+                        textStyle = MaterialTheme.typography.bodyLarge,
+                        colors = TextFieldDefaults.colors(
+                            focusedContainerColor = Color.Transparent, unfocusedContainerColor = Color.Transparent, disabledContainerColor = Color.Transparent,
+                            focusedIndicatorColor = Color.Transparent, unfocusedIndicatorColor = Color.Transparent, disabledIndicatorColor = Color.Transparent),
+                        keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences))
+                    if (model.active && model.partial.isNotEmpty()) Text(model.partial, Modifier.fillMaxWidth(), color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.bodyMedium, maxLines = 3)
+                    Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text(model.status, Modifier.weight(1f).semantics { liveRegion = LiveRegionMode.Polite }, style = MaterialTheme.typography.bodyMedium)
+                        if (action != null) TextButton({ act(action) }) { Text(action.label) }
+                    }
+                    if (model.cleanupAvailable) StyleGroup(model)
+                    MicButton(model, mic)
+                    // The one privacy line (spec §D: a blank page): said while the page is blank, gone once there is text.
+                    if (!model.hasText && !model.active) Text(
+                        if (model.historyOn) "Each dictation is also saved to history, encrypted on this phone. The text above is not."
+                        else "Nothing is saved. This text is gone when you leave.",
+                        Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp), style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center)
                 }
-                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(model.status, Modifier.weight(1f).semantics { liveRegion = LiveRegionMode.Polite }, style = MaterialTheme.typography.bodyMedium)
-                    if (action != null) TextButton({ act(action) }) { Text(action.label) }
-                }
-                MicButton(model, mic)
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton(copy, Modifier.weight(1f), enabled = model.hasText) { Text("Copy") }
-                    OutlinedButton(share, Modifier.weight(1f), enabled = model.hasText) { Text("Share") }
-                    TextButton({ model.clear() }, enabled = model.hasText && !model.active) { Text("Clear") }
-                }
-                Text(if (model.historyOn) "Dictation history is on: each dictation is also saved, encrypted, on this phone. The text above is not."
-                    else "Nothing is saved. This text is gone when you leave the Scratchpad.", style = MaterialTheme.typography.bodySmall)
-            }
         }
     }
 }
 
 @Composable
+private fun OverflowMenu(model: ScratchpadModel) {
+    var menu by remember { mutableStateOf(false) }
+    Box {
+        IconButton({ menu = true }) { Icon(painterResource(R.drawable.ic_more_vert), "More options") }
+        DropdownMenu(menu, { menu = false }) {
+            DropdownMenuItem(leadingIcon = { Icon(painterResource(R.drawable.ic_notes), null) }, text = { Text("Save as note") },
+                onClick = { menu = false; model.saveAsNote() }, enabled = model.hasText && !model.active)
+            DropdownMenuItem(leadingIcon = { Icon(painterResource(R.drawable.ic_delete), null) }, text = { Text("Clear") },
+                onClick = { menu = false; model.clear() }, enabled = model.hasText && !model.active)
+        }
+    }
+}
+
+/**
+ * The style choice as a single-select chip row above the mic: Raw and the Mac's clean-up styles. Chips keep their label on
+ * one line and the row scrolls sideways, so two to eight styles read at any width and at 200% font; the chosen one is
+ * scrolled into view.
+ */
+@Composable
+internal fun StyleGroup(model: ScratchpadModel) {
+    val options = buildList {
+        add(Triple("Raw", null as CorrectionProfile?, !model.cleanup))
+        model.profiles.forEach { add(Triple(it.name, it, model.cleanup && model.style.id == it.id)) }
+    }
+    val state = rememberLazyListState()
+    val selected = options.indexOfFirst { it.third }.coerceAtLeast(0)
+    LaunchedEffect(selected, options.size) { state.animateScrollToItem(selected) }
+    LazyRow(Modifier.fillMaxWidth().testTag("style-chips"), state = state,
+        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        itemsIndexed(options, key = { _, option -> option.second?.id ?: "raw" }) { _, (label, profile, isSelected) ->
+            FilterChip(isSelected, { model.choose(profile) }, label = { Text(label, maxLines = 1, softWrap = false) }, enabled = !model.active,
+                modifier = Modifier.semantics { role = Role.RadioButton },
+                // A small selected state may keep the koi container; unselected chips stay outlined.
+                colors = FilterChipDefaults.filterChipColors(selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                    selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer))
+        }
+    }
+}
+
+/** A large mic with the Pond Ripple while listening; Stop in the fixed `record` colour. */
+@Composable
 private fun MicButton(model: ScratchpadModel, onClick: () -> Unit) {
-    val halo by animateDpAsState((96 + (if (model.active && !model.stopping) model.level.coerceIn(0.0, 1.0) * 36 else 0.0)).dp, label = "level")
-    Box(Modifier.fillMaxWidth().height(136.dp), contentAlignment = Alignment.Center) {
-        Box(Modifier.size(halo).background(MaterialTheme.colorScheme.primary.copy(alpha = .2f), CircleShape))
+    val roles = LocalChirpRoles.current
+    val listening = model.active && !model.stopping
+    // The record red stays fixed under dynamic colour; its content flips to pond ink when the red runs light.
+    val onRecord = if (androidx.core.graphics.ColorUtils.calculateLuminance(roles.record.toArgb()) > 0.35f) Color(0xFF0D1526) else Color.White
+    Box(Modifier.fillMaxWidth().height(168.dp), contentAlignment = Alignment.Center) {
+        if (listening) Ripple(model.level.coerceIn(0.0, 1.0).toFloat(), Modifier.size(160.dp), color = roles.koiDecor)
         Surface(onClick, Modifier.size(96.dp).semantics {
             role = Role.Button
             contentDescription = if (model.active) "Microphone: stop dictation" else "Microphone: tap to dictate"
-        }, enabled = !model.stopping, shape = CircleShape, color = MaterialTheme.colorScheme.primary) {
+        }, enabled = !model.stopping, shape = CircleShape,
+            color = if (model.active) roles.record else MaterialTheme.colorScheme.primary,
+            contentColor = if (model.active) onRecord else MaterialTheme.colorScheme.onPrimary) {
             Box(contentAlignment = Alignment.Center) {
                 androidx.compose.material3.Icon(painterResource(if (model.active) R.drawable.ic_stop else R.drawable.ic_mic), null,
-                    Modifier.size(40.dp), tint = MaterialTheme.colorScheme.onPrimary)
+                    Modifier.size(40.dp))
             }
         }
     }

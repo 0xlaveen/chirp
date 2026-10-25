@@ -5,22 +5,41 @@ credential or personal text is included.
 
 - `keyboard-{idle,connecting,listening,countdown,polishing,final,tailscale,offline,phone,retention}-{light,dark}.png`:
   Robolectric native graphics on API 37, actual HeliBoard QWERTY keys with Chirp's production strip at 411 px
-  width (Gboard-like look, cover screen), settled with animator scale 0. `final` shows the Undo / Use raw chips,
-  `tailscale` the *Tailscale is off · Turn on* prompt, `offline` *Mac offline*, `phone` the phone-recogniser chip,
-  `retention` the debug banner. The same states are rendered for the other looks and the 673 px inner screen as
-  `keyboard-{gboard,samsung}-{cover,inner}-<state>-{light,dark}.png` (the default combination keeps the short names).
-  `KeyboardRenderTest` also asserts the strip and key-area height is identical in every state.
-- `emulator-keyboard-{idle,listening,final}-{light,dark}.png`: the authorized Android
-  17 fold emulator (`emulator-5580`), actual IME window over the setup test field.
-  A throwaway real Parakeet server receives say-generated speech through PcmCapture
-  and StreamTransport. Listening shows live composing text; final shows committed
-  text and the keyboard still selected. These captures do not simulate a phone mic.
-- `setup-{1,2,3,4}-{light,dark}.png`: Compose wizard initial viewports at 411 × 891 px.
-  The sequence is enable/select keyboard, mic permission, pairing, test. Longer
-  content scrolls; Diagnostics is reachable throughout.
-- `panel-{idle,connecting,listening,finalizing,error,raw,debug}-{light,dark}.png`:
-  shared Material panel for the optional accessibility mic (700 px listening,
-  360 px other states). This optional surface is separate from the full keyboard.
+  width (Gboard-like look, cover screen), settled with animator scale 0. While listening the strip shows the three
+  Pond ripple arcs stepping off the mic and Stop as a filled `record` pill (dark ink on the light dark-theme red);
+  `final` shows the Undo / Use raw chips, `tailscale` the *Tailscale is off · Turn on* prompt, `offline` *Mac offline*,
+  `phone` the phone-recogniser chip, `retention` the debug banner. The same states are rendered for the other looks
+  and the 673 px inner screen as `keyboard-{gboard,samsung}-{cover,inner}-<state>-{light,dark}.png` (the default
+  combination keeps the short names). `KeyboardRenderTest` also asserts the strip and key-area height is identical
+  in every state.
+- `floating-{idle,idle-copy,hold,connecting,listening,finishing,polished,ready,ready-copy-mode,error,error-tailscale}-{cover,inner}-{light,dark}.png`:
+  the floating mic (keep-my-keyboard path) over a synthetic reply field: the edge-docked Pond bubble (with the
+  clipboard badge where a field can't be filled), hold-to-talk with its one-line preview, and the voice panel's
+  states, from Connecting and Listening (Ripple rings, Stop in `record`) to Polished with Use raw, **Ready to copy**
+  with Copy / Open in Scratchpad / Done, and errors that each carry one fix. Rendered by `FloatingMicRenderTest`.
+- `emulator-floating-{idle,listening,ready}-{cover,inner}-{light,dark}.png`: the same bubble and panel on a real
+  Android 17 emulator with Gboard selected, from `emulator-bubble-check.py` (`e2e-all.sh --only bubble`).
+- `keepkb-{choice,floating,restricted,protected,settings}-{cover,inner}-{light,dark}.png`, plus `-font-200`:
+  onboarding's **How you'll dictate** choice, the guided floating-mic page (disclosure first), the Restricted
+  setting help, the Advanced Protection fallback and Settings → How you dictate. Rendered by `InputModeUiTest`.
+- `settings-{top,top-font-200,connection,dictation,keyboard,feedback,notes,history,about,two-pane,two-pane-about}-*.png`:
+  the settings tree (spec §D): a top level of seven category rows in one grouped card, each with an icon and a
+  live one-line summary, and one detail page per category behind them (medium top bars collapse on scroll).
+  Paragraph help lives behind the ⓘ on the row; Notes retention and kept audio sit under Notes, dictation
+  history under Privacy & history. `two-pane` shows the Fold inner screen's list-and-detail layout.
+  Regenerate with `./gradlew -Pchirp.updateScreenshots testDebugUnitTest --tests '*SettingsRenderTest*'`.
+- `history-{list,empty,off}-{cover,inner}-{light,dark}.png`: the History tab, titled "Dictation history" with
+  one line saying what it holds. Flat list rows lead with the target app's icon (PackageManager by label, with a
+  neutral glyph fallback), long-press offers "Add to note" through the notes library, and search, day groups,
+  the raw comparison, private Copy and swipe-delete Undo are unchanged. Rendered by `ShellRenderTest`.
+- `onboarding-{welcome,keyboard,microphone,pair}-{light,dark}.png` plus `-font-200-*`, `keyboard-done-*`,
+  `pair-{failed,checking,connected}-*`: the four-page wizard. The welcome page carries the approved full-bleed
+  pond art edge to edge and introduces Notes as well as dictation; every page keeps one koi primary button and
+  the segmented progress. Rendered by `VoiceUiTest`.
+- `scratchpad-{idle,listening,text}-{light,dark}.png`: the Scratchpad as a borderless blank page — Copy/Share
+  in the top bar, "Save as note" and Clear in the overflow, the style choices as one connected group above the
+  large mic (Ripple rings while listening, Stop in `record`), and the one privacy line only while the page is
+  blank. Rendered by `ScratchpadRenderTest` with animator scale 0 (the settled ripple).
 
 Regenerate the Robolectric artifacts from `android/`:
 
@@ -38,9 +57,37 @@ These are review artifacts, not pixel-golden assertions or Galaxy hardware batte
 latency or microphone measurements. Samsung editor quirks and folding still need
 operator acceptance on the phone.
 
+### Secondary surfaces validation (2026-10-25, #160)
+
+Rebased on the Notes-first shell from #163. Refreshed and reviewed the Settings,
+History, onboarding, Scratchpad, keyboard and voice-panel renders, including light
+and dark, cover and inner layouts, and onboarding/Settings at 200% font. Scratchpad's
+listening fixture now disables animation and asserts the active Stop control before
+capturing, so the render cannot silently capture a connection timeout instead.
+
+`./gradlew lint testDebugUnitTest assembleDebug assembleRelease` passed: 964 test
+cases, zero failures/errors, two opt-in skips. Regression coverage includes live
+Settings summaries while the detail pane stays open, preserving note duration/name
+when appending from History, and quarantining an unreadable note while saving the
+dictation as a new note with a new ID. The smoke helper follows Notes → Dictate →
+the borderless Scratchpad, and accepts an explicit release artifact with
+`CHIRP_SMOKE_APK`.
+
+Emulator smoke and TalkBack remain **blocked**. The shared `emulator-5580` was
+unreachable and was left untouched. A separately owned read-only `chirp-fold` on
+`emulator-5600` booted. The unsigned release artifact was signed in `/tmp` with the
+standard Android debug key for this check; no keystore or signing configuration is
+part of this change. After clearing the disposable instance's Chirp install to
+resolve `INSTALL_FAILED_UPDATE_INCOMPATIBLE`, the final attempt reached onboarding
+but lost ADB during the wait for “Scan code” (`ADB operation failed: shell`).
+TalkBack could not push its probe because `emulator-5600` was no longer present.
+The owned emulator had already exited at cleanup; other instances were untouched.
+No further emulator retries were made, and no successful smoke/TalkBack result or
+new emulator captures are claimed for this change.
+
 ## Design components
 
-- `components-{light,dark}.png`: the shared settings components (`ui/ChirpComponents.kt`) in Chirp green:
+- `components-{light,dark}.png`: the shared settings components (`ui/ChirpComponents.kt`) in Pond:
   `SettingsGroup` with `SwitchRow`, `NavRow` and a destructive `ActionRow`, `ChoiceChips`, the four
   `StatusBanner` kinds and the `InfoSheet` body. `components-dynamic-{light,dark}.png` show the
   default wallpaper colours (Robolectric's stock dynamic palette), and `components-font-200.png`
@@ -54,26 +101,20 @@ operator acceptance on the phone.
   the Samsung-like look (Rounded + borders, Chirp's One UI-style user colours). The
   Chirp strip takes its ink, accent and highlight from the active keyboard colours.
   Regenerate with `./gradlew testDebugUnitTest --tests '*KeyboardRenderTest*'`.
-- `before-keyboard-{inner,cover}-{light,dark}.png`, `before-keyboard-inner-landscape-light.png`:
-  the round-4 release captures kept for comparison (Material keys, no borders, fixed
-  green strip). The current `release-keyboard-*.png` files show the new default look.
 ## Release captures (round 4)
 
 `release-*.png` are direct, unmodified PNG captures from the minified release APK on
-`emulator-5580`, Android 17. Each file is below 2 MB. They are the primary review set:
+an Android 17 emulator. Each file is below 2 MB.
 
-- `release-keyboard-{inner,cover}-{light,dark}.png`: single suggestion row with mic;
-  inner width has a number row, cover width stays compact.
-- `release-pair-action-{inner,cover}-{light,dark}.png`: accessible pairing recovery in
-  that same row, with no duplicated partial text.
 - `release-pairing-light.png`, `release-scanner-light.png`: QR-first pairing and actual
   Google Play scanner surface, opened from the release APK.
-- `release-typing-{autocorrect,contraction,next-word,clipboard,emoji}.png`: real
-  HeliBoard key taps; `teh` corrects to sentence-cased `The`, `im` to `I'm`, next-word
-  predictions, local clipboard history, and the emoji keyboard.
-- `release-keyboard-inner-landscape-light.png`: landscape split with real key geometry checks; one-handed control reachability.
-- `release-talkback.png`: release with TalkBack enabled; native accessibility click,
-  long-click and mic/status/cancel labels are checked before the capture.
+- `release-launcher-icon.png`, `release-app-icon-settings.png`, `release-keyboard-picker-icon.png`
+  (archived evidence, from `emulator-icons.py`): the launcher, app-settings and keyboard-picker icons. The icon art
+  is unchanged; the labels predate the app's rename to **Chirp**.
+
+The round-4 keyboard, pairing-action, typing and TalkBack captures were removed in the redesign docs sweep
+(2026-10-25): they were taken over the retired setup "Try it" page with the old green strip. Re-run the scripts
+below to capture the current release UI.
 
 Regenerate with the toolchain sourced:
 
@@ -90,6 +131,9 @@ on this image. It is not packaged with the app. Neither release nor debug captur
 establish Samsung hardware microphone quality or Tailscale performance.
 
 ## Fold function-key placement
+
+**Archived evidence.** These captures prove the key geometry, which has not changed, but the page behind the
+keyboard is the retired setup screen. They are kept for the layout record, not as current UI.
 
 `fold-layout-{before,after}-{gboard,samsung}-{form}-{light,dark}.png` are direct
 release-APK captures on emulator-5580. `before` is unmodified 0.5.2; `after` includes
@@ -124,3 +168,65 @@ and landscape split; it restores size, density, night mode and rotation settings
 It selects the requested look through the production chooser and leaves it selected.
 The dimensions approximate the reported Fold inner screen; these are emulator
 layout checks, with hardware acceptance left to the operator.
+
+## Notes library (Pond)
+
+`notes-library-{cover,inner}-{state}-{light,dark}.png` are API 37 Robolectric native
+renders of the production Notes-first shell at 411 × 891 dp (cover, navigation bar)
+and 840 × 900 dp (inner, navigation rail and list/detail). States:
+
+- `empty`: glyph and static rings, first-record guidance and local-storage line.
+- `populated`: serif titles, relative times, two-line previews, duration and open tasks.
+- `recording`: pinned Ripple card with frozen preview and tabular timer.
+- `search` / `no-results`: local body/transcript search and highlighted matches.
+- `recently-deleted`: restore controls and the 30-day explanation.
+- `multi-select`: selected rows and bulk delete, while another note keeps recording.
+- `detail`: the rendered document, Continue, and a jump back to the active recording.
+- `transcript-sheet`: the actual modal sheet with per-segment playback controls.
+
+`notes-library-wide-landscape-{light,dark}.png` additionally show the transcript as
+a third pane at 1280 × 800 dp. Normal inner windows use a sheet to preserve reading
+space. Motion is disabled for these review captures, so Ripple uses its static
+accessibility treatment. `NotesScreenshots.kt` draws Material's separate sheet
+window over the activity because it does not expose `DialogWindowProvider` to the
+Robolectric PixelCopy helper.
+
+Regenerate this set and the existing detail states deliberately:
+
+```sh
+./gradlew testDebugUnitTest -Pchirp.updateScreenshots \
+  --tests '*NotesLibraryScreenTest*' --tests '*NotesRenderTest*'
+```
+
+The starting screen is Notes (the retired Home dashboard's `home-*` captures were removed); `notes-{cover,inner}-*`
+remain detail/editor review states of the note pane on its own. All fixture
+words and audio references are synthetic. Pixel renders do not establish codec
+support; the emulator check separately exercises the real platform codecs.
+
+The strengthened `emulator-check.py --notes-check` opts into kept audio on the
+throwaway emulator and requires a real MediaCodec AAC segment to prepare, start,
+play for at least two seconds, and complete naturally through MediaPlayer. It
+rejects decoder errors and keeps its output content-free.
+
+`emulator-notes-kept-audio-playing.png` is a real Android 17 arm64 capture from a
+separate read-only `chirp-fold` instance on `emulator-5600`. It shows the segment
+highlight and Stop playback control during actual playback, using only generated
+speech. The complete notes check passed: rolling transcription/structuring,
+voice edit, screen-off capture, pause/resume/stop, real kept-audio replay, native
+Markdown editing, Organize, Share and Scratchpad dictation. The owned emulator was
+shut down after the run; no other emulator instance was touched. The content-free
+result is in `emulator-notes-result.txt`.
+
+The original `emulator-5580` remains the default. To target the explicitly allowed
+read-only instance instead, set `ANDROID_SERIAL=emulator-5600` when invoking the
+check and the UI probe builder. The fixture's six-second Ready delay applies to
+Notes streams only; ordinary dictation uses the normal two-second delay so its
+smaller pre-ready buffer is not exhausted by the Notes stress scenario.
+
+### Keyboard-free entries (#168)
+
+`QuickDictateRenderTest` renders `quick-dictate-{listening,copied,error}-{cover,inner}-{light,dark}.png`, the static `quick-dictate-widget-{1x1,2x1}-*.png` previews and `share-to-notes-dialog-*.png`. `InputModeUiTest` adds `keepkb-entry-points-*.png`, including 200% font. The new sheet is capped at 560 dp on inner screens; status, finals, raw replacement and cancellation use the existing Pond roles and Ripple.
+
+`e2e-all.sh --only quickdictate release` records the actual tile/listening/copied, network-error and Share dialog in its private evidence folder. Only reviewed synthetic screenshots are copied here; no logs or UI XML are committed. There is no previous Quick dictate surface to compare; `keepkb-settings-*.png` is the earlier Settings context.
+
+The committed `quick-dictate-emulator-{polishing,copied,error}.png` and `share-to-notes-emulator-dialog.png` come from the passing real-server entry matrix. The black backdrop is the debug probe’s secure window underneath the translucent Activity; it contains no user content. The copied capture shows Android’s sensitive clipboard overlay with its text preview hidden.

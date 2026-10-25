@@ -103,9 +103,21 @@ import Testing
         #expect(contrast(HUDColors.errorDark, darkMaterial) >= 4.5)
     }
 
-    @Test func useRawButtonMeetsWCAGAA() {
-        #expect(contrast(HUDColors.actionLight, lightMaterial) >= 4.5)
-        #expect(contrast(HUDColors.actionDark, darkMaterial) >= 4.5)
+    @Test func useRawChipMeetsWCAGAA() {
+        // The chip is koiContainer with onKoiContainer text: its own solid fill, so it is readable over any material.
+        typealias Pond = ChirpColor.Pond
+        #expect(contrast(Pond.onKoiContainer.light, Pond.koiContainer.light) >= 4.5)
+        #expect(contrast(Pond.onKoiContainer.dark, Pond.koiContainer.dark) >= 4.5)
+        // The koi tint of the word waveform's bars and revised words is graphics, not body text: 3:1 over the material.
+        #expect(contrast(HUDColors.actionLight, lightMaterial) >= 3)
+        #expect(contrast(HUDColors.actionDark, darkMaterial) >= 3)
+    }
+
+    @Test func hudIsAFixedWidthPanelWithTheWordWaveformWider() {
+        #expect(HUDViewMetrics.width == 360 && HUDViewMetrics.wordWaveformWidth == 420)
+        #expect(HUDViewMetrics.width(wordWaveform: false) == 360 && HUDViewMetrics.width(wordWaveform: true) == 420)
+        #expect(HUDViewMetrics.contentWidth(wordWaveform: false) == 328)
+        #expect(HUDViewMetrics.corner == ChirpRadius.panel && HUDViewMetrics.transcriptLines == 3)
     }
 
     @Test func debugBadgeKeepsWhiteTextReadable() {
@@ -161,26 +173,33 @@ import Testing
 
     // MARK: tabs
 
-    @Test func hasEightTabsInTheTargetOrder() {
-        #expect(SettingsTab.allCases.map(\.title) == ["General", "Shortcuts", "Dictation", "Clean-up", "Notes", "Server", "Devices", "About"])
+    @Test func hasSixPagesAndAboutInTheFooter() {
+        #expect(SettingsTab.sidebar.map(\.title) == ["General", "Dictation", "Clean-up", "Notes", "Devices", "Advanced"])
+        #expect(SettingsTab.allCases.last == .about && !SettingsTab.sidebar.contains(.about))
         #expect(SettingsTab.allCases.allSatisfy { NSImage(systemSymbolName: $0.symbol, accessibilityDescription: nil) != nil })
     }
 
-    @Test func eachControlLivesOnItsOwnTab() {
+    @Test func eachControlLivesOnItsOwnPage() {
         let form = SettingsForm(SettingsState())
         func has(_ control: NSView, _ tab: SettingsTab) -> Bool { control.isDescendant(of: form.view(for: tab)) }
         #expect(has(form.launch, .general) && has(form.setupButton, .general) && has(form.micButton, .general) && has(form.accessibilityButton, .general))
-        #expect(has(form.hotkey, .shortcuts) && has(form.recorder, .shortcuts) && has(form.mode, .dictation) && has(form.silence, .dictation))
+        // Dictation holds every shortcut, how a dictation stops, the microphone and the sounds.
+        #expect(has(form.hotkey, .dictation) && has(form.recorder, .dictation) && has(form.notesShortcut.view, .dictation) && has(form.useRawShortcut.view, .dictation))
+        #expect(has(form.mode, .dictation) && has(form.silence, .dictation))
         #expect(has(form.microphone, .dictation) && has(form.wordWaveform, .dictation) && has(form.autoEnter, .dictation))
         #expect(has(form.sounds, .dictation) && has(form.soundPack, .dictation) && has(form.volume, .dictation) && has(form.chooseStart, .dictation))
         #expect(has(form.cleanupEnabled, .cleanup) && has(form.style, .cleanup) && has(form.prompts.view, .cleanup))
         #expect(has(form.appStyles.view, .cleanup) && has(form.showChanges, .cleanup) && has(form.insertRawFirst, .cleanup))
-        #expect(has(form.removeSpeakerModel, .notes) && has(form.notesButton, .notes) && has(form.notesRecoveryCopy, .notes))
-        #expect(has(form.serverURL, .server) && has(form.doctorButton, .server) && has(form.modelsButton, .server) && has(form.keepLoaded, .server))
+        #expect(has(form.removeSpeakerModel, .notes) && has(form.notesButton, .notes))
+        // Notes: retention, Recently Deleted, kept audio, the export folder and the smart-notes defaults.
+        #expect(has(form.notesRetention, .notes) && has(form.emptyDeleted, .notes) && has(form.keepAudio, .notes) && has(form.deleteAudio, .notes))
+        #expect(has(form.chooseExport, .notes) && has(form.structureNotes, .notes) && has(form.autoReorganize, .notes))
+        // Advanced: the server URL, token, models and Doctor.
+        #expect(has(form.serverURL, .advanced) && has(form.doctorButton, .advanced) && has(form.modelsButton, .advanced) && has(form.keepLoaded, .advanced))
         #expect(has(form.pairButton, .devices) && has(form.devicesView, .devices) && has(form.rotateButton, .devices) && has(form.about, .about))
         // and on no other
-        for control in [form.launch, form.hotkey, form.sounds, form.cleanupEnabled, form.removeSpeakerModel, form.notesRecoveryCopy, form.serverURL, form.keepLoaded,
-                        form.pairButton, form.devicesView, form.rotateButton, form.micButton, form.about] {
+        for control in [form.launch, form.hotkey, form.sounds, form.cleanupEnabled, form.removeSpeakerModel, form.serverURL, form.keepLoaded,
+                        form.pairButton, form.devicesView, form.rotateButton, form.micButton, form.about, form.keepAudio, form.notesRetention] {
             #expect(SettingsTab.allCases.filter { has(control, $0) }.count == 1)
         }
     }
@@ -204,43 +223,92 @@ import Testing
         #expect(SettingsForm.cleanupDetail(health: nil).available)
     }
 
-    @Test func everyTabSharesOneWidthAndIsAsTallAsItsContent() {
+    @Test func everyPageSharesOneWidthThatFillsTheDetailColumn() {
         let form = SettingsForm(SettingsState())
         let sizes = SettingsTab.allCases.map { form.fittingSize(for: $0) }
-        // One width, so the window never jumps sideways and the eight toolbar tabs always fit.
-        #expect(Set(sizes.map(\.width)).count == 1 && sizes[0].width >= SettingsForm.minimumWidth && sizes[0].width < 560)
+        // One width, so switching pages never moves the sidebar; it is the window's 520 pt detail column.
+        #expect(Set(sizes.map(\.width)).count == 1 && sizes[0].width == SettingsShell.size.width - SettingsShell.sidebarWidth)
         #expect(SettingsTab.allCases.allSatisfy { form.view(for: $0).fittingSize.width == sizes[0].width })
-        // Not one tall form: only Clean-up (the prompt editor) is tall.
+        // Only the long pages scroll; the General page fits the fixed 520 pt window.
         let heights = Dictionary(uniqueKeysWithValues: zip(SettingsTab.allCases, sizes.map(\.height)))
-        #expect(heights[.general]! < 260 && heights[.devices]! < 260 && heights[.notes]! < 420 && heights[.server]! < 380, "\(heights)")
-        #expect(heights[.dictation]! < 560, "\(heights)")
-        #expect(heights[.cleanup]! > heights[.dictation]! * 1.25)
+        #expect(heights[.general]! < SettingsShell.size.height, "\(heights)")
+        #expect(heights[.cleanup]! > SettingsShell.size.height && heights[.cleanup]! > heights[.general]! * 1.5, "\(heights)")
     }
 
-    @Test func contentIsCentredWithItsMargin() {
+    @Test func pagesSitInsideTheirMargin() {
         let form = SettingsForm(SettingsState())
-        let widest = SettingsTab.allCases.max { form.view(for: $0).subviews[0].fittingSize.width < form.view(for: $1).subviews[0].fittingSize.width }!
         for tab in SettingsTab.allCases {
             let view = form.view(for: tab)
             let size = form.fittingSize(for: tab)
             let body = view.subviews[0]
             view.setFrameSize(size)
             view.layoutSubtreeIfNeeded()
-            #expect(body.frame.minX >= 19.5 && abs(body.frame.minY - 20) < 0.5 && abs(size.height - body.frame.maxY - 20) < 0.5, "\(tab.title)")
-            // Centred to the point: an odd leftover width rounds half a point to one side.
-            #expect(abs(body.frame.midX - size.width / 2) <= 0.5, "\(tab.title)")
-            // The widest tab sets the width unless the toolbar needs more.
-            if tab == widest, body.fittingSize.width + 40 >= SettingsForm.minimumWidth {
-                #expect(abs(body.frame.minX - 20) < 0.5 && abs(size.width - body.frame.maxX - 20) < 0.5)
-            }
+            #expect(abs(body.frame.minY - 20) < 0.5 && abs(size.height - body.frame.maxY - 20) < 0.5, "\(tab.title)")
+            if tab != .about { #expect(abs(body.frame.minX - 20) < 0.5 && abs(size.width - body.frame.maxX - 20) < 0.5, "\(tab.title)") }
         }
     }
 
-    @Test func groupsStartWithExtraSpace() throws {
+    @Test func pagesAreGroupedCardsWithATitle() throws {
         let form = SettingsForm(SettingsState())
-        let grid = try #require(form.view(for: .dictation).subviews[0] as? NSGridView)
-        #expect(grid.row(at: 2).topPadding == SettingsForm.groupSpacing && grid.row(at: 5).topPadding == SettingsForm.groupSpacing)
-        #expect(grid.row(at: 1).topPadding == 0)
+        let page = try #require(form.view(for: .dictation).subviews[0] as? NSStackView)
+        #expect(page.arrangedSubviews.first is SettingsPageTitle)
+        let sections = page.arrangedSubviews.dropFirst()
+        #expect(sections.count == 3)   // Shortcuts, Dictating, Sounds
+        #expect(sections.allSatisfy { ($0 as? NSStackView)?.arrangedSubviews.contains { $0 is SettingsCard } == true })
+    }
+
+    @Test func hiddenRowsLeaveNoGap() {
+        var s = SettingsState()
+        s.soundPack = .default
+        let form = SettingsForm(s)
+        let rows = form.view(for: .dictation).allDescendants(of: SettingsRow.self)
+        #expect(rows.filter(\.isHidden).count == 3)   // the fn help row and the two custom sound rows
+        s.soundPack = .custom
+        form.apply(s, full: true)
+        #expect(form.view(for: .dictation).allDescendants(of: SettingsRow.self).filter(\.isHidden).count == 1)
+    }
+
+    @Test func notesPageShowsTheLibrarySettingsAsStored() {
+        var s = SettingsState()
+        s.notesRetention = .ninetyDays; s.notesKeepAudio = true; s.notesAudioBytes = 48_300_000; s.recentlyDeletedCount = 3
+        s.exportFolder = NSHomeDirectory() + "/Documents/Notes"; s.structureNotes = true; s.autoReorganize = false
+        let form = SettingsForm(s)
+        #expect(form.notesRetention.selectedItem?.representedObject as? String == NotesRetention.ninetyDays.rawValue)
+        #expect(form.keepAudio.state == .on && form.deleteAudio.isEnabled && form.emptyDeleted.isEnabled)
+        #expect(form.structureNotes.state == .on && form.autoReorganize.state == .off && form.resetExport.isEnabled)
+        #expect(form.notesRetention.itemTitles == ["Never", "1 year", "90 days", "30 days"])
+        // Nothing to delete: the buttons say so.
+        s.notesAudioBytes = 0; s.recentlyDeletedCount = 0
+        form.apply(s)
+        #expect(!form.deleteAudio.isEnabled && !form.emptyDeleted.isEnabled)
+    }
+
+    @Test func sidebarSearchMatchesTitlesAndKeywords() {
+        #expect(SettingsShell.pages(matching: "") == SettingsTab.allCases)
+        #expect(SettingsShell.pages(matching: "token").contains(.advanced) && SettingsShell.pages(matching: "token").contains(.devices))
+        #expect(SettingsShell.pages(matching: "Retention") == [.notes])
+        #expect(SettingsShell.pages(matching: "login") == [.general])
+        #expect(SettingsShell.pages(matching: "zzz").isEmpty)
+    }
+
+    @Test func permissionProblemsBadgeGeneral() {
+        #expect(SettingsShell.permissionProblems(micGranted: true, accessibilityGranted: true) == 0)
+        #expect(SettingsShell.permissionProblems(micGranted: false, accessibilityGranted: true) == 1)
+        #expect(SettingsShell.permissionProblems(micGranted: false, accessibilityGranted: false) == 2)
+    }
+
+    @Test func shellSelectsAPageAndFollowsASearch() {
+        let shell = SettingsShell(form: SettingsForm(SettingsState()), flat: true)
+        #expect(shell.selected == .general && shell.fittingSize == SettingsShell.size)
+        var heard: [SettingsTab] = []
+        shell.onSelect = { heard.append($0) }
+        shell.show(.notes)
+        #expect(shell.selected == .notes && heard == [.notes])
+        // A search the open page does not match moves to the first page that does.
+        shell.setSearch("doctor")
+        #expect(shell.selected == .advanced)
+        shell.setSearch("")
+        #expect(shell.selected == .advanced)
     }
 
     @Test func microphonePickerFollowsTheMenuRules() {
@@ -271,34 +339,23 @@ import Testing
         #expect(!form.removeSpeakerModel.isHidden && form.removeSpeakerModel.accessibilityLabel() == "Remove the speaker model")
     }
 
-    @Test(arguments: [(SettingsTab.general, SoundPack.chirp, 4), (.shortcuts, .chirp, 4), (.dictation, .chirp, 8), (.dictation, .custom, 10),
-                      (.cleanup, .chirp, 7), (.notes, .chirp, 4), (.server, .chirp, 6), (.devices, .chirp, 3)])
-    func labelsShareARightEdgeAndControlsALeftEdge(tab: SettingsTab, pack: SoundPack, expectedLabels: Int) throws {
-        var state = SettingsState()
-        state.soundPack = pack
-        let form = SettingsForm(state)
+    @Test(arguments: [(SettingsTab.general, "Set up Chirp"), (.dictation, "Dictation"), (.cleanup, "Style"), (.notes, "Delete notes older than"),
+                      (.advanced, "Server URL"), (.devices, "Pair a phone")])
+    func rowTitlesShareALeftEdgeAndTheirControlsATrailingEdge(tab: SettingsTab, title: String) throws {
+        let form = SettingsForm(SettingsState())
         let view = form.view(for: tab)
         view.setFrameSize(form.fittingSize(for: tab))
         view.layoutSubtreeIfNeeded()
-        func labels(in view: NSView) -> [NSTextField] {
-            view.subviews.flatMap { ($0 as? NSTextField).map { [$0] } ?? labels(in: $0) }
+        let rows = view.allDescendants(of: SettingsRow.self).filter { $0.title != nil && !$0.isHidden }
+        #expect(rows.contains { $0.title == title }, "\(tab.title): \(rows.compactMap(\.title))")
+        // Titles start at the card's text inset, in every row.
+        let titles = rows.compactMap { row in row.allDescendants(of: NSTextField.self).first { $0.stringValue == row.title } }
+        let edges = titles.map { view.convert($0.bounds, from: $0).minX }
+        #expect(edges.allSatisfy { abs($0 - edges[0]) < 0.5 }, "\(tab.title)")
+        // Nothing pokes out of the page's right margin.
+        for control in view.allDescendants(of: NSControl.self) where !control.isHiddenOrHasHiddenAncestor && !(control is SettingsPageTitle) {
+            #expect(view.convert(control.bounds, from: control).maxX <= view.bounds.width - 19.5, "\(tab.title): \(control)")
         }
-        let rowLabels = labels(in: view).filter { $0.stringValue.hasSuffix(":") && $0.alignment == .right && !$0.isHidden }
-        #expect(rowLabels.count == expectedLabels)
-        let edges = rowLabels.map { view.convert($0.bounds, from: $0).maxX }
-        #expect(edges.allSatisfy { abs($0 - edges[0]) < 0.5 })
-        let leading: [NSView] = switch tab {
-        case .general: [form.launch, form.alwaysInDock, form.setupButton]
-        case .shortcuts: [form.hotkey, form.notesShortcut.view, form.openNotes.view, form.useRawShortcut.view]
-        case .dictation: [form.mode, form.silence, form.microphone, form.wordWaveform, form.autoEnter, form.sounds, form.soundPack, form.volume]
-        case .cleanup: [form.cleanupEnabled, form.style, form.insertRawFirst, form.appStyles.scroll, form.showChanges, form.offerRaw]
-        case .notes: [form.notesRecoveryCopy, form.notesButton, form.voicesView.toggle]
-        case .server: [form.serverURL, form.keepLoaded, form.doctorButton, form.modelsButton]
-        case .devices: [form.pairButton, form.devicesView, form.rotateButton]
-        case .about: []
-        }
-        let controlEdges = leading.map { view.convert($0.bounds, from: $0).minX }
-        #expect(controlEdges.allSatisfy { abs($0 - controlEdges[0]) < 0.5 && $0 > edges[0] })
     }
 
     @Test func helpTextUsesTheSecondaryLabelColour() {
@@ -307,50 +364,43 @@ import Testing
         #expect(form.launchHelp.font?.pointSize == NSFont.smallSystemFontSize)
     }
 
-    @Test func theToolbarTabControllerHasEveryTabSizedToFit() throws {
+    @Test func theShellControllerHoldsTheFixedWindowAndEveryPage() throws {
         let form = SettingsForm(SettingsState())
         let controller = SettingsTabs.makeController(form: form)
-        #expect(controller.tabStyle == .toolbar)
-        #expect(controller.tabViewItems.map(\.label) == SettingsTab.allCases.map(\.title))
-        #expect(controller.tabViewItems.allSatisfy { $0.image != nil })
-        for (item, tab) in zip(controller.tabViewItems, SettingsTab.allCases) {
-            let vc = try #require(item.viewController as? SettingsTabController)
-            _ = vc.view
-            #expect(vc.tab == tab)
-            let fit = form.fittingSize(for: tab)
-            // Within the screen: its natural size (a little wider only when it has to scroll).
-            #expect(vc.preferredContentSize.width >= fit.width && vc.preferredContentSize.height <= fit.height + 0.5)
-            #expect(vc.preferredContentSize.height == min(fit.height, SettingsTabController.heightLimit()) || vc.preferredContentSize.height == fit.height)
-        }
+        _ = controller.view
+        #expect(controller.preferredContentSize == SettingsShell.size && SettingsShell.size == NSSize(width: 720, height: 520))
+        var shown: [SettingsTab] = []
+        controller.onAppear = { shown.append($0) }
+        for tab in SettingsTab.allCases { controller.shell.show(tab) }
+        #expect(shown == SettingsTab.allCases)
+        #expect(controller.shell.selected == .about)
     }
 
-    @Test func aWindowAroundTheTabsOpensWithoutAFocusedOrSelectedField() throws {
+    @Test func aWindowAroundTheShellOpensWithoutAFocusedOrSelectedField() throws {
         let form = SettingsForm(SettingsState())
         let controller = SettingsTabs.makeController(form: form)
         let window = NSWindow(contentViewController: controller)
-        window.styleMask = [.titled, .closable]
+        window.styleMask = [.titled, .closable, .fullSizeContentView]
         window.isReleasedWhenClosed = false
+        window.setContentSize(SettingsShell.size)
         #expect(!(window.firstResponder is NSText))
-        #expect(window.contentViewController === controller && window.contentView?.frame.width ?? 0 > 300)
-        controller.selectedTabViewItemIndex = SettingsTab.server.hashValue == 0 ? 0 : SettingsTab.allCases.firstIndex(of: .server)!
-        let current = try #require(controller.tabViewItems[controller.selectedTabViewItemIndex].viewController?.view)
-        window.makeFirstResponder(current)
+        #expect(window.contentViewController === controller && window.contentView?.frame.size == SettingsShell.size)
+        controller.shell.show(.advanced)
+        window.makeFirstResponder(form.view(for: .advanced))
         #expect(!(window.firstResponder is NSText) && form.serverURL.currentEditor() == nil)
     }
 
-    @Test func customSoundRowsChangeOnlyTheDictationTab() throws {
+    @Test func customSoundRowsRevealWithoutResizingTheWindow() throws {
         let form = SettingsForm(SettingsState())
         let controller = SettingsTabs.makeController(form: form)
-        let sounds = try #require(controller.tabViewItems[SettingsTab.allCases.firstIndex(of: .dictation)!].viewController as? SettingsTabController)
-        _ = sounds.view
-        let before = sounds.preferredContentSize.height
+        _ = controller.view
+        let before = form.fittingSize(for: .dictation).height
         form.showPack(.custom)
-        sounds.refreshSize()
-        let custom = sounds.preferredContentSize.height
+        let custom = form.fittingSize(for: .dictation).height
         #expect(custom > before)
         form.showPack(.chirp)
-        sounds.refreshSize()
-        #expect(sounds.preferredContentSize.height == before, "\(before) → \(custom) → \(sounds.preferredContentSize.height)")
+        #expect(form.fittingSize(for: .dictation).height == before, "\(before) → \(custom)")
+        #expect(controller.preferredContentSize == SettingsShell.size)
     }
 }
 
@@ -432,12 +482,13 @@ import Testing
         for state in ["paused", "listening", "unreachable", "debug", "use-raw", "permissions-missing", "long-names"] {
             #expect(names.contains("menu-\(state)-light.png") && names.contains("menu-\(state)-dark.png"))
         }
-        for name in ["onboarding-welcome", "onboarding-try-it-success", "onboarding-microphone-blocked", "settings-about-ready", "settings-shortcuts-custom"] {
+        for name in ["onboarding-welcome", "onboarding-try-it-success", "onboarding-microphone-blocked", "settings-about-ready", "settings-dictation-shortcuts-custom"] {
             #expect(names.contains("\(name)-light.png") && names.contains("\(name)-dark.png"))
         }
         for url in files {
             let data = try Data(contentsOf: url)
-            #expect(data.count < 250_000, "\(url.lastPathComponent) is too big to commit")
+            // The welcome window carries the pond artwork, a photographic image: it is the one PNG that needs the larger bound.
+            #expect(data.count < 550_000, "\(url.lastPathComponent) is too big to commit")
             let rep = try #require(NSBitmapImageRep(data: data))
             #expect(rep.pixelsWide > 100 && rep.pixelsHigh > 50)
             // Not a flat fill: some pixel differs from the corner.
@@ -475,15 +526,16 @@ import Testing
         let names = Snapshots.committedNames
         let all = Set(Snapshots.allScenarios.map(\.name))
         #expect(names.allSatisfy { all.contains($0) } && Set(names).count == names.count)
-        #expect(names.count * 2 <= 46)
+        #expect(names.count * 2 <= 72)  // 36 states: every Settings page, the 720 × 520 windows and nine Notes window states
         // The menu in light and dark, one per Settings tab, setup, the key HUD states and the Notes window.
-        #expect(names.contains("notes-editing") && names.contains("notes-split"))
+        #expect(["notes-empty", "notes-library", "notes-recording", "notes-search", "notes-no-results", "notes-deleted",
+                 "notes-continued", "notes-inspector-playing", "notes-review-sheet"].allSatisfy(names.contains))
         #expect(names.contains("menu-ready") && names.contains("onboarding-welcome") && names.contains { $0.hasPrefix("hud-") })
         for tab in SettingsTab.allCases { #expect(names.contains { $0.hasPrefix("settings-\(tab.rawValue)-") }, "\(tab.title)") }
         #expect(Snapshots.committedScenarios.map(\.name) == names)
     }
 
-    @Test func theCommittedFilesAreExactlyTheCuratedSetUnderFourPointFiveMegabytes() throws {
+    @Test func theCommittedFilesAreExactlyTheCuratedSetUnderTwelveMegabytes() throws {
         let dir = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
             .deletingLastPathComponent().appendingPathComponent("docs/screenshots/mac")
         guard FileManager.default.fileExists(atPath: dir.path) else { return }   // not a full checkout
@@ -491,7 +543,7 @@ import Testing
         let expected = Snapshots.committedNames.flatMap { ["\($0)-dark.png", "\($0)-light.png"] }.sorted()
         #expect(files == expected, "docs/screenshots/mac is out of date: run mac/scripts/snapshots.sh")
         let total = try files.reduce(0) { $0 + (try FileManager.default.attributesOfItem(atPath: dir.appendingPathComponent($1).path)[.size] as? Int ?? 0) }
-        #expect(total < 4_500_000, "\(total) bytes")
+        #expect(total < 12_000_000, "\(total) bytes")
     }
 
     @Test func curatedRenderingWritesOnlyTheCommittedNames() throws {
@@ -508,5 +560,76 @@ import Testing
         let ready = try Data(contentsOf: dir.appendingPathComponent("menu-ready-light.png"))
         let hover = try Data(contentsOf: dir.appendingPathComponent("menu-hover-light.png"))
         #expect(ready != hover)   // the hover scenario draws a selected row
+    }
+
+    // MARK: the Notes window's Pond surfaces
+
+    /// Renders one scenario's PNG under an appearance. `NSBitmapImageRep.colorAt` reads top-down.
+    private func rep(_ name: String, _ appearance: NSAppearance.Name) throws -> NSBitmapImageRep {
+        let scenario = try #require(Snapshots.allScenarios.first { $0.name == name })
+        let data = try #require(Snapshots.png(scenario, appearance: appearance))
+        return try #require(NSBitmapImageRep(data: data))
+    }
+
+    /// The committed PNG of `name` (rendered by `scripts/snapshots.sh` in the app process, where the sidebar's
+    /// List material behaves as on screen — the test runner's plainer AppKit draws it differently). nil when this
+    /// is not a full checkout.
+    private func committed(_ name: String) throws -> NSBitmapImageRep? {
+        let dir = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent().appendingPathComponent("docs/screenshots/mac")
+        let url = dir.appendingPathComponent(name)
+        guard let data = try? Data(contentsOf: url) else { return nil }
+        return NSBitmapImageRep(data: data)
+    }
+
+    /// How many 8-px samples in a horizontal band sit within `tolerance` of `rgb` per channel.
+    private func samples(_ rep: NSBitmapImageRep, x0: Int, x1: Int, near rgb: (Int, Int, Int), tolerance: Int = 14) -> Int {
+        var count = 0
+        for x in stride(from: x0, to: min(x1, rep.pixelsWide), by: 8) {
+            for y in stride(from: 0, to: rep.pixelsHigh, by: 8) {
+                if let c = rep.colorAt(x: x, y: y),
+                   abs(Int(c.redComponent * 255) - rgb.0) <= tolerance,
+                   abs(Int(c.greenComponent * 255) - rgb.1) <= tolerance,
+                   abs(Int(c.blueComponent * 255) - rgb.2) <= tolerance {
+                    count += 1
+                }
+            }
+        }
+        return count
+    }
+
+    @Test func theNotesSidebarSitsOnPondWithAKoiSelectedRow() throws {
+        guard let dark = try committed("notes-recording-dark.png"), let light = try committed("notes-recording-light.png") else { return }
+        // The sidebar column is Pond `surfaceRaised` (not the grey system material) beside the `surface` editor.
+        #expect(samples(dark, x0: 40, x1: 500, near: (26, 38, 64)) > 400)
+        #expect(samples(dark, x0: 1100, x1: 2000, near: (18, 28, 48)) > 4000)
+        // The selected row is a crisp solid koi pill, not a muddy wash.
+        #expect(samples(dark, x0: 40, x1: 500, near: (255, 138, 76)) > 60)
+        #expect(samples(light, x0: 40, x1: 500, near: (236, 239, 245)) > 400)
+        // The pale koi container at 85% over `surfaceRaised`.
+        #expect(samples(light, x0: 40, x1: 500, near: (252, 228, 213)) > 60)
+    }
+
+    @Test func theEmptyStateDiscIsARaisedPondSurfaceNotTheMuddyContainer() throws {
+        guard let dark = try committed("notes-empty-dark.png"), let light = try committed("notes-empty-light.png") else { return }
+        // In dark the glyph disc is `surfaceRaised` on the `surface` page; the koi container read as a muddy
+        // brown block at this size.
+        #expect(samples(dark, x0: 1000, x1: 1600, near: (26, 38, 64)) > 100)
+        #expect(samples(dark, x0: 1000, x1: 1600, near: (92, 34, 7), tolerance: 10) == 0)
+        // In light it keeps the pale koi disc.
+        #expect(samples(light, x0: 1000, x1: 1600, near: (255, 228, 212)) > 100)
+    }
+
+    @Test func theHearingStripWashStaysSubtleInDark() throws {
+        let dark = try rep("notes-recording-live", .darkAqua)
+        // 10% koi over the surface — a quiet warm wash, not the 35% koi container that read muddy.
+        #expect(samples(dark, x0: 1100, x1: 2000, near: (42, 38, 51), tolerance: 7) > 60)
+        #expect(samples(dark, x0: 1100, x1: 2000, near: (44, 31, 34), tolerance: 6) < 10)
+    }
+}
+
+extension NSView {
+    func allDescendants<T: NSView>(of type: T.Type) -> [T] {
+        subviews.flatMap { ($0 as? T).map { [$0] } ?? [] + $0.allDescendants(of: type) }
     }
 }

@@ -10,7 +10,8 @@ Pages in site/pages/ are HTML fragments with a header comment:
 
 They are wrapped in site/layout.html. `<!--shot:mac/hud-listening|Alt text|class-->` expands to
 a light/dark <picture> of docs/screenshots/mac/hud-listening-{light,dark}.png (or the single
-file when only one exists). Only screenshots a page references are copied. The build fails on
+file when only one exists). Only screenshots a page references are copied. The approved artwork in
+android/artwork/chirp-icons is copied byte for byte into assets/ (never resized or redrawn). The build fails on
 broken internal links or anchors, external scripts/styles, or anything that looks like a
 tailnet host, token, private address or personal path.
 """
@@ -29,6 +30,9 @@ ROOT = Path(__file__).resolve().parent.parent
 SITE = ROOT / "site"
 SHOTS = ROOT / "docs" / "screenshots"
 ICON = ROOT / "docs" / "assets" / "chirp-app-icon-256.png"
+# The operator-approved art, used exactly as committed: the pond scene and the brand glyph.
+ART = ROOT / "android" / "artwork" / "chirp-icons"
+ART_FILES = {"approved-pond-fullbleed.png": "pond.png", "approved-glyph.png": "glyph.png"}
 REPO = "https://github.com/araa47/chirp"
 BASE = "/chirp/"  # Pages project path; only 404.html, served at any depth, uses it
 
@@ -157,6 +161,8 @@ def main() -> int:
         shutil.rmtree(out_dir)
     shutil.copytree(SITE / "assets", out_dir / "assets")
     shutil.copy2(ICON, out_dir / "assets" / "chirp-icon.png")
+    for source, name in ART_FILES.items():
+        shutil.copy2(ART / source, out_dir / "assets" / name)
     layout = (SITE / "layout.html").read_text()
     used: set[str] = set()
     for page in sorted((SITE / "pages").rglob("*.html")):

@@ -1,3 +1,5 @@
+import java.security.MessageDigest
+
 plugins { alias(libs.plugins.android.application); alias(libs.plugins.compose) }
 android {
     buildFeatures { compose = true; buildConfig = true }
@@ -19,8 +21,8 @@ android {
         applicationId = "dev.chirp.android"
         minSdk = 31
         targetSdk = 37
-        versionCode = 14
-        versionName = "0.7.2"
+        versionCode = 17
+        versionName = "0.8.1"
     }
     signingConfigs {
         create("local") {
@@ -53,13 +55,34 @@ android {
     }
     lint { warningsAsErrors = true; lintConfig = file("lint.xml") }
     testOptions { unitTests.isIncludeAndroidResources = true }
+    // The render suite (settings, onboarding with the pond art, keyboard states) needs more than the 512m default.
+    tasks.withType<Test>().configureEach { maxHeapSize = "2g" }
     sourceSets.getByName("debug").res.directories.add(layout.buildDirectory.dir("generated/chirp-debug-res").get().asFile.path)
+}
+// Personal builds only: -Pchirp.gestureLib=<Google's arm64 libjni_latinimegoogle.so> packages it as
+// lib/arm64-v8a/libjni_latinimegoogle.so, which HeliBoard's JniUtils loads with no Swipe typing import.
+// Never publish such an APK (README "Swipe typing"); the file must be HeliBoard's known arm64 release.
+providers.gradleProperty("chirp.gestureLib").orNull?.let { path ->
+    val gestureLib = file(path)
+    require(gestureLib.isFile) { "chirp.gestureLib: $gestureLib is not a file" }
+    val known = "b1049983e6ac5cfc6d1c66e38959751044fad213dff0637a6cf1d2a2703e754f" // JniUtils.CHECKSUM_ARM64
+    val actual = MessageDigest.getInstance("SHA-256").digest(gestureLib.readBytes()).joinToString("") { "%02x".format(it) }
+    require(actual == known) { "chirp.gestureLib: SHA-256 $actual of $gestureLib is not HeliBoard's known arm64 gesture library" }
+    val jniDir = layout.buildDirectory.dir("generated/chirp-gesture-jni")
+    val stageGestureLib = tasks.register<Sync>("stageGestureLib") {
+        from(gestureLib) { rename { "libjni_latinimegoogle.so" } }
+        into(jniDir.map { it.dir("arm64-v8a") })
+    }
+    android.sourceSets.getByName("main").jniLibs.directories.add(jniDir.get().asFile.path)
+    tasks.matching { it.name.startsWith("merge") && it.name.endsWith("JniLibFolders") }.configureEach { dependsOn(stageGestureLib) }
+    logger.lifecycle("chirp.gestureLib: packaging $gestureLib into the arm64 APK (personal build, do not publish)")
 }
 dependencies {
     implementation(project(":keyboard"))
     implementation(platform(libs.compose.bom))
     implementation(libs.compose.material3)
     implementation(libs.compose.material3.navigation.suite)
+    implementation(libs.compose.adaptive.layout)
     implementation(libs.activity.compose)
     implementation(libs.material)
     testImplementation(platform(libs.compose.bom))

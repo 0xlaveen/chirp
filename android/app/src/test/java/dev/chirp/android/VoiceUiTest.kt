@@ -1,11 +1,9 @@
 package dev.chirp.android
 
-import android.app.Activity
+import dev.chirp.android.AppColour
+
 import android.content.res.Configuration
 import android.graphics.Bitmap
-import android.graphics.Canvas
-import android.view.ContextThemeWrapper
-import android.view.View
 import androidx.activity.ComponentActivity
 import androidx.compose.runtime.*
 import androidx.compose.ui.graphics.asAndroidBitmap
@@ -32,20 +30,24 @@ class VoiceUiTest {
     private val syntheticLink = "chirp://pair?url=https%3A%2F%2Fmac.example.test%2Fchirp&token=synthetic%2Btoken%3D"
     private class Calls { val seen = mutableListOf<String>()
         fun actions(state: SetupState? = null) = OnboardingActions(grantMic = { seen += "mic" }, keyboardSettings = { seen += "enable" }, picker = { seen += "select" },
-            appSettings = { seen += "permissions" }, scan = { seen += "scan" }, pasteLink = { state?.link = it; seen += "paste" }, retry = { seen += "retry" }, finish = { seen += "finish" }) }
+            appSettings = { seen += "permissions" }, scan = { seen += "scan" }, pasteLink = { state?.link = it; seen += "paste" }, retry = { seen += "retry" }, finish = { seen += "finish" }, chooseMode = { state?.inputMode = it }) }
 
     private fun fontScaled(scale: Float, content: @Composable () -> Unit) = fontScaled(mutableFloatStateOf(scale), content)
     private fun fontScaled(scale: State<Float>, content: @Composable () -> Unit) =
         compose.setContent { CompositionLocalProvider(LocalDensity provides Density(LocalDensity.current.density, scale.value)) { content() } }
 
-    @Test fun `onboarding is four pages and each primary button follows the next unmet requirement`() {
+    @Test fun `onboarding is five pages and each primary button follows the next unmet requirement`() {
         val state = SetupState(); val calls = Calls()
-        compose.setContent { ChirpTheme { Onboarding(state, calls.actions()) } }
-        compose.onNodeWithContentDescription("Step 1 of 4").assertIsDisplayed()
+        compose.setContent { ChirpTheme { Onboarding(state, calls.actions(state)) } }
+        compose.onNodeWithContentDescription("Step 1 of 5").assertIsDisplayed()
         compose.onNodeWithText("Dictate anywhere").assertIsDisplayed()
         compose.onNodeWithText("Get started").performClick()
+        compose.onNodeWithText("How you’ll dictate").assertIsDisplayed()
+        compose.onNodeWithText("Continue").assertIsNotEnabled()
+        compose.runOnIdle { state.inputMode = InputMode.KEYBOARD }
+        compose.onNodeWithText("Continue").performClick()
         compose.onNodeWithText("Turn on Chirp Keyboard").assertIsDisplayed()
-        compose.onNodeWithContentDescription("Step 2 of 4").assertExists()
+        compose.onNodeWithContentDescription("Step 3 of 5").assertExists()
         compose.onNodeWithText("Enable Chirp Keyboard").performClick()
         compose.runOnIdle { state.inputEnabled = true }
         compose.onNodeWithText("Select Chirp Keyboard").performClick()
@@ -117,7 +119,7 @@ class VoiceUiTest {
         val state = SetupState()
         compose.setContent { ChirpTheme { Onboarding(state) } }
         compose.onNodeWithText("Get started").performClick()
-        compose.onNodeWithText("Turn on Chirp Keyboard").assertIsDisplayed()
+        compose.onNodeWithText("How you’ll dictate").assertIsDisplayed()
     }
     @Test fun `at 200 percent font the primary button is visible without scrolling on every page`() {
         val state = SetupState()
@@ -141,8 +143,13 @@ class VoiceUiTest {
         val state = SetupState()
         val dark = mutableStateOf(false)
         val font = mutableFloatStateOf(1f)
-        fontScaled(font) { dev.chirp.android.ui.ChirpTheme(dark.value, dynamic = false) { Onboarding(state) } }
+        fontScaled(font) { dev.chirp.android.ui.ChirpTheme(dark.value, colour = AppColour.POND) { Onboarding(state) } }
         fun shot(name: String) {
+            compose.waitForIdle()
+            // Compose semantics may settle before Robolectric draws the native window buffer.
+            // Schedule a real draw before capture, as in the keep-keyboard render suite.
+            compose.runOnIdle { compose.activity.window.decorView.invalidate() }
+            compose.mainClock.advanceTimeByFrame()
             compose.waitForIdle()
             val bitmap = compose.onRoot().captureToImage().asAndroidBitmap()
             val colours = HashSet<Int>()
@@ -172,42 +179,5 @@ class VoiceUiTest {
             compose.runOnIdle { state.step = page }
             shot("font-200-$name")
         }
-    }
-    @Test fun `render voice states at cover and inner widths in light and dark`() {
-        val output = File(System.getProperty("chirp.screenshots")).apply { mkdirs() }
-        val controller = Robolectric.buildActivity(Activity::class.java).setup()
-        val activity = controller.get()
-        try {
-            for ((theme, night) in listOf("light" to Configuration.UI_MODE_NIGHT_NO, "dark" to Configuration.UI_MODE_NIGHT_YES)) {
-                val config = Configuration(activity.resources.configuration).apply { uiMode = Configuration.UI_MODE_TYPE_NORMAL or night }
-                val themed = ContextThemeWrapper(activity.createConfigurationContext(config), R.style.Theme_Chirp)
-                for ((name, status, text) in listOf(
-                    Triple("idle", "Ready to dictate", ""), Triple("connecting", "Connecting to Mac…", ""),
-                    Triple("listening", "Listening…", "Synthetic example for visual review"),
-                    Triple("finalizing", "Finishing…", "Synthetic example for visual review"),
-                    Triple("error", "Mac unreachable — is Tailscale on?", ""),
-                    Triple("raw", "Inserted · raw available for 5 seconds", ""),
-                    Triple("debug", "Listening…", "Synthetic example"),
-                )) {
-                    val view = VoicePanel(themed)
-                    view.show(status, text, "Synthetic example", name in listOf("connecting", "listening", "finalizing", "debug"), name == "finalizing")
-                    view.level(.45)
-                    view.control("Cancel", "Cancel dictation") { }
-                    view.control("Keyboard", "Previous keyboard") { }
-                    view.control("Fix setup", "Fix connection") { }
-                    if (name == "debug") view.banner.retention(true)
-                    if (name == "raw") view.raw.visibility = View.VISIBLE
-                    val width = if (name == "listening") 700 else 360
-                    activity.setContentView(view)
-                    view.measure(View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(1600, View.MeasureSpec.AT_MOST))
-                    view.layout(0, 0, width, view.measuredHeight)
-                    val bitmap = Bitmap.createBitmap(width, view.measuredHeight, Bitmap.Config.ARGB_8888)
-                    view.draw(Canvas(bitmap))
-                    File(output, "panel-$name-$theme.png").outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
-                    bitmap.recycle()
-                }
-            }
-            assertTrue(output.listFiles()!!.filter { it.extension == "png" && it.name.startsWith("panel-") }.sumOf { it.length() } < 2_000_000)
-        } finally { controller.pause().stop().destroy() }
     }
 }

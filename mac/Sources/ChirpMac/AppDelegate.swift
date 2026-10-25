@@ -21,6 +21,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// Quit stops Notes gracefully (at most 5 s), then asks about unsaved notes before the app goes.
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        if notes.library != nil {
+            Task {
+                await notes.stopForQuit()
+                notes.journal.flush()
+                await notes.journal.settle()
+                NSApp.reply(toApplicationShouldTerminate: true)
+            }
+            return .terminateLater
+        }
         guard notes.isActive || notes.model.document.isDirty else { return .terminateNow }
         Task {
             await notes.stopForQuit()
@@ -64,23 +73,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                            openSetup: { [onboardingWindow] in onboardingWindow.show() },
                            toggleNotes: { [notes] in notes.toggle(fromHotkey: false) },
                            showNotes: { [notesWindow] in notesWindow.show() },
+                           newNote: { [notes] in notes.recordNewNote() },
+                           openNote: { [notes, notesWindow] id in notes.showNote(id); notesWindow.show() },
+                           recentNotes: { [notes] in notes.recentNotes },
                            notes: { [notes, openNotesHotkey] in var state = notes.menuState; state.openShortcut = openNotesHotkey.title; return state },
                            setRunning: { [notes, openNotesHotkey] in notes.setRunning($0); openNotesHotkey.setRunning($0) },
                            serverNotice: { [serverWatch] in (serverWatch.notice, serverWatch.message) },
                            fixServer: { [serverWatch] in serverWatch.fix() }))
+        settingsWindow.library = notes.library
         settingsWindow.onOpenSetup = { [onboardingWindow] in onboardingWindow.show() }
         settingsWindow.onOpenModels = { [localModelsWindow] in localModelsWindow.show() }
         settingsWindow.onPairPhone = { [pairingWindow] in pairingWindow.show() }
         pairingWindow.onPaired = { [settingsWindow] in settingsWindow.refreshDevices() }
         settingsWindow.onOpenNotes = { [notesWindow] in notesWindow.show() }
         onboardingWindow.onOpenModels = { [localModelsWindow] in localModelsWindow.show() }
+        onboardingWindow.onOpenNotes = { [notesWindow] in notesWindow.show() }
         localModelsWindow.onServerChanged = { [controller] in Task { await controller.refreshHealth() } }
         settingsWindow.serverStatus = { [controller] in MenuContent.serverStatus(health: controller.health, healthError: controller.healthError) }
         settingsWindow.health = { [controller] in controller.health }
         settingsWindow.serverNotice = { [serverWatch] in (serverWatch.notice, serverWatch.message) }
         settingsWindow.onFixServer = { [serverWatch] in serverWatch.fix() }
         notes.model.onFixServer = { [serverWatch] in serverWatch.fix() }
-        notes.model.onServerSettings = { [settingsWindow] in settingsWindow.show(tab: .server) }
+        notes.model.onServerSettings = { [settingsWindow] in settingsWindow.show(tab: .advanced) }
         serverWatch.onFixed = { [controller] in Task { await controller.refreshHealth() } }
         serverWatch.onChange = { [weak self] in
             guard let self else { return }

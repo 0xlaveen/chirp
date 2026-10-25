@@ -1,0 +1,5 @@
+<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+    android:minWidth="110dp" android:minHeight="56dp" android:minResizeWidth="48dp" android:minResizeHeight="48dp"
+    android:targetCellWidth="2" android:targetCellHeight="1" android:resizeMode="horizontal"
+    android:updatePeriodMillis="0" android:initialLayout="@layout/chirp_widget" android:previewLayout="@layout/chirp_widget"
+    android:description="@string/widget_description" android:widgetCategory="home_screen" />

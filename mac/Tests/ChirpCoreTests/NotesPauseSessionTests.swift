@@ -68,7 +68,7 @@ import Testing
         await h.speak(2)
         await h.session.pause()
         await h.until("segment committed") { !h.document.segments.isEmpty }
-        #expect(h.session.isActive && !h.model.canNew)
+        #expect(h.session.isActive)
         h.session.reset()
         #expect(h.recorder.state == .paused && !h.document.segments.isEmpty)
         await h.stop()
@@ -142,39 +142,45 @@ import Testing
         model.document = Snapshots.demoNotes()
         model.state = .recording
         model.snapshots = Snapshots.demoSnapshots()
-        let keys = NotesCommand.items(for: model, windowIsKey: true)
+        let library = NotesLibraryModel()
+        let keys = NotesCommand.items(for: model, library: library, windowIsKey: true)
         func row(_ c: NotesCommand) -> NotesCommand.Item { keys.first { $0.command == c }! }
         let cmd: NSEvent.ModifierFlags = .command, shiftCmd: NSEvent.ModifierFlags = [.command, .shift]
+        let optCmd: NSEvent.ModifierFlags = [.command, .option]
+        #expect((row(.newNote).key, row(.newNote).modifiers) == ("n", cmd))
         #expect((row(.record).key, row(.record).modifiers) == ("r", shiftCmd))
         #expect((row(.pause).key, row(.pause).modifiers) == ("p", shiftCmd))
-        #expect([row(.showNotes).key, row(.showTranscript).key, row(.showSplit).key] == ["1", "2", "3"])
-        #expect([row(.showNotes), row(.showTranscript), row(.showSplit)].allSatisfy { $0.modifiers == cmd })
-        #expect((row(.togglePreview).key, row(.togglePreview).modifiers) == ("e", [.command, .option]))   // ⌘⇧E is Edit Notes by Voice
+        #expect((row(.toggleInspector).key, row(.toggleInspector).modifiers) == ("t", optCmd))
+        #expect((row(.findNotes).key, row(.findNotes).modifiers) == ("f", optCmd))
         #expect((row(.copyMarkdown).key, row(.copyMarkdown).modifiers) == ("c", shiftCmd))
-        #expect((row(.save).key, row(.save).modifiers) == ("s", cmd))
-        #expect((row(.new).key, row(.new).modifiers) == ("n", cmd))
+        // ⌘S is not a Save step any more: Export is ⇧⌘S, and ⇧⌘E stays Edit Notes by Voice.
+        #expect((row(.export).key, row(.export).modifiers) == ("s", shiftCmd))
+        #expect((row(.deleteNote).key, row(.deleteNote).modifiers) == (String(UnicodeScalar(NSBackspaceCharacter)!), cmd))
         #expect(row(.record).title == "Stop Recording" && row(.pause).title == "Pause Recording")
-        #expect(row(.showNotes).checked && !row(.showSplit).checked)
+        #expect(row(.toggleInspector).title == "Show Transcript" && !row(.showMarkdown).checked)
         #expect(row(.restoreOrganize).enabled)
+        #expect(NotesCommand.toggleInspector.menu == .view && NotesCommand.showMarkdown.menu == .view && NotesCommand.newNote.menu == .notes)
         // Every command is in the menu once.
         #expect(Set(keys.map(\.command)) == Set(NotesCommand.allCases) && keys.count == NotesCommand.allCases.count)
 
-        let away = NotesCommand.items(for: model, windowIsKey: false)
+        let away = NotesCommand.items(for: model, library: library, windowIsKey: false)
         #expect(away.allSatisfy { !$0.enabled })
     }
 
-    @Test func menuItemsFollowTheStateAndRunTheHeadersActions() {
+    @Test func menuItemsFollowTheStateAndRunTheToolbarsActions() {
         let model = NotesModel()
+        let library = NotesLibraryModel()
         var log: [String] = []
         model.onRecordToggle = { log.append("record") }
         model.onPauseToggle = { log.append("pause") }
         model.onCopy = { log.append("copy") }
         model.onSave = { log.append("save") }
-        model.onNew = { log.append("new") }
-        model.onTabChange = { log.append("tab \($0.rawValue)") }
-        model.onPreviewToggle = { log.append("preview \($0)") }
-        func item(_ c: NotesCommand) -> NotesCommand.Item { NotesCommand.items(for: model, windowIsKey: true).first { $0.command == c }! }
-        #expect(!item(.pause).enabled && !item(.copyMarkdown).enabled && !item(.save).enabled && !item(.new).enabled)
+        library.onNew = { log.append("new") }
+        library.onInspector = { log.append("inspector \($0)") }
+        library.onShowMarkdown = { log.append("markdown \($0)") }
+        library.onFocusSearch = { log.append("search") }
+        func item(_ c: NotesCommand) -> NotesCommand.Item { NotesCommand.items(for: model, library: library, windowIsKey: true).first { $0.command == c }! }
+        #expect(!item(.pause).enabled && !item(.copyMarkdown).enabled && !item(.export).enabled && item(.newNote).enabled)
         #expect(item(.record).enabled && item(.record).title == "Start Recording" && !item(.restoreOrganize).enabled)
         model.state = .paused
         #expect(item(.pause).enabled && item(.pause).title == "Resume Recording" && item(.record).title == "Stop Recording")
@@ -182,10 +188,41 @@ import Testing
         #expect(!item(.record).enabled)
         model.document = Snapshots.demoNotes()
         model.state = .stopped
-        for c in [NotesCommand.record, .pause, .showTranscript, .showSplit, .showNotes, .togglePreview, .copyMarkdown, .save, .new] { model.perform(c) }
-        #expect(log == ["record", "pause", "tab transcript", "tab split", "tab notes", "preview true", "copy", "save", "new"])
-        #expect(item(.togglePreview).title == "Edit Notes")
-        model.tab = .transcript
-        #expect(!item(.togglePreview).enabled)
+        // A finished note continues.
+        #expect(item(.record).title == NotesLibraryText.continueRecording)
+        for c in [NotesCommand.record, .pause, .toggleInspector, .showMarkdown, .findNotes, .copyMarkdown, .export, .newNote] {
+            model.perform(c, library: library)
+        }
+        #expect(log == ["record", "pause", "inspector true", "markdown true", "search", "copy", "save", "new"])
+        #expect(item(.toggleInspector).title == "Hide Transcript" && item(.showMarkdown).checked)
+    }
+
+    @Test func recordOnANoteBesideARecordingContinuesThereAndDeleteSkipsTheRecordingNote() {
+        let model = NotesModel()
+        model.document = Snapshots.demoNotes()
+        model.state = .recording
+        let library = NotesLibraryModel()
+        library.recordingID = model.document.id
+        let other = NotesModel()
+        other.document = NotesDocument(text: "## Other")
+        other.state = .stopped
+        library.browsed = other
+        library.notes = [NotesLibraryEntry(id: other.document.id, title: "Other", createdAt: Date(), updatedAt: Date()),
+                         NotesLibraryEntry(id: model.document.id, title: "Rec", createdAt: Date(), updatedAt: Date(), recording: true)]
+        var continued: [UUID] = [], trashed: [UUID] = []
+        library.onContinue = { continued.append($0) }
+        library.onTrash = { trashed.append($0) }
+        model.onRecordToggle = { Issue.record("the recording must not stop") }
+        func item(_ c: NotesCommand) -> NotesCommand.Item { NotesCommand.items(for: model, library: library, windowIsKey: true).first { $0.command == c }! }
+        #expect(item(.record).title == "Continue Recording Here…")
+        model.perform(.record, library: library)
+        #expect(continued == [other.document.id])
+        library.selection = .note(model.document.id)
+        #expect(!item(.deleteNote).enabled)                       // a recording note can't be deleted
+        model.perform(.deleteNote, library: library)
+        library.selection = .note(other.document.id)
+        #expect(item(.deleteNote).enabled)
+        model.perform(.deleteNote, library: library)
+        #expect(trashed == [other.document.id])
     }
 }

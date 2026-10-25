@@ -10,7 +10,7 @@ import androidx.activity.compose.setContent
 
 /**
  * Live Notes on the phone: record a meeting or a long think-aloud, and the Mac turns it into Markdown notes while the
- * transcript fills in beside them. Kept until Save, Copy or Share, with a sealed recovery copy meanwhile ([NotesJournal]).
+ * transcript fills in beside them. Saved automatically to the sealed local notes library.
  * The screen itself is [NotesScreen], which the app shell also hosts as its Notes tab; both share one session ([NotesSessionHolder]).
  */
 open class NotesActivity : ComponentActivity() {
@@ -27,7 +27,12 @@ open class NotesActivity : ComponentActivity() {
         handle(intent)
         setContent {
             ChirpTheme {
-                NotesScreen(model, record = ::record, copy = ::copy, share = ::share, act = ::act, leave = ::leave, save = ::save)
+                NotesLibraryScreen(model, NotesSessionHolder.reader(this),
+                    record = { id -> if (id == null) host.recordNew() else host.continueNote(id) },
+                    copy = { host.copy(it) }, share = { host.share(it) }, save = { host.save(it) }, act = ::act,
+                    initialDetail = model.state.active || recordOnResume,
+                    connection = { startActivity(Intent(this, SetupActivity::class.java).putExtra("section", "connection")) },
+                    dictate = { startActivity(Intent(this, ScratchpadActivity::class.java)) })
             }
         }
     }
@@ -49,11 +54,11 @@ open class NotesActivity : ComponentActivity() {
 
     internal fun record() = host.record()
 
-    /** Back while recording keeps it going in the background; with notes, it asks first (nothing is saved). */
+    /** Back while recording keeps it going in the background; otherwise flush the note before leaving. */
     internal fun leave(discard: Boolean) {
         when {
             model.state.active -> moveTaskToBack(true)
-            discard || !model.dirty || model.keepSession() -> { model.clear(); finish() }
+            else -> { model.keepSession(); finish() }
         }
     }
 

@@ -11,11 +11,14 @@ import time
 import xml.etree.ElementTree as ET
 import zipfile
 
-SERIAL = 'emulator-5580'
+from emulator_serial import emulator_serial
+
+SERIAL = emulator_serial()
+
 PACKAGE = 'dev.chirp.android'
 IME = PACKAGE + '/.ChirpImeService'
 ROOT = Path(__file__).resolve().parents[2]
-OUT = ROOT / 'docs/screenshots/android'
+OUT = Path(os.environ.get('CHIRP_E2E_OUTPUT', ROOT / 'docs/screenshots/android'))
 
 
 def adb(*args):
@@ -26,7 +29,12 @@ def adb(*args):
 
 
 def nodes():
-    adb('shell', 'CLASSPATH=/data/local/tmp/chirp-ui-probe.jar', 'app_process', '/', 'dev.chirp.smoke.UiHierarchy')
+    for attempt in range(2):
+        try:
+            adb('shell', 'CLASSPATH=/data/local/tmp/chirp-ui-probe.jar', 'app_process', '/', 'dev.chirp.smoke.UiHierarchy')
+            break
+        except RuntimeError:
+            if attempt: raise
     return list(ET.fromstring(adb('shell', 'cat', '/sdcard/chirp-windows.xml')).iter('node'))
 
 
@@ -49,9 +57,14 @@ def tap(node):
 
 
 def find(label, hierarchy=None):
+    hierarchy = nodes() if hierarchy is None else hierarchy
+    if label == 'Microphone: tap to dictate':
+        ime = [n for n in hierarchy if n.get('content-desc', '').startswith(label + ',') and visible(n)]
+        if ime: return ime[-1]
     matches = [n for n in (nodes() if hierarchy is None else hierarchy)
-               if visible(n) and (n.get('text') == label or label in n.get('content-desc', ''))]
-    return matches[-1] if matches else None
+               if visible(n) and (label in n.get('text', '').split('\n') or label in n.get('content-desc', ''))]
+    exact = [n for n in matches if n.get('text') == label or n.get('content-desc') == label]
+    return (exact or matches)[-1] if matches else None
 
 
 def size():
@@ -59,14 +72,19 @@ def size():
 
 
 def click(label):
-    for _ in range(7):
+    started = time.monotonic()
+    for _ in range(12):
         hierarchy = nodes()
-        matches = [n for n in hierarchy if visible(n) and (n.get('text') == label or label in n.get('content-desc', ''))]
+        matches = [n for n in hierarchy if visible(n) and (label in n.get('text', '').split('\n') or label in n.get('content-desc', ''))]
+        exact = [n for n in matches if n.get('text') == label or n.get('content-desc') == label]
+        if exact: matches = exact
         actionable = [n for n in matches if n.get('clickable') == 'true' or any(
             p.get('clickable') == 'true' and n in list(p.iter('node'))[1:] for p in hierarchy)]
         if actionable:
             tap(actionable[-1])
             return
+        if time.monotonic() - started < 12:
+            continue  # Let a popup finish opening; a scroll would dismiss it.
         w, h = size()
         adb('shell', 'input', 'swipe', str(w // 2), str(h * 4 // 5), str(w // 2), str(h // 3), '250')
     raise AssertionError('Missing accessible action: ' + label)
@@ -103,27 +121,44 @@ def focus_editor():
                 # boundsInScreen is not clipped to the viewport: a mostly-below-fold field
                 # still reports its full height, and its centre tap lands off screen. Only
                 # tap when the centre is comfortably inside the visible area.
-                x1, y1, x2, y2 = [int(v) for v in editor.get('bounds').strip('[]').replace('][', ',').split(',')]
+                x1, y1, x2, y2 = bounds(editor)
                 cy = (y1 + y2) // 2
                 if 100 < cy < h - 120:
                     x, y = center(editor)
                     adb('shell', 'CLASSPATH=/data/local/tmp/chirp-ui-probe.jar', 'app_process', '/', 'dev.chirp.smoke.UiHierarchy', 'tap', str(x), str(y))
-                    wait_for('Microphone: tap to dictate')
+                    wait_for('Microphone: tap to dictate, hold to talk')
                     return
             start, end = (h * 3 // 4, h // 3) if direction == 'up' else (h // 3, h * 3 // 4)
             adb('shell', 'input', 'swipe', str(w // 2), str(start), str(w // 2), str(end), '250')
     raise AssertionError('Test editor is not visible')
 
 
+def wait_for_editor():
+    deadline = time.monotonic() + 60
+    while time.monotonic() < deadline:
+        if any(n.get('class') == 'android.widget.EditText' for n in nodes()): return
+    raise AssertionError('Scratchpad editor did not open')
+
+
 def fresh_editor():
+    if os.environ.get('CHIRP_E2E_NATIVE_EDITOR') == '1':
+        adb('shell', 'am', 'force-stop', PACKAGE)
+        adb('shell', 'ime', 'enable', IME)
+        adb('shell', 'ime', 'set', IME)
+        adb('shell', 'am', 'start', '-n', PACKAGE + '/.E2eEditorActivity')
+        wait_for_editor()
+        focus_editor()
+        return
     adb('shell', 'cmd', 'statusbar', 'collapse')
     adb('shell', 'am', 'force-stop', PACKAGE)
     # Android falls back to Gboard when the selected IME package is force-stopped.
     adb('shell', 'ime', 'enable', IME)
     adb('shell', 'ime', 'set', IME)
-    adb('shell', 'am', 'start', '-n', PACKAGE + '/.SetupActivity', '--es', 'section', 'try')
-    # Cold start of the settings screen takes 10-13 s on a contended host; 15 s flaked.
-    wait_for('Try it', 60)
+    adb('shell', 'am', 'start', '--activity-clear-top', '--activity-single-top', '-n', PACKAGE + '/.SetupActivity', '--es', 'section', 'try')
+    # Notes is the launcher destination; Dictate opens Scratchpad.
+    wait_for('Dictate', 60)
+    click('Dictate')
+    wait_for_editor()
     focus_editor()
 
 
@@ -186,7 +221,7 @@ def main():
     # The release splits by ABI; smoke installs the split matching this emulator's ABI.
     abi = adb('shell', 'getprop', 'ro.product.cpu.abi').decode().strip()
     assert abi in ('arm64-v8a', 'x86_64'), 'unexpected emulator ABI ' + abi
-    apk = ROOT / ('android/app/build/outputs/apk/release/app-%s-release.apk' % abi)
+    apk = Path(os.environ.get('CHIRP_SMOKE_APK', ROOT / ('android/app/build/outputs/apk/release/app-%s-release.apk' % abi)))
     # Artifact inspection supplements (rather than substitutes for) UI verification.
     with zipfile.ZipFile(apk) as archive:
         assert not any('synthetic' in name or 'debug_network_security' in name for name in archive.namelist()), 'Debug resource in release'
@@ -210,6 +245,9 @@ def main():
         adb('shell', 'am', 'start', '-n', PACKAGE + '/.SetupActivity')
         wait_for('Dictate anywhere')
         click('Get started')
+        wait_for('How you’ll dictate')
+        click('Use Chirp Keyboard')
+        click('Continue')
         wait_for('Turn on Chirp Keyboard')
         click('Enable Chirp Keyboard')
         wait_for('Keyboard apps')
@@ -228,24 +266,28 @@ def main():
         adb('shell', 'input', 'keyevent', '4')
         wait_for('Scan code')
         crash_check()
-        adb('shell', 'am', 'start', '-n', PACKAGE + '/.SetupActivity', '--es', 'section', 'try')
-        wait_for('Try it')
+        adb('shell', 'am', 'start', '--activity-clear-top', '--activity-single-top', '-n', PACKAGE + '/.SetupActivity', '--es', 'section', 'try')
+        wait_for('Dictate')
+        click('Dictate')
+        wait_for('Dictate, then edit here')
         focus_editor()
-        mic = wait_for('Microphone: tap to dictate')
+        mic = wait_for('Microphone: tap to dictate, hold to talk')
         tap(mic)
-        action = wait_for('Pair your Mac in Chirp setup. Pair Mac')
+        action = wait_for('Pair your Mac in Chirp settings. Pair Mac')
         assert action.get('text') == 'Pair Mac', 'Mic strip did not respond'
         tap(action)
         wait_for('Scan code')
-        adb('shell', 'am', 'start', '-n', PACKAGE + '/.SetupActivity', '--es', 'section', 'try')
-        wait_for('Try it')
+        adb('shell', 'am', 'start', '--activity-clear-top', '--activity-single-top', '-n', PACKAGE + '/.SetupActivity', '--es', 'section', 'try')
+        wait_for('Dictate')
+        click('Dictate')
+        wait_for('Dictate, then edit here')
         focus_editor()
-        # Long press must expose options and stay idle (no capture before consent).
-        mic = wait_for('Microphone: tap to dictate')
-        x, y = center(mic)
-        adb('shell', 'input', 'swipe', str(x), str(y), str(x), str(y), '700')
+        # The ⋯ beside the mic must expose options and stay idle (no capture before consent); a hold on the mic is push-to-talk.
+        wait_for('Microphone: tap to dictate')
+        tap(wait_for('Dictation options'))
         wait_for('Chirp settings')
         adb('shell', 'input', 'keyevent', '4')
+        focus_editor()
         typing_check()
         for form, resolution, density in [('inner', '2076x2152', '420'), ('cover', '1080x2520', '420')]:
             adb('shell', 'wm', 'size', resolution)
@@ -254,7 +296,7 @@ def main():
                 adb('shell', 'cmd', 'uimode', 'night', 'yes' if theme == 'dark' else 'no')
                 fresh_editor()
                 hierarchy = nodes()
-                mic = find('Microphone: tap to dictate', hierarchy)
+                mic = find('Microphone: tap to dictate, hold to talk', hierarchy)
                 assert mic is not None, 'Mic absent after configuration change'
                 w, h = size()
                 digits = [n for n in hierarchy if n.get('class') == 'helium314.keyboard.keyboard.Key' and n.get('content-desc') == '1']
@@ -267,12 +309,12 @@ def main():
                 screenshot('keyboard-' + form + '-' + theme)
                 tap(mic)
                 # The pairing notice expires after 5 s and a dump can take 2 s; reuse the same dump for Cancel.
-                _, hierarchy = wait_for_hierarchy('Pair your Mac in Chirp setup. Pair Mac')
+                _, hierarchy = wait_for_hierarchy('Pair your Mac in Chirp settings. Pair Mac')
                 cancel = find('Cancel dictation', hierarchy)
                 assert cancel is not None and cancel.get('clickable') == 'true', 'Cancel missing beside pair action'
                 screenshot('pair-action-' + form + '-' + theme)
                 tap(cancel)
-                wait_for('Microphone: tap to dictate')
+                wait_for('Microphone: tap to dictate, hold to talk')
                 crash_check()
         adb('shell', 'wm', 'size', '2560x1600')
         adb('shell', 'cmd', 'uimode', 'night', 'no')
@@ -285,13 +327,17 @@ def main():
         click('More keys')
         wait_for('One-handed mode')
         adb('shell', 'input', 'keyevent', '4')
-        click('Keyboard layouts & settings')
-        wait_for('Pairing & connection')
-        click('Chirp diagnostics')
-        wait_for('No crashes recorded')
-        click('Close')
+        # Geometry is verified above. Return to portrait before opening Settings, so all category rows fit.
+        adb('shell', 'wm', 'size', '2076x2152')
+        focus_editor()
+        click('Dictation options')
+        click('Chirp settings')
+        wait_for('How you dictate')
+        click('About')
+        wait_for('Diagnostics')
+        assert any('No crashes recorded' in n.get('text', '') for n in nodes()), 'Chirp crash in diagnostics'
         crash_check()
-        print('PASS: release install; state-aware setup; QR scanner open/back; editor + keyboard; mic pairing action; long-press options; inner/cover light/dark; accessible labels and bounds; autocorrect teh/the + contraction; next-word suggestions; clipboard + emoji; settings + diagnostics; no Chirp crash.')
+        print('PASS: release install; state-aware setup; QR scanner open/back; editor + keyboard; mic pairing action; ⋯ options; inner/cover light/dark; accessible labels and bounds; autocorrect teh/the + contraction; next-word suggestions; clipboard + emoji; settings + diagnostics; no Chirp crash.')
         print('Release APK bytes:', apk.stat().st_size)
     finally:
         for command, original in [('size', original_size), ('density', original_density)]:

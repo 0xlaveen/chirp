@@ -27,6 +27,15 @@ for pt in 16 32 128 256 512; do
 done
 iconutil -c icns "$ICONSET" -o "$APP/Contents/Resources/AppIcon.icns"
 cp Assets/MenuBar*.png "$APP/Contents/Resources/"
+cp Assets/ChirpGlyph.png "$APP/Contents/Resources/"
+
+# The app accent colour (koi): compiled from Assets.xcassets into Assets.car, so Settings, Onboarding
+# and Notes system controls pick it up. actool ships with Xcode, so a Command Line Tools-only build
+# skips this and the app falls back to the system accent.
+if ACTOOL=$(xcrun --find actool 2>/dev/null); then
+    "$ACTOOL" --compile "$APP/Contents/Resources" --platform macosx --minimum-deployment-target 15.0 \
+        --output-partial-info-plist "$(mktemp)" "$PWD/Assets.xcassets" >/dev/null
+fi
 # Third-party notices: FluidAudio's Apache-2.0 licence (and those it vendors) and the speaker model's CC BY 4.0
 # attribution. About › Third-Party Notices… opens them.
 cp -R Assets/ThirdParty "$APP/Contents/Resources/ThirdParty"

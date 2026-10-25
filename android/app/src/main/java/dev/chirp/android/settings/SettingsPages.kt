@@ -15,13 +15,13 @@ import dev.chirp.android.ui.*
 internal fun SettingsDetail(page: SettingsPage, state: SetupState, actions: SettingsActions, history: DictationHistory?, updates: UpdateController?) {
     when (page) {
         SettingsPage.Connection -> ConnectionPage(state, actions)
-        SettingsPage.Look -> { KeyboardLookChooser(); AppColoursSettings() }
-        SettingsPage.SwipeTyping -> SwipeTypingSettings()
-        SettingsPage.History -> HistorySettings(store = history, title = null)   // the page already says "Dictation history"
+        SettingsPage.HowYouDictate -> HowYouDictate(state, actions.chooseMode, actions.floatingMicSettings, actions.appSettings, actions.picker, actions.keyboardSettings)
+        SettingsPage.Dictation -> DictationPage(state, actions)
+        SettingsPage.Keyboard -> KeyboardPage(actions)
+        SettingsPage.Feedback -> FeedbackPage()
         SettingsPage.Notes -> NotesSettings()
-        SettingsPage.FloatingMic -> FloatingMicPage(state, actions)
-        SettingsPage.Updates -> UpdateSettings(updates)
-        SettingsPage.Diagnostics -> DiagnosticsPage()
+        SettingsPage.History -> HistoryPage(history)
+        SettingsPage.About -> AboutPage(updates)
     }
 }
 
@@ -49,32 +49,85 @@ private fun ConnectionPage(state: SetupState, actions: SettingsActions) {
         dismissButton = { TextButton({ confirmForget = false }) { Text("Keep pairing") } })
 }
 
+/** Clean-up and styles, stop behaviour, spoken commands, auto-enter, and the other ways to dictate. */
 @Composable
-private fun FloatingMicPage(state: SetupState, actions: SettingsActions) {
-    SettingsGroup {
-        SettingsItem {
-            Text("Off by default. A floating mic you can use with another keyboard. Keyboard dictation works without it.", style = MaterialTheme.typography.bodyMedium)
-            LearnMore("Optional floating microphone", "Chirp reads the focused field locally to insert text safely. Nothing is sent anywhere except the audio you dictate.\n\n" +
-                "Turn it on in Settings → Accessibility → Installed apps → Chirp floating microphone. If sideloading blocks this optional feature: " +
-                "Apps → Chirp → ⋮ → Allow restricted settings.")
+private fun DictationPage(state: SetupState, actions: SettingsActions) {
+    val context = LocalContext.current
+    val store = remember { SettingsStore(context) }
+    var cleanup by remember { mutableStateOf(store.correction) }
+    var commands by remember { mutableStateOf(store.spokenCommands) }
+    if (state.health.cleanupAvailable()) {
+        SettingsGroup("Clean-up") {
+            SwitchRow("Clean-up · ${correctionLabel(state.health)}", cleanup, { cleanup = it; store.correction = it },
+                summary = "Polishes punctuation and filler words ${if (state.health?.correctionLeavesMachine == true) "on ${state.health?.correctionHost}" else "on your Mac"}",
+                infoTitle = "Clean-up", infoBody = cleanupDescription(state.health))
+            CleanupStyleSettings(state.health)
         }
-        NavRow(if (state.bubbleEnabled) "Floating mic is on" else "Turn on floating mic", actions.floatingMicSettings,
-            summary = if (state.bubbleEnabled) "Open Accessibility settings to turn it off" else "Opens Accessibility settings")
+    } else if (state.paired) SettingsGroup("Clean-up") { SettingsItem { Text("Mac has clean-up off", style = MaterialTheme.typography.bodyMedium) } }
+    SettingsGroup("Stopping") { StopDictationSettings() }
+    SettingsGroup("Spoken commands") {
+        SwitchRow("Spoken commands", commands, { commands = it; store.spokenCommands = it }, summary = "Off by default",
+            infoTitle = "Spoken commands", infoBody = "Ending a dictation with \"new line\" or \"new paragraph\" types a line break instead of the words.")
+    }
+    SettingsGroup("Press Send") { SettingsItem { AutoEnterSettings() } }
+
+}
+
+@Composable
+private fun KeyboardPage(actions: SettingsActions) {
+    val context = LocalContext.current
+    val store = remember { SettingsStore(context) }
+    val prefs = remember { keyboardPrefs(context) }
+    var shortcut by remember { mutableStateOf(store.hardwareShortcut) }
+    var largerMic by remember { mutableStateOf(store.largerMic) }
+    KeyboardLookChooser()
+    SwipeTypingSettings()
+    SettingsGroup("Keys and shortcuts") {
+        SwitchRow("Hardware keyboard shortcut", shortcut, { shortcut = it; store.hardwareShortcut = it }, summary = "Ctrl+Alt+Space · Works with Chirp Keyboard",
+            infoTitle = "Hardware keyboard shortcut", infoBody = "Ctrl+Alt+Space starts and stops dictation; Esc cancels while listening.")
+        SwitchRow("Larger mic on the inner screen", largerMic, { largerMic = it; store.largerMic = it })
+        NavRow("Layouts, languages & typing", actions.keyboardPreferences, summary = "Opens the keyboard's own settings")
     }
 }
 
 @Composable
-private fun DiagnosticsPage() {
+private fun FeedbackPage() {
     val context = LocalContext.current
     val store = remember { SettingsStore(context) }
-    var debug by remember { mutableStateOf(store.debugOverlay) }
+    var haptics by remember { mutableStateOf(store.haptics) }
+    var soundCues by remember { mutableStateOf(store.soundCues) }
+    AppColoursSettings()
+    SettingsGroup("Cues") {
+        SwitchRow("Haptic cues", haptics, { haptics = it; store.haptics = it })
+        SwitchRow("Sound cues", soundCues, { soundCues = it; store.soundCues = it }, summary = "Short tones for start, stop, inserted and error",
+            infoTitle = "Sound cues", infoBody = "Short tones for start, stop, inserted and error. Silent when the phone is on vibrate or mute.")
+    }
+}
+
+/** History retention and clear, separate from Notes retention (spec §D). */
+@Composable
+private fun HistoryPage(history: DictationHistory?) {
+    HistorySettings(showOpen = true, store = history, title = null)   // the page already says "Privacy & history"
+    SettingsGroup("What Chirp keeps") {
+        SettingsItem {
+            Text("Dictations, notes and kept audio never leave this phone.", style = MaterialTheme.typography.bodyMedium)
+            LearnMore("Local only", "Dictation history is opt-in and encrypted on this phone. Notes are sealed with the phone's keystore and never " +
+                "backed up or synced. Kept audio stays next to its note. Diagnostics carry numbers only — no text, audio, hosts or tokens.")
+        }
+    }
+}
+
+@Composable
+private fun AboutPage(updates: UpdateController?) {
+    val context = LocalContext.current
+    val store = remember { SettingsStore(context) }
     var report by remember { mutableStateOf(DiagnosticsReport.text(context)) }
-    SettingsGroup {
+    var debug by remember { mutableStateOf(store.debugOverlay) }
+    UpdateSettings(updates)
+    SettingsGroup("Diagnostics") {
+        SettingsItem { DiagnosticsBody(report) }
         SwitchRow("Debug overlay (timings only)", debug, { debug = it; store.debugOverlay = it })
         BuildSetupOptions()
-    }
-    SettingsGroup {
-        SettingsItem { DiagnosticsBody(report) }
         ActionRow("Copy diagnostics", { copyDiagnostics(context, report) })
         ActionRow("Clear timings", { DiagnosticsReport.clearTimings(context); report = DiagnosticsReport.text(context) })
     }

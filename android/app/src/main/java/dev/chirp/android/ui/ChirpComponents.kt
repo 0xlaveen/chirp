@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.material3.*
+import androidx.compose.ui.graphics.Color
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
@@ -59,32 +60,52 @@ private fun SettingsRow(title: String, summary: String?, @DrawableRes icon: Int?
 
 private fun Modifier.row() = fillMaxWidth().heightIn(min = 56.dp)
 
+/** ⓘ: the paragraph behind a row (spec §D Settings), so the row itself keeps to one line. */
+@Composable
+private fun InfoIcon(title: String, body: String) {
+    var open by rememberSaveable { mutableStateOf(false) }
+    IconButton({ open = true }, Modifier.semantics { contentDescription = "About $title" }) {
+        Icon(painterResource(R.drawable.ic_info), null, Modifier.size(20.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+    if (open) InfoSheet(title, body) { open = false }
+}
+
 /** The whole row toggles (one merged node: title, summary, switch, on/off); the [Switch] itself takes no input. */
 @Composable
 internal fun SwitchRow(title: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit, modifier: Modifier = Modifier,
-                       summary: String? = null, @DrawableRes icon: Int? = null, enabled: Boolean = true) {
+                       summary: String? = null, @DrawableRes icon: Int? = null, enabled: Boolean = true,
+                       infoTitle: String? = null, infoBody: String? = null) {
     SettingsRow(title, summary, icon, modifier.row().clip(MaterialTheme.shapes.extraSmall)
         .toggleable(checked, enabled = enabled, role = Role.Switch, onValueChange = onCheckedChange)) {
-        Switch(checked, onCheckedChange = null, enabled = enabled)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            if (infoTitle != null && infoBody != null) InfoIcon(infoTitle, infoBody)
+            Switch(checked, onCheckedChange = null, enabled = enabled)
+        }
     }
 }
 
 /** Opens another screen, dialog or app: trailing chevron. */
 @Composable
 internal fun NavRow(title: String, onClick: () -> Unit, modifier: Modifier = Modifier, summary: String? = null,
-                    @DrawableRes icon: Int? = null, enabled: Boolean = true) {
+                    @DrawableRes icon: Int? = null, enabled: Boolean = true, infoTitle: String? = null, infoBody: String? = null) {
     SettingsRow(title, summary, icon, modifier.row().clip(MaterialTheme.shapes.extraSmall)
         .clickable(enabled = enabled, role = Role.Button, onClick = onClick)) {
-        Icon(painterResource(R.drawable.ic_chevron_right), null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            if (infoTitle != null && infoBody != null) InfoIcon(infoTitle, infoBody)
+            Icon(painterResource(R.drawable.ic_chevron_right), null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
     }
 }
 
 /** Does something in place. [destructive] actions use the error colour. */
 @Composable
 internal fun ActionRow(title: String, onClick: () -> Unit, modifier: Modifier = Modifier, summary: String? = null,
-                       @DrawableRes icon: Int? = null, destructive: Boolean = false, enabled: Boolean = true) {
+                       @DrawableRes icon: Int? = null, destructive: Boolean = false, enabled: Boolean = true,
+                       infoTitle: String? = null, infoBody: String? = null) {
     SettingsRow(title, summary, icon, modifier.row().clip(MaterialTheme.shapes.extraSmall)
-        .clickable(enabled = enabled, role = Role.Button, onClick = onClick), destructive)
+        .clickable(enabled = enabled, role = Role.Button, onClick = onClick), destructive) {
+        if (infoTitle != null && infoBody != null) InfoIcon(infoTitle, infoBody)
+    }
 }
 
 /** Single-select chip row (Stop dictation, Keep for, App colours). */
@@ -98,20 +119,22 @@ internal fun <T> ChoiceChips(options: List<T>, selected: T, label: (T) -> String
 
 internal enum class StatusKind(@DrawableRes val icon: Int) { Info(R.drawable.ic_info), Success(R.drawable.ic_check_circle), Warning(R.drawable.ic_warning), Error(R.drawable.ic_error) }
 
+/** The card's fill and text colour. A full-width card is never the koi container (muddy brown in dark): Success is a tonal surface, its lily check carries the meaning. */
+internal fun statusColors(scheme: ColorScheme, kind: StatusKind): Pair<Color, Color> = when (kind) {
+    StatusKind.Info -> scheme.secondaryContainer to scheme.onSecondaryContainer
+    StatusKind.Success -> scheme.surfaceContainerHigh to scheme.onSurface
+    StatusKind.Warning -> scheme.tertiaryContainer to scheme.onTertiaryContainer
+    StatusKind.Error -> scheme.errorContainer to scheme.onErrorContainer
+}
+
 /** Status card. [live] announces changes politely, as the setup status line always has. */
 @Composable
 internal fun StatusBanner(kind: StatusKind, title: String, modifier: Modifier = Modifier, body: String? = null,
                           action: String? = null, onAction: () -> Unit = {}, live: Boolean = false) {
-    val scheme = MaterialTheme.colorScheme
-    val (container, content) = when (kind) {
-        StatusKind.Info -> scheme.secondaryContainer to scheme.onSecondaryContainer
-        StatusKind.Success -> scheme.primaryContainer to scheme.onPrimaryContainer
-        StatusKind.Warning -> scheme.tertiaryContainer to scheme.onTertiaryContainer
-        StatusKind.Error -> scheme.errorContainer to scheme.onErrorContainer
-    }
+    val (container, content) = statusColors(MaterialTheme.colorScheme, kind)
     Surface(modifier.fillMaxWidth(), shape = MaterialTheme.shapes.large, color = container, contentColor = content) {
         Row(Modifier.padding(16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            Icon(painterResource(kind.icon), null)
+            Icon(painterResource(kind.icon), null, tint = if (kind == StatusKind.Success) LocalChirpRoles.current.lily else LocalContentColor.current)
             Column(Modifier.weight(1f).semantics(mergeDescendants = true) { if (live) liveRegion = LiveRegionMode.Polite },
                 verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(title, style = if (body == null) MaterialTheme.typography.bodyLarge else MaterialTheme.typography.titleSmall)

@@ -62,7 +62,7 @@ class OfflineStateTest {
         assertBadge(true)
     }
     private fun assertBadge(offline: Boolean) {
-        assertEquals(if (offline) "Mac offline, double-tap to retry" else "Microphone: tap to dictate, long press for options", strip.mic.contentDescription.toString())
+        assertEquals(if (offline) "Mac offline, double-tap to retry" else "Microphone: tap to dictate, hold to talk", strip.mic.contentDescription.toString())
     }
     private fun assertNotOffline() = assertNotEquals(ConnectionFailure.OFFLINE_DESCRIPTION, strip.mic.contentDescription.toString())
     private fun assertQuiet() { assertEquals(View.GONE, strip.status.visibility); assertEquals(View.GONE, strip.action.visibility) }

@@ -517,7 +517,7 @@ final class NotesHarness {
 
     init(health: Health? = NotesHarness.defaultHealth, silence: TimeInterval = 1.5, speakers: SpeakerModelStore? = nil,
          voiceModel: VoiceModelStore? = nil, profiles: VoiceProfileStore? = nil,
-         journalDirectory: URL? = nil, keptAudio: TimeInterval = NotesRecorder.maxKeptAudio,
+         library: NotesLibrary? = nil, journalDirectory: URL? = nil, keptAudio: TimeInterval = NotesRecorder.maxKeptAudio,
          silencePause: TimeInterval = NotesCaptureSink.pauseAfter,
          finalText: @escaping @Sendable (Int) -> String = { "Segment \($0)." }) {
         let clock = self.clock, edges = self.edges
@@ -538,6 +538,7 @@ final class NotesHarness {
             settings: prefs, engine: engine, makeSession: { streams.makeSession($0) },
             structure: http.structure(config), reorganize: http.reorganize(config), speakerStore: store,
             journalStore: NotesJournalStore(directory: self.journalDirectory))
+        deps.library = library
         deps.edit = http.edit(config)
         if let voiceModel { deps.voiceModelStore = voiceModel; prefs.notesVoiceProfiles = true }
         if let profiles { deps.voiceProfileStore = profiles }

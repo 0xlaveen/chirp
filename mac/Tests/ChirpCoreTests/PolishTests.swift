@@ -8,7 +8,10 @@ import Testing
     @Test func manageLocalModelsSaysWhyItIsDisabledForARemoteServer() {
         var s = SettingsState()
         let form = SettingsForm(s)
-        func help() -> String? { form.modelsButton.superview?.subviews.compactMap { ($0 as? NSTextField)?.stringValue }.first }
+        func help() -> String? {
+            form.view(for: .advanced).allDescendants(of: SettingsRow.self).first { $0.allDescendants(of: NSButton.self).contains(form.modelsButton) }?
+                .allDescendants(of: NSTextField.self).last?.stringValue
+        }
         #expect(form.modelsButton.isEnabled && help()?.hasPrefix("Download") == true)
         s.serverURL = "https://studio.example-tailnet.ts.net"
         form.apply(s, full: true)
@@ -33,10 +36,10 @@ import Testing
         #expect(remote.contains("studio.example-tailnet.ts.net") && remote.contains("tailnet"))
         let form = SettingsForm(s)
         func texts(_ v: NSView) -> [String] { v.subviews.flatMap { (($0 as? NSTextField).map { [$0.stringValue] } ?? []) + texts($0) } }
-        #expect(texts(form.view(for: .server)).contains { $0.hasPrefix("Nothing answers at") })
+        #expect(texts(form.view(for: .advanced)).contains { $0.hasPrefix("Nothing answers at") })
         s.serverStatus = "Connected"; s.serverStatusTone = .ok
         form.apply(s, full: true)
-        #expect(!texts(form.view(for: .server)).contains { $0.hasPrefix("Nothing answers at") })
+        #expect(!texts(form.view(for: .advanced)).contains { $0.hasPrefix("Nothing answers at") })
     }
 
     @Test func serverAndTokenErrorsOfferServerSettings() {

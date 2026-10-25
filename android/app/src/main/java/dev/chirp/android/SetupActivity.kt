@@ -23,9 +23,7 @@ import androidx.lifecycle.compose.LifecycleStartEffect
 import androidx.lifecycle.lifecycleScope
 import dev.chirp.android.shell.AppShell
 import dev.chirp.android.shell.HistoryScreen
-import dev.chirp.android.shell.HomeActions
 import dev.chirp.android.shell.HomeFix
-import dev.chirp.android.shell.HomeScreen
 import dev.chirp.android.shell.ShellTab
 import dev.chirp.android.settings.SettingsActions
 import dev.chirp.android.settings.SettingsPage
@@ -53,6 +51,11 @@ internal class SetupState {
     var mic by mutableStateOf(false)
     var inputEnabled by mutableStateOf(false)
     var bubbleEnabled by mutableStateOf(false)
+    var inputMode by mutableStateOf<InputMode?>(null)
+    var keyboardLabel by mutableStateOf<String?>(null)
+    var floatingMicSkipped by mutableStateOf(false)
+    var advancedProtection by mutableStateOf(false)
+    var accessibilityReturns by mutableIntStateOf(0)
     var inputSelected by mutableStateOf(false)
     var diagnostics by mutableStateOf("No crashes recorded")
     var paired by mutableStateOf(false)
@@ -68,10 +71,10 @@ internal class SetupState {
     var failure by mutableStateOf<ConnectionFailure.Kind?>(null)
     /** Paired over the tailnet while no VPN is up: the Mac can't be reached until Tailscale is on. */
     var tailscaleOff by mutableStateOf(false)
-    /** The app shell (Home · Notes · History · Settings) is showing; otherwise onboarding. */
+    /** The app shell (Notes · History · Settings) is showing; otherwise onboarding. */
     var shellOpen by mutableStateOf(false)
-    var tab by mutableStateOf(ShellTab.Home)
-    /** The shell was opened from outside (the keyboard, a recovery link): Back returns there rather than to Home. */
+    var tab by mutableStateOf(ShellTab.Notes)
+    /** The shell was opened from outside (the keyboard, a recovery link): Back returns there rather than to Notes. */
     var exitOnBack by mutableStateOf(false)
     /** The pair page was opened from the shell: Back returns to it. */
     var pairFromShell by mutableStateOf(false)
@@ -86,6 +89,8 @@ open class SetupActivity : ComponentActivity() {
     private lateinit var store: SettingsStore
     internal val state = SetupState()
     private var awaitingPrerequisite = false
+    private var awaitingAccessibility = false
+    internal open val advancedProtection: AdvancedProtection by lazy { AndroidAdvancedProtection(this) }
     private var pairingGeneration = 0
     private var pendingHealth: okhttp3.Call? = null
     private val client by lazy { ChirpNetwork.client(this) }
@@ -115,12 +120,15 @@ open class SetupActivity : ComponentActivity() {
         savedInstanceState?.let {
             state.entryStep = it.getInt("entry", 0).coerceIn(PAGE_WELCOME, PAGE_PAIR); state.connected = it.getBoolean("connected"); state.tryIt = it.getBoolean("try_it")
             state.shellOpen = it.getBoolean("shell"); state.exitOnBack = it.getBoolean("exit_on_back"); state.pairFromShell = it.getBoolean("pair_from_shell")
-            state.tab = ShellTab.entries.firstOrNull { tab -> tab.name == it.getString("tab") } ?: ShellTab.Home
+            state.tab = ShellTab.entries.firstOrNull { tab -> tab.name == it.getString("tab") } ?: ShellTab.Notes
             state.settingsPage = it.getString("settings_page")?.let { name -> SettingsPage.entries.firstOrNull { page -> page.name == name } }
         }
+        state.accessibilityReturns = savedInstanceState?.getInt("accessibility_returns") ?: 0
+        awaitingAccessibility = savedInstanceState?.getBoolean("awaiting_accessibility") ?: false
+        awaitingPrerequisite = savedInstanceState?.getBoolean("awaiting_prerequisite") ?: false
         refresh()
         if (savedInstanceState == null) {
-            val first = setupStep(state.inputEnabled, state.inputSelected, state.mic, state.paired, welcomed = false)
+            val first = setupStep(state.inputEnabled, state.inputSelected, state.mic, state.paired, welcomed = false, mode = state.inputMode, bubbleEnabled = state.bubbleEnabled, floatingMicSkipped = state.floatingMicSkipped)
             if (store.onboarded || first == ONBOARDING_DONE) finishOnboarding() else { state.step = first; state.entryStep = first }
         }
         consumeSection(intent)
@@ -140,26 +148,33 @@ open class SetupActivity : ComponentActivity() {
                         grantNetwork = { networkPermission.launch(LOCAL_NETWORK_PERMISSION) },
                         scan = ::scan, pasteLink = ::editLink, retry = { if (state.link.isBlank()) scan() else testPairing(save = true) },
                         openTailscale = { tailscale.open() }, finish = ::advance,
+                        chooseMode = ::chooseMode, accessibility = ::openAccessibility, skipFloatingMic = {
+                            store.floatingMicSkipped = true; state.floatingMicSkipped = true; advance()
+                        },
                     ))
                 }
             }
         }
         consumePairingIntent(intent)
     }
-    override fun onNewIntent(intent: Intent) { super.onNewIntent(intent); consumeSection(intent); consumePairingIntent(intent) }
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        consumeSection(intent); consumePairingIntent(intent)
+    }
 
     @Composable
     private fun Shell() {
         AppShell(state.tab, ::selectTab, state.exitOnBack) { tab ->
             when (tab) {
-                ShellTab.Home -> HomeScreen(state, HomeActions(fix = ::fix, dictate = { startActivity(Intent(this, ScratchpadActivity::class.java)) },
-                    notes = { selectTab(ShellTab.Notes) }, history = { id -> state.historyEntry = id; selectTab(ShellTab.History) },
-                    historySettings = { openSettings(SettingsPage.History, outside = false) }), notesLive = NotesSessionHolder.current?.state?.active == true)
                 ShellTab.Notes -> {
                     LifecycleStartEffect(notes) { NotesSessionHolder.visible(notes, this@SetupActivity, true); notes.refresh()
                         onStopOrDispose { NotesSessionHolder.visible(notes, this@SetupActivity, false) } }
-                    NotesScreen(notes, record = notesHost::record, copy = notesHost::copy, share = notesHost::share, act = notesHost::act,
-                        leave = { }, save = notesHost::save, handleBack = false)
+                    NotesLibraryScreen(notes, NotesSessionHolder.reader(this@SetupActivity),
+                        record = { id -> if (id == null) notesHost.recordNew() else notesHost.continueNote(id) },
+                        copy = { notesHost.copy(it) }, share = { notesHost.share(it) }, save = { notesHost.save(it) }, act = notesHost::act,
+                        state = state, connection = { openSettings(SettingsPage.Connection, outside = false) },
+                        dictate = { startActivity(Intent(this, ScratchpadActivity::class.java)) })
                 }
                 ShellTab.History -> HistoryScreen(selected = state.historyEntry, select = { state.historyEntry = it })
                 ShellTab.Settings -> key(state.settingsRequest) {
@@ -168,7 +183,9 @@ open class SetupActivity : ComponentActivity() {
                         changePairing = ::openPairing,
                         forgetPairing = ::forgetPairing,
                         allowWifi = { networkPermission.launch(LOCAL_NETWORK_PERMISSION) },
-                        floatingMicSettings = { startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) },
+                        floatingMicSettings = ::openAccessibility,
+                        chooseMode = ::chooseMode, picker = ::chooseKeyboard, appSettings = ::openAppSettings,
+                        keyboardSettings = { awaitingPrerequisite = true; startActivity(Intent(Settings.ACTION_INPUT_METHOD_SETTINGS)) },
                         keyboardPreferences = ::openKeyboardPreferences,
                         openTailscale = if (tailscale.installed()) ({ tailscale.open() }) else null,
                     ), initialPage = state.settingsPage)
@@ -176,7 +193,7 @@ open class SetupActivity : ComponentActivity() {
             }
         }
     }
-    /** A tab picked in the bar or rail, or from Home: from here Back goes Home as usual. */
+    /** A tab picked in the bar or rail, or from Notes: from here Back goes to Notes as usual. */
     private fun selectTab(tab: ShellTab) { state.exitOnBack = false; state.tab = tab }
     /** Home's connection card: the one fix for what it shows. */
     internal fun fix(fix: HomeFix) {
@@ -187,19 +204,29 @@ open class SetupActivity : ComponentActivity() {
             HomeFix.Retry -> testPairing(save = false)
         }
     }
+    internal fun chooseMode(mode: InputMode) {
+        store.inputMode = mode; state.inputMode = mode
+        if (mode == InputMode.OWN_KEYBOARD) { store.floatingMicSkipped = false; state.floatingMicSkipped = false }
+    }
+    private fun chooseKeyboard() { awaitingPrerequisite = true; getSystemService(InputMethodManager::class.java).showInputMethodPicker() }
+    internal fun openAccessibility() {
+        if (advancedProtection.enabled()) { state.advancedProtection = true; return }
+        awaitingAccessibility = true; awaitingPrerequisite = true
+        openAccessibilitySettings(this)
+    }
     private fun openAppSettings() { awaitingPrerequisite = true; startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, "package:$packageName".toUri())) }
     private fun openKeyboardPreferences() = startActivity(Intent(this, helium314.keyboard.settings.SettingsActivity::class.java))
     private fun forgetPairing() {
         ++pairingGeneration; ChirpNetwork.cancel(pendingHealth); pendingHealth = null
         store.forget(); state.link = ""; state.status = "Pairing removed"; state.checking = false; state.reachable = null; state.failure = null; state.connected = false; refresh()
     }
-    /** Onboarding is complete (now or on an earlier run): open Home, with the first-run "Try it" card until it's dismissed. */
+    /** Onboarding is complete (now or on an earlier run): open Notes, with the first-run "Try it" card until it's dismissed. */
     private fun finishOnboarding() {
-        store.onboarded = true; state.tryIt = !store.tryItDismissed; state.settingsPage = null; open(ShellTab.Home, outside = false)
+        store.onboarded = true; state.tryIt = !store.tryItDismissed; state.settingsPage = null; open(ShellTab.Notes, outside = false)
     }
     /** Moves to the first page whose requirement isn't met, or finishes. Never back to the welcome page once past it. */
     internal fun advance() {
-        val next = setupStep(state.inputEnabled, state.inputSelected, state.mic, state.paired, welcomed = state.step > PAGE_WELCOME)
+        val next = setupStep(state.inputEnabled, state.inputSelected, state.mic, state.paired, welcomed = state.step > PAGE_WELCOME, mode = state.inputMode, bubbleEnabled = state.bubbleEnabled, floatingMicSkipped = state.floatingMicSkipped)
         if (next == ONBOARDING_DONE) finishOnboarding() else state.step = next
     }
     /** Opens the pair page on its own: from the shell (Pair Mac, Change pairing), a pairing link or a recovery action. Back leaves it. */
@@ -210,10 +237,13 @@ open class SetupActivity : ComponentActivity() {
     private fun open(tab: ShellTab, outside: Boolean) { state.tab = tab; state.exitOnBack = outside; state.pairFromShell = false; state.shellOpen = true }
     private fun openSettings(page: SettingsPage?, outside: Boolean = true) { state.settingsPage = page; state.settingsRequest++; open(ShellTab.Settings, outside) }
     private fun consumeSection(source: Intent) {
-        when (source.getStringExtra("section")) {
+        val section = source.getStringExtra("section")
+        source.removeExtra("section")
+        when (section) {
             "pair" -> openPairing()
             "settings" -> openSettings(null)
-            "try" -> { state.tryIt = true; open(ShellTab.Home, outside = false) }
+            "input" -> openSettings(SettingsPage.HowYouDictate, outside = false)
+            "try" -> { state.tryIt = true; open(ShellTab.Notes, outside = false) }
             "connection" -> openSettings(SettingsPage.Connection)
             "network" -> { state.reachable = false; openSettings(SettingsPage.Connection) }
             "history" -> { state.historyEntry = null; open(ShellTab.History, outside = true) }
@@ -223,7 +253,11 @@ open class SetupActivity : ComponentActivity() {
         super.onWindowFocusChanged(hasFocus)
         if (hasFocus && awaitingPrerequisite && ::store.isInitialized) {
             refresh()
-            if (!state.shellOpen) advance()
+            if (awaitingAccessibility) {
+                awaitingAccessibility = false
+                if (!state.bubbleEnabled) state.accessibilityReturns++
+            }
+            if (!state.shellOpen && (state.step != PAGE_KEYBOARD || state.inputMode != InputMode.OWN_KEYBOARD || state.bubbleEnabled)) advance()
             awaitingPrerequisite = false
         }
     }
@@ -264,13 +298,18 @@ open class SetupActivity : ComponentActivity() {
     }
     override fun onResume() {
         super.onResume()
-        if (::store.isInitialized) { refresh(); if (state.paired && state.link.isBlank()) testPairing(save = false, requestPermission = false) }
+        if (::store.isInitialized) { refresh();
+            if (!state.shellOpen && state.step == PAGE_KEYBOARD && state.inputMode == InputMode.OWN_KEYBOARD && state.bubbleEnabled) advance()
+            if (state.paired && state.link.isBlank()) testPairing(save = false, requestPermission = false) }
     }
     override fun onSaveInstanceState(outState: Bundle) {
         outState.putInt("step", state.step); outState.putInt("entry", state.entryStep); outState.putBoolean("connected", state.connected)
         outState.putBoolean("try_it", state.tryIt); outState.putBoolean("shell", state.shellOpen); outState.putBoolean("exit_on_back", state.exitOnBack)
         outState.putBoolean("pair_from_shell", state.pairFromShell); outState.putString("tab", state.tab.name)
         outState.putString("settings_page", state.settingsPage?.name)
+        outState.putInt("accessibility_returns", state.accessibilityReturns)
+        outState.putBoolean("awaiting_accessibility", awaitingAccessibility)
+        outState.putBoolean("awaiting_prerequisite", awaitingPrerequisite)
         super.onSaveInstanceState(outState)
     }
     private fun refresh() {
@@ -284,6 +323,10 @@ open class SetupActivity : ComponentActivity() {
         state.bubbleEnabled = enabled.split(':').any {
             ComponentName.unflattenFromString(it) == ComponentName(this, ChirpAccessibilityService::class.java)
         }
+        state.inputMode = store.migrateInputMode(state.inputEnabled, state.inputSelected, state.bubbleEnabled)
+        state.keyboardLabel = currentKeyboardLabel(this)
+        state.floatingMicSkipped = store.floatingMicSkipped
+        state.advancedProtection = advancedProtection.enabled()
         val pairing = store.pairing()
         state.paired = pairing != null
         state.host = pairing?.base?.host.orEmpty()

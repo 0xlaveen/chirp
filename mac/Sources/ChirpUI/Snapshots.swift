@@ -12,6 +12,19 @@ public enum Snapshots {
     public struct Scenario {
         public let name: String
         let make: () -> NSView
+        /// A whole window instead (the Notes window: its toolbar, sidebar and inspector are window chrome).
+        var window: (() -> NSWindow)?
+
+        init(name: String, make: @escaping () -> NSView) {
+            self.name = name
+            self.make = make
+        }
+
+        init(name: String, window: @escaping () -> NSWindow) {
+            self.name = name
+            make = { NSView() }
+            self.window = window
+        }
     }
 
     public static let appearances: [(name: String, appearance: NSAppearance.Name)] = [
@@ -22,15 +35,8 @@ public enum Snapshots {
 
     private static let sentence = "Please move the standup to three thirty and let everyone know"
 
-    /// The app icon when the source tree's `Assets/AppIcon.png` is there (a development checkout), else a bird symbol:
-    /// the icon only exists in the bundled app, and the snapshots never read the app bundle or the installed app.
-    static let appIcon: NSImage? = {
-        let url = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
-            .deletingLastPathComponent().deletingLastPathComponent().appendingPathComponent("Assets/AppIcon.png")
-        if let image = NSImage(contentsOf: url) { return image }
-        return NSImage(systemSymbolName: "bird.fill", accessibilityDescription: nil)?
-            .withSymbolConfiguration(.init(pointSize: 40, weight: .regular).applying(.init(paletteColors: [.systemIndigo])))
-    }()
+    /// The brand glyph (the operator-approved template PNG in `Assets/`), About and onboarding's hero.
+    static let appIcon: NSImage? = ChirpBrand.glyph()
 
     static func hud(_ name: String, _ configure: @escaping (HUDModel) -> Void) -> Scenario {
         Scenario(name: "hud-\(name)") {
@@ -122,18 +128,32 @@ public enum Snapshots {
         m.keptOriginal = p.keptOriginal
     }
 
+    /// The Pond Ripple at review size (the HUD glyph is 20 pt): driven at a few levels, plus the
+    /// Reduce Motion ring whose stroke follows the level.
+    public static var rippleScenarios: [Scenario] {
+        func ripple(_ name: String, _ make: @escaping () -> Ripple) -> Scenario {
+            Scenario(name: "ripple-\(name)") { NSHostingView(rootView: SnapshotBackdrop { make() }) }
+        }
+        return [
+            ripple("silent") { Ripple(level: 0, phase: 0.15, side: 120) },
+            ripple("speech") { Ripple(level: 0.7, phase: 0.4, side: 120) },
+            ripple("peak") { Ripple(level: 1, phase: 0.8, side: 120) },
+            ripple("static") { Ripple(level: 0.7, reduceMotion: true, side: 120) },
+        ]
+    }
+
     public static var hudScenarios: [Scenario] {
         let (stable, tail) = splitPartial(text: sentence + " about the release", stable: sentence)
         let long = Array(repeating: "and then we should also check the rollout plan with the whole team", count: 5).joined(separator: ", ")
         return [
             hud("connecting") { $0.status = HUDStatus.connecting },
-            hud("listening") { $0.status = HUDStatus.listening; $0.levels = .demo(peak: 0.8); $0.stable = stable; $0.unstable = tail },
-            hud("listening-no-text") { $0.status = HUDStatus.listening; $0.levels = .demo(peak: 0.45) },
-            hud("listening-unstable-only") { $0.status = HUDStatus.listening; $0.levels = .demo(peak: 1); $0.unstable = "so the first words are" },
-            hud("listening-multiline") { $0.status = HUDStatus.listening; $0.levels = .demo(peak: 0.7); $0.stable = long; $0.unstable = " and finally" },
-            hud("listening-reduce-motion") { $0.status = HUDStatus.listening; $0.reduceMotion = true; $0.stable = stable; $0.unstable = tail },
+            hud("listening") { $0.status = HUDStatus.listening; $0.levels = .demo(peak: 0.8); $0.pulsePhase = 0.4; $0.stable = stable; $0.unstable = tail },
+            hud("listening-no-text") { $0.status = HUDStatus.listening; $0.levels = .demo(peak: 0.45); $0.pulsePhase = 0.4 },
+            hud("listening-unstable-only") { $0.status = HUDStatus.listening; $0.levels = .demo(peak: 1); $0.pulsePhase = 0.4; $0.unstable = "so the first words are" },
+            hud("listening-multiline") { $0.status = HUDStatus.listening; $0.levels = .demo(peak: 0.7); $0.pulsePhase = 0.6; $0.stable = long; $0.unstable = " and finally" },
+            hud("listening-reduce-motion") { $0.status = HUDStatus.listening; $0.reduceMotion = true; $0.levels = .demo(peak: 0.6); $0.stable = stable; $0.unstable = tail },
             hud("listening-contrast") {
-                $0.status = HUDStatus.listening; $0.levels = .demo(peak: 0.8); $0.increaseContrast = true
+                $0.status = HUDStatus.listening; $0.levels = .demo(peak: 0.8); $0.pulsePhase = 0.4; $0.increaseContrast = true
                 $0.stable = stable; $0.unstable = tail
             },
             // The clean-up transition, in order: listening → finishing → polishing → changes → inserted.
@@ -214,7 +234,7 @@ public enum Snapshots {
     }
 
     public static var settingsScenarios: [Scenario] {
-        /// A tab's content, as the preferences window shows it under the toolbar.
+        /// A page, as the preferences window shows it: the sidebar and the page at the window's fixed 720 × 520.
         func form(_ name: String, _ tab: SettingsTab, _ configure: (inout SettingsState) -> Void = { _ in }) -> Scenario {
             var state = SettingsState()
             state.launch = .on; state.serverStatus = "parakeet-mlx:tdt-0.6b-v2"
@@ -222,10 +242,7 @@ public enum Snapshots {
             state.about = AboutInfo(version: "0.1.0", build: "1")
             configure(&state)
             return Scenario(name: "settings-\(tab.rawValue)-\(name)") {
-                let form = SettingsForm(state, icon: appIcon, onNotices: {})
-                let view = form.view(for: tab)
-                view.setFrameSize(form.fittingSize(for: tab))
-                return view
+                settingsWindow(state, tab)
             }
         }
         let styled: (inout SettingsState) -> Void = {
@@ -240,12 +257,10 @@ public enum Snapshots {
             Scenario(name: "settings-devices-\(name)") {
                 var state = SettingsState()
                 state.about = AboutInfo(version: "0.1.0", build: "1")
-                let form = SettingsForm(state, icon: appIcon, onNotices: {})
-                form.devicesView.apply(phase, revoking: revoking, problem: problem, now: sampleNow,
-                                       locale: Locale(identifier: "en_US"), timeZone: TimeZone(identifier: "UTC")!)
-                let view = form.view(for: .devices)
-                view.setFrameSize(form.fittingSize(for: .devices))
-                return view
+                return settingsWindow(state, .devices) { form in
+                    form.devicesView.apply(phase, revoking: revoking, problem: problem, now: sampleNow,
+                                           locale: Locale(identifier: "en_US"), timeZone: TimeZone(identifier: "UTC")!)
+                }
             }
         }
         let warmOff = CleanupModelSettings(keepLoaded: false, model: "qwen3-4b", memoryMB: 2662, memoryEstimated: true)
@@ -259,23 +274,20 @@ public enum Snapshots {
             form("ready", .general) { _ in },
             form("login-unavailable", .general) { $0.launch = .unavailable },
             form("missing", .general) { $0.micGranted = false; $0.accessibilityGranted = false },
-            form("ready", .shortcuts) { _ in },
-            form("custom", .shortcuts) {
+            form("shortcuts-custom", .dictation) {
                 $0.hotkey = .custom(keyCode: 0x0F, modifiers: UInt32(controlKey | optionKey | cmdKey))   // ⌃⌥⌘R
                 $0.notesHotkey = .custom(keyCode: 0x2E, modifiers: UInt32(controlKey | optionKey))       // ⌃⌥M
             },
-            form("fn", .shortcuts) { $0.hotkey = .custom(keyCode: KeyCombo.anyModifierKey, modifiers: ModifierKeys.fn) },
-            Scenario(name: "settings-shortcuts-rejected") {
+            form("shortcuts-fn", .dictation) { $0.hotkey = .custom(keyCode: KeyCombo.anyModifierKey, modifiers: ModifierKeys.fn) },
+            Scenario(name: "settings-dictation-shortcuts-rejected") {
                 var state = SettingsState()
                 state.inputs = [boya, studio]; state.defaultInput = boya
-                let form = SettingsForm(state)
-                // As if ⇧ had just been pressed and let go in the recorder, and ⌃⌥Space typed for Live Notes (set
-                // directly: no event monitor offscreen).
-                form.recorder.apply(.rejected(.shiftAlone))
-                form.notesShortcut.refuse(.inUse("dictation"))
-                let view = form.view(for: .shortcuts)
-                view.setFrameSize(form.fittingSize(for: .shortcuts))
-                return view
+                return settingsWindow(state, .dictation) { form in
+                    // As if ⇧ had just been pressed and let go in the recorder, and ⌃⌥Space typed for New Note (set
+                    // directly: no event monitor offscreen).
+                    form.recorder.apply(.rejected(.shiftAlone))
+                    form.notesShortcut.refuse(.inUse("dictation"))
+                }
             },
             form("ready", .dictation) { _ in },
             form("option-hold", .dictation) { $0.hotkey = .option; $0.activationMode = .holdToTalk },
@@ -313,32 +325,51 @@ public enum Snapshots {
             form("unavailable", .cleanup) {
                 $0.cleanupDetail = "The server has clean-up turned off; see the README to enable it."; $0.cleanupAvailable = false
             },
+            form("library", .notes) {
+                $0.notesRetention = .ninetyDays; $0.recentlyDeletedCount = 3
+                $0.notesKeepAudio = true; $0.notesAudioBytes = 48_300_000
+                $0.exportFolder = NSHomeDirectory() + "/Documents/Notes"
+                $0.structureNotes = true; $0.autoReorganize = true
+            },
             form("downloaded", .notes) { $0.speakerModelDownloaded = true },
             form("not-downloaded", .notes) { _ in },
-            form("ready", .server) { styled(&$0) },
-            form("unreachable", .server) {
+            form("ready", .advanced) { styled(&$0) },
+            form("unreachable", .advanced) {
                 $0.tokenPresent = false; $0.serverURL = "https://mainframe.example.ts.net/chirp"
                 $0.serverStatus = "Unreachable"; $0.serverStatusTone = .error
             },
-            form("warm-off", .server) { styled(&$0); $0.keepLoaded = KeepLoadedState(settings: warmOff, availability: .available) },
-            form("warm-loading", .server) {
+            form("warm-off", .advanced) { styled(&$0); $0.keepLoaded = KeepLoadedState(settings: warmOff, availability: .available) },
+            form("warm-loading", .advanced) {
                 styled(&$0)
                 $0.keepLoaded = KeepLoadedState(settings: CleanupModelSettings(keepLoaded: true, loading: true, model: "qwen3-4b", memoryMB: 2662, memoryEstimated: true),
                                                 availability: .available)
             },
-            form("warm-remote-host", .server) {
+            form("warm-remote-host", .advanced) {
                 styled(&$0); $0.serverHost = "mainframe.example.ts.net"; $0.serverURL = "https://mainframe.example.ts.net/chirp"
                 $0.keepLoaded = KeepLoadedState(settings: CleanupModelSettings(keepLoaded: true, loaded: true, model: "qwen3-4b", memoryMB: 2662),
                                                 availability: .available)
             },
-            form("warm-error", .server) {
+            form("warm-error", .advanced) {
                 styled(&$0)
                 $0.keepLoaded = KeepLoadedState(settings: warmOff, availability: .available, error: CleanupSettingsError.unreachable.changeFailure)
             },
-            form("warm-old-server", .server) { styled(&$0); $0.keepLoaded = KeepLoadedState(availability: .unavailable(.serverTooOld)) },
-            form("warm-remote-model", .server) { styled(&$0); $0.keepLoaded = KeepLoadedState(availability: .unavailable(.remoteModel)) },
+            form("warm-old-server", .advanced) { styled(&$0); $0.keepLoaded = KeepLoadedState(availability: .unavailable(.serverTooOld)) },
+            form("warm-remote-model", .advanced) { styled(&$0); $0.keepLoaded = KeepLoadedState(availability: .unavailable(.remoteModel)) },
             form("ready", .about) { _ in },
         ]
+    }
+
+    /// The Settings window's content for `state`, opened on `tab`: the sidebar (flat, with no window to blur through) and the
+    /// page, with the permission badge General shows. `prepare` sets up the form first (a device list, a refused shortcut).
+    static func settingsWindow(_ state: SettingsState, _ tab: SettingsTab, full: Bool = false,
+                               prepare: (SettingsForm) -> Void = { _ in }) -> NSView {
+        let form = SettingsForm(state, icon: appIcon, onNotices: {})
+        prepare(form)
+        let shell = SettingsShell(form: form, selected: tab, flat: true)
+        // `full` stretches the window to the whole page, for review (the real window is fixed and scrolls).
+        if full { shell.contentHeight = max(SettingsShell.size.height, form.fittingSize(for: tab).height + 28) }
+        shell.setBadge(SettingsShell.permissionProblems(micGranted: state.micGranted, accessibilityGranted: state.accessibilityGranted))
+        return shell
     }
 
     // MARK: setup and About
@@ -371,6 +402,21 @@ public enum Snapshots {
     /// A made-up link: the snapshots never read the real token.
     static let sampleLink = try! PairingLink(serverURL: TailscaleServe.pairingURL(host: "my-mac.example-tailnet.ts.net"),
                                              token: "snapshot-sample-not-a-real-token-0123456789")
+
+    /// The library's newest notes as the menu's Recent Notes lists them (relative to `sampleNow`).
+    static let sampleRecentNotes = [
+        RecentNote(id: "n1", title: "Weekly standup", updatedAt: sampleNow.addingTimeInterval(-14 * 60)),
+        RecentNote(id: "n2", title: "Launch checklist", updatedAt: sampleNow.addingTimeInterval(-3 * 3_600)),
+        RecentNote(id: "n3", title: "Ideas for the icon sizes", updatedAt: sampleNow.addingTimeInterval(-26 * 3_600)),
+        RecentNote(id: "n4", title: "Call with the design team", updatedAt: sampleNow.addingTimeInterval(-4 * 86_400)),
+        RecentNote(id: "n5", title: "Note, 3 October", updatedAt: sampleNow.addingTimeInterval(-11 * 86_400)),
+    ]
+
+    static let utcCalendar: Calendar = {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "UTC")!
+        return calendar
+    }()
 
     static let sampleNow = Date(timeIntervalSince1970: 1_792_000_000)   // 2026-10-14 17:46 UTC
     static let samplePhones = [
@@ -411,6 +457,9 @@ public enum Snapshots {
             var inputs = MenuInputs()
             inputs.inputs = [boya, studio]
             inputs.defaultInput = boya
+            inputs.now = sampleNow
+            inputs.calendar = utcCalendar
+            inputs.recentNotes = sampleRecentNotes
             configure(&inputs)
             let header = MenuContent.header(inputs)
             let entries = MenuContent.entries(inputs)
@@ -420,6 +469,9 @@ public enum Snapshots {
             var inputs = MenuInputs()
             inputs.inputs = [boya, studio]
             inputs.defaultInput = boya
+            inputs.now = sampleNow
+            inputs.calendar = utcCalendar
+            inputs.recentNotes = sampleRecentNotes
             configure(&inputs)
             let rows = MenuContent.entries(inputs).first { $0.title == title }?.submenu ?? []
             return Scenario(name: "menu-\(name)") { MenuPanelView(header: nil, entries: rows, native: true) }
@@ -453,8 +505,10 @@ public enum Snapshots {
             },
             menu("notes-recording") {
                 $0.health = local; $0.cleanupOn = true
-                $0.notesRecording = true; $0.notesElapsed = "12:34"; $0.notesHasDocument = true
+                $0.notesRecording = true; $0.notesElapsed = "03:12"; $0.notesTitle = "Weekly standup"; $0.notesHasDocument = true
             },
+            menu("loading") { $0.health = Health(engine: "parakeet-mlx:tdt-0.6b-v2", ready: false) },
+            menu("empty-library") { $0.health = local; $0.recentNotes = [] },
             menu("use-raw") { $0.health = local; $0.cleanupOn = true; $0.rawOfferOpen = true; $0.rawOfferKey = "⌃⌥Z" },
             menu("long-names") {
                 $0.health = local; $0.chosenInputUID = "long"
@@ -462,6 +516,7 @@ public enum Snapshots {
             },
             submenu("cleanup-submenu", of: "Clean-up") { $0.health = local; $0.cleanupOn = true; $0.styleID = "email" },
             submenu("cleanup-submenu-off", of: "Clean-up") { $0.health = local },
+            submenu("recent-notes-submenu", of: "Recent Notes") { $0.health = local },
             submenu("microphone-submenu", of: "Microphone") { $0.health = local; $0.chosenInputUID = "studio" },
         ]
     }
@@ -469,12 +524,15 @@ public enum Snapshots {
     /// The scenarios whose PNGs are committed under `docs/screenshots/mac`: the key HUD states, the menu in light and
     /// dark, one per Settings tab, and the setup window. The rest only render to a temporary directory for review.
     public static let committedNames: [String] = [
-        "hud-listening", "hud-flow-2-polishing", "hud-flow-3-diff", "hud-correction-use-raw",
+        "hud-listening", "ripple-speech", "ripple-static",
+        "hud-flow-2-polishing", "hud-flow-3-diff", "hud-correction-use-raw",
         "hud-wordwave-listening", "hud-wordwave-long", "hud-wordwave-polishing",
-        "menu-ready", "menu-cleanup-submenu",
-        "settings-general-missing", "settings-shortcuts-custom", "settings-dictation-sounds", "settings-cleanup-custom", "settings-notes-downloaded",
-        "settings-server-ready", "settings-devices-ready", "settings-about-ready", "onboarding-welcome",
-        "notes-editing", "notes-split", "notes-paused", "notes-review-sheet", "notes-tip",
+        "menu-ready", "menu-notes-recording", "menu-recent-notes-submenu", "menu-cleanup-submenu",
+        "settings-general-ready", "settings-general-missing", "settings-dictation-ready", "settings-dictation-shortcuts-custom",
+        "settings-dictation-sounds", "settings-cleanup-custom", "settings-notes-library", "settings-notes-downloaded",
+        "settings-devices-ready", "settings-advanced-ready", "settings-about-ready", "onboarding-welcome",
+        "notes-empty", "notes-library", "notes-recording", "notes-search", "notes-no-results", "notes-deleted",
+        "notes-continued", "notes-inspector-playing", "notes-review-sheet",
     ]
 
     public static var committedScenarios: [Scenario] {
@@ -531,8 +589,9 @@ public enum Snapshots {
 
     /// An invented meeting: an agenda the user typed, three structured segments settled, two more in the AI tail,
     /// a live partial.
-    static func demoNotes(gap: Bool = false, short: Bool = false, typed: Bool = true) -> NotesDocument {
+    static func demoNotes(gap: Bool = false, short: Bool = false, typed: Bool = true, captured: Bool = false) -> NotesDocument {
         var d = NotesDocument(startedAt: Date(timeIntervalSince1970: 1_792_504_980))
+        if captured { d.beginCapture(at: d.startedAt, offset: 0) }
         if typed { d.userEdit(NSRange(location: 0, length: 0), "## Agenda\n- Lantern kickoff\n- Budget check-in\n- [x] Share the doc with Maya\n") }
         let said: [(TimeInterval, String, String)] = [
             (12, "okay so we're kicking off the lantern project today and the launch target moved to march third",
@@ -652,147 +711,257 @@ public enum Snapshots {
         return snapshots
     }
 
-    static func notes(_ name: String, width: CGFloat = 820, _ configure: @escaping (NotesModel) -> Void) -> Scenario {
-        Scenario(name: "notes-\(name)") {
+    /// The snapshot clock: an hour and a half after the demo meeting started (2026-10-20 14:03 UTC), in UTC.
+    nonisolated static let notesNow = Date(timeIntervalSince1970: 1_792_504_980 + 5400)
+    static var notesCalendar: Calendar {
+        var c = Calendar(identifier: .gregorian)
+        c.timeZone = TimeZone(identifier: "UTC")!
+        return c
+    }
+
+    /// An invented library around the demo meeting: today, yesterday, this week, this month and two earlier months.
+    static func demoLibrary(current: NotesDocument?, recording: Bool = false) -> [NotesLibraryEntry] {
+        func id(_ n: Int) -> UUID { UUID(uuidString: String(format: "00000000-0000-0000-0000-%012d", n))! }
+        func at(_ hoursAgo: Double) -> Date { notesNow.addingTimeInterval(-hoursAgo * 3600) }
+        var list = [
+            NotesLibraryEntry(id: id(2), title: "Design review prep", snippet: "Walk through the onboarding flow first, then the empty states. Theo wants the copy deck before Thursday.",
+                              openTodos: 1, createdAt: at(4), updatedAt: at(3.2), duration: 0),
+            NotesLibraryEntry(id: id(3), title: "1:1 with Theo", snippet: "Career goals for next half: own the beta, mentor the new designer. Follow up on the conference budget.",
+                              openTodos: 2, createdAt: at(27), updatedAt: at(26), duration: 24 * 60, audioBytes: 2_100_000),
+            NotesLibraryEntry(id: id(4), title: "Grocery run ideas", snippet: "Lemons, good olive oil, the bread from the place on Fourth, something for Saturday.",
+                              openTodos: 3, createdAt: at(80), updatedAt: at(76)),
+            NotesLibraryEntry(id: id(5), title: "Quarterly planning", snippet: "Three bets for Q1: the beta, the Android notes library, and a faster first run. Headcount stays flat.",
+                              openTodos: 0, createdAt: at(300), updatedAt: at(298), duration: 52 * 60, recovered: true),
+            NotesLibraryEntry(id: id(6), title: "Podcast notes: retrieval", snippet: "Chunk size matters less than the reranker. Try the hybrid index on the support corpus.",
+                              createdAt: at(960), updatedAt: at(958), duration: 65 * 60, audioBytes: 9_400_000),
+            NotesLibraryEntry(id: id(7), title: "Vendor call", snippet: "Renewal at the same price if we sign before the end of the month. Ask legal about the data clause.",
+                              openTodos: 1, createdAt: at(1700), updatedAt: at(1690), duration: 31 * 60),
+        ]
+        if let current {
+            list.insert(NotesLibraryEntry(id: current.id, title: current.title, snippet: current.snippet(), openTodos: current.openTodoCount(),
+                                          createdAt: current.createdAt, updatedAt: at(0.4), duration: 192, audioBytes: 640_000,
+                                          recording: recording), at: 0)
+        }
+        return list
+    }
+
+    /// A search result with every case-insensitive match of `query` in `snippet` highlighted.
+    static func demoResult(_ entry: NotesLibraryEntry, snippet: String, query: String) -> NotesSearchResult {
+        var matches: [NSRange] = []
+        var cursor = snippet.startIndex
+        while let r = snippet.range(of: query, options: .caseInsensitive, range: cursor..<snippet.endIndex) {
+            matches.append(NSRange(r, in: snippet))
+            cursor = r.upperBound
+        }
+        return NotesSearchResult(entry: entry, snippet: snippet, matches: matches)
+    }
+
+    /// The demo meeting with a user title, as a library note: a finished capture, then (with `continued`) a second
+    /// one the next morning after Continue recording.
+    static func demoNote(continued: Bool = false) -> NotesDocument {
+        var d = demoNotes(short: continued, captured: true)
+        d.rename("Lantern kickoff", at: Date(timeIntervalSince1970: 1_792_504_980))
+        guard continued else { return d }
+        d.beginCapture(at: Date(timeIntervalSince1970: 1_792_504_980 + 19 * 3600 + 1680), offset: 120)
+        d.append(NotesSegment(id: 3, offset: 121, raw: "picking this up again maya sent the spec last night",
+                              text: "Picking this up again: Maya sent the spec last night.", corrected: true))
+        d.append(NotesSegment(id: 4, offset: 139, raw: "theo has the design review on thursday at two",
+                              text: "Theo has the design review on Thursday at two.", corrected: true))
+        let more = ["## Follow-up", "- Maya sent the draft spec", "- Design review **Thursday, 2 PM**"].joined(separator: "\n")
+        if let r = d.nextStructureRequest() { d.apply(NotesStructureResponse(markdown: more, structured: true), for: r) }
+        d.freezeAll()
+        return d
+    }
+
+    /// The Notes window as it is on screen, in a window that is never shown: the toolbar, sidebar and inspector are
+    /// window chrome, which only a window draws.
+    static func notesWindow(_ model: NotesModel, _ library: NotesLibraryModel, size: CGSize = CGSize(width: 1000, height: 620)) -> NSWindow {
+        let window = NSWindow(contentRect: NSRect(origin: .zero, size: size),
+                              styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
+                              backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.toolbarStyle = .unified
+        window.contentViewController = NSHostingController(rootView: NotesView(model: model, library: library))
+        window.setContentSize(size)
+        return window
+    }
+
+    /// A Notes window scenario: the demo meeting open in a populated library, recording, 3:12 in.
+    static func notes(_ name: String, _ configure: @escaping (NotesModel, NotesLibraryModel) -> Void) -> Scenario {
+        Scenario(name: "notes-\(name)", window: {
             let model = NotesModel()
             model.dictationKey = "⌥"
             model.state = .recording
-            model.document = demoNotes()
+            model.libraryEnabled = true
+            model.privacyLine = NotesModel.libraryPrivacy
+            model.privacyHelp = NotesModel.libraryPrivacyHelp
+            var d = demoNotes()
+            d.rename("Lantern kickoff", at: Date(timeIntervalSince1970: 1_792_504_980))
+            model.document = d
             model.elapsed = 192
+            model.level = 0.55
+            model.ripplePhase = 0.35
             model.canManageModels = true
-            configure(model)
-            // A little under the default window size, so the committed PNGs stay small.
-            return NSHostingView(rootView: NotesView(model: model).frame(width: width, height: 560))
-        }
+            model.structureEnabled = true
+            let library = NotesLibraryModel()
+            library.now = { notesNow }
+            library.calendar = notesCalendar
+            library.notes = demoLibrary(current: d, recording: true)
+            library.recordingID = d.id
+            library.selection = .note(d.id)
+            configure(model, library)
+            if !model.state.isActive, library.recordingID == model.document.id { library.recordingID = nil }
+            return notesWindow(model, library)
+        })
+    }
+
+    /// The demo meeting, finished and saved: the library's ordinary state.
+    static func finished(_ model: NotesModel, _ library: NotesLibraryModel, continued: Bool = false) {
+        model.state = .stopped
+        let d = demoNote(continued: continued)
+        model.document = d
+        model.elapsed = continued ? 148 : 192
+        library.recordingID = nil
+        library.notes = demoLibrary(current: d)
+        library.selection = .note(d.id)
     }
 
     public static var notesScenarios: [Scenario] {
         [
-            notes("editing") { $0.structuring = .running },
-            notes("preview") { $0.preview = true },
-            notes("reorganized") {
-                $0.document = reorganizedNotes()
-                $0.reorganizeStatus = .applied(at: 1)
+            notes("empty") { model, library in
+                model.state = .idle; model.document = NotesDocument(); model.elapsed = 0
+                library.notes = []; library.recordingID = nil; library.selection = .note(model.document.id)
             },
-            notes("reorganizing") { $0.reorganizeStatus = .running },
-            notes("voice-edit-listening") {
-                $0.voiceEditAvailable = true
-                $0.canVoiceEdit = true
-                $0.voiceEdit = .listening(heard: "remove the bit about the budget")
+            notes("library") { model, library in finished(model, library) },
+            notes("recording") { model, library in
+                // Browsing another note while the demo meeting records: the recording stays pinned and in the toolbar.
+                let other = NotesModel()
+                var d = NotesDocument(startedAt: notesNow.addingTimeInterval(-4 * 3600))
+                d.userEdit(NSRange(location: 0, length: 0), "## Flow\n- Onboarding first, then the empty states\n- Copy deck to Theo before **Thursday**\n\n## Open\n- [ ] Decide on the illustration style\n- **Question:** do we keep the three-step tour?\n")
+                d.rename("Design review prep", at: notesNow.addingTimeInterval(-3.2 * 3600))
+                other.document = d
+                other.state = .stopped
+                other.libraryEnabled = true
+                other.reorganizeStatus = .unavailable(.unsupported)
+                library.browsed = other
+                library.selection = .note(library.notes[1].id)
             },
-            notes("voice-edited") {
-                $0.voiceEditAvailable = true
-                $0.canVoiceEdit = true
-                $0.voiceEdit = .done(.applied, at: 1)
+            notes("recording-live") { _, _ in },
+            notes("search") { model, library in
+                finished(model, library)
+                library.query = "beta"
+                let notes = library.notes
+                library.results = [
+                    demoResult(notes[0], snippet: "Open question is who owns QA for the beta. Beta starts in the second week of April.", query: "beta"),
+                    demoResult(notes[2], snippet: "Career goals for next half: own the beta, mentor the new designer.", query: "beta"),
+                    demoResult(notes[4], snippet: "Three bets for Q1: the beta, the Android notes library, and a faster first run.", query: "beta"),
+                ]
             },
-            notes("voice-edit-refused") {
-                $0.state = .stopped
-                $0.voiceEditAvailable = true
-                $0.canVoiceEdit = true
-                $0.voiceEdit = .done(.refused("adds_content"), at: 1)
+            notes("no-results") { model, library in
+                finished(model, library)
+                library.query = "kangaroo"
+                library.results = []
             },
-            notes("organizing") { $0.state = .stopped; $0.reorganizeStatus = .organizing(step: 2, of: 3) },
-            notes("organize-partial") {
-                $0.state = .stopped
-                $0.reorganizeStatus = .organized(failed: 1, reason: "rejected: novel_name")
+            notes("deleted") { model, library in
+                finished(model, library)
+                library.selection = .recentlyDeleted
+                func at(_ days: Double) -> Date { notesNow.addingTimeInterval(-days * 86400) }
+                library.deleted = [
+                    NotesLibraryEntry(id: UUID(), title: "Standup scratch", snippet: "Blocked on the staging deploy; pairing with Sam after lunch.",
+                                      createdAt: at(3), updatedAt: at(2), deletedAt: at(2), duration: 6 * 60),
+                    NotesLibraryEntry(id: UUID(), title: "Old roadmap draft", snippet: "Superseded by Quarterly planning.",
+                                      createdAt: at(40), updatedAt: at(12), deletedAt: at(12)),
+                    NotesLibraryEntry(id: UUID(), title: "Test recording", snippet: "Testing, one two, testing.",
+                                      createdAt: at(26), updatedAt: at(26), deletedAt: at(26), duration: 14),
+                ]
             },
-            notes("split") {
-                $0.tab = .split
-                var d = demoNotes(short: true)
-                d.livePartial = "the beta itself should start in the second"
-                $0.document = d
+            notes("continued") { model, library in
+                finished(model, library, continued: true)
+                library.showsInspector = true
             },
-            notes("recovered") {
-                $0.state = .stopped; $0.elapsed = 0; $0.document = NotesDocument()
-                $0.recovery = RecoveryOffer(startedAt: Date(timeIntervalSince1970: 1_792_504_980), elapsed: 52 * 60)
-                $0.privacyLine = NotesStatus.privacyRecovery
+            notes("inspector-playing") { model, library in
+                finished(model, library)
+                model.document.livePartial = ""
+                library.showsInspector = true
+                model.keptAudio = Dictionary(uniqueKeysWithValues: (0..<7).map { ($0, URL(fileURLWithPath: "/dev/null/\($0).m4a")) })
+                let rows = model.transcriptRows
+                if rows.count > 1 { library.player.showPlaying(note: model.document.id, paragraph: rows[1].id, segment: rows[1].paragraph.segments.lowerBound) }
             },
-            notes("keep-saving-stopped") {
-                $0.state = .stopped
-                $0.privacyLine = NotesStatus.privacyRecovery
-                $0.keepSaving = .stopped(KeepSavingStatus.moved)
+            notes("editing") { model, _ in model.structuring = .running },
+            notes("show-markdown") { model, library in finished(model, library); library.showMarkdown = true },
+            notes("reorganized") { model, _ in
+                var d = reorganizedNotes()
+                d.rename("Lantern kickoff", at: Date(timeIntervalSince1970: 1_792_504_980))
+                model.document = d
+                model.reorganizeStatus = .applied(at: 1)
+                model.snapshots = demoSnapshots()
             },
-            notes("offline") { $0.connection = .offline(kept: 252) },
-            notes("catching-up") { $0.connection = .catchingUp(segments: 3) },
-            notes("mic-silent") { $0.micNotice = .silent },
-            notes("mic-switched") { $0.micNotice = .switched("MacBook Pro Microphone") },
-            notes("paused-slept") { $0.state = .paused; $0.pauseReason = NotesStatus.sleptPause },
-            notes("transcript-raw") { $0.tab = .transcript; $0.showRaw = true; $0.document = demoNotes(gap: true) },
-            notes("transcript") { $0.tab = .transcript; $0.document = demoNotes(gap: true) },
-            notes("transcript-speakers") {
-                $0.tab = .transcript; $0.document = demoSpeakers(); $0.speakerLabels = true; $0.speakerModel = .ready
+            notes("reorganizing") { model, _ in model.reorganizeStatus = .running },
+            notes("voice-edit-listening") { model, _ in
+                model.voiceEditAvailable = true
+                model.canVoiceEdit = true
+                model.voiceEdit = .listening(heard: "remove the bit about the budget")
             },
-            notes("transcript-speakers-renamed") {
-                var d = demoSpeakers()
-                d.renameSpeaker(2, to: "Maya")
-                $0.tab = .transcript; $0.document = d; $0.speakerLabels = true; $0.speakerModel = .ready
-                $0.speakerBanner = SpeakerBanner(document: d.id, kind: .offerReplace(old: "Person 2", new: "Maya", count: 2))
+            notes("voice-edited") { model, _ in
+                model.voiceEditAvailable = true
+                model.canVoiceEdit = true
+                model.voiceEdit = .done(.applied, at: 1)
             },
-            notes("hearing-speakers") {
-                var d = demoSpeakers()
-                d.userEdit(NSRange(location: 0, length: 0), "## Lantern kickoff\n- Launch target moved to **March 3**\n")
-                $0.document = d; $0.speakerLabels = true; $0.speakerModel = .ready
+            notes("organize-partial") { model, library in
+                finished(model, library)
+                model.reorganizeStatus = .organized(failed: 1, reason: "rejected: novel_name")
             },
-            notes("speakers-downloading") {
-                $0.state = .idle; $0.tab = .transcript; $0.speakerModel = .downloading(0.42); $0.elapsed = 0
-                $0.document = NotesDocument()
+            notes("keep-saving-stopped") { model, library in
+                finished(model, library)
+                model.keepSaving = .stopped(KeepSavingStatus.moved)
             },
-            notes("structuring-off-editable") {
+            notes("offline") { model, _ in model.connection = .offline(kept: 252) },
+            notes("mic-silent") { model, _ in model.micNotice = .silent },
+            notes("paused") { model, _ in model.state = .paused; model.elapsed = 754; model.document.livePartial = "" },
+            notes("transcript") { model, library in model.document = demoNotes(gap: true); library.showsInspector = true },
+            notes("transcript-speakers") { model, library in
+                model.document = demoSpeakers(); model.speakerLabels = true; model.speakerModel = .ready
+                library.showsInspector = true
+            },
+            notes("structuring-off-editable") { model, _ in
                 var d = NotesDocument(startedAt: Date(timeIntervalSince1970: 1_792_504_980))
                 d.userEdit(NSRange(location: 0, length: 0), "## My notes\n- Lantern launch moved to **March 3**\n- Ask Theo about the design review\n- [ ] ")
                 for s in demoNotes().segments { d.append(s) }
                 d.livePartial = "and we still need the onboarding emails"
-                $0.document = d
-                $0.structuring = .off(.correctionOff)
-                $0.reorganizeStatus = .unavailable(.correctionOff)
+                model.document = d
+                model.structuring = .off(.correctionOff)
+                model.reorganizeStatus = .unavailable(.correctionOff)
             },
-            notes("structure-failed") {
-                $0.structuring = .failed("timeout")
-                $0.reorganizeStatus = .failed("rejected")
-                $0.structuringHost = "llm.example.com"
-                $0.debugRetention = true
+            notes("structure-failed") { model, _ in
+                model.structuring = .failed("timeout")
+                model.reorganizeStatus = .failed("rejected")
+                model.structuringHost = "llm.example.com"
+                model.debugRetention = true
             },
-            notes("old-server") { $0.reorganizeStatus = .unavailable(.unsupported) },
-            notes("stopped") {
-                $0.state = .stopped
-                var d = demoNotes()
-                d.livePartial = ""
-                d.freezeAll()
-                $0.document = d
+            notes("long-lag") { model, _ in model.document = demoLong(); model.elapsed = 2690 },
+            notes("long-run") { model, _ in model.document = demoLong(); model.elapsed = 7262 },
+            notes("error") { model, _ in model.state = .error("Notes stopped: Server rejected the token") },
+            notes("new-note") { model, library in
+                model.state = .idle; model.document = NotesDocument(); model.elapsed = 0
+                library.recordingID = nil; library.selection = .note(model.document.id)
+                library.notes = demoLibrary(current: nil)
             },
-            notes("empty") { $0.state = .idle; $0.document = NotesDocument(); $0.elapsed = 0 },
-            notes("long-lag") { $0.document = demoLong(); $0.elapsed = 2690 },
-            notes("long-transcript") {
-                $0.tab = .transcript; $0.document = demoLong(); $0.elapsed = 2690; $0.hoveredParagraph = "0"
-            },
-            notes("long-preview") { $0.document = demoLong(); $0.elapsed = 2690; $0.preview = true; $0.structuring = .idle },
-            notes("long-run") { $0.document = demoLong(); $0.elapsed = 7262 },
-            notes("error") { $0.state = .error("Notes stopped: Server rejected the token") },
-            notes("paused") { $0.state = .paused; $0.elapsed = 754; var d = demoNotes(); d.livePartial = ""; $0.document = d },
-            notes("paused-asleep") { $0.state = .paused; $0.pauseReason = "Paused while the Mac slept"; $0.elapsed = 754 },
-            notes("level") { $0.level = 0.8; $0.structuring = .idle },
-            notes("min-width", width: NotesViewMetrics.minimumSize.width) {
-                $0.structuringHost = "llm.example.com"
-                $0.structuring = .running
-            },
-            notes("structuring-host") { $0.structuringHost = "llm.example.com" },
-            notes("reorganized-changes") {
-                $0.document = reorganizedNotes()
-                $0.reorganizeStatus = .applied(at: 1)
-                $0.snapshots = demoSnapshots()
+            notes("toast") { model, library in
+                finished(model, library)
+                library.showToast(NotesLibraryText.deleted, undo: UUID())
             },
             Scenario(name: "notes-review-sheet") {
                 let model = NotesModel()
                 model.snapshots = demoSnapshots()
                 model.review()
-                return NSHostingView(rootView: OrganizeReviewSheet(model: model).background(Color(nsColor: .windowBackgroundColor)))
+                return NSHostingView(rootView: OrganizeReviewSheet(model: model))
             },
             Scenario(name: "notes-review-confirm") {
                 let model = NotesModel()
                 model.snapshots = demoSnapshots()
                 model.review()
                 model.confirmingRestore = model.reviewing
-                return NSHostingView(rootView: OrganizeReviewSheet(model: model).background(Color(nsColor: .windowBackgroundColor)))
+                return NSHostingView(rootView: OrganizeReviewSheet(model: model))
             },
             Scenario(name: "notes-tip") {
                 NSHostingView(rootView: NotesTipView().background(Color(nsColor: .windowBackgroundColor)))
@@ -801,16 +970,17 @@ public enum Snapshots {
     }
 
     public static var allScenarios: [Scenario] {
-        hudScenarios + wordWaveScenarios + settingsScenarios + onboardingScenarios + menuScenarios + localModelsScenarios
-            + notesScenarios + pairingScenarios
+        hudScenarios + rippleScenarios + wordWaveScenarios + settingsScenarios + onboardingScenarios + menuScenarios
+            + localModelsScenarios + notesScenarios + pairingScenarios
     }
 
     // MARK: rendering
 
     /// Renders `scenario` at 2x under `appearance` into PNG data.
     public static func png(_ scenario: Scenario, appearance name: NSAppearance.Name) -> Data? {
-        let view = scenario.make()
         let appearance = NSAppearance(named: name)!
+        if let window = scenario.window { return windowPNG(window(), appearance: appearance) }
+        let view = scenario.make()
         view.appearance = appearance
         let size = view.fittingSize
         guard size.width > 0, size.height > 0 else { return nil }
@@ -841,13 +1011,50 @@ public enum Snapshots {
         return isWindow ? opaquePNG(rep) ?? rep.representation(using: .png, properties: [:]) : rep.representation(using: .png, properties: [:])
     }
 
+    /// A window drawn from its frame view (title bar and toolbar included) without ever being ordered on screen.
+    private static func windowPNG(_ window: NSWindow, appearance: NSAppearance) -> Data? {
+        window.appearance = appearance
+        guard let frame = window.contentView?.superview else { return nil }
+        // The toolbar and the split view's columns settle over a few layout passes (never the run loop: a window that
+        // is not on screen never finishes the display cycle's constraint passes).
+        for _ in 0..<4 {
+            window.layoutIfNeeded()
+            frame.layoutSubtreeIfNeeded()
+        }
+        for textView in textViews(in: frame) {
+            if let tlm = textView.textLayoutManager { tlm.ensureLayout(for: tlm.documentRange) }
+            textView.needsDisplay = true
+        }
+        frame.layoutSubtreeIfNeeded()
+        let size = frame.bounds.size
+        guard let rep = NSBitmapImageRep(
+            bitmapDataPlanes: nil, pixelsWide: Int(size.width * 2), pixelsHigh: Int(size.height * 2), bitsPerSample: 8,
+            samplesPerPixel: 4, hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB,
+            bytesPerRow: 0, bitsPerPixel: 0) else { return nil }
+        rep.size = size
+        appearance.performAsCurrentDrawingAppearance { frame.cacheDisplay(in: frame.bounds, to: rep) }
+        // A window that is never shown must not outlive its picture: left alive, its SwiftUI content keeps asking for
+        // layout passes that never settle (AppKit then throws).
+        window.contentViewController = nil
+        window.toolbar = nil
+        window.close()
+        var backdrop = NSColor.windowBackgroundColor
+        appearance.performAsCurrentDrawingAppearance { backdrop = NSColor.windowBackgroundColor.usingColorSpace(.deviceRGB) ?? .gray }
+        return opaquePNG(rep, backdrop: backdrop.cgColor) ?? rep.representation(using: .png, properties: [:])
+    }
+
     /// A window is opaque, so its PNG drops the alpha channel: the same pixels in a smaller file. (`cacheDisplay`
     /// only draws into a bitmap with alpha, so the pixels are copied into one that ignores it.)
-    private static func opaquePNG(_ rep: NSBitmapImageRep) -> Data? {
+    private static func opaquePNG(_ rep: NSBitmapImageRep, backdrop: CGColor? = nil) -> Data? {
         guard let image = rep.cgImage,
               let context = CGContext(data: nil, width: image.width, height: image.height, bitsPerComponent: 8, bytesPerRow: 0,
                                       space: image.colorSpace ?? CGColorSpaceCreateDeviceRGB(),
                                       bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue) else { return nil }
+        if let backdrop {
+            // The window's rounded corners show this instead of black.
+            context.setFillColor(backdrop)
+            context.fill(CGRect(x: 0, y: 0, width: image.width, height: image.height))
+        }
         context.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
         let data = NSMutableData()
         guard let opaque = context.makeImage(),
@@ -963,7 +1170,8 @@ private final class SubmenuRowView: NSView {
 
     var fittingWidth: CGFloat {
         let width = (entry.title as NSString).size(withAttributes: [.font: MenuStyle.font]).width
-        return max(MenuMetrics.minimumWidth - 60, ceil(width) + 34 + MenuMetrics.trailing + 12)
+        let value = entry.value.map { ($0 as NSString).size(withAttributes: [.font: MenuStyle.font]).width + 28 } ?? 0
+        return max(MenuMetrics.minimumWidth - 60, ceil(width + value) + 34 + MenuMetrics.trailing + 12)
     }
 
     override func draw(_ dirtyRect: NSRect) {
@@ -974,5 +1182,10 @@ private final class SubmenuRowView: NSView {
             ("✓" as NSString).draw(at: NSPoint(x: 14, y: y), withAttributes: [.font: MenuStyle.font, .foregroundColor: color])
         }
         (entry.title as NSString).draw(at: NSPoint(x: 34, y: y), withAttributes: [.font: MenuStyle.font, .foregroundColor: color])
+        if let value = entry.value {
+            let size = (value as NSString).size(withAttributes: [.font: MenuStyle.font])
+            (value as NSString).draw(at: NSPoint(x: bounds.width - MenuMetrics.trailing - size.width, y: y),
+                                     withAttributes: [.font: MenuStyle.font, .foregroundColor: NSColor.secondaryLabelColor])
+        }
     }
 }

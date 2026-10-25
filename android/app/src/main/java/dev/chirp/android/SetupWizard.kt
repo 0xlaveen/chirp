@@ -27,6 +27,7 @@ internal class OnboardingActions(
     val grantMic: () -> Unit = {}, val keyboardSettings: () -> Unit = {}, val picker: () -> Unit = {}, val appSettings: () -> Unit = {},
     val scan: () -> Unit = {}, val pasteLink: (String) -> Unit = {}, val retry: () -> Unit = {}, val grantNetwork: () -> Unit = {},
     val openTailscale: () -> Unit = {}, val finish: () -> Unit = {},
+    val chooseMode: (InputMode) -> Unit = {}, val accessibility: () -> Unit = {}, val skipFloatingMic: () -> Unit = {},
 )
 
 /** A page's one job: [onClick] is the primary button pinned to the bottom of the screen. */
@@ -47,7 +48,8 @@ internal fun Onboarding(state: SetupState, actions: OnboardingActions = Onboardi
     }
     Surface(Modifier.fillMaxSize()) {
         Box(Modifier.fillMaxSize().safeDrawingPadding(), contentAlignment = Alignment.TopCenter) {
-            Column(Modifier.widthIn(max = 560.dp).fillMaxSize().padding(horizontal = 24.dp).padding(top = 16.dp, bottom = 16.dp)) {
+            // No horizontal padding here: the welcome page's pond art bleeds edge to edge; each page pads its own text.
+            Column(Modifier.widthIn(max = 560.dp).fillMaxSize().padding(top = 16.dp, bottom = 16.dp)) {
                 PageIndicator(page)
                 AnimatedContent(page, Modifier.weight(1f).fillMaxWidth().graphicsLayer {
                     val scale = 1f - .08f * backProgress; scaleX = scale; scaleY = scale; alpha = 1f - .3f * backProgress
@@ -65,9 +67,9 @@ internal fun Onboarding(state: SetupState, actions: OnboardingActions = Onboardi
 @Composable
 private fun PageIndicator(page: Int) {
     Row(Modifier.fillMaxWidth().padding(vertical = 16.dp).semantics(mergeDescendants = true) {
-        contentDescription = "Step ${page + 1} of 4"; progressBarRangeInfo = ProgressBarRangeInfo((page + 1).toFloat(), 1f..4f, 2)
+        contentDescription = "Step ${page + 1} of 5"; progressBarRangeInfo = ProgressBarRangeInfo((page + 1).toFloat(), 1f..5f, 3)
     }, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        repeat(4) { index ->
+        repeat(5) { index ->
             val color by animateColorAsState(if (index <= page) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant, label = "segment")
             Box(Modifier.weight(1f).height(6.dp).clip(CircleShape).background(color))
         }

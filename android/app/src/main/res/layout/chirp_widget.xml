@@ -1,0 +1,17 @@
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_root" android:layout_width="match_parent" android:layout_height="match_parent"
+    android:orientation="horizontal" android:gravity="center" android:padding="8dp"
+    android:background="@drawable/widget_background" style="?android:attr/buttonBarStyle">
+    <Button android:id="@+id/widget_dictate" style="?android:attr/buttonBarButtonStyle" android:layout_width="0dp" android:layout_weight="1"
+        android:layout_height="match_parent" android:minHeight="48dp" android:minWidth="48dp"
+        android:text="@string/dictate_short" android:textAllCaps="false" android:maxLines="1"
+        android:autoSizeTextType="uniform" android:autoSizeMinTextSize="10sp" android:autoSizeMaxTextSize="16sp" android:autoSizeStepGranularity="1sp"
+        android:drawableTop="@drawable/ic_mic" android:drawableTint="@color/chirp_primary"
+        android:background="@android:color/transparent" android:textColor="@color/chirp_on_surface" />
+    <Button android:id="@+id/widget_record" style="?android:attr/buttonBarButtonStyle" android:layout_width="0dp" android:layout_weight="1"
+        android:layout_height="match_parent" android:minHeight="48dp" android:minWidth="48dp"
+        android:text="@string/widget_record" android:textAllCaps="false" android:maxLines="1"
+        android:autoSizeTextType="uniform" android:autoSizeMinTextSize="10sp" android:autoSizeMaxTextSize="16sp" android:autoSizeStepGranularity="1sp"
+        android:drawableTop="@drawable/ic_widget_record" android:drawableTint="@color/chirp_primary"
+        android:background="@android:color/transparent" android:textColor="@color/chirp_on_surface" />
+</LinearLayout>

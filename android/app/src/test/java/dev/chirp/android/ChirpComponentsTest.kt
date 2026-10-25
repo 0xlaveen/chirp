@@ -79,19 +79,19 @@ class ChirpComponentsTest {
     private fun inside(outer: Rect, inner: Rect) = inner.left >= outer.left - 1 && inner.top >= outer.top - 1 &&
         inner.right <= outer.right + 1 && inner.bottom <= outer.bottom + 1
 
-    @Test fun `render components in Chirp green and wallpaper colours, light, dark and at 200 percent font`() {
+    @Test fun `render components in Pond and wallpaper colours, light, dark and at 200 percent font`() {
         val output = File(System.getProperty("chirp.screenshots")).apply { mkdirs() }
         val dark = mutableStateOf(false)
-        val dynamic = mutableStateOf(false)
+        val colour = mutableStateOf(AppColour.POND)
         val fontScale = mutableFloatStateOf(1f)
         compose.setContent {
             CompositionLocalProvider(LocalDensity provides Density(LocalDensity.current.density, fontScale.floatValue)) {
-                ChirpTheme(dark.value, dynamic.value) { Box { Gallery() } }
+                ChirpTheme(dark.value, colour.value) { Box { Gallery() } }
             }
         }
-        for ((name, setting) in listOf("light" to Triple(false, false, 1f), "dark" to Triple(true, false, 1f),
-            "dynamic-light" to Triple(false, true, 1f), "dynamic-dark" to Triple(true, true, 1f), "font-200" to Triple(false, true, 2f))) {
-            compose.runOnIdle { dark.value = setting.first; dynamic.value = setting.second; fontScale.floatValue = setting.third }
+        for ((name, setting) in listOf("light" to Triple(false, AppColour.POND, 1f), "dark" to Triple(true, AppColour.POND, 1f),
+            "dynamic-light" to Triple(false, AppColour.DYNAMIC, 1f), "dynamic-dark" to Triple(true, AppColour.DYNAMIC, 1f), "font-200" to Triple(false, AppColour.DYNAMIC, 2f))) {
+            compose.runOnIdle { dark.value = setting.first; colour.value = setting.second; fontScale.floatValue = setting.third }
             compose.waitForIdle()
             val gallery = compose.onNodeWithTag("gallery").fetchSemanticsNode()
             // Every label is laid out in full and sits inside its row, toggle or card: nothing clipped at any font scale.
@@ -118,7 +118,7 @@ class ChirpComponentsTest {
 
     @Test fun `switch row is one merged switch node read as title then summary, toggled from anywhere on the row`() {
         var checked by mutableStateOf(false)
-        compose.setContent { ChirpTheme(dynamic = false) { SwitchRow("Haptic cues", checked, { checked = it }, summary = "Vibrate on start and stop") } }
+        compose.setContent { ChirpTheme(colour = AppColour.POND) { SwitchRow("Haptic cues", checked, { checked = it }, summary = "Vibrate on start and stop") } }
         val row = compose.onNode(isToggleable())
         row.assertIsOff().assert(SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Switch))
             .assert(SemanticsMatcher.expectValue(SemanticsProperties.Text, listOf(AnnotatedString("Haptic cues"), AnnotatedString("Vibrate on start and stop"))))
@@ -135,38 +135,50 @@ class ChirpComponentsTest {
         val history = DictationHistory(context, SoftwareHistoryKeys()).apply { enable() }
         val state = SetupState().apply { step = 3; paired = true; host = "mac.example.test"; health = store.health }
         val screen = mutableIntStateOf(0)
-        compose.setContent { ChirpTheme { when (screen.intValue) { 0 -> SettingsScreen(state); 1 -> ChirpSettingsSection(); else -> androidx.compose.foundation.layout.Column { HistorySettings(store = history) } } } }
+        compose.setContent { ChirpTheme { when (screen.intValue) { 0 -> SettingsScreen(state, initialPage = dev.chirp.android.settings.SettingsPage.Dictation); 1 -> ChirpSettingsSection(); else -> androidx.compose.foundation.layout.Column { HistorySettings(store = history) } } } }
         for (index in 0..2) {
             compose.runOnIdle { screen.intValue = index }
             compose.waitForIdle()
             val switches = compose.onAllNodes(isToggleable()).fetchSemanticsNodes()
-            assertTrue(switches.size >= if (index == 0) 4 else 1)
+            assertTrue(switches.size >= if (index == 0) 2 else 1)
             assertEquals("No switch nested inside another toggle", switches.size, compose.onAllNodes(isToggleable(), useUnmergedTree = true).fetchSemanticsNodes().size)
             switches.forEach { node ->
                 val label = node.config.getOrNull(SemanticsProperties.Text)
                 assertEquals(Role.Switch, node.config.getOrNull(SemanticsProperties.Role))
                 assertFalse("Switch without its own label: $label", label.isNullOrEmpty())
-                assertFalse(node.config.contains(SemanticsProperties.ContentDescription))
+                // The only description a switch row may carry is its ⓘ button's "About …" sheet link.
+                node.config.getOrNull(SemanticsProperties.ContentDescription)?.let { assertTrue(it.toString(), it.toString().startsWith("About ")) }
                 assertTrue("$label is under 48 dp", node.size.height >= 48)
             }
         }
     }
 
-    @Test fun `app colours default to the wallpaper, and Chirp green persists and restyles the app and floating mic`() {
+    @Test fun `app colours default to Pond, and Match wallpaper persists and restyles the app and floating mic`() {
         val store = SettingsStore(context)
-        assertTrue(store.dynamicColor)
+        assertEquals(AppColour.POND, store.appColour)
         val wallpaper = dynamicLightColorScheme(context).primary
-        assertNotEquals(ChirpGreenLight.primary, wallpaper)
+        assertNotEquals(PondLight.primary, wallpaper)
         var primary = Color.Unspecified
         compose.setContent { ChirpTheme(dark = false) { primary = MaterialTheme.colorScheme.primary; AppColoursSettings() } }
-        compose.runOnIdle { assertEquals(wallpaper, primary) }
+        compose.runOnIdle { assertEquals(PondLight.primary, primary) }
+        assertEquals(PondLight.primary.toArgb(), VoicePalette.of(context).accent)
+        compose.onNodeWithText("Pond").assertIsSelected()
+        compose.onNodeWithText("Match wallpaper").performClick()
+        compose.runOnIdle { assertEquals(AppColour.DYNAMIC, SettingsStore(context).appColour); assertEquals(wallpaper, primary) }
         assertEquals(wallpaper.toArgb(), VoicePalette.of(context).accent)
-        compose.onNodeWithText("Match wallpaper").assertIsSelected()
-        compose.onNodeWithText("Chirp green").performClick()
-        compose.runOnIdle { assertFalse(SettingsStore(context).dynamicColor); assertEquals(ChirpGreenLight.primary, primary) }
-        assertEquals(ChirpGreenLight.primary.toArgb(), VoicePalette.of(context).accent)
-        store.dynamicColor = true
-        compose.runOnIdle { assertEquals(wallpaper, primary) }
+        store.appColour = AppColour.POND
+        compose.runOnIdle { assertEquals(PondLight.primary, primary) }
+    }
+
+    @Test fun `a success banner is a tonal surface in dark and light, not the muddy koi container (174)`() {
+        for (scheme in listOf(PondDark, PondLight)) {
+            val (fill, text) = statusColors(scheme, StatusKind.Success)
+            assertEquals(scheme.surfaceContainerHigh, fill); assertEquals(scheme.onSurface, text)
+            assertNotEquals(scheme.primaryContainer, fill)
+            // No full-width status card uses the koi container.
+            StatusKind.values().forEach { assertNotEquals("$it", scheme.primaryContainer, statusColors(scheme, it).first) }
+        }
+        assertEquals(0xFF5C2207.toInt(), PondDark.primaryContainer.toArgb()) // the colour Success used to be in dark
     }
 
     @Test fun `status banner announces politely and learn more opens and closes its sheet`() {

@@ -4,7 +4,7 @@ import SwiftUI
 
 /// The word waveform: the live transcript laid out word by word, each word with the bars of its own audio directly above
 /// it, so the mapping from sound to text is spatial and immediate. Words wrap like text; a pause between words widens
-/// the gap and draws a faint dotted rest in the ribbon. A word being recognised is tinted and pulses; it settles to the
+/// the gap and draws a faint dotted rest in the ribbon. Every word's bars are tinted koi; a word being recognised is stronger and pulses; it settles to the
 /// solid colour once later partials leave it alone, a revised word crossfades in place, and dropped older words are
 /// marked with an ellipsis. Reduce Motion keeps the layout and drops the pulse, the springs and the shimmer sweep.
 struct WordWaveformView: View {
@@ -130,7 +130,8 @@ private struct WordCellView: View {
     private static func pulse(phase: Double) -> Double { 0.86 + 0.14 * sin(phase * 2 * .pi) }
 
     private func ribbon(pulse: Double) -> some View {
-        let tint: Color = cell.stable ? Color.primary.opacity(contrast ? 0.75 : 0.5) : HUDColors.action.opacity(current ? pulse : 0.8)
+        // Every bar is koi: settled words at half strength, the words still being recognised at full strength, the current one breathing.
+        let tint: Color = cell.stable ? HUDColors.action.opacity(contrast ? 0.85 : 0.55) : HUDColors.action.opacity(current ? pulse : 0.85)
         return HStack(alignment: .bottom, spacing: WordWaveformView.barSpacing) {
             ForEach(bars.indices, id: \.self) { i in
                 Capsule()
@@ -140,7 +141,7 @@ private struct WordCellView: View {
             }
         }
         .frame(width: width, height: WordWaveformView.ribbonHeight, alignment: .bottomLeading)
-        .shadow(color: current ? HUDColors.action.opacity(0.35 * pulse) : .clear, radius: current ? 3 : 0)
+        .shadow(color: current ? Color.chirp.koiDecor.opacity(0.35 * pulse) : .clear, radius: current ? 3 : 0)
         .animation(animated ? .spring(response: 0.22, dampingFraction: 0.7) : nil, value: bars)
         .animation(animated ? .easeInOut(duration: 0.35) : nil, value: cell.stable)
     }

@@ -7,12 +7,13 @@ import androidx.compose.ui.platform.LocalContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import dev.chirp.android.ui.ActionRow
 import dev.chirp.android.ui.ChoiceChips
 import dev.chirp.android.ui.SettingsGroup
 import dev.chirp.android.ui.SettingsItem
 import dev.chirp.android.ui.SwitchRow
 
-/** Notes settings, self-contained for the settings tree's Notes page and the Notes screen's own sheet ([title] there). */
+/** Notes settings (library on by default, retention, kept audio), self-contained for the settings tree's Notes page and the Notes screen's own sheet ([title] there). */
 @Composable
 internal fun NotesSettings(sessions: NotesSessions? = null, title: String? = null) {
     val context = LocalContext.current
@@ -23,43 +24,74 @@ internal fun NotesSettings(sessions: NotesSessions? = null, title: String? = nul
     var saver by remember { mutableStateOf(store.notesBatterySaver) }
     var keep by remember { mutableStateOf(kept.enabled) }
     var retention by remember { mutableStateOf(kept.retention) }
-    var confirmOff by remember { mutableStateOf(false) }
+    var keepAudio by remember { mutableStateOf(kept.keepAudio) }
+    var audioBytes by remember { mutableStateOf(0L) }
+    var confirmDeleteAudio by remember { mutableStateOf(false) }
+    var confirmDeleteAll by remember { mutableStateOf(false) }
+    LaunchedEffect(keepAudio, keep) {
+        // A size that cannot be read is shown as none, never as a crash of the settings page.
+        audioBytes = try { withContext(Dispatchers.IO) { kept.totalAudioBytes() } } catch (e: kotlinx.coroutines.CancellationException) { throw e } catch (_: Exception) { 0L }
+    }
     val rows: @Composable ColumnScope.() -> Unit = {
         SwitchRow("Save battery while the screen is off", saver, { saver = it; store.notesBatterySaver = it },
-            summary = "On by default. With the screen off the phone stops drawing live text and the level meter; recording, the transcript " +
+            summary = "On by default",
+            infoTitle = "Save battery while the screen is off", infoBody = "With the screen off the phone stops drawing live text and the level meter; recording, the transcript " +
                 "and the Mac's notes keep going, so everything is up to date the moment you look.")
         SwitchRow("Keep a recovery copy until notes are saved", recovery, { on ->
             recovery = on; store.notesRecovery = on
             // Off is also a delete: the copy and its key go.
             if (!on) NotesJournal(context, store = store).delete()
-        }, summary = "On by default. If Android closes Chirp or the phone restarts during a recording, Notes reopens with what you had. " +
-            "Encrypted on this phone, never backed up or sent anywhere, and deleted when you save, discard or start new notes.")
-        SwitchRow("Keep notes on this phone", keep, { on ->
-            if (on) { kept.enable(); keep = true } else confirmOff = true
-        }, summary = "Off by default. Notes you stop or leave are kept in Recent notes (the clock button on the Notes screen), encrypted on this " +
-            "phone only. Never sent to your Mac, backed up or logged.")
-        if (keep) SettingsItem {
-            Text("Keep for", style = MaterialTheme.typography.bodyMedium)
-            ChoiceChips(HistoryRetention.entries, retention, { it.label }) { option ->
+        }, summary = "On by default", infoTitle = "Keep a recovery copy until notes are saved",
+            infoBody = "If Android closes Chirp or the phone restarts during a recording, Notes reopens with what you had. " +
+                "Encrypted on this phone, never backed up or sent anywhere, and deleted when you save, discard or start new notes.")
+        if (kept.optedOut && !keep) ActionRow("Enable notes library", { kept.enable(); keep = true })
+        else SwitchRow("Keep notes on this phone", keep, { on ->
+            // Off stops keeping new notes; it never deletes the ones already kept.
+            if (on) kept.enable() else kept.disable()
+            keep = on
+        }, summary = "On by default · encrypted on this phone only", infoTitle = "Keep notes on this phone",
+            infoBody = "Every note keeps itself, encrypted on this phone only. Never sent to your Mac, backed up or logged. " +
+                "Turning this off keeps the notes you already have; \"Delete all notes\" removes them.")
+        SettingsItem {
+            Text("Delete notes older than", style = MaterialTheme.typography.bodyMedium)
+            ChoiceChips(NotesRetention.entries, retention, { it.label }) { option ->
                 retention = option
                 scope.launch { withContext(Dispatchers.IO) { kept.retention = option } }
             }
+            Text("Never by default. Deleted notes stay in Recently Deleted for ${NotesSessions.TRASH_DAYS} days.", style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
+        SwitchRow("Keep audio with notes", keepAudio, { on -> keepAudio = on; kept.keepAudio = on },
+            summary = "Off by default", infoTitle = "Keep audio with notes",
+            infoBody = "Keeps each spoken segment next to its transcript, compressed and encrypted on this phone only, so you can replay it. " +
+                "Audio goes nowhere else.")
+        if (audioBytes > 0) ActionRow("Delete kept audio (${megabytes(audioBytes)})", { confirmDeleteAudio = true }, destructive = true)
+        ActionRow("Delete all notes", { confirmDeleteAll = true }, destructive = true)
     }
     if (title != null) SettingsGroup(title, content = rows) else SettingsGroup(content = rows)
-    if (confirmOff) AlertDialog(onDismissRequest = { confirmOff = false },
-        title = { Text("Stop keeping notes?") },
-        text = { Text("This deletes every kept note from this phone. Notes you saved as files stay where you saved them.") },
+    if (confirmDeleteAudio) AlertDialog(onDismissRequest = { confirmDeleteAudio = false },
+        title = { Text("Delete kept audio?") },
+        text = { Text("This deletes the audio of every note. The text and transcripts stay.") },
         confirmButton = { TextButton({
-            confirmOff = false; keep = false
-            scope.launch { withContext(Dispatchers.IO) { kept.disable() } }
-        }) { Text("Delete and turn off") } },
-        dismissButton = { TextButton({ confirmOff = false }) { Text("Cancel") } })
+            confirmDeleteAudio = false; audioBytes = 0
+            scope.launch { withContext(Dispatchers.IO) { kept.deleteAllAudio() } }
+        }) { Text("Delete audio") } },
+        dismissButton = { TextButton({ confirmDeleteAudio = false }) { Text("Cancel") } })
+    if (confirmDeleteAll) AlertDialog(onDismissRequest = { confirmDeleteAll = false },
+        title = { Text("Delete all notes?") },
+        text = { Text("This deletes every note on this phone, including Recently Deleted and kept audio. Notes you saved as files stay where you saved them.") },
+        confirmButton = { TextButton({
+            confirmDeleteAll = false; audioBytes = 0
+            scope.launch { withContext(Dispatchers.IO) { kept.deleteAll() } }
+        }) { Text("Delete everything") } },
+        dismissButton = { TextButton({ confirmDeleteAll = false }) { Text("Cancel") } })
 }
+
+private fun megabytes(bytes: Long) = if (bytes < 100_000) "<0.1 MB" else "%.1f MB".format(java.util.Locale.US, bytes / 1_000_000.0)
 
 /** The settings list's one line for Notes, e.g. "Battery saver · recovery copy · keeps 7 days". */
 internal fun notesSummary(context: android.content.Context): String {
     val store = SettingsStore(context); val kept = NotesSessions(context)
     return listOfNotNull("battery saver".takeIf { store.notesBatterySaver }, "recovery copy".takeIf { store.notesRecovery },
-        kept.takeIf { it.enabled }?.let { "keeps ${it.retention.label}" }).joinToString(" · ").replaceFirstChar { it.uppercase() }.ifEmpty { "Off" }
+        kept.takeIf { it.enabled }?.let { if (it.retention == NotesRetention.NEVER) "keeps notes" else "deletes after ${it.retention.label}" }).joinToString(" · ").replaceFirstChar { it.uppercase() }.ifEmpty { "Off" }
 }

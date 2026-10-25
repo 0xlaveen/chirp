@@ -223,7 +223,7 @@ struct SpeakerBannerView: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 6)
-        .background(Color.accentColor.opacity(0.07))
+        .background(Color.chirp.koi.opacity(0.07))
         .overlay(alignment: .bottom) { Divider() }
     }
 }

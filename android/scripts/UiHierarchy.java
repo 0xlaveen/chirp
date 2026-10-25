@@ -26,8 +26,19 @@ public final class UiHierarchy {
             AccessibilityServiceInfo info = automation.getServiceInfo();
             info.flags |= AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS | AccessibilityServiceInfo.FLAG_REPORT_VIEW_IDS;
             automation.setServiceInfo(info);
+            if (args.length > 0 && (args[0].equals("dictation-cycle") || args[0].equals("click") || args[0].equals("click-if-present") || args[0].equals("long-click") || args[0].equals("tap") || args[0].equals("append-notes"))) {
+                try { automation.waitForIdle(200, 2000); } catch (java.util.concurrent.TimeoutException ignored) { }
+            }
+            if (args.length == 5 && args[0].equals("dictation-cycle")) {
+                dictationCycle(automation, args[1], Float.parseFloat(args[2]), Float.parseFloat(args[3]), args[4]);
+                return;
+            }
             if (args.length == 4 && args[0].equals("stop-case")) {
                 stopCase(automation, args[1], Float.parseFloat(args[2]), Float.parseFloat(args[3]));
+                return;
+            }
+            if (args.length == 4 && args[0].equals("await-action")) {
+                awaitAction(automation, args[1].equals("click"), args[2], Long.parseLong(args[3]));
                 return;
             }
             if (args.length == 3 && args[0].equals("tap")) {
@@ -40,17 +51,53 @@ public final class UiHierarchy {
                     event.recycle();
                 }
             }
-            if (args.length == 2 && (args[0].equals("click") || args[0].equals("long-click"))) {
+            if (args.length == 2 && (args[0].equals("click") || args[0].equals("click-if-present") || args[0].equals("long-click"))) {
                 boolean found = false;
                 for (AccessibilityWindowInfo window : automation.getWindows()) {
                     AccessibilityNodeInfo target = find(window.getRoot(), args[1]);
                     if (target != null) {
-                        int action = args[0].equals("click") ? AccessibilityNodeInfo.ACTION_CLICK : AccessibilityNodeInfo.ACTION_LONG_CLICK;
+                        while (target != null && !(args[0].equals("long-click") ? target.isLongClickable() : target.isClickable())) target = target.getParent();
+                        if (target == null) throw new IllegalStateException("Accessible action missing");
+                        int action = args[0].equals("long-click") ? AccessibilityNodeInfo.ACTION_LONG_CLICK : AccessibilityNodeInfo.ACTION_CLICK;
                         if (!target.performAction(action)) throw new IllegalStateException("Accessibility action rejected");
                         found = true; break;
                     }
                 }
-                if (!found) throw new IllegalStateException("Accessible target missing");
+                if (!found) {
+                    if (args[0].equals("click-if-present")) { System.out.println("MISSING"); return; }
+                    throw new IllegalStateException("Accessible target missing");
+                }
+            }
+            if (args.length == 3 && args[0].equals("custom-action")) {
+                // Invokes a labelled custom accessibility action, as TalkBack's actions menu does.
+                for (AccessibilityWindowInfo window : automation.getWindows()) {
+                    AccessibilityNodeInfo target = find(window.getRoot(), args[1]);
+                    if (target == null) continue;
+                    for (AccessibilityNodeInfo.AccessibilityAction action : target.getActionList())
+                        if (args[2].equals(String.valueOf(action.getLabel()))) {
+                            if (!target.performAction(action.getId())) throw new IllegalStateException("Custom action rejected");
+                            return;
+                        }
+                }
+                throw new IllegalStateException("Custom action missing");
+            }
+            if (args.length == 1 && args[0].equals("append-notes")) {
+                for (AccessibilityWindowInfo window : automation.getWindows()) {
+                    AccessibilityNodeInfo target = find(window.getRoot(), "Notes (Markdown)");
+                    while (target != null && !target.isEditable() && !"android.widget.EditText".contentEquals(target.getClassName())) {
+                        AccessibilityNodeInfo editable = editable(target);
+                        target = editable != null ? editable : target.getParent();
+                    }
+                    if (target == null) continue;
+                    android.os.Bundle value = new android.os.Bundle();
+                    value.putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE,
+                        safe(target.getText()) + "\n- Review the budget with finance before the launch on Monday");
+                    if (!target.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, value))
+                        throw new IllegalStateException("Notes edit accessibility action rejected");
+                    System.out.println("Synthetic notes edit applied");
+                    return;
+                }
+                throw new IllegalStateException("Notes editor accessibility target missing");
             }
             if (args.length == 3 && (args[0].equals("watch") || args[0].equals("watch-undo"))) {
                 long deadline = android.os.SystemClock.uptimeMillis() + 35000;
@@ -125,7 +172,12 @@ public final class UiHierarchy {
                 xml.startTag(null, "hierarchy");
                 for (AccessibilityWindowInfo window : automation.getWindows()) {
                     AccessibilityNodeInfo root = window.getRoot();
-                    if (root != null) dump(xml, root);
+                    if (root != null) {
+                        xml.startTag(null, "window");
+                        xml.attribute(null, "type", String.valueOf(window.getType()));
+                        dump(xml, root);
+                        xml.endTag(null, "window");
+                    }
                 }
                 xml.endTag(null, "hierarchy");
                 xml.endDocument();
@@ -135,9 +187,63 @@ public final class UiHierarchy {
             thread.quitSafely();
         }
     }
+    /**
+     * Tight-polls (20 ms, no hierarchy dump) for a transient action such as "Use raw", whose window is only 5 s, and
+     * clicks it the moment it is visible ("click") or only reports it ("observe"). Prints PRESENT/CLICKED/EXPIRED followed by
+     * fillers_before=true|false: whether the app's editor held a spoken filler (um/uh) at that instant. A boolean only, never text.
+     */
+    private static void awaitAction(UiAutomation automation, boolean click, String label, long timeoutMs) {
+        long deadline = android.os.SystemClock.uptimeMillis() + timeoutMs;
+        while (android.os.SystemClock.uptimeMillis() < deadline) {
+            for (AccessibilityWindowInfo window : automation.getWindows()) {
+                AccessibilityNodeInfo root = window.getRoot();
+                if (root == null) continue;
+                for (AccessibilityNodeInfo node : root.findAccessibilityNodeInfosByText(label)) {
+                    if (!node.isVisibleToUser() || !(safe(node.getText()).equals(label) || safe(node.getContentDescription()).startsWith(label))) continue;
+                    String state = " fillers_before=" + hasFillers(automation);
+                    if (!click) { System.out.println("PRESENT" + state); return; }
+                    AccessibilityNodeInfo target = node;
+                    while (target != null && !target.isClickable()) target = target.getParent();
+                    if (target == null || !target.performAction(AccessibilityNodeInfo.ACTION_CLICK)) throw new IllegalStateException("Accessibility action rejected");
+                    System.out.println("CLICKED" + state);
+                    return;
+                }
+            }
+            android.os.SystemClock.sleep(20);
+        }
+        System.out.println("EXPIRED fillers_before=" + hasFillers(automation));
+    }
+    private static boolean hasFillers(UiAutomation automation) {
+        return java.util.regex.Pattern.compile("(?i)\\b(um|uh)\\b").matcher(appEditorText(automation)).find();
+    }
+    private static String appEditorText(UiAutomation automation) {
+        for (AccessibilityWindowInfo window : automation.getWindows()) {
+            AccessibilityNodeInfo field = appEditor(window.getRoot());
+            if (field != null) return safe(field.getText());
+        }
+        return "";
+    }
+    private static AccessibilityNodeInfo appEditor(AccessibilityNodeInfo node) {
+        if (node == null) return null;
+        if ("android.widget.EditText".contentEquals(node.getClassName()) && "dev.chirp.android".contentEquals(safe(node.getPackageName()))) return node;
+        for (int i = 0; i < node.getChildCount(); i++) {
+            AccessibilityNodeInfo result = appEditor(node.getChild(i));
+            if (result != null) return result;
+        }
+        return null;
+    }
+    private static AccessibilityNodeInfo editable(AccessibilityNodeInfo node) {
+        if (node == null) return null;
+        if (node.isEditable() || "android.widget.EditText".contentEquals(node.getClassName())) return node;
+        for (int i = 0; i < node.getChildCount(); i++) {
+            AccessibilityNodeInfo result = editable(node.getChild(i));
+            if (result != null) return result;
+        }
+        return null;
+    }
     private static AccessibilityNodeInfo find(AccessibilityNodeInfo node, String label) {
         if (node == null || !node.isVisibleToUser()) return null;
-        if (label.equals(safe(node.getText())) || safe(node.getContentDescription()).startsWith(label)) return node;
+        if (java.util.Arrays.asList(safe(node.getText()).split("\n")).contains(label) || safe(node.getContentDescription()).startsWith(label)) return node;
         for (int i = 0; i < node.getChildCount(); i++) {
             AccessibilityNodeInfo found = find(node.getChild(i), label);
             if (found != null) return found;
@@ -157,7 +263,16 @@ public final class UiHierarchy {
         xml.attribute(null, "bounds", bounds.toShortString());
         xml.attribute(null, "long-clickable", String.valueOf(node.isLongClickable()));
         xml.attribute(null, "clickable", String.valueOf(node.isClickable()));
+        xml.attribute(null, "checkable", String.valueOf(node.isCheckable()));
+        xml.attribute(null, "checked", String.valueOf(node.isChecked()));
+        xml.attribute(null, "selected", String.valueOf(node.isSelected()));
         xml.attribute(null, "enabled", String.valueOf(node.isEnabled()));
+        // Caret position and custom action labels (the floating mic's TalkBack actions); never text.
+        xml.attribute(null, "selection", node.getTextSelectionStart() + "," + node.getTextSelectionEnd());
+        StringBuilder custom = new StringBuilder();
+        for (AccessibilityNodeInfo.AccessibilityAction action : node.getActionList())
+            if (action.getLabel() != null && action.getId() > 0x01ffffff) custom.append(custom.length() == 0 ? "" : "|").append(action.getLabel());
+        xml.attribute(null, "actions", custom.toString());
         for (int i = 0; i < node.getChildCount(); i++) {
             AccessibilityNodeInfo child = node.getChild(i);
             if (child != null) dump(xml, child);
@@ -175,17 +290,75 @@ public final class UiHierarchy {
         }
     }
     private static boolean has(UiAutomation automation, String label) {
-        for (AccessibilityWindowInfo window : automation.getWindows())
-            if (find(window.getRoot(), label) != null) return true;
+        // Ask the framework for matching text instead of materializing every virtual
+        // key at 10 Hz. Full-tree traversal can exhaust the shell JVM on API 37.
+        for (AccessibilityWindowInfo window : automation.getWindows()) {
+            AccessibilityNodeInfo root = window.getRoot();
+            if (root == null) continue;
+            for (AccessibilityNodeInfo node : root.findAccessibilityNodeInfosByText(label)) {
+                if (node.isVisibleToUser() && (safe(node.getText()).equals(label)
+                        || safe(node.getContentDescription()).startsWith(label))) return true;
+            }
+        }
         return false;
     }
     private static void await(UiAutomation automation, String label) {
         long deadline = android.os.SystemClock.uptimeMillis() + 35000;
         while (android.os.SystemClock.uptimeMillis() < deadline) {
+            // Retire stale virtual-key trees between observations and bound traversal pressure.
+            automation.clearCache();
             if (has(automation, label)) return;
-            android.os.SystemClock.sleep(16);
+            android.os.SystemClock.sleep(100);
         }
         throw new IllegalStateException("Stop scenario state missing: " + label);
+    }
+    private static String editorText(UiAutomation automation) {
+        for (AccessibilityWindowInfo window : automation.getWindows()) {
+            AccessibilityNodeInfo field = editable(window.getRoot());
+            if (field != null) return safe(field.getText());
+        }
+        throw new IllegalStateException("Editor accessibility root unavailable");
+    }
+    private static void screenshot(UiAutomation automation, String path) throws Exception {
+        android.graphics.Bitmap capture = automation.takeScreenshot();
+        if (capture == null) throw new IllegalStateException("Screenshot unavailable");
+        try (FileOutputStream output = new FileOutputStream(path)) {
+            capture.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, output);
+        } finally { capture.recycle(); }
+    }
+    private static void dictationCycle(UiAutomation automation, String mode, float x, float y, String path) throws Exception {
+        String before = editorText(automation);
+        long down = android.os.SystemClock.uptimeMillis();
+        boolean hold = mode.equals("hold");
+        if (hold) {
+            android.view.MotionEvent event = android.view.MotionEvent.obtain(down, down, 0, x, y, 0);
+            event.setSource(android.view.InputDevice.SOURCE_TOUCHSCREEN);
+            automation.injectInputEvent(event, true); event.recycle();
+        } else tap(automation, x, y);
+        try {
+            await(automation, "Listening…");
+            // This connection watches the actual transient state, rather than
+            // starting another shell JVM after a short utterance has finished.
+            screenshot(automation, path);
+            long deadline = android.os.SystemClock.uptimeMillis() + 12000;
+            boolean partial = false;
+            while (android.os.SystemClock.uptimeMillis() < deadline && has(automation, "Listening…")) {
+                if (!editorText(automation).equals(before)) { partial = true; break; }
+                android.os.SystemClock.sleep(100);
+            }
+            if (!partial) throw new IllegalStateException("No composing partial while listening");
+            if (has(automation, "Listening…")) screenshot(automation, path);
+            if (!hold) tap(automation, x, y);
+        } finally {
+            if (hold) {
+                android.view.MotionEvent event = android.view.MotionEvent.obtain(down, android.os.SystemClock.uptimeMillis(), 1, x, y, 0);
+                event.setSource(android.view.InputDevice.SOURCE_TOUCHSCREEN);
+                automation.injectInputEvent(event, true); event.recycle();
+            }
+        }
+        await(automation, "Use raw");
+        if (editorText(automation).equals(before)) throw new IllegalStateException("No final committed");
+        System.out.println("PASS: " + mode + " composing partial, stop, cleaned final");
     }
     private static void stopCase(UiAutomation automation, String mode, float x, float y) {
         AccessibilityNodeInfo status = null;

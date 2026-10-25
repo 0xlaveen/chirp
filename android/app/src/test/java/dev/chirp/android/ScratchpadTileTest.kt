@@ -50,7 +50,7 @@ class ScratchpadTileTest {
 
     @Test fun `manifest declares protected tile services and a private Scratchpad`() {
         val services = app.packageManager.queryIntentServices(Intent("android.service.quicksettings.action.QS_TILE").setPackage(app.packageName), 0)
-        assertEquals(setOf(ScratchpadTileService::class.java.name, NotesTileService::class.java.name), services.map { it.serviceInfo.name }.toSet())
+        assertEquals(setOf(ScratchpadTileService::class.java.name, NotesTileService::class.java.name, DictateTileService::class.java.name), services.map { it.serviceInfo.name }.toSet())
         for (info in services.map { it.serviceInfo }) {
             assertEquals("android.permission.BIND_QUICK_SETTINGS_TILE", info.permission)
             assertTrue(info.exported)

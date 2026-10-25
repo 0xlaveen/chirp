@@ -26,6 +26,7 @@ extension NotesSession {
             structure: { request in try await Self.structure(request) },
             reorganize: { request in try await Self.reorganize(request) },
             speakerStore: SortformerModelStore(), journalStore: NotesJournalStore())
+        deps.library = NotesLibrary()
         deps.edit = { request in try await Self.edit(request) }
         deps.voiceModelStore = WeSpeakerModelStore()
         deps.voiceProfileStore = KeychainVoiceProfileStore()
@@ -87,11 +88,30 @@ extension NotesSession {
         }
     }
 
+    /// New Note: a fresh note starts recording and its window comes forward. Never continues the note on screen.
+    func recordNewNote() {
+        guard !isActive, recorder.state != .stopping else { return }
+        if library != nil { reset() }
+        start(focus: true)
+    }
+
+    /// Recent Notes: the note opens in the window. While a note records it opens beside the recording (the window's
+    /// selection), so browsing never stops or replaces the recording.
+    func showNote(_ id: String) {
+        guard let uuid = UUID(uuidString: id) else { return }
+        window.select(.note(uuid))
+    }
+
+    /// The library's newest notes for the menu's Recent Notes, without the one being recorded.
+    var recentNotes: [RecentNote] {
+        (library?.notes ?? []).filter { !$0.recording }.map { RecentNote(id: $0.id.uuidString, title: $0.title, updatedAt: $0.updatedAt) }
+    }
+
     /// The menu's view of Notes.
     var menuState: MenuBarController.NotesMenuState {
         MenuBarController.NotesMenuState(
             recording: isRecording, finishing: recorder.state == .stopping, paused: isPaused,
-            elapsed: model.elapsedText, hasDocument: hasDocument,
+            elapsed: model.elapsedText, title: recorder.state.isActive ? recorder.document.title : nil, hasDocument: hasDocument,
             hotkeyRegistered: gate.hotkeyRegistered, debugRetention: isRecording && recorder.debugRetention)
     }
 }

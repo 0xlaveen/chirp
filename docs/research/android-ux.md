@@ -33,7 +33,7 @@ A research and design record for making Chirp for Android feel like a current Ma
    - The long-press options are a plain `PopupMenu` that marks state with text ("Style · Default ✓").
    - The active history toggle renders as a solid blob with no visible icon.
 8. **Inner screen:** every app screen is one centred column with no list-detail layout. The keyboard side already adapts well (number row, split landscape).
-9. **Render hygiene:** `setup-1-light.png` was committed as an empty frame until #63 regenerated it. #71 adds a non-blank guard so this can't recur.
+9. **Render hygiene:** `setup-1-light.png` (a setup render, since retired with the old setup page) was committed as an empty frame until #63 regenerated it. #71 adds a non-blank guard so this can't recur.
 
 What already works and should be kept:
 - strict privacy copy;

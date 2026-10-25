@@ -1,4 +1,5 @@
 import ChirpCore
+import Foundation
 
 /// Whether Chirp starts at login: the presence of its LaunchAgent.
 public enum LaunchState: Equatable, Sendable {
@@ -8,7 +9,8 @@ public enum LaunchState: Equatable, Sendable {
 }
 
 public enum MenuAction: Equatable, Sendable {
-    case toggleDictation, toggleNotes, showNotes, useRaw, pickInput(String?), toggleCleanup, toggleShowChanges, pickStyle(String)
+    /// `toggleNotes` starts, stops or resumes the recording; `newNote` always starts a new one; `openNote` carries a note id.
+    case toggleDictation, toggleNotes, newNote, showNotes, openNote(String), useRaw, pickInput(String?), toggleCleanup, pickStyle(String)
     case fixServer, showSettings, editStyles, showSetup, quit
 
     /// What the AppKit item carries to its action method.
@@ -16,6 +18,7 @@ public enum MenuAction: Equatable, Sendable {
         switch self {
         case .pickInput(let uid): uid
         case .pickStyle(let id): id
+        case .openNote(let id): id
         default: nil
         }
     }
@@ -41,6 +44,8 @@ public struct MenuEntry: Equatable, Sendable {
     public var isSeparator = false
     /// ⌘-key equivalent that really triggers the row ("," and "q"); its glyphs are the `shortcut`.
     public var keyEquivalent: String?
+    /// The key equivalent also holds ⌥ (⌥⌘L for the Notes library).
+    public var keyEquivalentOption = false
 
     public static let separator = MenuEntry(title: "", isSeparator: true)
 
@@ -52,11 +57,26 @@ public struct MenuEntry: Equatable, Sendable {
     }
 }
 
+/// The status dot before the header's status line: lily = ready, moon = loading, record = error; paused is a hollow ring.
+public enum MenuDot: Equatable, Sendable { case ready, loading, error, paused }
+
+/// A note in the Recent Notes submenu.
+public struct RecentNote: Equatable, Sendable {
+    public var id: String
+    public var title: String
+    public var updatedAt: Date
+
+    public init(id: String, title: String, updatedAt: Date) {
+        self.id = id; self.title = title; self.updatedAt = updatedAt
+    }
+}
+
 /// The header block: the name, a one-line status and the main switch.
 public struct MenuHeader: Equatable, Sendable {
     public var title = "Chirp"
     public var status: String
     public var tone: MenuEntry.Tone
+    public var dot: MenuDot = .ready
     /// The switch: on while Chirp is running, off while it is paused.
     public var isOn: Bool
     /// The status line's tooltip: how to end the debug warning, for now.
@@ -96,6 +116,8 @@ public struct MenuInputs: Sendable {
     /// Live Notes is recording (starting or listening); `notesElapsed` is its `mm:ss`.
     public var notesRecording = false
     public var notesElapsed: String?
+    /// The title of the note being recorded (or paused), for the menu's first row.
+    public var notesTitle: String?
     /// Live Notes is paused (the microphone is closed, Resume continues the same notes).
     public var notesPaused = false
     /// Live Notes is finishing its last segment and pass.
@@ -107,6 +129,11 @@ public struct MenuInputs: Sendable {
     public var notesShortcut = KeyCombo.controlOptionN.title
     /// The "Open Notes" shortcut's keys, nil while it is not registered (paused, or another app owns it).
     public var openNotesShortcut: String?
+    /// The library's newest notes (most recently modified first); the menu shows the top `MenuContent.recentLimit`.
+    public var recentNotes: [RecentNote] = []
+    /// The moment relative dates in Recent Notes are measured from.
+    public var now = Date()
+    public var calendar = Calendar.current
 
     public init() {}
 
@@ -129,7 +156,18 @@ public enum MenuContent {
     /// The header: the name, what Chirp is doing or what is wrong, and the switch.
     public static func header(_ m: MenuInputs) -> MenuHeader {
         let (status, tone) = statusLine(m)
-        return MenuHeader(status: status, tone: tone, isOn: !m.paused, help: status == debugRetention ? debugRetentionHelp : nil)
+        return MenuHeader(status: status, tone: tone, dot: dot(m, tone: tone), isOn: !m.paused,
+                          help: status == debugRetention ? debugRetentionHelp : nil)
+    }
+
+    /// lily = ready (including while it works), moon = loading or checking, record = error, a hollow ring = paused.
+    static func dot(_ m: MenuInputs, tone: MenuEntry.Tone) -> MenuDot {
+        if m.paused { return .paused }
+        switch tone {
+        case .error: return .error
+        case .warning: return .loading
+        default: return .ready
+        }
     }
 
     /// The one-line status under the name. What Chirp is doing wins over the server's state, which wins over the
@@ -168,10 +206,16 @@ public enum MenuContent {
     public static func entries(_ m: MenuInputs) -> [MenuEntry] {
         var out: [MenuEntry] = [.separator]
 
+        // While Notes records (or is paused) its row leads the menu: the way to stop without opening the window.
+        let notesBusy = m.notesRecording || m.notesFinishing || m.notesPaused
+        if let live = liveNotesRow(m) {
+            out.append(live)
+            out.append(.separator)
+        }
+
         // Dictation: the same toggle as the hotkey. Off while paused or while a dictation is wrapping up.
         // Notes holds the engine: dictation cannot start while it records (the hotkey shows a toast instead).
         let shortcut = m.paused || !m.hotkeyRegistered ? nil : m.hotkey.title
-        let notesBusy = m.notesRecording || m.notesFinishing || m.notesPaused
         switch m.state {
         case .idle, .error:
             out.append(MenuEntry(title: "Start Dictation", shortcut: shortcut, action: m.paused || notesBusy ? nil : .toggleDictation))
@@ -180,7 +224,10 @@ public enum MenuContent {
         case .finalizing, .correcting, .inserting:
             out.append(MenuEntry(title: "Start Dictation", shortcut: shortcut))
         }
-        out += notesRows(m)
+        let notes = notesRows(m)
+        out.append(notes[0])
+        out.append(.separator)
+        out += notes.dropFirst()
         out.append(.separator)
         if m.rawOfferOpen {
             out.append(MenuEntry(title: "Use Raw for Last Dictation", shortcut: m.rawOfferKey, action: .useRaw))
@@ -204,21 +251,68 @@ public enum MenuContent {
     /// Where the warning comes from and how to end it (the server's `[debug] retain` or `--debug-retain`).
     public static let debugRetentionHelp = "chirp-server keeps each dictation's audio and text for a few days because it runs with --debug-retain or [debug] retain = true in server.toml. Restart it without them to stop."
 
-    /// Live Notes: Start/Stop with its shortcut, and Open Notes, the way back to the window. Notes cannot start
-    /// during a dictation, while paused, or while the last session is still finishing.
+    /// The first row while Notes is recording, paused or finishing: `◉ Recording "Standup" 03:12 — Stop`.
+    static func liveNotesRow(_ m: MenuInputs) -> MenuEntry? {
+        let title = noteTitle(m.notesTitle)
+        let elapsed = m.notesElapsed ?? "00:00"
+        if m.notesRecording {
+            return MenuEntry(title: "◉ Recording \"\(title)\" \(elapsed) — Stop", tone: .active, action: .toggleNotes)
+        }
+        if m.notesFinishing {
+            return MenuEntry(title: "◉ Finishing \"\(title)\" \(elapsed)…", tone: .active)
+        }
+        if m.notesPaused {
+            return MenuEntry(title: "⏸ Paused \"\(title)\" \(elapsed) — Resume", action: m.paused || m.state.isActive ? nil : .toggleNotes)
+        }
+        return nil
+    }
+
+    /// A title cut for the menu: long note titles end in "…".
+    static func noteTitle(_ title: String?) -> String {
+        let t = (title ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        return truncated(t.isEmpty ? "Untitled note" : t, limit: 28)
+    }
+
+    /// How many notes Recent Notes lists.
+    public static let recentLimit = 5
+
+    /// Live Notes: New Note (always a new note; the same keys as the global shortcut) joins Start Dictation; Recent Notes and
+    /// the library window follow as their own group.
+    /// A new note cannot start during a dictation, while paused, while one records, or while the last session finishes.
     static func notesRows(_ m: MenuInputs) -> [MenuEntry] {
         let shortcut = m.paused || !m.notesHotkeyRegistered ? nil : m.notesShortcut
-        var rows: [MenuEntry]
-        if m.notesRecording {
-            rows = [MenuEntry(title: "Stop Notes", shortcut: shortcut, action: .toggleNotes)]
-        } else if m.notesPaused {
-            rows = [MenuEntry(title: "Resume Notes", shortcut: shortcut, action: m.paused || m.state.isActive ? nil : .toggleNotes)]
-        } else {
-            let canStart = !m.paused && !m.state.isActive && !m.notesFinishing
-            rows = [MenuEntry(title: "Start Notes", shortcut: shortcut, action: canStart ? .toggleNotes : nil)]
+        let busy = m.notesRecording || m.notesPaused || m.notesFinishing
+        let canStart = !m.paused && !m.state.isActive && !busy
+        return [
+            MenuEntry(title: "New Note", shortcut: shortcut, action: canStart ? .newNote : nil),
+            recentNotesMenu(m),
+            MenuEntry(title: "Notes Library…", shortcut: "⌥⌘L", action: .showNotes, keyEquivalent: "l", keyEquivalentOption: true),
+        ]
+    }
+
+    /// "Recent Notes ▸": the newest notes with a relative date each, or one dimmed line while the library is empty.
+    static func recentNotesMenu(_ m: MenuInputs) -> MenuEntry {
+        let notes = Array(m.recentNotes.prefix(recentLimit))
+        guard !notes.isEmpty else {
+            return MenuEntry(title: "Recent Notes", submenu: [MenuEntry(title: "No notes yet")])
         }
-        rows.append(MenuEntry(title: "Open Notes", shortcut: m.paused ? nil : m.openNotesShortcut, action: .showNotes))
-        return rows
+        let rows = notes.map {
+            MenuEntry(title: noteTitle($0.title), value: relativeDate($0.updatedAt, now: m.now, calendar: m.calendar), action: .openNote($0.id))
+        }
+        return MenuEntry(title: "Recent Notes", submenu: rows)
+    }
+
+    /// "Just now", "12 min ago", "3 hr ago", "Yesterday", a weekday within the last week, else "Oct 3".
+    public static func relativeDate(_ date: Date, now: Date, calendar: Calendar = .current) -> String {
+        let seconds = now.timeIntervalSince(date)
+        if seconds < 60 { return "Just now" }
+        if seconds < 3600 { return "\(Int(seconds / 60)) min ago" }
+        if calendar.isDate(date, inSameDayAs: now) { return "\(Int(seconds / 3600)) hr ago" }
+        let days = calendar.dateComponents([.day], from: calendar.startOfDay(for: date), to: calendar.startOfDay(for: now)).day ?? 0
+        if days == 1 { return "Yesterday" }
+        var format = Date.FormatStyle(calendar: calendar, timeZone: calendar.timeZone).locale(Locale(identifier: "en_US"))
+        format = days < 7 ? format.weekday(.abbreviated) : format.month(.abbreviated).day()
+        return date.formatted(format)
     }
 
     private static func row(_ title: String, value: String, tone: MenuEntry.Tone = .normal, submenu: [MenuEntry]?) -> MenuEntry {
@@ -228,10 +322,11 @@ public enum MenuContent {
 
     // MARK: clean-up
 
-    /// "Clean-up": the toggle, the styles, "Show changes after clean-up" and a way into the style editor. The value is
+    /// "Clean-up": the toggle, the styles and a way into the clean-up settings (the style editor, "Show changes" and the
+    /// other set-once choices live there, not in the menu). The value is
     /// the default style, or Off. A server without clean-up gets one explanatory line and nothing to toggle.
     static func cleanupMenu(_ m: MenuInputs) -> MenuEntry {
-        let edit = MenuEntry(title: "Edit Styles…", action: .editStyles)
+        let edit = MenuEntry(title: "Clean-up Settings…", action: .editStyles)
         if let h = m.health, !h.correctionAvailable {
             return row("Clean-up", value: "Unavailable", submenu: [
                 MenuEntry(title: "Clean-up is off on the server"), .separator, edit])
@@ -243,8 +338,6 @@ public enum MenuContent {
             }
             sub.append(.separator)
         }
-        sub.append(MenuEntry(title: "Show Changes after Clean-up", action: .toggleShowChanges, mark: m.showChanges ? .on : .off))
-        sub.append(.separator)
         sub.append(edit)
         let value = m.cleanupOn ? CorrectionProfile.name(for: m.styleID, in: m.health) : "Off"
         return row("Clean-up", value: value, submenu: sub)

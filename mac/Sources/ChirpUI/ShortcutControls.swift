@@ -1,8 +1,8 @@
 import AppKit
 import ChirpCore
 
-/// One row of Settings › Shortcuts for a shortcut other than dictation: its keys, Record Shortcut… and Reset (back to
-/// the default). Under them, the recorder's prompt or refusal, else what the shortcut does.
+/// One row of Settings › Dictation › Shortcuts for a shortcut other than dictation: its keys, Record Shortcut… and Reset
+/// (back to the default), with the recorder's prompt or refusal, else what the shortcut does, as its help line.
 @MainActor
 public final class ShortcutControls {
     public let shortcut: ChirpShortcut
@@ -17,6 +17,7 @@ public final class ShortcutControls {
         self.purpose = purpose
         current.font = .systemFont(ofSize: NSFont.systemFontSize, weight: .medium)
         current.lineBreakMode = .byTruncatingTail
+        current.alignment = .right
         current.widthAnchor.constraint(equalToConstant: 64).isActive = true   // Record lines up from row to row
         current.setAccessibilityLabel("\(shortcut.owner) shortcut")
         reset.bezelStyle = .rounded
@@ -27,17 +28,17 @@ public final class ShortcutControls {
         show(shortcut.defaultCombo)
     }
 
-    /// The row: current keys, Record Shortcut…, Reset, and the help line under them.
+    /// The keys, Record Shortcut… and Reset in one line; the help line is `helpView`, under the row's title.
     public lazy var view: NSView = {
         let row = NSStackView(views: [current, recorder, reset])
         row.orientation = .horizontal
+        row.alignment = .centerY
         row.spacing = 10
-        let stack = NSStackView(views: [row, help])
-        stack.orientation = .vertical
-        stack.alignment = .leading
-        stack.spacing = 4
-        return stack
+        return row
     }()
+
+    /// The recorder's prompt or refusal, else what the shortcut does.
+    public var helpView: NSTextField { help }
 
     public var shownTitle: String { current.stringValue }
     public var helpText: String { help.stringValue }
