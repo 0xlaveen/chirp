@@ -85,6 +85,37 @@ final class ChirpKeyboardUITests: XCTestCase {
         }
     }
 
+    /// Screenshots of every keyboard state over Messages, using the Debug simulator preview file (screenshot runs only:
+    /// set `TEST_RUNNER_CHIRP_PREVIEW_FILE` to the file in the App Group container, as ios/scripts do). Synthetic
+    /// states, no dictation, nothing is sent.
+    @MainActor func testKeyboardStateScreenshotsInMessages() throws {
+        guard let path = ProcessInfo.processInfo.environment["CHIRP_PREVIEW_FILE"], !path.isEmpty else {
+            throw XCTSkip("Screenshot run only: set TEST_RUNNER_CHIRP_PREVIEW_FILE.")
+        }
+        let states = (ProcessInfo.processInfo.environment["CHIRP_SHOT_STATES"] ?? "nosession armed listening polishing finished error armed+info")
+            .split(separator: " ").map(String.init)
+        func pin(_ state: String) { try? state.write(toFile: path, atomically: true, encoding: .utf8) }
+        XCUIDevice.shared.orientation = .portrait
+        pin("armed")
+        try enableKeyboardInSettings()
+        let messages = XCUIApplication(bundleIdentifier: "com.apple.MobileSMS")
+        messages.launch()
+        defer { try? FileManager.default.removeItem(atPath: path); messages.terminate() }
+        let conversation = messages.cells.firstMatch
+        guard conversation.waitForExistence(timeout: 10) else { throw XCTSkip("Messages shows no conversation") }
+        conversation.tap()
+        let field = messages.descendants(matching: .any).matching(identifier: "messageBodyField").firstMatch
+        guard field.waitForExistence(timeout: 10) else { throw XCTSkip("Messages exposes no message body field") }
+        field.tap()
+        try selectChirpKeyboard(in: messages)
+        XCTAssertTrue(messages.staticTexts["chirp.keyboard.status"].waitForExistence(timeout: 10))
+        for state in states {
+            pin(state)
+            sleep(2)
+            shot("keyboard-" + state.replacingOccurrences(of: "+", with: "-"))
+        }
+    }
+
     @MainActor private func shot(_ name: String) {
         let attachment = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
         attachment.name = name
