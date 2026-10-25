@@ -86,7 +86,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     /// History's Add to Notes: the dictation becomes a new note in the library, shown in the Notes window.
-    private func addToNotes(_ entry: HistoryEntry) {
+    private func addToNotes(_ entry: DictationEntry) {
         guard let library = notes.library else { return }
         let document = NotesDocument(startedAt: Date(), text: entry.text)
         Task {

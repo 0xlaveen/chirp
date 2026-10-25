@@ -63,7 +63,7 @@ private struct HistorySidebar: View {
         .safeAreaInset(edge: .bottom, spacing: 0) { footer }
     }
 
-    @ViewBuilder private func menu(_ entry: HistoryEntry) -> some View {
+    @ViewBuilder private func menu(_ entry: DictationEntry) -> some View {
         Button(HistoryText.insertAgain) { model.onInsertAgain(entry) }
         Button(HistoryText.copy) { model.copy(entry) }
         if entry.cleaned { Button(HistoryText.copyRaw) { model.copy(entry, raw: true) } }
@@ -104,7 +104,7 @@ private struct HistorySidebar: View {
 /// A dictation in the list: the app's icon, the app and time, a two-line preview, and a "Cleaned" badge.
 private struct HistoryRow: View {
     let model: HistoryModel
-    let entry: HistoryEntry
+    let entry: DictationEntry
     let selected: Bool
     @Environment(\.colorScheme) private var scheme
 
@@ -221,7 +221,7 @@ private struct HistoryDetail: View {
         }
     }
 
-    private func header(_ entry: HistoryEntry) -> some View {
+    private func header(_ entry: DictationEntry) -> some View {
         HStack(alignment: .center, spacing: 12) {
             AppIcon(image: model.icon(entry.bundleID), size: 40)
             VStack(alignment: .leading, spacing: 3) {
@@ -233,7 +233,7 @@ private struct HistoryDetail: View {
         }
     }
 
-    private func actions(_ entry: HistoryEntry) -> some View {
+    private func actions(_ entry: DictationEntry) -> some View {
         HStack(spacing: 8) {
             Button {
                 model.onInsertAgain(entry)

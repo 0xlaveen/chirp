@@ -15,7 +15,7 @@ final class HistoryWindowController: NSObject, NSWindowDelegate {
     /// The last app other than Chirp that was frontmost: Insert Again goes back to it.
     private var lastOtherApp: NSRunningApplication?
     var onInsertAgain: (String) async -> Void = { _ in }
-    var onAddToNotes: (HistoryEntry) -> Void = { _ in }
+    var onAddToNotes: (DictationEntry) -> Void = { _ in }
     var onOpenSettings: () -> Void = {}
 
     init(history: DictationHistory) {

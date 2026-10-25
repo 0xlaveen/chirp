@@ -5,7 +5,7 @@ import Security
 
 /// One committed dictation, as kept in the local history: what was inserted, the raw transcript when clean-up changed
 /// it, the app it went to, when, how long it was and which style cleaned it. Never logged: `description` is redacted.
-public struct HistoryEntry: Codable, Sendable, Equatable, Identifiable, CustomStringConvertible, CustomDebugStringConvertible {
+public struct DictationEntry: Codable, Sendable, Equatable, Identifiable, CustomStringConvertible, CustomDebugStringConvertible {
     public var id: UUID
     public var date: Date
     /// What went into the field (after "Use raw", the raw transcript).
@@ -37,15 +37,15 @@ public struct HistoryEntry: Codable, Sendable, Equatable, Identifiable, CustomSt
     /// What the History window calls the app.
     public var appTitle: String { appName ?? bundleID ?? "Unknown app" }
 
-    public var description: String { "HistoryEntry(<redacted>)" }
+    public var description: String { "DictationEntry(<redacted>)" }
     public var debugDescription: String { description }
 }
 
 /// How long dictation history is kept (Settings → Dictation → History). 30 days by default.
-public enum HistoryRetention: String, CaseIterable, Codable, Sendable {
+public enum DictationRetention: String, CaseIterable, Codable, Sendable {
     case oneDay, sevenDays, thirtyDays, ninetyDays, forever
 
-    public static let `default` = HistoryRetention.thirtyDays
+    public static let `default` = DictationRetention.thirtyDays
 
     public var days: Int? {
         switch self {
@@ -187,7 +187,7 @@ public actor DictationHistoryStore {
     private let keys: HistoryKeyStore
     private let now: @Sendable () -> Date
     /// Day file name → its entries, oldest first, once loaded.
-    private var days: [String: [HistoryEntry]]?
+    private var days: [String: [DictationEntry]]?
     private var cachedKey: SymmetricKey?
     static let suffix = ".sealed"
     static let schemaContext = "chirp.history.v1:"
@@ -244,12 +244,12 @@ public actor DictationHistoryStore {
             days = [:]
             return
         }
-        var loaded: [String: [HistoryEntry]] = [:]
+        var loaded: [String: [DictationEntry]] = [:]
         for name in files {
             let url = directory.appendingPathComponent(name)
             guard let sealed = try? Data(contentsOf: url) else { continue }
             guard let plain = try? codec(key, name).open(sealed),
-                  let entries = try? JSONDecoder().decode([HistoryEntry].self, from: plain) else {
+                  let entries = try? JSONDecoder().decode([DictationEntry].self, from: plain) else {
                 chirpLog.info("history file unreadable bytes=\(sealed.count, privacy: .public): discarded")
                 try? FileManager.default.removeItem(at: url)
                 continue
@@ -282,18 +282,18 @@ public actor DictationHistoryStore {
     }
 
     /// Newest first.
-    public func entries() throws -> [HistoryEntry] {
+    public func entries() throws -> [DictationEntry] {
         try load()
         return (days ?? [:]).values.flatMap { $0 }.sorted { $0.date == $1.date ? $0.id.uuidString < $1.id.uuidString : $0.date > $1.date }
     }
 
-    public func entry(_ id: UUID) throws -> HistoryEntry? {
+    public func entry(_ id: UUID) throws -> DictationEntry? {
         try load()
         return days?.values.lazy.compactMap { $0.first { $0.id == id } }.first
     }
 
     /// Adds `entry` (or puts a deleted one back, for Undo), then keeps the newest `HistoryPolicy.maxEntries`.
-    public func add(_ entry: HistoryEntry) throws {
+    public func add(_ entry: DictationEntry) throws {
         try load()
         let name = Self.dayName(entry.date)
         var list = (days?[name] ?? []).filter { $0.id != entry.id }
@@ -306,7 +306,7 @@ public actor DictationHistoryStore {
 
     /// Changes one entry in place ("Use raw" replaced the insertion); false when it is gone.
     @discardableResult
-    public func update(_ id: UUID, _ change: @Sendable (inout HistoryEntry) -> Void) throws -> Bool {
+    public func update(_ id: UUID, _ change: @Sendable (inout DictationEntry) -> Void) throws -> Bool {
         try load()
         for (name, list) in days ?? [:] {
             guard let i = list.firstIndex(where: { $0.id == id }) else { continue }
@@ -322,7 +322,7 @@ public actor DictationHistoryStore {
 
     /// Removes one entry and returns it (for Undo).
     @discardableResult
-    public func delete(_ id: UUID) throws -> HistoryEntry? {
+    public func delete(_ id: UUID) throws -> DictationEntry? {
         try load()
         for (name, list) in days ?? [:] {
             guard let entry = list.first(where: { $0.id == id }) else { continue }
@@ -343,7 +343,7 @@ public actor DictationHistoryStore {
 
     /// Drops entries older than `retention`; returns how many went.
     @discardableResult
-    public func prune(retention: HistoryRetention) throws -> Int {
+    public func prune(retention: DictationRetention) throws -> Int {
         guard let limit = retention.days else { return 0 }
         try load()
         let cutoff = now().addingTimeInterval(-Double(limit) * 86400)
@@ -365,7 +365,7 @@ public actor DictationHistoryStore {
     }
 
     /// Entries whose text, raw text or app match `query` (case- and diacritic-insensitive), newest first.
-    public func search(_ query: String) throws -> [HistoryEntry] {
+    public func search(_ query: String) throws -> [DictationEntry] {
         let all = try entries()
         let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !q.isEmpty else { return all }
@@ -374,7 +374,7 @@ public actor DictationHistoryStore {
 }
 
 public enum HistorySearch {
-    public static func matches(_ entry: HistoryEntry, _ query: String) -> Bool {
+    public static func matches(_ entry: DictationEntry, _ query: String) -> Bool {
         [entry.text, entry.raw ?? "", entry.appTitle].contains {
             $0.range(of: query, options: [.caseInsensitive, .diacriticInsensitive]) != nil
         }
@@ -385,7 +385,7 @@ public enum HistorySearch {
 /// `entries` is the newest-first list. Nothing here is logged.
 @MainActor @Observable public final class DictationHistory {
     public let store: DictationHistoryStore
-    public private(set) var entries: [HistoryEntry] = []
+    public private(set) var entries: [DictationEntry] = []
     /// The last load or write failed (the Keychain was locked or denied): the window says so instead of "No dictations".
     public private(set) var unavailable = false
     /// Called after every change of `entries`.
@@ -405,7 +405,7 @@ public enum HistorySearch {
     }
 
     /// Keeps a committed dictation; the caller already checked `HistoryPolicy.shouldRecord`.
-    public func record(_ entry: HistoryEntry) async {
+    public func record(_ entry: DictationEntry) async {
         do { try await store.add(entry) } catch { chirpLog.info("history write failed") }
         await reload()
     }
@@ -422,13 +422,13 @@ public enum HistorySearch {
 
     /// Deletes one entry and returns it, for Undo.
     @discardableResult
-    public func delete(_ id: UUID) async -> HistoryEntry? {
+    public func delete(_ id: UUID) async -> DictationEntry? {
         let removed = try? await store.delete(id)
         await reload()
         return removed ?? nil
     }
 
-    public func restore(_ entry: HistoryEntry) async {
+    public func restore(_ entry: DictationEntry) async {
         try? await store.add(entry)
         await reload()
     }
@@ -438,11 +438,11 @@ public enum HistorySearch {
         await reload()
     }
 
-    public func maintain(retention: HistoryRetention) async {
+    public func maintain(retention: DictationRetention) async {
         _ = try? await store.prune(retention: retention)
         await reload()
     }
 
     /// The newest `limit` entries, for the menu's Recent submenu.
-    public func recent(_ limit: Int = 3) -> [HistoryEntry] { Array(entries.prefix(limit)) }
+    public func recent(_ limit: Int = 3) -> [DictationEntry] { Array(entries.prefix(limit)) }
 }

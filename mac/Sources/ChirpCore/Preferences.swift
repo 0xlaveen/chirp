@@ -338,8 +338,8 @@ public final class Preferences: @unchecked Sendable {
         set { defaults.set(newValue, forKey: "historyEnabled") }
     }
     /// How long dictations are kept (30 days by default).
-    public var historyRetention: HistoryRetention {
-        get { defaults.string(forKey: "historyRetention").flatMap(HistoryRetention.init(rawValue:)) ?? .default }
+    public var historyRetention: DictationRetention {
+        get { defaults.string(forKey: "historyRetention").flatMap(DictationRetention.init(rawValue:)) ?? .default }
         set { defaults.set(newValue.rawValue, forKey: "historyRetention") }
     }
     /// Apps whose dictations are never kept (bundle ids). Password managers until the user edits the list; once

@@ -29,24 +29,24 @@ extension Snapshots {
         }
     }
 
-    static func demoHistory() -> [HistoryEntry] {
+    static func demoHistory() -> [DictationEntry] {
         func id(_ n: Int) -> UUID { UUID(uuidString: String(format: "00000000-0000-0000-0000-%012d", 900 + n))! }
         func ago(_ minutes: Double) -> Date { historyNow.addingTimeInterval(-minutes * 60) }
         return [
-            HistoryEntry(id: id(1), date: ago(4), text: "sounds good, I'll push the fix to staging after lunch",
+            DictationEntry(id: id(1), date: ago(4), text: "sounds good, I'll push the fix to staging after lunch",
                          raw: "Sounds good. I'll push the fix to staging after lunch.", bundleID: "com.tinyspeck.slackmacgap",
                          appName: "Slack", duration: 3.8, style: "chat"),
-            HistoryEntry(id: id(2), date: ago(38), text: "Hi Maya,\n\nThanks for the notes from Tuesday. I moved the review to Thursday at 3:30 so everyone can make it. Let me know if that clashes with anything.\n\nBest,\nSam",
+            DictationEntry(id: id(2), date: ago(38), text: "Hi Maya,\n\nThanks for the notes from Tuesday. I moved the review to Thursday at 3:30 so everyone can make it. Let me know if that clashes with anything.\n\nBest,\nSam",
                          raw: "hi maya thanks for the notes from tuesday I moved the review to thursday at three thirty so everyone can make it let me know if that clashes with anything best sam",
                          bundleID: "com.apple.mail", appName: "Mail", duration: 14.2, style: "email"),
-            HistoryEntry(id: id(3), date: ago(95), text: "Check that the retry loop backs off before the third attempt.",
+            DictationEntry(id: id(3), date: ago(95), text: "Check that the retry loop backs off before the third attempt.",
                          bundleID: "com.apple.TextEdit", appName: "TextEdit", duration: 4.1),
-            HistoryEntry(id: id(4), date: ago(60 * 20), text: "rename the helper to parseHeaders and keep the old name as a deprecated alias",
+            DictationEntry(id: id(4), date: ago(60 * 20), text: "rename the helper to parseHeaders and keep the old name as a deprecated alias",
                          raw: "rename the helper to parse headers and keep the old name as a deprecated alias",
                          bundleID: "com.microsoft.VSCode", appName: "Visual Studio Code", duration: 5.6, style: "code"),
-            HistoryEntry(id: id(5), date: ago(60 * 22), text: "On my way, ten minutes", bundleID: "com.apple.MobileSMS",
+            DictationEntry(id: id(5), date: ago(60 * 22), text: "On my way, ten minutes", bundleID: "com.apple.MobileSMS",
                          appName: "Messages", duration: 1.9),
-            HistoryEntry(id: id(6), date: ago(60 * 24 * 3), text: "Ship the Kubernetes upgrade on Monday once the canary is green.",
+            DictationEntry(id: id(6), date: ago(60 * 24 * 3), text: "Ship the Kubernetes upgrade on Monday once the canary is green.",
                          raw: "Ship the cooper netties upgrade on Monday once the canary is green.",
                          bundleID: "com.apple.TextEdit", appName: "TextEdit", duration: 4.4, style: "default"),
         ]

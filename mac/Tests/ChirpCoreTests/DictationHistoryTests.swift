@@ -23,8 +23,8 @@ private struct FailingKeys: HistoryKeyStore {
 }
 
 @Suite(.serialized) struct DictationHistoryTests {
-    private func entry(_ text: String, raw: String? = nil, at date: Date, app: String = "com.apple.TextEdit") -> HistoryEntry {
-        HistoryEntry(date: date, text: text, raw: raw, bundleID: app, appName: "TextEdit", duration: 3.2, style: raw == nil ? nil : "default")
+    private func entry(_ text: String, raw: String? = nil, at date: Date, app: String = "com.apple.TextEdit") -> DictationEntry {
+        DictationEntry(date: date, text: text, raw: raw, bundleID: app, appName: "TextEdit", duration: 3.2, style: raw == nil ? nil : "default")
     }
 
     @Test func entriesRoundTripNewestFirstAndRawIsOnlyKeptWhenItDiffers() async throws {
@@ -111,8 +111,8 @@ private struct FailingKeys: HistoryKeyStore {
         #expect(try await store.entries().isEmpty)
         // Emptied day files are removed, not left as sealed empty arrays.
         #expect(!(try FileManager.default.contentsOfDirectory(atPath: dir.path).contains { $0.hasSuffix(".sealed") }))
-        #expect(HistoryRetention.allCases.map(\.days) == [1, 7, 30, 90, nil])
-        #expect(HistoryRetention.default == .thirtyDays)
+        #expect(DictationRetention.allCases.map(\.days) == [1, 7, 30, 90, nil])
+        #expect(DictationRetention.default == .thirtyDays)
     }
 
     @Test func deleteRestoreUpdateAndClear() async throws {
@@ -141,7 +141,7 @@ private struct FailingKeys: HistoryKeyStore {
         let store = DictationHistoryStore(directory: dir, keys: MemoryHistoryKeyStore())
         try await store.add(entry("Meet at the café", at: Date()))
         try await store.add(entry("Deploy to Kubernetes", raw: "deploy to cooper netties", at: Date().addingTimeInterval(1)))
-        try await store.add(HistoryEntry(date: Date().addingTimeInterval(2), text: "ship it", bundleID: "com.tinyspeck.slackmacgap", appName: "Slack"))
+        try await store.add(DictationEntry(date: Date().addingTimeInterval(2), text: "ship it", bundleID: "com.tinyspeck.slackmacgap", appName: "Slack"))
         #expect(try await store.search("CAFE").map(\.text) == ["Meet at the café"])
         #expect(try await store.search("netties").map(\.text) == ["Deploy to Kubernetes"])
         #expect(try await store.search("slack").map(\.text) == ["ship it"])
@@ -226,7 +226,7 @@ private struct FailingKeys: HistoryKeyStore {
     private let now = Date(timeIntervalSince1970: 1_792_000_000)   // a Wednesday, 17:46 UTC
     private var utc: Calendar { var c = Calendar(identifier: .gregorian); c.timeZone = TimeZone(identifier: "UTC")!; return c }
 
-    private func model(_ entries: [HistoryEntry]) -> HistoryModel {
+    private func model(_ entries: [DictationEntry]) -> HistoryModel {
         let m = HistoryModel()
         m.now = { [now] in now }
         m.calendar = utc
@@ -234,13 +234,13 @@ private struct FailingKeys: HistoryKeyStore {
         return m
     }
 
-    private func entries() -> [HistoryEntry] {
-        [HistoryEntry(date: now.addingTimeInterval(-60), text: "Ship the Kubernetes upgrade", raw: "ship the cooper netties upgrade",
+    private func entries() -> [DictationEntry] {
+        [DictationEntry(date: now.addingTimeInterval(-60), text: "Ship the Kubernetes upgrade", raw: "ship the cooper netties upgrade",
                       bundleID: "com.apple.TextEdit", appName: "TextEdit", duration: 3),
-         HistoryEntry(date: now.addingTimeInterval(-3600), text: "lunch at noon?", bundleID: "com.tinyspeck.slackmacgap", appName: "Slack"),
-         HistoryEntry(date: now.addingTimeInterval(-86400), text: "Yesterday's note"),
-         HistoryEntry(date: now.addingTimeInterval(-3 * 86400), text: "Sunday thoughts"),
-         HistoryEntry(date: now.addingTimeInterval(-400 * 86400), text: "Long ago")]
+         DictationEntry(date: now.addingTimeInterval(-3600), text: "lunch at noon?", bundleID: "com.tinyspeck.slackmacgap", appName: "Slack"),
+         DictationEntry(date: now.addingTimeInterval(-86400), text: "Yesterday's note"),
+         DictationEntry(date: now.addingTimeInterval(-3 * 86400), text: "Sunday thoughts"),
+         DictationEntry(date: now.addingTimeInterval(-400 * 86400), text: "Long ago")]
     }
 
     @Test func groupsByDayNewestFirst() {
@@ -286,13 +286,13 @@ private struct FailingKeys: HistoryKeyStore {
 
     @Test func words() {
         let e = entries()[0]
-        #expect(HistoryText.meta(HistoryEntry(date: now.addingTimeInterval(-60), text: "x", duration: 4.2, style: "email"), now: now, calendar: utc)
+        #expect(HistoryText.meta(DictationEntry(date: now.addingTimeInterval(-60), text: "x", duration: 4.2, style: "email"), now: now, calendar: utc)
                     .replacingOccurrences(of: "\u{202F}", with: " ") == "Today at 5:45 PM · 4.2 s · Email style")
         #expect(HistoryText.duration(65) == "1 min 5 s" && HistoryText.duration(120) == "2 min" && HistoryText.duration(3) == "3 s")
         #expect(HistoryText.keptFor(.thirtyDays) == "Kept on this Mac for 30 days · encrypted")
         #expect(HistoryText.keptFor(.forever).hasPrefix("Kept on this Mac until you delete them"))
-        #expect(HistoryText.menuTitle(HistoryEntry(date: now, text: "one\ntwo   three"), limit: 40) == "one two three")
-        #expect(HistoryText.menuTitle(HistoryEntry(date: now, text: String(repeating: "word ", count: 20)), limit: 20).count == 20)
-        #expect(e.appTitle == "TextEdit" && HistoryEntry(date: now, text: "x").appTitle == "Unknown app")
+        #expect(HistoryText.menuTitle(DictationEntry(date: now, text: "one\ntwo   three"), limit: 40) == "one two three")
+        #expect(HistoryText.menuTitle(DictationEntry(date: now, text: String(repeating: "word ", count: 20)), limit: 20).count == 20)
+        #expect(e.appTitle == "TextEdit" && DictationEntry(date: now, text: "x").appTitle == "Unknown app")
     }
 }

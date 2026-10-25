@@ -84,7 +84,7 @@ public struct SettingsState: Sendable {
     public var notesAudioBytes = 0
     /// Dictation › History: on (the default), how long dictations are kept, the apps never kept, and how many are kept.
     public var historyEnabled = true
-    public var historyRetention = HistoryRetention.default
+    public var historyRetention = DictationRetention.default
     public var historyExcludedApps = HistoryPolicy.defaultExcludedApps
     public var historyCount = 0
     /// Notes › Export: the folder Export Markdown… opens in (nil: wherever it was last used).
@@ -402,7 +402,7 @@ public final class SettingsForm {
         historyRetention.setAccessibilityLabel("Keep dictations for")
         openHistory.setAccessibilityLabel("Open Dictation History")
         clearHistory.setAccessibilityLabel("Clear dictation history")
-        for r in HistoryRetention.allCases {
+        for r in DictationRetention.allCases {
             historyRetention.addItem(withTitle: r.title)
             historyRetention.lastItem?.representedObject = r.rawValue
         }
@@ -638,7 +638,7 @@ public final class SettingsForm {
             notesRecoveryCopy.state = s.notesRecoveryCopy ? .on : .off
             if let i = NotesRetention.allCases.firstIndex(of: s.notesRetention) { notesRetention.selectItem(at: i) }
             historyEnabled.state = s.historyEnabled ? .on : .off
-            if let i = HistoryRetention.allCases.firstIndex(of: s.historyRetention) { historyRetention.selectItem(at: i) }
+            if let i = DictationRetention.allCases.firstIndex(of: s.historyRetention) { historyRetention.selectItem(at: i) }
             historyApps.setApps(s.historyExcludedApps)
             keepAudio.state = s.notesKeepAudio ? .on : .off
             callAudio.state = s.notesCallAudio ? .on : .off

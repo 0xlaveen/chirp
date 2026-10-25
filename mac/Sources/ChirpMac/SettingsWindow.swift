@@ -759,7 +759,7 @@ final class SettingsWindowController: NSObject, NSTextFieldDelegate {
     }
 
     @objc private func historyRetentionChanged(_ sender: NSPopUpButton) {
-        guard let raw = sender.selectedItem?.representedObject as? String, let retention = HistoryRetention(rawValue: raw) else { return }
+        guard let raw = sender.selectedItem?.representedObject as? String, let retention = DictationRetention(rawValue: raw) else { return }
         settings.historyRetention = retention
         Task { [weak self] in
             await self?.history?.maintain(retention: retention)

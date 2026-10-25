@@ -5,7 +5,7 @@ import Observation
 /// A day of the History list: Today, Yesterday, then the weekday and date.
 public struct HistoryGroup: Identifiable, Equatable, Sendable {
     public var title: String
-    public var entries: [HistoryEntry]
+    public var entries: [DictationEntry]
     public var id: String { title }
 }
 
@@ -39,7 +39,7 @@ public enum HistoryText {
     public static func noResults(_ query: String) -> String { "No dictations match “\(query)”" }
 
     /// The footer: how long dictations are kept.
-    public static func keptFor(_ retention: HistoryRetention) -> String {
+    public static func keptFor(_ retention: DictationRetention) -> String {
         retention == .forever ? "Kept on this Mac until you delete them · encrypted"
                               : "Kept on this Mac for \(retention.title) · encrypted"
     }
@@ -57,7 +57,7 @@ public enum HistoryText {
     }
 
     /// The detail's meta line: "Today at 3:12 PM · 4.2 s · Email style".
-    public static func meta(_ entry: HistoryEntry, now: Date, calendar: Calendar = .current) -> String {
+    public static func meta(_ entry: DictationEntry, now: Date, calendar: Calendar = .current) -> String {
         var parts = ["\(dayTitle(entry.date, now: now, calendar: calendar)) at \(time(entry.date, calendar: calendar))"]
         if entry.duration > 0 { parts.append(duration(entry.duration)) }
         if let style = entry.style { parts.append("\(CorrectionProfile.displayName(for: style)) style") }
@@ -76,7 +76,7 @@ public enum HistoryText {
     }
 
     /// A one-line preview for the menu's Recent submenu.
-    public static func menuTitle(_ entry: HistoryEntry, limit: Int = 40) -> String {
+    public static func menuTitle(_ entry: DictationEntry, limit: Int = 40) -> String {
         let flat = entry.text.split(whereSeparator: \.isWhitespace).joined(separator: " ")
         return flat.count > limit ? String(flat.prefix(limit - 1)).trimmingCharacters(in: .whitespaces) + "…" : flat
     }
@@ -85,20 +85,20 @@ public enum HistoryText {
 /// "Dictation deleted · Undo" at the bottom of the window.
 public struct HistoryToast: Equatable, Sendable {
     public var text: String
-    public var undo: HistoryEntry?
+    public var undo: DictationEntry?
     public var serial: Int
 }
 
 /// What the History window shows and does. The window controller fills the actions; the snapshots and tests set
 /// plain values. Dictated text lives only in `entries` (memory) and is never logged.
 @MainActor @Observable public final class HistoryModel {
-    public var entries: [HistoryEntry] = []
+    public var entries: [DictationEntry] = []
     public var query = ""
     public var selection: UUID?
     public var enabled = true
     /// The Keychain refused the key: say so instead of "No dictations yet".
     public var unavailable = false
-    public var retention = HistoryRetention.default
+    public var retention = DictationRetention.default
     public var toast: HistoryToast?
     /// Shown for a moment after Copy / Insert Again ("Copied").
     public var flash: String?
@@ -109,23 +109,23 @@ public struct HistoryToast: Equatable, Sendable {
     @ObservationIgnored public var icon: (String?) -> NSImage? = { HistoryModel.workspaceIcon($0) }
 
     @ObservationIgnored public var onCopy: (String) -> Void = { _ in }
-    @ObservationIgnored public var onInsertAgain: (HistoryEntry) -> Void = { _ in }
-    @ObservationIgnored public var onAddToNotes: (HistoryEntry) -> Void = { _ in }
+    @ObservationIgnored public var onInsertAgain: (DictationEntry) -> Void = { _ in }
+    @ObservationIgnored public var onAddToNotes: (DictationEntry) -> Void = { _ in }
     @ObservationIgnored public var onDelete: (UUID) -> Void = { _ in }
-    @ObservationIgnored public var onRestore: (HistoryEntry) -> Void = { _ in }
+    @ObservationIgnored public var onRestore: (DictationEntry) -> Void = { _ in }
     @ObservationIgnored public var onOpenSettings: () -> Void = {}
 
     public init() {}
 
     /// The entries the search keeps, newest first.
-    public var filtered: [HistoryEntry] {
+    public var filtered: [DictationEntry] {
         let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
         return q.isEmpty ? entries : entries.filter { HistorySearch.matches($0, q) }
     }
 
     public var groups: [HistoryGroup] { Self.groups(filtered, now: now(), calendar: calendar) }
 
-    public static func groups(_ entries: [HistoryEntry], now: Date, calendar: Calendar = .current) -> [HistoryGroup] {
+    public static func groups(_ entries: [DictationEntry], now: Date, calendar: Calendar = .current) -> [HistoryGroup] {
         var out: [HistoryGroup] = []
         for entry in entries.sorted(by: { $0.date > $1.date }) {
             let title = HistoryText.dayTitle(entry.date, now: now, calendar: calendar)
@@ -134,15 +134,15 @@ public struct HistoryToast: Equatable, Sendable {
         return out
     }
 
-    public var selected: HistoryEntry? { selection.flatMap { id in entries.first { $0.id == id } } }
+    public var selected: DictationEntry? { selection.flatMap { id in entries.first { $0.id == id } } }
 
     /// New entries arrived (or went): keep the selection when it still exists, else select the newest.
-    public func show(_ entries: [HistoryEntry]) {
+    public func show(_ entries: [DictationEntry]) {
         self.entries = entries
         if selection == nil || !entries.contains(where: { $0.id == selection }) { selection = filtered.first?.id }
     }
 
-    public func copy(_ entry: HistoryEntry, raw: Bool = false) {
+    public func copy(_ entry: DictationEntry, raw: Bool = false) {
         onCopy(raw ? entry.raw ?? entry.text : entry.text)
         flash = "Copied"
     }

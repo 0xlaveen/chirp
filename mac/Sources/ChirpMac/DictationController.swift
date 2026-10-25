@@ -576,7 +576,7 @@ extension DictationController {
         else { return }
         let raw = final.corrected ? final.raw.trimmingCharacters(in: .whitespacesAndNewlines) : nil
         let audio = final.timings?.audio.map { $0 / 1000 } ?? capturedSeconds
-        let entry = HistoryEntry(date: Date(), text: text, raw: raw, bundleID: target.bundleID, appName: target.name,
+        let entry = DictationEntry(date: Date(), text: text, raw: raw, bundleID: target.bundleID, appName: target.name,
                                  duration: audio, style: final.corrected ? startOptions.correctionProfile : nil)
         lastHistoryID = entry.id
         Task { await history.record(entry) }
