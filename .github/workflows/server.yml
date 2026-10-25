@@ -37,8 +37,48 @@ jobs:
       - run: uv run pytest -q
 
   windows:
+    # Temporary bisect: four runners share the files, so the one that wedges names itself
+    # while the others finish with logs.
     runs-on: windows-latest
-    timeout-minutes: 45
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        part: [0, 1, 2, 3]
+    defaults:
+      run:
+        shell: bash
+        working-directory: server
+    env:
+      PYTHONUTF8: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.13"
+          enable-cache: true
+          cache-dependency-glob: server/uv.lock
+      - run: uv sync --locked --extra onnx
+      - name: pytest, part ${{ matrix.part }} of 4, file by file
+        run: |
+          status=0
+          index=0
+          for file in tests/test_*.py; do
+            if [ $((index % 4)) -eq ${{ matrix.part }} ]; then
+              echo "::group::$file"
+              date -u +%T
+              timeout -k 10 180 .venv/Scripts/python.exe -m pytest -v -p no:cacheprovider \
+                -o faulthandler_timeout=45 "$file" || { echo "FAILED $file ($?)"; status=1; }
+              echo "::endgroup::"
+            fi
+            index=$((index + 1))
+          done
+          exit $status
+        timeout-minutes: 20
+
+  windows-onnx:
+    runs-on: windows-latest
+    timeout-minutes: 30
     defaults:
       run:
         shell: bash
@@ -55,19 +95,6 @@ jobs:
           enable-cache: true
           cache-dependency-glob: server/uv.lock
       - run: uv sync --locked --extra onnx
-      # Each file under its own time limit, so one hang cannot hide the others; a test that
-      # runs for a minute dumps every thread's stack.
-      - name: pytest, file by file
-        run: |
-          status=0
-          for file in tests/test_*.py; do
-            echo "::group::$file"
-            timeout -k 10 240 .venv/Scripts/python.exe -m pytest -q -p no:cacheprovider \
-              -o faulthandler_timeout=60 "$file" || { code=$?; echo "FAILED $file ($code)"; status=1; }
-            echo "::endgroup::"
-          done
-          exit $status
-        timeout-minutes: 25
       - uses: actions/cache@v4
         id: model
         with:
@@ -87,5 +114,5 @@ jobs:
           )"
       # A real chirp-server process on a free port with a throwaway home: ONNX Parakeet
       # transcribes the committed synthetic clip over /v1/transcribe and /v1/stream.
-      - run: uv run pytest -q -m onnx -rs -o faulthandler_timeout=240
+      - run: timeout -k 10 480 .venv/Scripts/python.exe -m pytest -v -m onnx -rs -o faulthandler_timeout=240 tests/test_onnx_smoke.py
         timeout-minutes: 10
