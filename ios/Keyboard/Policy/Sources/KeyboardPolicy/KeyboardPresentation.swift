@@ -38,9 +38,16 @@ public struct KeyboardInputs: Equatable, Sendable {
 
 public enum PrimaryKind: Sendable, Equatable { case fullAccess, openChirp, start, stop, polishing }
 
+/// How the primary control is filled (Pond tokens, #195): koi to start, `record` to stop, moon while polishing,
+/// tonal koiContainer for "open Chirp" and the disabled Full Access state.
+public enum PrimaryStyle: Sendable, Equatable { case koi, record, moon, tonal }
+
 public struct PrimaryAction: Equatable, Sendable {
     public var kind: PrimaryKind
+    public var style: PrimaryStyle
     public var title: String
+    /// What VoiceOver reads, when the short visible title needs more ("Stop" → "Stop dictation").
+    public var accessibilityLabel: String
     public var symbol: String
     public var hint: String
     public var isEnabled: Bool
@@ -52,38 +59,68 @@ public struct StyleItem: Equatable, Sendable {
     public var isChecked: Bool
 }
 
+/// The leading glyph of the status strip.
+public enum StripGlyph: Sendable, Equatable {
+    /// Armed, finished: a koi dot.
+    case koiDot
+    /// Connecting, listening: the Ripple.
+    case ripple
+    /// Polishing: the moon ✦.
+    case moon
+    /// An error or something that needs attention: a `record` ⚠.
+    case warning
+    /// No session, no Full Access: the quiet brand glyph.
+    case idle
+}
+
+/// The capsule chips under the primary control, in display order. Chips that don't apply are hidden, not disabled.
+public enum KeyboardChip: Sendable, Equatable { case undo, cancel, raw, open, style }
+
+/// The four rows of the keyboard. All four are always laid out, so the height never depends on the state.
+public enum KeyboardRow: Sendable, CaseIterable { case strip, primary, chips, keys }
+
 /// What to draw. Space, Delete and Return are always enabled and need no flag.
 public struct KeyboardScreen: Equatable, Sendable {
-    /// Phase text plus elapsed/remaining labels, joined with " · " (the `chirp.keyboard.status` label).
-    public var status: String
+    /// The strip's short label: "Ready", "Listening…", "Mac offline". Also a notice such as "Dictation removed".
     public var phaseText: String
+    public var glyph: StripGlyph
+    /// The elapsed time while recording or "4:12 left" while the session is idle; shown right-aligned in tabular digits.
+    public var trailing: String?
     public var elapsed: String?
     public var remaining: String?
+    /// The long guidance behind ⓘ (`chirp.keyboard.detail`), including the DEBUG notice. Nil only when there is none.
     public var detail: String?
-    public var showsDetail: Bool
+    /// The DEBUG-retention notice; the strip shows `warningBadge` and ⓘ explains it.
     public var warning: String?
     public var primary: PrimaryAction
-    public var cancelEnabled: Bool
-    /// The Cancel slot shows Undo instead: Cancel only applies while recording, Undo only after a final.
-    public var showsUndo: Bool
-    public var rawEnabled: Bool
+    public var chips: [KeyboardChip]
     public var rawTitle: String
     public var rawSecondsLeft: Int?
-    public var styleEnabled: Bool
+    /// The Style chip's title: the style's name ("Email"), never "Style:…".
     public var styleTitle: String
     public var styleItems: [StyleItem]
     /// The Style menu's "Private session" item, checked while it is on.
     public var privacyOn: Bool
     public var endEnabled: Bool
-    public var showsOpenChirp: Bool
     public var showsGlobe: Bool
+    /// Every row, reserved in every state.
+    public var rows: [KeyboardRow] { KeyboardRow.allCases }
+
+    public var showsUndo: Bool { chips.contains(.undo) }
 }
 
 public enum KeyboardPresenter {
     public static let styleTitles = ["default": "Default", "chat": "Chat", "email": "Email",
                                      "code": "Code", "notes": "Notes", "custom": "Custom"]
+    /// The strip's DEBUG badge text; the full sentence is `warning`.
+    public static let warningBadge = "DEBUG"
+    public static let warningText = "DEBUG recordings kept on the server"
+    /// Private session, as in the Style menu.
+    public static let privateTitle = "Private session · exclude history"
+    public static let infoLabel = "More about this status"
+    public static let closeInfoLabel = "Close"
 
-    /// A server-defined style the keyboard has no name for shows its id, in the button as in the menu.
+    /// A server-defined style the keyboard has no name for shows its id, in the chip as in the menu.
     public static func styleTitle(_ id: String) -> String { styleTitles[id] ?? id }
 
     public static func screen(_ i: KeyboardInputs) -> KeyboardScreen {
@@ -92,27 +129,32 @@ public enum KeyboardPresenter {
         let phase = live ? i.phase : nil
         let recording = phase == .connecting || phase == .listening
         let busy = recording || phase == .correcting
-        let (phaseText, detail) = text(i, live: live, phase: phase)
+        let line = text(i, live: live, phase: phase)
         let elapsed = recording ? i.recordingStartedAt.map { ClockText.format(i.now.timeIntervalSince($0)) } : nil
         let remaining = live ? i.sessionExpiresAt.map { ClockText.format(ceil($0.timeIntervalSince(i.now))) + " left" } : nil
         let rawLeft = rawSeconds(i)
         let showsUndo = live && !busy && i.isFinal && i.ownsUtterance && i.undoAvailable
+        let showsCancel = live && !showsUndo && !i.isFinal && (busy || i.startPending)
+        let showsRaw = live && rawLeft != nil && i.isFinal && i.ownsUtterance && !i.rawRequested
         let items = i.availableStyleIDs.map { StyleItem(id: $0, title: styleTitle($0), isChecked: $0 == i.styleID) }
+        let showsStyle = live && !busy && !i.startPending && !items.isEmpty
+        let showsOpen = i.hasFullAccess && (i.fallback != nil || i.requiresRecovery)
+        let warning = i.debugRetention ? warningText : nil
+        let notice = live ? i.notice : nil
+        var chips: [KeyboardChip] = []
+        if showsUndo { chips.append(.undo) }
+        if showsCancel { chips.append(.cancel) }
+        if showsRaw { chips.append(.raw) }
+        if showsOpen { chips.append(.open) }
+        if showsStyle { chips.append(.style) }
         return KeyboardScreen(
-            status: ([live ? i.notice ?? phaseText : phaseText] + [elapsed, remaining].compactMap { $0 }).joined(separator: " · "),
-            phaseText: live ? i.notice ?? phaseText : phaseText, elapsed: elapsed, remaining: remaining,
-            detail: detail, showsDetail: detail != nil && !i.compactHeight,
-            warning: i.debugRetention ? "DEBUG recordings kept on the server" : nil,
-            primary: primary(i, live: live, phase: phase),
-            cancelEnabled: live && (showsUndo || (!i.isFinal && (busy || i.startPending))),
-            showsUndo: showsUndo,
-            rawEnabled: live && rawLeft != nil && i.isFinal && i.ownsUtterance && !i.rawRequested,
+            phaseText: notice ?? line.label, glyph: notice == nil ? line.glyph : .koiDot,
+            trailing: elapsed ?? remaining, elapsed: elapsed, remaining: remaining,
+            detail: [line.detail, warning].compactMap { $0 }.joined(separator: "\n\n").nilIfEmpty, warning: warning,
+            primary: primary(i, live: live, phase: phase), chips: chips,
             rawTitle: rawLeft.map { "Use raw (\($0)s)" } ?? "Use raw", rawSecondsLeft: rawLeft,
-            styleEnabled: live && !busy && !items.isEmpty,
-            styleTitle: "Style: " + styleTitle(i.styleID ?? "default"), styleItems: items, privacyOn: i.privacyMode,
-            endEnabled: live,
-            showsOpenChirp: i.hasFullAccess && (i.fallback != nil || i.requiresRecovery),
-            showsGlobe: i.needsGlobe)
+            styleTitle: styleTitle(i.styleID ?? "default"), styleItems: items, privacyOn: i.privacyMode,
+            endEnabled: live, showsGlobe: i.needsGlobe)
     }
 
     /// Whole seconds left in the Use raw window, rounded up so the label reaches 1 before it closes.
@@ -122,51 +164,70 @@ public enum KeyboardPresenter {
     }
 
     private static func primary(_ i: KeyboardInputs, live: Bool, phase: KeyboardPhase?) -> PrimaryAction {
-        let open = PrimaryAction(kind: .openChirp, title: "Open Chirp to start session", symbol: "arrow.up.forward.app",
+        let open = PrimaryAction(kind: .openChirp, style: .tonal, title: "Open Chirp to start",
+                                 accessibilityLabel: "Open Chirp to start a session", symbol: "arrow.up.forward.app",
                                  hint: "Opens Chirp so you can start a dictation session, then return here.", isEnabled: true)
         guard i.hasFullAccess else {
-            return PrimaryAction(kind: .fullAccess, title: "Full Access required", symbol: "lock.fill",
+            return PrimaryAction(kind: .fullAccess, style: .tonal, title: "Full Access required",
+                                 accessibilityLabel: "Full Access required", symbol: "lock.fill",
                                  hint: "Enable Full Access for Chirp Keyboard in Settings.", isEnabled: false)
         }
         guard live, let phase else { return open }
         switch phase {
         case .connecting, .listening:
-            return PrimaryAction(kind: .stop, title: "Stop dictation", symbol: "stop.fill",
-                                 hint: "Stops recording and inserts the text.", isEnabled: true)
+            return PrimaryAction(kind: .stop, style: .record, title: "Stop", accessibilityLabel: "Stop dictation",
+                                 symbol: "stop.fill", hint: "Stops recording and inserts the text.", isEnabled: true)
         case .correcting:
-            return PrimaryAction(kind: .polishing, title: "Polishing…", symbol: "sparkles",
-                                 hint: "Chirp is cleaning up the text.", isEnabled: false)
+            return PrimaryAction(kind: .polishing, style: .moon, title: "Polishing…", accessibilityLabel: "Polishing",
+                                 symbol: "sparkles", hint: "Chirp is cleaning up the text.", isEnabled: false)
         case .armed, .finished:
-            return PrimaryAction(kind: .start, title: i.startPending ? "Starting…" : "Start dictation", symbol: "mic.fill",
+            let title = i.startPending ? "Starting…" : "Start dictation"
+            return PrimaryAction(kind: .start, style: .koi, title: title, accessibilityLabel: title, symbol: "mic.fill",
                                  hint: "Starts dictating at the cursor.", isEnabled: !i.startPending)
         case .idle, .failed:
             return open
         }
     }
 
-    private static func text(_ i: KeyboardInputs, live: Bool, phase: KeyboardPhase?) -> (String, String?) {
+    private struct Line { var label: String; var glyph: StripGlyph; var detail: String? }
+
+    /// The one-line state and the long text behind ⓘ. The label is the short cause for an error ("Mac offline"),
+    /// the fix is the guidance.
+    private static func text(_ i: KeyboardInputs, live: Bool, phase: KeyboardPhase?) -> Line {
         guard i.hasFullAccess else {
-            return ("Dictation needs Full Access",
-                    "Open Settings → Chirp → Keyboards and turn on Allow Full Access, then start a session in Chirp. Space, delete, return and next keyboard work here.")
+            return Line(label: "Needs Full Access", glyph: .warning,
+                        detail: "Open Settings → Chirp → Keyboards and turn on Allow Full Access, then start a session in Chirp. Space, delete, return and next keyboard work here.")
         }
-        if let fallback = i.fallback { return ("Open Chirp", fallback) }
+        if let fallback = i.fallback { return Line(label: "Open Chirp", glyph: .warning, detail: fallback) }
         if i.requiresRecovery {
-            return ("Text kept in place",
-                    "Cursor or text context changed. Recover the dictation in Chirp; automatic replacement is paused.")
+            return Line(label: "Text kept in place", glyph: .warning,
+                        detail: "Cursor or text context changed. Recover the dictation in Chirp; automatic replacement is paused.")
         }
         guard live, let phase else {
-            return ("Start a session in Chirp",
-                    "Tap the button to open Chirp and tap Start keyboard session, then come back here with the app switcher.")
+            return Line(label: "No session", glyph: .idle,
+                        detail: "Tap the button to open Chirp and tap Start keyboard session, then come back here with the app switcher.")
         }
         let idle = "Microphone stays active in Chirp. Idle audio is discarded. End session turns it off."
+        let error = i.errorCode
         switch phase {
-        case .connecting: return ("Connecting…", "Tap Stop when you are done.")
-        case .listening: return ("Listening…", "Tap Stop when you are done.")
-        case .correcting: return ("Polishing…", "Chirp is cleaning up the text.")
-        case .armed: return ("Session armed", i.errorCode?.guidance ?? idle)
-        case .finished: return (i.kept ? "Kept what was heard" : "Finished", i.errorCode?.guidance ?? idle)
-        case .idle: return ("Session idle", i.errorCode?.guidance ?? "Open Chirp to start the session again.")
-        case .failed: return ("Dictation failed", (i.errorCode ?? .unknown).guidance)
+        case .connecting: return Line(label: "Connecting…", glyph: .ripple, detail: "Tap Stop when you are done.")
+        case .listening: return Line(label: "Listening…", glyph: .ripple, detail: "Tap Stop when you are done.")
+        case .correcting: return Line(label: "Polishing…", glyph: .moon, detail: "Chirp is cleaning up the text.")
+        case .armed:
+            return Line(label: error?.cause ?? "Ready", glyph: error == nil ? .koiDot : .warning, detail: error?.guidance ?? idle)
+        case .finished:
+            if i.kept { return Line(label: "Kept what was heard", glyph: error == nil ? .koiDot : .warning, detail: error?.guidance ?? idle) }
+            return Line(label: error?.cause ?? "Finished", glyph: error == nil ? .koiDot : .warning, detail: error?.guidance ?? idle)
+        case .idle:
+            return Line(label: error?.cause ?? "Session idle", glyph: error == nil ? .idle : .warning,
+                        detail: error?.guidance ?? "Open Chirp to start the session again.")
+        case .failed:
+            let code = error ?? .unknown
+            return Line(label: code.cause, glyph: .warning, detail: code.guidance)
         }
     }
+}
+
+private extension String {
+    var nilIfEmpty: String? { isEmpty ? nil : self }
 }

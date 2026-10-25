@@ -26,13 +26,20 @@
   ],
   "ChirpKeyboard": [
     "Keyboard/ChirpKeyboardViewController.swift",
-    "Keyboard/KeyboardBridgeClient.swift"
+    "Keyboard/KeyboardBridgeClient.swift",
+    "Keyboard/UI/KeyboardChipRow.swift",
+    "Keyboard/UI/KeyboardKeyStyle.swift",
+    "Keyboard/UI/KeyboardPreview.swift",
+    "Keyboard/UI/KeyboardRippleView.swift",
+    "Keyboard/UI/KeyboardStatusStrip.swift"
   ],
   "ChirpWidgets": [
     "Intents/ChirpActivityAttributes.swift",
     "Intents/NotesActivityAttributes.swift",
     "Intents/NotesIntents.swift",
     "Intents/SessionIntents.swift",
+    "Shared/Sources/ChirpIOSCore/Pond.swift",
+    "Widgets/ActivityViews.swift",
     "Widgets/ChirpWidgets.swift",
     "Widgets/NotesActivityWidget.swift"
   ],

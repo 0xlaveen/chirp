@@ -18,10 +18,15 @@ private func inputs(_ phase: KeyboardPhase? = .armed, access: Bool = true, lease
     func primaryFollowsPhase(phase: KeyboardPhase) {
         let p = KeyboardPresenter.screen(inputs(phase)).primary
         switch phase {
-        case .connecting, .listening: #expect(p.kind == .stop && p.title == "Stop dictation" && p.isEnabled)
-        case .correcting: #expect(p.kind == .polishing && p.title == "Polishing…" && !p.isEnabled)
-        case .armed, .finished: #expect(p.kind == .start && p.title == "Start dictation" && p.symbol == "mic.fill" && p.isEnabled)
-        case .idle, .failed: #expect(p.kind == .openChirp && p.title == "Open Chirp to start session" && p.isEnabled)
+        case .connecting, .listening:
+            #expect(p.kind == .stop && p.style == .record && p.title == "Stop" && p.symbol == "stop.fill" && p.isEnabled)
+            #expect(p.accessibilityLabel == "Stop dictation")
+        case .correcting: #expect(p.kind == .polishing && p.style == .moon && p.title == "Polishing…" && !p.isEnabled)
+        case .armed, .finished:
+            #expect(p.kind == .start && p.style == .koi && p.title == "Start dictation" && p.symbol == "mic.fill" && p.isEnabled)
+        case .idle, .failed:
+            #expect(p.kind == .openChirp && p.style == .tonal && p.title == "Open Chirp to start" && p.isEnabled)
+            #expect(p.symbol == "arrow.up.forward.app")
         }
     }
 
@@ -38,27 +43,29 @@ private func inputs(_ phase: KeyboardPhase? = .armed, access: Bool = true, lease
     @Test(arguments: KeyboardPhase.allCases)
     func fullAccessDeniedDisablesEverythingButTyping(phase: KeyboardPhase) {
         let s = KeyboardPresenter.screen(inputs(phase, access: false) { $0.fallback = "x"; $0.requiresRecovery = true })
-        #expect(s.primary.kind == .fullAccess && !s.primary.isEnabled)
-        #expect(!s.cancelEnabled && !s.rawEnabled && !s.styleEnabled && !s.endEnabled && !s.showsOpenChirp)
-        #expect(s.status == "Dictation needs Full Access" && s.elapsed == nil && s.remaining == nil)
+        #expect(s.primary.kind == .fullAccess && s.primary.style == .tonal && !s.primary.isEnabled && s.primary.symbol == "lock.fill")
+        #expect(s.primary.title == "Full Access required")
+        #expect(s.chips.isEmpty && !s.endEnabled)
+        #expect(s.phaseText == "Needs Full Access" && s.glyph == .warning && s.trailing == nil)
+        #expect(s.detail?.contains("Allow Full Access") == true, "ⓘ explains how to turn it on")
     }
 
     @Test func startPendingDisablesStartAndAllowsCancel() {
         let s = KeyboardPresenter.screen(inputs(.armed) { $0.startPending = true; $0.ownsUtterance = true })
         #expect(s.primary.kind == .start && s.primary.title == "Starting…" && !s.primary.isEnabled)
-        #expect(s.cancelEnabled)
+        #expect(s.chips == [.cancel])
     }
 
     @Test func fallbackOrRecoveryAddsSecondaryOpenWithoutChangingPrimary() {
         let plain = KeyboardPresenter.screen(inputs(.armed))
-        #expect(!plain.showsOpenChirp)
+        #expect(!plain.chips.contains(.open))
         let fallback = KeyboardPresenter.screen(inputs(.armed) { $0.fallback = "Open Chirp manually." })
-        #expect(fallback.showsOpenChirp && fallback.primary.kind == .start)
-        #expect(fallback.status == "Open Chirp" && fallback.detail == "Open Chirp manually.")
+        #expect(fallback.chips.contains(.open) && fallback.primary.kind == .start)
+        #expect(fallback.phaseText == "Open Chirp" && fallback.detail == "Open Chirp manually.")
         let recover = KeyboardPresenter.screen(inputs(.armed) { $0.requiresRecovery = true })
-        #expect(recover.showsOpenChirp && recover.status == "Text kept in place")
+        #expect(recover.chips.contains(.open) && recover.phaseText == "Text kept in place")
         let none = KeyboardPresenter.screen(inputs(nil) { $0.fallback = "Session unavailable." })
-        #expect(none.showsOpenChirp && none.primary.kind == .openChirp)
+        #expect(none.chips.contains(.open) && none.primary.kind == .openChirp)
     }
 }
 
@@ -69,9 +76,9 @@ private func inputs(_ phase: KeyboardPhase? = .armed, access: Bool = true, lease
             let s = KeyboardPresenter.screen(inputs(phase, lease: lease ? 8 : -1) { $0.isFinal = final; $0.ownsUtterance = true })
             let busy = phase == .connecting || phase == .listening || phase == .correcting
             #expect(s.endEnabled == lease)
-            #expect(s.cancelEnabled == (lease && busy && !final))
-            #expect(s.styleEnabled == (lease && !busy))
-            #expect(!s.rawEnabled)
+            #expect(s.chips.contains(.cancel) == (lease && busy && !final))
+            #expect(s.chips.contains(.style) == (lease && !busy))
+            #expect(!s.chips.contains(.raw))
         }
     }
 
@@ -80,24 +87,26 @@ private func inputs(_ phase: KeyboardPhase? = .armed, access: Bool = true, lease
         #expect(s.styleItems == [StyleItem(id: "default", title: "Default", isChecked: false),
                                  StyleItem(id: "chat", title: "Chat", isChecked: true),
                                  StyleItem(id: "acme", title: "acme", isChecked: false)])
-        #expect(s.styleTitle == "Style: Chat" && s.styleEnabled)
-        #expect(KeyboardPresenter.screen(inputs(.armed) { $0.styleID = "acme" }).styleTitle == "Style: acme")   // as the menu names it
+        #expect(s.styleTitle == "Chat" && s.chips.contains(.style), "the chip names the style, never \"Style:…\"")
+        #expect(KeyboardPresenter.screen(inputs(.armed) { $0.styleID = "acme" }).styleTitle == "acme")   // as the menu names it
         let empty = KeyboardPresenter.screen(inputs(.armed) { $0.availableStyleIDs = [] })
-        #expect(empty.styleItems.isEmpty && !empty.styleEnabled)
+        #expect(empty.styleItems.isEmpty && !empty.chips.contains(.style))
     }
 
     @Test func globeAndWarning() {
         #expect(KeyboardPresenter.screen(inputs { $0.needsGlobe = true }).showsGlobe)
         #expect(!KeyboardPresenter.screen(inputs()).showsGlobe)
-        #expect(KeyboardPresenter.screen(inputs { $0.debugRetention = true }).warning == "DEBUG recordings kept on the server")
+        let debug = KeyboardPresenter.screen(inputs { $0.debugRetention = true })
+        #expect(debug.warning == "DEBUG recordings kept on the server")
+        #expect(debug.detail?.hasSuffix("DEBUG recordings kept on the server") == true, "the ⓘ explains the DEBUG badge")
+        #expect(KeyboardPresenter.warningBadge == "DEBUG")
         #expect(KeyboardPresenter.screen(inputs()).warning == nil)
     }
 
-    @Test func compactHeightCollapsesDetailOnly() {
+    @Test func sizeClassNeverChangesTheScreen() {
         let wide = KeyboardPresenter.screen(inputs(.armed))
         let compact = KeyboardPresenter.screen(inputs(.armed) { $0.compactHeight = true })
-        #expect(wide.showsDetail && !compact.showsDetail)
-        #expect(compact.detail == wide.detail && compact.status == wide.status)
+        #expect(compact == wide)
     }
 }
 
@@ -112,12 +121,12 @@ private func inputs(_ phase: KeyboardPhase? = .armed, access: Bool = true, lease
     @Test(arguments: [(5.0, 5), (4.2, 5), (4.0, 4), (1.01, 2), (1.0, 1), (0.01, 1)])
     func secondsRoundUp(left: Double, label: Int) {
         let s = raw(left)
-        #expect(s.rawEnabled && s.rawSecondsLeft == label && s.rawTitle == "Use raw (\(label)s)")
+        #expect(s.chips.contains(.raw) && s.rawSecondsLeft == label && s.rawTitle == "Use raw (\(label)s)")
     }
 
     @Test func closedWindowRequestedOrNotOwned() {
         for s in [raw(0), raw(-1), raw(nil), raw(3, requested: true), raw(3, final: false), raw(3, owns: false)] {
-            #expect(!s.rawEnabled)
+            #expect(!s.chips.contains(.raw))
         }
         #expect(raw(0).rawTitle == "Use raw" && raw(0).rawSecondsLeft == nil)
         #expect(raw(3, requested: true).rawSecondsLeft == 3)
@@ -130,28 +139,30 @@ private func inputs(_ phase: KeyboardPhase? = .armed, access: Bool = true, lease
             let s = KeyboardPresenter.screen(inputs(phase) { $0.recordingStartedAt = now.addingTimeInterval(-75) })
             let recording = phase == .connecting || phase == .listening
             #expect(s.elapsed == (recording ? "1:15" : nil))
+            #expect(s.trailing == (recording ? "1:15" : nil))
         }
         let s = KeyboardPresenter.screen(inputs(.listening) { $0.recordingStartedAt = now.addingTimeInterval(-3725) })
-        #expect(s.elapsed == "1:02:05" && s.status == "Listening… · 1:02:05")
+        #expect(s.elapsed == "1:02:05" && s.phaseText == "Listening…" && s.trailing == "1:02:05")
         #expect(KeyboardPresenter.screen(inputs(.listening)).elapsed == nil)
     }
 
     @Test func remainingFromSessionExpiryOmittedForNever() {
         let timed = KeyboardPresenter.screen(inputs(.armed) { $0.sessionExpiresAt = now.addingTimeInterval(754.2) })
-        #expect(timed.remaining == "12:35 left" && timed.status == "Session armed · 12:35 left")
+        #expect(timed.remaining == "12:35 left" && timed.trailing == "12:35 left" && timed.phaseText == "Ready")
         let never = KeyboardPresenter.screen(inputs(.armed))
-        #expect(never.remaining == nil && never.status == "Session armed")
+        #expect(never.remaining == nil && never.trailing == nil && never.phaseText == "Ready")
         let both = KeyboardPresenter.screen(inputs(.listening) {
             $0.sessionExpiresAt = now.addingTimeInterval(60); $0.recordingStartedAt = now.addingTimeInterval(-7)
         })
-        #expect(both.status == "Listening… · 0:07 · 1:00 left")
+        #expect(both.phaseText == "Listening…" && both.trailing == "0:07", "the elapsed time wins while listening")
         #expect(KeyboardPresenter.screen(inputs(nil) { $0.sessionExpiresAt = now.addingTimeInterval(60) }).remaining == nil)
     }
 
     @Test(arguments: KeyboardPhase.allCases)
     func everyPhaseHasText(phase: KeyboardPhase) {
         let s = KeyboardPresenter.screen(inputs(phase))
-        #expect(!s.phaseText.isEmpty && !(s.detail ?? "").isEmpty && s.status.hasPrefix(s.phaseText))
+        #expect(!s.phaseText.isEmpty && !(s.detail ?? "").isEmpty)
+        #expect(s.phaseText.count <= 24, "one short line in the strip: \(s.phaseText)")
     }
 
     @Test func clockFormatting() {
@@ -186,7 +197,7 @@ private func inputs(_ phase: KeyboardPhase? = .armed, access: Bool = true, lease
 
     @Test func failedWithoutCodeIsUnknownAndMatchesDiagnosticRawValues() {
         let s = KeyboardPresenter.screen(inputs(.failed))
-        #expect(s.status == "Dictation failed" && s.detail == KeyboardError.unknown.guidance)
+        #expect(s.phaseText == "Dictation failed" && s.detail == KeyboardError.unknown.guidance && s.glyph == .warning)
         #expect(KeyboardError.allCases.map(\.rawValue) ==
                 ["auth", "busy", "tooLong", "badAudio", "badRequest", "engine", "unreachable", "timeout", "permission", "interrupted", "storage", "unknown",
                                                   "offline", "notFound", "secure"])
@@ -196,9 +207,9 @@ private func inputs(_ phase: KeyboardPhase? = .armed, access: Bool = true, lease
     @Test func aServerDefinedStyleShowsItsIdInTheButtonAsInTheMenu() {
         var i = inputs(.armed); i.availableStyleIDs = ["default", "meeting"]; i.styleID = "meeting"
         let s = KeyboardPresenter.screen(i)
-        #expect(s.styleTitle == "Style: meeting" && s.styleItems.map(\.title) == ["Default", "meeting"])
+        #expect(s.styleTitle == "meeting" && s.styleItems.map(\.title) == ["Default", "meeting"])
         i.styleID = nil
-        #expect(KeyboardPresenter.screen(i).styleTitle == "Style: Default")
+        #expect(KeyboardPresenter.screen(i).styleTitle == "Default")
     }
 
     @Test func theStyleMenuMirrorsThePrivateSession() {
@@ -213,7 +224,7 @@ private func inputs(_ phase: KeyboardPhase? = .armed, access: Bool = true, lease
     }
 
     @Test func recoveryAndFallbackOutrankErrorGuidance() {
-        #expect(KeyboardPresenter.screen(inputs(.failed) { $0.errorCode = .auth; $0.requiresRecovery = true }).status == "Text kept in place")
+        #expect(KeyboardPresenter.screen(inputs(.failed) { $0.errorCode = .auth; $0.requiresRecovery = true }).phaseText == "Text kept in place")
         #expect(KeyboardPresenter.screen(inputs(.failed) { $0.errorCode = .auth; $0.fallback = "f" }).detail == "f")
     }
 }
@@ -291,20 +302,119 @@ private func inputs(_ phase: KeyboardPhase? = .armed, access: Bool = true, lease
     @Test func cancelSlotBecomesUndoOnlyAfterAnOwnedFinal() {
         var i = live(.finished); i.ownsUtterance = true; i.isFinal = true; i.undoAvailable = true
         let undo = KeyboardPresenter.screen(i)
-        #expect(undo.showsUndo && undo.cancelEnabled)
+        #expect(undo.chips.first == .undo && !undo.chips.contains(.cancel))
         i.undoAvailable = false
-        #expect(!KeyboardPresenter.screen(i).showsUndo && !KeyboardPresenter.screen(i).cancelEnabled)
+        #expect(!KeyboardPresenter.screen(i).chips.contains(.undo) && !KeyboardPresenter.screen(i).chips.contains(.cancel))
         var recording = live(.listening); recording.ownsUtterance = true; recording.undoAvailable = true
-        #expect(!KeyboardPresenter.screen(recording).showsUndo && KeyboardPresenter.screen(recording).cancelEnabled)
+        #expect(!KeyboardPresenter.screen(recording).showsUndo && KeyboardPresenter.screen(recording).chips == [.cancel])
     }
     @Test func keptFinalAndNoticesNameWhatHappened() {
         var i = live(.finished); i.kept = true; i.errorCode = .notFound
         let kept = KeyboardPresenter.screen(i)
-        #expect(kept.phaseText == "Kept what was heard")
+        #expect(kept.phaseText == "Kept what was heard" && kept.glyph == .warning)
         #expect(kept.detail == KeyboardError.notFound.guidance)
         i.notice = "Dictation removed"
-        #expect(KeyboardPresenter.screen(i).status.hasPrefix("Dictation removed"))
+        #expect(KeyboardPresenter.screen(i).phaseText == "Dictation removed")
         var gone = i; gone.leaseUntil = nil
-        #expect(!KeyboardPresenter.screen(gone).status.hasPrefix("Dictation removed"), "Notices need a live session")
+        #expect(KeyboardPresenter.screen(gone).phaseText != "Dictation removed", "Notices need a live session")
+    }
+}
+
+@Suite struct StripChipsAndConstantHeightTests {
+    private func screen(_ phase: KeyboardPhase?, access: Bool = true, _ edit: (inout KeyboardInputs) -> Void = { _ in }) -> KeyboardScreen {
+        KeyboardPresenter.screen(inputs(phase, access: access, edit))
+    }
+
+    @Test func stripGlyphFollowsTheState() {
+        #expect(screen(.armed).glyph == .koiDot && screen(.finished).glyph == .koiDot)
+        #expect(screen(.connecting).glyph == .ripple && screen(.listening).glyph == .ripple)
+        #expect(screen(.correcting).glyph == .moon)
+        #expect(screen(.failed).glyph == .warning && screen(.armed) { $0.errorCode = .unreachable }.glyph == .warning)
+        #expect(screen(nil).glyph == .idle && screen(.idle).glyph == .idle)
+        #expect(screen(.armed) { $0.notice = "Dictation removed" }.glyph == .koiDot)
+    }
+
+    @Test func labelsAreTheShortOnesFromTheSpec() {
+        #expect(screen(.armed).phaseText == "Ready")
+        #expect(screen(.connecting).phaseText == "Connecting…" && screen(.listening).phaseText == "Listening…")
+        #expect(screen(.correcting).phaseText == "Polishing…")
+        #expect(screen(.finished).phaseText == "Finished")
+        #expect(screen(.finished) { $0.kept = true }.phaseText == "Kept what was heard")
+        #expect(screen(.failed) { $0.errorCode = .unreachable }.phaseText == "Mac offline")
+        #expect(screen(.armed) { $0.errorCode = .unreachable }.phaseText == "Mac offline")
+        #expect(screen(nil).phaseText == "No session")
+    }
+
+    @Test func theFixLivesBehindTheInfoButton() {
+        let failed = screen(.failed) { $0.errorCode = .unreachable }
+        #expect(failed.detail == KeyboardError.unreachable.guidance && failed.phaseText.count < failed.detail!.count)
+        #expect(screen(.armed).detail == "Microphone stays active in Chirp. Idle audio is discarded. End session turns it off.")
+    }
+
+    @Test func everyErrorHasAShortCause() {
+        for code in KeyboardError.allCases {
+            #expect(!code.cause.isEmpty && code.cause.count <= 28 && code.cause != code.guidance)
+        }
+        #expect(Set(KeyboardError.allCases.map(\.cause)).count == KeyboardError.allCases.count)
+    }
+
+    @Test func chipsAppearOnlyWhenTheyApply() {
+        #expect(screen(.armed).chips == [.style])
+        #expect(screen(.listening).chips == [.cancel])
+        #expect(screen(.correcting).chips == [.cancel], "Polishing can still be cancelled")
+        #expect(screen(nil).chips.isEmpty)
+        let cleaned = screen(.finished) {
+            $0.isFinal = true; $0.ownsUtterance = true; $0.undoAvailable = true; $0.rawUntil = now.addingTimeInterval(4)
+        }
+        #expect(cleaned.chips == [.undo, .raw, .style] && cleaned.rawTitle == "Use raw (4s)")
+        #expect(screen(.finished) { $0.isFinal = true; $0.ownsUtterance = true }.chips == [.style], "Undo only after a final")
+    }
+
+    /// The heights come from `KeyboardMetrics`, the rows from the presenter: every state lays out all four rows, so
+    /// the keyboard is the same height in every state for a given width and size class.
+    @Test(arguments: [(393.0, false), (393.0, true), (852.0, true), (820.0, false), (1180.0, false), (320.0, false)])
+    func heightIsIdenticalInEveryState(width: Double, compact: Bool) {
+        let metrics = KeyboardMetrics.make(width: width, compactHeight: compact)
+        var heights = Set<Double>()
+        var states = 0
+        for phase in [KeyboardPhase?.none] + KeyboardPhase.allCases.map(Optional.some) {
+            for access in [true, false] { for final in [true, false] { for error in [KeyboardError?.none, .unreachable, .auth] {
+                for debug in [true, false] { for fallback in [true, false] {
+                    let s = screen(phase, access: access) {
+                        $0.isFinal = final; $0.ownsUtterance = final; $0.undoAvailable = final; $0.errorCode = error
+                        $0.debugRetention = debug; $0.fallback = fallback ? "Open Chirp manually." : nil
+                        $0.rawUntil = final ? now.addingTimeInterval(3) : nil; $0.compactHeight = compact
+                        $0.recordingStartedAt = now.addingTimeInterval(-9); $0.sessionExpiresAt = now.addingTimeInterval(300)
+                    }
+                    #expect(s.rows == [.strip, .primary, .chips, .keys])
+                    #expect(Set(s.chips).count == s.chips.count && s.chips.count <= 4)
+                    heights.insert(metrics.totalHeight); states += 1
+                }}
+            }}}
+        }
+        #expect(states > 100 && heights.count == 1)
+        #expect(metrics.stripHeight == 44)
+    }
+
+    @Test func totalHeightAddsTheFourRowsGapsAndPadding() {
+        let m = KeyboardMetrics.make(width: 393, compactHeight: false)
+        #expect(m.totalHeight == m.stripHeight + m.primaryHeight + m.chipHeight + m.keyHeight + 3 * m.spacing + 2 * m.verticalInset)
+        let phone = m.totalHeight
+        #expect(phone > 200 && phone < 260, "close to the system keyboard height, not a third taller")
+        #expect(KeyboardMetrics.make(width: 393, compactHeight: true).totalHeight < phone)
+        #expect(KeyboardMetrics.make(width: 820, compactHeight: false).totalHeight > phone)
+    }
+
+    @Test func rowsFitTheirTouchTargetsAndTextCaps() {
+        for (width, compact) in [(393.0, false), (393.0, true), (820.0, false), (1180.0, true)] {
+            let m = KeyboardMetrics.make(width: width, compactHeight: compact)
+            #expect(m.chipHeight >= 36 && m.keyHeight >= 36 && m.primaryHeight >= KeyboardMetrics.minimumPrimaryHeight)
+        }
+        #expect(KeyboardMetrics.maxStripTextPoints <= KeyboardMetrics.stripHeight / 2)
+    }
+
+    @Test func iPadAlignsTheStripAndChipsToThePrimaryColumn() {
+        #expect(KeyboardMetrics.make(width: 1024, compactHeight: false).maxPrimaryWidth == KeyboardMetrics.iPadColumnWidth)
+        #expect(KeyboardMetrics.make(width: 393, compactHeight: false).maxPrimaryWidth == nil)
     }
 }

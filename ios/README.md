@@ -386,40 +386,63 @@ Hardware keyboard (iPad): ⌘⇧R record/stop, ⌘⇧P pause/resume.
 Chirp Keyboard is voice-first: keep Apple's keyboard for typing and switch to
 Chirp to dictate. There is deliberately no QWERTY layout.
 
-Layout, top to bottom:
+The keyboard is in the Pond look of the Android strip: calm, compact, with one
+big control. Four rows, top to bottom, and **the height never changes** between
+states (every row always reserves its space; chips that don't apply are hidden,
+not removed):
 
-- **Status line** — phase, a keyboard-local **elapsed timer** while this
-  keyboard's own utterance is connecting/listening, and **time remaining** in
-  the session (omitted for "Never"), e.g. `Listening… · 0:07 · 12:30 left`.
-  Below it a detail line (collapsed in landscape iPhone) shows short,
-  content-free guidance for the session's error code (unreachable → check
-  Tailscale/Mac, auth → re-pair in Chirp, permission → microphone in Chirp,
-  timeout, interrupted, busy, too long, storage, …).
-- **One large primary button** (≥ 64 pt; full width on iPhone, capped at a
-  readable width and centered on iPad) whose role follows state: *Open Chirp
-  to start session* → *Start dictation* → *Stop dictation* → disabled
-  *Polishing…*. A small *Open Chirp* link appears only in fallback states.
-- **Secondary row** — **Cancel** (while recording), which becomes **Undo** for
-  5 s after the text lands; **Use raw** (shows the seconds left in its 5 s
-  window); and the **Style** menu. Undo removes exactly the dictation that just
-  landed, and only if the field still shows it as Chirp left it. Otherwise it
-  says "Text changed — nothing to undo".
-- **Bottom row** — globe (only when iOS asks for it), **Space**, **Delete**
-  (press and hold repeats, accelerating; it stops on release and if the
-  keyboard takes ownership of an utterance), **Return** and **End session**.
+- **Status strip** (one line, 44 pt) — a state glyph, a short label and, on the
+  right in tabular digits, a keyboard-local **elapsed timer** while this
+  keyboard's own utterance is listening, or the session's **time left**
+  (`4:12 left`, omitted for "Never"). Glyphs: a koi dot when ready or finished,
+  the **Ripple** while connecting or listening (a static koi ring with Reduce
+  Motion), a moon ✦ while polishing, a `record` ⚠ for a cause that needs
+  attention. Labels: *Ready*, *Listening…*, *Polishing…*, *Finished*, *Kept what
+  was heard*, or a one-line cause such as *Mac offline*. A small **DEBUG** badge
+  shows while the server keeps recordings. The **ⓘ** at the end opens the long,
+  content-free guidance (the session text, the fix for the error code:
+  Tailscale/Mac, re-pair in Chirp, microphone in Chirp, …, the Full Access
+  steps) as an overlay over the rows below, so the keys don't move.
+- **Primary control** (≥ 64 pt capsule; full width on iPhone, one centred
+  440 pt column on iPad that the strip and chips share) whose look follows state:
+  koi *Start dictation*, `record` *Stop* (while connecting or listening), moon
+  *Polishing…* (disabled), tonal *Open Chirp to start* when there is no session,
+  and a disabled tonal *Full Access required* (the ⓘ explains it).
+- **Chips** — Undo (for 5 s after the text lands) or Cancel (while recording),
+  **Use raw (4s)** (the seconds left in its 5 s window, only after a cleaned
+  final), *Open Chirp* in fallback states, and the **Style ▾** menu showing the
+  style's name (*Email*), with the Private session item. Undo removes exactly the
+  dictation that just landed, and only if the field still shows it as Chirp left
+  it. Otherwise it says "Text changed — nothing to undo".
+- **Typing row** — in the system keyboard's look (raised keycaps, 6 pt radius):
+  globe (only when iOS asks for it), **space**, **Delete** (press and hold
+  repeats, accelerating; it stops on release and if the keyboard takes
+  ownership of an utterance), **Return** and **End** (`mic.slash`, "End
+  session" to VoiceOver).
+
+Dynamic Type grows the strip, chip and key labels up to the AX3 size inside their
+fixed rows (the caps are in `KeyboardMetrics`), then truncates them; every control
+keeps its full VoiceOver label. Start and stop give a light haptic when Full
+Access is on. The status is an `updatesFrequently` element, the ticking timer is
+not announced, and each final is announced once.
+
+Simulator screenshots: Debug builds on a simulator can pin the keyboard to a
+named state by writing a one-word file `keyboard-preview` (`nosession`, `armed`,
+`listening`, `polishing`, `finished`, `kept`, `error`, `debug`, `noaccess`; add
+`+info` for the ⓘ overlay) into the App Group container's `Chirp` folder. It is
+compiled out of device and Release builds and carries no text.
 
 Start and stop give a light haptic when Full Access is on.
 
-1. Arm a session in the app first (see above). The keyboard shows "Session
-   armed".
-2. Tap **Start dictation**. The primary button reads *Open Chirp to start
-   session* when no session exists; tapping it tries to open Chirp via
+1. Arm a session in the app first (see above). The keyboard shows "Ready".
+2. Tap **Start dictation**. The primary button reads *Open Chirp to start*
+   when no session exists; tapping it tries to open Chirp via
    `chirp://session/start`; iOS may refuse this from a keyboard
    extension. The keyboard then tells you to open Chirp manually and return
    with the system Back-to-app affordance or the app switcher — automatic
    return is not possible.
 3. Live text appears in the field as partials and is replaced by the final.
-   **Stop dictation** finalizes; **Cancel** retracts the partial; **Use raw**
+   **Stop** finalizes; **Cancel** retracts the partial; **Use raw**
    (5 s window, only when clean-up changed the text) swaps the original back;
    **Style** picks the server's clean-up profile; **End session** stops the
    microphone.
@@ -494,14 +517,22 @@ rather than stopping or copying it. Stop that dictation in the keyboard.
 
 ## Companion controls (Action Button, Control Center, Shortcuts)
 
-Two iOS 18 controls — **Chirp dictation** (start) and **End Chirp session** —
-can be added to Control Center and the Action Button (supported hardware). App
-Shortcuts phrases: "Start dictation with Chirp", "Toggle dictation with
+Two iOS 18 controls — **Chirp dictation** (start, koi) and **End Chirp session**
+(`record`) — can be added to Control Center and the Action Button (supported
+hardware). App Shortcuts phrases: "Start dictation with Chirp", "Toggle dictation with
 Chirp", "Stop dictation with Chirp", "Cancel dictation with Chirp", "End session with Chirp". While a
 session runs, a Live Activity on the lock screen/Dynamic Island shows the
-content-free phase (e.g. "Microphone active · dictating") with Start/Stop/
-Cancel/End buttons; enable Live Activities for Chirp in system settings or
-session start refuses.
+content-free phase in the keyboard's words (*Ready*, *Listening…*, *Polishing…*)
+with *Microphone active · idle audio discarded* under it, a koi ring and waveform
+mark (a static ring while listening, since activities can't animate the Ripple),
+the system-counted listening timer, and Start/Stop/Cancel plus a `record`
+**End session** capsule on the Pond background. A status that has gone stale
+shows a moon "Status expired · open Chirp"; the DEBUG banner stays `record`.
+Live Notes has its own activity: the note title (set by the app, at most 60
+characters), "● Recording 3:12" with the `record` dot, and Pause/Resume and a
+`record` Stop. In the Dynamic Island the compact view is the ring and the timer,
+and the expanded view adds the label and the End/Stop buttons. Enable Live
+Activities for Chirp in system settings or session start refuses.
 
 Companion start runs in the background when a session is armed. With no
 session it opens Chirp for permission and setup rather than recording cold in

@@ -189,7 +189,7 @@ final class ChirpLiveServerUITests: XCTestCase {
         try selectChirpKeyboard(in: messages)
         let status = messages.staticTexts["chirp.keyboard.status"]
         guard status.waitForExistence(timeout: 10) else { dump("Messages keyboard", messages); XCTFail("Chirp Keyboard did not appear in Messages"); return }
-        XCTAssertTrue(waitFor(status, "label BEGINSWITH 'Session armed'", timeout: 10), status.label)
+        XCTAssertTrue(waitFor(status, "label == 'Ready'", timeout: 10), status.label)
         screenshot("Keyboard armed in Messages", messages)
         let primary = messages.buttons["chirp.keyboard.primary"]
         primary.tap()
@@ -201,7 +201,7 @@ final class ChirpLiveServerUITests: XCTestCase {
         XCTAssertTrue((field.value as? String ?? "").hasPrefix(expectedStart), "Mid-sentence casing: \(String(describing: field.value))")
         screenshot("Keyboard final in Messages", messages)
         messages.buttons["chirp.keyboard.end"].tap()
-        XCTAssertTrue(waitFor(status, "NOT label BEGINSWITH 'Session armed'", timeout: 10), status.label)
+        XCTAssertTrue(waitFor(status, "label != 'Ready'", timeout: 10), status.label)
     }
 
     /// Runs Chirp's App Shortcut from Spotlight, as a hardware-keyboard user would with ⌘Space or a Full

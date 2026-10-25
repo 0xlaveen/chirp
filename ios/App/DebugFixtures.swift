@@ -219,6 +219,10 @@ struct KeyboardTestHost: View {
                 if let i = args.firstIndex(of: "--chirp-auto-enter"), i + 1 < args.count {
                     model.preferences.autoEnter = args[i + 1]; model.savePreferences()
                 }
+                #if targetEnvironment(simulator)
+                // Screenshot runs: a sample Live Activity for the lock screen and Dynamic Island (Debug, simulator only).
+                if let i = args.firstIndex(of: "--chirp-activity-preview"), i + 1 < args.count { ChirpLiveActivity.preview(args[i + 1]) }
+                #endif
                 await model.pair(link: "chirp://pair?url=https%3A%2F%2Fsynthetic.test.ts.net%2Fchirp&token=synthetic-only")
                 guard model.paired else {
                     setup = "Simulator shared App Group/Keychain unavailable: " + model.notice
@@ -244,6 +248,10 @@ struct LiveKeyboardHost: UIViewRepresentable {
         view.autocorrectionType = .no
         view.spellCheckingType = .no
         view.selectedRange = NSRange(location: view.text.utf16.count, length: 0)
+        // Screenshot runs: show the keyboard without a tap (the system keeps the last-used keyboard).
+        if ProcessInfo.processInfo.arguments.contains("--chirp-keyboard-host-focus") {
+            DispatchQueue.main.async { view.becomeFirstResponder() }
+        }
         return view
     }
     func updateUIView(_ view: UITextView, context: Context) {}
