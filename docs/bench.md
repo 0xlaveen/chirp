@@ -1333,9 +1333,10 @@ native Intel Mac these same commands run without translation). Download the mode
 explicitly first if it is not already cached; no model download occurs at startup.
 
 ```sh
-uv python install cpython-3.13-macos-x86_64-none
+UV_PYTHON_INSTALL_DIR=/tmp/chirp-x86-python \
+  uv python install --no-bin cpython-3.13.17-macos-x86_64-none
 (cd server && UV_PROJECT_ENVIRONMENT=/tmp/chirp-intel-python \
-  uv sync --locked --python cpython-3.13-macos-x86_64-none)
+  uv sync --locked --python /tmp/chirp-x86-python/cpython-3.13.17-macos-x86_64-none/bin/python3.13)
 swift build --package-path mac --arch x86_64 --scratch-path /tmp/chirp-intel-mac-build
 python3 scripts/test-intel-mac.py --python /tmp/chirp-intel-python/bin/python \
   --mac "$(swift build --package-path mac --arch x86_64 \
@@ -1382,3 +1383,10 @@ slow hosts may need larger explicit budgets, a local compatible endpoint, or
 cleanup off. Plain speech dictation was verified separately without cleanup.
 Only timing, pass/fail and guard outcomes were recorded; no input or generated
 text was logged by these helper checks.
+
+Keep Intel interpreters outside uv's shared installation directory and pass their
+absolute path. Installing a newer x86_64 patch into uv's shared managed directory
+can change `uv python find 3.13` on Apple Silicon even with an arm64 PATH symlink;
+`--no-bin` alone does not isolate managed discovery. The isolated install above
+avoids changing other environments. The test host's original arm64 discovery and
+PATH link were restored after this was observed during validation.
