@@ -17,6 +17,8 @@ Open the local preview under `/chirp/`. The normal build uses only Python's stan
 
 Page fragments in `pages/` begin with a metadata comment (`title`, `description`, optional `section`, `class`, `base`). `layout.html` supplies navigation, social metadata and footer. `{{root}}` is the relative site root and `{{repo}}` is the public repository URL.
 
+`pages/get.html` is the canonical availability page and the **Get Chirp** navigation target. It must stay explicit that packaged apps for macOS, Linux, Windows, Android and iOS are coming soon, that every install today is a self-serve source build, and that pointing a coding agent at the repository is the recommended path. Keep that status aligned across the homepage hero and FAQ, the guides index, each platform guide and the footer whenever packaging changes.
+
 Use a committed capture from `docs/screenshots/`:
 
 ```html
@@ -35,7 +37,7 @@ Pillow is needed only for this authoring step. The responsive assets and source 
 
 ## Checks
 
-The build fails on broken relative links, missing anchors, duplicate IDs, stale source captures, malformed sitemap entries, missing canonical URLs, unresolved templates, missing image dimensions or alt text, mismatched encoded WebP dimensions, or **any deployed image above 400,000 bytes**. It also checks external scripts, styles and resource URLs, trackers, tailnet hosts, private addresses, tokens and personal paths. Regression tests mutate a temporary build to verify these guardrails reject invalid output.
+The build fails on broken relative links, missing anchors, duplicate IDs, stale source captures, malformed sitemap entries, missing canonical URLs, unresolved templates, missing image dimensions or alt text, mismatched encoded WebP dimensions, or **any deployed image above 400,000 bytes**. It also checks external scripts, styles and resource URLs, trackers, tailnet hosts, private addresses, tokens and personal paths. Regression tests mutate a temporary build to verify these guardrails reject invalid output, and assert that every page keeps the packaged-apps-coming-soon / self-serve footer and that the homepage and Get Chirp page keep their availability wording.
 
 Every indexable page appears once in `sitemap.xml`; `404.html` is excluded and marked noindex. `robots.txt` declares the public sitemap. Social cards use the approved pond artwork. External comparison citations are links, never fetched by the site or its build.
 

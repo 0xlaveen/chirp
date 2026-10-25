@@ -27,8 +27,32 @@ class PublicSiteChecks(unittest.TestCase):
     def test_valid_build(self):
         self.assertEqual(build.check(self.site), [])
 
+    def test_availability_message_is_clear(self):
+        index = (self.site / 'index.html').read_text()
+        get = (self.site / 'get.html').read_text()
+        self.assertIn('Packaged apps coming soon', index)
+        self.assertIn('Packaged macOS, Linux and Windows apps', index)
+        self.assertIn('Android APK', index)
+        self.assertIn('point a coding agent at the repo', index)
+        self.assertIn('self-serve', index)
+        self.assertIn('href="get.html"', index)
+        self.assertIn('Packaged apps are coming soon', index)
+        for phrase in [
+            'macOS, Linux, Windows, Android and iOS',
+            'build Chirp from source',
+            'point a coding agent at the repository',
+            'APK coming soon',
+            'App Store build coming soon',
+        ]:
+            self.assertIn(phrase, get)
+        # Every rendered page repeats the availability status in its footer.
+        for page in self.site.rglob('*.html'):
+            text = page.read_text()
+            self.assertIn('Packaged apps are coming soon', text, page.name)
+            self.assertIn('self-serve', text, page.name)
+
     def test_missing_anchor_and_responsive_candidate_fail(self):
-        self.change('index.html', 'href="#start"', 'href="#missing"')
+        self.change('index.html', 'href="get.html"', 'href="#missing"')
         self.change('index.html', 'notes-library-light-320.webp', 'missing-320.webp')
         errors = '\n'.join(build.check(self.site))
         self.assertIn('missing anchor #missing', errors)
