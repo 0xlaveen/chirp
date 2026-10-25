@@ -211,10 +211,12 @@ profiles; nothing here is validated for that path.
    connects right away (or type it and tap **Connect**). The link field is a
    secure field, capped at 16 KiB and cleared after use.
 4. Chirp verifies the authenticated connection before saving anything:
-   **Settings → Connection** then shows "Mac pairing saved" with the Mac's
-   tailnet host and recognition engine, so you can confirm you paired the
-   right machine, and **This device** with the name you gave it. A device
-   paired with the shared token shows how to switch to a named pairing. If the
+   **Settings → Connection** then shows a Connected banner with the Mac's
+   tailnet host, recognition engine and clean-up destination, so you can
+   confirm you paired the right machine, and **This device** with the name you
+   gave it. A device paired with the shared token shows how to switch to a
+   named pairing behind its ⓘ. **Forget pairing** asks first (it also ends the
+   session). If the
    pairing is revoked, Chirp says "Your Mac refused this device. Pair again
    in Chirp." The token itself is stored in the iOS Keychain. **Check Mac
    connection** re-verifies later; **Forget pairing** clears the token. The
@@ -250,8 +252,12 @@ custom keyboards automatically use Apple's keyboard.
 
 The app has four tabs: **Notes** (the start tab), **Dictate**, **History** and
 **Settings**. On iPhone they are a tab bar; on iPad, a sidebar that turns into a
-tab bar in a narrow window (the selected tab survives). Pairing lives in
-Settings → Connection and clean-up styles in Settings → Styles.
+tab bar in a narrow window (the selected tab survives). **Settings** is seven
+category rows — Connection, Microphone session, Dictation, Keyboard, Notes,
+Privacy & history, About — each with an icon and a live one-line summary, push
+navigation on iPhone and a two-pane split on iPad. Paragraph help sits behind
+the ⓘ on each row. Pairing lives in Settings → Connection; clean-up and styles
+in Settings → Dictation.
 
 **Dictate** is a blank page with one big orange mic: tap it to dictate, and it
 becomes a red Stop with rings rippling around it (a steady ring with Reduce
@@ -269,7 +275,8 @@ but iOS shows the microphone indicator throughout the armed session. That is
 expected; only **End session** turns the microphone off. Every surface (app,
 keyboard, Live Activity) exposes End session.
 
-Session length (Settings tab): **5 minutes (default), 15 minutes, 1 hour,
+Session length (Settings → Microphone session): **5 minutes (default), 15
+minutes, 1 hour,
 Never**. Never lasts until ended, interrupted, terminated or revoked — iOS may
 still suspend the app; indefinite background execution is not guaranteed.
 Interruptions (calls, Siri, route changes) and expiry end the session safely.
@@ -600,12 +607,14 @@ Nothing transcript-like ever appears on the lock screen.
 
 ## Clean-up and styles
 
-**Styles** tab. Clean-up starts off. The disclosure line says where it runs —
-"Sends final text to \<host\>" for an external destination — and enabling an
-external destination takes an explicit per-destination consent that suspends
-when the destination changes. Styles come from your Mac's authenticated
-profile list (Default, Chat, Email, … plus custom server profiles); each has an
-editable prompt with a **Reset to server default** button. The keyboard's
+**Settings → Dictation**. Clean-up starts off. The row's summary line says
+where it runs — "Sends final text to \<host\>" for an external destination —
+and enabling an external destination takes an explicit per-destination consent
+that suspends when the destination changes. Styles come from your Mac's
+authenticated profile list (Default, Chat, Email, … plus custom server
+profiles) as a selectable list (a checkmark on the selected style, a moon
+"Edited" capsule when its prompt was changed); each has an editable prompt
+with a **Reset to server default** button. The keyboard's
 **Style** menu mirrors the same server profiles (one Chirp has no name for
 shows its id, in the menu and on the button) and also holds **Private session ·
 exclude history**, the same switch as in Settings. On clean-up failure or
@@ -650,7 +659,7 @@ when it matters; surrounding editor text is never collected.
   next access — there is no background purge daemon.
 - **Diagnostics are content-free.** Version, OS, phase, fixed local error
   codes, durations and counts only — no transcripts, prompts, audio, URLs,
-  hosts, tokens or device identifiers. Settings → Content-free diagnostics also keeps
+  hosts, tokens or device identifiers. Settings → About → Diagnostics also keeps
   **timings of the last 50 dictations**: time to ready, to the first words,
   from stop to the final, polishing and audio length, plus the outcome
   (final, empty, kept, failed, cancelled), error code, where you dictated

@@ -27,13 +27,16 @@ final class ChirpLiveNotesUITests: XCTestCase {
         // Pair through Settings → Connection like the dictation live test.
         app.openConnection()
         app.endChirpSession()
-        if app.buttons["Forget pairing"].exists { app.buttons["Forget pairing"].tap() }
+        if app.buttons["chirp.pair.forget"].waitForExistence(timeout: 2) {
+            app.buttons["chirp.pair.forget"].tap()
+            if app.buttons["Forget"].waitForExistence(timeout: 3) { app.buttons["Forget"].tap() }
+        }
         let field = app.pairingLinkField()
         field.tap(); field.typeText(env["CHIRP_LIVE_LINK"]!)
         app.buttons["chirp.pair.submit"].tap()
-        XCTAssertTrue(app.staticTexts["Mac pairing saved"].waitForExistence(timeout: 15))
+        XCTAssertTrue(app.descendants(matching: .any).matching(identifier: "chirp.connection.banner").firstMatch.waitForExistence(timeout: 15))
         // Clean-up on, so segments are cleaned and Show raw has something to show (pairing again turned it off).
-        app.openStyles()
+        app.openDictation()
         let cleanup = ChirpNotesUITests.element("chirp.cleanup.enabled", in: app)
         XCTAssertTrue(cleanup.waitForExistence(timeout: 5))
         if cleanup.value as? String != "1" {
