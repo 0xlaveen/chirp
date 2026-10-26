@@ -24,49 +24,65 @@ public enum SpeakerPalette {
     }
 }
 
-/// What to tell the user about the Mac's speaker model and the labels, in the transcript and in Settings.
+/// What to tell the user about the Mac's speaker model and the labels, in the note and in Settings. Labels are on by
+/// default (#247): the Mac's server fetches its model by itself, so nothing here asks; it only says where things stand.
 public enum SpeakerNotice {
     /// The Mac's server can label speakers (health); an older one cannot.
     public static func available(_ health: Health?) -> Bool { health?.notesSpeakers == true }
 
-    /// Why speakers are not being labelled although the switch is on (nil: nothing to say).
-    public static func transcriptNote(on: Bool, health: Health?, recorderError: String?) -> String? {
-        guard on else { return nil }
-        if health != nil, !available(health) { return "Update Chirp on your Mac to label speakers." }
-        let state = health?.speakersModel?.state
-        if state == .downloading { return "Downloading the speaker model on your Mac…" }
-        if recorderError == "unavailable" || state == .notDownloaded || state == .failed {
-            return "The speaker model isn’t on your Mac. Turn Label speakers off and on to download it."
+    /// The one line in the note's banner slot while labels are on but not working yet.
+    public enum Status: Equatable, Sendable {
+        /// The model is being fetched (or the request is on its way); `size` is the server's own figure ("27 MB").
+        case preparing(size: String?)
+        /// The fetch failed, the model is damaged, or the request could not reach the Mac.
+        case failed
+        /// One segment could not be labelled; the next one tries again.
+        case lastSegment
+
+        public var text: String {
+            switch self {
+            case .preparing(let size): return "Getting the speaker model ready (\(size.map { $0 + ", " } ?? "")once)…"
+            case .failed: return "Couldn’t download the speaker model."
+            case .lastSegment: return "Couldn’t label the last segment’s speakers."
+            }
         }
-        if recorderError != nil { return "Couldn’t label the last segment’s speakers." }
-        return nil
+        public var canRetry: Bool { self == .failed }
+        public var canTurnOff: Bool { self != .lastSegment }
     }
 
-    /// Where the Mac's model stands, for the Settings row while the switch is on (nil: nothing to say yet).
-    public static func modelStatus(on: Bool, health: Health?) -> String? {
+    /// Why speakers are not being labelled although labels are on (nil: nothing to say). An old server gets no line and
+    /// no nag: Settings explains it. A missing model is a model state, never a reason to switch the preference off.
+    public static func status(on: Bool, health: Health?, recorderError: String?, requestFailed: Bool = false) -> Status? {
+        guard on, available(health) else { return nil }
+        let size = health?.speakersModel?.sizeBytes.map { "\(Int((Double($0) / 1_000_000).rounded())) MB" }
+        switch health?.speakersModel?.state {
+        case .downloading: return .preparing(size: size)
+        case .notDownloaded: return requestFailed ? .failed : .preparing(size: size)
+        case .failed: return .failed
+        case .ready, nil: break
+        }
+        if recorderError == "unavailable" { return .failed }
+        return recorderError == nil ? nil : .lastSegment
+    }
+
+    /// Where the Mac's model stands, for the Settings row while labels are on (nil: nothing to say yet).
+    public static func modelStatus(on: Bool, health: Health?, requestFailed: Bool = false) -> String? {
         guard on, available(health), let state = health?.speakersModel?.state else { return nil }
         switch state {
-        case .ready: return "Speaker model ready on your Mac."
-        case .downloading: return "Downloading the speaker model on your Mac…"
-        case .notDownloaded, .failed: return "The speaker model isn’t on your Mac. Turn Label speakers off and on to download it."
+        case .ready: return "Speaker model on your Mac: ready"
+        case .downloading: return "Speaker model on your Mac: downloading"
+        case .notDownloaded: return requestFailed ? "Speaker model on your Mac: couldn’t download" : "Speaker model on your Mac: starting download"
+        case .failed: return "Speaker model on your Mac: couldn’t download"
         }
     }
 
     /// The Settings row's summary line.
-    public static func summary(health: Health?) -> String {
+    public static func summary(on: Bool, health: Health?) -> String {
         if health != nil, !available(health) { return "Update Chirp on your Mac to label speakers" }
-        return "Off by default · who said what"
+        return on ? "On · who said what" : "Off · who said what"
     }
 
-    /// Turning the switch on needs the user's say-so unless the Mac already has (or is fetching) its model.
-    public static func needsConsent(health: Health?) -> Bool {
-        let state = health?.speakersModel?.state
-        return state != .ready && state != .downloading
-    }
-
-    public static let consentTitle = "Label speakers?"
-    public static let consentMessage = "Chirp tells voices apart on your Mac to show who said what. This needs a 27 MB speaker model on your Mac, downloaded once from Hugging Face. Voices are compared in your Mac’s memory only and never saved; names stay in this note."
-    public static let info = "Shows who said what in the transcript (Person 1, Person 2…; tap a name to rename it) and lets the notes say who owns a to-do. Your Mac tells the voices apart in its memory only: nothing about a voice is saved, on the Mac or on this phone. Turning it on asks before your Mac downloads its 27 MB speaker model."
+    public static let info = "Shows who said what in the transcript (Person 1, Person 2…; tap a name to rename it) and lets the notes say who owns a to-do. Your Mac tells the voices apart in its memory only: nothing about a voice is saved, on the Mac or on this phone. The first time, your Mac fetches its speaker model from Hugging Face (once; nothing about you is sent). Turn it off here at any time."
 }
 
 /// What the user can do about a person in the transcript: rename (everywhere in the note, optionally in the notes text

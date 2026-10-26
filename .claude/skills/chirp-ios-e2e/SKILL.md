@@ -14,6 +14,12 @@ ios/scripts/e2e-all.sh            # portable checks, then iPhone + iPad: build, 
 ios/scripts/e2e-all.sh --phone-only --skip-portable --dark
 ```
 
+Speaker labels alone (Live Notes "who said what"), a short batched run: portable checks, `LiveNotesControllerTests`, the synthetic speaker UI tests and the live one against the real server and WeSpeaker model (two `say` voices, Samantha then Daniel). The server downloads its 27 MB speaker model by itself on first use, so the first run needs network (Hugging Face; `HF_HOME` keeps it between runs) and takes a few extra minutes.
+
+```sh
+ios/scripts/e2e-all.sh --only speakers [--phone-only|--ipad-only] [--skip-portable]
+```
+
 It creates its own `iPhone chirp-e2e-<pid>` / `iPad chirp-e2e-<pid>` (simulator.sh only accepts devices whose name starts with iPhone or iPad) simulators (newest "iPhone N Pro" / "iPad Pro 13-inch" with a runtime that supports them), deletes them on exit (`--keep-devices` keeps them), prints a pass/fail table plus one row per UI test, and leaves evidence in `$CHIRP_E2E_OUT` (default `/tmp/chirp-ios-e2e-all.XXXX`). Use `CHIRP_E2E_IPHONE=<uuid>` / `CHIRP_E2E_IPAD=<uuid>` to reuse devices (those are never deleted). Run it with `koi run --` (about 20-40 minutes when nothing else is using the Mac; the first build is the slowest) and end your turn. Each stage that fails is retried once; a pass on retry is shown as such. Last sweep on this layout: iPhone 18 Pro and iPad Pro 13-inch (M5), iOS 27.0, all stages PASS, 47 unit tests each, 14 UI tests pass and 2 skip on iPhone, 11 pass and 5 skip on iPad. Skips (the table prints each reason): Spotlight does not open, no hardware keyboard for the ⌘ shortcuts, and on iPad the three synthetic keyboard-host tests ("System keyboard lost its globe key"; the live keyboard-in-Messages tests do cover the iPad keyboard).
 
 ## Cold start, step by step
@@ -56,6 +62,7 @@ It creates its own `iPhone chirp-e2e-<pid>` / `iPad chirp-e2e-<pid>` (simulator.
 | Action Button / Control Center / Shortcuts intents, widgets | Intent logic in `SessionCoordinatorTests`; `testLiveToggleShortcutFromSpotlightThenPaste` (often skips); Control Center controls **not automatable** | Controls and Action Button need the system gallery; check by hand or accept as a device gate |
 | Live Activity (lock screen) | `testLiveActivityOnLockScreen` | Content-free phase only |
 | Notes library: record, pause/resume, continue, structure, export, recovery migration | `ChirpLiveNotesUITests` (live), `ChirpNotesUITests` (synthetic: record/pause/resume/stop/transcript/export, settings, rotation), `LiveNotesControllerTests`, `NotesStoreTests` | Sealed relaunch, delete/Undo/Restore, search, reading/tasks, kept replay, iPad inspector and AX5 screenshots are in ChirpNotesUITests; migration and late-AI isolation are unit tested |
+| Speaker labels (on by default, no switch or consent; the Mac fetches its model itself) | `ChirpLiveSpeakersUITests` (live: default on → waits for "Speaker model on your Mac: ready" → exactly {Person 1, Person 2} → rename to Maya → kept-audio replay), `ChirpNotesUITests.testSpeakerChipsRenameMergeAndSeparate` and `testLabelSpeakersAreOnByDefaultAndSettingsTurnsThemOff` (synthetic), `LiveNotesControllerTests` and `SpeakersTests` (default on, legacy-`false` migration, explicit off, auto-download, Retry, old server) | Run with `e2e-all.sh --only speakers`. The live test needs a server whose model is **not** downloaded yet (the script's throwaway HOME is fresh; a warm `HF_HOME` only makes the fetch quick). Never read or paste names or text from it: it reads chip counts and labels only |
 | History (encrypted, opt-in) | live test above, `ChirpUITests.testHistoryOffAndAdaptiveOrientation` | |
 | iPad layouts, rotation | `ChirpUITests.testHistoryOffAndAdaptiveOrientation`, `ChirpNotesUITests.testNotesLibraryBatch`, `ChirpHardwareKeyboardUITests.testRotationDuringDictationKeepsUtterance`; everything runs on the iPad too | Split View/Stage Manager resizing is not automatable |
 | Hardware-keyboard shortcuts | `ChirpHardwareKeyboardUITests` | Skips unless a hardware keyboard is connected |

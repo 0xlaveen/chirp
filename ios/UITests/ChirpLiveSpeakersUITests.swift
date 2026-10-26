@@ -2,9 +2,9 @@ import XCTest
 
 /// Live Notes speaker labels end to end against a real local chirp-server and its real WeSpeaker model
 /// (`ios/scripts/simulator-e2e.sh`, `e2e-all.sh --only speakers`): two synthetic voices (macOS `say`, Samantha then
-/// Daniel, looped like a meeting) through `--chirp-sim-audio` and the rolling `/v1/stream` sockets. Turns Label
-/// speakers on through the consent alert (the server downloads its model), then requires exactly two people in the
-/// transcript, a rename from a chip that lands on every segment, and the replay of a labelled kept-audio segment.
+/// Daniel, looped like a meeting) through `--chirp-sim-audio` and the rolling `/v1/stream` sockets. Labels are on by
+/// default: it never touches the switch, waits for the server's own automatic model download to reach "ready" (no
+/// consent alert), then requires exactly two people in the transcript, a rename from a chip that lands on every segment, and the replay of a labelled kept-audio segment.
 /// Skipped unless the runner passes CHIRP_LIVE_LINK and CHIRP_LIVE_SPEAKERS_AUDIO. Reads state and counts, never text.
 final class ChirpLiveSpeakersUITests: XCTestCase {
     override func setUpWithError() throws {
@@ -47,19 +47,15 @@ final class ChirpLiveSpeakersUITests: XCTestCase {
         XCTAssertTrue(keepAudio.waitForExistence(timeout: 5))
         if keepAudio.value as? String != "1" { ChirpNotesUITests.flipInSheet(keepAudio, in: app) }
 
-        // The Mac has no speaker model yet: turning the switch on asks before anything downloads.
+        // Labels are on by default and the Mac has no speaker model yet: no switch to flip and no consent. The phone
+        // asks the Mac for its one pinned download itself; Settings follows it until the model is ready.
         let toggle = ChirpNotesUITests.element("chirp.notes.speakers.setting", in: app)
-        XCTAssertTrue(toggle.waitForExistence(timeout: 10)); XCTAssertEqual(toggle.value as? String, "0")
-        ChirpNotesUITests.flipInSheet(toggle, in: app)
-        screenshot("Speakers after the switch on the live server", app)
-        let download = app.buttons["Download"].firstMatch
-        XCTAssertTrue(download.waitForExistence(timeout: 10), "The switch must ask before the Mac downloads its model")
-        XCTAssertTrue(app.staticTexts["Label speakers?"].firstMatch.exists)
-        screenshot("Speakers consent from the live server", app)
-        download.tap()
+        XCTAssertTrue(toggle.waitForExistence(timeout: 10)); XCTAssertEqual(toggle.value as? String, "1", "Labels must be on by default")
+        XCTAssertFalse(app.alerts.firstMatch.exists, "The download starts without a prompt")
+        screenshot("Speakers on by default on the live server", app)
         let model = ChirpNotesUITests.element("chirp.notes.speakers.model", in: app)
-        XCTAssertTrue(ChirpNotesUITests.waitFor(model, "label BEGINSWITH 'Speaker model ready'", timeout: 240),
-                      "The consented download never made the model ready: \(model.exists ? model.label : "no status")")
+        XCTAssertTrue(ChirpNotesUITests.waitFor(model, "label == 'Speaker model on your Mac: ready'", timeout: 240),
+                      "The automatic download never made the model ready: \(model.exists ? model.label : "no status")")
         screenshot("Speakers model ready on the live server", app)
         app.buttons["Done"].tap()
 

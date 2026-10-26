@@ -26,7 +26,10 @@ struct LiveNotesControllerTests {
     final class SpeakerCalls: @unchecked Sendable {
         private let lock = NSLock()
         private var list: [SpeakersModelAction] = []
+        private var failing = false
         var actions: [SpeakersModelAction] { lock.withLock { list } }
+        /// Makes the Mac unreachable for the next requests (they are still recorded).
+        var fail: Bool { get { lock.withLock { failing } } set { lock.withLock { failing = newValue } } }
         func add(_ action: SpeakersModelAction) { lock.withLock { list.append(action) } }
     }
     @MainActor struct Fixture {
@@ -63,6 +66,7 @@ struct LiveNotesControllerTests {
             reorganize: { _, _, request in try await reorganize(request) },
             speakersModel: { [calls = values.speakerCalls] _, _, action in
                 calls.add(action)
+                if calls.fail { throw URLError(.cannotConnectToHost) }
                 return SpeakersModel(state: .downloading)
             },
             audio: audio, requestPermission: { values.permission },
@@ -96,7 +100,7 @@ struct LiveNotesControllerTests {
         #expect(f.notes.state == .paused && !f.audio.isRunning)
         try await eventually("segment committed while paused") { f.notes.document.segments.count == 1 }
         try await eventually("structured") { f.notes.document.text.contains("## Synthetic notes") }
-        #expect(f.notes.document.text.contains("- Synthetic words."))
+        #expect(f.notes.document.text.contains("Synthetic words."))
         try await eventually("activity paused") { f.values.activity.last == "update:paused" }
 
         await f.notes.resume()
@@ -390,46 +394,80 @@ struct LiveNotesControllerTests {
         return h
     }
 
-    @Test func speakerLabelsAreOffByDefaultAndStartAsksForNone() async throws {
+    @Test func speakerLabelsAreOnByDefaultWithoutAnyPromptOrStoredChoice() async throws {
         let f = try fixture(health: speakerHealth(.ready)); defer { f.clean() }
+        await f.notes.refreshHealth()
+        #expect(f.notes.labelSpeakers && f.notes.speakersAvailable && f.notes.recorder.labelSpeakers)
+        #expect(f.notes.speakerStatus == nil && f.values.speakerRequests.isEmpty)
         await f.notes.record()
         try await eventually("recording") { f.notes.state == .recording }
         await f.notes.stop()
-        #expect(!f.notes.labelSpeakers && f.notes.speakersAvailable)
-        #expect(!f.values.starts.isEmpty && f.values.starts.allSatisfy { !$0.contains("speakers") })
-        #expect(f.notes.document.segments.allSatisfy { $0.turns == nil })
+        #expect(!f.values.starts.isEmpty && f.values.starts.allSatisfy { $0.contains(#""speakers":{"session":""#) })
+        try await eventually("labelled segment") { f.notes.document.segments.contains { $0.turns?.count == 2 } }
+        // Nothing but the user's own choice is ever stored.
+        #expect(try f.store.loadPreferences().labelSpeakers == nil)
     }
 
-    @Test func turningLabelsOnAsksBeforeTheDownloadAndDecliningFetchesNothing() async throws {
+    @Test func aMissingModelIsFetchedWithoutAskingAndNeverSwitchesTheChoiceOff() async throws {
         let f = try fixture(health: speakerHealth(.notDownloaded)); defer { f.clean() }
         await f.notes.refreshHealth()
-        f.notes.setLabelSpeakers(true, from: .note)
-        #expect(f.notes.speakerConsent == .note && !f.notes.labelSpeakers && f.values.speakerRequests.isEmpty)
-        f.notes.dismissSpeakerConsent()
-        #expect(f.notes.speakerConsent == nil && !f.notes.labelSpeakers && f.values.speakerRequests.isEmpty)
-        f.notes.setLabelSpeakers(true)
-        #expect(f.notes.speakerConsent == .settings)
-        f.notes.confirmSpeakerDownload()
         try await eventually("download requested") { f.values.speakerRequests == [.download] }
-        #expect(f.notes.speakerConsent == nil && f.notes.labelSpeakers && f.notes.recorder.labelSpeakers)
-        #expect(try f.store.loadPreferences().labelSpeakers)
+        try await eventually("settled") { f.notes.speakerStatus == .preparing(size: nil) }
+        #expect(f.notes.labelSpeakers && f.notes.recorder.labelSpeakers && !f.notes.speakerRequestFailed)
+        #expect(f.notes.speakerStatus?.text == "Getting the speaker model ready (once)…")
+        #expect(try f.store.loadPreferences().labelSpeakers == nil)
+        // Recording starts at once; the labels apply once the Mac has the model.
+        await f.notes.record()
+        try await eventually("recording") { f.notes.state == .recording }
+        await f.notes.stop()
+        #expect(f.values.speakerRequests.allSatisfy { $0 == .download })
+        #expect(!f.notes.document.segments.isEmpty)
     }
 
-    @Test func aMacThatHasTheModelTurnsLabelsOnWithoutAsking() async throws {
-        let f = try fixture(health: speakerHealth(.ready)); defer { f.clean() }
+    @Test func aFailedFetchShowsRetryOnceAndRetryAsksAgain() async throws {
+        let f = try fixture(health: speakerHealth(.notDownloaded)); defer { f.clean() }
+        f.values.speakerCalls.fail = true
         await f.notes.refreshHealth()
-        f.notes.setLabelSpeakers(true)
-        #expect(f.notes.speakerConsent == nil && f.notes.labelSpeakers && f.values.speakerRequests.isEmpty)
+        try await eventually("request failed") { f.notes.speakerStatus == .failed }
+        let tries = f.values.speakerRequests.count
+        await f.notes.refreshHealth()
+        #expect(f.values.speakerRequests.count == tries)   // one try per failure, never a loop
+        #expect(f.notes.speakerStatus?.canRetry == true && f.notes.labelSpeakers)
+        f.values.speakerCalls.fail = false
+        f.notes.retrySpeakerModel()
+        try await eventually("retried") { f.values.speakerRequests.count == tries + 1 && f.notes.speakerStatus == .preparing(size: nil) }
+        #expect(f.values.speakerRequests.last == .download)
+    }
+
+    @Test func turnOffIsTheOnlyWriterAndKeepsLabelsOffFromThenOn() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("chirp-notes-unit-" + UUID().uuidString)
+        let secrets = MemorySecretStore()
+        let f = try fixture(root: root, secrets: secrets, health: speakerHealth(.notDownloaded)); defer { f.clean() }
+        await f.notes.refreshHealth()
+        try await eventually("download requested") { f.values.speakerRequests == [.download] }
         f.notes.setLabelSpeakers(false)
-        #expect(!f.notes.labelSpeakers && !f.notes.recorder.labelSpeakers)
+        #expect(!f.notes.labelSpeakers && !f.notes.recorder.labelSpeakers && f.notes.speakerStatus == nil)
+        #expect(try f.store.loadPreferences().labelSpeakers == false)
+        await f.notes.refreshHealth()
+        #expect(f.values.speakerRequests == [.download])   // off asks for nothing more
+        await f.notes.record()
+        try await eventually("recording") { f.notes.state == .recording }
+        await f.notes.stop()
+        #expect(f.values.starts.allSatisfy { !$0.contains("speakers") })
+        // A fresh launch respects the explicit off, and turning it on again asks nothing of a Mac that has its model.
+        let again = try fixture(root: root, secrets: secrets, health: speakerHealth(.ready)); defer { again.clean() }
+        await again.notes.refreshHealth()
+        #expect(!again.notes.labelSpeakers && !again.notes.recorder.labelSpeakers)
+        again.notes.setLabelSpeakers(true)
+        #expect(again.notes.labelSpeakers && again.notes.recorder.labelSpeakers && again.values.speakerRequests.isEmpty)
+        #expect(try again.store.loadPreferences().labelSpeakers == true)
     }
 
-    @Test func anOlderServerNeverGetsAskedForLabels() async throws {
+    @Test func anOlderServerGetsNoStartSpeakersNoStatusAndNoDownloadRequest() async throws {
         let f = try fixture(health: speakerHealth(nil, speakers: false)); defer { f.clean() }
-        var p = try f.store.loadPreferences(); p.labelSpeakers = true; try f.store.save(p)
         await f.notes.refreshHealth()
-        #expect(!f.notes.speakersAvailable && !f.notes.recorder.labelSpeakers)
-        #expect(f.notes.speakerNote == nil)   // the preference was loaded at launch, the note is for the transcript
+        #expect(f.notes.labelSpeakers && !f.notes.speakersAvailable && !f.notes.recorder.labelSpeakers)
+        #expect(f.notes.speakerStatus == nil && f.values.speakerRequests.isEmpty)   // no line, no nag, no request
         await f.notes.record()
         try await eventually("recording") { f.notes.state == .recording }
         await f.notes.stop()
@@ -439,7 +477,6 @@ struct LiveNotesControllerTests {
     @Test func labelledNotesKeepTwoPeopleThroughRenameMergeSeparateAndTheSealedLibrary() async throws {
         let f = try fixture(health: speakerHealth(.ready)); defer { f.clean() }
         await f.notes.refreshHealth()
-        f.notes.setLabelSpeakers(true)
         await f.notes.record()
         try await eventually("recording") { f.notes.state == .recording }
         await f.notes.stop()

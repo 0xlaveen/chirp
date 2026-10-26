@@ -35,7 +35,8 @@ final class LiveNotesController: ObservableObject {
         var reorganize: @Sendable (ServerConfig, URLSession, NotesReorganizeRequest) async throws -> NotesReorganizeResponse = {
             try await $0.reorganizeNotes($2, session: $1, timeout: 50)
         }
-        /// `POST /v1/speakers/model`: the Mac fetches (or drops) its speaker model, only after the user's say-so.
+        /// `POST /v1/speakers/model`: the Mac fetches (or drops) its speaker model. Labels are on by default, so the phone asks
+        /// for the one pinned download itself while they are on; Turn off stops asking.
         var speakersModel: @Sendable (ServerConfig, URLSession, SpeakersModelAction) async throws -> SpeakersModel = {
             try await $0.speakersModel($2, session: $1)
         }
@@ -91,11 +92,10 @@ final class LiveNotesController: ObservableObject {
     @Published private(set) var notice = ""
     @Published private(set) var preferences = NotesPreferences()
     @Published private(set) var starting = false
-    /// Where the consent dialog is open (nil: closed). Turning "Label speakers" on needs the Mac's speaker model, so the
-    /// switch asks first; only the screen the user flipped it on shows the dialog.
-    enum SpeakerConsentSource { case note, settings }
-    @Published var speakerConsent: SpeakerConsentSource?
+    /// The request for the Mac's speaker model could not reach it (the status line offers Retry).
+    @Published private(set) var speakerRequestFailed = false
     private var speakerPoll: Task<Void, Never>?
+    private var speakerRequest: Task<Void, Never>?
     /// Screen updates skipped while locked in battery saver (for the tests and the status line).
     private(set) var skippedUpdates = 0
 
@@ -194,6 +194,7 @@ final class LiveNotesController: ObservableObject {
         for context in sessions.values { context.recorder.onChange = nil; context.recorder.cancel() }
         deps.audio.stop()
         speakerPoll?.cancel(); speakerPoll = nil
+        speakerRequest?.cancel(); speakerRequest = nil
         stopTick?(); stopTick = nil
         observers.forEach(NotificationCenter.default.removeObserver); observers = []
     }
@@ -360,7 +361,7 @@ final class LiveNotesController: ObservableObject {
         defer { starting = false }
         guard await deps.requestPermission() else { notice = SessionFailure.permission.localizedDescription; return }
         serverBox.config = config
-        if let fresh = try? await deps.fetchHealth(config, deps.http), fresh.ok { health = fresh; recorder.serverAvailable() }
+        if let fresh = try? await deps.fetchHealth(config, deps.http), fresh.ok { health = fresh; recorder.serverAvailable(); fetchSpeakerModelIfNeeded(); pollSpeakerModel() }
         guard selected === target, !recorder.state.isActive, recordingID == nil, !deps.otherCaptureActive() else { return }
         configure()
         notice = ""
@@ -542,43 +543,58 @@ final class LiveNotesController: ObservableObject {
 
     /// The Mac's server can label speakers (health); an older one cannot.
     var speakersAvailable: Bool { SpeakerNotice.available(health) }
-    var labelSpeakers: Bool { preferences.labelSpeakers }
-    /// Why speakers are not being labelled although the switch is on, for the transcript.
-    var speakerNote: String? {
-        SpeakerNotice.transcriptNote(on: preferences.labelSpeakers, health: health, recorderError: recorder.speakerError)
+    /// On unless the user turned it off (`stored ?? true`).
+    var labelSpeakers: Bool { preferences.speakerLabelsOn }
+    /// The line in the note's banner slot while labels are on but not working yet (never modal; nil: nothing to say).
+    var speakerStatus: SpeakerNotice.Status? {
+        SpeakerNotice.status(on: labelSpeakers, health: health, recorderError: recorder.speakerError, requestFailed: speakerRequestFailed)
+    }
+    /// Where the Mac's model stands, for the Settings row.
+    var speakerModelStatus: String? {
+        SpeakerNotice.modelStatus(on: labelSpeakers, health: health, requestFailed: speakerRequestFailed)
     }
 
-    /// The switch: off at once; on asks first unless the Mac already has its model. Applies from the next segment.
-    func setLabelSpeakers(_ on: Bool, from source: SpeakerConsentSource = .settings) {
-        // What the Mac has is unknown until its health arrived: look first rather than ask about a download it may not need.
-        if on, health == nil, deps.server() != nil {
-            Task { await refreshHealth(); applyLabelSpeakers(on, from: source) }
-            return
-        }
-        applyLabelSpeakers(on, from: source)
-    }
-
-    private func applyLabelSpeakers(_ on: Bool, from source: SpeakerConsentSource) {
-        if on, SpeakerNotice.needsConsent(health: health) { speakerConsent = source; return }
+    /// The switch, Turn off and the note's menu: the only writers of the preference, so a stored `false` is the user's
+    /// own choice. Applies from the next segment. On fetches the Mac's model if it is missing; off stops looking at it.
+    func setLabelSpeakers(_ on: Bool) {
         preferences.labelSpeakers = on
+        speakerRequestFailed = false
         save()
+        if on {
+            if health == nil, deps.server() != nil { Task { await refreshHealth() } } else { fetchSpeakerModelIfNeeded() }
+        } else {
+            speakerPoll?.cancel(); speakerPoll = nil
+        }
     }
 
-    /// The consent dialog's Download: the Mac fetches its model (once), and labels start with the next segment.
-    func confirmSpeakerDownload() {
-        speakerConsent = nil
-        preferences.labelSpeakers = true
-        save()
+    /// The status line's Retry: fetch again (a damaged model is dropped first).
+    func retrySpeakerModel() {
+        guard labelSpeakers else { return }
+        speakerRequestFailed = false
+        let damaged = health?.speakersModel?.state == .ready
+        requestSpeakerModel(damaged ? [.remove, .download] : [.download])
+    }
+
+    /// Labels on and the Mac has no model: ask it for its one pinned download, without a prompt. Recording never waits for
+    /// it; labels start with the first segment after the model is ready. One try per failure, then Retry.
+    private func fetchSpeakerModelIfNeeded() {
+        guard labelSpeakers, speakersAvailable, health?.speakersModel?.state == .notDownloaded,
+              speakerRequest == nil, !speakerRequestFailed else { return }
+        requestSpeakerModel([.download])
+    }
+
+    private func requestSpeakerModel(_ actions: [SpeakersModelAction]) {
         guard let config = deps.server() else { return }
         let http = deps.http, request = deps.speakersModel
-        Task {
-            do { _ = try await request(config, http, .download) }
-            catch { notice = "Couldn’t reach your Mac to download the speaker model." }
-            await refreshHealth()
+        speakerRequest = Task { [weak self] in
+            var failed = false
+            do { for action in actions { _ = try await request(config, http, action) } } catch { failed = true }
+            guard let self else { return }
+            self.speakerRequestFailed = failed
+            await self.refreshHealth()
+            self.speakerRequest = nil
         }
     }
-
-    func dismissSpeakerConsent() { speakerConsent = nil }
 
     /// Rename a person everywhere in the note; `replaceInNotes` also swaps their old name in the notes' text.
     func renameSpeaker(_ person: Int, to name: String, replaceInNotes: Bool) {
@@ -620,12 +636,13 @@ final class LiveNotesController: ObservableObject {
         guard let fresh = try? await deps.fetchHealth(config, deps.http), fresh.ok else { return }
         health = fresh
         for context in sessions.values { context.recorder.serverAvailable(); configure(context) }
+        fetchSpeakerModelIfNeeded()
         pollSpeakerModel()
     }
 
     /// The Mac fetching its speaker model: look again shortly, until it is ready or failed.
     private func pollSpeakerModel() {
-        guard health?.speakersModel?.state == .downloading, speakerPoll == nil else { return }
+        guard labelSpeakers, health?.speakersModel?.state == .downloading, speakerPoll == nil else { return }
         speakerPoll = Task { [weak self] in
             guard let self else { return }
             await self.deps.sleep(.seconds(3))
@@ -644,7 +661,7 @@ final class LiveNotesController: ObservableObject {
             ? StartOptions(client: "ios", correction: correction, correctionProfile: CorrectionProfile.liveNotesID, wordTimings: true)
             : StartOptions(client: "ios", correction: correction, correctionProfile: CorrectionProfile.defaultID, wordTimings: true)
         recorder.serverHost = deps.server()?.host ?? ""
-        recorder.labelSpeakers = preferences.labelSpeakers && SpeakerNotice.available(h)
+        recorder.labelSpeakers = preferences.speakerLabelsOn && SpeakerNotice.available(h)
         recorder.configureStructuring(enabled: preferences.structureEnabled(health: h), health: h)
     }
 

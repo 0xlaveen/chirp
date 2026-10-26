@@ -32,3 +32,10 @@ Orientation, tab bar vs. top tabs (iPad) and Dynamic Type are worth a screenshot
 
 ## Stale state
 `ios/DerivedData` is per checkout. If a build misbehaves after switching branches: delete it. A reused simulator keeps the app's Keychain, pairing and keyboard settings: `xcrun simctl erase "$UDID"` (shut down first) for a clean start.
+
+## Speaker labels in the simulator
+- Labels are on by default (`NotesPreferences.labelSpeakers == nil` means on; only Turn off stores `false`). Nothing asks: when health says `speakers_model.state == not_downloaded` the app sends `POST /v1/speakers/model {"action":"download"}` itself, shows "Getting the speaker model ready (27 MB, once)…" in the note, and Settings → Notes follows the model ("Speaker model on your Mac: downloading / ready / couldn’t download").
+- `simulator-e2e.sh` hands the live test `TEST_RUNNER_CHIRP_LIVE_SPEAKERS_AUDIO` (a looped Samantha + Daniel WAV at 16 kHz) and plays it through `--chirp-sim-audio`; the real server compares voices with its WeSpeaker ResNet34-LM model. Chips are `chirp.notes.speaker.chip.*`; the live test expects exactly `{Person 1, Person 2}`.
+- Synthetic UI tests (`--chirp-ui-test`) use `LiveNotesController.syntheticHealth` (speakers on, model ready), so every synthetic recording is labelled.
+- A stored `false` from before the `speakerLabelsDefault` marker is cleared once on load; test it as JSON in `SpeakersTests`, not in the simulator.
+- Accessibility ids: `chirp.notes.speakers.setting` (Settings switch), `chirp.notes.speakers.toggle` (⋯ menu), `chirp.notes.speakers.model` (Settings status), `chirp.notes.speakers.note` / `.retry` / `.turnoff` (the note's status line).

@@ -43,6 +43,7 @@ struct NoteDetailView: View {
                             .accessibilityElement(children: .combine).accessibilityLabel(banner)
                             .accessibilityIdentifier("chirp.notes.notice")
                     }
+                    if let status = notes.speakerStatus { SpeakerStatusLine(notes: notes, status: status) }
                     HStack(spacing: 12) {
                         Button("Transcript", systemImage: "text.alignleft") { transcript.toggle() }
                             .buttonStyle(.bordered).buttonBorderShape(.capsule)
@@ -95,7 +96,6 @@ struct NoteDetailView: View {
             }.presentationDetents([.medium, .large]).presentationDragIndicator(.visible)
         }
         .sheet(isPresented: $settings) { NotesSettingsSheet(notes: notes) }
-        .speakerConsentAlert(notes, isPresented: notes.speakerConsent == .note)
         .fileExporter(isPresented: $exporting, document: NotesMarkdownFile(text: notes.markdown), contentType: NotesMarkdownFile.markdown,
                       defaultFilename: notes.exportName) { if case .success = $0 { notes.didExport() } }
         .confirmationDialog("Undo Organize?", isPresented: $confirmUndo, titleVisibility: .visible) {
@@ -195,7 +195,7 @@ struct NoteDetailView: View {
                 Button("Rename", systemImage: "pencil") { title = notes.document.title; renaming = true }
                 if notes.speakersAvailable {
                     Divider()
-                    Toggle("Label speakers", systemImage: "person.2", isOn: Binding(get: { notes.labelSpeakers }, set: { notes.setLabelSpeakers($0, from: .note) }))
+                    Toggle("Label speakers", systemImage: "person.2", isOn: Binding(get: { notes.labelSpeakers }, set: { notes.setLabelSpeakers($0) }))
                         .accessibilityIdentifier("chirp.notes.speakers.toggle")
                 }
                 Divider()
@@ -209,11 +209,6 @@ struct NoteDetailView: View {
     private var transcriptContent: some View {
         VStack(spacing: 0) {
             Toggle("Show raw", isOn: $showRaw).padding().accessibilityIdentifier("chirp.notes.raw")
-            if let note = notes.speakerNote {
-                Label(note, systemImage: "person.2").font(.footnote).foregroundStyle(Color.chirp.inkMuted)
-                    .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal).padding(.bottom, 10)
-                    .accessibilityIdentifier("chirp.notes.speakers.note")
-            }
             Divider()
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 16) {
@@ -360,16 +355,15 @@ struct NotesSettingsView: View {
             } footer: { Text("Off by default. Keep speech segments sealed on this device so you can replay them. Deleting audio keeps the text.") }
             Section {
                 Toggle("Label speakers", isOn: Binding(get: { notes.labelSpeakers }, set: { notes.setLabelSpeakers($0) }))
-                    .disabled(notes.health != nil && !notes.speakersAvailable && !notes.labelSpeakers)
+                    .disabled(notes.health != nil && !notes.speakersAvailable)
                     .accessibilityIdentifier("chirp.notes.speakers.setting")
-                if let status = SpeakerNotice.modelStatus(on: notes.labelSpeakers, health: notes.health) {
+                if let status = notes.speakerModelStatus {
                     Label(status, systemImage: "person.2").font(.footnote).foregroundStyle(Color.chirp.inkMuted)
                         .accessibilityIdentifier("chirp.notes.speakers.model")
                 }
-            } footer: { Text(SpeakerNotice.summary(health: notes.health) + ". " + SpeakerNotice.info) }
+            } footer: { Text(SpeakerNotice.summary(on: notes.labelSpeakers, health: notes.health) + ". " + SpeakerNotice.info) }
         }.scrollContentBackground(.hidden).background(Color.chirp.background).tint(Color.chirp.koi)
             .navigationTitle("Notes").task { await notes.refreshHealth() }
-            .speakerConsentAlert(notes, isPresented: notes.speakerConsent == .settings)
             .confirmationDialog("Delete all kept audio?", isPresented: $confirmDeleteAudio, titleVisibility: .visible) {
                 Button("Delete kept audio", role: .destructive) { Task { await notes.deleteAudio(all: true) } }
             } message: { Text("Notes and transcripts are kept. This cannot be undone.") }

@@ -368,17 +368,21 @@ Legacy recovery records migrate once under their existing IDs and appear as
 future schemas remain untouched. Documents that were only exported or held
 in memory by an older version cannot be recovered from that version.
 
-**Label speakers** (off by default; the note's ⋯ menu, or Settings → Notes) shows
-who said what. The transcript starts each person's turn with a colour dot and
+**Label speakers** (on by default; turn it off in the note's ⋯ menu, or Settings →
+Notes) shows who said what. The transcript starts each person's turn with a colour dot and
 a name on a tinted capsule (**Person 1**, **Person 2**…, numbered in the order
 they first speak; the inspector on iPad, a sheet on iPhone). Tap a capsule for
 **Rename…** (everywhere in the note, with an optional *also replace* in the
 notes text), **Same person as** (merge) and **Separate**. The notes the Mac
 structures read `Name: …` lines, so decisions and tasks say who owns them, and
 exports show the names. Your own Mac's server tells the voices apart, in its
-memory only; turning the switch on asks first, because the Mac downloads a 27 MB
-speaker model once from Hugging Face. An older server hides the switch with
-"Update Chirp on your Mac". Labels and names are saved inside the sealed note
+memory only. If the Mac has no speaker model yet, the phone asks it to fetch the
+pinned one once from Hugging Face (about 27 MB, SHA-256 checked) without a prompt:
+recording starts at once, and a line in the note, "Getting the speaker model ready
+(27 MB, once)…", offers **Turn off** (and **Retry** if the download failed). Only
+your own Turn off stores a choice; a missing or failed model never switches labels
+off. An older server leaves the switch in Settings disabled with "Update Chirp on
+your Mac" and shows no line. Labels and names are saved inside the sealed note
 and never logged; no voiceprint ever reaches the phone. The same protocol and
 rules as Android: [docs/privacy.md](../docs/privacy.md).
 
@@ -625,8 +629,8 @@ when it matters; surrounding editor text is never collected.
 
 ## Privacy & security
 
-- **Speaker labels are opt-in and keep no voiceprints.** *Label speakers* (off by
-  default) adds a random per-note session id to each Notes segment sent to your
+- **Speaker labels are on by default and keep no voiceprints.** *Label speakers*
+  (Settings → Notes or a note's ⋯ menu turns it off) adds a random per-note session id to each Notes segment sent to your
   own Mac's server, which compares voices in its memory only and returns who
   spoke which words; the phone stores those turns and your names inside the
   sealed note and never logs them. Details: [docs/privacy.md](../docs/privacy.md).
