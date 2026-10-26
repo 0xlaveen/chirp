@@ -52,10 +52,17 @@ final class SettingsWindowController: NSObject, NSTextFieldDelegate {
         let model = DevicesModel(store: PairedDevices.store, remoteHost: {
             let config = settings.serverConfig()
             return config.isLoopback ? nil : config.host
-        })
+        }, activity: { DeviceActivityClient(baseURL: settings.serverConfig().baseURL) })
         model.onChange = { [weak self] in self?.showDevices() }
         return model
     }()
+    /// Asks for device activity every few seconds, only while the Devices tab or the Activity sheet is on screen.
+    private lazy var activityPoller = ActivityPoller(schedule: ActivityPoller.timer) { [weak self] in
+        guard let self else { return }
+        Task { await self.devices.refreshActivity() }
+    }
+    private var activityView: DeviceActivityView?
+    private var activitySheet: NSWindow?
     private var testTask: Task<Void, Never>?
     private var window: NSWindow?
     private var tabs: SettingsShellController?
@@ -160,6 +167,7 @@ final class SettingsWindowController: NSObject, NSTextFieldDelegate {
     private func pageShown(_ tab: SettingsTab) {
         if tab == .advanced { refreshKeepLoaded() }
         if tab == .devices { refreshDevices() }
+        activityPoller.tabVisible = tab == .devices && window?.isVisible == true
     }
 
     // MARK: paired devices
@@ -171,7 +179,57 @@ final class SettingsWindowController: NSObject, NSTextFieldDelegate {
     }
 
     private func showDevices() {
-        form?.devicesView.apply(devices.phase, revoking: devices.revoking, problem: devices.problem)
+        form?.devicesView.apply(devices.phase, revoking: devices.revoking, problem: devices.problem, activity: devices.activity,
+                                keepProblem: devices.keepProblem)
+        if let activity = devices.activity.activity, activity.keep { activityView?.apply(activity) }
+        // Activity turned off (here or elsewhere) while the sheet is open: close it.
+        if activitySheet != nil, devices.activity.activity?.keep != true { closeActivitySheet() }
+    }
+
+    private func showActivitySheet() {
+        guard let window, let activity = devices.activity.activity, activitySheet == nil else { return }
+        let view = DeviceActivityView()
+        view.apply(activity)
+        view.onDone = { [weak self] in self?.closeActivitySheet() }
+        let sheet = NSWindow(contentRect: NSRect(origin: .zero, size: DeviceActivityView.size), styleMask: [.titled], backing: .buffered, defer: false)
+        sheet.contentView = view
+        sheet.isReleasedWhenClosed = false
+        activityView = view
+        activitySheet = sheet
+        activityPoller.sheetVisible = true
+        window.beginSheet(sheet)
+    }
+
+    private func closeActivitySheet() {
+        guard let sheet = activitySheet else { return }
+        window?.endSheet(sheet)
+        activitySheet = nil
+        activityView = nil
+        activityPoller.sheetVisible = false
+    }
+
+    /// "Keep device activity" flipped. Turning it off deletes the stored list, so it asks first.
+    private func keepActivity(_ on: Bool) {
+        guard !on else {
+            Task { await devices.setKeepActivity(true) }
+            return
+        }
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = ActivityText.confirmOffTitle()
+        alert.informativeText = ActivityText.confirmOffDetail
+        alert.addButton(withTitle: "Turn Off")
+        alert.addButton(withTitle: "Cancel")
+        alert.buttons[0].hasDestructiveAction = true
+        let handle: (NSApplication.ModalResponse) -> Void = { [weak self] response in
+            guard let self else { return }
+            if response == .alertFirstButtonReturn {
+                Task { await self.devices.setKeepActivity(false) }
+            } else {
+                self.showDevices()   // put the switch back
+            }
+        }
+        if let window, window.isVisible { alert.beginSheetModal(for: window, completionHandler: handle) } else { handle(alert.runModal()) }
     }
 
     private func confirmRevoke(_ device: PairedDevice) {
@@ -276,6 +334,8 @@ final class SettingsWindowController: NSObject, NSTextFieldDelegate {
         form.rotateButton.target = self
         form.rotateButton.action = #selector(rotateSharedToken)
         form.devicesView.onRevoke = { [weak self] in self?.confirmRevoke($0) }
+        form.devicesView.onShowActivity = { [weak self] in self?.showActivitySheet() }
+        form.devicesView.onKeepActivity = { [weak self] in self?.keepActivity($0) }
         form.devicesView.onResize = { [weak self] in self?.tabSizeChanged() }
         form.notesButton.target = self
         form.notesButton.action = #selector(openNotes)
@@ -410,6 +470,13 @@ final class SettingsWindowController: NSObject, NSTextFieldDelegate {
         w.contentMaxSize = SettingsShell.size
         w.isReleasedWhenClosed = false
         w.center()
+        // Closing the window stops the activity poll; showing it again starts it with the tab.
+        NotificationCenter.default.addObserver(forName: NSWindow.willCloseNotification, object: w, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated {
+                self?.closeActivitySheet()
+                self?.activityPoller.tabVisible = false
+            }
+        }
         return w
     }
 

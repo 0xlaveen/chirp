@@ -146,28 +146,53 @@ public enum DevicesPhase: Equatable, Sendable {
     case unavailable(String)
 }
 
+/// What Settings → Devices shows of the server's activity: nothing (remote server, no owner token, refused), a one-line
+/// "update the server" note, or the activity itself.
+public enum ActivityPhase: Equatable, Sendable {
+    case hidden
+    case outdated
+    case shown(DeviceActivity)
+
+    public var activity: DeviceActivity? {
+        if case .shown(let activity) = self { activity } else { nil }
+    }
+}
+
 /// The Devices tab's list. Revoking runs the CLI, then reloads the list from it, so what shows is what the server has.
+/// Activity (who used the server, when) comes from the server's owner-only endpoint, only while the server is on this Mac.
 @MainActor
 public final class DevicesModel {
     public private(set) var phase: DevicesPhase = .loading { didSet { if phase != oldValue { onChange?() } } }
     /// The device whose revoke is running, and the last revoke's problem.
     public private(set) var revoking: String? { didSet { if revoking != oldValue { onChange?() } } }
     public private(set) var problem: String? { didSet { if problem != oldValue { onChange?() } } }
+    public private(set) var activity: ActivityPhase = .hidden { didSet { if activity != oldValue { onChange?() } } }
+    /// Why the last "Keep device activity" change did not apply.
+    public private(set) var keepProblem: String? { didSet { if keepProblem != oldValue { onChange?() } } }
     public var onChange: (() -> Void)?
     private let store: any DeviceStoring
+    private let activityServer: @MainActor () -> (any DeviceActivityFetching)?
     private let remoteHost: () -> String?
     private var generation = 0
+    private var activityGeneration = 0
 
-    /// `remoteHost` is the server's host when Chirp points at another machine, else nil.
-    public init(store: any DeviceStoring, remoteHost: @escaping () -> String? = { nil }) {
+    /// `remoteHost` is the server's host when Chirp points at another machine, else nil. `activity` gives the client for the
+    /// server as it is now (the URL can change); without one there is no activity part at all.
+    public init(store: any DeviceStoring, remoteHost: @escaping () -> String? = { nil },
+                activity: @escaping @MainActor () -> (any DeviceActivityFetching)? = { nil }) {
         self.store = store
         self.remoteHost = remoteHost
+        self.activityServer = activity
     }
 
     public func refresh() async {
         generation += 1
         let g = generation
-        if let host = remoteHost() { phase = .remote(host); return }
+        if let host = remoteHost() {
+            phase = .remote(host)
+            activity = .hidden
+            return
+        }
         do {
             let devices = try await store.list()
             guard g == generation else { return }
@@ -176,6 +201,35 @@ public final class DevicesModel {
             guard g == generation else { return }
             phase = .unavailable(error.message)
         }
+        await refreshActivity()
+    }
+
+    /// Asks the server for its activity again (the poll, and after a change of the switch). A remote server, a missing
+    /// owner token or a refusal hides it; a failed request keeps what was shown.
+    public func refreshActivity() async {
+        activityGeneration += 1
+        let g = activityGeneration
+        guard let activityServer = activityServer(), remoteHost() == nil else { activity = .hidden; return }
+        do {
+            let fetched = try await activityServer.fetch()
+            guard g == activityGeneration else { return }
+            activity = .shown(fetched)
+        } catch {
+            guard g == activityGeneration else { return }
+            switch error {
+            case .outdated: activity = .outdated
+            case .hidden: activity = .hidden
+            case .failed: break
+            }
+        }
+    }
+
+    /// "Keep device activity": off stops recording and deletes the stored list.
+    public func setKeepActivity(_ keep: Bool) async {
+        guard let activityServer = activityServer() else { return }
+        keepProblem = nil
+        do { try await activityServer.setKeep(keep) } catch { keepProblem = ActivityText.keepFailure(error) }
+        await refreshActivity()
     }
 
     public func revoke(_ device: PairedDevice) async {
