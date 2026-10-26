@@ -366,6 +366,24 @@ class NotesSpeakersTest {
         assertEquals(4, suggestions(listOf("A", "B", "C", "D", "E"), "", emptySet()).size)
     }
 
+    @Test fun `batch merges replace every original name and persist together`() {
+        val rig = NotesModelRig(RuntimeEnvironment.getApplication(), speakersMac)
+        rig.model.recorder.document.apply { roster.id(0, "g"); roster.id(1, "g"); roster.id(2, "g") }
+        rig.model.edit(androidx.compose.ui.text.input.TextFieldValue("Person 1 and Person 2 and Person 3"))
+        rig.model.renameSpeakers(mapOf(1 to "Maya"), replaceInNotes = true, merges = linkedMapOf(3 to 2, 2 to 1))
+        assertEquals("Maya and Maya and Maya", rig.model.document.text)
+        assertEquals(listOf(1, 1, 1), (1..3).map(rig.model.document.roster::resolve))
+    }
+
+    @Test fun `samples start at the person's turn within the segment`() {
+        val document = NotesDocument()
+        document.roster.id(0, "g"); document.roster.id(1, "g")
+        document.append(NotesSegment(0, 30.0, "hello", "Hello.", turns = listOf(
+            SpeakerTurn(1, 31.5, "Hello."), SpeakerTurn(2, 34.0, "Hi."))))
+        assertEquals(1500, document.sampleOffset(1)); assertEquals(4000, document.sampleOffset(2))
+        assertEquals(0, document.sampleOffset(9))
+    }
+
     @Test fun `a person's first line is what they said first, merges included`() {
         val document = labelledDocument()
         assertEquals(0 to "We ship Friday.", document.firstTurn(1)); assertEquals(0 to "Okay.", document.firstTurn(2))
@@ -526,6 +544,22 @@ class NotesSpeakersRenderTest {
         compose.onNodeWithText("Who was speaking?").assertDoesNotExist()
     }
 
+    @Test @Config(qualifiers = "w840dp-h700dp-mdpi") fun `Fold inner screen uses a dialog in light and dark`() {
+        val output = File(System.getProperty("chirp.screenshots")).apply { mkdirs() }
+        val rig = rig()
+        val dark = mutableStateOf(false)
+        compose.setContent { dev.chirp.android.ui.ChirpTheme(dark.value) { NameSpeakersSheet(rig.model) {} } }
+        compose.onNodeWithTag("name_speakers_dialog").assertIsDisplayed()
+        compose.onNodeWithTag("name_speakers_done").assertIsDisplayed()
+        for (night in listOf(false, true)) {
+            compose.runOnIdle { dark.value = night }; compose.mainClock.advanceTimeBy(2000); compose.waitForIdle()
+            val bitmap = notesScreenshot(compose.onRoot(), false)
+            File(output, "notes-speakers-name-dialog-${if (night) "dark" else "light"}.png").outputStream().use {
+                bitmap.compress(Bitmap.CompressFormat.PNG, 100, it)
+            }
+        }
+    }
+
     @Test @Config(qualifiers = "w411dp-h891dp-mdpi") fun `Name speakers can merge a person, and Cancel changes nothing`() {
         val rig = rig()
         rig.model.toggle(); rig.idle(); rig.wire.final("Bye."); rig.idle()
@@ -542,7 +576,14 @@ class NotesSpeakersRenderTest {
         compose.onNode(hasText("Same as ▸") and hasAnyAncestor(hasTestTag("name_speaker_3"))).performClick()
         compose.onNode(hasText("Person 1") and hasAnyAncestor(isPopup())).performClick()
         compose.waitForIdle()
-        assertEquals(1, rig.model.document.roster.resolve(3))
+        assertEquals("merge is only a draft", 3, rig.model.document.roster.resolve(3))
         compose.onNodeWithTag("name_speaker_3").assertDoesNotExist()
+        compose.onNodeWithText("Cancel").performClick()
+        assertEquals(3, rig.model.document.roster.resolve(3))
+        compose.onAllNodesWithText("Name speakers").onLast().performClick()
+        compose.onNode(hasText("Same as ▸") and hasAnyAncestor(hasTestTag("name_speaker_3"))).performClick()
+        compose.onNode(hasText("Person 1") and hasAnyAncestor(isPopup())).performClick()
+        compose.onNodeWithTag("name_speakers_done").performClick()
+        assertEquals(1, rig.model.document.roster.resolve(3))
     }
 }

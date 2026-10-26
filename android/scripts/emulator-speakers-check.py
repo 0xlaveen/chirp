@@ -57,7 +57,7 @@ def check(probe, work, output, standalone=False):
             if now and any(f.get('text') == name for f in now): return
             adb('shell', 'input', 'keycombination', 'KEYCODE_CTRL_LEFT', 'KEYCODE_A')
             adb('shell', 'input', 'keyevent', 'KEYCODE_DEL')
-        raise AssertionError('Could not type %s into the field' % name)
+        raise AssertionError('Could not fill the speaker name field')
 
     def tap(label): adb('shell', 'input', 'tap', *map(str, probe['center'](probe['wait_for'](label, 30))))
 
@@ -117,6 +117,9 @@ def check(probe, work, output, standalone=False):
     type_into(sorted(fields, key=lambda n: probe['center'](n)[1])[0], 'Sam')
     adb('shell', 'input', 'keyevent', 'KEYCODE_BACK')  # closes the keyboard
     screenshot('emulator-speakers-name-sheet.png')
+    tap('Play a sample of Person 1')
+    probe['wait_for']('Stop sample', 30)
+    tap('Stop sample')
     tap('Done')
     deadline = time.monotonic() + 20
     while probe['find']('Who was speaking?') is not None:

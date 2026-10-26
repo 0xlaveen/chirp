@@ -163,6 +163,14 @@ internal class NotesDocument(var startedAt: Long = System.currentTimeMillis(), t
         return null
     }
 
+    /** Seek within the kept segment to this person's first spoken turn. */
+    fun sampleOffset(person: Int): Int {
+        val first = firstTurn(person) ?: return 0
+        val segment = committed.first { it.id == first.first }
+        val turn = segment.turns.orEmpty().first { roster.resolve(it.person) == person && it.text.isNotBlank() }
+        return ((turn.start - segment.offset).coerceAtLeast(0.0) * 1000).toInt()
+    }
+
     fun renameSpeaker(person: Int, name: String?) { roster.rename(person, name); speakerVersion++ }
     fun mergeSpeaker(person: Int, into: Int) { roster.merge(person, into); speakerVersion++ }
     fun separateSpeaker(person: Int) { roster.separate(person); speakerVersion++ }

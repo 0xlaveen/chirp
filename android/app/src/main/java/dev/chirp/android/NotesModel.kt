@@ -340,18 +340,20 @@ internal class NotesModel(
      * Name several people at once (blank goes back to "Person N"); [replaceInNotes] also swaps each old name in the notes'
      * text, in one pass. Naming anyone settles the "Who was speaking?" line.
      */
-    fun renameSpeakers(names: Map<Int, String>, replaceInNotes: Boolean = false) {
+    fun renameSpeakers(names: Map<Int, String>, replaceInNotes: Boolean = false, merges: Map<Int, Int> = emptyMap()) {
         val document = recorder.document
-        val renames = LinkedHashMap<String, String>()
+        val oldNames = document.roster.active.associateWith(document.roster::displayName)
+        for ((person, into) in merges) document.mergeSpeaker(person, into)
         for ((person, name) in names) {
-            val old = document.roster.displayName(person)
-            if (name.trim().ifEmpty { "Person ${document.roster.resolve(person)}" } == old) continue
-            document.renameSpeaker(person, name)
-            renames[old] = document.roster.displayName(person)
+            val target = document.roster.resolve(person)
+            if (name.trim().take(SpeakerRoster.MAX_NAME).ifEmpty { "Person $target" } != document.roster.displayName(target))
+                document.renameSpeaker(target, name)
         }
+        val renames = oldNames.mapNotNull { (id, old) ->
+            document.roster.displayName(id).let { if (it != old) old to it else null }
+        }.toMap()
         namePromptFor = null
-        if (renames.isEmpty()) return
-        if (replaceInNotes) edit(TextFieldValue(document.replacingNames(renames)))
+        if (replaceInNotes && renames.isNotEmpty()) edit(TextFieldValue(document.replacingNames(renames)))
         sync(); keep(now = true)
     }
 

@@ -13,6 +13,12 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.material3.Surface
+import androidx.compose.ui.platform.LocalWindowInfo
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.window.Dialog
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardActions
@@ -65,27 +71,30 @@ import androidx.compose.ui.unit.dp
 @Composable
 internal fun NameSpeakersSheet(model: NotesModel, dismiss: () -> Unit) {
     val document = model.document
-    val roster = document.roster
+    val roster = remember(document) { SpeakerRoster.fromJson(document.roster.toJson()) }
+    val merges = remember(document) { mutableStateMapOf<Int, Int>() }
     LaunchedEffect(Unit) { model.loadRecentNames() }
     val player = remember(model.library) { model.library?.let(::NotesAudioPlayer) }
     val playing by (player?.playing ?: remember { kotlinx.coroutines.flow.MutableStateFlow<NotesClipRef?>(null) }).collectAsState()
     androidx.compose.runtime.DisposableEffect(player) { onDispose { player?.stop() } }
     // What is typed, by person; a person with no entry shows the name they have now.
     val drafts = remember { mutableStateMapOf<Int, String>() }
-    val people = roster.active
+    var samplePerson by remember { mutableStateOf<Int?>(null) }
+    val people = merges.size.let { roster.active }
     fun draft(id: Int) = drafts[id] ?: roster.person(id)?.name.orEmpty()
     // Old display name → new one, for the people whose name would change.
-    val renames = people.mapNotNull { id ->
-        val new = draft(id).trim().ifEmpty { "Person $id" }
-        roster.displayName(id).let { old -> if (old != new) old to new else null }
+    val renames = document.roster.active.mapNotNull { id ->
+        val target = roster.resolve(id)
+        val new = draft(target).trim().ifEmpty { "Person $target" }
+        document.roster.displayName(id).let { old -> if (old != new) old to new else null }
     }.toMap()
     val count = remember(document.version, document.speakerVersion, renames) { document.nameCount(renames.keys) }
     var replace by remember { mutableStateOf(true) }
     var focused by remember { mutableStateOf<Int?>(null) }
     val used = people.map { draft(it).trim().lowercase() }.toSet()
-    fun finish() { model.renameSpeakers(people.associateWith { draft(it) }, replace && count > 0); dismiss() }
+    fun finish() { model.renameSpeakers(people.associateWith { draft(it) }, replace && count > 0, merges.toMap()); dismiss() }
 
-    ModalBottomSheet(dismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+    val content: @Composable () -> Unit = {
         Column(Modifier.imePadding().navigationBarsPadding().padding(horizontal = 24.dp).padding(bottom = 16.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("Name speakers", Modifier.weight(1f).semantics { heading() }, style = MaterialTheme.typography.titleLarge)
@@ -99,14 +108,14 @@ internal fun NameSpeakersSheet(model: NotesModel, dismiss: () -> Unit) {
                     if (index > 0) HorizontalDivider(Modifier.padding(vertical = 8.dp))
                     val first = document.firstTurn(id)
                     val clip = first?.let { (segment, _) -> document.audio.firstOrNull { it.segment == segment } }
-                    val isPlaying = clip != null && playing == NotesClipRef(document.uid, clip.segment)
+                    val isPlaying = samplePerson == id && clip != null && playing == NotesClipRef(document.uid, clip.segment)
                     SpeakerRow(roster, id, draft(id), { drafts[id] = it.take(SpeakerRoster.MAX_NAME) }, focused == id,
                         { if (it) focused = id else if (focused == id) focused = null }, finish = ::finish,
                         sample = first?.second, playing = isPlaying, play = clip?.let { c ->
-                            { if (isPlaying) player?.stop() else player?.play(document.uid, c.segment) }
+                            { if (isPlaying) player?.stop() else { samplePerson = id; player?.play(document.uid, c.segment, document.sampleOffset(id)) } }
                         },
                         suggestions = if (focused == id) suggestions(model.recentNames, draft(id), used - draft(id).trim().lowercase()) else emptyList(),
-                        merge = { into -> player?.stop(); drafts.remove(id); model.mergeSpeaker(id, into) },
+                        merge = { into -> player?.stop(); drafts.remove(id); roster.merge(id, into); merges[id] = into },
                         others = people.filter { it != id })
                 }
             }
@@ -115,6 +124,15 @@ internal fun NameSpeakersSheet(model: NotesModel, dismiss: () -> Unit) {
                 Text("Also replace names in the notes (${if (count == 1) "1 place" else "$count places"})", style = MaterialTheme.typography.bodyMedium)
             }
         }
+    }
+    val windowWidth = with(LocalDensity.current) { LocalWindowInfo.current.containerSize.width.toDp() }
+    if (windowWidth >= 600.dp) {
+        Dialog(onDismissRequest = dismiss) {
+            Surface(Modifier.widthIn(max = 640.dp).heightIn(max = 680.dp).testTag("name_speakers_dialog"),
+                shape = MaterialTheme.shapes.extraLarge) { content() }
+        }
+    } else {
+        ModalBottomSheet(dismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) { content() }
     }
 }
 
