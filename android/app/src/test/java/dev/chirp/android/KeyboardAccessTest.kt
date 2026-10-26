@@ -117,11 +117,11 @@ class KeyboardAccessTest {
     }
     @Test fun `cleaned final announces use raw once and the chip is not a second live region`() {
         listen(); finish(corrected = true)
-        assertEquals("Cleaned, Use raw available", strip.status.contentDescription.toString())
+        assertEquals("Polished, Use raw available", strip.status.contentDescription.toString())
         assertEquals(View.VISIBLE, strip.raw.visibility)
         assertEquals(View.ACCESSIBILITY_LIVE_REGION_NONE, strip.raw.accessibilityLiveRegion)
         assertEquals(View.ACCESSIBILITY_LIVE_REGION_NONE, strip.revert.accessibilityLiveRegion)
-        voice.beforeEdit(); assertFalse(strip.status.contentDescription.toString().startsWith("Cleaned"))
+        voice.beforeEdit(); assertFalse(strip.status.contentDescription.toString().startsWith("Polished"))
     }
     @Test fun `announcement counts words in the final`() {
         listen(); assertTrue(voice.hardware(chord)); advance(0)

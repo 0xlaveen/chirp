@@ -2,7 +2,7 @@ package dev.chirp.android.shell
 
 
 internal enum class SetupNeed(val title: String, val action: String, val section: String) {
-    Pair("Pair your computer", "Scan code", "pair"),
+    Pair("Pair your computer", "Pair computer", "pair"),
     Microphone("Allow the microphone", "Allow", "microphone"),
     Keyboard("Turn on Chirp Keyboard", "Set up", "input"),
     FloatingMic("Turn on the floating mic", "Set up", "input"),

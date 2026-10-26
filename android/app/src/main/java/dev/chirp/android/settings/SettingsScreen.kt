@@ -81,7 +81,7 @@ internal fun SettingsScreen(state: SetupState, actions: SettingsActions = Settin
 /** A page: large title that collapses as the rows scroll under it, with Back on the cover screen. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun PageScaffold(title: String, back: (() -> Unit)?, scroll: ScrollState, modifier: Modifier = Modifier,
+internal fun PageScaffold(title: String, back: (() -> Unit)?, scroll: ScrollState, modifier: Modifier = Modifier,
                          content: @Composable ColumnScope.() -> Unit) {
     val behaviour = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
     Scaffold(modifier, topBar = {

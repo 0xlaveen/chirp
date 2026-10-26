@@ -49,7 +49,7 @@ class SettingsScreenTest {
     private val tree = linkedMapOf<SettingsPage?, List<String>>(
         null to listOf("Connection", "How you dictate", "Dictation", "Keyboard", "Feedback & look", "Notes", "Privacy & history", "About"),
         SettingsPage.Connection to listOf("Check connection", "Change pairing", "Forget pairing", "Use this phone's recogniser"),
-        SettingsPage.Dictation to listOf("Clean-up · Correction on your computer", "Styles", "Stop dictation", "Spoken commands",
+        SettingsPage.Dictation to listOf("Clean-up", "Styles", "Stop dictation", "Spoken commands",
             "Press Send after dictating", "Learn from my edits", "Learned"),
         SettingsPage.HowYouDictate to listOf("Use Chirp Keyboard", "Keep my keyboard", "Other ways to dictate"),
         SettingsPage.Keyboard to listOf("Keyboard look", "Swipe typing", "Hardware keyboard shortcut", "Larger mic on the inner screen",
@@ -92,7 +92,7 @@ class SettingsScreenTest {
         val (state, history, updates) = settingsFixture()
         show(state, history, updates)
         open(SettingsPage.Dictation)
-        compose.onNodeWithText("Clean-up · Correction on your computer").performClick()
+        compose.onNode(hasText("Clean-up") and isToggleable()).performClick()
         compose.onNodeWithText("Clean-up off · stops on tap").assertExists()
         open(SettingsPage.Feedback)
         compose.onNodeWithText("Haptic cues").performScrollTo().performClick()
@@ -197,15 +197,15 @@ class SettingsScreenTest {
         var forgotten = 0
         show(state, history, updates, SettingsActions(forgetPairing = { forgotten++ }), SettingsPage.Connection)
         compose.onNodeWithText("Forget pairing").performClick()
-        compose.onNodeWithText("Forget mac.example.test?").assertExists()
-        compose.onNodeWithText("You'll need the QR code to pair again.").assertExists()
-        compose.onNodeWithText("Keep pairing").performClick()
-        compose.onNodeWithText("Forget mac.example.test?").assertDoesNotExist()
+        compose.onNodeWithText("Forget this computer?").assertExists()
+        compose.onNodeWithText("You’ll need to scan a new code to dictate. This also ends the session.").assertExists()
+        compose.onNodeWithText("Cancel").performClick()
+        compose.onNodeWithText("Forget this computer?").assertDoesNotExist()
         assertEquals(0, forgotten)
         compose.onNodeWithText("Forget pairing").performClick()
         compose.onNodeWithText("Forget", substring = false).performClick()
         compose.runOnIdle { assertEquals(1, forgotten) }
-        compose.onNodeWithText("Forget mac.example.test?").assertDoesNotExist()
+        compose.onNodeWithText("Forget this computer?").assertDoesNotExist()
     }
 
     @Test fun `back leaves a detail page for the list, then the list leaves the screen`() {
@@ -235,10 +235,10 @@ class SettingsScreenTest {
         val (state, history, updates) = settingsFixture()
         show(state, history, updates)
         open(SettingsPage.Dictation)
-        compose.onNodeWithText("Clean-up · Correction on your computer").assertIsDisplayed().assertIsOn()
+        compose.onNode(hasText("Clean-up") and isToggleable()).assertIsDisplayed().assertIsOn()
         compose.onNodeWithText("Polishes punctuation and filler words on your computer").assertIsDisplayed()
         compose.runOnIdle { assertFalse(context.getSharedPreferences("chirp", 0).contains("correction_explicit")) }
-        compose.onNodeWithText("Clean-up · Correction on your computer").performClick()
+        compose.onNode(hasText("Clean-up") and isToggleable()).performClick()
         compose.runOnIdle { assertFalse(SettingsStore(context).correction); assertTrue(context.getSharedPreferences("chirp", 0).getBoolean("correction_explicit", false)) }
     }
 
@@ -248,7 +248,7 @@ class SettingsScreenTest {
         show(state, history, updates)
         open(SettingsPage.Dictation)
         compose.onNodeWithText("Clean-up is off on your computer").assertIsDisplayed()
-        compose.onNodeWithText("Clean-up · Correction on your computer").assertDoesNotExist()
+        compose.onNode(hasText("Clean-up") and isToggleable()).assertDoesNotExist()
     }
 
     @Test fun `stop dictation no longer promises 119 seconds`() {

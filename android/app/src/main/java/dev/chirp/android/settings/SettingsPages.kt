@@ -43,11 +43,11 @@ private fun ConnectionPage(state: SetupState, actions: SettingsActions) {
     if (state.paired) SettingsGroup { ActionRow("Forget pairing", { confirmForget = true }, destructive = true) }
     PhoneFallbackSettings()
     if (confirmForget) AlertDialog(onDismissRequest = { confirmForget = false },
-        title = { Text("Forget ${state.host}?") },
-        text = { Text("You'll need the QR code to pair again.") },
+        title = { Text("Forget this computer?") },
+        text = { Text("You’ll need to scan a new code to dictate. This also ends the session.") },
         confirmButton = { TextButton({ confirmForget = false; actions.forgetPairing() },
             colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)) { Text("Forget") } },
-        dismissButton = { TextButton({ confirmForget = false }) { Text("Keep pairing") } })
+        dismissButton = { TextButton({ confirmForget = false }) { Text("Cancel") } })
 }
 
 /** Clean-up and styles, stop behaviour, spoken commands, auto-enter, and the other ways to dictate. */
@@ -59,7 +59,7 @@ private fun DictationPage(state: SetupState, actions: SettingsActions) {
     var commands by remember { mutableStateOf(store.spokenCommands) }
     if (state.health.cleanupAvailable()) {
         SettingsGroup("Clean-up") {
-            SwitchRow("Clean-up · ${correctionLabel(state.health)}", cleanup, { cleanup = it; store.correction = it },
+            SwitchRow("Clean-up", cleanup, { cleanup = it; store.correction = it },
                 summary = "Polishes punctuation and filler words ${if (state.health?.correctionLeavesMachine == true) "on ${state.health?.correctionHost}" else "on your computer"}",
                 infoTitle = "Clean-up", infoBody = cleanupDescription(state.health))
             CleanupStyleSettings(state.health)

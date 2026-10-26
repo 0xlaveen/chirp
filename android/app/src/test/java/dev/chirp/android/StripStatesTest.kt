@@ -127,7 +127,7 @@ class StripStatesTest {
         strip.show("cleaned", "", false, false, true, false, notice = true, undoable = true)
         assertEquals(View.VISIBLE, strip.raw.visibility); assertEquals(View.VISIBLE, strip.revert.visibility)
         assertTrue(strip.indexOfChild(strip.revert) < strip.indexOfChild(strip.raw))
-        assertEquals("Finished", strip.status.text.toString())
+        assertEquals("Polished", strip.status.text.toString())
         assertEquals(StripKind.SUCCESS, strip.stripKind)
     }
 
@@ -155,7 +155,7 @@ class StripStatesTest {
         val anchor = View(ContextThemeWrapper(app, R.style.Theme_Chirp))
         var cleanup = true; var picked = ""; var opened = false
         val menu = StripMenu(anchor).apply {
-            toggle("Clean-up", "Correction on your computer", cleanup) { cleanup = it }
+            toggle("Clean-up", "On your computer", cleanup) { cleanup = it }
             section("Style")
             radio("Default", null, true) { picked = "default" }
             radio("Notes", "rewrites", false) { picked = "notes" }

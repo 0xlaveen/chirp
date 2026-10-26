@@ -208,7 +208,7 @@ class KeyboardDictationTest {
         assertEquals("Polishing…", strip.status.text.toString())
         assertEquals(android.view.View.VISIBLE, strip.style.visibility)
         stream.event(ServerEvent.Final("Synthetic.", "synthetic raw", true)); advance(450)
-        assertEquals("Synthetic.", host.editor.committed); assertEquals("Finished", strip.status.text.toString())
+        assertEquals("Synthetic.", host.editor.committed); assertEquals("Polished", strip.status.text.toString())
         assertEquals(android.view.View.VISIBLE, strip.raw.visibility)
         strip.raw.performClick(); assertEquals("synthetic raw", host.editor.committed)
     }
