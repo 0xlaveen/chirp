@@ -37,12 +37,12 @@ internal class DictationStream(
     var stopping = false
         private set
     private fun unreachable(timedOut: Boolean = false) = ConnectionFailure.status(transport?.failureKind, timedOut)
-    private val timeout = Runnable { fail(if (stopSent) "Mac took too long to finish — try again" else unreachable(true)) }
+    private val timeout = Runnable { fail(if (stopSent) "Chirp server took too long — try again" else unreachable(true)) }
 
     fun start(correction: Boolean, profile: String = "default", instructions: String = "", prompt: String? = null, learned: LearnedPayload? = null) {
         check(!live && transport == null)
         live = true
-        changed("Connecting to Mac…", null)
+        changed("Connecting to your computer…", null)
         val pending = PreReadyBuffer(send = { transport?.audio(it) == true })
         buffer = pending
         transport = transportFactory({ if (live) event(it) }, { if (live) fail(unreachable()) })
@@ -79,7 +79,7 @@ internal class DictationStream(
             is ServerEvent.Ready -> {
                 if (ready) { fail("Unexpected server response"); return }
                 ready = true; timing?.ready(); retention(event.debugRetention)
-                if (buffer?.ready() != true) { fail("Mac connection is too slow — try again"); return }
+                if (buffer?.ready() != true) { fail("Connection too slow — try again"); return }
                 handler.removeCallbacks(timeout)
                 if (!stopping) changed("Listening…", null)
                 if (released) sendStop() else deadline(125000)
@@ -110,10 +110,10 @@ internal class DictationStream(
                 "auth" -> "Pairing refused — pair again in Chirp settings"
                 "bad_audio" -> "Didn't catch that"
                 "engine" -> "Speech engine hiccup"
-                "busy" -> "Mac is busy — try again"
+                "busy" -> "Chirp server is busy — try again"
                 "too_long" -> "Dictation limit is 120 seconds"
                 "bad_request" -> "Clean-up prompt too long — shorten it in Chirp settings"
-                else -> "Mac speech engine unavailable — try again"
+                else -> "Speech engine unavailable — try again"
             }) }
             ServerEvent.Unknown -> Unit
         }

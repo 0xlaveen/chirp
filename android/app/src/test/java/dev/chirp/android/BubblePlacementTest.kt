@@ -87,9 +87,9 @@ class BubblePlacementTest {
         assertEquals(BubbleFix.QUICK_DICTATE, BubbleFix.forStatus(BubbleFix.BLOCKED))
         assertEquals(BubbleFix.TAILSCALE_ON, BubbleFix.forStatus(DictationAction.TAILSCALE_OFF))
         ConnectionFailure.Kind.entries.forEach { assertEquals(BubbleFix.CHECK_AGAIN, BubbleFix.forStatus(it.status)) }
-        assertEquals(BubbleFix.CHECK_AGAIN, BubbleFix.forStatus("Mac took too long to finish — try again"))
+        assertEquals(BubbleFix.CHECK_AGAIN, BubbleFix.forStatus("Chirp server took too long — try again"))
         assertEquals(BubbleFix.TRY_AGAIN, BubbleFix.forStatus("Didn't catch that"))
-        assertEquals(BubbleFix.TRY_AGAIN, BubbleFix.forStatus("Mac is busy — try again"))
+        assertEquals(BubbleFix.TRY_AGAIN, BubbleFix.forStatus("Chirp server is busy — try again"))
         assertNull(BubbleFix.forStatus("Listening…"))
         assertNull(PanelModel(FloatingState.LISTENING, status = BubbleFix.NOT_PAIRED).fix)
     }

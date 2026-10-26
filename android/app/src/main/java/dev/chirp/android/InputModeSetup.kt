@@ -82,7 +82,7 @@ internal fun FloatingMicGuide(state: SetupState, accessibility: () -> Unit, appI
     SettingsGroup("What Chirp can see") {
         SettingsItem { Text("The text field you’re typing in — on this phone only") }
         SettingsItem { Text("Never passwords, the rest of the screen or other apps’ content") }
-        SettingsItem { Text("Only your voice is sent, to your own Mac") }
+        SettingsItem { Text("Only your voice is sent, to your own computer") }
     }
     Text("No battery use while idle — the mic, network and timers start only when you tap it.",
         style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)

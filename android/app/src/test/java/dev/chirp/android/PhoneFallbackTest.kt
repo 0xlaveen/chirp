@@ -77,7 +77,7 @@ class PhoneFallbackTest {
         assertEquals(if (shown) View.VISIBLE else View.GONE, strip.style.visibility)
         if (shown) {
             assertEquals("on phone", strip.style.text.toString())
-            assertEquals("Recognised on this phone by Synthetic Speech, not your Mac", strip.style.contentDescription.toString())
+            assertEquals("Recognised on this phone by Synthetic Speech, not your computer", strip.style.contentDescription.toString())
         }
     }
     @Before fun setup() {
@@ -97,7 +97,7 @@ class PhoneFallbackTest {
         assertFalse(fallback.handsOver(ConnectionFailure.Kind.DOWN, moved = true))
         enabled = false; assertFalse(fallback.usable()); assertFalse(fallback.handsOver(ConnectionFailure.Kind.DOWN, moved = false))
         enabled = true; available = false; assertFalse(fallback.usable())
-        assertEquals("Recognised on this phone by the phone's own speech service, not your Mac", fallback.disclosure)
+        assertEquals("Recognised on this phone by the phone's own speech service, not your computer", fallback.disclosure)
     }
     @Test fun `a known-offline Mac dictates on the phone with raw text, an on-phone chip and history`() {
         keyboard(); macOffline(); val before = transports
@@ -121,7 +121,7 @@ class PhoneFallbackTest {
         tap(); assertTrue(voice.active); assertEquals(1, transports); assertTrue(recognizers.isEmpty())
         stream.failureKind = ConnectionFailure.Kind.DOWN; stream.failure(); advance(0)
         assertEquals(1, recognizers.size); assertTrue(voice.active); assertTrue(recognizer.listening)
-        assertEquals("Mac unavailable · listening on phone", strip.status.text.toString()); assertChip(true)
+        assertEquals("Computer unavailable · listening on phone", strip.status.text.toString()); assertChip(true)
         assertNull(DictationAction.forStatus(PhoneDictation.HANDOVER))
         recognizer.final("synthetic"); advance(0)
         assertEquals("synthetic", host.editor.committed); assertEquals(1, transports)

@@ -60,7 +60,7 @@ class SetupActivityTest {
         scan(); assertEquals(1, activity.scans); assertTrue(activity.state.scanning)
         activity.received(syntheticLink)
         assertFalse(activity.state.scanning); assertEquals(syntheticLink, activity.state.link); assertEquals(PAGE_PAIR, activity.state.step)
-        assertTrue(activity.state.checking); assertTrue(shows("Checking Mac")); assertNull(activity.saved)
+        assertTrue(activity.state.checking); assertTrue(shows("Checking your computer")); assertNull(activity.saved)
         assertFalse(prefs().contains("token"))
         idle()
         val (pairing, health) = activity.saved!!
@@ -175,7 +175,7 @@ class SetupActivityTest {
         org.robolectric.Shadows.shadowOf(org.robolectric.RuntimeEnvironment.getApplication()).denyPermissions(LOCAL_NETWORK_PERMISSION)
         activity.state.link = syntheticLink
         activity.testPairing(save = true)
-        assertTrue(shows("Checking Mac"))
+        assertTrue(shows("Checking your computer"))
         assertFalse(activity.state.wifiPermissionNeeded)
         assertFalse(activity.getSharedPreferences("chirp", 0).contains("token"))
     }

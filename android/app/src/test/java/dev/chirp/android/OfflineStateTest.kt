@@ -55,14 +55,14 @@ class OfflineStateTest {
     private fun tap() { voice.touch(MotionEvent.ACTION_DOWN); advance(40); voice.touch(MotionEvent.ACTION_UP) }
     private fun assertOfflineRow() {
         assertEquals(View.VISIBLE, strip.status.visibility)
-        assertEquals("Mac offline · Check again", strip.status.text.toString())
-        assertEquals("Mac offline, double-tap to retry", strip.status.contentDescription.toString())
+        assertEquals("Computer offline · Check again", strip.status.text.toString())
+        assertEquals("Computer offline, double-tap to retry", strip.status.contentDescription.toString())
         assertTrue(strip.status.isClickable); assertTrue(strip.cancel.isEnabled)
         assertEquals(View.GONE, strip.action.visibility)
         assertBadge(true)
     }
     private fun assertBadge(offline: Boolean) {
-        assertEquals(if (offline) "Mac offline, double-tap to retry" else "Microphone: tap to dictate, hold to talk", strip.mic.contentDescription.toString())
+        assertEquals(if (offline) "Computer offline, double-tap to retry" else "Microphone: tap to dictate, hold to talk", strip.mic.contentDescription.toString())
     }
     private fun assertNotOffline() = assertNotEquals(ConnectionFailure.OFFLINE_DESCRIPTION, strip.mic.contentDescription.toString())
     private fun assertQuiet() { assertEquals(View.GONE, strip.status.visibility); assertEquals(View.GONE, strip.action.visibility) }
@@ -130,7 +130,7 @@ class OfflineStateTest {
         keyboard(checkHealth = true)
         await { strip.status.text.toString() == ConnectionFailure.OFFLINE }
         tap()
-        await { strip.status.text.toString().startsWith("Can't find your Mac") }
+        await { strip.status.text.toString().startsWith("Can't find your computer") }
         assertFalse(voice.active)
         assertEquals(DictationAction.NETWORK.label, strip.status.contentDescription.toString().substringAfterLast(". "))
         assertBadge(true)

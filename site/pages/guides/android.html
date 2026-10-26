@@ -1,35 +1,35 @@
 <!--
 title: Use Chirp on Android — Chirp
-description: A beginner's guide to building Chirp for Android, pairing it with your Mac over Tailscale, and dictating in any app with Chirp Keyboard or your own keyboard.
+description: A beginner's guide to building Chirp for Android, pairing it with your computer over Tailscale, and dictating in any app with Chirp Keyboard or your own keyboard.
 section: guides
 -->
 <div class="narrow guide-hero">
   <p class="crumbs"><a href="index.html">Guides</a> / 02</p>
   <h1>Use Chirp on Android</h1>
-  <p class="lede">Chirp for Android is a notes app and a way to dictate in any app. Use its own keyboard, Chirp Keyboard, or keep Gboard or Samsung Keyboard and use a small floating mic. Either way your voice goes to the Chirp server on your Mac, and the text comes back. There’s no hosted APK yet — a packaged Android app is coming soon.</p>
-  <div class="meta-row"><span>Needs: Chirp on your Mac, Tailscale on both devices</span><span>Tuned for: Galaxy Z Fold</span></div>
+  <p class="lede">Chirp for Android is a notes app and a way to dictate in any app. Use its own keyboard, Chirp Keyboard, or keep Gboard or Samsung Keyboard and use a small floating mic. Either way your voice goes to the Chirp server on your computer, and the text comes back. There’s no hosted APK yet — a packaged Android app is coming soon.</p>
+  <div class="meta-row"><span>Needs: Chirp on your computer, Tailscale on both devices</span><span>Tuned for: Galaxy Z Fold</span></div>
 </div>
 <article class="narrow prose">
   <nav class="toc" aria-label="On this page"><b>On this page</b>
-    <ol><li><a href="#before">Before you start</a></li><li><a href="#tailscale">Connect with Tailscale</a></li><li><a href="#build">Build the keyboard</a></li><li><a href="#install">Install it</a></li><li><a href="#pair">Pair with your Mac</a></li><li><a href="#dictate">Dictate with Chirp Keyboard</a></li><li><a href="#keep">Keep your keyboard</a></li><li><a href="#keep-keyboard">Quick Dictate, widget and Share</a></li><li><a href="#scratchpad">Scratchpad and Notes</a></li><li><a href="#trouble">If something's off</a></li></ol>
+    <ol><li><a href="#before">Before you start</a></li><li><a href="#tailscale">Connect with Tailscale</a></li><li><a href="#build">Build the keyboard</a></li><li><a href="#install">Install it</a></li><li><a href="#pair">Pair with your computer</a></li><li><a href="#dictate">Dictate with Chirp Keyboard</a></li><li><a href="#keep">Keep your keyboard</a></li><li><a href="#keep-keyboard">Quick Dictate, widget and Share</a></li><li><a href="#scratchpad">Scratchpad and Notes</a></li><li><a href="#trouble">If something's off</a></li></ol>
   </nav>
 
   <h2 id="before">Before you start</h2>
-  <div class="callout"><b>No hosted APK yet.</b><p>A packaged Android app is coming soon. Until then this guide builds and signs the APK on your Mac. New here? <a href="../get.html">See what’s available today</a>, or use the <a href="coding-agent.html#android">Android agent prompt</a>.</p></div>
+  <div class="callout"><b>No hosted APK yet.</b><p>A packaged Android app is coming soon. Until then this guide builds and signs the APK on your computer. New here? <a href="../get.html">See what’s available today</a>, or use the <a href="coding-agent.html#android">Android agent prompt</a>.</p></div>
   <ul>
-    <li>Chirp is working on your Mac — see <a href="mac.html">Set up Chirp on your Mac</a>. The Mac needs to be awake when you dictate from the phone.</li>
+    <li>Chirp is working on your computer — see the <a href="mac.html">Mac</a>, <a href="windows.html">Windows</a> or <a href="linux.html">Linux</a> setup guide. The computer needs to be awake when you dictate from the phone.</li>
     <li>An Android phone and a USB cable (or wireless debugging). Chirp is tuned for the Galaxy Z Fold but works as a regular keyboard elsewhere.</li>
   </ul>
 
-  <h2 id="tailscale">Connect your phone and Mac with Tailscale</h2>
-  <p>Your phone reaches the Mac through <a href="https://tailscale.com/">Tailscale</a>, a private network between your own devices (a “tailnet”). Nothing is exposed to the public internet.</p>
+  <h2 id="tailscale">Connect your phone and computer with Tailscale</h2>
+  <p>Your phone reaches the computer through <a href="https://tailscale.com/">Tailscale</a>, a private network between your own devices (a “tailnet”). Nothing is exposed to the public internet.</p>
   <ol class="steps">
-    <li><strong>Install Tailscale on both</strong><p>Install it on the Mac and the phone and sign in with the same account. Both should show as connected.</p></li>
-    <li><strong>Allow HTTPS on your tailnet</strong><p>Chirp publishes the Mac's server to your tailnet with Tailscale Serve, which needs <strong>MagicDNS</strong> and <strong>HTTPS certificates</strong> turned on (admin console → DNS). If they're off, Tailscale tells you when you pair, with a link to fix it.</p></li>
+    <li><strong>Install Tailscale on both</strong><p>Install it on the computer and the phone and sign in with the same account. Both should show as connected.</p></li>
+    <li><strong>Allow HTTPS on your tailnet</strong><p>Chirp publishes the server on your computer to your tailnet with Tailscale Serve, which needs <strong>MagicDNS</strong> and <strong>HTTPS certificates</strong> turned on (admin console → DNS). If they're off, Tailscale tells you when you pair, with a link to fix it.</p></li>
   </ol>
 
   <h2 id="build">Build the app</h2>
-  <p>On the Mac, in the <code>chirp</code> folder from the Mac guide. The first command installs a Java and Android toolchain just for your user — no admin password, no emulator images:</p>
+  <p>On the computer, in the <code>chirp</code> folder from the setup guide. The first command installs a Java and Android toolchain just for your user — no admin password, no emulator images:</p>
 <pre data-copy="Copy commands"><code>android/scripts/setup-toolchain.sh
 source ~/.local/share/chirp-android/env.sh
 android/scripts/make-keystore.sh
@@ -51,20 +51,20 @@ cd android
     <li><strong>How you’ll dictate</strong><p>Choose <strong>Use Chirp Keyboard</strong> to switch to Chirp’s keyboard, or <strong>Keep Gboard</strong> (it shows your keyboard’s name) to keep yours and use the floating mic. Notes and the Scratchpad work either way, and you can change your mind later in Settings → How you dictate.</p></li>
     <li><strong>Turn on the keyboard, or the floating mic</strong><p>For Chirp Keyboard: enable it, then select it. On Samsung: Settings → General management → Keyboard list and default. For the floating mic, see <a href="#keep">Keep your keyboard</a>.</p></li>
     <li><strong>Allow the microphone</strong><p>It's only open while you dictate or record a note.</p></li>
-    <li><strong>Pair your Mac</strong><p>See the next section.</p></li>
+    <li><strong>Pair your computer</strong><p>See the next section.</p></li>
   </ol>
   <div class="shot-row">
     <figure><div class="frame"><!--shot:android/keepkb-choice-cover|Onboarding: How you’ll dictate, with Use Chirp Keyboard and Keep Gboard--></div><figcaption>How you’ll dictate</figcaption></figure>
-    <figure><div class="frame"><!--shot:android/onboarding-pair|Onboarding: scan the code on your Mac--></div><figcaption>Pair your Mac</figcaption></figure>
+    <figure><div class="frame"><!--shot:android/onboarding-pair|Onboarding: scan the code on your computer--></div><figcaption>Pair your computer</figcaption></figure>
   </div>
 
-  <h2 id="pair">Pair with your Mac</h2>
+  <h2 id="pair">Pair with your computer</h2>
   <ol class="steps">
-    <li><strong>Show the pairing code on the Mac</strong><p>In Chirp for Mac open <strong>Settings → Devices → Pair a Phone…</strong> If your tailnet isn't serving Chirp yet, it shows the exact Tailscale command and runs it only after you confirm. Then it shows a QR code.</p></li>
-    <li><strong>Scan it on the phone</strong><p>On the last onboarding page tap <strong>Scan code</strong>. Chirp tests the connection and saves the pairing by itself; nothing is saved until the connection works. Then tap <strong>Finish</strong> and Chirp opens on Notes, with a chip at the top showing it’s connected to your Mac.</p></li>
+    <li><strong>Show the pairing code on the computer</strong><p>In Chirp for Mac open <strong>Settings → Devices → Pair a Phone…</strong> If your tailnet isn't serving Chirp yet, it shows the exact Tailscale command and runs it only after you confirm. Then it shows a QR code. On Windows or Linux, <code>uv run chirp-server pair</code> prints the same QR (see those guides).</p></li>
+    <li><strong>Scan it on the phone</strong><p>On the last onboarding page tap <strong>Scan code</strong>. Chirp tests the connection and saves the pairing by itself; nothing is saved until the connection works. Then tap <strong>Finish</strong> and Chirp opens on Notes, with a chip at the top showing it’s connected to your computer.</p></li>
   </ol>
   <figure class="shot"><div class="frame"><!--shot:mac/settings-devices-ready|Settings, Devices: Pair a Phone button, noting the phone reaches this Mac over your tailnet only--></div></figure>
-  <div class="callout"><b>The QR code is a secret.</b><p>It contains the key to your Mac's speech server. The Mac hides the window from screenshots and screen sharing and closes it after two minutes. Don't post it anywhere.</p></div>
+  <div class="callout"><b>The QR code is a secret.</b><p>It contains the key to your computer's speech server. Chirp for Mac hides the window from screenshots and screen sharing and closes it after two minutes. Don't post it anywhere.</p></div>
 
   <h2 id="dictate">Dictate with Chirp Keyboard</h2>
   <ol class="steps">
@@ -113,7 +113,7 @@ cd android
   <h2 id="trouble">If something's off</h2>
   <ul>
     <li><strong>“Tailscale is off”</strong> in the keyboard: tap <strong>Turn on</strong>, or open the Tailscale app.</li>
-    <li><strong>Mac unreachable:</strong> is the Mac awake, with Chirp running and Tailscale connected? The connection chip at the top of Notes opens Settings → Connection, where <strong>Check connection</strong> tests it.</li>
+    <li><strong>Computer unreachable:</strong> is the computer awake, with Chirp running and Tailscale connected? The connection chip at the top of Notes opens Settings → Connection, where <strong>Check connection</strong> tests it.</li>
     <li><strong>Updates:</strong> install new builds over the old one — don't uninstall first, or you'll lose your pairing.</li>
   </ul>
   <p>All the details are in the <a href="{{repo}}/blob/main/android/README.md">Android README</a>.</p>

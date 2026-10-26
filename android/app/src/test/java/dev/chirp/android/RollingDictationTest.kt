@@ -154,7 +154,7 @@ class RollingDictationTest {
         h.transports[0].failure(); h.advance()
         assertEquals(listOf("next"), h.landed); assertEquals("Listening…", h.statuses.last())
         h.transports[1].failure(); h.advance()
-        assertEquals(1, h.ended); assertTrue(h.statuses.last(), h.statuses.last().startsWith("Mac"))
+        assertEquals(1, h.ended); assertTrue(h.statuses.last(), h.statuses.last().startsWith("Computer unreachable"))
     }
     @Test fun `the deadline of a segment still connecting fails only that segment`() {
         val h = Harness(); h.session.start(false); h.transports[0].ready()

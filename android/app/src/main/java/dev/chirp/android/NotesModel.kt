@@ -210,15 +210,15 @@ internal class NotesModel(
     val elapsedText get() = elapsed.toInt().let { s -> if (s >= 3600) "%d:%02d:%02d".format(s / 3600, s / 60 % 60, s % 60) else "%02d:%02d".format(s / 60, s % 60) }
 
     val status: String get() = voiceEditStatus?.let(NotesVoiceEditText::status) ?: message ?: when (state) {
-        NotesRecorder.State.IDLE -> if (paired) IDLE else "Pair your Mac in Chirp settings"
-        NotesRecorder.State.STARTING -> "Connecting to Mac…"
+        NotesRecorder.State.IDLE -> if (paired) IDLE else "Pair your computer in Chirp settings"
+        NotesRecorder.State.STARTING -> "Connecting to your computer…"
         NotesRecorder.State.RECORDING -> organizingText ?: if (structuring == Structuring.Running) "Updating notes…" else "Listening…"
         NotesRecorder.State.PAUSED -> recorder.error?.let { "Couldn’t resume: $it" } ?: organizingText ?: "Paused"
         NotesRecorder.State.STOPPING -> (organizingText ?: "Finishing…") + (revision.let { recorder.stoppingElapsed }?.takeIf { it >= 3000 }?.let { " · ${it / 1000} s" } ?: "")
         NotesRecorder.State.STOPPED -> organizingText ?: "Stopped"
         NotesRecorder.State.ERROR -> recorder.error?.let { error ->
             // A failed connection to a tailnet Mac usually means Tailscale is off; say that instead.
-            if (error.startsWith("Mac unreachable")) pairing()?.let(::tailscaleStatus) ?: error else error
+            if (error.startsWith("Computer unreachable")) pairing()?.let(::tailscaleStatus) ?: error else error
         } ?: "Notes stopped"
     }
 
@@ -259,9 +259,9 @@ internal class NotesModel(
 
     /** Why the notes are a plain editor and live transcript, or null when structuring runs. */
     val explanation: String? get() = when ((structuring as? Structuring.Off)?.why) {
-        StructuringOff.CORRECTION_OFF -> "Clean-up is off on your Mac, so these notes are a plain editor beside the live transcript."
-        StructuringOff.UNSUPPORTED -> "Chirp on your Mac is too old to structure notes — update it. The transcript still works."
-        StructuringOff.WAITING -> if (paired) "Checking your Mac…" else null
+        StructuringOff.CORRECTION_OFF -> "Clean-up is off on your computer, so these notes are a plain editor beside the live transcript."
+        StructuringOff.UNSUPPORTED -> "Chirp on your computer is too old to structure notes — update it. The transcript still works."
+        StructuringOff.WAITING -> if (paired) "Checking your computer…" else null
         else -> null
     }
 
@@ -466,7 +466,7 @@ internal class NotesModel(
         if (voiceEdit.holdsMicrophone) { message = "Finish the spoken edit first"; return }
         message = null; recovered = null
         if (!micGranted()) { message = "Allow microphone in Chirp settings"; return }
-        pairing().also { paired = it != null } ?: run { message = "Pair your Mac in Chirp settings"; return }
+        pairing().also { paired = it != null } ?: run { message = "Pair your computer in Chirp settings"; return }
         recorder.options = options()
         recorder.configure(structureEnabled, health)
         recorder.keepAudio = sessions?.let { it.enabled && it.keepAudio } == true

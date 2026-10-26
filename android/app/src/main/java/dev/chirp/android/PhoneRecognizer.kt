@@ -131,7 +131,7 @@ internal class PhoneDictation(
     companion object {
         const val LISTENING = "Listening on phone…"
         const val FINISHING = "Finishing on phone…"
-        const val HANDOVER = "Mac unavailable · listening on phone"
+        const val HANDOVER = "Computer unavailable · listening on phone"
         const val FINISH_MS = 5000L
         fun reason(code: Int) = when (code) {
             SpeechRecognizer.ERROR_NO_MATCH, SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> "Didn't catch that"
@@ -157,7 +157,7 @@ internal class PhoneFallback(
     fun session(changed: (String, ServerEvent.Partial?) -> Unit, level: (Double) -> Unit, final: (ServerEvent.Final) -> Unit,
                 kept: (String, String) -> Unit, ended: () -> Unit) = PhoneDictation(recognizer(), changed, level, final, kept, ended)
     /** TalkBack's description of the "on phone" chip; never claims the Mac's engine. */
-    val disclosure get() = "Recognised on this phone by ${provider ?: GENERIC}, not your Mac"
+    val disclosure get() = "Recognised on this phone by ${provider ?: GENERIC}, not your computer"
     companion object {
         const val CHIP = "on phone"
         const val GENERIC = "the phone's own speech service"
@@ -182,11 +182,11 @@ internal fun PhoneFallbackSettings() {
     val available = remember { AndroidPhoneRecognizer.available(context) }
     val provider = remember { PhoneFallback.provider(context) }
     var enabled by remember { mutableStateOf(store.phoneFallback) }
-    SettingsGroup("When your Mac is unavailable") {
+    SettingsGroup("When your computer is unavailable") {
         SwitchRow("Use this phone's recogniser", enabled && available, { enabled = it; store.phoneFallback = it }, enabled = available,
             summary = if (!available) "This phone has no on-device speech recogniser." else "Off by default",
             infoTitle = if (available) "Use this phone's recogniser" else null,
-            infoBody = if (available) "When the Mac can't be reached, dictation is recognised on this phone by ${provider ?: "the phone's own speech service (from Google or the phone maker)"}" +
-                " — not by Chirp's engine on your Mac. Android runs it on-device; that service's own terms apply. No clean-up; the row shows \"on phone\"." else null)
+            infoBody = if (available) "When your computer can't be reached, dictation is recognised on this phone by ${provider ?: "the phone's own speech service (from Google or the phone maker)"}" +
+                " — not by Chirp's engine on your computer. Android runs it on-device; that service's own terms apply. No clean-up; the row shows \"on phone\"." else null)
     }
 }

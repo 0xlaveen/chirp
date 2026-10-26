@@ -73,7 +73,7 @@ class NotesPauseTest {
         rig.recorder.resume(); rig.idle()
         rig.wire.error("busy"); rig.idle()
         assertEquals(NotesRecorder.State.PAUSED, rig.recorder.state)
-        assertEquals("Mac is busy", rig.recorder.error)
+        assertEquals("Chirp server is busy", rig.recorder.error)
         assertTrue(rig.captures.last().stopped)
         paused.final("kept words"); rig.idle()
         assertEquals(listOf("kept words"), rig.recorder.document.segments.map { it.text })

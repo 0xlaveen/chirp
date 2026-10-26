@@ -49,10 +49,10 @@ internal class UpdateController(
         scope.launch {
             val result: UpdateStatus = try {
                 withContext(Dispatchers.IO) {
-                    val base = pairing()?.let(AppUpdates::base) ?: return@withContext UpdateStatus.Failed("Updates need a Mac paired over Tailscale")
+                    val base = pairing()?.let(AppUpdates::base) ?: return@withContext UpdateStatus.Failed("Updates need a computer paired over Tailscale")
                     AppUpdates.check(client, base, installed())?.let { UpdateStatus.Available(it) } ?: UpdateStatus.Current
                 }
-            } catch (_: Exception) { UpdateStatus.Failed("Couldn't reach your Mac — is Tailscale on, and is the update folder hosted?") }
+            } catch (_: Exception) { UpdateStatus.Failed("Couldn't reach your computer — is Tailscale on, and is the update folder hosted?") }
             busy = false
             if (manual || result is UpdateStatus.Available) status = result
         }
@@ -94,11 +94,11 @@ internal fun UpdateSettings(controller: UpdateController? = null) {
     val working = status == UpdateStatus.Checking || status == UpdateStatus.Downloading
     SettingsGroup("Updates") {
         SettingsItem {
-            Text("Chirp checks only your paired Mac, over Tailscale, for a newer signed build. Nothing is installed without your tap and Android's confirmation.",
+            Text("Chirp checks only your paired computer, over Tailscale, for a newer signed build. Nothing is installed without your tap and Android's confirmation.",
                 style = MaterialTheme.typography.bodySmall)
             when (status) {
                 UpdateStatus.Idle -> {}
-                UpdateStatus.Checking -> Text("Checking your Mac…")
+                UpdateStatus.Checking -> Text("Checking your computer…")
                 UpdateStatus.Current -> Text("Chirp is up to date.")
                 UpdateStatus.Downloading -> Text("Downloading update…")
                 UpdateStatus.Installing -> Text("Confirm the install in Android's dialog. Chirp restarts when it finishes.")

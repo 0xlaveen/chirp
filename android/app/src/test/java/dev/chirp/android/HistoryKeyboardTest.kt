@@ -83,7 +83,7 @@ class HistoryKeyboardTest {
         assertEquals(View.VISIBLE, panel.visibility)
         assertEquals(View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS, keys.importantForAccessibility)
         assertEquals(View.INVISIBLE, keys.visibility)
-        assertTrue(texts(panel).any { it.contains("never sent to your Mac") })
+        assertTrue(texts(panel).any { it.contains("never sent to your computer") })
         val keep = (0 until panel.list.childCount).map { panel.list.getChildAt(it) }.filterIsInstance<Button>().first { it.text == "Keep history on this phone" }
         keep.performClick(); advance(0)
         assertTrue(store.enabled); assertEquals(KeyboardHistory.State.LIST, history.state)

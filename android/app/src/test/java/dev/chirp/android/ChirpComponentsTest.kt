@@ -60,10 +60,10 @@ class ChirpComponentsTest {
                 SettingsGroup("Stop dictation") {
                     SettingsItem { ChoiceChips(listOf("When I tap", "When I pause"), stop, { it }) { stop = it } }
                 }
-                StatusBanner(StatusKind.Info, "Paired · Mac ready", live = true)
+                StatusBanner(StatusKind.Info, "Paired · Computer ready", live = true)
                 StatusBanner(StatusKind.Success, "Chirp is up to date.")
-                StatusBanner(StatusKind.Warning, "Mac unreachable", body = "Check Tailscale is connected on both devices.", action = "Retry")
-                StatusBanner(StatusKind.Error, "DEBUG RETENTION IS ON — the Mac may retain audio and text")
+                StatusBanner(StatusKind.Warning, "Computer unreachable", body = "Check Tailscale is connected on both devices.", action = "Retry")
+                StatusBanner(StatusKind.Error, "DEBUG RETENTION IS ON — the Chirp server may retain audio and text")
                 Surface(shape = MaterialTheme.shapes.extraLarge, tonalElevation = 1.dp) {
                     Column(Modifier.padding(top = 24.dp)) {
                         InfoSheetContent("Optional floating microphone", "Off by default. Enable only if you want a floating mic with another keyboard.") {}
@@ -183,10 +183,10 @@ class ChirpComponentsTest {
 
     @Test fun `status banner announces politely and learn more opens and closes its sheet`() {
         compose.setContent { ChirpTheme { Column {
-            StatusBanner(StatusKind.Info, "Mac ready", live = true)
+            StatusBanner(StatusKind.Info, "Computer ready", live = true)
             LearnMore("Optional floating microphone", "Synthetic explanation")
         } } }
-        compose.onNodeWithText("Mac ready").assert(SemanticsMatcher.expectValue(SemanticsProperties.LiveRegion, LiveRegionMode.Polite))
+        compose.onNodeWithText("Computer ready").assert(SemanticsMatcher.expectValue(SemanticsProperties.LiveRegion, LiveRegionMode.Polite))
         compose.onNodeWithText("Learn more").performClick()
         compose.onNodeWithText("Synthetic explanation").assertExists()
         compose.onNodeWithText("Close").performClick()

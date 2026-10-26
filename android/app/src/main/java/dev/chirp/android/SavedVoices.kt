@@ -50,12 +50,12 @@ internal class VoiceLibraryError(val code: String) : IOException("Saved voices: 
     val userMessage get() = when (code) {
         "gone" -> "Record a little more with them, then try again"
         "too_short" -> "Name kept in this note. The voice will be remembered after 20 seconds of speech."
-        "disabled" -> "Remember voices is off on your Mac"
+        "disabled" -> "Remember voices is off on your computer"
         "full" -> "Saved voices is full. Forget a voice, then try again."
         "no_voice" -> "This voice was forgotten on another device. Refresh Saved voices."
-        "unsupported" -> "Update Chirp on your Mac to save voices"
+        "unsupported" -> "Update Chirp on your computer to save voices"
         "bad_speakers" -> "Use a name with letters, without colons or line breaks"
-        "auth" -> "Pair your Mac again to use Saved voices"
+        "auth" -> "Pair your computer again to use Saved voices"
         else -> "Couldn’t reach Saved voices. Try again."
     }
 }

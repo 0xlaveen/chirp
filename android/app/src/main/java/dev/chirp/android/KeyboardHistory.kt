@@ -198,7 +198,7 @@ internal class KeyboardHistory(
             State.OPT_IN -> {
                 view.subtitle.text = "Off · nothing is saved"
                 view.message("Keep your recent dictations on this phone so you can reinsert them. " +
-                    "Encrypted, never sent to your Mac or backed up, kept for ${store.retention.label}.")
+                    "Encrypted, never sent to your computer or backed up, kept for ${store.retention.label}.")
                 view.action("Keep history on this phone", primary = true) { enable() }
                 view.action("Not now", primary = false) { close() }
             }

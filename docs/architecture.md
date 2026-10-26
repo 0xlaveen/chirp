@@ -145,7 +145,7 @@ person's speech) per person, at most 50, in `data_dir()/speakers/voices.json` (f
 0600, owner-only ACL on Windows; `~/Library/Application Support/Chirp/speakers/` on a Mac). A voice
 named on one device is recognised on every other device that uses the same server; a client on
 another server has that server's library. No `api` bump: a client that does not see the
-capability hides "remember voice" and the Saved voices screen ("Update Chirp on your Mac to save
+capability hides "remember voice" and the Saved voices screen ("Update Chirp on your computer to save
 voices").
 
 - **Capability.** Authenticated health adds `"speaker_voices": true` (also in `capabilities`) and

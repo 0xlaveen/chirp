@@ -33,7 +33,7 @@ internal fun HistorySettings(showOpen: Boolean = true, store: DictationHistory? 
         }, summary = "On by default · encrypted on this phone only",
             infoTitle = "Keep dictation history on this phone",
             infoBody = "Saves recent dictations encrypted on this phone only, so you can reinsert them from the keyboard's clock button. " +
-                "Never sent to your Mac, backed up or logged. Password and incognito fields are never saved.")
+                "Never sent to your computer, backed up or logged. Password and incognito fields are never saved.")
         if (enabled) {
             SettingsItem {
                 Text("Keep for", style = MaterialTheme.typography.bodyMedium)

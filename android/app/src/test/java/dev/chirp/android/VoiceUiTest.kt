@@ -58,7 +58,7 @@ class VoiceUiTest {
         compose.onNodeWithText("Allow microphone").performClick()
         compose.runOnIdle { state.mic = true }
         compose.onNodeWithText("Continue").performClick()
-        compose.onNodeWithText("Scan the code on your Mac").assertIsDisplayed()
+        compose.onNodeWithText("Scan the code on your computer").assertIsDisplayed()
         compose.onNodeWithText("Scan code").performClick()
         assertEquals(listOf("enable", "select", "mic", "scan"), calls.seen)
     }
@@ -79,7 +79,7 @@ class VoiceUiTest {
         compose.runOnIdle { state.micDenied = true }
         compose.onNodeWithText("Open app permissions").performClick()
         compose.runOnIdle { state.step = PAGE_PAIR; state.pairIssue = PairIssue.Unreachable }
-        compose.onNodeWithText("Couldn’t reach your Mac").assertIsDisplayed()
+        compose.onNodeWithText("Couldn’t reach your computer").assertIsDisplayed()
         compose.onNodeWithText("Try again").performClick()
         compose.runOnIdle { state.pairIssue = PairIssue.ScannerUnavailable }
         compose.onNodeWithText("Paste link instead").assertIsDisplayed()
@@ -101,7 +101,7 @@ class VoiceUiTest {
         val state = connectedState(); val calls = Calls()
         compose.setContent { ChirpTheme { Onboarding(state, calls.actions()) } }
         compose.onNodeWithText("Connected · mac.example.test").assertIsDisplayed()
-        compose.onNodeWithText("Parakeet · clean-up on Mac", substring = true).assertIsDisplayed()
+        compose.onNodeWithText("Parakeet · clean-up on your computer", substring = true).assertIsDisplayed()
         compose.onNodeWithText("Scan code").assertDoesNotExist()
         compose.onNodeWithText("Finish").performClick()
         assertEquals(listOf("finish"), calls.seen)

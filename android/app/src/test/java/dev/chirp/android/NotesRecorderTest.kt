@@ -171,7 +171,7 @@ class NotesRecorderTest {
         rig.calls.structures.forEach { it.second.complete(NotesStructureResponse("- Kept words", true)) }
         rig.idle()
         assertEquals(NotesRecorder.State.ERROR, rig.recorder.state)
-        assertEquals("Notes stopped: Mac is busy", rig.recorder.error)
+        assertEquals("Notes stopped: Chirp server is busy", rig.recorder.error)
         assertEquals(listOf("kept words"), rig.recorder.document.segments.filter { !it.isGap }.map { it.text })
         assertTrue(rig.recorder.document.text.contains("Kept words"))
     }

@@ -52,7 +52,7 @@ class KeyboardRenderTest {
     private class Fixture(val name: String, val message: String, val kind: StripKind, val show: (KeyboardStrip) -> Unit)
     private val fixtures = listOf(
         Fixture("idle", "Tap mic · hold to talk", StripKind.IDLE) { it.show("Tap mic · hold to talk", "", false, false, false, false) },
-        Fixture("connecting", "Connecting to Mac…", StripKind.CONNECTING) { it.show("Connecting to Mac…", "", true, false, false, false) },
+        Fixture("connecting", "Connecting to your computer…", StripKind.CONNECTING) { it.show("Connecting to your computer…", "", true, false, false, false) },
         Fixture("listening", "Listening…", StripKind.LISTENING) { it.show("Listening…", "Synthetic example for visual review", true, false, false, false); it.level(.45) },
         Fixture("countdown", "Listening… · 15 s left", StripKind.LISTENING) { it.show("Listening… · 15 s left", "", true, false, false, false, countdown = true); it.level(.45) },
         Fixture("polishing", "Polishing…", StripKind.POLISHING) { it.show("Polishing…", "", true, true, false, false, polishing = true, style = "Email") },
@@ -177,7 +177,7 @@ class KeyboardRenderTest {
                 keys.dispatchTouchEvent(touch); touch.recycle()
             }
             shadowOf(Looper.getMainLooper()).idle()
-            assertEquals("Pair Mac", strip.status.text.toString())
+            assertEquals("Pair computer", strip.status.text.toString())
         } finally { window.pause().stop().destroy(); service.destroy() }
     }
 

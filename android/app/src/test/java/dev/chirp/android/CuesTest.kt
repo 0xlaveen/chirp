@@ -38,8 +38,8 @@ class CuesTest {
         Cues(context) { throw IllegalStateException("synthetic audio failure") }.play(Cue.INSERTED)
     }
     @Test fun `error statuses are recognised and normal ones are not`() {
-        for (status in listOf("Didn't catch that", "Speech engine hiccup", "Mac is busy — try again", "Allow microphone in Chirp settings",
-            "Dictation unavailable in password fields", "Mac took too long to finish — try again", "Text field unavailable — try again",
+        for (status in listOf("Didn't catch that", "Speech engine hiccup", "Chirp server is busy — try again", "Allow microphone in Chirp settings",
+            "Dictation unavailable in password fields", "Chirp server took too long — try again", "Text field unavailable — try again",
             ConnectionFailure.Kind.DNS.status, ConnectionFailure.Kind.DOWN.status, ConnectionFailure.Kind.TLS.status))
             assertTrue(status, Cue.isError(status))
         for (status in listOf("Listening…", "Finishing…", "Polishing…", "Cancelled", "Inserted · tap mic to dictate again", "Tailscale connected"))

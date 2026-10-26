@@ -40,10 +40,10 @@ internal fun View.systemInsets() {
 }
 internal fun correctionLabel(health: Health?): String = when {
     health?.correctionLeavesMachine == true -> "Correction — sends text to ${health.correctionHost ?: "external host (unavailable)"}"
-    else -> "Correction on Mac"
+    else -> "Correction on your computer"
 }
 
 internal fun Health?.cleanupAvailable() = this?.let { it.correctionAvailable && (!it.correctionLeavesMachine || it.correctionHost != null) } == true
 internal fun cleanupDescription(health: Health?) = if (health?.correctionLeavesMachine == true)
     "When enabled, sends text to ${health.correctionHost ?: "the external host"} for clean-up"
-    else "Polishes punctuation and filler words on your Mac; text never leaves it"
+    else "Polishes punctuation and filler words on your computer; text never leaves it"

@@ -52,7 +52,7 @@ internal fun NotesSettings(sessions: NotesSessions? = null, title: String? = nul
         SwitchRow("Save battery while the screen is off", saver, { saver = it; store.notesBatterySaver = it },
             summary = "On by default",
             infoTitle = "Save battery while the screen is off", infoBody = "With the screen off the phone stops drawing live text and the level meter; recording, the transcript " +
-                "and the Mac's notes keep going, so everything is up to date the moment you look.")
+                "and the notes on your computer keep going, so everything is up to date the moment you look.")
         SwitchRow("Keep a recovery copy until notes are saved", recovery, { on ->
             recovery = on; store.notesRecovery = on
             // Off is also a delete: the copy and its key go.
@@ -66,7 +66,7 @@ internal fun NotesSettings(sessions: NotesSessions? = null, title: String? = nul
             if (on) kept.enable() else kept.disable()
             keep = on
         }, summary = "On by default · encrypted on this phone only", infoTitle = "Keep notes on this phone",
-            infoBody = "Every note keeps itself, encrypted on this phone only. Never sent to your Mac, backed up or logged. " +
+            infoBody = "Every note keeps itself, encrypted on this phone only. Never sent to your computer, backed up or logged. " +
                 "Turning this off keeps the notes you already have; \"Delete all notes\" removes them.")
         SettingsItem {
             Text("Delete notes older than", style = MaterialTheme.typography.bodyMedium)
@@ -82,15 +82,15 @@ internal fun NotesSettings(sessions: NotesSessions? = null, title: String? = nul
             infoBody = "Keeps each spoken segment next to its transcript, compressed and encrypted on this phone only, so you can replay it. " +
                 "Audio goes nowhere else.")
         SwitchRow("Label speakers", speakers.enabled, speakers::setLabels,
-            summary = if (speakers.health != null && !speakers.available) "Update Chirp on your Mac to label speakers"
+            summary = if (speakers.health != null && !speakers.available) "Update Chirp on your computer to label speakers"
                 else "${if (speakers.enabled) "On" else "Off"} · who said what",
             enabled = speakers.available, infoTitle = "Label speakers",
             infoBody = "Shows who said what in the transcript (Person 1, Person 2…; tap a name to rename it) and lets the notes say who " +
-                "owns a to-do. Names and turns stay in the sealed note; saved voices stay on your Mac. " +
+                "owns a to-do. Names and turns stay in the sealed note; saved voices stay on your computer. " +
                 "The speaker model downloads automatically when needed. Recording starts straight away.")
         if (speakers.available) {
             SettingsItem {
-                Text("Speaker model on your Mac: " + when (speakers.state) {
+                Text("Speaker model on your computer: " + when (speakers.state) {
                     "ready" -> "ready"
                     "downloading" -> "downloading"
                     "failed" -> "couldn’t download"
@@ -101,7 +101,7 @@ internal fun NotesSettings(sessions: NotesSessions? = null, title: String? = nul
             if (speakers.state == "ready") ActionRow("Remove speaker model", speakers::remove, destructive = true)
         }
         if (speakers.health?.speakerVoices == true) ActionRow("Saved voices", { savedVoicesOpen = true })
-        else SettingsItem { Text("Update Chirp on your Mac to save voices", style = MaterialTheme.typography.bodySmall) }
+        else SettingsItem { Text("Update Chirp on your computer to save voices", style = MaterialTheme.typography.bodySmall) }
         if (audioBytes > 0) ActionRow("Delete kept audio (${megabytes(audioBytes)})", { confirmDeleteAudio = true }, destructive = true)
         ActionRow("Delete all notes", { confirmDeleteAll = true }, destructive = true)
     }

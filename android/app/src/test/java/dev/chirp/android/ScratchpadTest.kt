@@ -99,7 +99,7 @@ class ScratchpadTest {
     @Test fun `dictation walks connecting listening finishing and inserts the final into the text`() {
         val rig = Rig(context); screen(rig)
         mic().performClick()
-        compose.onNodeWithText("Connecting to Mac…").assertExists()
+        compose.onNodeWithText("Connecting to your computer…").assertExists()
         assertTrue(rig.capture.started)
         rig.wire.ready(); compose.waitForIdle()
         compose.onNodeWithText("Listening…").assertExists()
@@ -219,11 +219,11 @@ class ScratchpadTest {
         val actions = mutableListOf<DictationAction>(); screen(rig, actions)
         rig.model.toggle(); rig.wire.event(ServerEvent.Failure("auth")); compose.waitForIdle()
         compose.onNodeWithText("Pairing refused — pair again in Chirp settings").assertExists()
-        compose.onNodeWithText("Pair Mac").performClick()
+        compose.onNodeWithText("Pair computer").performClick()
         assertEquals(listOf(DictationAction.PAIR), actions)
         assertFalse(rig.model.active); assertTrue(rig.wire.closed)
         rig.model.toggle(); rig.wire.event(ServerEvent.Failure("busy")); compose.waitForIdle()
-        compose.onNodeWithText("Mac is busy — try again").assertExists()
+        compose.onNodeWithText("Chirp server is busy — try again").assertExists()
     }
 
     @Test fun `unreachable tailnet Mac says Tailscale is off with a turn on action`() {
@@ -238,7 +238,7 @@ class ScratchpadTest {
     @Test fun `unpaired and missing microphone are explained without starting capture`() {
         val unpaired = Rig(context, paired = false); screen(unpaired)
         mic().performClick(); compose.waitForIdle()
-        compose.onNodeWithText("Pair your Mac in Chirp settings").assertExists(); compose.onNodeWithText("Pair Mac").assertExists()
+        compose.onNodeWithText("Pair your computer in Chirp settings").assertExists(); compose.onNodeWithText("Pair computer").assertExists()
         assertTrue(unpaired.wires.isEmpty()); assertTrue(unpaired.captures.isEmpty())
         val silent = Rig(context, mic = false)
         silent.model.toggle()
@@ -266,7 +266,7 @@ class ScratchpadTest {
         compose.onNodeWithContentDescription("More options").performClick()
         compose.onNodeWithText("Clear").assertIsNotEnabled()
         rig.model.toggle(); rig.wire.event(ServerEvent.Ready(true)); compose.waitForIdle()
-        compose.onNodeWithText("DEBUG: recordings kept on Mac").assertExists()
+        compose.onNodeWithText("DEBUG: recordings kept on the server").assertExists()
     }
 
     @Test fun `floating mic hand-off arrives in memory once and appends after existing text`() {

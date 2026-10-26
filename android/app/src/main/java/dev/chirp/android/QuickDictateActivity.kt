@@ -183,7 +183,7 @@ internal fun QuickDictateScreen(model: QuickDictateModel, prompt: String? = null
                 }
                 Text(if (recognizing && model.copied) "Finished" else model.status,
                     Modifier.semantics { liveRegion = LiveRegionMode.Polite }, style = MaterialTheme.typography.titleMedium)
-                if (model.retained) Text("DEBUG: recordings kept on Mac", style = MaterialTheme.typography.bodySmall)
+                if (model.retained) Text("DEBUG: recordings kept on the server", style = MaterialTheme.typography.bodySmall)
                 val content = if (model.copied) model.text else model.partial
                 if (content.isNotEmpty()) Text(buildAnnotatedString {
                     val stable = if (model.copied) content else model.stable.takeIf { content.startsWith(it) }.orEmpty()
@@ -202,7 +202,7 @@ internal fun QuickDictateScreen(model: QuickDictateModel, prompt: String? = null
                     Button(done, Modifier.fillMaxWidth()) { Text("Done") }
                 } else {
                     Button(retry, Modifier.fillMaxWidth()) { Text(when (DictationAction.forStatus(model.status)) {
-                        DictationAction.PAIR -> "Pair Mac"
+                        DictationAction.PAIR -> "Pair computer"
                         DictationAction.MICROPHONE -> "Allow"
                         DictationAction.TAILSCALE_ON, DictationAction.TAILSCALE_OPEN, DictationAction.TAILSCALE_SETUP -> "Turn on Tailscale"
                         else -> "Check again"
