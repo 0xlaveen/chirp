@@ -452,6 +452,19 @@ private func inputs(_ phase: KeyboardPhase? = .armed, access: Bool = true, lease
         #expect(finishedScreen { $0.undoUntil = nil }.undoTitle == "Undo")
     }
 
+    @Test func typingKeepsTheSuggestionsInAPassiveNotReadyState() {
+        for s in [screen(nil) { $0.typing = true }, screen(.idle) { $0.typing = true }, screen(.armed, access: false) { $0.typing = true }] {
+            #expect(s.topRow == .suggestions && s.showsSuggestions, "typing needs the word suggestions")
+            #expect(s.detail != nil, "⋯ stays for the long guidance")
+        }
+        #expect(screen(nil) { $0.typing = true }.primary.kind == .openChirp, "the small icon is still Open Chirp")
+        // Something that needs attention keeps its message even while typing.
+        #expect(screen(.failed) { $0.errorCode = .unreachable; $0.typing = true }.topRow == .notReady)
+        #expect(screen(.armed) { $0.fallback = "Open Chirp manually."; $0.typing = true }.topRow == .notReady)
+        #expect(screen(.armed) { $0.requiresRecovery = true; $0.typing = true }.topRow == .notReady)
+        #expect(screen(nil).topRow == .notReady, "and without typing the message is back")
+    }
+
     @Test func remainingTimeIsADetailNotARowLabel() {
         let s = screen(.armed) { $0.sessionExpiresAt = now.addingTimeInterval(252) }
         #expect(s.remaining == "4:12 left" && s.topRow == .suggestions)

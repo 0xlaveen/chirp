@@ -243,7 +243,8 @@ final class KeyboardTopRow: UIView {
         open.isHidden = !opens
         let hasPrimary: Bool
         switch next {
-        case .suggestions, .dictating, .polishing: hasPrimary = true
+        case .suggestions: hasPrimary = action.kind != .fullAccess
+        case .dictating, .polishing: hasPrimary = true
         case .notReady: hasPrimary = !opens && action.kind != .fullAccess
         case .finished, .notice: hasPrimary = false
         }

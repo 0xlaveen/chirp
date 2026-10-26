@@ -460,6 +460,9 @@ changes** between states. Side-by-side screenshots with Android's strip are in
   short message (*No session*, *Needs Full Access*, *Mac offline*, *Debug
   retention on*), **⋯** for the long guidance, and at most one action: *Open
   Chirp* (also the fallback after a failed open) or the mic to retry.
+  While you type on the keys, a passive *No session* / *Needs Full Access* row gives
+  the row back to the word suggestions (⋯ stays, and the Open Chirp icon takes the mic's
+  place) for a few seconds; an error or a recovery notice keeps its message.
 
 - **Keys** — QWERTY in Apple's look and metrics on iPhone and iPad: shift,
   caps lock (double-tap shift), automatic capitals at sentence starts (following

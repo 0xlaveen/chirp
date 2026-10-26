@@ -33,6 +33,9 @@ public struct KeyboardInputs: Equatable, Sendable {
     public var fallback: String?
     public var recordingStartedAt: Date?
     public var compactHeight = false
+    /// The user is typing on the keys right now (the last few seconds). A not-ready row that only says "No session"
+    /// then gives the row back to the word suggestions, which typing needs.
+    public var typing = false
     public var now: Date
     public init(now: Date) { self.now = now }
 }
@@ -179,7 +182,7 @@ public enum KeyboardPresenter {
         let showsOpen = i.hasFullAccess && (i.fallback != nil || i.requiresRecovery)
         let warning = i.debugRetention ? warningText : nil
         let notice = live ? i.notice : nil
-        let row: TopRow
+        var row: TopRow
         if recording || i.startPending { row = .dictating }
         else if phase == .correcting { row = .polishing }
         else if notice != nil { row = .notice }
@@ -187,6 +190,10 @@ public enum KeyboardPresenter {
         else if showsUndo || showsRaw { row = .finished }
         else if i.errorCode != nil || warning != nil { row = .notReady }
         else { row = .suggestions }
+        // A passive "No session" / "Needs Full Access" row never takes the suggestions from someone who is typing:
+        // the row shows them again, with ⋯ and the Open Chirp action as the small trailing icon, until they stop.
+        let passive = i.errorCode == nil && i.fallback == nil && !i.requiresRecovery && !showsOpen
+        if row == .notReady && i.typing && passive && (!live || phase == .idle) { row = .suggestions }
         // Starting is already dictating: the same row, until the session confirms.
         if i.startPending && !recording && phase != .correcting { line = Line(label: "Starting…", glyph: .ripple, detail: line.detail) }
         if row == .notReady && warning != nil && i.errorCode == nil && live && !showsOpen {

@@ -27,6 +27,7 @@ final class ChirpKeyboardViewController: KeyboardInputViewController {
     private var applying = false
     private var visible = false
     private var rawUntil: Date?
+    private var typingUntil: Date?
     private var kept = false
     private var notice: String?
     private var noticeUntil: Date?
@@ -309,6 +310,7 @@ final class ChirpKeyboardViewController: KeyboardInputViewController {
 
     /// Typing next to a dictation the keyboard owns releases it first (its text stays; nothing more lands there).
     private func userWillType() {
+        typingUntil = Date().addingTimeInterval(8)
         guard policy.generation != nil || startPending else { return }
         invalidateOwnership()
         render()
@@ -442,6 +444,7 @@ final class ChirpKeyboardViewController: KeyboardInputViewController {
         let owned = bridgeState.flatMap { $0.generation == policy.generation && !policy.isFinal ? policy.utteranceID : nil }
         clock.observe(phase: live ? i.phase : nil, ownedUtterance: live && owned == bridgeState?.utteranceID ? owned : nil, now: now)
         i.recordingStartedAt = clock.startedAt
+        i.typing = now < (typingUntil ?? .distantPast)
         i.compactHeight = compactHeight
         #if DEBUG && targetEnvironment(simulator)
         KeyboardPreview.apply(to: &i)
