@@ -30,7 +30,6 @@ public struct KeyboardInputs: Equatable, Sendable {
     public var startPending = false
     public var fallback: String?
     public var recordingStartedAt: Date?
-    public var needsGlobe = false
     public var compactHeight = false
     public var now: Date
     public init(now: Date) { self.now = now }
@@ -73,13 +72,15 @@ public enum StripGlyph: Sendable, Equatable {
     case idle
 }
 
-/// The capsule chips under the primary control, in display order. Chips that don't apply are hidden, not disabled.
+/// Chirp's capsule chips, in display order. Style sits in the strip; the others take over the suggestion row while
+/// they apply. Chips that don't apply are hidden, not disabled.
 public enum KeyboardChip: Sendable, Equatable { case undo, cancel, raw, open, style }
 
-/// The four rows of the keyboard. All four are always laid out, so the height never depends on the state.
-public enum KeyboardRow: Sendable, CaseIterable { case strip, primary, chips, keys }
+/// The three rows of the keyboard: the Chirp strip, the suggestion row (word suggestions, or Chirp's action chips)
+/// and the typing keys. All three are always laid out, so the height never depends on the state.
+public enum KeyboardRow: Sendable, CaseIterable { case strip, suggestions, keys }
 
-/// What to draw. Space, Delete and Return are always enabled and need no flag.
+/// What to draw. The typing keys are always enabled and need no flag.
 public struct KeyboardScreen: Equatable, Sendable {
     /// The strip's short label: "Ready", "Listening…", "Mac offline". Also a notice such as "Dictation removed".
     public var phaseText: String
@@ -102,11 +103,16 @@ public struct KeyboardScreen: Equatable, Sendable {
     /// The Style menu's "Private session" item, checked while it is on.
     public var privacyOn: Bool
     public var endEnabled: Bool
-    public var showsGlobe: Bool
     /// Every row, reserved in every state.
     public var rows: [KeyboardRow] { KeyboardRow.allCases }
 
     public var showsUndo: Bool { chips.contains(.undo) }
+    /// The Style chip lives in the strip.
+    public var showsStyle: Bool { chips.contains(.style) }
+    /// The chips that replace the word suggestions: Undo, Cancel, Use raw, Open Chirp.
+    public var actionChips: [KeyboardChip] { chips.filter { $0 != .style } }
+    /// Word suggestions give way while Chirp has an action to offer (dictating, polishing, just finished).
+    public var showsSuggestions: Bool { actionChips.isEmpty }
 }
 
 public enum KeyboardPresenter {
@@ -154,7 +160,7 @@ public enum KeyboardPresenter {
             primary: primary(i, live: live, phase: phase), chips: chips,
             rawTitle: rawLeft.map { "Use raw (\($0)s)" } ?? "Use raw", rawSecondsLeft: rawLeft,
             styleTitle: styleTitle(i.styleID ?? "default"), styleItems: items, privacyOn: i.privacyMode,
-            endEnabled: live, showsGlobe: i.needsGlobe)
+            endEnabled: live)
     }
 
     /// Whole seconds left in the Use raw window, rounded up so the label reaches 1 before it closes.
@@ -196,7 +202,7 @@ public enum KeyboardPresenter {
     private static func text(_ i: KeyboardInputs, live: Bool, phase: KeyboardPhase?) -> Line {
         guard i.hasFullAccess else {
             return Line(label: "Needs Full Access", glyph: .warning,
-                        detail: "Open Settings → Chirp → Keyboards and turn on Allow Full Access, then start a session in Chirp. Space, delete, return and next keyboard work here.")
+                        detail: "Open Settings → Chirp → Keyboards and turn on Allow Full Access, then start a session in Chirp. Typing works without it.")
         }
         if let fallback = i.fallback { return Line(label: "Open Chirp", glyph: .warning, detail: fallback) }
         if i.requiresRecovery {

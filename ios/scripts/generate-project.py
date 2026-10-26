@@ -49,6 +49,8 @@ def configs(name, settings):
 config_ref = file('Config/Project.xcconfig', 'text.xcconfig')
 shared = add('package:Shared', isa='XCLocalSwiftPackageReference', relativePath='Shared')
 policy = add('package:Policy', isa='XCLocalSwiftPackageReference', relativePath='Keyboard/Policy')
+# The typing keys (KeyboardKit's MIT core, pinned in Keyboard/Typing/Package.swift): keyboard extension and its tests.
+typing = add('package:Typing', isa='XCLocalSwiftPackageReference', relativePath='Keyboard/Typing')
 target_ids = {name: oid('target:' + name) for name in ('ChirpIOS', 'ChirpKeyboard', 'ChirpWidgets', 'ChirpIOSTests', 'ChirpIOSUITests')}
 all_files = [config_ref]
 products = []
@@ -92,6 +94,10 @@ for name, paths in memberships.items():
         dep = add('packageproduct:KeyboardPolicy', isa='XCSwiftPackageProductDependency', package=policy, productName='KeyboardPolicy')
         packages.append(dep)
         links.append(add('link:KeyboardPolicy', isa='PBXBuildFile', productRef=dep))
+    if name in ('ChirpKeyboard', 'ChirpIOSTests'):
+        dep = add(f'packageproduct:{name}:KeyboardTyping', isa='XCSwiftPackageProductDependency', package=typing, productName='KeyboardTyping')
+        packages.append(dep)
+        links.append(add(f'link:{name}:KeyboardTyping', isa='PBXBuildFile', productRef=dep))
     phases.append(add('frameworks:' + name, isa='PBXFrameworksBuildPhase', buildActionMask=2147483647, files=links, runOnlyForDeploymentPostprocessing=0))
     resources = []
     # The app's catalog (AppIcon, the koi AccentColor, the ChirpGlyph brand glyph, PondArt) also ships in the
@@ -137,7 +143,7 @@ main_group = add('rootgroup', isa='PBXGroup', children=all_files+[product_group]
 project = add('project', isa='PBXProject', attributes={'BuildIndependentTargetsInParallel':'YES', 'LastUpgradeCheck':'1600'},
               buildConfigurationList=configs('project', {}), compatibilityVersion='Xcode 15.0', developmentRegion='en',
               knownRegions=['en','Base'], mainGroup=main_group, productRefGroup=product_group, projectDirPath='', projectRoot='',
-              packageReferences=[shared, policy, oid('package:mac')], targets=list(target_ids.values()))
+              packageReferences=[shared, policy, typing, oid('package:mac')], targets=list(target_ids.values()))
 out = ROOT / 'Chirp.xcodeproj'
 out.mkdir(exist_ok=True)
 (out/'project.pbxproj').write_text('// !$*UTF8*$!\n' + atom(dict(archiveVersion=1, classes={}, objectVersion=60, objects=objects, rootObject=project)) + '\n')

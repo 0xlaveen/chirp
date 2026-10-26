@@ -25,9 +25,3 @@ public enum ClockText {
         return h > 0 ? String(format: "%d:%02d:%02d", h, m, s) : String(format: "%d:%02d", m, s)
     }
 }
-
-/// Press-and-hold repeat for Delete: a pause, then an accelerating cadence.
-public enum KeyRepeat {
-    public static let initialDelay: TimeInterval = 0.4
-    public static func interval(afterRepeats count: Int) -> TimeInterval { count < 4 ? 0.12 : count < 12 ? 0.07 : 0.035 }
-}

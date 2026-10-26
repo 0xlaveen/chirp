@@ -76,7 +76,12 @@ by the current app lease. Lease expiry or generation change invalidates ownershi
 
 ### Voice-first layout and presenter
 
-The keyboard is voice-first (no QWERTY; users keep Apple's keyboard for typing).
+> **Superseded in part by #245:** Chirp Keyboard is now a full typing keyboard (KeyboardKit 9.9.1's MIT core under
+> Chirp's strip; see `ios/README.md` and `ios/Keyboard/Typing`). The primary control moved into the strip, the chips
+> take over the suggestion row, End session sits behind ⓘ and KeyboardKit owns Space, Delete (repeat), Return and the
+> globe. The ownership and presenter rules below still hold.
+
+The keyboard was voice-first (no QWERTY; users kept Apple's keyboard for typing).
 All decisions live in the pure `KeyboardPresenter.screen(_:)` in the
 `KeyboardPolicy` package (no UIKit, no ChirpIOSCore): `KeyboardInputs` mirrors
 phase, lease, session expiry, style, debug retention, error code, ownership

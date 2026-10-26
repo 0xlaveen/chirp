@@ -93,9 +93,7 @@ private func inputs(_ phase: KeyboardPhase? = .armed, access: Bool = true, lease
         #expect(empty.styleItems.isEmpty && !empty.chips.contains(.style))
     }
 
-    @Test func globeAndWarning() {
-        #expect(KeyboardPresenter.screen(inputs { $0.needsGlobe = true }).showsGlobe)
-        #expect(!KeyboardPresenter.screen(inputs()).showsGlobe)
+    @Test func debugWarning() {
         let debug = KeyboardPresenter.screen(inputs { $0.debugRetention = true })
         #expect(debug.warning == "DEBUG recordings kept on the server")
         #expect(debug.detail?.hasSuffix("DEBUG recordings kept on the server") == true, "the ⓘ explains the DEBUG badge")
@@ -264,31 +262,25 @@ private func inputs(_ phase: KeyboardPhase? = .armed, access: Bool = true, lease
     }
 }
 
-@Suite struct DeleteRepeatAndMetricsTests {
-    @Test func repeatAcceleratesAndHasFloor() {
-        let steps = (0..<40).map(KeyRepeat.interval(afterRepeats:))
-        #expect(zip(steps, steps.dropFirst()).allSatisfy { $0 >= $1 })
-        #expect(steps.first! > steps.last! && steps.last! >= 0.03 && KeyRepeat.initialDelay > steps.first!)
-    }
-
-    @Test func iPhonePortraitIsFullWidthPrimary() {
+@Suite struct MetricsTests {
+    @Test func iPhoneHidesThePrimaryTitleAndKeepsTouchTargets() {
         let m = KeyboardMetrics.make(width: 393, compactHeight: false)
-        #expect(m.primaryHeight >= KeyboardMetrics.minimumPrimaryHeight && m.maxPrimaryWidth == nil && m.spacing == 8)
+        #expect(!m.showsPrimaryTitle && m.showsRemaining && m.stripHeight == 44 && m.suggestionHeight >= 36)
+        #expect(!KeyboardMetrics.make(width: 375, compactHeight: false).showsRemaining, "an SE-width strip leaves the time to ⓘ")
     }
 
-    @Test func iPadCapsPrimaryAndWidensSpacing() {
+    @Test func iPadShowsTheTitleAndATallerSuggestionRow() {
         let phone = KeyboardMetrics.make(width: 393, compactHeight: false)
         let pad = KeyboardMetrics.make(width: 820, compactHeight: false)
-        #expect(pad.maxPrimaryWidth == 440 && pad.spacing > phone.spacing && pad.inset > phone.inset)
-        #expect(pad.primaryHeight >= KeyboardMetrics.minimumPrimaryHeight && pad.keyHeight > phone.keyHeight)
+        #expect(pad.showsPrimaryTitle && pad.inset > phone.inset && pad.suggestionHeight > phone.suggestionHeight)
     }
 
     @Test(arguments: [393.0, 852.0, 1180.0])
-    func compactHeightKeepsPrimaryAndShrinksKeys(width: Double) {
+    func compactHeightKeepsTheStripAndShrinksSuggestions(width: Double) {
         let m = KeyboardMetrics.make(width: width, compactHeight: true)
         let regular = KeyboardMetrics.make(width: width, compactHeight: false)
-        #expect(m.primaryHeight >= KeyboardMetrics.minimumPrimaryHeight && m.keyHeight < regular.keyHeight)
-        #expect(m.maxPrimaryWidth == (width >= 600 ? 440 : nil))
+        #expect(m.stripHeight == 44 && m.suggestionHeight < regular.suggestionHeight)
+        #expect(m.showsPrimaryTitle == (width >= 600))
     }
 }
 
@@ -370,8 +362,8 @@ private func inputs(_ phase: KeyboardPhase? = .armed, access: Bool = true, lease
         #expect(screen(.finished) { $0.isFinal = true; $0.ownsUtterance = true }.chips == [.style], "Undo only after a final")
     }
 
-    /// The heights come from `KeyboardMetrics`, the rows from the presenter: every state lays out all four rows, so
-    /// the keyboard is the same height in every state for a given width and size class.
+    /// The heights come from `KeyboardMetrics`, the rows from the presenter: every state lays out all three rows (the
+    /// chips take over the suggestion row, never add one), so the keyboard is the same height in every state.
     @Test(arguments: [(393.0, false), (393.0, true), (852.0, true), (820.0, false), (1180.0, false), (320.0, false)])
     func heightIsIdenticalInEveryState(width: Double, compact: Bool) {
         let metrics = KeyboardMetrics.make(width: width, compactHeight: compact)
@@ -386,9 +378,10 @@ private func inputs(_ phase: KeyboardPhase? = .armed, access: Bool = true, lease
                         $0.rawUntil = final ? now.addingTimeInterval(3) : nil; $0.compactHeight = compact
                         $0.recordingStartedAt = now.addingTimeInterval(-9); $0.sessionExpiresAt = now.addingTimeInterval(300)
                     }
-                    #expect(s.rows == [.strip, .primary, .chips, .keys])
+                    #expect(s.rows == [.strip, .suggestions, .keys])
                     #expect(Set(s.chips).count == s.chips.count && s.chips.count <= 4)
-                    heights.insert(metrics.totalHeight); states += 1
+                    #expect(s.showsSuggestions == s.actionChips.isEmpty && !s.actionChips.contains(.style))
+                    heights.insert(metrics.chromeHeight); states += 1
                 }}
             }}}
         }
@@ -396,25 +389,28 @@ private func inputs(_ phase: KeyboardPhase? = .armed, access: Bool = true, lease
         #expect(metrics.stripHeight == 44)
     }
 
-    @Test func totalHeightAddsTheFourRowsGapsAndPadding() {
+    @Test func chromeIsTheStripPlusASuggestionRow() {
         let m = KeyboardMetrics.make(width: 393, compactHeight: false)
-        #expect(m.totalHeight == m.stripHeight + m.primaryHeight + m.chipHeight + m.keyHeight + 3 * m.spacing + 2 * m.verticalInset)
-        let phone = m.totalHeight
-        #expect(phone > 200 && phone < 260, "close to the system keyboard height, not a third taller")
-        #expect(KeyboardMetrics.make(width: 393, compactHeight: true).totalHeight < phone)
-        #expect(KeyboardMetrics.make(width: 820, compactHeight: false).totalHeight > phone)
+        #expect(m.chromeHeight == m.stripHeight + m.suggestionHeight)
+        #expect(m.chromeHeight <= 88, "one strip on top of the system-height suggestion row, nothing more")
+        #expect(KeyboardMetrics.make(width: 393, compactHeight: true).chromeHeight < m.chromeHeight)
     }
 
     @Test func rowsFitTheirTouchTargetsAndTextCaps() {
         for (width, compact) in [(393.0, false), (393.0, true), (820.0, false), (1180.0, true)] {
             let m = KeyboardMetrics.make(width: width, compactHeight: compact)
-            #expect(m.chipHeight >= 36 && m.keyHeight >= 36 && m.primaryHeight >= KeyboardMetrics.minimumPrimaryHeight)
+            #expect(m.stripHeight >= 44 && m.suggestionHeight >= 36 && KeyboardMetrics.minimumPrimaryWidth >= 44)
         }
         #expect(KeyboardMetrics.maxStripTextPoints <= KeyboardMetrics.stripHeight / 2)
     }
 
-    @Test func iPadAlignsTheStripAndChipsToThePrimaryColumn() {
-        #expect(KeyboardMetrics.make(width: 1024, compactHeight: false).maxPrimaryWidth == KeyboardMetrics.iPadColumnWidth)
-        #expect(KeyboardMetrics.make(width: 393, compactHeight: false).maxPrimaryWidth == nil)
+    @Test func suggestionsGiveWayToChirpActionsOnly() {
+        #expect(screen(.armed).showsSuggestions && screen(.armed).showsStyle, "Style alone keeps the suggestions")
+        #expect(!screen(.listening).showsSuggestions && screen(.listening).actionChips == [.cancel])
+        let cleaned = screen(.finished) {
+            $0.isFinal = true; $0.ownsUtterance = true; $0.undoAvailable = true; $0.rawUntil = now.addingTimeInterval(4)
+        }
+        #expect(cleaned.actionChips == [.undo, .raw] && !cleaned.showsSuggestions)
+        #expect(screen(nil).showsSuggestions)
     }
 }

@@ -63,6 +63,11 @@ extension XCTestCase {
         let loaded = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in status.exists || globe.exists }, object: nil)
         _ = XCTWaiter.wait(for: [loaded], timeout: 10)
         if status.exists { return }
+        // A fresh simulator first shows Apple's "slide to type" tip over the keyboard; it hides the globe's effect.
+        let tip = app.buttons["Continue"]
+        if tip.exists, app.staticTexts.matching(NSPredicate(format: "label CONTAINS[c] 'sliding your finger'")).firstMatch.exists {
+            tip.tap()
+        }
         // iPad's Emoji keyboard has no globe key; "letters" returns to one that has.
         if !globe.exists, app.buttons["letters"].exists { app.buttons["letters"].tap(); _ = globe.waitForExistence(timeout: 3) }
         guard globe.exists, globe.isHittable else {

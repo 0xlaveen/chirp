@@ -2,15 +2,14 @@ import UIKit
 import ChirpIOSCore
 import KeyboardPolicy
 
-/// Capsule chips on `surfaceRaised` under the primary control: Undo or Cancel, Use raw, Open Chirp and the Style menu.
-/// A chip that doesn't apply is hidden (not disabled) and the row keeps its height, so nothing moves.
+/// Capsule chips on `surfaceRaised` that take over the suggestion row while they apply: Undo or Cancel, Use raw and
+/// Open Chirp. A chip that doesn't apply is hidden (not disabled) and the row keeps its height, so nothing moves.
 @MainActor
 final class KeyboardChipRow: UIStackView {
     let undo = UIButton(type: .system)
     let cancel = UIButton(type: .system)
     let raw = UIButton(type: .system)
     let open = UIButton(type: .system)
-    let style = UIButton(type: .system)
     private let spacer = UIView()
 
     init() {
@@ -22,39 +21,28 @@ final class KeyboardChipRow: UIStackView {
         Self.configure(cancel, title: "Cancel", symbol: "xmark", id: "cancel", label: "Cancel")
         Self.configure(raw, title: "Use raw", symbol: "text.append", id: "raw", label: "Use raw", tint: KeyboardPalette.moon)
         Self.configure(open, title: "Open Chirp", symbol: "arrow.up.forward.app", id: "open", label: "Open Chirp")
-        Self.configure(style, title: "Default", symbol: nil, id: "style", label: "Style")
-        style.configuration?.image = UIImage(systemName: "chevron.down")
-        style.configuration?.imagePlacement = .trailing
-        style.showsMenuAsPrimaryAction = true
+        spacing = 8
         spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
         spacer.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         for chip in [undo, cancel, raw, open] { addArrangedSubview(chip) }
         addArrangedSubview(spacer)
-        addArrangedSubview(style)
-        // When the row is too narrow for every chip, the Style chip and the labels give way first.
-        style.setContentCompressionResistancePriority(.defaultHigh - 1, for: .horizontal)
         for chip in [undo, cancel, raw, open] { chip.setContentCompressionResistancePriority(.defaultHigh, for: .horizontal) }
     }
     @available(*, unavailable) required init(coder: NSCoder) { fatalError() }
 
-    /// Gaps between chips; the row's own spacing follows the keyboard metrics.
     func apply(_ screen: KeyboardScreen) {
         let chips = Set(screen.chips)
         undo.isHidden = !chips.contains(.undo)
         cancel.isHidden = !chips.contains(.cancel)
         raw.isHidden = !chips.contains(.raw)
         open.isHidden = !chips.contains(.open)
-        style.isHidden = !chips.contains(.style)
         raw.configuration?.title = screen.rawTitle
         raw.accessibilityLabel = "Use raw"
         raw.accessibilityValue = screen.rawSecondsLeft.map { "\($0) seconds left" }
-        style.configuration?.title = screen.styleTitle
-        style.accessibilityLabel = "Style: " + screen.styleTitle
-        style.accessibilityHint = "Opens the style menu."
     }
 
-    private static func configure(_ button: UIButton, title: String, symbol: String?, id: String, label: String,
-                                  tint: UIColor = KeyboardPalette.ink) {
+    static func configure(_ button: UIButton, title: String, symbol: String?, id: String, label: String,
+                          tint: UIColor = KeyboardPalette.ink) {
         var configuration = UIButton.Configuration.filled()
         configuration.title = title
         configuration.image = symbol.flatMap { UIImage(systemName: $0) }
