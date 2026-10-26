@@ -66,7 +66,7 @@ def bubble_actions():
     custom('Move to other side')
     # Double tap is a click: the release build is unpaired, so the panel opens on its one fix.
     probe('click', bubble)
-    wait_for('Pair your Mac to dictate'); wait_for('Pair Mac')
+    wait_for('Pair your computer to dictate'); wait_for('Pair computer')
     m['screenshot']('talkback-floating-error')
     probe('click', 'Hide panel')
     probe('click', 'Dictate, then edit here')
@@ -84,7 +84,7 @@ def quickdictate_actions():
     package = m['PACKAGE']
     adb('shell', 'pm', 'grant', package, 'android.permission.RECORD_AUDIO')
     adb('shell', 'am', 'start', '-n', package + '/.QuickDictateActivity')
-    wait_for('Quick dictate'); wait_for('Pair Mac'); wait_for('Cancel')
+    wait_for('Quick dictate'); wait_for('Pair computer'); wait_for('Cancel')
     probe('click', 'Cancel')
     adb('shell', 'am', 'start', '-a', 'android.intent.action.SEND', '-t', 'text/plain',
         '--es', 'android.intent.extra.TEXT', shlex.quote('Synthetic share for accessibility review'), '-n', package + '/.ShareToNotesActivity')
@@ -92,7 +92,7 @@ def quickdictate_actions():
     m['screenshot']('quickdictate-talkback-share')
     probe('click', 'Cancel')
     m['crash_check']()
-    print('PASS: actual TalkBack; Quick dictate title, one Pair Mac fix and Cancel; Share title, Save as new note and Cancel; no crash.')
+    print('PASS: actual TalkBack; Quick dictate title, one Pair computer fix and Cancel; Share title, Save as new note and Cancel; no crash.')
 
 
 def main():
@@ -143,7 +143,7 @@ def main():
         wait_for('Dictation options')
         # Native accessibility actions exercise the same click a screen reader invokes on the mic and on the ⋯ options button.
         probe('click', 'Microphone: tap to dictate')
-        wait_for('Pair your Mac in Chirp settings. Pair Mac')
+        wait_for('Pair your computer in Chirp settings. Pair computer')
         wait_for('Cancel dictation')
         probe('click', 'Cancel dictation')
         probe('click', 'Dictation options')

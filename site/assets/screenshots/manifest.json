@@ -594,9 +594,9 @@
     ]
   },
   "ios/iphone-dark-onboarding-1-welcome.png": {
-    "sha256": "5987e494242a18158aa68110f3a9bb43b8a2377c144c9721c9b5df1a5c226e07",
-    "width": 690,
-    "height": 1500,
+    "sha256": "8a94b102f3302df9495a9d2a4d81f60c3b732d58cb1bf38a269ab228b5790813",
+    "width": 1206,
+    "height": 2622,
     "variants": [
       {
         "file": "ios/iphone-dark-onboarding-1-welcome-320.webp",
@@ -609,16 +609,21 @@
         "height": 1391
       },
       {
-        "file": "ios/iphone-dark-onboarding-1-welcome-690.webp",
-        "width": 690,
-        "height": 1500
+        "file": "ios/iphone-dark-onboarding-1-welcome-960.webp",
+        "width": 960,
+        "height": 2087
+      },
+      {
+        "file": "ios/iphone-dark-onboarding-1-welcome-1206.webp",
+        "width": 1206,
+        "height": 2622
       }
     ]
   },
   "ios/iphone-dark-onboarding-2-pair-connected.png": {
-    "sha256": "96139d2d180d49d3214c45aff265bb26cfa20597c3edafdebdc433e8ba44168e",
-    "width": 690,
-    "height": 1500,
+    "sha256": "09ca883dffc699e5ce3e999cfbde9a3c5cfd8c2dbcf2695728023cef1a8cf3a1",
+    "width": 1206,
+    "height": 2622,
     "variants": [
       {
         "file": "ios/iphone-dark-onboarding-2-pair-connected-320.webp",
@@ -631,9 +636,14 @@
         "height": 1391
       },
       {
-        "file": "ios/iphone-dark-onboarding-2-pair-connected-690.webp",
-        "width": 690,
-        "height": 1500
+        "file": "ios/iphone-dark-onboarding-2-pair-connected-960.webp",
+        "width": 960,
+        "height": 2087
+      },
+      {
+        "file": "ios/iphone-dark-onboarding-2-pair-connected-1206.webp",
+        "width": 1206,
+        "height": 2622
       }
     ]
   },
@@ -660,9 +670,9 @@
     ]
   },
   "ios/iphone-onboarding-1-welcome.png": {
-    "sha256": "c4a80d4dd0f22ac8c687163997d979be9eb3c19f5f43a92e7b7c790a71a79a3b",
-    "width": 690,
-    "height": 1500,
+    "sha256": "497ae733c9eca3a002dcb39b451a65084ec3a5b0fd7cc1fa34aaa22a817e00cc",
+    "width": 1206,
+    "height": 2622,
     "variants": [
       {
         "file": "ios/iphone-onboarding-1-welcome-320.webp",
@@ -675,16 +685,21 @@
         "height": 1391
       },
       {
-        "file": "ios/iphone-onboarding-1-welcome-690.webp",
-        "width": 690,
-        "height": 1500
+        "file": "ios/iphone-onboarding-1-welcome-960.webp",
+        "width": 960,
+        "height": 2087
+      },
+      {
+        "file": "ios/iphone-onboarding-1-welcome-1206.webp",
+        "width": 1206,
+        "height": 2622
       }
     ]
   },
   "ios/iphone-onboarding-2-pair-connected.png": {
-    "sha256": "7eaa964fe769cc96f0e844de6203cac2c5d43b3e268d169e09900f7bc9d11d97",
-    "width": 690,
-    "height": 1500,
+    "sha256": "f05af8f6be4387bd1ef52026bba55fa87ffa2d0e92fe3e3020630aef3e99db89",
+    "width": 1206,
+    "height": 2622,
     "variants": [
       {
         "file": "ios/iphone-onboarding-2-pair-connected-320.webp",
@@ -697,9 +712,14 @@
         "height": 1391
       },
       {
-        "file": "ios/iphone-onboarding-2-pair-connected-690.webp",
-        "width": 690,
-        "height": 1500
+        "file": "ios/iphone-onboarding-2-pair-connected-960.webp",
+        "width": 960,
+        "height": 2087
+      },
+      {
+        "file": "ios/iphone-onboarding-2-pair-connected-1206.webp",
+        "width": 1206,
+        "height": 2622
       }
     ]
   },

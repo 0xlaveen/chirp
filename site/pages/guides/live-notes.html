@@ -8,7 +8,7 @@ section: guides
   <h1>Take notes</h1>
   <p class="lede">Leave the mic open for a meeting, a lecture or thinking out loud. Chirp writes Markdown notes while you talk (headings, bullets, to-dos, decisions and open questions) next to the full transcript, and keeps every note in a library you can search.</p>
   <p>For the models, segment boundaries and platform differences, <a href="../architecture.html#notes">read the architecture</a>.</p>
-  <div class="meta-row"><span>Needs: Chirp on your Mac with a clean-up model</span><span>Also on: Android and early iOS</span></div>
+  <div class="meta-row"><span>Needs: Chirp on your Mac with a clean-up model</span><span>Also on: Android, iPhone and iPad (early) and the Windows/Linux desktop app</span></div>
 </div>
 <article class="narrow prose">
   <nav class="toc" aria-label="On this page"><b>On this page</b>
@@ -52,9 +52,9 @@ section: guides
   <figure class="shot"><div class="frame"><!--shot:mac/notes-inspector-playing|The transcript inspector with one paragraph highlighted and playing--></div></figure>
 
   <h2 id="organize">Organize and speakers</h2>
-  <p>Every few minutes while you record, Chirp regroups recent notes: duplicate headings merge, and tasks, decisions and questions are collected, without dropping or adding anything (the server checks). The <strong>✦ Smart notes</strong> menu in the toolbar has <strong>Organize Now</strong> (also <kbd>⌥⌘R</kbd>), a review of what changed with <strong>Restore previous</strong>, and the switches for <strong>Structure notes</strong> and <strong>Auto-reorganize</strong>.</p>
-  <p><strong>Speaker labels are opt-in on Mac and Android.</strong> On the Mac, turn on <strong>Label speakers</strong> in the ✦ <strong>Smart notes</strong> menu or under Settings → Notes → Speakers. On Android, enable it from a note’s menu or Settings → Notes. Chirp asks before the speaker model downloads (106 MB on the Mac, 27 MB on the server for Android). Person 1, Person 2… chips distinguish turns; click or tap a chip to rename, merge or separate a person. Names appear in exports and can inform task ownership. Kept audio still plays by segment.</p>
-  <p>Without saved voices, no voiceprints are stored: Android’s voice comparisons live in the server’s memory, and Mac labelling runs on the Mac. The Mac’s optional <strong>Recognize saved voices</strong> is off by default and keeps a voiceprint only after consent. <a href="{{repo}}/blob/main/mac/README.md#live-notes">Mac Notes details.</a> <a href="{{repo}}/blob/main/android/README.md#notes">Android Notes details.</a></p>
+  <p>Every few minutes while you record, Chirp regroups recent notes: duplicate headings merge, and tasks, decisions and questions are collected, without dropping or adding anything (your Chirp server checks). The <strong>✦ Smart notes</strong> menu in the toolbar has <strong>Organize Now</strong> (also <kbd>⌥⌘R</kbd>), a review of what changed with <strong>Restore previous</strong>, and the switches for <strong>Structure notes</strong> and <strong>Organize automatically</strong>.</p>
+  <p><strong>Speaker labels are on by default on Mac, Android and iPhone/iPad.</strong> Person 1, Person 2… chips mark each turn in the transcript. Click or tap a chip to rename a person, choose <strong>Same person as</strong> to merge two, or separate them again. Names appear in exports and can inform task ownership. The speaker model downloads by itself the first time, once (about 106 MB on the Mac, about 27 MB on your server for the phones), with a status line and a <strong>Turn off</strong> in place of a prompt; recording never waits for it, and labels start once it is ready. Turn <strong>Label speakers</strong> off in the ✦ <strong>Smart notes</strong> menu or Settings → Notes on the Mac, or from a note’s menu or Settings → Notes on the phones. After you stop, a <strong>Name speakers</strong> sheet lets you name everyone at once. Kept audio still plays by segment.</p>
+  <p><strong>Saved voices.</strong> Tick <strong>Remember voice</strong> when you name someone and your Chirp server keeps their voiceprint in one <strong>Saved voices</strong> library, shared by every device paired to it: name a person on your phone and your Mac, Android phone or iPhone recognizes them in later notes (a ✓ on the chip; <strong>Not Maya</strong> undoes a wrong match). Phones keep no voiceprints of their own, and the Mac’s old Keychain voices move to the server once. <strong>Remember voices of people I name</strong> is one server-wide switch, and Forget removes voices from the server but keeps the names already in your notes. The Mac labels on the Mac itself; Android and iPhone/iPad ask your computer. <a href="{{repo}}/blob/main/mac/README.md#live-notes">Mac Notes details.</a> <a href="{{repo}}/blob/main/android/README.md#notes">Android Notes details.</a> <a href="{{repo}}/blob/main/ios/README.md#live-notes">iPhone and iPad Notes details.</a></p>
 
   <h2 id="export">Export</h2>
   <ul>
@@ -63,18 +63,18 @@ section: guides
   </ul>
 
   <h2 id="android">Notes on Android</h2>
-  <p>Chirp for Android opens on its Notes library, and its notes are structured by your Mac over your tailnet.</p>
+  <p>Chirp for Android opens on its Notes library, and its notes are structured by your computer over your tailnet.</p>
   <ul>
     <li><strong>Record</strong> starts a note; the recording keeps going with the screen off, with Pause and Stop in its notification. The <strong>Notes</strong> Quick Settings tile starts and stops a recording too.</li>
     <li>On an unfolded Fold the list and the note sit side by side. Elsewhere, tap a note to open it and the <strong>Transcript</strong> chip to see what was said.</li>
     <li>Search, swipe a note away to delete it (with Undo), or long-press to select several. Tap the title to rename it.</li>
-    <li>Notes are kept automatically and encrypted on the phone. <strong>Keep audio with notes</strong> (Settings → Notes, off by default) lets you replay segments from the transcript.</li>
+    <li>Notes are kept automatically and encrypted on the phone. <strong>Keep audio with notes</strong> (Settings → Notes, off by default) lets you replay segments from the transcript. <strong>Label speakers</strong> is on by default.</li>
   </ul>
   <div class="shot-row">
     <figure><div class="frame"><!--shot:android/notes-library-cover-recording|The Android notes library with a note recording, pinned in a Recording section above the day groups--></div><figcaption>Recording</figcaption></figure>
     <figure><div class="frame"><!--shot:android/notes-library-cover-detail|A note open on an Android phone, with its title, a Transcript chip and the rendered notes--></div><figcaption>A note</figcaption></figure>
   </div>
 
-  <h2 id="ios">Notes on iPhone and iPad</h2><p>Notes is the app’s start tab. Record into a transcript and structured Markdown using your computer. On iPad notes and transcript sit side by side; on iPhone switch between them with the picker. The iOS app’s device recording and background behavior are still early; segment replay described above is available on Mac and Android.</p><p><a href="iphone.html">iPhone and iPad setup and current limits.</a></p>
+  <h2 id="ios">Notes on iPhone and iPad</h2><p>Notes is the app’s start tab. Record into a transcript and structured Markdown using your computer. On iPad notes and transcript sit side by side; on iPhone switch between them with the picker. Notes are saved as you go in an encrypted local library, with search, Recently Deleted, <strong>Label speakers</strong> (on by default) and Saved voices, and optional <strong>Keep audio with notes</strong> for segment replay. The iOS app’s device recording and background behavior are still early.</p><p><a href="iphone.html">iPhone and iPad setup and current limits.</a></p>
   <div class="next"><a href="iphone.html">← iPhone and iPad</a><a href="coding-agent.html">Next: Build with your coding agent →</a></div>
 </article>

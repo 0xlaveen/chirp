@@ -12,9 +12,28 @@
   const duration = ms => `${Math.floor(ms / 60000)}:${String(Math.floor(ms / 1000) % 60).padStart(2, '0')}`;
   const message = text => { el('notes-message').textContent = text; };
   const dirty = () => revision !== savedRevision;
-  function showNotes() { el('notes-view').hidden = false; el('dictation-view').hidden = true; }
-  el('show-notes').onclick = showNotes;
-  el('show-dictation').onclick = () => { el('notes-view').hidden = true; el('dictation-view').hidden = false; };
+  const tabs = ['show-notes', 'show-dictation'];
+  function showView(notes) {
+    el('notes-view').hidden = !notes; el('dictation-view').hidden = notes;
+    for (const [index, id] of tabs.entries()) {
+      const selected = notes === (index === 0), tab = el(id);
+      tab.setAttribute('aria-selected', String(selected));
+      tab.tabIndex = selected ? 0 : -1;
+      tab.classList.toggle('quiet', !selected);
+    }
+  }
+  function showNotes() { showView(true); }
+  for (const [index, id] of tabs.entries()) {
+    el(id).onclick = () => showView(index === 0);
+    el(id).onkeydown = event => {
+      let next;
+      if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') next = 1 - index;
+      else if (event.key === 'Home') next = 0;
+      else if (event.key === 'End') next = 1;
+      else return;
+      event.preventDefault(); showView(next === 0); el(tabs[next]).focus();
+    };
+  }
   function appendPreservingCursor(suffix) {
     const editor = el('note-body'), start = editor.selectionStart, end = editor.selectionEnd, scroll = editor.scrollTop;
     editor.setRangeText(suffix, editor.value.length, editor.value.length, 'preserve');

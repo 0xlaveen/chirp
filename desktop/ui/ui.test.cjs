@@ -48,3 +48,14 @@ test('shortcut status remains separate from the current dictation', () => {
   assert.equal(app.element('status').textContent, 'Listening');
   assert.equal(app.element('shortcut-status').textContent, 'Portal unavailable — use Record');
 });
+
+test('finished and error HUD states offer Dismiss; listening offers Cancel', () => {
+  const app = ui();
+  for (const state of ['done', 'error']) {
+    app.update({state, text:'Synthetic example', detail:state});
+    assert.equal(app.element('hud-cancel').textContent, 'Dismiss');
+    assert.equal(app.element('hud-stop').disabled, true);
+  }
+  app.update({state:'listening', text:'', detail:'Listening…'});
+  assert.equal(app.element('hud-cancel').textContent, 'Cancel');
+});

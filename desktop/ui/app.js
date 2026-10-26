@@ -19,6 +19,7 @@ function render(update) {
   $('record').disabled = active;
   $('stop').disabled = !active;
   $('hud-stop').disabled = !active;
+  $('hud-cancel').textContent = active ? 'Cancel' : 'Dismiss';
 }
 async function action(command) {
   try { await invoke(command); }
@@ -53,7 +54,7 @@ async function load() {
   $('mode').value = settings.mode; $('correction').checked = settings.correction;
   $('shortcut-help').textContent = wayland ? 'Use Record or the shortcut approved by your desktop. Your selected hold or toggle mode applies.' : settings.mode === 'Hold' ? `Hold ${keyLabel(settings.hotkey)} to talk. Release to insert.` : `Tap ${keyLabel(settings.hotkey)} to start and stop.`;
   $('capabilities').textContent = capabilities.detail;
-  $('status').textContent = paired ? 'Ready to dictate' : 'Pair with your server to begin.';
+  $('status').textContent = paired ? 'Ready to dictate' : 'Pair with your computer to begin.';
   $('stop').disabled = true;
   if (shortcut) renderShortcut(shortcut);
 }

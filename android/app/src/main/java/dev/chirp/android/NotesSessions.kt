@@ -50,7 +50,7 @@ internal data class NotesIndexEntry(
 }
 
 /** A whole note: its row, the document as [NotesDocument.toJson] wrote it (with `elapsed`) and its kept audio. */
-internal class NotesRecord(val entry: NotesIndexEntry, val document: JSONObject) {
+internal class NotesRecord(val entry: NotesIndexEntry, val document: JSONObject, val revision: String = "") {
     val id get() = entry.id
     val clips: List<NotesAudioClip> get() = document.optJSONArray("audio")?.let { a -> (0 until a.length()).map { NotesAudioClip.fromJson(a.getJSONObject(it)) } }.orEmpty()
     override fun toString() = "NotesRecord(<redacted>)"
@@ -182,16 +182,20 @@ internal class NotesSessions(
     /**
      * Keeps [document] (as [NotesDocument.toJson] wrote it) under [id], replacing its earlier copy; the title, snippet and
      * counts are worked out here. An untouched blank note is not kept (and an earlier copy of it goes). False when nothing
-     * was written (off, locked, or blank).
+     * was written (off, locked, or blank). With [expectedRevision], also false if the record changed or was deleted
+     * since it was opened. Every record write changes that token, including writes made within the same millisecond.
      */
-    fun put(id: String, document: JSONObject, recovered: Boolean = false): Boolean {
+    fun put(id: String, document: JSONObject, recovered: Boolean = false, expectedRevision: String? = null): Boolean {
         if (!enabled || !available || !safe(id)) return false
         val parsed = try { NotesDocument.fromJson(document) } catch (_: Exception) { return false }
         return synchronized(LOCK) {
-            if (parsed.untouched) { purgeLocked(id); return@synchronized false }
             val list = snapshot()
             val old = list.firstOrNull { it.id == id }
             val existing = old?.let { readRecord(id) }
+            // Check and write under the same lock, across all NotesSessions instances. A stale History edit must
+            // neither replace a newer autosave nor recreate a note that was deleted while the edit was prepared.
+            if (expectedRevision != null && (existing?.revision != expectedRevision || old?.deleted != false)) return@synchronized false
+            if (parsed.untouched) { purgeLocked(id); return@synchronized false }
             val now = clock()
             // Clips made since this snapshot was taken (they are written on their own thread) are not lost.
             val merged = (existing?.clips.orEmpty().associateBy { it.segment } + parsed.audio.associateBy { it.segment }).values
@@ -332,14 +336,15 @@ internal class NotesSessions(
             is SealedFile.Loaded.Ok -> try {
                 val json = JSONObject(String(loaded.plain, Charsets.UTF_8))
                 if (json.optInt("v") > VERSION) null // A note from a newer Chirp stays for that version.
-                else NotesRecord(NotesIndexEntry.fromJson(json.getJSONObject("entry")), json.getJSONObject("doc"))
+                else NotesRecord(NotesIndexEntry.fromJson(json.getJSONObject("entry")), json.getJSONObject("doc"), json.optString("revision"))
             } catch (_: Exception) { sealed.quarantine(File(root, "$QUARANTINE/$id.bin.${clock()}")); null } finally { loaded.plain.fill(0) }
         }
     }
 
     private fun writeRecord(record: NotesRecord) {
         root.mkdirs()
-        val plain = JSONObject().put("v", VERSION).put("entry", record.entry.toJson()).put("doc", record.document).toString().toByteArray(Charsets.UTF_8)
+        val plain = JSONObject().put("v", VERSION).put("revision", java.util.UUID.randomUUID().toString())
+            .put("entry", record.entry.toJson()).put("doc", record.document).toString().toByteArray(Charsets.UTF_8)
         try { noteSealed(record.id).write(plain) } finally { plain.fill(0) }
     }
 

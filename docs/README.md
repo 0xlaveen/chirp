@@ -9,6 +9,7 @@ Index of everything under `docs/`. Start with the architecture doc; everything e
 | [privacy.md](privacy.md) | Privacy & security summary across all clients (moved from the top-level README), with links to each component's detailed rules |
 | [windows.md](windows.md) | Chirp on Windows: server install, Task Scheduler service, phone pairing, desktop app, acceptance checklist |
 | [linux.md](linux.md) | Chirp on Linux: server install, XDG paths, GGUF clean-up, systemd user service, phone pairing |
+| [copy.md](copy.md) | Copy glossary: the canonical user-facing terms and destructive-dialog wording shared by Mac, iPhone/iPad, Android and desktop |
 | [TESTING.md](TESTING.md) | How Chirp is tested: automated checks, operator acceptance steps, privacy checks |
 | [android-input-options.md](android-input-options.md) | Research record: Android input paths considered (voice IME, RecognitionService, accessibility overlay) and what ships |
 | [android-keyboard-validation.md](android-keyboard-validation.md) | Chirp Keyboard 0.3.0 validation record |
@@ -22,7 +23,7 @@ Index of everything under `docs/`. Start with the architecture doc; everything e
 | [review/round2.md](review/round2.md) | Independent review, round 2 (findings and evidence) |
 | [review/word-waveform.md](review/word-waveform.md) | Design notes for the Mac word-waveform HUD overlay: shipped variant, rejected alternatives, protocol and latency benchmarks |
 | [review/site/](review/site/) | Website review captures (phone 390 px and desktop 1440 px, light and dark) from the local build of [site/](../site/README.md) |
-| [screenshots/](screenshots/) | UI captures: [mac](screenshots/mac/) and [android](screenshots/android/) (described in its [README](screenshots/android/README.md)), plus early [desktop](screenshots/desktop/) Notes captures |
+| [screenshots/](screenshots/) | UI captures: [mac](screenshots/mac/), [android](screenshots/android/) (described in its [README](screenshots/android/README.md)), [ios](screenshots/ios/) (iPhone and iPad, indexed in its [README](screenshots/ios/README.md)), plus early [desktop](screenshots/desktop/) Notes captures |
 | [bench-data/](bench-data/) | Committed numeric benchmark results (no audio or transcripts) |
 | [assets/](assets/) | Resized artwork used by the top-level README and the project website |
 

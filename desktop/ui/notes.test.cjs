@@ -9,8 +9,8 @@ const tick = () => new Promise(resolve => setImmediate(resolve));
 function ui() {
   const nodes = new Map(), callbacks = new Map(), timers = new Map(), calls = [], records = new Map();
   let active = null, nextId = 0, editHook = null, organizeHook = null;
-  function node() { return { value: '', textContent: '', checked: false, hidden: false, disabled: false, children: [], selectionStart: 0, selectionEnd: 0, scrollTop: 0, classList: {toggle() {}},
-    append(...children) { this.children.push(...children); }, replaceChildren(...children) { this.children = children; }, setAttribute() {}, focus() {}, showModal() {},
+  function node() { return { value: '', textContent: '', checked: false, hidden: false, disabled: false, children: [], selectionStart: 0, selectionEnd: 0, scrollTop: 0, classList: {toggle(name, enabled) { this[name] = enabled; }},
+    append(...children) { this.children.push(...children); }, replaceChildren(...children) { this.children = children; }, setAttribute(name, value) { this[name] = value; }, focus() { this.focused = true; }, showModal() {},
     setRangeText(text, start, end) { this.value = this.value.slice(0, start) + text + this.value.slice(end); }, setSelectionRange(start, end) { this.selectionStart = start; this.selectionEnd = end; },
     set innerHTML(_) { throw new Error('User content must never use innerHTML'); },
   }; }
@@ -102,4 +102,27 @@ test('Quit waits for the current edit to save and reports a failed write without
   await app.event('notes-save-for-quit', 2);
   assert.equal(app.calls.at(-1)[1].ok, false); assert.equal(body.value, 'Keep my unsaved text');
   assert.equal(app.element('main').inert, false);
+});
+
+
+test('tabs select the visible panel for clicks, keyboard and opening Notes from the tray', () => {
+  const app = ui(), notes = app.element('show-notes'), dictation = app.element('show-dictation');
+  function selected(isNotes) {
+    assert.equal(notes['aria-selected'], String(isNotes));
+    assert.equal(dictation['aria-selected'], String(!isNotes));
+    assert.equal(notes.classList.quiet, !isNotes);
+    assert.equal(dictation.classList.quiet, isNotes);
+    assert.equal(notes.tabIndex, isNotes ? 0 : -1);
+    assert.equal(dictation.tabIndex, isNotes ? -1 : 0);
+    assert.equal(app.element('notes-view').hidden, !isNotes);
+    assert.equal(app.element('dictation-view').hidden, isNotes);
+  }
+  dictation.onclick(); selected(false);
+  notes.onclick(); selected(true);
+  let prevented = false;
+  notes.onkeydown({ key: 'ArrowRight', preventDefault() { prevented = true; } });
+  assert(prevented); assert(dictation.focused); selected(false);
+  dictation.onkeydown({ key: 'Home', preventDefault() {} }); selected(true);
+  notes.onkeydown({ key: 'End', preventDefault() {} }); selected(false);
+  app.event('open-notes'); selected(true);
 });

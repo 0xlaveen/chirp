@@ -36,15 +36,15 @@ at the end of this README, and in [docs/windows.md](docs/windows.md) and
 
 **Dictate anywhere.** Hold **Right ⌥ Option** and talk (or tap it to start, tap again to stop) in any Mac app, or record any shortcut you like; auto-stop when you pause, or hold to talk. Optional clean-up on your Mac removes fillers and fixes punctuation, with chat, email, code and notes styles chosen per app, and **Use raw** puts back exactly what you said. On Android, use **Chirp Keyboard** (a full HeliBoard keyboard with a mic key) or **keep Gboard or Samsung Keyboard** and dictate with a floating mic.
 
-**Notes that remember.** ⌃⌥N on the Mac, or **Record** on Android, turns a long conversation into editable Markdown notes next to the transcript. Every note saves itself into a local library (no Save step), kept until you delete it, with search across notes and transcripts, Recently Deleted, Continue recording and Markdown export. Opt in to **Keep audio with notes** to replay what was said, segment by segment.
+**Notes that remember.** ⌃⌥N on the Mac, or **Record** on Android, iPhone, iPad and the Windows/Linux desktop app, turns a long conversation into editable Markdown notes next to the transcript. Every note saves itself into a local library (no Save step), kept until you delete it, with search across notes and transcripts, Recently Deleted and Markdown export. **Label speakers** is on by default on the Mac, Android and iPhone/iPad (Person 1, Person 2… that you can rename; the speaker model downloads by itself, once, with a status line and a Turn off). Naming a person can remember their voice in one **Saved voices** library on your Chirp server, shared by every phone and Mac that uses it. **Keep audio with notes** is off until you turn it on; then you can replay what was said, segment by segment.
 
-**Private by design.** No Chirp cloud, no account, no telemetry. Speech recognition and clean-up run on your Mac; phones pair by QR code over your tailnet.
+**Private by design.** No Chirp cloud, no account, no telemetry. Speech recognition and clean-up run on your own computer; phones pair by QR code over your tailnet.
 
 | | |
 |---|---|
 | **Mac** · [mac/README.md](mac/README.md) | Menu-bar app with a floating HUD, the Notes library window (library sidebar, live-preview editor, transcript inspector with replay), System Settings-style Settings, a model manager and **Pair a Phone**. |
-| **Android** · [android/README.md](android/README.md) | A Notes-first app (Notes · History · Settings), Chirp Keyboard or the floating mic, the Scratchpad for long text, opt-in encrypted dictation history, updates from your Mac over the tailnet. |
-| **iPhone and iPad** · [ios/README.md](ios/README.md) | A SwiftUI app plus a dictation-first keyboard for iOS/iPadOS 18. Early: simulator-tested, with a first iPad install done; iPhone installation and on-device dictation are still unverified. |
+| **Android** · [android/README.md](android/README.md) | A Notes-first app (Notes · History · Settings), Chirp Keyboard or the floating mic, the Scratchpad for long text, encrypted dictation history (on by default, 7 days), updates from your Chirp server over the tailnet. |
+| **iPhone and iPad** · [ios/README.md](ios/README.md) | A SwiftUI app (Notes · Dictate · History · Settings) plus Chirp Keyboard, a full typing keyboard with Chirp's dictation row on top, for iOS/iPadOS 18. On iPad, hold Right ⌥ Option in Chirp to dictate; elsewhere a Shortcuts key (with Full Keyboard Access) toggles dictation. Early: simulator-tested, with a first iPad install done; iPhone installation and on-device dictation are still unverified. |
 | **Linux / Windows desktop** · [desktop/README.md](desktop/README.md) | Shared Tauri app with native dictation, layout-aware shortcuts, text insertion and a local editable Notes library. Server setup: [Linux](docs/linux.md), [Windows](docs/windows.md). |
 | **Server** · [server/README.md](server/README.md) | Parakeet TDT on MLX (Apple Silicon) or ONNX (Intel and other platforms), optional local Qwen clean-up and notes structuring, revocable per-device tokens and a `doctor` check. |
 
@@ -97,7 +97,7 @@ For iPhone or iPad, point the agent at [ios/README.md](ios/README.md) → Instal
    ./gradlew assembleRelease
    adb install -r app/build/outputs/apk/release/app-arm64-v8a-release.apk
    ```
-   Onboarding asks how you'll dictate (Chirp Keyboard, or keep your own keyboard with the floating mic), then pairs by scanning the QR code from the Mac's **Pair a Phone…**. Full guide: [android/README.md](android/README.md).
+   Onboarding asks how you'll dictate (Chirp Keyboard, or keep your own keyboard with the floating mic), then pairs by scanning the QR code from the Mac's **Pair a Phone…** (or from `chirp-server pair` on a Windows or Linux server). Full guide: [android/README.md](android/README.md).
 3. **iPhone / iPad.** See [ios/README.md](ios/README.md) for requirements, same-team signing, Full Access and pairing.
 4. **Windows.** Server, Task Scheduler service and desktop app: [docs/windows.md](docs/windows.md), or the [website's Windows guide](https://araa47.github.io/chirp/guides/windows.html).
 5. **Linux.** Server, systemd user service and desktop app: [docs/linux.md](docs/linux.md) and [desktop/README.md](desktop/README.md), or the [website's Linux guide](https://araa47.github.io/chirp/guides/linux.html).
@@ -109,7 +109,7 @@ For iPhone or iPad, point the agent at [ios/README.md](ios/README.md) → Instal
 - **Dictation is transient.** Audio and text live in memory for one dictation, then they're gone. Logs hold timings and error codes, never what you said.
 - **Notes stay on the device that recorded them**, kept until you delete them (or after 1 year, 90 or 30 days if you choose). They're never synced or indexed; on Android they're encrypted with a Keystore key, and on the Mac and the desktop app the files are readable only by your user account.
 - **Audio with notes is opt-in** (off by default) and never leaves the device. (Desktop Notes keep text only; they don't store audio.)
-- **Dictation history is opt-in**, encrypted on the phone, kept for 24 hours, 7 days or 30 days.
+- **Dictation history** is encrypted and stays on the device. It is **on by default on the Mac (30 days; 1, 7, 90 days or Forever) and on Android (7 days; 24 hours or 30 days)**, and **off until you turn it on on iPhone and iPad** (then 7 days; 24 hours or 30 days). Turning it off on a phone deletes what is kept.
 - The speech server listens only on your machine's loopback address, phones reach it only through your tailnet, and every phone pairs with its own revocable token. Clean-up runs on the same machine; if you point it elsewhere, every client says where text goes.
 
 Full details: [docs/privacy.md](docs/privacy.md).
@@ -127,7 +127,7 @@ docs/     Architecture, benchmarks, privacy, testing, milestones (indexed in doc
 scripts/  Standalone Mac installer and the cross-component end-to-end check
 ```
 
-[Architecture](docs/architecture.md) · [Benchmarks](docs/bench.md) · [Privacy](docs/privacy.md) · [Testing](docs/TESTING.md) · [Milestones](docs/milestones/README.md) · [All docs](docs/README.md) · Screenshots: [Mac](docs/screenshots/mac/) · [Desktop](docs/screenshots/desktop/) · [Android](docs/screenshots/android/)
+[Architecture](docs/architecture.md) · [Benchmarks](docs/bench.md) · [Privacy](docs/privacy.md) · [Testing](docs/TESTING.md) · [Milestones](docs/milestones/README.md) · [All docs](docs/README.md) · Screenshots: [Mac](docs/screenshots/mac/) · [Desktop](docs/screenshots/desktop/) · [Android](docs/screenshots/android/) · [iPhone and iPad](docs/screenshots/ios/README.md)
 
 ## Licensing
 

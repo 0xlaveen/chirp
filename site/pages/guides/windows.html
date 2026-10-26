@@ -51,7 +51,7 @@ npm run build -- --bundles nsis</code></pre>
   <h2 id="dictate">Dictate</h2>
   <ol class="steps">
     <li><strong>Click into any text field</strong><p>Notepad, Word, a browser — anywhere you can type.</p></li>
-    <li><strong>Hold <kbd>Right Alt</kbd> and talk</strong><p>Release to insert. On layouts where Right Alt is <strong>AltGr</strong> (German, French, Polish and many others), Chirp detects it at setup and uses <strong>Right Ctrl</strong> instead, so AltGr keeps typing <code>@</code>, <code>€</code> and friends. Setup says which key it chose; change it in Settings, and tap-to-toggle is available too.</p></li>
+    <li><strong>Hold <kbd>Right Alt</kbd> and talk</strong><p>Release to insert. On layouts where Right Alt is <strong>AltGr</strong> (German, French, Polish and many others), Chirp’s default is <strong>Right Ctrl</strong> instead, so AltGr keeps typing <code>@</code>, <code>€</code> and friends. It picks the default from your layout the first time it creates its settings; <strong>Connection &amp; shortcuts → Dictation key</strong> shows it, changes it and offers tap-to-toggle.</p></li>
     <li><strong>Release, and it's typed</strong><p>Text is typed with SendInput. Long dictations (over 2000 characters) are pasted instead, and your previous clipboard text is restored; Chirp's clipboard writes stay out of clipboard history and cloud clipboard. Pressing any other key while holding cancels; key combinations never start dictation.</p></li>
   </ol>
   <div class="callout"><b>Apps running as administrator.</b><p>Windows blocks synthetic input to elevated apps. Chirp notices, leaves the text on the clipboard, and tells you to press <kbd>Ctrl</kbd>+<kbd>V</kbd>.</p></div>

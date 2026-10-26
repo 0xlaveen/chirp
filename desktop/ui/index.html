@@ -4,8 +4,8 @@
 <body>
 <main id="main">
   <header><img src="assets/pond.png" width="64" height="64" alt="Chirp bird on a moonlit pond"><div><h1>Chirp</h1><p>Your voice, in your words.</p></div></header>
-  <nav aria-label="Chirp views"><button id="show-notes">Notes</button><button id="show-dictation" class="quiet">Dictation &amp; settings</button></nav>
-  <div id="notes-view">
+  <nav role="tablist" aria-label="Chirp views"><button id="show-notes" role="tab" aria-controls="notes-view" aria-selected="true">Notes</button><button id="show-dictation" role="tab" aria-controls="dictation-view" aria-selected="false" tabindex="-1" class="quiet">Dictation &amp; settings</button></nav>
+  <div id="notes-view" role="tabpanel" aria-labelledby="show-notes">
     <div class="notes-toolbar"><h2>Your notes</h2><button id="new-note">New note</button><button id="jump-recording" class="tonal" hidden></button></div>
     <p class="muted">Notes stay on this computer. Audio is streamed to your server and is not kept.</p>
     <p id="notes-message" role="status" aria-live="polite"></p>
@@ -29,16 +29,16 @@
     <dialog id="trash-confirm"><form method="dialog"><h2>Delete these notes permanently?</h2><p>This empties Recently Deleted. It cannot be undone.</p><button value="cancel" class="quiet">Cancel</button><button id="trash-confirm-delete" value="delete" class="stop">Delete permanently</button></form></dialog>
     <div id="note-deleted" hidden role="status">Moved to Recently Deleted. <button id="note-undo-delete" class="quiet">Undo</button></div>
   </div>
-  <div id="dictation-view" hidden>
+  <div id="dictation-view" role="tabpanel" aria-labelledby="show-dictation" hidden>
   <section aria-labelledby="dictate-title"><h2 id="dictate-title">Dictate anywhere</h2><p id="shortcut-help"></p><p id="capabilities" class="muted"></p>
     <div class="actions"><button id="record">Record</button><button id="stop" class="tonal">Stop</button><button id="cancel" class="quiet">Cancel</button></div>
-    <p id="status" role="status" aria-live="polite">Pair with your server to begin.</p><p id="transcript"></p>
+    <p id="status" role="status" aria-live="polite">Pair with your computer to begin.</p><p id="transcript"></p>
   </section>
   <form id="settings"><h2>Connection &amp; shortcuts</h2>
-    <label>Server URL<input id="url" type="url" required placeholder="http://127.0.0.1:7821" autocomplete="off"></label>
+    <label>Chirp server URL<input id="url" type="url" required placeholder="http://127.0.0.1:7821" autocomplete="off"></label>
     <label>Pairing link<input id="pairing" type="password" placeholder="Paste chirp://pair…" autocomplete="off" spellcheck="false"></label>
-    <details><summary>Enter a token instead</summary><label>Server token<input id="token" type="password" autocomplete="off" spellcheck="false"></label></details>
-    <p class="muted">Your token is saved in your system credential store.</p>
+    <details><summary>Enter a code instead</summary><label>Pairing code<input id="token" type="password" autocomplete="off" spellcheck="false"></label></details>
+    <p class="muted">Your pairing code is saved in your system credential store.</p>
     <div class="columns"><label id="native-key">Dictation key<select id="hotkey"><option value="RightAlt">Right Alt</option><option value="RightCtrl">Right Ctrl</option></select></label>
       <label>How it works<select id="mode"><option value="Hold">Hold to talk</option><option value="Toggle">Tap to start / stop</option></select></label></div>
     <fieldset id="portal-settings" class="portal-controls" hidden><legend>Wayland shortcut</legend>
@@ -47,7 +47,7 @@
     </fieldset>
     <p id="shortcut-status" role="status" class="muted"></p>
     <p id="native-shortcut-hint" class="muted">The default key follows your keyboard layout. AltGr layouts use Right Ctrl. Press the key alone; chords cancel dictation.</p>
-    <label class="check"><input id="correction" type="checkbox"> Polish dictation with the server’s configured cleanup model</label>
+    <label class="check"><input id="correction" type="checkbox"> Polish dictation with your computer’s clean-up model</label>
     <button type="submit">Save settings</button><span id="saved" role="status"></span>
   </form>
   </div>
