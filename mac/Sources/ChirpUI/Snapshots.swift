@@ -540,6 +540,7 @@ public enum Snapshots {
         "notes-empty", "notes-library", "notes-recording", "notes-search", "notes-no-results", "notes-deleted",
         "notes-continued", "notes-inspector-playing", "notes-review-sheet",
         "notes-transcript-speakers", "notes-transcript-speakers-renamed", "notes-recording-call", "notes-sources-call",
+        "notes-speaker-model-downloading", "notes-speaker-model-failed",
         "history-cleaned", "history-empty", "menu-recent-dictations-submenu",
     ]
 
@@ -1020,6 +1021,13 @@ public enum Snapshots {
                 model.speakerLabels = true; model.speakerModel = .ready
                 model.speakerBanner = SpeakerBanner(document: d.id, kind: .offerReplace(old: "Person 2", new: "Maya", count: 2))
                 library.showsInspector = true
+            },
+            // Labels are on by default: the model is fetched in the background, with one status line (never a prompt).
+            notes("speaker-model-downloading") { model, _ in
+                model.speakerLabels = true; model.speakerModelSize = "106 MB"; model.speakerModel = .downloading(0.4)
+            },
+            notes("speaker-model-failed") { model, _ in
+                model.speakerLabels = true; model.speakerModelSize = "106 MB"; model.speakerModel = .failed("the download failed")
             },
             notes("structuring-off-editable") { model, _ in
                 var d = NotesDocument(startedAt: Date(timeIntervalSince1970: 1_792_504_980))

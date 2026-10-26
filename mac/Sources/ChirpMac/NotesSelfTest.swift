@@ -58,10 +58,12 @@ enum NotesSelfTest {
         let expectSpeakers = value("--speakers").flatMap(Int.init)
         if args.contains("--speakers"), expectSpeakers == nil { return usage() }
         if expectSpeakers != nil, !SpeakerModel.isDownloaded() {
-            print("notes-selftest: FAILED — --speakers needs the speaker model on this Mac (turn on Label speakers once)")
+            print("notes-selftest: FAILED — --speakers needs the speaker model on this Mac (record once with Label speakers on); the selftest never downloads it")
             return 5
         }
-        prefs.notesSpeakerLabels = expectSpeakers != nil
+        // Labels are on by default, so `--speakers` leaves the preference unset (proving the default); the other runs
+        // turn them off, which keeps the selftest from loading the model.
+        if expectSpeakers == nil { prefs.notesSpeakerLabels = false }
         // `--library`: the app's notes library in the throwaway directory, as the window uses it (journal writes, the
         // hotkey's new note, reopening a stored note).
         let useLibrary = args.contains("--library")

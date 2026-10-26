@@ -526,7 +526,7 @@ import Testing
         let names = Snapshots.committedNames
         let all = Set(Snapshots.allScenarios.map(\.name))
         #expect(names.allSatisfy { all.contains($0) } && Set(names).count == names.count)
-        #expect(names.count * 2 <= 82)  // 41 states: every Settings page, the 720 × 520 windows, the Notes window states and History
+        #expect(names.count * 2 <= 86)  // 43 states: every Settings page, the 720 × 520 windows, the Notes window states and History
         // The menu in light and dark, one per Settings tab, setup, the key HUD states and the Notes window.
         #expect(["notes-empty", "notes-library", "notes-recording", "notes-search", "notes-no-results", "notes-deleted",
                  "notes-continued", "notes-inspector-playing", "notes-review-sheet"].allSatisfy(names.contains))

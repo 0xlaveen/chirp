@@ -87,11 +87,26 @@ public enum NotesStatus {
     }
     public static let speakerLabels = "Label speakers"
     public static let speakerHelp = "Labels who is talking as Person 1, Person 2… On this Mac only: voices, labels and audio never leave it. Up to 4 people; a 5th voice joins the closest one."
-    public static func speakerDownloadPrompt(size: String) -> String {
-        "Speaker labels need a \(size) on-device model, downloaded once. Audio never leaves this Mac."
+    /// The status line while the model is fetched in the background (it never asks first, and Record never waits).
+    public static func speakerModelDownloading(size: String, percent: Int) -> String {
+        "Getting the speaker model ready (\(size), once)… \(percent)%"
     }
-    public static func speakerRedownloadPrompt(size: String) -> String {
-        "The speaker model on this Mac did not load. Remove it and download it again (\(size))? Audio never leaves this Mac."
+    public static let speakerModelDownloadFailed = "Couldn’t download the speaker model."
+    public static let speakerModelLoadFailed = "The speaker model on this Mac didn’t load."
+    public static let speakerTurnOff = "Turn off"
+    public static let speakerRetry = "Retry"
+}
+
+/// One line in the banner slot: the speaker model is downloading (`progress`) or didn't download or load (`failed`).
+public struct SpeakerModelNotice: Equatable, Sendable {
+    public var text: String
+    public var progress: Double?
+    public var failed: Bool
+
+    public init(text: String, progress: Double?, failed: Bool) {
+        self.text = text
+        self.progress = progress
+        self.failed = failed
     }
 }
 
@@ -188,6 +203,8 @@ public final class NotesModel {
     /// The user's "Label speakers" toggle, and the model behind it.
     public var speakerLabels = false
     public var speakerModel: SpeakerModelState = .notDownloaded
+    /// The model's size for the status line ("106 MB"), from the model store.
+    public var speakerModelSize = ""
     /// The open rename field and what is typed in it, and the banner after a rename or merge (`SpeakerMenu`).
     public var renaming: SpeakerRename?
     public var renameText = ""
@@ -254,6 +271,8 @@ public final class NotesModel {
     /// The title field changed (a rename, saved after a pause in typing).
     public var onTitleEdit: (String) -> Void = { _ in }
     public var onSpeakerLabelsToggle: (Bool) -> Void = { _ in }
+    /// The status line's Retry: remove the damaged or partial model and download it again.
+    public var onSpeakerRetry: () -> Void = {}
     /// Call audio (#211): this note's sources, whether this Mac can capture call audio, the apps it can record, the
     /// explanation waiting for Continue, the call side's level and capture while recording, and what went wrong.
     public var sources = NotesSources()
@@ -537,12 +556,26 @@ public final class NotesModel {
 
     // MARK: speakers
 
-    /// The footer's speaker line: the download, or how many people were heard.
+    /// The banner above the notes while labels are on and the model is being fetched or is unusable; nil otherwise.
+    public var speakerModelNotice: SpeakerModelNotice? {
+        guard speakerLabels else { return nil }
+        switch speakerModel {
+        case .downloading(let f):
+            return SpeakerModelNotice(text: NotesStatus.speakerModelDownloading(size: speakerModelSize, percent: Int((f * 100).rounded())),
+                                      progress: f, failed: false)
+        case .failed(let message):
+            let download = message.contains("download")
+            return SpeakerModelNotice(text: download ? NotesStatus.speakerModelDownloadFailed : NotesStatus.speakerModelLoadFailed,
+                                      progress: nil, failed: true)
+        case .notDownloaded, .loading, .ready: return nil
+        }
+    }
+
+    /// The footer's speaker line: how many people were heard (the model's own states are `speakerModelNotice`).
     public var speakerStatus: String? {
         switch speakerModel {
-        case .downloading(let f): return "Downloading speaker model… \(Int((f * 100).rounded()))%"
         case .loading: return speakerLabels ? "Loading speaker model…" : nil
-        case .failed(let message): return "Speaker labels unavailable: \(message)"
+        case .downloading, .failed: return nil
         case .notDownloaded, .ready:
             guard speakerLabels else { return nil }
             let n = document.speakerCount

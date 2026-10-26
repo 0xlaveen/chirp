@@ -2,7 +2,7 @@ import ChirpCore
 import SwiftUI
 
 /// Live Notes speaker fix-ups (issue #18 M2): the chip's menu (rename, merge, this turn is…, separate), the rename
-/// field and the banner after a rename or merge. Session-only, like the names themselves.
+/// field and the banner after a rename or merge. The names are the note's own and are saved with it.
 
 /// A fix-up asked for from the transcript.
 public enum SpeakerEdit: Equatable, Sendable {

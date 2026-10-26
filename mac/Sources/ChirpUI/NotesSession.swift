@@ -102,16 +102,14 @@ public final class NotesSession {
     public var onChange: (() -> Void)?
     /// Show the window; `focus` is false when started from the hotkey (it must not steal focus).
     public var onShowWindow: ((_ focus: Bool) -> Void)?
-    /// Asks before the one-time speaker model download (the window shows it as a sheet); `done(true)` downloads.
-    public var confirmSpeakerDownload: ((_ message: String, _ done: @escaping (Bool) -> Void) -> Void)?
-    /// The speaker model was downloaded or removed (Settings shows it).
+    /// The speaker model downloaded, failed, was removed or changed state (Settings shows it).
     public var onSpeakerModelChange: (() -> Void)?
     /// Voice profiles changed (the switch, the model, the saved voices): Settings shows them.
     public var onVoicesChange: (() -> Void)?
     /// "Remember this voice as Maya…": asks for the consent tick; `done(true)` only with it ticked.
     public var confirmRememberVoice: ((_ name: String, _ done: @escaping (Bool) -> Void) -> Void)?
 
-    /// Speaker labels: the switch, consent, offline loads, Remove and this document's diarizer.
+    /// Speaker labels: the switch, the model's background download, offline loads, Remove and this document's diarizer.
     public let speakers: SpeakerLabels
     /// Voice profiles: the Settings switch, the saved voices, and this document's suggestions (`SpeakerMenu`).
     public let voices: SpeakerVoices
@@ -159,6 +157,8 @@ public final class NotesSession {
     public init(_ deps: NotesSessionDependencies) {
         self.deps = deps
         let settings = deps.settings
+        // A legacy stored "off" was often the app's own (a missing model); the default is on.
+        settings.migrateSpeakerLabelsDefault()
         capture = AudioCapture(engine: deps.engine)
         sources = settings.notesSources
         recorder = NotesRecorder(
@@ -240,13 +240,9 @@ public final class NotesSession {
             self?.sync()
             self?.onSpeakerModelChange?()
         }
-        speakers.confirm = { [weak self] prompt, done in
-            let message = switch prompt {
-            case .download(let size): NotesStatus.speakerDownloadPrompt(size: size)
-            case .redownload(let size): NotesStatus.speakerRedownloadPrompt(size: size)
-            }
-            (self?.confirmSpeakerDownload ?? { _, done in done(false) })(message, done)
-        }
+        speakers.onReady = { [weak self] in self?.speakersReady() }
+        model.speakerModelSize = speakers.sizeText
+        model.onSpeakerRetry = { [weak self] in self?.speakers.retry() }
         // Posted on the main thread; the session lives as long as the app (tests pass a center of their own).
         let center = deps.workspaceNotifications ?? NSWorkspace.shared.notificationCenter
         _ = center.addObserver(forName: NSWorkspace.willSleepNotification, object: nil, queue: nil) { [weak self] _ in
@@ -293,9 +289,11 @@ public final class NotesSession {
         guard !voiceEdit.status.isListening else { deps.beep(); return }
         guard !isDictating() else { deps.beep(); return }
         onShowWindow?(focus)
-        if speakers.needsLoad || (speakers.enabled && voices.needsLoad) {
+        // Labels are on and the model is missing: fetch it in the background. Recording never waits for it.
+        speakers.ensureModel()
+        if speakers.needsLoad || (speakers.enabled && speakers.model == .ready && voices.needsLoad) {
             // The models load offline (~0.1 s warm); recording starts as soon as they are ready, or without labels
-            // (or voices) if one is gone (it turns off: nothing downloads without the user's Download).
+            // (or voices) if one is gone or damaged (the status line offers Retry).
             guard !speakers.isLoading, !voices.isLoading else { return }
             Task {
                 _ = await speakers.prepare()
@@ -670,11 +668,22 @@ public final class NotesSession {
 
     // MARK: speaker labels
 
-    /// "Label speakers", from the ✦ menu or Settings › Notes (applies from the next Record; refused while recording).
+    /// "Label speakers", from the ✦ menu, the status line's Turn off or Settings › Notes (applies from the next
+    /// Record; refused while recording, except turning it off while no diarizer is running, which cancels the download).
     public func setSpeakerLabels(_ on: Bool) {
-        guard !isActive else { deps.beep(); return }
+        guard !isActive || (!on && speakers.diarizer == nil) else { deps.beep(); return }
         speakers.setEnabled(on, documentHasLabels: recorder.document.speakerCount > 0)
         if !speakers.enabled, speakers.diarizer == nil { recorder.speakers = nil }
+    }
+
+    /// The model finished downloading with labels on: a recording or pause in progress joins from here on; otherwise
+    /// the next Record picks it up.
+    private func speakersReady() {
+        guard speakers.enabled, recorder.state.isLive, let diarizer = speakers.readyDiarizer() else { return }
+        diarizer.attachEmbedder(voices.readyEmbedder)
+        recorder.speakers = usesCallAudio ? CallSpeakers(remote: diarizer) : diarizer
+        recorder.joinSpeakers()
+        sync()
     }
 
     /// Settings › Remove: deletes the model, partial downloads too; refused while recording or loading.

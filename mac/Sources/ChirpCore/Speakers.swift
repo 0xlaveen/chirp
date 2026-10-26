@@ -123,7 +123,7 @@ public struct SpeakerTurn: Equatable, Sendable, Codable {
 }
 
 /// The people of one Notes document, numbered by first appearance: the first diarizer slot that speaks becomes
-/// Person 1. Session-only names and merges live here too (memory only, gone with the document).
+/// Person 1. The note's own names and merges live here too; they are saved with the document (`note.json`).
 public struct SpeakerRoster: Equatable, Sendable, Codable {
     /// Colours cycle through this many (the palette lives in the UI).
     public static let paletteSize = 8

@@ -532,7 +532,8 @@ final class NotesHarness {
         prefs.serverURL = "http://127.0.0.1:9"   // never contacted: the sockets and HTTP are scripted
         prefs.correction = true
         prefs.soundsEnabled = true
-        prefs.notesSpeakerLabels = speakers != nil
+        // Labels are on by default; a harness without a speaker model turns them off (nothing to download).
+        if speakers == nil { prefs.notesSpeakerLabels = false }
         self.health = health
         let config = ServerConfig(baseURL: URL(string: prefs.serverURL)!)
         var deps = NotesSessionDependencies(

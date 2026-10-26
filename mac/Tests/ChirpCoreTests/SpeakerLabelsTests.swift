@@ -52,43 +52,73 @@ final class FakeFactory: SpeakerDiarizerFactory, @unchecked Sendable {
 
 @MainActor
 @Suite struct SpeakerLabelsTests {
-    private func labels(_ store: FakeModelStore, enabled: Bool, answer: Bool? = nil) -> (SpeakerLabels, Box) {
+    /// `enabled` is the effective preference (unset reads as on); `box.preference` is what the user's own choices stored.
+    private func labels(_ store: FakeModelStore, enabled: Bool = true) -> (SpeakerLabels, Box) {
         let box = Box()
         let l = SpeakerLabels(store: store, enabled: enabled, onPreference: { box.preference = $0 })
-        l.confirm = { prompt, done in
-            box.prompts.append(prompt)
-            if let answer { done(answer) }
-        }
+        l.onReady = { box.ready += 1 }
         return (l, box)
     }
 
-    final class Box { var preference: Bool?; var prompts: [SpeakerLabels.Prompt] = [] }
+    final class Box { var preference: Bool?; var ready = 0 }
 
     private func settle(_ condition: () -> Bool) async {
         for _ in 0..<500 where !condition() { try? await Task.sleep(for: .milliseconds(2)) }
     }
 
-    // MARK: B1: no download without consent
+    // MARK: a missing or failed model is a model state, never a preference
 
-    @Test func launchWithTheModelGoneTurnsLabelsOff() {
+    @Test func launchWithTheModelGoneKeepsLabelsOnAndStoresNothing() {
         let store = FakeModelStore(downloaded: false)
-        let (l, box) = labels(store, enabled: true)
-        #expect(!l.enabled && box.preference == false && l.model == .notDownloaded && store.loads.isEmpty)
+        let (l, box) = labels(store)
+        #expect(l.enabled && box.preference == nil && l.model == .notDownloaded && store.loads.isEmpty && !l.needsLoad)
     }
 
-    @Test func recordWithTheModelGoneNeverLoadsOrDownloads() async {
+    @Test func recordWithTheModelGoneDownloadsInTheBackgroundAndRecordingGoesOn() async {
         let store = FakeModelStore(downloaded: true)
-        let (l, box) = labels(store, enabled: true)
+        let (l, box) = labels(store)
         store.setDownloaded(false)          // removed from disk after launch
-        #expect(l.needsLoad)
+        store.hold = true
+        #expect(await l.prepare() == nil)   // returns at once: Record starts without labels
+        await settle { l.model.isDownloading && store.loads == [true] }
+        #expect(l.enabled && l.model.isDownloading && box.preference == nil)
+        store.release()
+        await settle { l.model == .ready }
+        #expect(store.loads == [true] && l.enabled && box.preference == nil && box.ready == 1)
+        // Labels apply from now on: the next diarizer comes from the loaded model without another load.
+        #expect(l.readyDiarizer() != nil && store.loads == [true])
+    }
+
+    @Test func ensureModelStartsOneDownloadAndNeverRepeatsAfterAFailure() async {
+        let store = FakeModelStore(downloaded: false)
+        store.fail = true
+        let (l, box) = labels(store)
+        l.ensureModel()
+        l.ensureModel()
+        await settle { l.model.isFailure }
+        #expect(l.model == .failed("the download failed") && store.loads == [true] && l.enabled && box.preference == nil && box.ready == 0)
+        l.ensureModel()
+        try? await Task.sleep(for: .milliseconds(20))
+        #expect(store.loads == [true])      // only Retry tries again
+        store.fail = false
+        l.retry()
+        await settle { l.model == .ready }
+        #expect(store.loads == [true, true] && l.enabled && box.preference == nil && box.ready == 1)
+    }
+
+    @Test func nothingDownloadsWhileLabelsAreOff() async {
+        let store = FakeModelStore(downloaded: false)
+        let (l, box) = labels(store, enabled: false)
+        l.ensureModel()
         #expect(await l.prepare() == nil)
-        #expect(store.loads.isEmpty && box.prompts.isEmpty)
-        #expect(!l.enabled && box.preference == false && l.model == .notDownloaded)
+        try? await Task.sleep(for: .milliseconds(20))
+        #expect(store.loads.isEmpty && !l.enabled && box.preference == nil)
     }
 
     @Test func recordLoadsOfflineOnly() async {
         let store = FakeModelStore(downloaded: true)
-        let (l, _) = labels(store, enabled: true)
+        let (l, _) = labels(store)
+        #expect(l.needsLoad)
         #expect(await l.prepare() != nil)
         #expect(store.loads == [false])
         // The same document keeps its diarizer; New frees it, and the next Record loads (offline) again.
@@ -100,62 +130,64 @@ final class FakeFactory: SpeakerDiarizerFactory, @unchecked Sendable {
         #expect(store.loads == [false, false])
     }
 
-    @Test func turningOnAsksBeforeTheDownloadAndDecliningFetchesNothing() async {
+    @Test func turningOnFetchesAMissingModelWithoutAskingAndStoresTheChoice() async {
         let store = FakeModelStore(downloaded: false)
-        let (l, box) = labels(store, enabled: false, answer: false)
+        let (l, box) = labels(store, enabled: false)
         l.setEnabled(true, documentHasLabels: false)
-        #expect(box.prompts == [.download(size: "106 MB")])
-        try? await Task.sleep(for: .milliseconds(20))
-        #expect(store.loads.isEmpty && !l.enabled)
-    }
-
-    @Test func downloadOnlyAfterTheUsersDownload() async {
-        let store = FakeModelStore(downloaded: false)
-        let (l, box) = labels(store, enabled: false, answer: true)
-        l.setEnabled(true, documentHasLabels: false)
-        await settle { l.enabled }
-        #expect(store.loads == [true] && l.enabled && box.preference == true && l.model == .ready)
+        await settle { l.model == .ready }
+        #expect(store.loads == [true] && l.enabled && box.preference == true && box.ready == 1)
         // Already loaded: Record makes the diarizer without another load.
         #expect(l.readyDiarizer() != nil && store.loads == [true])
     }
 
-    @Test func aDamagedModelFailsOfflineAndOnlyARedownloadTheUserAcceptsRepairsIt() async {
+    @Test func aDamagedModelFailsOfflineAndOnlyRetryRepairsIt() async {
         let store = FakeModelStore(downloaded: true)
         store.fail = true
-        let (l, box) = labels(store, enabled: true, answer: true)
+        let (l, box) = labels(store)
         #expect(await l.prepare() == nil)
-        #expect(store.loads == [false] && l.model == .failed("the model did not load") && !l.enabled)
+        #expect(store.loads == [false] && l.model == .failed("the model did not load") && l.enabled && box.preference == nil)
+        #expect(!l.needsLoad)               // Record goes on without labels
         store.fail = false
-        l.setEnabled(true, documentHasLabels: false)
-        #expect(box.prompts == [.redownload(size: "106 MB")])
-        await settle { l.enabled }
-        #expect(store.removes == 1 && store.loads == [false, true] && l.model == .ready)
+        l.retry()
+        await settle { l.model == .ready }
+        #expect(store.removes == 1 && store.loads == [false, true] && l.enabled && box.preference == nil)
     }
 
-    // MARK: edges
+    // MARK: Turn off
 
-    @Test func switchingOffCancelsADownload() async {
+    @Test func turnOffCancelsADownloadAndStoresAnExplicitOff() async {
         let store = FakeModelStore(downloaded: false)
         store.hold = true
-        let (l, _) = labels(store, enabled: false, answer: true)
-        l.setEnabled(true, documentHasLabels: false)
+        let (l, box) = labels(store)
+        l.ensureModel()
         await settle { l.model.isDownloading && store.loads == [true] }
         l.setEnabled(false, documentHasLabels: false)
         store.release()
         await settle { !l.isLoading }
-        #expect(!l.enabled && l.model == .notDownloaded && l.readyDiarizer() == nil)
+        #expect(!l.enabled && box.preference == false && l.model == .notDownloaded && l.readyDiarizer() == nil && box.ready == 0)
+    }
+
+    @Test func turnOffAfterAFailedDownloadClearsTheFailure() async {
+        let store = FakeModelStore(downloaded: false)
+        store.fail = true
+        let (l, box) = labels(store)
+        l.ensureModel()
+        await settle { l.model.isFailure }
+        l.setEnabled(false, documentHasLabels: false)
+        #expect(!l.enabled && box.preference == false && l.model == .notDownloaded)
     }
 
     @Test func removeIsRefusedWhileLoadingAndCoversPartialDownloads() async {
         let store = FakeModelStore(downloaded: true)
         store.hold = true
-        let (l, box) = labels(store, enabled: true)
+        let (l, box) = labels(store)
         let prepared = Task { await l.prepare() }
         await settle { l.isLoading }
         #expect(!l.canRemove && !l.remove() && store.removes == 0)
         store.release()
         _ = await prepared.value
-        // A partial download (files but no complete model) can be removed too.
+        // A partial download (files but no complete model) can be removed too. Remove is the user's own choice, so
+        // it stores an explicit off and the model does not come straight back at the next Record.
         store.setDownloaded(false, files: true)
         #expect(l.canRemove && l.remove())
         #expect(store.removes == 1 && !l.enabled && box.preference == false && l.diarizer == nil)
@@ -163,7 +195,7 @@ final class FakeFactory: SpeakerDiarizerFactory, @unchecked Sendable {
 
     @Test func switchingOffFreesTheModelUnlessTheDocumentHasLabels() async {
         let store = FakeModelStore(downloaded: true)
-        let (l, _) = labels(store, enabled: true)
+        let (l, _) = labels(store)
         _ = await l.prepare()
         l.setEnabled(false, documentHasLabels: true)
         #expect(l.diarizer != nil)             // kept: on again keeps Person N
@@ -173,5 +205,45 @@ final class FakeFactory: SpeakerDiarizerFactory, @unchecked Sendable {
         #expect(l.diarizer == nil && !l.needsLoad)
         l.setEnabled(true, documentHasLabels: false)
         #expect(l.needsLoad)
+    }
+}
+
+@Suite struct SpeakerLabelsPreferenceTests {
+    private func prefs(_ body: (UserDefaults) -> Void = { _ in }) -> (Preferences, UserDefaults, () -> Void) {
+        let name = "chirp-labels-pref-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: name)!
+        body(defaults)
+        return (Preferences(defaults: defaults), defaults, { removeTestDefaults(name) })
+    }
+
+    @Test func unsetIsOnAndStoresNothing() {
+        let (p, defaults, done) = prefs()
+        defer { done() }
+        #expect(p.notesSpeakerLabels && p.notesSpeakerLabelsChoice == nil)
+        #expect(!p.migrateSpeakerLabelsDefault())
+        #expect(p.notesSpeakerLabels && defaults.object(forKey: "notesSpeakerLabels") == nil)
+    }
+
+    @Test func anExplicitOffStaysOffAcrossTheMigration() {
+        let (p, defaults, done) = prefs()
+        defer { done() }
+        p.notesSpeakerLabels = false
+        #expect(!p.migrateSpeakerLabelsDefault())
+        #expect(!Preferences(defaults: defaults).notesSpeakerLabels)
+    }
+
+    @Test func aLegacyFalseIsClearedOnceAndALegacyTrueIsKept() {
+        let (off, offDefaults, doneOff) = prefs { $0.set(false, forKey: "notesSpeakerLabels") }
+        defer { doneOff() }
+        #expect(!off.notesSpeakerLabels)                       // before the migration it reads as the user's off
+        #expect(off.migrateSpeakerLabelsDefault())
+        #expect(off.notesSpeakerLabels && offDefaults.object(forKey: "notesSpeakerLabels") == nil)
+        // From then on a stored false is the user's own and survives every later launch.
+        off.notesSpeakerLabels = false
+        #expect(!off.migrateSpeakerLabelsDefault() && !off.notesSpeakerLabels)
+
+        let (on, _, doneOn) = prefs { $0.set(true, forKey: "notesSpeakerLabels") }
+        defer { doneOn() }
+        #expect(!on.migrateSpeakerLabelsDefault() && on.notesSpeakerLabelsChoice == true)
     }
 }

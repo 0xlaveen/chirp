@@ -124,6 +124,7 @@ struct NotesDetail: View {
                 if let offer = model.recovery { RecoveryBanner(model: model, offer: offer) }
                 if model.showsLongRunNotice { LongRunNotice(model: model) }
                 if let explanation = model.explanation { ExplanationBanner(model: model, text: explanation) }
+                if let notice = model.speakerModelNotice { SpeakerModelBanner(model: model, notice: notice) }
             }
             ZStack(alignment: .topTrailing) {
                 NotesEditor(model: model, library: library)
@@ -345,8 +346,8 @@ struct SmartNotesMenu: View {
                 Button("Restore Notes Before Organize…") { model.review() }.disabled(!model.canRestore)
                 Divider()
             }
-            // On while downloading too, so switching it off cancels the download.
-            Toggle(NotesStatus.speakerLabels, isOn: Binding(get: { recorder.speakerLabels || recorder.speakerModel.isDownloading },
+            // On while the model downloads, so switching it off cancels the download.
+            Toggle(NotesStatus.speakerLabels, isOn: Binding(get: { recorder.speakerLabels },
                                                              set: { recorder.onSpeakerLabelsToggle($0) }))
                 .disabled(recorder.state.isActive)
             Toggle("Structure notes", isOn: Binding(get: { recorder.structureEnabled },
@@ -643,6 +644,36 @@ private struct ExplanationBanner: View {
     }
 }
 
+/// The speaker model is on its way (or didn't arrive): one quiet line, never a prompt. Recording goes on without
+/// labels meanwhile; they join once the model is ready.
+private struct SpeakerModelBanner: View {
+    @Bindable var model: NotesModel
+    let notice: SpeakerModelNotice
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 10) {
+            if notice.failed {
+                Image(systemName: "exclamationmark.triangle.fill").font(.system(size: 14)).foregroundStyle(Color.chirp.moon).accessibilityHidden(true)
+            } else {
+                Image(systemName: "arrow.down.circle").font(.system(size: 14)).foregroundStyle(Color.chirp.moon).accessibilityHidden(true)
+            }
+            Text(notice.text)
+                .font(.callout)
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            if notice.failed { Button(NotesStatus.speakerRetry, action: model.onSpeakerRetry).controlSize(.small) }
+            Button(NotesStatus.speakerTurnOff) { model.onSpeakerLabelsToggle(false) }.controlSize(.small)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 8)
+        .background(Color.chirp.moonFill.opacity(0.1))
+        .overlay(alignment: .bottom) { Divider() }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Speaker model")
+    }
+}
+
 // MARK: under the notes
 
 /// The retry note for appends, the reorganize note and the microphone warning, under the notes.
@@ -743,10 +774,9 @@ private struct NotesMetaBar: View {
                 }
                 if let status = model.speakerStatus {
                     HStack(spacing: 4) {
-                        if model.speakerModel.isDownloading { ProgressView().controlSize(.mini) }
                         Text(status)
                             .font(.caption)
-                            .foregroundStyle(model.speakerModel.isFailure ? AnyShapeStyle(Color.chirp.moon) : AnyShapeStyle(NotesInk.secondary))
+                            .foregroundStyle(NotesInk.secondary)
                             .lineLimit(1)
                     }
                 }
