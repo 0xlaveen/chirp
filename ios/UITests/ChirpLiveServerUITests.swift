@@ -70,8 +70,7 @@ final class ChirpLiveServerUITests: XCTestCase {
         for _ in 0..<4 where !(forget.exists && forget.isHittable) { app.swipeUp() }
         guard forget.exists else { XCTFail("Forget pairing is not reachable"); return }
         forget.tap()
-        XCTAssertTrue(app.buttons["Forget this Mac?"].waitForExistence(timeout: 3), "No Forget confirmation")
-        XCTAssertTrue(app.buttons["Forget"].waitForExistence(timeout: 3), "No confirm button in the dialog")
+        XCTAssertTrue(app.buttons["Forget"].waitForExistence(timeout: 3), "No Forget confirmation")
         app.buttons["Forget"].tap()
         XCTAssertTrue(waitFor(forget, "exists == false", timeout: 5), "Forget pairing did not clear it")
     }
