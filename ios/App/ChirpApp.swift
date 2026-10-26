@@ -146,7 +146,7 @@ struct ChirpRootView: View {
             }
             Tab(ChirpTab.history.title, systemImage: ChirpTab.history.symbol, value: .history) {
                 NavigationStack {
-                    HistoryView(model: model, openSettings: { open(.privacy) })
+                    HistoryView(model: model, openSettings: { open(.privacy) }, notes: notes, openNotes: { tab = .notes })
                         .modifier(SessionCapsule(model: model))
                 }
             }

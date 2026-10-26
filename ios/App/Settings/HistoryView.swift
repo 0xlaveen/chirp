@@ -14,6 +14,9 @@ struct HistoryView: View {
     @ObservedObject var model: SessionCoordinator
     /// Opens Settings → Privacy & history (the ⋯ menu's "History settings").
     var openSettings: () -> Void = {}
+    /// The Notes library (#193): "Add to note" appends to the latest note, then shows it.
+    var notes: LiveNotesController?
+    var openNotes: () -> Void = {}
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.horizontalSizeClass) private var sizeClass
     @State private var entries: [HistoryEntry] = []
@@ -25,6 +28,7 @@ struct HistoryView: View {
     @State private var detail: HistoryEntry?
     @State private var deletion: PendingDeletion?
     @State private var share: ShareItem?
+    @State private var notice: String?
 
     struct PendingDeletion {
         let entry: HistoryEntry
@@ -77,13 +81,27 @@ struct HistoryView: View {
             if phase == .active, visible { reload() } else { entries = []; query = ""; commitPending() }
         }
         .sheet(item: $detail) { entry in
-            HistoryDetailSheet(entry: entry) { delete(entry) }
+            HistoryDetailSheet(entry: entry, canAddToNote: notes != nil,
+                               addToNote: { addToNote(entry) }) { delete(entry) }
         }
         .sheet(item: $share) { item in
             ShareSheet(text: item.text)
         }
         .overlay(alignment: .bottom) { toast }
         .animation(.smooth(duration: 0.2), value: deletion == nil)
+        .overlay(alignment: .bottom) {
+            if let notice {
+                Text(notice).font(.subheadline.weight(.medium)).foregroundStyle(Color.chirp.ink)
+                    .padding(.horizontal, ChirpSpacing.s16).padding(.vertical, ChirpSpacing.s12)
+                    .background(Color.chirp.surface, in: Capsule())
+                    .shadow(color: Color.black.opacity(0.15), radius: 12, y: 4)
+                    .padding(.horizontal, ChirpSpacing.s16).padding(.bottom, ChirpSpacing.s8)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                    .task { try? await Task.sleep(for: .seconds(3)); self.notice = nil }
+                    .accessibilityIdentifier("chirp.history.notice")
+            }
+        }
+        .animation(.smooth(duration: 0.2), value: notice == nil)
     }
 
     @ViewBuilder private var content: some View {
@@ -129,6 +147,9 @@ struct HistoryView: View {
                                     Button { UIPasteboard.general.string = raw } label: { Label("Copy original", systemImage: "doc.on.doc.fill") }
                                 }
                                 Button { share = ShareItem(text: entry.text) } label: { Label("Share", systemImage: "square.and.arrow.up") }
+                                if notes != nil {
+                                    Button { addToNote(entry) } label: { Label("Add to note", systemImage: "note.text") }
+                                }
                                 Button(role: .destructive) { delete(entry) } label: { Label("Delete", systemImage: "trash") }
                             }
                     }
@@ -180,6 +201,18 @@ struct HistoryView: View {
             .padding(.horizontal, ChirpSpacing.s16).padding(.bottom, ChirpSpacing.s8)
             .accessibilityElement(children: .contain)
             .transition(.move(edge: .bottom).combined(with: .opacity))
+        }
+    }
+
+    /// Appends the dictation to the latest note (a new note when the library is empty) and shows it.
+    private func addToNote(_ entry: HistoryEntry) {
+        guard let notes else { return }
+        Task {
+            if await notes.addToNote(entry.text, id: notes.entries.first?.id) != nil {
+                openNotes()
+            } else {
+                notice = "Couldn't add the note"
+            }
         }
     }
 
@@ -278,6 +311,8 @@ private struct HistoryRowView: View {
 /// Copy · Copy original · Share · Delete.
 private struct HistoryDetailSheet: View {
     let entry: HistoryEntry
+    var canAddToNote = false
+    var addToNote: () -> Void = {}
     var delete: () -> Void
     @Environment(\.dismiss) private var dismiss
     @State private var share = false
@@ -304,6 +339,10 @@ private struct HistoryDetailSheet: View {
                             Button("Copy original", systemImage: "doc.on.doc.fill") { UIPasteboard.general.string = raw }.buttonStyle(.capsuleChip)
                         }
                         Button("Share", systemImage: "square.and.arrow.up") { share = true }.buttonStyle(.capsuleChip)
+                        if canAddToNote {
+                            Button("Add to note", systemImage: "note.text") { addToNote(); dismiss() }.buttonStyle(.capsuleChip)
+                                .accessibilityIdentifier("chirp.history.addNote")
+                        }
                         Button("Delete", systemImage: "trash", action: delete)
                             .buttonStyle(CapsuleChipStyle())
                             .foregroundStyle(Color.chirp.record)

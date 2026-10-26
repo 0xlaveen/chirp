@@ -150,10 +150,19 @@ struct SettingsHome: View {
         case .session: return sessionSummaryText(at: Date())
         case .dictation: return model.dictationSummary
         case .keyboard: return model.keyboardReady ? "Chirp Keyboard on · Full Access" : "Not set up"
-        case .notes: return notes.preferences.structureEnabled(health: notes.health) ? "Structure on" : "Structure off"
+        case .notes: return notesSummary
         case .privacy: return history.enabled ? "History on · keeps \(history.retention.label)" : "History off"
         case .about: return Self.versionSummary
         }
+    }
+
+    /// "Kept forever · structure on": the notes library's retention and structuring state (#193).
+    private var notesSummary: String {
+        guard notes.preferences.keepNotes else { return "Notes library off" }
+        var parts = [notes.preferences.retention.label]
+        if notes.preferences.structureEnabled(health: notes.health) { parts.append("structure on") }
+        if notes.preferences.keepAudio { parts.append("audio kept") }
+        return parts.joined(separator: " · ")
     }
 
     /// "Session running · 4:12 left" while armed, else the length and private state.
@@ -240,6 +249,13 @@ extension HistoryRetention {
     /// "24 hours", "7 days", "30 days": what Keep for offers and the Privacy summary shows.
     var label: String {
         switch self { case .day: "24 hours"; case .week: "7 days"; case .month: "30 days" }
+    }
+}
+
+extension NotesRetention {
+    /// What the Notes category row summarises: the library's retention choice.
+    var label: String {
+        switch self { case .never: "Kept forever"; case .oneYear: "1 year"; case .ninetyDays: "90 days"; case .thirtyDays: "30 days" }
     }
 }
 
