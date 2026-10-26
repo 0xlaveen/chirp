@@ -1,6 +1,7 @@
 pub mod audio;
 pub mod files;
 pub mod hotkey;
+mod hud;
 pub mod library;
 pub mod notes;
 pub mod platform;
@@ -21,6 +22,7 @@ struct Runtime {
     settings: Mutex<settings::Settings>,
     active: Mutex<Option<(u64, watch::Sender<Control>)>>,
     hotkey: Mutex<Option<platform::HotkeyHandle>>,
+    hud: Mutex<hud::Hud>,
     sequence: AtomicU64,
     hotkey_sequence: AtomicU64,
     shortcut: Mutex<ShortcutStatus>,
@@ -103,6 +105,23 @@ fn save_preferences(
 }
 
 fn emit(app: &tauri::AppHandle, update: Update) {
+    if let Some(window) = app.get_webview_window("hud") {
+        let ticket = app
+            .state::<Runtime>()
+            .hud
+            .lock()
+            .ok()
+            .and_then(|mut hud| hud.update(&window, &update.state));
+        if let Some(ticket) = ticket {
+            let app = app.clone();
+            tauri::async_runtime::spawn(async move {
+                tokio::time::sleep(hud::OUTCOME_DELAY).await;
+                if let Ok(hud) = app.state::<Runtime>().hud.lock() {
+                    hud.dismiss_outcome(&window, ticket);
+                };
+            });
+        }
+    }
     let _ = app.emit("dictation", update);
 }
 
@@ -130,35 +149,31 @@ fn start(app: &tauri::AppHandle) -> Result<(), String> {
     let id = state.sequence.fetch_add(1, Ordering::SeqCst) + 1;
     let (control, rx) = watch::channel(Control::Running);
     *active = Some((id, control.clone()));
-    if let Some(hud) = app.get_webview_window("hud") {
-        let _ = hud.show();
-    }
+    emit(app, Update::new("connecting", "", "Connecting…"));
     let app = app.clone();
     tauri::async_runtime::spawn(async move {
-        let result =
-            protocol::dictate(settings, token, rx, None, |update| emit(&app, update)).await;
-        let state = app.state::<Runtime>();
-        let cancelled = {
-            let Ok(active) = state.active.lock() else {
-                return;
+        let result = protocol::dictate(settings, token, rx, None, |update| {
+            if let Ok(active) = app.state::<Runtime>().active.lock() {
+                if matches!(active.as_ref(), Some((current, _)) if *current == id)
+                    && *control.borrow() != Control::Cancel
+                {
+                    emit(&app, update);
+                }
             };
-            if !matches!(active.as_ref(), Some((current, _)) if *current == id) {
-                return;
-            }
-            let cancelled = *control.borrow() == Control::Cancel;
-            cancelled
-        };
+        })
+        .await;
+        let state = app.state::<Runtime>();
+        let cancelled = *control.borrow() == Control::Cancel;
         if cancelled || matches!(&result, Err(error) if error == "cancelled") {
             if let Ok(mut active) = state.active.lock() {
-                active.take();
-            }
-            emit(&app, Update::new("idle", "", "Cancelled"));
-            if let Some(hud) = app.get_webview_window("hud") {
-                let _ = hud.hide();
+                if matches!(active.as_ref(), Some((current, _)) if *current == id) {
+                    active.take();
+                    emit(&app, Update::new("idle", "", "Cancelled"));
+                }
             }
             return;
         }
-        match result {
+        let outcome = match result {
             Ok(text) => {
                 // Insertion happens off the runtime thread. No transcript enters an argv or log.
                 let inserted = tauri::async_runtime::spawn_blocking(move || {
@@ -171,48 +186,51 @@ fn start(app: &tauri::AppHandle) -> Result<(), String> {
                 })
                 .await;
                 match inserted {
-                    Ok((text, Ok(outcome))) => emit(
-                        &app,
-                        Update::new(
-                            "done",
-                            &text,
-                            match outcome {
-                                platform::InsertionOutcome::Typed => "Inserted",
-                                platform::InsertionOutcome::Clipboard => {
-                                    "Copied — paste into your app"
-                                }
-                            },
-                        ),
+                    Ok((text, Ok(outcome))) => Update::new(
+                        "done",
+                        &text,
+                        match outcome {
+                            platform::InsertionOutcome::Typed => "Inserted",
+                            platform::InsertionOutcome::Clipboard => "Copied — paste into your app",
+                        },
                     ),
-                    Ok((text, Err(detail))) => emit(&app, Update::new("error", &text, &detail)),
-                    Err(_) => emit(
-                        &app,
-                        Update::new("error", "", "Could not insert the result"),
-                    ),
+                    Ok((text, Err(detail))) => Update::new("error", &text, &detail),
+                    Err(_) => Update::new("error", "", "Could not insert the result"),
                 }
             }
-            Err(detail) => emit(&app, Update::new("error", "", &detail)),
-        }
+            Err(detail) => Update::new("error", "", &detail),
+        };
         if let Ok(mut active) = state.active.lock() {
-            active.take();
+            if matches!(active.as_ref(), Some((current, _)) if *current == id) {
+                let cancelled = active
+                    .as_ref()
+                    .is_some_and(|(_, tx)| *tx.borrow() == Control::Cancel);
+                active.take();
+                emit(
+                    &app,
+                    if cancelled {
+                        Update::new("idle", "", "Cancelled")
+                    } else {
+                        outcome
+                    },
+                );
+            }
         };
     });
     Ok(())
 }
 
 fn signal(app: &tauri::AppHandle, value: Control) {
-    if value == Control::Cancel {
-        if let Some(hud) = app.get_webview_window("hud") {
-            let _ = hud.hide();
-        }
-        emit(app, Update::new("idle", "", "Cancelled"));
-    }
     if let Ok(active) = app.state::<Runtime>().active.lock() {
         if let Some((_, tx)) = active.as_ref() {
             let _ = tx.send(value);
         }
-    }
+        if value == Control::Cancel {
+            emit(app, Update::new("idle", "", "Cancelled"));
+        }
+    };
 }
+
 #[tauri::command]
 fn dictate_start(app: tauri::AppHandle) -> Result<(), String> {
     start(&app)?;
@@ -367,6 +385,7 @@ pub fn run() {
             settings: Mutex::new(settings::Settings::read()),
             active: Mutex::new(None),
             hotkey: Mutex::new(None),
+            hud: Mutex::new(hud::Hud::default()),
             sequence: AtomicU64::new(0),
             hotkey_sequence: AtomicU64::new(0),
             shortcut: Mutex::new(ShortcutStatus {

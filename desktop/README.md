@@ -63,7 +63,12 @@ access to native Wayland applications.
 The server must accept `start.client = "desktop"`. Dictations
 are limited to 120 seconds. Disconnects, mic failures and an overloaded audio
 queue fail visibly rather than inserting incomplete audio. A failed insertion
-keeps the transcript in the HUD. Escape in a focused Chirp window cancels.
+keeps the transcript in the HUD. **Inserted** and **Copied — paste into your app**
+stay visible for about 1.5 seconds, then the HUD hides. Errors stay visible until
+**Dismiss**, Escape in a focused Chirp window, or the next dictation. Cancel hides
+the HUD immediately. An older outcome timer cannot dismiss a newer recording or
+error. Notes and Dictation & settings show the selected tab visually and to
+screen readers; Left/Right Arrow, Home and End switch tabs.
 
 ## Windows
 
@@ -238,3 +243,19 @@ Frontend review fixtures (synthetic content, mocked native commands):
 ![Notes editor in Pond dark colors](../docs/screenshots/desktop/notes-dark.png)
 
 ![Notes search in a narrow light window](../docs/screenshots/desktop/notes-light-narrow.png)
+
+## Dictation and settings captures
+
+These light/dark captures render the actual HTML/CSS in Chromium through
+ego-browser, with synthetic dictation events and mocked native commands. They
+show the 440 × 160 HUD and the settings panel, rather than native Windows/Linux
+window chrome or the OS tray. The native HUD lifetime is covered by Rust unit
+tests, including successful insertion/clipboard outcomes, Cancel and stale timers.
+The frontend tests cover tab selection, keyboard navigation and tray-open events.
+
+| State | Light | Dark |
+| --- | --- | --- |
+| Listening | ![Listening HUD, light](../docs/screenshots/desktop/hud-listening-light.png) | ![Listening HUD, dark](../docs/screenshots/desktop/hud-listening-dark.png) |
+| Inserted | ![Inserted HUD, light](../docs/screenshots/desktop/hud-inserted-light.png) | ![Inserted HUD, dark](../docs/screenshots/desktop/hud-inserted-dark.png) |
+| Error | ![Error HUD, light](../docs/screenshots/desktop/hud-error-light.png) | ![Error HUD, dark](../docs/screenshots/desktop/hud-error-dark.png) |
+| Settings | ![Settings, light](../docs/screenshots/desktop/settings-light.png) | ![Settings, dark](../docs/screenshots/desktop/settings-dark.png) |
