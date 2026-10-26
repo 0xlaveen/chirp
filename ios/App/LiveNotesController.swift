@@ -368,7 +368,7 @@ final class LiveNotesController: ObservableObject {
         await ready()
         guard !starting, !recorder.state.isActive else { return }
         guard recordingID == nil else { notice = "Stop current and continue here."; return }
-        guard let config = deps.server() else { notice = "Pair your Mac first."; return }
+        guard let config = deps.server() else { notice = "Pair your computer first."; return }
         guard !deps.otherCaptureActive() else { notice = "End the keyboard session to record notes."; return }
         let target = selected
         starting = true
@@ -771,11 +771,11 @@ final class LiveNotesController: ObservableObject {
 
     /// Where structuring sends text, for the disclosure line.
     var structureDisclosure: String {
-        guard let health else { return "Chirp checks your Mac when you record." }
-        guard health.correctionAvailable else { return "Your Mac has clean-up off, so notes stay a transcript." }
-        if health.notesStructure != true { return "Your Mac's chirp-server is too old to structure notes. Update it." }
-        if health.correctionLeavesMachine == false { return "Structuring runs on your Mac." }
-        if let host = health.correctionHost, !host.isEmpty { return "Structuring sends the transcript to \(host). Audio stays on your Mac." }
+        guard let health else { return "Chirp checks your computer when you record." }
+        guard health.correctionAvailable else { return "Clean-up is off on your computer, so notes stay a transcript." }
+        if health.notesStructure != true { return "Chirp on your computer is too old to structure notes. Update it." }
+        if health.correctionLeavesMachine == false { return "Structuring runs on your computer." }
+        if let host = health.correctionHost, !host.isEmpty { return "Structuring sends the transcript to \(host). Audio stays on your computer." }
         return "The structuring destination is unknown, so structuring is off."
     }
     var structureCanEnable: Bool {

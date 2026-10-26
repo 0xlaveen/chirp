@@ -289,7 +289,7 @@ final class ChirpNotesUITests: XCTestCase {
         let toggle = Self.element("chirp.notes.speakers.setting", in: app)
         XCTAssertTrue(toggle.waitForExistence(timeout: 5)); XCTAssertEqual(toggle.value as? String, "1")
         let model = Self.element("chirp.notes.speakers.model", in: app)
-        XCTAssertTrue(Self.waitFor(model, "label == 'Speaker model on your Mac: ready'", timeout: 10))
+        XCTAssertTrue(Self.waitFor(model, "label == 'Speaker model on your computer: ready'", timeout: 10))
         XCTAssertFalse(app.alerts.firstMatch.exists, "Labels on by default never ask")
         screenshot("notes-settings-speakers-sheet", app)
         app.buttons["Done"].tap()

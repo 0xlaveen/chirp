@@ -69,20 +69,20 @@ public enum SpeakerNotice {
     public static func modelStatus(on: Bool, health: Health?, requestFailed: Bool = false) -> String? {
         guard on, available(health), let state = health?.speakersModel?.state else { return nil }
         switch state {
-        case .ready: return "Speaker model on your Mac: ready"
-        case .downloading: return "Speaker model on your Mac: downloading"
-        case .notDownloaded: return requestFailed ? "Speaker model on your Mac: couldn’t download" : "Speaker model on your Mac: starting download"
-        case .failed: return "Speaker model on your Mac: couldn’t download"
+        case .ready: return "Speaker model on your computer: ready"
+        case .downloading: return "Speaker model on your computer: downloading"
+        case .notDownloaded: return requestFailed ? "Speaker model on your computer: couldn’t download" : "Speaker model on your computer: starting download"
+        case .failed: return "Speaker model on your computer: couldn’t download"
         }
     }
 
     /// The Settings row's summary line.
     public static func summary(on: Bool, health: Health?) -> String {
-        if health != nil, !available(health) { return "Update Chirp on your Mac to label speakers" }
+        if health != nil, !available(health) { return "Update Chirp on your computer to label speakers" }
         return on ? "On · who said what" : "Off · who said what"
     }
 
-    public static let info = "Shows who said what in the transcript (Person 1, Person 2…; tap a name to rename it) and lets the notes say who owns a to-do. Saved voices stay on your paired Mac and are shared by your devices. Settings → Notes → Saved voices lets you stop remembering or forget voices. No voiceprint is stored on this phone. The first time, your Mac fetches its speaker model from Hugging Face (once; nothing about you is sent). Turn it off here at any time."
+    public static let info = "Shows who said what in the transcript (Person 1, Person 2…; tap a name to rename it) and lets the notes say who owns a to-do. Saved voices stay on your paired computer and are shared by your devices. Settings → Notes → Saved voices lets you stop remembering or forget voices. No voiceprint is stored on this phone. The first time, your computer fetches its speaker model from Hugging Face (once; nothing about you is sent). Turn it off here at any time."
 }
 
 /// What the user can do about a person in the transcript: rename (everywhere in the note, optionally in the notes text

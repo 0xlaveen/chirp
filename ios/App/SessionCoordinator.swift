@@ -184,12 +184,12 @@ final class SessionCoordinator: ObservableObject {
             guard ticket == lifecycle else { return false }
             config = try services.pairing.load(); paired = config != nil
             reached(checked)
-            notice = "Mac verified and pairing saved."
+            notice = "Computer verified and pairing saved."
             await loadProfiles()
             return true
         } catch {
             let issue = (error as? CoreError) == .unauthorized ? .refused : seen.issue
-            notice = issue?.message ?? "Could not verify pairing. Check the link, Tailscale and your Mac."
+            notice = issue?.message ?? "Could not verify pairing. Check the link, Tailscale and your computer."
             connectionIssue = issue; record(issue?.diagnostic ?? .auth)
             return false
         }
@@ -210,7 +210,7 @@ final class SessionCoordinator: ObservableObject {
         do {
             let checked = try await healthy(config)
             guard ticket == lifecycle else { return }
-            reached(checked); notice = "Mac connection verified."
+            reached(checked); notice = "Computer connection verified."
             await loadProfiles()
         } catch {}
     }
@@ -261,13 +261,13 @@ final class SessionCoordinator: ObservableObject {
             guard fetched.count <= 32 else { throw SessionFailure.connection }
             profiles = fetched
             if !profiles.contains(where: { $0.id == preferences.styleID }) { preferences.styleID = "default"; savePreferences() }
-        } catch { profiles = []; notice = "Style prompts unavailable. Check your Mac connection." }
+        } catch { profiles = []; notice = "Style prompts unavailable. Check your computer connection." }
     }
 
     var cleanupDisclosure: String {
-        guard let health, health.correctionAvailable else { return "Mac has clean-up off." }
-        if health.correctionLeavesMachine == false { return "Clean-up runs on your Mac." }
-        if health.correctionLeavesMachine == true, let host = health.correctionHost, !host.isEmpty { return "Sends final text to \(host). Audio stays on your Mac." }
+        guard let health, health.correctionAvailable else { return "Clean-up is off on your computer." }
+        if health.correctionLeavesMachine == false { return "Clean-up runs on your computer." }
+        if health.correctionLeavesMachine == true, let host = health.correctionHost, !host.isEmpty { return "Sends final text to \(host). Audio stays on your computer." }
         return "Clean-up destination is unknown. Clean-up is unavailable."
     }
     var cleanupCanEnable: Bool {
@@ -596,12 +596,12 @@ final class SessionCoordinator: ObservableObject {
     static func serverMessage(_ code: String) -> String {
         switch code {
         case "auth": ConnectionIssue.refused.message
-        case "busy": "Your Mac is busy. Try again in a moment."
+        case "busy": "Chirp server is busy. Try again in a moment."
         case "too_long": "That dictation hit the 120-second limit."
         case "bad_audio": SessionFailure.noResult.localizedDescription
         case "engine": "The speech engine had a problem. Try again."
         case "bad_request": "The clean-up prompt is too long. Shorten it in Styles."
-        default: "Your Mac couldn't finish that dictation. Try again."
+        default: "Chirp server couldn't finish that dictation. Try again."
         }
     }
 

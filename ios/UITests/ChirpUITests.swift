@@ -26,7 +26,7 @@ final class ChirpUITests: XCTestCase {
         add(shot)
     }
 
-    /// Four tabs, Notes first, no "More" and no Notes toolbar button; Pair Mac and Styles are no longer tabs.
+    /// Four tabs, Notes first, no "More" and no Notes toolbar button; Pair computer and Styles are no longer tabs.
     @MainActor func testShellHasFourTabsStartingOnNotes() {
         let app = launch()
         XCTAssertTrue(app.buttons["chirp.notes.record"].waitForExistence(timeout: 5), "Notes is the start tab")
@@ -35,7 +35,7 @@ final class ChirpUITests: XCTestCase {
         XCTAssertEqual(app.buttons["chirp.connection.chip"].label, "Connection: Not paired. Open connection settings")
         if app.tabBars.firstMatch.exists {
             for title in ["Notes", "Dictate", "History", "Settings"] { XCTAssertTrue(app.tabBars.buttons[title].exists, title) }
-            for gone in ["More", "Pair Mac", "Styles"] { XCTAssertFalse(app.tabBars.buttons[gone].exists, gone) }
+            for gone in ["More", "Pair computer", "Styles"] { XCTAssertFalse(app.tabBars.buttons[gone].exists, gone) }
         }
         screenshot("Notes with the setup card", app)
         app.buttons["chirp.connection.chip"].tap()
@@ -44,7 +44,7 @@ final class ChirpUITests: XCTestCase {
         app.selectChirpTab("Dictate")
         XCTAssertTrue(app.staticTexts["sessionStatus"].waitForExistence(timeout: 5))
         XCTAssertEqual(app.staticTexts["sessionStatus"].label, "Microphone off")
-        XCTAssertFalse(app.buttons["chirp.dictation.start"].isEnabled, "Dictate needs a paired Mac")
+        XCTAssertFalse(app.buttons["chirp.dictation.start"].isEnabled, "Dictate needs a paired computer")
         XCTAssertTrue(app.buttons["chirp.pair.open"].exists, "One banner names the missing pairing")
         screenshot("Dictate unpaired", app)
     }
@@ -70,7 +70,7 @@ final class ChirpUITests: XCTestCase {
         skip.tap()
         XCTAssertTrue(app.descendants(matching: .any)["chirp.setup"].waitForExistence(timeout: 5), "Skip lands on Notes with the setup card")
         XCTAssertTrue(app.buttons["chirp.notes.record"].exists)
-        XCTAssertEqual(app.buttons["chirp.setup.fix"].label, "Pair Mac")
+        XCTAssertEqual(app.buttons["chirp.setup.fix"].label, "Pair computer")
         screenshot("Notes setup card after Skip", app)
         // Finished onboarding stays finished.
         app.terminate()
@@ -96,7 +96,7 @@ final class ChirpUITests: XCTestCase {
     @MainActor func testSyntheticPairDictateRawAndEnd() {
         let app = pairedApp()
         app.selectChirpTab("Dictate")
-        XCTAssertEqual(app.buttons["chirp.connection.chip"].label, "Connection: Mac. Open connection settings")
+        XCTAssertEqual(app.buttons["chirp.connection.chip"].label, "Connection: Computer. Open connection settings")
         screenshot("Dictate idle", app)
         app.buttons["chirp.dictation.start"].tap()
         XCTAssertTrue(app.buttons["chirp.dictation.stop"].waitForExistence(timeout: 5))

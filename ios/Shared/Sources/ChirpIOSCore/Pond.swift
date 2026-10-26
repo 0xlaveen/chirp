@@ -52,7 +52,7 @@ public enum ChirpColor {
         public static let lily = (light: ChirpColor.hex(0x2F7A4F), dark: ChirpColor.hex(0x7CCB9B))
         /// The record/stop dot, Stop, errors and the DEBUG banner only.
         public static let record = (light: ChirpColor.hex(0xD93636), dark: ChirpColor.hex(0xFF6B6B))
-        /// Warning banners ("Mac offline", "Mac loading"): Android's tertiaryContainer pair, a moon-gold fill…
+        /// Warning banners ("Computer offline", "Computer loading"): Android's tertiaryContainer pair, a moon-gold fill…
         public static let warningContainer = (light: ChirpColor.hex(0xF5C566), dark: ChirpColor.hex(0x4E3B00))
         /// …and the ink on it.
         public static let onWarningContainer = (light: ChirpColor.hex(0x402D00), dark: ChirpColor.hex(0xF5C566))

@@ -113,12 +113,12 @@ struct DictateView: View {
     /// The one banner slot: the most important connection problem, with its one fix.
     @ViewBuilder private var banner: some View {
         if !model.paired {
-            PondBanner(kind: .info, title: "Pair your Mac to dictate", action: "Pair", actionID: "chirp.pair.open", perform: openConnection)
+            PondBanner(kind: .info, title: "Pair your computer to dictate", action: "Pair", actionID: "chirp.pair.open", perform: openConnection)
         } else if model.connectionIssue == .refused {
-            PondBanner(kind: .error, title: "Mac refused this device", action: "Pair again", actionID: "chirp.refused.pair", perform: openConnection)
+            PondBanner(kind: .error, title: "Computer refused this device", action: "Pair again", actionID: "chirp.refused.pair", perform: openConnection)
                 .accessibilityIdentifier("chirp.refused")
         } else if let issue = model.connectionIssue, issue.isOffline || issue == .loading {
-            PondBanner(kind: .warning, title: issue == .loading ? "Mac loading its model" : "Mac offline",
+            PondBanner(kind: .warning, title: issue == .loading ? "Computer loading its model" : "Computer offline",
                        action: "Check again", actionID: "chirp.offline.retry") { Task { await model.checkConnection() } }
                 .disabled(model.working).accessibilityIdentifier("chirp.offline")
         }
@@ -202,7 +202,7 @@ struct DictateView: View {
                             .buttonStyle(.pondTonal).disabled(!model.paired || model.working)
                             .accessibilityIdentifier("chirp.session.start")
                         LearnMore(title: "Keyboard session") {
-                            Text("A keyboard session keeps the microphone ready so Chirp Keyboard can dictate in other apps. Idle audio is discarded immediately; audio goes to your paired Mac only while you dictate.")
+                            Text("A keyboard session keeps the microphone ready so Chirp Keyboard can dictate in other apps. Idle audio is discarded immediately; audio goes to your paired computer only while you dictate.")
                             Text("The session ends by itself after the length set in Settings, or when you tap End.")
                             OtherAppsGuide()
                         }

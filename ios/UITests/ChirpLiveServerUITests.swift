@@ -94,7 +94,7 @@ final class ChirpLiveServerUITests: XCTestCase {
         screenshot("Paired with local server", app)
 
         app.openDictation()
-        XCTAssertTrue(app.staticTexts["Clean-up runs on your Mac."].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Clean-up runs on your computer."].waitForExistence(timeout: 5))
         let cleanup = element("chirp.cleanup.enabled", in: app)
         XCTAssertTrue(cleanup.waitForExistence(timeout: 5))
         if cleanup.value as? String != "1" {

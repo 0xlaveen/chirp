@@ -46,7 +46,7 @@ extension XCUIApplication {
         return field
     }
 
-    /// Settings → Connection → Pair Mac → paste a link → Connect. A success pops back to Connection,
+    /// Settings → Connection → Pair computer → paste a link → Connect. A success pops back to Connection,
     /// whose status banner is the saved-pairing marker.
     @MainActor func pair(link: String, timeout: TimeInterval = 5) {
         openConnection()

@@ -52,11 +52,11 @@ public enum SavedVoiceNotice {
         switch error as? VoiceLibraryError {
         case .gone: "Record a little more with them, then try again"
         case .tooShort: "Name kept in this note. Chirp will remember the voice after 20 seconds of speech in this note."
-        case .disabled: "Remember voices is off on your Mac."
-        case .full: "Your Mac has 50 saved voices. Forget a voice before saving another."
+        case .disabled: "Remember voices is off on your computer."
+        case .full: "Your computer has 50 saved voices. Forget a voice before saving another."
         case .noVoice: "This voice was forgotten on another device. Refresh saved voices."
-        case .unsupported: "Update Chirp on your Mac to save voices"
-        default: "Couldn’t update saved voices. Check your Mac and try again."
+        case .unsupported: "Update Chirp on your computer to save voices"
+        default: "Couldn’t update saved voices. Check your computer and try again."
         }
     }
 }

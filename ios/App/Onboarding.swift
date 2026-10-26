@@ -144,7 +144,7 @@ struct Onboarding: View {
             VStack(alignment: .leading, spacing: ChirpSpacing.s16) {
                 feature("mic", "Dictate into any app")
                 feature("note.text", "Keep conversations in Notes")
-                feature("lock", "Audio goes only to your own Mac.")
+                feature("lock", "Audio goes only to your own computer.")
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -162,12 +162,12 @@ struct Onboarding: View {
     private var pair: some View {
         VStack(alignment: .leading, spacing: ChirpSpacing.s16) {
             badge(model.paired ? "checkmark" : "qrcode.viewfinder", done: model.paired)
-            title("Pair your Mac")
-            Text("On your Mac, open Chirp → Settings → Devices → Pair a Phone, then scan the code.")
+            title("Pair your computer")
+            Text("On your computer, open Chirp → Settings → Devices → Pair a Phone, then scan the code.")
                 .font(.body).foregroundStyle(Color.chirp.inkMuted)
             PairingForm(model: model, hidesControlsWhenConnected: true)
             LearnMore(title: "Pairing", label: "About pairing") {
-                Text("Turn on Tailscale on both devices. Chirp checks that your Mac answers before it saves the pairing, so a successful scan is all it takes.")
+                Text("Turn on Tailscale on both devices. Chirp checks that your computer answers before it saves the pairing, so a successful scan is all it takes.")
                 Text("Scanning uses the camera only while the scanner is open. The pairing is kept in this device's Keychain and the link is never shown or logged.")
             }
         }

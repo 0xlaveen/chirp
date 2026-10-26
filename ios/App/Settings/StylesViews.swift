@@ -13,8 +13,8 @@ struct StylesList: View {
         SettingsGroup(title: "Styles") {
             if model.profiles.isEmpty {
                 SettingsItem {
-                    Text(model.paired ? "Style prompts unavailable. Check your Mac connection and refresh."
-                                      : "Connect to your Mac to load authenticated style prompts.")
+                    Text(model.paired ? "Style prompts unavailable. Check your computer connection and refresh."
+                                      : "Connect to your computer to load authenticated style prompts.")
                         .font(.subheadline).foregroundStyle(Color.chirp.inkMuted)
                 }
             }

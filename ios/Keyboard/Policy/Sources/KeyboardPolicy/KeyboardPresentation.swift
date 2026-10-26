@@ -108,7 +108,7 @@ public enum TopRow: Sendable, Equatable {
 
 /// What to draw. The typing keys are always enabled and need no flag.
 public struct KeyboardScreen: Equatable, Sendable {
-    /// The row's short label: "Ready", "Listening…", "Mac offline". Also a notice such as "Dictation removed".
+    /// The row's short label: "Ready", "Listening…", "Computer offline". Also a notice such as "Dictation removed".
     public var phaseText: String
     public var glyph: StripGlyph
     /// What the top row shows.
@@ -253,7 +253,7 @@ public enum KeyboardPresenter {
 
     private struct Line { var label: String; var glyph: StripGlyph; var detail: String? }
 
-    /// The one-line state and the long text behind ⓘ. The label is the short cause for an error ("Mac offline"),
+    /// The one-line state and the long text behind ⓘ. The label is the short cause for an error ("Computer offline"),
     /// the fix is the guidance.
     private static func text(_ i: KeyboardInputs, live: Bool, phase: KeyboardPhase?) -> Line {
         guard i.hasFullAccess else {

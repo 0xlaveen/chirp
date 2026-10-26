@@ -47,12 +47,12 @@ public enum ConnectionIssue: String, Sendable, CaseIterable, Equatable {
     public var message: String {
         switch self {
         case .offline: "This device is offline. Connect to a network and try again."
-        case .notFound: "Can't find your Mac on the tailnet. Is it online, with Tailscale on here?"
-        case .down: "Your Mac may be asleep, or Chirp isn't running on it."
-        case .secure: "Couldn't make a secure connection to your Mac."
-        case .refused: "Your Mac refused this device. Pair again in Chirp."
-        case .loading: "Your Mac is loading its speech model. Try again in a moment."
-        case .other: "Connection failed. Check Tailscale and your Mac."
+        case .notFound: "Can't find your computer on the tailnet. Is it online, with Tailscale on here?"
+        case .down: "Your computer may be asleep, or Chirp isn't running."
+        case .secure: "Couldn't make a secure connection to your computer."
+        case .refused: "Your computer refused this device. Pair again in Chirp."
+        case .loading: "Your computer is loading its speech model. Try again in a moment."
+        case .other: "Connection failed. Check Tailscale and your computer."
         }
     }
 

@@ -38,9 +38,9 @@
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>NSCameraUsageDescription</key>
-	<string>Scan the secret pairing QR shown locally on your Mac.</string>
+	<string>Scan the secret pairing QR shown locally on your computer.</string>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>Chirp keeps the microphone active during your session and sends audio to your paired Mac only while dictating.</string>
+	<string>Chirp keeps the microphone active during your session and sends audio to your paired computer only while dictating.</string>
 	<key>NSSupportsLiveActivities</key>
 	<true/>
 	<key>UIApplicationSceneManifest</key>
