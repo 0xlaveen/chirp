@@ -53,12 +53,14 @@ struct RowText: View {
     var summary: String?
     var symbol: String?
     var color: Color = Color.chirp.ink
+    /// The symbol column grows with the text, so a large symbol never spills into the title or the tile edge.
+    @ScaledMetric(relativeTo: .body) private var symbolWidth: CGFloat = 28
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: ChirpSpacing.s12) {
             if let symbol {
                 Image(systemName: symbol).symbolRenderingMode(.hierarchical)
                     .font(.body).foregroundStyle(color)
-                    .frame(width: 28, alignment: .center).accessibilityHidden(true)
+                    .frame(width: symbolWidth, alignment: .center).accessibilityHidden(true)
                     .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 6 }
             }
             VStack(alignment: .leading, spacing: 2) {
@@ -67,6 +69,7 @@ struct RowText: View {
                     Text(summary).font(.footnote).foregroundStyle(Color.chirp.inkMuted)
                 }
             }.fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 }
@@ -98,20 +101,37 @@ struct SwitchRow: View {
     var identifier: String?
     var disabled = false
     var set: (Bool) -> Void
+    @Environment(\.dynamicTypeSize) private var typeSize
     var body: some View {
         RowTile(hasSummary: summary != nil) {
-            RowText(title: title, summary: summary, symbol: symbol)
-            Spacer(minLength: 0)
-            if let infoTitle, let infoBody { RowInfo(title: infoTitle, text: infoBody) }
-            Toggle("", isOn: Binding(get: { isOn }, set: set))
-                .labelsHidden().tint(Color.chirp.koi).fixedSize().disabled(disabled)
-                .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 6 }
-                .accessibilityLabel([title, summary].compactMap { $0 }.joined(separator: ", "))
-                .accessibilityIdentifier(identifier ?? "")
+            if typeSize.isAccessibilitySize {
+                // Text first at the full row width, then the ⓘ and the switch on their own line, so
+                // neither is pushed past the edge (#271 A2-2).
+                VStack(alignment: .leading, spacing: ChirpSpacing.s8) {
+                    RowText(title: title, summary: summary, symbol: symbol)
+                    HStack(spacing: ChirpSpacing.s8) {
+                        if let infoTitle, let infoBody { RowInfo(title: infoTitle, text: infoBody) }
+                        Spacer(minLength: 0)
+                        toggle
+                    }
+                }
+            } else {
+                RowText(title: title, summary: summary, symbol: symbol)
+                Spacer(minLength: 0)
+                if let infoTitle, let infoBody { RowInfo(title: infoTitle, text: infoBody) }
+                toggle.alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 6 }
+            }
         }
         .opacity(disabled ? 0.55 : 1)
         .contentShape(RoundedRectangle(cornerRadius: ChirpRadius.row, style: .continuous))
         .onTapGesture { if !disabled { set(!isOn) } }
+    }
+
+    private var toggle: some View {
+        Toggle("", isOn: Binding(get: { isOn }, set: set))
+            .labelsHidden().tint(Color.chirp.koi).fixedSize().disabled(disabled)
+            .accessibilityLabel([title, summary].compactMap { $0 }.joined(separator: ", "))
+            .accessibilityIdentifier(identifier ?? "")
     }
 }
 
@@ -202,12 +222,14 @@ struct FlowLayout<Content: View>: View {
     var body: some View { WrapLayout(spacing: spacing) { content } }
 }
 
+/// Children are measured at no more than the proposed width, so a long label wraps inside its chip
+/// instead of widening the page (the AX5 overflow, #271 A2-2); the result never exceeds the proposal.
 private struct WrapLayout: Layout {
     var spacing: CGFloat
     private func rows(_ subviews: Subviews, width: CGFloat) -> (frames: [CGRect], size: CGSize) {
         var frames: [CGRect] = [], x: CGFloat = 0, y: CGFloat = 0, rowHeight: CGFloat = 0, widest: CGFloat = 0
         for view in subviews {
-            let size = view.sizeThatFits(.unspecified)
+            let size = view.sizeThatFits(ProposedViewSize(width: width.isFinite ? width : nil, height: nil))
             if x > 0, x + size.width > width { x = 0; y += rowHeight + spacing; rowHeight = 0 }
             frames.append(CGRect(origin: CGPoint(x: x, y: y), size: size))
             x += size.width + spacing; rowHeight = max(rowHeight, size.height); widest = max(widest, x - spacing)
@@ -220,7 +242,8 @@ private struct WrapLayout: Layout {
     func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
         let laidOut = rows(subviews, width: bounds.width).frames
         for (view, frame) in zip(subviews, laidOut) {
-            view.place(at: CGPoint(x: bounds.minX + frame.minX, y: bounds.minY + frame.minY), proposal: .unspecified)
+            view.place(at: CGPoint(x: bounds.minX + frame.minX, y: bounds.minY + frame.minY),
+                       proposal: ProposedViewSize(width: frame.width, height: frame.height))
         }
     }
 }

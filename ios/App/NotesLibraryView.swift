@@ -334,6 +334,15 @@ struct NotesEmptyView: View {
     }
 }
 
+/// The "N days left" line under a note in Recently Deleted: singular for one, never negative.
+enum RecentlyDeletedCopy {
+    static let keptDays = 30
+    static func daysLeft(since deleted: Date, now: Date = Date()) -> String {
+        let left = max(0, keptDays - Int(now.timeIntervalSince(deleted) / 86400))
+        return left == 1 ? "1 day left" : "\(left) days left"
+    }
+}
+
 private struct RecentlyDeletedView: View {
     @ObservedObject var notes: LiveNotesController
     @Environment(\.dismiss) private var dismiss
@@ -346,7 +355,7 @@ private struct RecentlyDeletedView: View {
                         VStack(alignment: .leading, spacing: 8) {
                             Text(entry.title).font(.system(.headline, design: .serif))
                             Text(entry.snippet).font(.subheadline).foregroundStyle(Color.chirp.inkMuted).lineLimit(2)
-                            if let date = entry.deletedAt { Text("\(max(0, 30 - Int(Date().timeIntervalSince(date) / 86400))) days left").font(.footnote).foregroundStyle(Color.chirp.inkMuted) }
+                            if let date = entry.deletedAt { Text(RecentlyDeletedCopy.daysLeft(since: date)).font(.footnote).foregroundStyle(Color.chirp.inkMuted) }
                         }
                         Spacer()
                         Button("Restore") { Task { await notes.restore([entry.id]) } }.buttonStyle(.bordered)

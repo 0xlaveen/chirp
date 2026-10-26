@@ -70,12 +70,12 @@ struct SavedVoicesView: View {
                     renaming = nil
                 }.disabled(!SavedVoice.isValidName(SpeakerFixups.cleanName(name) ?? ""))
             } message: { Text("Names in existing notes stay.") }
-            .confirmationDialog("Forget saved voices?", isPresented: Binding(get: { forgetting != nil || forgettingAll }, set: { if !$0 { forgetting = nil; forgettingAll = false } }), titleVisibility: .visible) {
+            .confirmationDialog(forgetting.map { "Forget \($0.name)?" } ?? "Forget all voices?", isPresented: Binding(get: { forgetting != nil || forgettingAll }, set: { if !$0 { forgetting = nil; forgettingAll = false } }), titleVisibility: .visible) {
                 Button("Forget", role: .destructive) {
                     if let voice = forgetting { action(.forget(voice: voice.id)) } else { action(.forgetAll) }
                     forgetting = nil; forgettingAll = false
                 }
-            } message: { Text("Removes \(forgetting?.name ?? "all saved voices") from your computer for every device. Names in existing notes stay. This cannot be undone.") }
+            } message: { Text((forgetting.map { "Removes \($0.name)’s voice" } ?? "Removes all saved voices") + " from your computer for every device. Names in existing notes stay. This can’t be undone.") }
     }
 
     private func action(_ value: VoiceLibraryAction) { Task { await notes.changeSavedVoices(value) } }

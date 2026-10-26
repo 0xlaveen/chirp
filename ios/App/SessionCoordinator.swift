@@ -608,7 +608,7 @@ final class SessionCoordinator: ObservableObject {
         case "too_long": "That dictation hit the 120-second limit."
         case "bad_audio": SessionFailure.noResult.localizedDescription
         case "engine": "The speech engine had a problem. Try again."
-        case "bad_request": "The clean-up prompt is too long. Shorten it in Styles."
+        case "bad_request": "The clean-up prompt is too long. Shorten it in Settings → Dictation → Styles."
         default: "Chirp server couldn't finish that dictation. Try again."
         }
     }

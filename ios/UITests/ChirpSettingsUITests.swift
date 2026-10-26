@@ -254,6 +254,30 @@ final class ChirpSettingsUITests: XCTestCase {
         XCTAssertTrue(waitFor(toggle, "value == '0'"))
     }
 
+    /// At the largest accessibility text size the Settings home and Dictation pages must not run past either
+    /// screen edge (#271 A2-2): every row, switch and chip stays inside the window. Also the AX5 captures.
+    @MainActor func testSettingsStayInsideTheScreenAtAX5() {
+        let app = launch(["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"])
+        app.pair(link: XCUIApplication.syntheticPairingLink)
+        app.selectChirpTab("Settings")
+        let window = app.windows.firstMatch.frame
+        func assertInside(_ ids: [String], _ page: String) {
+            for id in ids {
+                let item = element(id, in: app)
+                XCTAssertTrue(item.waitForExistence(timeout: 5), "\(page): no \(id)")
+                let frame = item.frame
+                XCTAssertGreaterThanOrEqual(frame.minX, window.minX - 0.5, "\(page): \(id) runs past the left edge")
+                XCTAssertLessThanOrEqual(frame.maxX, window.maxX + 0.5, "\(page): \(id) runs past the right edge")
+            }
+        }
+        _ = element("chirp.settings.dictation", in: app).waitForExistence(timeout: 5)
+        assertInside(["chirp.settings.connection", "chirp.settings.dictation"], "Settings home")
+        screenshot("settings-home-ax5", app)
+        openCategory("chirp.settings.dictation", app)
+        assertInside(["chirp.cleanup.enabled", "chirp.styles.row.default", "chirp.settings.spokenCommands", "chirp.settings.autoEnter"], "Dictation")
+        screenshot("settings-dictation-ax5", app)
+    }
+
     /// The Settings/History screenshots for the README and the PR (#194): every page, light or dark as
     /// `simctl ui` set the device. Synthetic content only. Runs only with CHIRP_SCREENSHOTS=1.
     @MainActor func testCaptureSettingsTour() throws {

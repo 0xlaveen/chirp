@@ -41,7 +41,7 @@ public enum KeyboardError: String, Sendable, CaseIterable {
         case .tooLong: "That dictation hit the length limit. Start a new one."
         case .storage: "Chirp can't use its shared storage. Open Chirp to check setup."
         case .badAudio: "The audio wasn't usable. Try again."
-        case .badRequest: "The clean-up prompt is too long. Shorten it in Chirp → Styles."
+        case .badRequest: "The clean-up prompt is too long. Shorten it in Settings → Dictation → Styles."
         case .engine: "The speech engine failed. Try again."
         case .unknown: "Something went wrong. Open Chirp for details."
         }

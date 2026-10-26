@@ -19,6 +19,7 @@ struct HistoryView: View {
     var openNotes: () -> Void = {}
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.horizontalSizeClass) private var sizeClass
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var entries: [HistoryEntry] = []
     @State private var enabled = false
     @State private var retention = HistoryRetention.week
@@ -88,7 +89,7 @@ struct HistoryView: View {
             ShareSheet(text: item.text)
         }
         .overlay(alignment: .bottom) { toast }
-        .animation(.smooth(duration: 0.2), value: deletion == nil)
+        .animation(reduceMotion ? nil : .smooth(duration: 0.2), value: deletion == nil)
         .overlay(alignment: .bottom) {
             if let notice {
                 Text(notice).font(.subheadline.weight(.medium)).foregroundStyle(Color.chirp.ink)
@@ -96,12 +97,12 @@ struct HistoryView: View {
                     .background(Color.chirp.surface, in: Capsule())
                     .shadow(color: Color.black.opacity(0.15), radius: 12, y: 4)
                     .padding(.horizontal, ChirpSpacing.s16).padding(.bottom, ChirpSpacing.s8)
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                    .transition(reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity))
                     .task { try? await Task.sleep(for: .seconds(3)); self.notice = nil }
                     .accessibilityIdentifier("chirp.history.notice")
             }
         }
-        .animation(.smooth(duration: 0.2), value: notice == nil)
+        .animation(reduceMotion ? nil : .smooth(duration: 0.2), value: notice == nil)
     }
 
     @ViewBuilder private var content: some View {
@@ -201,7 +202,7 @@ struct HistoryView: View {
             .shadow(color: Color.black.opacity(0.15), radius: 12, y: 4)
             .padding(.horizontal, ChirpSpacing.s16).padding(.bottom, ChirpSpacing.s8)
             .accessibilityElement(children: .contain)
-            .transition(.move(edge: .bottom).combined(with: .opacity))
+            .transition(reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity))
         }
     }
 

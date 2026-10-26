@@ -657,6 +657,9 @@ Settings and History screenshots (synthetic content; iPhone light and dark, the 
 ![iPhone Settings, light](../docs/screenshots/ios/iphone-settings-home-light.png)
 ![iPhone Dictation settings, dark](../docs/screenshots/ios/iphone-settings-dictation-dark.png)
 ![iPhone Settings at AX5](../docs/screenshots/ios/iphone-settings-home-ax5.png)
+![iPhone Settings at AX5, dark](../docs/screenshots/ios/iphone-settings-home-ax5-dark.png)
+![iPhone Dictation settings at AX5: every control inside the screen edges](../docs/screenshots/ios/iphone-settings-dictation-ax5.png)
+![iPhone Dictation settings at AX5, dark](../docs/screenshots/ios/iphone-settings-dictation-ax5-dark.png)
 ![iPad Settings two-pane, light](../docs/screenshots/ios/ipad-settings-dictation-light.png)
 
 ## History (off by default)
