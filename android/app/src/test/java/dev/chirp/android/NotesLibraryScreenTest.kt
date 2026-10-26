@@ -90,6 +90,36 @@ class NotesLibraryScreenTest {
         compose.waitUntil(5000) { compose.onNodeWithText(text).isDisplayed() }
     }
 
+    private fun newTypedNote(width: String) {
+        setup.paired = false; setup.mic = false
+        show()
+        compose.onNodeWithContentDescription("New note").performClick()
+        compose.onNodeWithContentDescription("Notes (Markdown)").assertIsFocused()
+        for (night in listOf(false, true)) {
+            compose.runOnIdle { dark.value = night }; compose.mainClock.advanceTimeBy(2000); compose.waitForIdle()
+            val bitmap = notesScreenshot(compose.onRoot())
+            File(System.getProperty("chirp.screenshots"), "notes-library-$width-new-note-${if (night) "dark" else "light"}.png")
+                .outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
+        }
+        compose.onNodeWithContentDescription("Notes (Markdown)").performTextInput("Typed locally")
+        val first = reader.model.document.uid
+        compose.runOnIdle { live.record().final("A synthetic recording"); live.idle() }
+        val recording = live.model.document.uid
+        compose.runOnIdle {
+            assertTrue(shortcuts.dispatch(android.view.KeyEvent(0, 0, android.view.KeyEvent.ACTION_DOWN,
+                android.view.KeyEvent.KEYCODE_N, 0, android.view.KeyEvent.META_CTRL_ON)))
+        }
+        compose.onNodeWithContentDescription("Notes (Markdown)").assertIsFocused()
+        assertEquals("", reader.model.field.text)
+        assertNotEquals(first, reader.model.document.uid)
+        assertEquals(recording, live.model.document.uid)
+        assertTrue(live.model.state.active)
+        assertEquals("Typed locally", NotesDocument.fromJson(library.open(first)!!.document).text)
+    }
+
+    @Test fun `New note opens a blank focused editor and Ctrl N keeps a recording separate`() = newTypedNote("cover")
+    @Test @Config(qualifiers = "w840dp-h900dp-mdpi") fun `New note works on inner with a separate recording`() = newTypedNote("inner")
+
     @Test fun `Ctrl F closes a cover detail and focuses library search`() {
         note("Garden plans", "A synthetic page")
         show(); open("Garden plans"); loaded("Garden plans")

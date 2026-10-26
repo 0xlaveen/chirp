@@ -17,6 +17,29 @@ class NotesDocumentLibraryTest {
     private val utc = TimeZone.getTimeZone("UTC")
     private fun doc(text: String, name: String? = null) = NotesDocument(1_792_840_000_000L, text).also { it.name = name }
 
+    @Test fun `new typed note is local editable durable and keeps the previous note`() {
+        val context = RuntimeEnvironment.getApplication()
+        val library = NotesSessions(context, SoftwareHistoryKeys())
+        val rig = NotesModelRig(context, health = null, paired = false, sessions = library, mic = false)
+        rig.model.edit(androidx.compose.ui.text.input.TextFieldValue("Earlier thoughts"))
+        val earlier = rig.model.document.uid
+        rig.model.newNote()
+        val blank = rig.model.document.uid
+        assertNotEquals(earlier, blank)
+        assertEquals("Untitled note", rig.model.displayTitle)
+        assertEquals("", rig.model.field.text)
+        assertFalse(rig.model.state.active)
+        assertTrue(rig.captures.isEmpty()); assertTrue(rig.wires.isEmpty()); assertTrue(rig.foreground.isEmpty())
+        assertEquals("Earlier thoughts", NotesDocument.fromJson(library.open(earlier)!!.document).text)
+        assertTrue(NotesDocument.fromJson(library.open(blank)!!.document).typedNote)
+        rig.model.edit(androidx.compose.ui.text.input.TextFieldValue("A typed thought"))
+        rig.model.keepSession()
+        assertEquals("A typed thought", NotesDocument.fromJson(library.open(blank)!!.document).text)
+        rig.model.newNote()
+        rig.model.open(blank); rig.idle()
+        assertEquals("A typed thought", rig.model.field.text)
+    }
+
     @Test fun `the title is a rename first, then the first heading, then the first heading, then the first line, then the date`() {
         assertEquals("Mine", doc("# Heading\nbody", name = "Mine").libraryTitle(utc, Locale.US))
         assertEquals("Heading", doc("intro line\n## Heading\nbody").libraryTitle(utc, Locale.US))

@@ -114,6 +114,7 @@ internal fun NotesLibraryScreen(
     var menu by remember { mutableStateOf(false) }
     var emptyTrash by remember { mutableStateOf(false) }
     var pendingRecord by remember { mutableStateOf<String?>(null) }
+    var typedSelection by rememberSaveable { mutableStateOf<String?>(null) }
     var pendingNew by remember { mutableStateOf(false) }
     var restoreVersion by remember { mutableIntStateOf(0) }
     var hits by remember { mutableStateOf<List<NotesSearchHit>>(emptyList()) }
@@ -144,7 +145,7 @@ internal fun NotesLibraryScreen(
         searched = query
     }
     LaunchedEffect(selected) {
-        selected?.takeIf { it != liveId }?.let { reader.open(it) }
+        selected?.takeIf { it != liveId && it != reader.document.uid }?.let { reader.open(it) }
     }
     fun open(id: String) { focus.clearFocus(); reader.keepSession(); selected = id }
     fun close() { shownModel.keepSession(); selected = null }
@@ -175,8 +176,14 @@ internal fun NotesLibraryScreen(
         if (recording && id != liveId) { if (id == null) pendingNew = true else pendingRecord = id; return }
         reader.keepSession(); record(id); selected = if (id == null) live.document.uid else id
     }
+    fun newNote() {
+        focus.clearFocus(); reader.newNote()
+        trash = false; selection = emptyList(); query = ""
+        selected = reader.document.uid; typedSelection = selected
+    }
     AppShortcutActions(
-        AppCommand.NewNote to { if (!trash) { start(null); true } else false },
+        AppCommand.NewNote to { if (!trash) { newNote(); true } else false },
+        AppCommand.Record to { if (!trash) { start(null); true } else false },
         AppCommand.Search to { if (selected != null) close(); searchRequest++; true },
         AppCommand.Escape to {
             when {
@@ -198,7 +205,7 @@ internal fun NotesLibraryScreen(
         }
     }
     // A new recording/continued note can finish loading asynchronously; follow it once it owns the microphone.
-    LaunchedEffect(live.document.uid, live.state.active) { if (live.state.active && selected != null && (pendingRecord == null && !pendingNew)) selected = live.document.uid }
+    LaunchedEffect(live.document.uid, live.state.active) { if (live.state.active && selected != null && selected != typedSelection && (pendingRecord == null && !pendingNew)) selected = live.document.uid }
     if (pendingNew || pendingRecord != null) AlertDialog(onDismissRequest = { pendingNew = false; pendingRecord = null },
         title = { Text(if (pendingNew) "Start a new recording?" else "Continue this note?") },
         text = { Text("Another note is recording. Stop it before starting here.") },
@@ -234,7 +241,10 @@ internal fun NotesLibraryScreen(
                                         if (trash) TextButton({ val ids = selection; selection = emptyList(); scope.launch { withContext(Dispatchers.IO) { ids.forEach { library?.restore(it) } } } }) { Text("Restore") }
                                         else IconButton({ delete(selection) }) { Icon(painterResource(R.drawable.ic_delete), "Delete selected notes") }
                                     } else {
-                                        if (!trash) ConnectionChip(state, connection)
+                                        if (!trash) {
+                                            IconButton(::newNote) { Icon(painterResource(R.drawable.ic_edit), "New note") }
+                                            ConnectionChip(state, connection)
+                                        }
                                         Box {
                                             IconButton({ menu = true }) { Icon(painterResource(R.drawable.ic_more_vert), "Library options") }
                                             DropdownMenu(menu, { menu = false }) {
@@ -298,7 +308,7 @@ internal fun NotesLibraryScreen(
                             }
                             if (shown.isEmpty() && !(recording && !trash && query.isBlank()) && (query.isBlank() || searched == query)) item(key = "empty") {
                                 LibraryEmpty(if (trash) "Nothing recently deleted" else if (query.isBlank()) "Your notes will live here" else "No results for “${query.trim()}”",
-                                    if (trash) "Deleted notes appear here for 30 days." else if (query.isBlank()) "Tap Record and talk. Chirp turns it into notes." else "Try another word from your notes or transcript.",
+                                    if (trash) "Deleted notes appear here for 30 days." else if (query.isBlank()) "Tap New note to type, or Record to turn a conversation into notes." else "Try another word from your notes or transcript.",
                                     glyph = query.isBlank(), modifier = Modifier.fillMaxWidth().padding(top = 48.dp))
                             }
 
@@ -311,14 +321,14 @@ internal fun NotesLibraryScreen(
                             if (shownModel.document.uid == selected) NotesScreen(shownModel, record = { start(selected) }, copy = { copy(shownModel) }, share = { share(shownModel) },
                                 act = act, leave = { close() }, save = { save(shownModel) }, handleBack = false, back = ::close, externalTranscript = extraPane,
                                 recordingElsewhere = live.takeIf { recording && shownModel !== live }, jumpToRecording = { open(liveId) },
-                                deleteNote = { delete(listOf(shownModel.document.uid)) })
+                                deleteNote = { delete(listOf(shownModel.document.uid)) }, initiallyEditing = selected == typedSelection)
                             else Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                                 if (reader.message != null) LibraryEmpty("Couldn’t open this note", "Go back to the library and choose another note.", false, Modifier.padding(24.dp))
                                 else CircularProgressIndicator()
                             }
                         }
                     } else Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        LibraryEmpty("A little room to think", "Choose a note, or start a new recording.", true, Modifier.widthIn(max = 360.dp).padding(24.dp))
+                        LibraryEmpty("A little room to think", "Choose a note, type a new one, or start recording.", true, Modifier.widthIn(max = 360.dp).padding(24.dp))
                     }
                 } },
                 extraPane = if (extraPane) ({ AnimatedPane { Surface(Modifier.fillMaxSize(), shape = MaterialTheme.shapes.large,

@@ -56,13 +56,14 @@ data class SpeakersResult(val generation: String?, val turns: List<ServerTurn>, 
 
 /** One person's stretch of a segment's text. [start] is in note seconds (the clock of [NotesSegment.offset]). */
 internal data class SpeakerTurn(val person: Int, val start: Double, val text: String, val raw: String = text,
-                                val approximate: Boolean = false, val keptOriginal: Boolean = false) {
+                                val approximate: Boolean = false, val keptOriginal: Boolean = false, val overridePerson: Int? = null) {
+    val effectivePerson get() = overridePerson ?: person
     fun toJson(): JSONObject = JSONObject().put("person", person).put("start", start).put("text", text).put("raw", raw)
-        .apply { if (approximate) put("approximate", true); if (keptOriginal) put("kept", true) }
+        .apply { if (approximate) put("approximate", true); if (keptOriginal) put("kept", true); overridePerson?.let { put("overridePerson", it) } }
 
     companion object {
         fun fromJson(json: JSONObject) = SpeakerTurn(json.getInt("person"), json.getDouble("start"), json.getString("text"),
-            json.optString("raw", json.getString("text")), json.optBoolean("approximate"), json.optBoolean("kept"))
+            json.optString("raw", json.getString("text")), json.optBoolean("approximate"), json.optBoolean("kept"), json.optInt("overridePerson").takeIf { it > 0 })
     }
 }
 

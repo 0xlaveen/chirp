@@ -27,7 +27,7 @@ class AppShortcutsTest {
         val groups = mutableListOf<android.view.KeyboardShortcutGroup>()
         shortcuts.provide(groups)
         assertEquals("Chirp", groups.single().label)
-        assertEquals("New recording note", groups.single().items.single().label)
+        assertEquals("New note", groups.single().items.single().label)
         shortcuts.unbind(owner)
         assertFalse(shortcuts.dispatch(key(KeyEvent.KEYCODE_N, KeyEvent.META_CTRL_ON)))
     }
@@ -52,7 +52,7 @@ class AppShortcutsScreenTest {
         compose.waitForIdle()
         val groups = mutableListOf<android.view.KeyboardShortcutGroup>()
         compose.runOnIdle { compose.activity.onProvideKeyboardShortcuts(groups, null, -1) }
-        assertTrue(groups.any { it.label == "Chirp" && it.items.any { row -> row.label == "New recording note" } })
+        assertTrue(groups.any { it.label == "Chirp" && it.items.any { row -> row.label == "New note" } })
         fun press(code: Int, mods: Int = KeyEvent.META_CTRL_ON) {
             compose.runOnIdle {
                 assertTrue(compose.activity.dispatchKeyEvent(KeyEvent(0, 0, KeyEvent.ACTION_DOWN, code, 0, mods)))

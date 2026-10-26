@@ -52,6 +52,7 @@ class SettingsRenderTest {
 
     private fun start() {
         val (state, history, updates) = settingsFixture()
+        state.host = "computer.example.test"
         compose.setContent {
             CompositionLocalProvider(LocalDensity provides Density(LocalDensity.current.density, fontScale.floatValue)) {
                 ChirpTheme(dark.value, colour = AppColour.POND) { key(page.value) { SettingsScreen(state, initialPage = page.value, history = history, updates = updates) } }

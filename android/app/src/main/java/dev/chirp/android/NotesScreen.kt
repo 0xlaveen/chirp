@@ -79,11 +79,11 @@ private data class Anchor(val offset: Int, val y: Int)
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalComposeUiApi::class)
 @Composable
 internal fun NotesScreen(model: NotesModel, record: () -> Unit, copy: () -> Unit, share: () -> Unit, act: (DictationAction) -> Unit,
-                         leave: (Boolean) -> Unit, save: () -> Unit = {}, handleBack: Boolean = true, back: (() -> Unit)? = null, externalTranscript: Boolean = false, recordingElsewhere: NotesModel? = null, jumpToRecording: () -> Unit = {}, deleteNote: () -> Unit = {}) {
+                         leave: (Boolean) -> Unit, save: () -> Unit = {}, handleBack: Boolean = true, back: (() -> Unit)? = null, externalTranscript: Boolean = false, recordingElsewhere: NotesModel? = null, jumpToRecording: () -> Unit = {}, deleteNote: () -> Unit = {}, initiallyEditing: Boolean = false) {
     var renaming by remember { mutableStateOf(false) }
     var settings by remember { mutableStateOf(false) }
     var transcript by rememberSaveable { mutableStateOf(false) }
-    var editing by rememberSaveable { mutableStateOf(false) }
+    var editing by rememberSaveable { mutableStateOf(initiallyEditing) }
     var anchor by remember { mutableStateOf<Anchor?>(null) }
     val focus = LocalFocusManager.current
     val list = rememberLazyListState()
@@ -510,15 +510,6 @@ internal fun TranscriptPane(model: NotesModel, modifier: Modifier, titled: Boole
         // A copy: the document's list is the same object as it grows, which the lazy list would not see change.
         val rows = document.segments.toList()
         model.speakerNote?.let { Text(it, Modifier.padding(vertical = 4.dp), color = scheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall) }
-        // A chip where the speaker changes (after merges), so one person's run of turns reads as one.
-        val chips = HashSet<Pair<Int, Int>>().apply {
-            var last: Int? = null
-            for (s in rows) {
-                val turns = s.turns
-                if (turns.isNullOrEmpty()) { if (s.text.isNotEmpty()) last = null; continue }
-                turns.forEachIndexed { i, t -> val p = roster.resolve(t.person); if (p != last) add(s.id to i); last = p }
-            }
-        }
         val list = rememberLazyListState()
         LaunchedEffect(rows.size) { if (rows.isNotEmpty() && !list.canScrollForward) list.animateScrollToItem(rows.size) }
         LazyColumn(Modifier.fillMaxWidth().weight(1f), list, contentPadding = PaddingValues(top = 4.dp, bottom = 128.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -541,16 +532,15 @@ internal fun TranscriptPane(model: NotesModel, modifier: Modifier, titled: Boole
                     if (failure != null) Text("⚠︎ audio not transcribed ($failure)", color = scheme.error, style = MaterialTheme.typography.bodyMedium)
                     else if (!turns.isNullOrEmpty()) Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         turns.forEachIndexed { i, turn ->
-                            if (segment.id to i in chips) {
-                                var menu by remember { mutableStateOf(false) }
-                                Box {
-                                    SpeakerChip(roster.displayName(turn.person), roster.colorIndex(turn.person), { menu = true },
-                                        recognized = roster.person(roster.resolve(turn.person))?.recognized != null)
-                                    SpeakerMenu(menu, { menu = false }, roster, turn.person, rename = { renaming = roster.resolve(turn.person) },
-                                        merge = { into -> model.mergeSpeaker(turn.person, into) }, separate = model::separateSpeaker,
-                                        nameAll = { model.nameSpeakersOpen = true }, reject = { model.rejectVoice(turn.person) },
-                                        update = if (model.rememberVoices) ({ model.updateVoice(turn.person) }) else null)
-                                }
+                            var menu by remember { mutableStateOf(false) }
+                            Box {
+                                SpeakerChip(roster.displayName(turn.effectivePerson), roster.colorIndex(turn.effectivePerson), { menu = true },
+                                    recognized = roster.person(roster.resolve(turn.effectivePerson))?.recognized != null)
+                                SpeakerMenu(menu, { menu = false }, roster, turn.effectivePerson, rename = { renaming = roster.resolve(turn.effectivePerson) },
+                                    merge = { into -> model.mergeSpeaker(turn.effectivePerson, into) }, separate = model::separateSpeaker,
+                                    nameAll = { model.nameSpeakersOpen = true }, reject = { model.rejectVoice(turn.effectivePerson) },
+                                    update = if (model.rememberVoices) ({ model.updateVoice(turn.effectivePerson) }) else null,
+                                    reassign = { person -> model.reassignTurn(segment.id, i, person) })
                             }
                             Text((if (model.raw) turn.raw else turn.text) + if ((turn.keptOriginal || segment.keptOriginal) && !model.raw) " (kept original)" else "",
                                 style = MaterialTheme.typography.bodyMedium)
