@@ -492,7 +492,7 @@ The 4B default passed 40/40 synthetic evaluation cases; the faster 2B and 0.8B a
 
 ### Correction destinations
 
-Managed mode and loopback endpoint mode keep text on this Mac. A remote endpoint receives final text only when the client opts in. Endpoint redirects and environment proxy settings are disabled. API keys are used only by endpoint mode. Authenticated health retains `correction = "off|available"` for existing clients and adds `correction_mode = "off|managed|endpoint"`; managed mode reports a null host and `correction_leaves_machine = false`.
+Managed mode and loopback endpoint mode keep text on this computer. A remote endpoint receives final text only when the client opts in. Endpoint redirects and environment proxy settings are disabled. API keys are used only by endpoint mode. Authenticated health retains `correction = "off|available"` for existing clients and adds `correction_mode = "off|managed|endpoint"`; managed mode reports a null host and `correction_leaves_machine = false`.
 
 ### Editing cleanup profiles
 
@@ -567,7 +567,7 @@ A loopback `base_url` keeps final text on this machine (health/doctor report it 
 
 ## Speaker labels
 
-For clients that stream Live Notes here (Android; the Mac labels speakers itself). A `start` with
+For clients that stream Live Notes here (Android and iPhone/iPad; the Mac labels speakers itself). Labels are on by default in every client, and a client fetches the model without a prompt. A `start` with
 `"speakers": {"session": "<16-64 of [A-Za-z0-9_-]>"}` (a random id per note) gets `speakers` on its
 final:
 
@@ -644,7 +644,7 @@ curl -s -H "$T" -H 'Content-Type: application/json' http://127.0.0.1:7821/v1/spe
 - **Manage.** `rename` (the saved voice only), `forget`, `forget_all` (deletes the file), `enable`,
   and `disable` with `"forget": true|false`. Errors and every field:
   [architecture.md](../docs/architecture.md#saved-voices-v1-compatible-addition-issue-247).
-- **At the Mac:**
+- **On the server's computer:**
 
   ```sh
   chirp-server voices list            # names, seconds, dates; --json for the API's listing
@@ -667,7 +667,7 @@ never compared. Turning "Remember voices" off (a client's Saved voices screen, t
 
 ## Notes structuring
 
-`POST /v1/notes/structure` powers Live Notes on the Mac. It is stateless JSON, uses the same
+`POST /v1/notes/structure` powers Live Notes on every client. It is stateless JSON, uses the same
 correction backend (managed Qwen helper or endpoint), needs correction enabled (otherwise `409
 notes_off`) and does not take the engine lease, so dictation and `/v1/stream` are unaffected.
 
@@ -692,7 +692,7 @@ even with `--debug-retain`.
 In managed mode a queued dictation correction is always served before a queued structuring
 request; a running structuring generation (at most 768 tokens) is never interrupted.
 
-`POST /v1/notes/reorganize` regroups the Mac's editable notes document: it merges duplicate
+`POST /v1/notes/reorganize` regroups a client's editable notes document: it merges duplicate
 sections and bullets and moves loose lines under the right heading, without dropping or inventing
 anything. The body is `{"notes":"<Markdown, at most 3500 chars>","outline":["Earlier heading"],
 "final":false}`; the answer is `{"markdown":"…","reorganized":true,"changed":true|false,

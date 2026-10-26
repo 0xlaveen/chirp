@@ -23,7 +23,7 @@ Index of everything under `docs/`. Start with the architecture doc; everything e
 | [review/round2.md](review/round2.md) | Independent review, round 2 (findings and evidence) |
 | [review/word-waveform.md](review/word-waveform.md) | Design notes for the Mac word-waveform HUD overlay: shipped variant, rejected alternatives, protocol and latency benchmarks |
 | [review/site/](review/site/) | Website review captures (phone 390 px and desktop 1440 px, light and dark) from the local build of [site/](../site/README.md) |
-| [screenshots/](screenshots/) | UI captures: [mac](screenshots/mac/) and [android](screenshots/android/) (described in its [README](screenshots/android/README.md)), plus early [desktop](screenshots/desktop/) Notes captures |
+| [screenshots/](screenshots/) | UI captures: [mac](screenshots/mac/), [android](screenshots/android/) (described in its [README](screenshots/android/README.md)), [ios](screenshots/ios/) (iPhone and iPad, indexed in its [README](screenshots/ios/README.md)), plus early [desktop](screenshots/desktop/) Notes captures |
 | [bench-data/](bench-data/) | Committed numeric benchmark results (no audio or transcripts) |
 | [assets/](assets/) | Resized artwork used by the top-level README and the project website |
 

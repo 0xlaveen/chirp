@@ -5,7 +5,7 @@ Status: agreed direction for the v1 build. Every performance number below is eit
 ## 1. Shape
 
 ```
- ┌──────────── Mac mini (M5 Pro, 64 GB) ────────────────────────┐
+ ┌──────────── Your computer (e.g. Mac) ────────────────────────┐
  │                                                              │
  │  ChirpMac.app (Swift, menu bar)   chirp-server (Python, uv)  │
  │  hotkey → mic → WS ───────────►  127.0.0.1:7821             │
@@ -14,7 +14,7 @@ Status: agreed direction for the v1 build. Every performance number below is eit
  │                                    ├─ optional correction ───┼──► OpenAI-compatible LLM
  │                                    └─ debug retention (opt-in)│    (local LM Studio or remote,
  │                                                              │     off by default, final only)
- │  tailscale serve  https://<your-mac>.<tailnet>.ts.net/chirp ─┤
+ │  tailscale serve  https://<computer>.<tailnet>.ts.net/chirp ─┤
  └──────────────────────────────▲───────────────────────────────┘
                                 │ wss over the tailnet (WireGuard)
  ┌─────────────── Galaxy Z Fold 8 ──────┴────────────────────────┐
@@ -24,7 +24,7 @@ Status: agreed direction for the v1 build. Every performance number below is eit
  └───────────────────────────────────────────────────────────────┘
 ```
 
-There is one speech server, the Mac, and two thin clients. All recognition and correction run on the Mac. The phone only captures audio, streams it and inserts text.
+There is one Chirp server (`chirp-server`), running on your own computer, which can be a Mac, a Windows PC or a Linux box. The diagram shows a Mac running the Mac app beside it, and a phone as a thin client; the Windows/Linux desktop app and the iPhone and iPad app are further clients of the same server. All recognition and correction run on that computer. A phone only captures audio, streams it and inserts text.
 
 ## 2. Reuse decisions (and why)
 
@@ -43,7 +43,7 @@ Koi already ships a proven, privacy-reviewed local dictation stack on this exact
 
 ## 3. Wire protocol (v1, frozen for parallel work)
 
-All endpoints sit under a base URL: either `http://127.0.0.1:7821` (Mac local) or `https://<your-mac>.<tailnet>.ts.net/chirp` (tailnet). The server honours `X-Forwarded-Prefix` or is started with `--root-path /chirp`.
+All endpoints sit under a base URL: either `http://127.0.0.1:7821` (Mac local) or `https://<computer>.<tailnet>.ts.net/chirp` (tailnet). The server honours `X-Forwarded-Prefix` or is started with `--root-path /chirp`.
 
 Every request carries `Authorization: Bearer <token>`. WebSocket clients that cannot set headers may send the token as the first text frame `{"type":"auth","token":"…"}` instead. The token is never put in a URL.
 
@@ -501,7 +501,7 @@ Version additions preserve existing fields. A breaking change becomes `/v2`.
     - The app never loads or prompts for the old 8 MB CoreML voice model. It requests the server’s pinned speaker model on first clip use if needed. The old embedding code remains only for the agreement bench. Existing Keychain embeddings are imported after the measured ≥ 0.98 agreement, then deleted only after server acknowledgement; failed deletion retries from a content-free local acknowledgement marker. Voiceprints are never returned to the Mac and never logged.
   - Logs carry `notes labels speakers=N lag_ms=… tentative=…` only. Tests assert the log line's shape, that a full labelled session writes nothing under Application Support or Chirp's caches, and (against a local stand-in for the Hub) that only the consented download makes a request.
 - **Saved voices on the server (#247) stay on the user's server.** Names and voiceprints are kept in one file, `voices.json` (0600, folder 0700) in the server's data folder, and never logged (`speakers voices action=remember code=ok`, `speakers voices count=N matched=N` only). Voiceprints are never returned to a client; the API lists names, seconds and dates. Nothing is sent outside the user's machines. A clip sent to remember or identify a voice is held only for the request; per-note centroids stay in the bounded in-memory session cache. The server-wide "Remember voices" switch stops saving and recognising; Forget and Forget all delete. Tests check the logs for names, ids, sessions and voiceprint digits, and that the only file written is `voices.json` (and its lock).
-- **Correction is off by default.** When it is enabled with a non-loopback `base_url`, health reports `correction_leaves_machine: true`, and clients label the toggle "sends text to <host>". Audio never leaves the Mac. Only the final text does, and only when correction is on.
+- **Correction is off by default.** When it is enabled with a non-loopback `base_url`, health reports `correction_leaves_machine: true`, and clients label the toggle "sends text to <host>". Audio never leaves your computer. Only the final text does, and only when correction is on.
 - **Secrets:**
   - Owner token: `~/.config/chirp/owner-token`, 0600, generated on first run; read by the Mac app on the server machine for device activity, never put in a pairing link and accepted by no other endpoint.
   - Server token: `~/.config/chirp/token`, 0600, generated on first run. `chirp-server pair` prints it as a `chirp://pair?url=…&token=…` QR code and string, shown locally in the terminal only.
@@ -529,7 +529,7 @@ Version additions preserve existing fields. A breaking change becomes `/v2`.
 - The mic is only opened while the IME window is visible and the user has started dictation. It is released on stop, `onFinishInputView` and `onWindowHidden`. There is no foreground service and no wake lock.
 - The user switches to Chirp from the keyboard picker (the navigation-bar keyboard icon) or through the `voice` subtype. The Chirp view offers "⌨ back" (`switchToPreviousInputMethod`).
 - Fold specifics: the cover and inner screens differ in width, and configuration changes must not drop an active utterance. The layout is a single large mic button with a partial-text strip, so it works at both widths.
-- The phone needs the Tailscale Android app connected. Chirp uses `https://<your-mac>.<tailnet>.ts.net/chirp`, which resolves through MagicDNS on the tailnet.
+- The phone needs the Tailscale Android app connected. Chirp uses `https://<computer>.<tailnet>.ts.net/chirp`, which resolves through MagicDNS on the tailnet.
 
 ## 6. Interaction model (Koi parity)
 
@@ -540,13 +540,13 @@ Version additions preserve existing fields. A breaking change becomes `/v2`.
 - Short start and stop cues, off by default.
 - Silence guard: if peak/RMS stays at zero for 1.5 s, the client shows "No microphone signal" and sends nothing, the same as Koi.
 - Undo: after a corrected final, the Mac HUD offers a 5 s "Use raw". Android shows a chip on the strip.
-- **Live Notes (Mac only).** ⌃⌥N (or the menu) starts a long session with the microphone open the whole time, shown in a Notes window rather than the HUD.
+- **Live Notes (every client).** On the Mac, ⌃⌥N (or the menu) starts a long session with the microphone open the whole time, shown in a Notes window rather than the HUD; the Android, iPhone/iPad and Windows/Linux desktop apps have a notes library with a Record button and use the same endpoints. The details below were written for the Mac, the reference client.
   - **Rolling segments.** The client cuts the audio into ordinary `/v1/stream` utterances of at most 45 s (never before 12 s; at a 0.6 s pause, 0.3 s after 30 s), so each segment's clean-up stays short and inside its budget. At a cut it opens the next socket and routes capture to it first, then sends `stop` on the old one, which finalizes and corrects in the background. No audio is dropped, the protocol is unchanged, and the 120 s cap and 60 s idle timeout never apply to the session as a whole. Each segment uses the hidden `live_notes` style when health has `notes_correction` (fillers, stutters and restarts removed under its own guard; the user's edited dictation prompt does not apply), otherwise the `default` style plus the user's edited default prompt.
   - **One editable document, an AI-owned tail.** The notes are one Markdown source string (`NotesDocument.text`) that the user can edit at any time. The AI owns only a suffix, the tail (`text[tailStart...]`): an append pass only ever replaces the tail, so nothing before `tailStart` is touched. An edit wholly before the tail shifts `tailStart`; an edit that touches a non-empty tail *claims* it — the whole tail becomes user text, the window moves past the segments it covered (they are never re-sent) and a `windowGeneration` bump makes any pass in flight for the old tail stale. Typing at the end with an empty tail stays the user's, and so does an insertion right before the tail's separator newline (the end of the user's own last line): it shifts `tailStart` instead of claiming. Every AI mutation returns the `NotesTextChange` it made; the Mac editor replays exactly that delta onto its `NSTextStorage` as one undo group and checks the result matches the model. Live partials and unstructured speech are never in the text: they show in a separate "Hearing" strip.
   - **Structuring.** After a segment's final (at most every 15 s, never while a segment of the session is still correcting) the client posts the open window's corrected text and the settled text's headings to `POST /v1/notes/structure`, and the answer replaces the tail. Once a window passes 1600 characters the tail settles (it becomes ordinary text) and a new window starts, so every pass is bounded. A window the server *rejects* is structured again in halves at a sentence end, then quarters (min 400 characters); the parts are appended in order and the tail settles, and only a part that still fails becomes a "Not structured" section. Otherwise a window past 3600 characters, or past 1600 after two failed passes (timeouts, busy), is appended as an ordinary, editable "Not structured" section. If the caret is in the tail while the user is typing (or an input method is composing), the newest answer is held until the caret leaves, focus leaves or 10 s pass without a keystroke. Stop waits for the last final, runs one `final` pass and settles everything. With correction off or an older server, Notes is a live transcript and a plain editor.
   - **Reorganize and the shared pass slot.** `POST /v1/notes/reorganize` rewrites the longest suffix of whole sections within 3500 characters (earlier headings go along as context only). Append and reorganize share one client pass slot (and the server's `structuring` lock), so they never overlap and only the user can change the text while a reorganize runs; append wins when both are due. Auto-reorganize runs after ≥ 1200 inserted characters, ≥ 180 s since the last one and 15 s without typing, but while recording only within 5 s of a segment commit and on at most the trailing 1200 characters of whole sections (a segment clean-up queued at the next cut preempts it; the server answers `error: "preempted"`, which the client treats as not run: no note, no backoff, retry after the next commit). Stop runs one full-scope pass unless one ended under 30 s ago on the same text. The Organize button skips the thresholds: it first re-structures the pending window and every fallback block the user has not edited (tracked verbatim; replaced in place as one version-checked undo group), then reorganizes the full scope. A result is applied only if `version` is unchanged since the request; otherwise it is discarded (auto retries after 60 s; a manual one says the notes changed). An applied reorganize settles everything and is one undo step. A 404 hides only reorganize.
   - **Mutual exclusion.** Notes holds the engine lease almost continuously, so on the Mac Notes and dictation exclude each other: the dictation hotkey shows "Notes is recording — stop it to dictate" and Start Dictation is disabled while Notes records; Notes cannot start mid-dictation. Phone clients may see `busy` meanwhile. Pausing Chirp stops Notes and keeps the notes.
-  - Notes and transcripts stay in memory until Save… (a user-chosen `.md`) or Copy, plus a text-only recovery journal (`~/Library/Application Support/Chirp/Recovery/<session-id>.json`, `0600` in a `0700` folder, atomic writes, deleted on Save/Discard/New, switchable) so a crash or power loss does not lose a session; see §4.
+  - There is no Save step. Every note is a document in a local library on the device that recorded it (the Mac under `~/Library/Application Support/Chirp/Notes/<uuid>/note.json`, `0600` in a `0700` folder; sealed on Android and iOS), written atomically and flushed at segment commits, AI changes and Stop, so a crash or power loss shows the note as Recovered instead of losing it. Notes stay until you delete them (Recently Deleted keeps them 30 days); Export Markdown writes a separate copy. See §4.
 
 ## 7. Measurement plan
 
