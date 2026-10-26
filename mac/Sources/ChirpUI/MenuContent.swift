@@ -10,7 +10,7 @@ public enum LaunchState: Equatable, Sendable {
 
 public enum MenuAction: Equatable, Sendable {
     /// `toggleNotes` starts, stops or resumes the recording; `newNote` always starts a new one; `openNote` carries a note id.
-    case toggleDictation, toggleNotes, newNote, showNotes, openNote(String), useRaw, pickInput(String?), toggleCleanup, pickStyle(String)
+    case togglePrivateSession, toggleDictation, toggleNotes, newNote, showNotes, openNote(String), useRaw, pickInput(String?), toggleCleanup, pickStyle(String)
     case fixServer, showSettings, editStyles, showSetup, quit
     /// Dictation history: the window, and one recent dictation's Insert Again, Copy and Show in History (its id).
     case showHistory, insertDictation(String), copyDictation(String), openDictation(String)
@@ -109,6 +109,7 @@ public struct MenuInputs: Sendable {
     public var serverFixMessage: String?
     public var debugRetention = false
     /// The menu's switch is off: the hotkey is released and the bird is dimmed.
+    public var privateSession = false
     public var paused = false
     /// The dictation hotkey is registered (it is not while paused, or when another app owns the shortcut).
     public var hotkeyRegistered = true
@@ -173,7 +174,7 @@ public enum MenuContent {
     /// The header: the name, what Chirp is doing or what is wrong, and the switch.
     public static func header(_ m: MenuInputs) -> MenuHeader {
         let (status, tone) = statusLine(m)
-        return MenuHeader(status: status, tone: tone, dot: dot(m, tone: tone), isOn: !m.paused,
+        return MenuHeader(status: m.privateSession ? "Private session · " + status : status, tone: tone, dot: dot(m, tone: tone), isOn: !m.paused,
                           help: status == debugRetention ? debugRetentionHelp : nil)
     }
 
@@ -253,6 +254,8 @@ public enum MenuContent {
             out.append(.separator)
         }
 
+        out.append(MenuEntry(title: "Private session", value: m.privateSession ? "On · up to 1 hour" : "Off",
+                             action: .togglePrivateSession, mark: m.privateSession ? .on : .off))
         out.append(cleanupMenu(m))
         out.append(microphoneMenu(m))
         out.append(.separator)

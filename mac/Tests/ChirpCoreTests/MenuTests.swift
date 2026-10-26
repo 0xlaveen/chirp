@@ -93,7 +93,7 @@ import Testing
     // MARK: the structure
 
     @Test func readyMenuHasTheTargetStructure() {
-        #expect(groups(inputs()) == [["Start Dictation", "New Note"], ["Recent Dictations", "Dictation History…"], ["Recent Notes", "Notes Library…"], ["Clean-up", "Microphone"],
+        #expect(groups(inputs()) == [["Start Dictation", "New Note"], ["Recent Dictations", "Dictation History…"], ["Recent Notes", "Notes Library…"], ["Private session", "Clean-up", "Microphone"],
                                       ["Settings…"], ["Quit Chirp"]])
         #expect(MenuContent.header(inputs()).title == "Chirp")
     }
@@ -118,7 +118,7 @@ import Testing
     @Test func useRawIsItsOwnGroupUnderTheStartRows() {
         let m = inputs { $0.rawOfferOpen = true; $0.rawOfferKey = "⌃⌥Z" }
         #expect(groups(m) == [["Start Dictation", "New Note"], ["Recent Dictations", "Dictation History…"], ["Recent Notes", "Notes Library…"], ["Use Raw for Last Dictation"],
-                              ["Clean-up", "Microphone"], ["Settings…"], ["Quit Chirp"]])
+                              ["Private session", "Clean-up", "Microphone"], ["Settings…"], ["Quit Chirp"]])
     }
 
     // MARK: header and status

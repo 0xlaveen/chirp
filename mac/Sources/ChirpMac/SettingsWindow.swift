@@ -75,6 +75,8 @@ final class SettingsWindowController: NSObject, NSTextFieldDelegate {
     private var keepLoaded = KeepLoadedState()
     private var keepLoadedTask: Task<Void, Never>?
 
+    var privateSession: PrivateSession?
+
     private var state: SettingsState {
         var s = SettingsState()
         s.hotkey = settings.hotkey
@@ -88,6 +90,8 @@ final class SettingsWindowController: NSObject, NSTextFieldDelegate {
         s.serverURL = settings.serverURL
         s.tokenPresent = ServerConfig.readToken() != nil
         s.launch = LaunchAtLogin.state
+        s.privateSession = privateSession?.isActive ?? false
+        s.spokenCommands = settings.spokenCommands
         s.wordWaveform = settings.wordWaveform
         s.notesRetention = settings.notesRetention
         s.notesKeepAudio = settings.notesKeepAudio
@@ -437,6 +441,10 @@ final class SettingsWindowController: NSObject, NSTextFieldDelegate {
         form.serverURL.delegate = self
         form.launch.target = self
         form.launch.action = #selector(toggleLaunch(_:))
+        form.privateSession.target = self
+        form.privateSession.action = #selector(togglePrivateSession(_:))
+        form.spokenCommands.target = self
+        form.spokenCommands.action = #selector(toggleSpokenCommands(_:))
         form.wordWaveform.target = self
         form.wordWaveform.action = #selector(toggleWordWaveform(_:))
         form.micButton.target = self
@@ -744,6 +752,8 @@ final class SettingsWindowController: NSObject, NSTextFieldDelegate {
         settings.alwaysShowInDock = sender.state == .on
         onAlwaysShowInDockChange?(sender.state == .on)
     }
+    @objc private func togglePrivateSession(_ sender: NSButton) { privateSession?.setEnabled(sender.state == .on); refresh() }
+    @objc private func toggleSpokenCommands(_ sender: NSButton) { settings.spokenCommands = sender.state == .on }
     @objc private func toggleWordWaveform(_ sender: NSButton) { settings.wordWaveform = sender.state == .on }
     @objc private func toggleOfferRaw(_ sender: NSButton) { settings.showRawAfterCleanup = sender.state == .on }
 

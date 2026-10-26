@@ -35,6 +35,8 @@ public enum HUDStatus {
 @MainActor @Observable
 public final class HUDModel {
     public var status = ""
+    public var privateSession = false
+    public var duration: String?
     public var stable = ""
     public var unstable = ""
     /// Recent input levels for the waveform, newest last.
@@ -182,6 +184,7 @@ public final class HUDModel {
     public func silence() { levels.clear() }
 
     public func reset() {
+        privateSession = false; duration = nil
         status = ""; stable = ""; unstable = ""; levels.clear(); indicator = .waveform
         isError = false; showUseRaw = false; cleaned = false; onUseRaw = nil
         styleName = nil; polishing = false; diff = nil; diffFade = 0; keptOriginal = false
@@ -264,6 +267,15 @@ public struct HUDView: View {
 
     private var content: some View {
         VStack(alignment: .leading, spacing: 8) {
+            if model.privateSession || model.duration != nil {
+                HStack {
+                    if model.privateSession { Label("Private session", systemImage: "lock.fill") }
+                    Spacer(minLength: 8)
+                    if let duration = model.duration { Text(duration).monospacedDigit().accessibilityLabel("Dictation duration: " + duration) }
+                }
+                .font(.system(size: 11))
+                .foregroundStyle(Color.secondary)
+            }
             HStack(spacing: 10) {
                 indicator
                     .accessibilityHidden(true)

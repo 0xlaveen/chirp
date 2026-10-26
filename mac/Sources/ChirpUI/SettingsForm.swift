@@ -19,6 +19,8 @@ public struct SettingsState: Sendable {
     public var tokenPresent = true
     public var launch: LaunchState = .off
     /// Dictation: the HUD's word waveform (each word's audio above it). Off by default.
+    public var spokenCommands = false
+    public var privateSession = false
     public var wordWaveform = false
     public var soundsEnabled = false
     public var soundPack: SoundPack = .default
@@ -146,7 +148,7 @@ public enum SettingsTab: String, CaseIterable, Sendable {
         case .general: ["startup", "launch at login", "dock", "permissions", "microphone", "accessibility", "setup"]
         case .dictation: ["shortcuts", "hotkey", "hold to talk", "auto-stop", "stop", "silence", "return", "word waveform",
                           "sounds", "volume", "input device", "use raw", "new note", "history", "recent dictations", "privacy",
-                          "learn", "learned", "edits", "vocabulary", "terms"]
+                          "learn", "learned", "edits", "vocabulary", "terms", "private session", "spoken commands", "new line", "new paragraph"]
         case .cleanup: ["style", "prompts", "per-app", "insert raw", "review changes", "undo", "polish"]
         case .notes: ["library", "retention", "recently deleted", "audio", "storage", "export", "folder", "smart notes",
                       "structure", "reorganize", "speakers", "voices", "call audio", "sources", "zoom", "meeting"]
@@ -252,6 +254,8 @@ public final class SettingsForm {
     public let structureNotes = NSButton(checkboxWithTitle: "Structure notes", target: nil, action: nil)
     public let autoReorganize = NSButton(checkboxWithTitle: "Organize automatically", target: nil, action: nil)
     /// Dictation › History: keep dictations (on by default), for how long, the apps never kept, and the window/Clear.
+    public let privateSession = NSButton(checkboxWithTitle: "Private session", target: nil, action: nil)
+    public let spokenCommands = NSButton(checkboxWithTitle: "Spoken commands", target: nil, action: nil)
     public let historyEnabled = NSButton(checkboxWithTitle: HistorySettingsText.keep, target: nil, action: nil)
     public let historyRetention = NSPopUpButton(frame: .zero, pullsDown: false)
     public let historyApps = HistoryAppsList()
@@ -436,6 +440,7 @@ public final class SettingsForm {
                 row("Stop after", silence),
                 row("Microphone", microphone, help: Self.help("Follows the system default unless you pick one. Applies from the next dictation.")),
                 row(nil, wordWaveform, help: Self.help("Draws each word's audio above it as you speak, so you can see what was heard.")),
+                row(nil, spokenCommands, help: Self.help("Off by default. Say “new line” or “new paragraph” at the end of a dictation to insert line breaks.")),
                 row("Press Return", autoEnter, help: Self.help("Sends a chat message after inserting. Hold ⇧ when you stop to skip it. Chat apps are those set to the Chat style.")),
             ]),
             SettingsSection("Sounds", [
@@ -443,6 +448,7 @@ public final class SettingsForm {
                 row("Pack", packRow, help: packHelp), row("Volume", volumeRow), startRow, stopRow,
             ]),
             SettingsSection("History", [
+                row(nil, privateSession, help: Self.help(PrivateSession.help)),
                 row(nil, historyEnabled, help: Self.help(HistorySettingsText.keepHelp)),
                 row("Keep for", historyRetention, help: Self.help(HistorySettingsText.retentionHelp)),
                 row("Never keep", historyApps.view, help: Self.help(HistorySettingsText.appsHelp)),
@@ -643,6 +649,7 @@ public final class SettingsForm {
     /// Fills the window. The periodic refresh passes `full: false` so it only follows the server and permission
     /// states and never overwrites what the user is typing or a login-item error shown under the checkbox.
     public func apply(_ s: SettingsState, full: Bool = false) {
+        privateSession.state = s.privateSession ? .on : .off
         if full {
             fillHotkeyMenu(selecting: s.hotkey, taken: ChirpShortcut.dictation.taken(s.combo(for:)))
             showShortcuts(s)
@@ -656,6 +663,7 @@ public final class SettingsForm {
             serverURL.stringValue = s.serverURL
             launch.state = s.launch == .on ? .on : .off
             launch.isEnabled = s.launch != .unavailable
+            spokenCommands.state = s.spokenCommands ? .on : .off
             wordWaveform.state = s.wordWaveform ? .on : .off
             if let i = NotesRetention.allCases.firstIndex(of: s.notesRetention) { notesRetention.selectItem(at: i) }
             historyEnabled.state = s.historyEnabled ? .on : .off
