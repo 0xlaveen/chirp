@@ -620,6 +620,13 @@ shows its id, in the menu and on the button) and also holds **Private session ·
 exclude history**, the same switch as in Settings. On clean-up failure or
 timeout, the raw transcript is kept and offered instead.
 
+Settings and History screenshots (synthetic content; iPhone light and dark, the largest accessibility text size, iPad two-pane):
+
+![iPhone Settings, light](../docs/screenshots/ios/iphone-settings-home-light.png)
+![iPhone Dictation settings, dark](../docs/screenshots/ios/iphone-settings-dictation-dark.png)
+![iPhone Settings at AX5](../docs/screenshots/ios/iphone-settings-home-ax5.png)
+![iPad Settings two-pane, light](../docs/screenshots/ios/ipad-settings-dictation-light.png)
+
 ## History (off by default)
 
 **History** tab: "Keep encrypted history on this device" is off initially.
@@ -631,6 +638,10 @@ ciphertext and the key. Cancelled and empty utterances are never recorded, and
 the **Private session** toggle (Settings, or Chirp Keyboard's Style menu) keeps an utterance out of history —
 but Chirp cannot detect every editor's private mode, so switch it on yourself
 when it matters; surrounding editor text is never collected.
+
+![iPhone History, dark](../docs/screenshots/ios/iphone-history-list-dark.png)
+![iPhone History entry, light](../docs/screenshots/ios/iphone-history-detail-light.png)
+![iPad History, light](../docs/screenshots/ios/ipad-history-list-light.png)
 
 ## Privacy & security
 
