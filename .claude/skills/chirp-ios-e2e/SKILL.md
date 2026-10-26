@@ -45,7 +45,7 @@ It creates its own `iPhone chirp-e2e-<pid>` / `iPad chirp-e2e-<pid>` (simulator.
 |---|---|
 | `ios/scripts/e2e-all.sh` | Whole sweep, results table, evidence dir, own simulators |
 | `ios/scripts/simulator-e2e.sh UUID [xcodebuild args]` | Throwaway server + stand-in + `ChirpIOS-UI` scheme with live env; privacy check (server log has no transcript) |
-| `ios/scripts/simulator.sh build\|test\|ui UUID [args]` | Ad-hoc-signed `xcodebuild` on one explicit simulator UUID (`ui` = synthetic UI tests, no server) |
+| `ios/scripts/simulator.sh build\|test\|ui UUID [args]` | Ad-hoc-signed `xcodebuild` on one explicit simulator UUID (`ui` = synthetic UI tests, no server). Test runs pass `-collect-test-diagnostics never` (skips Xcode's ~10-minute post-test diagnostics; verified on Xcode 26 even though `-help` omits the flag). Terminate the app in UI-test tearDown too, and `xcrun simctl shutdown` the device when a run ends — the host is shared |
 | `ios/scripts/ci-test.sh` | What CI runs: portable checks + unit tests on one iPhone |
 | `ios/scripts/check-sources.sh`, `generate-project.py`, `check-project.py` | Project generation and structural checks |
 | `ios/Shared/scripts/test.sh`, `swift test --package-path ios/Keyboard/Policy` | Portable package tests (no simulator) |

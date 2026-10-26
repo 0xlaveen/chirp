@@ -116,14 +116,15 @@ enum ChirpTab: String, CaseIterable, Hashable {
     }
 }
 
-/// Pages inside the Settings tab that other screens deep-link to (the connection chip, banners, setup card).
-enum SettingsRoute: Hashable { case connection, styles }
+/// Pages inside the Settings tab that other screens deep-link to (the connection chip, banners, the
+/// setup card, History's ⋯ menu). Styles lives under Dictation; the Settings tree consumes the rest.
+enum SettingsRoute: Hashable { case connection, styles, privacy }
 
 struct ChirpRootView: View {
     @ObservedObject var model: SessionCoordinator
     @ObservedObject var notes: LiveNotesController
     @Binding var tab: ChirpTab
-    @State private var settingsPath: [SettingsRoute] = []
+    @State private var settingsRoute: SettingsRoute?
     @State private var onboarding = false
     @AppStorage(Onboarding.doneKey) private var onboarded = false
     @AppStorage("chirp.setupCard.dismissed") private var setupDismissed = false
@@ -144,33 +145,20 @@ struct ChirpRootView: View {
                 }
             }
             Tab(ChirpTab.history.title, systemImage: ChirpTab.history.symbol, value: .history) {
-                NavigationStack { HistoryView(model: model).modifier(SessionCapsule(model: model)) }
+                NavigationStack {
+                    HistoryView(model: model, openSettings: { open(.privacy) }, notes: notes, openNotes: { tab = .notes })
+                        .modifier(SessionCapsule(model: model))
+                }
             }
             Tab(ChirpTab.settings.title, systemImage: ChirpTab.settings.symbol, value: .settings) {
-                NavigationStack(path: $settingsPath) {
-                    SessionSettingsView(model: model)
-                        .safeAreaInset(edge: .top, spacing: 0) { settingsShortcuts }
-                        .modifier(SessionCapsule(model: model))
-                        .navigationDestination(for: SettingsRoute.self) { route in
-                            switch route {
-                            case .connection: PairingView(model: model)
-                            case .styles: StylesView(model: model)
-                            }
-                        }
-                }
+                SettingsHome(model: model, notes: notes, showOnboarding: { setupDismissed = false; onboarding = true }, deeplink: $settingsRoute)
+                    .modifier(SessionCapsule(model: model))
             }
         }
         .tabViewStyle(.sidebarAdaptable)
         .defaultAdaptableTabBarPlacement(.sidebar)
         .tint(Color.chirp.koi)
         .focusedSceneValue(\.chirpTab, $tab)
-        .overlay(alignment: .top) {
-            if model.debugRetention {
-                Text("DEBUG: Mac keeps recordings").font(.headline).foregroundStyle(Color.chirp.onKoi)
-                    .frame(maxWidth: .infinity).padding(8).background(Color.chirp.record)
-                    .accessibilityAddTraits(.isHeader).allowsHitTesting(false)
-            }
-        }
         .modifier(PrivacyShield())
         .fullScreenCover(isPresented: $onboarding) {
             Onboarding(model: model) {
@@ -185,24 +173,9 @@ struct ChirpRootView: View {
 
     private func open(_ route: SettingsRoute) {
         tab = .settings
-        settingsPath = [route]
+        settingsRoute = route
     }
 
-    /// Until the Settings tree (#194) lands, Connection, Styles and "Show setup again" sit above the settings.
-    private var settingsShortcuts: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: ChirpSpacing.s8) {
-                NavigationLink(value: SettingsRoute.connection) { Label("Connection", systemImage: "link") }
-                    .buttonStyle(.capsuleChip).accessibilityIdentifier("chirp.settings.connection")
-                NavigationLink(value: SettingsRoute.styles) { Label("Styles", systemImage: "sparkles") }
-                    .buttonStyle(.capsuleChip).accessibilityIdentifier("chirp.settings.styles")
-                Button("Show setup again", systemImage: "arrow.counterclockwise") { setupDismissed = false; onboarding = true }
-                    .buttonStyle(.capsuleChip).accessibilityIdentifier("chirp.settings.showSetup")
-            }
-            .padding(.horizontal, ChirpSpacing.s16).padding(.vertical, ChirpSpacing.s8)
-        }
-        .background(Color(uiColor: .systemGroupedBackground))
-    }
 }
 
 /// The armed-session capsule: a quiet Ripple, "Mic on · 4:12 left" and End. Sits above each tab's content,

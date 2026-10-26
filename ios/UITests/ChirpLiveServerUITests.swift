@@ -45,7 +45,8 @@ final class ChirpLiveServerUITests: XCTestCase {
         add(shot)
     }
 
-    /// Forget, paste the secret link, verify against the live server, save.
+    /// Forget, paste the secret link, verify against the live server, save. Success pops back to
+    /// Connection, whose banner names the host.
     @MainActor func pair(_ app: XCUIApplication) {
         app.openConnection()
         endSession(app)
@@ -54,21 +55,24 @@ final class ChirpLiveServerUITests: XCTestCase {
         field.tap()
         field.typeText(link)
         app.buttons["chirp.pair.submit"].tap()
-        XCTAssertTrue(app.staticTexts["Mac pairing saved"].waitForExistence(timeout: 15), "Live server pairing failed")
-        XCTAssertTrue(app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS '127.0.0.1'")).firstMatch.exists)
+        let banner = app.descendants(matching: .any).matching(identifier: "chirp.connection.banner").firstMatch
+        XCTAssertTrue(banner.waitForExistence(timeout: 15), "Live server pairing failed")
+        XCTAssertTrue(waitFor(banner, "label CONTAINS '127.0.0.1'", timeout: 5), banner.label)
         XCTAssertTrue(app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS 'Chirp simulator'")).firstMatch.exists,
                       "The per-device pairing name must show")
     }
 
-    /// The saved-pairing rows can push Forget pairing under iOS 27's floating tab bar; bring it into view first.
+    /// Forget pairing asks first; confirming clears the pairing (the banner and its group disappear).
     @MainActor func forgetPairing(_ app: XCUIApplication) {
         // The Form builds only visible rows: below the fold the button is not in the tree yet.
-        guard app.staticTexts["Mac pairing saved"].waitForExistence(timeout: 2) else { return }
-        let forget = app.buttons["Forget pairing"]
+        let forget = app.buttons["chirp.pair.forget"]
+        guard forget.waitForExistence(timeout: 2) else { return }
         for _ in 0..<4 where !(forget.exists && forget.isHittable) { app.swipeUp() }
         guard forget.exists else { XCTFail("Forget pairing is not reachable"); return }
         forget.tap()
-        XCTAssertTrue(waitFor(app.staticTexts["Mac pairing saved"], "exists == false", timeout: 5), "Forget pairing did not clear it")
+        XCTAssertTrue(app.buttons["Forget"].waitForExistence(timeout: 3), "No Forget confirmation")
+        app.buttons["Forget"].tap()
+        XCTAssertTrue(waitFor(forget, "exists == false", timeout: 5), "Forget pairing did not clear it")
     }
 
     /// The QR's secret link opened by iOS: the system asks "Open in Chirp?" before Chirp verifies and saves.
@@ -76,11 +80,12 @@ final class ChirpLiveServerUITests: XCTestCase {
         app.openConnection()
         endSession(app)
         forgetPairing(app)
-        XCTAssertFalse(app.staticTexts["Mac pairing saved"].waitForExistence(timeout: 2))
+        let banner = app.descendants(matching: .any).matching(identifier: "chirp.connection.banner").firstMatch
+        XCTAssertFalse(banner.waitForExistence(timeout: 2))
         XCUIDevice.shared.system.open(try XCTUnwrap(URL(string: link)))
         let open = XCUIApplication(bundleIdentifier: "com.apple.springboard").buttons["Open"]
         if open.waitForExistence(timeout: 5) { open.tap() }
-        XCTAssertTrue(app.staticTexts["Mac pairing saved"].waitForExistence(timeout: 15), "Deep-link pairing failed")
+        XCTAssertTrue(banner.waitForExistence(timeout: 15), "Deep-link pairing failed")
     }
 
     @MainActor func testLivePairDictateCleanupRawHistoryAndEnd() {
@@ -88,7 +93,7 @@ final class ChirpLiveServerUITests: XCTestCase {
         pair(app)
         screenshot("Paired with local server", app)
 
-        app.openStyles()
+        app.openDictation()
         XCTAssertTrue(app.staticTexts["Clean-up runs on your Mac."].waitForExistence(timeout: 5))
         let cleanup = element("chirp.cleanup.enabled", in: app)
         XCTAssertTrue(cleanup.waitForExistence(timeout: 5))
@@ -99,9 +104,12 @@ final class ChirpLiveServerUITests: XCTestCase {
             enable.tap()
         }
         XCTAssertTrue(waitFor(cleanup, "value == '1'", timeout: 5))
-        XCTAssertTrue(app.staticTexts["Default · Selected"].waitForExistence(timeout: 10), "Server styles did not load")
+        XCTAssertTrue(app.descendants(matching: .any).matching(identifier: "chirp.styles.row.default").firstMatch.waitForExistence(timeout: 10), "Server styles did not load")
 
+        // History's settings moved out of the list: the ⋯ menu deep-links to Settings → Privacy & history.
         app.selectChirpTab("History")
+        app.buttons["chirp.history.menu"].tap()
+        app.buttons["History settings"].tap()
         let history = element("chirp.history.enabled", in: app)
         XCTAssertTrue(history.waitForExistence(timeout: 5))
         if history.value as? String != "1" { history.switches.firstMatch.exists ? history.switches.firstMatch.tap() : history.tap() }

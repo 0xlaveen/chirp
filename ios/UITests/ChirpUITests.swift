@@ -39,7 +39,8 @@ final class ChirpUITests: XCTestCase {
         }
         screenshot("Notes with the setup card", app)
         app.buttons["chirp.connection.chip"].tap()
-        XCTAssertTrue(app.buttons["chirp.pair.scan"].waitForExistence(timeout: 5), "The chip opens Settings → Connection")
+        // The chip deep-links to Settings → Connection; pairing itself sits behind Pair Mac (#194).
+        XCTAssertTrue(app.buttons["chirp.pair.change"].waitForExistence(timeout: 5), "The chip opens Settings → Connection")
         app.selectChirpTab("Dictate")
         XCTAssertTrue(app.staticTexts["sessionStatus"].waitForExistence(timeout: 5))
         XCTAssertEqual(app.staticTexts["sessionStatus"].label, "Microphone off")
@@ -112,7 +113,7 @@ final class ChirpUITests: XCTestCase {
         XCTAssertEqual(app.staticTexts["transcript"].label, "synthetic words")
         // Regression: the armed session bar covered iOS 27's tab bar, so a tab tap ended the session.
         app.selectChirpTab("History")
-        XCTAssertTrue(app.descendants(matching: .any).matching(identifier: "chirp.history.enabled").firstMatch.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["History is off"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.buttons["chirp.session.end"].exists, "Switching tabs must not end the session")
         screenshot("Session capsule", app)
         app.selectChirpTab("Dictate")
@@ -125,18 +126,15 @@ final class ChirpUITests: XCTestCase {
     @MainActor func testHistoryOffAndAdaptiveOrientation() {
         let app = pairedApp()
         app.selectChirpTab("History")
-        // SwiftUI's iOS 27 toggle can be exposed as a different element type.
-        let history = app.descendants(matching: .any).matching(identifier: "chirp.history.enabled").firstMatch
-        XCTAssertTrue(history.waitForExistence(timeout: 5))
-        XCTAssertEqual(history.value as? String, "0")
+        // The off state is the History tab's own screen now; the settings live behind the ⋯ menu.
+        XCTAssertTrue(app.staticTexts["History is off"].waitForExistence(timeout: 5))
         defer { XCUIDevice.shared.orientation = .portrait }
         XCUIDevice.shared.orientation = .landscapeLeft
-        XCTAssertTrue(history.waitForExistence(timeout: 5))
-        XCTAssertEqual(history.value as? String, "0")
+        XCTAssertTrue(app.staticTexts["History is off"].waitForExistence(timeout: 5))
         XCUIDevice.shared.orientation = .portrait
         app.selectChirpTab("Settings")
         let back = app.navigationBars.buttons["Settings"]
         if back.exists { back.tap() }
-        XCTAssertTrue(app.staticTexts["Microphone session"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["chirp.settings.session"].waitForExistence(timeout: 5))
     }
 }
