@@ -3,14 +3,19 @@
 import argparse
 import asyncio
 import json
+import shutil
+import time
 from pathlib import Path
 import uvicorn
+from chirp_server import speakers_model
+from chirp_server.speakers import SpeakerLabels
 from chirp_server.app import create_app
 from chirp_server.config import Settings
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--model-dir', type=Path, required=True)
 parser.add_argument('--metadata', type=Path, required=True)
+parser.add_argument('--speaker-model', type=Path)
 parser.add_argument('--cert')
 parser.add_argument('--key')
 parser.add_argument('--server-port', type=int, default=7899)
@@ -19,7 +24,19 @@ parser.add_argument('--ready-delay', type=float, default=2)
 args = parser.parse_args()
 settings = Settings.read()
 settings.model_dir = args.model_dir
-app = create_app(settings)
+def fetch_speaker_model():
+    # Exercise the authenticated automatic download, without network or the operator's model cache.
+    time.sleep(8)  # Keep the model status visible long enough for the UI probe.
+    target = speakers_model.path()
+    target.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(args.speaker_model, target)
+    if not speakers_model.verify(target):
+        speakers_model.remove()
+        raise ValueError("Synthetic fixture model checksum mismatch")
+    return target
+
+
+app = create_app(settings, speakers=SpeakerLabels(fetch=fetch_speaker_model) if args.speaker_model else None)
 
 notes = {}
 

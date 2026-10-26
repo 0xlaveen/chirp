@@ -317,15 +317,10 @@ def main():
         config = home / ".config/chirp/server.toml"
         config.parent.mkdir(parents=True)
         config.write_text('[correction]\nmode = "managed"\ntimeout = 60.0\n')
-        # Speaker labels: the server runs offline, so the check plays its Hugging Face download by copying the pinned
-        # model into the throwaway HOME once the phone's consent dialog is up (the server still verifies its hash).
+        # The throwaway server copies and verifies this pinned fixture only after the phone's
+        # automatic POST. It never mutates the source model or touches the network.
         speaker_model = Path(os.environ.get("CHIRP_SPEAKER_MODEL") or Path.home() / "Library/Application Support/Chirp/models/speakers/voxceleb_resnet34_LM.onnx")
-        speakers_model = None
-        if (opt.notes_check or opt.speakers_check) and speaker_model.is_file():
-            def speakers_model():
-                seeded = home / "Library/Application Support/Chirp/models/speakers" / speaker_model.name
-                seeded.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copyfile(speaker_model, seeded)
+        speakers_model = (opt.notes_check or opt.speakers_check) and speaker_model.is_file()
         assert speakers_model or not opt.speakers_check, "--speakers-check needs the speaker model (CHIRP_SPEAKER_MODEL)"
         env = dict(os.environ, HOME=str(home), HF_HOME=str(Path.home() / ".cache/huggingface"),
                    HF_HUB_OFFLINE="1", TRANSFORMERS_OFFLINE="1", PYTHONPATH=str(opt.server_root / "src"))
@@ -334,6 +329,7 @@ def main():
         if opt.tls or opt.stop_check or opt.notes_check or opt.speakers_check:
             command = [opt.python, str(Path(__file__).with_name("emulator-stop-server.py")),
                        "--model-dir", opt.model_dir, "--metadata", str(work / "events.json"), "--server-port", str(opt.server_port)]
+            if speakers_model: command += ["--speaker-model", str(speaker_model)]
             if opt.tls: command += ["--cert", str(cert), "--key", str(opt.tls_dir / "emulator-tls/key.pem")]
             command += ["--ready-delay", "2" if opt.stop_check else "0"]
         server = subprocess.Popen(command,

@@ -37,13 +37,14 @@ trusts its certificate for `https://10.0.2.2` (any port) only in debug.
 
 | Script under `android/scripts/` | Coverage / invocation |
 | --- | --- |
-| `e2e-all.sh`, `e2e-all.py` | One-command lifecycle and pass/fail table; `--only dictation cleanup notes history learn stop device bubble quickdictate visual keepkb release` selects checks |
+| `e2e-all.sh`, `e2e-all.py` | One-command lifecycle and pass/fail table; `--only dictation cleanup notes speakers history learn stop device bubble quickdictate visual keepkb release` selects checks |
 | `emulator-check.py --quickdictate-check --tls …` | Dictate tile, sensitive clipboard, Speak result/cancel/error, Share, Notes tile and a **real launcher widget** (pinned through the probe's *Pin widget* button, tapped, resized to one and four cells, light/dark/200% font); no Accessibility service |
 | `e2e-all.sh --only quickdictate release` | The entry-point matrix, release smoke and entry-point TalkBack checks in the same owned AVD |
 | `emulator-check.py` / `emulator-dictation-check.py` | Real verified pairing, native IME tap/hold, composing partial/final and light/dark; device-side listening/Ripple screenshots |
 | `emulator-check.py --cleanup-only --tls …` | Managed clean-up, Polishing, cleaned final, Use raw, frame metrics |
 | `UiHierarchy.java await-action click\|observe <label> <ms>` | Tight-polling probe for a transient action (Use raw's 5 s window); prints `PRESENT`/`CLICKED`/`EXPIRED` and whether the editor held fixture fillers, so an expired action is told apart from unchanged clean-up |
 | `emulator-check.py --notes-check --tls …` / `emulator-notes-check.py`, `emulator-library-check.py` | Notes segments/structure, voice edit, screen-off, pause/resume/stop; list/search/rename/delete/undo/Recently Deleted/restore/continue; kept AAC replay, Share, Scratchpad |
+| `e2e-all.sh --only speakers` / `emulator-speakers-check.py` | Default-on labels, automatic model download and inline status (no consent), exactly two synthetic speakers, rename and labelled kept-audio replay; requires `CHIRP_SPEAKER_MODEL`, which also adds this phase to the default sweep |
 | `emulator-check.py --history-check --tls …` / `emulator-history-check.py` | History default-on, encrypted storage, raw/clean reinsertion, cover/inner UI, opt-out |
 | `e2e-all.sh --only learn` / `emulator-learn-check.py` | Dictate, correct twice in the native debug editor, see Learned active, dictate again; real server confirms receipt/application; sealed storage and light/dark Learned screenshots |
 | `emulator-check.py --stop-check --tls …` / `emulator-stop-check.py` | Immediate/partial/polishing/double stop, hide/focus/unbind, crash checks; deliberately delayed ready fixture |

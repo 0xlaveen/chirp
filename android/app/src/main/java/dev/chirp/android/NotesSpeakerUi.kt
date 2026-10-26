@@ -33,13 +33,14 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.unit.dp
 
-/** The transcript's speaker chips and their fix-ups (rename, merge, separate), and the consent before the Mac's model download. */
+/** The transcript's speaker chips and their fix-ups (rename, merge, separate), and the inline model status. */
 internal object SpeakerColors {
     /** Pond-safe hues, each at least 4.5:1 on the light surface; the dark set is the same hues lifted for the night pond. */
     private val light = listOf(0xFFC2410C, 0xFF2F7A4F, 0xFF4F46E5, 0xFFA21CAF, 0xFF0F766E, 0xFF8A5A00, 0xFF0369A1, 0xFFBE123C)
@@ -117,15 +118,19 @@ internal fun RenameSpeakerDialog(document: NotesDocument, person: Int, dismiss: 
         dismissButton = { TextButton(dismiss) { Text("Cancel") } })
 }
 
-/** Before the Mac's one download: what it is, where it comes from, and what happens to voices. */
+/** Model preparation shares the note's single banner slot; controls wrap on narrow screens. */
 @Composable
-internal fun SpeakerConsentDialog(confirm: () -> Unit, dismiss: () -> Unit) {
-    AlertDialog(onDismissRequest = dismiss,
-        title = { Text("Label speakers?") },
-        text = {
-            Text("Chirp tells voices apart on your Mac to show who said what. This needs a 27 MB speaker model on your Mac, " +
-                "downloaded once from Hugging Face. Voices are compared in your Mac’s memory only and never saved; names stay in this note.")
-        },
-        confirmButton = { TextButton(confirm) { Text("Download") } },
-        dismissButton = { TextButton(dismiss) { Text("Not now") } })
+internal fun SpeakerModelStatus(model: NotesSpeakerModel, modifier: Modifier = Modifier) {
+    val status = model.status ?: return
+    androidx.compose.material3.Surface(modifier, shape = MaterialTheme.shapes.large,
+        color = if (model.retryable) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.surfaceContainer) {
+        Column(Modifier.padding(12.dp)) {
+            Text(status, style = MaterialTheme.typography.bodyMedium,
+                modifier = Modifier.semantics { liveRegion = androidx.compose.ui.semantics.LiveRegionMode.Polite })
+            Row {
+                if (model.retryable) TextButton(model::retry) { Text("Retry") }
+                if (model.enabled) TextButton({ model.setLabels(false) }) { Text("Turn off") }
+            }
+        }
+    }
 }
