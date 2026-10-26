@@ -290,7 +290,11 @@ private final class NotesSegmentPlayer: NSObject, ObservableObject, AVAudioPlaye
     }
     func stop() { request += 1; player?.stop(); player = nil; segment = nil }
     nonisolated func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
-        Task { @MainActor in if self.player === player { self.stop() } }
+        // AVAudioPlayer is not Sendable on older SDKs; only its identity crosses the actor boundary.
+        let finished = ObjectIdentifier(player)
+        Task { @MainActor in
+            if self.player.map(ObjectIdentifier.init) == finished { self.stop() }
+        }
     }
 }
 
