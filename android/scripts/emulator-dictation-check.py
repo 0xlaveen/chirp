@@ -27,7 +27,12 @@ def check(p, work, output):
     for theme in ('light', 'dark'):
         adb('shell', 'cmd', 'uimode', 'night', 'yes' if theme == 'dark' else 'no')
         for mode in ('tap', 'hold'):
-            p['fresh_editor']()
+            try:
+                p['fresh_editor']()
+            except AssertionError:
+                # A slow cold start can expose the native field just after the shared timeout.
+                # Keep waiting for that same activity rather than repeatedly killing its process.
+                p['wait_for_editor'](); p['focus_editor']()
             target = p['wait_for']('Microphone: tap to dictate')
             x, y = p['center'](target)
             before = p['editor_text']()
