@@ -1,4 +1,5 @@
 import AVFoundation
+import CryptoKit
 import Foundation
 import Testing
 @testable import ChirpCore
@@ -16,6 +17,63 @@ private func libraryDirectory() -> URL {
 }
 
 @Suite(.serialized) struct NotesLibraryTests {
+    @Test func optionalCodecSealsIndexRecordsRecoveryAndAudio() async throws {
+        let dir = libraryDirectory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let key = SymmetricKey(size: .bits256)
+        let codec = NotesJournalCodec(seal: { try AES.GCM.seal($0, using: key).combined! },
+                                      open: { try AES.GCM.open(AES.GCM.SealedBox(combined: $0), using: key) })
+        let store = NotesLibraryStore(directory: dir, codec: codec)
+        var d = NotesDocument(text: "## Confidential sentinel")
+        d.append(NotesSegment(id: 0, offset: 0, raw: "Private speech"))
+        var record = NotesJournalRecord(document: d, elapsed: 2); record.recording = true
+        try await store.write(record)
+        try await store.keepAudio(d.id, segment: 0, frames: [Data(count: 64_000)], offset: 0, sampleRate: 16_000)
+        for file in [dir.appendingPathComponent("index.json"), store.noteDirectory(d.id).appendingPathComponent("note.json")] {
+            let bytes = try Data(contentsOf: file)
+            #expect((try? JSONSerialization.jsonObject(with: bytes)) == nil)
+            #expect(!String(decoding: bytes, as: UTF8.self).contains("Confidential"))
+        }
+        let opened = NotesLibraryStore(directory: dir, codec: codec)
+        #expect(try await opened.list().first?.recovered == true)
+        #expect(try await opened.record(d.id).document.text == d.text)
+        #expect(try await opened.search("Private speech").count == 1)
+        let audio = try await opened.audioData(d.id, segment: 0)
+        #expect(try AVAudioPlayer(data: audio).duration > 0)
+        #expect((try? AVAudioPlayer(contentsOf: store.audioURL(d.id, segment: 0))) == nil)
+        try await opened.trash(d.id); try await opened.restore(d.id)
+        #expect(try await opened.list().count == 1)
+        try await opened.deleteAudio(d.id)
+        #expect(try await opened.totalAudioBytes() == 0)
+    }
+
+    private final class CodecAvailability: @unchecked Sendable {
+        private let lock = NSLock()
+        private var available = true
+        func set(_ value: Bool) { lock.withLock { available = value } }
+        func check() throws { try lock.withLock { if !available { throw CocoaError(.fileWriteNoPermission) } } }
+    }
+
+    @Test func sealedIndexFailureRetriesFromDiskAfterStorageBecomesAvailable() async throws {
+        let dir = libraryDirectory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let key = SymmetricKey(size: .bits256), availability = CodecAvailability()
+        let codec = NotesJournalCodec(seal: {
+            try availability.check()
+            return try AES.GCM.seal($0, using: key).combined!
+        }, open: { try AES.GCM.open(AES.GCM.SealedBox(combined: $0), using: key) })
+        let writer = NotesLibraryStore(directory: dir, codec: codec)
+        let first = NotesJournalRecord(document: NotesDocument(text: "Already kept"), elapsed: 0)
+        try await writer.write(first)
+        let retrying = NotesLibraryStore(directory: dir, codec: codec)
+        availability.set(false)
+        await #expect(throws: CocoaError.self) { try await retrying.list() }
+        availability.set(true)
+        let second = NotesJournalRecord(document: NotesDocument(text: "Kept while reader waited"), elapsed: 0)
+        try await writer.write(second)
+        #expect(Set(try await retrying.list().map(\.id)) == [first.document.id, second.document.id])
+    }
+
     @Test func schemaOneMigratesOnceAndUnknownSchemasRemainUntouched() async throws {
         let root = libraryDirectory()
         defer { try? FileManager.default.removeItem(at: root) }

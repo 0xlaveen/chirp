@@ -3,10 +3,10 @@
 A native SwiftUI app plus a dictation-first custom keyboard for iOS/iPadOS 18.
 Recognition and optional clean-up run on your existing Mac speech server — the
 iPhone or iPad only captures audio, streams it over your tailnet, and inserts
-text. Same trust model as the Android keyboard: nothing persistent is kept by
-default (the only on-device text is the encrypted transient app↔keyboard
-mailbox, opt-in encrypted history and the encrypted Live Notes recovery copy
-while notes are unsaved), pairing is a secret QR
+text. Dictation stays transient by default; Notes save continuously to an
+AES-GCM sealed library on this device, kept forever unless you choose retention
+or delete them. Dictation history and kept Notes audio are separate opt-ins.
+Pairing is a secret QR
 shown locally on the Mac, the iOS client's pairing accepts only tailnet
 `.ts.net` hosts, and the server itself binds to loopback — a public host is
 never used.
@@ -325,61 +325,79 @@ keeps recordings" stays on screen in the app, keyboard and Live Activity.
 
 ## Live Notes
 
-Long-form notes from speech: talk through a meeting, a lecture or a walk, and
-Chirp keeps a transcript and turns it into Markdown notes as you go. Live Notes is
-the **Notes** tab, the app's start tab: on iPad notes and transcript sit side by
-side; on iPhone a picker switches between Notes and Transcript. It uses the same Mac server as
-dictation and needs no keyboard session — the two never hold the microphone at
-the same time (end the keyboard session first, and a keyboard session cannot
-start while notes record).
+Notes are documents that save as you go. Open **Notes**, tap **Record**, and
+Chirp keeps a transcript and turns it into structured notes. The library has
+local search across titles, notes and transcripts, date groups, rename,
+Recently Deleted and a pinned Recording row. iPhone pushes to the note; iPad
+shows a list and detail, with a trailing transcript inspector.
 
-- **Record** opens the microphone (until a Mac is paired, **Pair Mac** beside
-  it opens Settings → Connection). Speech goes to your Mac in rolling segments
-  of at most 45 seconds (cut at pauses, ordinary `/v1/stream` utterances), and
-  the live partial shows under the notes. Clean-up applies when you turned it
-  on in Settings → Styles, using the Mac's notes style.
-- **Structuring** runs on your Mac (`/v1/notes/structure`): finished segments
-  become headings, bullets, tasks, decisions and questions. It is on when
-  clean-up stays on your Mac; if your Mac's clean-up sends text elsewhere,
-  Notes settings shows the destination and structuring stays off until you turn
-  it on for that host. With clean-up off on the Mac, or an older server, notes
-  stay a transcript. Type anywhere in the notes to add your own; while you type,
-  new structure waits for you (up to 10 seconds after the last keystroke).
-- **Organize** regroups the whole notes (`/v1/notes/reorganize`) and
-  **Undo Organize** puts them back (asking first if you edited since).
-  "Organize automatically" (Notes settings) runs it now and then on its own.
-- **Transcript** lists the segments with their times; **Show raw** shows them
-  before clean-up.
-- **Pause** closes the microphone and finishes the current segment; **Resume**
-  continues the same notes and clock. A call or Siri pauses Live Notes, and it
-  resumes when iOS says recording may continue. **Stop** finishes the last
-  segment and the final structuring pass; the notes stay until **New notes**
-  (which asks first when they are not saved). **Record more** continues them.
-- **Export** menu: **Copy**, **Share…** and **Save to Files…** — all give
-  Markdown with the notes and the timed transcript. Saving counts as saved.
-- If the Mac is unreachable mid-recording, recording goes on: up to 10 minutes of
-  audio waits in memory and is sent when the Mac answers again.
+- **Record** starts a new note. Speech goes to your paired Mac in rolling
+  segments of at most 45 seconds. Notes and a keyboard session never share the
+  microphone. Continue recording appends to an existing note with a dated
+  capture boundary; browsing other notes leaves the recording running.
+- Notes open in **reading mode** with headings, bullets, tappable task boxes,
+  and Decision/Question callouts. **Edit** switches to Markdown editing.
+  Structuring waits while you type, up to 10 seconds after the last keystroke.
+- **Structuring** uses `/v1/notes/structure` on your Mac. It follows clean-up
+  when that stays on the Mac; an external text destination needs consent for
+  that host in Notes settings. With clean-up off, or an older server, the
+  transcript remains available.
+- **Organize** regroups notes using `/v1/notes/reorganize`. **Undo Organize**
+  restores the previous version, asking before replacing intervening edits.
+  Automatic organizing is a separate Notes setting. AI responses stay attached
+  to the note that requested them, even while another note is open.
+- **Transcript** opens a sheet on iPhone or an inspector on iPad. It shows
+  timestamps, **Show raw**, capture boundaries, and per-segment replay when
+  audio was kept.
+- **Pause** closes the microphone; **Resume** keeps the same clock. Calls and
+  interruptions pause recording. **Stop** finishes the last segment and final
+  structuring pass. Notes remain in the library across launches and exports.
+- **Copy**, **Share…**, and **Export Markdown…** make a separate Markdown copy
+  with the timed transcript. There is no Save step.
+- If the Mac goes offline, up to 10 minutes of audio waits in memory to send
+  when it returns. This temporary buffer is independent of kept audio.
 
-**Locked screen and background.** Recording continues with the screen locked
-or Chirp in the background (the audio background mode). A Live Activity on the
-lock screen and in the Dynamic Island shows the state and the elapsed time with
-**Pause/Resume** and **Stop** — never any text. With Live Activities off for
-Chirp, recording still works; the lock screen just has no controls. **Battery
-saver while locked** (on by default) skips all screen updates while Chirp is in
-the background; recording, the Mac's structuring and the Live Activity's own
-timer go on, and the notes catch up when you return. iOS may suspend Chirp
-while Live Notes is paused in the background; Resume from the Live Activity or
-reopen Chirp. Shortcuts actions: **Start Chirp Live Notes**, **Pause or resume
-Chirp Live Notes**, **Stop Chirp Live Notes**.
+**Storage and migration.** Notes, the index, and optional kept audio are
+AES-GCM sealed using the existing `notes-recovery-key` device-only Keychain
+key. The library uses a separate authentication context
+(`chirp.notes.library.v1`) from legacy recovery (`chirp.notes.v1`). Files are
+owner-only under Application Support, excluded from backup, and protected
+with iOS complete file protection. No notes enter Spotlight, logs, or sync.
+Legacy recovery records migrate once under their existing IDs and appear as
+**Recovered**, without a Keep/Discard prompt. Unreadable files are quarantined;
+future schemas remain untouched. Documents that were only exported or held
+in memory by an older version cannot be recovered from that version.
 
-**Recovery copy.** Until you save or start new notes, Chirp keeps the notes and
-transcript in an AES-GCM-encrypted file (key in this device's Keychain, never
-synced; folder excluded from backups and file-protected) so a crash or a
-force-quit loses nothing. Next launch offers **Keep** or **Discard**. Never
-audio. "Keep an encrypted recovery copy" in Notes settings turns it off, which
-deletes the file and its key.
+**Notes settings** controls Structure notes, Organize automatically, Battery
+saver while locked, **Keep notes on this device**, retention (**Never** by
+default, 1 year, 90 days, or 30 days), and **Keep audio with notes** (off by
+default). An earlier explicit storage opt-out stays off, with an Enable notes
+library action. Turning storage off leaves existing notes intact and stops
+keeping new changes. Deleting a note moves it to **Recently Deleted** for
+30 days, with Undo and Restore. Empty Recently Deleted asks once.
 
-Hardware keyboard (iPad): ⌘⇧R record/stop, ⌘⇧P pause/resume.
+Opt-in kept audio is mono AAC, about 32 kbps, one sealed clip per speech
+segment. Replay decrypts in memory. Per-note and total audio sizes are shown;
+**Delete audio** and **Delete kept audio** preserve the text. Turning the audio
+switch off stops future audio storage. Re-transcription is not implemented.
+
+**Locked screen and background.** A Live Activity shows the note title (up to
+60 characters), state, elapsed time and Pause/Resume/Stop. Battery saver skips
+screen updates while recording and structuring continue. Complete file
+protection may defer disk writes until unlock; the in-memory document is
+flushed on return. iOS may suspend a paused background app; reopen Chirp to
+resume. Real microphone and background survival still need device acceptance.
+
+Notes library screenshots (synthetic text only):
+
+![iPhone note detail, light](../docs/screenshots/ios/iphone-notes-reading-light.png)
+![iPhone note detail, dark](../docs/screenshots/ios/iphone-notes-reading-dark.png)
+![iPad split view, dark](../docs/screenshots/ios/ipad-notes-reading-dark.png)
+![iPad transcript inspector, light](../docs/screenshots/ios/ipad-notes-transcript-audio-light.png)
+
+Hardware keyboard: ⌘N new recording, ⌘F search, ⌥⌘T transcript, ⌘⇧R
+record/stop, ⌘⇧P pause/resume. Shortcuts retain Start, Pause/resume and Stop
+Chirp Live Notes.
 
 ## Dictate from any app (keyboard)
 
@@ -568,16 +586,14 @@ when it matters; surrounding editor text is never collected.
 
 ## Privacy & security
 
-- **Nothing persistent by default.** No audio is ever written to disk, and
-  there is no persistent transcript storage by default — with two transient
-  exceptions: the app↔keyboard mailbox holds AES-GCM-encrypted text on disk
-  until it is consumed or expires, deleted opportunistically on the next
-  access (there is no background purge daemon), and the Live Notes recovery
-  copy holds AES-GCM-encrypted notes until they are saved, discarded or
-  replaced (Notes settings turns it off). Opt-in encrypted history is
-  separate and always ciphertext. The server's opt-in debug retention is
-  bannered in red on every surface, and idle audio is discarded on device,
-  never streamed.
+- **Dictation is transient; Notes persist locally.** Notes save continuously
+  to an AES-GCM sealed library on this device, kept forever by default. The
+  index and optional AAC audio use the same device-only Keychain key with a
+  separate library authentication context. Library files are owner-only,
+  backup-excluded and completely file-protected. Notes are never logged,
+  indexed, or synced. Kept audio defaults off. Dictation history is a separate
+  encrypted opt-in. The encrypted app↔keyboard mailbox expires on consumption
+  or next access. The server's opt-in debug retention stays visibly bannered.
 - **Pairing is a secret.** The QR/link is printed locally on the Mac only;
   treat it like a password. The token lives in the iOS Keychain (this-device,
   after first unlock, never synced) and is never rendered or logged. Do not

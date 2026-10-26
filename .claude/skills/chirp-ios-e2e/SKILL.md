@@ -54,10 +54,24 @@ It creates its own `iPhone chirp-e2e-<pid>` / `iPad chirp-e2e-<pid>` (simulator.
 | Chirp Keyboard in another app (Messages) | `ChirpKeyboardUITests` (synthetic), `testLiveKeyboardDictationInMessages`, `testLiveLongDictationInMessages` | Needs the keyboard enabled in simulator Settings (the tests do it); Safari never idles for XCUITest, so Messages is the host |
 | Action Button / Control Center / Shortcuts intents, widgets | Intent logic in `SessionCoordinatorTests`; `testLiveToggleShortcutFromSpotlightThenPaste` (often skips); Control Center controls **not automatable** | Controls and Action Button need the system gallery; check by hand or accept as a device gate |
 | Live Activity (lock screen) | `testLiveActivityOnLockScreen` | Content-free phase only |
-| Live Notes: record, pause/resume, stop, structure, export, recovery | `ChirpLiveNotesUITests` (live), `ChirpNotesUITests` (synthetic: record/pause/resume/stop/transcript/export, settings, rotation), `LiveNotesControllerTests`, `NotesStoreTests` | Recovery prompt (Keep/Discard) is unit-level only |
+| Notes library: record, pause/resume, continue, structure, export, recovery migration | `ChirpLiveNotesUITests` (live), `ChirpNotesUITests` (synthetic: record/pause/resume/stop/transcript/export, settings, rotation), `LiveNotesControllerTests`, `NotesStoreTests` | Sealed relaunch, delete/Undo/Restore, search, reading/tasks, kept replay, iPad inspector and AX5 screenshots are in ChirpNotesUITests; migration and late-AI isolation are unit tested |
 | History (encrypted, opt-in) | live test above, `ChirpUITests.testHistoryOffAndAdaptiveOrientation` | |
-| iPad layouts, rotation | `ChirpUITests.testHistoryOffAndAdaptiveOrientation`, `ChirpNotesUITests.testNotesSettingsAndRotation`, `ChirpHardwareKeyboardUITests.testRotationDuringDictationKeepsUtterance`; everything runs on the iPad too | Split View/Stage Manager resizing is not automatable |
+| iPad layouts, rotation | `ChirpUITests.testHistoryOffAndAdaptiveOrientation`, `ChirpNotesUITests.testNotesLibraryBatch`, `ChirpHardwareKeyboardUITests.testRotationDuringDictationKeepsUtterance`; everything runs on the iPad too | Split View/Stage Manager resizing is not automatable |
 | Hardware-keyboard shortcuts | `ChirpHardwareKeyboardUITests` | Skips unless a hardware keyboard is connected |
+
+## Faster shared-host runs
+
+- `simulator.sh test` and `ui` pass `-collect-test-diagnostics never` by default. XCTest results and screenshot
+  attachments remain available; only verbose simulator diagnostics (which can hang for ten minutes even on success)
+  are disabled. Set `CHIRP_TEST_DIAGNOSTICS=on-failure` when investigating a simulator failure.
+- Run one device per shared-host lock window (`e2e-all.sh --phone-only` or `--ipad-only`), release it, and let queued
+  workers interleave. Keep the lock wait and the test command inside one `koi run`; never leave a detached lock holder.
+- Notes screenshot helpers use the public `XCUIDevice.shared.appearance` API (iOS 15+) to capture light and dark inside
+  the same test. `ChirpNotesUITests/testNotesLibraryBatch` batches recording/relaunch/trash, reading/search/replay,
+  settings/rotation and AX5 in one method. For steady pixel evidence, set `simctl ui UUID appearance dark` before launch
+  and `TEST_RUNNER_CHIRP_NOTES_APPEARANCE=dark` (or `light`); this avoids capturing UIKit's appearance crossfade.
+  Use `XCUIScreen.main.screenshot()` so rotated iPad images have the screen's current bounds. Simulator teardown can still take five minutes per method; do not turn a successful test into a timeout just
+  to shorten that overhead.
 
 ## Evidence
 
@@ -72,6 +86,9 @@ It creates its own `iPhone chirp-e2e-<pid>` / `iPad chirp-e2e-<pid>` (simulator.
 ## Known pitfalls (short list; more in reference.md)
 
 - **Unit tests "The test runner hung before establishing connection" (5-6 min, then exit 65)** while the same code passes elsewhere: the build products sit under `~/Documents` (macOS privacy protection). Set `CHIRP_DERIVED_DATA=/tmp/...` (`simulator.sh` honours it, `e2e-all.sh` does it by default). Do not bisect the source first.
+- **MLX wheel error mentioning x86_64 on Apple Silicon**: the harness selects native CPython 3.13 explicitly, even
+  when a newer Intel interpreter is on PATH. Override with `CHIRP_E2E_PYTHON` when needed. Startup failures clean up the
+  stand-in before retrying, so a failed dependency sync cannot leave the port occupied.
 - **Port 7899 "in use"**: other agents share the Mac. `e2e-all.sh` picks 7899 or the next free pair right before each live stage; pin one with `CHIRP_E2E_PORT`.
 - **`simulator.sh` only accepts devices named `iPhone…`/`iPad…`**; name your own simulators that way.
 

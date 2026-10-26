@@ -9,8 +9,12 @@ public struct NotesPreferences: Codable, Sendable, Equatable {
     /// The host the user allowed structuring to send text to, when clean-up leaves the Mac.
     public var structureConsentHost: String?
     public var autoReorganize = true
-    /// "Keep an encrypted recovery copy until notes are saved".
+    /// Legacy preference, decoded only to preserve an explicit opt-out on upgrade.
     public var recoveryCopy = true
+    public var keepNotes = true
+    public var keepAudio = false
+    public var retention: NotesRetention = .never
+    public var libraryUpgradeNotice = false
     /// "Battery saver while locked": no screen updates while the app is in the background (recording and structuring
     /// go on; the Live Activity keeps its own timer).
     public var batterySaver = true
@@ -21,6 +25,10 @@ public struct NotesPreferences: Codable, Sendable, Equatable {
         structureConsentHost = try c.decodeIfPresent(String.self, forKey: .structureConsentHost)
         autoReorganize = try c.decodeIfPresent(Bool.self, forKey: .autoReorganize) ?? true
         recoveryCopy = try c.decodeIfPresent(Bool.self, forKey: .recoveryCopy) ?? true
+        keepNotes = try c.decodeIfPresent(Bool.self, forKey: .keepNotes) ?? recoveryCopy
+        keepAudio = try c.decodeIfPresent(Bool.self, forKey: .keepAudio) ?? false
+        retention = try c.decodeIfPresent(NotesRetention.self, forKey: .retention) ?? .never
+        libraryUpgradeNotice = try c.decodeIfPresent(Bool.self, forKey: .libraryUpgradeNotice) ?? !recoveryCopy
         batterySaver = try c.decodeIfPresent(Bool.self, forKey: .batterySaver) ?? true
     }
 
@@ -34,23 +42,31 @@ public struct NotesPreferences: Codable, Sendable, Equatable {
     }
 }
 
-/// Live Notes storage on this device: the switches, and the crash-recovery journal sealed with AES-GCM under a
-/// this-device-only Keychain key. The folder is owner-only, excluded from backups and file-protected; no audio is
-/// ever written.
+/// Local Notes library and legacy recovery journal, AES-GCM sealed with the same device-only Keychain key.
+/// The library and optional AAC segments use a separate authentication context from legacy recovery records.
+/// All folders are owner-only, backup-excluded and (on iOS) completely file-protected.
 public final class NotesStore: Sendable {
     static let keyAccount = "notes-recovery-key"
     private let files: ProtectedFiles
     private let secrets: any SecretStore
     private let key: KeyBox
     public let recoveryDirectory: URL
+    public let libraryStore: NotesLibraryStore
 
-    public init(root: URL, secrets: any SecretStore) throws {
+    public init(root: URL, secrets: any SecretStore, now: @escaping @Sendable () -> Date = { Date() }) throws {
         let folder = root.appendingPathComponent("notes", isDirectory: true)
         files = try ProtectedFiles(root: folder)
         recoveryDirectory = folder.appendingPathComponent("recovery", isDirectory: true)
         _ = try ProtectedFiles(root: recoveryDirectory)
         self.secrets = secrets
-        key = KeyBox(secrets: secrets, account: Self.keyAccount)
+        let key = KeyBox(secrets: secrets, account: Self.keyAccount)
+        self.key = key
+        let libraryDirectory = folder.appendingPathComponent("library", isDirectory: true)
+        _ = try ProtectedFiles(root: libraryDirectory)
+        #if os(iOS)
+        try FileManager.default.setAttributes([.protectionKey: FileProtectionType.complete], ofItemAtPath: libraryDirectory.path)
+        #endif
+        libraryStore = NotesLibraryStore(directory: libraryDirectory, codec: Self.codec(key: key, context: "chirp.notes.library.v1"), now: now)
     }
 
     /// `Application Support/Chirp` in the app's own container (the keyboard never needs notes).
@@ -69,25 +85,48 @@ public final class NotesStore: Sendable {
 
     /// The journal store: every record sealed before it reaches the disk. A file this key cannot open is skipped.
     public var journalStore: NotesJournalStore {
-        let key = self.key
-        let context = Data("chirp.notes.v1".utf8)
-        return NotesJournalStore(directory: recoveryDirectory, codec: NotesJournalCodec(seal: { plain in
+        NotesJournalStore(directory: recoveryDirectory, codec: Self.codec(key: key, context: "chirp.notes.v1"))
+    }
+
+    private static func codec(key: KeyBox, context: String) -> NotesJournalCodec {
+        let context = Data(context.utf8)
+        return NotesJournalCodec(seal: { plain in
             guard let sealed = try AES.GCM.seal(plain, using: key.get(create: true), authenticating: context).combined
             else { throw CoreError.storage }
             return sealed
         }, open: { sealed in
             try AES.GCM.open(AES.GCM.SealedBox(combined: sealed), using: key.get(create: false), authenticating: context)
-        }))
+        })
     }
 
-    /// Turning the recovery copy off: every journal file and the key go.
+    /// Each source is removed only after the sealed destination is durable. Invalid records are kept in quarantine;
+    /// future schemas and files inaccessible while locked remain untouched for a later launch.
+    public func migrateRecovery() async throws {
+        let journal = journalStore
+        for url in try FileManager.default.contentsOfDirectory(at: recoveryDirectory, includingPropertiesForKeys: nil)
+            where url.pathExtension == "json" {
+            guard let stored = try? Data(contentsOf: url) else { continue }
+            do {
+                let data = try journal.codec!.open(stored)
+                struct Header: Decodable { var schema: Int }
+                let schema = try JSONDecoder().decode(Header.self, from: data).schema
+                if ![1, 2].contains(schema) { continue }
+                _ = try JSONDecoder().decode(NotesJournalRecord.self, from: data)
+            } catch {
+                let quarantine = recoveryDirectory.appendingPathComponent("quarantine", isDirectory: true)
+                _ = try ProtectedFiles(root: quarantine)
+                try FileManager.default.moveItem(at: url, to: quarantine.appendingPathComponent(url.lastPathComponent + "-" + UUID().uuidString))
+            }
+        }
+        try await libraryStore.migrate(from: journal)
+    }
+
+    /// Removes only legacy journals; the library shares this key and must remain readable.
     public func deleteRecovery() throws {
         let fm = FileManager.default
         for name in (try? fm.contentsOfDirectory(atPath: recoveryDirectory.path)) ?? [] {
             try? fm.removeItem(at: recoveryDirectory.appendingPathComponent(name))
         }
-        key.forget()
-        try secrets.delete(account: Self.keyAccount)
     }
 }
 

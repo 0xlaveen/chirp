@@ -7,11 +7,12 @@ cd "$(dirname "$0")/.."
 ./scripts/check-sources.sh
 ./Shared/scripts/test.sh
 swift test --package-path Keyboard/Policy
-# Newest available iPhone simulator; create one for the newest runtime if the image has none.
-device=$(xcrun simctl list devices available --json | python3 -c '
+# An explicit owned simulator can be supplied for shared-host runs; otherwise use the newest available iPhone.
+# Create one for the newest runtime if the image has none.
+device=${CHIRP_CI_SIMULATOR:-$(xcrun simctl list devices available --json | python3 -c '
 import json,sys
 ds=[(r,d["udid"]) for r,l in json.load(sys.stdin)["devices"].items() for d in l if d["name"].startswith("iPhone") and d.get("isAvailable")]
-print(sorted(ds)[-1][1] if ds else "")')
+print(sorted(ds)[-1][1] if ds else "")')}
 if [ -z "$device" ]; then
     runtime=$(xcrun simctl list runtimes available --json | python3 -c '
 import json,sys

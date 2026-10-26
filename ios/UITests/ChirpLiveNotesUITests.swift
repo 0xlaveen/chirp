@@ -44,6 +44,12 @@ final class ChirpLiveNotesUITests: XCTestCase {
         XCTAssertTrue(ChirpNotesUITests.waitFor(cleanup, "value == '1'", timeout: 5))
 
         ChirpNotesUITests.openNotes(app)
+        app.buttons["chirp.notes.menu"].tap()
+        app.buttons["chirp.notes.settings"].tap()
+        let keepAudio = ChirpNotesUITests.element("chirp.notes.keepAudio", in: app)
+        XCTAssertTrue(keepAudio.waitForExistence(timeout: 5))
+        if keepAudio.value as? String != "1" { ChirpNotesUITests.flip(keepAudio) }
+        app.buttons["Done"].tap()
         let record = app.buttons["chirp.notes.record"]
         XCTAssertTrue(record.waitForExistence(timeout: 5))
         XCTAssertTrue(ChirpNotesUITests.waitFor(record, "isEnabled == true", timeout: 10))
@@ -58,19 +64,27 @@ final class ChirpLiveNotesUITests: XCTestCase {
 
         app.buttons["chirp.notes.stop"].tap()
         XCTAssertTrue(ChirpNotesUITests.waitFor(status, "label == 'Stopped'", timeout: 60), status.label)
+        let preview = ChirpNotesUITests.element("chirp.notes.preview", in: app)
+        XCTAssertTrue(preview.staticTexts.matching(NSPredicate(format: "label CONTAINS[c] 'design group'")).firstMatch.waitForExistence(timeout: 10))
+        screenshot("Notes reading from the live server", app)
+        app.buttons["chirp.notes.edit"].tap()
         let editor = app.textViews["chirp.notes.editor"]
-        XCTAssertTrue(ChirpNotesUITests.waitFor(editor, "value CONTAINS[c] 'design group'", timeout: 10), String(describing: editor.value))
-        let notes = editor.value as? String ?? ""
-        XCTAssertTrue(notes.hasPrefix("- "), "Structured as a bullet by the local stand-in: \(notes)")
-        XCTAssertFalse(notes.localizedCaseInsensitiveContains("um,"), notes)
-        screenshot("Live Notes structured from the live server", app)
-
-        if UIDevice.current.userInterfaceIdiom != .pad { app.buttons["Transcript"].tap() }
+        XCTAssertTrue(ChirpNotesUITests.waitFor(editor, "value CONTAINS[c] 'design group'", timeout: 10))
+        let markdown = editor.value as? String ?? ""
+        XCTAssertTrue(markdown.hasPrefix("- "), "The live server stand-in structures a bullet")
+        XCTAssertFalse(markdown.localizedCaseInsensitiveContains("um,"))
+        app.buttons["chirp.notes.edit"].tap()
+        app.buttons["chirp.notes.transcript.open"].tap()
         let transcript = ChirpNotesUITests.element("chirp.notes.transcript", in: app)
         XCTAssertTrue(transcript.staticTexts.matching(NSPredicate(format: "label CONTAINS[c] 'Tuesday'")).firstMatch.waitForExistence(timeout: 5))
         ChirpNotesUITests.flip(ChirpNotesUITests.element("chirp.notes.raw", in: app))
         XCTAssertTrue(transcript.staticTexts.matching(NSPredicate(format: "label CONTAINS[c] 'um,'")).firstMatch.waitForExistence(timeout: 5),
                       "Show raw shows the transcript before clean-up")
-        screenshot("Live Notes raw transcript from the live server", app)
+        screenshot("Notes raw transcript from the live server", app)
+        let play = app.buttons["chirp.notes.play.0"]
+        XCTAssertTrue(play.waitForExistence(timeout: 10), "Opted-in speech audio survives Stop")
+        play.tap()
+        XCTAssertTrue(ChirpNotesUITests.waitFor(play, "label == 'Stop replay'", timeout: 5))
+        screenshot("Notes kept audio replay from the live server", app)
     }
 }

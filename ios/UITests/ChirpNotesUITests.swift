@@ -1,105 +1,182 @@
 import XCTest
 
-/// Live Notes with synthetic sockets and capture (`--chirp-ui-test`): Record, the live partial, Pause, structured notes,
-/// Resume, Stop, the transcript with Show raw, Copy and New. On iPad notes and transcript are side by side.
+/// The Notes library through the real sealed store, with synthetic capture and server responses.
 final class ChirpNotesUITests: XCTestCase {
     override func setUp() { continueAfterFailure = false; XCUIDevice.shared.orientation = .portrait }
+    override func tearDown() async throws { await MainActor.run { XCUIApplication().terminate() } }
 
     @MainActor static func openNotes(_ app: XCUIApplication) {
         app.selectChirpTab("Notes")
     }
-
     @MainActor static func element(_ id: String, in app: XCUIApplication) -> XCUIElement {
         app.descendants(matching: .any).matching(identifier: id).firstMatch
     }
-
     @MainActor static func waitFor(_ element: XCUIElement, _ format: String, timeout: TimeInterval = 15) -> Bool {
         XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: NSPredicate(format: format), object: element)], timeout: timeout) == .completed
     }
-
-    /// SwiftUI's iOS 27 toggle row is one element; its switch sits at the trailing edge.
     @MainActor static func flip(_ toggle: XCUIElement) {
         toggle.coordinate(withNormalizedOffset: CGVector(dx: 0.93, dy: 0.5)).tap()
     }
-
+    /// Both appearances in one test invocation; no separate simulator configuration or app relaunch is needed.
     @MainActor func screenshot(_ name: String, _ app: XCUIApplication) {
-        let shot = XCTAttachment(screenshot: app.screenshot())
-        shot.name = name; shot.lifetime = .keepAlways
-        add(shot)
+        let original = XCUIDevice.shared.appearance
+        defer { XCUIDevice.shared.appearance = original }
+        let fixed = ProcessInfo.processInfo.environment["CHIRP_NOTES_APPEARANCE"]
+        let appearances: [XCUIDevice.Appearance] = fixed == "dark" ? [.dark] : fixed == "light" ? [.light] : [.light, .dark]
+        for appearance in appearances {
+            XCUIDevice.shared.appearance = appearance
+            let shot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+            shot.name = name + (appearance == .dark ? "-dark" : "-light")
+            shot.lifetime = .keepAlways
+            add(shot)
+        }
+    }
+    @MainActor private func launch(_ extra: [String] = []) -> XCUIApplication {
+        let app = XCUIApplication()
+        app.launchArguments = ["--chirp-ui-test", "--chirp-skip-onboarding", "--chirp-notes-library-id", UUID().uuidString] + extra
+        app.launch(); Self.openNotes(app)
+        XCTAssertTrue(Self.element("chirp.notes.library", in: app).waitForExistence(timeout: 10))
+        return app
+    }
+    @MainActor private func backToLibrary(_ app: XCUIApplication) {
+        if UIDevice.current.userInterfaceIdiom != .pad {
+            let back = app.navigationBars.buttons.element(boundBy: 0)
+            XCTAssertTrue(back.waitForExistence(timeout: 5)); back.tap()
+        }
+    }
+    @MainActor private func menu(_ app: XCUIApplication, action: String) {
+        app.buttons["chirp.notes.export"].tap()
+        let button = app.buttons[action]
+        XCTAssertTrue(button.waitForExistence(timeout: 5)); button.tap()
     }
 
-    @MainActor func testSyntheticRecordPauseResumeStopTranscriptAndExport() {
-        let app = XCUIApplication()
-        app.launchArguments = ["--chirp-ui-test", "--chirp-skip-onboarding"]
-        app.launch()
-        Self.openNotes(app)
-        let record = app.buttons["chirp.notes.record"]
-        XCTAssertTrue(record.waitForExistence(timeout: 5))
-        record.tap()
+    /// One XCTest case keeps all scenarios in one runner session, avoiding repeated simulator teardown stalls.
+    @MainActor func testNotesLibraryBatch() {
+        recordPauseResumeStopTranscriptAndExport()
+        libraryReadingSearchTasksAndInspector()
+        notesSettingsAndRotation()
+        accessibilityLibraryAndDock()
+    }
+
+    @MainActor private func recordPauseResumeStopTranscriptAndExport() {
+        let app = launch()
+        screenshot("notes-empty", app)
+        app.buttons["chirp.notes.record"].firstMatch.tap()
         let status = Self.element("chirp.notes.status", in: app)
-        XCTAssertTrue(Self.waitFor(status, "label == 'Recording'"), status.label)
+        XCTAssertTrue(Self.waitFor(status, "label == 'Recording'"))
         XCTAssertTrue(Self.waitFor(Self.element("chirp.notes.partial", in: app), "label == 'synthetic words'"))
-        XCTAssertTrue(Self.element("chirp.notes.elapsed", in: app).exists)
-        screenshot("Live Notes recording", app)
-
+        screenshot("notes-recording", app)
+        backToLibrary(app)
+        XCTAssertTrue(app.buttons["chirp.notes.recordingRow"].waitForExistence(timeout: 5))
+        screenshot("notes-library-recording", app)
+        app.buttons["chirp.notes.recordingRow"].tap()
         app.buttons["chirp.notes.pause"].tap()
-        XCTAssertTrue(Self.waitFor(status, "label BEGINSWITH 'Paused'"), status.label)
-        let editor = app.textViews["chirp.notes.editor"]
-        XCTAssertTrue(Self.waitFor(editor, "value CONTAINS 'Synthetic words.'"), String(describing: editor.value))
-        XCTAssertTrue((editor.value as? String)?.contains("## Synthetic notes") == true)
-
+        XCTAssertTrue(Self.waitFor(status, "label BEGINSWITH 'Paused'"))
+        XCTAssertTrue(app.staticTexts["Synthetic words."].waitForExistence(timeout: 15))
         app.buttons["chirp.notes.pause"].tap()
-        XCTAssertTrue(Self.waitFor(status, "label == 'Recording'"), status.label)
+        XCTAssertTrue(Self.waitFor(status, "label == 'Recording'"))
         app.buttons["chirp.notes.stop"].tap()
-        XCTAssertTrue(Self.waitFor(status, "label == 'Stopped'"), status.label)
-        XCTAssertTrue(app.buttons["chirp.notes.record"].waitForExistence(timeout: 5))
-        screenshot("Live Notes structured", app)
-
-        let split = Self.element("chirp.notes.split", in: app)
-        if UIDevice.current.userInterfaceIdiom == .pad {
-            XCTAssertTrue(split.exists, "iPad shows notes and transcript side by side")
-            XCTAssertTrue(editor.exists)
-        } else {
-            XCTAssertFalse(split.exists)
-            app.buttons["Transcript"].tap()
-        }
+        XCTAssertTrue(Self.waitFor(status, "label == 'Stopped'"))
+        screenshot("notes-stopped", app)
+        app.buttons["chirp.notes.edit"].tap()
+        let editor = app.textViews["chirp.notes.editor"]
+        XCTAssertTrue(Self.waitFor(editor, "value CONTAINS 'Synthetic words.'"))
+        screenshot("notes-edit", app)
+        app.buttons["chirp.notes.edit"].tap()
+        app.buttons["chirp.notes.transcript.open"].tap()
         let transcript = Self.element("chirp.notes.transcript", in: app)
         XCTAssertTrue(transcript.waitForExistence(timeout: 5))
-        XCTAssertTrue(transcript.staticTexts["Synthetic words. Synthetic words."].waitForExistence(timeout: 5)
-                      || transcript.staticTexts["Synthetic words."].exists)
         Self.flip(Self.element("chirp.notes.raw", in: app))
         XCTAssertTrue(transcript.staticTexts.matching(NSPredicate(format: "label BEGINSWITH 'synthetic words'")).firstMatch.waitForExistence(timeout: 5))
-        screenshot("Live Notes transcript raw", app)
-
-        app.buttons["chirp.notes.export"].tap()
-        app.buttons["chirp.notes.copy"].tap()
-        XCTAssertTrue(Self.waitFor(Self.element("chirp.notes.notice", in: app), "label == 'Copied notes and transcript.'", timeout: 5))
-
-        app.buttons["chirp.notes.new"].tap()
-        let discard = app.buttons["Discard and start new"]
-        XCTAssertTrue(discard.waitForExistence(timeout: 5))
-        discard.tap()
-        if UIDevice.current.userInterfaceIdiom != .pad { app.segmentedControls.buttons["Notes"].tap() }
-        XCTAssertTrue(Self.waitFor(editor, "value == '' OR value == nil", timeout: 5) || (editor.value as? String)?.isEmpty == true)
-        XCTAssertTrue(Self.waitFor(status, "label == 'Ready to record'", timeout: 5), status.label)
+        screenshot("notes-transcript", app)
+        if UIDevice.current.userInterfaceIdiom != .pad { app.buttons["Done"].tap() }
+        else { app.buttons["chirp.notes.transcript.open"].tap() }
+        menu(app, action: "chirp.notes.copy")
+        XCTAssertTrue(Self.waitFor(Self.element("chirp.notes.notice", in: app), "label CONTAINS 'Copied notes'"))
+        backToLibrary(app)
+        XCTAssertTrue(app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'chirp.notes.row.'")).firstMatch.waitForExistence(timeout: 5))
+        screenshot("notes-library-after-recording", app)
+        app.terminate(); app.launch(); Self.openNotes(app)
+        let row = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'chirp.notes.row.'")).firstMatch
+        XCTAssertTrue(row.waitForExistence(timeout: 10), "The sealed note survives relaunch")
+        row.tap()
+        XCTAssertTrue(app.buttons["chirp.notes.title"].waitForExistence(timeout: 5))
+        menu(app, action: "Delete")
+        let undo = app.buttons["chirp.notes.delete.undo"]
+        XCTAssertTrue(undo.waitForExistence(timeout: 5)); undo.tap()
+        XCTAssertTrue(row.waitForExistence(timeout: 5))
+        row.tap(); menu(app, action: "Delete")
+        app.buttons["chirp.notes.menu"].tap(); app.buttons["chirp.notes.deleted.menu"].tap()
+        XCTAssertTrue(app.buttons["Restore"].waitForExistence(timeout: 5))
+        screenshot("notes-recently-deleted", app)
+        app.buttons["Restore"].tap()
+        XCTAssertTrue(app.staticTexts["Nothing in Recently Deleted"].waitForExistence(timeout: 5))
     }
 
-    @MainActor func testNotesSettingsAndRotation() {
-        let app = XCUIApplication()
-        app.launchArguments = ["--chirp-ui-test", "--chirp-skip-onboarding"]
-        app.launch()
-        Self.openNotes(app)
-        app.buttons["chirp.notes.settings"].tap()
+    @MainActor private func notesSettingsAndRotation() {
+        let app = launch()
+        app.buttons["chirp.notes.menu"].tap(); app.buttons["chirp.notes.settings"].tap()
         let saver = Self.element("chirp.notes.batterySaver", in: app)
-        XCTAssertTrue(saver.waitForExistence(timeout: 5))
-        XCTAssertEqual(saver.value as? String, "1")
-        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'Structuring runs on your Mac.'")).firstMatch.waitForExistence(timeout: 5))
-        XCTAssertEqual(Self.element("chirp.notes.recoveryCopy", in: app).value as? String, "1")
-        screenshot("Live Notes settings", app)
+        XCTAssertTrue(saver.waitForExistence(timeout: 5)); XCTAssertEqual(saver.value as? String, "1")
+        XCTAssertEqual(Self.element("chirp.notes.keepNotes", in: app).value as? String, "1")
+        XCTAssertEqual(Self.element("chirp.notes.keepAudio", in: app).value as? String, "0")
+        XCTAssertTrue(app.staticTexts["Never"].exists)
+        screenshot("notes-settings", app)
         app.buttons["Done"].tap()
         defer { XCUIDevice.shared.orientation = .portrait }
         XCUIDevice.shared.orientation = .landscapeLeft
-        XCTAssertTrue(app.buttons["chirp.notes.record"].waitForExistence(timeout: 5))
-        screenshot("Live Notes landscape", app)
+        XCTAssertTrue(app.buttons["chirp.notes.record"].firstMatch.waitForExistence(timeout: 5))
+        screenshot("notes-library-landscape", app)
+    }
+
+    /// Reading, tasks, rename, local search and the inspector, with both appearances captured in this run.
+    @MainActor private func libraryReadingSearchTasksAndInspector() {
+        if UIDevice.current.userInterfaceIdiom == .pad { XCUIDevice.shared.orientation = .landscapeLeft }
+        let app = launch(["--chirp-notes-gallery"])
+        XCTAssertTrue(app.staticTexts["Lantern kickoff"].waitForExistence(timeout: 10))
+        screenshot("notes-library-groups", app)
+        let row = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'chirp.notes.row.' AND label CONTAINS 'Lantern kickoff'")).firstMatch
+        XCTAssertTrue(row.exists); row.tap()
+        XCTAssertTrue(app.staticTexts["Decision:"].exists || app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'Keep the launch in March'")).firstMatch.waitForExistence(timeout: 5))
+        screenshot("notes-reading", app)
+        let task = Self.element("chirp.notes.preview", in: app).buttons.matching(NSPredicate(format: "label CONTAINS 'Send the updated proposal'")).firstMatch
+        if task.exists { task.tap(); XCTAssertEqual(task.value as? String, "Checked") }
+        app.buttons["chirp.notes.transcript.open"].tap()
+        XCTAssertTrue(app.buttons["chirp.notes.play.0"].waitForExistence(timeout: 5))
+        app.buttons["chirp.notes.play.0"].tap()
+        screenshot("notes-transcript-audio", app)
+        if UIDevice.current.userInterfaceIdiom != .pad { app.buttons["Done"].tap() }
+        else { app.buttons["chirp.notes.transcript.open"].tap() }
+        app.buttons["chirp.notes.edit"].tap(); screenshot("notes-reading-edit", app)
+        app.buttons["chirp.notes.edit"].tap()
+        app.buttons["chirp.notes.title"].tap()
+        let title = app.textFields["chirp.notes.title.editor"]
+        XCTAssertTrue(title.waitForExistence(timeout: 5))
+        title.tap()
+        title.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: (title.value as? String)?.count ?? 32) + "Launch notes")
+        app.buttons["Done"].firstMatch.tap()
+        XCTAssertTrue(app.buttons["chirp.notes.title"].waitForExistence(timeout: 5))
+        backToLibrary(app)
+        app.buttons["Search notes"].tap()
+        let search = app.searchFields.firstMatch
+        XCTAssertTrue(search.waitForExistence(timeout: 5)); search.tap()
+        var prefix = ""
+        for character in "March" {
+            search.typeText(String(character)); prefix.append(character)
+            XCTAssertTrue(Self.waitFor(search, "value == '\(prefix)'", timeout: 3))
+        }
+        XCTAssertTrue(app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'chirp.notes.row.' AND label CONTAINS 'March'")).firstMatch.waitForExistence(timeout: 5))
+        search.typeText("\n")
+        screenshot("notes-search", app)
+    }
+
+    @MainActor private func accessibilityLibraryAndDock() {
+        let app = launch(["--chirp-notes-gallery", "-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"])
+        screenshot("notes-library-ax5", app)
+        app.buttons["chirp.notes.record"].firstMatch.tap()
+        XCTAssertTrue(app.buttons["chirp.notes.stop"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.buttons["chirp.notes.pause"].isHittable)
+        screenshot("notes-dock-ax5", app)
+        app.buttons["chirp.notes.stop"].tap()
     }
 }

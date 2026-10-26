@@ -5,6 +5,7 @@
 # Usage: ios/scripts/e2e-all.sh [--skip-portable] [--dark] [--phone-only|--ipad-only] [--keep-devices]
 # Env:   CHIRP_E2E_IPHONE / CHIRP_E2E_IPAD   use these simulator UUIDs instead of creating (and deleting) our own
 #        CHIRP_E2E_OUT                       evidence dir (default: a new /tmp/chirp-ios-e2e-all.XXXX)
+#        CHIRP_TEST_DIAGNOSTICS              never (default) or on-failure; simulator.sh passes it to xcodebuild
 #        CHIRP_E2E_PORT                      pin the server port (default: 7899 if free, else the next free pair; never 7821)
 # It only ever touches simulators it created (or was given), never a device and never the running Chirp server.
 set -u

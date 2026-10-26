@@ -1,8 +1,8 @@
 import ActivityKit
 import Foundation
 
-/// Live Notes on the lock screen and in the Dynamic Island. Deliberately content-free: the state and the elapsed time
-/// only, never notes, transcript, hosts or tokens.
+/// Live Notes on the lock screen and in the Dynamic Island: title, state and elapsed time.
+/// No transcript, body, hosts or tokens.
 struct ChirpNotesActivityAttributes: ActivityAttributes, Sendable {
     enum Status: String, Codable, Hashable, Sendable {
         case recording, paused, finishing, offline

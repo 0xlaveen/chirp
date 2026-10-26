@@ -32,17 +32,102 @@ struct NotesStoreTests {
         #expect(NotesJournalStore(directory: store.recoveryDirectory).recoverable().isEmpty)
     }
 
-    @Test func turningRecoveryOffDeletesTheFilesAndTheKey() throws {
+    @Test func deletingLegacyRecoveryPreservesTheSharedLibraryKey() throws {
         let root = try notesRoot(); defer { try? FileManager.default.removeItem(at: root) }
         let secrets = MemorySecretStore()
         let store = try NotesStore(root: root, secrets: secrets)
         try store.journalStore.write(NotesJournalRecord(document: NotesDocument(text: "x"), elapsed: 1))
         try store.deleteRecovery()
         #expect(try FileManager.default.contentsOfDirectory(atPath: store.recoveryDirectory.path).isEmpty)
-        #expect(try secrets.read(account: NotesStore.keyAccount) == nil)
-        // A new copy after that gets a new key.
+        #expect(try secrets.read(account: NotesStore.keyAccount)?.count == 32)
+        // The shared library key remains available for both stores.
         try store.journalStore.write(NotesJournalRecord(document: NotesDocument(text: "y"), elapsed: 1))
         #expect(store.journalStore.recoverable().count == 1)
+    }
+
+    @Test func sealedLibraryMigratesRecoveryOnceAndQuarantinesCorruption() async throws {
+        let root = try notesRoot(); defer { try? FileManager.default.removeItem(at: root) }
+        let secrets = MemorySecretStore()
+        let store = try NotesStore(root: root, secrets: secrets)
+        var document = NotesDocument(text: "## Secret plan\n- [ ] Send invitation")
+        document.append(NotesSegment(id: 0, offset: 4, raw: "private raw transcript"))
+        let record = NotesJournalRecord(document: document, elapsed: 14)
+        try store.journalStore.write(record)
+        let corrupt = store.recoveryDirectory.appendingPathComponent(UUID().uuidString + ".json")
+        try Data("invalid sealed record".utf8).write(to: corrupt)
+        try await store.migrateRecovery()
+        try await store.libraryStore.rename(document.id, title: "Chosen title")
+        try store.journalStore.write(record)
+        try await store.migrateRecovery()
+        #expect(try await store.libraryStore.list().map(\.title) == ["Chosen title"])
+        #expect(try await store.libraryStore.record(document.id).recovered == true)
+        #expect(!FileManager.default.fileExists(atPath: corrupt.path))
+        let quarantine = store.recoveryDirectory.appendingPathComponent("quarantine")
+        #expect(try FileManager.default.contentsOfDirectory(atPath: quarantine.path).count == 1)
+        for url in [store.libraryStore.directory.appendingPathComponent("index.json"), store.libraryStore.noteDirectory(document.id).appendingPathComponent("note.json")] {
+            let data = try Data(contentsOf: url)
+            #expect((try? JSONSerialization.jsonObject(with: data)) == nil)
+            #expect(!String(decoding: data, as: UTF8.self).contains("Secret plan"))
+            #expect(try FileManager.default.attributesOfItem(atPath: url.path)[.posixPermissions] as? Int == 0o600)
+            #if os(iOS)
+            #expect(try FileManager.default.attributesOfItem(atPath: url.path)[.protectionKey] as? FileProtectionType == .complete)
+            #endif
+        }
+        let relaunched = try NotesStore(root: root, secrets: secrets)
+        #expect(try await relaunched.libraryStore.record(document.id).document.text == document.text)
+        #expect(try await relaunched.libraryStore.search("private raw").count == 1)
+        #expect(!String(describing: try await relaunched.libraryStore.record(document.id)).contains("Secret"))
+    }
+
+    @Test func corruptLibraryRecordIsQuarantinedWithoutLosingOtherNotes() async throws {
+        let root = try notesRoot(); defer { try? FileManager.default.removeItem(at: root) }
+        let secrets = MemorySecretStore()
+        // Use a single key source for the durable collection and its reopened reader.
+        let writer = try NotesStore(root: root, secrets: secrets)
+        let good = NotesJournalRecord(document: NotesDocument(text: "Keep this note"), elapsed: 0)
+        try await writer.libraryStore.write(good)
+        let bad = UUID()
+        let corruptFolder = writer.libraryStore.noteDirectory(bad)
+        try FileManager.default.createDirectory(at: corruptFolder, withIntermediateDirectories: true)
+        let bytes = Data("invalid ciphertext".utf8)
+        try bytes.write(to: corruptFolder.appendingPathComponent("note.json"))
+        let reopened = try NotesStore(root: root, secrets: secrets)
+        #expect(try await reopened.libraryStore.list().map(\.id) == [good.document.id])
+        #expect(!FileManager.default.fileExists(atPath: corruptFolder.path))
+        let quarantine = reopened.libraryStore.directory.appendingPathComponent("quarantine")
+        let folders = try FileManager.default.contentsOfDirectory(at: quarantine, includingPropertiesForKeys: nil)
+        #expect(folders.count == 1)
+        #expect(try Data(contentsOf: folders[0].appendingPathComponent("note.json")) == bytes)
+    }
+
+    @Test func notesRetentionIsIndependentAndRecentlyDeletedHasItsOwnThirtyDayClock() async throws {
+        let root = try notesRoot(); defer { try? FileManager.default.removeItem(at: root) }
+        let secrets = MemorySecretStore(), start = Date(timeIntervalSince1970: 1_000_000)
+        let initial = try NotesStore(root: root, secrets: secrets, now: { start })
+        let note = NotesJournalRecord(document: NotesDocument(text: "A durable note"), elapsed: 0)
+        try await initial.libraryStore.write(note)
+        let later = start.addingTimeInterval(400 * 86400)
+        let reopened = try NotesStore(root: root, secrets: secrets, now: { later })
+        try await reopened.libraryStore.maintain(retention: .never)
+        #expect(try await reopened.libraryStore.list().count == 1)
+        try await reopened.libraryStore.maintain(retention: .thirtyDays)
+        #expect(try await reopened.libraryStore.list().isEmpty)
+        #expect(try await reopened.libraryStore.list(deleted: true).count == 1)
+        let beforePurge = later.addingTimeInterval(29 * 86400)
+        let waiting = try NotesStore(root: root, secrets: secrets, now: { beforePurge })
+        try await waiting.libraryStore.maintain(retention: .never)
+        #expect(try await waiting.libraryStore.list(deleted: true).count == 1)
+        let afterPurge = later.addingTimeInterval(30 * 86400)
+        let final = try NotesStore(root: root, secrets: secrets, now: { afterPurge })
+        try await final.libraryStore.maintain(retention: .never)
+        #expect(try await final.libraryStore.list(deleted: true).isEmpty)
+    }
+
+    @Test func upgradePreservesOptOutAndAudioIsOffByDefault() throws {
+        let preferences = try JSONDecoder().decode(NotesPreferences.self, from: Data(#"{"recoveryCopy":false}"#.utf8))
+        #expect(!preferences.keepNotes && preferences.libraryUpgradeNotice)
+        #expect(!preferences.keepAudio && preferences.retention == .never)
+        #expect(try JSONDecoder().decode(NotesPreferences.self, from: Data("{}".utf8)).keepNotes)
     }
 
     @Test func preferencesKeepDefaultsForMissingFieldsAndRoundTrip() throws {

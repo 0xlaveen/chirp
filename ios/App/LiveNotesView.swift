@@ -1,275 +1,300 @@
+import AVFoundation
 import ChirpCore
 import ChirpIOSCore
 import SwiftUI
 import UniformTypeIdentifiers
 
-enum NotesPane: Hashable { case notes, transcript }
-
-/// The Notes tab: Record/Pause/Stop, the live Markdown notes (editable) and the transcript. On iPad (regular width)
-/// notes and transcript sit side by side; on iPhone a picker switches between them.
 struct LiveNotesView: View {
     @ObservedObject var notes: LiveNotesController
     @ObservedObject var session: SessionCoordinator
-    /// Opens the Pair Mac tab: Record needs a paired Mac.
     var pair: () -> Void = {}
+    var dictate: () -> Void = {}
+    var body: some View { NotesLibraryView(notes: notes, session: session, pair: pair, dictate: dictate) }
+}
+
+struct NoteDetailView: View {
+    @ObservedObject var notes: LiveNotesController
+    @ObservedObject var session: SessionCoordinator
+    var pair: () -> Void
+    var openRecording: () -> Void
+    var deleted: () -> Void
     @Environment(\.horizontalSizeClass) private var sizeClass
-    @State private var pane = NotesPane.notes
-    @State private var showRaw = false
-    @State private var preview = false
+    @Environment(\.dynamicTypeSize) private var typeSize
+    @State private var editing = false
+    @FocusState private var editorFocused: Bool
+    @State private var renaming = false
+    @State private var title = ""
     @State private var exporting = false
-    @State private var confirmNew = false
-    @State private var confirmUndo = false
-    @State private var confirmKeep = false
     @State private var settings = false
-    @FocusState private var editing: Bool
+    @State private var transcript = false
+    @State private var showRaw = false
+    @State private var confirmUndo = false
+    @State private var confirmSwitch = false
+    @StateObject private var player = NotesSegmentPlayer()
 
     var body: some View {
         VStack(spacing: 0) {
-            if notes.recovery != nil, !notes.isActive { recoveryBanner }
-            controls.padding(.horizontal).padding(.vertical, 10)
-            Divider()
-            if sizeClass == .regular {
-                HStack(spacing: 0) {
-                    notesPane.frame(maxWidth: .infinity)
-                    Divider()
-                    transcriptPane.frame(maxWidth: .infinity)
-                }.accessibilityElement(children: .contain).accessibilityIdentifier("chirp.notes.split")
-            } else {
-                Picker("Show", selection: $pane) {
-                    Text("Notes").tag(NotesPane.notes)
-                    Text("Transcript").tag(NotesPane.transcript)
-                }.pickerStyle(.segmented).padding(.horizontal).padding(.vertical, 8).accessibilityIdentifier("chirp.notes.pane")
-                if pane == .notes { notesPane } else { transcriptPane }
-            }
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    titleBlock
+                    if let banner = banner {
+                        PondBanner(kind: notes.debugRetention ? .error : .info, title: banner)
+                            .accessibilityElement(children: .combine).accessibilityLabel(banner)
+                            .accessibilityIdentifier("chirp.notes.notice")
+                    }
+                    HStack(spacing: 12) {
+                        Button("Transcript", systemImage: "text.alignleft") { transcript.toggle() }
+                            .buttonStyle(.bordered).buttonBorderShape(.capsule)
+                            .keyboardShortcut("t", modifiers: [.command, .option])
+                            .accessibilityIdentifier("chirp.notes.transcript.open")
+                        if notes.selectedAudioBytes > 0 {
+                            Label(size(notes.selectedAudioBytes), systemImage: "waveform").font(.footnote).foregroundStyle(Color.chirp.inkMuted)
+                        }
+                    }
+                    if editing {
+                        TextEditor(text: Binding(get: { notes.document.text }, set: { notes.edit($0) }))
+                            .font(.body).scrollContentBackground(.hidden).frame(minHeight: 420)
+                            .focused($editorFocused).accessibilityIdentifier("chirp.notes.editor")
+                    } else if notes.document.text.isEmpty {
+                        VStack(alignment: .leading, spacing: 12) {
+                            Text(notes.state.isActive ? "A little room for your thoughts" : "Make this note your own").font(ChirpType.h2)
+                            Text(notes.structuring.isOff ? "Your transcript appears as you speak. Tap Edit to add your own notes." : "Chirp turns what you say into notes. You can edit them at any time.")
+                                .foregroundStyle(Color.chirp.inkMuted)
+                        }.padding(.vertical, 24)
+                    } else {
+                        NotesBlocksView(text: notes.document.text, title: notes.document.title, toggleTask: toggleTask)
+                            .textSelection(.enabled).accessibilityElement(children: .contain).accessibilityIdentifier("chirp.notes.preview")
+                    }
+                    if !notes.document.livePartial.isEmpty {
+                        Divider()
+                        Text(notes.document.livePartial).italic().foregroundStyle(Color.chirp.inkMuted)
+                            .accessibilityIdentifier("chirp.notes.partial")
+                    }
+                    if notes.canUndoOrganize {
+                        HStack {
+                            Label("Notes organized", systemImage: "sparkles").font(.footnote).foregroundStyle(Color.chirp.moon)
+                            Spacer()
+                            Button("Undo Organize") { if !notes.undoOrganize() { confirmUndo = true } }
+                                .font(.footnote).accessibilityIdentifier("chirp.notes.undo")
+                        }.padding(12).background(Color.chirp.surfaceRaised, in: RoundedRectangle(cornerRadius: 10))
+                    }
+                }.padding(24).frame(maxWidth: 680).frame(maxWidth: .infinity)
+            }.background(Color.chirp.surface)
         }
-        .navigationTitle("Live Notes")
-        .navigationBarTitleDisplayMode(.inline)
+        .navigationTitle("").navigationBarTitleDisplayMode(.inline).tint(Color.chirp.koi)
+        .safeAreaInset(edge: .bottom) { dock.padding(.horizontal, 16).padding(.vertical, 12).background(Color.chirp.background) }
         .toolbar { toolbar }
-        .overlay(alignment: .top) {
-            if notes.debugRetention {
-                Text("DEBUG: Mac keeps recordings").font(.headline).foregroundStyle(.white)
-                    .frame(maxWidth: .infinity).padding(8).background(.red).allowsHitTesting(false)
-            }
+        .inspector(isPresented: Binding(get: { transcript && sizeClass == .regular }, set: { transcript = $0 })) {
+            transcriptContent.inspectorColumnWidth(min: 280, ideal: 330, max: 420)
         }
-        .fileExporter(isPresented: $exporting, document: NotesMarkdownFile(text: notes.markdown),
-                      contentType: NotesMarkdownFile.markdown, defaultFilename: notes.exportName) { result in
-            if case .success = result { notes.didExport() }
+        .sheet(isPresented: Binding(get: { transcript && sizeClass != .regular }, set: { transcript = $0 })) {
+            NavigationStack {
+                transcriptContent.navigationTitle("Transcript").navigationBarTitleDisplayMode(.inline)
+                    .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { transcript = false } } }
+            }.presentationDetents([.medium, .large]).presentationDragIndicator(.visible)
         }
-        .sheet(isPresented: $settings) { NotesSettingsView(notes: notes) }
-        .confirmationDialog("Start new notes?", isPresented: $confirmNew, titleVisibility: .visible) {
-            Button("Discard and start new", role: .destructive) { notes.newNotes() }
-        } message: { Text("These notes are not saved. Copy, share or save them to Files first if you want to keep them.") }
+        .sheet(isPresented: $settings) { NotesSettingsSheet(notes: notes) }
+        .fileExporter(isPresented: $exporting, document: NotesMarkdownFile(text: notes.markdown), contentType: NotesMarkdownFile.markdown,
+                      defaultFilename: notes.exportName) { if case .success = $0 { notes.didExport() } }
         .confirmationDialog("Undo Organize?", isPresented: $confirmUndo, titleVisibility: .visible) {
             Button("Restore notes before Organize", role: .destructive) { notes.undoOrganize(confirmed: true) }
         } message: { Text("You edited the notes since Organize. Restoring replaces those edits too.") }
-        .confirmationDialog("Replace the current notes?", isPresented: $confirmKeep, titleVisibility: .visible) {
-            Button("Replace with recovered notes", role: .destructive) { notes.keepRecovered() }
-        } message: { Text("The current notes are not saved.") }
-        .task { await notes.refreshHealth() }
-    }
-
-    // MARK: controls
-
-    private var controls: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(alignment: .firstTextBaseline) {
-                Label {
-                    Text(notes.statusLine).accessibilityIdentifier("chirp.notes.status").accessibilityAddTraits(.updatesFrequently)
-                } icon: {
-                    Image(systemName: notes.state.isCapturing ? "record.circle.fill" : notes.isPaused ? "pause.circle" : "note.text").accessibilityHidden(true)
-                }.font(.headline).foregroundStyle(notes.state.isCapturing ? Color.red : Color.primary)
-                Spacer()
-                if notes.state.isActive || notes.elapsed > 0 {
-                    Text(ChirpNotesActivityAttributes.ContentState.clock(notes.elapsed)).font(.headline.monospacedDigit())
-                        .accessibilityIdentifier("chirp.notes.elapsed")
-                }
-            }
-            if let detail = notes.detailLine {
-                Text(detail).font(.subheadline).foregroundStyle(.secondary).accessibilityIdentifier("chirp.notes.detail")
-            }
-            ViewThatFits(in: .horizontal) {
-                HStack { buttons }
-                VStack(alignment: .leading) { buttons }
-            }
-            if session.armed, !notes.isActive {
-                HStack {
-                    Text("A keyboard session holds the microphone.").font(.footnote).foregroundStyle(.secondary)
-                    Button("End session") { session.endSession() }.font(.footnote)
-                }
-            }
-            if !notes.notice.isEmpty {
-                Text(notes.notice).font(.footnote).foregroundStyle(.secondary).accessibilityIdentifier("chirp.notes.notice")
-            }
-        }.controlSize(.large)
-    }
-
-    @ViewBuilder private var buttons: some View {
-        switch notes.state {
-        case .starting, .recording, .paused:
-            Button(notes.isPaused ? "Resume" : "Pause", systemImage: notes.isPaused ? "mic.fill" : "pause.fill") {
-                Task { await notes.togglePause() }
-            }.buttonStyle(.bordered).keyboardShortcut("p", modifiers: [.command, .shift]).accessibilityIdentifier("chirp.notes.pause")
-            Button("Stop", systemImage: "stop.fill") { Task { await notes.stop() } }
-                .buttonStyle(.borderedProminent).tint(.red).keyboardShortcut("r", modifiers: [.command, .shift])
-                .accessibilityIdentifier("chirp.notes.stop")
-        case .stopping:
-            ProgressView { Text("Finishing…") }.accessibilityIdentifier("chirp.notes.finishing")
-        default:
-            if !notes.paired {
-                Button("Pair Mac", systemImage: "qrcode.viewfinder", action: pair)
-                    .buttonStyle(.borderedProminent).accessibilityIdentifier("chirp.notes.pair")
-            }
-            Button(notes.document.isEmpty && notes.document.segments.isEmpty ? "Record" : "Record more", systemImage: "record.circle") {
-                Task { await notes.record() }
-            }.buttonStyle(.borderedProminent).disabled(!notes.paired || notes.starting || session.armed)
-                .keyboardShortcut("r", modifiers: [.command, .shift]).accessibilityIdentifier("chirp.notes.record")
+        .confirmationDialog("Another note is recording", isPresented: $confirmSwitch, titleVisibility: .visible) {
+            Button("Stop current and continue here") { Task { await notes.stopAndContinue() } }
+            Button("Go to recording", action: openRecording)
         }
-        Button("Organize", systemImage: "wand.and.stars") { notes.organize() }
-            .buttonStyle(.bordered).disabled(!notes.canOrganize).accessibilityIdentifier("chirp.notes.organize")
-        if notes.canUndoOrganize {
-            Button("Undo Organize", systemImage: "arrow.uturn.backward") { if !notes.undoOrganize() { confirmUndo = true } }
-                .buttonStyle(.bordered).accessibilityIdentifier("chirp.notes.undo")
+        .task(id: notes.document.id) { player.stop(); editing = false; await notes.refreshAudio() }
+        .onChange(of: notes.totalAudioBytes) { _, _ in Task { await notes.refreshAudio() } }
+        .onChange(of: editing) { _, value in notes.setEditing(value); editorFocused = value }
+        .onDisappear { player.stop(); notes.setEditing(false); Task { await notes.settleJournal() } }
+    }
+
+    private var titleBlock: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if renaming {
+                TextField("Note title", text: $title).font(ChirpType.noteTitle).submitLabel(.done)
+                    .onSubmit { renaming = false; Task { await notes.rename(title) } }
+                    .accessibilityIdentifier("chirp.notes.title.editor")
+                Button("Done") { renaming = false; Task { await notes.rename(title) } }
+            } else {
+                Button { title = notes.document.title; renaming = true } label: {
+                    Text(notes.document.title).font(ChirpType.noteTitle).foregroundStyle(Color.chirp.ink)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }.buttonStyle(.plain).accessibilityLabel("Rename \(notes.document.title)").accessibilityIdentifier("chirp.notes.title")
+            }
+            HStack(spacing: 8) {
+                Text(notes.statusLine).accessibilityIdentifier("chirp.notes.status").accessibilityAddTraits(.updatesFrequently)
+                if notes.elapsed > 0 || notes.state.isActive {
+                    Text("·")
+                    Text(clock(notes.elapsed)).monospacedDigit().accessibilityIdentifier("chirp.notes.elapsed")
+                }
+            }.font(.subheadline).foregroundStyle(notes.state.isCapturing ? Color.chirp.record : .chirp.inkMuted)
+        }
+    }
+
+    private var banner: String? {
+        if notes.debugRetention { return "DEBUG: Mac keeps recordings" }
+        if !notes.notice.isEmpty { return notes.notice }
+        if session.armed && !notes.isActive { return "End the keyboard session before recording notes." }
+        return notes.detailLine
+    }
+
+    private var dock: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 16) { dockButtons }
+            VStack(spacing: 12) { dockButtons }
+        }.padding(16).frame(maxWidth: 680).background(.regularMaterial, in: RoundedRectangle(cornerRadius: typeSize.isAccessibilitySize ? 24 : 40))
+            .modifier(NotesDockGlass())
+    }
+
+    @ViewBuilder private var dockButtons: some View {
+        if notes.state.isLive {
+            HStack(spacing: 8) {
+                Ripple(level: notes.state.isCapturing ? 0.3 : 0, reduceMotion: notes.isPaused ? true : nil).frame(width: 32, height: 32)
+                Text(clock(notes.elapsed)).font(ChirpType.timer(.headline))
+            }.accessibilityHidden(true)
+            Button(notes.isPaused ? "Resume" : "Pause", systemImage: notes.isPaused ? "mic.fill" : "pause.fill") { Task { await notes.togglePause() } }
+                .buttonStyle(.bordered).buttonBorderShape(.capsule).keyboardShortcut("p", modifiers: [.command, .shift])
+                .accessibilityIdentifier("chirp.notes.pause")
+            Button("Stop", systemImage: "stop.fill") { Task { await notes.stop() } }
+                .buttonStyle(.borderedProminent).buttonBorderShape(.capsule).tint(Color.chirp.record).foregroundStyle(Color.chirp.onKoi)
+                .keyboardShortcut("r", modifiers: [.command, .shift]).accessibilityIdentifier("chirp.notes.stop")
+        } else if notes.state == .stopping {
+            ProgressView("Finishing…").accessibilityIdentifier("chirp.notes.finishing")
+        } else {
+            if !notes.paired {
+                Button("Pair Mac", systemImage: "qrcode.viewfinder", action: pair).buttonStyle(.bordered).accessibilityIdentifier("chirp.notes.pair")
+            }
+            Button(notes.document.sessions.isEmpty && notes.document.segments.isEmpty && notes.elapsed == 0 ? "Record" : "Continue recording", systemImage: "record.circle") {
+                player.stop()
+                if notes.isActive { confirmSwitch = true } else { Task { await notes.record() } }
+            }.buttonStyle(.borderedProminent).buttonBorderShape(.capsule).tint(Color.chirp.koi).foregroundStyle(Color.chirp.onKoi)
+                .disabled(!notes.paired || notes.starting || session.armed)
+                .keyboardShortcut("r", modifiers: [.command, .shift]).accessibilityIdentifier("chirp.notes.record")
         }
     }
 
     @ToolbarContentBuilder private var toolbar: some ToolbarContent {
+        ToolbarItem(placement: .topBarLeading) {
+            if let id = notes.recordingID, id != notes.document.id {
+                Button(action: openRecording) { Label("Recording · \(notes.recordingTitle) · \(clock(notes.recordingElapsed))", systemImage: "record.circle.fill").lineLimit(1) }
+                    .font(.caption.monospacedDigit()).tint(Color.chirp.record).accessibilityIdentifier("chirp.notes.jumpRecording")
+            }
+        }
         ToolbarItemGroup(placement: .primaryAction) {
+            Button(editing ? "Done" : "Edit", systemImage: editing ? "checkmark" : "pencil") { editing.toggle() }
+                .accessibilityIdentifier("chirp.notes.edit")
+            Button("Organize", systemImage: "sparkles") { notes.organize() }.tint(Color.chirp.moon)
+                .disabled(!notes.canOrganize).accessibilityIdentifier("chirp.notes.organize")
             Menu {
                 Button("Copy", systemImage: "doc.on.doc") { notes.copy() }.accessibilityIdentifier("chirp.notes.copy")
-                ShareLink(item: notes.markdown, subject: Text("Notes")) { Label("Share…", systemImage: "square.and.arrow.up") }
-                Button("Save to Files…", systemImage: "folder") { exporting = true }.accessibilityIdentifier("chirp.notes.save")
+                ShareLink(item: notes.markdown, subject: Text(notes.document.title)) { Label("Share…", systemImage: "square.and.arrow.up") }
+                Button("Export Markdown…", systemImage: "square.and.arrow.up") { exporting = true }.accessibilityIdentifier("chirp.notes.save")
+                Button("Rename", systemImage: "pencil") { title = notes.document.title; renaming = true }
                 Divider()
-                Toggle("Preview Markdown", systemImage: "eye", isOn: $preview)
-            } label: { Label("Export", systemImage: "square.and.arrow.up") }
-                .disabled(notes.document.isEmpty && notes.document.segments.isEmpty).accessibilityIdentifier("chirp.notes.export")
-            Button("New notes", systemImage: "square.and.pencil") {
-                if notes.document.isDirty, !(notes.document.isEmpty && notes.document.segments.isEmpty) { confirmNew = true } else { notes.newNotes() }
-            }.disabled(notes.isActive).accessibilityIdentifier("chirp.notes.new")
-            Button("Notes settings", systemImage: "gearshape") { settings = true }.accessibilityIdentifier("chirp.notes.settings")
+                Button("Notes settings", systemImage: "gearshape") { settings = true }.accessibilityIdentifier("chirp.notes.settings")
+                if notes.selectedAudioBytes > 0 { Button("Delete audio (\(size(notes.selectedAudioBytes)))", systemImage: "waveform.slash", role: .destructive) { player.stop(); Task { await notes.deleteAudio(); await notes.refreshAudio() } } }
+                Button("Delete", systemImage: "trash", role: .destructive) { Task { await notes.delete([notes.document.id]); deleted() } }.disabled(notes.document.id == notes.recordingID)
+            } label: { Label("More", systemImage: "ellipsis.circle") }.accessibilityIdentifier("chirp.notes.export")
         }
     }
 
-    // MARK: panes
-
-    private var notesPane: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            if preview {
-                ScrollView { NotesMarkdownPreview(text: notes.document.text).padding() }.accessibilityIdentifier("chirp.notes.preview")
-            } else {
-                TextEditor(text: Binding(get: { notes.document.text }, set: { notes.edit($0) }))
-                    .font(.body).focused($editing).scrollContentBackground(.hidden).padding(.horizontal, 12)
-                    .accessibilityIdentifier("chirp.notes.editor")
-                    .overlay(alignment: .topLeading) {
-                        if notes.document.text.isEmpty {
-                            Text(notes.structuring.isOff ? "Notes stay a transcript while structuring is off. Type here to add your own."
-                                                         : "Structured notes appear here as you speak. Type anywhere to add your own.")
-                                .foregroundStyle(.tertiary).padding(.horizontal, 17).padding(.vertical, 8).allowsHitTesting(false)
-                        }
-                    }
-                    .onChange(of: editing) { _, value in notes.setEditing(value) }
-            }
-            if !notes.document.livePartial.isEmpty {
-                Divider()
-                Text(notes.document.livePartial).italic().foregroundStyle(.secondary).lineLimit(3)
-                    .frame(maxWidth: .infinity, alignment: .leading).padding()
-                    .accessibilityIdentifier("chirp.notes.partial")
-            }
-        }
-    }
-
-    private var transcriptPane: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            Toggle("Show raw", isOn: $showRaw).padding(.horizontal).padding(.vertical, 8)
-                .accessibilityIdentifier("chirp.notes.raw")
+    private var transcriptContent: some View {
+        VStack(spacing: 0) {
+            Toggle("Show raw", isOn: $showRaw).padding().accessibilityIdentifier("chirp.notes.raw")
             Divider()
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: 12) {
-                    if notes.document.segments.isEmpty {
-                        Text("The transcript appears here, segment by segment.").foregroundStyle(.tertiary)
-                    }
-                    ForEach(notes.document.transcriptParagraphs) { paragraph in
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(ChirpNotesActivityAttributes.ContentState.clock(paragraph.offset)).font(.caption.monospacedDigit())
-                                .foregroundStyle(.secondary)
-                            if let failure = paragraph.failure {
-                                Label("Not transcribed (\(failure))", systemImage: "exclamationmark.triangle").font(.subheadline).foregroundStyle(.orange)
-                            } else {
-                                Text(paragraph.text(raw: showRaw)).textSelection(.enabled)
+                LazyVStack(alignment: .leading, spacing: 16) {
+                    if notes.document.segments.isEmpty { Text("The transcript appears here, segment by segment.").foregroundStyle(Color.chirp.inkMuted) }
+                    ForEach(Array(notes.document.segments.enumerated()), id: \.element.id) { index, segment in
+                        ForEach(Array(notes.document.sessions.dropFirst().enumerated()), id: \.offset) { _, boundary in
+                            if boundary.firstSegment == index {
+                                HStack { Divider(); Text("Continued · \(boundary.startedAt.formatted(date: .abbreviated, time: .shortened))").font(.caption).foregroundStyle(Color.chirp.inkMuted); Divider() }.padding(.vertical, 8)
                             }
                         }
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack {
+                                Text(clock(segment.offset)).font(ChirpType.timer(.caption)).foregroundStyle(Color.chirp.inkMuted)
+                                Spacer()
+                                if notes.hasAudio(index) {
+                                    Button(player.segment == index ? "Stop replay" : "Play segment", systemImage: player.segment == index ? "stop.fill" : "play.fill") {
+                                        if player.segment == index { player.stop() }
+                                        else {
+                                            let request = player.beginLoading(), id = notes.document.id
+                                            Task {
+                                                do {
+                                                    let data = try await notes.audioData(segment: index)
+                                                    guard notes.document.id == id, player.accepts(request), !notes.isActive, !session.armed else { return }
+                                                    if let data { player.play(data, segment: index) } else { player.failed() }
+                                                } catch { if player.accepts(request) { player.failed() } }
+                                            }
+                                        }
+                                    }.font(.caption).buttonStyle(.bordered).buttonBorderShape(.capsule)
+                                        .disabled(notes.isActive || session.armed)
+                                        .accessibilityHint(notes.isActive || session.armed ? "Stop recording to replay kept audio" : "Plays this speech segment")
+                                        .accessibilityIdentifier("chirp.notes.play.\(index)")
+                                }
+                            }
+                            if let failure = segment.failure {
+                                Label("Not transcribed (\(failure))", systemImage: "exclamationmark.triangle").foregroundStyle(Color.chirp.record)
+                            } else {
+                                // NotesSegment already reserves per-turn speaker identity; #201 can render it here.
+                                Text(showRaw ? segment.raw : segment.text).textSelection(.enabled)
+                            }
+                        }.padding(12).frame(maxWidth: .infinity, alignment: .leading)
+                            .background(player.segment == index ? Color.chirp.koiContainer : .chirp.surface, in: RoundedRectangle(cornerRadius: 10))
                     }
-                }.frame(maxWidth: .infinity, alignment: .leading).padding()
+                    if let error = player.error { Text(error).font(.footnote).foregroundStyle(Color.chirp.record) }
+                }.padding(16)
             }.accessibilityIdentifier("chirp.notes.transcript")
-        }
+        }.background(Color.chirp.background).tint(Color.chirp.koi)
     }
 
-    private var recoveryBanner: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Label("Unsaved notes from an earlier session", systemImage: "arrow.counterclockwise.circle").font(.headline)
-            if let record = notes.recovery {
-                Text("Started \(record.document.startedAt.formatted(date: .abbreviated, time: .shortened)) · \(ChirpNotesActivityAttributes.ContentState.clock(record.elapsed)) recorded")
-                    .font(.subheadline).foregroundStyle(.secondary)
-            }
-            HStack {
-                Button("Keep") {
-                    if notes.document.isDirty, !notes.document.isEmpty { confirmKeep = true } else { notes.keepRecovered() }
-                }.buttonStyle(.borderedProminent).accessibilityIdentifier("chirp.notes.recovery.keep")
-                Button("Discard", role: .destructive) { notes.discardRecovered() }.buttonStyle(.bordered)
-                    .accessibilityIdentifier("chirp.notes.recovery.discard")
-            }
-        }.frame(maxWidth: .infinity, alignment: .leading).padding().background(.thinMaterial)
-            .accessibilityElement(children: .contain).accessibilityIdentifier("chirp.notes.recovery")
+    private func toggleTask(_ index: Int) {
+        var lines = notes.document.text.components(separatedBy: "\n")
+        guard lines.indices.contains(index), let box = lines[index].range(of: #"\[[ xX]\]"#, options: .regularExpression) else { return }
+        lines[index].replaceSubrange(box, with: lines[index][box] == "[ ]" ? "[x]" : "[ ]")
+        notes.edit(lines.joined(separator: "\n"))
     }
+    private func clock(_ value: TimeInterval) -> String { ChirpNotesActivityAttributes.ContentState.clock(value) }
+    private func size(_ value: Int) -> String { ByteCountFormatter.string(fromByteCount: Int64(value), countStyle: .file) }
 }
 
-/// Where Live Notes lives: its own tab on iPad, whose tab strip has room; on iPhone, where a sixth tab would push History
-/// and Settings into More, a button in the Dictate tab's toolbar (red while notes record).
-struct LiveNotesEntry: ViewModifier {
-    static var asTab: Bool { UIDevice.current.userInterfaceIdiom == .pad }
-    @ObservedObject var notes: LiveNotesController
-    @ObservedObject var session: SessionCoordinator
-    var pair: () -> Void = {}
-    @State private var open = false
+private struct NotesDockGlass: ViewModifier {
     func body(content: Content) -> some View {
-        if Self.asTab {
-            content
-        } else {
-            content
-                .toolbar {
-                    ToolbarItem(placement: .primaryAction) {
-                        Button(notes.isActive ? "Notes · recording" : "Live Notes", systemImage: notes.isActive ? "record.circle.fill" : "note.text") { open = true }
-                            .labelStyle(.titleAndIcon).tint(notes.isActive ? .red : nil).accessibilityIdentifier("chirp.notes.open")
-                    }
-                }
-                .navigationDestination(isPresented: $open) { LiveNotesView(notes: notes, session: session, pair: pair) }
-        }
+        if #available(iOS 26, *) { content.glassEffect(.regular, in: .rect(cornerRadius: 32)) }
+        else { content }
     }
 }
 
-/// A light Markdown rendering of the notes: headings, bullets, tasks and inline emphasis.
-struct NotesMarkdownPreview: View {
-    let text: String
-    var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            ForEach(Array(text.components(separatedBy: "\n").enumerated()), id: \.offset) { _, line in row(line) }
-        }.frame(maxWidth: .infinity, alignment: .leading)
+/// Replay decrypts into memory and never writes a plaintext playback file.
+@MainActor
+private final class NotesSegmentPlayer: NSObject, ObservableObject, AVAudioPlayerDelegate {
+    @Published private(set) var segment: Int?
+    @Published private(set) var error: String?
+    private var player: AVAudioPlayer?
+    private var request = 0
+    func beginLoading() -> Int { stop(); error = nil; return request }
+    func accepts(_ value: Int) -> Bool { request == value }
+    func failed() { stop(); error = "This audio could not be played. Try another segment." }
+    func play(_ data: Data, segment: Int) {
+        stop()
+        do {
+            try AVAudioSession.sharedInstance().setCategory(.playback, options: .mixWithOthers)
+            try AVAudioSession.sharedInstance().setActive(true)
+            let player = try AVAudioPlayer(data: data)
+            self.player = player; player.delegate = self
+            guard player.play() else { throw SessionFailure.audio }
+            self.segment = segment
+        } catch { failed() }
     }
-    @ViewBuilder private func row(_ line: String) -> some View {
-        let trimmed = line.trimmingCharacters(in: .whitespaces)
-        if trimmed.hasPrefix("### ") { inline(String(trimmed.dropFirst(4))).font(.headline) }
-        else if trimmed.hasPrefix("## ") { inline(String(trimmed.dropFirst(3))).font(.title3.bold()).padding(.top, 6) }
-        else if trimmed.hasPrefix("# ") { inline(String(trimmed.dropFirst(2))).font(.title2.bold()).padding(.top, 6) }
-        else if trimmed.hasPrefix("- [ ] ") || trimmed.lowercased().hasPrefix("- [x] ") {
-            Label { inline(String(trimmed.dropFirst(6))) } icon: { Image(systemName: trimmed.hasPrefix("- [ ] ") ? "square" : "checkmark.square") }
-                .padding(.leading, line.hasPrefix("  ") ? 20 : 0)
-        } else if trimmed.hasPrefix("- ") {
-            HStack(alignment: .firstTextBaseline, spacing: 6) { Text("•"); inline(String(trimmed.dropFirst(2))) }
-                .padding(.leading, line.hasPrefix("  ") ? 20 : 0)
-        } else if trimmed.isEmpty { Spacer().frame(height: 4) }
-        else { inline(trimmed) }
-    }
-    private func inline(_ s: String) -> Text {
-        Text((try? AttributedString(markdown: s, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace))) ?? AttributedString(s))
+    func stop() { request += 1; player?.stop(); player = nil; segment = nil }
+    nonisolated func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
+        // AVAudioPlayer is not Sendable on older SDKs; only its identity crosses the actor boundary.
+        let finished = ObjectIdentifier(player)
+        Task { @MainActor in
+            if self.player.map(ObjectIdentifier.init) == finished { self.stop() }
+        }
     }
 }
 
@@ -282,28 +307,53 @@ struct NotesMarkdownFile: FileDocument {
     func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper { FileWrapper(regularFileWithContents: Data(text.utf8)) }
 }
 
+/// Embeddable Settings → Notes form; its caller owns navigation and dismissal.
 struct NotesSettingsView: View {
+    @ObservedObject var notes: LiveNotesController
+    @State private var confirmDeleteAudio = false
+    var body: some View {
+        Form {
+            Section {
+                Toggle("Structure notes", isOn: Binding(get: { notes.preferences.structureEnabled(health: notes.health) }, set: { notes.setStructure($0) }))
+                    .disabled(!notes.structureCanEnable).accessibilityIdentifier("chirp.notes.structure")
+                Toggle("Organize automatically", isOn: Binding(get: { notes.preferences.autoReorganize }, set: { notes.setAutoReorganize($0) }))
+            } footer: { Text(notes.structureDisclosure) }
+            Section {
+                Toggle("Battery saver while locked", isOn: Binding(get: { notes.preferences.batterySaver }, set: { notes.setBatterySaver($0) }))
+                    .accessibilityIdentifier("chirp.notes.batterySaver")
+            } footer: { Text("Recording and structuring continue while screen updates pause.") }
+            Section {
+                Toggle("Keep notes on this device", isOn: Binding(get: { notes.preferences.keepNotes }, set: { notes.setKeepNotes($0) }))
+                    .accessibilityIdentifier("chirp.notes.keepNotes")
+                Picker("Delete notes older than", selection: Binding(get: { notes.preferences.retention }, set: { notes.setRetention($0) })) {
+                    Text("Never").tag(NotesRetention.never)
+                    Text("1 year").tag(NotesRetention.oneYear)
+                    Text("90 days").tag(NotesRetention.ninetyDays)
+                    Text("30 days").tag(NotesRetention.thirtyDays)
+                }
+            } footer: { Text("Notes save as you go, sealed on this device and excluded from backups. Turning this off stops keeping new changes; existing notes stay in your library. Deleted notes stay in Recently Deleted for 30 days.") }
+            Section {
+                Toggle("Keep audio with notes", isOn: Binding(get: { notes.preferences.keepAudio }, set: { notes.setKeepAudio($0) }))
+                    .disabled(!notes.preferences.keepNotes).accessibilityIdentifier("chirp.notes.keepAudio")
+                if notes.totalAudioBytes > 0 {
+                    LabeledContent("Kept audio", value: ByteCountFormatter.string(fromByteCount: Int64(notes.totalAudioBytes), countStyle: .file))
+                    Button("Delete kept audio", role: .destructive) { confirmDeleteAudio = true }
+                }
+            } footer: { Text("Off by default. Keep speech segments sealed on this device so you can replay them. Deleting audio keeps the text.") }
+        }.scrollContentBackground(.hidden).background(Color.chirp.background).tint(Color.chirp.koi)
+            .navigationTitle("Notes").task { await notes.refreshHealth() }
+            .confirmationDialog("Delete all kept audio?", isPresented: $confirmDeleteAudio, titleVisibility: .visible) {
+                Button("Delete kept audio", role: .destructive) { Task { await notes.deleteAudio(all: true) } }
+            } message: { Text("Notes and transcripts are kept. This cannot be undone.") }
+    }
+}
+
+struct NotesSettingsSheet: View {
     @ObservedObject var notes: LiveNotesController
     @Environment(\.dismiss) private var dismiss
     var body: some View {
         NavigationStack {
-            Form {
-                Section {
-                    Toggle("Structure notes", isOn: Binding(get: { notes.preferences.structureEnabled(health: notes.health) }, set: { notes.setStructure($0) }))
-                        .disabled(!notes.structureCanEnable).accessibilityIdentifier("chirp.notes.structure")
-                    Toggle("Organize automatically", isOn: Binding(get: { notes.preferences.autoReorganize }, set: { notes.setAutoReorganize($0) }))
-                } footer: { Text(notes.structureDisclosure + " Organize regroups the whole notes; Undo Organize puts them back.") }
-                Section {
-                    Toggle("Battery saver while locked", isOn: Binding(get: { notes.preferences.batterySaver }, set: { notes.setBatterySaver($0) }))
-                        .accessibilityIdentifier("chirp.notes.batterySaver")
-                } footer: { Text("While the screen is locked or Chirp is in the background, Chirp skips screen updates. Recording, structuring on your Mac and the lock-screen timer go on.") }
-                Section {
-                    Toggle("Keep an encrypted recovery copy", isOn: Binding(get: { notes.preferences.recoveryCopy }, set: { notes.setRecoveryCopy($0) }))
-                        .accessibilityIdentifier("chirp.notes.recoveryCopy")
-                } footer: { Text("Until you save or start new notes, Chirp keeps the notes and transcript encrypted on this iPhone or iPad, so a crash loses nothing. Never audio, never backed up. Turning this off deletes the copy.") }
-            }
-            .navigationTitle("Notes settings")
-            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
+            NotesSettingsView(notes: notes).toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
         }
     }
 }

@@ -3,7 +3,7 @@ import Foundation
 
 /// Used only on the library's disk actor. Capture callbacks never encode or access the filesystem.
 enum NotesAudioEncoder {
-    static func write(_ frames: [Data], sampleRate: Double, to url: URL) throws -> Int {
+    static func write(_ frames: [Data], sampleRate: Double, to url: URL, codec: NotesJournalCodec? = nil) throws -> Int {
         let pcm = frames.reduce(into: Data()) { $0.append($1) }
         guard !pcm.isEmpty, pcm.count.isMultiple(of: 2), sampleRate > 0,
               let inputFormat = AVAudioFormat(commonFormat: .pcmFormatInt16, sampleRate: sampleRate, channels: 1, interleaved: true),
@@ -23,6 +23,9 @@ enum NotesAudioEncoder {
         guard fd >= 0 else { throw CocoaError(.fileWriteUnknown) }
         guard fchmod(fd, 0o600) == 0 else { close(fd); throw CocoaError(.fileWriteNoPermission) }
         close(fd)
+        #if os(iOS)
+        try FileManager.default.setAttributes([.protectionKey: FileProtectionType.complete], ofItemAtPath: temp.path)
+        #endif
         do {
             let file = try AVAudioFile(forWriting: temp, settings: [
                 AVFormatIDKey: kAudioFormatMPEG4AAC, AVSampleRateKey: sampleRate,
@@ -35,7 +38,11 @@ enum NotesAudioEncoder {
         guard syncFD >= 0 else { throw CocoaError(.fileReadUnknown) }
         if fcntl(syncFD, F_FULLFSYNC) != 0 { fsync(syncFD) }
         close(syncFD)
-        guard rename(temp.path, url.path) == 0 else { throw CocoaError(.fileWriteUnknown) }
+        if let codec {
+            try NotesAtomicFile.write(codec.seal(Data(contentsOf: temp)), to: url)
+        } else {
+            guard rename(temp.path, url.path) == 0 else { throw CocoaError(.fileWriteUnknown) }
+        }
         return (try FileManager.default.attributesOfItem(atPath: url.path)[.size] as? Int) ?? 0
     }
 }
