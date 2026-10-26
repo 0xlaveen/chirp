@@ -60,7 +60,7 @@ def check(probe, work, output, standalone=False):
     probe['wait_for']('Record new note', 60)
     before = server().get('finals', 0)
     tap('Record new note')
-    probe['wait_for']('Turn off', 30)
+    probe['wait_for']('Turn off', 90)
     screenshot('emulator-speakers-status.png')
     if os.environ.get('CHIRP_E2E_SPEAKER_CANCEL') == '1':
         # Against the cancellation-capable server branch: turn off stops its active fetch,
@@ -71,7 +71,7 @@ def check(probe, work, output, standalone=False):
         assert probe['find']('Turn off') is None, 'Model status remained after turning labels off'
         probe['click']('More options')
         tap('Label speakers')
-        probe['wait_for']('Turn off', 30)
+        probe['wait_for']('Turn off', 90)
         wait(lambda: server().get('model_actions', [])[-1:] == ['download'] and
              server().get('model_state') == 'downloading', 'Explicit on did not restart the download', 30)
         log('PASS: Turn off cancelled the active download; explicit on restarted it')

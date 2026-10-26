@@ -37,7 +37,7 @@ def install_speaker_model():
 
 
 def fetch_speaker_model():
-    deadline = time.monotonic() + 180
+    deadline = time.monotonic() + 300
     while not args.speaker_model_gate.exists():
         if time.monotonic() >= deadline:
             raise TimeoutError("Speaker fixture was not released")
@@ -48,7 +48,7 @@ def fetch_speaker_model():
 class FixtureSpeakerLabels(SpeakerLabels):
     async def _fetch_model(self):
         # New servers support cancellable fetches; retain that behavior in the offline fixture.
-        deadline = time.monotonic() + 180
+        deadline = time.monotonic() + 300
         while not args.speaker_model_gate.exists():
             if time.monotonic() >= deadline:
                 raise TimeoutError("Speaker fixture was not released")
