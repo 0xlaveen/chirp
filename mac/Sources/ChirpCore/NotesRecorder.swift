@@ -242,6 +242,13 @@ public final class NotesRecorder {
     /// Speaker labels for this document: the controller attaches its diarizer before Record (nil: labels off, and
     /// everything behaves as without the feature). Changing it applies from the next Record.
     public var speakers: SpeakerDiarizing?
+    /// The speaker model became ready during a recording or a pause: `speakers` joins from here on (the audio before
+    /// it stays unlabelled; the diarizer maps the jump in document time). Resume feeds it too.
+    public func joinSpeakers() {
+        guard state.isLive, activeSpeakers == nil, let speakers else { return }
+        activeSpeakers = speakers
+        if state != .paused { router.setSpeakers(speakers) }
+    }
     /// Server-side speaker labels (Android and iOS; the Mac's own diarizer is `speakers`): each segment asks the
     /// server who spoke, read at the segment's start. Off by default; off leaves every `start` message as it was.
     public var labelSpeakers = false

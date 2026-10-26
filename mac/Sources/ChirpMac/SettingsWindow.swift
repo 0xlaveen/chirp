@@ -28,8 +28,11 @@ final class SettingsWindowController: NSObject, NSTextFieldDelegate {
     var onPairPhone: (() -> Void)?
     var onOpenNotes: (() -> Void)?
     var onRemoveSpeakerModel: (() -> Void)?
-    /// Notes › Speakers › Label speakers flipped (the Notes session asks before any download).
+    /// Notes › Speakers › Label speakers flipped (the Notes session downloads the model by itself when it is missing).
     var onSpeakerLabels: ((Bool) -> Void)?
+    /// Retry after a failed speaker model download, and the model's state and size as the Notes window has them.
+    var onRetrySpeakerModel: (() -> Void)?
+    var speakerModel: () -> (state: SpeakerModelState, size: String) = { (.notDownloaded, "") }
     /// A Live Notes recording is running: Label speakers waits for the next one.
     var notesRecording: () -> Bool = { false }
     /// Live Notes voice profiles (Settings › Notes › Voices).
@@ -125,6 +128,7 @@ final class SettingsWindowController: NSObject, NSTextFieldDelegate {
         s.serverOffersStyles = health == nil || health?.correctionProfiles != nil
         s.keepLoaded = keepLoaded
         s.speakerModelDownloaded = SpeakerModel.hasFiles()
+        (s.speakerModel, s.speakerModelSize) = speakerModel()
         s.speakerLabels = settings.notesSpeakerLabels
         s.speakerLabelsLocked = notesRecording()
         s.voices = voicesState
@@ -343,6 +347,8 @@ final class SettingsWindowController: NSObject, NSTextFieldDelegate {
         form.microphone.action = #selector(microphoneChanged(_:))
         form.removeSpeakerModel.target = self
         form.removeSpeakerModel.action = #selector(removeSpeakerModel)
+        form.retrySpeakerModel.target = self
+        form.retrySpeakerModel.action = #selector(retrySpeakerModel)
         form.voicesView.onToggle = { [weak self] in self?.toggleVoices($0) }
         form.voicesView.onForget = { [weak self] in self?.confirmForgetVoice($0) }
         form.voicesView.onForgetAll = { [weak self] in self?.confirmForgetVoice(nil) }
@@ -494,6 +500,7 @@ final class SettingsWindowController: NSObject, NSTextFieldDelegate {
         NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.Keyboard-Settings.extension")!)
     }
     @objc private func removeSpeakerModel() { onRemoveSpeakerModel?() }
+    @objc private func retrySpeakerModel() { onRetrySpeakerModel?() }
 
     /// The speaker model came or went: refresh the Notes tab's row.
     func speakerModelChanged() { refresh() }

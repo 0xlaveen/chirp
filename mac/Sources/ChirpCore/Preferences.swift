@@ -297,11 +297,34 @@ public final class Preferences: @unchecked Sendable {
         return StartOptions(client: "mac", correction: enabled, correctionProfile: CorrectionProfile.defaultID,
                             correctionPrompt: correctionPrompts[CorrectionProfile.defaultID], wordTimings: true)
     }
-    /// Live Notes' "Label speakers" toggle: off until the user turns it on and the on-device model is downloaded.
-    /// A preference only; no label, name or voice is ever stored.
+    /// Live Notes' "Label speakers": on unless the user turned it off. Only the user's own Turn off (or Remove)
+    /// stores a value; a missing or failed model is a model state, never a preference. A preference only; no label,
+    /// name or voice is ever stored.
     public var notesSpeakerLabels: Bool {
-        get { defaults.bool(forKey: "notesSpeakerLabels") }
-        set { defaults.set(newValue, forKey: "notesSpeakerLabels") }
+        get { notesSpeakerLabelsChoice ?? true }
+        set { notesSpeakerLabelsChoice = newValue }
+    }
+    /// The stored choice; nil until the user makes one. Writing one stamps `speakerLabelsDefault`, so the migration
+    /// below never mistakes it for a legacy value.
+    public var notesSpeakerLabelsChoice: Bool? {
+        get { defaults.object(forKey: "notesSpeakerLabels") as? Bool }
+        set {
+            if let newValue { defaults.set(newValue, forKey: "notesSpeakerLabels") } else { defaults.removeObject(forKey: "notesSpeakerLabels") }
+            defaults.set(Self.speakerLabelsDefault, forKey: "speakerLabelsDefault")
+        }
+    }
+    /// Version of the "labels are on by default" rule. Before it (nothing stored), the app wrote `false` itself
+    /// whenever the model was missing or failed to load, so a stored `false` did not mean the user chose off.
+    static let speakerLabelsDefault = 2
+    /// Once, at launch: clears a legacy `false` (back to the default, on), keeps a legacy `true`, and from then on
+    /// only the user's own choices are stored. Returns whether it cleared one.
+    @discardableResult
+    public func migrateSpeakerLabelsDefault() -> Bool {
+        guard defaults.integer(forKey: "speakerLabelsDefault") < Self.speakerLabelsDefault else { return false }
+        let cleared = notesSpeakerLabelsChoice == false
+        if cleared { defaults.removeObject(forKey: "notesSpeakerLabels") }
+        defaults.set(Self.speakerLabelsDefault, forKey: "speakerLabelsDefault")
+        return cleared
     }
     /// Settings › Notes › Sources: new notes include call audio (#211). Off by default; each note can change it.
     public var notesCallAudio: Bool {

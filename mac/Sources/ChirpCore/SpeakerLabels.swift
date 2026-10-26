@@ -13,10 +13,11 @@ public enum SpeakerModelState: Equatable, Sendable {
     public var isDownloading: Bool { if case .downloading = self { true } else { false } }
 }
 
-/// Where the speaker model lives. Only `load(download: true)`, which follows the user's Download, may use the
-/// network; every other load is offline and fails on a missing or damaged model rather than fetching or repairing it.
+/// Where the speaker model lives. Only `load(download: true)`, the one-time fetch of the pinned, checksummed model
+/// (nothing about the user is sent), may use the network; every other load is offline and fails on a missing or
+/// damaged model rather than fetching or repairing it.
 public protocol SpeakerModelStore: Sendable {
-    /// For the consent prompt ("a 106 MB on-device model").
+    /// For the status line ("Getting the speaker model ready (106 MB, once)").
     var sizeText: String { get }
     /// The pinned model is completely on disk.
     func isDownloaded() -> Bool
@@ -31,23 +32,18 @@ public protocol SpeakerDiarizerFactory: AnyObject, Sendable {
     func makeDiarizer() -> SpeakerDiarizing
 }
 
-/// Live Notes' speaker-label policy: the footer switch, the consent before the one download, offline loads for
-/// Record, Remove, and the document's diarizer. Memory only; the switch itself is the one stored preference.
+/// Live Notes' speaker-label policy: the switch (on unless the user turned it off), the model that follows it
+/// (downloaded in the background, never behind a prompt), offline loads for Record, Remove, and the document's
+/// diarizer. Memory only; the one stored preference is the user's own choice, so a missing or failed model is a
+/// `model` state and never changes the switch.
 @MainActor
 public final class SpeakerLabels {
-    public enum Prompt: Equatable, Sendable {
-        /// First use: download the model.
-        case download(size: String)
-        /// The model on disk did not load: remove it and download it again.
-        case redownload(size: String)
-    }
-
-    /// The user's switch (on only with the model on disk).
+    /// The user's switch. On does not mean the model is here: `model` says that.
     public private(set) var enabled: Bool
     public private(set) var model: SpeakerModelState
     public var onChange: () -> Void = {}
-    /// Asks the user; `done(true)` is their Download. Nothing downloads without it.
-    public var confirm: (_ prompt: Prompt, _ done: @escaping (Bool) -> Void) -> Void = { _, done in done(false) }
+    /// The model finished downloading (or loading) with the switch on: a recording in progress joins from here on.
+    public var onReady: () -> Void = {}
 
     private let store: SpeakerModelStore
     private let onPreference: (Bool) -> Void
@@ -56,56 +52,61 @@ public final class SpeakerLabels {
     public private(set) var diarizer: SpeakerDiarizing?
     private var loadTask: Task<(any SpeakerDiarizerFactory)?, Never>?
 
+    /// `onPreference` is called only for the user's own choices (the switch, Remove), never for the model's state.
     public init(store: SpeakerModelStore, enabled: Bool, onPreference: @escaping (Bool) -> Void) {
         self.store = store
         self.onPreference = onPreference
-        let downloaded = store.isDownloaded()
-        self.enabled = enabled && downloaded
-        model = downloaded ? .ready : .notDownloaded
-        if enabled && !downloaded { onPreference(false) }
+        self.enabled = enabled
+        model = store.isDownloaded() ? .ready : .notDownloaded
     }
 
     public var isLoading: Bool { loadTask != nil }
-    /// Record has to load the model first (offline).
-    public var needsLoad: Bool { enabled && diarizer == nil && factory == nil }
+    /// The model's size for the status line ("106 MB"); the store is the one place that knows it.
+    public var sizeText: String { store.sizeText }
+    /// Record has to load the model first (offline): it is on disk, and nothing holds it yet.
+    public var needsLoad: Bool { enabled && diarizer == nil && factory == nil && !model.isFailure && store.isDownloaded() }
     /// Settings › Remove applies: files are on disk and nothing is loading them.
     public var canRemove: Bool { loadTask == nil && store.hasFiles() }
 
     // MARK: the switch
 
-    /// The footer switch. Off cancels a download, and frees the model unless this document already has labels (they
-    /// keep their diarizer so Person N stays the same if it is turned on again). On asks before any download.
+    /// The switch. Off is the only thing that stores a choice: it cancels a download, and frees the model unless this
+    /// document already has labels (they keep their diarizer so Person N stays the same if it is turned on again).
+    /// On fetches the model in the background when it is missing, with no prompt.
     public func setEnabled(_ on: Bool, documentHasLabels: Bool) {
         guard on else {
             if model.isDownloading { loadTask?.cancel() }
+            if model.isFailure { model = store.isDownloaded() ? .ready : .notDownloaded }
             setPreference(false)
             if !documentHasLabels { drop() }
             onChange()
             return
         }
-        guard loadTask == nil else { return }
-        if model.isFailure, store.hasFiles() {
-            confirm(.redownload(size: store.sizeText)) { [weak self] yes in
-                guard let self, yes else { return }
-                try? self.store.remove()
-                Task { await self.download() }
-            }
-        } else if store.isDownloaded() {
-            if model.isFailure { model = .ready }
-            setPreference(true)
-            onChange()
-        } else {
-            confirm(.download(size: store.sizeText)) { [weak self] yes in
-                guard let self, yes else { return }
-                Task { await self.download() }
-            }
-        }
+        setPreference(true)
+        if model.isFailure { retry() } else { ensureModel() }
+        onChange()
+    }
+
+    /// Labels are on and the model is missing: download it in the background. A no-op while one runs, once the model
+    /// is on disk, and after a failure (the status line's Retry starts the next attempt).
+    public func ensureModel() {
+        guard enabled, loadTask == nil, !model.isFailure, !store.isDownloaded() else { return }
+        Task { await download() }
+    }
+
+    /// Retry on the status line: a damaged or half-downloaded model is removed and fetched again.
+    public func retry() {
+        guard enabled, loadTask == nil else { return }
+        try? store.remove()
+        drop()
+        model = .notDownloaded
+        Task { await download() }
     }
 
     private func download() async {
-        guard await load(download: true) != nil else { return }
-        setPreference(true)
+        guard await load(download: true) != nil, enabled else { return }
         onChange()
+        onReady()
     }
 
     // MARK: Record and New
@@ -119,14 +120,14 @@ public final class SpeakerLabels {
         return diarizer
     }
 
-    /// Record with labels on: load the model offline if needed. A model that is no longer on disk turns labels off
-    /// instead: it never downloads without the user's Download.
+    /// Record with labels on: load the model offline if needed. A model that is not on disk starts its download in
+    /// the background and Record goes on without labels; they join once it is ready.
     public func prepare() async -> SpeakerDiarizing? {
         guard enabled else { return nil }
         if diarizer == nil, factory == nil {
             guard store.isDownloaded() else {
-                setPreference(false)
-                model = .notDownloaded
+                if !model.isDownloading, !model.isFailure { model = .notDownloaded }
+                ensureModel()
                 onChange()
                 return nil
             }
@@ -141,7 +142,8 @@ public final class SpeakerLabels {
         drop()
     }
 
-    /// Settings › Remove. Refused (false) while a load runs on those files.
+    /// Settings › Remove. Refused (false) while a load runs on those files. Removing is the user's choice to stop
+    /// labelling: it stores an explicit off, so the model does not come straight back at the next Record.
     @discardableResult
     public func remove() -> Bool {
         guard loadTask == nil else { return false }
@@ -175,7 +177,6 @@ public final class SpeakerLabels {
             model = store.isDownloaded() ? .ready : .notDownloaded
         } else {
             model = .failed(download ? "the download failed" : "the model did not load")
-            setPreference(false)
         }
         onChange()
         return loaded

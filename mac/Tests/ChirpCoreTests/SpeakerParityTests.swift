@@ -105,16 +105,18 @@ private func libraryDirectory() -> URL {
         await h.stop()
     }
 
-    @Test func turningLabelsOnAsksBeforeAnyDownload() async throws {
+    @Test func turningLabelsOnFetchesTheModelWithoutAskingAndStoresTheChoice() async throws {
         let store = FakeModelStore(downloaded: false)
         let suite = "chirp-speaker-parity-\(UUID().uuidString)"
         defer { removeTestDefaults(suite) }
         let prefs = Preferences(defaults: UserDefaults(suiteName: suite)!)
-        var asked: [String] = []
-        let labels = SpeakerLabels(store: store, enabled: false, onPreference: { prefs.notesSpeakerLabels = $0 })
-        labels.confirm = { prompt, done in asked.append("\(prompt)"); done(false) }
+        let labels = SpeakerLabels(store: store, enabled: prefs.notesSpeakerLabels, onPreference: { prefs.notesSpeakerLabels = $0 })
+        #expect(labels.enabled && prefs.notesSpeakerLabelsChoice == nil)    // on by default, nothing stored
+        labels.setEnabled(false, documentHasLabels: false)
+        #expect(!labels.enabled && prefs.notesSpeakerLabelsChoice == false && store.loads.isEmpty)
         labels.setEnabled(true, documentHasLabels: false)
-        #expect(asked.count == 1 && !labels.enabled && store.loads.isEmpty && !prefs.notesSpeakerLabels)
+        for _ in 0..<500 where labels.model != .ready { try? await Task.sleep(for: .milliseconds(2)) }
+        #expect(store.loads == [true] && labels.model == .ready && prefs.notesSpeakerLabels)
     }
 
     @Test func theSessionRefusesTheSwitchWhileRecording() async throws {
@@ -128,6 +130,67 @@ private func libraryDirectory() -> URL {
         #expect(!h.session.speakers.enabled && !h.prefs.notesSpeakerLabels)
         h.session.setSpeakerLabels(true)
         #expect(h.session.speakers.enabled && h.prefs.notesSpeakerLabels && h.model.speakerLabels)
+    }
+}
+
+/// Labels on by default (#247, item 1a): a missing model downloads in the background, never behind a prompt, and
+/// Record never waits for it.
+@MainActor
+@Suite struct SpeakerDefaultOnTests {
+    @Test func recordingWithTheModelMissingStartsAtOnceDownloadsAndJoinsLabelsWhenReady() async throws {
+        let store = FakeModelStore(downloaded: false)
+        store.hold = true
+        let h = NotesHarness(speakers: store)
+        #expect(h.session.speakers.enabled && h.prefs.notesSpeakerLabelsChoice == nil)   // on by default, nothing stored
+        await h.record()
+        #expect(h.recorder.state == .recording)                 // not held up by the download
+        #expect(store.loads == [true] && h.session.speakers.model.isDownloading)
+        let notice = try #require(h.model.speakerModelNotice)
+        #expect(notice.text == "Getting the speaker model ready (106 MB, once)… 0%" && !notice.failed)
+        #expect(h.model.speakerStatus == nil && h.prefs.notesSpeakerLabelsChoice == nil)
+        #expect(h.recorder.speakers == nil)
+        store.release()
+        await h.until("speaker model ready") { h.session.speakers.model == .ready }
+        await h.settle()
+        #expect(h.recorder.speakers != nil)                     // joined mid-recording: later audio is labelled
+        #expect(h.model.speakerModelNotice == nil && h.prefs.notesSpeakerLabelsChoice == nil)
+        await h.stop()
+    }
+
+    @Test func aFailedDownloadShowsRetryAndKeepsLabelsOn() async throws {
+        let store = FakeModelStore(downloaded: false)
+        store.fail = true
+        let h = NotesHarness(speakers: store)
+        await h.record()
+        await h.until("download failed") { h.session.speakers.model.isFailure }
+        await h.settle()
+        let notice = try #require(h.model.speakerModelNotice)
+        #expect(notice.failed && notice.text == "Couldn’t download the speaker model.")
+        #expect(h.model.speakerLabels && h.prefs.notesSpeakerLabelsChoice == nil && h.recorder.state == .recording)
+        store.fail = false
+        h.model.onSpeakerRetry()
+        await h.until("speaker model ready") { h.session.speakers.model == .ready }
+        #expect(h.model.speakerModelNotice == nil && store.loads == [true, true])
+        await h.stop()
+    }
+
+    @Test func turnOffOnTheStatusLineCancelsTheDownloadEvenWhileRecording() async throws {
+        let store = FakeModelStore(downloaded: false)
+        store.hold = true
+        let h = NotesHarness(speakers: store)
+        await h.record()
+        #expect(h.model.speakerModelNotice != nil)
+        h.model.onSpeakerLabelsToggle(false)
+        store.release()
+        await h.settle()
+        #expect(h.edges.beeps == 0 && !h.session.speakers.enabled && h.prefs.notesSpeakerLabelsChoice == false)
+        #expect(h.model.speakerModelNotice == nil && h.session.speakers.model == .notDownloaded)
+        #expect(h.recorder.speakers == nil && h.recorder.state == .recording)
+        await h.stop()
+        // Off stays off: the next Record neither downloads nor labels.
+        await h.record()
+        #expect(store.loads == [true])
+        await h.stop()
     }
 }
 
@@ -147,7 +210,8 @@ private func libraryDirectory() -> URL {
 
     @Test func theSpeakerScreenshotsAreCommitted() {
         let names = Set(Snapshots.committedScenarios.map(\.name))
-        #expect(names.isSuperset(of: ["notes-transcript-speakers", "notes-transcript-speakers-renamed"]))
+        #expect(names.isSuperset(of: ["notes-transcript-speakers", "notes-transcript-speakers-renamed",
+                                       "notes-speaker-model-downloading", "notes-speaker-model-failed"]))
         // The whole Settings › Notes page with the switch, for review (the committed set keeps one Notes page).
         #expect(Snapshots.allScenarios.contains { $0.name == "settings-notes-speakers" })
     }

@@ -225,12 +225,12 @@ private func span(_ slot: Int, _ start: Double, _ end: Double) -> SpeakerSpan { 
         let defaults = UserDefaults(suiteName: name)!
         defer { defaults.removePersistentDomain(forName: name) }
         let prefs = Preferences(defaults: defaults)
-        #expect(!prefs.notesSpeakerLabels)
+        #expect(prefs.notesSpeakerLabels)      // on by default
         let health = Health(correction: "available", notesCorrection: true)
         // Always on: the overlap trim at a hard cut needs them as much as the speaker labels do.
         #expect(ClientMessage.start(prefs.notesStartOptions(health: health)).contains("\"word_timings\":true"))
-        prefs.notesSpeakerLabels = true
-        #expect(Preferences(defaults: defaults).notesSpeakerLabels)
+        prefs.notesSpeakerLabels = false
+        #expect(!Preferences(defaults: defaults).notesSpeakerLabels)
     }
 }
 
@@ -527,18 +527,25 @@ private func span(_ slot: Int, _ start: Double, _ end: Double) -> SpeakerSpan { 
         #expect(d.transcriptLines() == ["**[00:00:00] Person 1:** a b c"])
     }
 
-    @Test func footerStatusFollowsTheModelAndTheCount() {
+    @Test func footerStatusFollowsTheCountAndTheBannerFollowsTheModel() {
         let m = model()
-        #expect(m.speakerStatus == nil)          // labels off
+        m.speakerLabels = false
+        #expect(m.speakerStatus == nil && m.speakerModelNotice == nil)          // labels off
         m.speakerLabels = true
         m.speakerModel = .ready
-        #expect(m.speakerStatus == "2 speakers")
+        #expect(m.speakerStatus == "2 speakers" && m.speakerModelNotice == nil)
+        m.speakerModelSize = "106 MB"
         m.speakerModel = .downloading(0.416)
-        #expect(m.speakerStatus == "Downloading speaker model… 42%")
+        #expect(m.speakerStatus == nil)          // the banner owns the model's own states
+        #expect(m.speakerModelNotice == SpeakerModelNotice(text: "Getting the speaker model ready (106 MB, once)… 42%",
+                                                           progress: 0.416, failed: false))
         m.speakerModel = .failed("the download failed")
-        #expect(m.speakerStatus == "Speaker labels unavailable: the download failed")
-        #expect(NotesStatus.speakerDownloadPrompt(size: "234 MB")
-                == "Speaker labels need a 234 MB on-device model, downloaded once. Audio never leaves this Mac.")
+        #expect(m.speakerStatus == nil)
+        #expect(m.speakerModelNotice == SpeakerModelNotice(text: "Couldn’t download the speaker model.", progress: nil, failed: true))
+        m.speakerModel = .failed("the model did not load")
+        #expect(m.speakerModelNotice?.text == "The speaker model on this Mac didn’t load.")
+        m.speakerLabels = false                  // Turn off: the banner goes with it
+        #expect(m.speakerModelNotice == nil)
     }
 }
 

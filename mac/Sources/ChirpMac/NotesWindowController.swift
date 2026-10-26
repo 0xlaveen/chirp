@@ -29,7 +29,6 @@ final class NotesWindowController: NSObject, NSWindowDelegate {
         model.onRecoveryKeep = { [weak self] in self?.keepRecovered() }
         model.onRecoverySave = { [weak self] in self?.saveRecovered() }
         model.onRecoveryDiscard = { [weak self] in self?.notes.dropRecovered() }
-        notes.confirmSpeakerDownload = { [weak self] message, done in self?.confirmSpeakerDownload(message, done: done) }
         notes.confirmRememberVoice = { [weak self] name, done in self?.confirmRememberVoice(name, done: done) }
         model.onManageModels = { [weak self] in self?.onOpenModels() }
         NotesMenuTarget.shared.model = model
@@ -242,22 +241,6 @@ final class NotesWindowController: NSObject, NSWindowDelegate {
         }
         NSApp.activate()
         if let window, window.isVisible {
-            alert.beginSheetModal(for: window, completionHandler: handle)
-        } else {
-            handle(alert.runModal())
-        }
-    }
-
-    /// The one-time speaker model download asks first: nothing downloads without "Download". A sheet on the Notes
-    /// window when the switch was flipped there, else a dialog of its own (Settings › Notes).
-    private func confirmSpeakerDownload(_ message: String, done: @escaping (Bool) -> Void) {
-        let alert = NSAlert()
-        alert.messageText = "Download the speaker model?"
-        alert.informativeText = message
-        alert.addButton(withTitle: "Download")
-        alert.addButton(withTitle: "Cancel")
-        let handle: (NSApplication.ModalResponse) -> Void = { done($0 == .alertFirstButtonReturn) }
-        if let window, window.isVisible, window.isKeyWindow || !NSApp.isActive {
             alert.beginSheetModal(for: window, completionHandler: handle)
         } else {
             handle(alert.runModal())

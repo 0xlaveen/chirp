@@ -61,7 +61,7 @@ enum CallAudioSelfTest {
         prefs.serverURL = config.baseURL.absoluteString
         prefs.correction = false
         prefs.notesRecoveryCopy = false
-        prefs.notesSpeakerLabels = true
+        // Labels are on by default: the preference stays unset, so this run proves the default too.
         prefs.notesCallAudio = true
         prefs.notesCallAudioExplained = true
 

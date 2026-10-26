@@ -63,9 +63,12 @@ public struct SettingsState: Sendable {
     public var serverHost = "this Mac"
     /// Some of Live Notes' speaker-label model is on this Mac, complete or not (Remove deletes it).
     public var speakerModelDownloaded = false
-    /// Notes › Speakers: "Label speakers" (the same switch as the Notes window's ✦ menu), and whether a recording
-    /// holds it (it applies from the next Record).
-    public var speakerLabels = false
+    /// The speaker model's state and size ("106 MB"), as the Notes window's status line shows them.
+    public var speakerModel: SpeakerModelState = .notDownloaded
+    public var speakerModelSize = ""
+    /// Notes › Speakers: "Label speakers" (the same switch as the Notes window's ✦ menu; on by default), and whether
+    /// a recording holds it (it applies from the next Record).
+    public var speakerLabels = true
     public var speakerLabelsLocked = false
     /// Notes › Voices: "Recognize saved voices", the voice model and the saved voices.
     public var voices = VoiceProfilesState()
@@ -274,10 +277,12 @@ public final class SettingsForm {
     /// Devices: the phones paired with their own token, each with Revoke; and the advanced shared-token rotation.
     public let devicesView = DevicesView()
     public let rotateButton = NSButton(title: "Rotate Shared Token…", target: nil, action: nil)
-    /// Notes: "Label speakers"; turning it on the first time asks before the one-time model download.
+    /// Notes: "Label speakers", on by default; the one-time model download starts by itself, with a status line here.
     public let labelSpeakers = NSButton(checkboxWithTitle: "Label speakers", target: nil, action: nil)
     /// Notes: deletes Live Notes' on-device speaker model (shown beside its status while it is on this Mac).
     public let removeSpeakerModel = NSButton(title: "Remove", target: nil, action: nil)
+    /// Notes: fetches the speaker model again after a failed download (shown beside its status).
+    public let retrySpeakerModel = NSButton(title: "Retry", target: nil, action: nil)
     private let speakerStatus = StatusLine()
     private let speakerHelp = SettingsForm.help("")
     /// Notes: "Recognize saved voices" and the saved voices, each with Forget.
@@ -325,7 +330,7 @@ public final class SettingsForm {
         serverURL.font = MenuStyle.font
         serverURL.lineBreakMode = .byTruncatingMiddle
         serverURL.widthAnchor.constraint(equalToConstant: Self.fieldWidth).isActive = true
-        for button in [micButton, accessibilityButton, removeSpeakerModel] { button.bezelStyle = .rounded; button.controlSize = .small }
+        for button in [micButton, accessibilityButton, removeSpeakerModel, retrySpeakerModel] { button.bezelStyle = .rounded; button.controlSize = .small }
         micStatus.accessory = micButton
         serverFixButton.bezelStyle = .rounded; serverFixButton.controlSize = .small
         serverFixButton.setAccessibilityLabel("Fix the out-of-date server")
@@ -333,6 +338,8 @@ public final class SettingsForm {
         serverDetail.isHidden = true
         accessibilityStatus.accessory = accessibilityButton
         speakerStatus.accessory = removeSpeakerModel
+        speakerStatus.addArrangedSubview(retrySpeakerModel)
+        retrySpeakerModel.setAccessibilityLabel("Download the speaker model again")
         micButton.setAccessibilityLabel("Fix Microphone access")
         accessibilityButton.setAccessibilityLabel("Fix Accessibility access")
         removeSpeakerModel.setAccessibilityLabel("Remove the speaker model")
@@ -485,7 +492,7 @@ public final class SettingsForm {
                 row(nil, autoReorganize, help: Self.help("Tidies the notes in the background as they grow.")),
             ], footnote: Self.help("Defaults for new recordings. The ✦ menu in the Notes window changes them while you record.")),
             SettingsSection("Speakers", [
-                row(nil, labelSpeakers, help: Self.help("Shows who said what as Person 1, Person 2… in the transcript, the notes and exports. Voices are told apart on this Mac only.")),
+                row(nil, labelSpeakers, help: Self.help("On by default. Shows who said what as Person 1, Person 2… in the transcript, the notes and exports. Voices are told apart on this Mac only.")),
                 row(nil, stack([speakerStatus, speakerHelp])),
                 row("Saved voices", voicesView, stacked: true),
             ]),
@@ -713,17 +720,18 @@ public final class SettingsForm {
         modelsHelp.stringValue = modelsButton.isEnabled ? "Download speech and local Qwen models, see progress, and start this Mac's server."
                                                         : "Only for a server on this Mac: the URL above points to another host."
         fillMicrophoneMenu(s.inputs, defaultInput: s.defaultInput, chosen: s.chosenInputUID)
-        speakerStatus.set(symbol: s.speakerModelDownloaded ? "checkmark.circle.fill" : "circle", tone: s.speakerModelDownloaded ? .ok : .normal,
-                          text: s.speakerModelDownloaded ? "Speaker model on this Mac" : "Speaker model not downloaded")
-        removeSpeakerModel.isHidden = !s.speakerModelDownloaded
+        let (speakerSymbol, speakerTone, speakerText) = Self.speakerModelLine(s)
+        speakerStatus.set(symbol: speakerSymbol, tone: speakerTone, text: speakerText)
+        removeSpeakerModel.isHidden = !s.speakerModelDownloaded || s.speakerModel.isDownloading
+        retrySpeakerModel.isHidden = !s.speakerModel.isFailure
         // Every refresh: the ✦ menu, a consent or Remove can flip it while Settings is open.
         labelSpeakers.state = s.speakerLabels ? .on : .off
         labelSpeakers.isEnabled = !s.speakerLabelsLocked
         labelSpeakers.toolTip = s.speakerLabelsLocked ? "Applies from the next recording: stop the current one to change it." : nil
         voicesView.apply(s.voices)
         speakerHelp.stringValue = s.speakerModelDownloaded
-            ? "Labels who is talking in Live Notes, on this Mac. Removing it turns labels off until you download it again."
-            : "Downloaded only when you turn on Label speakers (here or in the Notes window's ✦ menu), after you agree."
+            ? "Labels who is talking in Live Notes, on this Mac. Remove deletes the model and turns labels off."
+            : "Chirp fetches the \(s.speakerModelSize.isEmpty ? "speaker model" : "\(s.speakerModelSize) model") once, in the background, the first time you record with labels on. Recording never waits for it, and no audio leaves this Mac."
         micStatus.set(symbol: s.micGranted ? "checkmark.circle.fill" : "exclamationmark.triangle.fill",
                       tone: s.micGranted ? .ok : .warning, text: s.micGranted ? "Microphone allowed" : "Microphone not allowed")
         accessibilityStatus.set(symbol: s.accessibilityGranted ? "checkmark.circle.fill" : "exclamationmark.triangle.fill",
@@ -731,6 +739,20 @@ public final class SettingsForm {
                                 text: s.accessibilityGranted ? "Accessibility allowed" : "Accessibility not allowed")
         micButton.isHidden = s.micGranted
         accessibilityButton.isHidden = s.accessibilityGranted
+    }
+
+    /// The Speakers row's status: the model on this Mac, as it is right now.
+    static func speakerModelLine(_ s: SettingsState) -> (symbol: String, tone: MenuEntry.Tone, text: String) {
+        switch s.speakerModel {
+        case .downloading(let f):
+            return ("arrow.down.circle", .normal, "Speaker model on this Mac: downloading \(Int((f * 100).rounded()))%")
+        case .failed(let message):
+            return ("exclamationmark.triangle.fill", .warning,
+                    message.contains("download") ? "Speaker model: couldn’t download" : "Speaker model: didn’t load")
+        case .notDownloaded, .loading, .ready:
+            return s.speakerModelDownloaded ? ("checkmark.circle.fill", .ok, "Speaker model on this Mac: ready")
+                                            : ("circle", .normal, "Speaker model not downloaded yet")
+        }
     }
 
     /// Recently Deleted's count and the kept-audio total, which the library reports (they change without the user

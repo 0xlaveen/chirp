@@ -4,10 +4,10 @@
 # preferences or port 7821. Usage: mac/scripts/notes-selftest.sh [--real-time] [--fault PLAN] [--speakers]
 #
 # --speakers adds a third run: a ~60 s two-voice meeting (macOS `say` voices Samantha and Daniel taking turns) with
-# Label speakers on, through the notes library, which must come back as exactly two people, with a rename of Person 2
-# reaching every turn, the export and the structuring transcript. It needs the on-device speaker model already on
-# this Mac (turn on Label speakers once); it never downloads it. CHIRP_MAC_SCRATCH builds outside the checkout (a
-# checkout under ~/Documents can hang on TCC).
+# Label speakers left at its default (on, which proves the default), through the notes library, which must come back
+# as exactly two people, with a rename of Person 2 reaching every turn, the export and the structuring transcript.
+# It needs the on-device speaker model already on this Mac (record once with Label speakers on); it never downloads it.
+# CHIRP_MAC_SCRATCH builds outside the checkout (a checkout under ~/Documents can hang on TCC).
 set -euo pipefail
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
 PORT=${CHIRP_NOTES_SELFTEST_PORT:-7899}
