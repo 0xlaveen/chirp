@@ -1341,6 +1341,10 @@ server's voiced 1.5 s windows.
 | Mac vs server, the whole clip | 0.981 | 0.990 | 0.994 | **41 / 41** |
 | Mac (whole clip) vs server (windows) | 0.669 | 0.931 | 0.988 | 28 / 41 |
 
+The takeover reran both implementations on all 41 clips and reproduced these ranges exactly.
+At threshold 0.70, imported and native saved voices each recognised 23/26 held-out clips with
+zero wrong names, confirming the import result on this host as well.
+
 - **Outcome: they agree.** On the same audio the two embeddings agree to 0.98–0.99 on every clip. `wespeaker_v2` is
   the same network (pyannote's WeSpeaker ResNet34-LM), palettized to 8 bits. The lower second row compares two
   recipes (one 10 s window against the mean of 1.5 s voiced windows), not two models.
