@@ -537,7 +537,7 @@ def main():
                 # Counts, fixed action/state codes and slot numbers only; never retain server content.
                 try:
                     seen = json.loads((work / "notes.json").read_text())
-                    allowed = ("finals", "labelled", "slots", "label_errors", "model", "model_actions", "model_state")
+                    allowed = ("finals", "labelled", "slots", "label_errors", "model", "model_actions", "model_state", "voice_actions", "voice_count", "voices_enabled", "matched", "voices", "voice_errors")
                     (output / "speaker-counts.json").write_text(json.dumps({k: seen[k] for k in allowed if k in seen}, indent=2))
                 except (OSError, ValueError):
                     pass

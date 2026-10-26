@@ -172,6 +172,7 @@ internal class NotesDocument(var startedAt: Long = System.currentTimeMillis(), t
     }
 
     fun renameSpeaker(person: Int, name: String?) { roster.rename(person, name); speakerVersion++ }
+    fun rejectVoice(person: Int) { roster.reject(person); speakerVersion++ }
     fun mergeSpeaker(person: Int, into: Int) { roster.merge(person, into); speakerVersion++ }
     fun separateSpeaker(person: Int) { roster.separate(person); speakerVersion++ }
 

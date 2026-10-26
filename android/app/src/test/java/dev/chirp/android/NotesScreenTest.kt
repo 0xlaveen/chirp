@@ -47,7 +47,8 @@ internal class ScriptedNotesApi : NotesApi {
 internal fun libraryOff(context: Context) = NotesSessions(context, SoftwareHistoryKeys()).apply { disable() }
 
 internal class NotesModelRig(context: Context, health: Health? = notesMac, paired: Boolean = true, val keys: SoftwareHistoryKeys = SoftwareHistoryKeys(),
-                             val sessions: NotesSessions = NotesSessions(context, SoftwareHistoryKeys())) {
+                             val sessions: NotesSessions = NotesSessions(context, SoftwareHistoryKeys()),
+                             voices: (VoiceAction?) -> SavedVoices = { SavedVoices(true, "synthetic", emptyList()) }) {
     val wires = mutableListOf<NotesWire>()
     val captures = mutableListOf<FakeNotesCapture>()
     val foreground = mutableListOf<Boolean>()
@@ -61,7 +62,7 @@ internal class NotesModelRig(context: Context, health: Health? = notesMac, paire
             transportFactory = { _, _, event, failure -> NotesWire(event, failure).also { wires += it } },
             apiFactory = { _, _ -> api }, micGranted = { true },
             pairing = { if (paired) Pairing.from("https://mac.example.test/chirp", "synthetic") else null },
-            fetchHealth = { _, _ -> null }, tailscale = TailscalePromptTest.FakeTailscale(),
+            fetchHealth = { _, _ -> null }, voicesRequest = { _, _, action -> voices(action) }, tailscale = TailscalePromptTest.FakeTailscale(),
             foreground = { foreground += it }, io = { it() }, journal = NotesJournal(context, keys, store, io = { it() }),
             sessions = sessions, background = { it() }, audioWork = { it() })
     }

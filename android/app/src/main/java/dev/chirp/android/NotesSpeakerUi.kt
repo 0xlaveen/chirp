@@ -51,27 +51,31 @@ internal object SpeakerColors {
 
 /** The capsule that starts a person's turn: their colour, their name. A tap opens [SpeakerMenu]. */
 @Composable
-internal fun SpeakerChip(name: String, colorIndex: Int, onClick: () -> Unit, modifier: Modifier = Modifier) {
+internal fun SpeakerChip(name: String, colorIndex: Int, onClick: () -> Unit, modifier: Modifier = Modifier, recognized: Boolean = false) {
     val dark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
     val color = SpeakerColors.of(colorIndex, dark)
     Row(modifier.clip(CircleShape).background(color.copy(alpha = if (dark) .18f else .12f))
-        .clickable(onClick = onClick).semantics { role = Role.Button; contentDescription = "$name. Rename or merge this speaker" }
+        .clickable(onClick = onClick).semantics { role = Role.Button; contentDescription = "$name${if (recognized) ", recognised" else ""}. Rename or merge this speaker" }
         .padding(horizontal = 10.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
         Box(Modifier.size(8.dp).clip(CircleShape).background(color))
         Spacer(Modifier.width(6.dp))
-        Text(name, style = MaterialTheme.typography.labelLarge, color = color)
+        Text(name + if (recognized) " ✓" else "", style = MaterialTheme.typography.labelLarge, color = color)
     }
 }
 
 /** What can be done about one person: rename, merge into another, or separate people merged into them. */
 @Composable
 internal fun SpeakerMenu(open: Boolean, dismiss: () -> Unit, roster: SpeakerRoster, person: Int, rename: () -> Unit,
-                         merge: (Int) -> Unit, separate: (Int) -> Unit, nameAll: (() -> Unit)? = null) {
+                         merge: (Int) -> Unit, separate: (Int) -> Unit, nameAll: (() -> Unit)? = null, reject: (() -> Unit)? = null, update: (() -> Unit)? = null) {
     val target = roster.resolve(person)
     val others = roster.active.filter { it != target }
     val merged = roster.merged(target)
     DropdownMenu(open, dismiss) {
         DropdownMenuItem({ Text("Rename “${roster.displayName(target)}”…") }, { dismiss(); rename() })
+        if (roster.person(target)?.recognized != null && reject != null)
+            DropdownMenuItem({ Text("Not ${roster.displayName(target)}") }, { dismiss(); reject() })
+        if (roster.person(target)?.name != null && update != null)
+            DropdownMenuItem({ Text("Update ${roster.displayName(target)}’s saved voice") }, { dismiss(); update() })
         if (nameAll != null) DropdownMenuItem({ Text("Name speakers…") }, { dismiss(); nameAll() })
         if (others.isNotEmpty()) {
             HorizontalDivider()

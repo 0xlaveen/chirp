@@ -110,12 +110,18 @@ internal fun NotesScreen(model: NotesModel, record: () -> Unit, copy: () -> Unit
     BackHandler(enabled = handleBack) { model.keepSession(); leave(false) }
     BackHandler(enabled = editing) { read() }
     if (settings) ModalBottomSheet({ settings = false }) {
-        Column(Modifier.padding(start = 16.dp, end = 16.dp, bottom = 24.dp)) { NotesSettings(title = "Notes settings") }
+        Column(Modifier.verticalScroll(rememberScrollState()).padding(start = 16.dp, end = 16.dp, bottom = 24.dp)) { NotesSettings(title = "Notes settings") }
     }
     if (transcript && !externalTranscript) ModalBottomSheet({ transcript = false }, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         TranscriptPane(model, Modifier.fillMaxWidth().fillMaxHeight(.85f).padding(horizontal = 24.dp), close = { transcript = false })
     }
     if (model.nameSpeakersOpen) NameSpeakersSheet(model) { model.nameSpeakersOpen = false }
+    model.voiceNotice?.let { name ->
+        AlertDialog(onDismissRequest = model::acknowledgeVoiceNotice, title = { Text("Remembered voice") },
+            text = { Text("Chirp will recognise $name’s voice in later notes on your devices. Saved voices stay on your Mac. Settings → Notes → Saved voices.") },
+            confirmButton = { TextButton(model::acknowledgeVoiceNotice) { Text("OK") } },
+            dismissButton = { TextButton(model::disableRememberVoices) { Text("Don’t remember voices") } })
+    }
     val menu = NotesMenuActions(copy = copy, share = share, save = save, rename = { renaming = true }, settings = { settings = true })
     val action = DictationAction.forStatus(model.status)
     /** Into the editor at the block tapped (or the first one on screen), at the height it had on the page. */
@@ -522,10 +528,12 @@ internal fun TranscriptPane(model: NotesModel, modifier: Modifier, titled: Boole
                             if (segment.id to i in chips) {
                                 var menu by remember { mutableStateOf(false) }
                                 Box {
-                                    SpeakerChip(roster.displayName(turn.person), roster.colorIndex(turn.person), { menu = true })
+                                    SpeakerChip(roster.displayName(turn.person), roster.colorIndex(turn.person), { menu = true },
+                                        recognized = roster.person(roster.resolve(turn.person))?.recognized != null)
                                     SpeakerMenu(menu, { menu = false }, roster, turn.person, rename = { renaming = roster.resolve(turn.person) },
                                         merge = { into -> model.mergeSpeaker(turn.person, into) }, separate = model::separateSpeaker,
-                                        nameAll = { model.nameSpeakersOpen = true })
+                                        nameAll = { model.nameSpeakersOpen = true }, reject = { model.rejectVoice(turn.person) },
+                                        update = if (model.rememberVoices) ({ model.updateVoice(turn.person) }) else null)
                                 }
                             }
                             Text((if (model.raw) turn.raw else turn.text) + if ((turn.keptOriginal || segment.keptOriginal) && !model.raw) " (kept original)" else "",

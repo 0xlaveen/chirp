@@ -42,13 +42,44 @@ object ChirpNetwork {
         require(action in setOf("download", "cancel", "remove"))
         val request = Request.Builder().url(pairing.endpoint("v1/speakers/model")).header("Authorization", "Bearer ${pairing.token}")
             .post(org.json.JSONObject().put("action", action).toString().toRequestBody("application/json".toMediaType())).build()
-        client.newCall(request).execute().use { response ->
+        // These commands are idempotent; recover when an idle pooled socket was closed.
+        client.newBuilder().retryOnConnectionFailure(true).build().newCall(request).execute().use { response ->
             if (response.code !in setOf(200, 202, 409)) throw IOException("Speaker model unavailable")
             val source = response.body.source()
             source.request(4097)
             if (source.buffer.size > 4096) throw IOException("Speaker model answer too large")
             return org.json.JSONObject(source.readUtf8()).getString("state").takeIf { it.matches(Regex("[a-z_]{1,32}")) }
                 ?: throw IOException("Speaker model answer invalid")
+        }
+    }
+    /** Authenticated server library; the response is bounded and held in memory only. */
+    internal fun savedVoices(client: OkHttpClient, pairing: Pairing, action: VoiceAction? = null): SavedVoices {
+        val request = Request.Builder().url(pairing.endpoint("v1/speakers/voices"))
+            .header("Authorization", "Bearer ${pairing.token}").apply {
+                if (action != null) post(action.json().toString().toRequestBody("application/json".toMediaType()))
+            }.build()
+        // The server can close an idle pooled socket between notes. GET is safe to retry;
+        // enrollment is a weighted update and must never be replayed automatically.
+        // Writes use a fresh connection, closed after the response, to avoid that idle-socket race.
+        val reader = client.newBuilder().apply {
+            if (action == null) retryOnConnectionFailure(true)
+            else connectionPool(okhttp3.ConnectionPool(0, 1, TimeUnit.SECONDS))
+        }.build()
+        reader.newCall(request).execute().use { response ->
+            val source = response.body.source()
+            source.request(65537)
+            if (source.buffer.size > 65536) throw VoiceLibraryError("failed")
+            val text = source.readUtf8()
+            if (!response.isSuccessful) {
+                val code = try { org.json.JSONObject(text).optString("code") } catch (_: Exception) { "" }
+                throw VoiceLibraryError(when {
+                    code in setOf("gone", "too_short", "disabled", "full", "no_voice", "bad_speakers") -> code
+                    response.code == 401 -> "auth"
+                    response.code in setOf(404, 405) -> "unsupported"
+                    else -> "failed"
+                })
+            }
+            return try { SavedVoices.decode(text) } catch (_: Exception) { throw VoiceLibraryError("failed") }
         }
     }
     fun health(call: okhttp3.Call): Health {

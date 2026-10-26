@@ -65,7 +65,7 @@ import androidx.compose.ui.unit.dp
 /**
  * "Name speakers": everyone in the note in one place, instead of a menu per chip. A row per person has their colour, a name
  * field that suggests names from recent notes, a line of what they said first (with ▶ when audio was kept) and "Same as"
- * to merge. Done names them all at once; one toggle replaces the old names in the notes too. Names stay in this note.
+ * to merge. Done names them all at once; one toggle replaces the old names in the notes too. Remember voice uses the server library.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -78,6 +78,7 @@ internal fun NameSpeakersSheet(model: NotesModel, dismiss: () -> Unit) {
     val playing by (player?.playing ?: remember { kotlinx.coroutines.flow.MutableStateFlow<NotesClipRef?>(null) }).collectAsState()
     androidx.compose.runtime.DisposableEffect(player) { onDispose { player?.stop() } }
     // What is typed, by person; a person with no entry shows the name they have now.
+    val rememberVoice = remember { mutableStateMapOf<Int, Boolean>() }
     val drafts = remember { mutableStateMapOf<Int, String>() }
     var samplePerson by remember { mutableStateOf<Int?>(null) }
     val people = merges.size.let { roster.active }
@@ -92,7 +93,7 @@ internal fun NameSpeakersSheet(model: NotesModel, dismiss: () -> Unit) {
     var replace by remember { mutableStateOf(true) }
     var focused by remember { mutableStateOf<Int?>(null) }
     val used = people.map { draft(it).trim().lowercase() }.toSet()
-    fun finish() { model.renameSpeakers(people.associateWith { draft(it) }, replace && count > 0, merges.toMap()); dismiss() }
+    fun finish() { model.renameSpeakers(people.associateWith { draft(it) }, replace && count > 0, merges.toMap(), people.filter { rememberVoice[it] != false }.toSet()); dismiss() }
 
     val content: @Composable () -> Unit = {
         Column(Modifier.imePadding().navigationBarsPadding().padding(horizontal = 24.dp).padding(bottom = 16.dp)) {
@@ -114,9 +115,14 @@ internal fun NameSpeakersSheet(model: NotesModel, dismiss: () -> Unit) {
                         sample = first?.second, playing = isPlaying, play = clip?.let { c ->
                             { if (isPlaying) player?.stop() else { samplePerson = id; player?.play(document.uid, c.segment, document.sampleOffset(id)) } }
                         },
-                        suggestions = if (focused == id) suggestions(model.recentNames, draft(id), used - draft(id).trim().lowercase()) else emptyList(),
+                        suggestions = if (focused == id) suggestions(model.savedVoices.library?.voices.orEmpty().map { it.name } + model.recentNames, draft(id), used - draft(id).trim().lowercase()) else emptyList(),
                         merge = { into -> player?.stop(); drafts.remove(id); roster.merge(id, into); merges[id] = into },
                         others = people.filter { it != id })
+                    if (model.voicesAvailable && model.rememberVoices) Row(Modifier.padding(start = 16.dp)
+                        .clickable(role = Role.Checkbox) { rememberVoice[id] = rememberVoice[id] == false }, verticalAlignment = Alignment.CenterVertically) {
+                        Checkbox(rememberVoice[id] != false, { rememberVoice[id] = it })
+                        Text("Remember voice", style = MaterialTheme.typography.bodyMedium)
+                    }
                 }
             }
             if (count > 0) Row(Modifier.padding(top = 8.dp).clickable(role = Role.Checkbox) { replace = !replace }, verticalAlignment = Alignment.CenterVertically) {

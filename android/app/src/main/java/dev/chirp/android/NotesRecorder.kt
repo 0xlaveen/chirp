@@ -118,11 +118,12 @@ internal class NotesRecorder(
     var audioSink: ((documentId: Long, segment: Int, offset: Double, pcm: ByteArray) -> Unit)? = null
     /** "Label speakers": segments ask the server who spoke (read at each segment's start). */
     var labelSpeakers = false
+    var recognizeVoices = false
     /** Why the last segment came without labels (`unavailable`: no speaker model on the Mac), else null. */
     var speakerError: String? = null
         private set
     /** This note's speaker session on the server: random, memory only, new for every document. */
-    private var speakerSession = newSpeakerSession()
+    internal var speakerSession = newSpeakerSession()
 
     private inner class Segment(val transport: ImeTransport, val buffer: PreReadyBuffer, val pcm: java.io.ByteArrayOutputStream? = null) {
         var seq = -1
@@ -514,6 +515,7 @@ internal class NotesRecorder(
             if (last != null && last.person == person) turns[turns.size - 1] = last.copy(text = last.text + " " + text, raw = (last.raw + " " + t.raw.trim()).trim())
             else turns += SpeakerTurn(person, segment.offset + t.start, text, t.raw.trim(), t.approximate, t.keptOriginal)
         }
+        if (recognizeVoices) for (match in result.matches) document.roster.recognize(match)
         return if (turns.isEmpty()) segment else segment.copy(turns = turns)
     }
 

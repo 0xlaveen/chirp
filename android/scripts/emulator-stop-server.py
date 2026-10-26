@@ -64,8 +64,15 @@ notes = {}
 async def observed(scope, receive, send):
     if scope['type'] == 'http' and scope['path'].startswith(('/v1/notes/', '/v1/speakers/')):
         # Content-free: only the endpoint and its status, for the Notes check.
+        voice_action = None
         async def read_model():
+            nonlocal voice_action
             event = await receive()
+            if scope['path'].endswith('/speakers/voices') and event.get('body'):
+                try: action = json.loads(event['body']).get('action')
+                except (ValueError, AttributeError): action = None
+                if action in ('remember', 'rename', 'forget', 'forget_all', 'enable', 'disable'):
+                    voice_action = action
             if scope['path'].endswith('/speakers/model') and event.get('body'):
                 try: action = json.loads(event['body']).get('action')
                 except (ValueError, AttributeError): action = None
@@ -76,11 +83,21 @@ async def observed(scope, receive, send):
         async def answer(event):
             if event['type'] == 'http.response.start':
                 notes.setdefault(scope['path'].rsplit('/', 1)[-1], []).append(event['status'])
+                if voice_action:
+                    notes.setdefault('voice_actions', []).append({'action': voice_action, 'status': event['status']})
             if scope['path'].endswith('/speakers/model') and event.get('body'):
                 try: state = json.loads(event['body']).get('state')
                 except (ValueError, AttributeError): state = None
                 if state in ('ready', 'downloading', 'not_downloaded', 'failed'):
                     notes['model_state'] = state
+            if scope['path'].endswith('/speakers/voices') and event.get('body'):
+                try: body = json.loads(event['body'])
+                except ValueError: body = {}
+                if body.get('code') in ('too_short', 'gone', 'disabled', 'full', 'no_voice', 'bad_speakers'):
+                    notes.setdefault('voice_errors', []).append(body['code'])
+                if isinstance(body.get('voices'), list):
+                    notes['voice_count'] = len(body['voices'])
+                    notes['voices_enabled'] = body.get('enabled') is True
             args.metadata.with_name('notes.json').write_text(json.dumps(notes))
             await send(event)
         return await app(scope, read_model, answer)
@@ -129,6 +146,7 @@ async def observed(scope, receive, send):
                 if isinstance(labels, dict) and labels.get('turns'):
                     notes['labelled'] = notes.get('labelled', 0) + 1
                     notes['slots'] = sorted(set(notes.get('slots', [])) | {t['speaker'] for t in labels['turns']})
+                    notes['matched'] = notes.get('matched', 0) + len(labels.get('matches', []))
                 elif isinstance(labels, dict) and labels.get('error'):
                     notes['label_errors'] = notes.get('label_errors', []) + [labels['error']]
                 args.metadata.with_name('notes.json').write_text(json.dumps(notes))

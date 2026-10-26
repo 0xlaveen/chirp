@@ -128,3 +128,11 @@ sheet, names a synthetic speaker there, plays their kept-audio sample, and then
 checks the transcript rename menu and segment replay. Recent-name autocomplete,
 batch replacement, Cancel (including drafted merges), and the Fold dialog have
 Compose coverage and light/dark screenshots in `NotesSpeakersTest.kt`.
+
+The same check names the two synthetic speakers, requires successful `remember`
+actions on the throwaway server, starts a second note, and checks recognised ✓
+chips. Update voice must reach the server; Not X restores Person N, stays
+suppressed across another final, and leaves the shared library unchanged.
+Evidence includes light/dark Robolectric Saved voices and ✓ chips, plus
+emulator recognition/rejection screenshots and counts/codes only in
+`speaker-counts.json`. No voiceprints, names or transcripts go into that JSON.
