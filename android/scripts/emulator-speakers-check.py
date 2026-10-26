@@ -61,6 +61,7 @@ def check(probe, work, output, standalone=False):
     tap('Record new note')
     probe['wait_for']('Turn off', 30)
     screenshot('emulator-speakers-status.png')
+    probe['speakers_model']()  # Release only after the inline preparation status was captured.
     wait(lambda: server().get('finals', 0) >= before + 1, 'The two-voice recording did not reach the transcript')
     # No switch or consent: the first note requests the model by itself.
     wait(lambda: any(code in (200, 202) for code in server().get('model', [])),
@@ -93,8 +94,16 @@ def check(probe, work, output, standalone=False):
         assert time.monotonic() < deadline, 'The rename field did not open'
         time.sleep(.5)
     adb('shell', 'input', 'tap', *map(str, probe['center'](fields[-1])))
-    adb('shell', 'input', 'text', 'Maya')
-    time.sleep(1)
+    # On a loaded host the input service can drop characters: type until the field holds the whole name.
+    for _ in range(5):
+        adb('shell', 'input', 'text', 'Maya')
+        time.sleep(1)
+        field = [n for n in nodes() if n.get('class') == 'android.widget.EditText']
+        if field and field[-1].get('text') == 'Maya': break
+        adb('shell', 'input', 'keycombination', 'KEYCODE_CTRL_LEFT', 'KEYCODE_A')
+        adb('shell', 'input', 'keyevent', 'KEYCODE_DEL')
+    else:
+        raise AssertionError('Could not type the new name into the rename field')
     adb('shell', 'input', 'keyevent', 'KEYCODE_ENTER')
     deadline = time.monotonic() + 20
     while 'Maya' not in chips():

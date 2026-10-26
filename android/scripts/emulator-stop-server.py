@@ -16,6 +16,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--model-dir', type=Path, required=True)
 parser.add_argument('--metadata', type=Path, required=True)
 parser.add_argument('--speaker-model', type=Path)
+parser.add_argument('--speaker-model-gate', type=Path)
 parser.add_argument('--cert')
 parser.add_argument('--key')
 parser.add_argument('--server-port', type=int, default=7899)
@@ -26,7 +27,11 @@ settings = Settings.read()
 settings.model_dir = args.model_dir
 def fetch_speaker_model():
     # Exercise the authenticated automatic download, without network or the operator's model cache.
-    time.sleep(8)  # Keep the model status visible long enough for the UI probe.
+    deadline = time.monotonic() + 180
+    while not args.speaker_model_gate.exists():
+        if time.monotonic() >= deadline:
+            raise TimeoutError("Speaker fixture was not released")
+        time.sleep(.1)
     target = speakers_model.path()
     target.parent.mkdir(parents=True, exist_ok=True)
     shutil.copyfile(args.speaker_model, target)

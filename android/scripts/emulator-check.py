@@ -320,7 +320,11 @@ def main():
         # The throwaway server copies and verifies this pinned fixture only after the phone's
         # automatic POST. It never mutates the source model or touches the network.
         speaker_model = Path(os.environ.get("CHIRP_SPEAKER_MODEL") or Path.home() / "Library/Application Support/Chirp/models/speakers/voxceleb_resnet34_LM.onnx")
-        speakers_model = (opt.notes_check or opt.speakers_check) and speaker_model.is_file()
+        speakers_model = None
+        speaker_gate = work / "speaker-model-ready"
+        if (opt.notes_check or opt.speakers_check) and speaker_model.is_file():
+            def speakers_model():
+                speaker_gate.touch()
         assert speakers_model or not opt.speakers_check, "--speakers-check needs the speaker model (CHIRP_SPEAKER_MODEL)"
         env = dict(os.environ, HOME=str(home), HF_HOME=str(Path.home() / ".cache/huggingface"),
                    HF_HUB_OFFLINE="1", TRANSFORMERS_OFFLINE="1", PYTHONPATH=str(opt.server_root / "src"))
@@ -329,7 +333,7 @@ def main():
         if opt.tls or opt.stop_check or opt.notes_check or opt.speakers_check:
             command = [opt.python, str(Path(__file__).with_name("emulator-stop-server.py")),
                        "--model-dir", opt.model_dir, "--metadata", str(work / "events.json"), "--server-port", str(opt.server_port)]
-            if speakers_model: command += ["--speaker-model", str(speaker_model)]
+            if speakers_model: command += ["--speaker-model", str(speaker_model), "--speaker-model-gate", str(speaker_gate)]
             if opt.tls: command += ["--cert", str(cert), "--key", str(opt.tls_dir / "emulator-tls/key.pem")]
             command += ["--ready-delay", "2" if opt.stop_check else "0"]
         server = subprocess.Popen(command,
@@ -391,7 +395,7 @@ def main():
             link = "chirp://pair?" + urllib.parse.urlencode({"url": scheme + "://10.0.2.2:" + str(opt.server_port), "token": token})
             adb("shell", "am", "start", "-a", "android.intent.action.VIEW", "-d", shlex.quote(link))
             # The link is tested and saved on arrival. The pairing UI holds the throwaway credential; never retain a capture here.
-            deadline = time.monotonic() + 15
+            deadline = time.monotonic() + 60
             while time.monotonic() < deadline:
                 if any(n.get("text", "").startswith(("Connected", "Paired")) for n in nodes()):
                     break
