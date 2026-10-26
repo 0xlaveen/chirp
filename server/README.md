@@ -224,7 +224,7 @@ Full protocol details, including every message field, are in [the architecture d
 | `POST /v1/notes/structure` | bearer | Live Notes: structure a transcript window into Markdown (see [Notes structuring](#notes-structuring)) |
 | `POST /v1/notes/reorganize` | bearer | Live Notes: reorganize an edited notes document (see [Notes structuring](#notes-structuring)) |
 | `POST /v1/notes/edit` | bearer | Live Notes: apply a spoken edit instruction to the notes (see [Notes structuring](#notes-structuring)) |
-| `POST /v1/speakers/model` | bearer | Live Notes speaker labels: download (after the client's consent) or remove the speaker model (see [Speaker labels](#speaker-labels)) |
+| `POST /v1/speakers/model` | bearer | Live Notes speaker labels: download, cancel a download, or remove the speaker model (see [Speaker labels](#speaker-labels)) |
 | `GET /v1/devices/activity` | owner token, direct loopback | Which devices used the server (metadata only; see [Per-device tokens](#per-device-tokens)) |
 | `PUT /v1/devices/activity/settings` | owner token, direct loopback | `{"keep":false}` stops recording and deletes the stored activity |
 | `POST /v1/transcribe` | bearer | 16 kHz mono PCM16 WAV body (same limits as streaming); returns the final object |
@@ -599,10 +599,14 @@ a real voice can still be split in two (the client's "Same person as" merges the
 
 **The model** (`Wespeaker/wespeaker-voxceleb-resnet34-LM` at `f0c48c29`, one 26.5 MB ONNX file,
 CC-BY-4.0) is fetched only by `chirp-server model fetch --speakers` or by a paired client's
-`POST /v1/speakers/model {"action":"download"}` after its user agreed (202 while it runs; health's
+`POST /v1/speakers/model {"action":"download"}` (202 while it runs; health's
 `speakers_model.state` is `downloading`, then `ready` or `failed`). It lands in
 `~/Library/Application Support/Chirp/models/speakers/` and is checked against its pinned SHA-256
-(a mismatch is deleted). `{"action":"remove"}` deletes it (409 while downloading). Authenticated
+(a mismatch is deleted). `{"action":"remove"}` deletes it (409 while downloading).
+`{"action":"cancel"}` stops the owned downloader and removes partial files, returning HTTP 200
+with `{"state":"not_downloaded","size_bytes":26530309}`. It is idempotent when idle or already
+cancelled, clears a failed state, and leaves an installed model intact (200 `ready`). A new
+`download` can start immediately after cancellation. Saved voices are preserved. Authenticated
 health carries `"notes_speakers": true` and `"speakers_model": {"state": …, "size_bytes": …}`.
 
 **Privacy.** The per-note state is per-speaker sums of voice embeddings in this process's memory

@@ -1,6 +1,6 @@
 import Foundation
 
-public enum SpeakersModelAction: String, Sendable { case download, remove }
+public enum SpeakersModelAction: String, Sendable { case download, cancel, remove }
 
 /// A saved voice as the server lists it (#247): a name and how much speech it was saved from, never its voiceprint.
 public struct SavedVoice: Decodable, Sendable, Equatable, Identifiable {
@@ -266,7 +266,7 @@ public struct ServerConfig: Sendable, Equatable {
         try await postNotes(r, to: notesEditURL, session: session, timeout: timeout)
     }
 
-    /// `POST /v1/speakers/model`: `download` (only after the user agreed to the one download) or `remove`. Returns the
+    /// `POST /v1/speakers/model`: `download`, `cancel` (keeps an installed model), or `remove`. Returns the
     /// model's state after it (`downloading` answers 202; 409 means a remove while downloading, which still reports it).
     public func speakersModel(_ action: SpeakersModelAction, session: URLSession = .shared) async throws -> SpeakersModel {
         var req = authorized(URLRequest(url: speakersModelURL))

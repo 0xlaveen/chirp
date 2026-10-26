@@ -617,7 +617,7 @@ def create_app(settings=None, engine=None, token=None, corrector=None, speakers=
                 with contextlib.suppress(asyncio.CancelledError):
                     await cleanup
             await worker.close()
-            speakers.close()
+            await speakers.close()
             if isinstance(corrector, Corrector):
                 await corrector.close()
 
@@ -870,8 +870,7 @@ def create_app(settings=None, engine=None, token=None, corrector=None, speakers=
         )
 
     async def speakers_route(request: Request):
-        """The speaker model: `{"action":"download"}` after the client's consent prompt, or
-        `{"action":"remove"}`. The download runs in the background; health reports its state."""
+        """The speaker model: download, cancel an active download, or remove an installed model. The download runs in the background; health reports its state."""
         if (refusal := reject(request.headers)) is not None:
             return refusal
         source = credential.source(bearer(request.headers), request.scope)
@@ -885,10 +884,13 @@ def create_app(settings=None, engine=None, token=None, corrector=None, speakers=
                 token.outcome = "bad_speakers"
                 return JSONResponse(error("bad_speakers"), status_code=400)
             if action["action"] == "download":
-                speakers.start_download()
+                await speakers.start_download()
                 status = 202 if speakers.state == "downloading" else 200
                 token.outcome = "ok"
                 return JSONResponse(speakers.health(), status_code=status)
+            if action["action"] == "cancel":
+                await speakers.cancel_download()
+                return JSONResponse(speakers.health())
             if action["action"] == "remove":
                 if not await speakers.remove():
                     token.outcome = "busy"

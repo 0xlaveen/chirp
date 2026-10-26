@@ -22,7 +22,9 @@ speech (`audio`, the Mac), and identifies people from clips.
 """
 
 import asyncio
+import contextlib
 import logging
+import sys
 import time
 import uuid
 from collections import OrderedDict
@@ -559,11 +561,12 @@ class SpeakerLabels:
     def __init__(self, embedder_factory=None, fetch=None, downloaded=None, library=None):
         self.executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="chirp-speakers")
         self.factory = embedder_factory or OnnxEmbedder
-        self.fetch = fetch or speakers_model.fetch
+        self.fetch = fetch
         self.downloaded = downloaded or speakers_model.is_downloaded
         self.embedder = None
         self.sessions = Sessions()
         self.download: asyncio.Task | None = None
+        self.model_lock = asyncio.Lock()
         self.failed = False
         self.library = library if library is not None else voices.VoiceLibrary()
 
@@ -581,30 +584,78 @@ class SpeakerLabels:
     async def call(self, method, *args):
         return await asyncio.get_running_loop().run_in_executor(self.executor, method, *args)
 
-    def start_download(self):
-        """The client's consented Download: fetch in the background; health reports it."""
-        if self.state in {"downloading", "ready"}:
+    async def _fetch_model(self):
+        if self.fetch is not None:
+            # Injectable in-process fetcher for deterministic tests.
+            await asyncio.to_thread(self.fetch)
             return
+        # A thread cannot interrupt Hugging Face's blocking HTTP download. An owned process
+        # lets Turn off stop the transfer before removing its partial files.
+        spawning = asyncio.create_task(
+            asyncio.create_subprocess_exec(
+                sys.executable,
+                "-c",
+                "from chirp_server.speakers_model import fetch; fetch()",
+                stdin=asyncio.subprocess.DEVNULL,
+                stdout=asyncio.subprocess.DEVNULL,
+                stderr=asyncio.subprocess.DEVNULL,
+            )
+        )
+        process = None
+        try:
+            # Shield creation so cancellation cannot lose a child whose spawn is in flight.
+            process = await asyncio.shield(spawning)
+            if await process.wait() != 0:
+                raise RuntimeError("speaker_download")
+        finally:
+            if process is None:
+                process = await spawning
+            if process.returncode is None:
+                process.terminate()
+                try:
+                    await asyncio.wait_for(process.wait(), timeout=5)
+                except TimeoutError:
+                    process.kill()
+                    await process.wait()
 
-        async def run():
-            try:
-                await asyncio.get_running_loop().run_in_executor(None, self.fetch)
-                self.failed = False
-            except Exception:
-                self.failed = True
-                log.warning("speakers model download failed")
+    async def start_download(self):
+        """Fetch in the background; health reports it. Repeated requests are idempotent."""
+        async with self.model_lock:
+            if self.state in {"downloading", "ready"}:
+                return
 
-        self.failed = False
-        self.download = asyncio.create_task(run())
+            async def run():
+                try:
+                    await self._fetch_model()
+                    self.failed = False
+                except Exception:
+                    self.failed = True
+                    log.warning("speakers model download failed")
+
+            self.failed = False
+            self.download = asyncio.create_task(run())
+
+    async def cancel_download(self):
+        """Stop an active fetch and remove its partial files. Keep an installed model. The
+        operation is idempotent and deliberate cancellation never reports `failed`."""
+        async with self.model_lock:
+            if self.download is not None and not self.download.done():
+                self.download.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await self.download
+                await self.call(speakers_model.remove)
+            self.download = None
+            self.failed = False
 
     async def remove(self) -> bool:
-        if self.state == "downloading":
-            return False
-        self.embedder = None
-        await self.call(speakers_model.remove)
-        self.failed = False
-        self.sessions.clear()
-        return True
+        async with self.model_lock:
+            if self.state == "downloading":
+                return False
+            self.embedder = None
+            await self.call(speakers_model.remove)
+            self.failed = False
+            self.sessions.clear()
+            return True
 
     def _embed(self, clips):
         if self.embedder is None:
@@ -714,5 +765,6 @@ class SpeakerLabels:
         measured = await self.measure(session, pcm)
         return self.payload(measured, words, raw, text, len(pcm) / 2 / RATE, started)
 
-    def close(self):
+    async def close(self):
+        await self.cancel_download()
         self.executor.shutdown(wait=False, cancel_futures=True)

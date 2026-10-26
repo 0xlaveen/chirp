@@ -127,9 +127,12 @@ even when correction is off; it never exposes prompts or client instructions.
 `{"error": "unavailable|failed"}`. Turn texts cover the final's `text` in order; `speaker` is the
 note's slot, numbered by first appearance; a new `generation` means the server lost the note (its
 slots are new voices). Any other `speakers` value is `bad_audio`; without the field nothing changes.
-`POST /v1/speakers/model` (authenticated, `{"action":"download"|"remove"}`) fetches the pinned
-speaker model after the client's consent or deletes it (200/202 with `{"state":…,"size_bytes":…}`,
-409 for remove while downloading, 400 `bad_speakers` otherwise). Authenticated health adds
+`POST /v1/speakers/model` (authenticated, `{"action":"download"|"cancel"|"remove"}`) fetches the pinned
+speaker model or deletes it (200/202 with `{"state":…,"size_bytes":…}`,
+409 for remove while downloading, 400 `bad_speakers` otherwise). `cancel` is idempotent: it stops
+the owned download process and removes partial files, returning 200 `not_downloaded`; an already
+installed model is preserved (200 `ready`). A deliberate cancel clears `failed`. It does not change
+saved voices or other clients' preferences. Authenticated health adds
 `"notes_speakers": true` (also in `capabilities`) and `"speakers_model": {"state":
 "ready|downloading|not_downloaded|failed", "size_bytes": n}`. Details in
 [server/README.md](../server/README.md#speaker-labels).
