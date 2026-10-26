@@ -16,8 +16,12 @@ def check(p, work, output):
     def poll(predicate, message, seconds=70):
         deadline = time.monotonic() + seconds
         while time.monotonic() < deadline:
-            result = predicate()
-            if result: return result
+            try:
+                result = predicate()
+                if result: return result
+            except (RuntimeError, StopIteration):
+                # IME/window transitions can temporarily omit the editor from a short dump.
+                pass
             time.sleep(.3)
         raise AssertionError(message)
 
