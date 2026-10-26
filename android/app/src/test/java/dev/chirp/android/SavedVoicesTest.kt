@@ -102,6 +102,7 @@ class SavedVoicesTest {
         rig.model.stop(); rig.wire.final("More fixture", speakers = SpeakersResult("g", listOf(ServerTurn(0, 0.0, "More fixture", "fixture")))); rig.idle()
         assertEquals(2, actions.filterIsInstance<VoiceAction.Remember>().size)
         assertEquals("Maya", rig.model.voiceNotice)
+        assertNull(rig.model.message)
         rig.model.acknowledgeVoiceNotice(); assertNull(rig.model.voiceNotice)
         rig.model.updateVoice(1); rig.idle()
         assertEquals(savedVoice.id, (actions.last() as VoiceAction.Remember).voice)

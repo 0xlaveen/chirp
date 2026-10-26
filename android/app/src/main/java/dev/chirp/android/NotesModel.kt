@@ -372,6 +372,7 @@ internal class NotesModel(
                 pending.running = false
                 if (enrollments[pending.person] !== pending || recorder.document !== doc) return@launch
                 if (result != null) {
+                    if (message == VoiceLibraryError("too_short").userMessage) message = null
                     enrollments.remove(pending.person)
                     if (!voicePrefs.getBoolean("shown", false)) voiceNotice = pending.name
                 } else {
