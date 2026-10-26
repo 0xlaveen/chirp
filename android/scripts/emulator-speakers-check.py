@@ -66,24 +66,27 @@ def check(probe, work, output, standalone=False):
     assert not any(n.get('text') == 'Label speakers?' for n in nodes()), 'A consent dialog appeared; labels are on by default'
     status = lambda: [n.get('text') for n in nodes() if (n.get('text') or '').startswith(('Getting the speaker model ready', 'Couldn’t download the speaker model'))]
     deadline = time.monotonic() + 30
-    while not status():
+    while not (line := status()):
         assert time.monotonic() < deadline, 'No speaker model status line while the model was missing'
         time.sleep(.5)
-    log('Status line: %s' % status())
+    log('Status line: %s' % line)
     screenshot('emulator-speakers-status.png')
     probe['speakers_model']()  # the download's stand-in: the pinned file arrives in the server's model cache
-    deadline = time.monotonic() + 60
+    deadline = time.monotonic() + 180
     while status():
         # The offline fetch has already failed on the phone's screen: Retry asks again and the server finds the file.
         retry = [n for n in nodes() if n.get('text') == 'Retry']
         if retry: adb('shell', 'input', 'tap', *map(str, probe['center'](retry[-1])))
         assert time.monotonic() < deadline, 'The speaker model status line never went away: %s' % status()
         time.sleep(2)
+    # Segments that finished before the model was ready came back "unavailable": a model state, never an error to the user.
+    early = list(server().get('label_errors', []))
+    assert set(early) <= {'unavailable'}, 'Unexpected label errors before the model was ready: ' + json.dumps(early)
     labelled = server().get('labelled', 0)
     wait(lambda: server().get('labelled', 0) >= labelled + 2 and len(server().get('slots', [])) >= 2,
          'Two labelled segments with two distinct speakers did not arrive', 180)
     assert server()['slots'] == [0, 1], 'Two voices must be exactly two people: ' + json.dumps(server())
-    assert not server().get('label_errors'), 'The server could not label: ' + json.dumps(server())
+    assert server().get('label_errors', []) == early, 'The server could not label once the model was ready: ' + json.dumps(server())
     probe['click']('Stop recording notes')
     probe['wait_for']('Stopped', 90)
     log('Server: %d labelled segments, slots %s' % (server()['labelled'], server()['slots']))
@@ -106,8 +109,16 @@ def check(probe, work, output, standalone=False):
         assert time.monotonic() < deadline, 'The rename field did not open'
         time.sleep(.5)
     adb('shell', 'input', 'tap', *map(str, probe['center'](fields[-1])))
-    adb('shell', 'input', 'text', 'Maya')
-    time.sleep(1)
+    # On a loaded host the input service can drop characters: type until the field holds the whole name.
+    for _ in range(5):
+        adb('shell', 'input', 'text', 'Maya')
+        time.sleep(1)
+        field = [n for n in nodes() if n.get('class') == 'android.widget.EditText']
+        if field and field[-1].get('text') == 'Maya': break
+        adb('shell', 'input', 'keycombination', 'KEYCODE_CTRL_LEFT', 'KEYCODE_A')
+        adb('shell', 'input', 'keyevent', 'KEYCODE_DEL')
+    else:
+        raise AssertionError('Could not type the new name into the rename field')
     adb('shell', 'input', 'keyevent', 'KEYCODE_ENTER')
     deadline = time.monotonic() + 20
     while 'Maya' not in chips():

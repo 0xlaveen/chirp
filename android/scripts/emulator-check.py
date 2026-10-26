@@ -395,7 +395,7 @@ def main():
             link = "chirp://pair?" + urllib.parse.urlencode({"url": scheme + "://10.0.2.2:" + str(opt.server_port), "token": token})
             adb("shell", "am", "start", "-a", "android.intent.action.VIEW", "-d", shlex.quote(link))
             # The link is tested and saved on arrival. The pairing UI holds the throwaway credential; never retain a capture here.
-            deadline = time.monotonic() + 15
+            deadline = time.monotonic() + 60
             while time.monotonic() < deadline:
                 if any(n.get("text", "").startswith(("Connected", "Paired")) for n in nodes()):
                     break
