@@ -9,6 +9,7 @@ Index of everything under `docs/`. Start with the architecture doc; everything e
 | [privacy.md](privacy.md) | Privacy & security summary across all clients (moved from the top-level README), with links to each component's detailed rules |
 | [windows.md](windows.md) | Chirp on Windows: server install, Task Scheduler service, phone pairing, desktop app, acceptance checklist |
 | [linux.md](linux.md) | Chirp on Linux: server install, XDG paths, GGUF clean-up, systemd user service, phone pairing |
+| [copy.md](copy.md) | Copy glossary: the canonical user-facing terms and destructive-dialog wording shared by Mac, iPhone/iPad, Android and desktop |
 | [TESTING.md](TESTING.md) | How Chirp is tested: automated checks, operator acceptance steps, privacy checks |
 | [android-input-options.md](android-input-options.md) | Research record: Android input paths considered (voice IME, RecognitionService, accessibility overlay) and what ships |
 | [android-keyboard-validation.md](android-keyboard-validation.md) | Chirp Keyboard 0.3.0 validation record |
