@@ -72,8 +72,8 @@ private val SIDE_BY_SIDE = 1000.dp
 private data class Anchor(val offset: Int, val y: Int)
 
 /**
- * Live Notes as a notes app: the rendered page is the screen. A compact top bar (title, status, Edit, ⋮), one record
- * control at the bottom, and every other action in the overflow menu. Tap the words (or Edit) to edit the Markdown in
+ * Live Notes as a notes app: the rendered page is the screen. A compact top bar (title, status, Organize, Edit, ⋮), one record
+ * control at the bottom, and supporting actions in the overflow menu. Tap the words (or Edit) to edit the Markdown in
  * place, with a small formatting bar above the keyboard; Done or Back returns to the page at the same place.
  */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalComposeUiApi::class)
@@ -117,7 +117,7 @@ internal fun NotesScreen(model: NotesModel, record: () -> Unit, copy: () -> Unit
     }
     if (model.nameSpeakersOpen) NameSpeakersSheet(model) { model.nameSpeakersOpen = false }
     model.voiceNotice?.let { name ->
-        AlertDialog(onDismissRequest = model::acknowledgeVoiceNotice, title = { Text("Remembered voice") },
+        AlertDialog(onDismissRequest = model::acknowledgeVoiceNotice, title = { Text("Remembering voices") },
             text = { Text("Chirp will recognise $name’s voice in later notes on your devices. Saved voices stay on your computer. Settings → Notes → Saved voices.") },
             confirmButton = { TextButton(model::acknowledgeVoiceNotice) { Text("OK") } },
             dismissButton = { TextButton(model::disableRememberVoices) { Text("Don’t remember voices") } })
@@ -214,6 +214,10 @@ private fun NotesTopBar(model: NotesModel, editing: Boolean, gutter: androidx.co
                     color = scheme.onSurfaceVariant)
             }
         }
+        if (model.reorganizing !is Reorganizing.Unavailable) IconButton(model::organize, enabled = model.canOrganize,
+            modifier = Modifier.size(48.dp), colors = IconButtonDefaults.iconButtonColors(contentColor = LocalChirpRoles.current.moon)) {
+            Icon(painterResource(R.drawable.ic_sparkle), "Organize")
+        }
         IconButton(edit) { Icon(painterResource(if (editing) R.drawable.ic_check else R.drawable.ic_edit), if (editing) "Done editing" else "Edit notes") }
         NotesMenu(model, menu)
     }
@@ -247,7 +251,7 @@ private fun NotesMenu(model: NotesModel, actions: NotesMenuActions) {
                 if (model.canUndo) item("Undo organize", R.drawable.ic_undo) { model.undo() }
             }
             if (model.structureAvailable) toggle("Structure notes", model.structureEnabled, model.structureHost?.let { "Sends text to $it" }) { model.setStructure(it) }
-            if (model.reorganizing !is Reorganizing.Unavailable) toggle("Auto-organize", model.auto) { model.setAuto(it) }
+            if (model.reorganizing !is Reorganizing.Unavailable) toggle("Organize automatically", model.auto) { model.setAuto(it) }
             if (model.speakersAvailable) toggle("Label speakers", model.labelSpeakers, "Who said what · voices compared on your computer") { model.setSpeakerLabels(it) }
             if (model.reorganizing !is Reorganizing.Unavailable || model.structureAvailable || model.speakersAvailable) HorizontalDivider()
             item("Copy", R.drawable.ic_copy, model.hasContent, run = actions.copy)
@@ -398,11 +402,11 @@ private fun Notice(text: String) {
 @Composable
 private fun RecordButton(model: NotesModel, onClick: () -> Unit) {
     val scheme = MaterialTheme.colorScheme
-    Surface(onClick, Modifier.heightIn(min = 64.dp).semantics { contentDescription = if (model.hasContent || model.elapsed > 0) "Continue recording notes" else "Record notes" }, enabled = !model.busy, shape = CircleShape,
+    Surface(onClick, Modifier.heightIn(min = 64.dp).semantics { contentDescription = if (model.hasContent || model.elapsed > 0) "Continue recording" else "Record notes" }, enabled = !model.busy, shape = CircleShape,
         color = scheme.primary, contentColor = scheme.onPrimary, shadowElevation = 6.dp) {
         Row(Modifier.padding(start = 22.dp, end = 26.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             Icon(painterResource(R.drawable.ic_record), null, Modifier.size(22.dp), tint = scheme.onPrimary)
-            Text(if (model.hasContent || model.elapsed > 0) "Continue" else "Record", style = MaterialTheme.typography.titleMedium)
+            Text(if (model.hasContent || model.elapsed > 0) "Continue recording" else "Record", style = MaterialTheme.typography.titleMedium)
         }
     }
 }

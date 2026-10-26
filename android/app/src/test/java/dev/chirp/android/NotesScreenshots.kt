@@ -7,14 +7,14 @@ import androidx.compose.ui.platform.ViewRootForTest
 import androidx.compose.ui.test.SemanticsNodeInteraction
 import androidx.compose.ui.test.captureToImage
 import androidx.test.platform.app.InstrumentationRegistry
+import org.junit.Assert.assertTrue
 
 /**
- * Material's sheet window does not implement DialogWindowProvider. Compose's PixelCopy helper consequently captures
- * the activity underneath it on Robolectric. Draw the actual sheet root over that activity for these review artifacts.
+ * Draw the actual Compose root over PixelCopy's buffer: Robolectric can return the activity under a sheet/dialog,
+ * or a blank buffer for the first frame. Check visible content before exporting these review artifacts.
  */
-internal fun notesScreenshot(target: SemanticsNodeInteraction, sheet: Boolean): Bitmap {
+internal fun notesScreenshot(target: SemanticsNodeInteraction): Bitmap {
     val background = target.captureToImage().asAndroidBitmap()
-    if (!sheet) return background
     val view = (target.fetchSemanticsNode().root as ViewRootForTest).view
     val bitmap = Bitmap.createBitmap(view.width, view.height, Bitmap.Config.ARGB_8888)
     InstrumentationRegistry.getInstrumentation().runOnMainSync {
@@ -22,5 +22,9 @@ internal fun notesScreenshot(target: SemanticsNodeInteraction, sheet: Boolean): 
         canvas.drawBitmap(background, 0f, 0f, null)
         view.draw(canvas)
     }
+    val first = bitmap.getPixel(0, 0)
+    assertTrue("Notes capture is blank", (0 until bitmap.height step 7).any { y ->
+        (0 until bitmap.width step 7).any { x -> bitmap.getPixel(x, y) != first }
+    })
     return bitmap
 }

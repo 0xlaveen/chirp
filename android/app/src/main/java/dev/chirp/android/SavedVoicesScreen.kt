@@ -3,10 +3,12 @@ package dev.chirp.android
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.Alignment
+import dev.chirp.android.settings.PageScaffold
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
@@ -21,14 +23,8 @@ internal fun SavedVoicesScreen(model: SavedVoicesModel, dismiss: () -> Unit) {
     Dialog(onDismissRequest = dismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Surface(Modifier.fillMaxSize()) {
             BackHandler(onBack = dismiss)
-            Column(Modifier.safeDrawingPadding()) {
-                Row(Modifier.fillMaxWidth().padding(12.dp)) {
-                    TextButton(dismiss) { Text("Back") }
-                    Text("Saved voices", Modifier.padding(12.dp), style = MaterialTheme.typography.titleLarge)
-                }
-                Column(Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 16.dp)) {
-                    SavedVoicesContent(model)
-                }
+            PageScaffold("Saved voices", back = dismiss, scroll = rememberScrollState(), modifier = Modifier.fillMaxSize().safeDrawingPadding()) {
+                SavedVoicesContent(model)
             }
         }
     }
@@ -59,7 +55,7 @@ internal fun SavedVoicesContent(model: SavedVoicesModel) {
         }
         library?.voices.orEmpty().forEach { voice ->
             SettingsItem {
-                Row(Modifier.fillMaxWidth()) {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f).padding(vertical = 8.dp)) {
                         Text(voice.name, style = MaterialTheme.typography.titleMedium)
                         Text(voiceDetail(voice), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -67,7 +63,10 @@ internal fun SavedVoicesContent(model: SavedVoicesModel) {
                     }
                     var menu by remember(voice.id) { mutableStateOf(false) }
                     Box {
-                        TextButton({ menu = true }, enabled = !model.busy) { Text("⋯") }
+                        IconButton({ menu = true }, Modifier.size(48.dp), enabled = !model.busy,
+                            colors = IconButtonDefaults.iconButtonColors(contentColor = MaterialTheme.colorScheme.onSurfaceVariant)) {
+                            Icon(painterResource(R.drawable.ic_more_horiz), "Options for ${voice.name}")
+                        }
                         DropdownMenu(menu, { menu = false }) {
                             DropdownMenuItem({ Text("Rename…") }, { menu = false; renaming = voice; name = voice.name })
                             DropdownMenuItem({ Text("Forget…") }, { menu = false; forgetting = voice })
@@ -88,7 +87,8 @@ internal fun SavedVoicesContent(model: SavedVoicesModel) {
         } })
     if (forgetAll || forgetting != null) AlertDialog(onDismissRequest = { forgetAll = false; forgetting = null },
         title = { Text(if (forgetAll) "Forget all voices?" else "Forget ${forgetting?.name}?") },
-        text = { Text("Removes saved voices from your computer for every device. Names in existing notes stay.") },
+        text = { Text(if (forgetAll) "Removes all saved voices from your computer for every device. Names in existing notes stay. This can’t be undone."
+            else "Removes ${forgetting?.name}’s voice from your computer for every device. Names in existing notes stay. This can’t be undone.") },
         confirmButton = { TextButton({
             val action = forgetting?.let { VoiceAction.Forget(it.id) } ?: VoiceAction.ForgetAll
             forgetAll = false; forgetting = null; model.action(action)

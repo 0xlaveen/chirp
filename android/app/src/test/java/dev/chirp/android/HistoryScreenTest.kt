@@ -67,7 +67,7 @@ class HistoryScreenTest {
             compose.onNodeWithText(it).fetchSemanticsNode().boundsInRoot.top
         }
         assertEquals("headers in order, each above its entries", tops.sorted(), tops)
-        compose.onNodeWithText("Gmail · 20 h ago · cleaned").assertExists()
+        compose.onNodeWithText("Gmail · 20 h ago · Polished").assertExists()
         compose.onNodeWithText("Search history").performTextInput("pier")
         compose.waitUntil(5000) { compose.onAllNodesWithText("Draft the quarterly summary").fetchSemanticsNodes().isEmpty() }
         compose.onNodeWithText("Meet at the pier at noon").assertExists()

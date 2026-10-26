@@ -110,14 +110,14 @@ class NotesLibraryScreenTest {
         compose.waitUntil(5000) { compose.onAllNodesWithText("A quiet pond beside the terrace").fetchSemanticsNodes().isNotEmpty() }
         compose.onNodeWithText("A quiet pond beside the terrace").assertIsDisplayed()
         open("Garden plans"); loaded("Garden plans")
-        compose.onNodeWithText("Continue").assertIsDisplayed()
+        compose.onNodeWithText("Continue recording").assertIsDisplayed()
         back()
         compose.onNode(hasSetTextAction()).assertTextEquals("pond")
         compose.onNodeWithText("Garden plans").assertIsDisplayed()
         assertEquals(id, reader.model.document.uid)
         search("no such phrase")
-        compose.waitUntil(5000) { compose.onAllNodesWithText("No results for ‘no such phrase’").fetchSemanticsNodes().isNotEmpty() }
-        compose.onNodeWithText("No results for ‘no such phrase’").assertExists()
+        compose.waitUntil(5000) { compose.onAllNodesWithText("No results for “no such phrase”").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithText("No results for “no such phrase”").assertExists()
         compose.onNodeWithText("Your notes will live here").assertDoesNotExist()
     }
 
@@ -198,7 +198,7 @@ class NotesLibraryScreenTest {
         assertEquals(recordingId, live.model.document.uid)
         assertTrue(live.model.recording)
         compose.runOnIdle { assertEquals("Garden journal", library.open(id)!!.entry.title) }
-        compose.onNodeWithText("Continue").performClick()
+        compose.onNodeWithText("Continue recording").performClick()
         compose.onNodeWithText("Stop current and continue here").assertExists()
     }
 
@@ -209,9 +209,10 @@ class NotesLibraryScreenTest {
         assertEquals(1, connections)
         compose.onNodeWithContentDescription("Dictate").performClick()
         assertEquals(1, dictations)
-        compose.onNodeWithText("Allow the microphone").assertExists()
+        compose.onNodeWithText("Finish setting up").assertIsDisplayed()
+        compose.onNodeWithText("Next: allow the microphone").assertExists()
         compose.onNodeWithContentDescription("Dismiss setup").performClick()
-        compose.onNodeWithText("Allow the microphone").assertDoesNotExist()
+        compose.onNodeWithText("Next: allow the microphone").assertDoesNotExist()
         assertTrue(SettingsStore(context).tryItDismissed)
     }
 
@@ -253,8 +254,12 @@ class NotesLibraryScreenTest {
                 compose.runOnIdle { dark.value = night }
                 compose.mainClock.advanceTimeBy(2000); compose.waitForIdle()
                 // A modal sheet has its own window/root. Capture that window when present.
-                val target = if (state == "transcript-sheet") compose.onNode(isRoot() and hasAnyDescendant(hasText("Show raw"))) else compose.onRoot()
-                val bitmap = notesScreenshot(target, state == "transcript-sheet")
+                val target = when (state) {
+                    "transcript-sheet" -> compose.onNode(isRoot() and hasAnyDescendant(hasText("Show raw")))
+                    "empty-trash" -> compose.onNode(isRoot() and hasAnyDescendant(hasText("Empty Recently Deleted?")))
+                    else -> compose.onRoot()
+                }
+                val bitmap = notesScreenshot(target)
                 File(output, "notes-library-$width-$state-${if (night) "dark" else "light"}.png").outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
             }
         }
@@ -276,15 +281,20 @@ class NotesLibraryScreenTest {
         compose.waitUntil(5000) { compose.onAllNodesWithText("Launch sync").fetchSemanticsNodes().isNotEmpty() }
         shot("search")
         search("summer holiday")
-        compose.waitUntil(5000) { compose.onAllNodesWithText("No results for ‘summer holiday’").fetchSemanticsNodes().isNotEmpty() }
-        compose.onNodeWithText("No results for ‘summer holiday’").assertExists()
+        compose.waitUntil(5000) { compose.onAllNodesWithText("No results for “summer holiday”").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithText("No results for “summer holiday”").assertExists()
         shot("no-results")
         search("")
         compose.onNode(hasText("Launch sync") and hasClickAction()).performTouchInput { longClick() }
         open("A walk by the water")
         shot("multi-select")
         back()
-        trash(); shot("recently-deleted"); back()
+        trash(); compose.onNodeWithText("Search Recently Deleted").assertIsDisplayed(); shot("recently-deleted")
+        compose.onNodeWithContentDescription("Library options").performClick()
+        compose.onNodeWithText("Empty Recently Deleted").performClick()
+        compose.onNodeWithText("Delete permanently").assertIsDisplayed()
+        shot("empty-trash")
+        compose.onNodeWithText("Cancel").performClick(); back()
         open("Launch sync"); loaded("Launch sync")
         shot("detail")
         compose.onNodeWithText("Transcript").performClick()

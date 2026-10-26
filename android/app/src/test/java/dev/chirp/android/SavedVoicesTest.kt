@@ -189,30 +189,42 @@ class SavedVoicesTest {
 @Config(sdk = [37], qualifiers = "w411dp-h891dp-mdpi")
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 class SavedVoicesRenderTest {
+    @org.junit.After fun resetFontScale() { RuntimeEnvironment.setFontScale(1f) }
     @get:Rule val compose = createComposeRule()
-    @Test fun `saved voices and recognized chip light and dark with management actions`() {
+    @Test fun `saved voices and recognized chip light and dark with management actions`() = savedVoices(1f)
+    @Test fun `saved voices at 200 percent font in light and dark`() = savedVoices(2f)
+
+    private fun savedVoices(fontScale: Float) {
+        RuntimeEnvironment.setFontScale(fontScale)
         val dark = mutableStateOf(false)
         val actions = mutableListOf<VoiceAction?>()
         val model = SavedVoicesModel(CoroutineScope(Dispatchers.Main.immediate), { it() }) { action -> actions += action; library }
         runBlocking { model.perform(null) }
         compose.setContent {
-            dev.chirp.android.ui.ChirpTheme(dark.value) { Surface { Column(Modifier.padding(16.dp)) {
-                androidx.compose.material3.Text("Saved voices", style = androidx.compose.material3.MaterialTheme.typography.headlineSmall)
-                SavedVoicesContent(model)
-            } } }
+            dev.chirp.android.ui.ChirpTheme(dark.value, colour = AppColour.POND) { SavedVoicesScreen(model) {} }
         }
         for (night in listOf(false, true)) {
             compose.runOnIdle { dark.value = night }
             compose.mainClock.advanceTimeBy(2000); compose.waitForIdle()
-            val bitmap = notesScreenshot(compose.onRoot(), false)
+            compose.onNodeWithContentDescription("Back").assertIsDisplayed()
+            val options = compose.onNodeWithContentDescription("Options for Maya").assertIsDisplayed().fetchSemanticsNode().boundsInRoot
+            assertTrue("48 dp overflow target", options.width >= 48f && options.height >= 48f)
+            val refresh = compose.onNodeWithText("Refresh saved voices").fetchSemanticsNode().boundsInRoot
+            val destructive = compose.onNodeWithText("Forget all voices…").fetchSemanticsNode().boundsInRoot
+            assertTrue("destructive action comes last", destructive.top > refresh.bottom)
+            val bitmap = notesScreenshot(compose.onNode(isRoot() and hasAnyDescendant(hasText("Saved voices"))))
             val output = File(System.getProperty("chirp.screenshots")).apply { mkdirs() }
-            File(output, "notes-saved-voices-${if (night) "dark" else "light"}.png").outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
+            val size = if (fontScale == 2f) "font-200-" else ""
+            File(output, "notes-saved-voices-$size${if (night) "dark" else "light"}.png").outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
+            compose.onNodeWithText("Forget all voices…").performScrollTo().assertIsDisplayed()
+            compose.onNodeWithText("Remember voices of people I name").performScrollTo()
         }
-        compose.onNodeWithText("⋯").performClick(); compose.onNodeWithText("Rename…").performClick()
+        if (fontScale == 2f) return
+        compose.onNodeWithContentDescription("Options for Maya").performClick(); compose.onNodeWithText("Rename…").performClick()
         compose.onNode(hasSetTextAction()).performTextReplacement("Sam")
         compose.onNodeWithText("Rename", substring = false).performClick()
         compose.runOnIdle { assertEquals(VoiceAction.Rename(savedVoice.id, "Sam"), actions.last()) }
-        compose.onNodeWithText("⋯").performClick(); compose.onNodeWithText("Forget…").performClick()
+        compose.onNodeWithContentDescription("Options for Maya").performClick(); compose.onNodeWithText("Forget…").performClick()
         compose.onNodeWithText("Forget", substring = false).performClick()
         compose.runOnIdle { assertEquals(VoiceAction.Forget(savedVoice.id), actions.last()) }
         compose.onNodeWithText("Forget all voices…").performClick(); compose.onNodeWithText("Forget", substring = false).performClick()
@@ -301,14 +313,14 @@ class SavedVoicesRenderTest {
         for (night in listOf(false, true)) {
             compose.runOnIdle { dark.value = night }
             compose.mainClock.advanceTimeBy(2000); compose.waitForIdle()
-            val bitmap = notesScreenshot(compose.onRoot(), false)
+            val bitmap = notesScreenshot(compose.onRoot())
             File(File(System.getProperty("chirp.screenshots")), "notes-auto-name-chip-${if (night) "dark" else "light"}.png")
                 .outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
         }
         compose.onNodeWithText("Maya ✓").assertIsDisplayed()
         compose.onNodeWithContentDescription("Maya, recognised. Rename or merge this speaker").performClick()
         compose.onNodeWithText("Not Maya").assertIsDisplayed()
-        compose.onNodeWithText("Update Maya’s saved voice").assertIsDisplayed()
+        compose.onNodeWithText("Update Maya’s voice").assertIsDisplayed()
         compose.onNodeWithText("Not Maya").performClick()
         compose.onNodeWithText("Person 1").assertIsDisplayed()
         compose.runOnIdle {

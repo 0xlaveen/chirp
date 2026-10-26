@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -81,7 +82,7 @@ internal fun SpeakerMenu(open: Boolean, dismiss: () -> Unit, roster: SpeakerRost
         if (roster.person(target)?.recognized != null && reject != null)
             DropdownMenuItem({ Text("Not ${roster.displayName(target)}") }, { dismiss(); reject() })
         if (roster.person(target)?.name != null && update != null)
-            DropdownMenuItem({ Text("Update ${roster.displayName(target)}’s saved voice") }, { dismiss(); update() })
+            DropdownMenuItem({ Text("Update ${roster.displayName(target)}’s voice") }, { dismiss(); update() })
         if (nameAll != null) DropdownMenuItem({ Text("Name speakers…") }, { dismiss(); nameAll() })
         if (others.isNotEmpty()) {
             HorizontalDivider()
@@ -156,7 +157,7 @@ internal fun RenameSpeakerDialog(model: NotesModel, person: Int, dismiss: () -> 
 @Composable
 internal fun SpeakerModelStatus(model: NotesSpeakerModel, modifier: Modifier = Modifier) {
     val status = model.status ?: return
-    androidx.compose.material3.Surface(modifier, shape = MaterialTheme.shapes.large,
+    androidx.compose.material3.Surface(modifier.fillMaxWidth(), shape = MaterialTheme.shapes.large,
         color = if (model.retryable) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.surfaceContainer) {
         Column(Modifier.padding(12.dp)) {
             Text(status, style = MaterialTheme.typography.bodyMedium,

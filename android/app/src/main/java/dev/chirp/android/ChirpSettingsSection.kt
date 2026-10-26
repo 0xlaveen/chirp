@@ -25,7 +25,7 @@ internal fun ChirpSettingsSection() {
         Text("Chirp", style = MaterialTheme.typography.titleLarge)
         SettingsGroup {
             NavRow(connection.title, { open("connection") }, summary = connection.summary, icon = connection.kind.icon)
-            if (store.health.cleanupAvailable()) SwitchRow("Clean-up · ${correctionLabel(store.health)}", cleanup, { cleanup = it; store.correction = it },
+            if (store.health.cleanupAvailable()) SwitchRow("Clean-up", cleanup, { cleanup = it; store.correction = it },
                 summary = cleanupDescription(store.health))
             NavRow("Open Chirp settings", { open("settings") })
         }

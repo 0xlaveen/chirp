@@ -573,7 +573,7 @@ internal class KeyboardDictation(
     // One spoken result per final: the status live region is silent while listening and reads this once.
     private fun announcement(raw: Boolean) = when {
         active || words == 0 -> null
-        raw -> "Cleaned, Use raw available"
+        raw -> "Polished, Use raw available"
         notice -> "Inserted, $words ${if (words == 1) "word" else "words"}"
         else -> null
     }

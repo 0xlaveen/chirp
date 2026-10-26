@@ -39,8 +39,8 @@ internal fun View.systemInsets() {
     ViewCompat.requestApplyInsets(this)
 }
 internal fun correctionLabel(health: Health?): String = when {
-    health?.correctionLeavesMachine == true -> "Correction — sends text to ${health.correctionHost ?: "external host (unavailable)"}"
-    else -> "Correction on your computer"
+    health?.correctionLeavesMachine == true -> "Sends text to ${health.correctionHost ?: "external host (unavailable)"}"
+    else -> "On your computer"
 }
 
 internal fun Health?.cleanupAvailable() = this?.let { it.correctionAvailable && (!it.correctionLeavesMachine || it.correctionHost != null) } == true

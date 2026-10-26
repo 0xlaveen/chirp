@@ -212,7 +212,7 @@ internal fun NotesLibraryScreen(
         }) { Text(if (pendingNew) "Stop current and record" else "Stop current and continue here") } },
         dismissButton = { TextButton({ pendingNew = false; pendingRecord = null }) { Text("Cancel") } })
     if (emptyTrash) AlertDialog(onDismissRequest = { emptyTrash = false }, title = { Text("Empty Recently Deleted?") },
-        text = { Text("These notes and their audio will be permanently deleted.") },
+        text = { Text("These notes and their audio will be deleted for good. This can’t be undone.") },
         confirmButton = { TextButton({ emptyTrash = false; scope.launch { withContext(Dispatchers.IO) { library?.emptyTrash() } }; selection = emptyList() }) { Text("Delete permanently") } },
         dismissButton = { TextButton({ emptyTrash = false }) { Text("Cancel") } })
     val shown = if (trash) rows.filter { it.deleted && (query.isBlank() || it.title.contains(query.trim(), true) || it.snippet.contains(query.trim(), true)) }
@@ -247,7 +247,7 @@ internal fun NotesLibraryScreen(
                                 }, scrollBehavior = scrollBehavior, expandedHeight = 104.dp,
                                 colors = TopAppBarDefaults.largeTopAppBarColors(containerColor = MaterialTheme.colorScheme.background, scrolledContainerColor = MaterialTheme.colorScheme.background))
                             DockedSearchBar(inputField = { SearchBarDefaults.InputField(query, { query = it }, { focus.clearFocus() }, false, {},
-                                modifier = Modifier.focusRequester(searchFocus), placeholder = { Text("Search notes") }, leadingIcon = { Icon(painterResource(R.drawable.ic_search), null) },
+                                modifier = Modifier.focusRequester(searchFocus), placeholder = { Text(if (trash) "Search Recently Deleted" else "Search notes") }, leadingIcon = { Icon(painterResource(R.drawable.ic_search), null) },
                                 trailingIcon = if (query.isEmpty()) null else ({ IconButton({ query = "" }) { Icon(painterResource(R.drawable.ic_close), "Clear search") } })) },
                                 expanded = false, onExpandedChange = {}, modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(bottom = 12.dp)) { }
                             if (!trash && recording) Column(Modifier.padding(horizontal = 16.dp).padding(bottom = 12.dp)) {
@@ -297,7 +297,7 @@ internal fun NotesLibraryScreen(
                                 }
                             }
                             if (shown.isEmpty() && !(recording && !trash && query.isBlank()) && (query.isBlank() || searched == query)) item(key = "empty") {
-                                LibraryEmpty(if (trash) "Nothing recently deleted" else if (query.isBlank()) "Your notes will live here" else "No results for ‘${query.trim()}’",
+                                LibraryEmpty(if (trash) "Nothing recently deleted" else if (query.isBlank()) "Your notes will live here" else "No results for “${query.trim()}”",
                                     if (trash) "Deleted notes appear here for 30 days." else if (query.isBlank()) "Tap Record and talk. Chirp turns it into notes." else "Try another word from your notes or transcript.",
                                     glyph = query.isBlank(), modifier = Modifier.fillMaxWidth().padding(top = 48.dp))
                             }
@@ -344,8 +344,8 @@ private fun SetupCard(progress: dev.chirp.android.shell.SetupProgress, fix: () -
     Surface(Modifier.fillMaxWidth().padding(bottom = 8.dp), shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.surfaceContainer) {
         Row(Modifier.padding(start = 16.dp, top = 8.dp, bottom = 8.dp, end = 4.dp), verticalAlignment = Alignment.Top) {
             Column(Modifier.weight(1f).padding(top = 8.dp)) {
-                Text(progress.missing!!.title, style = MaterialTheme.typography.titleMedium)
-                Text("${progress.done} of 3 done", Modifier.padding(top = 4.dp), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("Finish setting up", style = MaterialTheme.typography.titleMedium)
+                Text("Next: ${progress.missing!!.title.replaceFirstChar { it.lowercase() }}", Modifier.padding(top = 4.dp), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 TextButton(fix, contentPadding = PaddingValues(vertical = 8.dp)) { Text(progress.missing!!.action) }
             }
             IconButton(dismiss) { Icon(painterResource(R.drawable.ic_close), "Dismiss setup") }
@@ -365,7 +365,7 @@ internal fun LibraryEmpty(title: String, body: String, glyph: Boolean, modifier:
         }
         Text(title, Modifier.padding(top = 16.dp), style = MaterialTheme.typography.titleLarge.copy(fontFamily = FontFamily.Serif), textAlign = TextAlign.Center)
         Text(body, Modifier.widthIn(max = 290.dp).padding(top = 8.dp), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center)
-        if (glyph && title == "Your notes will live here") Text("Notes stay on this phone", Modifier.padding(top = 24.dp), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        if (glyph && title == "Your notes will live here") Text("Notes stay on this phone.", Modifier.padding(top = 24.dp), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 

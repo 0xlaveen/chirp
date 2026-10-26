@@ -82,7 +82,7 @@ internal fun elapsedSpoken(millis: Long): String {
 internal fun dictationDisplayStatus(status: String): String = when {
     status == "Tap mic" || status.startsWith("Tap mic ·") -> "Ready"
     status == "kept original" -> "Kept what was heard"
-    status.startsWith("cleaned") -> "Finished" + status.removePrefix("cleaned")
+    status.startsWith("cleaned") -> "Polished" + status.removePrefix("cleaned")
     status.startsWith("Inserted") -> "Finished" + status.removePrefix("Inserted")
     status == ConnectionFailure.OFFLINE -> "Computer offline · Check again"
     status.startsWith("Computer is loading") || status.startsWith("Computer loading") -> "Computer loading its model"

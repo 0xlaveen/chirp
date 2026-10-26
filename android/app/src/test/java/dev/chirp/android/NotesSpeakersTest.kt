@@ -423,7 +423,8 @@ class NotesSpeakersRenderTest {
         }
         fun shot(name: String) {
             compose.mainClock.advanceTimeBy(2000); compose.waitForIdle()
-            val bitmap = notesScreenshot(compose.onRoot(), false)
+            val target = if (name == "rename") compose.onNode(isRoot() and hasAnyDescendant(hasText("Rename “Person 2”"))) else compose.onRoot()
+            val bitmap = notesScreenshot(target)
             File(output, "notes-speakers-$name-${if (dark.value) "dark" else "light"}.png").outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
         }
         for (night in listOf(false, true)) { compose.runOnIdle { dark.value = night }; shot("transcript") }
@@ -461,7 +462,7 @@ class NotesSpeakersRenderTest {
         compose.onNodeWithText("Getting the speaker model ready (27 MB, once)…").assertIsDisplayed()
         for (night in listOf(false, true)) {
             compose.runOnIdle { dark.value = night }; compose.mainClock.advanceTimeBy(2000); compose.waitForIdle()
-            val bitmap = notesScreenshot(compose.onRoot(), false)
+            val bitmap = notesScreenshot(compose.onRoot())
             File(output, "notes-speakers-preparing-${if (night) "dark" else "light"}.png").outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
         }
         compose.onNodeWithText("Turn off").performClick()
@@ -496,7 +497,7 @@ class NotesSpeakersRenderTest {
         compose.onNodeWithText("Label speakers?").assertDoesNotExist()
         for (night in listOf(false, true)) {
             compose.runOnIdle { dark.value = night }; compose.mainClock.advanceTimeBy(2000); compose.waitForIdle()
-            val bitmap = notesScreenshot(compose.onRoot(), false)
+            val bitmap = notesScreenshot(compose.onRoot())
             File(output, "notes-speakers-status-${if (night) "dark" else "light"}.png").outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
         }
         compose.onNodeWithText("Turn off").performClick()
@@ -531,7 +532,7 @@ class NotesSpeakersRenderTest {
         for (night in listOf(false, true)) {
             compose.runOnIdle { dark.value = night }
             compose.mainClock.advanceTimeBy(2000); compose.waitForIdle()
-            val bitmap = notesScreenshot(compose.onRoot(), false)
+            val bitmap = notesScreenshot(compose.onNode(isRoot() and hasAnyDescendant(hasTestTag("name_speakers_done"))))
             File(output, "notes-speakers-name-sheet-${if (night) "dark" else "light"}.png").outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
         }
         compose.onNodeWithTag("name_speakers_done").performClick()
@@ -553,7 +554,7 @@ class NotesSpeakersRenderTest {
         compose.onNodeWithTag("name_speakers_done").assertIsDisplayed()
         for (night in listOf(false, true)) {
             compose.runOnIdle { dark.value = night }; compose.mainClock.advanceTimeBy(2000); compose.waitForIdle()
-            val bitmap = notesScreenshot(compose.onRoot(), false)
+            val bitmap = notesScreenshot(compose.onNode(isRoot() and hasAnyDescendant(hasTestTag("name_speakers_dialog"))))
             File(output, "notes-speakers-name-dialog-${if (night) "dark" else "light"}.png").outputStream().use {
                 bitmap.compress(Bitmap.CompressFormat.PNG, 100, it)
             }

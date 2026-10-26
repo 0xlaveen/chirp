@@ -99,7 +99,7 @@ class KeyboardRenderTest {
                     else assertEquals("Dictation must reuse the suggestion row height (${state.name})", idleHeight, root.measuredHeight)
                     assertFalse("Partial belongs only in the editor", strip.status.text.contains("Synthetic example"))
                     if (state.name == "countdown") assertEquals("Listening… · 15 s left", strip.status.text.toString())
-                    if (state.name == "final") assertEquals("Finished", strip.status.text.toString())
+                    if (state.name == "final") assertEquals("Polished", strip.status.text.toString())
                     assertNotNull(KeyboardSwitcher.getInstance().keyboard?.getKey('a'.code))
                     colors.tints.of(state.kind)?.let { tint ->
                         assertTrue("${state.name} text on tint", androidx.core.graphics.ColorUtils.calculateContrast(tint.text, tint.fill) >= StripTints.TEXT)

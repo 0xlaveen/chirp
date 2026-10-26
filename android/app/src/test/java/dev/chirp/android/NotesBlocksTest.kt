@@ -170,7 +170,7 @@ class NotesPageTest {
         compose.onNodeWithText("Decision").assertIsDisplayed()
         compose.onNodeWithText("Ship Friday").assertIsDisplayed()
         compose.onNode(hasSetTextAction()).assertDoesNotExist()
-        compose.onNodeWithContentDescription("Continue recording notes").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Continue recording").assertIsDisplayed()
     }
 
     @Test fun `ticking a to-do writes it back to the Markdown as the user's edit`() {
@@ -202,16 +202,24 @@ class NotesPageTest {
         compose.onNodeWithText("Loose line").assertIsDisplayed()
     }
 
-    @Test fun `actions live in the overflow menu, not in a row of buttons`() {
+    @Test fun `Organize is one tap away and supporting actions live in the overflow menu`() {
         screen("- a")
         compose.onNodeWithText("Share").assertDoesNotExist()
-        compose.onNodeWithText("Organize").assertDoesNotExist()
+        compose.onNodeWithContentDescription("Organize").assertIsDisplayed().assertIsEnabled()
         compose.onNodeWithContentDescription("More options").performClick()
         compose.onNodeWithText("Organize").assertIsDisplayed()
         compose.onNodeWithText("Share").assertIsDisplayed()
         compose.onNodeWithText("Export Markdown").assertIsDisplayed()
         compose.onNodeWithText("Notes settings").assertIsDisplayed()
         compose.onNodeWithText("Delete").assertIsDisplayed().assertIsEnabled()
+    }
+
+    @Test fun `toolbar Organize runs the model and is disabled on an empty note`() {
+        val rig = screen("")
+        compose.onNodeWithContentDescription("Organize").assertIsDisplayed().assertIsNotEnabled()
+        compose.runOnIdle { rig.model.edit(TextFieldValue("A synthetic planning note. ".repeat(60))) }
+        compose.onNodeWithContentDescription("Organize").assertIsEnabled().performClick()
+        compose.runOnIdle { rig.idle(); assertEquals(1, rig.api.reorganizations.size) }
     }
 
     @Test fun `the transcript is a second view on the cover screen`() {

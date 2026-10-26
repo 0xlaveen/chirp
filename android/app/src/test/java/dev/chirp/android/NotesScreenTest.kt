@@ -35,7 +35,10 @@ internal class ScriptedNotesApi : NotesApi {
     override fun structure(request: NotesStructureRequest): NotesStructureResponse {
         structures += request; return answers.removeFirstOrNull() ?: NotesStructureResponse.failed("timeout")
     }
-    override fun reorganize(request: NotesReorganizeRequest) = NotesReorganizeResponse(request.notes, true, false)
+    val reorganizations = mutableListOf<NotesReorganizeRequest>()
+    override fun reorganize(request: NotesReorganizeRequest): NotesReorganizeResponse {
+        reorganizations += request; return NotesReorganizeResponse(request.notes, true, false)
+    }
     val edits = mutableListOf<NotesEditRequest>()
     val editAnswers = ArrayDeque<NotesEditResponse>()
     override fun edit(request: NotesEditRequest): NotesEditResponse {
@@ -240,7 +243,7 @@ class NotesRenderTest {
             // Let the last tap's ripple fade before the capture.
             compose.mainClock.advanceTimeBy(2000); compose.waitForIdle()
             val target = if (name == "transcript") compose.onNode(isRoot() and hasAnyDescendant(hasText("Show raw"))) else compose.onRoot()
-            val bitmap = notesScreenshot(target, name == "transcript")
+            val bitmap = notesScreenshot(target)
             File(output, "notes-$width-$name-${if (dark.value) "dark" else "light"}.png").outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
         }
         val notes = NotesStructureResponse("## Launch plan\n- Beta goes to **ten** design partners first\n  - Then open the waitlist\n" +
@@ -255,6 +258,8 @@ class NotesRenderTest {
                 rig.wire.partial("Someone should draft the invite email")
             }
             shot("recording")
+            compose.onNodeWithContentDescription("Organize").assertIsDisplayed().assertIsEnabled()
+            shot("organize-toolbar")
             compose.runOnIdle { rig.model.command(); rig.idle(); rig.wire.ready(); rig.wire.partial("remove the question about the waitlist"); rig.idle() }
             shot("command")
             compose.runOnIdle {

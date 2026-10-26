@@ -67,9 +67,9 @@ internal fun historyDay(now: Long, time: Long, zone: ZoneId = ZoneId.systemDefau
 internal fun historyMatches(entry: HistoryEntry, query: String): Boolean =
     query.isBlank() || listOfNotNull(entry.text, entry.raw, entry.app).any { it.contains(query.trim(), ignoreCase = true) }
 
-/** "Gmail · 2 min ago · cleaned": app, age and whether clean-up changed it. Never any of the text. */
+/** "Gmail · 2 min ago · Polished": app, age and whether clean-up changed it. Never any of the text. */
 internal fun historyMeta(entry: HistoryEntry, now: Long): String =
-    listOfNotNull(entry.app, historyAge(now, entry.time).first, if (entry.partial) "partial" else if (entry.raw != null) "cleaned" else null).joinToString(" · ")
+    listOfNotNull(entry.app, historyAge(now, entry.time).first, if (entry.partial) "partial" else if (entry.raw != null) "Polished" else null).joinToString(" · ")
 
 /** Dictated text on the clipboard, kept out of clipboard previews and overlays where the system supports it. */
 internal fun copyPrivately(context: Context, label: String, text: String) {
