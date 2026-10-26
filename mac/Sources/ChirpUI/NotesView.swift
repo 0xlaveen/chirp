@@ -126,6 +126,7 @@ struct NotesDetail: View {
                 if let explanation = model.explanation { ExplanationBanner(model: model, text: explanation) }
                 if let notice = model.speakerModelNotice { SpeakerModelBanner(model: model, notice: notice) }
             }
+            if model.showsNameSpeakersLine { SpeakerNameLine(model: model) }
             ZStack(alignment: .topTrailing) {
                 NotesEditor(model: model, library: library)
                     .id(ObjectIdentifier(model))
@@ -144,6 +145,9 @@ struct NotesDetail: View {
         }
         // Under the toolbar too, so the title bar sits on the page.
         .background(Color.chirp.surface.ignoresSafeArea())
+        .sheet(isPresented: Binding(get: { model.namingSpeakers }, set: { if !$0 { model.endNamingSpeakers() } })) {
+            if let state = model.nameSpeakers { NameSpeakersSheet(model: model, state: state, library: library) }
+        }
     }
 }
 

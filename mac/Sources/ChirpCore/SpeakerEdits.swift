@@ -31,6 +31,15 @@ public struct SpeakerNameReplacement: Equatable, Sendable {
     public var fallbackBlocks: [String]
     /// `version` right after the replace: Undo applies only while nothing else changed the notes.
     public var version: Int
+
+    /// Several replaces made one after another as one: their changes in order, and an inverse that undoes the last
+    /// first, from the text before the first. Nil when there were none.
+    public static func combined(_ list: [SpeakerNameReplacement]) -> SpeakerNameReplacement? {
+        guard let first = list.first, let last = list.last else { return nil }
+        return SpeakerNameReplacement(old: first.old, new: first.new, changes: list.flatMap(\.changes),
+                                      inverse: list.reversed().flatMap(\.inverse), fallbackBlocks: first.fallbackBlocks,
+                                      version: last.version)
+    }
 }
 
 extension NotesDocument {

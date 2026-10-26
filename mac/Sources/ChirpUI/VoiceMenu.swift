@@ -15,6 +15,8 @@ public struct SpeakerVoiceState: Equatable, Sendable {
     public var canRemember: Set<Int> = []
     /// Seconds of each person's voice heard so far.
     public var seconds: [Int: TimeInterval] = [:]
+    /// The names of the saved voices, most recently updated first (the Name speakers sheet offers them first).
+    public var saved: [String] = []
 
     public init(enabled: Bool = false) { self.enabled = enabled }
 }
@@ -27,6 +29,7 @@ extension NotesSession {
         let prints = recorder.speakers?.voiceprints ?? [:]
         let heard = SpeakerVoices.personVoices(document, prints)
         var s = SpeakerVoiceState(enabled: true)
+        s.saved = voices.profiles.sorted { $0.updated > $1.updated }.map(\.name)
         s.suggestions = voices.suggestions(document, prints).mapValues(\.name)
         for person in document.roster.active {
             if let profile = voices.link(person) { s.linked[person] = profile.name }

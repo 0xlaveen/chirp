@@ -580,6 +580,7 @@ public enum Snapshots {
         "notes-continued", "notes-inspector-playing", "notes-review-sheet",
         "notes-transcript-speakers", "notes-transcript-speakers-renamed", "notes-recording-call", "notes-sources-call",
         "notes-speaker-model-downloading", "notes-speaker-model-failed",
+        "notes-name-speakers-line", "notes-name-speakers-sheet", "notes-name-speakers-suggest", "notes-name-speakers-remember",
         "history-cleaned", "history-empty", "menu-recent-dictations-submenu",
     ]
 
@@ -910,6 +911,34 @@ public enum Snapshots {
         })
     }
 
+    /// The Name speakers sheet over the speaker demo (three people, the notes naming Person 2 twice, audio kept so each
+    /// has a ▶). `configure` edits the draft and picks the row whose suggestions show.
+    @MainActor
+    static func nameSpeakersSheet(voices: Bool = false, _ configure: (inout NameSpeakersDraft, inout Int?) -> Void) -> NSView {
+        let model = NotesModel()
+        var d = demoSpeakers()
+        d.livePartial = ""
+        d.userEdit(NSRange(location: 0, length: 0), "## Lantern kickoff\n- Launch target moved to **March 3** (**Person 2** confirmed)\n- [ ] **Person 2** to send the draft spec by **Friday**\n")
+        model.document = d
+        model.state = .stopped
+        model.speakerLabels = true; model.speakerModel = .ready
+        model.keptAudio = Dictionary(uniqueKeysWithValues: (0..<4).map { ($0, URL(fileURLWithPath: "/dev/null/\($0).m4a")) })
+        if voices {
+            model.voices = SpeakerVoiceState(enabled: true)
+            model.voices.saved = ["Maya Chen", "Theo"]
+            model.voices.canRemember = [1, 2]
+            model.voices.seconds = [1: 41, 2: 28, 3: 9]
+        }
+        let library = NotesLibraryModel()
+        library.notes = demoLibrary(current: d, recording: false)
+        if let i = library.notes.firstIndex(where: { $0.id != d.id }) { library.notes[i].speakerNames = ["Maya", "Akshay"] }
+        var draft = NameSpeakersDraft(d), suggesting: Int?
+        configure(&draft, &suggesting)
+        let state = NameSpeakersState(d, draft: draft, suggesting: suggesting)
+        model.nameSpeakers = state
+        return NSHostingView(rootView: NameSpeakersSheet(model: model, state: state, library: library))
+    }
+
     /// The demo meeting, finished and saved: the library's ordinary state.
     static func finished(_ model: NotesModel, _ library: NotesLibraryModel, continued: Bool = false) {
         model.state = .stopped
@@ -1061,6 +1090,34 @@ public enum Snapshots {
                 model.speakerBanner = SpeakerBanner(document: d.id, kind: .offerReplace(old: "Person 2", new: "Maya", count: 2))
                 library.showsInspector = true
             },
+            // After Stop, nobody named yet: the quiet "Who was speaking?" line over the note.
+            notes("name-speakers-line") { model, library in
+                var d = demoSpeakers()
+                d.livePartial = ""
+                d.userEdit(NSRange(location: 0, length: 0), "## Lantern kickoff\n- Launch target moved to **March 3** (**Person 2** confirmed)\n- [ ] **Person 2** to send the draft spec by **Friday**\n")
+                model.document = d
+                model.state = .stopped
+                model.speakerLabels = true; model.speakerModel = .ready
+                library.showsInspector = true
+            },
+            // The Name speakers sheet over that note: two named, one voice marked as the same person.
+            Scenario(name: "notes-name-speakers-sheet") { nameSpeakersSheet { draft, _ in
+                draft.rows[0].name = "Theo"
+                draft.rows[1].name = "Maya"
+                draft.rows[2].mergeInto = 1
+            } },
+            // Typing in a field: saved voices first, then names from recent notes.
+            Scenario(name: "notes-name-speakers-suggest") { nameSpeakersSheet(voices: true) { draft, suggesting in
+                draft.rows[0].name = "Theo"
+                draft.rows[1].name = "M"
+                suggesting = 2
+            } },
+            // Where Chirp can remember voices: "Remember voice", ticked, for those with enough speech.
+            Scenario(name: "notes-name-speakers-remember") { nameSpeakersSheet(voices: true) { draft, _ in
+                draft.rows[0].name = "Theo"
+                draft.rows[1].name = "Maya"
+                draft.rows[1].remember = false
+            } },
             // Labels are on by default: the model is fetched in the background, with one status line (never a prompt).
             notes("speaker-model-downloading") { model, _ in
                 model.speakerLabels = true; model.speakerModelSize = "106 MB"; model.speakerModel = .downloading(0.4)
