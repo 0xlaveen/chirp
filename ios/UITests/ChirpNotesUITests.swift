@@ -275,19 +275,19 @@ final class ChirpNotesUITests: XCTestCase {
                       "the rename replaced the name in the notes")
     }
 
-    /// The switch itself: off by default, on without a consent (the synthetic Mac has the model), and the chips follow.
-    @MainActor func testLabelSpeakersSwitchAndRecording() {
+    /// Labels are on by default: no switch to flip and no consent (the synthetic Mac has the model), the chips follow, and
+    /// Turn off in Settings is the one explicit choice.
+    @MainActor func testLabelSpeakersAreOnByDefaultAndSettingsTurnsThemOff() {
         let app = launch()
-        // Paired (the synthetic Mac answers health) before the switch is asked for: otherwise the Mac's model is unknown.
+        // Paired (the synthetic Mac answers health) before Settings is read: otherwise the Mac's model is unknown.
         XCTAssertTrue(Self.waitFor(app.buttons["chirp.notes.record"].firstMatch, "isEnabled == true", timeout: 20))
         app.buttons["chirp.notes.menu"].tap(); app.buttons["chirp.notes.settings"].tap()
         let toggle = Self.element("chirp.notes.speakers.setting", in: app)
-        XCTAssertTrue(toggle.waitForExistence(timeout: 5)); XCTAssertEqual(toggle.value as? String, "0")
+        XCTAssertTrue(toggle.waitForExistence(timeout: 5)); XCTAssertEqual(toggle.value as? String, "1")
+        let model = Self.element("chirp.notes.speakers.model", in: app)
+        XCTAssertTrue(Self.waitFor(model, "label == 'Speaker model on your Mac: ready'", timeout: 10))
+        XCTAssertFalse(app.alerts.firstMatch.exists, "Labels on by default never ask")
         screenshot("notes-settings-speakers-sheet", app)
-        Self.flipInSheet(toggle, in: app)
-        screenshot("notes-settings-speakers-tapped", app)
-        XCTAssertTrue(Self.waitFor(toggle, "value == '1'", timeout: 10))
-        screenshot("notes-settings-speakers", app)
         app.buttons["Done"].tap()
         app.buttons["chirp.notes.record"].firstMatch.tap()
         XCTAssertTrue(Self.waitFor(Self.element("chirp.notes.status", in: app), "label == 'Recording'"))
@@ -296,5 +296,14 @@ final class ChirpNotesUITests: XCTestCase {
         app.buttons["chirp.notes.transcript.open"].tap()
         XCTAssertTrue(app.buttons["chirp.notes.speaker.chip.0.0"].waitForExistence(timeout: 15))
         XCTAssertEqual(app.buttons["chirp.notes.speaker.chip.0.1"].label, "Person 2")
+        if UIDevice.current.userInterfaceIdiom != .pad { app.buttons["Done"].tap() }
+        else { app.buttons["chirp.notes.transcript.open"].tap() }
+
+        // Turn off is the user's own choice: the switch reads off.
+        app.buttons["chirp.notes.menu"].tap(); app.buttons["chirp.notes.settings"].tap()
+        XCTAssertTrue(toggle.waitForExistence(timeout: 5))
+        Self.flipInSheet(toggle, in: app)
+        XCTAssertTrue(Self.waitFor(toggle, "value == '0'", timeout: 10))
+        screenshot("notes-settings-speakers", app)
     }
 }

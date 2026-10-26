@@ -3,8 +3,9 @@
 #   portable checks -> for an iPhone and an iPad simulator: build, unit tests, then the full UI scheme against a
 #   throwaway real chirp-server (simulator-e2e.sh) -> a per-test table, screenshots and logs under one evidence dir.
 # Usage: ios/scripts/e2e-all.sh [--skip-portable] [--dark] [--phone-only|--ipad-only] [--keep-devices] [--only speakers]
-#   --only speakers   a short batched run for Live Notes speaker labels: portable checks, the controller unit tests and the
-#                     speaker UI tests (synthetic, and live against the real server with its WeSpeaker model, two `say` voices)
+#   --only speakers   a short batched run for Live Notes speaker labels (on by default; the server fetches its model itself):
+#                     portable checks, the controller unit tests and the speaker UI tests (synthetic, and live against the
+#                     real server with its WeSpeaker model, two `say` voices)
 # Env:   CHIRP_E2E_IPHONE / CHIRP_E2E_IPAD   use these simulator UUIDs instead of creating (and deleting) our own
 #        CHIRP_E2E_OUT                       evidence dir (default: a new /tmp/chirp-ios-e2e-all.XXXX)
 #        CHIRP_TEST_DIAGNOSTICS              never (default) or on-failure; simulator.sh passes it to xcodebuild
@@ -137,7 +138,7 @@ run_device() {
   local unit_only="" ui_only=""
   if [ "$only" = speakers ]; then
     unit_only="-only-testing:ChirpIOSTests/LiveNotesControllerTests"
-    ui_only="-only-testing:ChirpIOSUITests/ChirpLiveSpeakersUITests -only-testing:ChirpIOSUITests/ChirpNotesUITests/testSpeakerChipsRenameMergeAndSeparate -only-testing:ChirpIOSUITests/ChirpNotesUITests/testLabelSpeakersSwitchAndRecording"
+    ui_only="-only-testing:ChirpIOSUITests/ChirpLiveSpeakersUITests -only-testing:ChirpIOSUITests/ChirpNotesUITests/testSpeakerChipsRenameMergeAndSeparate -only-testing:ChirpIOSUITests/ChirpNotesUITests/testLabelSpeakersAreOnByDefaultAndSettingsTurnsThemOff"
   fi
   # shellcheck disable=SC2086
   stage "$label-unit" ./scripts/simulator.sh test "$uuid" -resultBundlePath "$OUT/$label-unit.xcresult" $unit_only

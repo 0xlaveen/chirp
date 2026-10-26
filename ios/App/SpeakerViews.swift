@@ -3,7 +3,7 @@ import ChirpIOSCore
 import SwiftUI
 
 /// Live Notes speaker labels (#201, Pond #151): the capsule that starts a person's turn, its menu (rename, same person
-/// as, separate), the rename sheet and the consent before the Mac's one model download. Names are note content and are
+/// as, separate), the rename sheet and the status line while the Mac fetches its model. Names are note content and are
 /// never logged.
 
 /// A person's colour dot and name on a tinted capsule. The name stays in Pond ink so it reads on every hue.
@@ -120,12 +120,35 @@ struct RenameSpeakerSheet: View {
     }
 }
 
-extension View {
-    /// Before the Mac's one download: what it is, where it comes from, and what happens to voices.
-    func speakerConsentAlert(_ notes: LiveNotesController, isPresented: Bool) -> some View {
-        alert(SpeakerNotice.consentTitle, isPresented: Binding(get: { isPresented }, set: { if !$0 { notes.dismissSpeakerConsent() } })) {
-            Button("Download") { notes.confirmSpeakerDownload() }.accessibilityIdentifier("chirp.notes.speaker.download")
-            Button("Not now", role: .cancel) { notes.dismissSpeakerConsent() }
-        } message: { Text(SpeakerNotice.consentMessage) }
+/// The one line in the note's banner slot while labels are on but not working yet: never a dialog, always with a way out.
+struct SpeakerStatusLine: View {
+    @ObservedObject var notes: LiveNotesController
+    let status: SpeakerNotice.Status
+
+    var body: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 12) { label; Spacer(minLength: 8); actions }
+            VStack(alignment: .leading, spacing: 8) { label; HStack(spacing: 12) { actions } }
+        }
+        .padding(12).background(Color.chirp.surfaceRaised, in: RoundedRectangle(cornerRadius: 10))
+        .accessibilityElement(children: .contain).accessibilityIdentifier("chirp.notes.speakers.note")
+    }
+
+    private var label: some View {
+        Label {
+            Text(status.text)
+        } icon: {
+            if case .preparing = status { ProgressView().controlSize(.small) }
+            else { Image(systemName: "exclamationmark.triangle") }
+        }.font(.footnote).foregroundStyle(Color.chirp.inkMuted)
+    }
+
+    @ViewBuilder private var actions: some View {
+        if status.canRetry {
+            Button("Retry") { notes.retrySpeakerModel() }.accessibilityIdentifier("chirp.notes.speakers.retry")
+        }
+        if status.canTurnOff {
+            Button("Turn off") { notes.setLabelSpeakers(false) }.accessibilityIdentifier("chirp.notes.speakers.turnoff")
+        }
     }
 }

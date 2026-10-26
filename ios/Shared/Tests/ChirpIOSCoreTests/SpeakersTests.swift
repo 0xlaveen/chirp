@@ -47,51 +47,74 @@ import Testing
         Health(notesSpeakers: speakers, speakersModel: model.map { SpeakersModel(state: $0) })
     }
 
-    @Test func anOlderServerHidesTheFeatureWithAReason() {
+    @Test func anOlderServerHidesTheFeatureWithAReasonInSettingsAndNeverNags() {
         #expect(!SpeakerNotice.available(nil) && !SpeakerNotice.available(health(speakers: nil)) && SpeakerNotice.available(health(speakers: true)))
-        #expect(SpeakerNotice.transcriptNote(on: true, health: health(speakers: nil), recorderError: nil) == "Update Chirp on your Mac to label speakers.")
-        #expect(SpeakerNotice.summary(health: health(speakers: nil)) == "Update Chirp on your Mac to label speakers")
+        #expect(SpeakerNotice.status(on: true, health: health(speakers: nil), recorderError: "failed") == nil)
+        #expect(SpeakerNotice.summary(on: true, health: health(speakers: nil)) == "Update Chirp on your Mac to label speakers")
         // No health yet is not "too old".
-        #expect(SpeakerNotice.transcriptNote(on: true, health: nil, recorderError: nil) == nil)
-        #expect(SpeakerNotice.summary(health: nil) == "Off by default · who said what")
+        #expect(SpeakerNotice.status(on: true, health: nil, recorderError: nil) == nil)
+        #expect(SpeakerNotice.summary(on: true, health: nil) == "On · who said what")
+        #expect(SpeakerNotice.summary(on: false, health: health(speakers: true)) == "Off · who said what")
     }
 
-    @Test func noticesFollowTheModelAndTheLastSegment() {
+    @Test func theStatusLineFollowsTheModelAndTheLastSegment() {
         let ready = health(speakers: true, model: .ready)
-        #expect(SpeakerNotice.transcriptNote(on: false, health: health(speakers: nil), recorderError: "failed") == nil)
-        #expect(SpeakerNotice.transcriptNote(on: true, health: ready, recorderError: nil) == nil)
-        #expect(SpeakerNotice.transcriptNote(on: true, health: health(speakers: true, model: .downloading), recorderError: nil)
-                == "Downloading the speaker model on your Mac…")
-        for state in [SpeakersModel.State.notDownloaded, .failed] {
-            #expect(SpeakerNotice.transcriptNote(on: true, health: health(speakers: true, model: state), recorderError: nil)?.hasPrefix("The speaker model isn’t on your Mac") == true)
+        #expect(SpeakerNotice.status(on: false, health: health(speakers: true, model: .failed), recorderError: "failed") == nil)
+        #expect(SpeakerNotice.status(on: true, health: ready, recorderError: nil) == nil)
+        for state in [SpeakersModel.State.downloading, .notDownloaded] {
+            #expect(SpeakerNotice.status(on: true, health: health(speakers: true, model: state), recorderError: nil) == .preparing(size: nil))
         }
-        #expect(SpeakerNotice.transcriptNote(on: true, health: ready, recorderError: "unavailable")?.hasPrefix("The speaker model isn’t on your Mac") == true)
-        #expect(SpeakerNotice.transcriptNote(on: true, health: ready, recorderError: "failed") == "Couldn’t label the last segment’s speakers.")
+        #expect(SpeakerNotice.status(on: true, health: health(speakers: true, model: .notDownloaded), recorderError: nil, requestFailed: true) == .failed)
+        #expect(SpeakerNotice.status(on: true, health: health(speakers: true, model: .failed), recorderError: nil) == .failed)
+        // A damaged model: the Mac says ready, the segment says it cannot use it.
+        #expect(SpeakerNotice.status(on: true, health: ready, recorderError: "unavailable") == .failed)
+        #expect(SpeakerNotice.status(on: true, health: ready, recorderError: "failed") == .lastSegment)
+    }
+
+    @Test func theStatusLineTextCarriesTheServersOwnSizeAndTheRightButtons() {
+        let sized = Health(notesSpeakers: true, speakersModel: SpeakersModel(state: .downloading, sizeBytes: 26_530_309))
+        let status = SpeakerNotice.status(on: true, health: sized, recorderError: nil)
+        #expect(status?.text == "Getting the speaker model ready (27 MB, once)…")
+        #expect(status?.canTurnOff == true && status?.canRetry == false)
+        #expect(SpeakerNotice.Status.failed.text == "Couldn’t download the speaker model." && SpeakerNotice.Status.failed.canRetry)
+        #expect(SpeakerNotice.Status.lastSegment.canTurnOff == false && SpeakerNotice.Status.lastSegment.canRetry == false)
     }
 
     @Test func settingsShowsWhereTheModelStands() {
         #expect(SpeakerNotice.modelStatus(on: false, health: health(speakers: true, model: .ready)) == nil)
         #expect(SpeakerNotice.modelStatus(on: true, health: nil) == nil && SpeakerNotice.modelStatus(on: true, health: health(speakers: nil)) == nil)
-        #expect(SpeakerNotice.modelStatus(on: true, health: health(speakers: true, model: .ready)) == "Speaker model ready on your Mac.")
-        #expect(SpeakerNotice.modelStatus(on: true, health: health(speakers: true, model: .downloading)) == "Downloading the speaker model on your Mac…")
-        #expect(SpeakerNotice.modelStatus(on: true, health: health(speakers: true, model: .failed))?.hasPrefix("The speaker model isn’t") == true)
+        #expect(SpeakerNotice.modelStatus(on: true, health: health(speakers: true, model: .ready)) == "Speaker model on your Mac: ready")
+        #expect(SpeakerNotice.modelStatus(on: true, health: health(speakers: true, model: .downloading)) == "Speaker model on your Mac: downloading")
+        #expect(SpeakerNotice.modelStatus(on: true, health: health(speakers: true, model: .failed)) == "Speaker model on your Mac: couldn’t download")
+        #expect(SpeakerNotice.modelStatus(on: true, health: health(speakers: true, model: .notDownloaded), requestFailed: true)
+                == "Speaker model on your Mac: couldn’t download")
     }
 
-    @Test func turningOnAsksUnlessTheMacHasTheModel() {
-        #expect(SpeakerNotice.needsConsent(health: nil))
-        #expect(SpeakerNotice.needsConsent(health: health(speakers: true, model: .notDownloaded)))
-        #expect(SpeakerNotice.needsConsent(health: health(speakers: true, model: .failed)))
-        #expect(!SpeakerNotice.needsConsent(health: health(speakers: true, model: .ready)))
-        #expect(!SpeakerNotice.needsConsent(health: health(speakers: true, model: .downloading)))
-        #expect(SpeakerNotice.consentMessage.contains("27 MB") && SpeakerNotice.consentMessage.contains("never saved"))
-    }
-
-    @Test func theSwitchIsOffByDefaultAndKeepsOlderPreferencesDecoding() throws {
-        #expect(NotesPreferences().labelSpeakers == false)
-        #expect(try JSONDecoder().decode(NotesPreferences.self, from: Data("{}".utf8)).labelSpeakers == false)
+    @Test func labelsAreOnUntilTheUserTurnsThemOff() throws {
+        let decode = { (json: String) in try JSONDecoder().decode(NotesPreferences.self, from: Data(json.utf8)) }
+        #expect(NotesPreferences().labelSpeakers == nil && NotesPreferences().speakerLabelsOn)
+        #expect(try decode("{}").speakerLabelsOn && decode("{}").labelSpeakers == nil)
         var p = NotesPreferences()
+        p.labelSpeakers = false
+        let off = try JSONDecoder().decode(NotesPreferences.self, from: JSONEncoder().encode(p))
+        #expect(off.labelSpeakers == false && !off.speakerLabelsOn)
         p.labelSpeakers = true
-        #expect(try JSONDecoder().decode(NotesPreferences.self, from: JSONEncoder().encode(p)).labelSpeakers)
+        #expect(try JSONDecoder().decode(NotesPreferences.self, from: JSONEncoder().encode(p)).labelSpeakers == true)
+        // Only a user's choice is written: an unset choice stays unset through a save.
+        #expect(try JSONDecoder().decode(NotesPreferences.self, from: JSONEncoder().encode(NotesPreferences())).labelSpeakers == nil)
+    }
+
+    @Test func aLegacyFalseWasEveryoneWhoNeverSwitchedItOnSoItIsClearedOnce() throws {
+        let decode = { (json: String) in try JSONDecoder().decode(NotesPreferences.self, from: Data(json.utf8)) }
+        // Before the marker the field was a plain `false` for everyone who had not switched labels on.
+        #expect(try decode(#"{"labelSpeakers":false}"#).labelSpeakers == nil)
+        #expect(try decode(#"{"labelSpeakers":false,"speakerLabelsDefault":1}"#).speakerLabelsOn)
+        #expect(try decode(#"{"labelSpeakers":true}"#).labelSpeakers == true)
+        // From then on an explicit off is the user's and survives every later load.
+        #expect(try decode(#"{"labelSpeakers":false,"speakerLabelsDefault":2}"#).labelSpeakers == false)
+        var p = try decode(#"{"labelSpeakers":false}"#)
+        p.labelSpeakers = false
+        #expect(try decode(String(decoding: JSONEncoder().encode(p), as: UTF8.self)).labelSpeakers == false)
     }
 
     // MARK: fix-ups
