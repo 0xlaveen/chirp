@@ -609,6 +609,58 @@ health carries `"notes_speakers": true` and `"speakers_model": {"state": …, "s
 only: never on disk, never logged, never sent to a client. Logs say `speakers turns=N people=M
 ms=…`, never a label, name or text.
 
+### Saved voices
+
+One library of named voices per server, shared by every paired client (#247): name a person in a
+note on any device and every device that uses this server recognises them in later notes.
+
+```sh
+T="Authorization: Bearer $(cat ~/.config/chirp/token)"
+curl -s -H "$T" http://127.0.0.1:7821/v1/speakers/voices
+# {"enabled": true, "model": "wespeaker-voxceleb-resnet34-LM@f0c48c29", "voices": [
+#   {"id": "3f9a0c2e7b1d4a56", "name": "Maya", "seconds": 46.0, "created": "2026-10-12T09:00:00Z",
+#    "updated": "2026-10-20T10:30:00Z", "compatible": true}]}
+curl -s -H "$T" -H 'Content-Type: application/json' http://127.0.0.1:7821/v1/speakers/voices \
+  -d '{"action":"remember","name":"Maya","from":{"session":"<note session>","generation":"<generation>","speaker":1}}'
+```
+
+- **Remember.** From a note's speaker the server holds (`from`: the note's session, the final's
+  `generation` and the slot; the phones), or from a ≤ 30 s clip of the person's settled turns
+  (`audio`: base64 PCM16 16 kHz mono; the Mac). It needs about 20 s of the person's speech
+  (`409 too_short` below 16 s of embedded windows). `"voice": "<id>"` updates that voice instead,
+  a seconds-weighted mean of the two voiceprints.
+- **Recognise.** A `start.speakers` note's `final.speakers` gains `"matches": [{"speaker": 1,
+  "voice": "<id>", "name": "Maya"}]` once a person has about 10 s of speech that is at least 0.7
+  alike to a saved voice and 0.10 ahead of the next one (one person per voice). The Mac sends clips
+  instead: `{"action":"identify","people":[{"person":3,"audio":"…"}]}` → `{"matches":[{"person":3,
+  "voice":"…","name":"Maya"}]}`. Without saved voices nothing changes on the wire.
+- **Import.** `{"action":"import","name","embedding","seconds","model":"wespeaker_v2@df2625a"}` moves
+  a voice the Mac saved in its Keychain before this library (#18): the Mac's model is the same
+  network, so its voiceprints compare (docs/bench.md).
+- **Manage.** `rename` (the saved voice only), `forget`, `forget_all` (deletes the file), `enable`,
+  and `disable` with `"forget": true|false`. Errors and every field:
+  [architecture.md](../docs/architecture.md#saved-voices-v1-compatible-addition-issue-247).
+- **At the Mac:**
+
+  ```sh
+  chirp-server voices list            # names, seconds, dates; --json for the API's listing
+  chirp-server voices forget Maya     # by name or id
+  chirp-server voices forget-all
+  chirp-server voices off [--forget]  # stop saving and recognising; --forget also deletes them
+  chirp-server voices on
+  ```
+
+**Storage and privacy.** `voices.json` in the server's data folder (`~/Library/Application
+Support/Chirp/speakers/` on a Mac, `$XDG_DATA_HOME/chirp/speakers/` on Linux, `%LOCALAPPDATA%\Chirp\speakers\`
+on Windows), folder 0700 and file 0600 (owner-only ACL on Windows), written atomically under a lock:
+the name, model id, voiceprint (256 float32, base64), seconds and dates of at most 50 voices. It is
+the only thing written; nothing is created until a voice is saved. Names and voiceprints are never
+logged (`speakers voices action=remember code=ok`, `speakers voices count=N matched=N`) and never
+returned: the API lists names, seconds and dates. Clips are held only for their request. Removing
+the speaker model keeps the voices; a voice saved with another model is listed as incompatible and
+never compared. Turning "Remember voices" off (a client's Saved voices screen, the `disable` action, or
+`chirp-server voices off`) stops saving and recognising server-wide.
+
 ## Notes structuring
 
 `POST /v1/notes/structure` powers Live Notes on the Mac. It is stateless JSON, uses the same

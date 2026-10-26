@@ -21,6 +21,8 @@ CAPABILITIES = (
     "notes_context",
     "notes_edit",
     "notes_speakers",
+    # `GET/POST /v1/speakers/voices` and `final.speakers.matches` (saved voices, #247).
+    "speaker_voices",
 )
 # Written next to the code by scripts/install-mac.sh, whose copy has no .git to ask.
 COMMIT_FILE = "BUILD_COMMIT"

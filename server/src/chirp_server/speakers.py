@@ -14,6 +14,11 @@ The note's speakers (centroid sums and seconds of speech) live in this process's
 keyed by the client's random session id, evicted when idle and lost on restart: a new
 `generation` tells the client to start its slot map again. Nothing here is logged except
 counts and timings: never a label, an embedding, a name or text.
+
+Saved voices (issue #247, `voices.py`): when the library is on and holds voices of this model,
+`final.speakers` also carries `matches`, the note's people recognised as saved voices. A client
+remembers a person from the note's speaker in memory here (`from`), or from a clip of their
+speech (`audio`, the Mac), and identifies people from clips.
 """
 
 import asyncio
@@ -26,7 +31,7 @@ from dataclasses import dataclass, field, replace
 
 import numpy as np
 
-from . import speakers_model
+from . import speakers_model, voices
 
 log = logging.getLogger("chirp")
 
@@ -551,7 +556,7 @@ class SpeakerLabels:
     """Labels for notes: the model (loaded on first use, on its own thread), the notes'
     speakers, and the model's download state for health."""
 
-    def __init__(self, embedder_factory=None, fetch=None, downloaded=None):
+    def __init__(self, embedder_factory=None, fetch=None, downloaded=None, library=None):
         self.executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="chirp-speakers")
         self.factory = embedder_factory or OnnxEmbedder
         self.fetch = fetch or speakers_model.fetch
@@ -560,6 +565,7 @@ class SpeakerLabels:
         self.sessions = Sessions()
         self.download: asyncio.Task | None = None
         self.failed = False
+        self.library = library if library is not None else voices.VoiceLibrary()
 
     @property
     def state(self) -> str:
@@ -644,6 +650,9 @@ class SpeakerLabels:
             if turns:
                 note.last = turns[-1].slot
         payload = {"generation": note.generation, "turns": [t.payload() for t in turns or []]}
+        matches = self.matches(note)
+        if matches is not None:
+            payload["matches"] = matches
         log.info(
             "speakers turns=%d people=%d ms=%.1f",
             len(payload["turns"]),
@@ -651,6 +660,54 @@ class SpeakerLabels:
             (time.perf_counter() - (started or time.perf_counter())) * 1000,
         )
         return payload
+
+    def matches(self, note: NoteSpeakers) -> list[dict] | None:
+        """The note's people recognised as saved voices; None (no field at all) while the library
+        is off, holds no voice of this model, or is unreadable."""
+        try:
+            candidates = self.library.candidates()
+        except (OSError, ValueError):
+            log.warning("speakers voices code=unreadable")
+            return None
+        if not candidates:
+            return None
+        people = {slot: (s.total, s.seconds) for slot, s in enumerate(note.speakers)}
+        found = voices.match(people, candidates)
+        log.info("speakers voices count=%d matched=%d", len(candidates), len(found))
+        return [
+            {"speaker": slot, "voice": voice.id, "name": voice.name}
+            for slot, voice in sorted(found.items())
+        ]
+
+    def person(self, session: str, generation: str, slot: int) -> tuple[np.ndarray, float]:
+        """A note's speaker as (voiceprint, seconds of speech), without touching the note's place
+        in the LRU; `gone` when the server no longer holds that note (or that generation)."""
+        note = self.sessions.notes.get(session)
+        if note is None or note.generation != generation or not 0 <= slot < len(note.speakers):
+            raise voices.VoiceError("gone")
+        speaker = note.speakers[slot]
+        return speaker.centroid, speaker.seconds
+
+    async def clip(self, pcm: bytes) -> tuple[np.ndarray, float]:
+        """One person's clip as (voiceprint, seconds of speech covered by embedded windows). The
+        clip is held only for this call."""
+        if not self.downloaded():
+            raise voices.VoiceError("unavailable")
+        audio = np.frombuffer(pcm, dtype="<i2").astype(np.float32) / 32768.0
+        ranges = windows(audio)
+        if not ranges:
+            return np.zeros(1, dtype=np.float32), 0.0
+        clips = [speech(audio, a, b) for a, b in ranges]
+        try:
+            embeddings = await self.call(self._embed, clips)
+        except Exception:
+            log.warning("speakers voices code=failed")
+            raise voices.VoiceError("failed") from None
+        covered, end = 0, 0
+        for a, b in ranges:
+            covered += b - max(a, end)
+            end = b
+        return _unit(embeddings.sum(axis=0)), covered / RATE
 
     async def label(self, session, pcm, words, raw, text) -> dict:
         started = time.perf_counter()

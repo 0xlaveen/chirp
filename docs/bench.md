@@ -1271,6 +1271,71 @@ ONNX (CPU, 2 threads). Fbank matches kaldi-native-fbank within 5e-5.
   in one segment, ≥ 90 % of the audio given the right voice, Daniel again in a later segment matched to the same
   person; 2.2 s for the test including model load.
 
+## Saved voices (server, #247)
+
+2026-10-26, M4 Pro, macOS 27.0.1, shared host (load average 55–75). `server/scripts/bench_voices.py` with the pinned
+WeSpeaker ResNet34-LM ONNX (CPU, 2 threads) and the shipped `voices.match`; 7 min for everything below.
+
+- **Synthetic voices:** the six neural `say` voices that render on this macOS (Samantha, Daniel, Moira, Rishi, Karen,
+  Tessa; Aman and Tara crash `say` here), every pair as a one-minute conversation (`make_voice_clips.py`, 15 in all).
+  Each voice is remembered from a solo note of other sentences (24–27 s of embedded speech), as naming would.
+  - *Phone path:* the shipped `SpeakerLabels` (15 s segments, clustering, the note's people), then `match` on the
+    note's people, read 45 s in and at the end. 9 of 15 conversations came out as 3 people (a split-off third).
+  - *Mac path:* each person's settled turns (≥ 2 s, the last 30 s) as one clip, as `identify` gets it.
+  - 20 rotations (every 3 of the 6 voices saved, the other 3 unknown).
+- **Real voices:** four AMI meetings (ES2004a, IS1009a, TS3003a, ES2014a; headset mix, CC-BY-4.0), 15 people with
+  enough solo speech. Each is remembered from the first 30 s of their solo turns and tested on later, disjoint 30 s
+  and 12 s stretches (Mac path; one-to-one within a meeting). 20 seeded draws of half the people saved.
+- **Rates:** *true* = a saved person given their own name; *false* = any wrong name, out of all trials.
+
+| τ (margin 0.10) | phone, end: true | phone, end: false | Mac clips, end: true | Mac clips, end: false | AMI 12 s: true | AMI 12 s: false |
+|---|---|---|---|---|---|---|
+| 0.60 (the issue's start) | 100% (280/280) | 6.9% (40/580) | 100% (300/300) | 4.0% (24/600) | 100% (103/103) | 0% (0/220) |
+| 0.65 | 100% | 3.8% (22/580) | 100% | 3.0% (18/600) | 100% | 0% |
+| **0.70 (shipped)** | **100%** | **2.8% (16/580)** | **100%** | **0% (0/600)** | **100%** | **0%** |
+| 0.75 | 100% | 2.8% (16/580) | 100% | 0% | 100% | 0% |
+| 0.80 | 100% | 1.7% (10/580) | 100% | 0% | 100% | 0% |
+
+- **Scores:** a person against their own saved voice scores 0.91–0.95 (`say`) and 0.83–0.94 (AMI, 12 s and 30 s).
+  Against anyone else's, the highest is 0.66 (`say`, Karen against Samantha, the closest pair) and 0.36 (AMI).
+- **Why 0.70:** below it, Karen is named Samantha (0.62–0.67). From 0.70 the Mac path and AMI give no wrong names,
+  and every phone-path wrong name is one slot of one note. There the diarizer merged Samantha and Karen into one
+  person (60 s of speech; 0.91 to Samantha, 0.76 to Karen), so no threshold separates them. That is the
+  merge case of the Mac's own bench, not a matcher one ("Not Maya" undoes it). 0.70 leaves 0.13 between it and the
+  lowest real-voice self-score; 0.75 gains nothing. The margin (0.05–0.15) changes the false rate by ≤ 0.7 points; it
+  stays 0.10. The 45 s readings equal the end ones on the phone path, and differ by ≤ 1 point on the Mac path.
+- **Caveat:** AMI people are remembered and tested within one meeting, on one microphone set. Across days and
+  microphones a voice scores lower against itself; the margin between 0.83 and 0.70 is the room for that.
+
+### `wespeaker_v2` agreement spike
+
+Whether the Mac's saved voices (#18, `wespeaker_v2@df2625a` CoreML via FluidAudio) compare with the server's.
+41 clips of 8 s (the six `say` voices and 9 AMI people) were embedded by both: the Mac side by
+`mac/scripts/speaker-bench` `VoiceAgreement` (the app's `WeSpeakerEmbedder`), the server side whole and as the
+server's voiced 1.5 s windows.
+
+| | cosine min | median | max | clips ≥ 0.9 |
+|---|---|---|---|---|
+| Mac vs server, the whole clip | 0.981 | 0.990 | 0.994 | **41 / 41** |
+| Mac (whole clip) vs server (windows) | 0.669 | 0.931 | 0.988 | 28 / 41 |
+
+- **Outcome: they agree.** On the same audio the two embeddings agree to 0.98–0.99 on every clip. `wespeaker_v2` is
+  the same network (pyannote's WeSpeaker ResNet34-LM), palettized to 8 bits. The lower second row compares two
+  recipes (one 10 s window against the mean of 1.5 s voiced windows), not two models.
+- **Import works:** with each speaker's Mac embedding as their saved voice, the server's own voiceprints of their
+  other clips are recognised as often as with the server's own saved voice: 23/26 at 0.70 for both, and no wrong
+  name. The nearest-speaker test across the models is right 39 of 41 times, as it is within the server's model.
+- So item 3b imports the Mac's Keychain voices once (`{"action":"import", …, "model":"wespeaker_v2@df2625a"}`;
+  only that model id is accepted) and then deletes the Keychain items.
+
+```sh
+B=~/Library/Caches/Chirp/speaker-bench   # voices/: make_voice_clips.py (6 voices here); ami/: fetch_ami.sh
+S="uv run python scripts/bench_voices.py --model <pinned ONNX> --clips $B/voices --ami $B/ami --spike $B/spike"
+(cd server && $S --spike-only)
+(cd mac/scripts/speaker-bench && swift run -c release VoiceAgreement --clips $B/spike/clips --out $B/spike/mac.json)
+(cd server && $S --mac-embeddings $B/spike/mac.json --out $B/voices-bench.json)
+```
+
 ## Android real-device session timings
 
 Not yet measured. Android keeps content-free per-session timings (Settings → About → Diagnostics); paste the Wi-Fi and LTE summaries from the [real-device checklist](android-device-acceptance.md) here, with the device, Chirp version, engine and `battery-session.sh` rows. Until then every Android latency and battery figure is emulator-only (TBM).

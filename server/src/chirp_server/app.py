@@ -1,6 +1,7 @@
 """Frozen v1 HTTP/WS protocol. Logs contain metadata and safe error codes only."""
 
 import asyncio
+import base64
 import contextlib
 import json
 import logging
@@ -30,6 +31,16 @@ from .managed_cleanup import ManagedCleanup
 from .profiles import LIVE_NOTES_ID, MAX_PROMPT_CHARS
 from .retention import Retention
 from .speakers import SpeakerLabels
+from .voices import (
+    DIMENSIONS,
+    IMPORTABLE,
+    MAX_CLIP_SECONDS,
+    VOICE_ID,
+    VoiceError,
+    clean_name,
+    decode,
+    match,
+)
 
 log = logging.getLogger("chirp")
 MAX_CONTEXT_CHARS = 500
@@ -47,8 +58,44 @@ MESSAGES = {
     "bad_speakers": "Invalid speakers request",
     "forbidden": "Not available to this credential",
     "bad_activity": "Invalid activity request",
+    "gone": "This note's speakers are no longer on the server; record a little more, then retry",
+    "no_voice": "No saved voice has that id",
+    "too_short": "Needs at least 20 seconds of this person's speech",
+    "disabled": "Remember voices is off on this server",
+    "full": "At most 50 saved voices; forget one first",
+    "unavailable": "The speaker model is not downloaded",
+    "clip_too_long": "A voice clip is at most 30 seconds",
+    "failed": "The speaker model failed",
+    "voices_file": "The saved voices file could not be read or written",
 }
 CLIENTS = {"mac", "android", "ios", "desktop"}
+# Saved-voice errors and their HTTP status (issue #247).
+VOICE_STATUS = {
+    "bad_speakers": 400,
+    "gone": 404,
+    "no_voice": 404,
+    "too_short": 409,
+    "disabled": 409,
+    "full": 409,
+    "unavailable": 409,
+    "clip_too_long": 413,
+    "failed": 500,
+    "voices_file": 500,
+}
+VOICE_ACTIONS = {
+    "remember",
+    "import",
+    "identify",
+    "rename",
+    "forget",
+    "forget_all",
+    "enable",
+    "disable",
+}
+# One clip of PCM16 at 16 kHz, base64; `identify` takes up to MAX_IDENTIFY people.
+MAX_CLIP_BYTES = MAX_CLIP_SECONDS * 32000
+MAX_IDENTIFY = 8
+MAX_VOICES_BODY = MAX_IDENTIFY * (MAX_CLIP_BYTES * 4 // 3 + 256) + 1024
 
 
 def error(code):
@@ -73,6 +120,25 @@ def failure(code):
     return (
         "ok" if code is None else code if code in {"rejected", "timeout", "preempted"} else "engine"
     )
+
+
+def clip_field(value) -> bytes:
+    """A base64 PCM16 16 kHz mono clip of at most MAX_CLIP_SECONDS."""
+    if not isinstance(value, str):
+        raise VoiceError("bad_speakers")
+    if len(value) > (MAX_CLIP_BYTES + 2) // 3 * 4:
+        raise VoiceError("clip_too_long")
+    try:
+        pcm = base64.b64decode(value, validate=True)
+    except ValueError:
+        raise VoiceError("bad_speakers") from None
+    if len(pcm) % 2:
+        raise VoiceError("bad_speakers")
+    return pcm
+
+
+def small_int(value, limit) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool) and 0 <= value <= limit
 
 
 def bearer(headers):
@@ -594,6 +660,10 @@ def create_app(settings=None, engine=None, token=None, corrector=None, speakers=
                 # `start.learned` (version 1): the user's own terms and per-app preferences.
                 "learned": 1,
                 "speakers_model": speakers.health(),
+                # Saved voices: `/v1/speakers/voices` and `final.speakers.matches` exist;
+                # `speakers_voices` is the server-wide switch and how many are saved.
+                "speaker_voices": True,
+                "speakers_voices": speakers.library.health(),
                 **build.info(),
             }
         )
@@ -825,6 +895,155 @@ def create_app(settings=None, engine=None, token=None, corrector=None, speakers=
                 return JSONResponse(speakers.health())
             token.outcome = "bad_speakers"
             return JSONResponse(error("bad_speakers"), status_code=400)
+
+    async def voice_action(action) -> dict:
+        library = speakers.library
+        kind = action.get("action") if isinstance(action, dict) else None
+        if kind not in VOICE_ACTIONS:
+            raise VoiceError("bad_speakers")
+        keys = set(action)
+        if kind == "remember":
+            source = keys & {"from", "audio"}
+            if len(source) != 1 or keys - {"action", "name", "voice", "from", "audio"}:
+                raise VoiceError("bad_speakers")
+            name = clean_name(action.get("name"))
+            voice = action.get("voice")
+            if voice is not None and not (isinstance(voice, str) and VOICE_ID.fullmatch(voice)):
+                raise VoiceError("bad_speakers")
+            if not (await asyncio.to_thread(library.read))["enabled"]:
+                raise VoiceError("disabled")
+            if "from" in action:
+                origin = action["from"]
+                if (
+                    not isinstance(origin, dict)
+                    or set(origin) != {"session", "generation", "speaker"}
+                    or not isinstance(origin["session"], str)
+                    or not SPEAKER_SESSION.fullmatch(origin["session"])
+                    or not isinstance(origin["generation"], str)
+                    or not 0 < len(origin["generation"]) <= 64
+                    or not small_int(origin["speaker"], 63)
+                ):
+                    raise VoiceError("bad_speakers")
+                embedding, seconds = speakers.person(
+                    origin["session"], origin["generation"], origin["speaker"]
+                )
+            else:
+                embedding, seconds = await speakers.clip(clip_field(action["audio"]))
+            saved = await asyncio.to_thread(library.remember, name, embedding, seconds, voice)
+            return {**await asyncio.to_thread(library.listing), "voice": saved}
+        if kind == "import":
+            # A voice the Mac saved before the shared library (#18), from a model that agrees.
+            if (
+                keys != {"action", "name", "embedding", "seconds", "model"}
+                or action["model"] not in IMPORTABLE
+                or not isinstance(action["embedding"], str)
+                or isinstance(action["seconds"], bool)
+                or not isinstance(action["seconds"], int | float)
+                or not 0 <= action["seconds"] < 1e6
+            ):
+                raise VoiceError("bad_speakers")
+            name = clean_name(action["name"])
+            try:
+                embedding = decode(action["embedding"])
+            except ValueError:
+                raise VoiceError("bad_speakers") from None
+            if embedding.shape != (DIMENSIONS,):
+                raise VoiceError("bad_speakers")
+            saved = await asyncio.to_thread(
+                library.remember, name, embedding, float(action["seconds"])
+            )
+            return {**await asyncio.to_thread(library.listing), "voice": saved}
+        if kind == "identify":
+            people = action.get("people")
+            if (
+                keys != {"action", "people"}
+                or not isinstance(people, list)
+                or not 0 < len(people) <= MAX_IDENTIFY
+                or not all(
+                    isinstance(p, dict)
+                    and set(p) == {"person", "audio"}
+                    and small_int(p["person"], 999)
+                    for p in people
+                )
+                or len({p["person"] for p in people}) != len(people)
+            ):
+                raise VoiceError("bad_speakers")
+            clips = {p["person"]: clip_field(p["audio"]) for p in people}
+            if not (await asyncio.to_thread(library.read))["enabled"]:
+                raise VoiceError("disabled")
+            candidates = await asyncio.to_thread(library.candidates)
+            if not candidates:
+                return {"matches": []}
+            heard = {person: await speakers.clip(pcm) for person, pcm in clips.items()}
+            found = match(heard, candidates)
+            log.info("speakers voices count=%d matched=%d", len(candidates), len(found))
+            return {
+                "matches": [
+                    {"person": person, "voice": voice.id, "name": voice.name}
+                    for person, voice in sorted(found.items())
+                ]
+            }
+        expected = {
+            "rename": {"action", "voice", "name"},
+            "forget": {"action", "voice"},
+            "forget_all": {"action"},
+            "enable": {"action"},
+            "disable": {"action", "forget"} if "forget" in action else {"action"},
+        }[kind]
+        voice = action.get("voice")
+        if (
+            keys != expected
+            or ("voice" in expected and not (isinstance(voice, str) and VOICE_ID.fullmatch(voice)))
+            or not isinstance(action.get("forget", False), bool)
+        ):
+            raise VoiceError("bad_speakers")
+        if kind == "rename":
+            await asyncio.to_thread(library.rename, voice, action["name"])
+        elif kind == "forget":
+            await asyncio.to_thread(library.forget, voice)
+        elif kind == "forget_all":
+            await asyncio.to_thread(library.forget_all)
+        elif kind == "enable":
+            await asyncio.to_thread(library.enable)
+        else:
+            await asyncio.to_thread(library.disable, action.get("forget", False))
+        return await asyncio.to_thread(library.listing)
+
+    async def voices_route(request: Request):
+        """Saved voices (#247): `GET` lists them (names and seconds, never a voiceprint); `POST`
+        takes one action. Logs carry the action and a code only."""
+        if not authorized(credential, bearer(request.headers)):
+            return JSONResponse(
+                error("auth"), status_code=401, headers={"WWW-Authenticate": "Bearer"}
+            )
+        kind = "list"
+        try:
+            if request.method == "POST":
+                body = bytearray()
+                async for chunk in request.stream():
+                    body.extend(chunk)
+                    if len(body) > MAX_VOICES_BODY:
+                        raise VoiceError("clip_too_long")
+                try:
+                    action = json.loads(body)
+                except ValueError:
+                    action = None
+                if isinstance(action, dict) and action.get("action") in VOICE_ACTIONS:
+                    kind = action["action"]
+                else:
+                    kind = "unknown"
+                result = await voice_action(action)
+            else:
+                result = await asyncio.to_thread(speakers.library.listing)
+        except VoiceError as exc:
+            log.info("speakers voices action=%s code=%s", kind, exc.code)
+            return JSONResponse(error(exc.code), status_code=VOICE_STATUS[exc.code])
+        except (OSError, ValueError):
+            log.warning("speakers voices action=%s code=voices_file", kind)
+            return JSONResponse(error("voices_file"), status_code=500)
+        if kind != "list":
+            log.info("speakers voices action=%s code=ok", kind)
+        return JSONResponse(result)
 
     async def transcribe(request: Request):
         if (refusal := reject(request.headers)) is not None:
@@ -1096,6 +1315,7 @@ def create_app(settings=None, engine=None, token=None, corrector=None, speakers=
             Route("/v1/speakers/model", speakers_route, methods=["POST"]),
             Route("/v1/devices/activity", device_activity, methods=["GET"]),
             Route("/v1/devices/activity/settings", device_activity_settings, methods=["PUT"]),
+            Route("/v1/speakers/voices", voices_route, methods=["GET", "POST"]),
             WebSocketRoute("/v1/stream", stream),
         ],
         lifespan=lifespan,

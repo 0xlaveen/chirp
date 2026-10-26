@@ -20,6 +20,8 @@ FILE = "voxceleb_resnet34_LM.onnx"
 SIZE = 26_530_309
 SHA256 = "7bb2f06e9df17cdf1ef14ee8a15ab08ed28e8d0ef5054ee135741560df2ec068"
 LICENSE = "cc-by-4.0"
+# What a saved voice records: a voice from another model (or revision) is never compared.
+MODEL_ID = f"{REPOSITORY.split('/')[1]}@{REVISION[:8]}"
 # What a client's consent prompt quotes.
 SIZE_TEXT = "27 MB"
 

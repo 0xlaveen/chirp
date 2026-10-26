@@ -70,6 +70,32 @@ public struct ServerTurn: Decodable, Sendable, Equatable {
     }
 }
 
+/// One entry of `final.speakers.matches` (saved voices, #247): a note's speaker slot the server recognised as a saved
+/// voice, with its name so a device that never saw the voice can show it. Never logged.
+public struct ServerVoiceMatch: Decodable, Sendable, Equatable {
+    public var speaker: Int
+    public var voice: String
+    public var name: String
+
+    public init(speaker: Int, voice: String, name: String) {
+        self.speaker = speaker
+        self.voice = voice
+        self.name = name
+    }
+
+    private enum CodingKeys: String, CodingKey { case speaker, voice, name }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        speaker = try c.decode(Int.self, forKey: .speaker)
+        voice = try c.decode(String.self, forKey: .voice)
+        name = try c.decode(String.self, forKey: .name)
+        guard (0...ServerSpeakers.maxSlot).contains(speaker), SavedVoice.isValidID(voice), SavedVoice.isValidName(name) else {
+            throw DecodingError.dataCorruptedError(forKey: .voice, in: c, debugDescription: "match")
+        }
+    }
+}
+
 /// `final.speakers`: the segment's turns, or why there are none (`unavailable`: no speaker model on the server;
 /// `failed`). Lenient: anything malformed is no labels, never a failed segment.
 public struct ServerSpeakers: Decodable, Sendable, Equatable {
@@ -80,14 +106,29 @@ public struct ServerSpeakers: Decodable, Sendable, Equatable {
     public var generation: String?
     public var turns: [ServerTurn]
     public var error: String?
+    /// The note's people the server recognised as saved voices (one slot per voice, one voice per slot). Nil when the
+    /// server's library is off or holds no voice of its model (the message is then exactly as before #247); a slot
+    /// missing from a present list is not recognised (yet). A malformed list is nil, never lost turns.
+    public var matches: [ServerVoiceMatch]?
 
-    public init(generation: String?, turns: [ServerTurn], error: String? = nil) {
+    public init(generation: String?, turns: [ServerTurn], error: String? = nil, matches: [ServerVoiceMatch]? = nil) {
         self.generation = generation
         self.turns = turns
         self.error = error
+        self.matches = matches
     }
 
-    private enum CodingKeys: String, CodingKey { case generation, turns, error }
+    private enum CodingKeys: String, CodingKey { case generation, turns, error, matches }
+
+    private struct Matches: Decodable {
+        var value: [ServerVoiceMatch]?
+        init(from decoder: Decoder) throws {
+            value = try? [ServerVoiceMatch](from: decoder)
+            if let value, value.count > ServerSpeakers.maxSlot + 1 || Set(value.map(\.speaker)).count != value.count {
+                self.value = nil
+            }
+        }
+    }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -104,7 +145,8 @@ public struct ServerSpeakers: Decodable, Sendable, Equatable {
         guard turns.count <= Self.maxTurns else {
             throw DecodingError.dataCorruptedError(forKey: .turns, in: c, debugDescription: "turns")
         }
-        self.init(generation: generation, turns: turns)
+        let matches = (try? c.decodeIfPresent(Matches.self, forKey: .matches))?.value
+        self.init(generation: generation, turns: turns, matches: matches)
     }
 }
 
@@ -293,6 +335,24 @@ public struct SpeakersModel: Decodable, Sendable, Equatable {
     }
 }
 
+/// `health.speakers_voices`: the server's saved-voice library at a glance (#247).
+public struct SpeakersVoices: Decodable, Sendable, Equatable {
+    /// The server-wide "Remember voices" switch.
+    public var enabled: Bool
+    public var count: Int
+    /// The model a voice must come from to be compared (`wespeaker-voxceleb-resnet34-LM@f0c48c29`).
+    public var model: String?
+    /// `unreadable`: the server's voices file is damaged; Forget all starts again.
+    public var error: String?
+
+    public init(enabled: Bool, count: Int, model: String? = nil, error: String? = nil) {
+        self.enabled = enabled
+        self.count = count
+        self.model = model
+        self.error = error
+    }
+}
+
 /// `GET /v1/health` (authenticated variant).
 public struct Health: Decodable, Sendable, Equatable {
     public var ok: Bool
@@ -321,6 +381,10 @@ public struct Health: Decodable, Sendable, Equatable {
     public var notesSpeakers: Bool?
     /// The speaker model's state on the server (authenticated health only).
     public var speakersModel: SpeakersModel?
+    /// `/v1/speakers/voices` and `final.speakers.matches` exist (saved voices, #247); nil from a server that predates them.
+    public var speakerVoices: Bool?
+    /// The saved-voice library's switch and size (authenticated health only).
+    public var speakersVoices: SpeakersVoices?
     /// Build, API level and capabilities (authenticated health only); nil from a server that predates them.
     public var version: String?
     public var commit: String?
@@ -334,7 +398,8 @@ public struct Health: Decodable, Sendable, Equatable {
                 correction: String? = nil, correctionLeavesMachine: Bool? = nil, correctionHost: String? = nil,
                 correctionProfiles: [CorrectionProfile]? = nil, correctionKeepLoaded: Bool? = nil, correctionLoaded: Bool? = nil,
                 notesStructure: Bool? = nil, notesCorrection: Bool? = nil, notesReorganize: Bool? = nil, notesContext: Bool? = nil,
-                notesEdit: Bool? = nil, notesSpeakers: Bool? = nil, speakersModel: SpeakersModel? = nil, version: String? = nil, commit: String? = nil, api: Int? = nil, capabilities: [String]? = nil,
+                notesEdit: Bool? = nil, notesSpeakers: Bool? = nil, speakersModel: SpeakersModel? = nil,
+                speakerVoices: Bool? = nil, speakersVoices: SpeakersVoices? = nil, version: String? = nil, commit: String? = nil, api: Int? = nil, capabilities: [String]? = nil,
                 startedAt: Double? = nil, source: String? = nil) {
         self.ok = ok
         self.engine = engine
@@ -353,6 +418,8 @@ public struct Health: Decodable, Sendable, Equatable {
         self.notesEdit = notesEdit
         self.notesSpeakers = notesSpeakers
         self.speakersModel = speakersModel
+        self.speakerVoices = speakerVoices
+        self.speakersVoices = speakersVoices
         self.version = version
         self.commit = commit
         self.api = api
@@ -362,6 +429,9 @@ public struct Health: Decodable, Sendable, Equatable {
     }
 
     public var correctionAvailable: Bool { correction == "available" }
+    /// The server keeps saved voices: naming can remember a voice and the Saved voices screen applies. Without it a
+    /// client says "Update Chirp on your Mac to save voices".
+    public var supportsSpeakerVoices: Bool { speakerVoices == true || capabilities?.contains("speaker_voices") == true }
 }
 
 /// `POST /v1/notes/structure`: the open window's transcript plus the settled headings for continuity. Only

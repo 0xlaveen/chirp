@@ -47,6 +47,12 @@ def test_health_redaction(client, settings):
         "notes_speakers": True,
         "learned": 1,
         "speakers_model": {"state": "not_downloaded", "size_bytes": 26530309},
+        "speaker_voices": True,
+        "speakers_voices": {
+            "enabled": True,
+            "count": 0,
+            "model": "wespeaker-voxceleb-resnet34-LM@f0c48c29",
+        },
         **build.info(),
     }
 
