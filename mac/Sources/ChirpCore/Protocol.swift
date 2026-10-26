@@ -354,6 +354,35 @@ public struct SpeakersVoices: Decodable, Sendable, Equatable {
     }
 }
 
+/// Operations whose effective server budgets are advertised in authenticated health, in seconds.
+public enum ServerOperation: String, CodingKey, CaseIterable, Sendable {
+    case dictation, notesCorrection, notesStructure, notesReorganize, notesEdit
+}
+
+/// Missing or invalid individual budgets fall back independently, including on older servers.
+public struct OperationDeadlines: Decodable, Sendable, Equatable {
+    private var seconds: [ServerOperation: Double] = [:]
+
+    public init(from decoder: Decoder) throws {
+        guard let values = try? decoder.container(keyedBy: ServerOperation.self) else { return }
+        for operation in ServerOperation.allCases {
+            if let value = try? values.decode(Double.self, forKey: operation), value.isFinite, value > 0 {
+                seconds[operation] = value
+            }
+        }
+    }
+
+    /// Five seconds of transport slack, bounded independently of the server's processing budget.
+    public func timeout(for operation: ServerOperation, fallback: TimeInterval) -> TimeInterval {
+        advertisedTimeout(for: operation) ?? fallback
+    }
+
+    public func advertisedTimeout(for operation: ServerOperation) -> TimeInterval? {
+        guard let value = seconds[operation], value < Double(Int64.max) / 1000 - 5 else { return nil }
+        return value + 5
+    }
+}
+
 /// `GET /v1/health` (authenticated variant).
 public struct Health: Decodable, Sendable, Equatable {
     public var ok: Bool
@@ -391,6 +420,7 @@ public struct Health: Decodable, Sendable, Equatable {
     public var commit: String?
     public var api: Int?
     public var capabilities: [String]?
+    public var operationDeadlines: OperationDeadlines?
     /// Unix seconds the server process started, and the folder it runs from (home shown as ~).
     public var startedAt: Double?
     public var source: String?
@@ -401,7 +431,7 @@ public struct Health: Decodable, Sendable, Equatable {
                 notesStructure: Bool? = nil, notesCorrection: Bool? = nil, notesReorganize: Bool? = nil, notesContext: Bool? = nil,
                 notesEdit: Bool? = nil, notesSpeakers: Bool? = nil, speakersModel: SpeakersModel? = nil,
                 speakerVoices: Bool? = nil, speakersVoices: SpeakersVoices? = nil, version: String? = nil, commit: String? = nil, api: Int? = nil, capabilities: [String]? = nil,
-                startedAt: Double? = nil, source: String? = nil) {
+                startedAt: Double? = nil, source: String? = nil, operationDeadlines: OperationDeadlines? = nil) {
         self.ok = ok
         self.engine = engine
         self.ready = ready
@@ -425,8 +455,13 @@ public struct Health: Decodable, Sendable, Equatable {
         self.commit = commit
         self.api = api
         self.capabilities = capabilities
+        self.operationDeadlines = operationDeadlines
         self.startedAt = startedAt
         self.source = source
+    }
+
+    public func operationTimeout(_ operation: ServerOperation, fallback: TimeInterval) -> TimeInterval {
+        operationDeadlines?.timeout(for: operation, fallback: fallback) ?? fallback
     }
 
     public var correctionAvailable: Bool { correction == "available" }

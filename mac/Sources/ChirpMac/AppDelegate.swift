@@ -8,7 +8,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let settingsWindow = SettingsWindowController()
     private let localModelsWindow = LocalModelsWindowController()
     private let pairingWindow = PairingWindowController()
-    private let notes = NotesController()
+    private lazy var notes = NotesController(health: { [controller] in controller.health })
     private let serverWatch = ServerWatch()
     private lazy var notesWindow = NotesWindowController(notes: notes)
     private let history = DictationHistory()

@@ -51,8 +51,8 @@ final class DictationController {
     /// The hotkey's presses for the current mode and shortcut; rebuilt whenever the hotkey is registered.
     private var gesture = HotkeyGesture()
 
-    /// Longer than the server's own clean-up timeout (8 s by default), so the server's fallback normally wins.
-    static let correctionTimeout: Duration = .seconds(12)
+    /// Legacy-server fallback; current servers advertise their effective budget.
+    static let correctionTimeout: TimeInterval = 12
     private static let cancellable: [DictationState] = [.connecting, .listening, .finalizing, .correcting]
 
     static let dictateID: UInt32 = 1
@@ -370,8 +370,9 @@ final class DictationController {
         hud.announce(HUDStatus.polishing)
         let myEpoch = epoch
         timeoutTask?.cancel()
+        let timeout = health?.operationTimeout(.dictation, fallback: Self.correctionTimeout) ?? Self.correctionTimeout
         timeoutTask = Task { [weak self] in
-            try? await Task.sleep(for: Self.correctionTimeout)
+            try? await Task.sleep(for: .seconds(timeout))
             guard !Task.isCancelled, let self, self.epoch == myEpoch, self.machine.state == .correcting else { return }
             self.failCorrection()
         }

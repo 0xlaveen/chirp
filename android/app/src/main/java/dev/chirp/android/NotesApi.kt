@@ -80,16 +80,17 @@ internal interface NotesApi {
 }
 
 internal class HttpNotesApi(client: OkHttpClient, private val pairing: Pairing) : NotesApi {
-    /**
-     * The server's structure timeout (30 s) and reorganize timeout (45 s), plus a margin. The calls are stateless, so one
-     * that went out on a kept-alive connection the Mac had just closed goes again on a fresh one.
-     */
-    private val structureClient = client.newBuilder().retryOnConnectionFailure(true).readTimeout(35, TimeUnit.SECONDS).callTimeout(35, TimeUnit.SECONDS).build()
-    private val reorganizeClient = client.newBuilder().retryOnConnectionFailure(true).readTimeout(50, TimeUnit.SECONDS).callTimeout(50, TimeUnit.SECONDS).build()
+    /** Updated from authenticated health; each call snapshots the current operation budget. */
+    var deadlines = OperationDeadlines()
+    private val baseClient = client.newBuilder().retryOnConnectionFailure(true).build()
+    private fun client(operation: String, fallback: Long): OkHttpClient {
+        val timeout = deadlines.timeoutMs(operation, fallback)
+        return baseClient.newBuilder().readTimeout(timeout, TimeUnit.MILLISECONDS).callTimeout(timeout, TimeUnit.MILLISECONDS).build()
+    }
 
-    override fun structure(request: NotesStructureRequest) = NotesStructureResponse.decode(post(structureClient, "v1/notes/structure", request.json()))
-    override fun reorganize(request: NotesReorganizeRequest) = NotesReorganizeResponse.decode(post(reorganizeClient, "v1/notes/reorganize", request.json()))
-    override fun edit(request: NotesEditRequest) = NotesEditResponse.decode(post(reorganizeClient, "v1/notes/edit", request.json()))
+    override fun structure(request: NotesStructureRequest) = NotesStructureResponse.decode(post(client("notes_structure", 35000), "v1/notes/structure", request.json()))
+    override fun reorganize(request: NotesReorganizeRequest) = NotesReorganizeResponse.decode(post(client("notes_reorganize", 50000), "v1/notes/reorganize", request.json()))
+    override fun edit(request: NotesEditRequest) = NotesEditResponse.decode(post(client("notes_edit", 50000), "v1/notes/edit", request.json()))
 
     private fun post(client: OkHttpClient, path: String, body: String): String {
         val request = Request.Builder().url(pairing.endpoint(path)).header("Authorization", "Bearer ${pairing.token}")

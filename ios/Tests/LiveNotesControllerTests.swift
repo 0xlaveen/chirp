@@ -62,8 +62,8 @@ struct LiveNotesControllerTests {
                 values.transports.append(transport)
                 return StreamSession(transport: transport, options: options)
             },
-            structure: { _, _, request in try await structure(request) },
-            reorganize: { _, _, request in try await reorganize(request) },
+            structure: { _, _, request, _ in try await structure(request) },
+            reorganize: { _, _, request, _ in try await reorganize(request) },
             speakersModel: { [calls = values.speakerCalls] _, _, action in
                 calls.add(action)
                 if calls.fail { throw URLError(.cannotConnectToHost) }

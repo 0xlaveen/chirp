@@ -12,7 +12,7 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [31, 37])
 class DictationStreamTest {
-    private class Harness {
+    private class Harness(deadlines: OperationDeadlines = OperationDeadlines()) {
         val order = mutableListOf<String>()
         lateinit var transport: ChirpImeServiceTest.FakeTransport
         lateinit var capture: ChirpImeServiceTest.FakeCapture
@@ -22,6 +22,7 @@ class DictationStreamTest {
         var ended = 0
         var retention = false
         val session = DictationStream(
+            deadlines = deadlines,
             transportFactory = { event, failure -> ChirpImeServiceTest.FakeTransport(event, failure, order).also { transport = it } },
             captureFactory = { frame, _, done -> ChirpImeServiceTest.FakeCapture(frame, done, order).also { capture = it } },
             changed = { status, partial -> statuses += status; if (partial != null) partials += partial },
@@ -128,6 +129,21 @@ class DictationStreamTest {
         val success = Harness(); success.session.start(true); success.transport.ready(); success.session.stop(); success.advance()
         success.transport.event(ServerEvent.Correcting(2, "synthetic", "chat")); success.transport.final(true); success.advance(12000)
         assertTrue(success.finals.single().corrected); assertEquals(1, success.ended)
+    }
+
+    @Test fun `CPU polishing survives legacy deadline then keeps raw or accepts a late valid final`() {
+        for (complete in listOf(false, true)) {
+            val h = Harness(OperationDeadlines(mapOf("dictation" to 30.0)))
+            h.session.start(true); h.transport.ready(); h.session.stop(); h.advance()
+            h.transport.event(ServerEvent.Correcting(2, "synthetic raw", "default"))
+            h.advance(12000); assertEquals(0, h.ended)
+            h.advance(22999); assertEquals(0, h.ended)
+            if (complete) h.transport.final(true)
+            h.advance(1)
+            assertEquals(1, h.ended)
+            assertEquals(complete, h.finals.single().corrected)
+            if (!complete) assertEquals("synthetic raw", h.finals.single().text)
+        }
     }
 
     @Test fun `fast cleanup has a readable transition and cancellation fences pending commit`() {

@@ -343,3 +343,38 @@ struct KeyboardSetupTests {
         #expect(Array(keys) == ["fullAccessSeenAt"])
     }
 }
+
+struct OperationDeadlineTests {
+    private func health(_ fields: String) throws -> Health {
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        return try decoder.decode(Health.self, from: Data((#"{"ok":true"# + fields + "}").utf8))
+    }
+
+    @Test func advertisedCPUAndOverrideBudgetsIncludeBoundedTransportMargin() throws {
+        let h = try health(#", "operation_deadlines":{"dictation":30,"notes_correction":45,"notes_structure":90,"notes_reorganize":120,"notes_edit":180.25,"future":1}"#)
+        #expect(h.operationTimeout(.dictation, fallback: 12) == 35)
+        #expect(h.operationTimeout(.notesCorrection, fallback: 25) == 50)
+        #expect(h.operationTimeout(.notesStructure, fallback: 35) == 95)
+        #expect(h.operationTimeout(.notesReorganize, fallback: 50) == 125)
+        #expect(h.operationTimeout(.notesEdit, fallback: 50) == 185.25)
+    }
+
+    @Test(arguments: ["", #", "operation_deadlines":null"#, #", "operation_deadlines":[]"#,
+                      #", "operation_deadlines":{"dictation":0,"notes_structure":-1,"notes_reorganize":"120","notes_edit":true}"#])
+    func oldOrInvalidServerUsesLegacyTimeouts(_ fields: String) throws {
+        let h = try health(fields)
+        #expect(h.operationTimeout(.dictation, fallback: 12) == 12)
+        #expect(h.operationTimeout(.notesCorrection, fallback: 25) == 25)
+        #expect(h.operationTimeout(.notesStructure, fallback: 35) == 35)
+        #expect(h.operationTimeout(.notesReorganize, fallback: 50) == 50)
+        #expect(h.operationTimeout(.notesEdit, fallback: 50) == 50)
+    }
+
+    @Test func partialAdvertisementFallsBackIndependently() throws {
+        let h = try health(#", "operation_deadlines":{"dictation":"bad","notes_structure":135,"notes_edit":1e100}"#)
+        #expect(h.operationTimeout(.dictation, fallback: 12) == 12)
+        #expect(h.operationTimeout(.notesStructure, fallback: 35) == 140)
+        #expect(h.operationTimeout(.notesEdit, fallback: 50) == 50)
+    }
+}

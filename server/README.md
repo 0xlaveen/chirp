@@ -854,3 +854,9 @@ For candidate-only runs, `uv run python scripts/run_swift_benches.py --with-flui
 History note: the initial M1 Apple probe explicitly downloaded the en-US `SpeechTranscriber` model through `AssetInventory` (system-managed asset storage, outside the Chirp cache). It did not call any permission-request API, open a microphone, install software/services or change Tailscale. The benchmark no longer contains an asset-install path. Removing OS-managed speech assets is an operator action through macOS asset/storage controls; do not delete system asset files by hand.
 
 `~/Library/Caches/Chirp/` can be removed entirely to clear generated fixtures, candidate source/builds, FluidAudio models and metrics. It contains no user recordings or user transcripts.
+
+Authenticated `GET /v1/health` includes additive `operation_deadlines` metadata in seconds:
+`dictation`, `notes_correction`, `notes_structure`, `notes_reorganize`, and `notes_edit`.
+These are the effective configured processing budgets (including CPU defaults and explicit overrides).
+Clients add a fixed five-second transport margin; missing or invalid individual values keep each
+client's legacy timeout. Unauthenticated health remains `{"ok":true}`.

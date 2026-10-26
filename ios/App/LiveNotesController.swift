@@ -29,11 +29,11 @@ final class LiveNotesController: ObservableObject {
         var http: URLSession
         var fetchHealth: (ServerConfig, URLSession) async throws -> Health = { try await $0.fetchHealth(session: $1) }
         var makeStream: (ServerConfig, StartOptions, URLSession) -> StreamSession = { StreamSession(config: $0, options: $1, urlSession: $2) }
-        var structure: @Sendable (ServerConfig, URLSession, NotesStructureRequest) async throws -> NotesStructureResponse = {
-            try await $0.structureNotes($2, session: $1, timeout: 35)
+        var structure: @Sendable (ServerConfig, URLSession, NotesStructureRequest, TimeInterval) async throws -> NotesStructureResponse = {
+            try await $0.structureNotes($2, session: $1, timeout: $3)
         }
-        var reorganize: @Sendable (ServerConfig, URLSession, NotesReorganizeRequest) async throws -> NotesReorganizeResponse = {
-            try await $0.reorganizeNotes($2, session: $1, timeout: 50)
+        var reorganize: @Sendable (ServerConfig, URLSession, NotesReorganizeRequest, TimeInterval) async throws -> NotesReorganizeResponse = {
+            try await $0.reorganizeNotes($2, session: $1, timeout: $3)
         }
         /// `POST /v1/speakers/model`: the Mac fetches (or drops) its speaker model. Labels are on by default, so the phone asks
         /// for the one pinned download itself while they are on; Turn off stops asking.
@@ -152,13 +152,13 @@ final class LiveNotesController: ObservableObject {
         let http = deps.http, structure = deps.structure, reorganize = deps.reorganize, makeStream = deps.makeStream
         let recorder = NotesRecorder(
             makeSession: { options in makeStream(box.config ?? ServerConfig(baseURL: URL(string: "https://unpaired.invalid")!), options, http) },
-            structure: { request in
+            structure: { [weak self] request in
                 guard let config = box.config else { throw NotesStructureError.unsupported(404) }
-                return try await structure(config, http, request)
+                return try await structure(config, http, request, await self?.health?.operationTimeout(.notesStructure, fallback: 35) ?? 35)
             },
-            reorganize: { request in
+            reorganize: { [weak self] request in
                 guard let config = box.config else { throw NotesStructureError.unsupported(404) }
-                return try await reorganize(config, http, request)
+                return try await reorganize(config, http, request, await self?.health?.operationTimeout(.notesReorganize, fallback: 50) ?? 50)
             },
             now: deps.now, sleep: deps.sleep, options: StartOptions(client: "ios", wordTimings: true), structuring: false,
             autoReorganize: preferences.autoReorganize, keptAudio: deps.keptAudio)

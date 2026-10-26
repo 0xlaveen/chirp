@@ -72,6 +72,7 @@ internal class QuickDictateModel(
         partial = ""; stable = ""
         val http = client ?: ChirpNetwork.client(app).also { client = it }
         val session = DictationStream(
+            deadlines = store.health?.operationDeadlines ?: OperationDeadlines(),
             transportFactory = { event, failure -> transportFactory(http, paired, event, failure) },
             captureFactory = { frame, meter, done -> captureFactory(app, frame, meter, done) },
             changed = { message, event ->
