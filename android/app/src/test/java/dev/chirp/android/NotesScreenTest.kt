@@ -51,7 +51,7 @@ internal fun libraryOff(context: Context) = NotesSessions(context, SoftwareHisto
 
 internal class NotesModelRig(context: Context, health: Health? = notesMac, paired: Boolean = true, val keys: SoftwareHistoryKeys = SoftwareHistoryKeys(),
                              val sessions: NotesSessions = NotesSessions(context, SoftwareHistoryKeys()),
-                             voices: (VoiceAction?) -> SavedVoices = { SavedVoices(true, "synthetic", emptyList()) }) {
+                             voices: (VoiceAction?) -> SavedVoices = { SavedVoices(true, "synthetic", emptyList()) }, mic: Boolean = true) {
     val wires = mutableListOf<NotesWire>()
     val captures = mutableListOf<FakeNotesCapture>()
     val foreground = mutableListOf<Boolean>()
@@ -63,7 +63,7 @@ internal class NotesModelRig(context: Context, health: Health? = notesMac, paire
         model = NotesModel(context, store,
             captureFactory = { frame, _, done -> FakeNotesCapture(frame, done).also { captures += it } },
             transportFactory = { _, _, event, failure -> NotesWire(event, failure).also { wires += it } },
-            apiFactory = { _, _ -> api }, micGranted = { true },
+            apiFactory = { _, _ -> api }, micGranted = { mic },
             pairing = { if (paired) Pairing.from("https://mac.example.test/chirp", "synthetic") else null },
             fetchHealth = { _, _ -> null }, voicesRequest = { _, _, action -> voices(action) }, tailscale = TailscalePromptTest.FakeTailscale(),
             foreground = { foreground += it }, io = { it() }, journal = NotesJournal(context, keys, store, io = { it() }),

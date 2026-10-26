@@ -31,15 +31,4 @@ The keep-keyboard run also exposed a real `SecurityException` when a system imag
 
 The harness now uses the dedicated options button after push-to-talk replaced the old long press, waits for real native draw buffers in onboarding/Settings render tests, queries transient states without repeatedly traversing virtual keyboard trees, exposes IME window types, and uses accessibility clicks for permission/Finish actions. Synthetic setup happens before enabling Accessibility so a force-stop cannot silently unbind it. Optional bubble actions explicitly report an absent target and propagate adb failures. No retries were added.
 
-The [key screenshots](screenshots/android/final-verification/) contain only reviewed synthetic UI. Private run logs, XML, certificates, credentials and audio are excluded. Physical-device restrictions, OEM behavior and real scanner provisioning retain the acceptance boundaries in [TESTING.md](TESTING.md).
-
-| Cover, light | Cover, dark |
-| --- | --- |
-| ![Notes library light](screenshots/android/final-verification/cover-light-notes-library.png) | ![Notes library dark](screenshots/android/final-verification/cover-dark-notes-library.png) |
-| ![Scratchpad light](screenshots/android/final-verification/cover-light-scratchpad.png) | ![Scratchpad dark](screenshots/android/final-verification/cover-dark-scratchpad.png) |
-
-| Inner, light | Inner, dark |
-| --- | --- |
-| ![Note detail light](screenshots/android/final-verification/inner-light-note-detail.png) | ![Note detail dark](screenshots/android/final-verification/inner-dark-note-detail.png) |
-
-Additional evidence: [keyboard hold](screenshots/android/final-verification/keyboard-hold-light.png), [bubble](screenshots/android/final-verification/bubble-cover-dark.png), [History](screenshots/android/final-verification/history-panel-inner-dark.png), [kept audio playing](screenshots/android/final-verification/kept-audio-playing.png), [onboarding choice](screenshots/android/final-verification/cover-light-onboarding-choice.png), [floating-mic guide](screenshots/android/final-verification/inner-dark-onboarding-floating.png), [Share](screenshots/android/final-verification/cover-dark-share.png), [Settings dark](screenshots/android/final-verification/inner-dark-settings-home.png), [inset defect](screenshots/android/final-verification/inner-light-settings-about.png), [large-font rail defect](screenshots/android/final-verification/font200-rail.png).
+The screenshots from this historical run were retired during #271 W12 because they predate the current copy and layout. For current UI evidence, use the [Android screenshot index](screenshots/android/README.md). The results above remain a record of the 25 October run; they do not certify the current build. Private run logs, XML, certificates, credentials and audio are excluded. Physical-device restrictions, OEM behavior and real scanner provisioning retain the acceptance boundaries in [TESTING.md](TESTING.md).

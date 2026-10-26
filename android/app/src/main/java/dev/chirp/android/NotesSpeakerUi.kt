@@ -62,7 +62,7 @@ internal fun SpeakerChip(name: String, colorIndex: Int, onClick: () -> Unit, mod
     val dark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
     val color = SpeakerColors.of(colorIndex, dark)
     Row(modifier.clip(CircleShape).background(color.copy(alpha = if (dark) .18f else .12f))
-        .clickable(onClick = onClick).semantics { role = Role.Button; contentDescription = "$name${if (recognized) ", recognised" else ""}. Rename or merge this speaker" }
+        .clickable(onClick = onClick).semantics { role = Role.Button; contentDescription = "$name${if (recognized) ", recognised" else ""}. Rename, merge or reassign this speaker" }
         .padding(horizontal = 10.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
         Box(Modifier.size(8.dp).clip(CircleShape).background(color))
         Spacer(Modifier.width(6.dp))
@@ -70,14 +70,23 @@ internal fun SpeakerChip(name: String, colorIndex: Int, onClick: () -> Unit, mod
     }
 }
 
-/** What can be done about one person: rename, merge into another, or separate people merged into them. */
+/** Person actions, plus a second menu for changing just the selected transcript turn. */
 @Composable
 internal fun SpeakerMenu(open: Boolean, dismiss: () -> Unit, roster: SpeakerRoster, person: Int, rename: () -> Unit,
-                         merge: (Int) -> Unit, separate: (Int) -> Unit, nameAll: (() -> Unit)? = null, reject: (() -> Unit)? = null, update: (() -> Unit)? = null) {
+                         merge: (Int) -> Unit, separate: (Int) -> Unit, nameAll: (() -> Unit)? = null, reject: (() -> Unit)? = null, update: (() -> Unit)? = null, reassign: ((Int?) -> Unit)? = null) {
     val target = roster.resolve(person)
     val others = roster.active.filter { it != target }
     val merged = roster.merged(target)
+    var assigning by remember(open) { mutableStateOf(false) }
     DropdownMenu(open, dismiss) {
+        if (assigning && reassign != null) {
+            DropdownMenuItem({ Text("This turn is") }, { assigning = false })
+            HorizontalDivider()
+            others.forEach { id -> DropdownMenuItem({ Text(roster.displayName(id)) }, { dismiss(); reassign(id) }) }
+            DropdownMenuItem({ Text("New person") }, { dismiss(); reassign(null) })
+            return@DropdownMenu
+        }
+        if (reassign != null) DropdownMenuItem({ Text("This turn is…") }, { assigning = true })
         DropdownMenuItem({ Text("Rename “${roster.displayName(target)}”…") }, { dismiss(); rename() })
         if (roster.person(target)?.recognized != null && reject != null)
             DropdownMenuItem({ Text("Not ${roster.displayName(target)}") }, { dismiss(); reject() })

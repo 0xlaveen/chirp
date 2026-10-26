@@ -12,7 +12,7 @@ import androidx.compose.ui.platform.LocalContext
 
 /** One table drives dispatch and Android's Meta+/ helper. Only mounted contexts publish actions. */
 internal enum class AppCommand(val label: String, val key: Int, val modifiers: Int) {
-    NewNote("New recording note", KeyEvent.KEYCODE_N, KeyEvent.META_CTRL_ON),
+    NewNote("New note", KeyEvent.KEYCODE_N, KeyEvent.META_CTRL_ON),
     Search("Search notes / history", KeyEvent.KEYCODE_F, KeyEvent.META_CTRL_ON),
     Record("Record / Stop note", KeyEvent.KEYCODE_R, KeyEvent.META_CTRL_ON or KeyEvent.META_SHIFT_ON),
     Pause("Pause / Resume note", KeyEvent.KEYCODE_P, KeyEvent.META_CTRL_ON or KeyEvent.META_SHIFT_ON),

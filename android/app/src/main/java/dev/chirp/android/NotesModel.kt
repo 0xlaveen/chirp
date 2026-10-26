@@ -463,6 +463,9 @@ internal class NotesModel(
 
     fun mergeSpeaker(person: Int, into: Int) { recorder.document.mergeSpeaker(person, into); sync(); keep(now = true) }
     fun separateSpeaker(person: Int) { recorder.document.separateSpeaker(person); sync(); keep(now = true) }
+    fun reassignTurn(segment: Int, turn: Int, person: Int?) {
+        if (document.reassignTurn(segment, turn, person)) { sync(); keep(now = true) }
+    }
     fun setAuto(on: Boolean) = recorder.setAuto(on)
     val auto get() = revision.let { recorder.autoReorganize }
 
@@ -649,9 +652,19 @@ internal class NotesModel(
     fun organize() { message = null; recorder.organize() }
     fun undo() = recorder.undoOrganize()
 
+    /** A local typed note: no microphone, pairing or server work. */
+    fun newNote() {
+        if (state.active) return
+        keepSession()
+        clear()
+        recorder.document.typedNote = true
+        sync(); keep(now = true)
+    }
+
     /** New: an empty document (only while not recording). */
     fun clear() {
         if (state.active) return
+        ++openRequest
         recorder.reset(); field = TextFieldValue(""); message = null; elapsed = 0.0; recovered = null; savedKey = null; keptKey = null
         journal?.delete()
     }

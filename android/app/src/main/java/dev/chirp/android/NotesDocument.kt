@@ -119,6 +119,8 @@ internal class NotesDocument(var startedAt: Long = System.currentTimeMillis(), t
     var livePartial = ""
     /** The user's name for this session (Rename), else the title is the start time. */
     var name: String? = null
+    /** Explicitly created typed notes stay in the library even before the first edit. */
+    var typedNote = false
     /** Survives the recovery copy and kept sessions, so keeping it again replaces the earlier copy. */
     var uid: String = java.util.UUID.randomUUID().toString()
         private set
@@ -150,7 +152,7 @@ internal class NotesDocument(var startedAt: Long = System.currentTimeMillis(), t
 
     /** What a segment said for structuring and fallbacks: a `Name: text` line per turn when labelled, else its text. */
     fun spoken(segment: NotesSegment) = segment.turns?.takeIf { it.isNotEmpty() }
-        ?.joinToString("\n") { roster.displayName(it.person) + ": " + it.text } ?: segment.text
+        ?.joinToString("\n") { roster.displayName(it.effectivePerson) + ": " + it.text } ?: segment.text
 
     /** Some segment is labelled: the transcript shows who said what. */
     val labelled get() = committed.any { !it.turns.isNullOrEmpty() }
@@ -158,7 +160,7 @@ internal class NotesDocument(var startedAt: Long = System.currentTimeMillis(), t
     /** Where [person] (and anyone merged into them) first speaks: the segment's id and a line of what they said. Null when they never did. */
     fun firstTurn(person: Int): Pair<Int, String>? {
         for (segment in committed) for (turn in segment.turns.orEmpty()) {
-            if (roster.resolve(turn.person) == person && turn.text.isNotBlank()) return segment.id to turn.text.trim().take(120)
+            if (roster.resolve(turn.effectivePerson) == person && turn.text.isNotBlank()) return segment.id to turn.text.trim().take(120)
         }
         return null
     }
@@ -167,8 +169,20 @@ internal class NotesDocument(var startedAt: Long = System.currentTimeMillis(), t
     fun sampleOffset(person: Int): Int {
         val first = firstTurn(person) ?: return 0
         val segment = committed.first { it.id == first.first }
-        val turn = segment.turns.orEmpty().first { roster.resolve(it.person) == person && it.text.isNotBlank() }
+        val turn = segment.turns.orEmpty().first { roster.resolve(it.effectivePerson) == person && it.text.isNotBlank() }
         return ((turn.start - segment.offset).coerceAtLeast(0.0) * 1000).toInt()
+    }
+
+    /** Override one turn without changing its server identity or any other turn. Null creates a local person. */
+    fun reassignTurn(segment: Int, turn: Int, person: Int?): Boolean {
+        val row = committed.getOrNull(segment) ?: return false
+        val turns = row.turns ?: return false
+        val original = turns.getOrNull(turn) ?: return false
+        if (person != null && roster.person(person) == null) return false
+        val target = person?.let(roster::resolve) ?: roster.addPerson()
+        committed[segment] = row.copy(turns = turns.toMutableList().apply { this[turn] = original.copy(overridePerson = target) })
+        speakerVersion++
+        return true
     }
 
     fun renameSpeaker(person: Int, name: String?) { roster.rename(person, name); speakerVersion++ }
@@ -422,7 +436,7 @@ internal class NotesDocument(var startedAt: Long = System.currentTimeMillis(), t
 
     /** The library title: a rename wins forever, else the first heading, else the first meaningful line, else the date. */
     fun libraryTitle(zone: TimeZone = TimeZone.getDefault(), locale: Locale = Locale.getDefault()) =
-        name?.trim()?.takeIf { it.isNotEmpty() } ?: titleLine()?.second?.take(MAX_LIBRARY_TITLE) ?: dateTitle(zone, locale)
+        name?.trim()?.takeIf { it.isNotEmpty() } ?: titleLine()?.second?.take(MAX_LIBRARY_TITLE) ?: if (typedNote && isEmpty) "Untitled note" else dateTitle(zone, locale)
 
     /** A line or two of the note after its title line (else the start of the transcript), for the list. */
     val snippet: String get() {
@@ -440,7 +454,7 @@ internal class NotesDocument(var startedAt: Long = System.currentTimeMillis(), t
     val openTodos: Int get() = text.lineSequence().count { OPEN_TODO.containsMatchIn(it) }
 
     /** Nothing written and never named: a note like this is not kept. */
-    val untouched get() = isEmpty && name.isNullOrBlank()
+    val untouched get() = !typedNote && isEmpty && name.isNullOrBlank()
 
     /** One line per segment: `**[00:00:12]** text`, gaps and "kept original" marked; [raw] swaps in the raw text. */
     fun transcriptLines(raw: Boolean = false, zone: TimeZone = TimeZone.getDefault(), locale: Locale = Locale.US): List<String> {
@@ -455,7 +469,7 @@ internal class NotesDocument(var startedAt: Long = System.currentTimeMillis(), t
             else if (!turns.isNullOrEmpty()) {
                 // A line per turn: `**[00:01:05] Maya:** text`.
                 turns.joinToString("\n\n") { t ->
-                    "**[${timestamp(t.start)}] ${roster.displayName(t.person)}:** " + (if (raw) t.raw else t.text) +
+                    "**[${timestamp(t.start)}] ${roster.displayName(t.effectivePerson)}:** " + (if (raw) t.raw else t.text) +
                         if ((t.keptOriginal || s.keptOriginal) && !raw) " _(kept original)_" else ""
                 }
             }
@@ -480,7 +494,7 @@ internal class NotesDocument(var startedAt: Long = System.currentTimeMillis(), t
 
     /** Everything but the live partial and the reorganize bookkeeping, for [NotesJournal]. */
     fun toJson(): JSONObject = JSONObject().put("startedAt", startedAt).put("text", text).put("tailStart", tailStart)
-        .put("windowStart", windowStart).put("structuredEnd", structuredEnd).put("fallbacks", JSONArray(fallbackBlocks)).put("uid", uid)
+        .put("typedNote", typedNote).put("windowStart", windowStart).put("structuredEnd", structuredEnd).put("fallbacks", JSONArray(fallbackBlocks)).put("uid", uid)
         .put("boundaries", JSONArray().apply { boundaryList.forEach { put(JSONObject().put("offset", it.offset).put("time", it.time)) } })
         .put("audio", JSONArray().apply { clips.values.forEach { put(it.toJson()) } })
         .put("segments", JSONArray().apply {
@@ -493,6 +507,7 @@ internal class NotesDocument(var startedAt: Long = System.currentTimeMillis(), t
 
     companion object {
         fun fromJson(json: JSONObject) = NotesDocument(json.getLong("startedAt"), json.getString("text")).apply {
+            typedNote = json.optBoolean("typedNote")
             name = json.optString("name").takeIf { json.has("name") }
             json.optString("uid").takeIf { it.isNotEmpty() }?.let { uid = it }
             val list = json.getJSONArray("segments")

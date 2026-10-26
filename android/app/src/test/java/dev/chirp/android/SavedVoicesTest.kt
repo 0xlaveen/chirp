@@ -251,7 +251,7 @@ class SavedVoicesRenderTest {
         }
         compose.setContent { dev.chirp.android.ui.ChirpTheme(false) { NotesScreen(rig.model, rig.model::toggle, {}, {}, {}, {}) } }
         compose.onNodeWithText("Transcript").performClick()
-        compose.onNodeWithContentDescription("Person 1. Rename or merge this speaker").performClick()
+        compose.onNodeWithContentDescription("Person 1. Rename, merge or reassign this speaker").performClick()
         compose.onNodeWithText("Rename “Person 1”…").performClick()
         rig.idle(); compose.waitForIdle()
         compose.onNode(isToggleable() and hasAnySibling(hasText("Remember voice")), useUnmergedTree = true).assertIsOn()
@@ -265,7 +265,7 @@ class SavedVoicesRenderTest {
         assertTrue(actions.any { it is VoiceAction.Remember })
         rig.model.acknowledgeVoiceNotice(); rig.idle(); compose.waitForIdle()
 
-        compose.onNodeWithContentDescription("Akshay. Rename or merge this speaker").performClick()
+        compose.onNodeWithContentDescription("Akshay. Rename, merge or reassign this speaker").performClick()
         compose.onNodeWithText("Rename “Akshay”…").performClick()
         val remembered = actions.count { it is VoiceAction.Remember }
         compose.onNodeWithText("Remember voice").performClick()
@@ -289,7 +289,7 @@ class SavedVoicesRenderTest {
         }
         compose.setContent { dev.chirp.android.ui.ChirpTheme(false) { NotesScreen(off.model, off.model::toggle, {}, {}, {}, {}) } }
         compose.onNodeWithText("Transcript").performClick()
-        compose.onNodeWithContentDescription("Person 1. Rename or merge this speaker").performClick()
+        compose.onNodeWithContentDescription("Person 1. Rename, merge or reassign this speaker").performClick()
         compose.onNodeWithText("Rename “Person 1”…").performClick()
         compose.onNodeWithText("Remember voice").assertDoesNotExist()
         compose.onNode(hasSetTextAction()).performTextReplacement("Sam")
@@ -318,7 +318,7 @@ class SavedVoicesRenderTest {
                 .outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
         }
         compose.onNodeWithText("Maya ✓").assertIsDisplayed()
-        compose.onNodeWithContentDescription("Maya, recognised. Rename or merge this speaker").performClick()
+        compose.onNodeWithContentDescription("Maya, recognised. Rename, merge or reassign this speaker").performClick()
         compose.onNodeWithText("Not Maya").assertIsDisplayed()
         compose.onNodeWithText("Update Maya’s voice").assertIsDisplayed()
         compose.onNodeWithText("Not Maya").performClick()

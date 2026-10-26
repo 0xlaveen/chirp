@@ -109,6 +109,34 @@ class NotesSpeakersTest {
         assertEquals("**[00:00:00] Person 1:** we ship friday\n\n**[00:01:05] Maya:** okay", document.transcriptLines(raw = true)[0])
     }
 
+    @Test fun `one turn override survives storage structuring raw export merges and new segments`() {
+        val document = labelledDocument()
+        document.renameSpeaker(1, "Sam")
+        assertTrue(document.reassignTurn(0, 1, 1))
+        val changed = document.segments[0].turns!![1]
+        assertEquals(2, changed.person)
+        assertEquals(1, changed.effectivePerson)
+        assertEquals("Okay.", changed.text); assertEquals("okay", changed.raw)
+        assertTrue(document.nextStructureRequest()!!.transcript.contains("Sam: Okay."))
+        assertTrue(document.exportMarkdown().contains("Sam:** Okay."))
+        assertTrue(document.transcriptMarkdown(raw = true).contains("Sam:** okay"))
+        assertTrue(document.reassignTurn(0, 1, null))
+        assertEquals(3, document.segments[0].turns!![1].effectivePerson)
+        document.renameSpeaker(3, "Maya")
+        document.mergeSpeaker(3, 1)
+        assertTrue(document.transcriptMarkdown().contains("Sam:** Okay."))
+        document.separateSpeaker(3)
+        val copy = NotesDocument.fromJson(document.toJson())
+        assertTrue(copy.nextStructureRequest()!!.transcript.contains("Maya: Okay."))
+        assertTrue(copy.exportMarkdown().contains("Maya:** Okay."))
+        document.append(NotesSegment(2, 80.0, "More.", turns = listOf(SpeakerTurn(2, 80.0, "More."))))
+        assertEquals("Person 2: More.", document.spoken(document.segments.last()))
+        val people = document.roster.people.size
+        assertFalse(document.reassignTurn(99, 0, null)); assertFalse(document.reassignTurn(0, 99, null))
+        assertFalse(document.reassignTurn(0, 0, 999))
+        assertEquals(people, document.roster.people.size)
+    }
+
     @Test fun `names are replaced as whole words only`() {
         val document = NotesDocument(0L, "- [ ] **Person 2** to send the spec\n- Person 21 joins\n- Ask Person 2")
         assertEquals(2, document.nameCount("Person 2"))
@@ -432,7 +460,7 @@ class NotesSpeakersRenderTest {
         listOf("Person 1", "Person 2", "Person 3").forEach { compose.onNodeWithText(it).assertIsDisplayed() }
         compose.onNodeWithText("Who owns the invite?").assertIsDisplayed()
         // Rename from the chip: everywhere in the note at once.
-        compose.onNodeWithContentDescription("Person 2. Rename or merge this speaker").performClick()
+        compose.onNodeWithContentDescription("Person 2. Rename, merge or reassign this speaker").performClick()
         compose.onNodeWithText("Rename “Person 2”…").performClick()
         compose.onNode(hasSetTextAction()).performTextInput("Maya")
         for (night in listOf(false, true)) { compose.runOnIdle { dark.value = night }; shot("rename") }
@@ -441,16 +469,47 @@ class NotesSpeakersRenderTest {
         compose.onNodeWithText("Maya").assertIsDisplayed()
         assertTrue(rig.model.export().contains("Maya:** Who owns the invite?"))
         // Same person as: Person 3 becomes Maya, and Separate undoes it.
-        compose.onNodeWithContentDescription("Person 3. Rename or merge this speaker").performClick()
+        compose.onNodeWithContentDescription("Person 3. Rename, merge or reassign this speaker").performClick()
         compose.onAllNodesWithText("Maya").onLast().performClick()
         compose.waitForIdle()
         assertEquals("Maya", rig.model.document.roster.displayName(3))
         compose.onNodeWithText("Person 3").assertDoesNotExist()
         for (night in listOf(false, true)) { compose.runOnIdle { dark.value = night }; shot("merged") }
         compose.runOnIdle { dark.value = false }
-        compose.onNodeWithContentDescription("Maya. Rename or merge this speaker").performClick()
+        compose.onAllNodesWithContentDescription("Maya. Rename, merge or reassign this speaker").onFirst().performClick()
         compose.onNodeWithText("Separate Person 3").performClick()
         compose.onNodeWithText("Person 3").assertIsDisplayed()
+    }
+
+    @Test @Config(qualifiers = "w411dp-h891dp-mdpi") fun `each turn can be reassigned from its menu including consecutive turns`() {
+        val rig = rig()
+        val dark = mutableStateOf(false)
+        compose.setContent { dev.chirp.android.ui.ChirpTheme(dark.value) {
+            androidx.compose.material3.Surface { TranscriptPane(rig.model, androidx.compose.ui.Modifier.padding(24.dp)) }
+        } }
+        fun shot(name: String, popup: Boolean = false) {
+            for (night in listOf(false, true)) {
+                compose.runOnIdle { dark.value = night }; compose.mainClock.advanceTimeBy(2000); compose.waitForIdle()
+                val target = if (popup) compose.onNode(isRoot() and hasAnyDescendant(hasText("New person"))) else compose.onRoot()
+                val bitmap = notesScreenshot(target)
+                File(System.getProperty("chirp.screenshots"), "notes-speakers-$name-${if (night) "dark" else "light"}.png")
+                    .outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
+            }
+        }
+        compose.onNodeWithText("Person 2").performClick()
+        compose.onNodeWithText("This turn is…").performClick()
+        shot("reassign-menu", popup = true)
+        compose.onAllNodesWithText("Person 1").onLast().performClick()
+        assertEquals(1, rig.model.document.segments[0].turns!![1].effectivePerson)
+        compose.onAllNodesWithText("Person 1").assertCountEquals(2)
+        compose.onAllNodesWithText("Person 1")[1].performClick()
+        compose.onNodeWithText("This turn is…").performClick()
+        compose.onNodeWithText("New person").performClick()
+        compose.onNodeWithText("Person 4").assertIsDisplayed()
+        shot("reassigned")
+        val kept = NotesDocument.fromJson(rig.sessions.open(rig.model.document.uid)!!.document)
+        assertEquals(4, kept.segments[0].turns!![1].effectivePerson)
+        assertTrue(kept.exportMarkdown().contains("Person 4:** Who owns the invite?"))
     }
 
     @Test @Config(qualifiers = "w411dp-h891dp-mdpi") fun `preparing status and turn off are visible in light and dark`() {
