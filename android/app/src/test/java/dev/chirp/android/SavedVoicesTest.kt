@@ -221,6 +221,72 @@ class SavedVoicesRenderTest {
         compose.onNodeWithText("Keep voices").performClick()
         compose.runOnIdle { assertEquals(VoiceAction.Disable(false), actions.last()) }
     }
+
+    @Test @Config(qualifiers = "w411dp-h891dp-mdpi") fun `chip rename offers remember voice and the same name suggestions`() {
+        val actions = mutableListOf<VoiceAction>()
+        val rig = NotesModelRig(RuntimeEnvironment.getApplication(), voicesMac, voices = { action ->
+            if (action != null) actions += action
+            library
+        })
+        rig.sessions.put("old", NotesDocument(0L).apply {
+            roster.id(0, "g"); roster.id(1, "g"); renameSpeaker(1, "Akshay")
+            append(NotesSegment(0, 0.0, "Hello.", turns = listOf(SpeakerTurn(1, 0.0, "Hello."))))
+        }.toJson())
+        rig.model.recorder.labelSpeakers = true
+        rig.model.recorder.document.apply {
+            roster.id(0, "g")
+            append(NotesSegment(0, 0.0, "Hello there.", turns = listOf(SpeakerTurn(1, 0.0, "Hello there."))))
+        }
+        compose.setContent { dev.chirp.android.ui.ChirpTheme(false) { NotesScreen(rig.model, rig.model::toggle, {}, {}, {}, {}) } }
+        compose.onNodeWithText("Transcript").performClick()
+        compose.onNodeWithContentDescription("Person 1. Rename or merge this speaker").performClick()
+        compose.onNodeWithText("Rename “Person 1”…").performClick()
+        rig.idle(); compose.waitForIdle()
+        compose.onNode(isToggleable() and hasAnySibling(hasText("Remember voice")), useUnmergedTree = true).assertIsOn()
+        compose.onNode(hasSetTextAction()).performClick()
+        compose.onNodeWithText("Maya").assertExists()
+        compose.onNodeWithText("Akshay").assertExists()
+        compose.onNodeWithText("Akshay").performClick()
+        compose.onNodeWithText("Rename", substring = false).performClick()
+        rig.idle()
+        assertEquals("Akshay", rig.model.document.roster.displayName(1))
+        assertTrue(actions.any { it is VoiceAction.Remember })
+        rig.model.acknowledgeVoiceNotice(); rig.idle(); compose.waitForIdle()
+
+        compose.onNodeWithContentDescription("Akshay. Rename or merge this speaker").performClick()
+        compose.onNodeWithText("Rename “Akshay”…").performClick()
+        val remembered = actions.count { it is VoiceAction.Remember }
+        compose.onNodeWithText("Remember voice").performClick()
+        compose.onNode(hasSetTextAction()).performTextReplacement("Sam")
+        compose.onNodeWithText("Rename", substring = false).performClick()
+        rig.idle()
+        assertEquals("Sam", rig.model.document.roster.displayName(1))
+        assertEquals(remembered, actions.count { it is VoiceAction.Remember })
+    }
+
+    @Test @Config(qualifiers = "w411dp-h891dp-mdpi") fun `chip rename does not remember when the server library is off`() {
+        val quiet = mutableListOf<VoiceAction>()
+        val off = NotesModelRig(RuntimeEnvironment.getApplication(), notesMac, voices = { action ->
+            if (action != null) quiet += action
+            library
+        })
+        off.model.recorder.labelSpeakers = true
+        off.model.recorder.document.apply {
+            roster.id(0, "g")
+            append(NotesSegment(0, 0.0, "Hello there.", turns = listOf(SpeakerTurn(1, 0.0, "Hello there."))))
+        }
+        compose.setContent { dev.chirp.android.ui.ChirpTheme(false) { NotesScreen(off.model, off.model::toggle, {}, {}, {}, {}) } }
+        compose.onNodeWithText("Transcript").performClick()
+        compose.onNodeWithContentDescription("Person 1. Rename or merge this speaker").performClick()
+        compose.onNodeWithText("Rename “Person 1”…").performClick()
+        compose.onNodeWithText("Remember voice").assertDoesNotExist()
+        compose.onNode(hasSetTextAction()).performTextReplacement("Sam")
+        compose.onNodeWithText("Rename", substring = false).performClick()
+        off.idle()
+        assertEquals("Sam", off.model.document.roster.displayName(1))
+        assertTrue(quiet.isEmpty())
+        assertNull(off.model.message)
+    }
     @Test fun `recognized transcript chip and Not X menu light and dark`() {
         val rig = NotesModelRig(RuntimeEnvironment.getApplication(), voicesMac, voices = { library })
         rig.model.refreshVoices(); rig.idle()

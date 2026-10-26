@@ -192,7 +192,7 @@ class HistoryScreenTest {
         val row = compose.onNode(hasText("Meet at the pier at noon") and hasClickAction()).fetchSemanticsNode()
         compose.runOnIdle { row.config[androidx.compose.ui.semantics.SemanticsActions.CustomActions].first { it.label == "Save as new note" }.action() }
         compose.waitUntil(5000) { compose.onAllNodes(hasText("Notes are off", substring = true)).fetchSemanticsNodes().isNotEmpty() }
-        compose.onNodeWithText("Notes are off", substring = true).assertExists()
+        compose.onNodeWithText("Notes are off — turn on Keep notes on this phone in Settings → Notes").assertExists()
         assertTrue(notes.entries().isEmpty())
         assertPrivate("pier")
         assertTrue(notes.entries().isEmpty())

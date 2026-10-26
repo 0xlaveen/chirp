@@ -121,6 +121,37 @@ class NotesLibraryScreenTest {
         compose.onNodeWithText("Your notes will live here").assertDoesNotExist()
     }
 
+    @Test fun `the note menu deletes with Undo`() {
+        val id = note("Garden plans", "- Buy seeds")
+        show(); open("Garden plans"); loaded("Garden plans")
+        compose.onNodeWithContentDescription("More options").performClick()
+        compose.onNodeWithText("Delete").performClick()
+        displayed("Note deleted")
+        compose.runOnIdle { assertTrue(library.open(id)!!.entry.deleted) }
+        compose.onNodeWithText("Undo").performClick()
+        displayed("Garden plans")
+        compose.runOnIdle { assertFalse(library.open(id)!!.entry.deleted) }
+    }
+
+    @Test fun `Delete audio asks first, shows megabytes, and keeps the text`() {
+        val id = note("Garden plans", "- Buy seeds", audio = true)
+        show(); open("Garden plans"); loaded("Garden plans")
+        compose.onNodeWithContentDescription("More options").performClick()
+        compose.onNodeWithText("<0.1 MB on this phone").assertIsDisplayed()
+        compose.onNodeWithText("Delete audio").performClick()
+        compose.onNodeWithText("Delete audio?").assertIsDisplayed()
+        compose.onNodeWithText("This deletes this note’s audio (<0.1 MB). The text and transcript stay.").assertIsDisplayed()
+        compose.onNodeWithText("Cancel").performClick()
+        compose.runOnIdle { assertTrue(library.open(id)!!.document.getJSONArray("audio").length() > 0) }
+        compose.onNodeWithContentDescription("More options").performClick()
+        compose.onNodeWithText("Delete audio", substring = false).performClick()
+        compose.onNodeWithText("Delete audio", substring = false).performClick()
+        compose.waitUntil(5000) { library.open(id)!!.document.getJSONArray("audio").length() == 0 }
+        assertEquals("- Buy seeds", NotesDocument.fromJson(library.open(id)!!.document).text)
+        compose.onNodeWithContentDescription("More options").performClick()
+        compose.onNodeWithText("Delete audio").assertDoesNotExist()
+    }
+
     @Test fun `swipe deletes with Undo and recently deleted can restore`() {
         val id = note("Garden plans", "- Buy seeds")
         show()

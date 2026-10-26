@@ -102,6 +102,52 @@ class SettingsScreenTest {
         compose.onNodeWithText("History on · keeps 7 days").assertExists()
     }
 
+    @Test fun `the Dictation page has no History group`() {
+        val (state, history, updates) = settingsFixture()
+        show(state, history, updates, initialPage = SettingsPage.Dictation)
+        compose.onNodeWithText("Keep dictation history on this phone").assertDoesNotExist()
+        compose.onNodeWithText("Clear history").assertDoesNotExist()
+        compose.onNodeWithText("Learn from my edits").assertExists()
+    }
+
+    @Test fun `switch summaries follow the switch`() {
+        val (state, history, updates) = settingsFixture()
+        show(state, history, updates, initialPage = SettingsPage.History)
+        compose.onNode(hasText("Keep dictation history on this phone") and hasText("Off")).assertIsOff()
+        compose.onNodeWithText("Keep dictation history on this phone").performClick()
+        compose.onNode(hasText("Keep dictation history on this phone") and hasText("On · encrypted on this phone only")).assertIsOn()
+        compose.onNodeWithText("Keep dictation history on this phone").performClick()
+        compose.onNodeWithText("Turn off and delete").performClick()
+        compose.waitUntil(5000) { compose.onAllNodes(hasText("Keep dictation history on this phone") and hasText("Off")).fetchSemanticsNodes().isNotEmpty() }
+        compose.onNode(hasText("Keep dictation history on this phone") and hasText("On · encrypted on this phone only")).assertDoesNotExist()
+
+        compose.onNodeWithContentDescription("Back").performClick()
+        open(SettingsPage.Notes)
+        compose.onNode(hasText("Save battery while the screen is off") and hasText("On")).assertIsOn()
+        compose.onNode(hasText("Keep a recovery copy until notes are saved") and hasText("On")).assertIsOn()
+        compose.onNode(hasText("Keep notes on this phone") and hasText("On · encrypted on this phone only")).assertIsOn()
+        compose.onNodeWithText("On by default").assertDoesNotExist()
+        compose.onNodeWithText("Save battery while the screen is off").performClick()
+        compose.onNode(hasText("Save battery while the screen is off") and hasText("Off")).assertIsOff()
+        compose.onNodeWithText("Keep a recovery copy until notes are saved").performScrollTo().performClick()
+        compose.onNode(hasText("Keep a recovery copy until notes are saved") and hasText("Off")).assertIsOff()
+        compose.onNodeWithText("Keep notes on this phone").performScrollTo().performClick()
+        // Turning it off is an explicit opt-out: the switch leaves and Enable notes library takes its place.
+        compose.onNodeWithText("Keep notes on this phone").assertDoesNotExist()
+        compose.onNodeWithText("Enable notes library").performScrollTo().assertExists()
+    }
+
+    @Test fun `audio sizes use megabytes in the phone locale`() {
+        val previous = java.util.Locale.getDefault()
+        try {
+            java.util.Locale.setDefault(java.util.Locale.GERMANY)
+            assertEquals("<0.1 MB", megabytes(50_000))
+            assertEquals("1,5 MB", megabytes(1_500_000))
+            java.util.Locale.setDefault(java.util.Locale.US)
+            assertEquals("1.5 MB", megabytes(1_500_000))
+        } finally { java.util.Locale.setDefault(previous) }
+    }
+
     @Test fun `paragraph help sits behind an info sheet, not on the row`() {
         val (state, history, updates) = settingsFixture()
         show(state, history, updates)

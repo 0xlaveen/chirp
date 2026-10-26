@@ -30,7 +30,7 @@ internal fun HistorySettings(showOpen: Boolean = true, store: DictationHistory? 
     SettingsGroup(title = title) {
         SwitchRow("Keep dictation history on this phone", enabled, { on ->
             if (on) { history.enable(); enabled = true; changed() } else confirmOff = true
-        }, summary = "On by default · encrypted on this phone only",
+        }, summary = if (enabled) "On · encrypted on this phone only" else "Off",
             infoTitle = "Keep dictation history on this phone",
             infoBody = "Saves recent dictations encrypted on this phone only, so you can reinsert them from the keyboard's clock button. " +
                 "Never sent to your computer, backed up or logged. Password and incognito fields are never saved.")

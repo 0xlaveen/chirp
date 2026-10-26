@@ -310,7 +310,8 @@ internal fun NotesLibraryScreen(
                         key(selected) {
                             if (shownModel.document.uid == selected) NotesScreen(shownModel, record = { start(selected) }, copy = { copy(shownModel) }, share = { share(shownModel) },
                                 act = act, leave = { close() }, save = { save(shownModel) }, handleBack = false, back = ::close, externalTranscript = extraPane,
-                                recordingElsewhere = live.takeIf { recording && shownModel !== live }, jumpToRecording = { open(liveId) })
+                                recordingElsewhere = live.takeIf { recording && shownModel !== live }, jumpToRecording = { open(liveId) },
+                                deleteNote = { delete(listOf(shownModel.document.uid)) })
                             else Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                                 if (reader.message != null) LibraryEmpty("Couldn’t open this note", "Go back to the library and choose another note.", false, Modifier.padding(24.dp))
                                 else CircularProgressIndicator()

@@ -59,7 +59,7 @@ open class ShareToNotesActivity : ComponentActivity() {
             val error = withContext(Dispatchers.IO) {
                 try {
                     val notes = library()
-                    if (!notes.enabled) "Notes are off. Turn on Keep notes in Chirp settings."
+                    if (!notes.enabled) "Notes are off. Turn on Keep notes on this phone in Settings → Notes."
                     else {
                         val note = NotesDocument().apply {
                             userEdit(0, 0, text)

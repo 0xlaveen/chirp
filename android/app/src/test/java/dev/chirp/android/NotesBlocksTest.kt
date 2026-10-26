@@ -211,6 +211,7 @@ class NotesPageTest {
         compose.onNodeWithText("Share").assertIsDisplayed()
         compose.onNodeWithText("Export Markdown").assertIsDisplayed()
         compose.onNodeWithText("Notes settings").assertIsDisplayed()
+        compose.onNodeWithText("Delete").assertIsDisplayed().assertIsEnabled()
     }
 
     @Test fun `the transcript is a second view on the cover screen`() {

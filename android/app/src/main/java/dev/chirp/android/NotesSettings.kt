@@ -50,14 +50,14 @@ internal fun NotesSettings(sessions: NotesSessions? = null, title: String? = nul
     }
     val rows: @Composable ColumnScope.() -> Unit = {
         SwitchRow("Save battery while the screen is off", saver, { saver = it; store.notesBatterySaver = it },
-            summary = "On by default",
+            summary = if (saver) "On" else "Off",
             infoTitle = "Save battery while the screen is off", infoBody = "With the screen off the phone stops drawing live text and the level meter; recording, the transcript " +
                 "and the notes on your computer keep going, so everything is up to date the moment you look.")
         SwitchRow("Keep a recovery copy until notes are saved", recovery, { on ->
             recovery = on; store.notesRecovery = on
             // Off is also a delete: the copy and its key go.
             if (!on) NotesJournal(context, store = store).delete()
-        }, summary = "On by default", infoTitle = "Keep a recovery copy until notes are saved",
+        }, summary = if (recovery) "On" else "Off", infoTitle = "Keep a recovery copy until notes are saved",
             infoBody = "If Android closes Chirp or the phone restarts during a recording, Notes reopens with what you had. " +
                 "Encrypted on this phone, never backed up or sent anywhere, and deleted when you save, discard or start new notes.")
         if (kept.optedOut && !keep) ActionRow("Enable notes library", { kept.enable(); keep = true })
@@ -65,7 +65,7 @@ internal fun NotesSettings(sessions: NotesSessions? = null, title: String? = nul
             // Off stops keeping new notes; it never deletes the ones already kept.
             if (on) kept.enable() else kept.disable()
             keep = on
-        }, summary = "On by default · encrypted on this phone only", infoTitle = "Keep notes on this phone",
+        }, summary = if (keep) "On · encrypted on this phone only" else "Off", infoTitle = "Keep notes on this phone",
             infoBody = "Every note keeps itself, encrypted on this phone only. Never sent to your computer, backed up or logged. " +
                 "Turning this off keeps the notes you already have; \"Delete all notes\" removes them.")
         SettingsItem {
@@ -124,7 +124,8 @@ internal fun NotesSettings(sessions: NotesSessions? = null, title: String? = nul
         dismissButton = { TextButton({ confirmDeleteAll = false }) { Text("Cancel") } })
 }
 
-private fun megabytes(bytes: Long) = if (bytes < 100_000) "<0.1 MB" else "%.1f MB".format(java.util.Locale.US, bytes / 1_000_000.0)
+/** Sealed audio size for settings and the note menu. Under 0.1 MB stays a threshold; larger sizes use the phone's locale. */
+internal fun megabytes(bytes: Long) = if (bytes < 100_000) "<0.1 MB" else "%.1f MB".format(java.util.Locale.getDefault(), bytes / 1_000_000.0)
 
 /** The settings list's one line for Notes, e.g. "Battery saver · recovery copy · keeps 7 days". */
 internal fun notesSummary(context: android.content.Context): String {

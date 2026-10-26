@@ -114,6 +114,16 @@ class VoiceUiTest {
         compose.onNodeWithText("Turn on Chirp Keyboard").assertIsDisplayed()
         assertFalse(compose.activity.onBackPressedDispatcher.hasEnabledCallbacks())
     }
+    @Test fun `onboarding points history at Privacy and history and learning at Dictation`() {
+        val state = SetupState()
+        compose.setContent { ChirpTheme { Onboarding(state) } }
+        compose.onNodeWithText("Turn history off in Settings → Privacy & history, and learning off in Settings → Dictation.", substring = true).assertExists()
+        compose.onNodeWithText("Turn them off in Settings → Dictation").assertDoesNotExist()
+        compose.runOnIdle { state.step = PAGE_MIC }
+        compose.onNodeWithText("What Chirp keeps").performClick()
+        compose.onNodeWithText("turn history off in Settings → Privacy & history, and learning off in Settings → Dictation.", substring = true).assertExists()
+    }
+
     @Test fun `pages still change with animations turned off`() {
         android.provider.Settings.Global.putFloat(compose.activity.contentResolver, android.provider.Settings.Global.ANIMATOR_DURATION_SCALE, 0f)
         val state = SetupState()

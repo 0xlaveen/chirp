@@ -71,8 +71,6 @@ private fun DictationPage(state: SetupState, actions: SettingsActions) {
     }
     SettingsGroup("Press Send") { SettingsItem { AutoEnterSettings() } }
     LearningSettings()
-    HistorySettings()
-
 }
 
 @Composable

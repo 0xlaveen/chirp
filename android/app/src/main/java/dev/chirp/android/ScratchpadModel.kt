@@ -243,7 +243,7 @@ internal class ScratchpadModel(
             }
             status = when (result) {
                 SaveNote.SAVED -> "Saved as note"
-                SaveNote.OFF -> "Notes are off — turn on Keep notes in Chirp settings"
+                SaveNote.OFF -> "Notes are off — turn on Keep notes on this phone in Settings → Notes"
                 SaveNote.FAILED -> "Couldn't save the note"
             }
         }

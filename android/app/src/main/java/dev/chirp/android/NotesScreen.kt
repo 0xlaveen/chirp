@@ -79,7 +79,7 @@ private data class Anchor(val offset: Int, val y: Int)
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalComposeUiApi::class)
 @Composable
 internal fun NotesScreen(model: NotesModel, record: () -> Unit, copy: () -> Unit, share: () -> Unit, act: (DictationAction) -> Unit,
-                         leave: (Boolean) -> Unit, save: () -> Unit = {}, handleBack: Boolean = true, back: (() -> Unit)? = null, externalTranscript: Boolean = false, recordingElsewhere: NotesModel? = null, jumpToRecording: () -> Unit = {}) {
+                         leave: (Boolean) -> Unit, save: () -> Unit = {}, handleBack: Boolean = true, back: (() -> Unit)? = null, externalTranscript: Boolean = false, recordingElsewhere: NotesModel? = null, jumpToRecording: () -> Unit = {}, deleteNote: () -> Unit = {}) {
     var renaming by remember { mutableStateOf(false) }
     var settings by remember { mutableStateOf(false) }
     var transcript by rememberSaveable { mutableStateOf(false) }
@@ -122,7 +122,7 @@ internal fun NotesScreen(model: NotesModel, record: () -> Unit, copy: () -> Unit
             confirmButton = { TextButton(model::acknowledgeVoiceNotice) { Text("OK") } },
             dismissButton = { TextButton(model::disableRememberVoices) { Text("Don’t remember voices") } })
     }
-    val menu = NotesMenuActions(copy = copy, share = share, save = save, rename = { renaming = true }, settings = { settings = true })
+    val menu = NotesMenuActions(copy = copy, share = share, save = save, rename = { renaming = true }, settings = { settings = true }, delete = deleteNote)
     val action = DictationAction.forStatus(model.status)
     /** Into the editor at the block tapped (or the first one on screen), at the height it had on the page. */
     fun startEditing(block: NotesBlock?) {
@@ -180,7 +180,7 @@ internal fun NotesScreen(model: NotesModel, record: () -> Unit, copy: () -> Unit
     }
 }
 
-private class NotesMenuActions(val copy: () -> Unit, val share: () -> Unit, val save: () -> Unit, val rename: () -> Unit, val settings: () -> Unit)
+private class NotesMenuActions(val copy: () -> Unit, val share: () -> Unit, val save: () -> Unit, val rename: () -> Unit, val settings: () -> Unit, val delete: () -> Unit)
 
 /** Title (tap to rename) over a one-line status, then Edit and the overflow menu. */
 @Composable
@@ -229,12 +229,15 @@ private fun LiveDot(on: Boolean) {
 @Composable
 private fun NotesMenu(model: NotesModel, actions: NotesMenuActions) {
     var open by remember { mutableStateOf(false) }
+    var confirmAudio by remember { mutableStateOf(false) }
+    val bytes = model.document.audio.sumOf { it.bytes }
     Box {
         IconButton({ open = true }) { Icon(painterResource(R.drawable.ic_more_vert), "More options") }
         DropdownMenu(open, { open = false }) {
-            @Composable fun item(label: String, icon: Int, enabled: Boolean = true, summary: String? = null, run: () -> Unit) =
-                DropdownMenuItem({ Column { Text(label); summary?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) } } },
-                    { open = false; run() }, leadingIcon = { Icon(painterResource(icon), null) }, enabled = enabled)
+            @Composable fun item(label: String, icon: Int, enabled: Boolean = true, summary: String? = null, destructive: Boolean = false, run: () -> Unit) =
+                DropdownMenuItem({ Column { Text(label); summary?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = if (destructive) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant) } } },
+                    { open = false; run() }, leadingIcon = { Icon(painterResource(icon), null) }, enabled = enabled,
+                    colors = if (destructive) MenuDefaults.itemColors(textColor = MaterialTheme.colorScheme.error, leadingIconColor = MaterialTheme.colorScheme.error) else MenuDefaults.itemColors())
             @Composable fun toggle(label: String, on: Boolean, summary: String? = null, set: (Boolean) -> Unit) =
                 DropdownMenuItem({ Column { Text(label); summary?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) } } },
                     { set(!on) }, Modifier.semantics { role = Role.Switch; stateDescription = if (on) "On" else "Off" },
@@ -252,13 +255,20 @@ private fun NotesMenu(model: NotesModel, actions: NotesMenuActions) {
             item("Export Markdown", R.drawable.ic_download, model.hasContent, run = actions.save)
             HorizontalDivider()
             item("Rename", R.drawable.ic_edit, run = actions.rename)
-            val bytes = model.document.audio.sumOf { it.bytes }
             if (bytes > 0) {
-                item("Delete audio", R.drawable.ic_delete, summary = "${"%.1f".format(bytes / 1024.0)} KB on this phone") { model.deleteAudio() }
+                item("Delete audio", R.drawable.ic_delete, summary = "${megabytes(bytes)} on this phone", destructive = true) { confirmAudio = true }
             }
             item("Notes settings", R.drawable.ic_settings, run = actions.settings)
+            // Into Recently Deleted. The library shows Undo. A recording stays until it is stopped.
+            item("Delete", R.drawable.ic_delete, enabled = !model.state.active, destructive = true, run = actions.delete)
         }
     }
+    if (confirmAudio) AlertDialog(onDismissRequest = { confirmAudio = false },
+        title = { Text("Delete audio?") },
+        text = { Text("This deletes this note’s audio (${megabytes(bytes)}). The text and transcript stay.") },
+        confirmButton = { TextButton({ confirmAudio = false; model.deleteAudio() },
+            colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)) { Text("Delete audio") } },
+        dismissButton = { TextButton({ confirmAudio = false }) { Text("Cancel") } })
 }
 
 /**
@@ -489,7 +499,9 @@ internal fun TranscriptPane(model: NotesModel, modifier: Modifier, titled: Boole
         val roster = document.roster
         var renaming by remember { mutableStateOf<Int?>(null) }
         renaming?.let { person ->
-            RenameSpeakerDialog(document, person, { renaming = null }) { name, replace -> renaming = null; model.renameSpeaker(person, name, replace) }
+            RenameSpeakerDialog(model, person, { renaming = null }) { name, replace, remember ->
+                renaming = null; model.renameSpeaker(person, name, replace, remember)
+            }
         }
         // A copy: the document's list is the same object as it grows, which the lazy list would not see change.
         val rows = document.segments.toList()
