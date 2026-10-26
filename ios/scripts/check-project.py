@@ -67,7 +67,7 @@ assert members('ChirpWidgets') == {'Widgets/ChirpWidgets.swift','Widgets/NotesAc
                                   'Intents/SessionIntents.swift','Intents/ChirpActivityAttributes.swift','Intents/NotesIntents.swift',
                                   'Intents/NotesActivityAttributes.swift','Shared/Sources/ChirpIOSCore/Pond.swift'}
 assert members('ChirpKeyboard') == {'Keyboard/ChirpKeyboardViewController.swift','Keyboard/KeyboardBridgeClient.swift',
-                                   'Keyboard/UI/KeyboardChipRow.swift','Keyboard/UI/KeyboardKeyStyle.swift',
+                                   'Keyboard/UI/KeyboardChipRow.swift','Keyboard/UI/KeyboardPalette.swift',
                                    'Keyboard/UI/KeyboardPreview.swift','Keyboard/UI/KeyboardRippleView.swift',
                                    'Keyboard/UI/KeyboardStatusStrip.swift'}
 for target in ('ChirpKeyboard','ChirpWidgets'):
@@ -102,8 +102,15 @@ for name, test in [('ChirpIOS','ChirpIOSTests'), ('ChirpIOS-UI','ChirpIOSUITests
     assert members(test)
 
 packages = {v['relativePath'] for v in objects.values() if v['isa'] == 'XCLocalSwiftPackageReference'}
-assert packages == {'Shared','Keyboard/Policy','../mac'}
+assert packages == {'Shared','Keyboard/Policy','Keyboard/Typing','../mac'}
 for path in packages: assert (root/path/'Package.swift').is_file()
+# KeyboardKit (via KeyboardTyping) is linked into the keyboard extension and its unit tests only, at the exact MIT
+# release recorded in THIRD-PARTY-NOTICES.md; the app and widgets never load it.
+typing_users = {name for name, t in targets.items()
+                if any(objects[d]['productName'] == 'KeyboardTyping' for d in t.get('packageProductDependencies', []))}
+assert typing_users == {'ChirpKeyboard', 'ChirpIOSTests'}, typing_users
+assert 'exact: "9.9.1"' in (root/'Keyboard/Typing/Package.swift').read_text()
+assert 'KeyboardKit 9.9.1' in (root/'Keyboard/Typing/THIRD-PARTY-NOTICES.md').read_text()
 config = (root/'Config/Project.xcconfig').read_text()
 assert 'IPHONEOS_DEPLOYMENT_TARGET = 18.0' in config
 assert '$(AppIdentifierPrefix)' in config and '#include? "Local.xcconfig"' in config

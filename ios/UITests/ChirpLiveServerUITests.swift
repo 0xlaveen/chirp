@@ -200,6 +200,7 @@ final class ChirpLiveServerUITests: XCTestCase {
         let expectedStart = typed + "so, um, schedule"
         XCTAssertTrue((field.value as? String ?? "").hasPrefix(expectedStart), "Mid-sentence casing: \(String(describing: field.value))")
         screenshot("Keyboard final in Messages", messages)
+        messages.buttons["chirp.keyboard.info"].tap()
         messages.buttons["chirp.keyboard.end"].tap()
         XCTAssertTrue(waitFor(status, "label != 'Ready'", timeout: 10), status.label)
     }

@@ -2,22 +2,39 @@ import UIKit
 import ChirpIOSCore
 import KeyboardPolicy
 
-/// The 44 pt status strip: a state glyph, one short label, the DEBUG badge, the elapsed or remaining time in tabular
-/// digits and the ⓘ button. One line in every state, so the keyboard never changes height.
+/// The 44 pt Chirp strip above the suggestion row: a state glyph, one short label, the DEBUG badge, the elapsed or
+/// remaining time in tabular digits, the Style chip, the ⓘ button and the mic/Stop capsule at the trailing edge (where
+/// Android's strip has its mic). One line in every state, so the keyboard never changes height.
 @MainActor
 final class KeyboardStatusStrip: UIView {
     let label = UILabel()
     let time = UILabel()
     let info = UIButton(type: .system)
+    let style = UIButton(type: .system)
+    /// Start / Stop / Polishing / Open Chirp: a filled capsule whose colour follows `PrimaryStyle`.
+    let primary = UIButton(type: .system)
     private let glyphBox = UIView()
     private let ripple = KeyboardRippleView()
     private let symbol = UIImageView()
     private let dot = UIView()
     private let badge = UILabel()
     private var glyph: StripGlyph?
+    private var primaryStyle: PrimaryStyle = .tonal { didSet { if primaryStyle != oldValue { primary.setNeedsUpdateConfiguration() } } }
+    private var primaryWidth: NSLayoutConstraint!
+    private var showsTitle = false
+    private var showsRemaining = true
 
     init() {
         super.init(frame: .zero)
+        configurePrimary()
+        KeyboardChipRow.configure(style, title: "Default", symbol: nil, id: "style", label: "Style")
+        style.configuration?.image = UIImage(systemName: "chevron.down")
+        style.configuration?.imagePlacement = .trailing
+        style.configuration?.contentInsets = NSDirectionalEdgeInsets(top: 0, leading: 10, bottom: 0, trailing: 10)
+        style.showsMenuAsPrimaryAction = true
+        style.setContentHuggingPriority(.required, for: .horizontal)
+        // The status label gives way first, then the Style chip's title truncates.
+        style.setContentCompressionResistancePriority(.defaultHigh - 1, for: .horizontal)
         label.font = UIFontMetrics(forTextStyle: .subheadline)
             .scaledFont(for: .systemFont(ofSize: 15, weight: .medium), maximumPointSize: KeyboardMetrics.maxStripTextPoints)
         label.adjustsFontForContentSizeCategory = true
@@ -77,11 +94,12 @@ final class KeyboardStatusStrip: UIView {
             glyphBox.widthAnchor.constraint(equalToConstant: 28), glyphBox.heightAnchor.constraint(equalToConstant: 28),
         ])
 
-        let row = UIStackView(arrangedSubviews: [glyphBox, label, UIView(), badge, time, info])
+        let row = UIStackView(arrangedSubviews: [glyphBox, label, UIView(), badge, time, style, info, primary])
         row.axis = .horizontal
         row.alignment = .center
         row.spacing = 8
-        row.setCustomSpacing(0, after: time)
+        row.setCustomSpacing(0, after: style)
+        row.setCustomSpacing(0, after: info)
         row.translatesAutoresizingMaskIntoConstraints = false
         addSubview(row)
         NSLayoutConstraint.activate([
@@ -90,6 +108,8 @@ final class KeyboardStatusStrip: UIView {
             row.topAnchor.constraint(equalTo: topAnchor), row.bottomAnchor.constraint(equalTo: bottomAnchor),
             badge.heightAnchor.constraint(equalToConstant: 18), badge.widthAnchor.constraint(greaterThanOrEqualToConstant: 46),
             info.widthAnchor.constraint(equalToConstant: 44), info.heightAnchor.constraint(equalToConstant: 44),
+            style.heightAnchor.constraint(equalToConstant: 44), primary.heightAnchor.constraint(equalToConstant: 44),
+            primaryWidth,
         ])
         // The label takes the leftover width; the spacer only absorbs slack.
         row.arrangedSubviews[2].setContentHuggingPriority(.defaultLow - 1, for: .horizontal)
@@ -97,15 +117,77 @@ final class KeyboardStatusStrip: UIView {
     }
     @available(*, unavailable) required init?(coder: NSCoder) { fatalError() }
 
+    /// The capsule is 36 pt tall inside the 44 pt row (the whole row height stays tappable) and at least 56 pt wide;
+    /// on iPhone it is the symbol alone, with the title for VoiceOver.
+    private func configurePrimary() {
+        var configuration = UIButton.Configuration.filled()
+        configuration.cornerStyle = .capsule
+        configuration.imagePadding = 6
+        configuration.titleLineBreakMode = .byTruncatingTail
+        configuration.background.backgroundInsets = NSDirectionalEdgeInsets(top: 4, leading: 0, bottom: 4, trailing: 0)
+        configuration.contentInsets = NSDirectionalEdgeInsets(top: 0, leading: 16, bottom: 0, trailing: 16)
+        configuration.titleTextAttributesTransformer = UIConfigurationTextAttributesTransformer { attributes in
+            var attributes = attributes
+            attributes.font = UIFontMetrics(forTextStyle: .headline)
+                .scaledFont(for: .systemFont(ofSize: 16, weight: .semibold), maximumPointSize: KeyboardMetrics.maxPrimaryTextPoints)
+            return attributes
+        }
+        configuration.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(pointSize: 17, weight: .semibold)
+        primary.configuration = configuration
+        primary.accessibilityIdentifier = "chirp.keyboard.primary"
+        primary.titleLabel?.adjustsFontForContentSizeCategory = true
+        primary.setContentHuggingPriority(.required, for: .horizontal)
+        primary.setContentCompressionResistancePriority(.required, for: .horizontal)
+        primaryWidth = primary.widthAnchor.constraint(greaterThanOrEqualToConstant: KeyboardMetrics.minimumPrimaryWidth)
+        // A disabled primary is a status (Polishing…, Full Access required), not a dimmed button: keep its own colours.
+        primary.configurationUpdateHandler = { [weak self] button in
+            guard let self, var configuration = button.configuration else { return }
+            let (fill, ink) = self.primaryColors
+            configuration.baseBackgroundColor = fill
+            configuration.baseForegroundColor = ink
+            button.configuration = configuration
+        }
+    }
+
+    private var primaryColors: (UIColor, UIColor) {
+        switch primaryStyle {
+        case .koi: (KeyboardPalette.koi, KeyboardPalette.onKoi)
+        case .record: (KeyboardPalette.record, KeyboardPalette.onRecord)
+        case .moon: (KeyboardPalette.moonFill, KeyboardPalette.onMoonFill)
+        case .tonal: (KeyboardPalette.koiContainer, KeyboardPalette.onKoiContainer)
+        }
+    }
+
+    func apply(_ metrics: KeyboardMetrics) {
+        showsTitle = metrics.showsPrimaryTitle
+        showsRemaining = metrics.showsRemaining
+    }
+
     func apply(_ screen: KeyboardScreen) {
         label.text = screen.phaseText
-        time.text = screen.trailing
-        time.isHidden = screen.trailing == nil
+        // A narrow strip keeps the ticking elapsed time and leaves the session's remaining time to ⓘ.
+        let trailing = screen.elapsed ?? (showsRemaining ? screen.remaining : nil)
+        time.text = trailing
+        time.isHidden = trailing == nil
         // The ticking elapsed time is never announced; the "left" text is a plain label for VoiceOver.
-        time.isAccessibilityElement = screen.elapsed == nil && screen.trailing != nil
+        time.isAccessibilityElement = screen.elapsed == nil && trailing != nil
         time.accessibilityLabel = screen.remaining
         badge.isHidden = screen.warning == nil
         info.isHidden = screen.detail == nil
+        style.isHidden = !screen.showsStyle
+        style.configuration?.title = screen.styleTitle
+        style.accessibilityLabel = "Style: " + screen.styleTitle
+        style.accessibilityHint = "Opens the style menu."
+        let action = screen.primary
+        primaryStyle = action.style
+        primary.configuration?.title = showsTitle ? action.title : nil
+        primary.configuration?.image = UIImage(systemName: action.symbol)
+        primary.accessibilityLabel = action.accessibilityLabel
+        primary.accessibilityHint = action.hint
+        // Polishing is a status, not a dimmed button: it stays "enabled" so it keeps its moon fill, and VoiceOver
+        // still reads it as dimmed. The controller ignores the tap.
+        primary.isEnabled = action.isEnabled || action.kind == .polishing
+        if action.kind == .polishing { primary.accessibilityTraits.insert(.notEnabled) } else { primary.accessibilityTraits.remove(.notEnabled) }
         setGlyph(screen.glyph)
     }
 
@@ -133,12 +215,14 @@ final class KeyboardStatusStrip: UIView {
     }
 }
 
-/// The ⓘ overlay: the long guidance, laid over the rows under the strip so the keys don't move. Its label keeps the
-/// `chirp.keyboard.detail` identifier.
+/// The ⓘ overlay: the long guidance and End session, laid over the rows under the strip so the keys don't move. Its
+/// label keeps the `chirp.keyboard.detail` identifier.
 @MainActor
 final class KeyboardInfoOverlay: UIView {
     let detail = UILabel()
     let close = UIButton(type: .system)
+    /// Ends the keyboard session (the app's microphone turns off); shown while a session is live.
+    let end = UIButton(type: .system)
 
     init() {
         super.init(frame: .zero)
@@ -168,14 +252,29 @@ final class KeyboardInfoOverlay: UIView {
         close.accessibilityLabel = KeyboardPresenter.closeInfoLabel
         close.setContentHuggingPriority(.required, for: .vertical)
         close.setContentCompressionResistancePriority(.required, for: .vertical)
+        var ending = UIButton.Configuration.plain()
+        ending.title = "End session"
+        ending.image = UIImage(systemName: "mic.slash")
+        ending.imagePadding = 6
+        ending.baseForegroundColor = KeyboardPalette.record
+        ending.contentInsets = NSDirectionalEdgeInsets(top: 8, leading: 4, bottom: 8, trailing: 12)
+        end.configuration = ending
+        end.accessibilityIdentifier = "chirp.keyboard.end"
+        end.accessibilityLabel = "End session"
+        end.accessibilityHint = "Turns off Chirp's microphone. Start a new session in Chirp."
+        let buttons = UIStackView(arrangedSubviews: [end, UIView(), close])
+        buttons.axis = .horizontal
+        buttons.alignment = .center
+        // The text takes the spare height; the buttons stay at the bottom of the panel.
+        buttons.setContentHuggingPriority(.required, for: .vertical)
         let scroll = UIScrollView()
         scroll.setContentHuggingPriority(.defaultLow, for: .vertical)
         scroll.alwaysBounceVertical = false
         detail.translatesAutoresizingMaskIntoConstraints = false
         scroll.addSubview(detail)
-        let stack = UIStackView(arrangedSubviews: [scroll, close])
+        let stack = UIStackView(arrangedSubviews: [scroll, buttons])
         stack.axis = .vertical
-        stack.alignment = .trailing
+        stack.alignment = .fill
         stack.spacing = 8
         stack.translatesAutoresizingMaskIntoConstraints = false
         addSubview(stack)

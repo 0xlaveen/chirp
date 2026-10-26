@@ -6,3 +6,4 @@ Artifacts/
 Chirp.xcodeproj/project.xcworkspace/
 Shared/Package.resolved
 Keyboard/Policy/Package.resolved
+Keyboard/Typing/.swiftpm/

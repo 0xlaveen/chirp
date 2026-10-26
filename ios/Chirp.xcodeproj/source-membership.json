@@ -31,7 +31,7 @@
     "Keyboard/ChirpKeyboardViewController.swift",
     "Keyboard/KeyboardBridgeClient.swift",
     "Keyboard/UI/KeyboardChipRow.swift",
-    "Keyboard/UI/KeyboardKeyStyle.swift",
+    "Keyboard/UI/KeyboardPalette.swift",
     "Keyboard/UI/KeyboardPreview.swift",
     "Keyboard/UI/KeyboardRippleView.swift",
     "Keyboard/UI/KeyboardStatusStrip.swift"
@@ -48,6 +48,7 @@
   ],
   "ChirpIOSTests": [
     "Tests/CaptureSinkTests.swift",
+    "Tests/KeyboardTypingTests.swift",
     "Tests/LiveNotesControllerTests.swift",
     "Tests/LongDictationTests.swift",
     "Tests/PondShellTests.swift",
@@ -56,6 +57,7 @@
   ],
   "ChirpIOSUITests": [
     "UITests/ChirpHardwareKeyboardUITests.swift",
+    "UITests/ChirpKeyboardTypingUITests.swift",
     "UITests/ChirpKeyboardUITests.swift",
     "UITests/ChirpLiveNotesUITests.swift",
     "UITests/ChirpLiveServerUITests.swift",

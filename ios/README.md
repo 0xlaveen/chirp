@@ -34,7 +34,7 @@ still unchecked.
 | `ios/scripts/simulator.sh build` — iPhone 18 Pro and iPad Pro 13-inch (M5) | BUILD SUCCEEDED on both |
 | `ios/scripts/simulator.sh test` — same two simulators | 20 tests in 2 suites, both |
 | `CHIRP_E2E_APPEARANCE=dark ios/scripts/simulator-e2e.sh` (full UI scheme plus live server) — same two simulators | 11 tests, both: 9 pass, 2 skip with stated reasons (⌘ shortcuts need a hardware keyboard on the simulator; UI tests cannot open Spotlight); server log transcript-free |
-| `swift test --package-path ios/Keyboard/Policy` | 62 tests in 9 suites |
+| `swift test --package-path ios/Keyboard/Policy` | 108 tests in 17 suites |
 | `ios/Shared/scripts/test.sh` | 22 tests in 6 suites |
 | `ios/scripts/check-sources.sh` | passed |
 
@@ -242,8 +242,8 @@ The last page of first-run setup, and the setup card on Notes, take you there.
 Full Access is required because the keyboard talks to the app through the
 encrypted App Group mailbox — it never gives the keyboard a microphone; Apple's
 sandbox denies keyboard audio access even with Full Access. Without Full Access
-the keyboard keeps Space, Delete, Return and the globe (next keyboard), and
-shows "Dictation needs Full Access". Secure fields and hosts that disallow
+the keyboard still types, suggests and corrects (no haptics), and the strip says
+"Needs Full Access". Secure fields and hosts that disallow
 custom keyboards automatically use Apple's keyboard.
 
 ## Dictate in the app
@@ -415,56 +415,80 @@ Chirp Live Notes.
 
 ## Dictate from any app (keyboard)
 
-Chirp Keyboard is voice-first: keep Apple's keyboard for typing and switch to
-Chirp to dictate. There is deliberately no QWERTY layout.
+Chirp Keyboard is a full typing keyboard with Chirp's strip on top, like the
+Android keyboard: type as on Apple's keyboard, tap the mic to dictate, and never
+switch keyboards in between.
 
-The keyboard is in the Pond look of the Android strip: calm, compact, with one
-big control. Four rows, top to bottom, and **the height never changes** between
-states (every row always reserves its space; chips that don't apply are hidden,
-not removed):
+Three rows, top to bottom, and **the height never changes** between states
+(every row always reserves its space):
 
-- **Status strip** (one line, 44 pt) — a state glyph, a short label and, on the
-  right in tabular digits, a keyboard-local **elapsed timer** while this
-  keyboard's own utterance is listening, or the session's **time left**
-  (`4:12 left`, omitted for "Never"). Glyphs: a koi dot when ready or finished,
-  the **Ripple** while connecting or listening (a static koi ring with Reduce
-  Motion), a moon ✦ while polishing, a `record` ⚠ for a cause that needs
-  attention. Labels: *Ready*, *Listening…*, *Polishing…*, *Finished*, *Kept what
-  was heard*, or a one-line cause such as *Mac offline*. A small **DEBUG** badge
-  shows while the server keeps recordings. The **ⓘ** at the end opens the long,
-  content-free guidance (the session text, the fix for the error code:
-  Tailscale/Mac, re-pair in Chirp, microphone in Chirp, …, the Full Access
-  steps) as an overlay over the rows below, so the keys don't move.
-- **Primary control** (≥ 64 pt capsule; full width on iPhone, one centred
-  440 pt column on iPad that the strip and chips share) whose look follows state:
-  koi *Start dictation*, `record` *Stop* (while connecting or listening), moon
-  *Polishing…* (disabled), tonal *Open Chirp to start* when there is no session,
-  and a disabled tonal *Full Access required* (the ⓘ explains it).
-- **Chips** — Undo (for 5 s after the text lands) or Cancel (while recording),
-  **Use raw (4s)** (the seconds left in its 5 s window, only after a cleaned
-  final), *Open Chirp* in fallback states, and the **Style ▾** menu showing the
-  style's name (*Email*), with the Private session item. Undo removes exactly the
-  dictation that just landed, and only if the field still shows it as Chirp left
-  it. Otherwise it says "Text changed — nothing to undo".
-- **Typing row** — in the system keyboard's look (raised keycaps, 6 pt radius):
-  globe (only when iOS asks for it), **space**, **Delete** (press and hold
-  repeats, accelerating; it stops on release and if the keyboard takes
-  ownership of an utterance), **Return** and **End** (`mic.slash`, "End
-  session" to VoiceOver).
+- **Chirp strip** (one line, 44 pt) — a state glyph and a short label, the
+  keyboard-local **elapsed timer** while this keyboard's own utterance is
+  listening or the session's **time left** (`4:12 left`, left to ⓘ on the
+  narrowest iPhones), the **Style ▾** chip (the style's name, *Email*, with the
+  Private session item), **ⓘ** and, at the trailing edge, the **mic capsule**.
+  Glyphs: a koi dot when ready or finished, the **Ripple** while connecting or
+  listening (a static koi ring with Reduce Motion), a moon ✦ while polishing, a
+  `record` ⚠ for a cause that needs attention. Labels: *Ready*, *Listening…*,
+  *Polishing…*, *Finished*, *Kept what was heard*, or a one-line cause such as
+  *Mac offline*. A small **DEBUG** badge shows while the server keeps
+  recordings. The capsule is koi *Start dictation* (a mic), `record` *Stop*,
+  moon *Polishing…* (disabled), tonal *Open Chirp to start* when there is no
+  session, and a disabled tonal *Full Access required*; iPhone shows the symbol
+  (VoiceOver reads the title), iPad shows the title too. **ⓘ** opens the long,
+  content-free guidance (the session text, the fix for the error code, the Full
+  Access steps) and **End session** as an overlay over the rows below, so the
+  keys don't move.
+- **Suggestion row** — word suggestions while you type; Chirp's chips take the
+  row over while they apply: **Undo** (for 5 s after the text lands) or
+  **Cancel** (while recording or polishing), **Use raw (4s)** (the seconds left
+  in its 5 s window, only after a cleaned final) and *Open Chirp* in fallback
+  states. Undo removes exactly the dictation that just landed, and only if the
+  field still shows it as Chirp left it; otherwise it says "Text changed —
+  nothing to undo".
+- **Keys** — QWERTY in Apple's look and metrics on iPhone and iPad: shift,
+  caps lock (double-tap shift), automatic capitals at sentence starts (following
+  the field's capitalization setting), the 123 and #+= pages (Space returns to
+  the letters), long-press callouts for accents (é, ñ, ü…), key-press pop-ups on
+  iPhone (not on iPad, like Apple's), a double space for a full stop, touch and
+  hold Delete to repeat (whole words after a few seconds), touch and hold the
+  space bar and slide to move the cursor, Return labelled for the field (send,
+  go, search, done…), and the globe when iOS asks for one. Fields open the right
+  layout: number pads, e-mail (`@` and `.`), URL (`.`, `/`, `.com`) and web
+  search. Key clicks follow the Keyboard Clicks setting; haptics need Full
+  Access. There is no emoji page: use the globe (or the system's globe below the
+  keyboard) to reach Apple's emoji keyboard. English layouts only for now.
 
-Dynamic Type grows the strip, chip and key labels up to the AX3 size inside their
+**Suggestions and autocorrect** come from the on-device spell checker
+(`UITextChecker`) and your text replacements and contact names (`UILexicon`);
+nothing is sent anywhere. The bar shows what you typed, the correction and
+completions. Space replaces a word only when it is misspelled, looks like prose
+(no acronyms, camelCase, digits or handles) and the fix is a close edit (one
+letter for short words, two for longer ones), or when it is one of your text
+replacements; e-mail and URL fields and fields that turn autocorrect off get no
+corrections. Press Delete right after a correction to put back what you typed;
+that word is then learned on the device and left alone. Tapping the quoted word
+keeps it and learns it too.
+
+The keys are [KeyboardKit](https://github.com/KeyboardKit/KeyboardKit) 9.9.1,
+the last MIT-licensed source release (later versions are closed source), pinned
+exactly in `Keyboard/Typing/Package.swift` and linked into the keyboard only.
+`Keyboard/Typing` is the thin adapter (suggestions, autocorrect revert, field
+layouts, feedback); Chirp's decisions stay in `Keyboard/Policy`. See
+[Keyboard/Typing/THIRD-PARTY-NOTICES.md](Keyboard/Typing/THIRD-PARTY-NOTICES.md).
+
+Dynamic Type grows the strip and chip labels up to the AX3 size inside their
 fixed rows (the caps are in `KeyboardMetrics`), then truncates them; every control
-keeps its full VoiceOver label. Start and stop give a light haptic when Full
-Access is on. The status is an `updatesFrequently` element, the ticking timer is
-not announced, and each final is announced once.
+keeps its full VoiceOver label, and the strip and chips stay 44 pt touch targets.
+Start and stop give a light haptic when Full Access is on. The status is an
+`updatesFrequently` element, the ticking timer is not announced, and each final
+is announced once.
 
 Simulator screenshots: Debug builds on a simulator can pin the keyboard to a
 named state by writing a one-word file `keyboard-preview` (`nosession`, `armed`,
 `listening`, `polishing`, `finished`, `kept`, `error`, `debug`, `noaccess`; add
 `+info` for the ⓘ overlay) into the App Group container's `Chirp` folder. It is
 compiled out of device and Release builds and carries no text.
-
-Start and stop give a light haptic when Full Access is on.
 
 1. Arm a session in the app first (see above). The keyboard shows "Ready".
 2. Tap **Start dictation**. The primary button reads *Open Chirp to start*
@@ -476,8 +500,9 @@ Start and stop give a light haptic when Full Access is on.
 3. Live text appears in the field as partials and is replaced by the final.
    **Stop** finalizes; **Cancel** retracts the partial; **Use raw**
    (5 s window, only when clean-up changed the text) swaps the original back;
-   **Style** picks the server's clean-up profile; **End session** stops the
-   microphone.
+   **Style** picks the server's clean-up profile; **End session** (behind ⓘ)
+   stops the microphone. Typing next to a dictation that is still landing
+   releases it: the text stays and nothing more is written there.
 
 **Casing and spoken commands.** When the text just before a dictation shows a
 sentence already under way (it ends in a word, a digit, a comma or a
