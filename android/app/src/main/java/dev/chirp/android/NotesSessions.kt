@@ -157,6 +157,26 @@ internal class NotesSessions(
         }
     }
 
+    /**
+     * Names people were given in recent live notes, newest note first, without repeats: what "Name speakers" suggests as
+     * you type. Looks at the [notes] most recent notes other than [excluding]. Names stay on this phone and are never logged.
+     */
+    fun speakerNames(excluding: String? = null, notes: Int = 30, limit: Int = 30): List<String> {
+        if (!available) return emptyList()
+        return synchronized(LOCK) {
+            val names = LinkedHashMap<String, String>()
+            for (entry in sorted(snapshot().filter { !it.deleted && it.id != excluding }).take(notes)) {
+                val people = readRecord(entry.id)?.document?.optJSONArray("people") ?: continue
+                for (i in 0 until people.length()) {
+                    val person = people.optJSONObject(i) ?: continue
+                    val name = person.optString("name").trim()
+                    if (!person.has("merged") && name.isNotEmpty()) names.putIfAbsent(name.lowercase(), name)
+                }
+            }
+            names.values.take(limit)
+        }
+    }
+
     // Writing
 
     /**

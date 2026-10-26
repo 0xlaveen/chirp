@@ -155,6 +155,14 @@ internal class NotesDocument(var startedAt: Long = System.currentTimeMillis(), t
     /** Some segment is labelled: the transcript shows who said what. */
     val labelled get() = committed.any { !it.turns.isNullOrEmpty() }
 
+    /** Where [person] (and anyone merged into them) first speaks: the segment's id and a line of what they said. Null when they never did. */
+    fun firstTurn(person: Int): Pair<Int, String>? {
+        for (segment in committed) for (turn in segment.turns.orEmpty()) {
+            if (roster.resolve(turn.person) == person && turn.text.isNotBlank()) return segment.id to turn.text.trim().take(120)
+        }
+        return null
+    }
+
     fun renameSpeaker(person: Int, name: String?) { roster.rename(person, name); speakerVersion++ }
     fun mergeSpeaker(person: Int, into: Int) { roster.merge(person, into); speakerVersion++ }
     fun separateSpeaker(person: Int) { roster.separate(person); speakerVersion++ }
@@ -165,7 +173,19 @@ internal class NotesDocument(var startedAt: Long = System.currentTimeMillis(), t
     /** The notes with every whole-word [old] replaced by [new]. */
     fun replacingName(old: String, new: String) = if (old.isBlank()) text else nameRegex(old).replace(text, Regex.escapeReplacement(new))
 
-    private fun nameRegex(name: String) = Regex("(?<![\\p{L}\\p{N}])" + Regex.escape(name) + "(?![\\p{L}\\p{N}])")
+    private fun nameRegex(name: String) = namesRegex(listOf(name))
+
+    private fun namesRegex(names: Collection<String>) =
+        Regex("(?<![\\p{L}\\p{N}])(?:" + names.sortedByDescending { it.length }.joinToString("|") { Regex.escape(it) } + ")(?![\\p{L}\\p{N}])")
+
+    /** Places any of [names] appears as a whole word in the notes: "Also replace names in the notes (N places)". */
+    fun nameCount(names: Collection<String>): Int = names.filter { it.isNotBlank() }.let { if (it.isEmpty()) 0 else namesRegex(it).findAll(text).count() }
+
+    /** The notes with every whole-word old name swapped for its new one, in one pass so a swap (Maya ↔ Sam) comes out right. */
+    fun replacingNames(renames: Map<String, String>): String {
+        val olds = renames.keys.filter { it.isNotBlank() }
+        return if (olds.isEmpty()) text else namesRegex(olds).replace(text) { renames.getValue(it.value) }
+    }
 
     /** Continue recording: a capture boundary at [offset] seconds of audio, [time] wall clock. */
     fun addBoundary(offset: Double, time: Long) { boundaryList += NotesBoundary(offset, time); version++ }

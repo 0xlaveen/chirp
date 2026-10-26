@@ -103,6 +103,9 @@ internal class SpeakerRoster {
 
     fun separate(id: Int) { person(id)?.mergedInto = null }
 
+    /** People still standing with no name of their own yet: who "Who was speaking?" asks about. */
+    val unnamed get() = list.filter { it.mergedInto == null && it.name.isNullOrBlank() }.map { it.id }
+
     /** The people merged straight into [id], for "Separate". */
     fun merged(into: Int) = list.filter { it.mergedInto == into }.map { it.id }
 

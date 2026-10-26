@@ -40,7 +40,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.unit.dp
 
-/** The transcript's speaker chips and their fix-ups (rename, merge, separate), and the inline model status. */
+/** The transcript's speaker chips and their fix-ups: rename, merge and separate. [NameSpeakersSheet] names everyone at once. */
 internal object SpeakerColors {
     /** Pond-safe hues, each at least 4.5:1 on the light surface; the dark set is the same hues lifted for the night pond. */
     private val light = listOf(0xFFC2410C, 0xFF2F7A4F, 0xFF4F46E5, 0xFFA21CAF, 0xFF0F766E, 0xFF8A5A00, 0xFF0369A1, 0xFFBE123C)
@@ -66,12 +66,13 @@ internal fun SpeakerChip(name: String, colorIndex: Int, onClick: () -> Unit, mod
 /** What can be done about one person: rename, merge into another, or separate people merged into them. */
 @Composable
 internal fun SpeakerMenu(open: Boolean, dismiss: () -> Unit, roster: SpeakerRoster, person: Int, rename: () -> Unit,
-                         merge: (Int) -> Unit, separate: (Int) -> Unit) {
+                         merge: (Int) -> Unit, separate: (Int) -> Unit, nameAll: (() -> Unit)? = null) {
     val target = roster.resolve(person)
     val others = roster.active.filter { it != target }
     val merged = roster.merged(target)
     DropdownMenu(open, dismiss) {
         DropdownMenuItem({ Text("Rename “${roster.displayName(target)}”…") }, { dismiss(); rename() })
+        if (nameAll != null) DropdownMenuItem({ Text("Name speakers…") }, { dismiss(); nameAll() })
         if (others.isNotEmpty()) {
             HorizontalDivider()
             Text("Same person as", Modifier.padding(horizontal = 12.dp, vertical = 8.dp), style = MaterialTheme.typography.labelMedium,

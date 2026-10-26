@@ -306,6 +306,72 @@ class NotesSpeakersTest {
         rig.model.renameSpeaker(1, "Sam")
         assertEquals("- [ ] **Maya** to send the spec", rig.model.document.text)
     }
+
+    // Name speakers
+
+    @Test fun `naming several people at once replaces old names in one pass, swaps included`() {
+        val rig = NotesModelRig(RuntimeEnvironment.getApplication(), speakersMac)
+        rig.model.recorder.document.apply { roster.id(0, "g"); roster.id(1, "g"); roster.id(2, "g"); renameSpeaker(1, "Maya"); renameSpeaker(2, "Sam") }
+        rig.model.edit(androidx.compose.ui.text.input.TextFieldValue("- Maya sends the spec\n- Sam reviews\n- Person 3 joins late, Person 31 not"))
+        val document = rig.model.document
+        assertEquals(3, document.nameCount(listOf("Maya", "Sam", "Person 3")))
+        // Maya ↔ Sam swap, Person 3 becomes Lee; blank for nobody; an unchanged name is not a change.
+        rig.model.renameSpeakers(mapOf(1 to "Sam", 2 to "Maya", 3 to " Lee "), replaceInNotes = true)
+        assertEquals("- Sam sends the spec\n- Maya reviews\n- Lee joins late, Person 31 not", document.text)
+        assertEquals(listOf("Sam", "Maya", "Lee"), (1..3).map(document.roster::displayName))
+        val version = document.speakerVersion
+        rig.model.renameSpeakers(mapOf(1 to "Sam", 3 to "Lee"), replaceInNotes = true)
+        assertEquals(version, document.speakerVersion)
+        // Blank goes back to "Person N"; without the toggle the notes' text stays.
+        rig.model.renameSpeakers(mapOf(3 to ""), replaceInNotes = false)
+        assertEquals("Person 3", document.roster.displayName(3)); assertTrue(document.text.contains("Lee joins late"))
+    }
+
+    @Test fun `who was speaking asks once after Stop for people with no name`() {
+        val rig = NotesModelRig(RuntimeEnvironment.getApplication(), notesMac.copy(notesSpeakers = true, speakersModel = "ready"))
+        rig.model.recorder.labelSpeakers = true
+        assertFalse(rig.model.askToNameSpeakers)
+        rig.record().final("We ship. Okay.", speakers = result("g", turn(0, 0.2, "We ship."), turn(1, 2.0, "Okay.")))
+        rig.idle()
+        assertFalse("not while recording", rig.model.askToNameSpeakers)
+        rig.model.toggle(); rig.idle(); rig.wire.final("Bye."); rig.idle()
+        assertTrue(rig.model.askToNameSpeakers)
+        // It goes while recording again, and comes back after the next Stop.
+        rig.model.toggle(); rig.wire.ready(); rig.idle()
+        assertFalse(rig.model.askToNameSpeakers)
+        // Naming everyone settles it; naming one leaves the other for the sheet.
+        val named = NotesModelRig(RuntimeEnvironment.getApplication(), notesMac.copy(notesSpeakers = true, speakersModel = "ready"))
+        named.model.recorder.labelSpeakers = true
+        named.record().final("We ship. Okay.", speakers = result("g", turn(0, 0.2, "We ship."), turn(1, 2.0, "Okay."))); named.idle()
+        named.model.toggle(); named.idle(); named.wire.final("Bye."); named.idle()
+        assertTrue(named.model.askToNameSpeakers)
+        named.model.renameSpeakers(mapOf(1 to "Maya", 2 to "Sam"))
+        assertFalse(named.model.askToNameSpeakers); assertTrue(named.model.document.roster.unnamed.isEmpty())
+    }
+
+    @Test fun `autocomplete offers names from recent notes, newest first, without this note's own or used names`() {
+        val sessions = NotesSessions(RuntimeEnvironment.getApplication(), SoftwareHistoryKeys())
+        fun note(id: String, vararg names: String?) = sessions.put(id, labelledDocument().apply {
+            names.forEachIndexed { i, n -> if (n != null) renameSpeaker(i + 1, n) }
+            roster.addPerson(); roster.merge(3, 1)
+        }.toJson().put("elapsed", 1.0))
+        assertTrue(note("a", "Maya", "Sam")); assertTrue(note("b", "sam", "Lee")); assertTrue(note("c", null, null)); assertTrue(note("d", "Zed", null))
+        val names = sessions.speakerNames()
+        // Newest note first; "Sam" and "sam" are one name, and the newer spelling stays.
+        assertEquals(listOf("Zed", "sam", "Lee", "Maya"), names)
+        assertFalse(sessions.speakerNames(excluding = "d").contains("Zed"))
+        assertEquals(listOf("Maya"), suggestions(listOf("Maya", "Sam", "Lee"), "ma", emptySet()))
+        assertEquals(listOf("Maya", "Lee"), suggestions(listOf("Maya", "Sam", "Lee"), "", setOf("sam")))
+        assertEquals(emptyList<String>(), suggestions(listOf("Maya"), "maya", emptySet()))
+        assertEquals(4, suggestions(listOf("A", "B", "C", "D", "E"), "", emptySet()).size)
+    }
+
+    @Test fun `a person's first line is what they said first, merges included`() {
+        val document = labelledDocument()
+        assertEquals(0 to "We ship Friday.", document.firstTurn(1)); assertEquals(0 to "Okay.", document.firstTurn(2))
+        document.mergeSpeaker(2, 1)
+        assertEquals(0 to "We ship Friday.", document.firstTurn(1)); assertNull(document.firstTurn(9))
+    }
 }
 
 @RunWith(RobolectricTestRunner::class)
@@ -418,5 +484,65 @@ class NotesSpeakersRenderTest {
         compose.onNodeWithText("Turn off").performClick()
         assertFalse(rig.model.labelSpeakers)
         compose.onNodeWithText("Couldn’t download the speaker model.").assertDoesNotExist()
+    }
+
+    @Test @Config(qualifiers = "w411dp-h891dp-mdpi") fun `Name speakers names everyone at once and the banner asks after Stop`() {
+        val output = File(System.getProperty("chirp.screenshots")).apply { mkdirs() }
+        val rig = rig()
+        // Recent notes' names, for the autocomplete.
+        rig.sessions.put("old", NotesDocument(0L).apply {
+            roster.id(0, "g"); roster.id(1, "g"); renameSpeaker(1, "Maya"); renameSpeaker(2, "Akshay")
+            append(NotesSegment(0, 0.0, "hello", "Hello.", turns = listOf(SpeakerTurn(1, 0.0, "Hello."), SpeakerTurn(2, 1.0, "Hi.")))) }.toJson().put("elapsed", 1.0))
+        rig.model.toggle(); rig.idle(); rig.wire.final("Bye."); rig.idle()
+        rig.model.edit(androidx.compose.ui.text.input.TextFieldValue("- [ ] **Person 2** drafts the invite\n- Person 1 owns the beta"))
+        val dark = mutableStateOf(false)
+        compose.setContent { dev.chirp.android.ui.ChirpTheme(dark.value) { NotesScreen(rig.model, rig.model::toggle, {}, {}, {}, {}) } }
+        compose.onNodeWithText("Who was speaking?").assertIsDisplayed()
+        compose.onAllNodesWithText("Name speakers").onFirst().performClick()
+        compose.waitForIdle()
+        listOf("Person 1", "Person 2", "Person 3").forEach { compose.onNodeWithTag("name_speaker_${it.last()}").assertExists() }
+        compose.onNodeWithText("“Who owns the invite?”").assertIsDisplayed()
+        compose.onNodeWithText("Also replace names in the notes", substring = true).assertDoesNotExist()
+        // Typing a few letters offers a name from a recent note.
+        compose.onNodeWithContentDescription("Name for Person 2").performClick()
+        compose.onNodeWithContentDescription("Name for Person 2").performTextInput("Ma")
+        compose.onNodeWithText("Maya").assertIsDisplayed()
+        compose.onNodeWithText("Maya").performClick()
+        compose.onNodeWithContentDescription("Name for Person 1").performTextInput("Akshay")
+        compose.onNodeWithText("Also replace names in the notes (2 places)").assertIsDisplayed()
+        for (night in listOf(false, true)) {
+            compose.runOnIdle { dark.value = night }
+            compose.mainClock.advanceTimeBy(2000); compose.waitForIdle()
+            val bitmap = notesScreenshot(compose.onRoot(), false)
+            File(output, "notes-speakers-name-sheet-${if (night) "dark" else "light"}.png").outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
+        }
+        compose.onNodeWithTag("name_speakers_done").performClick()
+        compose.waitForIdle()
+        val roster = rig.model.document.roster
+        assertEquals(listOf("Akshay", "Maya", "Person 3"), (1..3).map(roster::displayName))
+        assertEquals("- [ ] **Maya** drafts the invite\n- Akshay owns the beta", rig.model.document.text)
+        compose.onNodeWithTag("name_speaker_1").assertDoesNotExist()
+        // Person 3 is still unnamed, but the line was settled by naming.
+        compose.onNodeWithText("Who was speaking?").assertDoesNotExist()
+    }
+
+    @Test @Config(qualifiers = "w411dp-h891dp-mdpi") fun `Name speakers can merge a person, and Cancel changes nothing`() {
+        val rig = rig()
+        rig.model.toggle(); rig.idle(); rig.wire.final("Bye."); rig.idle()
+        compose.setContent { dev.chirp.android.ui.ChirpTheme(false) { NotesScreen(rig.model, rig.model::toggle, {}, {}, {}, {}) } }
+        // The banner opens it; Cancel changes nothing.
+        compose.onAllNodesWithText("Name speakers").onFirst().performClick()
+        compose.onNodeWithContentDescription("Name for Person 1").performTextInput("Nobody")
+        compose.onNodeWithText("Cancel").performClick()
+        assertEquals("Person 1", rig.model.document.roster.displayName(1))
+        // The transcript's own button opens the same sheet.
+        compose.onNodeWithText("Transcript").performClick()
+        compose.onAllNodesWithText("Name speakers").onLast().performClick()
+        compose.onNodeWithTag("name_speaker_3").assertExists()
+        compose.onNode(hasText("Same as ▸") and hasAnyAncestor(hasTestTag("name_speaker_3"))).performClick()
+        compose.onNode(hasText("Person 1") and hasAnyAncestor(isPopup())).performClick()
+        compose.waitForIdle()
+        assertEquals(1, rig.model.document.roster.resolve(3))
+        compose.onNodeWithTag("name_speaker_3").assertDoesNotExist()
     }
 }

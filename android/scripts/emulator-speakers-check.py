@@ -3,7 +3,7 @@
 Samantha then Daniel, looped with silence) through the real NotesCapture and rolling /v1/stream sockets
 to the throwaway server's WeSpeaker model. Labels default on and the phone requests its model
 without consent; the offline fixture copies and verifies the pinned file. Requires exactly two
-people, rename persistence, and kept-audio replay. Prints states and counts, never text."""
+people, the post-Stop naming sheet, rename persistence, and kept-audio replay. Prints states and counts, never text."""
 import json
 import os
 import shlex
@@ -43,6 +43,21 @@ def check(probe, work, output, standalone=False):
         raise AssertionError(message + ' within %d s (server: %s)' % (seconds, json.dumps(last)))
 
     def chips(): return sorted({n.get('content-desc')[:-len(CHIP)] for n in nodes() if n.get('content-desc', '').endswith(CHIP)})
+
+    def edit_text():
+        return [n for n in nodes() if n.get('class') == 'android.widget.EditText']
+
+    def type_into(field, name):
+        """Taps [field] and types until it holds the whole [name]: on a loaded host the input service can drop characters."""
+        adb('shell', 'input', 'tap', *map(str, probe['center'](field)))
+        for _ in range(5):
+            adb('shell', 'input', 'text', name)
+            time.sleep(1)
+            now = edit_text()
+            if now and any(f.get('text') == name for f in now): return
+            adb('shell', 'input', 'keycombination', 'KEYCODE_CTRL_LEFT', 'KEYCODE_A')
+            adb('shell', 'input', 'keyevent', 'KEYCODE_DEL')
+        raise AssertionError('Could not type %s into the field' % name)
 
     def tap(label): adb('shell', 'input', 'tap', *map(str, probe['center'](probe['wait_for'](label, 30))))
 
@@ -90,13 +105,31 @@ def check(probe, work, output, standalone=False):
     probe['wait_for']('Stopped', 90)
     log('Server: %d labelled segments, slots %s' % (server()['labelled'], server()['slots']))
 
+    # After Stop with unnamed people: "Who was speaking?" opens the Name speakers sheet, one place for everyone.
+    probe['wait_for']('Who was speaking?', 30)
+    screenshot('emulator-speakers-who.png')
+    tap('Name speakers')
+    deadline = time.monotonic() + 20
+    while len(fields := edit_text()) < 2:
+        assert time.monotonic() < deadline, 'The Name speakers sheet did not list two people'
+        time.sleep(.5)
+    assert len(fields) == 2, 'Two voices must be exactly two rows in the Name speakers sheet: %d' % len(fields)
+    type_into(sorted(fields, key=lambda n: probe['center'](n)[1])[0], 'Sam')
+    adb('shell', 'input', 'keyevent', 'KEYCODE_BACK')  # closes the keyboard
+    screenshot('emulator-speakers-name-sheet.png')
+    tap('Done')
+    deadline = time.monotonic() + 20
+    while probe['find']('Who was speaking?') is not None:
+        assert time.monotonic() < deadline, 'The "Who was speaking?" line stayed after naming'
+        time.sleep(.5)
+
     tap('Transcript')
     deadline = time.monotonic() + 30
     while len(chips()) < 2:
         assert time.monotonic() < deadline, 'The transcript does not show two speaker chips'
         time.sleep(1)
     people = chips()
-    assert people == ['Person 1', 'Person 2'], 'Two voices must be exactly two people'
+    assert people == ['Person 2', 'Sam'], 'Two voices must be exactly two people, one named in the sheet'
     screenshot('emulator-speakers-transcript.png')
     log('Transcript speaker count: %d' % len(people))
 
@@ -104,20 +137,10 @@ def check(probe, work, output, standalone=False):
     tap('Person 2' + CHIP)
     tap('Rename “Person 2”…')
     deadline = time.monotonic() + 20
-    while not (fields := [n for n in nodes() if n.get('class') == 'android.widget.EditText']):
+    while not (fields := edit_text()):
         assert time.monotonic() < deadline, 'The rename field did not open'
         time.sleep(.5)
-    adb('shell', 'input', 'tap', *map(str, probe['center'](fields[-1])))
-    # On a loaded host the input service can drop characters: type until the field holds the whole name.
-    for _ in range(5):
-        adb('shell', 'input', 'text', 'Maya')
-        time.sleep(1)
-        field = [n for n in nodes() if n.get('class') == 'android.widget.EditText']
-        if field and field[-1].get('text') == 'Maya': break
-        adb('shell', 'input', 'keycombination', 'KEYCODE_CTRL_LEFT', 'KEYCODE_A')
-        adb('shell', 'input', 'keyevent', 'KEYCODE_DEL')
-    else:
-        raise AssertionError('Could not type the new name into the rename field')
+    type_into(fields[-1], 'Maya')
     adb('shell', 'input', 'keyevent', 'KEYCODE_ENTER')
     deadline = time.monotonic() + 20
     while 'Maya' not in chips():
@@ -141,4 +164,4 @@ def check(probe, work, output, standalone=False):
     adb('shell', 'am', 'force-stop', package)
     adb('shell', 'run-as', package, 'sh', '-c', shlex.quote('cat > shared_prefs/debug_capture.xml'),
         data=b'<?xml version="1.0" encoding="utf-8"?><map><boolean name="synthetic" value="true" /></map>')
-    log('PASS: speaker labels: default on → automatic model ready, two voices → two people, rename from a chip, labelled kept-audio replay')
+    log('PASS: speaker labels: on by default, model fetched without consent, two voices → two people, Name speakers sheet, rename from a chip, labelled kept-audio replay')

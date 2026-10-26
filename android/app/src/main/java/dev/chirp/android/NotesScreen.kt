@@ -115,6 +115,7 @@ internal fun NotesScreen(model: NotesModel, record: () -> Unit, copy: () -> Unit
     if (transcript && !externalTranscript) ModalBottomSheet({ transcript = false }, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         TranscriptPane(model, Modifier.fillMaxWidth().fillMaxHeight(.85f).padding(horizontal = 24.dp), close = { transcript = false })
     }
+    if (model.nameSpeakersOpen) NameSpeakersSheet(model) { model.nameSpeakersOpen = false }
     val menu = NotesMenuActions(copy = copy, share = share, save = save, rename = { renaming = true }, settings = { settings = true })
     val action = DictationAction.forStatus(model.status)
     /** Into the editor at the block tapped (or the first one on screen), at the height it had on the page. */
@@ -147,6 +148,8 @@ internal fun NotesScreen(model: NotesModel, record: () -> Unit, copy: () -> Unit
                         action != null -> StatusBanner(StatusKind.Warning, model.status, action = action.label, onAction = { act(action) })
                         model.recovered != null -> StatusBanner(StatusKind.Info, "Recovered note", body = "Your note was recovered and kept on this phone.")
                         model.speakerModelControl.status != null -> SpeakerModelStatus(model.speakerModelControl)
+                        model.askToNameSpeakers -> StatusBanner(StatusKind.Info, "Who was speaking?", action = "Name speakers",
+                            onAction = { model.nameSpeakersOpen = true })
                         model.explanation != null -> Text(model.explanation!!, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
@@ -471,6 +474,7 @@ internal fun TranscriptPane(model: NotesModel, modifier: Modifier, titled: Boole
         Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
             if (titled) Text("Transcript", Modifier.semantics { heading() }, style = MaterialTheme.typography.titleSmall, color = scheme.onSurfaceVariant)
             Spacer(Modifier.weight(1f))
+            if (model.document.labelled) TextButton({ model.nameSpeakersOpen = true }) { Text("Name speakers") }
             FilterChip(model.raw, { model.raw = !model.raw }, label = { Text("Show raw") })
             if (close != null) IconButton(close) { Icon(painterResource(R.drawable.ic_close), "Close transcript") }
         }
@@ -520,7 +524,8 @@ internal fun TranscriptPane(model: NotesModel, modifier: Modifier, titled: Boole
                                 Box {
                                     SpeakerChip(roster.displayName(turn.person), roster.colorIndex(turn.person), { menu = true })
                                     SpeakerMenu(menu, { menu = false }, roster, turn.person, rename = { renaming = roster.resolve(turn.person) },
-                                        merge = { into -> model.mergeSpeaker(turn.person, into) }, separate = model::separateSpeaker)
+                                        merge = { into -> model.mergeSpeaker(turn.person, into) }, separate = model::separateSpeaker,
+                                        nameAll = { model.nameSpeakersOpen = true })
                                 }
                             }
                             Text((if (model.raw) turn.raw else turn.text) + if ((turn.keptOriginal || segment.keptOriginal) && !model.raw) " (kept original)" else "",
