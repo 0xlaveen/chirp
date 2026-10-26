@@ -125,7 +125,7 @@ final class ChirpSettingsUITests: XCTestCase {
         app.openDictation()
         let row = app.descendants(matching: .any).matching(identifier: "chirp.styles.row.default").firstMatch
         XCTAssertTrue(row.waitForExistence(timeout: 10), "Server styles did not load")
-        row.tap()
+        app.buttons["chirp.styles.pick.default"].tap()
         app.buttons["chirp.styles.edit.default"].tap()
         XCTAssertTrue(app.buttons["chirp.styles.reset"].waitForExistence(timeout: 5), "Prompt editor did not open")
         XCTAssertTrue(app.buttons["Selected"].waitForExistence(timeout: 3), "The tapped style did not become selected")

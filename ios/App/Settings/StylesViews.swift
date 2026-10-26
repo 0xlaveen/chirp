@@ -45,6 +45,7 @@ private struct StyleRow: View {
                 if edited { editedCapsule }
                 Spacer(minLength: ChirpSpacing.s4)
             }.buttonStyle(.rowPress)
+            .accessibilityIdentifier("chirp.styles.pick." + profile.id)
             Image(systemName: selected ? "checkmark.circle.fill" : "circle")
                 .symbolRenderingMode(.hierarchical)
                 .font(.title3).foregroundStyle(selected ? Color.chirp.koi : Color.chirp.inkMuted)
