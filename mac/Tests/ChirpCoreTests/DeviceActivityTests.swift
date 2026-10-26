@@ -208,8 +208,8 @@ private final class ActivityFake: URLProtocol, @unchecked Sendable {
         #expect(ActivityText.sourceName(pixel) == "Pixel 9")
         #expect(ActivityText.sourceName(.device(id: "x", name: "Old Pixel", revoked: true)) == "Old Pixel (revoked)")
         #expect(ActivityText.sourceName(.device(id: "x", name: nil, revoked: false)) == "Unknown device")
-        #expect(ActivityText.sourceName(.local) == "This Mac" && ActivityText.sourceName(.shared) == "Shared token")
-        #expect(ActivityText.sourceName(.shared, client: "ios") == "Shared token · iOS")
+        #expect(ActivityText.sourceName(.local) == "This Mac" && ActivityText.sourceName(.shared) == "Shared code")
+        #expect(ActivityText.sourceName(.shared, client: "ios") == "Shared code · iOS")
     }
 
     @Test func lengthsAreInWholeSeconds() {
@@ -247,9 +247,9 @@ private final class ActivityFake: URLProtocol, @unchecked Sendable {
     @Test func refusalsAreCountedInWords() {
         func line(_ r: Refusal) -> String { ActivityText.refusal(r, now: clock, locale: en) }
         let unknown = line(Refusal(reason: .unknownToken, count: 3, last: clock.addingTimeInterval(-300)))
-        #expect(unknown.hasPrefix("3 refused requests with an unknown token · last "))
-        #expect(line(Refusal(reason: .unknownToken, count: 1, last: clock)).hasPrefix("1 refused request with an unknown token"))
-        #expect(line(Refusal(reason: .noToken, count: 2, last: clock)).hasPrefix("2 refused requests with no token"))
+        #expect(unknown.hasPrefix("3 refused requests with an unknown code · last "))
+        #expect(line(Refusal(reason: .unknownToken, count: 1, last: clock)).hasPrefix("1 refused request with an unknown code"))
+        #expect(line(Refusal(reason: .noToken, count: 2, last: clock)).hasPrefix("2 refused requests with no code"))
         let revoked = line(Refusal(reason: .revoked, deviceID: "x", deviceName: "Old Pixel", count: 2, last: clock.addingTimeInterval(-3_600)))
         #expect(revoked.hasPrefix("Old Pixel (revoked) tried 2 times · last "))
         #expect(line(Refusal(reason: .revoked, deviceName: "Old Pixel", count: 1, last: clock)).hasPrefix("Old Pixel (revoked) tried once"))
@@ -467,17 +467,17 @@ private final class PhonesStore: DeviceStoring, @unchecked Sendable {
         let view = DevicesView()
         apply(view, .shown(busy))
         let all = texts(view)
-        #expect(all.contains("This Mac") && all.contains("Shared token") && all.contains("via iOS"))
+        #expect(all.contains("This Mac") && all.contains("Shared code") && all.contains("via iOS"))
         #expect(buttons(view).filter { $0.title == "Revoke…" }.count == 2)   // the two phones only
         #expect(all.firstIndex(of: "This Mac")! < all.firstIndex(of: "Pixel 9")!)
-        #expect(all.firstIndex(of: "Shared token")! < all.firstIndex(of: "Pixel 9")!)
+        #expect(all.firstIndex(of: "Shared code")! < all.firstIndex(of: "Pixel 9")!)
     }
 
     @Test func noActivityMeansNoExtraRows() {
         let view = DevicesView()
         let activity = DeviceActivity(started: clock, events: [event(60, pixel)])
         apply(view, .shown(activity))
-        #expect(!texts(view).contains("This Mac") && !texts(view).contains("Shared token"))
+        #expect(!texts(view).contains("This Mac") && !texts(view).contains("Shared code"))
     }
 
     @Test func refusalsShowInOrangeOnlyWhenThereAreSome() {

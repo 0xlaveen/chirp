@@ -12,14 +12,14 @@ public struct HistoryGroup: Identifiable, Equatable, Sendable {
 /// The History window's words, in one place for the view, the snapshots and the tests.
 public enum HistoryText {
     public static let windowTitle = "Dictation History"
-    public static let searchPrompt = "Search dictations"
+    public static let searchPrompt = "Search history"
     public static let empty = "No dictations yet"
     public static let emptyDetail = "Everything you dictate is kept here on this Mac, so you can find it, copy it or insert it again."
     public static let off = "History is off"
     public static let offDetail = "Turn it on in Settings → Dictation to keep what you dictate on this Mac."
     public static let unavailable = "History is locked"
     public static let unavailableDetail = "Chirp could not read its key from the Keychain. Unlock the Mac's login keychain and reopen this window."
-    public static let cleaned = "Cleaned"
+    public static let cleaned = "Polished"
     public static let changes = "What clean-up changed"
     public static let changesFootnote = "Struck-through words are what you said that clean-up removed; underlined words were added or changed."
     public static let inserted = "What was inserted"

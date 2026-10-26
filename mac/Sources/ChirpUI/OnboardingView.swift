@@ -48,7 +48,7 @@ public struct OnboardingStatus: Equatable, Sendable {
             case .loadingModel: return .init(text: "Loading the speech model…", tone: .warning)
             case .checking: return .init(text: "Checking…", tone: .warning)
             case .unreachable(let host): return .init(text: "Can’t reach \(host)", tone: .error, fixTitle: "Copy Fix Command")
-            case .noToken: return .init(text: "No token yet — start chirp-server once", tone: .warning, fixTitle: "Copy Fix Command")
+            case .noToken: return .init(text: "No pairing code yet — start Chirp on this Mac once", tone: .warning, fixTitle: "Copy Fix Command")
             }
         }
     }
@@ -264,7 +264,7 @@ public final class OnboardingView: NSView {
         content.setCustomSpacing(14, after: content.arrangedSubviews.last!)
         content.addArrangedSubview(features)
         content.setCustomSpacing(14, after: features)
-        content.addArrangedSubview(bodyLabel("Setup takes a minute: the microphone, Accessibility and a speech server."))
+        content.addArrangedSubview(bodyLabel("Setup takes a minute: the microphone, Accessibility and a Chirp server."))
     }
 
     private func feature(_ symbol: String, _ title: String, _ detail: String) -> NSView {

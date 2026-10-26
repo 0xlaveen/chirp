@@ -52,16 +52,16 @@ public struct PairingPresentation: Equatable, Sendable {
         switch step {
         case .naming(let suggested, let problem):
             headline = "Name this phone"
-            detail = problem ?? "Each phone gets its own pairing token, so you can cut one off later in Settings → Devices without re-pairing the others."
+            detail = problem ?? "Each phone gets its own pairing, so you can cut one off later in Settings → Devices without re-pairing the others."
             if problem != nil { tone = .warning }
             asksName = suggested
             action = "Continue"
         case .checking:
             headline = "Checking Tailscale…"
             detail = "Looking for this Mac’s tailnet name and whether Chirp is published on it."
-        case .remoteServer(let host):
-            headline = "Chirp uses the server on \(host)"
-            detail = "Pair phones on the machine that runs chirp-server, with chirp-server pair."
+        case .remoteServer:
+            headline = "Chirp uses your Chirp server"
+            detail = "Run the pairing command on your Chirp server: chirp-server pair."
             tone = .warning
         case .noTailscale:
             headline = "Tailscale isn’t installed"
@@ -104,18 +104,18 @@ public struct PairingPresentation: Equatable, Sendable {
             tone = .warning
             action = "Check Again"
         case .noToken:
-            headline = "No server token yet"
-            detail = "Start chirp-server once to create ~/.config/chirp/token, then check again."
+            headline = "No pairing code yet"
+            detail = "Start Chirp on this Mac once, then check again."
             tone = .warning
             action = "Check Again"
         case .cannotMint(let reason):
-            headline = "Couldn’t create the phone’s token"
+            headline = "Couldn’t pair this phone"
             detail = reason
             tone = .warning
             action = "Try Again"
         case .ready(let link):
             headline = "Scan with Chirp on your phone"
-            detail = "In Chirp on Android or iPhone, tap Scan pairing QR. The phone connects to \(link.serverURL.absoluteString) over your tailnet."
+            detail = "In Chirp on Android or iPhone, tap Scan the code. The phone connects to \(link.serverURL.absoluteString) over your tailnet."
             showsCode = true
         }
     }

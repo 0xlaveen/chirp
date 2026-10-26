@@ -105,7 +105,7 @@ private struct HistorySidebar: View {
     }
 }
 
-/// A dictation in the list: the app's icon, the app and time, a two-line preview, and a "Cleaned" badge.
+/// A dictation in the list: the app's icon, the app and time, a two-line preview, and a "Polished" badge.
 private struct HistoryRow: View {
     let model: HistoryModel
     let entry: DictationEntry
@@ -124,7 +124,7 @@ private struct HistoryRow: View {
                         .font(.system(size: 12, weight: .semibold))
                         .foregroundStyle(ink.title)
                         .lineLimit(1)
-                    if entry.cleaned { CleanedBadge(onPill: ink.onPill) }
+                    if entry.cleaned { PolishedBadge() }
                     Spacer(minLength: 4)
                     Text(HistoryText.time(entry.date, calendar: model.calendar))
                         .font(.system(size: 11))
@@ -142,20 +142,18 @@ private struct HistoryRow: View {
         .padding(.vertical, 5)
         .padding(.horizontal, 4)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(entry.appTitle), \(HistoryText.time(entry.date, calendar: model.calendar))\(entry.cleaned ? ", cleaned" : ""): \(entry.text)")
+        .accessibilityLabel("\(entry.appTitle), \(HistoryText.time(entry.date, calendar: model.calendar))\(entry.cleaned ? ", polished" : ""): \(entry.text)")
     }
 }
 
-private struct CleanedBadge: View {
-    let onPill: Bool
-
+private struct PolishedBadge: View {
     var body: some View {
         Text(HistoryText.cleaned)
             .font(.system(size: 9.5, weight: .semibold))
-            .foregroundStyle(onPill ? Color.chirp.onKoi : Color.chirp.onKoiContainer)
+            .foregroundStyle(Color.chirp.moon)
             .padding(.horizontal, 5)
             .padding(.vertical, 1)
-            .background(Capsule().fill(onPill ? Color.chirp.onKoi.opacity(0.16) : Color.chirp.koiContainer))
+            .background(Capsule().fill(Color.chirp.moonFill.opacity(0.18)))
             .fixedSize()
     }
 }

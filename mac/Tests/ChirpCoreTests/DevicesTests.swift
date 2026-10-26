@@ -392,7 +392,7 @@ private final class CallLog: @unchecked Sendable {
     }
 
     @Test func theTabListsTheNoteAboutTheSharedToken() {
-        #expect(DevicesText.sharedNote.contains("shared token") && DevicesText.rotateHelp.contains("pair again"))
+        #expect(DevicesText.sharedNote.contains("shared code") && DevicesText.rotateHelp.contains("pair again"))
         #expect(DevicesText.revokeTitle(pixel) == "Revoke “Pixel 9”?")
     }
 

@@ -234,7 +234,7 @@ public enum Snapshots {
     }
 
     public static var settingsScenarios: [Scenario] {
-        /// A page, as the preferences window shows it: the sidebar and the page at the window's fixed 720 × 520.
+        /// A Settings page with enough height to show every section, including Speakers and Saved voices.
         func form(_ name: String, _ tab: SettingsTab, _ configure: (inout SettingsState) -> Void = { _ in }) -> Scenario {
             var state = SettingsState()
             state.launch = .on; state.serverStatus = "parakeet-mlx:tdt-0.6b-v2"
@@ -377,7 +377,7 @@ public enum Snapshots {
 
     /// The Settings window's content for `state`, opened on `tab`: the sidebar (flat, with no window to blur through) and the
     /// page, with the permission badge General shows. `prepare` sets up the form first (a device list, a refused shortcut).
-    static func settingsWindow(_ state: SettingsState, _ tab: SettingsTab, full: Bool = false,
+    static func settingsWindow(_ state: SettingsState, _ tab: SettingsTab, full: Bool = true,
                                prepare: (SettingsForm) -> Void = { _ in }) -> NSView {
         let form = SettingsForm(state, icon: appIcon, onNotices: {})
         prepare(form)
@@ -1219,6 +1219,21 @@ public enum Snapshots {
     /// Renders `scenario` at 2x under `appearance` into PNG data.
     public static func png(_ scenario: Scenario, appearance name: NSAppearance.Name) -> Data? {
         let appearance = NSAppearance(named: name)!
+        let app = NSApplication.shared
+        let previous = app.appearance
+        app.appearance = appearance
+        defer { app.appearance = previous }
+        // Native controls resolve and cache their accent while being created, before the first draw.
+        var data: Data?
+        appearance.performAsCurrentDrawingAppearance {
+            // Eagerly loading the named asset registers the bundle accent before AppKit caches a system blue cell.
+            _ = NSColor(named: "AccentColor", bundle: .main)?.usingColorSpace(.sRGB)
+            data = png(scenario, appearance: appearance)
+        }
+        return data
+    }
+
+    private static func png(_ scenario: Scenario, appearance: NSAppearance) -> Data? {
         if let window = scenario.window { return windowPNG(window(), appearance: appearance) }
         let view = scenario.make()
         view.appearance = appearance

@@ -4,7 +4,7 @@ import Foundation
 /// time zone injectable, so tests (and snapshots) read the same text on any day.
 public enum ActivityText {
     public static let keepTitle = "Keep device activity"
-    public static let keepHelp = "Keeps a list of which device used this Mac’s server, when and for what, on this Mac only. Never what was said or written. Turning it off deletes the list."
+    public static let keepHelp = "Keeps a list of which device used Chirp on this Mac, when and for what, on this Mac only. Never what was said or written. Turning it off deletes the list."
     public static let keepOff = "Device activity is off. Nothing is recorded."
     public static let outdated = "Update chirp-server to see device activity."
     public static let showButton = "Activity…"
@@ -12,7 +12,7 @@ public enum ActivityText {
     public static let allDevices = "All devices"
     public static let empty = "No requests yet."
     public static let thisMac = "This Mac"
-    public static let sharedToken = "Shared token"
+    public static let sharedToken = "Shared code"
     public static let unknownDevice = "Unknown device"
 
     public static let columns = ["Time", "Device", "What", "Length", "Result"]
@@ -163,7 +163,7 @@ public enum ActivityText {
 
     // MARK: refusals
 
-    /// `3 refused requests with an unknown token · last 5 min ago`, `Old Pixel (revoked) tried 2 times · last 1 h ago`.
+    /// `3 refused requests with an unknown code · last 5 min ago`, `Old Pixel (revoked) tried 2 times · last 1 h ago`.
     public static func refusal(_ r: Refusal, now: Date, locale: Locale = .current) -> String {
         let ago = relative(r.last, now: now, locale: locale)
         switch r.reason {
@@ -172,9 +172,9 @@ public enum ActivityText {
             let tried = r.count == 1 ? "tried once" : "tried \(r.count) times"
             return "\(name) (revoked) \(tried) · last \(ago)"
         case .unknownToken:
-            return "\(r.count) refused \(r.count == 1 ? "request" : "requests") with an unknown token · last \(ago)"
+            return "\(r.count) refused \(r.count == 1 ? "request" : "requests") with an unknown code · last \(ago)"
         case .noToken:
-            return "\(r.count) refused \(r.count == 1 ? "request" : "requests") with no token · last \(ago)"
+            return "\(r.count) refused \(r.count == 1 ? "request" : "requests") with no code · last \(ago)"
         case .other:
             return "\(r.count) refused \(r.count == 1 ? "request" : "requests") · last \(ago)"
         }

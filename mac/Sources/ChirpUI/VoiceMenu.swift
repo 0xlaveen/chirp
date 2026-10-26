@@ -86,9 +86,9 @@ public enum VoiceText {
         "Remembered after \(Int(VoiceMatch.enrolSeconds)) s of their speech (\(Int(seconds)) s so far)"
     }
     public static let nameFirst = "Name this speaker to remember their voice"
-    public static let consentTitle = "Remember voices in later notes"
-    public static func consentDetail(_ name: String) -> String {
-        "Chirp will recognise \(name)'s voice in later notes on your devices. Saved voices stay on your Chirp server. Settings → Notes → Saved voices."
+    public static let consentTitle = "Remembering voices"
+    public static func consentDetail(_ name: String, local: Bool) -> String {
+        "Chirp will recognise \(name)’s voice in later notes on your devices. Saved voices stay on \(MacServerCopy.place(local: local)). Manage them in Saved voices."
     }
 }
 
@@ -103,10 +103,10 @@ struct VoiceMenuItems: View {
                 if voices.recognised.contains(person) {
                     Button("Not \(name)") { model.onSpeakerEdit(.declineVoice(person)) }
                 }
-                Button("Update \(name)'s Saved Voice") { model.onSpeakerEdit(.updateVoice(person)) }
+                Button("Update \(name)’s voice") { model.onSpeakerEdit(.updateVoice(person)) }
                     .disabled(!voices.canRemember.contains(person))
             } else if model.document.roster.person(id: person)?.name != nil {
-                Button("Remember This Voice") { model.onSpeakerEdit(.rememberVoice(person)) }
+                Button("Remember voice") { model.onSpeakerEdit(.rememberVoice(person)) }
                 if !voices.canRemember.contains(person) { Text(VoiceText.needs(voices.seconds[person] ?? 0)) }
             } else { Text(VoiceText.nameFirst) }
         }

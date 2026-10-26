@@ -152,7 +152,7 @@ public enum KeepLoaded {
     }
 
     /// Where the memory is used: "this Mac" for a server on loopback, else its host.
-    public static func hostPhrase(_ config: ServerConfig) -> String { config.isLoopback ? "this Mac" : config.host }
+    public static func hostPhrase(_ config: ServerConfig) -> String { config.isLoopback ? "this Mac" : "your Chirp server" }
 
     /// Why the switch cannot be used, in one line.
     public enum Unavailable: Sendable, Equatable {

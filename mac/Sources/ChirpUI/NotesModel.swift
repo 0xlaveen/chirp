@@ -34,7 +34,7 @@ public enum NotesStatus {
     }
     /// "Server offline — keeping audio (4:12) · retrying": segments wait in memory for the server.
     public static func offline(kept: TimeInterval?) -> String {
-        "Server offline — keeping audio" + (kept.map { " (\(clock($0)))" } ?? "") + " · retrying"
+        "Chirp server offline — keeping audio" + (kept.map { " (\(clock($0)))" } ?? "") + " · retrying"
     }
     public static func catchingUp(_ segments: Int) -> String { "Catching up \(segments) segment\(segments == 1 ? "" : "s")…" }
     public static let finishingOffline = "Finishing — waiting for the server"
@@ -66,13 +66,6 @@ public enum NotesStatus {
     /// The reminder every `NotesModel.longRunEvery` of recording.
     public static func longRun(hours: Int) -> String { "Notes has been recording for \(hours) h" }
     public static func empty(key: String = KeyCombo.controlOptionN.title) -> String { "Press Record or \(key) to start taking notes." }
-    public static let privacy = "Notes stay in memory until you save them."
-    public static let recoveryFolder = "~/Library/Application Support/Chirp/Recovery"
-    /// The footer line while the recovery copy is on.
-    public static let privacyRecovery = "Recovery copy until you save: \(recoveryFolder)"
-    public static let privacyRecoveryHelp = "Chirp keeps the text of your unsaved notes and transcript, never audio, in \(recoveryFolder) (readable only by you). It is deleted when you save or discard the notes."
-    public static let recoverySwitch = "Keep a recovery copy until notes are saved"
-    public static let recoveryHelp = "Keeps unsaved Live Notes text (never audio) on this Mac so a crash does not lose a meeting."
     public static let keepSavingCheckbox = "Keep saving changes to this file"
 
     /// "Recovered unsaved notes from 14:03 (52 min)".
@@ -154,7 +147,7 @@ public struct HearingPart: Equatable, Sendable {
 }
 
 /// What the Notes window shows: a mirror of `NotesRecorder` plus the window's own choices. In memory only; the
-/// controller stores just the preferences (the tab, "Structure notes", "Auto-reorganize" and Edit/Preview).
+/// controller stores just the preferences (the tab, "Structure notes", "Organize automatically" and Edit/Preview).
 @MainActor @Observable
 public final class NotesModel {
     public var state: NotesRecorderState = .idle
@@ -175,7 +168,7 @@ public final class NotesModel {
     public var transcriptAtBottom = true
     /// The user's "Structure notes" toggle.
     public var structureEnabled = true
-    public var privacyLine = NotesStatus.privacy
+    public var privacyLine = NotesModel.libraryPrivacy
     /// Where structuring sends the text when that is off this Mac: its own chip in the footer, never truncated.
     public var structuringHost: String?
     /// The input level while recording, on the HUD's bar scale (0…1).
@@ -218,7 +211,7 @@ public final class NotesModel {
     public var titleDraft: String?
     /// The kept audio of this note's segments (`audio/<segment>.m4a`), for ▶ in the transcript.
     public var keptAudio: [Int: URL] = [:]
-    /// The user's "Auto-reorganize" toggle.
+    /// The user's "Organize automatically" toggle.
     public var autoReorganize = true
     public var reorganizeStatus: ReorganizeStatus = .idle
     /// What the last reorganizes and Organize runs changed, for Show changes and Restore Notes Before Organize….
@@ -439,7 +432,7 @@ public final class NotesModel {
     /// The server has structuring but no reorganize endpoint: the button is hidden and the toggle explains why.
     public var reorganizeHidden: Bool { reorganizeStatus == .unavailable(.unsupported) && !structuring.isOff }
 
-    /// The "Auto-reorganize" toggle can be flipped (it shows off otherwise).
+    /// The "Organize automatically" toggle can be flipped (it shows off otherwise).
     public var autoReorganizeAvailable: Bool { !structuring.isOff && !reorganizeHidden }
 
     /// The small line under the editor about the last reorganize.

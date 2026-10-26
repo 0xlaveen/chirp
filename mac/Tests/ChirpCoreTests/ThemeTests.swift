@@ -37,16 +37,16 @@ import Testing
         #expect(contrast(ChirpColor.Pond.onKoiContainer.dark, ChirpColor.Pond.koiContainer.dark) >= 4.5)
     }
 
-    /// The dark sidebar selection is a solid koi pill; its pond-ink text dims for the snippet and meta lines but
+    /// The dark sidebar selection uses koiContainer; its warm ink dims for the snippet and meta lines but
     /// stays readable (the snippet at body-text contrast, the meta as UI-level 3:1).
     @Test func sidebarSelectionInkStaysReadableOnTheKoiPill() {
         func blend(_ a: ChirpColor.RGB, over b: ChirpColor.RGB, alpha: Double) -> ChirpColor.RGB {
             (r: a.r * alpha + b.r * (1 - alpha), g: a.g * alpha + b.g * (1 - alpha), b: a.b * alpha + b.b * (1 - alpha))
         }
-        let koi = ChirpColor.Pond.koi.dark
-        #expect(contrast(ChirpColor.Pond.onKoi.dark, koi) >= 4.5)
-        #expect(contrast(blend(ChirpColor.Pond.onKoi.dark, over: koi, alpha: RowInk.snippetOnPill), koi) >= 4.5)
-        #expect(contrast(blend(ChirpColor.Pond.onKoi.dark, over: koi, alpha: RowInk.metaOnPill), koi) >= 3)
+        let koi = ChirpColor.Pond.koiContainer.dark
+        #expect(contrast(ChirpColor.Pond.onKoiContainer.dark, koi) >= 4.5)
+        #expect(contrast(blend(ChirpColor.Pond.onKoiContainer.dark, over: koi, alpha: RowInk.snippetOnPill), koi) >= 4.5)
+        #expect(contrast(blend(ChirpColor.Pond.onKoiContainer.dark, over: koi, alpha: RowInk.metaOnPill), koi) >= 3)
     }
 
     /// `record` is the record/stop dot, not body text: WCAG AA for UI components is 3:1.

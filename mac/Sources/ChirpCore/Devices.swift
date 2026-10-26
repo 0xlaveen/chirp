@@ -28,7 +28,7 @@ public enum DevicesError: Error, Equatable, Sendable {
     public var message: String {
         switch self {
         case .noServer: "Chirp couldn’t find chirp-server on this Mac."
-        case .outdated: "This Mac’s chirp-server is too old for per-device tokens. Update it, then try again."
+        case .outdated: "Update Chirp on this Mac to pair each phone separately, then try again."
         case .rejected(let reason): reason
         case .failed: "chirp-server didn’t answer as expected."
         }
@@ -245,7 +245,7 @@ public final class DevicesModel {
 /// Rotating the shared token is done where the server runs: it reads the token once at start, so the file is replaced and
 /// the server restarted. Chirp shows the commands instead of restarting a server it did not start.
 public enum SharedTokenRotation {
-    public static let warning = "Every phone paired with the shared token stops working until you pair it again, and so does any script that uses it. Phones paired with their own token are not affected. This Mac’s Chirp reads the new token by itself."
+    public static let warning = "Every phone paired with the shared code stops working until you pair it again, and so does any script that uses it. Other pairings are not affected. Chirp on this Mac reads the new code by itself."
 
     public static var commands: String {
         """

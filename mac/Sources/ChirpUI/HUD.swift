@@ -22,7 +22,7 @@ public enum HUDIndicator: Equatable, Sendable {
 /// The HUD's short status wording, in one place so the controller, the snapshots and the tests agree.
 public enum HUDStatus {
     public static let connecting = "Connecting…"
-    public static let listening = "Listening"
+    public static let listening = "Listening…"
     public static let finishing = "Finishing…"
     public static let polishing = "Polishing…"
     public static let polished = "Polished"
@@ -277,7 +277,7 @@ public struct HUDView: View {
                     HUDChip(name).accessibilityLabel("Style: \(name)")
                 }
                 if model.keptOriginal { HUDChip("kept original") }
-                if model.cleaned { HUDChip("cleaned", symbol: "sparkles", tone: .moon) }
+                if model.cleaned { HUDChip(HUDStatus.polished, symbol: "sparkles", tone: .moon) }
                 if model.showUseRaw {
                     Button { model.onUseRaw?() } label: { HUDChip("Use raw", tone: .action) }
                         .buttonStyle(.plain)
