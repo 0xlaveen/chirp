@@ -350,9 +350,12 @@ def main():
             token = token_path.read_text().strip()
             wait_health(token, base=base, context=context)
             warm_cleanup(opt.python, token_path, env, opt.tls, opt.server_port)
-            # Independent host-routing probe, no authentication or private response content.
-            probe = adb("shell", "sh", "-c", shlex.quote("printf 'GET /v1/health HTTP/1.0\\r\\nHost: 10.0.2.2\\r\\n\\r\\n' | toybox nc -w 3 10.0.2.2 " + str(opt.server_port)))
-            print("Emulator route to throwaway server:", opt.tls or b"200 OK" in probe, flush=True)
+            # Plain HTTP can be probed without credentials. A TLS server closes plaintext
+            # connections (nc can exit nonzero); verified pairing below checks its route and trust.
+            if not opt.tls:
+                probe = adb("shell", "sh", "-c", shlex.quote("printf 'GET /v1/health HTTP/1.0\\r\\nHost: 10.0.2.2\\r\\n\\r\\n' | toybox nc -w 3 10.0.2.2 " + str(opt.server_port)))
+                assert b"200 OK" in probe, "Emulator cannot reach the throwaway HTTP server"
+                print("Emulator route to throwaway server: True", flush=True)
             adb("install", "-r", str(Path(opt.apk).resolve()))
             if opt.keepkb_check or opt.bubble_check or opt.quickdictate_check:
                 module = runpy.run_path(str(Path(__file__).with_name("emulator-keepkb-check.py")))
