@@ -41,10 +41,18 @@ final class ChirpHardwareKeyboardUITests: XCTestCase {
         screenshot("Listening in landscape", app)
         app.buttons["chirp.dictation.stop"].tap()
         XCTAssertTrue(waitFor(transcript, "label == 'Synthetic words.'"))
-        app.buttons["chirp.dictation.raw"].tap()
+        // A phone on its side once had the mic over the results row, so the tap below hit nothing (#238);
+        // isHittable still said yes, so check the frames instead.
+        let raw = app.buttons["chirp.dictation.raw"], mic = app.buttons["chirp.dictation.start"]
+        XCTAssertTrue(raw.exists && mic.exists)
+        XCTAssertFalse(raw.frame.intersects(mic.frame), "The mic must not cover Use raw: \(raw.frame) vs \(mic.frame)")
+        raw.tap()
         XCTAssertTrue(waitFor(transcript, "label == 'synthetic words'"))
         XCUIDevice.shared.orientation = .portrait
         XCTAssertTrue(waitFor(status, "label == 'Finished'"))
+        // An armed session keeps the app from going idle, which stalls tear-down until the test times out.
+        app.endChirpSession()
+        XCTAssertTrue(app.staticTexts["Microphone off"].waitForExistence(timeout: 5))
     }
 
     /// ⌘Return starts and stops, ⌘⇧Z uses raw, ⌘⇧C copies, ⌘. cancels, ⌘⇧E ends, ⌘⇧K arms and ⌘1–⌘4 switch tabs.

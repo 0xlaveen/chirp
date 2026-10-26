@@ -11,6 +11,7 @@ struct DictateView: View {
     /// Opens Settings → Connection (refused pairing, not paired).
     var openConnection: () -> Void
     @Environment(\.horizontalSizeClass) private var sizeClass
+    @Environment(\.verticalSizeClass) private var verticalSizeClass
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.dynamicTypeSize) private var typeSize
     @State private var listeningSince: Date?
@@ -18,7 +19,40 @@ struct DictateView: View {
 
     var active: Bool { [.connecting, .listening, .correcting].contains(model.phase) }
 
+    /// A phone on its side has about 200 pt of height under the navigation bar: the mic would cover the page
+    /// (and Use raw with it), so the controls sit in a column beside it instead.
+    private var controlsBeside: Bool { verticalSizeClass == .compact && !typeSize.isAccessibilitySize }
+
     var body: some View {
+        Group {
+            if controlsBeside {
+                HStack(spacing: 0) {
+                    pageScroll
+                    ScrollView {
+                        controls.padding(.horizontal, ChirpSpacing.s16).padding(.vertical, ChirpSpacing.s8)
+                    }
+                    .scrollBounceBehavior(.basedOnSize).frame(width: 220)
+                }
+            } else {
+                pageScroll.safeAreaInset(edge: .bottom, spacing: 0) {
+                    if !typeSize.isAccessibilitySize {
+                        controls.padding(.horizontal, ChirpSpacing.gutter(sizeClass)).padding(.top, ChirpSpacing.s12).padding(.bottom, ChirpSpacing.s16)
+                            .frame(maxWidth: .infinity).background(Color.chirp.background)
+                    }
+                }
+            }
+        }
+        .background(Color.chirp.background)
+        .navigationTitle("Dictate").navigationBarTitleDisplayMode(.inline)
+        .onChange(of: model.phase, initial: true) { _, phase in
+            if phase == .listening { if listeningSince == nil { listeningSince = .now } }
+            else if phase != .connecting { listeningSince = nil }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .GCKeyboardDidConnect)) { _ in hardwareKeyboard = true }
+        .onReceive(NotificationCenter.default.publisher(for: .GCKeyboardDidDisconnect)) { _ in hardwareKeyboard = Self.keyboardAttached }
+    }
+
+    private var pageScroll: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: ChirpSpacing.s16) {
                 statusLine
@@ -36,20 +70,6 @@ struct DictateView: View {
             .frame(maxWidth: 680, alignment: .leading).frame(maxWidth: .infinity)
         }
         .scrollBounceBehavior(.basedOnSize)
-        .safeAreaInset(edge: .bottom, spacing: 0) {
-            if !typeSize.isAccessibilitySize {
-                controls.padding(.horizontal, ChirpSpacing.gutter(sizeClass)).padding(.top, ChirpSpacing.s12).padding(.bottom, ChirpSpacing.s16)
-                    .frame(maxWidth: .infinity).background(Color.chirp.background)
-            }
-        }
-        .background(Color.chirp.background)
-        .navigationTitle("Dictate").navigationBarTitleDisplayMode(.inline)
-        .onChange(of: model.phase, initial: true) { _, phase in
-            if phase == .listening { if listeningSince == nil { listeningSince = .now } }
-            else if phase != .connecting { listeningSince = nil }
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .GCKeyboardDidConnect)) { _ in hardwareKeyboard = true }
-        .onReceive(NotificationCenter.default.publisher(for: .GCKeyboardDidDisconnect)) { _ in hardwareKeyboard = Self.keyboardAttached }
     }
 
     // MARK: Top
