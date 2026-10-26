@@ -34,11 +34,10 @@
   "ChirpKeyboard": [
     "Keyboard/ChirpKeyboardViewController.swift",
     "Keyboard/KeyboardBridgeClient.swift",
-    "Keyboard/UI/KeyboardChipRow.swift",
     "Keyboard/UI/KeyboardPalette.swift",
     "Keyboard/UI/KeyboardPreview.swift",
     "Keyboard/UI/KeyboardRippleView.swift",
-    "Keyboard/UI/KeyboardStatusStrip.swift"
+    "Keyboard/UI/KeyboardTopRow.swift"
   ],
   "ChirpWidgets": [
     "Intents/ChirpActivityAttributes.swift",

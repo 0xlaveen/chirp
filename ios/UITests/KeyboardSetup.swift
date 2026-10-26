@@ -55,9 +55,15 @@ extension XCTestCase {
         }
     }
 
+    /// Any element of the Chirp Keyboard (the top row's state label, ⋯, the mic or Stop button, a key): the row shows
+    /// different controls in different states, so "the keyboard is up" is asked of the identifier prefix.
+    @MainActor func chirpKeyboard(in app: XCUIApplication) -> XCUIElement {
+        app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH 'chirp.keyboard.'")).firstMatch
+    }
+
     @MainActor func selectChirpKeyboard(in app: XCUIApplication) throws {
         // Only system keyboard labels are used here. Extension queries use IDs.
-        let status = app.staticTexts["chirp.keyboard.status"]
+        let status = chirpKeyboard(in: app)
         let globe = app.buttons.matching(NSPredicate(format: "identifier == 'Next keyboard' OR label == 'Next keyboard' OR identifier == 'Change Keyboard' OR label == 'Change Keyboard'")).firstMatch
         // Whichever keyboard is up (a previous test may have left Chirp selected) can take a while to load.
         let loaded = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in status.exists || globe.exists }, object: nil)
@@ -79,7 +85,7 @@ extension XCTestCase {
         for _ in 0..<4 {
             guard globe.exists, globe.isHittable else { break }
             globe.tap()
-            if app.staticTexts["chirp.keyboard.status"].waitForExistence(timeout: 3) { return }
+            if chirpKeyboard(in: app).waitForExistence(timeout: 3) { return }
         }
         let letters = app.buttons["letters"]
         if !globe.exists, letters.exists { letters.tap() }

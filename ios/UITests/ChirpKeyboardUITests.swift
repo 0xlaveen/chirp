@@ -31,18 +31,21 @@ final class ChirpKeyboardUITests: XCTestCase {
         XCTAssertTrue(field.waitForExistence(timeout: 10))
         field.tap()
         try selectChirpKeyboard(in: app)
-        let status = app.staticTexts["chirp.keyboard.status"]
-        XCTAssertTrue(status.waitForExistence(timeout: 10))
-        let armed = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label == %@", "Ready"), object: status)
-        XCTAssertEqual(XCTWaiter.wait(for: [armed], timeout: 10), .completed)
+        // Idle is the suggestion row with the small mic: no status text, the mic says what it does.
         let primary = app.buttons["chirp.keyboard.primary"]
+        XCTAssertTrue(primary.waitForExistence(timeout: 10))
+        let armed = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label == %@", "Start dictation"), object: primary)
+        XCTAssertEqual(XCTWaiter.wait(for: [armed], timeout: 10), .completed)
         primary.tap()
         XCTAssertTrue(wait(for: field, key: "value", equalTo: "synthetic words"))
         XCTAssertEqual(app.staticTexts["chirp.host.sends"].label, "Returns: 0", "No Return while dictating")
         primary.tap()
+        // The result takes the row for 3 seconds ("Finished · ↵ sent"), so it is the first thing looked for.
+        let status = app.staticTexts["chirp.keyboard.status"]
+        let sent = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label CONTAINS %@", AutoEnterSentMarker), object: status)
+        XCTAssertEqual(XCTWaiter.wait(for: [sent], timeout: 10), .completed, "The row says the Return was sent: \(status.label)")
         XCTAssertTrue(wait(for: field, key: "value", equalTo: "Synthetic words."))
         XCTAssertTrue(wait(for: app.staticTexts["chirp.host.sends"], key: "label", equalTo: "Returns: 1"), "Send must fire once after the final")
-        XCTAssertTrue(status.label.contains(AutoEnterSentMarker), status.label)
         XCTAssertFalse(app.buttons["chirp.keyboard.undo"].exists, "Nothing to undo once sent")
     }
 
@@ -110,13 +113,25 @@ final class ChirpKeyboardUITests: XCTestCase {
         guard field.waitForExistence(timeout: 10) else { throw XCTSkip("Messages exposes no message body field") }
         field.tap()
         try selectChirpKeyboard(in: messages)
-        XCTAssertTrue(messages.staticTexts["chirp.keyboard.status"].waitForExistence(timeout: 10))
+        XCTAssertTrue(chirpKeyboard(in: messages).waitForExistence(timeout: 10))
         for state in states {
             pin(state)
             sleep(2)
             shot("keyboard-" + state.replacingOccurrences(of: "+", with: "-"))
+            if state.hasSuffix("+info") {
+                // Frames of the options panel's controls, for layout checks.
+                let ids = ["options", "primary", "style", "remaining", "detail", "end", "info.close"]
+                let lines = ids.map { id -> String in
+                    let element = messages.descendants(matching: .any).matching(identifier: "chirp.keyboard." + id).firstMatch
+                    return id + ": " + (element.exists ? NSCoder.string(for: element.frame) : "missing")
+                }
+                let frames = XCTAttachment(string: lines.joined(separator: "\n"))
+                frames.name = "options-panel-frames"
+                frames.lifetime = .keepAlways
+                add(frames)
+            }
         }
-        // Landscape: the strip keeps 44 pt, the suggestion row and the keys shrink like Apple's.
+        // Landscape: the one top row and the keys shrink like Apple's.
         pin("armed")
         XCUIDevice.shared.orientation = .landscapeLeft
         sleep(2)
@@ -170,41 +185,47 @@ final class ChirpKeyboardUITests: XCTestCase {
         // A tap in the empty area below the text puts the caret after the prefix, as a user would.
         field.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.6)).tap()
 
-        // The redesign lands separately. Once status exists, failures are assertions.
-        let status = app.staticTexts["chirp.keyboard.status"]
-        guard status.waitForExistence(timeout: 10) else {
-            throw XCTSkip("Installed keyboard has no chirp.keyboard.status yet; waiting for the parallel keyboard identifier change.")
+        guard chirpKeyboard(in: app).waitForExistence(timeout: 10) else {
+            throw XCTSkip("The Chirp Keyboard did not come up in the host.")
         }
-        // Idle keyboard: one status line, no paragraph, the full typing keys under it. Chips that don't apply are
-        // hidden, so only Style is on screen; End session sits behind ⓘ.
-        for id in ["primary", "info", "style", "space", "delete", "return", "shift"] {
-            XCTAssertTrue(app.descendants(matching: .any)["chirp.keyboard." + id].exists, "Missing keyboard identifier: \(id)")
+        // Idle keyboard, as on Android: one row, the height of the suggestion bar, with the small ⋯ options button at the
+        // leading edge, the suggestions between, and the small mic at the trailing edge. No status text; the full
+        // typing keys under it. Everything that doesn't apply is hidden; Style and End session are behind ⋯.
+        for id in ["primary", "options", "space", "delete", "return", "shift"] {
+            XCTAssertTrue(app.descendants(matching: .any)["chirp.keyboard." + id].waitForExistence(timeout: 5), "Missing keyboard identifier: \(id)")
         }
-        for id in ["cancel", "raw", "undo", "detail", "end"] {
+        for id in ["status", "time", "style", "cancel", "raw", "undo", "open", "detail", "end"] {
             XCTAssertFalse(app.descendants(matching: .any)["chirp.keyboard." + id].exists, "\(id) must be hidden while armed")
         }
-        // The Style chip names the style, never "Style:…" as its visible title.
+        let optionsButton = app.buttons["chirp.keyboard.options"]
+        let spaceBefore = app.buttons["chirp.keyboard.space"].frame
+        let primaryBefore = primaryButton(in: app).frame
+        XCTAssertEqual(optionsButton.label, "Dictation options")
+        XCTAssertLessThan(optionsButton.frame.minX, primaryBefore.minX, "⋯ leads, the mic trails")
+        XCTAssertLessThan(primaryBefore.maxY, spaceBefore.minY, "the row sits above the keys")
+        XCTAssertLessThan(primaryBefore.width, 60, "the idle mic is small")
+        // The long guidance, the Style picker and End session sit behind ⋯ and open over the keys without moving them.
+        optionsButton.tap()
+        let detail = app.staticTexts["chirp.keyboard.detail"]
+        XCTAssertTrue(detail.waitForExistence(timeout: 3), "⋯ must open the options")
+        XCTAssertTrue(detail.label.contains("Microphone stays active in Chirp"), detail.label)
+        XCTAssertTrue(app.buttons["chirp.keyboard.end"].exists, "End session is in the options panel")
+        // The style names the style, never "Style:…" as its visible title.
         let styleChip = app.buttons["chirp.keyboard.style"]
         XCTAssertEqual(styleChip.label, "Style: Default")
         XCTAssertFalse(styleChip.staticTexts.allElementsBoundByIndex.contains { $0.label.contains("Style:") })
-        // The long guidance sits behind the ⓘ and opens over the keys without moving them.
-        let spaceBefore = app.buttons["chirp.keyboard.space"].frame
-        let primaryBefore = primaryButton(in: app).frame
-        app.buttons["chirp.keyboard.info"].tap()
-        let detail = app.staticTexts["chirp.keyboard.detail"]
-        XCTAssertTrue(detail.waitForExistence(timeout: 3), "ⓘ must open the guidance")
-        XCTAssertTrue(detail.label.contains("Microphone stays active in Chirp"), detail.label)
-        XCTAssertTrue(app.buttons["chirp.keyboard.end"].exists, "End session is in the ⓘ panel")
-        keep(app, "keyboard-info-open")
+        // The session's time left is a detail here, not a label in the row.
+        XCTAssertTrue(app.staticTexts["chirp.keyboard.remaining"].label.hasSuffix("left"))
+        keep(app, "keyboard-options-open")
         app.buttons["chirp.keyboard.info.close"].tap()
         XCTAssertTrue(waitForAbsence(detail))
         XCTAssertEqual(app.buttons["chirp.keyboard.space"].frame, spaceBefore)
         if setup.label.contains("unavailable") || setup.label.contains("could not arm") {
             throw XCTSkip(setup.label)
         }
-        let armed = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label == %@", "Ready"), object: status)
-        XCTAssertEqual(XCTWaiter.wait(for: [armed], timeout: 10), .completed)
         let primary = app.buttons["chirp.keyboard.primary"]
+        let armed = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label == %@", "Start dictation"), object: primary)
+        XCTAssertEqual(XCTWaiter.wait(for: [armed], timeout: 10), .completed)
         XCTAssertTrue(primary.isEnabled)
         keep(app, "keyboard-armed")
         primary.tap()
@@ -214,24 +235,35 @@ final class ChirpKeyboardUITests: XCTestCase {
         observed.lifetime = .keepAlways
         add(observed)
         XCTAssertTrue(partialArrived, "Real mailbox partial must reach the editor; host text was \(String(describing: field.value))")
-        // Height never changes: the strip and the keys stay exactly where they were while listening.
-        XCTAssertEqual(primary.frame, primaryBefore, "The keyboard must not change height while listening")
-        XCTAssertEqual(app.buttons["chirp.keyboard.space"].frame, spaceBefore)
+        // Height never changes: the keys stay exactly where they were while listening, and Stop is in the same row as
+        // the mic was (the row is taken over, not added to).
+        XCTAssertEqual(app.buttons["chirp.keyboard.space"].frame, spaceBefore, "The keyboard must not change height while listening")
+        XCTAssertEqual(primary.frame.midY, primaryBefore.midY, accuracy: 1, "Stop sits in the mic's row")
+        XCTAssertEqual(primary.frame.maxX, primaryBefore.maxX, accuracy: 12, "Stop sits at the mic's trailing edge")
         XCTAssertEqual(primary.label, "Stop dictation")
-        XCTAssertTrue(app.buttons["chirp.keyboard.cancel"].exists, "Cancel takes over the suggestion row while listening")
+        XCTAssertTrue(app.buttons["chirp.keyboard.cancel"].exists, "✕ takes over the row's leading edge while listening")
+        let status = app.staticTexts["chirp.keyboard.status"]
+        XCTAssertEqual(status.label, "Listening…")
+        XCTAssertLessThan(app.buttons["chirp.keyboard.cancel"].frame.minX, status.frame.minX)
+        XCTAssertLessThan(status.frame.maxX, primary.frame.minX)
+        XCTAssertFalse(optionsButton.exists, "⋯ gives way to ✕ while listening")
         keep(app, "keyboard-listening")
         primary.tap()
         XCTAssertTrue(wait(for: field, key: "value", equalTo: prefix + "Synthetic words."), "Final must replace only the keyboard-owned partial")
-        // For 5 seconds after the final, the Cancel slot is Undo and removes exactly the dictation.
+        // For 5 seconds after the final, the same row says Finished and offers Undo, which removes exactly the dictation.
         let undo = app.buttons["chirp.keyboard.undo"]
         XCTAssertTrue(undo.waitForExistence(timeout: 3), "Undo must be offered after the final lands")
+        XCTAssertEqual(status.label, "Finished")
+        XCTAssertEqual(undo.frame.midY, primaryBefore.midY, accuracy: 1, "Undo is in the same row")
         XCTAssertEqual(app.buttons["chirp.keyboard.space"].frame, spaceBefore, "The keyboard must not change height after the final")
         keep(app, "keyboard-finished")
         undo.tap()
         XCTAssertTrue(wait(for: field, key: "value", equalTo: prefix), "Undo must restore the field exactly; was \(String(describing: field.value))")
         XCTAssertTrue(status.label.hasPrefix("Dictation removed"), status.label)
         XCTAssertTrue(waitForAbsence(undo), "Undo goes away once used")
-        app.buttons["chirp.keyboard.info"].tap()
+        // The result ("Dictation removed") holds the row for a few seconds, then ⋯ is back.
+        XCTAssertTrue(optionsButton.waitForExistence(timeout: 10))
+        optionsButton.tap()
         app.buttons["chirp.keyboard.end"].tap()
         XCTAssertTrue(wait(for: app.staticTexts["chirp.host.phase"], key: "label", equalTo: "idle"))
         XCTAssertEqual(field.value as? String ?? "", prefix)
@@ -242,7 +274,7 @@ final class ChirpKeyboardUITests: XCTestCase {
         let secure = app.secureTextFields["chirp.host.secure"]
         XCTAssertTrue(secure.waitForExistence(timeout: 5))
         secure.tap()
-        XCTAssertTrue(waitForAbsence(status), "Chirp Keyboard must not appear in a secure field")
+        XCTAssertTrue(waitForAbsence(primary), "Chirp Keyboard must not appear in a secure field")
         XCTAssertTrue(app.keys["space"].waitForExistence(timeout: 5), "Apple's keyboard must take over in the secure field")
         XCTAssertEqual(field.value as? String ?? "", prefix)
     }

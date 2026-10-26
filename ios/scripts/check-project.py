@@ -67,9 +67,9 @@ assert members('ChirpWidgets') == {'Widgets/ChirpWidgets.swift','Widgets/NotesAc
                                   'Intents/SessionIntents.swift','Intents/ChirpActivityAttributes.swift','Intents/NotesIntents.swift',
                                   'Intents/NotesActivityAttributes.swift','Shared/Sources/ChirpIOSCore/Pond.swift'}
 assert members('ChirpKeyboard') == {'Keyboard/ChirpKeyboardViewController.swift','Keyboard/KeyboardBridgeClient.swift',
-                                   'Keyboard/UI/KeyboardChipRow.swift','Keyboard/UI/KeyboardPalette.swift',
+                                   'Keyboard/UI/KeyboardPalette.swift',
                                    'Keyboard/UI/KeyboardPreview.swift','Keyboard/UI/KeyboardRippleView.swift',
-                                   'Keyboard/UI/KeyboardStatusStrip.swift'}
+                                   'Keyboard/UI/KeyboardTopRow.swift'}
 for target in ('ChirpKeyboard','ChirpWidgets'):
     assert not any(p.startswith('App/') for p in members(target))
 
