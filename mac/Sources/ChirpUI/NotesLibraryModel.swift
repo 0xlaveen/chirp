@@ -241,6 +241,18 @@ public final class NotesLibraryModel {
         return NotesLibraryText.groups(list, now: now(), calendar: calendar)
     }
 
+    /// Names people were given in other notes, newest note first, for the Name speakers sheet's autocomplete.
+    public func recentSpeakerNames(excluding note: UUID? = nil, limit: Int = 24) -> [String] {
+        var seen = Set<String>(), out: [String] = []
+        for entry in notes where entry.id != note {
+            for name in entry.speakerNames where seen.insert(name.lowercased()).inserted {
+                out.append(name)
+                if out.count == limit { return out }
+            }
+        }
+        return out
+    }
+
     /// "No notes yet" (the empty state) versus a library that has some.
     public var isEmpty: Bool { notes.isEmpty && recordingID == nil }
 }

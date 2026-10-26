@@ -177,6 +177,9 @@ public struct NotesLibraryEntry: Codable, Equatable, Sendable, Identifiable {
     public var snippet: String
     // A missing format marker invalidates the old index so snippets rebuild from the original line boundaries.
     private var snippetFormat: Int = 1
+    /// The names people were given in the note, for the Name speakers sheet's autocomplete. A missing key invalidates
+    /// the old index too, so the first launch after it fills this in.
+    public var speakerNames: [String]
     public var openTodos: Int
     public var createdAt: Date
     public var updatedAt: Date
@@ -189,15 +192,16 @@ public struct NotesLibraryEntry: Codable, Equatable, Sendable, Identifiable {
 
     /// A row built by hand (the window's unsaved new note, snapshots and tests); the library builds its own from records.
     public init(id: UUID, title: String, snippet: String = "", openTodos: Int = 0, createdAt: Date, updatedAt: Date,
-                deletedAt: Date? = nil, duration: TimeInterval = 0, audioBytes: Int = 0, recovered: Bool = false, recording: Bool = false) {
-        self.id = id; self.title = title; self.snippet = snippet; self.openTodos = openTodos
+                deletedAt: Date? = nil, duration: TimeInterval = 0, audioBytes: Int = 0, recovered: Bool = false, recording: Bool = false,
+                speakerNames: [String] = []) {
+        self.id = id; self.title = title; self.snippet = snippet; self.openTodos = openTodos; self.speakerNames = speakerNames
         self.createdAt = createdAt; self.updatedAt = updatedAt; self.deletedAt = deletedAt; self.duration = duration
         self.audioBytes = audioBytes; hasAudio = audioBytes > 0; self.recovered = recovered; self.recording = recording
     }
 
     init(_ r: NotesJournalRecord) {
         let d = r.document
-        id = d.id; title = d.title; snippet = d.snippet(); openTodos = d.openTodoCount()
+        id = d.id; title = d.title; snippet = d.snippet(); openTodos = d.openTodoCount(); speakerNames = d.namedSpeakers
         createdAt = d.createdAt; updatedAt = d.updatedAt; deletedAt = d.deletedAt
         recording = r.recording == true
         duration = r.elapsed; audioBytes = d.audio.reduce(0) { $0 + $1.bytes }; recovered = r.recovered == true

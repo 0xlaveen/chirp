@@ -17,6 +17,13 @@ struct NotesInspector: View {
                         .foregroundStyle(NotesInk.secondary)
                 }
                 Spacer()
+                if !model.document.namableSpeakers.isEmpty {
+                    Button { model.beginNamingSpeakers() } label: { Image(systemName: "person.2") }
+                        .buttonStyle(.borderless)
+                        .controlSize(.small)
+                        .help("Name the people in this note")
+                        .accessibilityLabel("Name speakers")
+                }
                 Toggle("Raw", isOn: $model.showRaw)
                     .toggleStyle(.checkbox)
                     .controlSize(.small)

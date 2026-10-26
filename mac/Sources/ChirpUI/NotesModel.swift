@@ -209,6 +209,9 @@ public final class NotesModel {
     public var renaming: SpeakerRename?
     public var renameText = ""
     public var speakerBanner: SpeakerBanner?
+    /// The Name speakers sheet is open, and the notes whose "Who was speaking?" line was dismissed (or answered).
+    var nameSpeakers: NameSpeakersState?
+    public var nameLineDismissed: Set<UUID> = []
     /// Voice profiles in this document: suggestions, remembered people (`SpeakerMenu`).
     public var voices = SpeakerVoiceState()
     /// The title field's text while it is being edited (nil: it shows the note's title).

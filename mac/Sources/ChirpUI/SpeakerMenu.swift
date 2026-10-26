@@ -2,7 +2,8 @@ import ChirpCore
 import SwiftUI
 
 /// Live Notes speaker fix-ups (issue #18 M2): the chip's menu (rename, merge, this turn is…, separate), the rename
-/// field and the banner after a rename or merge. The names are the note's own and are saved with it.
+/// field and the banner after a rename or merge. The names are the note's own and are saved with it. The Name speakers
+/// sheet (#247 3a) is the same fix-ups for everyone at once.
 
 /// A fix-up asked for from the transcript.
 public enum SpeakerEdit: Equatable, Sendable {
@@ -11,6 +12,8 @@ public enum SpeakerEdit: Equatable, Sendable {
     case separate(Int)
     /// "This turn is ▸": nil is a new person.
     case reassign([SpeakerTurnRef], to: Int?)
+    /// The Name speakers sheet's Done: every change at once, and "Also replace names in the notes" for the renames.
+    case nameSpeakers([SpeakerNaming], replaceInNotes: Bool)
     /// The banner's "Replace in notes".
     case replaceInNotes
     /// The banner's Undo (a replace in the notes, or a merge).
@@ -30,6 +33,8 @@ public struct SpeakerBanner: Equatable, Sendable {
         case offerReplace(old: String, new: String, count: Int)
         case replaced(SpeakerNameReplacement)
         case merged(person: Int, name: String, into: String)
+        /// The Name speakers sheet applied `people` changes; `undo` puts the notes' text back (nil: nothing was replaced).
+        case named(people: Int, places: Int, undo: SpeakerNameReplacement?)
         /// A voice was saved, updated or could not be.
         case notice(String)
     }
@@ -44,6 +49,9 @@ public struct SpeakerBanner: Equatable, Sendable {
         case .replaced(let r):
             "Replaced “\(r.old)” with “\(r.new)” in the notes (\(r.changes.count == 1 ? "1 place" : "\(r.changes.count) places"))."
         case .merged(_, let name, let into): "Merged \(name) into \(into)."
+        case .named(let people, let places, _):
+            "Updated \(people == 1 ? "1 speaker" : "\(people) speakers")"
+                + (places > 0 ? " and replaced their names in the notes (\(places == 1 ? "1 place" : "\(places) places"))." : ".")
         case .notice(let text): text
         }
     }
@@ -65,6 +73,7 @@ extension NotesModel {
     public var speakerBannerUndoable: Bool {
         switch visibleSpeakerBanner?.kind {
         case .replaced(let r): document.version == r.version
+        case .named(_, _, let r?): document.version == r.version
         case .merged: true
         default: false
         }
@@ -107,6 +116,29 @@ public enum SpeakerEditing {
             change { $0.separateSpeaker(id); return [] }
         case .reassign(let refs, let person):
             change { $0.reassignTurns(refs, to: person); return [] }
+        case .nameSpeakers(let namings, let replace):
+            guard !namings.isEmpty else { return nil }
+            let olds = Dictionary(namings.map { ($0.person, roster.displayName($0.person)) }, uniquingKeysWith: { a, _ in a })
+            var done: [SpeakerNameReplacement] = []
+            change { d in
+                for n in namings {
+                    if let target = n.mergeInto { d.mergeSpeaker(n.person, into: target) } else if let name = n.name {
+                        d.renameSpeaker(n.person, to: name)
+                    }
+                }
+                guard replace else { return [] }
+                var changes: [NotesTextChange] = []
+                for n in namings where n.mergeInto == nil && n.name != nil {
+                    let old = olds[n.person] ?? "", new = d.roster.displayName(n.person)
+                    guard new != old, let r = d.replaceSpeakerName(old, with: new) else { continue }
+                    done.append(r)
+                    changes += r.changes
+                }
+                return changes
+            }
+            // One undo for all of them.
+            let undo = SpeakerNameReplacement.combined(done)
+            return .named(people: namings.count, places: undo?.changes.count ?? 0, undo: undo)
         case .replaceInNotes:
             guard case .offerReplace(let old, let new, _) = banner else { return banner }
             var done: SpeakerNameReplacement?
@@ -118,6 +150,7 @@ public enum SpeakerEditing {
         case .undo:
             switch banner {
             case .replaced(let r): change { $0.revert(r) ?? [] }
+            case .named(_, _, let r?): change { $0.revert(r) ?? [] }
             case .merged(let person, _, _): change { $0.separateSpeaker(person); return [] }
             default: break
             }
@@ -156,6 +189,7 @@ struct SpeakerMenuItems: View {
         let roster = model.document.roster
         let others = roster.active.filter { $0 != roster.resolve(person) }
         Button("Rename “\(roster.displayName(person))”…") { model.beginRename(row: row, person: person) }
+        Button("Name Speakers…") { model.beginNamingSpeakers() }
         Menu("Merge into") {
             ForEach(others, id: \.self) { id in
                 Button(roster.displayName(id)) { model.onSpeakerEdit(.merge(person, into: id)) }
