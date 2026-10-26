@@ -110,8 +110,7 @@ final class ChirpSettingsUITests: XCTestCase {
         cleanup.switches.firstMatch.exists ? cleanup.switches.firstMatch.tap() : cleanup.tap()
         let enable = app.buttons["Enable for this destination"]
         XCTAssertTrue(enable.waitForExistence(timeout: 5), "No consent dialog")
-        XCTAssertTrue(app.buttons["Cancel"].waitForExistence(timeout: 5), "No system Cancel in the consent dialog")
-        app.buttons["Cancel"].tap()
+        dismissDialog(app)
         XCTAssertTrue(waitFor(cleanup, "value == '0'"), "A cancelled consent leaves clean-up off")
         cleanup.switches.firstMatch.exists ? cleanup.switches.firstMatch.tap() : cleanup.tap()
         XCTAssertTrue(enable.waitForExistence(timeout: 5))
@@ -127,10 +126,10 @@ final class ChirpSettingsUITests: XCTestCase {
         let row = app.descendants(matching: .any).matching(identifier: "chirp.styles.row.default").firstMatch
         XCTAssertTrue(row.waitForExistence(timeout: 10), "Server styles did not load")
         row.tap()
-        XCTAssertTrue(waitFor(row, "isSelected == true"), "The tapped style did not become selected")
-        screenshot("settings-dictation-styles", app)
         app.buttons["chirp.styles.edit.default"].tap()
         XCTAssertTrue(app.buttons["chirp.styles.reset"].waitForExistence(timeout: 5), "Prompt editor did not open")
+        XCTAssertTrue(app.buttons["Selected"].waitForExistence(timeout: 3), "The tapped style did not become selected")
+        screenshot("settings-dictation-styles", app)
         screenshot("settings-prompt-editor", app)
     }
 
@@ -216,7 +215,7 @@ final class ChirpSettingsUITests: XCTestCase {
         XCTAssertTrue(forget.waitForExistence(timeout: 5))
         forget.tap()
         XCTAssertTrue(app.buttons["Forget"].waitForExistence(timeout: 5), "No Forget confirmation")
-        app.buttons["Cancel"].tap()
+        dismissDialog(app)
         XCTAssertTrue(element("chirp.connection.banner", in: app).waitForExistence(timeout: 5), "Cancelling must keep the pairing")
         screenshot("settings-connection", app)
     }
@@ -234,8 +233,7 @@ final class ChirpSettingsUITests: XCTestCase {
         toggle.switches.firstMatch.exists ? toggle.switches.firstMatch.tap() : toggle.tap()
         XCTAssertTrue(app.buttons["Turn off and delete"].waitForExistence(timeout: 5), "No turn-off confirmation")
         // A dialog's cancel button can appear a beat after its destructive one.
-        XCTAssertTrue(app.buttons["Cancel"].waitForExistence(timeout: 5), "No cancel in the turn-off dialog")
-        app.buttons["Cancel"].tap()
+        dismissDialog(app)
         XCTAssertTrue(waitFor(toggle, "value == '1'"), "Cancelling must leave history on")
         toggle.switches.firstMatch.exists ? toggle.switches.firstMatch.tap() : toggle.tap()
         app.buttons["Turn off and delete"].tap()
@@ -315,6 +313,15 @@ final class ChirpSettingsUITests: XCTestCase {
         app.buttons["Close"].tap()
         app.buttons["chirp.history.menu"].tap()
         shot("history-menu", app)
+    }
+
+    /// iOS 26 renders confirmationDialog as a compact popover with no cancel button; cancelling is
+    /// tapping the outside dismiss region.
+    @MainActor private func dismissDialog(_ app: XCUIApplication) {
+        let dismiss = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "label == 'dismiss popup' OR identifier == 'PopoverDismissRegion'")).firstMatch
+        XCTAssertTrue(dismiss.waitForExistence(timeout: 5), "No dismiss region around the dialog")
+        dismiss.tap()
     }
 
     @MainActor private func shot(_ name: String, _ app: XCUIApplication) {
