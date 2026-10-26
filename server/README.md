@@ -202,6 +202,13 @@ uv run chirp-server devices revoke "Pixel 9" # or the 8-character id
 - Names are 1–64 printable characters and unique among active devices; revoking frees the name for re-pairing.
 - Revocation applies to the next request without a restart: WS gets `auth` and close 4401, and HTTP (health included) returns 401 `auth`, so clients route to re-pair. Only a revoked token gets 401 on health; unknown credentials still see `{"ok":true}`. The revoked entry's digest is kept so it can be recognized.
 - If `devices.json` is unreadable, invalid or a symlink, device tokens are refused (a warning without content is logged) and the shared token keeps working.
+- **Device activity.** The server keeps metadata about which device used it (time, device, client and request kind, style id, duration, audio length, outcome; refused requests as counters), never text or audio. It is saved to `device-activity.json` (mode 0600, beside the server state) so a restart keeps it: 5000 events or 30 days at most. Turn it off with `[activity] keep = false` (`max_events`, `max_days` tune the limits) or **Keep device activity** in the Mac's Settings → Devices, which also deletes what is stored. Only the owner reads it: a separate `~/.config/chirp/owner-token` (0600, created on first start, never printed by `pair` or put in a link or QR code, refused by every other endpoint), from this machine and not through `tailscale serve`:
+
+  ```sh
+  curl -s -H "Authorization: Bearer $(cat ~/.config/chirp/owner-token)" http://127.0.0.1:7821/v1/devices/activity
+  ```
+
+  The shared token and device tokens get 403 there. See the [protocol](../docs/architecture.md#device-activity-v1-compatible-addition).
 - The shared token stays valid until you rotate it: stop the server, delete `~/.config/chirp/token` and start it again (a new one is generated); devices paired without `--name` then need re-pairing, while the Mac app on the same machine reads the new file.
 
 ## The API
@@ -218,6 +225,8 @@ Full protocol details, including every message field, are in [the architecture d
 | `POST /v1/notes/reorganize` | bearer | Live Notes: reorganize an edited notes document (see [Notes structuring](#notes-structuring)) |
 | `POST /v1/notes/edit` | bearer | Live Notes: apply a spoken edit instruction to the notes (see [Notes structuring](#notes-structuring)) |
 | `POST /v1/speakers/model` | bearer | Live Notes speaker labels: download (after the client's consent) or remove the speaker model (see [Speaker labels](#speaker-labels)) |
+| `GET /v1/devices/activity` | owner token, direct loopback | Which devices used the server (metadata only; see [Per-device tokens](#per-device-tokens)) |
+| `PUT /v1/devices/activity/settings` | owner token, direct loopback | `{"keep":false}` stops recording and deletes the stored activity |
 | `POST /v1/transcribe` | bearer | 16 kHz mono PCM16 WAV body (same limits as streaming); returns the final object |
 | `WS /v1/stream` | bearer | Streaming dictation |
 

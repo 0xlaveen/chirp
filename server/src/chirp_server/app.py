@@ -18,11 +18,12 @@ from starlette.routing import Route, WebSocketRoute
 from starlette.websockets import WebSocket, WebSocketDisconnect
 
 from . import build, notes, notes_edit
+from .activity import FLUSH_SECONDS, Activity
 from .audio import MAX_FRAME, MAX_PCM, AudioError, decode_wav, levels, samples, silent
 from .cleanup_models import DEFAULT_MODEL, model_spec
 from .config import Settings, load_token, persist_keep_loaded, read_keep_loaded
 from .correction import CorrectionResult, Corrector
-from .devices import Credentials
+from .devices import Credentials, direct_loopback, encode
 from .engine import EngineWorker
 from .learned import parse_learned
 from .managed_cleanup import ManagedCleanup
@@ -44,7 +45,10 @@ MESSAGES = {
     "bad_notes": "Invalid notes request",
     "notes_off": "Notes structuring needs correction enabled on the server",
     "bad_speakers": "Invalid speakers request",
+    "forbidden": "Not available to this credential",
+    "bad_activity": "Invalid activity request",
 }
+CLIENTS = {"mac", "android", "ios", "desktop"}
 
 
 def error(code):
@@ -62,6 +66,13 @@ def device_field(token, value):
     """Authenticated health tells a device its own pairing name; the shared token has none."""
     name = token.name(value) if isinstance(token, Credentials) else None
     return {"device": name} if name else {}
+
+
+def failure(code):
+    """The activity outcome for a clean-up or notes result's `error` (a fixed code, never text)."""
+    return (
+        "ok" if code is None else code if code in {"rejected", "timeout", "preempted"} else "engine"
+    )
 
 
 def bearer(headers):
@@ -103,6 +114,9 @@ class Utterance:
         # Opt-in `start.speakers.session`: the final carries `speakers` (Live Notes labels).
         self.speaker_session = None
         self.labelling = None
+        # The activity entry for this utterance (metadata only), set by the stream loop.
+        self.token = None
+        self.disconnected = False
 
     async def start(self, control):
         if "correction_prompt" in control:
@@ -128,7 +142,7 @@ class Utterance:
         if (
             control.get("sample_rate") != 16000
             or control.get("encoding") != "pcm_s16le"
-            or control.get("client") not in {"mac", "android", "ios", "desktop"}
+            or control.get("client") not in CLIENTS
             or not isinstance(control.get("correction", False), bool)
             or not isinstance(control.get("word_timings", False), bool)
         ):
@@ -156,6 +170,8 @@ class Utterance:
         self.leased = True
         self.correction = control.get("correction", False)
         self.profile = profile
+        if self.token is not None:
+            self.token.profile = profile
         self.instructions = instructions if profile == "custom" else ""
         self.stream = await self.worker.call(self.worker.engine.open_stream)
         await self.ws.send_json(
@@ -468,7 +484,15 @@ def create_app(settings=None, engine=None, token=None, corrector=None, speakers=
     keep = {"value": bool(override if override is not None else config.keep_loaded)}
     if managed is not None:
         managed.keep_loaded = keep["value"]
-    credential = token
+    # A token given here works before lifespan too (tests drive handlers without it).
+    credential = Credentials(token, settings.config_dir) if isinstance(token, str) else token
+    owner = ""  # the owner token, read in lifespan; only the activity routes accept it
+    activity = Activity(
+        settings.activity_path,
+        settings.activity.keep,
+        settings.activity.max_events,
+        settings.activity.max_days,
+    )
     pending_auth = 0
     structuring = asyncio.Lock()  # at most one structuring pass server-wide
 
@@ -477,11 +501,33 @@ def create_app(settings=None, engine=None, token=None, corrector=None, speakers=
             await asyncio.sleep(3600)
             retention.purge()
 
+    async def saving():
+        while True:
+            await asyncio.sleep(FLUSH_SECONDS)
+            if (data := activity.pending()) is not None:
+                try:
+                    await asyncio.to_thread(activity.write, data)
+                except OSError:
+                    activity.dirty = True  # silently; the next round tries again
+
+    def reject(headers):
+        """None for an authorized request; otherwise the 401, counted as a refusal."""
+        value = bearer(headers)
+        if authorized(credential, value):
+            return None
+        activity.refused(*credential.refusal(value))
+        return JSONResponse(error("auth"), status_code=401, headers={"WWW-Authenticate": "Bearer"})
+
     @asynccontextmanager
     async def lifespan(app):
-        nonlocal credential
-        credential = Credentials(credential or load_token(settings.config_dir), settings.config_dir)
+        nonlocal credential, owner
+        if not isinstance(credential, Credentials):
+            credential = Credentials(
+                credential or load_token(settings.config_dir), settings.config_dir
+            )
+        owner = load_token(settings.config_dir, "owner-token")
         cleanup = None
+        saver = asyncio.create_task(saving())
         try:
             if settings.debug_retain:
                 log.warning("DEBUG: recording kept — debug retention is ENABLED")
@@ -494,6 +540,10 @@ def create_app(settings=None, engine=None, token=None, corrector=None, speakers=
                 managed.prewarm()
             yield
         finally:
+            saver.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await saver
+            activity.flush()
             if cleanup:
                 cleanup.cancel()
                 with contextlib.suppress(asyncio.CancelledError):
@@ -507,6 +557,7 @@ def create_app(settings=None, engine=None, token=None, corrector=None, speakers=
         if not authorized(credential, value := bearer(request.headers)):
             if credential.revoked(value):
                 # Only a revoked device token learns more, so its client can re-pair.
+                activity.refused(*credential.refusal(value))
                 return JSONResponse(
                     error("auth"), status_code=401, headers={"WWW-Authenticate": "Bearer"}
                 )
@@ -548,10 +599,8 @@ def create_app(settings=None, engine=None, token=None, corrector=None, speakers=
         )
 
     async def profiles(request: Request):
-        if not authorized(credential, bearer(request.headers)):
-            return JSONResponse(
-                error("auth"), status_code=401, headers={"WWW-Authenticate": "Bearer"}
-            )
+        if (refusal := reject(request.headers)) is not None:
+            return refusal
         return JSONResponse(
             {
                 "profiles": [
@@ -592,10 +641,8 @@ def create_app(settings=None, engine=None, token=None, corrector=None, speakers=
         }
 
     async def correction_settings(request: Request):
-        if not authorized(credential, bearer(request.headers)):
-            return JSONResponse(
-                error("auth"), status_code=401, headers={"WWW-Authenticate": "Bearer"}
-            )
+        if (refusal := reject(request.headers)) is not None:
+            return refusal
         if request.method == "GET":
             return JSONResponse(correction_settings_payload())
         try:
@@ -621,33 +668,37 @@ def create_app(settings=None, engine=None, token=None, corrector=None, speakers=
             managed.prewarm()
         return JSONResponse(correction_settings_payload())
 
-    async def notes_pass(request: Request, validate, run, respond):
+    async def notes_pass(request: Request, kind, validate, run, respond):
         """Shared by the notes endpoints: stateless, no engine lease, no retention, and one
         notes generation at a time server-wide (`structuring`)."""
-        if not authorized(credential, bearer(request.headers)):
-            return JSONResponse(
-                error("auth"), status_code=401, headers={"WWW-Authenticate": "Bearer"}
-            )
-        if not config.enabled:
-            return JSONResponse(error("notes_off"), status_code=409)
-        try:
-            body = bytearray()
-            async for chunk in request.stream():
-                if len(body) + len(chunk) > notes.MAX_BODY_BYTES:
-                    raise ValueError("Request too large")
-                body.extend(chunk)
-            fields = validate(json.loads(bytes(body)))
-        except ValueError:  # includes malformed JSON and invalid UTF-8
-            return JSONResponse(error("bad_notes"), status_code=400)
-        if structuring.locked():
-            return JSONResponse(error("busy"), status_code=503)
-        async with structuring:
-            started = time.perf_counter()
-            if managed is not None:
-                managed.prewarm()
-            result = await run(*fields[:2])
-            elapsed = (time.perf_counter() - started) * 1000
-        return respond(fields, result, elapsed)
+        if (refusal := reject(request.headers)) is not None:
+            return refusal
+        source = credential.source(bearer(request.headers), request.scope)
+        with activity.track(source, None, kind) as token:
+            if not config.enabled:
+                token.outcome = "notes_off"
+                return JSONResponse(error("notes_off"), status_code=409)
+            try:
+                body = bytearray()
+                async for chunk in request.stream():
+                    if len(body) + len(chunk) > notes.MAX_BODY_BYTES:
+                        raise ValueError("Request too large")
+                    body.extend(chunk)
+                fields = validate(json.loads(bytes(body)))
+            except ValueError:  # includes malformed JSON and invalid UTF-8
+                token.outcome = "bad_notes"
+                return JSONResponse(error("bad_notes"), status_code=400)
+            if structuring.locked():
+                token.outcome = "busy"
+                return JSONResponse(error("busy"), status_code=503)
+            async with structuring:
+                started = time.perf_counter()
+                if managed is not None:
+                    managed.prewarm()
+                result = await run(*fields[:2])
+                elapsed = (time.perf_counter() - started) * 1000
+            token.outcome = failure(result.error)
+            return respond(fields, result, elapsed)
 
     async def notes_structure(request: Request):
         """Lengths-only logging; the transcript and Markdown never reach the log."""
@@ -673,6 +724,7 @@ def create_app(settings=None, engine=None, token=None, corrector=None, speakers=
 
         return await notes_pass(
             request,
+            "notes_structure",
             notes.validate_request,
             lambda transcript, outline: notes.structure(corrector, transcript, outline),
             respond,
@@ -705,6 +757,7 @@ def create_app(settings=None, engine=None, token=None, corrector=None, speakers=
 
         return await notes_pass(
             request,
+            "notes_reorganize",
             notes.validate_reorganize_request,
             lambda text, outline: notes.reorganize(corrector, text, outline),
             respond,
@@ -738,6 +791,7 @@ def create_app(settings=None, engine=None, token=None, corrector=None, speakers=
 
         return await notes_pass(
             request,
+            "notes_edit",
             lambda body: (notes_edit.validate_edit_request(body),),
             lambda edit: notes_edit.edit(corrector, edit),
             respond,
@@ -746,58 +800,107 @@ def create_app(settings=None, engine=None, token=None, corrector=None, speakers=
     async def speakers_route(request: Request):
         """The speaker model: `{"action":"download"}` after the client's consent prompt, or
         `{"action":"remove"}`. The download runs in the background; health reports its state."""
-        if not authorized(credential, bearer(request.headers)):
-            return JSONResponse(
-                error("auth"), status_code=401, headers={"WWW-Authenticate": "Bearer"}
-            )
-        body = await request.body()
-        try:
-            action = json.loads(body) if len(body) <= 1024 else None
-        except ValueError:
-            action = None
-        if not isinstance(action, dict) or set(action) != {"action"}:
+        if (refusal := reject(request.headers)) is not None:
+            return refusal
+        source = credential.source(bearer(request.headers), request.scope)
+        with activity.track(source, None, "speaker_model") as token:
+            body = await request.body()
+            try:
+                action = json.loads(body) if len(body) <= 1024 else None
+            except ValueError:
+                action = None
+            if not isinstance(action, dict) or set(action) != {"action"}:
+                token.outcome = "bad_speakers"
+                return JSONResponse(error("bad_speakers"), status_code=400)
+            if action["action"] == "download":
+                speakers.start_download()
+                status = 202 if speakers.state == "downloading" else 200
+                token.outcome = "ok"
+                return JSONResponse(speakers.health(), status_code=status)
+            if action["action"] == "remove":
+                if not await speakers.remove():
+                    token.outcome = "busy"
+                    return JSONResponse(speakers.health(), status_code=409)
+                token.outcome = "ok"
+                return JSONResponse(speakers.health())
+            token.outcome = "bad_speakers"
             return JSONResponse(error("bad_speakers"), status_code=400)
-        if action["action"] == "download":
-            speakers.start_download()
-            status = 202 if speakers.state == "downloading" else 200
-            return JSONResponse(speakers.health(), status_code=status)
-        if action["action"] == "remove":
-            if not await speakers.remove():
-                return JSONResponse(speakers.health(), status_code=409)
-            return JSONResponse(speakers.health())
-        return JSONResponse(error("bad_speakers"), status_code=400)
 
     async def transcribe(request: Request):
-        if not authorized(credential, bearer(request.headers)):
-            return JSONResponse(
-                error("auth"), status_code=401, headers={"WWW-Authenticate": "Bearer"}
-            )
-        try:
-            body = bytearray()
-            async for chunk in request.stream():
-                if len(body) + len(chunk) > MAX_PCM + 65536:
-                    raise AudioError("too_long")
-                body.extend(chunk)
-            pcm = decode_wav(bytes(body))
-            await asyncio.wait_for(worker.lease.acquire(), settings.queue_timeout)
+        if (refusal := reject(request.headers)) is not None:
+            return refusal
+        source = credential.source(bearer(request.headers), request.scope)
+        with activity.track(source, None, "transcribe") as token:
             try:
-                started = time.perf_counter()
-                raw = await worker.call(engine.transcribe, samples(pcm))
-            finally:
-                worker.lease.release()
-            final = await make_final(raw, pcm, None, started, corrector, False)
-            retention.save(uuid4().hex, pcm, final)
-            log.info(
-                "bytes=%d identity_present=%s", len(pcm), "tailscale-user-login" in request.headers
-            )
-            return JSONResponse(final)
-        except AudioError as exc:
-            return JSONResponse(error(exc.code), status_code=413 if exc.code == "too_long" else 400)
-        except TimeoutError:
-            return JSONResponse(error("busy"), status_code=503)
-        except Exception:
-            log.warning("code=engine")
-            return JSONResponse(error("engine"), status_code=503)
+                body = bytearray()
+                async for chunk in request.stream():
+                    if len(body) + len(chunk) > MAX_PCM + 65536:
+                        raise AudioError("too_long")
+                    body.extend(chunk)
+                pcm = decode_wav(bytes(body))
+                token.audio_ms = len(pcm) // 32
+                await asyncio.wait_for(worker.lease.acquire(), settings.queue_timeout)
+                try:
+                    started = time.perf_counter()
+                    raw = await worker.call(engine.transcribe, samples(pcm))
+                finally:
+                    worker.lease.release()
+                final = await make_final(raw, pcm, None, started, corrector, False)
+                retention.save(uuid4().hex, pcm, final)
+                log.info(
+                    "bytes=%d identity_present=%s",
+                    len(pcm),
+                    "tailscale-user-login" in request.headers,
+                )
+                token.outcome = "ok"
+                return JSONResponse(final)
+            except AudioError as exc:
+                token.outcome = exc.code
+                return JSONResponse(
+                    error(exc.code), status_code=413 if exc.code == "too_long" else 400
+                )
+            except TimeoutError:
+                token.outcome = "busy"
+                return JSONResponse(error("busy"), status_code=503)
+            except Exception:
+                token.outcome = "engine"
+                log.warning("code=engine")
+                return JSONResponse(error("engine"), status_code=503)
+
+    def owner_gate(request: Request):
+        """None for the owner token used directly on this machine, else the refusal. Neither the
+        shared token, a device token nor a proxied owner token may read activity."""
+        value = bearer(request.headers)
+        if owner and secrets.compare_digest(encode(owner), encode(value)):
+            if direct_loopback(request.scope):
+                return None
+            return JSONResponse(error("forbidden"), status_code=403)
+        if authorized(credential, value):
+            return JSONResponse(error("forbidden"), status_code=403)
+        activity.refused(*credential.refusal(value))
+        return JSONResponse(error("auth"), status_code=401, headers={"WWW-Authenticate": "Bearer"})
+
+    async def device_activity(request: Request):
+        if (refusal := owner_gate(request)) is not None:
+            return refusal
+        return JSONResponse(activity.snapshot(credential.roster()))
+
+    async def device_activity_settings(request: Request):
+        """`{"keep": false}` stops recording and deletes the stored activity; `true` resumes."""
+        if (refusal := owner_gate(request)) is not None:
+            return refusal
+        try:
+            body = json.loads(await request.body())
+        except ValueError:
+            body = None
+        if (
+            not isinstance(body, dict)
+            or set(body) != {"keep"}
+            or not isinstance(body["keep"], bool)
+        ):
+            return JSONResponse(error("bad_activity"), status_code=400)
+        activity.set_keep(body["keep"])
+        return JSONResponse({"keep": activity.keep})
 
     async def receive(ws, deadline=None):
         message = await asyncio.wait_for(
@@ -844,6 +947,7 @@ def create_app(settings=None, engine=None, token=None, corrector=None, speakers=
             try:
                 message = reader.result()
             except WebSocketDisconnect:
+                utterance.disconnected = True
                 utterance.cancel()
                 await finisher
                 break
@@ -865,31 +969,46 @@ def create_app(settings=None, engine=None, token=None, corrector=None, speakers=
         nonlocal pending_auth
         utterance = None
         pending = None  # A read finalize() left in flight; the next frame comes from it.
+
+        def settle(outcome, final=None):
+            """Close the utterance's activity entry (metadata only; a no-op once closed)."""
+            if utterance is None or utterance.token is None:
+                return
+            if final is not None:
+                utterance.token.corrected = bool(final.get("corrected"))
+            activity.end(utterance.token, outcome, len(utterance.pcm) // 32)
+
         await ws.accept()
         try:
-            valid = authorized(credential, bearer(ws.headers))
+            presented = bearer(ws.headers)
+            valid = authorized(credential, presented)
             # An explicitly supplied wrong header cannot switch authentication paths.
             if not valid and "authorization" not in ws.headers:
                 if pending_auth >= settings.max_pending_auth:
+                    activity.refused("no_token")
                     await ws.send_json(error("auth"))
                     await ws.close(code=4401)
                     return
                 pending_auth += 1
+                presented = None
                 try:
                     auth = await receive(ws, settings.auth_seconds)
+                    presented = auth.get("token") if isinstance(auth, dict) else None
                     valid = (
                         isinstance(auth, dict)
                         and auth.get("type") == "auth"
-                        and authorized(credential, auth.get("token"))
+                        and authorized(credential, presented)
                     )
                 except (AudioError, TimeoutError):
                     valid = False
                 finally:
                     pending_auth -= 1
             if not valid:
+                activity.refused(*credential.refusal(presented))
                 await ws.send_json(error("auth"))
                 await ws.close(code=4401)
                 return
+            source = credential.source(presented, ws.scope)
             carry = deque()
             while True:
                 if carry:
@@ -912,8 +1031,17 @@ def create_app(settings=None, engine=None, token=None, corrector=None, speakers=
                 kind = message.get("type")
                 if kind == "start" and utterance is None:
                     utterance = Utterance(ws, worker, settings, corrector, retention, speakers)
+                    client = message.get("client")
+                    utterance.token = activity.begin(
+                        source,
+                        client if isinstance(client, str) and client in CLIENTS else None,
+                        "notes_segment"
+                        if message.get("correction_profile") == LIVE_NOTES_ID
+                        else "dictation",
+                    )
                     await utterance.start(message)
                 elif kind == "cancel" and utterance:
+                    settle("cancelled")
                     await utterance.close()
                     utterance = None
                 elif kind == "stop" and utterance:
@@ -923,21 +1051,28 @@ def create_app(settings=None, engine=None, token=None, corrector=None, speakers=
                     # socket stays usable for the next start.
                     if final is not None:
                         await ws.send_json(final)
+                        settle(failure(final["correction_error"]), final)
+                    else:
+                        settle("disconnected" if utterance.disconnected else "cancelled")
                     await utterance.close()
                     utterance = None
                     carry.extend(raced)
                 else:
                     raise AudioError()
         except WebSocketDisconnect:
-            pass
+            settle("disconnected")
         except TimeoutError:
+            # Still queued for the engine: busy; otherwise the client went quiet.
+            settle("busy" if utterance is not None and utterance.task is None else "timeout")
             if utterance is not None:
                 await ws.send_json(error("busy"))
             await ws.close(code=1000)
         except AudioError as exc:
+            settle(exc.code)
             await ws.send_json(error(exc.code))
             await ws.close(code=1009 if exc.code == "too_long" else 1003)
         except Exception:
+            settle("engine")
             log.warning("code=engine")
             with contextlib.suppress(Exception):
                 await ws.send_json(error("engine"))
@@ -945,6 +1080,7 @@ def create_app(settings=None, engine=None, token=None, corrector=None, speakers=
         finally:
             if pending is not None:
                 pending.cancel()
+            settle("disconnected")
             if utterance:
                 await utterance.close()
 
@@ -958,6 +1094,8 @@ def create_app(settings=None, engine=None, token=None, corrector=None, speakers=
             Route("/v1/notes/reorganize", notes_reorganize, methods=["POST"]),
             Route("/v1/notes/edit", notes_edit_route, methods=["POST"]),
             Route("/v1/speakers/model", speakers_route, methods=["POST"]),
+            Route("/v1/devices/activity", device_activity, methods=["GET"]),
+            Route("/v1/devices/activity/settings", device_activity_settings, methods=["PUT"]),
             WebSocketRoute("/v1/stream", stream),
         ],
         lifespan=lifespan,

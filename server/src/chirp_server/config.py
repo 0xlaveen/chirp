@@ -193,6 +193,23 @@ class OnnxConfig:
 
 
 @dataclass
+class ActivityConfig:
+    """`[activity]` in server.toml: the per-device activity list (docs/privacy.md)."""
+
+    keep: bool = True
+    max_events: int = 5000
+    max_days: int = 30
+
+    def __post_init__(self):
+        if not isinstance(self.keep, bool):
+            raise ValueError("Activity keep must be true or false")
+        for name, limit in (("max_events", 100_000), ("max_days", 365)):
+            value = getattr(self, name)
+            if type(value) is not int or not 1 <= value <= limit:
+                raise ValueError(f"Activity {name} must be an integer between 1 and {limit}")
+
+
+@dataclass
 class Settings:
     config_dir: Path = field(default_factory=paths.config_dir)
     debug_dir: Path = field(default_factory=paths.debug_dir)
@@ -207,11 +224,17 @@ class Settings:
     streaming: str = "rolling"
     finalization: str = "full"
     onnx: OnnxConfig = field(default_factory=OnnxConfig)
+    activity: ActivityConfig = field(default_factory=ActivityConfig)
     correction: CorrectionConfig = field(default_factory=CorrectionConfig)
     idle_seconds: float = 60.0
     auth_seconds: float = 5.0
     max_pending_auth: int = 8
     queue_timeout: float = 10.0
+
+    @property
+    def activity_path(self) -> Path:
+        """The saved activity list, beside the server state."""
+        return self.state_path.with_name("device-activity.json")
 
     @classmethod
     def read(cls, path: Path | None = None) -> "Settings":
@@ -226,6 +249,7 @@ class Settings:
             result.retain_days = int(debug.get("retain_days", 3))
             result.correction = CorrectionConfig(**data.get("correction", {}))
             result.onnx = OnnxConfig(**data.get("onnx", {}))
+            result.activity = ActivityConfig(**data.get("activity", {}))
         if result.retain_days < 1 or result.correction.timeout <= 0:
             raise ValueError("Invalid configuration limits")
         if result.engine not in {"mlx", "onnx", "sensevoice"}:
@@ -245,9 +269,11 @@ class Settings:
         return result
 
 
-def load_token(directory: Path) -> str:
+def load_token(directory: Path, name: str = "token") -> str:
+    """The shared token, or (`name="owner-token"`) the owner's: a 0600 regular file, created
+    on first use."""
     private_mkdir(directory)
-    path = directory / "token"
+    path = directory / name
     try:
         fd = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
     except FileExistsError:
