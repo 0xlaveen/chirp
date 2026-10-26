@@ -32,6 +32,7 @@ internal fun OnboardingPage(page: Int, state: SetupState, actions: OnboardingAct
         PAGE_WELCOME -> PageFrame("Dictate anywhere", { PondHero() }, PrimaryAction("Get started") { next() }) {
             Body("Speak on your phone and your Mac writes the words into any app, privately over Tailscale. " +
                 "Meetings and thoughts can live in Notes: a recording that transcribes and organises itself while you talk.")
+            Body("Dictation history and learning from your edits are on by default, encrypted on this phone. Turn them off in Settings → Dictation.")
         }
         PAGE_CHOICE -> PageFrame("How you’ll dictate", {}, PrimaryAction("Continue", state.inputMode != null) { next() }) {
             InputModeCards(state, actions.chooseMode)
@@ -68,7 +69,7 @@ internal fun OnboardingPage(page: Int, state: SetupState, actions: OnboardingAct
             if (state.mic) SettingsGroup { CheckRow("Microphone allowed", true) }
             else if (state.micDenied) StatusBanner(StatusKind.Warning, "Allow the microphone to dictate", action = "Open app permissions", onAction = actions.appSettings, live = true)
             Tips("What Chirp keeps", "Your microphone",
-                "The mic opens only when you start dictation or a note and is released when you stop. Dictation history is opt-in. " +
+                "The mic opens only when you start dictation or a note and is released when you stop. Dictation history and learning from your edits are on by default, encrypted on this phone; turn them off in Settings → Dictation. " +
                 "Notes are kept locally; keeping their audio is optional and off by default.")
         }
         else -> PairPage(state, actions)

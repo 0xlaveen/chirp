@@ -102,6 +102,8 @@ internal class NetworkHousekeeping(
 }
 
 interface ImeTransport {
+    /** Optional versioned preferences for this utterance, set before start. */
+    fun learned(payload: LearnedPayload?) {}
     fun connect()
     fun start(correction: Boolean, profile: String, instructions: String, prompt: String? = null): Boolean = start(correction)
     /** Live Notes: [speakers] is the note's speaker session (labels on), else null. */
@@ -193,6 +195,8 @@ class StreamTransport(
             }
         })
     }
+    private var learnedPayload: LearnedPayload? = null
+    override fun learned(payload: LearnedPayload?) { learnedPayload = payload }
     override fun start(correction: Boolean, profile: String, instructions: String, prompt: String?): Boolean =
         start(correction, profile, instructions, prompt, null)
     override fun start(correction: Boolean, profile: String, instructions: String, prompt: String?, speakers: String?): Boolean {
@@ -207,7 +211,7 @@ class StreamTransport(
         return !closed
     }
     private fun sendStart() {
-        startSent = socket?.send(Protocol.start(correction, profile, instructions, prompt, speakers)) == true
+        startSent = socket?.send(Protocol.start(correction, profile, instructions, prompt, speakers, learnedPayload)) == true
         if (!startSent) failed()
     }
     private fun failed() {

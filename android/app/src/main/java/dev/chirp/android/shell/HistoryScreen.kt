@@ -137,6 +137,7 @@ internal fun HistoryScreen(store: DictationHistory? = null, now: () -> Long = Sy
     var query by rememberSaveable { mutableStateOf("") }
     var settings by rememberSaveable { mutableStateOf(false) }
     var menu by remember { mutableStateOf(false) }
+    var teach by remember { mutableStateOf<HistoryEntry?>(null) }
     var own by rememberSaveable { mutableStateOf<String?>(null) }
     val open = if (select == null) own else selected
     val choose: (String?) -> Unit = select ?: { own = it }
@@ -178,7 +179,7 @@ internal fun HistoryScreen(store: DictationHistory? = null, now: () -> Long = Sy
     val icons = rememberAppIcons()
     val actions = DetailActions(copy = { label, text -> copyPrivately(context, label, text) },
         share = { text -> context.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, text), null)) },
-        delete = ::delete)
+        delete = ::delete, teach = { teach = it })
     Surface(Modifier.fillMaxSize()) {
         BoxWithConstraints(Modifier.fillMaxSize().safeDrawingPadding(), contentAlignment = Alignment.TopCenter) {
             // Off or empty there is nothing to show beside the list: one centred column instead.
@@ -241,6 +242,7 @@ internal fun HistoryScreen(store: DictationHistory? = null, now: () -> Long = Sy
             }
         }
     }
+    teach?.let { dev.chirp.android.TeachChirp(it) { teach = null } }
     if (settings) ModalBottomSheet({ settings = false }) {
         Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(start = 16.dp, end = 16.dp, bottom = 24.dp)) {
             HistorySettings(showOpen = false, store = history) { enabled = history.enabled; reload++ }
@@ -268,7 +270,7 @@ private fun rememberAppIcons(): Map<String, Drawable> {
     }
 }
 
-private class DetailActions(val copy: (String, String) -> Unit, val share: (String) -> Unit, val delete: (HistoryEntry) -> Unit)
+private class DetailActions(val copy: (String, String) -> Unit, val share: (String) -> Unit, val delete: (HistoryEntry) -> Unit, val teach: (HistoryEntry) -> Unit)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -332,6 +334,7 @@ private fun HistoryDetail(entry: HistoryEntry, now: Long, zone: ZoneId, actions:
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             FilledTonalButton({ actions.copy("Chirp dictation", entry.text) }) { ButtonIcon(R.drawable.ic_copy); Text("Copy") }
             entry.raw?.let { raw -> OutlinedButton({ actions.copy("Chirp dictation (raw)", raw) }) { Text("Copy raw") } }
+            if (!entry.partial) OutlinedButton({ actions.teach(entry) }) { Text("Teach Chirp") }
             OutlinedButton({ actions.share(entry.text) }) { ButtonIcon(R.drawable.ic_share); Text("Share") }
             TextButton({ actions.delete(entry) }, colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)) {
                 ButtonIcon(R.drawable.ic_delete); Text("Delete")

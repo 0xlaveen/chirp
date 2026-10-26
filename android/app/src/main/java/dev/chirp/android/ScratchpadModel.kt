@@ -257,7 +257,7 @@ internal class ScratchpadModel(
 
     companion object {
         const val IDLE = "Tap the mic to dictate"
-        // Plain editor: history's own rules (opt-in, never password fields) decide whether a final is kept.
+        // Plain editor: history's own rules (on by default, never password fields) decide whether a final is kept.
         private val HISTORY_EDITOR by lazy { EditorInfo().apply { inputType = InputType.TYPE_CLASS_TEXT } }
     }
 }

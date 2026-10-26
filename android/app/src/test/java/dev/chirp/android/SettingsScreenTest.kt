@@ -27,7 +27,7 @@ internal fun settingsFixture(): Triple<SetupState, DictationHistory, UpdateContr
     SettingsStore(context).apply { this.health = health } // Robolectric has no AndroidKeyStore, so no saved pairing.
     val state = SetupState().apply { paired = true; host = "mac.example.test"; this.health = health; reachable = true }
     val updates = UpdateController(context, CoroutineScope(Dispatchers.Unconfined), OkHttpClient(), pairing = { null }, installed = { 1 })
-    return Triple(state, DictationHistory(context, SoftwareHistoryKeys()), updates)
+    return Triple(state, DictationHistory(context, SoftwareHistoryKeys()).also { it.disable() }, updates)
 }
 
 @RunWith(RobolectricTestRunner::class)
@@ -50,7 +50,7 @@ class SettingsScreenTest {
         null to listOf("Connection", "How you dictate", "Dictation", "Keyboard", "Feedback & look", "Notes", "Privacy & history", "About"),
         SettingsPage.Connection to listOf("Check connection", "Change pairing", "Forget pairing", "Use this phone's recogniser"),
         SettingsPage.Dictation to listOf("Clean-up · Correction on Mac", "Styles", "Stop dictation", "Spoken commands",
-            "Press Send after dictating"),
+            "Press Send after dictating", "Learn from my edits", "Learned"),
         SettingsPage.HowYouDictate to listOf("Use Chirp Keyboard", "Keep my keyboard", "Other ways to dictate"),
         SettingsPage.Keyboard to listOf("Keyboard look", "Swipe typing", "Hardware keyboard shortcut", "Larger mic on the inner screen",
             "Layouts, languages & typing"),

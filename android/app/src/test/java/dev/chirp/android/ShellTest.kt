@@ -113,7 +113,7 @@ class ShellBackTest {
         compose.runOnIdle { activity.onBackPressedDispatcher.onBackPressed() }
         assertTrue("back from the pair page returns to the shell", activity.state.shellOpen); assertFalse(activity.isFinishing)
         compose.onNode(hasText("History") and isSelectable()).performClick()
-        compose.onNodeWithText("Dictation history is off").assertExists()
+        compose.onNodeWithText("No dictations yet").assertExists()
         compose.runOnIdle { activity.onBackPressedDispatcher.onBackPressed() }
         assertEquals(ShellTab.Notes, activity.state.tab); assertFalse(activity.isFinishing)
         compose.onNode(hasText("Notes") and isSelectable()).performClick()

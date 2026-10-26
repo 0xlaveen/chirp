@@ -55,7 +55,7 @@ class TailscalePromptTest {
     private val tailscale = FakeTailscale()
     private fun advance(ms: Long) = shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(ms))
     private fun keyboard(url: String = "https://mac.example.ts.net/chirp") {
-        voice = KeyboardDictation(host,
+        voice = KeyboardDictation(host, learning = EditLearning(host, io = { it() }),
             captureFactory = { frame, _, done -> ChirpImeServiceTest.FakeCapture(frame, done, mutableListOf()) },
             transportFactory = { _, _, event, failure -> transports++; ChirpImeServiceTest.FakeTransport(event, failure, mutableListOf()).also { stream = it } },
             prepare = {}, resync = { _, _ -> }, pairing = { Pairing.from(url, "synthetic") }, checkHealth = false, tailscale = tailscale,

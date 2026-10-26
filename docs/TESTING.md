@@ -80,6 +80,7 @@ android/scripts/e2e-all.sh --only notes
 ```
 
 `e2e-all.sh` runs every emulator check in one command: dictation, clean-up,
+learning from edits (two corrections, activation and real-server application, with light/dark Learned captures),
 Notes (including the library: search, rename, delete and Undo, Recently Deleted,
 Continue and kept-audio replay), history, the stop matrix, device checks
 (onboarding, TalkBack, 200% font including the inner-screen rail, folded and open), the floating mic bubble

@@ -15,14 +15,14 @@ import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import java.time.Duration
 
-internal class QuickRig(context: Context, mic: Boolean = true, paired: Boolean = true, historyOn: Boolean = false) {
+internal class QuickRig(context: Context, mic: Boolean = true, paired: Boolean = true, historyOn: Boolean = false, io: (() -> Unit) -> Unit = { it() }) {
     lateinit var wire: Wire
     lateinit var capture: ChirpImeServiceTest.FakeCapture
-    val history = DictationHistory(context, SoftwareHistoryKeys()).also { if (historyOn) it.enable() }
+    val history = DictationHistory(context, SoftwareHistoryKeys()).also { if (historyOn) it.enable() else it.disable() }
     val model = QuickDictateModel(context, history = history,
         captureFactory = { _, frame, _, done -> ChirpImeServiceTest.FakeCapture(frame, done, mutableListOf()).also { capture = it } },
         transportFactory = { _, _, event, failure -> Wire(event, failure).also { wire = it } },
-        micGranted = { mic }, pairing = { if (paired) Pairing.from("https://speech.example.test/chirp", "synthetic") else null }, io = { it() })
+        micGranted = { mic }, pairing = { if (paired) Pairing.from("https://speech.example.test/chirp", "synthetic") else null }, io = io)
     fun finish(corrected: Boolean = true) {
         wire.ready(); wire.partial(1, "synthetic words"); model.stop()
         shadowOf(Looper.getMainLooper()).idle()
@@ -41,6 +41,16 @@ class QuickDictateTest {
         internal lateinit var rig: QuickRig
         override fun createModel() = QuickRig(applicationContext).also { rig = it }.model
     }
+    @Test fun `stop during learned preferences load still stops the eventual capture`() {
+        val pending = mutableListOf<() -> Unit>()
+        val rig = QuickRig(app, io = { pending += it })
+        rig.model.start(); assertTrue(rig.model.active)
+        rig.model.stop(); assertTrue(rig.model.stopping)
+        pending.removeAt(0).invoke()
+        assertTrue(rig.capture.started); assertTrue(rig.capture.stopRequested)
+        rig.model.cancel()
+    }
+
     @Test fun `private utterance stays out of history after session expiry`() {
         val rig = QuickRig(app, historyOn = true)
         PrivateSession.set(true)
@@ -128,7 +138,7 @@ class QuickDictateTest {
         assertTrue(setup.flags and Intent.FLAG_ACTIVITY_CLEAR_TOP != 0)
         controller.pause().stop().destroy()
     }
-    @Test fun `history is opt in uses this entry label and never includes other data`() {
+    @Test fun `history respects explicit off and uses only this entry label`() {
         val off = QuickRig(app); off.model.start(); off.finish(); assertTrue(off.history.entries().isEmpty())
         val on = QuickRig(app, historyOn = true); on.model.appLabel = "Synthetic caller"; on.model.start(); on.finish()
         val row = on.history.entries().single()

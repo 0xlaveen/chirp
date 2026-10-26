@@ -23,7 +23,7 @@ data class Health(val ready: Boolean, val debugRetention: Boolean, val correctio
 
 object Protocol {
     fun start(correction: Boolean, profile: String = "default", instructions: String = "", prompt: String? = null,
-              speakers: String? = null): String {
+              speakers: String? = null, learned: LearnedPayload? = null): String {
         require(CleanupStyles.validId(profile))
         require(speakers == null || SPEAKER_SESSION.matches(speakers))
         require(CleanupStyles.characterCount(instructions) <= CleanupStyles.MAX_INSTRUCTIONS)
@@ -33,6 +33,7 @@ object Protocol {
         .put("client", "android").put("correction", correction)
         .put("correction_profile", profile).put("correction_instructions", if (profile == "custom") instructions else "")
         .apply { if (prompt != null) put("correction_prompt", prompt) }
+        .apply { if (learned != null && !learned.isEmpty) put("learned", learned.wire()) }
         .apply { if (speakers != null) put("speakers", JSONObject().put("session", speakers)) }.toString()
     }
     /** A note's random speaker-session id, as the server accepts it. */

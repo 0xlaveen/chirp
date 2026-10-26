@@ -153,7 +153,7 @@ internal class KeyboardHistory(
     override fun record(text: String, raw: String?, info: EditorInfo?, partial: Boolean): String? {
         val source = info ?: return null
         if (PrivateSession.enabled || !store.enabled || !DictationHistory.allowed(source)) return null
-        val editor = EditorInfo().apply { inputType = source.inputType; imeOptions = source.imeOptions }
+        val editor = EditorInfo().apply { inputType = source.inputType; imeOptions = source.imeOptions; packageName = source.packageName }
         val target = source.packageName
         val id = UUID.randomUUID().toString()
         io { store.record(text, raw, label(target), editor, id, partial) }

@@ -132,7 +132,7 @@ internal class RollingDictation(
     override var landingLast = true
         private set
 
-    fun start(correction: Boolean, profile: String = "default", instructions: String = "", prompt: String? = null) {
+    fun start(correction: Boolean, profile: String = "default", instructions: String = "", prompt: String? = null, learned: LearnedPayload? = null) {
         check(!live && capture == null)
         live = true
         capture = captureFactory(router::route, { value -> handler.post { if (live && !stopping) level(value) } }, { error ->
@@ -142,7 +142,7 @@ internal class RollingDictation(
             real.pauseSeconds = pauseSeconds; real.limitSeconds = limitSeconds
             real.countdown = { left -> handler.post { if (live && !stopping) countdown(left) } }
         }
-        begin = { it.start(correction, profile, instructions, prompt) }
+        begin = { it.start(correction, profile, instructions, prompt, learned) }
         open()
     }
     private fun open() {

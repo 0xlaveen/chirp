@@ -34,7 +34,8 @@ async def observed(scope, receive, send):
             await send(event)
         return await app(scope, receive, answer)
     state = {'frames': 0, 'partials': 0, 'stop': False, 'empty': False, 'correcting': False, 'error': None,
-             'correction_requested': False, 'started': False, 'retired': False}
+             'learned_terms': 0, 'learned_applied': False, 'corrected': False, 'correction_requested': False, 'started': False, 'retired': False}
+    learned_terms = []  # In memory only, never written to metadata or logs.
     def save():
         args.metadata.write_text(json.dumps(state))
     async def read():
@@ -43,6 +44,8 @@ async def observed(scope, receive, send):
         if event.get('text'):
             control = json.loads(event['text'])
             if control.get('type') == 'start':
+                learned_terms[:] = control.get('learned', {}).get('terms', [])
+                state['learned_terms'] = len(learned_terms)
                 state['started'] = True
                 state['correction_requested'] = control.get('correction', False)
                 state['notes_stream'] = control.get('correction_profile') == 'live_notes'
@@ -60,7 +63,14 @@ async def observed(scope, receive, send):
             if kind == 'correcting': state['correcting'] = True
             # Keep the real managed correction transition observable on a slow AVD.
             if kind == 'final' and state['correcting']: await asyncio.sleep(2)
-            if kind == 'final': state['empty'] = not frame.get('text', '').strip()
+            if kind == 'final':
+                state['empty'] = not frame.get('text', '').strip()
+                state['corrected'] = frame.get('corrected', False)
+                state['correction_error'] = frame.get('correction_error')
+                state['learned_applied'] = any(
+                    term['term'] in frame.get('text', '') and any(heard.lower() in frame.get('raw', '').lower() for heard in term.get('heard', []))
+                    for term in learned_terms)
+
             if kind == 'final' and not state['empty']:
                 notes['finals'] = notes.get('finals', 0) + 1
                 # Speaker labels: how many finals were labelled and which slots spoke (numbers, never text).

@@ -20,8 +20,8 @@ import javax.crypto.spec.GCMParameterSpec
 
 /** Deliberately not a data class: toString must never expose dictated text. */
 internal class HistoryEntry(val id: String, val time: Long, val text: String, val raw: String?, val app: String?,
-                            /** Kept from partials after a failure, never finalised by the Mac. */ val partial: Boolean = false) {
-    fun copy(text: String = this.text, raw: String? = this.raw) = HistoryEntry(id, time, text, raw, app, partial)
+                            /** Kept from partials after a failure, never finalised by the Mac. */ val partial: Boolean = false, val packageName: String? = null) {
+    fun copy(text: String = this.text, raw: String? = this.raw) = HistoryEntry(id, time, text, raw, app, partial, packageName)
     override fun toString() = "HistoryEntry(<redacted>)"
 }
 
@@ -32,7 +32,7 @@ internal enum class HistoryRetention(val days: Int, val label: String) {
 }
 
 /**
- * Opt-in dictation history that never leaves this phone. Entries live only in credential-encrypted
+ * On-by-default dictation history that never leaves this phone. Entries live only in credential-encrypted
  * app storage (unavailable before first unlock), are sealed with an Android Keystore AES-GCM key,
  * and are excluded from backup/transfer. Nothing here is logged or added to diagnostics.
  * Turning history off or clearing it deletes the file and its key.
@@ -48,7 +48,7 @@ internal class DictationHistory(
     private val prefs = app.getSharedPreferences("chirp_history", Context.MODE_PRIVATE)
     private val file = File(app.filesDir, FILE_NAME)
 
-    val enabled get() = prefs.getBoolean("enabled", false)
+    val enabled get() = prefs.getBoolean("enabled", true)
     var retention: HistoryRetention
         get() = HistoryRetention.of(prefs.getInt("retention_days", HistoryRetention.WEEK.days))
         set(value) { prefs.edit { putInt("retention_days", value.days) }; if (enabled && available) synchronized(LOCK) { save(load()) } }
@@ -82,7 +82,7 @@ internal class DictationHistory(
         val inserted = text.trim()
         if (inserted.isEmpty() || inserted.length > MAX_CHARS) return null
         val original = raw?.trim()?.takeIf { it.isNotEmpty() && it != inserted && it.length <= MAX_CHARS }
-        val entry = HistoryEntry(id, clock(), inserted, original, appLabel?.trim()?.take(80)?.takeIf { it.isNotEmpty() }, partial)
+        val entry = HistoryEntry(id, clock(), inserted, original, appLabel?.trim()?.take(80)?.takeIf { it.isNotEmpty() }, partial, info?.packageName)
         synchronized(LOCK) {
             if (!enabled || settings.privateSession) return null // Re-check while holding the write lock.
             save(load() + entry)
@@ -140,7 +140,7 @@ internal class DictationHistory(
             (0 until json.length()).map { index ->
                 val item = json.getJSONObject(index)
                 HistoryEntry(item.getString("id"), item.getLong("time"), item.getString("text"),
-                    item.optString("raw").takeIf { item.has("raw") }, item.optString("app").takeIf { item.has("app") }, item.optBoolean("partial"))
+                    item.optString("raw").takeIf { item.has("raw") }, item.optString("app").takeIf { item.has("app") }, item.optBoolean("partial"), item.optString("package").takeIf { item.has("package") })
             }.sortedBy { it.time }
         } catch (_: Exception) {
             // Lost key (reinstall/restore) or damaged file: unreadable history is discarded, never repaired.
@@ -155,7 +155,7 @@ internal class DictationHistory(
         val json = JSONArray()
         entries.forEach { entry ->
             json.put(JSONObject().put("id", entry.id).put("time", entry.time).put("text", entry.text).apply {
-                entry.raw?.let { put("raw", it) }; entry.app?.let { put("app", it) }; if (entry.partial) put("partial", true)
+                entry.packageName?.let { put("package", it) }; entry.raw?.let { put("raw", it) }; entry.app?.let { put("app", it) }; if (entry.partial) put("partial", true)
             })
         }
         val cipher = Cipher.getInstance(TRANSFORMATION)

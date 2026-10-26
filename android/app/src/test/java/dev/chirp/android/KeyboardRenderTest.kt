@@ -42,6 +42,7 @@ class KeyboardInputMethods : ShadowInputMethodManager() {
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 class KeyboardRenderTest {
     class RenderIme : ChirpImeService() {
+        override fun createLearning() = EditLearning(this, io = { it() })
         val editor = ChirpImeServiceTest.Editor()
         val info = EditorInfo().apply { inputType = android.text.InputType.TYPE_CLASS_TEXT; initialSelStart = 0; initialSelEnd = 0 }
         override fun getCurrentInputConnection() = editor.connection

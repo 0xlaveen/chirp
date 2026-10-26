@@ -8,6 +8,9 @@ if command -v say >/dev/null && command -v afconvert >/dev/null; then
     trap 'rm -rf "$speech_tmp"' EXIT
     say -v Samantha -r 135 -o "$speech_tmp/speech.aiff" 'Um, this is a, a synthetic keyboard test. Uh, please send the, the draft tomorrow.'
     afconvert -f WAVE -d LEI16@16000 -c 1 "$speech_tmp/speech.aiff" "$asset_dir/synthetic.wav"
+    # Learning: an unambiguous technical mishearing, rather than an ordinary adjective the model should preserve.
+    say -v Samantha -r 135 -o "$speech_tmp/learn.aiff" 'Please deploy the service to acme cloud before the meeting tomorrow.'
+    afconvert -f WAVE -d LEI16@16000 -c 1 "$speech_tmp/learn.aiff" "$asset_dir/synthetic-learn.wav"
     # Two different voices, one after the other, for the speaker-labels check: a short meeting exchange.
     say -v Samantha -r 150 -o "$speech_tmp/one.aiff" 'We should ship the beta on Friday, but only if the review is done by Thursday.'
     say -v Daniel -r 150 -o "$speech_tmp/two.aiff" 'That works for me. I can send the spec tomorrow morning and check the budget.'

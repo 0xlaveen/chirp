@@ -43,7 +43,7 @@ class KeyboardDictationTest {
     private var healthCalls = 0
     private var sockets = 0
     private fun build(policy: PrewarmPolicy, checkHealth: Boolean = false) {
-        voice = KeyboardDictation(host,
+        voice = KeyboardDictation(host, learning = EditLearning(host, io = { it() }),
             captureFactory = { frame, _, done -> ChirpImeServiceTest.FakeCapture(frame, done, order).also { capture = it } },
             transportFactory = { _, _, event, failure -> sockets++; ChirpImeServiceTest.FakeTransport(event, failure, order).also { stream = it } },
             prepare = { order += "prepare" }, resync = { _, _ -> resyncs++ },

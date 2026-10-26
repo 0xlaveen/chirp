@@ -38,6 +38,10 @@ internal class FocusedInsertion private constructor(
         forget()
         return true
     }
+    val learningStart get() = start
+    val learningText get() = inserted
+    /** Revalidate focus and privacy before every read; never traverse another field. */
+    fun readForLearning(): String? = if (learningAllowed(node)) node.value().takeIf { it.length <= MAX_TEXT } else null
     fun matchesFinal(): Boolean = after?.let {
         node.refresh() && node.isFocused && node.isEnabled && !node.isPassword && node.value() == it && node.selectionStart() == end && node.selectionEnd() == end
     } == true
@@ -54,6 +58,12 @@ internal class FocusedInsertion private constructor(
     /** What the floating mic may do in a field: nothing (no bubble), write the final, or hand it over to copy. */
     enum class Eligibility { NONE, INSERT, COPY }
     companion object {
+        fun learningAllowed(node: AccessibilityNodeInfo?): Boolean = learningPrivateAllowed(node) && node?.isFocused == true
+        fun learningPrivateAllowed(node: AccessibilityNodeInfo?): Boolean = node != null && node.refresh() &&
+            node.isEditable && node.isEnabled && !node.isPassword && DictationHistory.allowed(android.view.inputmethod.EditorInfo().apply {
+                inputType = node.inputType
+            }) && node.inputType and android.text.InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS == 0
+
         /** Longer fields are never snapshotted; the bubble offers copy instead. */
         const val MAX_TEXT = 100000
 

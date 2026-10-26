@@ -55,6 +55,7 @@ open class QuickDictateActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         setResult(RESULT_CANCELED)
         if (Build.VERSION.SDK_INT >= 33) setRecentsScreenshotEnabled(false)
+        model.targetPackage = if (recognizing) callingPackage ?: referrer?.takeIf { it.scheme == "android-app" }?.host else null
         model.appLabel = if (recognizing) callerLabel() else "Quick dictate"
         model.completed = ::complete
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {

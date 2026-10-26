@@ -34,6 +34,7 @@ class ComposingSession(private val connection: InputConnection, private val anch
         private set
     var selectionEnd = -1
         private set
+    val committedText get() = finalText
     val rawAvailable get() = rawText != null
 
     /** Opt this utterance's final into mid-sentence casing (and spoken commands). Call before the first partial. */

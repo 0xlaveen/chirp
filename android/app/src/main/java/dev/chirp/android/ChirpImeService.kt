@@ -21,8 +21,9 @@ open class ChirpImeService : LatinIME() {
     internal open fun createHistory(insert: (String) -> Boolean) = KeyboardHistory(this, insert)
     private val dictation: KeyboardDictation by lazy {
         KeyboardDictation(this, ::createCapture, ::createTransport, ::prepareChirpDictation, ::finishChirpDictation,
-            history = history, started = { history.close() })
+            history = history, started = { history.close() }, learning = createLearning())
     }
+    internal open fun createLearning() = EditLearning(this)
     protected open fun createCapture(frame: (ByteArray) -> Boolean, level: (Double) -> Unit, done: (String?) -> Unit): Capture =
         captureForBuild(this, frame, level, done)
     protected open fun createTransport(client: okhttp3.OkHttpClient, pairing: Pairing, event: (ServerEvent) -> Unit, failure: () -> Unit): ImeTransport =

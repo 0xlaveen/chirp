@@ -34,6 +34,10 @@ import org.robolectric.util.ReflectionHelpers
 @Config(sdk = [31, 37])
 class ChirpAccessibilityServiceTest {
     class TestService : ChirpAccessibilityService() {
+        override fun learningEditorInfo() = android.view.inputmethod.EditorInfo().apply {
+            inputType = android.text.InputType.TYPE_CLASS_TEXT; packageName = "com.example.chat"
+        }
+        override fun createLearning() = EditLearning(this, io = { it() })
         var paired = true
         var pairingUrl = "https://mac.example.test"
         var vpn = TailscalePromptTest.FakeTailscale(connected = true)

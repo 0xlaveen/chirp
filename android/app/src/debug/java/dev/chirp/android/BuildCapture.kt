@@ -11,7 +11,8 @@ import java.io.DataInputStream
 internal fun allowedServer(base: HttpUrl) = base.isHttps || (base.scheme == "http" && base.host == "10.0.2.2" && base.port in 1024..65535)
 internal fun captureForBuild(context: Context, frame: (ByteArray) -> Boolean, level: (Double) -> Unit, done: (String?) -> Unit): Capture =
     if (context.getSharedPreferences("debug_capture", 0).getBoolean("synthetic", false))
-        PcmCapture(frame, level, done, SyntheticPcmInput(context))
+        PcmCapture(frame, level, done, SyntheticPcmInput(context, asset =
+            if (context.getSharedPreferences("debug_capture", 0).getString("dictation_asset", null) == "synthetic-learn.wav") "synthetic-learn.wav" else "synthetic.wav"))
     else PcmCapture(frame, level, done)
 /** Notes and its voice commands: the synthetic asset repeats with [NOTES_GAP_MS] of silence between, like a meeting. */
 internal fun notesInputForBuild(context: Context): PcmInput = context.getSharedPreferences("debug_capture", 0).let { prefs ->

@@ -39,13 +39,14 @@ internal class DictationStream(
     private fun unreachable(timedOut: Boolean = false) = ConnectionFailure.status(transport?.failureKind, timedOut)
     private val timeout = Runnable { fail(if (stopSent) "Mac took too long to finish — try again" else unreachable(true)) }
 
-    fun start(correction: Boolean, profile: String = "default", instructions: String = "", prompt: String? = null) {
+    fun start(correction: Boolean, profile: String = "default", instructions: String = "", prompt: String? = null, learned: LearnedPayload? = null) {
         check(!live && transport == null)
         live = true
         changed("Connecting to Mac…", null)
         val pending = PreReadyBuffer(send = { transport?.audio(it) == true })
         buffer = pending
         transport = transportFactory({ if (live) event(it) }, { if (live) fail(unreachable()) })
+        transport?.learned(learned)
         capture = captureFactory(pending::offer, { value -> handler.post { if (live && !stopping) level(value) } }, { error ->
             handler.post {
                 if (live) {
