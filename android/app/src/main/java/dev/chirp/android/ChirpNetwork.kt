@@ -35,11 +35,11 @@ object ChirpNetwork {
     }
     fun health(client: OkHttpClient, pairing: Pairing): Health = health(healthCall(client, pairing))
     /**
-     * `POST /v1/speakers/model`: [action] `download` (only after the user agreed to it) or `remove`. The server's model state
+     * `POST /v1/speakers/model`: [action] `download`, `cancel` (idempotent; retains a ready model), or `remove`. The server's model state
      * after it (`downloading`, `ready`…).
      */
     fun speakerModel(client: OkHttpClient, pairing: Pairing, action: String): String {
-        require(action == "download" || action == "remove")
+        require(action in setOf("download", "cancel", "remove"))
         val request = Request.Builder().url(pairing.endpoint("v1/speakers/model")).header("Authorization", "Bearer ${pairing.token}")
             .post(org.json.JSONObject().put("action", action).toString().toRequestBody("application/json".toMediaType())).build()
         client.newCall(request).execute().use { response ->

@@ -15,7 +15,7 @@ import dev.chirp.android.ui.SwitchRow
 
 /** Notes settings (library on by default, retention, kept audio, speaker labels), self-contained for the settings tree's Notes page and the Notes screen's own sheet ([title] there). */
 @Composable
-internal fun NotesSettings(sessions: NotesSessions? = null, title: String? = null) {
+internal fun NotesSettings(sessions: NotesSessions? = null, title: String? = null, speakerState: NotesSpeakerModel? = null) {
     val context = LocalContext.current
     val store = remember { SettingsStore(context) }
     val kept = sessions ?: remember { NotesSessions(context) }
@@ -28,9 +28,14 @@ internal fun NotesSettings(sessions: NotesSessions? = null, title: String? = nul
     var audioBytes by remember { mutableStateOf(0L) }
     var confirmDeleteAudio by remember { mutableStateOf(false) }
     var confirmDeleteAll by remember { mutableStateOf(false) }
-    var labelSpeakers by remember { mutableStateOf(store.notesLabelSpeakers) }
-    var speakerConsent by remember { mutableStateOf(false) }
-    val health = remember { store.health }
+    val speakerClient = remember { ChirpNetwork.client(context) }
+    DisposableEffect(speakerClient) { onDispose { ChirpNetwork.dispose(speakerClient) } }
+    val speakers = speakerState ?: remember {
+        NotesSpeakerModel(store, scope, io = { withContext(Dispatchers.IO) { it() } },
+            fetch = { store.pairing()?.let { try { ChirpNetwork.health(speakerClient, it) } catch (_: Exception) { null } } },
+            request = { action -> store.pairing()?.let { try { ChirpNetwork.speakerModel(speakerClient, it, action) } catch (_: Exception) { null } } })
+    }
+    LaunchedEffect(Unit) { speakers.refresh() }
     LaunchedEffect(keepAudio, keep) {
         // A size that cannot be read is shown as none, never as a crash of the settings page.
         audioBytes = try { withContext(Dispatchers.IO) { kept.totalAudioBytes() } } catch (e: kotlinx.coroutines.CancellationException) { throw e } catch (_: Exception) { 0L }
@@ -68,23 +73,29 @@ internal fun NotesSettings(sessions: NotesSessions? = null, title: String? = nul
             summary = "Off by default", infoTitle = "Keep audio with notes",
             infoBody = "Keeps each spoken segment next to its transcript, compressed and encrypted on this phone only, so you can replay it. " +
                 "Audio goes nowhere else.")
-        SwitchRow("Label speakers", labelSpeakers, { on ->
-            // On asks first, unless the Mac already has its speaker model.
-            if (!on || health?.speakersModel == "ready" || health?.speakersModel == "downloading") { labelSpeakers = on; store.notesLabelSpeakers = on }
-            else speakerConsent = true
-        }, summary = if (health != null && !health.notesSpeakers) "Update Chirp on your Mac to label speakers" else "Off by default · who said what",
-            enabled = health?.notesSpeakers != false || labelSpeakers, infoTitle = "Label speakers",
+        SwitchRow("Label speakers", speakers.enabled, speakers::setLabels,
+            summary = if (speakers.health != null && !speakers.available) "Update Chirp on your Mac to label speakers"
+                else "${if (speakers.enabled) "On" else "Off"} · who said what",
+            enabled = speakers.available, infoTitle = "Label speakers",
             infoBody = "Shows who said what in the transcript (Person 1, Person 2…; tap a name to rename it) and lets the notes say who " +
-                "owns a to-do. Your Mac tells the voices apart in its memory only: nothing about a voice is saved, on the Mac or on this phone. " +
-                "Turning it on asks before your Mac downloads its 27 MB speaker model.")
+                "owns a to-do. Your Mac tells voices apart in memory; names and turns stay in the sealed note. " +
+                "The speaker model downloads automatically when needed. Recording starts straight away.")
+        if (speakers.available) {
+            SettingsItem {
+                Text("Speaker model on your Mac: " + when (speakers.state) {
+                    "ready" -> "ready"
+                    "downloading" -> "downloading"
+                    "failed" -> "couldn’t download"
+                    else -> "not downloaded"
+                }, style = MaterialTheme.typography.bodySmall)
+                SpeakerModelStatus(speakers)
+            }
+            if (speakers.state == "ready") ActionRow("Remove speaker model", speakers::remove, destructive = true)
+        }
         if (audioBytes > 0) ActionRow("Delete kept audio (${megabytes(audioBytes)})", { confirmDeleteAudio = true }, destructive = true)
         ActionRow("Delete all notes", { confirmDeleteAll = true }, destructive = true)
     }
     if (title != null) SettingsGroup(title, content = rows) else SettingsGroup(content = rows)
-    if (speakerConsent) SpeakerConsentDialog(confirm = {
-        speakerConsent = false; labelSpeakers = true; store.notesLabelSpeakers = true
-        scope.launch { withContext(Dispatchers.IO) { requestSpeakerModel(context, store) } }
-    }, dismiss = { speakerConsent = false })
     if (confirmDeleteAudio) AlertDialog(onDismissRequest = { confirmDeleteAudio = false },
         title = { Text("Delete kept audio?") },
         text = { Text("This deletes the audio of every note. The text and transcripts stay.") },
@@ -101,13 +112,6 @@ internal fun NotesSettings(sessions: NotesSessions? = null, title: String? = nul
             scope.launch { withContext(Dispatchers.IO) { kept.deleteAll() } }
         }) { Text("Delete everything") } },
         dismissButton = { TextButton({ confirmDeleteAll = false }) { Text("Cancel") } })
-}
-
-/** Asks the paired Mac to download its speaker model (after the user agreed); its state after, null when unreachable. */
-internal fun requestSpeakerModel(context: android.content.Context, store: SettingsStore): String? {
-    val paired = store.pairing() ?: return null
-    val client = ChirpNetwork.client(context)
-    return try { ChirpNetwork.speakerModel(client, paired, "download") } catch (_: Exception) { null } finally { ChirpNetwork.dispose(client) }
 }
 
 private fun megabytes(bytes: Long) = if (bytes < 100_000) "<0.1 MB" else "%.1f MB".format(java.util.Locale.US, bytes / 1_000_000.0)

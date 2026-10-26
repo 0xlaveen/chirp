@@ -3,14 +3,20 @@
 import argparse
 import asyncio
 import json
+import shutil
+import time
 from pathlib import Path
 import uvicorn
+from chirp_server import speakers_model
+from chirp_server.speakers import SpeakerLabels
 from chirp_server.app import create_app
 from chirp_server.config import Settings
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--model-dir', type=Path, required=True)
 parser.add_argument('--metadata', type=Path, required=True)
+parser.add_argument('--speaker-model', type=Path)
+parser.add_argument('--speaker-model-gate', type=Path)
 parser.add_argument('--cert')
 parser.add_argument('--key')
 parser.add_argument('--server-port', type=int, default=7899)
@@ -19,7 +25,38 @@ parser.add_argument('--ready-delay', type=float, default=2)
 args = parser.parse_args()
 settings = Settings.read()
 settings.model_dir = args.model_dir
-app = create_app(settings)
+def install_speaker_model():
+    # Exercise the authenticated automatic download, without network or the operator's model cache.
+    target = speakers_model.path()
+    target.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(args.speaker_model, target)
+    if not speakers_model.verify(target):
+        speakers_model.remove()
+        raise ValueError("Synthetic fixture model checksum mismatch")
+    return target
+
+
+def fetch_speaker_model():
+    deadline = time.monotonic() + 300
+    while not args.speaker_model_gate.exists():
+        if time.monotonic() >= deadline:
+            raise TimeoutError("Speaker fixture was not released")
+        time.sleep(.1)
+    return install_speaker_model()
+
+
+class FixtureSpeakerLabels(SpeakerLabels):
+    async def _fetch_model(self):
+        # New servers support cancellable fetches; retain that behavior in the offline fixture.
+        deadline = time.monotonic() + 300
+        while not args.speaker_model_gate.exists():
+            if time.monotonic() >= deadline:
+                raise TimeoutError("Speaker fixture was not released")
+            await asyncio.sleep(.1)
+        install_speaker_model()
+
+
+app = create_app(settings, speakers=FixtureSpeakerLabels(fetch=fetch_speaker_model) if args.speaker_model else None)
 
 notes = {}
 
@@ -27,12 +64,26 @@ notes = {}
 async def observed(scope, receive, send):
     if scope['type'] == 'http' and scope['path'].startswith(('/v1/notes/', '/v1/speakers/')):
         # Content-free: only the endpoint and its status, for the Notes check.
+        async def read_model():
+            event = await receive()
+            if scope['path'].endswith('/speakers/model') and event.get('body'):
+                try: action = json.loads(event['body']).get('action')
+                except (ValueError, AttributeError): action = None
+                if action in ('download', 'cancel', 'remove'):
+                    notes.setdefault('model_actions', []).append(action)
+            return event
+
         async def answer(event):
             if event['type'] == 'http.response.start':
                 notes.setdefault(scope['path'].rsplit('/', 1)[-1], []).append(event['status'])
-                args.metadata.with_name('notes.json').write_text(json.dumps(notes))
+            if scope['path'].endswith('/speakers/model') and event.get('body'):
+                try: state = json.loads(event['body']).get('state')
+                except (ValueError, AttributeError): state = None
+                if state in ('ready', 'downloading', 'not_downloaded', 'failed'):
+                    notes['model_state'] = state
+            args.metadata.with_name('notes.json').write_text(json.dumps(notes))
             await send(event)
-        return await app(scope, receive, answer)
+        return await app(scope, read_model, answer)
     state = {'frames': 0, 'partials': 0, 'stop': False, 'empty': False, 'correcting': False, 'error': None,
              'learned_terms': 0, 'learned_applied': False, 'corrected': False, 'correction_requested': False, 'started': False, 'retired': False}
     learned_terms = []  # In memory only, never written to metadata or logs.

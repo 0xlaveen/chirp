@@ -49,14 +49,14 @@ class NotesSpeakersTest {
 
     @Test fun `health says whether the Mac labels speakers and where its model is`() {
         val health = Protocol.health("""{"ok":true,"ready":true,"debug_retention":false,"notes_speakers":true,"speakers_model":{"state":"not_downloaded","size_bytes":1}}""")
-        assertTrue(health.notesSpeakers); assertEquals("not_downloaded", health.speakersModel)
+        assertTrue(health.notesSpeakers); assertEquals("not_downloaded", health.speakersModel); assertEquals(1L, health.speakersModelBytes)
         val old = Protocol.health("""{"ok":true,"ready":true,"debug_retention":false}""")
         assertFalse(old.notesSpeakers); assertNull(old.speakersModel)
         // The cached copy keeps both.
         val store = SettingsStore(RuntimeEnvironment.getApplication())
         store.health = health
-        assertEquals("not_downloaded", store.health?.speakersModel); assertTrue(store.health!!.notesSpeakers)
-        assertFalse(store.notesLabelSpeakers)
+        assertEquals("not_downloaded", store.health?.speakersModel); assertTrue(store.health!!.notesSpeakers); assertEquals(1L, store.health?.speakersModelBytes)
+        assertTrue(store.notesLabelSpeakers)
     }
 
     // Roster
@@ -172,25 +172,128 @@ class NotesSpeakersTest {
 
     private val speakersMac = notesMac.copy(notesSpeakers = true, speakersModel = "not_downloaded")
 
-    @Test fun `turning labels on asks before the Mac downloads its model`() {
+    @Test fun `default recording starts immediately and downloads without writing a preference`() {
         val app = RuntimeEnvironment.getApplication()
         val requests = mutableListOf<String>()
         val store = SettingsStore(app).apply { health = speakersMac }
         val model = NotesModel(app, store, captureFactory = { frame, _, done -> FakeNotesCapture(frame, done) },
             transportFactory = { _, _, event, failure -> NotesWire(event, failure) }, apiFactory = { _, _ -> ScriptedNotesApi() },
             micGranted = { true }, pairing = { Pairing.from("https://mac.example.test/chirp", "synthetic") }, fetchHealth = { _, _ -> null },
-            speakerModel = { _, _, action -> requests += action; "downloading" }, tailscale = TailscalePromptTest.FakeTailscale(),
-            foreground = {}, io = { it() }, journal = null, sessions = null, background = { it() }, audioWork = { it() })
-        model.setSpeakerLabels(true)
-        assertTrue(model.speakerConsent); assertFalse(model.labelSpeakers); assertTrue(requests.isEmpty())
-        model.dismissSpeakerConsent()
-        assertFalse(model.labelSpeakers); assertFalse(store.notesLabelSpeakers)
-        model.setSpeakerLabels(true); model.confirmSpeakerDownload()
+            speakerModel = { _, _, action -> requests += action; if (action == "cancel") "not_downloaded" else "downloading" },
+            tailscale = TailscalePromptTest.FakeTailscale(), foreground = {}, io = { it() }, journal = null, sessions = null,
+            background = { it() }, audioWork = { it() })
+        model.start()
+        assertTrue(model.state.active)
         org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle()
         assertEquals(listOf("download"), requests)
-        assertTrue(model.labelSpeakers); assertTrue(store.notesLabelSpeakers); assertTrue(model.recorder.labelSpeakers)
+        assertTrue(model.labelSpeakers); assertFalse(model.recorder.labelSpeakers)
+        assertFalse(app.getSharedPreferences(SettingsStore.FILE, android.content.Context.MODE_PRIVATE).contains("notes_label_speakers"))
         model.setSpeakerLabels(false)
-        assertFalse(model.recorder.labelSpeakers); assertFalse(store.notesLabelSpeakers)
+        org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle()
+        assertEquals(listOf("download", "cancel"), requests)
+        assertFalse(model.recorder.labelSpeakers); assertTrue(store.notesSpeakersOptedOut)
+    }
+
+    @Test fun `unset defaults on and explicit off survives a new store`() {
+        val app = RuntimeEnvironment.getApplication()
+        val store = SettingsStore(app)
+        assertTrue(store.notesLabelSpeakers); assertFalse(store.notesSpeakersOptedOut)
+        store.notesLabelSpeakers = false
+        assertFalse(SettingsStore(app).notesLabelSpeakers); assertTrue(SettingsStore(app).notesSpeakersOptedOut)
+        store.notesLabelSpeakers = true
+        assertTrue(SettingsStore(app).notesLabelSpeakers); assertFalse(store.notesSpeakersOptedOut)
+    }
+
+    private class ModelRig(initial: Health, off: Boolean = false) {
+        val store = SettingsStore(RuntimeEnvironment.getApplication()).apply { health = initial; if (off) notesLabelSpeakers = false }
+        val scope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.Main.immediate)
+        var latest: Health? = null
+        var answer: String? = "downloading"
+        val requests = mutableListOf<String>()
+        val model = NotesSpeakerModel(store, scope, { it() }, { latest }, { requests += it; answer })
+        fun idle() = org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle()
+    }
+
+    @Test fun `off and old server never request a model or show status`() {
+        for ((health, off) in listOf(speakersMac to true, notesMac to false)) {
+            val rig = ModelRig(health, off)
+            rig.model.activate(); rig.idle()
+            assertTrue(rig.requests.isEmpty()); assertFalse(rig.model.ready); assertNull(rig.model.status)
+        }
+        val rig = NotesModelRig(RuntimeEnvironment.getApplication(), notesMac)
+        rig.record()
+        assertFalse(rig.model.recorder.labelSpeakers); assertNull(rig.wire.speakers)
+    }
+
+    @Test fun `health polling starts labels once ready without changing preference`() {
+        val rig = ModelRig(speakersMac)
+        rig.model.activate(); rig.idle()
+        assertEquals(listOf("download"), rig.requests); assertFalse(rig.model.ready)
+        rig.latest = speakersMac.copy(speakersModel = "ready")
+        rig.model.refresh(); rig.idle()
+        assertTrue(rig.model.ready); assertNull(rig.model.status)
+        assertTrue(rig.store.notesLabelSpeakers)
+    }
+
+    @Test fun `failed download offers retry and cancellation failure keeps explicit off`() {
+        val rig = ModelRig(speakersMac)
+        rig.answer = null
+        rig.model.activate(); rig.idle()
+        assertTrue(rig.model.retryable); assertEquals("Couldn’t download the speaker model.", rig.model.status)
+        rig.latest = speakersMac; rig.model.refresh(); rig.idle()
+        assertTrue(rig.model.retryable) // A health refresh never hides a failed POST.
+        rig.latest = null
+        rig.answer = "downloading"; rig.model.retry(); rig.idle()
+        assertEquals(listOf("download", "download"), rig.requests)
+        rig.model.setLabels(false); rig.idle()
+        assertTrue(rig.model.cancelFailed); assertTrue(rig.store.notesSpeakersOptedOut)
+        rig.answer = "not_downloaded"; rig.model.retry(); rig.idle()
+        assertFalse(rig.model.cancelFailed); assertNull(rig.model.status); assertFalse(rig.model.ready)
+        assertEquals(listOf("download", "download", "cancel", "cancel"), rig.requests)
+    }
+
+    @Test fun `turn off queues cancellation after an in-flight download POST`() {
+        val app = RuntimeEnvironment.getApplication()
+        val store = SettingsStore(app).apply { health = speakersMac }
+        val scope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.Main.immediate)
+        val release = kotlinx.coroutines.CompletableDeferred<Unit>()
+        val requests = mutableListOf<String>()
+        var calls = 0
+        val model = NotesSpeakerModel(store, scope, { work -> if (++calls == 1) release.await(); work() }, { null },
+            { requests += it; if (it == "download") "downloading" else "not_downloaded" })
+        model.activate()
+        model.setLabels(false)
+        release.complete(Unit)
+        org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle()
+        assertEquals(listOf("download", "cancel"), requests)
+        assertFalse(model.enabled); assertFalse(model.ready); assertNull(model.status)
+        assertTrue(store.notesSpeakersOptedOut)
+    }
+
+    @Test fun `an installed model that cannot load is replaced on Retry`() {
+        val app = RuntimeEnvironment.getApplication()
+        val store = SettingsStore(app).apply { health = speakersMac.copy(speakersModel = "ready") }
+        val scope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.Main.immediate)
+        val requests = mutableListOf<String>()
+        val model = NotesSpeakerModel(store, scope, { it() }, { null },
+            { requests += it; if (it == "remove") "not_downloaded" else "downloading" })
+        model.unavailable()
+        assertFalse(model.ready); assertTrue(model.retryable)
+        model.refresh(); org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle()
+        model.retry(); org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle()
+        assertEquals(listOf("remove", "download"), requests)
+        assertTrue(store.notesLabelSpeakers)
+    }
+
+    @Test fun `damaged model waits for retry and settings refresh sees the latest health`() {
+        val rig = ModelRig(speakersMac.copy(speakersModel = "failed", speakersModelBytes = 26_530_309))
+        rig.model.activate(); rig.idle()
+        assertTrue(rig.requests.isEmpty()); assertTrue(rig.model.retryable)
+        rig.model.retry(); rig.idle()
+        assertEquals("Getting the speaker model ready (27 MB, once)…", rig.model.status)
+        rig.latest = speakersMac.copy(speakersModel = "ready")
+        rig.model.refresh(); rig.idle()
+        assertEquals("ready", rig.store.health?.speakersModel); assertTrue(rig.model.ready)
     }
 
     @Test fun `renaming offers to replace the old name in the notes`() {
@@ -247,7 +350,8 @@ class NotesSpeakersRenderTest {
         compose.onNodeWithContentDescription("Person 2. Rename or merge this speaker").performClick()
         compose.onNodeWithText("Rename “Person 2”…").performClick()
         compose.onNode(hasSetTextAction()).performTextInput("Maya")
-        shot("rename")
+        for (night in listOf(false, true)) { compose.runOnIdle { dark.value = night }; shot("rename") }
+        compose.runOnIdle { dark.value = false }
         compose.onNodeWithText("Rename").performClick()
         compose.onNodeWithText("Maya").assertIsDisplayed()
         assertTrue(rig.model.export().contains("Maya:** Who owns the invite?"))
@@ -257,19 +361,62 @@ class NotesSpeakersRenderTest {
         compose.waitForIdle()
         assertEquals("Maya", rig.model.document.roster.displayName(3))
         compose.onNodeWithText("Person 3").assertDoesNotExist()
-        shot("merged")
+        for (night in listOf(false, true)) { compose.runOnIdle { dark.value = night }; shot("merged") }
+        compose.runOnIdle { dark.value = false }
         compose.onNodeWithContentDescription("Maya. Rename or merge this speaker").performClick()
         compose.onNodeWithText("Separate Person 3").performClick()
         compose.onNodeWithText("Person 3").assertIsDisplayed()
     }
 
-    @Test @Config(qualifiers = "w411dp-h891dp-mdpi") fun `the notes menu offers the switch and the consent dialog`() {
-        val rig = NotesModelRig(RuntimeEnvironment.getApplication(), notesMac.copy(notesSpeakers = true, speakersModel = "not_downloaded"))
-        compose.setContent { dev.chirp.android.ui.ChirpTheme(false) { NotesScreen(rig.model, rig.model::toggle, {}, {}, {}, {}) } }
-        compose.onNodeWithContentDescription("More options").performClick()
-        compose.onNodeWithText("Label speakers").performClick()
-        compose.onNodeWithText("Label speakers?").assertIsDisplayed()
-        compose.onNodeWithText("Not now").performClick()
+    @Test @Config(qualifiers = "w411dp-h891dp-mdpi") fun `preparing status and turn off are visible in light and dark`() {
+        val output = File(System.getProperty("chirp.screenshots")).apply { mkdirs() }
+        val rig = NotesModelRig(RuntimeEnvironment.getApplication(), notesMac.copy(notesSpeakers = true,
+            speakersModel = "not_downloaded", speakersModelBytes = 26_530_309))
+        val dark = mutableStateOf(false)
+        compose.setContent { dev.chirp.android.ui.ChirpTheme(dark.value) { NotesScreen(rig.model, rig.model::toggle, {}, {}, {}, {}) } }
+        compose.onNodeWithText("Getting the speaker model ready (27 MB, once)…").assertIsDisplayed()
+        for (night in listOf(false, true)) {
+            compose.runOnIdle { dark.value = night }; compose.mainClock.advanceTimeBy(2000); compose.waitForIdle()
+            val bitmap = notesScreenshot(compose.onRoot(), false)
+            File(output, "notes-speakers-preparing-${if (night) "dark" else "light"}.png").outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
+        }
+        compose.onNodeWithText("Turn off").performClick()
         assertFalse(rig.model.labelSpeakers)
+    }
+
+    @Test @Config(qualifiers = "w411dp-h891dp-mdpi") fun `settings refreshes cached health and offers remove with no consent`() {
+        val app = RuntimeEnvironment.getApplication()
+        val store = SettingsStore(app).apply { health = notesMac }
+        val scope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.Main.immediate)
+        val requests = mutableListOf<String>()
+        val speakers = NotesSpeakerModel(store, scope, { it() },
+            { notesMac.copy(notesSpeakers = true, speakersModel = "ready") }, { requests += it; "not_downloaded" })
+        compose.setContent { dev.chirp.android.ui.ChirpTheme(false) {
+            androidx.compose.foundation.lazy.LazyColumn { item { NotesSettings(speakerState = speakers) } }
+        } }
+        compose.onNodeWithText("Remove speaker model").performScrollTo().assertIsDisplayed()
+        assertEquals("ready", store.health?.speakersModel)
+        compose.onNodeWithText("Remove speaker model").performClick()
+        compose.waitForIdle()
+        assertEquals(listOf("remove"), requests)
+        compose.onNodeWithText("Label speakers?").assertDoesNotExist()
+    }
+
+    @Test @Config(qualifiers = "w411dp-h891dp-mdpi") fun `model status has inline retry and turn off in light and dark`() {
+        val output = File(System.getProperty("chirp.screenshots")).apply { mkdirs() }
+        val rig = NotesModelRig(RuntimeEnvironment.getApplication(), notesMac.copy(notesSpeakers = true, speakersModel = "failed"))
+        val dark = mutableStateOf(false)
+        compose.setContent { dev.chirp.android.ui.ChirpTheme(dark.value) { NotesScreen(rig.model, rig.model::toggle, {}, {}, {}, {}) } }
+        compose.onNodeWithText("Couldn’t download the speaker model.").assertIsDisplayed()
+        compose.onNodeWithText("Retry").assertIsDisplayed()
+        compose.onNodeWithText("Label speakers?").assertDoesNotExist()
+        for (night in listOf(false, true)) {
+            compose.runOnIdle { dark.value = night }; compose.mainClock.advanceTimeBy(2000); compose.waitForIdle()
+            val bitmap = notesScreenshot(compose.onRoot(), false)
+            File(output, "notes-speakers-status-${if (night) "dark" else "light"}.png").outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
+        }
+        compose.onNodeWithText("Turn off").performClick()
+        assertFalse(rig.model.labelSpeakers)
+        compose.onNodeWithText("Couldn’t download the speaker model.").assertDoesNotExist()
     }
 }

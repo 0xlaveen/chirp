@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """Speaker labels end to end (#187), run by emulator-notes-check.py: two synthetic voices (macOS `say`,
 Samantha then Daniel, looped with silence) through the real NotesCapture and rolling /v1/stream sockets
-to the throwaway server's WeSpeaker model. Turns Label speakers on from the note's menu through the
-consent dialog (the offline server's download played by a file copy), then requires two distinct people in the transcript, a rename from a chip that lands
-everywhere, and kept-audio replay of a labelled segment. Prints states and counts, never text."""
+to the throwaway server's WeSpeaker model. Labels default on and the phone requests its model
+without consent; the offline fixture copies and verifies the pinned file. Requires exactly two
+people, rename persistence, and kept-audio replay. Prints states and counts, never text."""
 import json
+import os
 import shlex
 import time
 from pathlib import Path
@@ -59,15 +60,27 @@ def check(probe, work, output, standalone=False):
     probe['wait_for']('Record new note', 60)
     before = server().get('finals', 0)
     tap('Record new note')
+    probe['wait_for']('Turn off', 90)
+    screenshot('emulator-speakers-status.png')
+    if os.environ.get('CHIRP_E2E_SPEAKER_CANCEL') == '1':
+        # Against the cancellation-capable server branch: turn off stops its active fetch,
+        # leaves the preference off, then a deliberate on starts a fresh download.
+        tap('Turn off')
+        wait(lambda: server().get('model_actions', [])[-1:] == ['cancel'] and
+             server().get('model_state') == 'not_downloaded', 'Turn off did not cancel the active fetch', 30)
+        assert probe['find']('Turn off') is None, 'Model status remained after turning labels off'
+        probe['click']('More options')
+        tap('Label speakers')
+        probe['wait_for']('Turn off', 90)
+        wait(lambda: server().get('model_actions', [])[-1:] == ['download'] and
+             server().get('model_state') == 'downloading', 'Explicit on did not restart the download', 30)
+        log('PASS: Turn off cancelled the active download; explicit on restarted it')
+    probe['speakers_model']()  # Release only after the inline preparation status was captured.
     wait(lambda: server().get('finals', 0) >= before + 1, 'The two-voice recording did not reach the transcript')
-    # Smart options: the Mac has no speaker model yet, so Label speakers asks before it downloads one.
-    probe['click']('More options')
-    tap('Label speakers')
-    probe['wait_for']('Label speakers?', 20)
-    screenshot('emulator-speakers-consent.png')
-    probe['speakers_model']()  # the download's stand-in: the pinned file arrives in the server's model cache
-    tap('Download')
-    wait(lambda: 200 in server().get('model', []), 'The consented download never reached /v1/speakers/model', 30)
+    # No switch or consent: the first note requests the model by itself.
+    wait(lambda: any(code in (200, 202) for code in server().get('model', [])),
+         'The automatic download never reached /v1/speakers/model', 30)
+    assert probe['find']('Label speakers?') is None, 'A consent dialog blocked default-on labels'
     labelled = server().get('labelled', 0)
     wait(lambda: server().get('labelled', 0) >= labelled + 2 and len(server().get('slots', [])) >= 2,
          'Two labelled segments with two distinct speakers did not arrive', 180)
@@ -80,12 +93,12 @@ def check(probe, work, output, standalone=False):
     tap('Transcript')
     deadline = time.monotonic() + 30
     while len(chips()) < 2:
-        assert time.monotonic() < deadline, 'The transcript does not show two speakers: ' + json.dumps(chips())
+        assert time.monotonic() < deadline, 'The transcript does not show two speaker chips'
         time.sleep(1)
     people = chips()
-    assert people == ['Person 1', 'Person 2'], 'Two voices must be exactly two people: ' + json.dumps(people)
+    assert people == ['Person 1', 'Person 2'], 'Two voices must be exactly two people'
     screenshot('emulator-speakers-transcript.png')
-    log('Transcript speakers: %s' % people)
+    log('Transcript speaker count: %d' % len(people))
 
     # Rename from a chip: the new name replaces "Person 2" everywhere in the note.
     tap('Person 2' + CHIP)
@@ -95,12 +108,20 @@ def check(probe, work, output, standalone=False):
         assert time.monotonic() < deadline, 'The rename field did not open'
         time.sleep(.5)
     adb('shell', 'input', 'tap', *map(str, probe['center'](fields[-1])))
-    adb('shell', 'input', 'text', 'Maya')
-    time.sleep(1)
+    # On a loaded host the input service can drop characters: type until the field holds the whole name.
+    for _ in range(5):
+        adb('shell', 'input', 'text', 'Maya')
+        time.sleep(1)
+        field = [n for n in nodes() if n.get('class') == 'android.widget.EditText']
+        if field and field[-1].get('text') == 'Maya': break
+        adb('shell', 'input', 'keycombination', 'KEYCODE_CTRL_LEFT', 'KEYCODE_A')
+        adb('shell', 'input', 'keyevent', 'KEYCODE_DEL')
+    else:
+        raise AssertionError('Could not type the new name into the rename field')
     adb('shell', 'input', 'keyevent', 'KEYCODE_ENTER')
     deadline = time.monotonic() + 20
     while 'Maya' not in chips():
-        assert time.monotonic() < deadline, 'The rename did not reach the transcript: ' + json.dumps(chips())
+        assert time.monotonic() < deadline, 'The rename did not reach the transcript'
         time.sleep(1)
     assert 'Person 2' not in chips(), 'Person 2 is still shown after the rename'
     screenshot('emulator-speakers-renamed.png')
@@ -120,4 +141,4 @@ def check(probe, work, output, standalone=False):
     adb('shell', 'am', 'force-stop', package)
     adb('shell', 'run-as', package, 'sh', '-c', shlex.quote('cat > shared_prefs/debug_capture.xml'),
         data=b'<?xml version="1.0" encoding="utf-8"?><map><boolean name="synthetic" value="true" /></map>')
-    log('PASS: speaker labels: consent → model ready, two voices → two people, rename from a chip, labelled kept-audio replay')
+    log('PASS: speaker labels: default on → automatic model ready, two voices → two people, rename from a chip, labelled kept-audio replay')

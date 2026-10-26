@@ -112,7 +112,6 @@ internal fun NotesScreen(model: NotesModel, record: () -> Unit, copy: () -> Unit
     if (settings) ModalBottomSheet({ settings = false }) {
         Column(Modifier.padding(start = 16.dp, end = 16.dp, bottom = 24.dp)) { NotesSettings(title = "Notes settings") }
     }
-    if (model.speakerConsent) SpeakerConsentDialog(model::confirmSpeakerDownload, model::dismissSpeakerConsent)
     if (transcript && !externalTranscript) ModalBottomSheet({ transcript = false }, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         TranscriptPane(model, Modifier.fillMaxWidth().fillMaxHeight(.85f).padding(horizontal = 24.dp), close = { transcript = false })
     }
@@ -147,6 +146,7 @@ internal fun NotesScreen(model: NotesModel, record: () -> Unit, copy: () -> Unit
                         model.retained -> StatusBanner(StatusKind.Error, stringResource(R.string.debug_retention))
                         action != null -> StatusBanner(StatusKind.Warning, model.status, action = action.label, onAction = { act(action) })
                         model.recovered != null -> StatusBanner(StatusKind.Info, "Recovered note", body = "Your note was recovered and kept on this phone.")
+                        model.speakerModelControl.status != null -> SpeakerModelStatus(model.speakerModelControl)
                         model.explanation != null -> Text(model.explanation!!, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
@@ -475,7 +475,6 @@ internal fun TranscriptPane(model: NotesModel, modifier: Modifier, titled: Boole
             if (close != null) IconButton(close) { Icon(painterResource(R.drawable.ic_close), "Close transcript") }
         }
         if (playbackFailed) Text("Couldn’t play kept audio. Try another segment.", Modifier.padding(vertical = 8.dp), color = scheme.error, style = MaterialTheme.typography.bodyMedium)
-        model.speakerNote?.let { Text(it, Modifier.padding(vertical = 4.dp), color = scheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall) }
         val document = model.document
         val roster = document.roster
         var renaming by remember { mutableStateOf<Int?>(null) }
@@ -484,6 +483,7 @@ internal fun TranscriptPane(model: NotesModel, modifier: Modifier, titled: Boole
         }
         // A copy: the document's list is the same object as it grows, which the lazy list would not see change.
         val rows = document.segments.toList()
+        model.speakerNote?.let { Text(it, Modifier.padding(vertical = 4.dp), color = scheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall) }
         // A chip where the speaker changes (after merges), so one person's run of turns reads as one.
         val chips = HashSet<Pair<Int, Int>>().apply {
             var last: Int? = null

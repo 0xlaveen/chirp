@@ -107,3 +107,18 @@ original value (delete it if previously null).
   edge at mid-height. Retry placement only after looking for an already placed widget, or a slow launcher gets two.
 - **Use raw:** the action lasts 5 s, longer than a hierarchy dump round trip. Start `await-action` right after the
   bubble tap (one UiAutomation connection at a time, so no concurrent dumps) instead of polling from Python.
+
+# Speaker labels and cancellation
+
+With `CHIRP_SPEAKER_MODEL` set to the pinned ONNX file, the speakers phase runs
+without changing the Label speakers preference or accepting a dialog. The
+throwaway server holds its verified file-copy fixture until the check captures
+the preparation banner, then labels two synthetic voices. No network download
+or live model cache is used.
+
+For integration with a cancellation-capable server checkout, set
+`CHIRP_E2E_SERVER_ROOT=/path/to/checkout/server` and
+`CHIRP_E2E_SPEAKER_CANCEL=1`. Sync that checkout's virtual environment first.
+The extra check turns labels off during preparation, requires `cancel` to return
+`not_downloaded`, explicitly turns labels on, and then completes the same
+speaker/rename/replay flow. This uses the same host-wide emulator lease.
