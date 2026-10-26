@@ -287,6 +287,7 @@ public final class SettingsForm {
     private let speakerHelp = SettingsForm.help("")
     /// Notes: "Recognize saved voices" and the saved voices, each with Forget.
     public let voicesView = VoiceProfilesView()
+    public let savedVoicesButton = NSButton(title: "Saved Voices…", target: nil, action: nil)
     /// Notes: brings the Notes window forward.
     public let notesButton = NSButton(title: "Open Notes Library", target: nil, action: nil)
     /// About: the icon, the version and Third-Party Notices….
@@ -494,7 +495,7 @@ public final class SettingsForm {
             SettingsSection("Speakers", [
                 row(nil, labelSpeakers, help: Self.help("On by default. Shows who said what as Person 1, Person 2… in the transcript, the notes and exports. Voices are told apart on this Mac only.")),
                 row(nil, stack([speakerStatus, speakerHelp])),
-                row("Saved voices", voicesView, stacked: true),
+                row("Saved voices", savedVoicesButton, help: Self.help("Names recognised on your devices by this Chirp server.")),
             ]),
         ])
 

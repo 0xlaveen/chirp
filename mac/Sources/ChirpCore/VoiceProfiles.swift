@@ -1,10 +1,9 @@
 import Foundation
 import Security
 
-/// Live Notes voice profiles (issue #18 M3, opt-in): a saved person's voice as one 256-number voiceprint, so Chirp can
-/// *suggest* their name for a Person N. Voiceprints are biometric data. A session's voiceprints live in memory only;
-/// a profile is saved only on the user's "Remember", only in this Mac's Keychain, and never leaves it: no file, no
-/// UserDefaults, no log, no export and no request ever carries one.
+/// Legacy Mac voiceprints (#18), retained for one-time migration to the shared server library and the model bench.
+/// The app never creates new Keychain profiles. Import sends an existing voiceprint only to the user's own server;
+/// after acknowledgement its Keychain item is deleted. Clips, voiceprints and names are never logged.
 
 /// One voice heard in this session: the duration-weighted sum of the embeddings of its settled turns of 2 s or more.
 public struct Voiceprint: Equatable, Sendable {
@@ -49,7 +48,7 @@ public struct Voiceprint: Equatable, Sendable {
     }
 }
 
-/// A remembered voice: what one Keychain item holds.
+/// A legacy remembered voice: what one Keychain item holds until imported.
 public struct VoiceProfile: Codable, Equatable, Sendable, Identifiable {
     public var id: UUID
     public var name: String
@@ -74,7 +73,7 @@ public struct VoiceProfile: Codable, Equatable, Sendable, Identifiable {
     }
 }
 
-/// Where profiles are kept. The app's is the Keychain; tests use memory.
+/// Legacy migration source. The app reads and deletes Keychain items; tests use memory.
 public protocol VoiceProfileStore: Sendable {
     func load() throws -> [VoiceProfile]
     func save(_ profile: VoiceProfile) throws

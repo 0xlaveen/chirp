@@ -32,7 +32,7 @@ struct NameSpeakersDraft: Equatable {
             if let target = row.mergeInto { return SpeakerNaming(person: row.id, mergeInto: target) }
             let current = Self.trimmed(document.roster.person(id: row.id)?.name ?? "")
             let name = Self.trimmed(row.name)
-            return name == current ? nil : SpeakerNaming(person: row.id, name: name)
+            return name == current && row.remember ? nil : SpeakerNaming(person: row.id, name: name, remember: row.remember)
         }
     }
 
@@ -208,11 +208,11 @@ struct NameSpeakersSheet: View {
                 .fixedSize()
                 .disabled(others.isEmpty && !merged)
                 .help("Two voices that are one person")
-                if voices.enabled, voices.linked[row.id] == nil, !merged {
+                if voices.enabled, !merged {
                     Toggle("Remember voice", isOn: $state.draft.rows[i].remember)
                         .toggleStyle(.checkbox)
                         .controlSize(.small)
-                        .disabled(typed.isEmpty || !voices.canRemember.contains(row.id))
+                        .disabled(typed.isEmpty)
                         .help(voices.canRemember.contains(row.id) ? "Chirp recognises this voice in later notes"
                               : VoiceText.needs(voices.seconds[row.id] ?? 0))
                 }
@@ -265,9 +265,7 @@ struct NameSpeakersSheet: View {
     private func done() {
         let document = model.document
         let namings = draft.namings(in: document)
-        let remember = draft.remembered(in: document, voices: model.voices)
         if !namings.isEmpty { model.onSpeakerEdit(.nameSpeakers(namings, replaceInNotes: draft.replace)) }
-        for person in remember { model.onSpeakerEdit(.rememberVoice(person)) }
         model.nameLineDismissed.insert(document.id)
         model.endNamingSpeakers()
     }

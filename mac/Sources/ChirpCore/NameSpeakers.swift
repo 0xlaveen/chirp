@@ -8,11 +8,13 @@ public struct SpeakerNaming: Equatable, Sendable {
     public var person: Int
     public var name: String?
     public var mergeInto: Int?
+    public var remember: Bool
 
-    public init(person: Int, name: String? = nil, mergeInto: Int? = nil) {
+    public init(person: Int, name: String? = nil, mergeInto: Int? = nil, remember: Bool = true) {
         self.person = person
         self.name = name
         self.mergeInto = mergeInto
+        self.remember = remember
     }
 }
 

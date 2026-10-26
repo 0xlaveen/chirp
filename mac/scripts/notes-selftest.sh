@@ -1,24 +1,26 @@
 #!/bin/bash
 # Live Notes smoke test: a `say` recording through `ChirpMac --notes-selftest` against a throwaway chirp-server
 # (temporary HOME and token, port 7899), once clean and once with a dropped socket. Never the running app, its
-# preferences or port 7821. Usage: mac/scripts/notes-selftest.sh [--real-time] [--fault PLAN] [--speakers]
+# preferences or port 7821. Usage: mac/scripts/notes-selftest.sh [--real-time] [--fault PLAN] [--speakers] [--voices]
 #
 # --speakers adds a third run: a ~60 s two-voice meeting (macOS `say` voices Samantha and Daniel taking turns) with
 # Label speakers left at its default (on, which proves the default), through the notes library, which must come back
 # as exactly two people, with a rename of Person 2 reaching every turn, the export and the structuring transcript.
 # It needs the on-device speaker model already on this Mac (record once with Label speakers on); it never downloads it.
+# --voices adds a second note: name Samantha in note 1, recognise her automatically in note 2, reject the match,
+# then round-trip rename, disable/enable and forget on the throwaway server. Needs its cached ONNX speaker model.
 # CHIRP_MAC_SCRATCH builds outside the checkout (a checkout under ~/Documents can hang on TCC).
 set -euo pipefail
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
 PORT=${CHIRP_NOTES_SELFTEST_PORT:-7899}
 MODEL_DIR=${CHIRP_MODEL_DIR:-$HOME/.koi/voice-models/parakeet-mlx}
-PACE=--fast; FAULT=drop@14; SPEAKERS=
+PACE=--fast; FAULT=drop@14; SPEAKERS=; VOICES=
 while [ $# -gt 0 ]; do
-  case $1 in --real-time) PACE= ;; --fault) FAULT=$2; shift ;; --speakers) SPEAKERS=1 ;; *) echo "unknown arg $1" >&2; exit 64 ;; esac
+  case $1 in --real-time) PACE= ;; --fault) FAULT=$2; shift ;; --speakers) SPEAKERS=1 ;; --voices) SPEAKERS=1; VOICES=--voices ;; *) echo "unknown arg $1" >&2; exit 64 ;; esac
   shift
 done
 [ "$PORT" = 7821 ] && { echo "refusing port 7821 (the app's server)" >&2; exit 64; }
-if curl -s -m 1 "http://127.0.0.1:$PORT/v1/health" >/dev/null 2>&1; then
+if lsof -nP -iTCP:"$PORT" -sTCP:LISTEN >/dev/null 2>&1; then
   echo "port $PORT is in use; set CHIRP_NOTES_SELFTEST_PORT" >&2; exit 1
 fi
 
@@ -59,6 +61,14 @@ TURNS
     -ar 16000 -ac 1 -c:a pcm_s16le "$WORK/two.wav"
 fi
 
+if [ -n "$VOICES" ]; then
+  SPEAKER_FILE=voxceleb_resnet34_LM.onnx
+  SPEAKER_SOURCE=${CHIRP_SPEAKER_MODEL:-$HOME/Library/Application Support/Chirp/models/speakers/$SPEAKER_FILE}
+  [ -f "$SPEAKER_SOURCE" ] || { echo "--voices needs the cached server speaker model (or CHIRP_SPEAKER_MODEL)" >&2; exit 1; }
+  mkdir -p "$WORK/Library/Application Support/Chirp/models/speakers"
+  cp "$SPEAKER_SOURCE" "$WORK/Library/Application Support/Chirp/models/speakers/$SPEAKER_FILE"
+fi
+
 cd "$ROOT/server"
 uv sync --locked -q
 HOME="$WORK" UV_CACHE_DIR="${UV_CACHE_DIR:-$HOME/.cache/uv}" \
@@ -83,7 +93,7 @@ echo "== notes-selftest --fault $FAULT"
 if [ -n "$SPEAKERS" ]; then
   echo "== notes-selftest --speakers 2 (two voices, the library, a rename)"
   "$MAC" --notes-selftest "$WORK/two.wav" --url "http://127.0.0.1:$PORT" --token-file "$TOKEN" $PACE \
-    --speakers 2 --library --snapshot "$WORK/snapshots" --expect spreadsheet || fail=1
+    --speakers 2 --library $VOICES --snapshot "$WORK/snapshots" --expect spreadsheet || fail=1
 fi
 
 echo "== privacy: transcript words in server log (expect 0)"

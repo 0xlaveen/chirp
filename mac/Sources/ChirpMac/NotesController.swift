@@ -28,7 +28,10 @@ extension NotesSession {
             speakerStore: SortformerModelStore(), journalStore: NotesJournalStore())
         deps.library = NotesLibrary()
         deps.edit = { request in try await Self.edit(request) }
-        deps.voiceModelStore = WeSpeakerModelStore()
+        deps.voiceClient = VoiceLibraryClient(list: { try await settings.serverConfig().savedVoices() },
+            action: { try await settings.serverConfig().savedVoices($0) },
+            identify: { try await settings.serverConfig().identifyVoices($0) },
+            prepare: { try await Self.prepareSavedVoiceModel(settings.serverConfig()) })
         deps.voiceProfileStore = KeychainVoiceProfileStore()
         deps.requestMicrophone = { await Permissions.requestMicrophone() }
         deps.openMicrophoneSettings = { Permissions.openSettings(.microphone) }
@@ -49,6 +52,22 @@ extension NotesSession {
         deps.callApps = { CallAudio.apps() }
         deps.openCallAudioSettings = { Permissions.openSettings(.systemAudio) }
         self.init(deps)
+    }
+
+    /// The shared library uses the server's pinned model. Prepare it on first clip use, without a local-model prompt.
+    /// Record and labels keep running while this request waits; failure leaves the name in its note for a retry.
+    private nonisolated static func prepareSavedVoiceModel(_ server: ServerConfig) async throws {
+        var state = try await server.fetchHealth().speakersModel?.state
+        if state == .ready { return }
+        if state == .notDownloaded || state == .failed { state = try await server.speakersModel(.download).state }
+        for _ in 0..<90 {
+            try Task.checkCancellation()
+            if state == .ready { return }
+            guard state == .downloading else { throw VoiceLibraryError.unavailable }
+            try await Task.sleep(for: .seconds(1))
+            state = try await server.fetchHealth().speakersModel?.state
+        }
+        throw VoiceLibraryError.unavailable
     }
 
     /// One structuring call, logged with counts and the guard name only.

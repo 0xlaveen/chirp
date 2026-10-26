@@ -37,6 +37,7 @@ final class SettingsWindowController: NSObject, NSTextFieldDelegate {
     var notesRecording: () -> Bool = { false }
     /// Live Notes voice profiles (Settings › Notes › Voices).
     var voices: SpeakerVoices?
+    private var voicesPanel: NSPanel?
     /// The Notes library: Recently Deleted's count and the kept-audio total, and the two bulk actions on them.
     var library: NotesLibrary?
     var onNotesRecoveryCopyChange: (() -> Void)?
@@ -151,6 +152,7 @@ final class SettingsWindowController: NSObject, NSTextFieldDelegate {
     func show(tab: SettingsTab? = nil) {
         if window == nil { window = makeWindow() }
         refresh()
+        Task { await voices?.refresh() }
         if let tab { tabs?.shell.show(tab, notify: false) }
         Task { [weak self] in
             try? await self?.library?.reload()
@@ -349,6 +351,10 @@ final class SettingsWindowController: NSObject, NSTextFieldDelegate {
         form.removeSpeakerModel.action = #selector(removeSpeakerModel)
         form.retrySpeakerModel.target = self
         form.retrySpeakerModel.action = #selector(retrySpeakerModel)
+        form.savedVoicesButton.target = self
+        form.savedVoicesButton.action = #selector(showSavedVoices)
+        form.voicesView.onRefresh = { [weak self] in Task { await self?.voices?.refresh() } }
+        form.voicesView.onRename = { [weak self] in self?.renameSavedVoice($0) }
         form.voicesView.onToggle = { [weak self] in self?.toggleVoices($0) }
         form.voicesView.onForget = { [weak self] in self?.confirmForgetVoice($0) }
         form.voicesView.onForgetAll = { [weak self] in self?.confirmForgetVoice(nil) }
@@ -507,40 +513,97 @@ final class SettingsWindowController: NSObject, NSTextFieldDelegate {
 
     // MARK: voice profiles
 
+    @objc private func showSavedVoices() {
+        guard let window, let view = form?.voicesView else { return }
+        let panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 520, height: 520), styleMask: [.titled], backing: .buffered, defer: false)
+        panel.title = "Saved voices"
+        let controller = NSViewController()
+        let content = NSView()
+        controller.view = content
+        let scroll = NSScrollView()
+        scroll.hasVerticalScroller = true; scroll.drawsBackground = false
+        let wrapper = NSView()
+        wrapper.translatesAutoresizingMaskIntoConstraints = false
+        view.translatesAutoresizingMaskIntoConstraints = false
+        wrapper.addSubview(view)
+        scroll.documentView = wrapper
+        let done = NSButton(title: "Done", target: self, action: #selector(closeSavedVoices))
+        done.bezelStyle = .rounded; done.keyEquivalent = "\r"
+        for child in [scroll, done] { child.translatesAutoresizingMaskIntoConstraints = false; content.addSubview(child) }
+        NSLayoutConstraint.activate([
+            scroll.topAnchor.constraint(equalTo: content.topAnchor, constant: 20),
+            scroll.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: 24),
+            scroll.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -24),
+            scroll.bottomAnchor.constraint(equalTo: done.topAnchor, constant: -16),
+            done.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -24),
+            done.bottomAnchor.constraint(equalTo: content.bottomAnchor, constant: -16),
+            wrapper.widthAnchor.constraint(equalTo: scroll.contentView.widthAnchor),
+            view.leadingAnchor.constraint(equalTo: wrapper.leadingAnchor), view.topAnchor.constraint(equalTo: wrapper.topAnchor),
+            wrapper.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: 16)
+        ])
+        panel.contentViewController = controller
+        voicesPanel = panel
+        window.beginSheet(panel)
+        Task { await voices?.refresh() }
+    }
+
+    @objc private func closeSavedVoices() {
+        if let panel = voicesPanel { window?.endSheet(panel) }
+        voicesPanel = nil
+    }
+
+    private func renameSavedVoice(_ profile: SavedVoice) {
+        guard let voices, let window = voicesPanel ?? window else { return }
+        let alert = NSAlert()
+        alert.messageText = "Rename saved voice"
+        alert.informativeText = "Existing notes keep their names."
+        let field = NSTextField(string: profile.name)
+        field.frame = NSRect(x: 0, y: 0, width: 300, height: 24)
+        alert.accessoryView = field
+        alert.addButton(withTitle: "Rename"); alert.addButton(withTitle: "Cancel")
+        alert.beginSheetModal(for: window) { response in
+            guard response == .alertFirstButtonReturn else { return }
+            Task { await voices.perform(.rename(voice: profile.id, name: field.stringValue)) }
+        }
+    }
+
     private var voicesState: VoiceProfilesState {
         var v = VoiceProfilesState()
         guard let voices else { return v }
         v.enabled = voices.enabled
-        v.model = voices.model
+        v.supported = voices.supported
+        v.busy = voices.busy
+        v.error = voices.error
         v.profiles = voices.profiles
-        v.modelID = voices.modelID
         return v
     }
 
     /// The voice switch, the model or the saved voices changed.
     func voicesChanged() { form?.voicesView.apply(voicesState) }
 
-    /// On asks before the one model download (`confirmVoiceDownload`); off with saved voices asks whether to forget them.
+    /// The server-wide stop-storing control. Disable first, then offer to delete the library too.
     private func toggleVoices(_ on: Bool) {
         guard let voices else { return }
-        guard !on else { voices.setEnabled(true); voicesChanged(); return }
+        if on { Task { await voices.perform(.enable) }; return }
         let count = voices.profiles.count
-        voices.setEnabled(false)
-        guard count > 0, let window else { return }
-        let alert = NSAlert()
-        alert.messageText = VoiceProfilesText.turnOffTitle(count)
-        alert.informativeText = VoiceProfilesText.turnOffDetail
-        alert.addButton(withTitle: "Forget")
-        alert.addButton(withTitle: "Keep")
-        alert.buttons[0].hasDestructiveAction = true
-        alert.beginSheetModal(for: window) { response in
-            if response == .alertFirstButtonReturn { voices.forgetAll() }
+        Task { [weak self] in
+            guard await voices.perform(.disable(forget: false)), count > 0,
+                  let self, let window = self.voicesPanel ?? self.window else { return }
+            let alert = NSAlert()
+            alert.messageText = VoiceProfilesText.turnOffTitle(count)
+            alert.informativeText = VoiceProfilesText.turnOffDetail
+            alert.addButton(withTitle: "Forget")
+            alert.addButton(withTitle: "Keep")
+            alert.buttons[0].hasDestructiveAction = true
+            alert.beginSheetModal(for: window) { response in
+                if response == .alertFirstButtonReturn { Task { await voices.perform(.forgetAll) } }
+            }
         }
     }
 
     /// Forget one saved voice (or all, for nil), after asking.
-    private func confirmForgetVoice(_ profile: VoiceProfile?) {
-        guard let voices, let window else { return }
+    private func confirmForgetVoice(_ profile: SavedVoice?) {
+        guard let voices, let window = voicesPanel ?? window else { return }
         let alert = NSAlert()
         alert.alertStyle = .warning
         alert.messageText = profile.map(VoiceProfilesText.forgetTitle) ?? VoiceProfilesText.forgetAllTitle
@@ -550,25 +613,8 @@ final class SettingsWindowController: NSObject, NSTextFieldDelegate {
         alert.buttons[0].hasDestructiveAction = true
         alert.beginSheetModal(for: window) { response in
             guard response == .alertFirstButtonReturn else { return }
-            if let profile { voices.forget(profile.id) } else { voices.forgetAll() }
+            if let profile { Task { await voices.perform(.forget(voice: profile.id)) } } else { Task { await voices.perform(.forgetAll) } }
         }
-    }
-
-    /// The one-time voice model download asks first: nothing downloads without "Download".
-    func confirmVoiceDownload(_ prompt: SpeakerVoices.Prompt, done: @escaping (Bool) -> Void) {
-        let alert = NSAlert()
-        alert.messageText = "Download the voice model?"
-        switch prompt {
-        case .download(let size): alert.informativeText = VoiceProfilesText.downloadPrompt(size: size)
-        case .redownload(let size): alert.informativeText = VoiceProfilesText.redownloadPrompt(size: size)
-        }
-        alert.addButton(withTitle: "Download")
-        alert.addButton(withTitle: "Cancel")
-        let handle: (NSApplication.ModalResponse) -> Void = { [weak self] in
-            done($0 == .alertFirstButtonReturn)
-            self?.voicesChanged()
-        }
-        if let window, window.isVisible { alert.beginSheetModal(for: window, completionHandler: handle) } else { handle(alert.runModal()) }
     }
 
     /// The notices shipped in the app bundle (`bundle.sh` copies them); the repository copy for a bare `swift run`.
