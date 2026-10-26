@@ -64,9 +64,11 @@ final class ChirpNotesUITests: XCTestCase {
         defer { XCUIDevice.shared.appearance = original }
         let pad = UIDevice.current.userInterfaceIdiom == .pad
         if pad { XCUIDevice.shared.orientation = .landscapeLeft }
-        for appearance in [XCUIDevice.Appearance.light, .dark] {
-            XCUIDevice.shared.appearance = appearance
+        let fixed = ProcessInfo.processInfo.environment["CHIRP_NOTES_APPEARANCE"]
+        let appearances: [XCUIDevice.Appearance] = fixed == "dark" ? [.dark] : fixed == "light" ? [.light] : [.light, .dark]
+        for appearance in appearances {
             let app = launch(["--chirp-notes-gallery"])
+            XCUIDevice.shared.appearance = appearance
             func capture(_ name: String) {
                 let shot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
                 shot.name = name + (appearance == .dark ? "-dark" : "-light")
