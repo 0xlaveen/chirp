@@ -26,7 +26,7 @@ public final class UiHierarchy {
             AccessibilityServiceInfo info = automation.getServiceInfo();
             info.flags |= AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS | AccessibilityServiceInfo.FLAG_REPORT_VIEW_IDS;
             automation.setServiceInfo(info);
-            if (args.length > 0 && (args[0].equals("dictation-cycle") || args[0].equals("click") || args[0].equals("click-if-present") || args[0].equals("long-click") || args[0].equals("tap") || args[0].equals("append-notes"))) {
+            if (args.length > 0 && (args[0].equals("dictation-cycle") || args[0].equals("click") || args[0].equals("click-if-present") || args[0].equals("long-click") || args[0].equals("tap") || args[0].equals("append-notes") || args[0].equals("click-and-await-action"))) {
                 try { automation.waitForIdle(200, 2000); } catch (java.util.concurrent.TimeoutException ignored) { }
             }
             if (args.length == 2 && args[0].equals("shortcut-helper")) {
@@ -91,6 +91,21 @@ public final class UiHierarchy {
                     android.os.SystemClock.sleep(100);
                 }
                 throw new IllegalStateException("Expected accessible action did not arrive");
+            }
+            if (args.length == 6 && args[0].equals("click-and-await-action")) {
+                // Trigger and handle a short-lived notice without reconnecting UiAutomation between them.
+                boolean triggered = false;
+                for (AccessibilityWindowInfo window : automation.getWindows()) {
+                    AccessibilityNodeInfo target = find(window.getRoot(), args[1]);
+                    while (target != null && !target.isClickable()) target = target.getParent();
+                    if (target != null && target.performAction(AccessibilityNodeInfo.ACTION_CLICK)) { triggered = true; break; }
+                }
+                if (!triggered) throw new IllegalStateException("Trigger action missing");
+                long timeout = Long.parseLong(args[4]);
+                if (!awaitAction(automation, false, args[2], timeout)) throw new IllegalStateException("Notice did not arrive");
+                if (!args[5].equals("-")) screenshot(automation, args[5]);
+                if (!awaitAction(automation, true, args[3], timeout)) throw new IllegalStateException("Notice action expired");
+                return;
             }
             if (args.length == 4 && args[0].equals("await-action")) {
                 awaitAction(automation, args[1].equals("click"), args[2], Long.parseLong(args[3]));
@@ -255,7 +270,7 @@ public final class UiHierarchy {
      * clicks it the moment it is visible ("click") or only reports it ("observe"). Prints PRESENT/CLICKED/EXPIRED followed by
      * fillers_before=true|false: whether the app's editor held a spoken filler (um/uh) at that instant. A boolean only, never text.
      */
-    private static void awaitAction(UiAutomation automation, boolean click, String label, long timeoutMs) {
+    private static boolean awaitAction(UiAutomation automation, boolean click, String label, long timeoutMs) {
         long deadline = android.os.SystemClock.uptimeMillis() + timeoutMs;
         while (android.os.SystemClock.uptimeMillis() < deadline) {
             for (AccessibilityWindowInfo window : automation.getWindows()) {
@@ -264,17 +279,18 @@ public final class UiHierarchy {
                 for (AccessibilityNodeInfo node : root.findAccessibilityNodeInfosByText(label)) {
                     if (!node.isVisibleToUser() || !(safe(node.getText()).equals(label) || safe(node.getContentDescription()).startsWith(label))) continue;
                     String state = " fillers_before=" + hasFillers(automation);
-                    if (!click) { System.out.println("PRESENT" + state); return; }
+                    if (!click) { System.out.println("PRESENT" + state); return true; }
                     AccessibilityNodeInfo target = node;
                     while (target != null && !target.isClickable()) target = target.getParent();
                     if (target == null || !target.performAction(AccessibilityNodeInfo.ACTION_CLICK)) throw new IllegalStateException("Accessibility action rejected");
                     System.out.println("CLICKED" + state);
-                    return;
+                    return true;
                 }
             }
             android.os.SystemClock.sleep(20);
         }
         System.out.println("EXPIRED fillers_before=" + hasFillers(automation));
+        return false;
     }
     private static boolean hasFillers(UiAutomation automation) {
         return java.util.regex.Pattern.compile("(?i)\\b(um|uh)\\b").matcher(appEditorText(automation)).find();
