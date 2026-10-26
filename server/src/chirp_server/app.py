@@ -870,7 +870,8 @@ def create_app(settings=None, engine=None, token=None, corrector=None, speakers=
         )
 
     async def speakers_route(request: Request):
-        """The speaker model: download, cancel an active download, or remove an installed model. The download runs in the background; health reports its state."""
+        """The speaker model: download, cancel an active download, or remove an installed model.
+        The download runs in the background; health reports its state."""
         if (refusal := reject(request.headers)) is not None:
             return refusal
         source = credential.source(bearer(request.headers), request.scope)
@@ -890,6 +891,7 @@ def create_app(settings=None, engine=None, token=None, corrector=None, speakers=
                 return JSONResponse(speakers.health(), status_code=status)
             if action["action"] == "cancel":
                 await speakers.cancel_download()
+                token.outcome = "ok"
                 return JSONResponse(speakers.health())
             if action["action"] == "remove":
                 if not await speakers.remove():
