@@ -250,18 +250,17 @@ final class ChirpSettingsUITests: XCTestCase {
         app.pair(link: XCUIApplication.syntheticPairingLink)
         app.selectChirpTab("Settings")
         shot("settings-home", app)
-        app.buttons["chirp.settings.connection"].tap()
+        openCategory("chirp.settings.connection", app)
         _ = element("chirp.connection.banner", in: app).waitForExistence(timeout: 5)
         shot("settings-connection-connected", app)
         let change = app.buttons["chirp.pair.change"]
         change.tap()
         _ = app.buttons["chirp.pair.scan"].waitForExistence(timeout: 5)
         shot("settings-change-pairing", app)
-        app.navigationBars.buttons.firstMatch.tap()
-        app.buttons["chirp.settings.session"].tap()
+        openCategory("chirp.settings.session", app)
         _ = element("chirp.settings.private", in: app).waitForExistence(timeout: 5)
         shot("settings-session", app)
-        app.buttons["chirp.settings.dictation"].tap()
+        openCategory("chirp.settings.dictation", app)
         _ = element("chirp.cleanup.enabled", in: app).waitForExistence(timeout: 5)
         let cleanup = element("chirp.cleanup.enabled", in: app)
         if cleanup.value as? String != "1" {
@@ -274,21 +273,20 @@ final class ChirpSettingsUITests: XCTestCase {
         app.buttons["chirp.styles.edit.default"].tap()
         _ = app.buttons["chirp.styles.reset"].waitForExistence(timeout: 5)
         shot("settings-prompt-editor", app)
-        app.navigationBars.buttons.firstMatch.tap()
-        app.buttons["chirp.settings.keyboard"].tap()
+        openCategory("chirp.settings.keyboard", app)
         _ = element("chirp.keyboard.status", in: app).waitForExistence(timeout: 5)
         shot("settings-keyboard", app)
         app.buttons["chirp.keyboard.way.onScreen"].tap()
         _ = app.staticTexts["On screen"].waitForExistence(timeout: 3)
         shot("settings-ways-to-dictate", app)
         app.buttons["Close"].tap()
-        app.buttons["chirp.settings.notes"].tap()
+        openCategory("chirp.settings.notes", app)
         _ = element("chirp.notes.structure", in: app).waitForExistence(timeout: 5)
         shot("settings-notes", app)
-        app.buttons["chirp.settings.privacy"].tap()
+        openCategory("chirp.settings.privacy", app)
         _ = element("chirp.history.enabled", in: app).waitForExistence(timeout: 5)
         shot("settings-privacy", app)
-        app.buttons["chirp.settings.about"].tap()
+        openCategory("chirp.settings.about", app)
         _ = element("chirp.diagnostics.timings", in: app).waitForExistence(timeout: 5)
         shot("settings-about", app)
 
@@ -313,6 +311,17 @@ final class ChirpSettingsUITests: XCTestCase {
         app.buttons["Close"].tap()
         app.buttons["chirp.history.menu"].tap()
         shot("history-menu", app)
+    }
+
+    /// Pushed pages (iPhone) go back one level per tap; the two-pane iPad always shows the rows.
+    @MainActor private func openCategory(_ row: String, _ app: XCUIApplication) {
+        for _ in 0..<4 where !app.buttons[row].exists {
+            let back = app.navigationBars.buttons["BackButton"]
+            guard back.exists else { break }
+            back.tap()
+        }
+        XCTAssertTrue(app.buttons[row].waitForExistence(timeout: 5), "No \(row) category row")
+        app.buttons[row].tap()
     }
 
     /// iOS 26 renders confirmationDialog as a compact popover with no cancel button; cancelling is
