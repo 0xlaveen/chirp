@@ -100,7 +100,7 @@
     ]
   },
   "android/keepkb-floating-cover-dark.png": {
-    "sha256": "ec3f841f2c81c3f7301fd4a37290a04d48073af675294e7034925936d3c488cd",
+    "sha256": "0216f96d192c1b6cb62fd3f129a4d78f9680a8831d5400c1c12377246b7f6aa7",
     "width": 411,
     "height": 891,
     "variants": [
@@ -117,7 +117,7 @@
     ]
   },
   "android/keepkb-floating-cover-light.png": {
-    "sha256": "36af933fd230470c943b4b81d644b56cfd1a0a85d442110a276ad316fddafd94",
+    "sha256": "226d7856b975fbb07144093aec225bf917eeec6f9ca1b4c4524afb599a3fef9c",
     "width": 411,
     "height": 891,
     "variants": [
@@ -270,7 +270,7 @@
     ]
   },
   "android/notes-library-cover-recording-dark.png": {
-    "sha256": "7562d96628b276261718344048ae3ca98239110740c19c484e69e5e34a80060a",
+    "sha256": "465d373bf53dad84f129b0def4b3e60fcf7abc47b3e4595f81f9f96f6993aebe",
     "width": 411,
     "height": 891,
     "variants": [
@@ -287,7 +287,7 @@
     ]
   },
   "android/notes-library-cover-recording-light.png": {
-    "sha256": "87bcd02391b2f862186736693411d48f5aefd64ac5947daeb7344a73342ef829",
+    "sha256": "badbb1a62ca245805bb760b4d4d887f0086e88e9efccf878646c4251064db89f",
     "width": 411,
     "height": 891,
     "variants": [
@@ -304,7 +304,7 @@
     ]
   },
   "android/onboarding-pair-dark.png": {
-    "sha256": "e8782b8a22fa5aa4faa9472ce4cf8c05639124798144e0c2844d9ef02fbef931",
+    "sha256": "5b974f873a4adb6d2b6cee202a3ae539e102bdbc965289d78e75c7ac31858f90",
     "width": 411,
     "height": 891,
     "variants": [
@@ -321,7 +321,7 @@
     ]
   },
   "android/onboarding-pair-light.png": {
-    "sha256": "feddc43b3af80b8702373c1e8e6c4ecdd51fa56477ef1bcf3ef350df8e473509",
+    "sha256": "f1d82414d39532d049d7e13568ad09bb768542cccbd87b303d09056c4c069d5f",
     "width": 411,
     "height": 891,
     "variants": [
@@ -406,7 +406,7 @@
     ]
   },
   "android/scratchpad-text-dark.png": {
-    "sha256": "bed4c4fd750e65d08b0104d6feffec3229e3ffaa7ae3c04bcda657a6b8b1a32b",
+    "sha256": "35de5a5b70adcf012f3514e1ab1a7a04e6efb6a8ee0013634c428eff1ec9a30e",
     "width": 411,
     "height": 891,
     "variants": [
@@ -423,7 +423,7 @@
     ]
   },
   "android/scratchpad-text-light.png": {
-    "sha256": "6b1c12c0a4140fe8418e122431986db52e4d8fe1f7dfc15c72990277172e36f5",
+    "sha256": "462ea6ec289775c73f219d6733693ec1227fa99d75d799742c5541aff9dbb56c",
     "width": 411,
     "height": 891,
     "variants": [
