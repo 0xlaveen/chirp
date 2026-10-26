@@ -368,6 +368,20 @@ Legacy recovery records migrate once under their existing IDs and appear as
 future schemas remain untouched. Documents that were only exported or held
 in memory by an older version cannot be recovered from that version.
 
+**Label speakers** (off by default; the note's ⋯ menu, or Settings → Notes) shows
+who said what. The transcript starts each person's turn with a colour dot and
+a name on a tinted capsule (**Person 1**, **Person 2**…, numbered in the order
+they first speak; the inspector on iPad, a sheet on iPhone). Tap a capsule for
+**Rename…** (everywhere in the note, with an optional *also replace* in the
+notes text), **Same person as** (merge) and **Separate**. The notes the Mac
+structures read `Name: …` lines, so decisions and tasks say who owns them, and
+exports show the names. Your own Mac's server tells the voices apart, in its
+memory only; turning the switch on asks first, because the Mac downloads a 27 MB
+speaker model once from Hugging Face. An older server hides the switch with
+"Update Chirp on your Mac". Labels and names are saved inside the sealed note
+and never logged; no voiceprint ever reaches the phone. The same protocol and
+rules as Android: [docs/privacy.md](../docs/privacy.md).
+
 **Notes settings** controls Structure notes, Organize automatically, Battery
 saver while locked, **Keep notes on this device**, retention (**Never** by
 default, 1 year, 90 days, or 30 days), and **Keep audio with notes** (off by
@@ -586,6 +600,11 @@ when it matters; surrounding editor text is never collected.
 
 ## Privacy & security
 
+- **Speaker labels are opt-in and keep no voiceprints.** *Label speakers* (off by
+  default) adds a random per-note session id to each Notes segment sent to your
+  own Mac's server, which compares voices in its memory only and returns who
+  spoke which words; the phone stores those turns and your names inside the
+  sealed note and never logs them. Details: [docs/privacy.md](../docs/privacy.md).
 - **Dictation is transient; Notes persist locally.** Notes save continuously
   to an AES-GCM sealed library on this device, kept forever by default. The
   index and optional AAC audio use the same device-only Keychain key with a

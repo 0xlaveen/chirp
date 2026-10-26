@@ -30,6 +30,7 @@ struct NoteDetailView: View {
     @State private var showRaw = false
     @State private var confirmUndo = false
     @State private var confirmSwitch = false
+    @State private var renamingSpeaker: SpeakerSheetItem?
     @StateObject private var player = NotesSegmentPlayer()
 
     var body: some View {
@@ -94,6 +95,7 @@ struct NoteDetailView: View {
             }.presentationDetents([.medium, .large]).presentationDragIndicator(.visible)
         }
         .sheet(isPresented: $settings) { NotesSettingsSheet(notes: notes) }
+        .speakerConsentAlert(notes, isPresented: notes.speakerConsent == .note)
         .fileExporter(isPresented: $exporting, document: NotesMarkdownFile(text: notes.markdown), contentType: NotesMarkdownFile.markdown,
                       defaultFilename: notes.exportName) { if case .success = $0 { notes.didExport() } }
         .confirmationDialog("Undo Organize?", isPresented: $confirmUndo, titleVisibility: .visible) {
@@ -191,6 +193,11 @@ struct NoteDetailView: View {
                 ShareLink(item: notes.markdown, subject: Text(notes.document.title)) { Label("Share…", systemImage: "square.and.arrow.up") }
                 Button("Export Markdown…", systemImage: "square.and.arrow.up") { exporting = true }.accessibilityIdentifier("chirp.notes.save")
                 Button("Rename", systemImage: "pencil") { title = notes.document.title; renaming = true }
+                if notes.speakersAvailable {
+                    Divider()
+                    Toggle("Label speakers", systemImage: "person.2", isOn: Binding(get: { notes.labelSpeakers }, set: { notes.setLabelSpeakers($0, from: .note) }))
+                        .accessibilityIdentifier("chirp.notes.speakers.toggle")
+                }
                 Divider()
                 Button("Notes settings", systemImage: "gearshape") { settings = true }.accessibilityIdentifier("chirp.notes.settings")
                 if notes.selectedAudioBytes > 0 { Button("Delete audio (\(size(notes.selectedAudioBytes)))", systemImage: "waveform.slash", role: .destructive) { player.stop(); Task { await notes.deleteAudio(); await notes.refreshAudio() } } }
@@ -202,6 +209,11 @@ struct NoteDetailView: View {
     private var transcriptContent: some View {
         VStack(spacing: 0) {
             Toggle("Show raw", isOn: $showRaw).padding().accessibilityIdentifier("chirp.notes.raw")
+            if let note = notes.speakerNote {
+                Label(note, systemImage: "person.2").font(.footnote).foregroundStyle(Color.chirp.inkMuted)
+                    .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal).padding(.bottom, 10)
+                    .accessibilityIdentifier("chirp.notes.speakers.note")
+            }
             Divider()
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 16) {
@@ -237,8 +249,11 @@ struct NoteDetailView: View {
                             }
                             if let failure = segment.failure {
                                 Label("Not transcribed (\(failure))", systemImage: "exclamationmark.triangle").foregroundStyle(Color.chirp.record)
+                            } else if let turns = segment.turns, !turns.isEmpty {
+                                SpeakerTurnsView(notes: notes, segment: segment, segmentIndex: index, showRaw: showRaw, clock: clock) {
+                                    renamingSpeaker = SpeakerSheetItem(id: $0)
+                                }
                             } else {
-                                // NotesSegment already reserves per-turn speaker identity; #201 can render it here.
                                 Text(showRaw ? segment.raw : segment.text).textSelection(.enabled)
                             }
                         }.padding(12).frame(maxWidth: .infinity, alignment: .leading)
@@ -248,6 +263,7 @@ struct NoteDetailView: View {
                 }.padding(16)
             }.accessibilityIdentifier("chirp.notes.transcript")
         }.background(Color.chirp.background).tint(Color.chirp.koi)
+            .sheet(item: $renamingSpeaker) { RenameSpeakerSheet(notes: notes, person: $0.id) }
     }
 
     private func toggleTask(_ index: Int) {
@@ -259,6 +275,8 @@ struct NoteDetailView: View {
     private func clock(_ value: TimeInterval) -> String { ChirpNotesActivityAttributes.ContentState.clock(value) }
     private func size(_ value: Int) -> String { ByteCountFormatter.string(fromByteCount: Int64(value), countStyle: .file) }
 }
+
+private struct SpeakerSheetItem: Identifiable { let id: Int }
 
 private struct NotesDockGlass: ViewModifier {
     func body(content: Content) -> some View {
@@ -340,8 +358,18 @@ struct NotesSettingsView: View {
                     Button("Delete kept audio", role: .destructive) { confirmDeleteAudio = true }
                 }
             } footer: { Text("Off by default. Keep speech segments sealed on this device so you can replay them. Deleting audio keeps the text.") }
+            Section {
+                Toggle("Label speakers", isOn: Binding(get: { notes.labelSpeakers }, set: { notes.setLabelSpeakers($0) }))
+                    .disabled(notes.health != nil && !notes.speakersAvailable && !notes.labelSpeakers)
+                    .accessibilityIdentifier("chirp.notes.speakers.setting")
+                if let status = SpeakerNotice.modelStatus(on: notes.labelSpeakers, health: notes.health) {
+                    Label(status, systemImage: "person.2").font(.footnote).foregroundStyle(Color.chirp.inkMuted)
+                        .accessibilityIdentifier("chirp.notes.speakers.model")
+                }
+            } footer: { Text(SpeakerNotice.summary(health: notes.health) + ". " + SpeakerNotice.info) }
         }.scrollContentBackground(.hidden).background(Color.chirp.background).tint(Color.chirp.koi)
             .navigationTitle("Notes").task { await notes.refreshHealth() }
+            .speakerConsentAlert(notes, isPresented: notes.speakerConsent == .settings)
             .confirmationDialog("Delete all kept audio?", isPresented: $confirmDeleteAudio, titleVisibility: .visible) {
                 Button("Delete kept audio", role: .destructive) { Task { await notes.deleteAudio(all: true) } }
             } message: { Text("Notes and transcripts are kept. This cannot be undone.") }

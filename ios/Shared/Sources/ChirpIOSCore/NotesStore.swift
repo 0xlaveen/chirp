@@ -18,6 +18,9 @@ public struct NotesPreferences: Codable, Sendable, Equatable {
     /// "Battery saver while locked": no screen updates while the app is in the background (recording and structuring
     /// go on; the Live Activity keeps its own timer).
     public var batterySaver = true
+    /// "Label speakers": who said what, from the user's own server. Off by default; turning it on asks before the
+    /// server downloads its speaker model. Nothing about a voice is stored here or anywhere on the phone.
+    public var labelSpeakers = false
     public init() {}
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -30,6 +33,7 @@ public struct NotesPreferences: Codable, Sendable, Equatable {
         retention = try c.decodeIfPresent(NotesRetention.self, forKey: .retention) ?? .never
         libraryUpgradeNotice = try c.decodeIfPresent(Bool.self, forKey: .libraryUpgradeNotice) ?? !recoveryCopy
         batterySaver = try c.decodeIfPresent(Bool.self, forKey: .batterySaver) ?? true
+        labelSpeakers = try c.decodeIfPresent(Bool.self, forKey: .labelSpeakers) ?? false
     }
 
     /// Whether structuring runs against a server with this health. Unknown health is off (nothing says where the text

@@ -144,8 +144,21 @@ public struct SpeakerRoster: Equatable, Sendable, Codable {
     public private(set) var people: [Person] = []
     /// Diarizer slot → person id. A merge points the slot at the target, so future audio follows it.
     private var slots: [Int: Int] = [:]
+    /// The server's note state the slots belong to (server-side labels): a new one means the server lost it and its
+    /// slots mean other voices. Optional storage, so a roster saved before it decodes.
+    private var generation: String?
 
     public init() {}
+
+    /// The id of the person a server slot speaks as in `generation`, numbering a new one on first sight. A changed
+    /// generation forgets the slot map first and keeps the people.
+    public mutating func id(forSlot slot: Int, generation: String?) -> Int {
+        if generation != self.generation {
+            slots = [:]
+            self.generation = generation
+        }
+        return id(forSlot: slot)
+    }
 
     /// The person a slot speaks as, numbering a new one on first sight.
     public mutating func person(forSlot slot: Int) -> Int { resolve(id(forSlot: slot)) }
@@ -240,7 +253,7 @@ public struct SpeakerRoster: Equatable, Sendable, Codable {
     public var active: [Int] { people.filter { $0.mergedInto == nil }.map(\.id) }
 
     /// A recovered session has a new diarizer whose slots mean other voices: forget the slot map, keep the people.
-    public mutating func forgetSlots() { slots = [:] }
+    public mutating func forgetSlots() { slots = [:]; generation = nil }
 
     /// People still standing (not merged away).
     public var activeCount: Int { people.filter { $0.mergedInto == nil }.count }

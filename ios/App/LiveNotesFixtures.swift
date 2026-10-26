@@ -92,7 +92,8 @@ final class SimulatorNotesAudio: NotesAudio {
 extension LiveNotesController {
     /// The health of a current Mac server with clean-up on this Mac and every notes endpoint.
     static let syntheticHealth = Health(engine: "synthetic", ready: true, correction: "available", correctionLeavesMachine: false,
-                                        notesStructure: true, notesCorrection: true, notesReorganize: true, notesContext: true)
+                                        notesStructure: true, notesCorrection: true, notesReorganize: true, notesContext: true,
+                                        notesSpeakers: true, speakersModel: SpeakersModel(state: .ready, sizeBytes: 26_530_309))
 
     /// UI-test controller: synthetic sockets (ready and a partial on start, a final on stop), a structuring stand-in that
     /// bullets the transcript, quiet synthetic capture and a throwaway encrypted store.
@@ -128,6 +129,20 @@ extension LiveNotesController {
         let organized = (lines.filter { !$0.hasPrefix("- ") } + lines.filter { $0.hasPrefix("- ") }.sorted()).joined(separator: "\n")
         return NotesReorganizeResponse(markdown: organized, reorganized: true, changed: organized != request.notes)
     }
+    /// `--chirp-speakers-gallery`: the first note's transcript with two people (one renamed), as the server's labels
+    /// would leave it, and notes that name "Person 1", so the rename sheet has something to offer.
+    private static func labelGallerySegments(_ document: inout NotesDocument) {
+        func turns(_ pairs: [(Int, Double, String)]) -> [ServerTurn] { pairs.map { ServerTurn(speaker: $0.0, start: $0.1, text: $0.2) } }
+        document.attachServerTurns(turns([(0, 0, "Keep the launch in March."), (1, 4, "Send the proposal by Friday.")]),
+                                   generation: "gallery", toSegment: 0)
+        document.append(NotesSegment(id: 1, offset: 40, raw: "who will lead the beta maya can lead the beta i will send the notes",
+                                     text: "Who will lead the beta? Maya can lead the beta. I will send the notes."))
+        document.attachServerTurns(turns([(0, 0, "Who will lead the beta?"), (1, 3, "Maya can lead the beta."), (0, 6, "I will send the notes.")]),
+                                   generation: "gallery", toSegment: 1)
+        document.renameSpeaker(2, to: "Maya")
+        document.userEdit(NSRange(location: document.text.utf16.count, length: 0), "\n\n- [ ] **Person 1** to send the notes")
+    }
+
     /// Synthetic documents for reproducible screenshots; the real sealed store and library are still exercised.
     func seedLibrary() async throws {
         guard let library, try await library.store.list().isEmpty else { return }
@@ -145,6 +160,7 @@ extension LiveNotesController {
             let date = Calendar.current.date(byAdding: .day, value: -days, to: Date())!
             var document = NotesDocument(startedAt: date, text: text)
             document.append(NotesSegment(id: 0, offset: 12, raw: "We will keep the launch in March and send the proposal by Friday.", text: "Keep the launch in March. Send the proposal by Friday."))
+            if days == 0, ProcessInfo.processInfo.arguments.contains("--chirp-speakers-gallery") { Self.labelGallerySegments(&document) }
             var record = NotesJournalRecord(document: document, elapsed: elapsed, writtenAt: date)
             record.recovered = days == 1
             try seed.journalStore.write(record)

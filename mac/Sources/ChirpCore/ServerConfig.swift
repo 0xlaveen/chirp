@@ -1,5 +1,7 @@
 import Foundation
 
+public enum SpeakersModelAction: String, Sendable { case download, remove }
+
 /// Where the server is and how to authenticate. The token lives in `~/.config/chirp/token`
 /// (written by `chirp-server`); nothing else is persisted by the client.
 public struct ServerConfig: Sendable, Equatable {
@@ -42,6 +44,9 @@ public struct ServerConfig: Sendable, Equatable {
     /// `POST …/v1/notes/edit`.
     public var notesEditURL: URL { baseURL.appendingPathComponent("v1/notes/edit") }
 
+    /// `POST …/v1/speakers/model`.
+    public var speakersModelURL: URL { baseURL.appendingPathComponent("v1/speakers/model") }
+
     public func authorized(_ request: URLRequest) -> URLRequest {
         var r = request
         if let token { r.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization") }
@@ -78,6 +83,22 @@ public struct ServerConfig: Sendable, Equatable {
     public func editNotes(_ r: NotesEditRequest, session: URLSession = .shared,
                           timeout: TimeInterval = 50) async throws -> NotesEditResponse {
         try await postNotes(r, to: notesEditURL, session: session, timeout: timeout)
+    }
+
+    /// `POST /v1/speakers/model`: `download` (only after the user agreed to the one download) or `remove`. Returns the
+    /// model's state after it (`downloading` answers 202; 409 means a remove while downloading, which still reports it).
+    public func speakersModel(_ action: SpeakersModelAction, session: URLSession = .shared) async throws -> SpeakersModel {
+        var req = authorized(URLRequest(url: speakersModelURL))
+        req.httpMethod = "POST"
+        req.timeoutInterval = 10
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = Data("{\"action\":\"\(action.rawValue)\"}".utf8)
+        let (data, response) = try await session.data(for: req)
+        guard let status = (response as? HTTPURLResponse)?.statusCode, [200, 202, 409].contains(status), data.count <= 4096
+        else { throw URLError(.badServerResponse) }
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        return try decoder.decode(SpeakersModel.self, from: data)
     }
 
     private func postNotes<Request: Encodable, Response: Decodable>(_ r: Request, to url: URL, session: URLSession,
