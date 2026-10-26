@@ -1,0 +1,29 @@
+{
+  "before": {
+    "performance": 95,
+    "accessibility": 100,
+    "best-practices": 100,
+    "seo": 100,
+    "agentic-browsing": 100,
+    "lcp_ms": 2851,
+    "cls": 0
+  },
+  "after": {
+    "performance": 96,
+    "accessibility": 100,
+    "best-practices": 100,
+    "seo": 100,
+    "agentic-browsing": 100,
+    "lcp_ms": 2701,
+    "cls": 0
+  },
+  "architecture": {
+    "performance": 99,
+    "accessibility": 100,
+    "best-practices": 100,
+    "seo": 100,
+    "agentic-browsing": 100,
+    "lcp_ms": 2101,
+    "cls": 0
+  }
+}

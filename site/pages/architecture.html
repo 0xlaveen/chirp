@@ -1,0 +1,175 @@
+<!--
+title: Architecture — how Chirp works
+description: Follow your voice through Chirp: local Parakeet speech recognition, optional Qwen clean-up, Live Notes, speaker labels, platform input and private storage.
+section: architecture
+class: architecture
+-->
+<div class="wrap guide-hero architecture-hero">
+  <p class="eyebrow">Inside Chirp</p>
+  <h1>Your voice.<br>Your computer.<br><em>The whole pipeline.</em></h1>
+  <p class="lede">A microphone captures sound. Your own server turns it into words. Optional local models tidy the text, organize notes and tell speakers apart. Here’s how the pieces fit together.</p>
+  <div class="meta-row"><span>No Chirp cloud</span><span>Local models · private connections</span><span>Source builds today</span></div>
+</div>
+<div class="wrap architecture-layout">
+  <nav class="architecture-toc" aria-label="Architecture sections">
+    <p class="eyebrow">Follow the signal</p>
+    <ol>
+      <li><a href="#picture">The big picture</a></li>
+      <li><a href="#speech">Speech to text</a></li>
+      <li><a href="#cleanup">Clean-up &amp; learning</a></li>
+      <li><a href="#notes">Live Notes</a></li>
+      <li><a href="#speakers">Speaker detection</a></li>
+      <li><a href="#input">Input on each platform</a></li>
+      <li><a href="#privacy">Privacy &amp; security</a></li>
+      <li><a href="#platforms">Feature matrix</a></li>
+      <li><a href="#sources">Learn more</a></li>
+    </ol>
+  </nav>
+  <article class="architecture-body prose">
+    <section aria-labelledby="picture">
+      <p class="eyebrow">01 / The big picture</p>
+      <h2 id="picture">One server. Your devices.</h2>
+      <p>Your Mac, Windows PC or Linux computer runs <strong>chirp-server</strong>, a Python service built with Starlette and uvicorn. The Mac app and the Windows/Linux Tauri app capture audio and insert text. Android and iPhone/iPad are clients too: phones reach your server over your private <strong>Tailscale</strong> network. Keep that computer on and reachable. There is no Chirp cloud or Chirp account.</p>
+      <figure class="architecture-flow" aria-labelledby="flow-caption">
+        <div class="flow-clients"><div><strong>Desktop client</strong><span>Mac · Windows · Linux</span></div><div><strong>Phone or tablet</strong><span>Android · iPhone · iPad</span></div></div>
+        <div class="flow-connection"><span aria-hidden="true">↓ ↑</span><p>Microphone audio →<br>← live words &amp; final text</p><small>Local connection, or Tailscale between devices</small></div>
+        <div class="flow-server"><span class="eyebrow">Your computer</span><h3>Chirp server</h3><div class="flow-models"><div><strong>Speech model</strong><span>Parakeet / SenseVoice</span></div><div><strong>Optional clean-up</strong><span>Qwen / local LLM</span></div></div></div>
+        <div class="flow-result"><span aria-hidden="true">↓</span><p>Client inserts text or saves a note<br><strong>Library stays on the recording device</strong></p></div>
+        <figcaption id="flow-caption">The normal local-model path. An explicitly configured external clean-up endpoint receives text; see <a href="#privacy">privacy &amp; security</a>. Mac speaker labeling runs in the Mac app; phone labeling runs on your server.</figcaption>
+      </figure>
+    </section>
+
+    <section aria-labelledby="speech">
+      <p class="eyebrow">02 / Speech to text</p>
+      <h2 id="speech">Models that run on your hardware.</h2>
+      <div class="architecture-cards">
+        <div><h3>Apple Silicon</h3><p><strong>Parakeet TDT 0.6B</strong> through <strong>parakeet-mlx</strong>, using MLX. English v2 is the default; multilingual v3 is a catalog alternative. Model load, warmup and decoding share one dedicated engine thread.</p></div>
+        <div><h3>Intel Mac · Windows · Linux</h3><p><strong>ONNX Parakeet v2 int8</strong> is the default. CPU execution works out of the box. Optional CUDA or DirectML providers need a compatible runtime and drivers; Chirp keeps CPU fallback. A GPU isn’t automatically faster for this model.</p></div>
+      </div>
+      <p><strong>SenseVoice Small</strong> is an optional CPU engine through sherpa-onnx, with Silero VAD to find speech regions. It uses the same client protocol. See the <a href="{{repo}}/blob/main/server/README.md#sensevoice-cpu-backend">backend’s language tests and setup</a> before choosing it.</p>
+      <h3>Download once, load from cache</h3>
+      <p>The model catalog records pinned revisions, sizes, cached files and selections. <strong>Manage Local Models</strong> on Mac, or the server’s <code>setup</code> commands, make downloads and selection explicit. Refresh checks metadata; it does not silently replace a running model. Speech weights use Chirp’s local model store or a compatible existing cache; managed clean-up reuses the Hugging Face cache. Startup and inference do not download missing weights.</p>
+      <h3>A conversation over WebSocket</h3>
+      <ol class="signal-steps">
+        <li><strong>Authenticate, then start.</strong> The client opens <code>/v1/stream</code> and sends <code>start</code> with its audio format and options. The server replies <code>ready</code>. Audio is 16 kHz mono PCM16LE, sent as binary frames.</li>
+        <li><strong>Show words while speaking.</strong> Sequenced <code>partial</code> messages update the preview. MLX’s default rolling mode decodes eight-second windows and merges timestamped tokens. Optional incremental mode uses upstream cached context and one-second chunks.</li>
+        <li><strong>Stop and finalize.</strong> <code>stop</code> triggers the quality decode: the whole utterance, or overlapping 30-second chunks for longer MLX audio. Queued previews give way to finalization. With clean-up enabled, <code>correcting</code> exposes the raw result before <code>final</code> returns raw text, final text and timings. Default partials have an empty <code>stable</code> prefix because the final may revise any word.</li>
+        <li><strong>Cancel means discard.</strong> <code>cancel</code> suppresses the final, including during clean-up. A socket can carry successive utterances; one utterance has a 120-second server limit.</li>
+      </ol>
+      <h3>Detecting quiet and cutting segments</h3>
+      <p>These are separate decisions. Parakeet uses signal-level silence checks to avoid decoding silence. Mac dictation’s <strong>Auto-stop</strong> compares the level with the room’s noise floor: two seconds of quiet by default (selectable 1–5 seconds), or ten seconds with no speech. Hold-to-talk ends when you release. Optional server <code>--finalization segments</code> freezes full-decoded text after at least 400 ms of low signal; it remains opt-in because it did not win consistently in the latency tests.</p>
+      <p><strong>Live Notes</strong> keeps recording and cuts ordinary utterances instead of ending the session. On Mac and iOS, no pause cut before 12 seconds; then 0.6 seconds of quiet, relaxed to 0.3 after 30 seconds and 0.15 after 35 seconds; a hard cut at 45 seconds. Hard cuts overlap one second, with timing and text deduplication. Android Notes uses the 12 / 30 / 45-second policy with 0.6 / 0.3-second pauses. Android’s rolling keyboard dictation instead uses 45 / 70 / 90-second thresholds. The Tauri desktop currently uses fixed 45-second Notes segments.</p>
+      <div class="architecture-measurement">
+        <h3>Measured latency, with the conditions attached</h3>
+        <p><strong>244 ms to first partial · 107 ms stop to final.</strong> One real WebSocket simulator check on a synthetic 5.85-second clip, Parakeet MLX v2, Apple M5 Pro / 64 GiB, macOS 27.0.1, quiet-host rerun on October 17, 2026. Speech timings exclude optional LLM clean-up.</p>
+        <p><strong>5,188 ms median · 5,540 ms p95</strong> for structuring roughly 2,400 characters: four invented transcripts, warm Qwen3 4B 4-bit, same Mac, near-quiet load, October 20. Three of four passed the guards; these are measured request timings, not a guarantee of accepted notes.</p>
+        <p class="small">Synthetic fixtures and specific hardware, not a cross-platform speed promise. <a href="{{repo}}/blob/main/docs/bench.md">Read the methods, contention caveats and other results.</a></p>
+      </div>
+    </section>
+
+    <section aria-labelledby="cleanup">
+      <p class="eyebrow">03 / Clean-up &amp; learning</p>
+      <h2 id="cleanup">From spoken words to usable text.</h2>
+      <p>Clean-up is optional and off by default on the server. It runs on the <strong>final transcript</strong>; previews stay raw. Managed mode runs a Qwen model in a supervised helper: <strong>MLX on Apple Silicon</strong>, or <strong>GGUF through llama.cpp</strong> on Intel Mac, Windows and Linux. Endpoint mode can use an OpenAI-compatible local server, such as LM Studio or Ollama, or a deliberately chosen remote endpoint. CPU clean-up can be slow; plain dictation works without it.</p>
+      <p>Styles include <strong>Default, Chat, Email, Code, Notes and Custom</strong>. They set punctuation, formatting and tone within fixed rules. Mac and Android support per-app style choices; custom instructions and editable style prompts cannot replace the safety rules.</p>
+      <p>Output guards check word retention, negations, names, numbers and profile-specific formatting. They reject invented words, unsupported changes, assistant-like answers and truncated output. Timeouts, helper failures and rejected output keep the raw text. These are heuristic checks, not proof of identical meaning. The final preserves both versions; Mac, Android and iOS offer <strong>Use raw</strong> to choose the original after clean-up. Desktop currently has a clean-up switch without a style picker or Use raw control.</p>
+      <h3>Your corrections can teach Chirp</h3>
+      <p>On Mac and Android, <strong>Learn from my edits</strong> watches the verified inserted span for up to 60 seconds, until focus moves or another dictation starts. Repeating the same name or technical-word correction twice activates it; <strong>Teach Chirp</strong> can activate an explicit correction once. Lowercase starts and omitted final periods can become per-app preferences. Large rewrites and password fields are excluded; Android also excludes incognito and Private sessions. Mac paste insertions are not watched; Android floating-mic learning needs Android 13+.</p>
+      <p>The local sealed learned store offers review, approval, undo, deletion and reset. Active terms and the target app’s style travel with dictation in <code>start.learned</code>, including to a configured external clean-up host. Conservative respelling and style application also work with clean-up off. <a href="{{repo}}/blob/main/mac/README.md#learn-from-my-edits">Mac learning</a> · <a href="{{repo}}/blob/main/android/README.md#learn-from-my-edits">Android learning</a>.</p>
+    </section>
+
+    <section aria-labelledby="notes">
+      <p class="eyebrow">04 / Live Notes</p>
+      <h2 id="notes">A transcript becomes a document.</h2>
+      <p>Capture runs in segments, with each completed transcript kept in order. On Mac and phones, the next socket takes capture while the old segment finalizes. A stateless <code>/v1/notes/structure</code> request sends a transcript window and an outline to the configured clean-up model. It returns Markdown headings, bullets, tasks, decisions and questions. Without structuring, you still have the transcript and an editor.</p>
+      <p><code>/v1/notes/reorganize</code> regroups existing notes. On Mac and phones, new generated text has an AI-owned tail: editing it makes it yours. Version checks discard stale Organize results when you have changed the document. Mac and Android also offer guarded voice edits through <code>/v1/notes/edit</code>. The desktop saves each transcript segment before optional structuring and limits Organize to 3,500 characters, with a version check and Undo.</p>
+      <h3>The recording device owns the library</h3>
+      <ul>
+        <li><strong>Mac:</strong> local JSON files containing the Markdown document, metadata and transcript in Application Support. Private folders and files (0700 / 0600), not encrypted note content. No automatic sync or Spotlight indexing.</li>
+        <li><strong>Android:</strong> one AES-GCM sealed file per note and a sealed index, with an Android Keystore key in credential-encrypted app storage; excluded from backup and device transfer.</li>
+        <li><strong>iPhone / iPad:</strong> an AES-GCM sealed library in Application Support, protected by a device-only Keychain key and complete iOS file protection; excluded from backup and Spotlight.</li>
+        <li><strong>Windows / Linux:</strong> local JSON documents and index in the app’s data directory. No content encryption; Linux uses private file modes and Windows checks a protected user + SYSTEM ACL.</li>
+      </ul>
+      <p>Libraries save as you go, support local search and Markdown export, and keep notes until deletion by default. Recently Deleted retains removed notes for 30 days. Export creates a separate copy.</p>
+      <p><strong>Keep audio with notes</strong> is opt-in on Mac, Android and iOS. It keeps short mono AAC clips for transcript replay. Phone clips are sealed with the notes key and decrypted in memory; Mac clips use private file permissions. Removing kept audio preserves text. Desktop has no kept audio or replay. Re-transcription of kept clips is not built yet.</p>
+    </section>
+
+    <section aria-labelledby="speakers">
+      <p class="eyebrow">05 / Speaker detection</p>
+      <h2 id="speakers">Who said what?</h2>
+      <p>Speaker labeling is optional. It groups voices and aligns their turns with the transcript; a label is not a guarantee of someone’s identity. Similar voices can merge, and one voice can split.</p>
+      <div class="architecture-cards">
+        <div><h3>Mac: in the app</h3><p><strong>Streaming Sortformer</strong> through FluidAudio / CoreML diarizes on the Mac, after a consented model download. With optional call-audio capture, the microphone side is <strong>You</strong> and the call side is diarized on this same Mac. “Remote participants” describes the people on the call; their diarization does not run in a remote service.</p></div>
+        <div><h3>Phones: on your server</h3><p>Android and iOS request <strong>WeSpeaker ResNet34-LM</strong> embeddings from your server. Voiced windows are clustered within a segment and matched to earlier speakers in that note. A consent prompt precedes the pinned, hash-checked model download (about 27 MB).</p></div>
+      </div>
+      <p>Phone speaker comparison state lives <strong>only in server memory</strong>, never in logs or returned as voiceprints. It expires after six idle hours, when the 32-note bound is exceeded, or on restart. Names, merges and text turns belong to the saved note. Rename a person, use <strong>Same person as</strong> to merge a split, and send <code>Name: …</code> attribution into structuring so tasks can retain their owner.</p>
+      <p>Mac additionally offers optional <strong>Remember this voice</strong>: a saved voice profile in this Mac’s Keychain, only after consent, with name suggestions that need confirmation. Phones have no saved voice profiles. Windows and Linux desktop do not currently label speakers or capture call audio.</p>
+    </section>
+
+    <section aria-labelledby="input">
+      <p class="eyebrow">06 / Input on each platform</p>
+      <h2 id="input">Same engine. Different ways in.</h2>
+      <dl class="architecture-inputs">
+        <div><dt>Mac</dt><dd>A native Swift menu-bar app. The hotkey state machine handles hold and toggle; a modifier event tap requires Accessibility. A HUD shows live words and clean-up state. Insertion uses Accessibility, with paste or copy fallback; terminals and Chromium/Electron apps prefer paste.</dd></div>
+        <div><dt>Android</dt><dd>A HeliBoard-based full keyboard with a voice strip. Or keep your keyboard and use the floating mic through Accessibility. Quick Dictate has a Quick Settings tile and a launcher widget; plain-text Share can create or append to a note. Tile/widget dictation auto-copies the final, while the floating mic copies only when you tap Copy.</dd></div>
+        <div><dt>iPhone / iPad</dt><dd>A voice-first keyboard extension. iOS does not let the extension open the microphone: it bounces to the app to start an audio session, then you return to the original app. Full Access enables the shared session. Live Activities expose session controls; the Notes activity can show title, time and state, never the note body.</dd></div>
+        <div><dt>Windows / Linux</dt><dd>A Tauri app with native CPAL audio capture and a shared HUD. Windows inserts with Unicode SendInput or a clipboard paste. Linux X11 uses XTest; Wayland uses a compositor-approved Global Shortcuts portal and wtype where supported, otherwise copy-to-paste. Windows still needs a real-PC acceptance pass; Wayland behavior depends on your compositor.</dd></div>
+      </dl>
+      <p>iOS is early too: simulator end-to-end checks and a first iPad install are recorded; iPhone hardware acceptance and real microphone/background checks remain pending. <a href="guides/index.html">Read the platform setup guides.</a></p>
+    </section>
+
+    <section aria-labelledby="privacy">
+      <p class="eyebrow">07 / Privacy &amp; security</p>
+      <h2 id="privacy">Know where the data goes.</h2>
+      <p>The server binds to loopback. <strong>Tailscale Serve</strong> exposes it privately to your tailnet, with TLS; Mac pairing refuses public Funnel exposure. Bearer authentication happens before audio is accepted. Pairing QR codes carry a secret token: keep them private. Named per-device tokens are independently revocable; the server stores their SHA-256 digests rather than the original tokens.</p>
+      <p>Client credentials use the platform’s protected storage: Mac reads its private token file; Android seals credentials with Keystore; iOS uses Keychain; desktop uses Windows Credential Manager or Linux Secret Service. Tokens are not URL parameters on stream requests.</p>
+      <p><strong>Routine logs contain counts, timings, fixed status/error codes and session identifiers, never audio, transcripts, notes, prompts or credentials.</strong> Dictation audio is transient in normal operation. Libraries, optional history and learning stay on the client; the server’s Notes endpoints do not keep documents. Mac and Android history default on; iOS history is opt-in. Optional kept Notes audio follows the storage rules above.</p>
+      <p>Two deliberate settings change the path. <strong>Debug retention</strong> keeps WAV and transcript files locally on the server, expiring after three days by default, and clients show a warning. An <strong>external clean-up endpoint</strong> receives final dictation text and supplied context; Notes requests send their transcript windows or notes text when enabled for that host. It receives no audio. The clients show the destination, and Notes processing needs consent for that host.</p>
+      <p>With local models, speech and text processing stays on your devices. Model downloads contact the model host only when explicitly requested. No Chirp telemetry or library sync is built in. Android’s optional phone-recognizer fallback is a separate on-device service from Google or the phone maker, labeled <strong>on phone</strong>, under that provider’s terms.</p>
+    </section>
+
+    <section aria-labelledby="platforms">
+      <p class="eyebrow">08 / Feature matrix</p>
+      <h2 id="platforms">What’s there on your device.</h2>
+      <p id="matrix-key"><strong>✓</strong> Implemented · <strong>~</strong> Conditional or limited · <strong>✗</strong> Not implemented. These are source-build capabilities, not packaged downloads. Scroll the table horizontally on a phone.</p>
+      <div class="architecture-table" role="region" aria-label="Platform features" aria-describedby="matrix-key" tabindex="0">
+        <table>
+          <caption>Chirp client capabilities</caption>
+          <thead><tr><th scope="col">Feature</th><th scope="col">Mac</th><th scope="col">Android</th><th scope="col">iOS / iPadOS</th><th scope="col">Windows</th><th scope="col">Linux</th></tr></thead>
+          <tbody>
+            <tr><th scope="row">Dictation with live previews</th><td><span aria-hidden="true">✓</span><span class="sr-only">Implemented</span></td><td><span aria-hidden="true">✓</span><span class="sr-only">Implemented</span></td><td><span aria-hidden="true">✓</span><span class="sr-only">Implemented</span></td><td><span aria-hidden="true">✓</span><span class="sr-only">Implemented</span></td><td><span aria-hidden="true">✓</span><span class="sr-only">Implemented</span></td></tr>
+            <tr><th scope="row">Global hotkey / direct insertion</th><td><span aria-hidden="true">✓</span><span class="sr-only">Implemented</span></td><td><span aria-hidden="true">~</span><span class="sr-only">Conditional or limited</span> Accessibility mic</td><td><span aria-hidden="true">~</span><span class="sr-only">Conditional or limited</span> Keyboard + app session</td><td><span aria-hidden="true">~</span><span class="sr-only">Conditional or limited</span> Real-PC checks pending</td><td><span aria-hidden="true">~</span><span class="sr-only">Conditional or limited</span> Wayland support varies</td></tr>
+            <tr><th scope="row">Optional transcript clean-up</th><td><span aria-hidden="true">✓</span><span class="sr-only">Implemented</span></td><td><span aria-hidden="true">✓</span><span class="sr-only">Implemented</span></td><td><span aria-hidden="true">✓</span><span class="sr-only">Implemented</span></td><td><span aria-hidden="true">✓</span><span class="sr-only">Implemented</span></td><td><span aria-hidden="true">✓</span><span class="sr-only">Implemented</span></td></tr>
+            <tr><th scope="row">Style picker &amp; Use raw</th><td><span aria-hidden="true">✓</span><span class="sr-only">Implemented</span></td><td><span aria-hidden="true">✓</span><span class="sr-only">Implemented</span></td><td><span aria-hidden="true">✓</span><span class="sr-only">Implemented</span></td><td><span aria-hidden="true">✗</span><span class="sr-only">Not implemented</span></td><td><span aria-hidden="true">✗</span><span class="sr-only">Not implemented</span></td></tr>
+            <tr><th scope="row">Learn from edits</th><td><span aria-hidden="true">~</span><span class="sr-only">Conditional or limited</span> Verified AX writes</td><td><span aria-hidden="true">~</span><span class="sr-only">Conditional or limited</span> Floating mic needs 13+</td><td><span aria-hidden="true">✗</span><span class="sr-only">Not implemented</span></td><td><span aria-hidden="true">✗</span><span class="sr-only">Not implemented</span></td><td><span aria-hidden="true">✗</span><span class="sr-only">Not implemented</span></td></tr>
+            <tr><th scope="row">Notes library &amp; Markdown export</th><td><span aria-hidden="true">✓</span><span class="sr-only">Implemented</span></td><td><span aria-hidden="true">✓</span><span class="sr-only">Implemented</span></td><td><span aria-hidden="true">✓</span><span class="sr-only">Implemented</span></td><td><span aria-hidden="true">✓</span><span class="sr-only">Implemented</span></td><td><span aria-hidden="true">✓</span><span class="sr-only">Implemented</span></td></tr>
+            <tr><th scope="row">Structure &amp; Organize notes</th><td><span aria-hidden="true">✓</span><span class="sr-only">Implemented</span></td><td><span aria-hidden="true">✓</span><span class="sr-only">Implemented</span></td><td><span aria-hidden="true">✓</span><span class="sr-only">Implemented</span></td><td><span aria-hidden="true">~</span><span class="sr-only">Conditional or limited</span> Opt-in; 3,500-char Organize</td><td><span aria-hidden="true">~</span><span class="sr-only">Conditional or limited</span> Opt-in; 3,500-char Organize</td></tr>
+            <tr><th scope="row">Voice edits to notes</th><td><span aria-hidden="true">✓</span><span class="sr-only">Implemented</span></td><td><span aria-hidden="true">✓</span><span class="sr-only">Implemented</span></td><td><span aria-hidden="true">✗</span><span class="sr-only">Not implemented</span></td><td><span aria-hidden="true">✗</span><span class="sr-only">Not implemented</span></td><td><span aria-hidden="true">✗</span><span class="sr-only">Not implemented</span></td></tr>
+            <tr><th scope="row">Speaker labels, rename &amp; merge</th><td><span aria-hidden="true">✓</span><span class="sr-only">Implemented</span> On-device</td><td><span aria-hidden="true">✓</span><span class="sr-only">Implemented</span> Own server</td><td><span aria-hidden="true">✓</span><span class="sr-only">Implemented</span> Own server</td><td><span aria-hidden="true">✗</span><span class="sr-only">Not implemented</span></td><td><span aria-hidden="true">✗</span><span class="sr-only">Not implemented</span></td></tr>
+            <tr><th scope="row">Call / system audio capture</th><td><span aria-hidden="true">✓</span><span class="sr-only">Implemented</span> Opt-in</td><td><span aria-hidden="true">✗</span><span class="sr-only">Not implemented</span></td><td><span aria-hidden="true">✗</span><span class="sr-only">Not implemented</span></td><td><span aria-hidden="true">✗</span><span class="sr-only">Not implemented</span></td><td><span aria-hidden="true">✗</span><span class="sr-only">Not implemented</span></td></tr>
+            <tr><th scope="row">Keep Notes audio &amp; replay</th><td><span aria-hidden="true">✓</span><span class="sr-only">Implemented</span> Opt-in</td><td><span aria-hidden="true">✓</span><span class="sr-only">Implemented</span> Opt-in</td><td><span aria-hidden="true">✓</span><span class="sr-only">Implemented</span> Opt-in</td><td><span aria-hidden="true">✗</span><span class="sr-only">Not implemented</span></td><td><span aria-hidden="true">✗</span><span class="sr-only">Not implemented</span></td></tr>
+            <tr><th scope="row">Encrypted Notes content</th><td><span aria-hidden="true">✗</span><span class="sr-only">Not implemented</span> Private files</td><td><span aria-hidden="true">✓</span><span class="sr-only">Implemented</span> Keystore</td><td><span aria-hidden="true">✓</span><span class="sr-only">Implemented</span> Keychain</td><td><span aria-hidden="true">✗</span><span class="sr-only">Not implemented</span> Private ACL</td><td><span aria-hidden="true">✗</span><span class="sr-only">Not implemented</span> Private files</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="small muted">✓ means implemented in source, with the permissions, model settings and platform acceptance limits described above. Structuring and clean-up require a configured model. Mac’s speech server supports Intel via ONNX; this page does not imply identical latency across hardware.</p>
+    </section>
+
+    <section aria-labelledby="sources">
+      <p class="eyebrow">09 / Learn more</p>
+      <h2 id="sources">Follow it into the source.</h2>
+      <ul class="architecture-sources">
+        <li><a href="{{repo}}/blob/main/docs/architecture.md">Protocol &amp; architecture reference</a><span>Messages, Notes APIs and output guards; some original v1 design notes predate current clients.</span></li>
+        <li><a href="{{repo}}/blob/main/docs/bench.md">Benchmarks</a><span>Fixtures, hardware, timings, accuracy limits and reproduction commands.</span></li>
+        <li><a href="{{repo}}/blob/main/docs/privacy.md">Privacy &amp; storage</a><span>Retention, encrypted libraries, credentials and external processing.</span></li>
+        <li><a href="{{repo}}/blob/main/server/README.md">Server guide</a><span>Models, pairing, streaming, local clean-up and optional accelerators.</span></li>
+        <li><a href="{{repo}}/tree/main/server/src/chirp_server">Server source</a><span><a href="{{repo}}/blob/main/server/src/chirp_server/app.py">Stream &amp; HTTP handlers</a> · <a href="{{repo}}/blob/main/server/src/chirp_server/model_catalog.py">Model catalog</a> · <a href="{{repo}}/blob/main/server/src/chirp_server/speakers.py">WeSpeaker clustering</a></span></li>
+        <li><a href="{{repo}}/tree/main/mac/Sources">Mac source</a><span><a href="{{repo}}/blob/main/mac/Sources/ChirpCore/NotesSegmenter.swift">Segment cut rules</a> · <a href="{{repo}}/blob/main/mac/Sources/ChirpSpeakers/SortformerSpeakers.swift">Sortformer</a> · <a href="{{repo}}/blob/main/mac/README.md">Mac README</a></span></li>
+        <li><a href="{{repo}}/tree/main/android/app/src/main/java/dev/chirp/android">Android source</a><span><a href="{{repo}}/blob/main/android/app/src/main/java/dev/chirp/android/RollingSegments.kt">Notes capture</a> · <a href="{{repo}}/blob/main/android/app/src/main/java/dev/chirp/android/LearnFromEdits.kt">Learning</a> · <a href="{{repo}}/blob/main/android/README.md">Android README</a></span></li>
+        <li><a href="{{repo}}/tree/main/ios">iOS source</a><span><a href="{{repo}}/blob/main/ios/App/LiveNotesController.swift">Notes controller</a> · <a href="{{repo}}/blob/main/ios/Shared/Sources/ChirpIOSCore/NotesStore.swift">Sealed storage</a> · <a href="{{repo}}/blob/main/ios/README.md">iOS README</a></span></li>
+        <li><a href="{{repo}}/tree/main/desktop">Windows / Linux source</a><span><a href="{{repo}}/tree/main/desktop/src-tauri/src/platform">Native input</a> · <a href="{{repo}}/blob/main/desktop/src-tauri/src/notes.rs">Notes</a> · <a href="{{repo}}/blob/main/desktop/README.md">Desktop README</a></span></li>
+      </ul>
+      <p><a href="guides/index.html">Ready to build? Pick your setup guide →</a></p>
+    </section>
+  </article>
+</div>

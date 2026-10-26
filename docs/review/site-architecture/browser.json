@@ -1,0 +1,1042 @@
+[
+  {
+    "page": "index.html",
+    "width": 1440,
+    "theme": "light",
+    "viewport": 1440,
+    "documentWidth": 1425,
+    "navRight": 1302.5,
+    "missingImages": 0,
+    "currentArchitecture": null
+  },
+  {
+    "page": "index.html",
+    "width": 1440,
+    "theme": "dark",
+    "viewport": 1440,
+    "documentWidth": 1425,
+    "navRight": 1302.5,
+    "missingImages": 0,
+    "currentArchitecture": null
+  },
+  {
+    "page": "index.html",
+    "width": 834,
+    "theme": "light",
+    "viewport": 834,
+    "documentWidth": 819,
+    "navRight": 803,
+    "missingImages": 0,
+    "currentArchitecture": null
+  },
+  {
+    "page": "index.html",
+    "width": 834,
+    "theme": "dark",
+    "viewport": 834,
+    "documentWidth": 819,
+    "navRight": 803,
+    "missingImages": 0,
+    "currentArchitecture": null
+  },
+  {
+    "page": "index.html",
+    "width": 390,
+    "theme": "light",
+    "viewport": 390,
+    "documentWidth": 390,
+    "navRight": 374,
+    "missingImages": 0,
+    "currentArchitecture": null
+  },
+  {
+    "page": "index.html",
+    "width": 390,
+    "theme": "dark",
+    "viewport": 390,
+    "documentWidth": 390,
+    "navRight": 374,
+    "missingImages": 0,
+    "currentArchitecture": null
+  },
+  {
+    "page": "index.html",
+    "width": 320,
+    "theme": "light",
+    "viewport": 320,
+    "documentWidth": 320,
+    "navRight": 304,
+    "missingImages": 0,
+    "currentArchitecture": null
+  },
+  {
+    "page": "index.html",
+    "width": 320,
+    "theme": "dark",
+    "viewport": 320,
+    "documentWidth": 320,
+    "navRight": 304,
+    "missingImages": 0,
+    "currentArchitecture": null
+  },
+  {
+    "page": "architecture.html",
+    "width": 1440,
+    "theme": "light",
+    "viewport": 1440,
+    "documentWidth": 1425,
+    "navRight": 1302.5,
+    "missingImages": 0,
+    "currentArchitecture": "page"
+  },
+  {
+    "page": "architecture.html",
+    "width": 1440,
+    "theme": "dark",
+    "viewport": 1440,
+    "documentWidth": 1425,
+    "navRight": 1302.5,
+    "missingImages": 0,
+    "currentArchitecture": "page"
+  },
+  {
+    "page": "architecture.html",
+    "width": 834,
+    "theme": "light",
+    "viewport": 834,
+    "documentWidth": 819,
+    "navRight": 803,
+    "missingImages": 0,
+    "currentArchitecture": "page"
+  },
+  {
+    "page": "architecture.html",
+    "width": 834,
+    "theme": "dark",
+    "viewport": 834,
+    "documentWidth": 819,
+    "navRight": 803,
+    "missingImages": 0,
+    "currentArchitecture": "page"
+  },
+  {
+    "page": "architecture.html",
+    "width": 390,
+    "theme": "light",
+    "viewport": 390,
+    "documentWidth": 390,
+    "navRight": 374,
+    "missingImages": 0,
+    "currentArchitecture": "page"
+  },
+  {
+    "page": "architecture.html",
+    "width": 390,
+    "theme": "dark",
+    "viewport": 390,
+    "documentWidth": 390,
+    "navRight": 374,
+    "missingImages": 0,
+    "currentArchitecture": "page"
+  },
+  {
+    "page": "architecture.html",
+    "width": 320,
+    "theme": "light",
+    "viewport": 320,
+    "documentWidth": 320,
+    "navRight": 304,
+    "missingImages": 0,
+    "currentArchitecture": "page"
+  },
+  {
+    "page": "architecture.html",
+    "width": 320,
+    "theme": "dark",
+    "viewport": 320,
+    "documentWidth": 320,
+    "navRight": 304,
+    "missingImages": 0,
+    "currentArchitecture": "page"
+  },
+  {
+    "page": "get.html",
+    "width": 1440,
+    "theme": "light",
+    "viewport": 1440,
+    "documentWidth": 1425,
+    "navRight": 1302.5,
+    "missingImages": 0,
+    "currentArchitecture": null
+  },
+  {
+    "page": "get.html",
+    "width": 1440,
+    "theme": "dark",
+    "viewport": 1440,
+    "documentWidth": 1425,
+    "navRight": 1302.5,
+    "missingImages": 0,
+    "currentArchitecture": null
+  },
+  {
+    "page": "get.html",
+    "width": 834,
+    "theme": "light",
+    "viewport": 834,
+    "documentWidth": 819,
+    "navRight": 803,
+    "missingImages": 0,
+    "currentArchitecture": null
+  },
+  {
+    "page": "get.html",
+    "width": 834,
+    "theme": "dark",
+    "viewport": 834,
+    "documentWidth": 819,
+    "navRight": 803,
+    "missingImages": 0,
+    "currentArchitecture": null
+  },
+  {
+    "page": "get.html",
+    "width": 390,
+    "theme": "light",
+    "viewport": 390,
+    "documentWidth": 390,
+    "navRight": 374,
+    "missingImages": 0,
+    "currentArchitecture": null
+  },
+  {
+    "page": "get.html",
+    "width": 390,
+    "theme": "dark",
+    "viewport": 390,
+    "documentWidth": 390,
+    "navRight": 374,
+    "missingImages": 0,
+    "currentArchitecture": null
+  },
+  {
+    "page": "get.html",
+    "width": 320,
+    "theme": "light",
+    "viewport": 320,
+    "documentWidth": 320,
+    "navRight": 304,
+    "missingImages": 0,
+    "currentArchitecture": null
+  },
+  {
+    "page": "get.html",
+    "width": 320,
+    "theme": "dark",
+    "viewport": 320,
+    "documentWidth": 320,
+    "navRight": 304,
+    "missingImages": 0,
+    "currentArchitecture": null
+  },
+  {
+    "page": "changelog.html",
+    "width": 1440,
+    "theme": "light",
+    "viewport": 1440,
+    "documentWidth": 1425,
+    "navRight": 1302.5,
+    "missingImages": 0,
+    "currentArchitecture": null
+  },
+  {
+    "page": "changelog.html",
+    "width": 1440,
+    "theme": "dark",
+    "viewport": 1440,
+    "documentWidth": 1425,
+    "navRight": 1302.5,
+    "missingImages": 0,
+    "currentArchitecture": null
+  },
+  {
+    "page": "changelog.html",
+    "width": 834,
+    "theme": "light",
+    "viewport": 834,
+    "documentWidth": 819,
+    "navRight": 803,
+    "missingImages": 0,
+    "currentArchitecture": null
+  },
+  {
+    "page": "changelog.html",
+    "width": 834,
+    "theme": "dark",
+    "viewport": 834,
+    "documentWidth": 819,
+    "navRight": 803,
+    "missingImages": 0,
+    "currentArchitecture": null
+  },
+  {
+    "page": "changelog.html",
+    "width": 390,
+    "theme": "light",
+    "viewport": 390,
+    "documentWidth": 390,
+    "navRight": 374,
+    "missingImages": 0,
+    "currentArchitecture": null
+  },
+  {
+    "page": "changelog.html",
+    "width": 390,
+    "theme": "dark",
+    "viewport": 390,
+    "documentWidth": 390,
+    "navRight": 374,
+    "missingImages": 0,
+    "currentArchitecture": null
+  },
+  {
+    "page": "changelog.html",
+    "width": 320,
+    "theme": "light",
+    "viewport": 320,
+    "documentWidth": 320,
+    "navRight": 304,
+    "missingImages": 0,
+    "currentArchitecture": null
+  },
+  {
+    "page": "changelog.html",
+    "width": 320,
+    "theme": "dark",
+    "viewport": 320,
+    "documentWidth": 320,
+    "navRight": 304,
+    "missingImages": 0,
+    "currentArchitecture": null
+  },
+  {
+    "page": "404.html",
+    "width": 1440,
+    "theme": "light",
+    "viewport": 1440,
+    "documentWidth": 1440,
+    "navRight": 1310,
+    "missingImages": 0,
+    "currentArchitecture": null
+  },
+  {
+    "page": "404.html",
+    "width": 1440,
+    "theme": "dark",
+    "viewport": 1440,
+    "documentWidth": 1440,
+    "navRight": 1310,
+    "missingImages": 0,
+    "currentArchitecture": null
+  },
+  {
+    "page": "404.html",
+    "width": 834,
+    "theme": "light",
+    "viewport": 834,
+    "documentWidth": 819,
+    "navRight": 803,
+    "missingImages": 0,
+    "currentArchitecture": null
+  },
+  {
+    "page": "404.html",
+    "width": 834,
+    "theme": "dark",
+    "viewport": 834,
+    "documentWidth": 819,
+    "navRight": 803,
+    "missingImages": 0,
+    "currentArchitecture": null
+  },
+  {
+    "page": "404.html",
+    "width": 390,
+    "theme": "light",
+    "viewport": 390,
+    "documentWidth": 390,
+    "navRight": 374,
+    "missingImages": 0,
+    "currentArchitecture": null
+  },
+  {
+    "page": "404.html",
+    "width": 390,
+    "theme": "dark",
+    "viewport": 390,
+    "documentWidth": 390,
+    "navRight": 374,
+    "missingImages": 0,
+    "currentArchitecture": null
+  },
+  {
+    "page": "404.html",
+    "width": 320,
+    "theme": "light",
+    "viewport": 320,
+    "documentWidth": 320,
+    "navRight": 304,
+    "missingImages": 0,
+    "currentArchitecture": null
+  },
+  {
+    "page": "404.html",
+    "width": 320,
+    "theme": "dark",
+    "viewport": 320,
+    "documentWidth": 320,
+    "navRight": 304,
+    "missingImages": 0,
+    "currentArchitecture": null
+  },
+  {
+    "page": "guides/index.html",
+    "width": 1440,
+    "theme": "light",
+    "viewport": 1440,
+    "documentWidth": 1425,
+    "navRight": 1302.5,
+    "missingImages": 0,
+    "currentArchitecture": null
+  },
+  {
+    "page": "guides/index.html",
+    "width": 1440,
+    "theme": "dark",
+    "viewport": 1440,
+    "documentWidth": 1440,
+    "navRight": 1310,
+    "missingImages": 0,
+    "currentArchitecture": null
+  },
+  {
+    "page": "guides/index.html",
+    "width": 834,
+    "theme": "light",
+    "viewport": 834,
+    "documentWidth": 819,
+    "navRight": 803,
+    "missingImages": 0,
+    "currentArchitecture": null
+  },
+  {
+    "page": "guides/index.html",
+    "width": 834,
+    "theme": "dark",
+    "viewport": 834,
+    "documentWidth": 834,
+    "navRight": 818,
+    "missingImages": 0,
+    "currentArchitecture": null
+  },
+  {
+    "page": "guides/index.html",
+    "width": 390,
+    "theme": "light",
+    "viewport": 390,
+    "documentWidth": 390,
+    "navRight": 374,
+    "missingImages": 0,
+    "currentArchitecture": null
+  },
+  {
+    "page": "guides/index.html",
+    "width": 390,
+    "theme": "dark",
+    "viewport": 390,
+    "documentWidth": 390,
+    "navRight": 374,
+    "missingImages": 0,
+    "currentArchitecture": null
+  },
+  {
+    "page": "guides/index.html",
+    "width": 320,
+    "theme": "light",
+    "viewport": 320,
+    "documentWidth": 320,
+    "navRight": 304,
+    "missingImages": 0,
+    "currentArchitecture": null
+  },
+  {
+    "page": "guides/index.html",
+    "width": 320,
+    "theme": "dark",
+    "viewport": 320,
+    "documentWidth": 320,
+    "navRight": 304,
+    "missingImages": 0,
+    "currentArchitecture": null
+  },
+  {
+    "page": "guides/mac.html",
+    "width": 1440,
+    "theme": "light",
+    "viewport": 1440,
+    "documentWidth": 1425,
+    "navRight": 1302.5,
+    "missingImages": 0,
+    "currentArchitecture": null
+  },
+  {
+    "page": "guides/mac.html",
+    "width": 1440,
+    "theme": "dark",
+    "viewport": 1440,
+    "documentWidth": 1425,
+    "navRight": 1302.5,
+    "missingImages": 0,
+    "currentArchitecture": null
+  },
+  {
+    "page": "guides/mac.html",
+    "width": 834,
+    "theme": "light",
+    "viewport": 834,
+    "documentWidth": 819,
+    "navRight": 803,
+    "missingImages": 0,
+    "currentArchitecture": null
+  },
+  {
+    "page": "guides/mac.html",
+    "width": 834,
+    "theme": "dark",
+    "viewport": 834,
+    "documentWidth": 819,
+    "navRight": 803,
+    "missingImages": 0,
+    "currentArchitecture": null
+  },
+  {
+    "page": "guides/mac.html",
+    "width": 390,
+    "theme": "light",
+    "viewport": 390,
+    "documentWidth": 390,
+    "navRight": 374,
+    "missingImages": 0,
+    "currentArchitecture": null
+  },
+  {
+    "page": "guides/mac.html",
+    "width": 390,
+    "theme": "dark",
+    "viewport": 390,
+    "documentWidth": 390,
+    "navRight": 374,
+    "missingImages": 0,
+    "currentArchitecture": null
+  },
+  {
+    "page": "guides/mac.html",
+    "width": 320,
+    "theme": "light",
+    "viewport": 320,
+    "documentWidth": 320,
+    "navRight": 304,
+    "missingImages": 0,
+    "currentArchitecture": null
+  },
+  {
+    "page": "guides/mac.html",
+    "width": 320,
+    "theme": "dark",
+    "viewport": 320,
+    "documentWidth": 320,
+    "navRight": 304,
+    "missingImages": 0,
+    "currentArchitecture": null
+  },
+  {
+    "page": "guides/android.html",
+    "width": 1440,
+    "theme": "light",
+    "viewport": 1440,
+    "documentWidth": 1425,
+    "navRight": 1302.5,
+    "missingImages": 0,
+    "currentArchitecture": null
+  },
+  {
+    "page": "guides/android.html",
+    "width": 1440,
+    "theme": "dark",
+    "viewport": 1440,
+    "documentWidth": 1425,
+    "navRight": 1302.5,
+    "missingImages": 0,
+    "currentArchitecture": null
+  },
+  {
+    "page": "guides/android.html",
+    "width": 834,
+    "theme": "light",
+    "viewport": 834,
+    "documentWidth": 819,
+    "navRight": 803,
+    "missingImages": 0,
+    "currentArchitecture": null
+  },
+  {
+    "page": "guides/android.html",
+    "width": 834,
+    "theme": "dark",
+    "viewport": 834,
+    "documentWidth": 819,
+    "navRight": 803,
+    "missingImages": 0,
+    "currentArchitecture": null
+  },
+  {
+    "page": "guides/android.html",
+    "width": 390,
+    "theme": "light",
+    "viewport": 390,
+    "documentWidth": 390,
+    "navRight": 374,
+    "missingImages": 0,
+    "currentArchitecture": null
+  },
+  {
+    "page": "guides/android.html",
+    "width": 390,
+    "theme": "dark",
+    "viewport": 390,
+    "documentWidth": 390,
+    "navRight": 374,
+    "missingImages": 0,
+    "currentArchitecture": null
+  },
+  {
+    "page": "guides/android.html",
+    "width": 320,
+    "theme": "light",
+    "viewport": 320,
+    "documentWidth": 320,
+    "navRight": 304,
+    "missingImages": 0,
+    "currentArchitecture": null
+  },
+  {
+    "page": "guides/android.html",
+    "width": 320,
+    "theme": "dark",
+    "viewport": 320,
+    "documentWidth": 320,
+    "navRight": 304,
+    "missingImages": 0,
+    "currentArchitecture": null
+  },
+  {
+    "page": "guides/iphone.html",
+    "width": 1440,
+    "theme": "light",
+    "viewport": 1440,
+    "documentWidth": 1425,
+    "navRight": 1302.5,
+    "missingImages": 0,
+    "currentArchitecture": null
+  },
+  {
+    "page": "guides/iphone.html",
+    "width": 1440,
+    "theme": "dark",
+    "viewport": 1440,
+    "documentWidth": 1425,
+    "navRight": 1302.5,
+    "missingImages": 0,
+    "currentArchitecture": null
+  },
+  {
+    "page": "guides/iphone.html",
+    "width": 834,
+    "theme": "light",
+    "viewport": 834,
+    "documentWidth": 819,
+    "navRight": 803,
+    "missingImages": 0,
+    "currentArchitecture": null
+  },
+  {
+    "page": "guides/iphone.html",
+    "width": 834,
+    "theme": "dark",
+    "viewport": 834,
+    "documentWidth": 819,
+    "navRight": 803,
+    "missingImages": 0,
+    "currentArchitecture": null
+  },
+  {
+    "page": "guides/iphone.html",
+    "width": 390,
+    "theme": "light",
+    "viewport": 390,
+    "documentWidth": 390,
+    "navRight": 374,
+    "missingImages": 0,
+    "currentArchitecture": null
+  },
+  {
+    "page": "guides/iphone.html",
+    "width": 390,
+    "theme": "dark",
+    "viewport": 390,
+    "documentWidth": 390,
+    "navRight": 374,
+    "missingImages": 0,
+    "currentArchitecture": null
+  },
+  {
+    "page": "guides/iphone.html",
+    "width": 320,
+    "theme": "light",
+    "viewport": 320,
+    "documentWidth": 320,
+    "navRight": 304,
+    "missingImages": 0,
+    "currentArchitecture": null
+  },
+  {
+    "page": "guides/iphone.html",
+    "width": 320,
+    "theme": "dark",
+    "viewport": 320,
+    "documentWidth": 320,
+    "navRight": 304,
+    "missingImages": 0,
+    "currentArchitecture": null
+  },
+  {
+    "page": "guides/windows.html",
+    "width": 1440,
+    "theme": "light",
+    "viewport": 1440,
+    "documentWidth": 1425,
+    "navRight": 1302.5,
+    "missingImages": 0,
+    "currentArchitecture": null
+  },
+  {
+    "page": "guides/windows.html",
+    "width": 1440,
+    "theme": "dark",
+    "viewport": 1440,
+    "documentWidth": 1425,
+    "navRight": 1302.5,
+    "missingImages": 0,
+    "currentArchitecture": null
+  },
+  {
+    "page": "guides/windows.html",
+    "width": 834,
+    "theme": "light",
+    "viewport": 834,
+    "documentWidth": 819,
+    "navRight": 803,
+    "missingImages": 0,
+    "currentArchitecture": null
+  },
+  {
+    "page": "guides/windows.html",
+    "width": 834,
+    "theme": "dark",
+    "viewport": 834,
+    "documentWidth": 819,
+    "navRight": 803,
+    "missingImages": 0,
+    "currentArchitecture": null
+  },
+  {
+    "page": "guides/windows.html",
+    "width": 390,
+    "theme": "light",
+    "viewport": 390,
+    "documentWidth": 390,
+    "navRight": 374,
+    "missingImages": 0,
+    "currentArchitecture": null
+  },
+  {
+    "page": "guides/windows.html",
+    "width": 390,
+    "theme": "dark",
+    "viewport": 390,
+    "documentWidth": 390,
+    "navRight": 374,
+    "missingImages": 0,
+    "currentArchitecture": null
+  },
+  {
+    "page": "guides/windows.html",
+    "width": 320,
+    "theme": "light",
+    "viewport": 320,
+    "documentWidth": 320,
+    "navRight": 304,
+    "missingImages": 0,
+    "currentArchitecture": null
+  },
+  {
+    "page": "guides/windows.html",
+    "width": 320,
+    "theme": "dark",
+    "viewport": 320,
+    "documentWidth": 320,
+    "navRight": 304,
+    "missingImages": 0,
+    "currentArchitecture": null
+  },
+  {
+    "page": "guides/linux.html",
+    "width": 1440,
+    "theme": "light",
+    "viewport": 1440,
+    "documentWidth": 1425,
+    "navRight": 1302.5,
+    "missingImages": 0,
+    "currentArchitecture": null
+  },
+  {
+    "page": "guides/linux.html",
+    "width": 1440,
+    "theme": "dark",
+    "viewport": 1440,
+    "documentWidth": 1425,
+    "navRight": 1302.5,
+    "missingImages": 0,
+    "currentArchitecture": null
+  },
+  {
+    "page": "guides/linux.html",
+    "width": 834,
+    "theme": "light",
+    "viewport": 834,
+    "documentWidth": 819,
+    "navRight": 803,
+    "missingImages": 0,
+    "currentArchitecture": null
+  },
+  {
+    "page": "guides/linux.html",
+    "width": 834,
+    "theme": "dark",
+    "viewport": 834,
+    "documentWidth": 819,
+    "navRight": 803,
+    "missingImages": 0,
+    "currentArchitecture": null
+  },
+  {
+    "page": "guides/linux.html",
+    "width": 390,
+    "theme": "light",
+    "viewport": 390,
+    "documentWidth": 390,
+    "navRight": 374,
+    "missingImages": 0,
+    "currentArchitecture": null
+  },
+  {
+    "page": "guides/linux.html",
+    "width": 390,
+    "theme": "dark",
+    "viewport": 390,
+    "documentWidth": 390,
+    "navRight": 374,
+    "missingImages": 0,
+    "currentArchitecture": null
+  },
+  {
+    "page": "guides/linux.html",
+    "width": 320,
+    "theme": "light",
+    "viewport": 320,
+    "documentWidth": 320,
+    "navRight": 304,
+    "missingImages": 0,
+    "currentArchitecture": null
+  },
+  {
+    "page": "guides/linux.html",
+    "width": 320,
+    "theme": "dark",
+    "viewport": 320,
+    "documentWidth": 320,
+    "navRight": 304,
+    "missingImages": 0,
+    "currentArchitecture": null
+  },
+  {
+    "page": "guides/live-notes.html",
+    "width": 1440,
+    "theme": "light",
+    "viewport": 1440,
+    "documentWidth": 1425,
+    "navRight": 1302.5,
+    "missingImages": 0,
+    "currentArchitecture": null
+  },
+  {
+    "page": "guides/live-notes.html",
+    "width": 1440,
+    "theme": "dark",
+    "viewport": 1440,
+    "documentWidth": 1425,
+    "navRight": 1302.5,
+    "missingImages": 0,
+    "currentArchitecture": null
+  },
+  {
+    "page": "guides/live-notes.html",
+    "width": 834,
+    "theme": "light",
+    "viewport": 834,
+    "documentWidth": 819,
+    "navRight": 803,
+    "missingImages": 0,
+    "currentArchitecture": null
+  },
+  {
+    "page": "guides/live-notes.html",
+    "width": 834,
+    "theme": "dark",
+    "viewport": 834,
+    "documentWidth": 819,
+    "navRight": 803,
+    "missingImages": 0,
+    "currentArchitecture": null
+  },
+  {
+    "page": "guides/live-notes.html",
+    "width": 390,
+    "theme": "light",
+    "viewport": 390,
+    "documentWidth": 390,
+    "navRight": 374,
+    "missingImages": 0,
+    "currentArchitecture": null
+  },
+  {
+    "page": "guides/live-notes.html",
+    "width": 390,
+    "theme": "dark",
+    "viewport": 390,
+    "documentWidth": 390,
+    "navRight": 374,
+    "missingImages": 0,
+    "currentArchitecture": null
+  },
+  {
+    "page": "guides/live-notes.html",
+    "width": 320,
+    "theme": "light",
+    "viewport": 320,
+    "documentWidth": 320,
+    "navRight": 304,
+    "missingImages": 0,
+    "currentArchitecture": null
+  },
+  {
+    "page": "guides/live-notes.html",
+    "width": 320,
+    "theme": "dark",
+    "viewport": 320,
+    "documentWidth": 320,
+    "navRight": 304,
+    "missingImages": 0,
+    "currentArchitecture": null
+  },
+  {
+    "page": "guides/coding-agent.html",
+    "width": 1440,
+    "theme": "light",
+    "viewport": 1440,
+    "documentWidth": 1425,
+    "navRight": 1302.5,
+    "missingImages": 0,
+    "currentArchitecture": null
+  },
+  {
+    "page": "guides/coding-agent.html",
+    "width": 1440,
+    "theme": "dark",
+    "viewport": 1440,
+    "documentWidth": 1425,
+    "navRight": 1302.5,
+    "missingImages": 0,
+    "currentArchitecture": null
+  },
+  {
+    "page": "guides/coding-agent.html",
+    "width": 834,
+    "theme": "light",
+    "viewport": 834,
+    "documentWidth": 819,
+    "navRight": 803,
+    "missingImages": 0,
+    "currentArchitecture": null
+  },
+  {
+    "page": "guides/coding-agent.html",
+    "width": 834,
+    "theme": "dark",
+    "viewport": 834,
+    "documentWidth": 819,
+    "navRight": 803,
+    "missingImages": 0,
+    "currentArchitecture": null
+  },
+  {
+    "page": "guides/coding-agent.html",
+    "width": 390,
+    "theme": "light",
+    "viewport": 390,
+    "documentWidth": 390,
+    "navRight": 374,
+    "missingImages": 0,
+    "currentArchitecture": null
+  },
+  {
+    "page": "guides/coding-agent.html",
+    "width": 390,
+    "theme": "dark",
+    "viewport": 390,
+    "documentWidth": 390,
+    "navRight": 374,
+    "missingImages": 0,
+    "currentArchitecture": null
+  },
+  {
+    "page": "guides/coding-agent.html",
+    "width": 320,
+    "theme": "light",
+    "viewport": 320,
+    "documentWidth": 320,
+    "navRight": 304,
+    "missingImages": 0,
+    "currentArchitecture": null
+  },
+  {
+    "page": "guides/coding-agent.html",
+    "width": 320,
+    "theme": "dark",
+    "viewport": 320,
+    "documentWidth": 320,
+    "navRight": 304,
+    "missingImages": 0,
+    "currentArchitecture": null
+  }
+]
