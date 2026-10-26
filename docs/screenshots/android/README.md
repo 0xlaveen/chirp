@@ -6,8 +6,8 @@ credential or personal text is included.
 - `keyboard-{idle,connecting,listening,countdown,polishing,final,tailscale,offline,phone,retention}-{light,dark}.png`:
   Robolectric native graphics on API 37, actual HeliBoard QWERTY keys with Chirp's production strip at 411 px
   width (Gboard-like look, cover screen), settled with animator scale 0. While listening the strip shows the three
-  Pond ripple arcs stepping off the mic and Stop as a filled `record` pill (dark ink on the light dark-theme red);
-  `final` shows the Undo / Use raw chips, `tailscale` the *Tailscale is off · Turn on* prompt, `offline` *Mac offline*,
+  Pond Ripple (one steady arc with Reduce Motion; three arcs when animated) and Stop as a filled `record` pill (dark ink on the light dark-theme red);
+  `final` shows the Undo / Use raw chips, `tailscale` the *Tailscale is off · Turn on* prompt, `offline` *Computer offline*,
   `phone` the phone-recogniser chip, `retention` the debug banner. The same states are rendered for the other looks
   and the 673 px inner screen as `keyboard-{gboard,samsung}-{cover,inner}-<state>-{light,dark}.png` (the default
   combination keeps the short names). `KeyboardRenderTest` also asserts the strip and key-area height is identical
@@ -197,7 +197,7 @@ layout checks, with hardware acceptance left to the operator.
 renders of the production Notes-first shell at 411 × 891 dp (cover, navigation bar)
 and 840 × 900 dp (inner, navigation rail and list/detail). States:
 
-- `empty`: glyph and static rings, first-record guidance and local-storage line.
+- `empty`: glyph and static rings, type-or-record guidance and local-storage line.
 - `populated`: serif titles, relative times, two-line previews, duration and open tasks.
 - `recording`: pinned Ripple card with frozen preview and tabular timer.
 - `search` / `no-results`: local body/transcript search and highlighted matches.
@@ -252,3 +252,15 @@ smaller pre-ready buffer is not exhausted by the Notes stress scenario.
 `e2e-all.sh --only quickdictate release` records the actual tile/listening/copied, network-error and Share dialog in its private evidence folder. Only reviewed synthetic screenshots are copied here; no logs or UI XML are committed. There is no previous Quick dictate surface to compare; `keepkb-settings-*.png` is the earlier Settings context.
 
 The committed `quick-dictate-emulator-{polishing,copied,error}.png` and `share-to-notes-emulator-dialog.png` come from the passing real-server entry matrix. The black backdrop is the debug probe’s secure window underneath the translucent Activity; it contains no user content. The copied capture shows Android’s sensitive clipboard overlay with its text preview hidden.
+
+## Android Notes parity and W12 refresh (#271)
+
+Capture source: `e635260a` (based on `61774f28`), 27 October 2026. API 37 Robolectric native graphics; Pond light/dark, cover 411 dp and inner 840 dp (Notes library), plus wide landscape 1280 dp. Standard font size except `settings-top-font-200-light.png` (200%). Keyboard fixtures use the existing 411/673 px widths and both looks, with animator scale 0.
+
+- `notes-library-{cover,inner}-new-note-{light,dark}.png`: **New note** opens a focused local editor as **Untitled note**, with the computer offline and microphone setup incomplete. The library captures now include its toolbar action and current empty-state copy.
+- `notes-speakers-reassign-menu-{light,dark}.png`: **This turn is…** opens choices for other people and **New person**. `notes-speakers-reassigned-*` shows the corrected turn as Person 4; `notes-speakers-merged-*` shows a chip for every turn, including adjacent turns by the same person, so each can be corrected separately.
+- The three formerly blank light captures (`notes-cover-idle-light.png`, `notes-inner-idle-light.png`, `notes-speakers-preparing-light.png`) were regenerated and visually checked. Main already contains the visible-content export fix from `9589cff9`; these regenerate identically.
+- All keyboard listening captures were regenerated. The old wedge was a real viewport-clipping bug, already fixed by `86c65e0b` in `KeyboardStrip.kt` (height-bounded radius), not a Robolectric-only artifact. Compare the explicitly historical `e2e-keyboard-ripple-clipped.png` / `e2e-keyboard-ripple-fixed.png` emulator evidence. Current reduced-motion renders show the steady arc; the existing `KeyboardRippleTest` checks that it crosses the visible middle. Offline renders were regenerated and remain byte-identical.
+- `settings-top-*` now use the reserved synthetic `computer.example.test` fixture and current app version. The obsolete final-verification and gaps capture directories were removed, their historical report now links to this index, and the site widget reference uses current Quick Dictate captures. Historical before/after images remain labelled as historical evidence above.
+
+Validation: `lint testDebugUnitTest assembleDebug assembleRelease` passed (1,221 tests, zero failures/errors, two opt-in skips). Captures were visually reviewed in both appearances. A separate locked, disposable emulator dictation run stopped before listening because the selected IME remained Gboard and the probe could not find Chirp’s mic action; no new end-to-end listening success is claimed. The iOS/Android strip-comparison composites are owned by the later iOS W2 pass and were left unchanged.

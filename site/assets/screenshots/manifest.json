@@ -43,28 +43,6 @@
       }
     ]
   },
-  "android/gaps/launcher-widget-default-light.png": {
-    "sha256": "5bdcd076af17d3179ba5a7f9f0746d687092bbb494b4297b5300c22ea2ca7ca4",
-    "width": 733,
-    "height": 760,
-    "variants": [
-      {
-        "file": "android/gaps/launcher-widget-default-light-320.webp",
-        "width": 320,
-        "height": 332
-      },
-      {
-        "file": "android/gaps/launcher-widget-default-light-640.webp",
-        "width": 640,
-        "height": 664
-      },
-      {
-        "file": "android/gaps/launcher-widget-default-light-733.webp",
-        "width": 733,
-        "height": 760
-      }
-    ]
-  },
   "android/keepkb-choice-cover-dark.png": {
     "sha256": "a32ec59eaaa582e2ced15d7b9db11d016e2403e2fc5e69f62c45ef08a39f7905",
     "width": 411,
@@ -168,7 +146,7 @@
     ]
   },
   "android/keyboard-listening-dark.png": {
-    "sha256": "891fa4f5963fb3795bed70289670c717afb094ab8824848d763952240aedfb55",
+    "sha256": "cd238c7276f19221f82c121e739a0542ce3831691baec6e350dc1dddcc47bcd2",
     "width": 411,
     "height": 293,
     "variants": [
@@ -185,7 +163,7 @@
     ]
   },
   "android/keyboard-listening-light.png": {
-    "sha256": "889ed22d7fb5e8ecce977122dbae72b223cdd435638327f6881d332d8109583e",
+    "sha256": "cfc3cda8398361c4469f4376b0bf26bfa92a629c7b132af7de8c4f887ca795b7",
     "width": 411,
     "height": 293,
     "variants": [
@@ -202,7 +180,7 @@
     ]
   },
   "android/keyboard-look-gboard-listening-dark.png": {
-    "sha256": "3e5d9be9cb051346a8e6bd68c746b330d2dcd433915054b01e71d7a6b26ef95a",
+    "sha256": "b3127f78e2f729d21761aa69bd42a81e84d66c8de87d965577d0ff2d70e3b7cd",
     "width": 411,
     "height": 293,
     "variants": [
@@ -219,7 +197,7 @@
     ]
   },
   "android/keyboard-look-gboard-listening-light.png": {
-    "sha256": "dfe62fd0a5a675a0e98c396b18ba324e2dfd94788e4eca958c6acfec21b4a4d3",
+    "sha256": "53a310b247dd642a958210a85bba406b43618c3388f5e3aa2601819d987a1c85",
     "width": 411,
     "height": 293,
     "variants": [
@@ -270,7 +248,7 @@
     ]
   },
   "android/notes-library-cover-recording-dark.png": {
-    "sha256": "06b8def15987ffcdbc0a9981fa7a3783c0ec78c593dc6c7eb9a5c69424ec6fca",
+    "sha256": "88616a6c05547eac3f08ad13cfb5be0573fa34a6ed909a957e428f1bfacc6fb2",
     "width": 411,
     "height": 891,
     "variants": [
@@ -287,7 +265,7 @@
     ]
   },
   "android/notes-library-cover-recording-light.png": {
-    "sha256": "7c5bb88b7da56a7fd6b8db218e42f721f130af08976c105e327b50bb29047cd7",
+    "sha256": "e6aa359fcf343c871091c24ffe2c41fec6a026b03bae5d5b0cf6c279a04b5a5b",
     "width": 411,
     "height": 891,
     "variants": [
@@ -368,6 +346,30 @@
         "file": "android/quick-dictate-listening-cover-light-360.webp",
         "width": 360,
         "height": 800
+      }
+    ]
+  },
+  "android/quick-dictate-widget-2x1-cover-dark.png": {
+    "sha256": "468e6d54fb31620f415a8540d4bfe8f13fd883369360b0ea229b69ce3438ce2a",
+    "width": 240,
+    "height": 112,
+    "variants": [
+      {
+        "file": "android/quick-dictate-widget-2x1-cover-dark-240.webp",
+        "width": 240,
+        "height": 112
+      }
+    ]
+  },
+  "android/quick-dictate-widget-2x1-cover-light.png": {
+    "sha256": "eb4cdd7cb6bb5dcbd73e8e737dca34a3d845f05807f96626b34ed4710b25ed8c",
+    "width": 240,
+    "height": 112,
+    "variants": [
+      {
+        "file": "android/quick-dictate-widget-2x1-cover-light-240.webp",
+        "width": 240,
+        "height": 112
       }
     ]
   },
