@@ -19,7 +19,10 @@ data class Health(val ready: Boolean, val debugRetention: Boolean, val correctio
                   val notesStructure: Boolean = false, val notesReorganize: Boolean = false, val notesCorrection: Boolean = false,
                   val notesEdit: Boolean = false,
                   /** The server labels speakers (`start.speakers`), and its speaker model's state (`ready`, `not_downloaded`…). */
-                  val notesSpeakers: Boolean = false, val speakersModel: String? = null, val speakersModelBytes: Long? = null)
+                  val notesSpeakers: Boolean = false, val speakersModel: String? = null, val speakersModelBytes: Long? = null,
+                  val speakerVoices: Boolean = false, val speakersVoices: SpeakersVoicesHealth? = null)
+
+data class SpeakersVoicesHealth(val enabled: Boolean, val count: Int, val model: String)
 
 object Protocol {
     fun start(correction: Boolean, profile: String = "default", instructions: String = "", prompt: String? = null,
@@ -88,6 +91,13 @@ object Protocol {
             }, json.optBoolean("notes_structure"), json.optBoolean("notes_reorganize"), json.optBoolean("notes_correction"),
             json.optBoolean("notes_edit"), json.optBoolean("notes_speakers"),
             json.optJSONObject("speakers_model")?.optString("state")?.takeIf { it.matches(Regex("[a-z_]{1,32}")) },
-            json.optJSONObject("speakers_model")?.optLong("size_bytes")?.takeIf { it > 0 })
+            json.optJSONObject("speakers_model")?.optLong("size_bytes")?.takeIf { it > 0 },
+            json.optBoolean("speaker_voices") || json.optJSONArray("capabilities")?.let { caps ->
+                (0 until caps.length()).any { caps.optString(it) == "speaker_voices" }
+            } == true,
+            json.optJSONObject("speakers_voices")?.let { v ->
+                if (v.opt("enabled") is Boolean && v.optInt("count", -1) in 0..50)
+                    SpeakersVoicesHealth(v.getBoolean("enabled"), v.getInt("count"), v.optString("model").take(128)) else null
+            })
     }
 }

@@ -35,7 +35,15 @@ internal fun NotesSettings(sessions: NotesSessions? = null, title: String? = nul
             fetch = { store.pairing()?.let { try { ChirpNetwork.health(speakerClient, it) } catch (_: Exception) { null } } },
             request = { action -> store.pairing()?.let { try { ChirpNetwork.speakerModel(speakerClient, it, action) } catch (_: Exception) { null } } })
     }
+    var savedVoicesOpen by remember { mutableStateOf(false) }
+    val voices = remember { SavedVoicesModel(scope, { withContext(Dispatchers.IO) { it() } }) { action ->
+        ChirpNetwork.savedVoices(speakerClient, store.pairing() ?: throw VoiceLibraryError("auth"), action)
+    } }
     LaunchedEffect(Unit) { speakers.refresh() }
+    if (savedVoicesOpen) {
+        LaunchedEffect(Unit) { voices.refresh() }
+        SavedVoicesScreen(voices) { savedVoicesOpen = false }
+    }
     LaunchedEffect(keepAudio, keep) {
         // A size that cannot be read is shown as none, never as a crash of the settings page.
         audioBytes = try { withContext(Dispatchers.IO) { kept.totalAudioBytes() } } catch (e: kotlinx.coroutines.CancellationException) { throw e } catch (_: Exception) { 0L }
@@ -78,7 +86,7 @@ internal fun NotesSettings(sessions: NotesSessions? = null, title: String? = nul
                 else "${if (speakers.enabled) "On" else "Off"} · who said what",
             enabled = speakers.available, infoTitle = "Label speakers",
             infoBody = "Shows who said what in the transcript (Person 1, Person 2…; tap a name to rename it) and lets the notes say who " +
-                "owns a to-do. Your Mac tells voices apart in memory; names and turns stay in the sealed note. " +
+                "owns a to-do. Names and turns stay in the sealed note; saved voices stay on your Mac. " +
                 "The speaker model downloads automatically when needed. Recording starts straight away.")
         if (speakers.available) {
             SettingsItem {
@@ -92,6 +100,8 @@ internal fun NotesSettings(sessions: NotesSessions? = null, title: String? = nul
             }
             if (speakers.state == "ready") ActionRow("Remove speaker model", speakers::remove, destructive = true)
         }
+        if (speakers.health?.speakerVoices == true) ActionRow("Saved voices", { savedVoicesOpen = true })
+        else SettingsItem { Text("Update Chirp on your Mac to save voices", style = MaterialTheme.typography.bodySmall) }
         if (audioBytes > 0) ActionRow("Delete kept audio (${megabytes(audioBytes)})", { confirmDeleteAudio = true }, destructive = true)
         ActionRow("Delete all notes", { confirmDeleteAll = true }, destructive = true)
     }

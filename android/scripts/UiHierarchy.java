@@ -68,6 +68,30 @@ public final class UiHierarchy {
                 stopCase(automation, args[1], Float.parseFloat(args[2]), Float.parseFloat(args[3]));
                 return;
             }
+            if (args.length == 3 && args[0].equals("await-click")) {
+                // Keep one UiAutomation connection while a Compose popup settles. Reconnecting
+                // for each hierarchy query can temporarily expose only the status-bar window.
+                long deadline = android.os.SystemClock.uptimeMillis() + Long.parseLong(args[2]);
+                while (android.os.SystemClock.uptimeMillis() < deadline) {
+                    java.util.List<AccessibilityNodeInfo> roots = new java.util.ArrayList<>();
+                    for (AccessibilityWindowInfo window : automation.getWindows()) {
+                        AccessibilityNodeInfo root = window.getRoot();
+                        if (root != null) roots.add(root);
+                    }
+                    AccessibilityNodeInfo active = automation.getRootInActiveWindow();
+                    if (active != null) roots.add(active);
+                    for (AccessibilityNodeInfo root : roots) {
+                        AccessibilityNodeInfo target = find(root, args[1]);
+                        while (target != null && !target.isClickable()) target = target.getParent();
+                        if (target != null && target.performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
+                            System.out.println("CLICKED");
+                            return;
+                        }
+                    }
+                    android.os.SystemClock.sleep(100);
+                }
+                throw new IllegalStateException("Expected accessible action did not arrive");
+            }
             if (args.length == 4 && args[0].equals("await-action")) {
                 awaitAction(automation, args[1].equals("click"), args[2], Long.parseLong(args[3]));
                 return;

@@ -50,6 +50,7 @@ internal class NotesModel(
     private val speakerModel: (OkHttpClient, Pairing, String) -> String? = { client, paired, action ->
         try { ChirpNetwork.speakerModel(client, paired, action) } catch (_: Exception) { null }
     },
+    private val voicesRequest: (OkHttpClient, Pairing, VoiceAction?) -> SavedVoices = ChirpNetwork::savedVoices,
     private val tailscale: TailscaleControl = AndroidTailscale(context.applicationContext),
     /** Starts or stops the microphone foreground service; the recording itself lives here. */
     private val foreground: (Boolean) -> Unit = { on -> NotesService.set(context.applicationContext, on) },
@@ -289,6 +290,8 @@ internal class NotesModel(
             if (first && latest != null) structureEnabled = !latest.correctionLeavesMachine
             recorder.configure(structureEnabled, latest)
             recorder.labelSpeakers = speakerModelControlReady()
+            recorder.recognizeVoices = rememberVoices
+            if (latest?.speakerVoices == true) refreshVoices()
             if (!recorder.state.active) recorder.options = options()
         })
 
@@ -297,6 +300,7 @@ internal class NotesModel(
     fun refresh() {
         paired = pairing() != null
         speakerModelControl.refresh()
+        refreshVoices()
     }
 
     fun setStructure(on: Boolean) { structureEnabled = on; recorder.configure(on, health) }
@@ -308,14 +312,98 @@ internal class NotesModel(
     }
     fun setSpeakerLabels(on: Boolean) = speakerModelControl.setLabels(on)
 
+    val savedVoices = SavedVoicesModel(scope, io) { action ->
+        voicesRequest(http(), pairing() ?: throw VoiceLibraryError("auth"), action)
+    }
+    val voicesAvailable get() = health?.speakerVoices == true
+    val rememberVoices get() = voicesAvailable && (savedVoices.library?.enabled ?: health?.speakersVoices?.enabled ?: false)
+    var voiceNotice by mutableStateOf<String?>(null)
+        private set
+    private val voicePrefs = app.getSharedPreferences("chirp_voice_notice", Context.MODE_PRIVATE)
+    private data class Enrollment(val document: NotesDocument, val person: Int, val name: String, val voice: String?,
+                                  var attempted: Int = -1, var running: Boolean = false)
+    private val enrollments = mutableMapOf<Int, Enrollment>()
+
+    fun acknowledgeVoiceNotice() { voicePrefs.edit().putBoolean("shown", true).apply(); voiceNotice = null }
+    fun disableRememberVoices() {
+        acknowledgeVoiceNotice(); enrollments.clear(); recorder.recognizeVoices = false
+        scope.launch {
+            savedVoices.perform(VoiceAction.Disable(false))
+            message = savedVoices.error
+        }
+    }
+    fun refreshVoices() {
+        if (!voicesAvailable) return
+        scope.launch {
+            savedVoices.perform(null)
+            recorder.recognizeVoices = rememberVoices
+        }
+    }
+    private fun rememberSpeaker(person: Int, remember: Boolean = true, update: Boolean = false, previousVoice: String? = null) {
+        val document = recorder.document
+        val id = document.roster.resolve(person)
+        enrollments.remove(id)
+        if (!remember || !voicesAvailable) return
+        val name = document.roster.person(id)?.name ?: return
+        if (!validVoiceName(name)) return
+        val recognized = previousVoice ?: document.roster.person(id)?.recognized?.voice
+        val voice = recognized ?: savedVoices.library?.voices?.firstOrNull { it.name.equals(name, true) }?.id
+        enrollments[id] = Enrollment(document, id, name, voice)
+        scope.launch {
+            // Read the server-wide switch before naming stores anything.
+            if (savedVoices.perform(null)?.enabled == true) retryEnrollments(force = update)
+            else { enrollments.remove(id); recorder.recognizeVoices = false; message = savedVoices.error }
+        }
+    }
+    private fun retryEnrollments(force: Boolean = false) {
+        if (!rememberVoices) return
+        val doc = recorder.document
+        enrollments.values.toList().forEach { pending ->
+            if (pending.document !== doc || doc.roster.displayName(pending.person) != pending.name) {
+                enrollments.remove(pending.person); return@forEach
+            }
+            if (pending.running || (!force && pending.attempted == doc.segments.size)) return@forEach
+            val source = doc.roster.source(pending.person, recorder.speakerSession) ?: run {
+                message = "Record a little more with them, then try again"; return@forEach
+            }
+            pending.running = true; pending.attempted = doc.segments.size
+            scope.launch {
+                val result = savedVoices.perform(VoiceAction.Remember(pending.name, source, pending.voice))
+                pending.running = false
+                if (enrollments[pending.person] !== pending || recorder.document !== doc) return@launch
+                if (result != null) {
+                    if (message == VoiceLibraryError("too_short").userMessage) message = null
+                    enrollments.remove(pending.person)
+                    if (!voicePrefs.getBoolean("shown", false)) voiceNotice = pending.name
+                } else {
+                    message = savedVoices.error
+                    // Only a short voice is eligible for an automatic retry at the next segment.
+                    if (savedVoices.errorCode != "too_short") enrollments.remove(pending.person)
+                }
+            }
+        }
+    }
+    fun updateVoice(person: Int) = rememberSpeaker(person, update = true)
+    fun rejectVoice(person: Int) {
+        val doc = recorder.document
+        val old = doc.roster.displayName(person)
+        enrollments.remove(doc.roster.resolve(person))
+        doc.rejectVoice(person)
+        val new = doc.roster.displayName(person)
+        if (old != new && doc.nameCount(old) > 0) edit(TextFieldValue(doc.replacingName(old, new)))
+        sync(); keep(now = true)
+    }
+
     /** Rename a person everywhere in the note; [replaceInNotes] also swaps their old name in the notes' text. */
-    fun renameSpeaker(person: Int, name: String, replaceInNotes: Boolean = false) {
+    fun renameSpeaker(person: Int, name: String, replaceInNotes: Boolean = false, remember: Boolean = true) {
         val document = recorder.document
         val old = document.roster.displayName(person)
-        document.renameSpeaker(person, name)
+        val previousVoice = document.roster.person(document.roster.resolve(person))?.recognized?.voice
+        document.renameSpeaker(person, cleanVoiceName(name))
         val new = document.roster.displayName(person)
         if (replaceInNotes && new != old) edit(TextFieldValue(document.replacingName(old, new)))
         sync(); keep(now = true)
+        rememberSpeaker(person, remember, previousVoice = previousVoice)
     }
 
     /** The note just recorded has people nobody has named: "Who was speaking?" shows until they are named or the next recording starts. */
@@ -331,6 +419,7 @@ internal class NotesModel(
     var recentNames by mutableStateOf<List<String>>(emptyList())
         private set
     fun loadRecentNames() {
+        refreshVoices()
         val kept = sessions ?: return
         val uid = recorder.document.uid
         scope.launch { var names = emptyList<String>(); io { names = kept.speakerNames(excluding = uid) }; recentNames = names }
@@ -340,14 +429,15 @@ internal class NotesModel(
      * Name several people at once (blank goes back to "Person N"); [replaceInNotes] also swaps each old name in the notes'
      * text, in one pass. Naming anyone settles the "Who was speaking?" line.
      */
-    fun renameSpeakers(names: Map<Int, String>, replaceInNotes: Boolean = false, merges: Map<Int, Int> = emptyMap()) {
+    fun renameSpeakers(names: Map<Int, String>, replaceInNotes: Boolean = false, merges: Map<Int, Int> = emptyMap(), remember: Set<Int> = names.keys) {
         val document = recorder.document
+        val oldVoices = document.roster.active.associateWith { document.roster.person(it)?.recognized?.voice }
         val oldNames = document.roster.active.associateWith(document.roster::displayName)
         for ((person, into) in merges) document.mergeSpeaker(person, into)
         for ((person, name) in names) {
             val target = document.roster.resolve(person)
             if (name.trim().take(SpeakerRoster.MAX_NAME).ifEmpty { "Person $target" } != document.roster.displayName(target))
-                document.renameSpeaker(target, name)
+                document.renameSpeaker(target, cleanVoiceName(name))
         }
         val renames = oldNames.mapNotNull { (id, old) ->
             document.roster.displayName(id).let { if (it != old) old to it else null }
@@ -355,6 +445,13 @@ internal class NotesModel(
         namePromptFor = null
         if (replaceInNotes && renames.isNotEmpty()) edit(TextFieldValue(document.replacingNames(renames)))
         sync(); keep(now = true)
+        for (person in names.keys) {
+            val name = document.roster.person(person)?.name
+            val notSaved = name != null && document.roster.person(person)?.recognized == null &&
+                savedVoices.library?.voices.orEmpty().none { it.name.equals(name, true) }
+            if (oldNames[person] != document.roster.displayName(person) || person !in remember || notSaved)
+                rememberSpeaker(person, person in remember, previousVoice = oldVoices[person])
+        }
     }
 
     fun mergeSpeaker(person: Int, into: Int) { recorder.document.mergeSpeaker(person, into); sync(); keep(now = true) }
@@ -594,6 +691,7 @@ internal class NotesModel(
         if (!quiet) elapsed = recorder.elapsed
         val state = recorder.state
         val commits = recorder.document.segments.size
+        if (commits != committedCount) retryEnrollments()
         val stateChanged = state != published
         val commanding = voiceEdit.status.isListening
         if (stateChanged || commanding != publishedCommand) { published = state; publishedCommand = commanding; NotesControls.publish(app, this) }

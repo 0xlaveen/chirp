@@ -8,6 +8,7 @@ import json
 import os
 import shlex
 import time
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
 
@@ -42,7 +43,7 @@ def check(probe, work, output, standalone=False):
         screenshot('emulator-speakers-failure.png')
         raise AssertionError(message + ' within %d s (server: %s)' % (seconds, json.dumps(last)))
 
-    def chips(): return sorted({n.get('content-desc')[:-len(CHIP)] for n in nodes() if n.get('content-desc', '').endswith(CHIP)})
+    def chips(): return sorted({n.get('content-desc')[:-len(CHIP)].removesuffix(', recognised') for n in nodes() if n.get('content-desc', '').endswith(CHIP)})
 
     def edit_text():
         return [n for n in nodes() if n.get('class') == 'android.widget.EditText']
@@ -59,10 +60,22 @@ def check(probe, work, output, standalone=False):
             adb('shell', 'input', 'keyevent', 'KEYCODE_DEL')
         raise AssertionError('Could not fill the speaker name field')
 
-    def tap(label): adb('shell', 'input', 'tap', *map(str, probe['center'](probe['wait_for'](label, 30))))
+    def tap(label):
+        result = adb('shell', 'CLASSPATH=/data/local/tmp/chirp-ui-probe.jar', 'app_process', '/',
+                     'dev.chirp.smoke.UiHierarchy', 'await-click', shlex.quote(label), '30000')
+        assert b'CLICKED' in result, 'Accessible action did not complete'
 
     # The two-voice asset, read by a fresh process (preferences are cached per process).
     adb('shell', 'am', 'force-stop', package)
+    # This phase isolates real diarization/enrollment from managed cleanup's engine lease.
+    # Preserve the encrypted fixture pairing in memory, never print it or write it to evidence.
+    preferences = ET.fromstring(adb('shell', 'run-as', package, 'cat', 'shared_prefs/chirp.xml'))
+    for child in list(preferences):
+        if child.get('name') in ('correction', 'correction_explicit'):
+            preferences.remove(child)
+    ET.SubElement(preferences, 'boolean', name='correction', value='false')
+    ET.SubElement(preferences, 'boolean', name='correction_explicit', value='true')
+    adb('shell', 'run-as', package, 'sh', '-c', shlex.quote('cat > shared_prefs/chirp.xml'), data=ET.tostring(preferences))
     if standalone:
         # What the notes check sets up first: notifications, the library on with kept audio.
         adb('shell', 'pm', 'grant', package, 'android.permission.POST_NOTIFICATIONS')
@@ -121,10 +134,24 @@ def check(probe, work, output, standalone=False):
     probe['wait_for']('Stop sample', 30)
     tap('Stop sample')
     tap('Done')
-    deadline = time.monotonic() + 20
-    while probe['find']('Who was speaking?') is not None:
-        assert time.monotonic() < deadline, 'The "Who was speaking?" line stayed after naming'
+    # Enrolment uses voiced windows, rather than the wall clock. If this first note is
+    # short, continuing it must automatically remember the drafted name without another rename.
+    deadline = time.monotonic() + 45
+    continued = False
+    while probe['find']('Remembered voice') is None:
+        if 'too_short' in server().get('voice_errors', []):
+            tap('Continue recording notes')
+            continued = True
+            break
+        assert time.monotonic() < deadline, 'Naming produced neither enrollment nor a short-voice result'
         time.sleep(.5)
+    probe['wait_for']('Remembered voice', 180)
+    screenshot('emulator-speakers-notice.png')
+    tap('OK')
+    wait(lambda: server().get('voice_count', 0) >= 1, 'Naming did not remember a voice on the server', 30)
+    if continued:
+        probe['click']('Stop recording notes')
+        probe['wait_for']('Stopped', 90)
 
     tap('Transcript')
     deadline = time.monotonic() + 30
@@ -163,8 +190,36 @@ def check(probe, work, output, standalone=False):
         time.sleep(.5)
     tap('Close transcript')
 
+    # A new note uses a new random session; both named voices are recognised by the server.
+    wait(lambda: server().get('voice_count', 0) == 2, 'Chip rename did not remember the second voice', 45)
+    tap('Back to notes')
+    probe['wait_for']('Record new note', 30)
+    matched = server().get('matched', 0)
+    tap('Record new note')
+    wait(lambda: server().get('matched', 0) >= matched + 2,
+         'A new note did not recognise the saved voices', 180)
+    tap('Transcript')
+    probe['wait_for']('Sam, recognised' + CHIP, 45)
+    screenshot('emulator-speakers-recognised.png')
+    remembered = sum(a == {'action': 'remember', 'status': 200} for a in server().get('voice_actions', []))
+    tap('Sam, recognised' + CHIP)
+    tap('Update Sam’s saved voice')
+    wait(lambda: sum(a == {'action': 'remember', 'status': 200} for a in server().get('voice_actions', [])) > remembered,
+         'Update saved voice did not reach the server', 45)
+    tap('Sam, recognised' + CHIP)
+    tap('Not Sam')
+    assert 'Sam' not in chips(), 'Not X did not restore the numbered person'
+    labelled = server().get('labelled', 0)
+    wait(lambda: server().get('labelled', 0) > labelled, 'No segment arrived after Not X', 90)
+    assert 'Sam' not in chips(), 'A rejected voice was applied again in the same note'
+    assert server().get('voice_count') == 2, 'Not X changed the shared library'
+    screenshot('emulator-speakers-rejected.png')
+    tap('Close transcript')
+    probe['click']('Stop recording notes')
+    probe['wait_for']('Stopped', 90)
+
     # Back to the one-voice asset for whatever runs next.
     adb('shell', 'am', 'force-stop', package)
     adb('shell', 'run-as', package, 'sh', '-c', shlex.quote('cat > shared_prefs/debug_capture.xml'),
         data=b'<?xml version="1.0" encoding="utf-8"?><map><boolean name="synthetic" value="true" /></map>')
-    log('PASS: speaker labels: on by default, model fetched without consent, two voices → two people, Name speakers sheet, rename from a chip, labelled kept-audio replay')
+    log('PASS: speaker labels: on by default, model fetched without consent, two voices → two people, Name speakers sheet, rename from a chip, labelled kept-audio replay; naming → server enrollment → automatic recognition in a new note; Update voice; Not X suppression')

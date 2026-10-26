@@ -168,6 +168,9 @@ class SettingsStore(context: Context) {
                 .put("correction_leaves_machine", value.correctionLeavesMachine)
                 .put("correction_host", value.correctionHost.orEmpty())
                 .put("notes_structure", value.notesStructure).put("notes_reorganize", value.notesReorganize).put("notes_correction", value.notesCorrection).put("notes_edit", value.notesEdit)
+                .put("speaker_voices", value.speakerVoices).apply { value.speakersVoices?.let { v ->
+                    put("speakers_voices", JSONObject().put("enabled", v.enabled).put("count", v.count).put("model", v.model))
+                } }
                 .put("notes_speakers", value.notesSpeakers).apply { value.speakersModel?.let { put("speakers_model", JSONObject().put("state", it).put("size_bytes", value.speakersModelBytes)) } }
                 .put("correction_profiles", org.json.JSONArray().apply {
                     value.correctionProfiles.forEach { profile -> put(JSONObject().put("id", profile.id)

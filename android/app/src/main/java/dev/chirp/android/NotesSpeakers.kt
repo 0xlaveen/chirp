@@ -5,7 +5,7 @@ import org.json.JSONObject
 
 /**
  * Live Notes speaker labels (issue #187): who said what, as Person 1, Person 2… The Mac's server tells voices apart (in its
- * memory, never saved); this file holds what the phone keeps of it: each segment's turns and the note's roster of people,
+ * memory, with saved voices kept only in the server library); this file holds what the phone keeps of it: each segment's turns and the note's roster of people,
  * with their names and merges. A port of the Mac's `SpeakerRoster`/`SpeakerTurn`. Never logged.
  */
 
@@ -13,8 +13,11 @@ import org.json.JSONObject
 data class ServerTurn(val speaker: Int, val start: Double, val text: String, val raw: String,
                                val approximate: Boolean = false, val keptOriginal: Boolean = false)
 
-/** `final.speakers`: the segment's turns, or why there are none (`unavailable`: no model on the Mac; `failed`). */
-data class SpeakersResult(val generation: String?, val turns: List<ServerTurn>, val error: String? = null) {
+/** A recognised slot and its server voice's public metadata. */
+data class ServerVoiceMatch(val speaker: Int, val voice: String, val name: String)
+
+/** `final.speakers`: turns, recognition, or a fixed error code. */
+data class SpeakersResult(val generation: String?, val turns: List<ServerTurn>, val error: String? = null, val matches: List<ServerVoiceMatch> = emptyList()) {
     companion object {
         const val MAX_TURNS = 400
         const val MAX_SLOT = 63
@@ -30,9 +33,24 @@ data class SpeakersResult(val generation: String?, val turns: List<ServerTurn>, 
                     val t = list.getJSONObject(i)
                     ServerTurn(t.getInt("speaker").also { require(it in 0..MAX_SLOT) }, t.getDouble("start").coerceAtLeast(0.0),
                         t.getString("text"), t.optString("raw", t.getString("text")), t.optBoolean("approximate"), t.optBoolean("kept_original"))
-                })
+                }, matches = decodeMatches(json))
             }
         } catch (_: Exception) { null }
+        /** A bad match cannot discard valid transcript turns. Drop every conflicting entry. */
+        private fun decodeMatches(json: JSONObject): List<ServerVoiceMatch> {
+            val array = json.optJSONArray("matches") ?: return emptyList()
+            if (array.length() > 64) return emptyList()
+            val matches = (0 until array.length()).mapNotNull { i ->
+                val item = array.optJSONObject(i) ?: return@mapNotNull null
+                val slot = item.opt("speaker")
+                val voice = item.opt("voice") as? String ?: return@mapNotNull null
+                val name = item.opt("name") as? String ?: return@mapNotNull null
+                if (slot !is Int || slot !in 0..MAX_SLOT || !VOICE_ID.matches(voice) || !validVoiceName(name)) null
+                else ServerVoiceMatch(slot, voice, name)
+            }
+            return matches.filter { m -> matches.count { it.speaker == m.speaker } == 1 && matches.count { it.voice == m.voice } == 1 }
+        }
+
     }
 }
 
@@ -54,7 +72,11 @@ internal data class SpeakerTurn(val person: Int, val start: Double, val text: St
  * state for this note (a restart) says so with a new generation, and its slots then mean new people.
  */
 internal class SpeakerRoster {
-    class Person(val id: Int, var name: String? = null, var mergedInto: Int? = null)
+    class Person(val id: Int, var name: String? = null, var mergedInto: Int? = null) {
+        var recognized: ServerVoiceMatch? = null
+        val rejected = mutableSetOf<String>()
+        var manuallyNamed = false
+    }
 
     private val list = mutableListOf<Person>()
     val people: List<Person> get() = list
@@ -65,6 +87,29 @@ internal class SpeakerRoster {
     fun id(slot: Int, generation: String?): Int {
         if (generation != this.generation) { slots.clear(); this.generation = generation }
         return slots.getOrPut(slot) { addPerson() }
+    }
+
+    fun source(id: Int, session: String): SpeakerVoiceSource? {
+        val target = resolve(id)
+        val slot = slots.entries.firstOrNull { it.value == target }?.key
+            ?: slots.entries.firstOrNull { resolve(it.value) == target }?.key ?: return null
+        return generation?.let { SpeakerVoiceSource(session, it, slot) }
+    }
+
+    fun recognize(match: ServerVoiceMatch): Int? {
+        val id = slots[match.speaker] ?: return null
+        val p = person(id) ?: return null
+        if (p.mergedInto != null || p.manuallyNamed || match.voice in p.rejected ||
+            (p.name != null && p.recognized == null) || slots.values.any { it != id && person(it)?.recognized?.voice == match.voice }) return null
+        p.recognized = match
+        p.name = match.name
+        return id
+    }
+
+    fun reject(id: Int) {
+        val p = person(resolve(id)) ?: return
+        p.recognized?.let { p.rejected += it.voice }
+        p.recognized = null; p.name = null; p.manuallyNamed = false
     }
 
     fun addPerson(): Int { list += Person(list.size + 1); return list.size }
@@ -91,6 +136,7 @@ internal class SpeakerRoster {
     /** A name for the note; blank goes back to "Person N". */
     fun rename(id: Int, name: String?) {
         val person = person(resolve(id)) ?: return
+        person.manuallyNamed = true; person.recognized = null
         person.name = name?.trim()?.take(MAX_NAME)?.takeIf { it.isNotEmpty() }
     }
 
