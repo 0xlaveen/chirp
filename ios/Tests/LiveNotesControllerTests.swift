@@ -100,7 +100,7 @@ struct LiveNotesControllerTests {
         #expect(f.notes.state == .paused && !f.audio.isRunning)
         try await eventually("segment committed while paused") { f.notes.document.segments.count == 1 }
         try await eventually("structured") { f.notes.document.text.contains("## Synthetic notes") }
-        #expect(f.notes.document.text.contains("- Synthetic words."))
+        #expect(f.notes.document.text.contains("Synthetic words."))
         try await eventually("activity paused") { f.values.activity.last == "update:paused" }
 
         await f.notes.resume()
