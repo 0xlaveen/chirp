@@ -231,7 +231,7 @@ class SettingsStore(context: Context) {
 /** Memory-only, shared by every entry point. Process death also ends a private session. */
 internal object PrivateSession {
     const val LIMIT_MS = 3_600_000L
-    const val HELP = "Exclude dictations from history until the screen locks or 1 hour passes. Clean-up and the Mac connection work as usual."
+    const val HELP = "Exclude dictations from history until the screen locks or 1 hour passes. Clean-up and the connection to your computer work as usual."
     private val main = android.os.Handler(android.os.Looper.getMainLooper())
     @Volatile private var until = 0L
     private var app: android.app.Application? = null

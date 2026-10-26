@@ -28,12 +28,12 @@ internal fun SettingsList(state: SetupState, actions: SettingsActions, history: 
     val dictationHistory = history ?: remember { DictationHistory(context) }
     val connection = connectionSummary(state.paired, state.host, state.reachable, state.checking, state.health)
     Column(verticalArrangement = Arrangement.spacedBy(24.dp)) {
-        if (state.health?.debugRetention == true) StatusBanner(StatusKind.Error, "DEBUG RETENTION IS ON — the Mac may retain audio and text")
+        if (state.health?.debugRetention == true) StatusBanner(StatusKind.Error, "DEBUG RETENTION IS ON — the Chirp server may retain audio and text")
         // One grouped card, System-Settings style: seven rows with an icon and a live one-line summary each.
         // The list stays composed beside its detail page on a Fold: preference changes must refresh its summaries.
         key(revision) { SettingsGroup {
             NavRow(SettingsPage.Connection.title, { open(SettingsPage.Connection) },
-                summary = if (state.paired) connection.title else "Pair your Mac to dictate", icon = R.drawable.ic_devices)
+                summary = if (state.paired) connection.title else "Pair your computer to dictate", icon = R.drawable.ic_devices)
             NavRow(SettingsPage.HowYouDictate.title, { open(SettingsPage.HowYouDictate) }, summary = inputModeSummary(state), icon = R.drawable.ic_mic)
             NavRow(SettingsPage.Dictation.title, { open(SettingsPage.Dictation) }, summary = dictationSummary(context, state), icon = R.drawable.ic_tune)
             NavRow(SettingsPage.Keyboard.title, { open(SettingsPage.Keyboard) }, summary = if (state.inputMode == InputMode.OWN_KEYBOARD) "Not in use — you’re keeping ${state.keyboardLabel ?: "your keyboard"}" else keyboardSummary(context, prefs), icon = R.drawable.ic_keyboard)
@@ -56,7 +56,7 @@ internal fun dictationSummary(context: android.content.Context, state: SetupStat
         !state.paired -> stop
         cleanup && store.correction -> "Clean-up on · $stop"
         cleanup -> "Clean-up off · $stop"
-        else -> "No clean-up from this Mac · $stop"
+        else -> "No clean-up from your computer · $stop"
     }
 }
 

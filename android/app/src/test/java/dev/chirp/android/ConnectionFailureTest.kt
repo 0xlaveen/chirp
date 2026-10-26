@@ -36,8 +36,8 @@ class ConnectionFailureTest {
     @Test fun `statuses are hedged, distinct and round-trip`() {
         val statuses = ConnectionFailure.Kind.entries.map { it.status }
         assertEquals(statuses.size, statuses.toSet().size)
-        assertEquals("Mac may be asleep, or Chirp isn't running", ConnectionFailure.Kind.DOWN.status)
-        assertTrue(ConnectionFailure.Kind.DNS.status.startsWith("Can't find your Mac on the tailnet"))
+        assertEquals("Computer may be asleep, or Chirp isn't running", ConnectionFailure.Kind.DOWN.status)
+        assertTrue(ConnectionFailure.Kind.DNS.status.startsWith("Can't find your computer on the tailnet"))
         ConnectionFailure.Kind.entries.forEach { assertEquals(it, ConnectionFailure.kind(it.status)) }
         assertNull(ConnectionFailure.kind("Didn't catch that"))
         assertEquals(ConnectionFailure.Kind.DNS.status, ConnectionFailure.status(ConnectionFailure.Kind.DNS, timedOut = true))

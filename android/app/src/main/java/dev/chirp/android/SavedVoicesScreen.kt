@@ -45,9 +45,9 @@ internal fun SavedVoicesContent(model: SavedVoicesModel) {
     SettingsGroup {
         SwitchRow("Remember voices of people I name", library?.enabled == true, { on ->
             if (on) model.action(VoiceAction.Enable) else disable = true
-        }, enabled = library != null && !model.busy, summary = "Shared by all devices paired to this Mac")
+        }, enabled = library != null && !model.busy, summary = "Shared by all devices paired to this computer")
         SettingsItem {
-            Text("Chirp recognises these people in new notes on all your devices. They’re kept on your paired Mac, never uploaded.",
+            Text("Chirp recognises these people in new notes on all your devices. They’re kept on your paired computer, never uploaded.",
                 style = MaterialTheme.typography.bodyMedium)
         }
         model.error?.let { message ->
@@ -88,7 +88,7 @@ internal fun SavedVoicesContent(model: SavedVoicesModel) {
         } })
     if (forgetAll || forgetting != null) AlertDialog(onDismissRequest = { forgetAll = false; forgetting = null },
         title = { Text(if (forgetAll) "Forget all voices?" else "Forget ${forgetting?.name}?") },
-        text = { Text("Removes saved voices from your Mac for every device. Names in existing notes stay.") },
+        text = { Text("Removes saved voices from your computer for every device. Names in existing notes stay.") },
         confirmButton = { TextButton({
             val action = forgetting?.let { VoiceAction.Forget(it.id) } ?: VoiceAction.ForgetAll
             forgetAll = false; forgetting = null; model.action(action)

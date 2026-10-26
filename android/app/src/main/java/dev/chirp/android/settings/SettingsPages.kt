@@ -37,7 +37,7 @@ private fun ConnectionPage(state: SetupState, actions: SettingsActions) {
         if (state.paired) ActionRow("Check connection", actions.checkConnection, enabled = !state.checking)
         if (state.wifiPermissionNeeded && !state.localNetwork) ActionRow("Allow Wi-Fi server access", actions.allowWifi,
             summary = "Needed only for servers on your Wi-Fi. Tailscale works without it.")
-        NavRow(if (state.paired) "Change pairing" else "Pair Mac", actions.changePairing)
+        NavRow(if (state.paired) "Change pairing" else "Pair computer", actions.changePairing)
     }
     if (state.paired) SettingsGroup { ActionRow("Forget pairing", { confirmForget = true }, destructive = true) }
     PhoneFallbackSettings()
@@ -59,11 +59,11 @@ private fun DictationPage(state: SetupState, actions: SettingsActions) {
     if (state.health.cleanupAvailable()) {
         SettingsGroup("Clean-up") {
             SwitchRow("Clean-up · ${correctionLabel(state.health)}", cleanup, { cleanup = it; store.correction = it },
-                summary = "Polishes punctuation and filler words ${if (state.health?.correctionLeavesMachine == true) "on ${state.health?.correctionHost}" else "on your Mac"}",
+                summary = "Polishes punctuation and filler words ${if (state.health?.correctionLeavesMachine == true) "on ${state.health?.correctionHost}" else "on your computer"}",
                 infoTitle = "Clean-up", infoBody = cleanupDescription(state.health))
             CleanupStyleSettings(state.health)
         }
-    } else if (state.paired) SettingsGroup("Clean-up") { SettingsItem { Text("Mac has clean-up off", style = MaterialTheme.typography.bodyMedium) } }
+    } else if (state.paired) SettingsGroup("Clean-up") { SettingsItem { Text("Clean-up is off on your computer", style = MaterialTheme.typography.bodyMedium) } }
     SettingsGroup("Stopping") { StopDictationSettings() }
     SettingsGroup("Spoken commands") {
         SwitchRow("Spoken commands", commands, { commands = it; store.spokenCommands = it }, summary = "Off by default",

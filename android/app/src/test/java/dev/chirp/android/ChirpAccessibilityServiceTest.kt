@@ -299,7 +299,7 @@ class ChirpAccessibilityServiceTest {
         assertEquals(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, shadowOf(app).nextStartedActivity.action)
         shadowOf(app).grantPermissions(Manifest.permission.RECORD_AUDIO)
         service.paired = false; focus(); tapBubble()
-        assertTrue(shows("Pair your Mac to dictate")); assertEquals(listOf("Pair Mac"), errorActions())
+        assertTrue(shows("Pair your computer to dictate")); assertEquals(listOf("Pair computer"), errorActions())
         panel!!.hide.performClick(); advance()
         service.paired = true; service.pairingUrl = "https://mac.tail0000.ts.net"; service.vpn = TailscalePromptTest.FakeTailscale(connected = false)
         focus(); tapBubble()

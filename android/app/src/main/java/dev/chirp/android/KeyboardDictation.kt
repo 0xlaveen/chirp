@@ -257,7 +257,7 @@ internal class KeyboardDictation(
                 CleanupStyles.profiles(store.health).forEach { profile ->
                     radio(profile.name, if (profile.rewrites) "rewrites" else null, selected == profile.id) { styleOverride = profile.id; currentStyle = profile; render() }
                 }
-            } else note("Mac has clean-up off")
+            } else note("Clean-up is off on your computer")
             section("Chirp")
             item(R.drawable.ic_settings, "Chirp settings") { setup() }
             show()
@@ -342,7 +342,7 @@ internal class KeyboardDictation(
         if (info.isPasswordField()) {
             showNotice("Dictation unavailable in password fields"); return
         }
-        val paired = pairing() ?: run { showNotice("Pair your Mac in Chirp settings"); return }
+        val paired = pairing() ?: run { showNotice("Pair your computer in Chirp settings"); return }
         onPhone = phone || fallback.usable() && (offline.active() || tailscaleStatus() != null)
         if (!onPhone && retry(paired)) return
         checking = false
@@ -592,7 +592,7 @@ internal class KeyboardDictation(
     }
     private companion object {
         fun keptStatus(reason: String) = (if (DictationAction.forStatus(reason) == DictationAction.NETWORK ||
-            reason.startsWith("Mac took too long")) "Connection lost" else reason.substringBefore(" — ")) + " — kept what I heard"
+            reason.startsWith("Chirp server took too long")) "Connection lost" else reason.substringBefore(" — ")) + " — kept what I heard"
         const val IDLE = "Tap mic · hold to talk"
         const val CONNECTING = "Connecting Tailscale…"
         const val CONNECTED = "Tailscale connected"

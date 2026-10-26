@@ -27,12 +27,12 @@ internal fun CleanupStyleSettings(health: Health?, appsOnly: Boolean = false) {
     LaunchedEffect(open, health, reload) {
         if (!open || appsOnly) return@LaunchedEffect
         val paired = store.pairing()
-        if (paired == null) { promptStatus = "Pair your Mac to load style prompts"; return@LaunchedEffect }
+        if (paired == null) { promptStatus = "Pair your computer to load style prompts"; return@LaunchedEffect }
         val client = ChirpNetwork.client(context)
         try {
             loaded = withContext(Dispatchers.IO) { ChirpNetwork.profiles(client, paired) }
             promptStatus = ""
-        } catch (_: Exception) { promptStatus = "Style prompts unavailable. Check Mac connection and retry." }
+        } catch (_: Exception) { promptStatus = "Style prompts unavailable. Check the connection and retry." }
         finally { ChirpNetwork.dispose(client) }
     }
     var default by remember { mutableStateOf(store.defaultStyle) }

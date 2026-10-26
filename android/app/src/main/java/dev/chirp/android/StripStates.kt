@@ -84,8 +84,8 @@ internal fun dictationDisplayStatus(status: String): String = when {
     status == "kept original" -> "Kept what was heard"
     status.startsWith("cleaned") -> "Finished" + status.removePrefix("cleaned")
     status.startsWith("Inserted") -> "Finished" + status.removePrefix("Inserted")
-    status == ConnectionFailure.OFFLINE -> "Mac offline · Check again"
-    status.startsWith("Mac is loading") || status.startsWith("Mac loading") -> "Mac loading its model"
+    status == ConnectionFailure.OFFLINE -> "Computer offline · Check again"
+    status.startsWith("Computer is loading") || status.startsWith("Computer loading") -> "Computer loading its model"
     else -> status
 }
 

@@ -174,7 +174,7 @@ class NotesLibraryScreenTest {
     @Test fun `connection and Dictate actions and the dismissible setup card are reachable`() {
         setup.mic = false
         show()
-        compose.onNodeWithContentDescription("Connection: Mac. Open connection settings").performClick()
+        compose.onNodeWithContentDescription("Connection: Computer. Open connection settings").performClick()
         assertEquals(1, connections)
         compose.onNodeWithContentDescription("Dictate").performClick()
         assertEquals(1, dictations)

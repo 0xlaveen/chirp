@@ -55,7 +55,7 @@ class QuickDictateRenderTest {
             compose.onNodeWithContentDescription("Use raw, available for 4 seconds").assertExists()
             write(compose.onRoot().captureToImage().asAndroidBitmap(), "quick-dictate-copied-$screen-${if (dark) "dark" else "light"}")
             compose.runOnIdle { current.value = QuickRig(app, paired = false); current.value.model.start() }
-            compose.onNodeWithText("Pair Mac").assertExists()
+            compose.onNodeWithText("Pair computer").assertExists()
             write(compose.onRoot().captureToImage().asAndroidBitmap(), "quick-dictate-error-$screen-${if (dark) "dark" else "light"}")
             compose.runOnIdle { share.value = true }
             compose.onNodeWithText("Save as new note").assertExists()

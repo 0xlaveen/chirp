@@ -118,7 +118,7 @@ internal fun NotesScreen(model: NotesModel, record: () -> Unit, copy: () -> Unit
     if (model.nameSpeakersOpen) NameSpeakersSheet(model) { model.nameSpeakersOpen = false }
     model.voiceNotice?.let { name ->
         AlertDialog(onDismissRequest = model::acknowledgeVoiceNotice, title = { Text("Remembered voice") },
-            text = { Text("Chirp will recognise $name’s voice in later notes on your devices. Saved voices stay on your Mac. Settings → Notes → Saved voices.") },
+            text = { Text("Chirp will recognise $name’s voice in later notes on your devices. Saved voices stay on your computer. Settings → Notes → Saved voices.") },
             confirmButton = { TextButton(model::acknowledgeVoiceNotice) { Text("OK") } },
             dismissButton = { TextButton(model::disableRememberVoices) { Text("Don’t remember voices") } })
     }
@@ -245,7 +245,7 @@ private fun NotesMenu(model: NotesModel, actions: NotesMenuActions) {
             }
             if (model.structureAvailable) toggle("Structure notes", model.structureEnabled, model.structureHost?.let { "Sends text to $it" }) { model.setStructure(it) }
             if (model.reorganizing !is Reorganizing.Unavailable) toggle("Auto-organize", model.auto) { model.setAuto(it) }
-            if (model.speakersAvailable) toggle("Label speakers", model.labelSpeakers, "Who said what · voices compared on your Mac") { model.setSpeakerLabels(it) }
+            if (model.speakersAvailable) toggle("Label speakers", model.labelSpeakers, "Who said what · voices compared on your computer") { model.setSpeakerLabels(it) }
             if (model.reorganizing !is Reorganizing.Unavailable || model.structureAvailable || model.speakersAvailable) HorizontalDivider()
             item("Copy", R.drawable.ic_copy, model.hasContent, run = actions.copy)
             item("Share", R.drawable.ic_share, model.hasContent, run = actions.share)

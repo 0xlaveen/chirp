@@ -35,7 +35,7 @@ class PolishSweepTest {
     }
 
     @Test fun `errors point to Chirp settings, the screen that exists`() {
-        assertEquals(DictationAction.PAIR, DictationAction.forStatus("Pair your Mac in Chirp settings"))
+        assertEquals(DictationAction.PAIR, DictationAction.forStatus("Pair your computer in Chirp settings"))
         assertEquals(DictationAction.MICROPHONE, DictationAction.forStatus("Allow microphone in Chirp settings"))
     }
 }

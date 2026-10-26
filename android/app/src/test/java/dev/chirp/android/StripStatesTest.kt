@@ -71,7 +71,7 @@ class StripStatesTest {
     @Test fun `with animator scale zero no strip animator runs in any state`() {
         noMotion()
         val strip = strip()
-        for (state in listOf("Connecting to Mac…" to false, "Listening…" to false, "Polishing…" to true)) {
+        for (state in listOf("Connecting to your computer…" to false, "Listening…" to false, "Polishing…" to true)) {
             strip.show(state.first, "", true, state.second, false, false, polishing = state.second, style = "Email")
             assertFalse("${state.first} animating", strip.animating)
         }
@@ -96,7 +96,7 @@ class StripStatesTest {
         var now = 0L
         val strip = strip { now }
         assertEquals(View.GONE, strip.timer.visibility)
-        strip.show("Connecting to Mac…", "", true, false, false, false)
+        strip.show("Connecting to your computer…", "", true, false, false, false)
         assertEquals("no timer while connecting", View.GONE, strip.timer.visibility)
         strip.show("Listening…", "", true, false, false, false)
         assertEquals(View.VISIBLE, strip.timer.visibility); assertEquals("0:00", strip.timer.text.toString())
@@ -155,7 +155,7 @@ class StripStatesTest {
         val anchor = View(ContextThemeWrapper(app, R.style.Theme_Chirp))
         var cleanup = true; var picked = ""; var opened = false
         val menu = StripMenu(anchor).apply {
-            toggle("Clean-up", "Correction on Mac", cleanup) { cleanup = it }
+            toggle("Clean-up", "Correction on your computer", cleanup) { cleanup = it }
             section("Style")
             radio("Default", null, true) { picked = "default" }
             radio("Notes", "rewrites", false) { picked = "notes" }

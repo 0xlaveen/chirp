@@ -339,7 +339,7 @@ class ChirpImeServiceTest {
     }
     @Test fun `startup timeout releases capture and retires socket`() {
         tap(); advance(18000)
-        assertTrue(capture.released); assertTrue(stream.closed); assertTrue(shows("Mac unreachable"))
+        assertTrue(capture.released); assertTrue(stream.closed); assertTrue(shows("Computer unreachable"))
     }
     @Test fun `idle panel has no socket or microphone`() {
         advance(30000)
@@ -372,6 +372,6 @@ class ChirpImeServiceTest {
     @Test fun `transport failure during capture cancels composition`() {
         start(); stream.partial(); stream.failure(); advance(0)
         assertTrue(capture.released); assertEquals("", service.editor.composing)
-        assertTrue(shows("Mac unreachable"))
+        assertTrue(shows("Computer unreachable"))
     }
 }

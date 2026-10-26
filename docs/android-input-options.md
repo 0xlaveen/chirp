@@ -107,9 +107,9 @@ The user is granting sensitive screen-interaction capabilities; onboarding and t
   - **Polished** gets a `moon` chip and **Use raw** with a 5 s bar.
   - **Ready to copy** offers Copy, Open in Scratchpad and Done.
 - **Errors** each carry exactly one fix:
-  - not paired → Pair Mac;
+  - not paired → Pair computer;
   - microphone denied → Allow;
-  - Mac offline → the keyboard's reason with Check again, or "Tailscale is off" with Turn on on a tailnet pairing;
+  - Computer offline → the keyboard's reason with Check again, or "Tailscale is off" with Turn on on a tailnet pairing;
   - FGS start blocked → Use Quick dictate.
 - **Window changes.** A window change mid-utterance stops capture, and the final lands in Ready to copy rather than in another app. The lock screen and screen off still discard everything.
 

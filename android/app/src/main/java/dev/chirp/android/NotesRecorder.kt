@@ -1040,7 +1040,7 @@ internal class NotesRecorder(
 
         fun friendly(code: String) = when (code) {
             "auth" -> "Pairing refused — pair again in Chirp settings"
-            "busy" -> "Mac is busy"
+            "busy" -> "Chirp server is busy"
             "too_long" -> "Segment too long"
             "bad_audio" -> "audio not understood"
             "engine" -> "speech engine hiccup"

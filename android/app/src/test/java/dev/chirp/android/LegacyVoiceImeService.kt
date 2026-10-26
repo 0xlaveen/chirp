@@ -147,7 +147,7 @@ open class LegacyVoiceImeService : InputMethodService() {
             status = "Dictation unavailable in password fields"; render(); return
         }
         val connection = currentInputConnection ?: run { status = "Select a text field first"; render(); return }
-        if (pairing == null) { status = "Pair with your Mac in Chirp setup"; render(); return }
+        if (pairing == null) { status = "Pair with your computer in Chirp setup"; render(); return }
         forgetUndo()
         val id = ++generation
         pressAt = SystemClock.elapsedRealtime()
@@ -156,7 +156,7 @@ open class LegacyVoiceImeService : InputMethodService() {
         composingStart = -1; lastSequence = -1
         phase = Phase.CONNECTING
         audioFinished = false; streamReady = false; stopSent = false
-        status = "Connecting to Mac…"; partial = ""; stable = ""
+        status = "Connecting to your computer…"; partial = ""; stable = ""
         stopAt = null; finalLatency = null; stopToFinal = null; firstPartialLatency = null
         val buffer = PreReadyBuffer(send = { bytes -> transport?.audio(bytes) == true })
         preReady = buffer
@@ -175,8 +175,8 @@ open class LegacyVoiceImeService : InputMethodService() {
                 }
             } })
         capture?.start(); haptic(); render()
-        setDeadline(id, 18000, "Mac unreachable — is Tailscale on?")
-        if (ensureTransport()?.start(store.correction) != true) cancelSession("Mac unreachable — is Tailscale on?")
+        setDeadline(id, 18000, "Computer unreachable — is Tailscale on?")
+        if (ensureTransport()?.start(store.correction) != true) cancelSession("Computer unreachable — is Tailscale on?")
     }
     private fun onServerEvent(id: Int, event: ServerEvent) {
         when (event) {
@@ -189,7 +189,7 @@ open class LegacyVoiceImeService : InputMethodService() {
                 store.health = store.health?.copy(debugRetention = retained)
                 streamReady = true
                 clearDeadline()
-                if (preReady?.ready() != true) { cancelSession("Mac connection is too slow — try again"); return }
+                if (preReady?.ready() != true) { cancelSession("Connection too slow — try again"); return }
                 if (phase == Phase.CONNECTING) { phase = Phase.RECORDING; status = "Listening…" }
                 if (audioFinished) sendStop(id)
             }
@@ -231,10 +231,10 @@ open class LegacyVoiceImeService : InputMethodService() {
             }
             is ServerEvent.Failure -> cancelSession(when (event.code) {
                 "auth" -> "Pairing refused — pair again in Chirp setup"
-                "busy" -> "Mac is busy — try again"
+                "busy" -> "Chirp server is busy — try again"
                 "too_long" -> "Dictation limit is 120 seconds"
                 "bad_audio" -> "No audio received — try again"
-                else -> "Mac speech engine unavailable — try again"
+                else -> "Speech engine unavailable — try again"
             })
             is ServerEvent.Correcting, ServerEvent.Unknown -> Unit
         }
@@ -256,9 +256,9 @@ open class LegacyVoiceImeService : InputMethodService() {
     }
     private fun sendStop(id: Int) {
         if (stopSent) return
-        if (transport?.stop() != true) { cancelSession("Mac unreachable — is Tailscale on?"); return }
+        if (transport?.stop() != true) { cancelSession("Computer unreachable — is Tailscale on?"); return }
         stopSent = true
-        setDeadline(id, 60000, "Mac took too long to finish — try again")
+        setDeadline(id, 60000, "Chirp server took too long — try again")
     }
     private fun cancelSession(message: String = "Tap to dictate · hold to talk") {
         val active = phase != Phase.IDLE
@@ -292,7 +292,7 @@ open class LegacyVoiceImeService : InputMethodService() {
             failure = {
                 if (transport === stream) {
                     transport = null
-                    if (phase != Phase.IDLE) cancelSession("Mac unreachable — is Tailscale on?")
+                    if (phase != Phase.IDLE) cancelSession("Computer unreachable — is Tailscale on?")
                 }
             })
         transport = stream

@@ -34,7 +34,7 @@ import java.time.ZoneOffset
 
 class NotesConnectionStatusTest {
     @Test fun `connection chip distinguishes Mac offline and phone fallback`() {
-        assertEquals("Mac", notesConnectionStatus(true, true, false, false).label)
+        assertEquals("Computer", notesConnectionStatus(true, true, false, false).label)
         assertTrue(notesConnectionStatus(true, true, false, false).connected)
         assertEquals("Offline", notesConnectionStatus(true, false, false, true).label)
         assertEquals("Offline", notesConnectionStatus(true, true, true, false).label)

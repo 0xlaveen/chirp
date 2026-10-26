@@ -103,7 +103,7 @@ class QuickDictateTest {
         controller.destroy()
     }
     @Test fun `network engine and microphone errors give the matching Activity result when abandoned`() {
-        for ((message, code) in listOf("Mac unreachable — check Tailscale" to RecognizerIntent.RESULT_NETWORK_ERROR,
+        for ((message, code) in listOf("Computer unreachable — check Tailscale" to RecognizerIntent.RESULT_NETWORK_ERROR,
             "Speech engine hiccup" to RecognizerIntent.RESULT_SERVER_ERROR, "Microphone unavailable" to RecognizerIntent.RESULT_AUDIO_ERROR)) {
             val controller = Robolectric.buildActivity(TestQuick::class.java, Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH)).setup()
             val activity = controller.get()
@@ -124,14 +124,14 @@ class QuickDictateTest {
         shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(1)); assertTrue(activity.isFinishing)
         controller.pause().stop().destroy()
     }
-    @Test fun `Check again retries the stream and Pair Mac delivers the pairing entry`() {
+    @Test fun `Check again retries the stream and Pair computer delivers the pairing entry`() {
         val controller = Robolectric.buildActivity(TestQuick::class.java).setup()
         val activity = controller.get(); val first = activity.rig.wire
         first.failure(); assertFalse(activity.model.active)
         activity.fix()
         assertTrue(activity.model.active); assertNotSame(first, activity.rig.wire)
         assertNull(shadowOf(activity).nextStartedActivity)
-        activity.model.cancel(); activity.model.status = "Pair your Mac in Chirp settings"
+        activity.model.cancel(); activity.model.status = "Pair your computer in Chirp settings"
         activity.fix()
         val setup = shadowOf(activity).nextStartedActivity
         assertEquals("pair", setup.getStringExtra("section"))

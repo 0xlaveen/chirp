@@ -170,7 +170,7 @@ internal class ScratchpadModel(
         if (active) return
         clearRaw()
         if (!micGranted()) { status = "Allow microphone in Chirp settings"; return }
-        val paired = pairing().also { this.paired = it != null } ?: run { status = "Pair your Mac in Chirp settings"; return }
+        val paired = pairing().also { this.paired = it != null } ?: run { status = "Pair your computer in Chirp settings"; return }
         privateUtterance = PrivateSession.enabled
         val chosen = style
         partial = ""; level = 0.0
@@ -179,7 +179,7 @@ internal class ScratchpadModel(
             captureFactory = { frame, lvl, done -> captureFactory(app, frame, lvl, done) },
             changed = { text, event ->
                 // A failed connection to a tailnet Mac usually means Tailscale is off; say that instead.
-                status = if (text.startsWith("Mac unreachable")) tailscaleStatus(paired) ?: text else text
+                status = if (text.startsWith("Computer unreachable")) tailscaleStatus(paired) ?: text else text
                 if (event != null) partial = event.text
                 sync()
             },

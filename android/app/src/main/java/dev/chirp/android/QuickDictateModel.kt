@@ -32,7 +32,7 @@ internal class QuickDictateModel(
     private var client: OkHttpClient? = null
     private var stream: DictationStream? = null
     private var privateUtterance = false
-    var status by mutableStateOf("Connecting to Mac…")
+    var status by mutableStateOf("Connecting to your computer…")
         internal set
     var partial by mutableStateOf("")
         private set
@@ -67,7 +67,7 @@ internal class QuickDictateModel(
         if (active || copied) return
         errorCode = null
         if (!micGranted()) { fail("Allow microphone in Chirp settings", RecognizerIntent.RESULT_AUDIO_ERROR); return }
-        val paired = pairing() ?: run { fail("Pair your Mac in Chirp settings", RecognizerIntent.RESULT_SERVER_ERROR); return }
+        val paired = pairing() ?: run { fail("Pair your computer in Chirp settings", RecognizerIntent.RESULT_SERVER_ERROR); return }
         privateUtterance = PrivateSession.enabled
         partial = ""; stable = ""
         val http = client ?: ChirpNetwork.client(app).also { client = it }
@@ -75,7 +75,7 @@ internal class QuickDictateModel(
             transportFactory = { event, failure -> transportFactory(http, paired, event, failure) },
             captureFactory = { frame, meter, done -> captureFactory(app, frame, meter, done) },
             changed = { message, event ->
-                status = if (message.startsWith("Mac unreachable") && TailscaleControl.routes(paired.base)) when {
+                status = if (message.startsWith("Computer unreachable") && TailscaleControl.routes(paired.base)) when {
                     !tailscale.installed() -> DictationAction.TAILSCALE_MISSING
                     !tailscale.connected() -> DictationAction.TAILSCALE_OFF
                     else -> message
@@ -128,7 +128,7 @@ internal class QuickDictateModel(
     companion object {
         fun errorFor(status: String): Int = when {
             status.startsWith("Microphone") || status.startsWith("Allow microphone") || status == "Didn't catch that" -> RecognizerIntent.RESULT_AUDIO_ERROR
-            ConnectionFailure.kind(status) != null || status.startsWith("Mac unreachable") || status.startsWith("Mac connection") || status.startsWith("Tailscale") -> RecognizerIntent.RESULT_NETWORK_ERROR
+            ConnectionFailure.kind(status) != null || status.startsWith("Computer unreachable") || status.startsWith("Connection too slow") || status.startsWith("Tailscale") -> RecognizerIntent.RESULT_NETWORK_ERROR
             else -> RecognizerIntent.RESULT_SERVER_ERROR
         }
     }

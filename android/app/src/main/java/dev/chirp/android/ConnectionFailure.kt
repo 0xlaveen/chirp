@@ -10,14 +10,14 @@ import javax.net.ssl.SSLException
  * Wording is hedged because Android reports the symptom, not the cause. */
 object ConnectionFailure {
     enum class Kind(val status: String, val offline: Boolean) {
-        DNS("Can't find your Mac on the tailnet — is it online?", true),
-        DOWN("Mac may be asleep, or Chirp isn't running", true),
-        TLS("Couldn't make a secure connection to your Mac", false),
-        OTHER("Mac unreachable — is Tailscale on?", false),
+        DNS("Can't find your computer on the tailnet — is it online?", true),
+        DOWN("Computer may be asleep, or Chirp isn't running", true),
+        TLS("Couldn't make a secure connection to your computer", false),
+        OTHER("Computer unreachable — is Tailscale on?", false),
     }
-    const val OFFLINE = "Mac offline · Check again"
-    const val OFFLINE_DESCRIPTION = "Mac offline, double-tap to retry"
-    const val CHECKING = "Checking Mac…"
+    const val OFFLINE = "Computer offline · Check again"
+    const val OFFLINE_DESCRIPTION = "Computer offline, double-tap to retry"
+    const val CHECKING = "Checking your computer…"
 
     fun classify(failure: Throwable?): Kind {
         var current = failure

@@ -49,7 +49,7 @@ class SettingsScreenTest {
     private val tree = linkedMapOf<SettingsPage?, List<String>>(
         null to listOf("Connection", "How you dictate", "Dictation", "Keyboard", "Feedback & look", "Notes", "Privacy & history", "About"),
         SettingsPage.Connection to listOf("Check connection", "Change pairing", "Forget pairing", "Use this phone's recogniser"),
-        SettingsPage.Dictation to listOf("Clean-up · Correction on Mac", "Styles", "Stop dictation", "Spoken commands",
+        SettingsPage.Dictation to listOf("Clean-up · Correction on your computer", "Styles", "Stop dictation", "Spoken commands",
             "Press Send after dictating", "Learn from my edits", "Learned"),
         SettingsPage.HowYouDictate to listOf("Use Chirp Keyboard", "Keep my keyboard", "Other ways to dictate"),
         SettingsPage.Keyboard to listOf("Keyboard look", "Swipe typing", "Hardware keyboard shortcut", "Larger mic on the inner screen",
@@ -92,7 +92,7 @@ class SettingsScreenTest {
         val (state, history, updates) = settingsFixture()
         show(state, history, updates)
         open(SettingsPage.Dictation)
-        compose.onNodeWithText("Clean-up · Correction on Mac").performClick()
+        compose.onNodeWithText("Clean-up · Correction on your computer").performClick()
         compose.onNodeWithText("Clean-up off · stops on tap").assertExists()
         open(SettingsPage.Feedback)
         compose.onNodeWithText("Haptic cues").performScrollTo().performClick()
@@ -189,10 +189,10 @@ class SettingsScreenTest {
         val (state, history, updates) = settingsFixture()
         show(state, history, updates)
         open(SettingsPage.Dictation)
-        compose.onNodeWithText("Clean-up · Correction on Mac").assertIsDisplayed().assertIsOn()
-        compose.onNodeWithText("Polishes punctuation and filler words on your Mac").assertIsDisplayed()
+        compose.onNodeWithText("Clean-up · Correction on your computer").assertIsDisplayed().assertIsOn()
+        compose.onNodeWithText("Polishes punctuation and filler words on your computer").assertIsDisplayed()
         compose.runOnIdle { assertFalse(context.getSharedPreferences("chirp", 0).contains("correction_explicit")) }
-        compose.onNodeWithText("Clean-up · Correction on Mac").performClick()
+        compose.onNodeWithText("Clean-up · Correction on your computer").performClick()
         compose.runOnIdle { assertFalse(SettingsStore(context).correction); assertTrue(context.getSharedPreferences("chirp", 0).getBoolean("correction_explicit", false)) }
     }
 
@@ -201,8 +201,8 @@ class SettingsScreenTest {
         state.health = Health(true, false, false, false, null)
         show(state, history, updates)
         open(SettingsPage.Dictation)
-        compose.onNodeWithText("Mac has clean-up off").assertIsDisplayed()
-        compose.onNodeWithText("Clean-up · Correction on Mac").assertDoesNotExist()
+        compose.onNodeWithText("Clean-up is off on your computer").assertIsDisplayed()
+        compose.onNodeWithText("Clean-up · Correction on your computer").assertDoesNotExist()
     }
 
     @Test fun `stop dictation no longer promises 119 seconds`() {
@@ -218,12 +218,12 @@ class SettingsScreenTest {
         assertEquals("Not paired", connectionSummary(false, "", null, false, null).title)
         val health = Health(true, false, true, false, null, engine = "Parakeet")
         assertEquals("Connected · mac.example.test", connectionSummary(true, "mac.example.test", true, false, health).title)
-        assertEquals("Parakeet · clean-up on Mac", connectionSummary(true, "mac.example.test", true, false, health).summary)
+        assertEquals("Parakeet · clean-up on your computer", connectionSummary(true, "mac.example.test", true, false, health).summary)
         assertEquals("Paired · mac.example.test", connectionSummary(true, "mac.example.test", null, false, health).title)
         assertEquals("Checking · mac.example.test", connectionSummary(true, "mac.example.test", true, true, health).title)
         val down = connectionSummary(true, "mac.example.test", false, false, health)
-        assertEquals("Mac unreachable · mac.example.test", down.title); assertNotNull(down.hint)
-        assertEquals("Mac is loading its speech model", connectionSummary(true, "m", null, false, health.copy(ready = false)).summary)
+        assertEquals("Computer unreachable · mac.example.test", down.title); assertNotNull(down.hint)
+        assertEquals("Computer is loading its speech model", connectionSummary(true, "m", null, false, health.copy(ready = false)).summary)
     }
 
     /** #181: dispatches a 48 dp status bar and a 40 dp gesture area over the window, as an edge-to-edge activity receives them. */

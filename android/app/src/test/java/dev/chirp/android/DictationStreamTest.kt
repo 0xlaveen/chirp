@@ -90,18 +90,18 @@ class DictationStreamTest {
         assertEquals(0, ok.ended); assertEquals("Listening…", ok.statuses.last())
     }
     @Test fun `transport failures name the recorded reason and never a server message`() {
-        for ((kind, expected) in listOf(ConnectionFailure.Kind.DNS to "Can't find your Mac on the tailnet", ConnectionFailure.Kind.DOWN to "asleep",
-            ConnectionFailure.Kind.TLS to "secure connection", ConnectionFailure.Kind.OTHER to "Mac unreachable")) {
+        for ((kind, expected) in listOf(ConnectionFailure.Kind.DNS to "Can't find your computer on the tailnet", ConnectionFailure.Kind.DOWN to "asleep",
+            ConnectionFailure.Kind.TLS to "secure connection", ConnectionFailure.Kind.OTHER to "Computer unreachable")) {
             val h = Harness(); h.session.start(false)
             h.transport.failureKind = kind; h.transport.failure(); h.advance()
             assertTrue("${kind.name}: ${h.statuses.last()}", h.statuses.last().contains(expected)); assertEquals(1, h.ended)
         }
     }
     @Test fun `a full pre-Ready buffer is reported as a connect timeout unless the transport knows better`() {
-        val h = Harness(); h.session.start(false); h.capture.finish("Mac unreachable — is Tailscale on?"); h.advance()
+        val h = Harness(); h.session.start(false); h.capture.finish("Computer unreachable — is Tailscale on?"); h.advance()
         assertEquals(ConnectionFailure.Kind.DOWN.status, h.statuses.last())
         val dns = Harness(); dns.session.start(false); dns.transport.failureKind = ConnectionFailure.Kind.DNS
-        dns.capture.finish("Mac unreachable — is Tailscale on?"); dns.advance()
+        dns.capture.finish("Computer unreachable — is Tailscale on?"); dns.advance()
         assertEquals(ConnectionFailure.Kind.DNS.status, dns.statuses.last())
     }
     @Test fun `debug retention changes before partials and no final is accepted before stop`() {

@@ -88,7 +88,7 @@ class PcmCapture internal constructor(
                     if (signalled) {
                         val bytes = ByteArray(count * 2)
                         for (i in samples.indices) { bytes[i * 2] = samples[i].toByte(); bytes[i * 2 + 1] = (samples[i].toInt() shr 8).toByte() }
-                        if (!frame(bytes)) { error = "Mac unreachable — is Tailscale on?"; break }
+                        if (!frame(bytes)) { error = "Computer unreachable — is Tailscale on?"; break }
                     }
                     total += count
                     if (detector?.feed((sqrt(energy / count) / 32768.0).toFloat(), total / 16000.0) == true) break

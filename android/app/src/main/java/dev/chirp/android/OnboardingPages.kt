@@ -30,7 +30,7 @@ internal fun OnboardingPage(page: Int, state: SetupState, actions: OnboardingAct
     val next = { state.step = page + 1 }
     when (page) {
         PAGE_WELCOME -> PageFrame("Dictate anywhere", { PondHero() }, PrimaryAction("Get started") { next() }) {
-            Body("Speak on your phone and your Mac writes the words into any app, privately over Tailscale. " +
+            Body("Speak on your phone and your computer writes the words into any app, privately over Tailscale. " +
                 "Meetings and thoughts can live in Notes: a recording that transcribes and organises itself while you talk.")
             Body("Dictation history and learning from your edits are on by default, encrypted on this phone. Turn them off in Settings → Dictation.")
         }
@@ -84,21 +84,21 @@ private fun PairPage(state: SetupState, actions: OnboardingActions) {
         val connection = connectionSummary(true, state.host, state.reachable, false, state.health)
         PageFrame("Connected", { Illustration(R.drawable.ic_check_circle) }, PrimaryAction("Finish", onClick = actions.finish)) {
             StatusBanner(connection.kind, connection.title, body = connection.summary, live = true)
-            if (state.health?.debugRetention == true) StatusBanner(StatusKind.Error, "DEBUG RETENTION IS ON — the Mac may retain audio and text")
+            if (state.health?.debugRetention == true) StatusBanner(StatusKind.Error, "DEBUG RETENTION IS ON — the Chirp server may retain audio and text")
         }
         return
     }
     val busy = state.scanning || state.checking
-    PageFrame("Scan the code on your Mac", { Illustration(R.drawable.ic_qr_scan) },
+    PageFrame("Scan the code on your computer", { Illustration(R.drawable.ic_qr_scan) },
         PrimaryAction(when { state.scanning -> "Scanning…"; state.checking -> "Connecting…"; else -> "Scan code" }, !busy, actions.scan)) {
-        Body("Turn on Tailscale on both devices. On your Mac, open Chirp → Settings → Devices → Pair a Phone.")
+        Body("Turn on Tailscale on both devices. On your computer, open Chirp → Settings → Devices → Pair a Phone.")
         if (state.wifiPermissionNeeded && !state.localNetwork) StatusBanner(StatusKind.Warning, "Allow Wi-Fi server access",
             body = "Needed only for servers on your Wi-Fi. Tailscale works without it.", action = "Allow", onAction = actions.grantNetwork)
-        if (state.checking) StatusBanner(StatusKind.Info, "Connecting to your Mac…", live = true)
+        if (state.checking) StatusBanner(StatusKind.Info, "Connecting to your computer…", live = true)
         else when (state.pairIssue) {
             PairIssue.Unreachable -> {
                 val tailscale = remember(context) { AndroidTailscale(context).installed() }
-                StatusBanner(StatusKind.Error, "Couldn’t reach your Mac", body = "Check Tailscale is on for both devices and Chirp is running on the Mac.",
+                StatusBanner(StatusKind.Error, "Couldn’t reach your computer", body = "Check Tailscale is on for both devices and Chirp is running on the computer.",
                     action = if (tailscale) "Open Tailscale" else "Try again", onAction = if (tailscale) actions.openTailscale else actions.retry, live = true)
             }
             PairIssue.ScannerUnavailable -> StatusBanner(StatusKind.Warning, "Scanner unavailable", body = "QR scanning uses Google Play services.",
@@ -116,7 +116,7 @@ private fun PairPage(state: SetupState, actions: OnboardingActions) {
         }
         Tips("About scanning", "Scanning and pairing",
             "QR scanning uses Google Play services; Chirp needs no camera permission. Pasting the link works without the scanner. " +
-                "Pairing tokens are encrypted with Android Keystore, and nothing is saved until your Mac answers.")
+                "Pairing tokens are encrypted with Android Keystore, and nothing is saved until your computer answers.")
     }
 }
 

@@ -2,7 +2,7 @@ package dev.chirp.android.shell
 
 
 internal enum class SetupNeed(val title: String, val action: String, val section: String) {
-    Pair("Pair your Mac", "Scan code", "pair"),
+    Pair("Pair your computer", "Scan code", "pair"),
     Microphone("Allow the microphone", "Allow", "microphone"),
     Keyboard("Turn on Chirp Keyboard", "Set up", "input"),
     FloatingMic("Turn on the floating mic", "Set up", "input"),
@@ -20,13 +20,13 @@ internal fun setupProgress(paired: Boolean, mic: Boolean, keyboard: Boolean, sel
 }
 
 /** The one fix Home's connection card offers. */
-internal enum class HomeFix(val label: String) { Pair("Pair Mac"), Microphone("Allow"), TailscaleOn("Turn on"), Retry("Check again") }
+internal enum class HomeFix(val label: String) { Pair("Pair computer"), Microphone("Allow"), TailscaleOn("Turn on"), Retry("Check again") }
 
 /** Compact status for the Notes top bar. Setup help belongs in Settings → Connection. */
 internal data class NotesConnectionStatus(val label: String, val connected: Boolean)
 
 internal fun notesConnectionStatus(paired: Boolean, reachable: Boolean?, tailscaleOff: Boolean, phone: Boolean) = when {
-    paired && reachable != false && !tailscaleOff -> NotesConnectionStatus("Mac", true)
+    paired && reachable != false && !tailscaleOff -> NotesConnectionStatus("Computer", true)
     !paired && phone -> NotesConnectionStatus("Phone", false)
     else -> NotesConnectionStatus("Offline", false)
 }

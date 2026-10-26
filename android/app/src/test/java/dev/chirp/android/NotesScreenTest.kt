@@ -127,7 +127,7 @@ class NotesModelTest {
     @Test fun `without a pairing Record explains instead of starting`() {
         val rig = NotesModelRig(context, paired = false)
         rig.model.toggle()
-        assertEquals("Pair your Mac in Chirp settings", rig.model.status)
+        assertEquals("Pair your computer in Chirp settings", rig.model.status)
         assertEquals(DictationAction.PAIR, DictationAction.forStatus(rig.model.status))
         assertTrue(rig.wires.isEmpty())
     }

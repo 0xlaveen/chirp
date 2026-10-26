@@ -59,7 +59,7 @@ internal class SetupState {
     var inputSelected by mutableStateOf(false)
     var diagnostics by mutableStateOf("No crashes recorded")
     var paired by mutableStateOf(false)
-    var status by mutableStateOf("Pair with your Mac to begin")
+    var status by mutableStateOf("Pair with your computer to begin")
     var checking by mutableStateOf(false)
     var scanning by mutableStateOf(false)
     var link by mutableStateOf("")
@@ -355,7 +355,7 @@ open class SetupActivity : ComponentActivity(), AppShortcutHost {
         val id = ++pairingGeneration
         ChirpNetwork.cancel(pendingHealth)
         val call = ChirpNetwork.healthCall(client, pairing); pendingHealth = call
-        state.checking = true; state.pairIssue = null; state.status = "Checking Mac…"
+        state.checking = true; state.pairIssue = null; state.status = "Checking your computer…"
         lifecycleScope.launch {
             try {
                 val health = checkMac(call)
@@ -366,7 +366,7 @@ open class SetupActivity : ComponentActivity(), AppShortcutHost {
                     store.health = health
                 }
                 state.reachable = true; state.failure = null
-                state.status = if (health.ready) "Mac ready" else "Paired · Mac is loading its speech model"
+                state.status = if (health.ready) "Computer ready" else "Paired · Computer is loading its speech model"
                 refresh()
                 if (save) state.connected = true
             } catch (error: Exception) {
@@ -380,7 +380,7 @@ open class SetupActivity : ComponentActivity(), AppShortcutHost {
                 if (pairingGeneration == id) {
                     pendingHealth = null; state.checking = false; state.reachable = false; state.failure = ConnectionFailure.classify(error)
                     if (save) state.pairIssue = PairIssue.Unreachable
-                    state.status = "Mac unreachable — is Tailscale on? Check the Mac is awake, Chirp is running, and the pairing link is current."
+                    state.status = "Computer unreachable — is Tailscale on? Check the computer is awake, Chirp is running, and the pairing link is current."
                 }
             }
         }
