@@ -50,7 +50,7 @@ import Testing
     @Test func anOlderServerHidesTheFeatureWithAReasonInSettingsAndNeverNags() {
         #expect(!SpeakerNotice.available(nil) && !SpeakerNotice.available(health(speakers: nil)) && SpeakerNotice.available(health(speakers: true)))
         #expect(SpeakerNotice.status(on: true, health: health(speakers: nil), recorderError: "failed") == nil)
-        #expect(SpeakerNotice.summary(on: true, health: health(speakers: nil)) == "Update Chirp on your Mac to label speakers")
+        #expect(SpeakerNotice.summary(on: true, health: health(speakers: nil)) == "Update Chirp on your computer to label speakers")
         // No health yet is not "too old".
         #expect(SpeakerNotice.status(on: true, health: nil, recorderError: nil) == nil)
         #expect(SpeakerNotice.summary(on: true, health: nil) == "On · who said what")
@@ -83,11 +83,11 @@ import Testing
     @Test func settingsShowsWhereTheModelStands() {
         #expect(SpeakerNotice.modelStatus(on: false, health: health(speakers: true, model: .ready)) == nil)
         #expect(SpeakerNotice.modelStatus(on: true, health: nil) == nil && SpeakerNotice.modelStatus(on: true, health: health(speakers: nil)) == nil)
-        #expect(SpeakerNotice.modelStatus(on: true, health: health(speakers: true, model: .ready)) == "Speaker model on your Mac: ready")
-        #expect(SpeakerNotice.modelStatus(on: true, health: health(speakers: true, model: .downloading)) == "Speaker model on your Mac: downloading")
-        #expect(SpeakerNotice.modelStatus(on: true, health: health(speakers: true, model: .failed)) == "Speaker model on your Mac: couldn’t download")
+        #expect(SpeakerNotice.modelStatus(on: true, health: health(speakers: true, model: .ready)) == "Speaker model on your computer: ready")
+        #expect(SpeakerNotice.modelStatus(on: true, health: health(speakers: true, model: .downloading)) == "Speaker model on your computer: downloading")
+        #expect(SpeakerNotice.modelStatus(on: true, health: health(speakers: true, model: .failed)) == "Speaker model on your computer: couldn’t download")
         #expect(SpeakerNotice.modelStatus(on: true, health: health(speakers: true, model: .notDownloaded), requestFailed: true)
-                == "Speaker model on your Mac: couldn’t download")
+                == "Speaker model on your computer: couldn’t download")
     }
 
     @Test func labelsAreOnUntilTheUserTurnsThemOff() throws {

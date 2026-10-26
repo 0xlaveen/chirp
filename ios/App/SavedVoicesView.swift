@@ -19,7 +19,7 @@ struct SavedVoicesView: View {
                 })).disabled(notes.savedVoices == nil || notes.voicesBusy)
                     .accessibilityIdentifier("chirp.notes.voices.enabled")
             } footer: {
-                Text("Chirp recognises these people in new notes on all your devices. They’re kept on your paired Mac, never uploaded. This switch applies to every device paired to that Mac.")
+                Text("Chirp recognises these people in new notes on all your devices. They’re kept on your paired computer, never uploaded. This switch applies to every device paired to this computer.")
             }
             if let error = notes.voicesError {
                 Section { Text(error).foregroundStyle(Color.chirp.record).accessibilityIdentifier("chirp.notes.voices.error") }
@@ -51,7 +51,7 @@ struct SavedVoicesView: View {
                         .accessibilityIdentifier("chirp.notes.voices.forgetAll") }.disabled(notes.voicesBusy)
                 }
             } else if !notes.voicesAvailable {
-                Text("Update Chirp on your Mac to save voices")
+                Text("Update Chirp on your computer to save voices")
             } else if notes.voicesError == nil { ProgressView("Loading saved voices…") }
             Button("Refresh saved voices") { Task { await notes.refreshHealth() } }.disabled(notes.voicesBusy)
         }.scrollContentBackground(.hidden).background(Color.chirp.background).tint(Color.chirp.koi)
@@ -75,7 +75,7 @@ struct SavedVoicesView: View {
                     if let voice = forgetting { action(.forget(voice: voice.id)) } else { action(.forgetAll) }
                     forgetting = nil; forgettingAll = false
                 }
-            } message: { Text("Removes \(forgetting?.name ?? "all saved voices") from your Mac for every device. Names in existing notes stay. This cannot be undone.") }
+            } message: { Text("Removes \(forgetting?.name ?? "all saved voices") from your computer for every device. Names in existing notes stay. This cannot be undone.") }
     }
 
     private func action(_ value: VoiceLibraryAction) { Task { await notes.changeSavedVoices(value) } }

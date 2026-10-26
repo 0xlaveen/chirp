@@ -40,7 +40,7 @@ struct ConnectionPage: View {
                     ActionRow(title: "Check connection", symbol: "arrow.triangle.2.circlepath", disabled: model.working,
                               identifier: "chirp.connection.check") { Task { await model.checkConnection() } }
                 }
-                NavRow(title: model.paired ? "Change pairing" : "Pair Mac", symbol: "qrcode.viewfinder",
+                NavRow(title: model.paired ? "Change pairing" : "Pair computer", symbol: "qrcode.viewfinder",
                        identifier: "chirp.pair.change") {
                     ChangePairingPage(model: model)
                 }
@@ -53,7 +53,7 @@ struct ConnectionPage: View {
                 }
             }
         }
-        .confirmationDialog("Forget this Mac?", isPresented: $forget, titleVisibility: .visible) {
+        .confirmationDialog("Forget this computer?", isPresented: $forget, titleVisibility: .visible) {
             Button("Forget", role: .destructive) { model.forgetPairing() }
         } message: {
             Text("You’ll need to scan a new code to dictate. This also ends the session.")
@@ -64,13 +64,13 @@ struct ConnectionPage: View {
     private var deviceRow: some View {
         RowTile(hasSummary: true) {
             RowText(title: "This device",
-                    summary: model.pairedDevice ?? "Paired with your Mac’s shared token")
+                    summary: model.pairedDevice ?? "Paired with your computer’s shared token")
             Spacer(minLength: 0)
             LearnMore(title: "This device") {
                 if let device = model.pairedDevice {
-                    Text("Paired as “\(device)”. The Mac lists this pairing under that name, and it can be revoked on its own.")
+                    Text("Paired as “\(device)”. The computer lists this pairing under that name, and it can be revoked on its own.")
                 } else {
-                    Text("Paired with your Mac’s shared token. For a pairing you can revoke on its own, run chirp-server pair --name \"\(UIDevice.current.model)\" on your Mac and pair again.")
+                    Text("Paired with your computer’s shared token. For a pairing you can revoke on its own, run chirp-server pair --name \"\(UIDevice.current.model)\" on your computer and pair again.")
                 }
             }
         }.accessibilityIdentifier("chirp.pair.device")
@@ -85,7 +85,7 @@ struct ChangePairingPage: View {
         SettingsPageScroll {
             SettingsGroup {
                 SettingsItem {
-                    Text("On your Mac, open Chirp → Settings → Devices → Pair a Phone, then scan the code here.")
+                    Text("On your computer, open Chirp → Settings → Devices → Pair a Phone, then scan the code here.")
                         .font(.subheadline).foregroundStyle(Color.chirp.inkMuted)
                     PairingForm(model: model, paired: { dismiss() })
                 }
@@ -95,7 +95,7 @@ struct ChangePairingPage: View {
                     .accessibilityAddTraits(.updatesFrequently)
             }
         }
-        .navigationTitle(model.paired ? "Change pairing" : "Pair Mac")
+        .navigationTitle(model.paired ? "Change pairing" : "Pair computer")
     }
 }
 
@@ -161,7 +161,7 @@ struct DictationPage: View {
                           summary: model.cleanupDisclosure,
                           symbol: "text.badge.checkmark",
                           infoTitle: "Clean-up",
-                          infoBody: "Starts off. Audio is recognized on your Mac. Clean-up only receives the final transcript after you stop. Changes to the clean-up destination suspend consent.",
+                          infoBody: "Starts off. Audio is recognized on your computer. Clean-up only receives the final transcript after you stop. Changes to the clean-up destination suspend consent.",
                           identifier: "chirp.cleanup.enabled", disabled: !model.cleanupCanEnable || model.phase == .correcting,
                           set: { on in if on { consent = true } else { model.setCleanup(false) } })
             }
@@ -359,7 +359,7 @@ struct PrivacyPage: View {
                         .font(.subheadline).foregroundStyle(Color.chirp.ink)
                     LearnMore(title: "Local only") {
                         Text("Dictation history is opt-in and encrypted on this device only. Notes stay on this device and are never backed up or synced. Diagnostics carry numbers only — no text, audio, hosts or tokens.")
-                        Text("Audio goes to your paired Mac only while you dictate or record; idle audio is discarded on device and never written to disk.")
+                        Text("Audio goes to your paired computer only while you dictate or record; idle audio is discarded on device and never written to disk.")
                     }
                 }
             }
@@ -429,7 +429,7 @@ struct AboutPage: View {
         }
         .sheet(isPresented: $privacy) {
             InfoSheet(title: "Privacy") {
-                Text("Nothing persistent by default: no audio is ever written to disk, and history is opt-in, encrypted on this device only and never backed up or synced. Audio goes to your paired Mac only while you dictate or record; idle audio is discarded.")
+                Text("Nothing persistent by default: no audio is ever written to disk, and history is opt-in, encrypted on this device only and never backed up or synced. Audio goes to your paired computer only while you dictate or record; idle audio is discarded.")
                 Text("Diagnostics are content-free: version, OS, phase, fixed local error codes, durations and counts — no transcripts, prompts, audio, addresses, network names or credentials. No telemetry, no background sync, no analytics.")
             }
         }

@@ -4,7 +4,7 @@ import Foundation
 
 /// Live Notes switches. Preferences only, never notes content. Fields missing from an older file keep their defaults.
 public struct NotesPreferences: Codable, Sendable, Equatable {
-    /// "Structure notes": nil follows the server (on when clean-up stays on the Mac).
+    /// "Structure notes": nil follows the server (on when clean-up stays on the computer).
     public var structure: Bool?
     /// The host the user allowed structuring to send text to, when clean-up leaves the Mac.
     public var structureConsentHost: String?

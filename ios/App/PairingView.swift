@@ -80,12 +80,12 @@ struct PairingForm: View {
         if model.working {
             HStack(spacing: ChirpSpacing.s12) {
                 ProgressView()
-                Text("Connecting to your Mac…").font(.subheadline.weight(.semibold))
+                Text("Connecting to your computer…").font(.subheadline.weight(.semibold))
             }
             .frame(minHeight: 44).accessibilityElement(children: .combine).accessibilityAddTraits(.updatesFrequently)
             .accessibilityIdentifier("chirp.pair.checking")
         } else if case .failed(let cause)? = outcome {
-            PondBanner(kind: .error, title: "Couldn’t pair with your Mac", detail: cause, action: "Retry", actionID: "chirp.pair.retry") {
+            PondBanner(kind: .error, title: "Couldn’t pair with your computer", detail: cause, action: "Retry", actionID: "chirp.pair.retry") {
                 scanner = !pasting
                 linkFocused = pasting
             }
@@ -109,7 +109,7 @@ struct PairingForm: View {
                 outcome = .connected; pasting = false
                 paired()
             } else {
-                outcome = .failed(model.connectionIssue?.message ?? "Check the code, Tailscale on both devices, and that Chirp is running on your Mac.")
+                outcome = .failed(model.connectionIssue?.message ?? "Check the code, Tailscale on both devices, and that Chirp is running on your computer.")
             }
         }
     }
@@ -125,11 +125,11 @@ struct PairingView: View {
                 if model.paired { saved }
                 card {
                     HStack(alignment: .firstTextBaseline) {
-                        Text(model.paired ? "Change pairing" : "Pair your Mac").font(.headline)
+                        Text(model.paired ? "Change pairing" : "Pair your computer").font(.headline)
                         Spacer()
                         LearnMore(title: "Pairing") { pairingHelp }
                     }
-                    Text("On your Mac, open Chirp → Settings → Devices → Pair a Phone.")
+                    Text("On your computer, open Chirp → Settings → Devices → Pair a Phone.")
                         .font(.subheadline).foregroundStyle(Color.chirp.inkMuted)
                     PairingForm(model: model)
                 }
@@ -147,13 +147,13 @@ struct PairingView: View {
 
     private var saved: some View {
         card {
-            Label("Mac pairing saved", systemImage: "checkmark.shield.fill").font(.headline)
+            Label("Computer pairing saved", systemImage: "checkmark.shield.fill").font(.headline)
                 .foregroundStyle(Color.chirp.lily).symbolRenderingMode(.hierarchical)
-            row("Mac", model.pairedHost)
+            row("Computer", model.pairedHost)
             if let device = model.pairedDevice {
                 row("This device", device).accessibilityIdentifier("chirp.pair.device")
             } else {
-                Text("Paired with your Mac's shared token. For a pairing you can revoke on its own, run chirp-server pair --name \"\(UIDevice.current.model)\" on your Mac and pair again.")
+                Text("Paired with your computer's shared token. For a pairing you can revoke on its own, run chirp-server pair --name \"\(UIDevice.current.model)\" on your computer and pair again.")
                     .font(.footnote).foregroundStyle(Color.chirp.inkMuted)
             }
             if let engine = model.health?.engine { row("Engine", String(engine.prefix(128))) }
@@ -165,7 +165,7 @@ struct PairingView: View {
     }
 
     private var checkButton: some View {
-        Button("Check Mac connection") { Task { await model.checkConnection() } }.buttonStyle(.capsuleChip).disabled(model.working)
+        Button("Check computer connection") { Task { await model.checkConnection() } }.buttonStyle(.capsuleChip).disabled(model.working)
     }
 
     private var forgetButton: some View {
@@ -189,7 +189,7 @@ struct PairingView: View {
     }
 
     @ViewBuilder private var pairingHelp: some View {
-        Text("Connect Tailscale on both devices. On your Mac, open Chirp → Settings → Devices → Pair a Phone… (or run chirp-server pair --name \"\(UIDevice.current.model)\") and scan its secret QR here.")
+        Text("Connect Tailscale on both devices. On your computer, open Chirp → Settings → Devices → Pair a Phone… (or run chirp-server pair --name \"\(UIDevice.current.model)\") and scan its secret QR here.")
         Text("Chirp verifies the connection before it saves the pairing. The pairing is stored in this device's Keychain; the link is never shown or logged.")
     }
 }

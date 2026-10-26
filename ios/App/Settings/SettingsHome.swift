@@ -87,7 +87,7 @@ struct SettingsHome: View {
         ScrollView {
             VStack(alignment: .leading, spacing: ChirpSpacing.s24) {
                 if model.debugRetention {
-                    PondBanner(kind: .error, title: "DEBUG RETENTION IS ON", detail: "The Mac may retain audio and text")
+                    PondBanner(kind: .error, title: "DEBUG RETENTION IS ON", detail: "The Chirp server may retain audio and text")
                 }
                 SettingsGroup {
                     ForEach(SettingsCategory.allCases) { row($0) }
@@ -202,24 +202,24 @@ extension SessionCoordinator {
         var hint: String?
     }
 
-    /// "Connected · host · engine · clean-up on Mac" and its variants; `nil` health reads as never checked.
+    /// "Connected · host · engine · clean-up on your computer" and its variants; `nil` health reads as never checked.
     var connectionStatus: ConnectionStatus {
-        guard paired else { return .init(kind: .warning, title: "Not paired", detail: "Pair your Mac to dictate") }
+        guard paired else { return .init(kind: .warning, title: "Not paired", detail: "Pair your computer to dictate") }
         let details = [health?.engine.flatMap { $0.isEmpty ? nil : $0 } ?? "Engine not reported", cleanupDetail].joined(separator: " · ")
         if working { return .init(kind: .info, title: "Checking · \(pairedHost)", detail: details) }
         if let issue = connectionIssue {
-            if issue == .loading { return .init(kind: .info, title: "Paired · \(pairedHost)", detail: "Mac is loading its speech model") }
-            return .init(kind: .warning, title: "Mac unreachable · \(pairedHost)", detail: details, hint: issue.message)
+            if issue == .loading { return .init(kind: .info, title: "Paired · \(pairedHost)", detail: "Computer is loading its speech model") }
+            return .init(kind: .warning, title: "Computer unreachable · \(pairedHost)", detail: details, hint: issue.message)
         }
         guard let health else { return .init(kind: .info, title: "Paired · \(pairedHost)", detail: details) }
-        if health.ready == false { return .init(kind: .info, title: "Paired · \(pairedHost)", detail: "Mac is loading its speech model") }
+        if health.ready == false { return .init(kind: .info, title: "Paired · \(pairedHost)", detail: "Computer is loading its speech model") }
         return .init(kind: .success, title: "Connected · \(pairedHost)", detail: details)
     }
 
     private var cleanupDetail: String {
         guard let health, health.correctionAvailable else { return "clean-up off" }
         if health.correctionLeavesMachine == true { return "clean-up via \(health.correctionHost ?? "another host")" }
-        return "clean-up on Mac"
+        return "clean-up on your computer"
     }
 
     /// "Clean-up on · Email style · Return on Send": the three things the Dictation page decides.
@@ -228,7 +228,7 @@ extension SessionCoordinator {
         if let health, health.correctionAvailable {
             parts.append(preferences.correction ? "Clean-up on" : "Clean-up off")
         } else if paired {
-            parts.append("No clean-up from this Mac")
+            parts.append("No clean-up from your computer")
         }
         parts.append("\(styleName) style")
         if let autoEnter = preferences.autoEnter {

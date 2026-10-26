@@ -67,7 +67,7 @@ final class ChirpLiveSpeakersUITests: XCTestCase {
         XCTAssertFalse(app.alerts.firstMatch.exists, "The download starts without a prompt")
         screenshot("Speakers on by default on the live server", app)
         let model = ChirpNotesUITests.element("chirp.notes.speakers.model", in: app)
-        XCTAssertTrue(ChirpNotesUITests.waitFor(model, "label == 'Speaker model on your Mac: ready'", timeout: 240),
+        XCTAssertTrue(ChirpNotesUITests.waitFor(model, "label == 'Speaker model on your computer: ready'", timeout: 240),
                       "The automatic download never made the model ready: \(model.exists ? model.label : "no status")")
         screenshot("Speakers model ready on the live server", app)
         resetSavedVoicesInSettings(app)
@@ -128,7 +128,7 @@ final class ChirpLiveSpeakersUITests: XCTestCase {
         ChirpNotesUITests.openNotes(app)
         app.buttons["chirp.notes.menu"].tap(); app.buttons["chirp.notes.settings"].tap()
         let model = ChirpNotesUITests.element("chirp.notes.speakers.model", in: app)
-        XCTAssertTrue(ChirpNotesUITests.waitFor(model, "label == 'Speaker model on your Mac: ready'", timeout: 240))
+        XCTAssertTrue(ChirpNotesUITests.waitFor(model, "label == 'Speaker model on your computer: ready'", timeout: 240))
         resetSavedVoicesInSettings(app)
         app.buttons["Done"].firstMatch.tap()
 

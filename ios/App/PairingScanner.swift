@@ -24,7 +24,7 @@ final class ScannerController: UIViewController, AVCaptureMetadataOutputObjectsD
         view.backgroundColor = .black
         message.textColor = .white; message.numberOfLines = 0; message.textAlignment = .center
         message.font = .preferredFont(forTextStyle: .body); message.adjustsFontForContentSizeCategory = true
-        message.text = "Point the camera at the QR on your Mac. You can also paste the pairing link."
+        message.text = "Point the camera at the QR on your computer. You can also paste the pairing link."
         message.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(message)
         NSLayoutConstraint.activate([message.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor, constant: 20),

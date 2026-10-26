@@ -13,13 +13,13 @@ struct PondShellTests {
         #expect(SetupProgress(paired: true, microphone: true, keyboard: false).firstMissing == .keyboard)
         let done = SetupProgress(paired: true, microphone: true, keyboard: true)
         #expect(done.firstMissing == nil && done.isComplete)
-        #expect(SetupProgress.Step.allCases.map(SetupProgress.fix) == ["Pair Mac", "Allow", "Open Settings"])
+        #expect(SetupProgress.Step.allCases.map(SetupProgress.fix) == ["Pair computer", "Allow", "Open Settings"])
     }
 
     @Test func connectionChipFollowsPairingAndReachability() {
         #expect(ConnectionChip.status(paired: false, issue: nil) == ("Not paired", false))
         #expect(ConnectionChip.status(paired: false, issue: .offline) == ("Not paired", false))
-        #expect(ConnectionChip.status(paired: true, issue: nil) == ("Mac", true))
+        #expect(ConnectionChip.status(paired: true, issue: nil) == ("Computer", true))
         for issue in ConnectionIssue.allCases {
             #expect(ConnectionChip.status(paired: true, issue: issue) == ("Offline", false), "\(issue)")
         }

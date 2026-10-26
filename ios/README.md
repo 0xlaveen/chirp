@@ -1,13 +1,13 @@
 # Chirp for iPhone and iPad
 
 A native SwiftUI app plus a dictation-first custom keyboard for iOS/iPadOS 18.
-Recognition and optional clean-up run on your existing Mac speech server — the
+Recognition and optional clean-up run on your existing Chirp server — the
 iPhone or iPad only captures audio, streams it over your tailnet, and inserts
 text. Dictation stays transient by default; Notes save continuously to an
 AES-GCM sealed library on this device, kept forever unless you choose retention
 or delete them. Dictation history and kept Notes audio are separate opt-ins.
 Pairing is a secret QR
-shown locally on the Mac, the iOS client's pairing accepts only tailnet
+shown locally on the computer, the iOS client's pairing accepts only tailnet
 `.ts.net` hosts, and the server itself binds to loopback — a public host is
 never used.
 
@@ -77,12 +77,12 @@ Earlier evidence:
 One server prerequisite: the server must run the updated source from this
 branch, which accepts `"ios"` alongside `"mac"` and `"android"` as `client`
 values. Restart `chirp-server` from this checkout before pairing iOS. The
-production/launchd server on the Mac was not touched by any worker; updating it
+production/launchd server on the computer was not touched by any worker; updating it
 is an operator step.
 
 ## Requirements
 
-- A Mac running the Chirp speech server from this branch, with Tailscale on.
+- A computer running the Chirp speech server from this branch, with Tailscale on.
 - iPhone and/or iPad on iOS/iPadOS 18+, on the same tailnet.
 - For building and installing: a Mac with **full Xcode** and a matching iOS
   SDK/simulator runtime. The Command Line Tools alone cannot build any of this;
@@ -174,7 +174,7 @@ installation is Xcode's Run action, performed by you.
    token or history key either.
 
 9. **First launch** shows a short setup in four pages: **Welcome**, **Pair your
-   Mac**, **Microphone** and **Chirp Keyboard** (optional). Each page has one
+   computer**, **Microphone** and **Chirp Keyboard** (optional). Each page has one
    orange button and **Skip for now**. Skipping lands on Notes with a small
    "Finish setting up" card that names the next missing step. Setup does not
    come back by itself once you are paired; **Settings → Show setup again**
@@ -190,15 +190,15 @@ is unavailable rather than silently degrading. TestFlight or ad-hoc
 distribution needs a paid Apple Developer Program membership and matching
 profiles; nothing here is validated for that path.
 
-## Pair with your Mac
+## Pair with your computer
 
-1. Connect Tailscale on the Mac and on the iPhone/iPad.
-2. On the Mac, open Chirp → Settings → Devices → **Pair a Phone…**: it checks
+1. Connect Tailscale on the computer and on the iPhone/iPad.
+2. On the computer, open Chirp → Settings → Devices → **Pair a Phone…**: it checks
    Tailscale, publishes the server, names this device and shows the QR. Without
    the Mac app, from `server/`, publish the pairing QR (printed locally only).
    Give this device its own pairing with `--name`, so you can revoke it on its
    own later (`chirp-server devices list`, `chirp-server devices revoke "My iPad"`).
-   Without `--name` the QR carries the Mac's shared token:
+   Without `--name` the QR carries the computer's shared token:
 
    ```sh
    uv run chirp-server pair --name "My iPad" --url https://<your-mac>.<tailnet>.ts.net/chirp
@@ -211,16 +211,16 @@ profiles; nothing here is validated for that path.
    connects right away (or type it and tap **Connect**). The link field is a
    secure field, capped at 16 KiB and cleared after use.
 4. Chirp verifies the authenticated connection before saving anything:
-   **Settings → Connection** then shows a Connected banner with the Mac's
+   **Settings → Connection** then shows a Connected banner with the computer's
    tailnet host, recognition engine and clean-up destination, so you can
    confirm you paired the right machine, and **This device** with the name you
    gave it. A device paired with the shared token shows how to switch to a
    named pairing behind its ⓘ. **Forget pairing** asks first (it also ends the
    session). If the
-   pairing is revoked, Chirp says "Your Mac refused this device. Pair again
-   in Chirp." The token itself is stored in the iOS Keychain. **Check Mac
+   pairing is revoked, Chirp says "Your computer refused this device. Pair again
+   in Chirp." The token itself is stored in the iOS Keychain. **Check computer
    connection** re-verifies later; **Forget pairing** clears the token. The
-   **● Mac / ● Offline / ● Not paired** chip at the top of Notes and Dictate
+   **● Computer / ● Offline / ● Not paired** chip at the top of Notes and Dictate
    opens this page.
 
 Accepted links are exactly `chirp://pair?url=…&token=…` with an HTTPS
@@ -280,22 +280,22 @@ minutes, 1 hour,
 Never**. Never lasts until ended, interrupted, terminated or revoked — iOS may
 still suspend the app; indefinite background execution is not guaranteed.
 Interruptions (calls, Siri, route changes) and expiry end the session safely.
-When dictation fails partway — the connection drops, the Mac answers with an
+When dictation fails partway — the connection drops, the computer answers with an
 error, or it doesn't finish in time — Chirp **keeps what was heard**. The last
 live text lands as plain text, with no clean-up, and the notice says why
 (e.g. "Connection lost. Kept what was heard."). If nothing had been heard yet,
 only the reason is shown. A failure during clean-up keeps the original
 transcript. Connection failures leave the session armed, so you can try again
-once the Mac answers. Only interruptions, expiry and End session turn the
+once the computer answers. Only interruptions, expiry and End session turn the
 microphone off.
 
-Connection problems are named by cause: this device is offline, the Mac
-can't be found on the tailnet, the Mac may be asleep or Chirp isn't running on
-it, a secure connection failed, or the Mac refused this device (for example a
+Connection problems are named by cause: this device is offline, the computer
+can't be found on the tailnet, the computer may be asleep or Chirp isn't running on
+it, a secure connection failed, or the computer refused this device (for example a
 revoked device pairing). Dictate shows one banner at a time, with one fix:
-**Pair your Mac to dictate · Pair**, **Mac refused this device · Pair again**,
-**Mac offline · Check again**, or, for a Mac that answers but is still loading
-its speech model, **Mac loading its model · Check again** (not a network error).
+**Pair your computer to dictate · Pair**, **Computer refused this device · Pair again**,
+**Computer offline · Check again**, or, for a computer that answers but is still loading
+its speech model, **Computer loading its model · Check again** (not a network error).
 
 While dictating, Stop finalizes. After the final you get **Copy**, **Share**
 and, when clean-up changed the text, **Use raw** with its countdown ("Use raw
@@ -346,8 +346,7 @@ land in order with a space between them. Undo and Use raw apply to the last
 part, and a part that fails keeps what it heard. A dictation stops just under
 10 minutes.
 
-If the server runs with `--debug-retain`, a persistent red banner "DEBUG: Mac
-keeps recordings" stays on screen in the app, keyboard and Live Activity.
+If the server runs with `--debug-retain`, a persistent red banner "DEBUG RETENTION IS ON" stays on screen in the app, keyboard and Live Activity.
 
 ![Dictate listening, light](../docs/screenshots/ios/iphone-dictate-listening.png)
 ![Dictate finished, dark](../docs/screenshots/ios/iphone-dark-dictate-finished.png)
@@ -360,15 +359,15 @@ local search across titles, notes and transcripts, date groups, rename,
 Recently Deleted and a pinned Recording row. iPhone pushes to the note; iPad
 shows a list and detail, with a trailing transcript inspector.
 
-- **Record** starts a new note. Speech goes to your paired Mac in rolling
+- **Record** starts a new note. Speech goes to your paired computer in rolling
   segments of at most 45 seconds. Notes and a keyboard session never share the
   microphone. Continue recording appends to an existing note with a dated
   capture boundary; browsing other notes leaves the recording running.
 - Notes open in **reading mode** with headings, bullets, tappable task boxes,
   and Decision/Question callouts. **Edit** switches to Markdown editing.
   Structuring waits while you type, up to 10 seconds after the last keystroke.
-- **Structuring** uses `/v1/notes/structure` on your Mac. It follows clean-up
-  when that stays on the Mac; an external text destination needs consent for
+- **Structuring** uses `/v1/notes/structure` on your computer. It follows clean-up
+  when that stays on the computer; an external text destination needs consent for
   that host in Notes settings. With clean-up off, or an older server, the
   transcript remains available.
 - **Organize** regroups notes using `/v1/notes/reorganize`. **Undo Organize**
@@ -383,7 +382,7 @@ shows a list and detail, with a trailing transcript inspector.
   structuring pass. Notes remain in the library across launches and exports.
 - **Copy**, **Share…**, and **Export Markdown…** make a separate Markdown copy
   with the timed transcript. There is no Save step.
-- If the Mac goes offline, up to 10 minutes of audio waits in memory to send
+- If the computer goes offline, up to 10 minutes of audio waits in memory to send
   when it returns. This temporary buffer is independent of kept audio.
 
 **Storage and migration.** Notes, the index, and optional kept audio are
@@ -402,16 +401,16 @@ Notes) shows who said what. The transcript starts each person's turn with a colo
 a name on a tinted capsule (**Person 1**, **Person 2**…, numbered in the order
 they first speak; the inspector on iPad, a sheet on iPhone). Tap a capsule for
 **Rename…** (everywhere in the note, with an optional *also replace* in the
-notes text), **Same person as** (merge) and **Separate**. The notes the Mac
+notes text), **Same person as** (merge) and **Separate**. The notes the computer
 structures read `Name: …` lines, so decisions and tasks say who owns them, and
-exports show the names. Your own Mac's server tells the voices apart; the note’s
-session averages stay in its memory, while voices you name can be saved in its library. If the Mac has no speaker model yet, the phone asks it to fetch the
+exports show the names. Your own computer's server tells the voices apart; the note’s
+session averages stay in its memory, while voices you name can be saved in its library. If the computer has no speaker model yet, the phone asks it to fetch the
 pinned one once from Hugging Face (about 27 MB, SHA-256 checked) without a prompt:
 recording starts at once, and a line in the note, "Getting the speaker model ready
 (27 MB, once)…", offers **Turn off** (and **Retry** if the download failed). Only
 your own Turn off stores a choice; a missing or failed model never switches labels
 off. An older server leaves the switch in Settings disabled with "Update Chirp on
-your Mac" and shows no line. Labels and names are saved inside the sealed note
+your computer" and shows no line. Labels and names are saved inside the sealed note
 and never logged; no voiceprint ever reaches the phone. The same protocol and
 rules as Android: [docs/privacy.md](../docs/privacy.md).
 
@@ -479,7 +478,7 @@ changes** between states. Side-by-side screenshots with Android's strip are in
   row for 3 s.
 - **Not ready** (no session, no Full Access, an error, DEBUG retention) — one
   compact line: a glyph (the brand glyph, or a `record` ⚠ on a tinted row), a
-  short message (*No session*, *Needs Full Access*, *Mac offline*, *Debug
+  short message (*No session*, *Needs Full Access*, *Computer offline*, *Debug
   retention on*), **⋯** for the long guidance, and at most one action: *Open
   Chirp* (also the fallback after a failed open) or the mic to retry.
   While you type on the keys, a passive *No session* / *Needs Full Access* row gives
@@ -643,7 +642,7 @@ Nothing transcript-like ever appears on the lock screen.
 **Settings → Dictation**. Clean-up starts off. The row's summary line says
 where it runs — "Sends final text to \<host\>" for an external destination —
 and enabling an external destination takes an explicit per-destination consent
-that suspends when the destination changes. Styles come from your Mac's
+that suspends when the destination changes. Styles come from your computer's
 authenticated profile list (Default, Chat, Email, … plus custom server
 profiles) as a selectable list (a checkmark on the selected style, a moon
 "Edited" capsule when its prompt was changed); each has an editable prompt
@@ -680,7 +679,7 @@ when it matters; surrounding editor text is never collected.
 
 - **Speaker labels are on by default and keep no voiceprints.** *Label speakers*
   (Settings → Notes or a note's ⋯ menu turns it off) adds a random per-note session id to each Notes segment sent to your
-  own Mac's server, which compares voices and returns who
+  own computer's server, which compares voices and returns who
   spoke which words; the phone stores those turns and your names inside the
   sealed note and never logs them. Details: [docs/privacy.md](../docs/privacy.md).
 - **Dictation is transient; Notes persist locally.** Notes save continuously
@@ -691,7 +690,7 @@ when it matters; surrounding editor text is never collected.
   indexed, or synced. Kept audio defaults off. Dictation history is a separate
   encrypted opt-in. The encrypted app↔keyboard mailbox expires on consumption
   or next access. The server's opt-in debug retention stays visibly bannered.
-- **Pairing is a secret.** The QR/link is printed locally on the Mac only;
+- **Pairing is a secret.** The QR/link is printed locally on the computer only;
   treat it like a password. The token lives in the iOS Keychain (this-device,
   after first unlock, never synced) and is never rendered or logged. Do not
   paste real pairing links or tokens into issues, docs or chat.
@@ -723,12 +722,12 @@ when it matters; surrounding editor text is never collected.
 | "iOS could not open Chirp from this keyboard" | Expected fallback; open Chirp manually and return via app switcher. |
 | "Text kept in place" | The editor's context changed or is unreliable; recover the dictation in the app. Your text is never auto-deleted. |
 | "Protected storage unavailable. Unlock and reopen Chirp." | Keychain/App Group not accessible (device locked or missing capability). Check the provisioning profile includes the App Group and keychain access group. |
-| "Connection failed. Check Tailscale and your Mac." | Tailnet down or server not running the updated source; use Check Mac connection after fixing. |
-| "Can't find your Mac on the tailnet…" | The Mac's tailnet name didn't resolve: the Mac is off the tailnet, or Tailscale is off on this device. |
-| "Your Mac may be asleep, or Chirp isn't running on it." | Nothing answered at the Mac's address. Wake the Mac, check chirp-server, then tap Check again. |
-| "Your Mac refused this device. Pair again in Chirp." | The pairing was revoked or replaced (`chirp-server devices revoke`). Pair again from Settings → Connection. |
+| "Connection failed. Check Tailscale and your computer." | Tailnet down or server not running the updated source; use Check computer connection after fixing. |
+| "Can't find your computer on the tailnet…" | The computer's tailnet name didn't resolve: the computer is off the tailnet, or Tailscale is off on this device. |
+| "Your computer may be asleep, or Chirp isn't running." | Nothing answered at the computer's address. Wake the computer, check chirp-server, then tap Check again. |
+| "Your computer refused this device. Pair again in Chirp." | The pairing was revoked or replaced (`chirp-server devices revoke`). Pair again from Settings → Connection. |
 | "Kept what was heard" | Dictation failed partway; the text heard so far was inserted without clean-up. Undo removes it for 5 s. |
-| "The Mac did not finish in time." | Finalization/clean-up deadline hit; raw text is kept when possible. |
+| "Chirp server took too long. Try again." | Finalization/clean-up deadline hit; raw text is kept when possible. |
 | Arming fails or the session ends immediately | Check microphone permission, that Live Activities are enabled for Chirp, and Tailscale; Dictate shows the local error. |
 
 ## Develop and test
@@ -864,7 +863,7 @@ The server-wide **Remember voices of people I name** switch stops saving and
 recognising on every device paired to the server. Turning it off offers to keep
 or forget existing voices. Rename changes only the saved voice’s name; Forget
 and Forget all ask for confirmation and keep names in existing notes. An old
-server disables the Saved voices row with “Update Chirp on your Mac to save
+server disables the Saved voices row with “Update Chirp on your computer to save
 voices” and hides Remember voice. Different servers have separate libraries.
 
 `ios/scripts/e2e-all.sh --only speakers` includes the naming and saved-voice UI

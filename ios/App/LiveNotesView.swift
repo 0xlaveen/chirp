@@ -116,7 +116,7 @@ struct NoteDetailView: View {
                 notes.rememberedVoiceNotice = nil
                 Task { await notes.changeSavedVoices(.disable(forget: false)) }
             }
-        } message: { Text("Chirp will recognise \(notes.rememberedVoiceNotice ?? "this person")’s voice in later notes on your devices. Saved voices stay on your Mac. Settings → Notes → Saved voices.") }
+        } message: { Text("Chirp will recognise \(notes.rememberedVoiceNotice ?? "this person")’s voice in later notes on your devices. Saved voices stay on your computer. Settings → Notes → Saved voices.") }
         .sheet(isPresented: $settings) { NotesSettingsSheet(notes: notes) }
         .fileExporter(isPresented: $exporting, document: NotesMarkdownFile(text: notes.markdown), contentType: NotesMarkdownFile.markdown,
                       defaultFilename: notes.exportName) { if case .success = $0 { notes.didExport() } }
@@ -157,7 +157,7 @@ struct NoteDetailView: View {
     }
 
     private var banner: String? {
-        if notes.debugRetention { return "DEBUG: Mac keeps recordings" }
+        if notes.debugRetention { return "DEBUG: recordings kept on the server" }
         if !notes.notice.isEmpty { return notes.notice }
         if session.armed && !notes.isActive { return "End the keyboard session before recording notes." }
         return notes.detailLine
@@ -187,7 +187,7 @@ struct NoteDetailView: View {
             ProgressView("Finishing…").accessibilityIdentifier("chirp.notes.finishing")
         } else {
             if !notes.paired {
-                Button("Pair Mac", systemImage: "qrcode.viewfinder", action: pair).buttonStyle(.bordered).accessibilityIdentifier("chirp.notes.pair")
+                Button("Pair computer", systemImage: "qrcode.viewfinder", action: pair).buttonStyle(.bordered).accessibilityIdentifier("chirp.notes.pair")
             }
             Button(notes.document.sessions.isEmpty && notes.document.segments.isEmpty && notes.elapsed == 0 ? "Record" : "Continue recording", systemImage: "record.circle") {
                 player.stop()
@@ -392,7 +392,7 @@ struct NotesSettingsView: View {
             Section {
                 NavigationLink("Saved voices") { SavedVoicesView(notes: notes) }
                     .disabled(!notes.voicesAvailable).accessibilityIdentifier("chirp.notes.voices.open")
-            } footer: { if notes.health != nil && !notes.voicesAvailable { Text("Update Chirp on your Mac to save voices") } }
+            } footer: { if notes.health != nil && !notes.voicesAvailable { Text("Update Chirp on your computer to save voices") } }
 
         }.scrollContentBackground(.hidden).background(Color.chirp.background).tint(Color.chirp.koi)
             .navigationTitle("Notes").task { await notes.refreshHealth() }
@@ -415,7 +415,7 @@ struct NotesSettingsSheet: View {
 extension LiveNotesController {
     var statusLine: String {
         switch state {
-        case .idle: paired ? "Ready to record" : "Pair your Mac to record notes"
+        case .idle: paired ? "Ready to record" : "Pair your computer to record notes"
         case .starting: "Starting…"
         case .recording: "Recording"
         case .paused: pauseReason ?? "Paused · microphone off"
@@ -428,7 +428,7 @@ extension LiveNotesController {
     /// Structuring, Organize and the connection, one line (nil when there is nothing to say).
     var detailLine: String? {
         switch connection {
-        case .offline(let kept): return "Mac offline · keeping \(ChirpNotesActivityAttributes.ContentState.clock(kept)) of audio to send later"
+        case .offline(let kept): return "Computer offline · keeping \(ChirpNotesActivityAttributes.ContentState.clock(kept)) of audio to send later"
         case .catchingUp(let segments): return "Back online · sending \(segments) segment\(segments == 1 ? "" : "s") recorded offline"
         case .online: break
         }
@@ -441,12 +441,12 @@ extension LiveNotesController {
         default: break
         }
         switch structuring {
-        case .running: return "Structuring on your Mac…"
+        case .running: return "Structuring on your computer…"
         case .failed(let code): return "Structuring failed (\(code)); the next segment tries again"
-        case .off(.correctionOff): return "Your Mac has clean-up off, so notes stay a transcript"
-        case .off(.unsupported): return "Your Mac's chirp-server can't structure notes; update it"
+        case .off(.correctionOff): return "Clean-up is off on your computer, so notes stay a transcript"
+        case .off(.unsupported): return "Chirp on your computer is too old to structure notes; update it"
         case .off(.disabled): return state.isActive ? "Structuring off · transcript only" : nil
-        case .off(.waiting): return state.isActive ? "Waiting for your Mac…" : nil
+        case .off(.waiting): return state.isActive ? "Waiting for your computer…" : nil
         case .idle: return nil
         }
     }

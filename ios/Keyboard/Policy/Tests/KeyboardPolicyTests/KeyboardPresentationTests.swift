@@ -341,8 +341,8 @@ private func inputs(_ phase: KeyboardPhase? = .armed, access: Bool = true, lease
         #expect(screen(.correcting).phaseText == "Polishing…")
         #expect(screen(.finished).phaseText == "Finished")
         #expect(screen(.finished) { $0.kept = true }.phaseText == "Kept what was heard")
-        #expect(screen(.failed) { $0.errorCode = .unreachable }.phaseText == "Mac offline")
-        #expect(screen(.armed) { $0.errorCode = .unreachable }.phaseText == "Mac offline")
+        #expect(screen(.failed) { $0.errorCode = .unreachable }.phaseText == "Computer offline")
+        #expect(screen(.armed) { $0.errorCode = .unreachable }.phaseText == "Computer offline")
         #expect(screen(nil).phaseText == "No session")
     }
 

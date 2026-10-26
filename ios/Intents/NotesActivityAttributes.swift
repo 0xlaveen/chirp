@@ -13,7 +13,7 @@ struct ChirpNotesActivityAttributes: ActivityAttributes, Sendable {
             case .recording: "Recording"
             case .paused: "Paused"
             case .finishing: "Finishing…"
-            case .offline: "Mac offline · audio kept"
+            case .offline: "Computer offline · audio kept"
             }
         }
 
@@ -22,7 +22,7 @@ struct ChirpNotesActivityAttributes: ActivityAttributes, Sendable {
             case .recording: "Live Notes · recording"
             case .paused: "Live Notes · paused"
             case .finishing: "Live Notes · finishing"
-            case .offline: "Live Notes · Mac offline, audio kept"
+            case .offline: "Live Notes · Computer offline, audio kept"
             }
         }
     }

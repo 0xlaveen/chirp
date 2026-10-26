@@ -24,13 +24,13 @@ enum SessionFailure: Error, LocalizedError, Equatable {
     var errorDescription: String? {
         switch self {
         case .mac(let issue): issue.message
-        case .setup: "Open Chirp to pair your Mac and start a session."
+        case .setup: "Open Chirp to pair your computer and start a session."
         case .permission: "Open Chirp and allow microphone access in Settings."
         case .audio: "Microphone unavailable. Open Chirp to start again."
-        case .connection: "Connection failed. Check Tailscale and your Mac."
+        case .connection: "Connection failed. Check Tailscale and your computer."
         case .expired: "Session ended. Open Chirp to start again."
         case .cancelled: "Dictation cancelled."
-        case .timeout: "The Mac did not finish in time."
+        case .timeout: "Chirp server took too long. Try again."
         case .noResult: "Didn't catch that."
         case .storage: "Protected storage unavailable. Unlock and reopen Chirp."
         case .notesRecording: "Live Notes is recording. Stop it in Live Notes to dictate."

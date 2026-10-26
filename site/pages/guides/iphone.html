@@ -1,25 +1,25 @@
 <!--
 title: Use Chirp on iPhone and iPad — Chirp
-description: A beginner's guide to building Chirp for iPhone and iPad with Xcode, pairing it with your Mac and dictating with Chirp Keyboard.
+description: A beginner's guide to building Chirp for iPhone and iPad with Xcode, pairing it with your computer and dictating with Chirp Keyboard.
 section: guides
 -->
 <div class="narrow guide-hero">
   <p class="crumbs"><a href="index.html">Guides</a> / 03</p>
   <h1>Use Chirp on iPhone and iPad</h1>
-  <p class="lede">A native app plus a dictation keyboard for iOS and iPadOS 18. Like Android, it sends your voice to the Chirp server on your Mac. There’s no App Store or TestFlight build yet — both are coming soon; this guide is the personal-install route today.</p>
+  <p class="lede">A native app plus a dictation keyboard for iOS and iPadOS 18. Like Android, it sends your voice to the Chirp server on your computer. There’s no App Store or TestFlight build yet — both are coming soon; this guide is the personal-install route today.</p>
   <div class="meta-row"><span>Needs: full Xcode, an Apple ID, Tailscale</span><span>Status: early</span></div>
 </div>
 <article class="narrow prose">
   <div class="callout warn"><b>Early: first iPad install verified.</b><p>The app, keyboard and widgets build and pass their tests on iPhone and iPad simulators, including a test that dictates through the real keyboard. An iPad personal install was verified on October 25, 2026; iPhone installation, microphone quality and Live Notes on hardware are still unverified. Expect rough edges — and please <a href="{{repo}}/issues">report what you find</a>. Packaged iOS builds are coming soon; there is no App Store or TestFlight download yet.</p></div>
   <nav class="toc" aria-label="On this page"><b>On this page</b>
-    <ol><li><a href="#before">Before you start</a></li><li><a href="#build">Build and install</a></li><li><a href="#pair">Pair with your Mac</a></li><li><a href="#keyboard">Turn on the keyboard</a></li><li><a href="#dictate">Dictate</a></li><li><a href="#mic">About the mic indicator</a></li></ol>
+    <ol><li><a href="#before">Before you start</a></li><li><a href="#build">Build and install</a></li><li><a href="#pair">Pair with your computer</a></li><li><a href="#keyboard">Turn on the keyboard</a></li><li><a href="#dictate">Dictate</a></li><li><a href="#mic">About the mic indicator</a></li></ol>
   </nav>
 
-  <div class="ios-captures guide-ios-captures"><figure><!--shot:ios/iphone-dictate-listening|The Pond iPhone Dictate screen listening, with the timed keyboard session visible--><figcaption>Dictate on iPhone.</figcaption></figure><figure><!--shot:ios/iphone-onboarding-2-pair-connected|Guided onboarding confirms the Mac connection before continuing--><figcaption>Pair, then enable the microphone.</figcaption></figure></div>
+  <div class="ios-captures guide-ios-captures"><figure><!--shot:ios/iphone-dictate-listening|The Pond iPhone Dictate screen listening, with the timed keyboard session visible--><figcaption>Dictate on iPhone.</figcaption></figure><figure><!--shot:ios/iphone-onboarding-2-pair-connected|Guided onboarding confirms the computer connection before continuing--><figcaption>Pair, then enable the microphone.</figcaption></figure></div>
   <figure class="shot"><div class="frame"><!--shot:ios/ipad-sidebar-dictate|The iPad Pond sidebar with Notes, Dictate, History and Settings beside the Dictate screen--></div><figcaption>A sidebar on iPad; a tab bar on iPhone.</figcaption></figure>
   <h2 id="before">Before you start</h2>
   <ul>
-    <li>Chirp running on your Mac (<a href="mac.html">Mac guide</a>) and Tailscale on the Mac and the iPhone or iPad, signed in to the same account (<a href="android.html#tailscale">how</a>).</li>
+    <li>Chirp running on your computer (<a href="mac.html">Mac</a>, <a href="windows.html">Windows</a> or <a href="linux.html">Linux</a> guide) and Tailscale on that computer and the iPhone or iPad, signed in to the same account (<a href="android.html#tailscale">how</a>).</li>
     <li><strong>Full Xcode</strong> from the Mac App Store, opened once so it finishes installing. The Command Line Tools alone can't build iOS apps.</li>
     <li>An Apple ID signed in to Xcode (Xcode → Settings → Accounts). Free Personal Team profiles expire after seven days, requiring another build. App Groups and shared Keychain capabilities are not guaranteed on free accounts; check the actual provisioning profiles.</li>
   </ul>
@@ -36,10 +36,10 @@ section: guides
   </ol>
   <p>The <a href="{{repo}}/blob/main/ios/README.md">iOS README</a> also describes simulator test runs to do before installing on hardware.</p>
 
-  <h2 id="pair">Pair with your Mac</h2>
+  <h2 id="pair">Pair with your computer</h2>
   <ol class="steps">
-    <li><strong>Show the code on the Mac</strong><p>Chirp for Mac → <strong>Settings → Devices → Pair a Phone…</strong></p></li>
-    <li><strong>Scan it</strong><p>In Chirp on the iPhone, use <strong>Pair your Mac</strong> during onboarding, or <strong>Settings → Connection</strong>, and tap <strong>Scan pairing QR</strong>. Chirp checks the connection before saving, then shows which Mac you paired.</p></li>
+    <li><strong>Show the code on the computer</strong><p>In Chirp for Mac → <strong>Settings → Devices → Pair a Phone…</strong></p></li>
+    <li><strong>Scan it</strong><p>In Chirp on the iPhone, use <strong>Pair your computer</strong> during onboarding, or <strong>Settings → Connection</strong>, and tap <strong>Scan pairing QR</strong>. Chirp checks the connection before saving, then shows which computer you paired.</p></li>
   </ol>
   <p>The iPhone app only accepts private tailnet addresses, so it can never be pointed at a public server.</p>
 

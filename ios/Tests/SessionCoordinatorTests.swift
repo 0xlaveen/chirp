@@ -95,7 +95,7 @@ struct SessionCoordinatorTests {
         try await eventually { f.model.text == "almost done" }
         f.transport.push(#"{"type":"error","code":"busy","message":"synthetic"}"#)
         try await eventually { f.model.phase == .finished }
-        #expect(f.model.notice == "Your Mac is busy. Try again in a moment. Kept what was heard.")
+        #expect(f.model.notice == "Chirp server is busy. Try again in a moment. Kept what was heard.")
         #expect(f.model.armed && f.model.diagnostics.last?.code == .busy)
     }
 
@@ -109,7 +109,7 @@ struct SessionCoordinatorTests {
         #expect(try keyboardView(f).state()?.errorCode == .notFound)
         FlakyHTTP.failure = nil
         await f.model.checkConnection()
-        #expect(f.model.connectionIssue == nil && f.model.notice == "Mac connection verified.")
+        #expect(f.model.connectionIssue == nil && f.model.notice == "Computer connection verified.")
         #expect(try keyboardView(f).state()?.errorCode == nil)
     }
 

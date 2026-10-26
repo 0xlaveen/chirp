@@ -179,7 +179,7 @@ struct LearnMore<Content: View>: View {
 
 // MARK: - Connection chip
 
-/// The toolbar connection status (Android's ConnectionChip): lily "Mac" when the Mac answers, muted
+/// The toolbar connection status (Android's ConnectionChip): lily "Computer" when the computer answers, muted
 /// "Offline" or "Not paired" otherwise. Tapping opens Settings → Connection.
 struct ConnectionChip: View {
     @ObservedObject var model: SessionCoordinator
@@ -187,7 +187,7 @@ struct ConnectionChip: View {
 
     nonisolated static func status(paired: Bool, issue: ConnectionIssue?) -> (label: String, connected: Bool) {
         guard paired else { return ("Not paired", false) }
-        return issue == nil ? ("Mac", true) : ("Offline", false)
+        return issue == nil ? ("Computer", true) : ("Offline", false)
     }
 
     var body: some View {
@@ -230,14 +230,14 @@ struct SetupProgress: Equatable {
 
     static func title(_ step: Step) -> String {
         switch step {
-        case .pair: "Pair your Mac"
+        case .pair: "Pair your computer"
         case .microphone: "Allow the microphone"
         case .keyboard: "Turn on Chirp Keyboard"
         }
     }
     static func fix(_ step: Step) -> String {
         switch step {
-        case .pair: "Pair Mac"
+        case .pair: "Pair computer"
         case .microphone: "Allow"
         case .keyboard: "Open Settings"
         }
