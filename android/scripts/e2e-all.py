@@ -32,7 +32,9 @@ def main():
                '--model-dir', os.environ.get('CHIRP_MODEL_DIR', str(Path.home() / '.koi/voice-models/parakeet-mlx')),
                '--apk', str(ROOT / f'android/app/build/outputs/apk/debug/app-{abi}-debug.apk')]
     results = {}
-    for phase in args.only or ('dictation', 'cleanup', 'notes', 'history', 'learn', 'stop', 'device', 'bubble', 'quickdictate', 'visual', 'keepkb', 'release'):
+    # Speaker labels join the default sweep when the speaker model is at hand (CHIRP_SPEAKER_MODEL).
+    speakers = ('speakers',) if os.environ.get('CHIRP_SPEAKER_MODEL') else ()
+    for phase in args.only or ('dictation', 'cleanup', 'notes', *speakers, 'history', 'learn', 'stop', 'device', 'bubble', 'quickdictate', 'visual', 'keepkb', 'release'):
         target = OUT / phase
         target.mkdir(exist_ok=True)
         env = dict(os.environ, CHIRP_E2E_OUTPUT=str(target), CHIRP_E2E_NATIVE_EDITOR='0' if phase == 'release' else '1')

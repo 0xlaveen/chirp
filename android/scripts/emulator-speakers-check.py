@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""Speaker labels end to end (#187), run by emulator-notes-check.py: two synthetic voices (macOS `say`,
+"""Speaker labels end to end (#187, on by default #247), run by emulator-notes-check.py: two synthetic voices (macOS `say`,
 Samantha then Daniel, looped with silence) through the real NotesCapture and rolling /v1/stream sockets
-to the throwaway server's WeSpeaker model. Turns Label speakers on from the note's menu through the
-consent dialog (the offline server's download played by a file copy), then requires two distinct people in the transcript, a rename from a chip that lands
-everywhere, and kept-audio replay of a labelled segment. Prints states and counts, never text."""
+to the throwaway server's WeSpeaker model. Labels are on without touching a switch, so there is no consent dialog: the first
+note asks the server to download its model by itself and shows a status line (the offline server's download is played by a
+file copy, with Retry when the offline fetch had already failed). Then it requires two distinct people in the transcript, a
+rename from a chip that lands everywhere, and kept-audio replay of a labelled segment. Prints states and counts, never text."""
 import json
 import shlex
 import time
@@ -60,14 +61,24 @@ def check(probe, work, output, standalone=False):
     before = server().get('finals', 0)
     tap('Record new note')
     wait(lambda: server().get('finals', 0) >= before + 1, 'The two-voice recording did not reach the transcript')
-    # Smart options: the Mac has no speaker model yet, so Label speakers asks before it downloads one.
-    probe['click']('More options')
-    tap('Label speakers')
-    probe['wait_for']('Label speakers?', 20)
-    screenshot('emulator-speakers-consent.png')
+    # Labels are on by default: no switch, no consent. The first note asked the server to fetch the model by itself.
+    wait(lambda: server().get('model'), 'The phone did not ask the server for the speaker model by itself', 60)
+    assert not any(n.get('text') == 'Label speakers?' for n in nodes()), 'A consent dialog appeared; labels are on by default'
+    status = lambda: [n.get('text') for n in nodes() if (n.get('text') or '').startswith(('Getting the speaker model ready', 'Couldn’t download the speaker model'))]
+    deadline = time.monotonic() + 30
+    while not status():
+        assert time.monotonic() < deadline, 'No speaker model status line while the model was missing'
+        time.sleep(.5)
+    log('Status line: %s' % status())
+    screenshot('emulator-speakers-status.png')
     probe['speakers_model']()  # the download's stand-in: the pinned file arrives in the server's model cache
-    tap('Download')
-    wait(lambda: 200 in server().get('model', []), 'The consented download never reached /v1/speakers/model', 30)
+    deadline = time.monotonic() + 60
+    while status():
+        # The offline fetch has already failed on the phone's screen: Retry asks again and the server finds the file.
+        retry = [n for n in nodes() if n.get('text') == 'Retry']
+        if retry: adb('shell', 'input', 'tap', *map(str, probe['center'](retry[-1])))
+        assert time.monotonic() < deadline, 'The speaker model status line never went away: %s' % status()
+        time.sleep(2)
     labelled = server().get('labelled', 0)
     wait(lambda: server().get('labelled', 0) >= labelled + 2 and len(server().get('slots', [])) >= 2,
          'Two labelled segments with two distinct speakers did not arrive', 180)
@@ -120,4 +131,4 @@ def check(probe, work, output, standalone=False):
     adb('shell', 'am', 'force-stop', package)
     adb('shell', 'run-as', package, 'sh', '-c', shlex.quote('cat > shared_prefs/debug_capture.xml'),
         data=b'<?xml version="1.0" encoding="utf-8"?><map><boolean name="synthetic" value="true" /></map>')
-    log('PASS: speaker labels: consent → model ready, two voices → two people, rename from a chip, labelled kept-audio replay')
+    log('PASS: speaker labels: on by default, model fetched without consent, two voices → two people, rename from a chip, labelled kept-audio replay')

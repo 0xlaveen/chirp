@@ -46,7 +46,7 @@ internal class NotesModel(
     private val fetchHealth: (OkHttpClient, Pairing) -> Health? = { client, paired ->
         try { ChirpNetwork.health(client, paired) } catch (_: Exception) { null }
     },
-    /** `POST /v1/speakers/model` (download only after the user agreed); the model's state after it, null when it failed. */
+    /** `POST /v1/speakers/model` (the download starts by itself while labels are on); the model's state after it, null when it failed. */
     private val speakerModel: (OkHttpClient, Pairing, String) -> String? = { client, paired, action ->
         try { ChirpNetwork.speakerModel(client, paired, action) } catch (_: Exception) { null }
     },
@@ -104,12 +104,12 @@ internal class NotesModel(
     /** "Structure notes": on by default only while structuring stays on the Mac (text never leaves it). */
     var structureEnabled by mutableStateOf(health?.correctionLeavesMachine != true)
         private set
-    /** "Label speakers": off by default; on, each segment asks the Mac who spoke. */
+    /** "Label speakers": on by default (only the user's own switch writes an off); each segment asks the Mac who spoke. */
     var labelSpeakers by mutableStateOf(store.notesLabelSpeakers)
         private set
-    /** Turning "Label speakers" on needs the Mac's speaker model: the consent dialog is open. */
-    var speakerConsent by mutableStateOf(false)
-        private set
+    /** This run already asked the Mac to download its speaker model; it asks again only from Retry. */
+    private var speakerDownloadAsked = false
+    private var speakerDownloadFailed by mutableStateOf(false)
     /** "Recovered unsaved notes from 14:03 · 52 min", until the user saves, discards or records. */
     var recovered by mutableStateOf<String?>(null)
         private set
@@ -297,6 +297,7 @@ internal class NotesModel(
             if (first) structureEnabled = !latest.correctionLeavesMachine
             recorder.configure(structureEnabled, latest)
             if (recorder.state.active) recorder.labelSpeakers = labelSpeakers && speakersAvailable
+            fetchSpeakerModel()
             // The Mac downloading its speaker model: look again shortly.
             if (latest.speakersModel == "downloading") scope.launch { delay(3000); if (id == refreshing) refresh() }
             if (!recorder.state.active) recorder.options = options()
@@ -310,41 +311,60 @@ internal class NotesModel(
     val speakersAvailable get() = health?.notesSpeakers == true
     /** The Mac's speaker model: `ready`, `downloading`, `not_downloaded` or `failed` (null: unknown). */
     val speakerModelState get() = health?.speakersModel
-    /** Why speakers are not being labelled although the switch is on, for the transcript. */
+    /** Why speakers are not being labelled although the switch is on, for the transcript. The model's own state has its banner line. */
     val speakerNote: String? get() = revision.let {
         when {
             !labelSpeakers -> null
             health != null && !speakersAvailable -> "Update Chirp on your Mac to label speakers."
-            speakerModelState == "downloading" -> "Downloading the speaker model on your Mac…"
-            recorder.speakerError == "unavailable" || speakerModelState == "not_downloaded" || speakerModelState == "failed" ->
-                "The speaker model isn’t on your Mac. Turn Label speakers off and on to download it."
-            recorder.speakerError != null -> "Couldn’t label the last segment’s speakers."
+            speakerModelLine != null -> null
+            recorder.speakerError != null && recorder.speakerError != "unavailable" -> "Couldn’t label the last segment’s speakers."
             else -> null
         }
     }
 
-    /** The switch: off at once; on asks first unless the Mac already has the model. Applies from the next segment. */
+    /** The model download's status line (never modal): getting it ready, or it failed. Null when ready, off, or the Mac can't label. */
+    val speakerModelLine: SpeakerModelLine? get() = revision.let {
+        when {
+            !labelSpeakers || !speakersAvailable -> null
+            speakerDownloadFailed || speakerModelState == "failed" || (speakerModelState == "ready" && recorder.speakerError == "unavailable") -> SpeakerModelLine.Failed
+            speakerModelState == "downloading" || speakerModelState == "not_downloaded" -> SpeakerModelLine.Preparing
+            else -> null
+        }
+    }
+    /** "Getting the speaker model ready (27 MB, once)…": the size comes from the Mac's health. */
+    val speakerModelSize: String? get() = health?.speakersModelBytes?.let { "%d MB".format(java.util.Locale.US, Math.round(it / 1_000_000.0)) }
+
+    /** The switch. Off is the only thing that stores an explicit off; on starts the Mac's model download when it needs one. Applies from the next segment. */
     fun setSpeakerLabels(on: Boolean) {
-        if (on && speakerModelState.let { it != "ready" && it != "downloading" }) { speakerConsent = true; return }
         labelSpeakers = on; store.notesLabelSpeakers = on
         recorder.labelSpeakers = on && speakersAvailable
+        if (on) fetchSpeakerModel(retry = true) else { speakerDownloadAsked = false; speakerDownloadFailed = false }
     }
 
-    /** The consent dialog's Download: the Mac fetches its model (once), and labels start with the next segment. */
-    fun confirmSpeakerDownload() {
-        speakerConsent = false
-        labelSpeakers = true; store.notesLabelSpeakers = true
-        recorder.labelSpeakers = speakersAvailable
+    /** Retry from the status line: ask the Mac to download its speaker model again. */
+    fun retrySpeakerModel() {
+        speakerDownloadAsked = false; speakerDownloadFailed = false
+        fetchSpeakerModel(retry = true)
+    }
+
+    /**
+     * Labels are on and the Mac has no speaker model: it fetches one (once, pinned and verified) while the notes carry on unlabelled.
+     * A download that failed is only asked again by the user ([retry]: Retry, or turning the switch on).
+     */
+    private fun fetchSpeakerModel(retry: Boolean = false) {
+        if (!labelSpeakers || !speakersAvailable || speakerDownloadAsked) return
+        val missing = speakerModelState == "not_downloaded"
+        val broken = speakerModelState == "failed" || (speakerModelState == "ready" && recorder.speakerError == "unavailable")
+        if (!missing && !(retry && broken)) return
         val paired = pairing() ?: return
+        speakerDownloadAsked = true
         scope.launch {
             var state: String? = null
             io { state = speakerModel(http(), paired, "download") }
-            if (state == null) message = "Couldn’t reach your Mac to download the speaker model"
+            if (state == null) speakerDownloadFailed = true
             refresh()
         }
     }
-
-    fun dismissSpeakerConsent() { speakerConsent = false }
 
     /** Rename a person everywhere in the note; [replaceInNotes] also swaps their old name in the notes' text. */
     fun renameSpeaker(person: Int, name: String, replaceInNotes: Boolean = false) {
@@ -374,6 +394,7 @@ internal class NotesModel(
         recorder.keepAudio = sessions?.let { it.enabled && it.keepAudio } == true
         labelSpeakers = store.notesLabelSpeakers
         recorder.labelSpeakers = labelSpeakers && speakersAvailable
+        fetchSpeakerModel()
         // Recording into a finished note continues it: a quiet divider marks where, and the audio clock goes on.
         if (recorder.state.let { it == NotesRecorder.State.STOPPED || it == NotesRecorder.State.ERROR } && document.segments.isNotEmpty())
             recorder.document.addBoundary(recorder.elapsed, System.currentTimeMillis())
@@ -644,3 +665,6 @@ internal class NotesModel(
         const val SAVE_MS = 2000L
     }
 }
+
+/** The speaker model's download as the banner slot shows it. */
+internal enum class SpeakerModelLine { Preparing, Failed }

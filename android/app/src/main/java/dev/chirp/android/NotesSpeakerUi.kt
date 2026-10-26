@@ -116,16 +116,3 @@ internal fun RenameSpeakerDialog(document: NotesDocument, person: Int, dismiss: 
         confirmButton = { TextButton({ rename(name, replace && count > 0 && new != old) }) { Text("Rename") } },
         dismissButton = { TextButton(dismiss) { Text("Cancel") } })
 }
-
-/** Before the Mac's one download: what it is, where it comes from, and what happens to voices. */
-@Composable
-internal fun SpeakerConsentDialog(confirm: () -> Unit, dismiss: () -> Unit) {
-    AlertDialog(onDismissRequest = dismiss,
-        title = { Text("Label speakers?") },
-        text = {
-            Text("Chirp tells voices apart on your Mac to show who said what. This needs a 27 MB speaker model on your Mac, " +
-                "downloaded once from Hugging Face. Voices are compared in your Mac’s memory only and never saved; names stay in this note.")
-        },
-        confirmButton = { TextButton(confirm) { Text("Download") } },
-        dismissButton = { TextButton(dismiss) { Text("Not now") } })
-}

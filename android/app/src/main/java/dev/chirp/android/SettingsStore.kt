@@ -143,9 +143,12 @@ class SettingsStore(context: Context) {
     var notesRecovery: Boolean
         get() = prefs.getBoolean("notes_recovery", true)
         set(value) { prefs.edit { putBoolean("notes_recovery", value) } }
-    /** Notes: label who said what (the Mac compares voices in its memory). Off by default; turning it on asks before the Mac's model download. */
+    /**
+     * Notes: label who said what (the Mac compares voices in its memory). On by default; the stored value is only ever written by the
+     * user's own switches, so a stored `false` is an explicit off and stays off. A missing speaker model is a model state, not this.
+     */
     var notesLabelSpeakers: Boolean
-        get() = prefs.getBoolean("notes_label_speakers", false)
+        get() = prefs.getBoolean("notes_label_speakers", true)
         set(value) { prefs.edit { putBoolean("notes_label_speakers", value) } }
     /** Notes: skip screen work (live partials, the level meter, editor updates) while the screen is off. On by default. */
     var notesBatterySaver: Boolean
@@ -167,7 +170,7 @@ class SettingsStore(context: Context) {
                 .put("correction_leaves_machine", value.correctionLeavesMachine)
                 .put("correction_host", value.correctionHost.orEmpty())
                 .put("notes_structure", value.notesStructure).put("notes_reorganize", value.notesReorganize).put("notes_correction", value.notesCorrection).put("notes_edit", value.notesEdit)
-                .put("notes_speakers", value.notesSpeakers).apply { value.speakersModel?.let { put("speakers_model", JSONObject().put("state", it)) } }
+                .put("notes_speakers", value.notesSpeakers).apply { value.speakersModel?.let { put("speakers_model", JSONObject().put("state", it).apply { value.speakersModelBytes?.let { bytes -> put("size_bytes", bytes) } }) } }
                 .put("correction_profiles", org.json.JSONArray().apply {
                     value.correctionProfiles.forEach { profile -> put(JSONObject().put("id", profile.id)
                         .put("name", profile.name).put("description", profile.description).put("rewrites", profile.rewrites)) }

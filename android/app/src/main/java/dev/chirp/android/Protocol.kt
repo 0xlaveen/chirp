@@ -19,7 +19,9 @@ data class Health(val ready: Boolean, val debugRetention: Boolean, val correctio
                   val notesStructure: Boolean = false, val notesReorganize: Boolean = false, val notesCorrection: Boolean = false,
                   val notesEdit: Boolean = false,
                   /** The server labels speakers (`start.speakers`), and its speaker model's state (`ready`, `not_downloaded`…). */
-                  val notesSpeakers: Boolean = false, val speakersModel: String? = null)
+                  val notesSpeakers: Boolean = false, val speakersModel: String? = null,
+                  /** The speaker model's download size (`speakers_model.size_bytes`), for the one-time download line. */
+                  val speakersModelBytes: Long? = null)
 
 object Protocol {
     fun start(correction: Boolean, profile: String = "default", instructions: String = "", prompt: String? = null,
@@ -87,6 +89,7 @@ object Protocol {
                 }
             }, json.optBoolean("notes_structure"), json.optBoolean("notes_reorganize"), json.optBoolean("notes_correction"),
             json.optBoolean("notes_edit"), json.optBoolean("notes_speakers"),
-            json.optJSONObject("speakers_model")?.optString("state")?.takeIf { it.matches(Regex("[a-z_]{1,32}")) })
+            json.optJSONObject("speakers_model")?.optString("state")?.takeIf { it.matches(Regex("[a-z_]{1,32}")) },
+            json.optJSONObject("speakers_model")?.optLong("size_bytes", 0)?.takeIf { it in 1..10_000_000_000L })
     }
 }

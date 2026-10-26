@@ -5,6 +5,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.platform.LocalContext
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import dev.chirp.android.ui.ActionRow
@@ -29,8 +30,16 @@ internal fun NotesSettings(sessions: NotesSessions? = null, title: String? = nul
     var confirmDeleteAudio by remember { mutableStateOf(false) }
     var confirmDeleteAll by remember { mutableStateOf(false) }
     var labelSpeakers by remember { mutableStateOf(store.notesLabelSpeakers) }
-    var speakerConsent by remember { mutableStateOf(false) }
-    val health = remember { store.health }
+    var health by remember { mutableStateOf(store.health) }
+    // The cached health is only as fresh as the last Notes visit: look again while the speaker model is on its way.
+    LaunchedEffect(labelSpeakers) {
+        while (true) {
+            val latest = withContext(Dispatchers.IO) { refreshSpeakerHealth(context, store, labelSpeakers) } ?: break
+            health = latest
+            if (!labelSpeakers || latest.speakersModel != "downloading") break
+            delay(3000)
+        }
+    }
     LaunchedEffect(keepAudio, keep) {
         // A size that cannot be read is shown as none, never as a crash of the settings page.
         audioBytes = try { withContext(Dispatchers.IO) { kept.totalAudioBytes() } } catch (e: kotlinx.coroutines.CancellationException) { throw e } catch (_: Exception) { 0L }
@@ -69,22 +78,18 @@ internal fun NotesSettings(sessions: NotesSessions? = null, title: String? = nul
             infoBody = "Keeps each spoken segment next to its transcript, compressed and encrypted on this phone only, so you can replay it. " +
                 "Audio goes nowhere else.")
         SwitchRow("Label speakers", labelSpeakers, { on ->
-            // On asks first, unless the Mac already has its speaker model.
-            if (!on || health?.speakersModel == "ready" || health?.speakersModel == "downloading") { labelSpeakers = on; store.notesLabelSpeakers = on }
-            else speakerConsent = true
-        }, summary = if (health != null && !health.notesSpeakers) "Update Chirp on your Mac to label speakers" else "Off by default · who said what",
+            labelSpeakers = on; store.notesLabelSpeakers = on
+            // On starts the Mac's one-time model download when it has none.
+            if (on) scope.launch { withContext(Dispatchers.IO) { refreshSpeakerHealth(context, store, true, retry = true) }?.let { health = it } }
+        }, summary = speakerSummary(health, labelSpeakers),
             enabled = health?.notesSpeakers != false || labelSpeakers, infoTitle = "Label speakers",
             infoBody = "Shows who said what in the transcript (Person 1, Person 2…; tap a name to rename it) and lets the notes say who " +
-                "owns a to-do. Your Mac tells the voices apart in its memory only: nothing about a voice is saved, on the Mac or on this phone. " +
-                "Turning it on asks before your Mac downloads its 27 MB speaker model.")
+                "owns a to-do. On by default. Your Mac tells the voices apart in its memory only: nothing about a voice is saved, on the Mac or on this phone. " +
+                "The first time, your Mac downloads a small speaker model (27 MB, once, from Hugging Face); notes never wait for it. Turn it off here at any time.")
         if (audioBytes > 0) ActionRow("Delete kept audio (${megabytes(audioBytes)})", { confirmDeleteAudio = true }, destructive = true)
         ActionRow("Delete all notes", { confirmDeleteAll = true }, destructive = true)
     }
     if (title != null) SettingsGroup(title, content = rows) else SettingsGroup(content = rows)
-    if (speakerConsent) SpeakerConsentDialog(confirm = {
-        speakerConsent = false; labelSpeakers = true; store.notesLabelSpeakers = true
-        scope.launch { withContext(Dispatchers.IO) { requestSpeakerModel(context, store) } }
-    }, dismiss = { speakerConsent = false })
     if (confirmDeleteAudio) AlertDialog(onDismissRequest = { confirmDeleteAudio = false },
         title = { Text("Delete kept audio?") },
         text = { Text("This deletes the audio of every note. The text and transcripts stay.") },
@@ -103,11 +108,34 @@ internal fun NotesSettings(sessions: NotesSessions? = null, title: String? = nul
         dismissButton = { TextButton({ confirmDeleteAll = false }) { Text("Cancel") } })
 }
 
-/** Asks the paired Mac to download its speaker model (after the user agreed); its state after, null when unreachable. */
-internal fun requestSpeakerModel(context: android.content.Context, store: SettingsStore): String? {
+/** The Settings row's line: "On · who said what" plus where the Mac's speaker model stands. */
+internal fun speakerSummary(health: Health?, on: Boolean): String = when {
+    health != null && !health.notesSpeakers -> "Update Chirp on your Mac to label speakers"
+    !on -> "Off · who said what"
+    else -> "On · who said what" + when (health?.speakersModel) {
+        "ready" -> " · speaker model on your Mac: ready"
+        "downloading" -> " · speaker model on your Mac: downloading"
+        "not_downloaded" -> " · speaker model on your Mac: getting ready"
+        "failed" -> " · couldn’t download the speaker model"
+        else -> ""
+    }
+}
+
+/**
+ * The Mac's health, fresh and cached for the next screen; null when unreachable. When [on] and the Mac has no speaker model
+ * (or [retry] and its last download failed) it is asked to download one first: once, pinned and verified.
+ */
+internal fun refreshSpeakerHealth(context: android.content.Context, store: SettingsStore, on: Boolean, retry: Boolean = false): Health? {
     val paired = store.pairing() ?: return null
     val client = ChirpNetwork.client(context)
-    return try { ChirpNetwork.speakerModel(client, paired, "download") } catch (_: Exception) { null } finally { ChirpNetwork.dispose(client) }
+    return try {
+        var health = ChirpNetwork.health(client, paired)
+        if (on && health.notesSpeakers && (health.speakersModel == "not_downloaded" || retry && health.speakersModel == "failed")) {
+            ChirpNetwork.speakerModel(client, paired, "download")
+            health = ChirpNetwork.health(client, paired)
+        }
+        health.also { store.health = it }
+    } catch (_: Exception) { null } finally { ChirpNetwork.dispose(client) }
 }
 
 private fun megabytes(bytes: Long) = if (bytes < 100_000) "<0.1 MB" else "%.1f MB".format(java.util.Locale.US, bytes / 1_000_000.0)

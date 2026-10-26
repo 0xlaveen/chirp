@@ -112,7 +112,6 @@ internal fun NotesScreen(model: NotesModel, record: () -> Unit, copy: () -> Unit
     if (settings) ModalBottomSheet({ settings = false }) {
         Column(Modifier.padding(start = 16.dp, end = 16.dp, bottom = 24.dp)) { NotesSettings(title = "Notes settings") }
     }
-    if (model.speakerConsent) SpeakerConsentDialog(model::confirmSpeakerDownload, model::dismissSpeakerConsent)
     if (transcript && !externalTranscript) ModalBottomSheet({ transcript = false }, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         TranscriptPane(model, Modifier.fillMaxWidth().fillMaxHeight(.85f).padding(horizontal = 24.dp), close = { transcript = false })
     }
@@ -147,6 +146,11 @@ internal fun NotesScreen(model: NotesModel, record: () -> Unit, copy: () -> Unit
                         model.retained -> StatusBanner(StatusKind.Error, stringResource(R.string.debug_retention))
                         action != null -> StatusBanner(StatusKind.Warning, model.status, action = action.label, onAction = { act(action) })
                         model.recovered != null -> StatusBanner(StatusKind.Info, "Recovered note", body = "Your note was recovered and kept on this phone.")
+                        model.speakerModelLine == SpeakerModelLine.Preparing -> StatusBanner(StatusKind.Info,
+                            "Getting the speaker model ready" + (model.speakerModelSize?.let { " ($it, once)" } ?: "") + "…", live = true,
+                            action = "Turn off", onAction = { model.setSpeakerLabels(false) })
+                        model.speakerModelLine == SpeakerModelLine.Failed -> StatusBanner(StatusKind.Warning, "Couldn’t download the speaker model",
+                            action = "Retry", onAction = model::retrySpeakerModel, secondAction = "Turn off", onSecondAction = { model.setSpeakerLabels(false) })
                         model.explanation != null -> Text(model.explanation!!, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }

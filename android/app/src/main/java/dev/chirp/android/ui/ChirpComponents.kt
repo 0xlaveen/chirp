@@ -134,7 +134,8 @@ internal fun statusColors(scheme: ColorScheme, kind: StatusKind): Pair<Color, Co
 /** Status card. [live] announces changes politely, as the setup status line always has. */
 @Composable
 internal fun StatusBanner(kind: StatusKind, title: String, modifier: Modifier = Modifier, body: String? = null,
-                          action: String? = null, onAction: () -> Unit = {}, live: Boolean = false) {
+                          action: String? = null, onAction: () -> Unit = {}, live: Boolean = false,
+                          secondAction: String? = null, onSecondAction: () -> Unit = {}) {
     val (container, content) = statusColors(MaterialTheme.colorScheme, kind)
     Surface(modifier.fillMaxWidth(), shape = MaterialTheme.shapes.large, color = container, contentColor = content) {
         Row(Modifier.padding(16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -146,6 +147,8 @@ internal fun StatusBanner(kind: StatusKind, title: String, modifier: Modifier = 
             }
             if (action != null) TextButton(onAction, Modifier.align(Alignment.CenterVertically),
                 colors = ButtonDefaults.textButtonColors(contentColor = content)) { Text(action) }
+            if (secondAction != null) TextButton(onSecondAction, Modifier.align(Alignment.CenterVertically),
+                colors = ButtonDefaults.textButtonColors(contentColor = content)) { Text(secondAction) }
         }
     }
 }
