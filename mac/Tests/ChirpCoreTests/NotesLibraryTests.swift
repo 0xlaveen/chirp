@@ -452,3 +452,63 @@ private func libraryDirectory() -> URL {
     }
 
 }
+
+/// The title a note gets from its text when it has no heading and no chosen title (#201: a speaker-labelled paragraph
+/// was the whole title).
+@Suite struct DerivedTitleTests {
+    private func title(_ text: String, segment: String? = nil, build: (inout NotesDocument) -> Void = { _ in }) -> String {
+        var d = NotesDocument(startedAt: Date(timeIntervalSince1970: 0), text: text)
+        if let segment { d.append(NotesSegment(id: 0, offset: 0, raw: segment, text: segment)) }
+        build(&d)
+        return d.title
+    }
+
+    @Test func listMarkersAndASpeakerLabelComeOffAndItStopsAtTheFirstSentence() {
+        #expect(title("- Person 1: We should ship the new onboarding flow on Friday. Person 2: That sounds good.")
+                == "We should ship the new onboarding flow on Friday")
+        #expect(title("* Send the proposal") == "Send the proposal")
+        #expect(title("1. Book the room. Then call") == "Book the room")
+        #expect(title("- [ ] Send the proposal by Friday") == "Send the proposal by Friday")
+        #expect(title("> Question? Who leads") == "Question")
+    }
+
+    @Test func aRenamedPersonsLabelComesOffToo() {
+        let t = title("- Maya: That sounds good to me. Person 1: ok") { d in
+            d.append(NotesSegment(id: 0, offset: 0, raw: "x", text: "x"))
+            d.attachServerTurns([ServerTurn(speaker: 0, start: 0, text: "x")], generation: "g", toSegment: 0)
+            d.renameSpeaker(1, to: "Maya")
+        }
+        #expect(t == "That sounds good to me")
+        // A colon that is not a known speaker stays: "Agenda: review" is the user's own line.
+        #expect(title("Agenda: review the plan") == "Agenda: review the plan")
+    }
+
+    @Test func aLongTitleIsCutOnAWordBoundaryWithAnEllipsis() {
+        let t = title("- Person 1: We should ship the new onboarding flow on Friday, and I will write the announcement tonight.")
+        #expect(t == "We should ship the new onboarding flow on Friday, and I will…")
+        #expect(t.count <= NotesDocument.derivedTitleLength + 1)
+        let words = title(String(repeating: "word ", count: 40))
+        #expect(words.hasSuffix("…") && words.count <= NotesDocument.derivedTitleLength + 1 && !words.contains("wor…"))
+        // One long unbroken token is cut where it is.
+        #expect(title(String(repeating: "a", count: 100)).count == NotesDocument.derivedTitleLength + 1)
+    }
+
+    @Test func aShortTitleIsLeftAlone() {
+        #expect(title("Call the dentist") == "Call the dentist")
+        #expect(title("Call the dentist\nthen the bank") == "Call the dentist")
+    }
+
+    @Test func nothingLeftFallsBackToTheNextLineThenTheSegmentThenTheDate() {
+        #expect(title("- \n---\n- Person 1:\nReal first line") == "Real first line")
+        #expect(title("", segment: "Person 1: hello there. Bye") == "hello there")
+        #expect(title("- Person 1:").hasPrefix("Note, "))
+        #expect(title("").hasPrefix("Note, "))
+    }
+
+    @Test func aHeadingAndAChosenTitleAreUnchanged() {
+        #expect(title("intro\n## The Heading\nbody") == "The Heading")
+        var d = NotesDocument(text: "- Person 1: long text here")
+        d.rename("My title")
+        #expect(d.title == "My title")
+    }
+}

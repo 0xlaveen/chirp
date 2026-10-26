@@ -82,8 +82,8 @@ extension NotesDocument {
         if let heading = lines.first(where: { $0.range(of: #"^#{1,6}\s+\S"#, options: .regularExpression) != nil }) {
             return String(heading.drop(while: { $0 == "#" || $0.isWhitespace }).prefix(160))
         }
-        if let line = lines.first(where: { !$0.isEmpty && $0 != "---" }) { return String(line.prefix(160)) }
-        if let line = segments.first(where: { !$0.isGap && !$0.text.isEmpty })?.text { return String(line.prefix(160)) }
+        if let derived = lines.lazy.compactMap({ derivedTitle(from: $0) }).first { return derived }
+        if let derived = segments.lazy.filter({ !$0.isGap }).compactMap({ derivedTitle(from: $0.text) }).first { return derived }
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.dateFormat = "d MMMM"
@@ -117,6 +117,38 @@ extension NotesDocument {
         }
         let preview = body.isEmpty ? segments.filter { !$0.isGap }.map(\.text).joined(separator: " ") : body
         return String(preview.split(whereSeparator: \.isWhitespace).joined(separator: " ").prefix(240))
+    }
+
+    /// The longest a title derived from the text runs (about; it ends on a word boundary).
+    public static let derivedTitleLength = 60
+
+    /// A short title from a line of text when the note has no heading and no chosen title: list markers and a leading
+    /// speaker label (`Person 1:`, or the name a person was renamed to) come off, it stops at the first sentence end, and
+    /// it is cut on a word boundary with an ellipsis. Nil when nothing is left.
+    func derivedTitle(from line: String) -> String? {
+        var text = line.trimmingCharacters(in: .whitespaces)
+        text = text.replacingOccurrences(of: #"^(?:>\s*|[-*+]\s+(?:\[[ xX]\]\s+)?|\d+[.)]\s+)+"#, with: "", options: .regularExpression)
+        text = text.replacingOccurrences(of: #"\*\*|__|`"#, with: "", options: .regularExpression)
+        let names = roster.people.compactMap { $0.name?.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
+        for name in names where text.hasPrefix(name + ":") {
+            text = String(text.dropFirst(name.count + 1))
+            break
+        }
+        text = text.trimmingCharacters(in: .whitespaces)
+            .replacingOccurrences(of: #"^Person \d+:"#, with: "", options: .regularExpression)
+            .trimmingCharacters(in: .whitespaces)
+        // The first sentence only.
+        if let end = text.range(of: #"[.!?](?=\s|$)"#, options: .regularExpression) { text = String(text[..<end.lowerBound]) }
+        text = text.split(whereSeparator: \.isWhitespace).joined(separator: " ")
+        guard text.contains(where: { $0.isLetter || $0.isNumber }) else { return nil }
+        let limit = Self.derivedTitleLength
+        guard text.count > limit else { return text }
+        let cut = String(text.prefix(limit))
+        let words = cut.split(separator: " ", omittingEmptySubsequences: true)
+        // A boundary: drop the word the limit fell inside, unless the cut landed exactly after one.
+        let whole = text[text.index(text.startIndex, offsetBy: limit)] == " "
+        let kept = whole || words.count < 2 ? words : words.dropLast()
+        return kept.joined(separator: " ").trimmingCharacters(in: CharacterSet(charactersIn: " ,;:-—")) + "…"
     }
 
     public func openTodoCount() -> Int {
