@@ -253,13 +253,14 @@ public enum Snapshots {
                                             availability: .available)
         }
         /// Settings → Devices with a fixed clock and zone, so the snapshot never changes with the day it is drawn.
-        func devicesForm(_ name: String, _ phase: DevicesPhase, revoking: String? = nil, problem: String? = nil) -> Scenario {
+        func devicesForm(_ name: String, _ phase: DevicesPhase, revoking: String? = nil, problem: String? = nil,
+                         activity: ActivityPhase = .hidden, keepProblem: String? = nil) -> Scenario {
             Scenario(name: "settings-devices-\(name)") {
                 var state = SettingsState()
                 state.about = AboutInfo(version: "0.1.0", build: "1")
                 return settingsWindow(state, .devices) { form in
-                    form.devicesView.apply(phase, revoking: revoking, problem: problem, now: sampleNow,
-                                           locale: Locale(identifier: "en_US"), timeZone: TimeZone(identifier: "UTC")!)
+                    form.devicesView.apply(phase, revoking: revoking, problem: problem, activity: activity, keepProblem: keepProblem,
+                                           now: sampleNow, locale: Locale(identifier: "en_US"), timeZone: TimeZone(identifier: "UTC")!)
                 }
             }
         }
@@ -271,6 +272,15 @@ public enum Snapshots {
             devicesForm("unavailable", .unavailable(DevicesError.outdated.message)),
             devicesForm("revoke-failed", .loaded(samplePhones), problem: DevicesError.failed.message),
             devicesForm("remote", .remote("studio.example-tailnet.ts.net")),
+            devicesForm("activity", .loaded(samplePhones), activity: .shown(sampleActivity())),
+            devicesForm("refused", .loaded(samplePhones), activity: .shown(sampleActivity(refused: true))),
+            devicesForm("activity-off", .loaded(samplePhones), activity: .shown(DeviceActivity(started: sampleNow, keep: false))),
+            devicesForm("activity-outdated", .loaded(samplePhones), activity: .outdated),
+            Scenario(name: "device-activity-sheet") {
+                let view = DeviceActivityView()
+                view.apply(sampleActivity(refused: true), now: sampleNow, locale: Locale(identifier: "en_US"), timeZone: TimeZone(identifier: "UTC")!)
+                return view
+            },
             form("ready", .general) { _ in },
             form("login-unavailable", .general) { $0.launch = .unavailable },
             form("missing", .general) { $0.micGranted = false; $0.accessibilityGranted = false },
@@ -430,6 +440,35 @@ public enum Snapshots {
         PairedDevice(id: "04be77d1", name: "iPad", created: sampleNow.addingTimeInterval(-40 * 86_400), lastSeen: sampleNow.addingTimeInterval(-3 * 3_600)),
         PairedDevice(id: "c81d20aa", name: "Akshay’s phone", created: sampleNow.addingTimeInterval(-3_600)),
     ]
+
+    /// What a busy day looks like to Settings → Devices: the Pixel is dictating now, the iPad cleaned up notes a few minutes ago,
+    /// this Mac and a phone on the shared token have been used too.
+    static func sampleActivity(refused: Bool = false) -> DeviceActivity {
+        let pixel = ActivitySource.device(id: "9f3a1c52", name: "Pixel 9", revoked: false)
+        let ipad = ActivitySource.device(id: "04be77d1", name: "iPad", revoked: false)
+        func event(_ ago: TimeInterval, _ source: ActivitySource, _ client: String, _ kind: ActivityKind, audio: Int? = nil,
+                   ms: Int = 1_800, _ outcome: ActivityOutcome = .ok) -> ActivityEvent {
+            ActivityEvent(at: sampleNow.addingTimeInterval(-ago), source: source, client: client, kind: kind, profile: "default",
+                          durationMS: ms, audioMS: audio, outcome: outcome)
+        }
+        var events = [
+            event(95, .local, "mac", .dictation, audio: 4_100),
+            event(180, ipad, "ios", .notesStructure, ms: 6_200),
+            event(240, pixel, "android", .dictation, audio: 9_800),
+            event(600, .shared, "ios", .notesSegment, audio: 41_800, ms: 2_310),
+            event(900, ipad, "ios", .notesReorganize, ms: 9_400, .timeout),
+            event(1_500, pixel, "android", .dictation, audio: 2_600, .cancelled),
+            event(2_400, .local, "mac", .transcribe, audio: 61_000, ms: 3_900),
+        ]
+        // A dozen requests from the iPad today (the row counts them).
+        for i in 0..<10 { events.append(event(3_000 + Double(i) * 200, ipad, "ios", .notesSegment, audio: 20_000, ms: 1_500)) }
+        let active = [ActiveRequest(source: pixel, client: "android", kind: .dictation, profile: "default", since: sampleNow.addingTimeInterval(-3))]
+        let refusals = refused ? [
+            Refusal(reason: .unknownToken, count: 3, last: sampleNow.addingTimeInterval(-300)),
+            Refusal(reason: .revoked, deviceID: "11aa22bb", deviceName: "Old Pixel", count: 2, last: sampleNow.addingTimeInterval(-3_600)),
+        ] : []
+        return DeviceActivity(started: sampleNow.addingTimeInterval(-8 * 3_600), active: active, events: events, refused: refusals)
+    }
 
     public static var pairingScenarios: [Scenario] {
         func pairing(_ name: String, _ step: PairingStep, remaining: Int = 107, concealed: Bool = false) -> Scenario {

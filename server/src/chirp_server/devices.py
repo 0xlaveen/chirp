@@ -3,6 +3,7 @@ logged or printed (pairing prints a new token once, locally)."""
 
 import contextlib
 import hashlib
+import ipaddress
 import json
 import logging
 import math
@@ -23,6 +24,30 @@ MAX_NAME = 64
 SEEN_INTERVAL = 60.0  # seconds between persisted last-seen updates for one device
 DIGEST = re.compile(r"[0-9a-f]{64}")
 STAMP = re.compile(r"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ")
+# A request that came through `tailscale serve` (or any proxy) carries at least one of these.
+PROXY_HEADERS = {
+    b"x-forwarded-for",
+    b"x-forwarded-host",
+    b"forwarded",
+    b"x-real-ip",
+    b"tailscale-user-login",
+    b"tailscale-user-name",
+}
+
+
+def direct_loopback(scope) -> bool:
+    """The peer is this machine itself and no proxy header is present. A label, not a security
+    boundary for the shared token; the owner token adds the boundary for activity."""
+    client = scope.get("client")
+    try:
+        address = ipaddress.ip_address(client[0]) if client else None
+    except ValueError:
+        address = None
+    if isinstance(address, ipaddress.IPv6Address) and address.ipv4_mapped:
+        address = address.ipv4_mapped
+    if address is None or not address.is_loopback:
+        return False
+    return not any(name in PROXY_HEADERS for name, _ in scope.get("headers", ()))
 
 
 def encode(token: str) -> bytes:
@@ -245,6 +270,32 @@ class Credentials:
             return False
         self.saw(found[0])
         return True
+
+    def source(self, value, scope) -> tuple:
+        """Who an authorized request is, for the activity list: ("device", id), ("local",) for
+        the shared token used directly on this machine, else ("shared",)."""
+        found = self.match(value) if isinstance(value, str) else None
+        if found is not None and not found[1] and not self.is_legacy(value):
+            return ("device", found[0])
+        return ("local", None) if direct_loopback(scope) else ("shared", None)
+
+    def is_legacy(self, value) -> bool:
+        return isinstance(value, str) and secrets.compare_digest(self.legacy, encode(value))
+
+    def refusal(self, value) -> tuple:
+        """(reason, device id) for a refused credential: counted per revoked device, otherwise
+        only as unknown or missing."""
+        if not isinstance(value, str) or not value:
+            return ("no_token", None)
+        found = self.match(value)
+        if found is not None and found[1]:
+            return ("revoked", found[0])
+        return ("unknown_token", None)
+
+    def roster(self) -> dict:
+        """Device id -> (current name, revoked) for every device ever paired."""
+        self.refresh()
+        return {ident: (name, revoked) for _, ident, revoked, name in self.devices}
 
     def revoked(self, value) -> bool:
         return isinstance(value, str) and bool((found := self.match(value)) and found[1])

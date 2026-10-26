@@ -28,10 +28,15 @@ public enum DevicesText {
 }
 
 /// Settings → Devices: the phones paired with their own token (name, when paired, last seen) and a Revoke button for
-/// each. The owner supplies the data through `apply` and handles `onRevoke` (which asks first).
+/// each. When the server reports activity it adds a line per row (in use now, or the last request), This Mac and Shared
+/// token rows, the refused-request lines, an Activity… button and the "Keep device activity" switch. The owner supplies
+/// the data through `apply` and handles `onRevoke` (which asks first), `onShowActivity` and `onKeepActivity`.
 @MainActor
 public final class DevicesView: NSStackView {
     public var onRevoke: ((PairedDevice) -> Void)?
+    public var onShowActivity: (() -> Void)?
+    /// "Keep device activity" was flipped to this value.
+    public var onKeepActivity: ((Bool) -> Void)?
     /// The list grew or shrank: the window should resize.
     public var onResize: (() -> Void)?
     private var shown: [PairedDevice] = []
@@ -49,7 +54,8 @@ public final class DevicesView: NSStackView {
 
     public var devices: [PairedDevice] { shown }
 
-    public func apply(_ phase: DevicesPhase, revoking: String?, problem: String?, now: Date = Date(), locale: Locale = .current, timeZone: TimeZone = .current) {
+    public func apply(_ phase: DevicesPhase, revoking: String?, problem: String?, activity: ActivityPhase = .hidden, keepProblem: String? = nil,
+                      now: Date = Date(), locale: Locale = .current, timeZone: TimeZone = .current) {
         for v in arrangedSubviews { removeArrangedSubview(v); v.removeFromSuperview() }
         shown = []
         switch phase {
@@ -58,11 +64,63 @@ public final class DevicesView: NSStackView {
         case .unavailable(let why): addNote(why, tone: .warning)
         case .loaded(let devices):
             shown = devices
+            // Only a server that keeps activity has anything to add to the rows.
+            let shownActivity = activity.activity.flatMap { $0.keep ? $0 : nil }
+            func line(_ matches: (ActivitySource) -> Bool) -> ActivityLine? {
+                guard let shownActivity,
+                      let text = ActivityText.line(shownActivity, source: matches, now: now, locale: locale, timeZone: timeZone) else { return nil }
+                return ActivityLine(text: text, inUse: shownActivity.active.contains { matches($0.source) })
+            }
+            if let shownActivity {
+                let isLocal: (ActivitySource) -> Bool = { $0 == .local }
+                let isShared: (ActivitySource) -> Bool = { $0 == .shared }
+                if ActivityText.has(shownActivity, source: isLocal), let l = line(isLocal) {
+                    addRow(name: ActivityText.thisMac, detail: nil, activity: l, revoke: nil, busy: false, enabled: true)
+                }
+                if ActivityText.has(shownActivity, source: isShared), let l = line(isShared) {
+                    let clients = ActivityText.clients(shownActivity, source: isShared)
+                    let via = clients.isEmpty ? nil : "via " + clients.joined(separator: ", ")
+                    addRow(name: ActivityText.sharedToken, detail: via, activity: l, revoke: nil, busy: false, enabled: true)
+                }
+            }
             if devices.isEmpty { addNote(DevicesText.empty) }
-            for d in devices { addRow(d, busy: revoking == d.id, enabled: revoking == nil, now: now, locale: locale, timeZone: timeZone) }
+            for d in devices {
+                let mine: (ActivitySource) -> Bool = { if case .device(let id, _, _) = $0 { id == d.id } else { false } }
+                addRow(name: d.name, detail: DevicesText.detail(d, now: now, locale: locale, timeZone: timeZone), activity: line(mine), revoke: d,
+                       busy: revoking == d.id, enabled: revoking == nil)
+            }
+            if let shownActivity {
+                for r in shownActivity.refused { addNote(ActivityText.refusal(r, now: now, locale: locale), tone: .warning) }
+            }
         }
         if let problem { addNote(problem, tone: .error) }
+        if case .loaded = phase { addActivityControls(activity, keepProblem: keepProblem) }
         onResize?()
+    }
+
+    /// The Activity… button and the "Keep device activity" switch, or the old-server note.
+    private func addActivityControls(_ activity: ActivityPhase, keepProblem: String?) {
+        switch activity {
+        case .hidden: return
+        case .outdated: addNote(ActivityText.outdated)
+        case .shown(let shownActivity):
+            let keep = ClosureButton(checkbox: ActivityText.keepTitle) { [weak self] on in self?.onKeepActivity?(on) }
+            keep.state = shownActivity.keep ? .on : .off
+            keep.setAccessibilityHelp(ActivityText.keepHelp)
+            var views: [NSView] = [keep]
+            if shownActivity.keep {
+                let show = ClosureButton(title: ActivityText.showButton) { [weak self] _ in self?.onShowActivity?() }
+                show.setAccessibilityLabel("Show device activity")
+                views = [show, keep]
+            }
+            let row = NSStackView(views: views)
+            row.orientation = .horizontal
+            row.alignment = .centerY
+            row.spacing = 14
+            addArrangedSubview(row)
+            addNote(shownActivity.keep ? ActivityText.keepHelp : ActivityText.keepOff)
+            if let keepProblem { addNote(keepProblem, tone: .error) }
+        }
     }
 
     private func addNote(_ text: String, tone: MenuEntry.Tone = .normal) {
@@ -72,23 +130,48 @@ public final class DevicesView: NSStackView {
         addArrangedSubview(f)
     }
 
-    private func addRow(_ d: PairedDevice, busy: Bool, enabled: Bool, now: Date, locale: Locale, timeZone: TimeZone) {
-        let name = NSTextField(labelWithString: d.name)
+    /// The activity line under a row's detail; `inUse` draws the small green dot.
+    struct ActivityLine { var text: String; var inUse: Bool }
+
+    /// A row: bold name, a grey detail line, the activity line, and Revoke when it is a phone with its own token.
+    private func addRow(name title: String, detail: String?, activity: ActivityLine?, revoke device: PairedDevice?, busy: Bool, enabled: Bool) {
+        let name = NSTextField(labelWithString: title)
         name.font = MenuStyle.semiboldFont
         name.lineBreakMode = .byTruncatingTail
-        let detail = NSTextField(labelWithString: DevicesText.detail(d, now: now, locale: locale, timeZone: timeZone))
-        detail.font = MenuStyle.secondaryFont
-        detail.textColor = .secondaryLabelColor
-        detail.lineBreakMode = .byTruncatingTail
-        let text = NSStackView(views: [name, detail])
+        var lines: [NSView] = [name]
+        if let detail {
+            let field = NSTextField(labelWithString: detail)
+            field.font = MenuStyle.secondaryFont
+            field.textColor = .secondaryLabelColor
+            field.lineBreakMode = .byTruncatingTail
+            lines.append(field)
+        }
+        if let activity {
+            let field = NSTextField(labelWithString: activity.text)
+            field.font = MenuStyle.secondaryFont
+            field.textColor = .secondaryLabelColor
+            field.lineBreakMode = .byTruncatingTail
+            if activity.inUse {
+                let text = NSMutableAttributedString(string: "● ", attributes: [.foregroundColor: NSColor.systemGreen, .font: MenuStyle.secondaryFont])
+                text.append(NSAttributedString(string: activity.text, attributes: [.foregroundColor: NSColor.secondaryLabelColor, .font: MenuStyle.secondaryFont]))
+                field.attributedStringValue = text
+                field.setAccessibilityLabel(activity.text)
+            }
+            lines.append(field)
+        }
+        let text = NSStackView(views: lines)
         text.orientation = .vertical
         text.alignment = .leading
         text.spacing = 1
         text.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-        let revoke = RevokeButton(title: busy ? "Revoking…" : "Revoke…", device: d) { [weak self] in self?.onRevoke?(d) }
-        revoke.isEnabled = enabled
-        revoke.setAccessibilityLabel("Revoke \(d.name)")
-        let row = NSStackView(views: [text, NSView(), revoke])
+        var views: [NSView] = [text, NSView()]
+        if let device {
+            let button = ClosureButton(title: busy ? "Revoking…" : "Revoke…") { [weak self] _ in self?.onRevoke?(device) }
+            button.isEnabled = enabled
+            button.setAccessibilityLabel("Revoke \(device.name)")
+            views.append(button)
+        }
+        let row = NSStackView(views: views)
         row.orientation = .horizontal
         row.alignment = .centerY
         addArrangedSubview(row)
@@ -96,13 +179,12 @@ public final class DevicesView: NSStackView {
     }
 }
 
+/// A small push button or checkbox that runs a closure; the checkbox passes its new state.
 @MainActor
-private final class RevokeButton: NSButton {
-    let device: PairedDevice
-    private let handler: () -> Void
+final class ClosureButton: NSButton {
+    private let handler: (Bool) -> Void
 
-    init(title: String, device: PairedDevice, handler: @escaping () -> Void) {
-        self.device = device
+    init(title: String, handler: @escaping (Bool) -> Void) {
         self.handler = handler
         super.init(frame: .zero)
         self.title = title
@@ -112,7 +194,17 @@ private final class RevokeButton: NSButton {
         action = #selector(pressed)
     }
 
+    init(checkbox title: String, handler: @escaping (Bool) -> Void) {
+        self.handler = handler
+        super.init(frame: .zero)
+        self.title = title
+        setButtonType(.switch)
+        controlSize = .small
+        target = self
+        action = #selector(pressed)
+    }
+
     @available(*, unavailable) required init?(coder: NSCoder) { fatalError("not used") }
 
-    @objc private func pressed() { handler() }
+    @objc private func pressed() { handler(state == .on) }
 }

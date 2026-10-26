@@ -56,6 +56,7 @@ The token is either the shared one or a per-device token minted by `chirp-server
 - `POST /v1/notes/structure` (authenticated, JSON): stateless Live Notes structuring, specified [below](#live-notes-structuring-v1-compatible-addition). `/v1/stream` is unchanged.
 - `POST /v1/notes/reorganize` (authenticated, JSON): stateless reorganize of a whole Live Notes document (or its trailing sections), specified [below](#live-notes-reorganize-v1-compatible-addition). `/v1/stream` and `/v1/notes/structure` are unchanged.
 - `POST /v1/notes/edit` (authenticated, JSON): stateless voice edit of a Live Notes document (notes + a spoken instruction → edited notes), specified [below](#live-notes-edit-v1-compatible-addition).
+- `GET /v1/devices/activity` (owner token, direct loopback only; a v1-compatible addition no phone calls): which devices used the server, specified in [Device activity](#device-activity-v1-compatible-addition) below. `PUT /v1/devices/activity/settings` with `{"keep":bool}` turns the recording off (deleting what is stored) or on.
 - `POST /v1/transcribe`: the body is 16 kHz mono PCM16 WAV, capped at 120 s. It returns the same object as a `final` message. Used for tests and as a fallback.
 - `WS /v1/stream`:
   - client → `{"type":"start","sample_rate":16000,"encoding":"pcm_s16le","client":"mac|android|ios|desktop","correction":false,"correction_profile":"default","correction_instructions":"","context":"…"}` (`correction_prompt`, `word_timings`, `context` and `learned` are optional)
@@ -70,6 +71,39 @@ The token is either the shared one or a per-device token minted by `chirp-server
 - Limits: 120 s per utterance, and frames ≥ 1 MB are rejected. Requests queue for one engine.
 
 Authenticated health also includes the selected `speech_model` and `correction_model` IDs. These optional metadata fields contain no token, prompt, audio, or transcript. Unauthenticated health remains minimal.
+
+### Device activity (v1-compatible addition)
+
+Metadata about who used the server, for Settings → Devices on the Mac. Phones never call it, so the protocol stays v1; clients must ignore unknown fields, kinds and outcomes.
+
+- **Auth.** `Authorization: Bearer <owner token>` (`~/.config/chirp/owner-token`, `0600`, created on first start, never printed by `pair`, never in a link, never shown in health) **and** a direct loopback connection: the peer is `127.0.0.1`/`::1` and none of `X-Forwarded-For`, `X-Forwarded-Host`, `Forwarded`, `X-Real-IP`, `Tailscale-User-Login`, `Tailscale-User-Name` is present (a `tailscale serve` request carries them). No or a wrong token → 401 `auth`. A valid shared or device token, or the owner token through a proxy → 403 `forbidden`. The owner token is refused (401) by every other endpoint.
+- **Source** of a request, from the credential that passed auth: `{"kind":"device","id","name","revoked"}` (names and `revoked` are joined at read time), `{"kind":"local"}` (the shared token used directly on this machine, "This Mac") or `{"kind":"shared"}` (the shared token through the proxy). A label, not a security boundary.
+- **Events** are one per `/v1/stream` utterance (`start` to final, cancel or error, not per socket), per `/v1/transcribe`, `/v1/notes/{structure,reorganize,edit}` and `/v1/speakers/model` request. Health, `/v1/correction/profiles` and `/v1/correction/settings` are not recorded. `kind` is `dictation`, `notes_segment` (a stream utterance with the `live_notes` style), `transcribe`, `notes_structure`, `notes_reorganize`, `notes_edit` or `speaker_model`. `outcome` is `ok`, `cancelled`, `rejected`, `timeout`, `busy`, `preempted`, `disconnected`, `notes_off` or an error code. `audio_ms` is set for audio kinds only.
+- **Refusals** (bad or missing token on a protected endpoint, WS auth failures including the pending-auth cap, a revoked device's token anywhere) are counters with the last time only; an unauthenticated health probe is not counted.
+- **Retention.** Written to `device-activity.json` (`0600`, atomically replaced, at most every 5 s and on shutdown) so a restart keeps it; at most `[activity] max_events` (5000) events and `max_days` (30) days, pruned at read time. `[activity] keep = false` or `PUT /v1/devices/activity/settings {"keep":false}` stops recording and deletes the file's contents; that choice is saved with it and wins over `server.toml`. Nothing is logged.
+
+```json
+{
+  "started": "2026-10-26T09:12:00Z",
+  "keep": true,
+  "retention": {"max_events": 5000, "max_age_days": 30},
+  "active": [
+    {"source": {"kind": "device", "id": "9f3a1c52", "name": "Pixel 8", "revoked": false},
+     "client": "android", "kind": "dictation", "profile": "default", "since": "2026-10-26T10:15:03Z"}
+  ],
+  "events": [
+    {"at": "2026-10-26T10:14:40Z", "source": {"kind": "shared"}, "client": "ios",
+     "kind": "notes_segment", "profile": "live_notes", "corrected": true,
+     "duration_ms": 2310, "audio_ms": 41800, "outcome": "ok"}
+  ],
+  "refused": [
+    {"reason": "unknown_token", "count": 3, "last": "2026-10-26T10:10:00Z"},
+    {"reason": "revoked", "device": {"id": "11aa22bb", "name": "Old Pixel"}, "count": 2, "last": "2026-10-26T10:11:00Z"}
+  ]
+}
+```
+
+`events` is newest first, `at` is when the request ended, `since` when it began. `reason` is `unknown_token`, `no_token` or `revoked`.
 
 ### Optional correction fields (v1-compatible additions)
 
@@ -379,7 +413,8 @@ Version additions preserve existing fields. A breaking change becomes `/v2`.
 - **Default: nothing is retained.** Audio and transcripts live only in memory for the length of the utterance.
   - They are never written to disk, logs, crash reports or temp files.
   - Logs contain only session ids, durations, byte counts, peak/RMS levels, timings and error codes.
-  - A test asserts that a full session writes no files, and that the log contains no transcript text.
+  - A test asserts that a full session writes no files except the activity list below, and that the log contains no transcript text.
+- **Device activity is metadata only, local and switchable.** `device-activity.json` (`0600`, beside the server state; 5000 events / 30 days, `[activity] keep = false` or the Mac switch deletes it) holds times, device ids, client and request kinds, style ids, durations, audio lengths and outcome codes; never text, audio, prompts, learned items, outlines, addresses, identities or tokens. Readable only with the owner token over direct loopback. See [Device activity](#device-activity-v1-compatible-addition).
 - **Debug retention is opt-in, local only and loudly visible.**
   - Enable it with `chirp-server --debug-retain` or `[debug] retain = true` in `~/.config/chirp/server.toml`.
   - It writes `<session>.wav` plus a `<session>.json` transcript/timings file to `~/Library/Application Support/Chirp/debug/` (mode 0700/0600).
@@ -398,6 +433,7 @@ Version additions preserve existing fields. A breaking change becomes `/v2`.
   - Logs carry `notes labels speakers=N lag_ms=… tentative=…` only. Tests assert the log line's shape, that a full labelled session writes nothing under Application Support or Chirp's caches, and (against a local stand-in for the Hub) that only the consented download makes a request.
 - **Correction is off by default.** When it is enabled with a non-loopback `base_url`, health reports `correction_leaves_machine: true`, and clients label the toggle "sends text to <host>". Audio never leaves the Mac. Only the final text does, and only when correction is on.
 - **Secrets:**
+  - Owner token: `~/.config/chirp/owner-token`, 0600, generated on first run; read by the Mac app on the server machine for device activity, never put in a pairing link and accepted by no other endpoint.
   - Server token: `~/.config/chirp/token`, 0600, generated on first run. `chirp-server pair` prints it as a `chirp://pair?url=…&token=…` QR code and string, shown locally in the terminal only.
   - LLM API key: Keychain or an env var, never in the repo.
   - Android: the token is encrypted with an Android Keystore AES key.
