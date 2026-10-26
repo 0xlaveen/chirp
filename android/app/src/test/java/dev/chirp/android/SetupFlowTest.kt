@@ -24,6 +24,19 @@ class SetupFlowTest {
             assertEquals(expected, migratedInputMode(enabled, selected, bubble))
         }
     }
+    @Test fun `onboarding titles match the iOS wizard`() {
+        assertEquals("Welcome to Chirp", WELCOME_TITLE)
+        assertEquals("Pair your computer", PAIR_PAGE_TITLE)
+        assertEquals("About pairing", ABOUT_PAIRING)
+        assertEquals("Allow the microphone", MICROPHONE_TITLE)
+        assertEquals("What Chirp keeps", ABOUT_MICROPHONE)
+        assertEquals("Turn on Chirp Keyboard", KEYBOARD_TITLE)
+        assertEquals("About the keyboard", ABOUT_KEYBOARD)
+        assertEquals(
+            "On your computer, open Chirp → Settings → Devices → Pair a Phone, or run chirp-server pair on your server.",
+            PAIRING_STEPS)
+        assertFalse(PAIRING_STEPS.contains("Mac"))
+    }
     @Test fun `each recoverable dictation error has a specific action`() {
         assertEquals(DictationAction.PAIR, DictationAction.forStatus("Pair your computer in Chirp settings"))
         assertEquals(DictationAction.PAIR, DictationAction.forStatus("Pairing refused — pair again in Chirp settings"))

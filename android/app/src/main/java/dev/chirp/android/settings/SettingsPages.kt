@@ -33,6 +33,7 @@ private fun ConnectionPage(state: SetupState, actions: SettingsActions) {
     val tailscale = actions.openTailscale.takeIf { state.paired && state.reachable == false && !state.checking }
     StatusBanner(connection.kind, connection.title, body = connection.hint ?: connection.summary, live = true,
         action = tailscale?.let { "Open Tailscale" }, onAction = { tailscale?.invoke() })
+    Text(pairingStepsAnnotated(), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
     SettingsGroup {
         if (state.paired) ActionRow("Check connection", actions.checkConnection, enabled = !state.checking)
         if (state.wifiPermissionNeeded && !state.localNetwork) ActionRow("Allow Wi-Fi server access", actions.allowWifi,

@@ -35,6 +35,9 @@ struct ConnectionPage: View {
             let status = model.connectionStatus
             PondBanner(kind: status.kind, title: status.title, detail: status.hint ?? status.detail)
                 .accessibilityIdentifier("chirp.connection.banner")
+            OnboardingCopy.pairingStepsText(.subheadline)
+                .foregroundStyle(Color.chirp.inkMuted)
+                .accessibilityLabel(OnboardingCopy.pairingSteps)
             SettingsGroup {
                 if model.paired {
                     ActionRow(title: "Check connection", symbol: "arrow.triangle.2.circlepath", disabled: model.working,
@@ -85,8 +88,9 @@ struct ChangePairingPage: View {
         SettingsPageScroll {
             SettingsGroup {
                 SettingsItem {
-                    Text("On your computer, open Chirp → Settings → Devices → Pair a Phone, then scan the code here.")
-                        .font(.subheadline).foregroundStyle(Color.chirp.inkMuted)
+                    OnboardingCopy.pairingStepsText(.subheadline)
+                        .foregroundStyle(Color.chirp.inkMuted)
+                        .accessibilityLabel(OnboardingCopy.pairingSteps)
                     PairingForm(model: model, paired: { dismiss() })
                 }
             }

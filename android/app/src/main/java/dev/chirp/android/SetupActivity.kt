@@ -159,6 +159,7 @@ open class SetupActivity : ComponentActivity(), AppShortcutHost {
                         chooseMode = ::chooseMode, accessibility = ::openAccessibility, skipFloatingMic = {
                             store.floatingMicSkipped = true; state.floatingMicSkipped = true; advance()
                         },
+                        skipPairing = ::finishOnboarding,
                     ))
                 }
             }

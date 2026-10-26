@@ -3,9 +3,34 @@ import ChirpIOSCore
 import SwiftUI
 import UIKit
 
-/// First-run setup (a port of Android's four-page wizard): Welcome · Pair your Mac · Microphone · Chirp
-/// Keyboard. Segmented progress on top, one koi primary button per page and a quiet "Skip for now". It shows
-/// on first launch until the device is paired, and again from Settings → "Show setup again".
+/// Page titles and secondary links shared with Android `OnboardingPages.kt`.
+enum OnboardingCopy {
+    static let welcome = "Welcome to Chirp"
+    static let pair = "Pair your computer"
+    static let aboutPairing = "About pairing"
+    static let microphone = "Allow the microphone"
+    static let aboutMicrophone = "What Chirp keeps"
+    static let keyboard = "Turn on Chirp Keyboard"
+    static let aboutKeyboard = "About the keyboard"
+    static let pairingCommand = "chirp-server pair"
+    static let pairingSteps = "On your computer, open Chirp → Settings → Devices → Pair a Phone, or run chirp-server pair on your server."
+
+    /// The command is code font; the rest of the sentence stays the page’s body font.
+    /// A hyphen is a line-break point, so the shown command uses a non-breaking hyphen and space.
+    /// The accessibility label stays the canonical sentence.
+    static func pairingStepsText(_ font: Font) -> Text {
+        let parts = pairingSteps.components(separatedBy: pairingCommand)
+        let shown = pairingCommand
+            .replacingOccurrences(of: "-", with: "\u{2011}")
+            .replacingOccurrences(of: " ", with: "\u{00A0}")
+        let command = Text(shown).font(font.monospaced())
+        return Text(parts[0]).font(font) + command + Text(parts.count > 1 ? parts[1] : "").font(font)
+    }
+}
+
+/// First-run setup: Welcome · Pair your computer · Allow the microphone · Turn on Chirp Keyboard. Segmented progress on top,
+/// one koi primary button per page and a quiet "Skip for now". It shows on first launch until the device is
+/// paired, and again from Settings → "Show setup again".
 struct Onboarding: View {
     enum Page: Int, CaseIterable { case welcome, pair, microphone, keyboard }
     /// Set once onboarding is finished or skipped. Unpaired first launches show it until then.
@@ -140,7 +165,7 @@ struct Onboarding: View {
 
     private var welcome: some View {
         VStack(alignment: .leading, spacing: ChirpSpacing.s24) {
-            Text("Welcome to Chirp").font(.largeTitle.bold()).accessibilityAddTraits(.isHeader)
+            Text(OnboardingCopy.welcome).font(.largeTitle.bold()).accessibilityAddTraits(.isHeader)
             VStack(alignment: .leading, spacing: ChirpSpacing.s16) {
                 feature("mic", "Dictate into any app")
                 feature("note.text", "Keep conversations in Notes")
@@ -162,11 +187,12 @@ struct Onboarding: View {
     private var pair: some View {
         VStack(alignment: .leading, spacing: ChirpSpacing.s16) {
             badge(model.paired ? "checkmark" : "qrcode.viewfinder", done: model.paired)
-            title("Pair your computer")
-            Text("On your computer, open Chirp → Settings → Devices → Pair a Phone, then scan the code.")
-                .font(.body).foregroundStyle(Color.chirp.inkMuted)
+            title(OnboardingCopy.pair)
+            OnboardingCopy.pairingStepsText(.body)
+                .foregroundStyle(Color.chirp.inkMuted)
+                .accessibilityLabel(OnboardingCopy.pairingSteps)
             PairingForm(model: model, hidesControlsWhenConnected: true)
-            LearnMore(title: "Pairing", label: "About pairing") {
+            LearnMore(title: "Pairing", label: OnboardingCopy.aboutPairing) {
                 Text("Turn on Tailscale on both devices. Chirp checks that your computer answers before it saves the pairing, so a successful scan is all it takes.")
                 Text("Scanning uses the camera only while the scanner is open. The pairing is kept in this device's Keychain and the link is never shown or logged.")
             }
@@ -176,9 +202,12 @@ struct Onboarding: View {
     private var microphonePage: some View {
         VStack(alignment: .leading, spacing: ChirpSpacing.s16) {
             badge(microphone == .granted ? "checkmark" : "mic", done: microphone == .granted)
-            title("Allow the microphone")
+            title(OnboardingCopy.microphone)
             Text("Chirp listens only while you dictate, record a note or keep a keyboard session on.")
                 .font(.body).foregroundStyle(Color.chirp.inkMuted)
+            LearnMore(title: "Your microphone", label: OnboardingCopy.aboutMicrophone) {
+                Text("The microphone opens only while you dictate, record a note or keep a keyboard session on, and closes when you stop.")
+            }
             if microphone == .granted {
                 check("Microphone allowed")
             } else if microphone == .denied {
@@ -190,14 +219,14 @@ struct Onboarding: View {
     private var keyboard: some View {
         VStack(alignment: .leading, spacing: ChirpSpacing.s16) {
             badge(model.keyboardReady ? "checkmark" : "keyboard", done: model.keyboardReady)
-            title("Chirp Keyboard")
+            title(OnboardingCopy.keyboard)
             Text("Optional. Lets you dictate in other apps.").font(.body).foregroundStyle(Color.chirp.inkMuted)
             if model.keyboardReady {
                 check("Chirp Keyboard is on")
             } else {
                 Text("In Settings, tap Keyboards and turn on Chirp Keyboard and Allow Full Access.")
                     .font(.subheadline).foregroundStyle(Color.chirp.inkMuted)
-                LearnMore(title: "Chirp Keyboard", label: "About the keyboard") {
+                LearnMore(title: "Chirp Keyboard", label: OnboardingCopy.aboutKeyboard) {
                     Text("Full Access lets the keyboard reach the Chirp app through an encrypted shared mailbox. The keyboard never uses the microphone; Chirp does, while a session runs.")
                     Text("Open Chirp Keyboard once in any app and this step shows as done.")
                     OtherAppsGuide()

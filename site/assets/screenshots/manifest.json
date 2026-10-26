@@ -304,7 +304,7 @@
     ]
   },
   "android/onboarding-pair-dark.png": {
-    "sha256": "5b974f873a4adb6d2b6cee202a3ae539e102bdbc965289d78e75c7ac31858f90",
+    "sha256": "64adef7dcbcd2259b3844388d49f5fc350f99d72a630c0ee7a42f098ade2659e",
     "width": 411,
     "height": 891,
     "variants": [
@@ -321,7 +321,7 @@
     ]
   },
   "android/onboarding-pair-light.png": {
-    "sha256": "f1d82414d39532d049d7e13568ad09bb768542cccbd87b303d09056c4c069d5f",
+    "sha256": "d1c9a3d5ffaae4eda18b383dce8b1ea65fb2e4c35e01553396902f6c09899063",
     "width": 411,
     "height": 891,
     "variants": [
@@ -621,7 +621,7 @@
     ]
   },
   "ios/iphone-dark-onboarding-2-pair-connected.png": {
-    "sha256": "09ca883dffc699e5ce3e999cfbde9a3c5cfd8c2dbcf2695728023cef1a8cf3a1",
+    "sha256": "0b3fa622dfcd51ae45b972a1959f86b1bd132c24c07ce3f58e402e9e0217dd50",
     "width": 1206,
     "height": 2622,
     "variants": [
@@ -697,7 +697,7 @@
     ]
   },
   "ios/iphone-onboarding-2-pair-connected.png": {
-    "sha256": "f05af8f6be4387bd1ef52026bba55fa87ffa2d0e92fe3e3020630aef3e99db89",
+    "sha256": "4165cd5536af3e3419ec6978bef68c99049a8dcc5d43fd8e80b1c0fb546abcff",
     "width": 1206,
     "height": 2622,
     "variants": [

@@ -15,7 +15,7 @@ def onboarding(p):
     adb('shell', 'pm', 'clear', package)
     adb('shell', 'ime', 'disable', p['IME'])
     adb('shell', 'am', 'start', '-n', package + '/.SetupActivity')
-    wait('Dictate anywhere'); click('Get started')
+    wait('Welcome to Chirp'); click('Get started')
     wait('How you’ll dictate'); click('Use Chirp Keyboard'); click('Continue')
     wait('Turn on Chirp Keyboard'); click('Enable Chirp Keyboard')
     wait('Keyboard apps')
