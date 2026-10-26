@@ -335,7 +335,7 @@ class ScratchpadTest {
         rig.model.field = TextFieldValue("Text with nowhere to go."); compose.waitForIdle()
         compose.onNodeWithContentDescription("More options").performClick()
         compose.onNodeWithText("Save as note").performClick()
-        compose.waitUntil(5000) { compose.onAllNodesWithText("Notes are off", substring = true).fetchSemanticsNodes().isNotEmpty() }
+        compose.waitUntil(5000) { compose.onAllNodesWithText("Notes are off — turn on Keep notes on this phone in Settings → Notes").fetchSemanticsNodes().isNotEmpty() }
         assertTrue(rig.notes!!.entries().isEmpty())
     }
 

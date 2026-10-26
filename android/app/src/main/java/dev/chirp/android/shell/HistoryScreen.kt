@@ -195,7 +195,7 @@ internal fun HistoryScreen(store: DictationHistory? = null, now: () -> Long = Sy
                     result.createdNote -> "Saved as a new note"
                     else -> "Added to your latest note"
                 }
-                AddToNoteResult.Off -> "Notes are off — turn on Keep notes in Settings → Notes"
+                AddToNoteResult.Off -> "Notes are off — turn on Keep notes on this phone in Settings → Notes"
                 AddToNoteResult.Failed -> "Couldn't add the note"
             }
             snackbar.showSnackbar(message, duration = SnackbarDuration.Long)

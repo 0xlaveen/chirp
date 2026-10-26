@@ -2,6 +2,8 @@ package dev.chirp.android
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -9,6 +11,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -19,9 +22,11 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.SuggestionChip
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -29,6 +34,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.semantics.Role
@@ -92,25 +98,48 @@ internal fun SpeakerMenu(open: Boolean, dismiss: () -> Unit, roster: SpeakerRost
     }
 }
 
-/** Rename everywhere in this note; blank goes back to "Person N". Offers to replace the old name in the notes too. */
+/**
+ * Rename everywhere in this note; blank goes back to "Person N". Offers to replace the old name in the notes too.
+ * Remember voice is on by default only while the server's library is on, and the field suggests the same saved and
+ * recent names as Name speakers.
+ */
 @Composable
-internal fun RenameSpeakerDialog(document: NotesDocument, person: Int, dismiss: () -> Unit, rename: (String, Boolean) -> Unit) {
+internal fun RenameSpeakerDialog(model: NotesModel, person: Int, dismiss: () -> Unit, rename: (String, Boolean, Boolean) -> Unit) {
+    val document = model.document
     val roster = document.roster
+    val resolved = roster.resolve(person)
     val old = roster.displayName(person)
-    var name by remember(person) { mutableStateOf(roster.person(roster.resolve(person))?.name.orEmpty()) }
+    var name by remember(person) { mutableStateOf(roster.person(resolved)?.name.orEmpty()) }
     var replace by remember(person) { mutableStateOf(true) }
+    var rememberVoice by remember(person) { mutableStateOf(true) }
+    var focused by remember(person) { mutableStateOf(false) }
+    LaunchedEffect(person) { model.loadRecentNames() }
     val count = remember(document.version, old) { document.nameCount(old) }
-    val new = name.trim().ifEmpty { "Person ${roster.resolve(person)}" }
+    val new = name.trim().ifEmpty { "Person $resolved" }
+    val offerRemember = model.voicesAvailable && model.rememberVoices
+    val used = roster.active.filter { it != resolved }.map { roster.displayName(it).trim().lowercase() }.toSet()
+    val ideas = if (focused) suggestions(
+        model.savedVoices.library?.voices.orEmpty().map { it.name } + model.recentNames, name, used) else emptyList()
+    fun commit() { rename(name, replace && count > 0 && new != old, offerRemember && rememberVoice) }
     AlertDialog(onDismissRequest = dismiss,
         title = { Text("Rename “$old”") },
         text = {
             Column {
-                OutlinedTextField(name, { name = it.take(SpeakerRoster.MAX_NAME) }, label = { Text("Name") }, singleLine = true,
-                    placeholder = { Text("Person ${roster.resolve(person)}") },
+                OutlinedTextField(name, { name = it.take(SpeakerRoster.MAX_NAME) }, Modifier.onFocusChanged { focused = it.isFocused },
+                    label = { Text("Name") }, singleLine = true,
+                    placeholder = { Text("Person $resolved") },
                     keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Words, imeAction = ImeAction.Done),
-                    keyboardActions = KeyboardActions(onDone = { rename(name, replace && count > 0 && new != old) }))
+                    keyboardActions = KeyboardActions(onDone = { commit() }))
+                if (ideas.isNotEmpty()) Row(Modifier.padding(top = 8.dp).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    ideas.forEach { SuggestionChip({ name = it }, { Text(it) }) }
+                }
                 Text("Used everywhere in this note: the transcript, the notes Chirp writes and exports.", Modifier.padding(top = 8.dp),
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                if (offerRemember) Row(Modifier.padding(top = 4.dp).clickable(role = Role.Checkbox) { rememberVoice = !rememberVoice },
+                    verticalAlignment = Alignment.CenterVertically) {
+                    Checkbox(rememberVoice, { rememberVoice = it })
+                    Text("Remember voice", style = MaterialTheme.typography.bodyMedium)
+                }
                 if (count > 0 && new != old) Row(Modifier.padding(top = 4.dp).clickable(role = Role.Checkbox) { replace = !replace },
                     verticalAlignment = Alignment.CenterVertically) {
                     Checkbox(replace, null)
@@ -119,7 +148,7 @@ internal fun RenameSpeakerDialog(document: NotesDocument, person: Int, dismiss: 
                 }
             }
         },
-        confirmButton = { TextButton({ rename(name, replace && count > 0 && new != old) }) { Text("Rename") } },
+        confirmButton = { TextButton(::commit) { Text("Rename") } },
         dismissButton = { TextButton(dismiss) { Text("Cancel") } })
 }
 
