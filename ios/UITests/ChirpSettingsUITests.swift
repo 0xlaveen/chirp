@@ -306,7 +306,8 @@ final class ChirpSettingsUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Synthetic words."].waitForExistence(timeout: 5))
         shot("history-list", app)
         app.staticTexts["Synthetic words."].tap()
-        XCTAssertTrue(app.staticTexts["Before clean-up"].waitForExistence(timeout: 5))
+        // The sheet's Close button, not a row inside it: at the largest text sizes the lists are lazy.
+        XCTAssertTrue(app.buttons["Close"].waitForExistence(timeout: 5))
         shot("history-detail", app)
         app.buttons["Close"].tap()
         app.buttons["chirp.history.menu"].tap()

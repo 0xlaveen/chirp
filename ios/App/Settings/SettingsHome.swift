@@ -68,7 +68,8 @@ struct SettingsHome: View {
             list.navigationTitle("Settings")
                 .navigationSplitViewColumnWidth(min: 320, ideal: 340, max: 420)
         } detail: {
-            NavigationStack { page(selection) }
+            // Picking another category starts its own stack, so a pushed page (Change pairing) never covers it.
+            NavigationStack { page(selection) }.id(selection)
         }
     }
 
