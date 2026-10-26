@@ -630,11 +630,11 @@ curl -s -H "$T" -H 'Content-Type: application/json' http://127.0.0.1:7821/v1/spe
 
 - **Remember.** From a note's speaker the server holds (`from`: the note's session, the final's
   `generation` and the slot; the phones), or from a ≤ 30 s clip of the person's settled turns
-  (`audio`: base64 PCM16 16 kHz mono; the Mac). It needs about 20 s of the person's speech
-  (`409 too_short` below 16 s of embedded windows). `"voice": "<id>"` updates that voice instead,
+  (`audio`: base64 PCM16 16 kHz mono; the Mac). It needs at least 20 s of the person's embedded speech
+  (`409 too_short` below that). `"voice": "<id>"` updates that voice instead,
   a seconds-weighted mean of the two voiceprints.
 - **Recognise.** A `start.speakers` note's `final.speakers` gains `"matches": [{"speaker": 1,
-  "voice": "<id>", "name": "Maya"}]` once a person has about 10 s of speech that is at least 0.7
+  "voice": "<id>", "name": "Maya"}]` once a person has at least 10 s of embedded speech that is at least 0.7
   alike to a saved voice and 0.10 ahead of the next one (one person per voice). The Mac sends clips
   instead: `{"action":"identify","people":[{"person":3,"audio":"…"}]}` → `{"matches":[{"person":3,
   "voice":"…","name":"Maya"}]}`. Without saved voices nothing changes on the wire.

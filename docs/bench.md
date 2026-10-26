@@ -1307,6 +1307,28 @@ WeSpeaker ResNet34-LM ONNX (CPU, 2 threads) and the shipped `voices.match`; 7 mi
 - **Caveat:** AMI people are remembered and tested within one meeting, on one microphone set. Across days and
   microphones a voice scores lower against itself; the margin between 0.83 and 0.70 is the room for that.
 
+### Takeover revalidation with strict speech minimums
+
+2026-10-26: reran `bench_voices.py` against the SHA-256-verified pinned ONNX model after enforcing
+10 seconds of embedded speech for recognition and 20 seconds for enrollment (the initial run above
+allowed 8/16 seconds to approximate client turn durations). The server now enforces the specified
+minimums directly. The run used the same six synthetic voices, 15 pair conversations, four AMI
+meetings and 20 saved/unknown rotations, and took 673 seconds on the shared host.
+
+| τ (margin 0.10) | phone, end: true / false | Mac clips, end: true / false | AMI 12 s: true / false |
+|---|---|---|---|
+| 0.60 | 280/280 · 40/580 | 300/300 · 24/600 | 95/95 · 0/200 |
+| 0.65 | 280/280 · 28/580 | 300/300 · 18/600 | 95/95 · 0/200 |
+| **0.70 (shipped)** | **280/280 · 16/580** | **300/300 · 0/600** | **95/95 · 0/200** |
+| 0.75 | 280/280 · 16/580 | 300/300 · 0/600 | 95/95 · 0/200 |
+| 0.80 | 280/280 · 10/580 | 300/300 · 0/600 | 95/95 · 0/200 |
+
+The stricter duration gate excludes additional short AMI windows, explaining the smaller denominator.
+At 0.70, all eligible saved people are recognised and the Mac and AMI paths give no wrong names.
+The phone path's wrong names still come from one slot containing two merged synthetic voices;
+saved-voice matching cannot separate people already merged by the diarizer. This remains a
+limitation, alongside the same-meeting/microphone constraint of the real-speech benchmark.
+
 ### `wespeaker_v2` agreement spike
 
 Whether the Mac's saved voices (#18, `wespeaker_v2@df2625a` CoreML via FluidAudio) compare with the server's.

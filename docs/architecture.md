@@ -155,7 +155,7 @@ voices").
   voice of the server's model saved, `final.speakers` gains `"matches": [{"speaker": slot, "voice":
   "<16 hex>", "name": "Maya"}]` (possibly `[]`). Each match is the note's slot (as in `turns`) the
   server recognises now, over the whole note so far, not only this segment's turns: a slot with
-  ≥ 8 s of embedded speech (about 10 s of its turns), whose voiceprint is at least 0.7 alike to a
+  ≥ 10 s of embedded speech, whose voiceprint is at least 0.7 alike to a
   saved voice and 0.10 ahead of the next saved voice; one slot per voice and one voice per slot,
   the closest first (the Mac's `VoiceMatch`). The name is included so a device that never saw the
   voice can show it. A slot absent from a present list is not recognised (yet); clients keep a name
@@ -191,8 +191,7 @@ voices").
     characters; runs of spaces collapse.
   - Errors are `{"type": "error", "code", "message"}`: `400 bad_speakers` (malformed, or a name the
     rule refuses), `404 gone` (the server no longer holds that note or generation: "Record a little
-    more with them, then try again"), `404 no_voice`, `409 too_short` (under 16 s of embedded speech,
-    about 20 s of the person's turns), `409 disabled`, `409 full` (50 voices), `409 unavailable`
+    more with them, then try again"), `404 no_voice`, `409 too_short` (under 20 s of embedded speech), `409 disabled`, `409 full` (50 voices), `409 unavailable`
     (a clip needs the speaker model), `413 clip_too_long`, `500 voices_file` (the file could not be
     read or written), `500 failed`, `401 auth`. An older server answers 404/405 without a code.
 - **Thresholds** are this model's own (0.7 / 0.10; the Mac's `wespeaker_v2` profiles use 0.75), from
@@ -502,7 +501,7 @@ Version additions preserve existing fields. A breaking change becomes `/v2`.
     - Voiceprints never enter the document, the recovery journal, Save…, Copy, UserDefaults, logs (`notes voices saved=N suggestions=N` only) or any request. Tests check the document, the journal, the export and the structuring request for a voiceprint's digits, and that no file is written.
     - Suggestions only: a name changes only when the user confirms it.
   - Logs carry `notes labels speakers=N lag_ms=… tentative=…` only. Tests assert the log line's shape, that a full labelled session writes nothing under Application Support or Chirp's caches, and (against a local stand-in for the Hub) that only the consented download makes a request.
-- **Saved voices on the server (#247) stay on the user's server.** Names and voiceprints are kept in one file, `voices.json` (0600, folder 0700) in the server's data folder, and nowhere else: never logged (`speakers voices action=remember code=ok`, `speakers voices count=N matched=N` only), never returned to a client (it lists names, seconds and dates), never sent off the machine. The note's in-memory speakers and a clip sent to remember or identify a voice are held only for the request. The server-wide "Remember voices" switch stops saving and recognising; Forget and Forget all delete. Tests check the logs for names, ids, sessions and voiceprint digits, and that the only file written is `voices.json` (and its lock).
+- **Saved voices on the server (#247) stay on the user's server.** Names and voiceprints are kept in one file, `voices.json` (0600, folder 0700) in the server's data folder, and never logged (`speakers voices action=remember code=ok`, `speakers voices count=N matched=N` only). Voiceprints are never returned to a client; the API lists names, seconds and dates. Nothing is sent outside the user's machines. A clip sent to remember or identify a voice is held only for the request; per-note centroids stay in the bounded in-memory session cache. The server-wide "Remember voices" switch stops saving and recognising; Forget and Forget all delete. Tests check the logs for names, ids, sessions and voiceprint digits, and that the only file written is `voices.json` (and its lock).
 - **Correction is off by default.** When it is enabled with a non-loopback `base_url`, health reports `correction_leaves_machine: true`, and clients label the toggle "sends text to <host>". Audio never leaves the Mac. Only the final text does, and only when correction is on.
 - **Secrets:**
   - Owner token: `~/.config/chirp/owner-token`, 0600, generated on first run; read by the Mac app on the server machine for device activity, never put in a pairing link and accepted by no other endpoint.
