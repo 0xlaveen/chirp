@@ -35,7 +35,7 @@ import org.robolectric.util.ReflectionHelpers
 class ChirpAccessibilityServiceTest {
     class TestService : ChirpAccessibilityService() {
         var editorOptions = 0
-        val learnedStore by lazy { LearnedStore(this, SoftwareHistoryKeys()) }
+        internal val learnedStore by lazy { LearnedStore(this, SoftwareHistoryKeys()) }
         override fun learningEditorInfo() = android.view.inputmethod.EditorInfo().apply {
             inputType = android.text.InputType.TYPE_CLASS_TEXT; packageName = "com.example.chat"; imeOptions = editorOptions
         }
