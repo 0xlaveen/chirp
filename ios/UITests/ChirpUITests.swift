@@ -39,7 +39,8 @@ final class ChirpUITests: XCTestCase {
         }
         screenshot("Notes with the setup card", app)
         app.buttons["chirp.connection.chip"].tap()
-        XCTAssertTrue(app.buttons["chirp.pair.scan"].waitForExistence(timeout: 5), "The chip opens Settings → Connection")
+        // The chip deep-links to Settings → Connection; pairing itself sits behind Pair Mac (#194).
+        XCTAssertTrue(app.buttons["chirp.pair.change"].waitForExistence(timeout: 5), "The chip opens Settings → Connection")
         app.selectChirpTab("Dictate")
         XCTAssertTrue(app.staticTexts["sessionStatus"].waitForExistence(timeout: 5))
         XCTAssertEqual(app.staticTexts["sessionStatus"].label, "Microphone off")
