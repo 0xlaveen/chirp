@@ -135,3 +135,39 @@ public enum SpeakerFixups {
                     separable: roster.merged(into: target))
     }
 }
+
+/// The sheet edits a value snapshot; only Done changes the sealed note.
+public struct SpeakerNamesDraft: Equatable, Sendable {
+    public var names: [Int: String]
+    public var merges: [Int: Int] = [:]
+    public var replace = true
+
+    public init(_ document: NotesDocument) {
+        names = Dictionary(uniqueKeysWithValues: document.namableSpeakers.map { ($0, document.roster.person(id: $0)?.name ?? "") })
+    }
+
+    public func preview(_ document: NotesDocument) -> NotesDocument {
+        var copy = document
+        for id in names.keys.sorted() { copy.renameSpeaker(id, to: SpeakerFixups.cleanName(names[id] ?? "")) }
+        for id in merges.keys.sorted() { if let target = merges[id] { copy.mergeSpeaker(id, into: target) } }
+        return copy
+    }
+
+    public func replacementCount(in document: NotesDocument) -> Int {
+        let after = preview(document)
+        return document.namableSpeakers.reduce(0) { count, id in
+            let old = document.roster.displayName(id)
+            return count + (old == after.roster.displayName(id) ? 0 : document.nameCount(old))
+        }
+    }
+
+    public func apply(to document: inout NotesDocument) -> [NotesTextChange] {
+        let before = document
+        document = preview(document)
+        guard replace else { return [] }
+        return before.namableSpeakers.flatMap { id -> [NotesTextChange] in
+            let old = before.roster.displayName(id), new = document.roster.displayName(id)
+            return old == new ? [] : document.replaceSpeakerName(old, with: new)?.changes ?? []
+        }
+    }
+}

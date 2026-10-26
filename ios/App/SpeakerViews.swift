@@ -32,6 +32,7 @@ struct SpeakerTurnsView: View {
     let showRaw: Bool
     let clock: (TimeInterval) -> String
     let rename: (Int) -> Void
+    let nameAll: () -> Void
 
     var body: some View {
         let roster = notes.document.roster
@@ -43,6 +44,8 @@ struct SpeakerTurnsView: View {
                         Menu {
                             Button("Rename “\(menu.name)”…", systemImage: "pencil") { rename(turn.person) }
                                 .accessibilityIdentifier("chirp.notes.speaker.rename")
+                            Button("Name speakers…", systemImage: "person.2", action: nameAll)
+                                .accessibilityIdentifier("chirp.notes.speaker.nameAll")
                             if !menu.mergeTargets.isEmpty {
                                 Menu("Same person as", systemImage: "person.2") {
                                     ForEach(menu.mergeTargets, id: \.self) { id in
@@ -149,6 +152,123 @@ struct SpeakerStatusLine: View {
         }
         if status.canTurnOff {
             Button("Turn off") { notes.setLabelSpeakers(false) }.accessibilityIdentifier("chirp.notes.speakers.turnoff")
+        }
+    }
+}
+
+/// All the note's speakers in one native sheet. Audio is decrypted into memory for replay.
+struct NameSpeakersSheet: View {
+    @ObservedObject var notes: LiveNotesController
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.horizontalSizeClass) private var sizeClass
+    @State private var mergingPerson: Int?
+    @State private var draft: SpeakerNamesDraft?
+    @FocusState private var focused: Int?
+    @StateObject private var player = NotesSegmentPlayer()
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                if let draft {
+                    let preview = draft.preview(notes.document)
+                    ForEach(preview.namableSpeakers, id: \.self) { id in
+                        Section {
+                            HStack(spacing: 12) {
+                                Circle().fill(SpeakerPalette.color(preview.roster.colorIndex(id))).frame(width: 10, height: 10).accessibilityHidden(true)
+                                TextField("Person \(id)", text: nameBinding(id)).focused($focused, equals: id)
+                                    .textInputAutocapitalization(.words).autocorrectionDisabled()
+                                    .accessibilityLabel("Name for Person \(id)")
+                                    .accessibilityIdentifier("chirp.notes.speakers.name.\(id)")
+                            }
+                            if focused == id {
+                                let taking = draft.names.filter { $0.key != id }.map(\.value)
+                                let suggestions = SpeakerNameSuggestions.names(saved: [], recent: notes.recentSpeakerNames,
+                                                                              taking: taking, matching: draft.names[id] ?? "")
+                                if !suggestions.isEmpty {
+                                    ScrollView(.horizontal) {
+                                        HStack {
+                                            ForEach(suggestions, id: \.self) { name in
+                                                Button(name) { self.draft?.names[id] = name }
+                                                    .buttonStyle(.bordered).buttonBorderShape(.capsule)
+                                                    .accessibilityIdentifier("chirp.notes.speakers.suggestion.\(name)")
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            if let sample = sample(id) {
+                                HStack(alignment: .top) {
+                                    Text("“\(sample.text)”").font(.footnote).foregroundStyle(Color.chirp.inkMuted).lineLimit(2)
+                                    Spacer(minLength: 8)
+                                    if notes.hasAudio(sample.segment) {
+                                        Button(player.segment == sample.segment ? "Stop sample" : "Play sample", systemImage: player.segment == sample.segment ? "stop.fill" : "play.fill") {
+                                            play(sample.segment, offset: sample.offset)
+                                        }.labelStyle(.iconOnly).disabled(notes.isActive)
+                                            .accessibilityIdentifier("chirp.notes.speakers.sample.\(id)")
+                                    }
+                                }
+                            }
+                            if preview.namableSpeakers.count > 1 {
+                                Button("Same as ▸") { focused = nil; mergingPerson = id }
+                                    .accessibilityIdentifier("chirp.notes.speakers.same.\(id)")
+                            }
+                        } header: { Text("Person \(id)") }
+                    }
+                    let count = draft.replacementCount(in: notes.document)
+                    if count > 0 {
+                        Toggle("Also replace names in the notes (\(count == 1 ? "1 place" : "\(count) places"))",
+                               isOn: Binding(get: { self.draft?.replace ?? true }, set: { self.draft?.replace = $0 }))
+                            .accessibilityIdentifier("chirp.notes.speakers.replace")
+                    }
+                    Section {} footer: { Text("Names are used everywhere in this note: the transcript, the notes Chirp writes and exports.") }
+                }
+            }.scrollContentBackground(.hidden).background(Color.chirp.background)
+                .navigationTitle("Name speakers").navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("Done") { if let draft { notes.nameSpeakers(draft) }; dismiss() }
+                            .accessibilityIdentifier("chirp.notes.speakers.name.done")
+                    }
+                }
+        }.tint(Color.chirp.koi)
+            .presentationDetents(sizeClass == .regular ? [.medium, .large] : [.large])
+            .presentationDragIndicator(.visible)
+            .task { if draft == nil { draft = SpeakerNamesDraft(notes.document) }; await notes.loadRecentSpeakerNames() }
+            .confirmationDialog("Same person as", isPresented: Binding(get: { mergingPerson != nil }, set: { if !$0 { mergingPerson = nil } }), titleVisibility: .visible) {
+                if let id = mergingPerson, let draft {
+                    let preview = draft.preview(notes.document)
+                    ForEach(preview.namableSpeakers.filter { $0 != id }, id: \.self) { other in
+                        Button(preview.roster.displayName(other)) { player.stop(); self.draft?.merges[id] = other; mergingPerson = nil }
+                            .accessibilityIdentifier("chirp.notes.speakers.merge.into.\(other)")
+                    }
+                }
+            }
+            .onDisappear { player.stop() }
+    }
+
+    private func nameBinding(_ id: Int) -> Binding<String> {
+        Binding(get: { draft?.names[id] ?? "" }, set: { draft?.names[id] = String($0.prefix(SpeakerFixups.maxNameLength)) })
+    }
+
+    private func sample(_ id: Int) -> (segment: Int, text: String, offset: TimeInterval)? {
+        for (index, segment) in notes.document.segments.enumerated() {
+            if let turn = segment.turns?.first(where: { notes.document.roster.resolve($0.person) == id }) {
+                return (index, String(turn.text.prefix(100)), max(0, turn.start - segment.offset))
+            }
+        }
+        return nil
+    }
+
+    private func play(_ segment: Int, offset: TimeInterval) {
+        if player.segment == segment { player.stop(); return }
+        let request = player.beginLoading(), id = notes.document.id
+        Task {
+            do {
+                guard let data = try await notes.audioData(segment: segment), notes.document.id == id,
+                      player.accepts(request), !notes.isActive else { return }
+                player.play(data, segment: segment, offset: offset)
+            } catch { if player.accepts(request) { player.failed() } }
         }
     }
 }

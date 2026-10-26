@@ -34,7 +34,7 @@ final class ChirpNotesUITests: XCTestCase {
         let fixed = ProcessInfo.processInfo.environment["CHIRP_NOTES_APPEARANCE"]
         let appearances: [XCUIDevice.Appearance] = fixed == "dark" ? [.dark] : fixed == "light" ? [.light] : [.light, .dark]
         for appearance in appearances {
-            XCUIDevice.shared.appearance = appearance
+            if fixed == nil { XCUIDevice.shared.appearance = appearance }
             let shot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
             shot.name = name + (appearance == .dark ? "-dark" : "-light")
             shot.lifetime = .keepAlways
@@ -44,6 +44,9 @@ final class ChirpNotesUITests: XCTestCase {
     @MainActor private func launch(_ extra: [String] = []) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments = ["--chirp-ui-test", "--chirp-skip-onboarding", "--chirp-notes-library-id", UUID().uuidString] + extra
+        if let appearance = ProcessInfo.processInfo.environment["CHIRP_NOTES_APPEARANCE"] {
+            app.launchArguments += ["-AppleInterfaceStyle", appearance == "dark" ? "Dark" : "Light"]
+        }
         app.launch(); Self.openNotes(app)
         XCTAssertTrue(Self.element("chirp.notes.library", in: app).waitForExistence(timeout: 10))
         return app
@@ -78,7 +81,7 @@ final class ChirpNotesUITests: XCTestCase {
         let appearances: [XCUIDevice.Appearance] = fixed == "dark" ? [.dark] : fixed == "light" ? [.light] : [.light, .dark]
         for appearance in appearances {
             let app = launch(["--chirp-notes-gallery"])
-            XCUIDevice.shared.appearance = appearance
+            if fixed == nil { XCUIDevice.shared.appearance = appearance }
             func capture(_ name: String) {
                 let shot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
                 shot.name = name + (appearance == .dark ? "-dark" : "-light")
@@ -309,4 +312,53 @@ final class ChirpNotesUITests: XCTestCase {
         XCTAssertTrue(Self.waitFor(toggle, "value == '0'", timeout: 10))
         screenshot("notes-settings-speakers", app)
     }
+    @MainActor func testNameSpeakersSheetCancelNameMergeAndReopen() {
+        if UIDevice.current.userInterfaceIdiom == .pad { XCUIDevice.shared.orientation = .landscapeLeft }
+        let app = launch(["--chirp-notes-gallery", "--chirp-speakers-gallery"])
+        let row = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'chirp.notes.row.' AND label CONTAINS 'Lantern kickoff'")).firstMatch
+        XCTAssertTrue(row.waitForExistence(timeout: 10)); row.tap()
+        let open = app.buttons["chirp.notes.speakers.name.open"]
+        XCTAssertTrue(open.waitForExistence(timeout: 10))
+        screenshot("notes-speakers-name-line", app)
+        open.tap()
+        let name = app.textFields["chirp.notes.speakers.name.1"]
+        XCTAssertTrue(name.waitForExistence(timeout: 10))
+        screenshot("notes-speakers-name-sheet", app)
+        name.tap(); name.typeText("Theo")
+        XCTAssertTrue(Self.element("chirp.notes.speakers.replace", in: app).exists)
+        app.buttons["Cancel"].tap()
+        XCTAssertTrue(open.waitForExistence(timeout: 5)); open.tap()
+        XCTAssertTrue(name.waitForExistence(timeout: 5))
+        XCTAssertEqual(name.value as? String, "Person 1")
+        name.tap(); name.typeText("Theo")
+        app.buttons["chirp.notes.speakers.name.done"].tap()
+        XCTAssertFalse(open.exists)
+        app.buttons["chirp.notes.transcript.open"].tap()
+        let one = app.buttons["chirp.notes.speaker.chip.0.0"]
+        XCTAssertTrue(Self.waitFor(one, "label == 'Theo'", timeout: 10))
+        app.buttons["chirp.notes.speakers.name.header"].tap()
+        XCTAssertTrue(name.waitForExistence(timeout: 5))
+        app.buttons["chirp.notes.speakers.same.2"].tap()
+        let merge = app.buttons["chirp.notes.speakers.merge.into.1"].firstMatch
+        XCTAssertTrue(merge.waitForExistence(timeout: 5)); merge.tap()
+        XCTAssertFalse(app.textFields["chirp.notes.speakers.name.2"].exists)
+        app.buttons["chirp.notes.speakers.name.done"].tap()
+        XCTAssertTrue(Self.waitFor(app.buttons["chirp.notes.speaker.chip.0.1"], "label == 'Theo'", timeout: 5))
+    }
+
+    @MainActor func testNameSpeakersEvidence() {
+        if UIDevice.current.userInterfaceIdiom == .pad { XCUIDevice.shared.orientation = .landscapeLeft }
+        let app = launch(["--chirp-notes-gallery", "--chirp-speakers-gallery"])
+        let row = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'chirp.notes.row.' AND label CONTAINS 'Lantern kickoff'")).firstMatch
+        XCTAssertTrue(row.waitForExistence(timeout: 10)); row.tap()
+        let open = app.buttons["chirp.notes.speakers.name.open"]
+        XCTAssertTrue(open.waitForExistence(timeout: 10))
+        screenshot("notes-speakers-name-line", app)
+        open.tap()
+        let name = app.textFields["chirp.notes.speakers.name.1"]
+        XCTAssertTrue(name.waitForExistence(timeout: 10))
+        name.tap(); name.typeText("Theo\n")
+        screenshot("notes-speakers-name-sheet", app)
+    }
+
 }
