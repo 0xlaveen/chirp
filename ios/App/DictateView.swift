@@ -8,6 +8,7 @@ import SwiftUI
 /// Help (other apps, the keyboard session) sits behind ⓘ.
 struct DictateView: View {
     @ObservedObject var model: SessionCoordinator
+    @ObservedObject private var shortcuts = HardwareShortcutController.shared
     /// Opens Settings → Connection (refused pairing, not paired).
     var openConnection: () -> Void
     @Environment(\.horizontalSizeClass) private var sizeClass
@@ -211,7 +212,8 @@ struct DictateView: View {
                 }
             }
             if hardwareKeyboard, sizeClass == .regular {
-                Text("⌘Return to dictate · ⌘. to cancel").font(.footnote).foregroundStyle(Color.chirp.inkMuted)
+                Text(shortcuts.shortcut.enabled ? "\(shortcuts.shortcut.mode == .hold ? "Hold" : "Press") \(shortcuts.shortcut.title) or ⌘Return to dictate · Esc to cancel"
+                     : "⌘Return to dictate · ⌘. to cancel").font(.footnote).foregroundStyle(Color.chirp.inkMuted)
                     .accessibilityIdentifier("chirp.dictation.shortcutsHint")
             }
         }

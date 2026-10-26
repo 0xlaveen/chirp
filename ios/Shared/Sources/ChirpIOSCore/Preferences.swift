@@ -21,6 +21,8 @@ public struct IOSPreferences: Codable, Sendable, Equatable {
     /// Chirp Keyboard presses Return after a dictation: nil/"off", "actionKeys" or "always" (KeyboardPolicy
     /// `AutoEnterMode`). Optional so older preference files still decode.
     public var autoEnter: String?
+    /// The hardware-keyboard dictation shortcut in the app; nil is Right ⌥ held to talk (`HardwareShortcut.resolve`).
+    public var hardwareShortcut: HardwareShortcut?
     public init() {}
     public func permitsCorrection(health: Health) -> Bool {
         guard correction, health.correctionAvailable else { return false }

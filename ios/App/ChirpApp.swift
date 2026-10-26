@@ -31,18 +31,23 @@ struct ChirpScene: View {
     @Environment(\.scenePhase) private var scenePhase
     @SceneStorage("chirp.tab") private var tab = ChirpTab.notes
     var body: some View {
-        #if DEBUG
-        if KeyboardTestMode.enabled {
-            KeyboardTestHost(model: coordinator)
-        } else {
+        Group {
+            #if DEBUG
+            if KeyboardTestMode.enabled {
+                KeyboardTestHost(model: coordinator)
+            } else {
+                root
+            }
+            #else
             root
+            #endif
         }
-        #else
-        root
-        #endif
+        .modifier(ShortcutListeningBar(model: coordinator, shortcuts: .shared))
+        .onAppear { HardwareShortcutController.shared.attach(coordinator) }
     }
     private var root: some View {
         ChirpRootView(model: coordinator, notes: .current(for: coordinator), tab: $tab)
+            .onAppear { HardwareShortcutController.shared.showDictate = { tab = .dictate } }
             .onChange(of: scenePhase) { _, phase in if phase == .active { coordinator.refreshSetup(); coordinator.reconcile() } }
             .onOpenURL { url in
                 let c = URLComponents(url: url, resolvingAgainstBaseURL: false)
@@ -83,7 +88,39 @@ struct DictationCommands: Commands {
                 .keyboardShortcut("k", modifiers: [.command, .shift]).disabled(model.armed || !model.paired || model.working)
             Button("End Session") { model.endSession() }
                 .keyboardShortcut("e", modifiers: [.command, .shift]).disabled(!model.armed)
+            HardwareShortcutCommand(model: model, shortcuts: .shared)
         }
+    }
+}
+
+/// The hardware-keyboard shortcut in the menu bar and the hold-⌘ overlay. A key shortcut carries its keys, so its
+/// press is a key command that never types into a field; a modifier on its own cannot be a key command, so its item
+/// says how to use it. Choosing the item starts or stops dictation.
+private struct HardwareShortcutCommand: View {
+    @ObservedObject var model: SessionCoordinator
+    @ObservedObject var shortcuts: HardwareShortcutController
+    var body: some View {
+        let shortcut = shortcuts.shortcut
+        if shortcut.enabled {
+            Divider()
+            let title = shortcut.mode == .hold ? "Hold \(shortcut.title) to Dictate" : "Press \(shortcut.title) to Dictate"
+            let button = Button(title) { shortcuts.run([.toggle]) }.disabled(!model.paired)
+            if !shortcut.isModifierOnly, let character = HIDKey.character(shortcut.key) {
+                button.keyboardShortcut(KeyEquivalent(character), modifiers: EventModifiers(shortcut.modifiers))
+            } else {
+                button
+            }
+        }
+    }
+}
+
+private extension EventModifiers {
+    init(_ modifiers: HardwareShortcut.Modifiers) {
+        self = []
+        if modifiers.contains(.command) { insert(.command) }
+        if modifiers.contains(.option) { insert(.option) }
+        if modifiers.contains(.control) { insert(.control) }
+        if modifiers.contains(.shift) { insert(.shift) }
     }
 }
 

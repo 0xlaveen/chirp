@@ -151,6 +151,7 @@ struct SessionPage: View {
 /// the Dictation category row summarises.
 struct DictationPage: View {
     @ObservedObject var model: SessionCoordinator
+    @ObservedObject private var shortcuts = HardwareShortcutController.shared
     @State private var consent = false
     var body: some View {
         SettingsPageScroll {
@@ -174,6 +175,13 @@ struct DictationPage: View {
                           infoBody: "In Chirp Keyboard, ending a dictation with “new line” or “new paragraph” types a line break instead of the words. Mid-sentence, a common first word such as “so” or “and” starts lower-case.",
                           identifier: "chirp.settings.spokenCommands",
                           set: { on in model.preferences.spokenCommands = on ? true : nil; model.savePreferences() })
+            }
+            SettingsGroup(title: "Hardware keyboard") {
+                NavRow(title: "Keyboard shortcut",
+                       summary: shortcuts.shortcut.enabled ? shortcuts.shortcut.instruction : "Off",
+                       symbol: "keyboard", identifier: "chirp.settings.hardwareShortcut") {
+                    HardwareShortcutSettings(shortcuts: shortcuts)
+                }
             }
             SettingsGroup(title: "Press Return after dictating") {
                 SettingsItem {
@@ -220,10 +228,10 @@ struct KeyboardPage: View {
         var body: String {
             switch self {
             case .onScreen: "Tap a text field in any app, touch and hold the globe key and choose Chirp. Tap Start dictation, then Stop dictation. The text appears where you were typing. Tap the globe key to go back to your usual keyboard."
-            case .hardware: "iPadOS hides on-screen keyboards when a hardware keyboard is attached. Press the globe key (or Control-Space) until Chirp is chosen, then use the small keyboard bar at the bottom of the screen to show it."
+            case .hardware: "iPadOS hides on-screen keyboards when a hardware keyboard is attached. Press the globe key (or Control-Space) until Chirp is chosen, then use the small keyboard bar at the bottom of the screen to show it. Chirp Keyboard doesn’t receive hardware keys, so outside Chirp a key can only start and stop (One key for it), not hold."
             case .anyApp: "Start a session here, then press ⌘Space, type Toggle dictation and press Return. Do it again to stop. The text is copied, so press ⌘V to paste."
             case .oneKey: "In the Shortcuts app, make a shortcut with Chirp’s Toggle Chirp dictation action. Then go to Settings → Accessibility → Keyboards & Typing → Full Keyboard Access, turn it on, open Commands and give that shortcut a key combination."
-            case .inside: "⌘Return starts or stops dictation, ⌘. cancels, ⌘⇧K starts a keyboard session and ⌘⇧E ends it. Hold ⌘ to see every shortcut."
+            case .inside: "Hold Right ⌥ Option to dictate into the field you are typing in (Settings → Dictation → Keyboard shortcut). ⌘Return starts or stops dictation, ⌘. cancels, ⌘⇧K starts a keyboard session and ⌘⇧E ends it. Hold ⌘ to see every shortcut."
             }
         }
     }
@@ -273,6 +281,10 @@ struct ShortcutsPage: View {
     var body: some View {
         SettingsPageScroll {
             SettingsGroup(title: "Dictation") {
+                if HardwareShortcutController.shared.shortcut.enabled {
+                    let hw = HardwareShortcutController.shared.shortcut
+                    shortcut(hw.mode == .hold ? "Hold to dictate" : "Press to start or stop", hw.title)
+                }
                 shortcut("Start or stop dictation", "⌘↩")
                 shortcut("Cancel dictation", "⌘.")
                 shortcut("Copy result", "⇧⌘C")
