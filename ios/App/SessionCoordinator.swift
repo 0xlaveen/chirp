@@ -436,6 +436,14 @@ final class SessionCoordinator: ObservableObject {
             case .correcting(let seq, let value, _, _):
                 guard seq > segment.lastSequence else { return }
                 segment.lastSequence = seq; segment.raw = value
+                if let timeout = health?.operationDeadlines?.advertisedTimeout(for: .dictation) {
+                    segment.deadline?.cancel()
+                    segment.deadline = Task { [weak self, weak segment] in
+                        try? await Task.sleep(for: .seconds(timeout))
+                        guard !Task.isCancelled, let self, let segment, self.utterance == id else { return }
+                        segment.fail(); self.record(.timeout); self.drain(id: id)
+                    }
+                }
             case .final(let result): if segment.outcome == nil { segment.outcome = .final(result) }
             case .error(let code, _): record(DiagnosticCode.server(code)); segment.fail()
             default: break
@@ -559,7 +567,7 @@ final class SessionCoordinator: ObservableObject {
                 guard ready, stopRequested, seq > lastServerSequence else { return }
                 lastServerSequence = seq; raw = value; text = value; words = timings ?? []
                 timer?.polishing(now())
-                setPhase(.correcting); publishLive(.correcting, text: value, raw: value); startDeadline(seconds: 12)
+                setPhase(.correcting); publishLive(.correcting, text: value, raw: value); startDeadline(seconds: health?.operationTimeout(.dictation, fallback: 12) ?? 12)
             case .final(let result):
                 guard ready, stopRequested else { return }
                 finishLive(result, id: id)

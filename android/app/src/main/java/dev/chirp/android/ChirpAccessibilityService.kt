@@ -334,6 +334,7 @@ open class ChirpAccessibilityService : AccessibilityService(), FloatingMicOverla
             val paired = loadPairing() ?: error("Pairing required")
             val network = ChirpNetwork.client(this); client = network
             val session = DictationStream(
+            deadlines = store.health?.operationDeadlines ?: OperationDeadlines(),
                 transportFactory = { event, failure -> createTransport(network, paired, event, failure) },
                 captureFactory = ::createCapture,
                 changed = { text, event -> changed(text, event, paired) },

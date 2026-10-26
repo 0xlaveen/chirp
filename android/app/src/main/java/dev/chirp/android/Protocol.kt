@@ -20,7 +20,31 @@ data class Health(val ready: Boolean, val debugRetention: Boolean, val correctio
                   val notesEdit: Boolean = false,
                   /** The server labels speakers (`start.speakers`), and its speaker model's state (`ready`, `not_downloaded`…). */
                   val notesSpeakers: Boolean = false, val speakersModel: String? = null, val speakersModelBytes: Long? = null,
-                  val speakerVoices: Boolean = false, val speakersVoices: SpeakersVoicesHealth? = null)
+                  val speakerVoices: Boolean = false, val speakersVoices: SpeakersVoicesHealth? = null,
+                  val operationDeadlines: OperationDeadlines = OperationDeadlines())
+
+/** Effective server budgets in seconds; each absent or invalid value uses the caller's legacy timeout. */
+data class OperationDeadlines(private val seconds: Map<String, Double> = emptyMap()) {
+    fun timeoutMs(operation: String, fallback: Long): Long {
+        return advertisedTimeoutMs(operation) ?: fallback
+    }
+    fun advertisedTimeoutMs(operation: String): Long? {
+        val value = seconds[operation] ?: return null
+        // Keep the five-second transport margin bounded, and stay within OkHttp's Int millisecond limit.
+        if (!value.isFinite() || value <= 0 || value >= Int.MAX_VALUE.toDouble() / 1000 - 5) return null
+        return kotlin.math.ceil((value + 5) * 1000).toLong()
+    }
+    fun json() = JSONObject(seconds)
+    companion object {
+        fun decode(json: JSONObject?) = OperationDeadlines(buildMap {
+            for (operation in listOf("dictation", "notes_correction", "notes_structure", "notes_reorganize", "notes_edit")) {
+                val value = json?.opt(operation) as? Number ?: continue
+                val seconds = value.toDouble()
+                if (seconds.isFinite() && seconds > 0) put(operation, seconds)
+            }
+        })
+    }
+}
 
 data class SpeakersVoicesHealth(val enabled: Boolean, val count: Int, val model: String)
 
@@ -98,6 +122,6 @@ object Protocol {
             json.optJSONObject("speakers_voices")?.let { v ->
                 if (v.opt("enabled") is Boolean && v.optInt("count", -1) in 0..50)
                     SpeakersVoicesHealth(v.getBoolean("enabled"), v.getInt("count"), v.optString("model").take(128)) else null
-            })
+            }, OperationDeadlines.decode(json.optJSONObject("operation_deadlines")))
     }
 }

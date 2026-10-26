@@ -175,6 +175,7 @@ internal class ScratchpadModel(
         val chosen = style
         partial = ""; level = 0.0
         val stream = DictationStream(
+            deadlines = store.health?.operationDeadlines ?: OperationDeadlines(),
             transportFactory = { event, failed -> transportFactory(http(), paired, event, failed) },
             captureFactory = { frame, lvl, done -> captureFactory(app, frame, lvl, done) },
             changed = { text, event ->

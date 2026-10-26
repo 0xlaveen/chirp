@@ -109,6 +109,7 @@ internal class RollingDictation(
     private val next: () -> Unit = {},
     private val limitSeconds: Int = CaptureLimit.ROLLING_SECONDS,
     /** A fresh timer per segment, before its transport is made: each utterance logs its own timings. */
+    private val deadlines: OperationDeadlines = OperationDeadlines(),
     private val timing: () -> SessionTimer? = { null },
 ) : Utterance {
     private inner class Segment {
@@ -164,7 +165,7 @@ internal class RollingDictation(
             handler = handler,
             correcting = { if (live) { segment.raw = it; if (segment === segments.firstOrNull()) correcting(it) } },
             kept = kept?.let { keep -> { heard, reason -> segment.outcome = { keep(heard, reason) } } },
-            timing = timing(),
+            timing = timing(), deadlines = deadlines,
         )
         begin(segment.stream)
     }

@@ -647,6 +647,14 @@ def create_app(settings=None, engine=None, token=None, corrector=None, speakers=
                 "correction_profiles": [
                     profile.metadata() for profile in correction.resolved_profiles.values()
                 ],
+                # Effective configured budgets, in seconds; additive to the frozen v1 API.
+                "operation_deadlines": {
+                    "dictation": correction.timeout,
+                    "notes_correction": correction.notes_timeout,
+                    "notes_structure": correction.structure_timeout,
+                    "notes_reorganize": correction.reorganize_timeout,
+                    "notes_edit": correction.reorganize_timeout,
+                },
                 "correction_keep_loaded": keep["value"],
                 **device_field(credential, value),
                 "correction_loaded": bool(managed and managed.loaded),

@@ -328,6 +328,7 @@ public final class NotesRecorder {
     var stops = 0
     /// The newest final (trimmed), for the next segment's context and dedupe.
     private var lastFinal: (seq: Int, text: String)?
+    private var operationDeadlines: OperationDeadlines?
     /// The server takes `stop.context` (health `notes_context`).
     private var contextSupported = false
 
@@ -415,6 +416,7 @@ public final class NotesRecorder {
         self.autoReorganize = autoReorganize
         reorganizeSupported = health?.notesReorganize == true
         editSupported = health?.notesEdit == true
+        operationDeadlines = health?.operationDeadlines
         contextSupported = health?.notesContext == true
         self.now = now
         self.sleep = sleep
@@ -471,6 +473,7 @@ public final class NotesRecorder {
     public func configureStructuring(enabled: Bool, health: Health?) {
         structuringAllowed = .availability(health: health, enabled: enabled)
         reorganizeSupported = health?.notesReorganize == true && !reorganizeEndpointMissing
+        operationDeadlines = health?.operationDeadlines
         contextSupported = health?.notesContext == true
         editSupported = health?.notesEdit == true
         if structuringAllowed.isOff {
@@ -757,6 +760,16 @@ public final class NotesRecorder {
         case .message(.correcting(_, let raw, _, _)):
             segments[seq]?.partial = raw
             segments[seq]?.correcting = true
+            let operation: ServerOperation = options.correctionProfile == CorrectionProfile.liveNotesID ? .notesCorrection : .dictation
+            if let session = segments[seq]?.session, let timeout = operationDeadlines?.advertisedTimeout(for: operation) {
+                segments[seq]?.timeout?.cancel()
+                let sleep = self.sleep, myEpoch = epoch, myDocumentID = document.id
+                segments[seq]?.timeout = Task {
+                    await sleep(.seconds(timeout))
+                    guard !Task.isCancelled, self.epoch == myEpoch, self.document.id == myDocumentID, self.segments[seq]?.session === session else { return }
+                    self.segmentFailed(seq, reason: "timed out")
+                }
+            }
             updateLivePartial()
         case .message(.final(let f)):
             let joined = joinTrimmed(f, seq: seq)

@@ -140,6 +140,7 @@ internal class NotesModel(
 
     private suspend fun <T> call(body: (NotesApi) -> T): T {
         val current = api ?: apiFactory(http(), requireNotNull(pairing())).also { api = it }
+        (current as? HttpNotesApi)?.deadlines = health?.operationDeadlines ?: OperationDeadlines()
         var result: Result<T>? = null
         io { result = runCatching { body(current) } }
         return requireNotNull(result).getOrThrow()

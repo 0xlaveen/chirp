@@ -18,6 +18,7 @@ internal class DictationStream(
     private val kept: ((String, String) -> Unit)? = null,
     private val pauseSeconds: Double? = null,
     private val countdown: (Int) -> Unit = {},
+    private val deadlines: OperationDeadlines = OperationDeadlines(),
     private val timing: SessionTimer? = null,
 ) {
     private var transport: ImeTransport? = null
@@ -89,7 +90,7 @@ internal class DictationStream(
             }
             is ServerEvent.Correcting -> if (stopSent && !polishing && event.seq > sequence && event.raw.isNotEmpty()) {
                 sequence = event.seq; raw = event.raw; polishing = true; polishingAt = android.os.SystemClock.uptimeMillis(); timing?.polishing()
-                correcting(event); changed("Polishing…", null); deadline(12000)
+                correcting(event); changed("Polishing…", null); deadline(deadlines.timeoutMs("dictation", 12000))
             }
             is ServerEvent.Final -> {
                 if (!stopSent) { fail("Unexpected server response"); return }

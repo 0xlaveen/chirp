@@ -37,6 +37,13 @@ def test_health_redaction(client, settings):
         "correction_leaves_machine": False,
         "correction_host": None,
         "correction_profiles": [profile.metadata() for profile in BUILTINS.values()],
+        "operation_deadlines": {
+            "dictation": settings.correction.timeout,
+            "notes_correction": settings.correction.notes_timeout,
+            "notes_structure": settings.correction.structure_timeout,
+            "notes_reorganize": settings.correction.reorganize_timeout,
+            "notes_edit": settings.correction.reorganize_timeout,
+        },
         "correction_keep_loaded": False,
         "correction_loaded": False,
         "notes_structure": True,

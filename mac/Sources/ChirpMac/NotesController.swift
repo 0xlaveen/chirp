@@ -11,23 +11,23 @@ typealias NotesController = NotesSession
 extension NotesSession {
     static let hotkeyID: UInt32 = 4
 
-    /// The server's structure timeout (30 s) plus a margin.
-    static let structureTimeout: TimeInterval = 35
+    /// Legacy-server fallback for structure calls.
+    nonisolated static let structureTimeout: TimeInterval = 35
     /// A reorganize pass may take longer (up to 3500 chars in and out).
-    static let reorganizeTimeout: TimeInterval = 50
+    nonisolated static let reorganizeTimeout: TimeInterval = 50
     /// A voice edit is bounded like a reorganize on the server.
-    static let editTimeout: TimeInterval = 50
+    nonisolated static let editTimeout: TimeInterval = 50
 
-    convenience init() {
+    convenience init(health: @escaping @MainActor @Sendable () -> Health? = { nil }) {
         var deps = NotesSessionDependencies(
             settings: settings,
             engine: SystemCaptureEngine(pickedDevice: { InputDevice.pickedID(uid: settings.inputDeviceUID) }),
             makeSession: { StreamSession(config: settings.serverConfig(), options: $0) },
-            structure: { request in try await Self.structure(request) },
-            reorganize: { request in try await Self.reorganize(request) },
+            structure: { request in try await Self.structure(request, timeout: await health()?.operationTimeout(.notesStructure, fallback: Self.structureTimeout) ?? Self.structureTimeout) },
+            reorganize: { request in try await Self.reorganize(request, timeout: await health()?.operationTimeout(.notesReorganize, fallback: Self.reorganizeTimeout) ?? Self.reorganizeTimeout) },
             speakerStore: SortformerModelStore(), journalStore: NotesJournalStore())
         deps.library = NotesLibrary()
-        deps.edit = { request in try await Self.edit(request) }
+        deps.edit = { request in try await Self.edit(request, timeout: await health()?.operationTimeout(.notesEdit, fallback: Self.editTimeout) ?? Self.editTimeout) }
         deps.voiceClient = VoiceLibraryClient(list: { try await settings.serverConfig().savedVoices() },
             action: { try await settings.serverConfig().savedVoices($0) },
             identify: { try await settings.serverConfig().identifyVoices($0) },
@@ -71,22 +71,22 @@ extension NotesSession {
     }
 
     /// One structuring call, logged with counts and the guard name only.
-    private nonisolated static func structure(_ request: NotesStructureRequest) async throws -> NotesStructureResponse {
-        try await timed({ try await settings.serverConfig().structureNotes(request, timeout: structureTimeout) }) { result, ms in
+    private nonisolated static func structure(_ request: NotesStructureRequest, timeout: TimeInterval) async throws -> NotesStructureResponse {
+        try await timed({ try await settings.serverConfig().structureNotes(request, timeout: timeout) }) { result, ms in
             chirpLog.info("notes structure chars=\(request.transcript.count, privacy: .public) result=\(result, privacy: .public) ms=\(ms, privacy: .public)")
         } result: { $0.structured ? "ok" : $0.failureLabel }
     }
 
     /// One reorganize call, logged with counts and the guard name only.
-    private nonisolated static func reorganize(_ request: NotesReorganizeRequest) async throws -> NotesReorganizeResponse {
-        try await timed({ try await settings.serverConfig().reorganizeNotes(request, timeout: reorganizeTimeout) }) { result, ms in
+    private nonisolated static func reorganize(_ request: NotesReorganizeRequest, timeout: TimeInterval) async throws -> NotesReorganizeResponse {
+        try await timed({ try await settings.serverConfig().reorganizeNotes(request, timeout: timeout) }) { result, ms in
             chirpLog.info("notes reorganize chars=\(request.notes.count, privacy: .public) scope=\(request.range.length, privacy: .public) result=\(result, privacy: .public) ms=\(ms, privacy: .public)")
         } result: { $0.reorganized ? ($0.changed ? "changed" : "unchanged") : $0.failureLabel }
     }
 
     /// One voice edit, logged with counts and the outcome code only (never the instruction or the notes).
-    private nonisolated static func edit(_ request: NotesEditRequest) async throws -> NotesEditResponse {
-        try await timed({ try await settings.serverConfig().editNotes(request, timeout: editTimeout) }) { result, ms in
+    private nonisolated static func edit(_ request: NotesEditRequest, timeout: TimeInterval) async throws -> NotesEditResponse {
+        try await timed({ try await settings.serverConfig().editNotes(request, timeout: timeout) }) { result, ms in
             chirpLog.info("notes edit chars=\(request.notes.count, privacy: .public) instruction=\(request.instruction.count, privacy: .public) result=\(result, privacy: .public) ms=\(ms, privacy: .public)")
         } result: { $0.edited ? ($0.changed ? "changed" : "unchanged") : $0.failureLabel }
     }

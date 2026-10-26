@@ -360,6 +360,7 @@ internal class KeyboardDictation(
         if (onPhone) { listenOnPhone(if (phone) PhoneDictation.HANDOVER else PhoneDictation.LISTENING); return }
         var timer: SessionTimer? = null
         val stream = RollingDictation(
+            deadlines = store.health?.operationDeadlines ?: OperationDeadlines(),
             transportFactory = { event, failed -> val warm = warmed != null; takeTransport(paired, event, failed).also { timer?.attach(it, warm) } },
             captureFactory = captureFactory,
             changed = { status, partial ->

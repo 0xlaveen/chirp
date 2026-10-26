@@ -164,6 +164,7 @@ internal class NotesRecorder(
     private var lastPassEnd: Long? = null
     private var timer: Job? = null
     private var timerDeadline: Long? = null
+    private var operationDeadlines = health?.operationDeadlines
     private var allowed: Structuring = Structuring.availability(health, structuringEnabled)
     private var epoch = 0
 
@@ -225,6 +226,7 @@ internal class NotesRecorder(
 
     /** The user's "Structure notes" switch or new health. Turning it on schedules a pass for what is waiting. */
     fun configure(enabled: Boolean, health: Health?) {
+        operationDeadlines = health?.operationDeadlines
         allowed = Structuring.availability(health, enabled)
         reorganizeSupported = health?.notesReorganize == true && !reorganizeMissing
         editSupported = health?.notesEdit == true && !editMissing
@@ -435,7 +437,19 @@ internal class NotesRecorder(
                 changed()
             }
             is ServerEvent.Partial -> if (segment.seq >= 0) { segment.partial = event.text; if (!quiet) updateLivePartial() }
-            is ServerEvent.Correcting -> if (segment.seq >= 0) { segment.partial = event.raw; segment.correcting = true; if (!quiet) updateLivePartial() }
+            is ServerEvent.Correcting -> if (segment.seq >= 0) {
+                segment.partial = event.raw; segment.correcting = true
+                val operation = if (options.profile == "live_notes") "notes_correction" else "dictation"
+                operationDeadlines?.advertisedTimeoutMs(operation)?.let { timeout ->
+                    segment.timeout?.cancel()
+                    val myEpoch = epoch
+                    segment.timeout = scope.launch {
+                        delay(timeout)
+                        if (epoch == myEpoch && segments[segment.seq] === segment) segmentFailed(segment, "timed out")
+                    }
+                }
+                if (!quiet) updateLivePartial()
+            }
             is ServerEvent.Final -> if (segment.seq >= 0) {
                 val text = event.text.trim(); val raw = event.raw.trim()
                 val kept = options.correction && !event.corrected && event.correctionError != null
