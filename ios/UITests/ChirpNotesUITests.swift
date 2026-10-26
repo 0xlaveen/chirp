@@ -301,8 +301,9 @@ final class ChirpNotesUITests: XCTestCase {
         else { app.buttons["chirp.notes.transcript.open"].tap() }
 
         // Turn off is the user's own choice: the switch reads off.
-        XCTAssertTrue(app.buttons["chirp.notes.menu"].waitForExistence(timeout: 10))
-        app.buttons["chirp.notes.menu"].tap(); app.buttons["chirp.notes.settings"].tap()
+        // The note's own ⋯ menu (the library's is not on screen on an iPhone).
+        XCTAssertTrue(app.buttons["chirp.notes.export"].waitForExistence(timeout: 10))
+        app.buttons["chirp.notes.export"].tap(); app.buttons["chirp.notes.settings"].tap()
         XCTAssertTrue(toggle.waitForExistence(timeout: 5))
         Self.flipInSheet(toggle, in: app)
         XCTAssertTrue(Self.waitFor(toggle, "value == '0'", timeout: 10))
