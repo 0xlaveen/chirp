@@ -205,7 +205,7 @@ def score(notes, profiles, rotations, threshold, margin):
             heard = {i: (c, s) for i, (_, c, s) in enumerate(people)}
             found = vs.match(heard, candidates, threshold, margin)
             for i, (who, _, seconds) in enumerate(people):
-                if seconds < vs.MATCH_SECONDS * vs.MEASURED:
+                if seconds < vs.MATCH_SECONDS:
                     continue
                 total += 1
                 got = found.get(i)
@@ -237,7 +237,7 @@ def scores(notes, profiles):
     same, other = [], []
     for people in notes:
         for who, centroid, seconds in people:
-            if seconds < vs.MATCH_SECONDS * vs.MEASURED:
+            if seconds < vs.MATCH_SECONDS:
                 continue
             c = vs.unit(centroid)
             if who in profiles:

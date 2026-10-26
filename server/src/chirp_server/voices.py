@@ -42,9 +42,6 @@ MARGIN = 0.10
 # Mac's `VoiceMatch.minSeconds` / `enrolSeconds`): the clients' gates, on their turns' durations.
 MATCH_SECONDS = 10.0
 ENROL_SECONDS = 20.0
-# The server counts a person's embedded windows (pauses and the edges of segments left out), which
-# runs a little under the client's sum of turn durations, so its own gate allows a fifth less.
-MEASURED = 0.8
 # A clip the Mac sends (its last 30 s of one person's settled turns).
 MAX_CLIP_SECONDS = 30
 MAX_DIMENSIONS = 1024
@@ -238,7 +235,7 @@ def match(
     voices: list[Candidate],
     threshold: float = THRESHOLD,
     margin: float = MARGIN,
-    min_seconds: float = MATCH_SECONDS * MEASURED,
+    min_seconds: float = MATCH_SECONDS,
 ) -> dict[int, Candidate]:
     """For each person (centroid, seconds) with enough speech, the voice at least `threshold`
     alike and `margin` ahead of every other voice. A voice goes to at most one person, the
@@ -329,7 +326,7 @@ class VoiceLibrary:
         two voiceprints (a voice from another model is replaced). Returns the voice's listing."""
         name = clean_name(name)
         embedding = unit(np.asarray(embedding, dtype=np.float32))
-        if seconds < ENROL_SECONDS * MEASURED:
+        if seconds < ENROL_SECONDS:
             raise VoiceError("too_short")
 
         def edit(library):

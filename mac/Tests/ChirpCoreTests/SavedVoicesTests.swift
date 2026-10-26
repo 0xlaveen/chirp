@@ -29,7 +29,8 @@ import Testing
         for bad in [#""no""#, #"[{"speaker":99,"voice":"0123456789abcdef","name":"Maya"}]"#,
                     #"[{"speaker":1,"voice":"short","name":"Maya"}]"#, #"[{"speaker":1,"voice":"0123456789abcdef","name":"A: B"}]"#,
                     #"[{"speaker":1,"voice":"0123456789abcdef","name":""}]"#, #"[{"speaker":1,"voice":"0123456789ABCDEF","name":"Maya"}]"#,
-                    #"[{"speaker":1,"voice":"0123456789abcdef","name":"Maya"},{"speaker":1,"voice":"fedcba9876543210","name":"Kim"}]"#] {
+                    #"[{"speaker":1,"voice":"0123456789abcdef","name":"Maya"},{"speaker":1,"voice":"fedcba9876543210","name":"Kim"}]"#,
+                    #"[{"speaker":1,"voice":"0123456789abcdef","name":"Maya"},{"speaker":2,"voice":"0123456789abcdef","name":"Maya"}]"#] {
             let s = try #require(try speakers(#"{\#(turns),"matches":\#(bad)}"#), "\(bad)")
             #expect(s.matches == nil && s.turns.count == 1, "\(bad)")
         }

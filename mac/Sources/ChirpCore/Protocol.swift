@@ -124,7 +124,8 @@ public struct ServerSpeakers: Decodable, Sendable, Equatable {
         var value: [ServerVoiceMatch]?
         init(from decoder: Decoder) throws {
             value = try? [ServerVoiceMatch](from: decoder)
-            if let value, value.count > ServerSpeakers.maxSlot + 1 || Set(value.map(\.speaker)).count != value.count {
+            if let value, value.count > ServerSpeakers.maxSlot + 1 || Set(value.map(\.speaker)).count != value.count
+                || Set(value.map(\.voice)).count != value.count {
                 self.value = nil
             }
         }

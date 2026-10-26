@@ -147,7 +147,7 @@ def test_cap_too_short_and_unknown_voice(library):
     with pytest.raises(vs.VoiceError, match="full"):
         library.remember("One more", band(1), 30.0)
     with pytest.raises(vs.VoiceError, match="too_short"):
-        library.remember("Short", band(1), vs.ENROL_SECONDS * vs.MEASURED - 0.1)
+        library.remember("Short", band(1), vs.ENROL_SECONDS - 0.1)
     for call in (
         lambda: library.rename("0" * 16, "X"),
         lambda: library.forget("0" * 16),
@@ -227,7 +227,7 @@ def test_match_needs_threshold_margin_and_seconds():
     near = vs.unit(band(0) * 0.9 + band(2) * 0.3)
     assert {p: v.name for p, v in vs.match({0: (near, 12.0)}, voices).items()} == {0: "V0"}
     # Not enough speech yet.
-    assert vs.match({0: (near, vs.MATCH_SECONDS * vs.MEASURED - 0.1)}, voices) == {}
+    assert vs.match({0: (near, vs.MATCH_SECONDS - 0.1)}, voices) == {}
     # Below the threshold.
     assert vs.match({0: (vs.unit(band(0) * 0.5 + band(2)), 12.0)}, voices) == {}
     # Two saved voices too alike to tell apart: no margin, no match.
@@ -294,9 +294,10 @@ def test_import_rejects_non_string_models(app):
 def test_clip_limit_checks_decoded_size(app):
     # Enforce the limit on decoded PCM as well as the encoded request.
     audio = base64.b64encode(bytes(30 * sp.RATE * 2 + 2)).decode()
-    assert post(app, {"action": "remember", "name": "Maya", "audio": audio}, 413)[
-        "code"
-    ] == "clip_too_long"
+    assert (
+        post(app, {"action": "remember", "name": "Maya", "audio": audio}, 413)["code"]
+        == "clip_too_long"
+    )
 
 
 def test_remember_from_a_note_then_recognise_in_the_next(app):
@@ -305,7 +306,7 @@ def test_remember_from_a_note_then_recognise_in_the_next(app):
     origin = {"session": session(1), "generation": first["generation"], "speaker": 0}
     body = post(app, {"action": "remember", "name": "Maya", "from": origin})
     voice = body["voice"]
-    assert voice["name"] == "Maya" and voice["seconds"] >= vs.ENROL_SECONDS * vs.MEASURED
+    assert voice["name"] == "Maya" and voice["seconds"] >= vs.ENROL_SECONDS
     assert body["enabled"] and body["voices"] == [voice] and body["model"] == MODEL
     # The same note now reports her too.
     again = stream(app, session(1), tone(250, 3))

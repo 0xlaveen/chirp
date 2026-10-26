@@ -23,4 +23,4 @@ print([t["identifier"] for t in json.load(sys.stdin)["devicetypes"] if t["name"]
     device=$(xcrun simctl create chirp-ci "$type" "$runtime")
 fi
 echo "Simulator: $device"
-./scripts/simulator.sh test "$device" -skipPackagePluginValidation -skipMacroValidation
+./scripts/simulator.sh test "$device" -skipPackagePluginValidation -skipMacroValidation "$@"
