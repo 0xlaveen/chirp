@@ -48,7 +48,9 @@ private struct StyleRow: View {
             Image(systemName: selected ? "checkmark.circle.fill" : "circle")
                 .symbolRenderingMode(.hierarchical)
                 .font(.title3).foregroundStyle(selected ? Color.chirp.koi : Color.chirp.inkMuted)
-                .accessibilityHidden(true)
+                .accessibilityHidden(!selected)
+                .accessibilityLabel(selected ? "Selected" : "")
+                .accessibilityAddTraits(selected ? [.isSelected] : [])
             NavigationLink { PromptEditor(model: model, profile: profile) } label: {
                 Image(systemName: "square.and.pencil").font(.body)
                     .foregroundStyle(Color.chirp.inkMuted).frame(width: 44, height: 44).contentShape(Rectangle())

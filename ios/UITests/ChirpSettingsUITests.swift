@@ -110,7 +110,7 @@ final class ChirpSettingsUITests: XCTestCase {
         cleanup.switches.firstMatch.exists ? cleanup.switches.firstMatch.tap() : cleanup.tap()
         let enable = app.buttons["Enable for this destination"]
         XCTAssertTrue(enable.waitForExistence(timeout: 5), "No consent dialog")
-        XCTAssertTrue(app.buttons["Cancel"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["Cancel"].waitForExistence(timeout: 5), "No system Cancel in the consent dialog")
         app.buttons["Cancel"].tap()
         XCTAssertTrue(waitFor(cleanup, "value == '0'"), "A cancelled consent leaves clean-up off")
         cleanup.switches.firstMatch.exists ? cleanup.switches.firstMatch.tap() : cleanup.tap()
@@ -127,7 +127,7 @@ final class ChirpSettingsUITests: XCTestCase {
         let row = app.descendants(matching: .any).matching(identifier: "chirp.styles.row.default").firstMatch
         XCTAssertTrue(row.waitForExistence(timeout: 10), "Server styles did not load")
         row.tap()
-        XCTAssertTrue(waitFor(row, "label CONTAINS 'Selected'"))
+        XCTAssertTrue(waitFor(row, "isSelected == true"), "The tapped style did not become selected")
         screenshot("settings-dictation-styles", app)
         app.buttons["chirp.styles.edit.default"].tap()
         XCTAssertTrue(app.buttons["chirp.styles.reset"].waitForExistence(timeout: 5), "Prompt editor did not open")
@@ -208,17 +208,16 @@ final class ChirpSettingsUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["No matches"].waitForExistence(timeout: 5), "The original text is not matched")
     }
 
-    /// Forget pairing asks first; Keep pairing leaves the connection page unchanged.
+    /// Forget pairing asks first; Cancel leaves the connection page unchanged.
     @MainActor func testForgetPairingConfirmationCancel() {
         let app = pairedApp()
         app.openConnection()
         let forget = app.buttons["chirp.pair.forget"]
         XCTAssertTrue(forget.waitForExistence(timeout: 5))
         forget.tap()
-        let keep = app.buttons["Keep pairing"]
-        XCTAssertTrue(keep.waitForExistence(timeout: 5), "No Forget confirmation")
-        keep.tap()
-        XCTAssertTrue(element("chirp.connection.banner", in: app).waitForExistence(timeout: 5), "Keep pairing dropped the banner")
+        XCTAssertTrue(app.buttons["Forget"].waitForExistence(timeout: 5), "No Forget confirmation")
+        app.buttons["Cancel"].tap()
+        XCTAssertTrue(element("chirp.connection.banner", in: app).waitForExistence(timeout: 5), "Cancelling must keep the pairing")
         screenshot("settings-connection", app)
     }
 
@@ -235,9 +234,9 @@ final class ChirpSettingsUITests: XCTestCase {
         toggle.switches.firstMatch.exists ? toggle.switches.firstMatch.tap() : toggle.tap()
         XCTAssertTrue(app.buttons["Turn off and delete"].waitForExistence(timeout: 5), "No turn-off confirmation")
         // A dialog's cancel button can appear a beat after its destructive one.
-        XCTAssertTrue(app.buttons["Keep history"].waitForExistence(timeout: 5), "No cancel in the turn-off dialog")
-        app.buttons["Keep history"].tap()
-        XCTAssertTrue(waitFor(toggle, "value == '1'"), "Keep history must leave it on")
+        XCTAssertTrue(app.buttons["Cancel"].waitForExistence(timeout: 5), "No cancel in the turn-off dialog")
+        app.buttons["Cancel"].tap()
+        XCTAssertTrue(waitFor(toggle, "value == '1'"), "Cancelling must leave history on")
         toggle.switches.firstMatch.exists ? toggle.switches.firstMatch.tap() : toggle.tap()
         app.buttons["Turn off and delete"].tap()
         XCTAssertTrue(waitFor(toggle, "value == '0'"))

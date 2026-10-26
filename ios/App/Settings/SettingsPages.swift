@@ -55,7 +55,6 @@ struct ConnectionPage: View {
         }
         .confirmationDialog("Forget this Mac?", isPresented: $forget, titleVisibility: .visible) {
             Button("Forget", role: .destructive) { model.forgetPairing() }
-            Button("Keep pairing", role: .cancel) {}
         } message: {
             Text("You’ll need to scan a new code to dictate. This also ends the session.")
         }
@@ -193,7 +192,6 @@ struct DictationPage: View {
         }
         .confirmationDialog("Enable clean-up?", isPresented: $consent, titleVisibility: .visible) {
             Button("Enable for this destination") { model.setCleanup(true) }
-            Button("Cancel", role: .cancel) {}
         } message: {
             Text(model.cleanupDisclosure + " Changes to this destination suspend consent.")
         }
@@ -356,13 +354,11 @@ struct PrivacyPage: View {
         }
         .confirmationDialog("Turn off dictation history?", isPresented: $confirmOff, titleVisibility: .visible) {
             Button("Turn off and delete", role: .destructive) { change { try $0.setEnabled(false) } }
-            Button("Keep history", role: .cancel) {}
         } message: {
             Text("This deletes every saved dictation from this device. New dictations won’t be saved.")
         }
         .confirmationDialog("Clear all saved dictations?", isPresented: $confirmClear, titleVisibility: .visible) {
             Button("Clear all", role: .destructive) { change { try $0.clear() } }
-            Button("Cancel", role: .cancel) {}
         } message: {
             Text("History stays on for new dictations.")
         }
