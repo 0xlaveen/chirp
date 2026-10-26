@@ -125,6 +125,7 @@ struct HistoryView: View {
             Section {
                 Text("What you dictated, encrypted on this device only")
                     .font(.subheadline).foregroundStyle(Color.chirp.inkMuted)
+                    .dynamicTypeSize(...DynamicTypeSize.accessibility1) // an aside: it must not fill the screen at AX5
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .listRowBackground(Color.clear)
                     .listRowInsets(EdgeInsets(top: ChirpSpacing.s4, leading: ChirpSpacing.gutter(sizeClass),

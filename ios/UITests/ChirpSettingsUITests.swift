@@ -319,7 +319,10 @@ final class ChirpSettingsUITests: XCTestCase {
         app.selectChirpTab("History")
         XCTAssertTrue(app.staticTexts["Synthetic words."].waitForExistence(timeout: 5))
         shot("history-list", app)
-        app.staticTexts["Synthetic words."].tap()
+        let row = app.staticTexts["Synthetic words."]
+        // At the largest text sizes the row starts under the mic bar and tab bar: scroll it clear first.
+        for _ in 0..<3 where !row.isHittable { app.swipeUp() }
+        row.tap()
         // The sheet's Close button, not a row inside it: at the largest text sizes the lists are lazy.
         XCTAssertTrue(app.buttons["Close"].waitForExistence(timeout: 5))
         shot("history-detail", app)
