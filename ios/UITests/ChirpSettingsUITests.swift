@@ -85,6 +85,20 @@ final class ChirpSettingsUITests: XCTestCase {
         }
     }
 
+    /// iPad: a pushed page (Change pairing) does not stay over the next category the list selects.
+    @MainActor func testPickingACategoryClosesAPushedPageOnIPad() throws {
+        try XCTSkipUnless(UIDevice.current.userInterfaceIdiom == .pad, "The list is covered by the pushed page on iPhone.")
+        let app = pairedApp()
+        app.selectChirpTab("Settings")
+        app.buttons["chirp.settings.connection"].tap()
+        XCTAssertTrue(app.buttons["chirp.pair.change"].waitForExistence(timeout: 5))
+        app.buttons["chirp.pair.change"].tap()
+        XCTAssertTrue(app.buttons["chirp.pair.scan"].waitForExistence(timeout: 5))
+        app.buttons["chirp.settings.dictation"].tap()
+        XCTAssertTrue(element("chirp.cleanup.enabled", in: app).waitForExistence(timeout: 5), "Dictation did not replace Change pairing")
+        XCTAssertFalse(app.buttons["chirp.pair.scan"].exists)
+    }
+
     /// Spoken commands toggles and keeps its value.
     @MainActor func testSpokenCommandsToggles() {
         let app = pairedApp()

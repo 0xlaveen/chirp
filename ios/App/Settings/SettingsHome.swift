@@ -68,9 +68,11 @@ struct SettingsHome: View {
             list.navigationTitle("Settings")
                 .navigationSplitViewColumnWidth(min: 320, ideal: 340, max: 420)
         } detail: {
-            // Picking another category starts its own stack, so a pushed page (Change pairing) never covers it.
-            NavigationStack { page(selection) }.id(selection)
+            NavigationStack { page(selection) }
         }
+        // Picking another category starts over on its own page: the detail column's stack is the split view's,
+        // so a pushed page (Change pairing) would otherwise stay on top of the new selection.
+        .id(selection)
     }
 
     /// iPhone: the categories push their page, Back returns to the list.
