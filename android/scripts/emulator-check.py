@@ -530,6 +530,14 @@ def main():
                     pass
             raise
         finally:
+            if opt.speakers_check:
+                # Counts, fixed action/state codes and slot numbers only; never retain server content.
+                try:
+                    seen = json.loads((work / "notes.json").read_text())
+                    allowed = ("finals", "labelled", "slots", "label_errors", "model", "model_actions", "model_state")
+                    (output / "speaker-counts.json").write_text(json.dumps({k: seen[k] for k in allowed if k in seen}, indent=2))
+                except (OSError, ValueError):
+                    pass
             server.terminate()
             try:
                 server.wait(timeout=10)
