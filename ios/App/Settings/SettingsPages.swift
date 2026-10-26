@@ -103,6 +103,12 @@ struct ChangePairingPage: View {
     }
 }
 
+/// Row summaries that follow their switch, so a row never says "Off by default" while it is on (#271 T14).
+enum SettingsSummary {
+    static func spokenCommands(on: Bool) -> String { on ? "On" : "Off by default" }
+    static func history(on: Bool) -> String { (on ? "On" : "Off by default") + " · encrypted on this device only" }
+}
+
 // MARK: - Microphone session
 
 /// Session length, Private session, End session (while armed) and the microphone permission link.
@@ -173,7 +179,7 @@ struct DictationPage: View {
             SettingsGroup(title: "Spoken commands") {
                 SwitchRow(title: "Spoken commands",
                           isOn: model.preferences.spokenCommands == true,
-                          summary: "Off by default",
+                          summary: SettingsSummary.spokenCommands(on: model.preferences.spokenCommands == true),
                           symbol: "text.bubble",
                           infoTitle: "Spoken commands",
                           infoBody: "In Chirp Keyboard, ending a dictation with “new line” or “new paragraph” types a line break instead of the words. Mid-sentence, a common first word such as “so” or “and” starts lower-case.",
@@ -336,7 +342,7 @@ struct PrivacyPage: View {
             }
             SettingsGroup(title: "Dictation history") {
                 SwitchRow(title: "Keep dictation history", isOn: history.enabled,
-                          summary: "Off by default · encrypted on this device only",
+                          summary: SettingsSummary.history(on: history.enabled),
                           symbol: "lock.shield",
                           infoTitle: "Keep dictation history",
                           infoBody: "Off initially. At most 200 nonempty finals. AES-GCM encrypted with a device-only Keychain key, excluded from backup. Disabling deletes history and its key.",
@@ -363,7 +369,7 @@ struct PrivacyPage: View {
                         .font(.subheadline).foregroundStyle(Color.chirp.ink)
                     LearnMore(title: "Local only") {
                         Text("Dictation history is opt-in and encrypted on this device only. Notes stay on this device and are never backed up or synced. Diagnostics carry numbers only — no text, audio, hosts or tokens.")
-                        Text("Audio goes to your paired computer only while you dictate or record; idle audio is discarded on device and never written to disk.")
+                        Text("Audio goes to your paired computer only while you dictate or record; idle audio is discarded on device. Audio is written to disk only if you turn on Keep audio with notes (Settings → Notes): then each note’s speech is sealed on this device until you delete it. If your computer is unreachable during a Notes recording, up to the last ten minutes wait in memory, never on disk.")
                     }
                 }
             }
@@ -433,7 +439,7 @@ struct AboutPage: View {
         }
         .sheet(isPresented: $privacy) {
             InfoSheet(title: "Privacy") {
-                Text("Nothing persistent by default: no audio is ever written to disk, and history is opt-in, encrypted on this device only and never backed up or synced. Audio goes to your paired computer only while you dictate or record; idle audio is discarded.")
+                Text("Nothing persistent by default: audio is not written to disk unless you turn on Keep audio with notes (Settings → Notes), which seals each note’s speech on this device until you delete it. History is opt-in, encrypted on this device only and never backed up or synced. Audio goes to your paired computer only while you dictate or record; idle audio is discarded. If your computer is unreachable during a Notes recording, up to the last ten minutes wait in memory, never on disk.")
                 Text("Diagnostics are content-free: version, OS, phase, fixed local error codes, durations and counts — no transcripts, prompts, audio, addresses, network names or credentials. No telemetry, no background sync, no analytics.")
             }
         }

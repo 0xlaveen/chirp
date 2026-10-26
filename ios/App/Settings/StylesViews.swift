@@ -36,35 +36,70 @@ private struct StyleRow: View {
     let profile: CorrectionProfile
     private var selected: Bool { profile.selected(model) }
     private var edited: Bool { model.preferences.prompts[profile.id] != nil }
+    @Environment(\.dynamicTypeSize) private var typeSize
     var body: some View {
         RowTile(hasSummary: true) {
-            Button { model.selectStyle(profile.id) } label: {
-                HStack(spacing: ChirpSpacing.s8) {
-                    RowText(title: profile.name,
-                            summary: profile.rewrites ? profile.description + " · May restructure" : profile.description,
-                            symbol: nil)
-                    if edited { editedCapsule }
-                    Spacer(minLength: ChirpSpacing.s4)
-                }.frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
-            }.buttonStyle(.rowPress)
-            .accessibilityIdentifier("chirp.styles.pick." + profile.id)
-            Image(systemName: selected ? "checkmark.circle.fill" : "circle")
-                .symbolRenderingMode(.hierarchical)
-                .font(.title3).foregroundStyle(selected ? Color.chirp.koi : Color.chirp.inkMuted)
-                .accessibilityHidden(!selected)
-                .accessibilityLabel(selected ? "Selected" : "")
-                .accessibilityAddTraits(selected ? [.isSelected] : [])
-            NavigationLink { PromptEditor(model: model, profile: profile) } label: {
-                Image(systemName: "square.and.pencil").font(.body)
-                    .foregroundStyle(Color.chirp.inkMuted).frame(width: 44, height: 44).contentShape(Rectangle())
+            if typeSize.isAccessibilitySize {
+                // The pick text at the full row width; the selection mark and pencil on their own line (#271 A2-2).
+                VStack(alignment: .leading, spacing: ChirpSpacing.s8) {
+                    pick
+                    HStack(spacing: ChirpSpacing.s8) {
+                        mark
+                        Spacer(minLength: 0)
+                        edit
+                    }
+                }
+            } else {
+                pick
+                mark
+                edit
             }
-            .accessibilityLabel("Edit \(profile.name) prompt")
-            .accessibilityIdentifier("chirp.styles.edit." + profile.id)
         }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("\(profile.name)\(selected ? ", Selected" : "")\(edited ? ", Edited" : "")")
         .accessibilityAddTraits(selected ? [.isSelected] : [])
         .accessibilityIdentifier("chirp.styles.row." + profile.id)
+    }
+
+    private var pick: some View {
+        Button { model.selectStyle(profile.id) } label: {
+            let text = RowText(title: profile.name,
+                               summary: profile.rewrites ? profile.description + " · May restructure" : profile.description,
+                               symbol: nil)
+            Group {
+                if typeSize.isAccessibilitySize {
+                    VStack(alignment: .leading, spacing: ChirpSpacing.s8) {
+                        text
+                        if edited { editedCapsule }
+                    }
+                } else {
+                    HStack(spacing: ChirpSpacing.s8) {
+                        text
+                        if edited { editedCapsule }
+                        Spacer(minLength: ChirpSpacing.s4)
+                    }
+                }
+            }.frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
+        }.buttonStyle(.rowPress)
+        .accessibilityIdentifier("chirp.styles.pick." + profile.id)
+    }
+
+    private var mark: some View {
+        Image(systemName: selected ? "checkmark.circle.fill" : "circle")
+            .symbolRenderingMode(.hierarchical)
+            .font(.title3).foregroundStyle(selected ? Color.chirp.koi : Color.chirp.inkMuted)
+            .accessibilityHidden(!selected)
+            .accessibilityLabel(selected ? "Selected" : "")
+            .accessibilityAddTraits(selected ? [.isSelected] : [])
+    }
+
+    private var edit: some View {
+        NavigationLink { PromptEditor(model: model, profile: profile) } label: {
+            Image(systemName: "square.and.pencil").font(.body)
+                .foregroundStyle(Color.chirp.inkMuted).frame(width: 44, height: 44).contentShape(Rectangle())
+        }
+        .accessibilityLabel("Edit \(profile.name) prompt")
+        .accessibilityIdentifier("chirp.styles.edit." + profile.id)
     }
 
     private var editedCapsule: some View {

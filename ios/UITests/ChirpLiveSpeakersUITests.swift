@@ -149,7 +149,7 @@ final class ChirpLiveSpeakersUITests: XCTestCase {
         if app.alerts["Remembering voices"].waitForExistence(timeout: 10) { app.alerts.buttons["OK"].tap() }
 
         // The server's saved list must contain the enrolled synthetic voice before the next session starts.
-        app.buttons["chirp.notes.export"].tap(); app.buttons["chirp.notes.settings"].tap()
+        app.buttons["chirp.notes.more"].tap(); app.buttons["chirp.notes.note.settings"].tap()
         let saved = ChirpNotesUITests.element("chirp.notes.voices.open", in: app)
         for _ in 0..<6 where !saved.isHittable { app.swipeUp() }
         XCTAssertTrue(saved.isHittable); saved.tap()

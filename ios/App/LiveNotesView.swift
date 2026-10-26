@@ -221,10 +221,10 @@ struct NoteDetailView: View {
                         .accessibilityIdentifier("chirp.notes.speakers.toggle")
                 }
                 Divider()
-                Button("Notes settings", systemImage: "gearshape") { settings = true }.accessibilityIdentifier("chirp.notes.settings")
+                Button("Notes settings", systemImage: "gearshape") { settings = true }.accessibilityIdentifier("chirp.notes.note.settings")
                 if notes.selectedAudioBytes > 0 { Button("Delete audio (\(size(notes.selectedAudioBytes)))", systemImage: "waveform.slash", role: .destructive) { player.stop(); Task { await notes.deleteAudio(); await notes.refreshAudio() } } }
                 Button("Delete", systemImage: "trash", role: .destructive) { Task { await notes.delete([notes.document.id]); deleted() } }.disabled(notes.document.id == notes.recordingID)
-            } label: { Label("More", systemImage: "ellipsis.circle") }.accessibilityIdentifier("chirp.notes.export")
+            } label: { Label("More", systemImage: "ellipsis.circle") }.accessibilityIdentifier("chirp.notes.more")
         }
     }
 

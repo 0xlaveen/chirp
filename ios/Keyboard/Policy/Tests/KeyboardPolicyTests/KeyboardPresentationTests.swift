@@ -219,7 +219,8 @@ private func inputs(_ phase: KeyboardPhase? = .armed, access: Bool = true, lease
     }
 
     @Test func anOverLongPromptPointsToStylesLikeTheApp() {
-        #expect(KeyboardError.badRequest.guidance.contains("clean-up prompt is too long") && KeyboardError.badRequest.guidance.contains("Styles"))
+        #expect(KeyboardError.badRequest.guidance.contains("clean-up prompt is too long"))
+        #expect(KeyboardError.badRequest.guidance.contains("Settings → Dictation → Styles"))
     }
 
     @Test func recoveryAndFallbackOutrankErrorGuidance() {

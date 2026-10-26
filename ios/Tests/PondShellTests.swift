@@ -50,4 +50,22 @@ struct PondShellTests {
         #expect(ChirpTab.allCases.map(\.title) == ["Notes", "Dictate", "History", "Settings"])
         #expect(ChirpTab(rawValue: "notes") == .notes, "SceneStorage restores the tab by its raw value")
     }
+
+    @Test func recentlyDeletedCountdownIsSingularForOneDay() {
+        let now = Date(timeIntervalSince1970: 1_000_000_000)
+        func left(daysAgo: Double) -> String { RecentlyDeletedCopy.daysLeft(since: now.addingTimeInterval(-daysAgo * 86400), now: now) }
+        #expect(left(daysAgo: 29) == "1 day left")
+        #expect(left(daysAgo: 28) == "2 days left")
+        #expect(left(daysAgo: 0) == "30 days left")
+        #expect(left(daysAgo: 30) == "0 days left")
+        #expect(left(daysAgo: 45) == "0 days left")
+    }
+
+    @Test func settingsSummariesFollowTheirSwitch() {
+        #expect(SettingsSummary.spokenCommands(on: false) == "Off by default")
+        #expect(SettingsSummary.spokenCommands(on: true) == "On")
+        #expect(SettingsSummary.history(on: false).hasPrefix("Off by default"))
+        #expect(SettingsSummary.history(on: true).hasPrefix("On ·"))
+        #expect(!SettingsSummary.history(on: true).contains("Off"))
+    }
 }
