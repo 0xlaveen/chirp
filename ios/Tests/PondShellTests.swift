@@ -33,6 +33,18 @@ struct PondShellTests {
         #expect(DictateView.clock(-3) == "0:00", "a passed deadline never shows negative time")
     }
 
+    @Test func onboardingTitlesMatchTheAndroidWizard() {
+        #expect(OnboardingCopy.welcome == "Welcome to Chirp")
+        #expect(OnboardingCopy.pair == "Pair your computer")
+        #expect(OnboardingCopy.aboutPairing == "About pairing")
+        #expect(OnboardingCopy.microphone == "Allow the microphone")
+        #expect(OnboardingCopy.aboutMicrophone == "What Chirp keeps")
+        #expect(OnboardingCopy.keyboard == "Turn on Chirp Keyboard")
+        #expect(OnboardingCopy.aboutKeyboard == "About the keyboard")
+        #expect(OnboardingCopy.pairingSteps == "On your computer, open Chirp → Settings → Devices → Pair a Phone, or run chirp-server pair on your server.")
+        #expect(!OnboardingCopy.pairingSteps.contains("Mac"))
+    }
+
     @Test func tabsAreTheFourDestinationsInShortcutOrder() {
         #expect(ChirpTab.allCases == [.notes, .dictate, .history, .settings])
         #expect(ChirpTab.allCases.map(\.title) == ["Notes", "Dictate", "History", "Settings"])

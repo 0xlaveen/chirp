@@ -44,7 +44,7 @@ final class ChirpScreenshotUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Allow the microphone"].waitForExistence(timeout: 5))
         shot("onboarding-3-microphone", app)
         skip.tap()
-        XCTAssertTrue(app.staticTexts["Chirp Keyboard"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Turn on Chirp Keyboard"].waitForExistence(timeout: 5))
         shot("onboarding-4-keyboard", app)
         skip.tap()
 

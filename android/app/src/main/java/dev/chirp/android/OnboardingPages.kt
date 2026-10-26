@@ -18,18 +18,34 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.*
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import dev.chirp.android.settings.connectionSummary
 import dev.chirp.android.ui.*
 
+/** Shared with iOS onboarding: the same page titles and secondary-link labels on both phones. */
+internal const val WELCOME_TITLE = "Welcome to Chirp"
+internal const val KEYBOARD_TITLE = "Turn on Chirp Keyboard"
+internal const val ABOUT_KEYBOARD = "About the keyboard"
+internal const val MICROPHONE_TITLE = "Allow the microphone"
+internal const val ABOUT_MICROPHONE = "What Chirp keeps"
+internal const val PAIR_PAGE_TITLE = "Pair your computer"
+internal const val ABOUT_PAIRING = "About pairing"
+internal const val PAIRING_COMMAND = "chirp-server pair"
+internal const val PAIRING_STEPS =
+    "On your computer, open Chirp → Settings → Devices → Pair a Phone, or run chirp-server pair on your server."
+
 @Composable
 internal fun OnboardingPage(page: Int, state: SetupState, actions: OnboardingActions) {
     val next = { state.step = page + 1 }
     when (page) {
-        PAGE_WELCOME -> PageFrame("Dictate anywhere", { PondHero() }, PrimaryAction("Get started") { next() }) {
+        PAGE_WELCOME -> PageFrame(WELCOME_TITLE, { PondHero() }, PrimaryAction("Get started") { next() }) {
             Body("Speak on your phone and your computer writes the words into any app, privately over Tailscale. " +
                 "Meetings and thoughts can live in Notes: a recording that transcribes and organises itself while you talk.")
             Body("Dictation history and learning from your edits are on by default, encrypted on this phone. Turn history off in Settings → Privacy & history, and learning off in Settings → Dictation.")
@@ -47,7 +63,7 @@ internal fun OnboardingPage(page: Int, state: SetupState, actions: OnboardingAct
                     useKeyboard = { actions.chooseMode(InputMode.KEYBOARD) })
                 if (!state.advancedProtection) TextButton(actions.skipFloatingMic) { Text("Skip for now") }
             }
-        } else PageFrame("Turn on Chirp Keyboard", { Illustration(R.drawable.ic_keyboard) }, when {
+        } else PageFrame(KEYBOARD_TITLE, { Illustration(R.drawable.ic_keyboard) }, when {
             !state.inputEnabled -> PrimaryAction("Enable Chirp Keyboard", onClick = actions.keyboardSettings)
             !state.inputSelected -> PrimaryAction("Select Chirp Keyboard", onClick = actions.picker)
             else -> PrimaryAction("Continue") { next() }
@@ -58,17 +74,17 @@ internal fun OnboardingPage(page: Int, state: SetupState, actions: OnboardingAct
                 CheckRow("Selected as default", state.inputSelected)
             }
             val swipe = swipeTypingSummary(LocalContext.current)
-            Tips("Samsung path and suggestions", "Keyboard tips",
+            Tips(ABOUT_KEYBOARD, "Chirp Keyboard",
                 "Samsung: Settings → General management → Keyboard list and default.\n\n" +
                     "English autocorrect, next-word and emoji suggestions are ready to use. Personalised suggestions learn typed words on this device; " +
                     "turn them off in Chirp settings → Keyboard → Layouts, languages & typing → Text correction. Dictation finals bypass keyboard learning.\n\n$swipe")
         }
-        PAGE_MIC -> PageFrame("Allow the microphone", { Illustration(R.drawable.ic_mic) }, if (state.mic) PrimaryAction("Continue") { next() }
+        PAGE_MIC -> PageFrame(MICROPHONE_TITLE, { Illustration(R.drawable.ic_mic) }, if (state.mic) PrimaryAction("Continue") { next() }
             else PrimaryAction("Allow microphone", onClick = actions.grantMic)) {
             Body("Chirp listens only while you dictate or record a note. Notes and optional kept audio stay on this phone.")
             if (state.mic) SettingsGroup { CheckRow("Microphone allowed", true) }
             else if (state.micDenied) StatusBanner(StatusKind.Warning, "Allow the microphone to dictate", action = "Open app permissions", onAction = actions.appSettings, live = true)
-            Tips("What Chirp keeps", "Your microphone",
+            Tips(ABOUT_MICROPHONE, "Your microphone",
                 "The mic opens only when you start dictation or a note and is released when you stop. Dictation history and learning from your edits are on by default, encrypted on this phone; turn history off in Settings → Privacy & history, and learning off in Settings → Dictation. " +
                 "Notes are kept locally; keeping their audio is optional and off by default.")
         }
@@ -89,9 +105,10 @@ private fun PairPage(state: SetupState, actions: OnboardingActions) {
         return
     }
     val busy = state.scanning || state.checking
-    PageFrame("Scan the code on your computer", { Illustration(R.drawable.ic_qr_scan) },
+    PageFrame(PAIR_PAGE_TITLE, { Illustration(R.drawable.ic_qr_scan) },
         PrimaryAction(when { state.scanning -> "Scanning…"; state.checking -> "Connecting…"; else -> "Scan code" }, !busy, actions.scan)) {
-        Body("Turn on Tailscale on both devices. On your computer, open Chirp → Settings → Devices → Pair a Phone.")
+        PairingSteps()
+        if (!state.pairFromShell) TextButton(actions.skipPairing, Modifier.align(Alignment.CenterHorizontally)) { Text("Skip for now") }
         if (state.wifiPermissionNeeded && !state.localNetwork) StatusBanner(StatusKind.Warning, "Allow Wi-Fi server access",
             body = "Needed only for servers on your Wi-Fi. Tailscale works without it.", action = "Allow", onAction = actions.grantNetwork)
         if (state.checking) StatusBanner(StatusKind.Info, "Connecting to your computer…", live = true)
@@ -114,9 +131,9 @@ private fun PairPage(state: SetupState, actions: OnboardingActions) {
                 supportingText = { Text(if (invalid) "That isn’t a Chirp pairing link" else "Pasting a valid link connects right away") },
                 visualTransformation = PasswordVisualTransformation(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password))
         }
-        Tips("About scanning", "Scanning and pairing",
-            "QR scanning uses Google Play services; Chirp needs no camera permission. Pasting the link works without the scanner. " +
-                "Pairing tokens are encrypted with Android Keystore, and nothing is saved until your computer answers.")
+        Tips(ABOUT_PAIRING, "Pairing",
+            "Turn on Tailscale on both devices. QR scanning uses Google Play services; Chirp needs no camera permission. Pasting the link works without the scanner. " +
+                "The pairing is encrypted with Android Keystore, and nothing is saved until your computer answers.")
     }
 }
 
@@ -156,6 +173,23 @@ private fun Illustration(@DrawableRes icon: Int, wide: Boolean = false) {
 @Composable
 private fun Body(text: String) = Text(text, Modifier.fillMaxWidth(), style = MaterialTheme.typography.bodyLarge, textAlign = TextAlign.Center,
     color = MaterialTheme.colorScheme.onSurfaceVariant)
+
+/** Pairing steps, with the server command in code font. */
+internal fun pairingStepsAnnotated() = buildAnnotatedString {
+    val start = PAIRING_STEPS.indexOf(PAIRING_COMMAND)
+    append(PAIRING_STEPS.substring(0, start))
+    // A hyphen is a line-break point, so the shown command uses a non-breaking hyphen and space.
+    withStyle(SpanStyle(fontFamily = FontFamily.Monospace)) {
+        append(PAIRING_COMMAND.replace('-', '\u2011').replace(' ', '\u00A0'))
+    }
+    append(PAIRING_STEPS.substring(start + PAIRING_COMMAND.length))
+}
+
+@Composable
+private fun PairingSteps() {
+    Text(pairingStepsAnnotated(), Modifier.fillMaxWidth(), style = MaterialTheme.typography.bodyLarge, textAlign = TextAlign.Center,
+        color = MaterialTheme.colorScheme.onSurfaceVariant)
+}
 
 /** One requirement: a check in a circle when met, an empty circle when not (an icon, not a "✓" character). */
 @Composable

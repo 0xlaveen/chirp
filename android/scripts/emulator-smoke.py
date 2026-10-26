@@ -255,7 +255,7 @@ def main():
         adb('logcat', '-b', 'crash', '-c')
         adb('shell', 'settings', 'put', 'secure', 'show_ime_with_hard_keyboard', '1')
         adb('shell', 'am', 'start', '-n', PACKAGE + '/.SetupActivity')
-        wait_for('Dictate anywhere')
+        wait_for('Welcome to Chirp')
         click('Get started')
         wait_for('How you’ll dictate')
         click('Use Chirp Keyboard')

@@ -28,6 +28,7 @@ internal class OnboardingActions(
     val scan: () -> Unit = {}, val pasteLink: (String) -> Unit = {}, val retry: () -> Unit = {}, val grantNetwork: () -> Unit = {},
     val openTailscale: () -> Unit = {}, val finish: () -> Unit = {},
     val chooseMode: (InputMode) -> Unit = {}, val accessibility: () -> Unit = {}, val skipFloatingMic: () -> Unit = {},
+    val skipPairing: () -> Unit = {},
 )
 
 /** A page's one job: [onClick] is the primary button pinned to the bottom of the screen. */
