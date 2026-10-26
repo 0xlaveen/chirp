@@ -19,6 +19,14 @@ extension XCUIApplication {
         XCTFail("No \(title) tab", file: file, line: line)
     }
 
+    /// iPad: the tab sidebar can be open over the content (the chip and the Notes list sit under it). A tap on the
+    /// dimmed content closes it; a no-op when the control is already reachable.
+    @MainActor func dismissSidebarOverlay(covering control: XCUIElement) {
+        guard control.exists, !control.isHittable else { return }
+        coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.5)).tap()
+        _ = control.waitForExistence(timeout: 2)
+    }
+
     /// Settings → a category row, from any tab.
     @MainActor func openSettingsPage(_ id: String) {
         selectChirpTab("Settings")
