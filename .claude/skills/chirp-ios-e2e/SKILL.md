@@ -31,7 +31,7 @@ It creates its own `iPhone chirp-e2e-<pid>` / `iPad chirp-e2e-<pid>` (simulator.
    ```
    (Type and runtime names change with Xcode: `xcrun simctl list devicetypes runtimes`.)
 4. Server and clean-up stand-in: `ios/scripts/simulator-e2e.sh` starts both (throwaway `$WORK` under `/tmp`, `chirp-server --port 7899`, `fake-cleanup.py` on 7898, `say`-generated audio, a per-device pairing named "Chirp simulator") and stops them on exit. To drive them by hand, copy its setup block; pairing link is `HOME=$WORK uv run chirp-server pair --name "Chirp simulator" --url http://127.0.0.1:7899`.
-5. Run a flow (table below). Single test: `ios/scripts/simulator-e2e.sh "$PHONE" -only-testing:ChirpIOS-UI/ChirpLiveServerUITests/testLiveKeyboardDictationInMessages`.
+5. Run a flow (table below). Single test: `ios/scripts/simulator-e2e.sh "$PHONE" -only-testing:ChirpIOSUITests/ChirpLiveServerUITests/testLiveKeyboardDictationInMessages` (the target name `ChirpIOSUITests`, not the scheme `ChirpIOS-UI`).
 
 ## Scripts
 
@@ -52,6 +52,7 @@ It creates its own `iPhone chirp-e2e-<pid>` / `iPad chirp-e2e-<pid>` (simulator.
 | Onboarding / pairing (pasted link, deep link, forget, per-device name) | `ChirpLiveServerUITests.testLivePairDictateCleanupRawHistoryAndEnd`, `ChirpUITests.testSyntheticPairDictateRawAndEnd` | Camera scan is not simulatable; paste path only |
 | In-app dictation session ("bounce to app": the keyboard opens `chirp://session/start`, app arms the background audio session) | same live test; `SessionCoordinatorTests`, `LongDictationTests` (units); `testLiveLongDictationInMessages` | Simulator mic hangs, so `--chirp-sim-audio FILE` (Debug) plays speech through the capture sink |
 | Chirp Keyboard in another app (Messages) | `ChirpKeyboardUITests` (synthetic), `testLiveKeyboardDictationInMessages`, `testLiveLongDictationInMessages` | Needs the keyboard enabled in simulator Settings (the tests do it); Safari never idles for XCUITest, so Messages is the host |
+| Typing with the full keyboard (KeyboardKit keys, suggestions, autocorrect) | `ChirpKeyboardTypingUITests` (host `--chirp-keyboard-host-prose`), `KeyboardTypingTests` (units through KeyboardKit's handler), `TypingTests` in `Keyboard/Policy` | The accent long-press runs on iPhone only; caps lock (two taps < 0.5 s) is unit-tested, XCUITest taps are slower |
 | Action Button / Control Center / Shortcuts intents, widgets | Intent logic in `SessionCoordinatorTests`; `testLiveToggleShortcutFromSpotlightThenPaste` (often skips); Control Center controls **not automatable** | Controls and Action Button need the system gallery; check by hand or accept as a device gate |
 | Live Activity (lock screen) | `testLiveActivityOnLockScreen` | Content-free phase only |
 | Notes library: record, pause/resume, continue, structure, export, recovery migration | `ChirpLiveNotesUITests` (live), `ChirpNotesUITests` (synthetic: record/pause/resume/stop/transcript/export, settings, rotation), `LiveNotesControllerTests`, `NotesStoreTests` | Sealed relaunch, delete/Undo/Restore, search, reading/tasks, kept replay, iPad inspector and AX5 screenshots are in ChirpNotesUITests; migration and late-AI isolation are unit tested |
@@ -91,6 +92,10 @@ It creates its own `iPhone chirp-e2e-<pid>` / `iPad chirp-e2e-<pid>` (simulator.
   stand-in before retrying, so a failed dependency sync cannot leave the port occupied.
 - **Port 7899 "in use"**: other agents share the Mac. `e2e-all.sh` picks 7899 or the next free pair right before each live stage; pin one with `CHIRP_E2E_PORT`.
 - **`simulator.sh` only accepts devices named `iPhone…`/`iPad…`**; name your own simulators that way.
+- **iPad keyboard tests skip "System keyboard lost its globe key"**: iPadOS 27's system keyboard has an emoji key instead of a globe. On your own iPad simulator, make Chirp the default keyboard: shut it down, put `dev.chirp.ios.keyboard` first in `AppleKeyboards` of `data/Library/Preferences/.GlobalPreferences.plist` (PlistBuddy), boot. The tests then find Chirp already up.
+- **A fresh simulator's "slide to type" tip** covers the keyboard on first use; `selectChirpKeyboard` taps its Continue.
+- **Keyboard preview file** goes in the App Group's `Chirp` folder: `TEST_RUNNER_CHIRP_PREVIEW_FILE=$(xcrun simctl get_app_container UDID dev.chirp.ios groups | cut -f2)/Chirp/keyboard-preview`.
+- **Keyboard memory**: `footprint -p $(pgrep -f "UDID.*ChirpKeyboard.appex/ChirpKeyboard")` on the Mac reads the simulator extension's footprint (Debug, not device numbers).
 
 - **Headless UI-test flakiness.** The Simulator window does not need to be visible but a *booted, unlocked* device does. First run after boot is the flakiest: retry a failing UI test once with `-only-testing:` before calling it a bug. Never run two UI suites on one simulator, or `simulator-e2e.sh` twice at once (port 7899).
 - **Keyboard enablement.** The tests walk Settings → General → Keyboard → Keyboards → Add New Keyboard → Chirp → Allow Full Access. Settings layout changes by OS: on mismatch the test **skips with a reason** rather than fails. Skips are not passes; read them. Reusing a simulator keeps the keyboard enabled.

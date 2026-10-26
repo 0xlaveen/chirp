@@ -252,8 +252,11 @@ struct LiveKeyboardHost: UIViewRepresentable {
         view.font = .preferredFont(forTextStyle: .title2)
         view.accessibilityIdentifier = "chirp.host.text"
         view.text = ProcessInfo.processInfo.arguments.contains("--chirp-keyboard-host-empty") ? "" : "Host prefix. "
-        view.autocorrectionType = .no
-        view.spellCheckingType = .no
+        // Dictation tests want the host's text untouched; the typing test asks for a prose field with suggestions.
+        if !ProcessInfo.processInfo.arguments.contains("--chirp-keyboard-host-prose") {
+            view.autocorrectionType = .no
+            view.spellCheckingType = .no
+        }
         view.selectedRange = NSRange(location: view.text.utf16.count, length: 0)
         // Screenshot runs: show the keyboard without a tap (the system keeps the last-used keyboard).
         if ProcessInfo.processInfo.arguments.contains("--chirp-keyboard-host-focus") {

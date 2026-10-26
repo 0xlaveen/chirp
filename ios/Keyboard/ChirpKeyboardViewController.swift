@@ -20,7 +20,6 @@ final class ChirpKeyboardViewController: KeyboardInputViewController {
     private let chrome = TypingChrome()
     private var keys: UIViewController?
     private var autocomplete: ChirpAutocompleteService?
-    private var primary: UIButton { strip.primary }
     private var style: UIButton { strip.style }
     private var bridge: KeyboardBridgeClient?
     private var bridgeState: BridgeState?

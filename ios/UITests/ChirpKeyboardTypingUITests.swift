@@ -7,7 +7,7 @@ final class ChirpKeyboardTypingUITests: XCTestCase {
         continueAfterFailure = false
         XCUIDevice.shared.orientation = .portrait
         let app = XCUIApplication()
-        app.launchArguments = ["--chirp-ui-test", "--chirp-keyboard-host", "--chirp-keyboard-host-empty"]
+        app.launchArguments = ["--chirp-ui-test", "--chirp-keyboard-host", "--chirp-keyboard-host-empty", "--chirp-keyboard-host-prose"]
         app.launch()
         defer { app.terminate() }
         XCTAssertTrue(app.textViews["chirp.host.text"].waitForExistence(timeout: 10))
@@ -26,8 +26,8 @@ final class ChirpKeyboardTypingUITests: XCTestCase {
         // Shift: one capital, then lower case again. (Caps lock — two taps within 0.5 s — is covered by
         // KeyboardTypingTests: XCUITest's taps arrive further apart than that.)
         key("shift", in: app).tap()
-        tapLetters("ok", in: app)
-        XCTAssertEqual(value(field), "Hi Ok")
+        tapLetters("so", in: app)
+        XCTAssertEqual(value(field), "Hi So")
         key("space", in: app).tap()
         // The 123 page; Space returns to the letters, as on Apple's keyboard.
         key("type.numeric", in: app).tap()
@@ -35,15 +35,20 @@ final class ChirpKeyboardTypingUITests: XCTestCase {
         key("key.2", in: app).tap()
         keep(app, "typing-numbers")
         key("space", in: app).tap()
-        XCTAssertEqual(value(field), "Hi Ok 42 ")
+        XCTAssertEqual(value(field), "Hi So 42 ")
         // Long-press e for its accents; é is third in the callout (e è é ê …), whose cells are narrower than a key.
+        // iPhone only: the iPad callout sits elsewhere and XCUITest cannot read it mid-gesture.
         tapLetters("caf", in: app)
+        let phone = UIDevice.current.userInterfaceIdiom == .phone
         let e = letter("e", in: app)
-        let width = e.frame.width
-        e.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
-            .press(forDuration: 1.0, thenDragTo: e.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
-                .withOffset(CGVector(dx: width * 1.4, dy: -e.frame.height)))
-        XCTAssertEqual(value(field), "Hi Ok 42 café")
+        if phone {
+            let center = e.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+            center.press(forDuration: 1.0, thenDragTo: center.withOffset(CGVector(dx: e.frame.width * 1.4, dy: -e.frame.height)))
+        } else {
+            e.tap()
+        }
+        let cafe = phone ? "café" : "cafe"
+        XCTAssertEqual(value(field), "Hi So 42 " + cafe)
         key("space", in: app).tap()
         // A misspelling: the bar offers the fix; tapping it replaces the word.
         tapLetters("helo", in: app)
@@ -51,16 +56,19 @@ final class ChirpKeyboardTypingUITests: XCTestCase {
         XCTAssertTrue(hello.waitForExistence(timeout: 5), "the suggestion bar offers the correction")
         keep(app, "typing-suggestions")
         hello.tap()
-        XCTAssertEqual(value(field), "Hi Ok 42 café hello ")
+        XCTAssertEqual(value(field), "Hi So 42 \(cafe) hello ")
         key("delete", in: app).tap()
-        XCTAssertEqual(value(field), "Hi Ok 42 café hello")
+        XCTAssertEqual(value(field), "Hi So 42 \(cafe) hello")
         // Touch and hold the space bar, slide left: the caret moves, so the next letter lands inside the text.
-        let space = key("space", in: app)
-        space.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
-            .press(forDuration: 0.8, thenDragTo: space.coordinate(withNormalizedOffset: CGVector(dx: 0.1, dy: 0.5)))
-        tapLetters("x", in: app)
-        let moved = value(field)
-        XCTAssertTrue(moved.contains("x") && !moved.hasSuffix("x"), "the caret moved left before typing: \(moved)")
+        // iPhone only: on the iPad simulator XCUITest's press-and-drag never registers KeyboardKit's long press
+        // (it types a space), so the iPad cursor drag is a device check.
+        if phone {
+            let middle = key("space", in: app).coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+            middle.press(forDuration: 0.8, thenDragTo: middle.withOffset(CGVector(dx: -80, dy: 0)))
+            tapLetters("x", in: app)
+            let moved = value(field)
+            XCTAssertTrue(moved.contains("x") && !moved.hasSuffix("x"), "the caret moved left before typing: \(moved)")
+        }
         keep(app, "typing-done")
     }
 
