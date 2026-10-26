@@ -32,7 +32,7 @@ enum KeyboardPreview {
         case "polishing": i.phase = .correcting; i.ownsUtterance = true
         case "finished":
             i.phase = .finished; i.isFinal = true; i.ownsUtterance = true; i.undoAvailable = true
-            i.rawUntil = now.addingTimeInterval(4)
+            i.rawUntil = now.addingTimeInterval(4); i.undoUntil = now.addingTimeInterval(4)
         case "kept": i.phase = .finished; i.kept = true; i.errorCode = .unreachable
         case "error": i.phase = .failed; i.errorCode = .unreachable
         case "debug": i.phase = .armed; i.debugRetention = true

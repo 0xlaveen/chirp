@@ -10,17 +10,16 @@ private final class ClickInputView: UIInputView, UIInputViewAudioFeedback {
 }
 
 /// Keyboard extension entry class: a full typing keyboard (KeyboardKit's system-style keys, see `KeyboardTyping`)
-/// under Chirp's strip. Capture and network remain in the app. All Chirp screen decisions live in `KeyboardPresenter`
+/// under Chirp's one top row. Capture and network remain in the app. All Chirp screen decisions live in `KeyboardPresenter`
 /// (KeyboardPolicy package); this class only gathers inputs and applies the result.
 @MainActor
 final class ChirpKeyboardViewController: KeyboardInputViewController {
-    private let strip = KeyboardStatusStrip()
+    private let topRow = KeyboardTopRow()
     private let overlay = KeyboardInfoOverlay()
-    private let chips = KeyboardChipRow()
     private let chrome = TypingChrome()
     private var keys: UIViewController?
     private var autocomplete: ChirpAutocompleteService?
-    private var style: UIButton { strip.style }
+    private var style: UIButton { overlay.style }
     private var bridge: KeyboardBridgeClient?
     private var bridgeState: BridgeState?
     private var policy = OwnedInsertion()
@@ -28,6 +27,7 @@ final class ChirpKeyboardViewController: KeyboardInputViewController {
     private var applying = false
     private var visible = false
     private var rawUntil: Date?
+    private var typingUntil: Date?
     private var kept = false
     private var notice: String?
     private var noticeUntil: Date?
@@ -41,8 +41,8 @@ final class ChirpKeyboardViewController: KeyboardInputViewController {
     private var documentID: UUID?
     private lazy var haptic = UIImpactFeedbackGenerator(style: .light)
     private var stack: UIStackView!
-    private var chipHeight: NSLayoutConstraint!
-    private var stripInsets: [NSLayoutConstraint] = []
+    private var rowHeight: NSLayoutConstraint!
+    private var overlayInsets: [NSLayoutConstraint] = []
     private var appliedMetrics: KeyboardMetrics?
 
     override func loadView() {
@@ -56,48 +56,41 @@ final class ChirpKeyboardViewController: KeyboardInputViewController {
         autocomplete = typing.autocomplete
         typing.actions.willEdit = { [weak self] in self?.userWillType() }
         overlay.accessibilityViewIsModal = true
-        strip.info.addTarget(self, action: #selector(infoTapped), for: .touchUpInside)
-        strip.primary.addTarget(self, action: #selector(primaryTapped), for: .touchUpInside)
+        topRow.options.addTarget(self, action: #selector(infoTapped), for: .touchUpInside)
+        topRow.primary.addTarget(self, action: #selector(primaryTapped), for: .touchUpInside)
         overlay.close.addTarget(self, action: #selector(infoTapped), for: .touchUpInside)
         overlay.end.addTarget(self, action: #selector(endTapped), for: .touchUpInside)
-        chips.cancel.addTarget(self, action: #selector(cancelTapped), for: .touchUpInside)
-        chips.undo.addTarget(self, action: #selector(cancelTapped), for: .touchUpInside)
-        chips.raw.addTarget(self, action: #selector(rawTapped), for: .touchUpInside)
-        chips.open.addTarget(self, action: #selector(openTapped), for: .touchUpInside)
+        topRow.cancel.addTarget(self, action: #selector(cancelTapped), for: .touchUpInside)
+        topRow.undo.addTarget(self, action: #selector(cancelTapped), for: .touchUpInside)
+        topRow.raw.addTarget(self, action: #selector(rawTapped), for: .touchUpInside)
+        topRow.open.addTarget(self, action: #selector(openTapped), for: .touchUpInside)
 
-        // The strip on top; the keys (with the suggestion row) below it. Chirp's chips lie over the suggestion row.
-        let stripBox = UIView()
-        strip.translatesAutoresizingMaskIntoConstraints = false
-        stripBox.addSubview(strip)
-        stripInsets = [strip.leadingAnchor.constraint(equalTo: stripBox.leadingAnchor),
-                       strip.trailingAnchor.constraint(equalTo: stripBox.trailingAnchor)]
-        NSLayoutConstraint.activate(stripInsets + [
-            strip.topAnchor.constraint(equalTo: stripBox.topAnchor), strip.bottomAnchor.constraint(equalTo: stripBox.bottomAnchor),
-            strip.heightAnchor.constraint(equalToConstant: KeyboardMetrics.stripHeight)])
-        stack = UIStackView(arrangedSubviews: [stripBox])
+        // The keys (with KeyboardKit's suggestion bar on top of them) fill the view; Chirp's one top row lies over the
+        // suggestion bar, as Android's strip lies over HeliBoard's.
+        stack = UIStackView()
         stack.axis = .vertical
         stack.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(stack)
-        chips.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(chips)
+        topRow.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(topRow)
         overlay.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(overlay)
-        chipHeight = chips.heightAnchor.constraint(equalToConstant: 40)
-        NSLayoutConstraint.activate([
+        rowHeight = topRow.heightAnchor.constraint(equalToConstant: 40)
+        overlayInsets = [overlay.leadingAnchor.constraint(equalTo: view.leadingAnchor), overlay.trailingAnchor.constraint(equalTo: view.trailingAnchor)]
+        NSLayoutConstraint.activate(overlayInsets + [
             stack.leadingAnchor.constraint(equalTo: view.leadingAnchor), stack.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             stack.topAnchor.constraint(equalTo: view.topAnchor), stack.bottomAnchor.constraint(equalTo: view.bottomAnchor),
-            chips.topAnchor.constraint(equalTo: stripBox.bottomAnchor), chipHeight,
-            chips.leadingAnchor.constraint(equalTo: strip.leadingAnchor), chips.trailingAnchor.constraint(equalTo: strip.trailingAnchor),
-            overlay.leadingAnchor.constraint(equalTo: strip.leadingAnchor), overlay.trailingAnchor.constraint(equalTo: strip.trailingAnchor),
-            overlay.topAnchor.constraint(equalTo: stripBox.bottomAnchor),
+            topRow.topAnchor.constraint(equalTo: view.topAnchor), rowHeight,
+            topRow.leadingAnchor.constraint(equalTo: view.leadingAnchor), topRow.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            overlay.topAnchor.constraint(equalTo: topRow.bottomAnchor),
             overlay.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -6),
         ])
         registerForTraitChanges([UITraitVerticalSizeClass.self]) { (self: Self, _) in self.applyMetrics(); self.render() }
         applyMetrics()
     }
 
-    /// KeyboardKit would rebuild its whole view on every appearance (and drop Chirp's rows); the keys are built once
-    /// under the strip instead.
+    /// KeyboardKit would rebuild its whole view on every appearance (and drop Chirp's row); the keys are built once
+    /// under the top row instead.
     override func viewWillSetupKeyboardView() {
         guard keys == nil else { return }
         let host = TypingKeyboard.makeKeys(for: self, chrome: chrome)
@@ -105,7 +98,7 @@ final class ChirpKeyboardViewController: KeyboardInputViewController {
         stack.addArrangedSubview(host.view)
         host.didMove(toParent: self)
         keys = host
-        view.bringSubviewToFront(chips)
+        view.bringSubviewToFront(topRow)
         view.bringSubviewToFront(overlay)
     }
 
@@ -177,16 +170,18 @@ final class ChirpKeyboardViewController: KeyboardInputViewController {
 
     private var compactHeight: Bool { traitCollection.verticalSizeClass == .compact }
 
-    /// The strip is 44 pt in every size; the suggestion row (and the chips over it) follows the system's predictive
-    /// bar. Every row has a fixed height, so the keyboard is the same height in every bridgeState.
+    /// The top row follows the system's predictive bar in height; the suggestions leave room for ⋯ and the mic. Both
+    /// rows have a fixed height, so the keyboard is the same height in every bridgeState.
     private func applyMetrics() {
         let metrics = KeyboardMetrics.make(width: Double(view.bounds.width), compactHeight: compactHeight)
         guard metrics != appliedMetrics else { return }
         appliedMetrics = metrics
-        chipHeight.constant = metrics.suggestionHeight
+        rowHeight.constant = metrics.suggestionHeight
         chrome.suggestionHeight = metrics.suggestionHeight
-        stripInsets[0].constant = metrics.inset; stripInsets[1].constant = -metrics.inset
-        strip.apply(metrics)
+        chrome.leadingInset = metrics.inset + KeyboardMetrics.controlWidth
+        chrome.trailingInset = metrics.inset + KeyboardMetrics.controlWidth
+        overlayInsets[0].constant = metrics.inset; overlayInsets[1].constant = -metrics.inset
+        topRow.apply(metrics)
     }
 
     /// The host field's keyboard type picks the first layout; autocorrect follows the field and the layout.
@@ -315,6 +310,7 @@ final class ChirpKeyboardViewController: KeyboardInputViewController {
 
     /// Typing next to a dictation the keyboard owns releases it first (its text stays; nothing more lands there).
     private func userWillType() {
+        typingUntil = Date().addingTimeInterval(8)
         guard policy.generation != nil || startPending else { return }
         invalidateOwnership()
         render()
@@ -441,13 +437,14 @@ final class ChirpKeyboardViewController: KeyboardInputViewController {
         i.ownsUtterance = policy.generation != nil
         i.isFinal = policy.isFinal; i.requiresRecovery = policy.requiresRecovery
         i.rawUntil = rawUntil; i.rawRequested = rawRequested; i.startPending = startPending
-        i.undoAvailable = policy.canUndo(now: now); i.kept = kept
+        i.undoAvailable = policy.canUndo(now: now); i.undoUntil = policy.undoUntil; i.kept = kept
         i.notice = now < (noticeUntil ?? .distantPast) ? notice : nil
         i.fallback = fallback
         let live = hasFullAccess && (bridgeState?.leaseUntil ?? .distantPast) > now
         let owned = bridgeState.flatMap { $0.generation == policy.generation && !policy.isFinal ? policy.utteranceID : nil }
         clock.observe(phase: live ? i.phase : nil, ownedUtterance: live && owned == bridgeState?.utteranceID ? owned : nil, now: now)
         i.recordingStartedAt = clock.startedAt
+        i.typing = now < (typingUntil ?? .distantPast)
         i.compactHeight = compactHeight
         #if DEBUG && targetEnvironment(simulator)
         KeyboardPreview.apply(to: &i)
@@ -457,15 +454,16 @@ final class ChirpKeyboardViewController: KeyboardInputViewController {
 
     private func render() {
         let screen = KeyboardPresenter.screen(inputs())
-        strip.apply(screen)
+        topRow.apply(screen)
         #if DEBUG && targetEnvironment(simulator)
         if KeyboardPreview.preset != nil { setInfo(open: KeyboardPreview.opensInfo) }
         #endif
         overlay.detail.text = screen.detail
-        if screen.detail == nil { setInfo(open: false) }
-        chips.apply(screen)
-        // Chirp's chips take over the suggestion row while they apply; otherwise the word suggestions show.
-        chips.isHidden = screen.actionChips.isEmpty
+        overlay.remaining.text = screen.remaining
+        overlay.remaining.isHidden = screen.remaining == nil
+        // ⋯ is only in the idle and not-ready rows; dictating or finishing closes its panel.
+        if screen.detail == nil || !(screen.topRow == .suggestions || screen.topRow == .notReady) { setInfo(open: false) }
+        // Chirp's state takes over the suggestion row while it applies; otherwise the word suggestions show.
         if chrome.showsSuggestions != screen.showsSuggestions { chrome.showsSuggestions = screen.showsSuggestions }
         // Rebuilding the menu while it is open would dismiss it, so only replace it when items change.
         if screen.styleItems != styleItems || screen.privacyOn != privacyOn {
@@ -482,6 +480,10 @@ final class ChirpKeyboardViewController: KeyboardInputViewController {
             style.menu = UIMenu(children: [UIMenu(options: .displayInline, children: styles), UIMenu(options: .displayInline, children: [privacy])])
         }
         overlay.end.isHidden = !screen.endEnabled
+        style.isHidden = !screen.showsStyle
+        style.configuration?.title = screen.styleTitle
+        style.accessibilityLabel = "Style: " + screen.styleTitle
+        style.accessibilityHint = "Opens the style menu."
     }
 
     // MARK: Info overlay
@@ -492,11 +494,11 @@ final class ChirpKeyboardViewController: KeyboardInputViewController {
         guard overlay.isHidden == open else { return }
         overlay.isHidden = !open
         stripInfoAccessibility(open: open)
-        UIAccessibility.post(notification: .screenChanged, argument: open ? overlay.detail : strip.info)
+        UIAccessibility.post(notification: .screenChanged, argument: open ? overlay.detail : topRow.options)
     }
 
     private func stripInfoAccessibility(open: Bool) {
-        strip.info.configuration?.image = UIImage(systemName: open ? "info.circle.fill" : "info.circle")
-        strip.info.accessibilityValue = open ? "Expanded" : nil
+        topRow.options.configuration?.baseForegroundColor = open ? KeyboardPalette.koi : KeyboardPalette.inkMuted
+        topRow.options.accessibilityValue = open ? "Expanded" : nil
     }
 }

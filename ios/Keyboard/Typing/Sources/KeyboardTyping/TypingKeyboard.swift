@@ -3,12 +3,14 @@ import UIKit
 import KeyboardKit
 import KeyboardPolicy
 
-/// What Chirp's UIKit rows tell the SwiftUI keys: whether the suggestion row shows word suggestions (or gives way to
-/// Chirp's chips laid over it) and how tall it is.
+/// What Chirp's UIKit row tells the SwiftUI keys: whether the suggestion bar shows word suggestions (or gives way to
+/// Chirp's state laid over it), how tall it is, and how much room its ⋯ (leading) and mic (trailing) take.
 @MainActor
 public final class TypingChrome: ObservableObject {
     @Published public var showsSuggestions = true
     @Published public var suggestionHeight: CGFloat = 40
+    @Published public var leadingInset: CGFloat = 0
+    @Published public var trailingInset: CGFloat = 0
     public init() {}
 }
 
@@ -75,6 +77,8 @@ struct TypingKeys: View {
             emojiKeyboard: { $0.view },
             toolbar: { params in
                 params.view
+                    .padding(.leading, chrome.leadingInset)
+                    .padding(.trailing, chrome.trailingInset)
                     .opacity(chrome.showsSuggestions ? 1 : 0)
                     .allowsHitTesting(chrome.showsSuggestions)
                     .accessibilityHidden(!chrome.showsSuggestions)

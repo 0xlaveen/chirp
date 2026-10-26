@@ -96,8 +96,9 @@ private func inputs(_ phase: KeyboardPhase? = .armed, access: Bool = true, lease
     @Test func debugWarning() {
         let debug = KeyboardPresenter.screen(inputs { $0.debugRetention = true })
         #expect(debug.warning == "DEBUG recordings kept on the server")
-        #expect(debug.detail?.hasSuffix("DEBUG recordings kept on the server") == true, "the ⓘ explains the DEBUG badge")
-        #expect(KeyboardPresenter.warningBadge == "DEBUG")
+        #expect(debug.detail?.hasSuffix("DEBUG recordings kept on the server") == true, "the options panel explains the DEBUG notice")
+        #expect(debug.topRow == .notReady && debug.phaseText == KeyboardPresenter.debugLine && debug.glyph == .warning)
+        #expect(debug.primary.kind == .start, "the mic stays the row's action")
         #expect(KeyboardPresenter.screen(inputs()).warning == nil)
     }
 
@@ -265,8 +266,7 @@ private func inputs(_ phase: KeyboardPhase? = .armed, access: Bool = true, lease
 @Suite struct MetricsTests {
     @Test func iPhoneHidesThePrimaryTitleAndKeepsTouchTargets() {
         let m = KeyboardMetrics.make(width: 393, compactHeight: false)
-        #expect(!m.showsPrimaryTitle && m.showsRemaining && m.stripHeight == 44 && m.suggestionHeight >= 36)
-        #expect(!KeyboardMetrics.make(width: 375, compactHeight: false).showsRemaining, "an SE-width strip leaves the time to ⓘ")
+        #expect(!m.showsPrimaryTitle && m.suggestionHeight >= 36 && m.chromeHeight == m.suggestionHeight)
     }
 
     @Test func iPadShowsTheTitleAndATallerSuggestionRow() {
@@ -276,10 +276,10 @@ private func inputs(_ phase: KeyboardPhase? = .armed, access: Bool = true, lease
     }
 
     @Test(arguments: [393.0, 852.0, 1180.0])
-    func compactHeightKeepsTheStripAndShrinksSuggestions(width: Double) {
+    func compactHeightShrinksTheRow(width: Double) {
         let m = KeyboardMetrics.make(width: width, compactHeight: true)
         let regular = KeyboardMetrics.make(width: width, compactHeight: false)
-        #expect(m.stripHeight == 44 && m.suggestionHeight < regular.suggestionHeight)
+        #expect(m.suggestionHeight < regular.suggestionHeight)
         #expect(m.showsPrimaryTitle == (width >= 600))
     }
 }
@@ -317,13 +317,22 @@ private func inputs(_ phase: KeyboardPhase? = .armed, access: Bool = true, lease
         KeyboardPresenter.screen(inputs(phase, access: access, edit))
     }
 
+    private func finishedScreen(_ edit: (inout KeyboardInputs) -> Void = { _ in }) -> KeyboardScreen {
+        screen(.finished) {
+            $0.isFinal = true; $0.ownsUtterance = true; $0.undoAvailable = true; $0.rawUntil = now.addingTimeInterval(4)
+            $0.undoUntil = now.addingTimeInterval(4)
+            edit(&$0)
+        }
+    }
+
     @Test func stripGlyphFollowsTheState() {
         #expect(screen(.armed).glyph == .koiDot && screen(.finished).glyph == .koiDot)
+        #expect(finishedScreen().glyph == .check, "a landed final shows a check")
         #expect(screen(.connecting).glyph == .ripple && screen(.listening).glyph == .ripple)
         #expect(screen(.correcting).glyph == .moon)
         #expect(screen(.failed).glyph == .warning && screen(.armed) { $0.errorCode = .unreachable }.glyph == .warning)
         #expect(screen(nil).glyph == .idle && screen(.idle).glyph == .idle)
-        #expect(screen(.armed) { $0.notice = "Dictation removed" }.glyph == .koiDot)
+        #expect(screen(.armed) { $0.notice = "Dictation removed" }.glyph == .check)
     }
 
     @Test func labelsAreTheShortOnesFromTheSpec() {
@@ -362,8 +371,8 @@ private func inputs(_ phase: KeyboardPhase? = .armed, access: Bool = true, lease
         #expect(screen(.finished) { $0.isFinal = true; $0.ownsUtterance = true }.chips == [.style], "Undo only after a final")
     }
 
-    /// The heights come from `KeyboardMetrics`, the rows from the presenter: every state lays out all three rows (the
-    /// chips take over the suggestion row, never add one), so the keyboard is the same height in every state.
+    /// The heights come from `KeyboardMetrics`, the rows from the presenter: every state lays out the same two rows
+    /// (Chirp's state takes over the suggestion row, never adds one), so the keyboard is the same height in every state.
     @Test(arguments: [(393.0, false), (393.0, true), (852.0, true), (820.0, false), (1180.0, false), (320.0, false)])
     func heightIsIdenticalInEveryState(width: Double, compact: Bool) {
         let metrics = KeyboardMetrics.make(width: width, compactHeight: compact)
@@ -378,39 +387,87 @@ private func inputs(_ phase: KeyboardPhase? = .armed, access: Bool = true, lease
                         $0.rawUntil = final ? now.addingTimeInterval(3) : nil; $0.compactHeight = compact
                         $0.recordingStartedAt = now.addingTimeInterval(-9); $0.sessionExpiresAt = now.addingTimeInterval(300)
                     }
-                    #expect(s.rows == [.strip, .suggestions, .keys])
+                    #expect(s.rows == [.top, .keys])
                     #expect(Set(s.chips).count == s.chips.count && s.chips.count <= 4)
-                    #expect(s.showsSuggestions == s.actionChips.isEmpty && !s.actionChips.contains(.style))
+                    #expect(s.showsSuggestions == (s.topRow == .suggestions) && !s.actionChips.contains(.style))
+                    if s.showsSuggestions { #expect(s.actionChips.isEmpty, "idle suggestions share the row with nothing else") }
                     heights.insert(metrics.chromeHeight); states += 1
                 }}
             }}}
         }
         #expect(states > 100 && heights.count == 1)
-        #expect(metrics.stripHeight == 44)
     }
 
-    @Test func chromeIsTheStripPlusASuggestionRow() {
+    @Test func chromeIsOneRowTheHeightOfTheSuggestionBar() {
         let m = KeyboardMetrics.make(width: 393, compactHeight: false)
-        #expect(m.chromeHeight == m.stripHeight + m.suggestionHeight)
-        #expect(m.chromeHeight <= 88, "one strip on top of the system-height suggestion row, nothing more")
+        #expect(m.chromeHeight == m.suggestionHeight)
+        #expect(m.chromeHeight <= 48, "one row, as on Android; nothing stacked above the suggestions")
         #expect(KeyboardMetrics.make(width: 393, compactHeight: true).chromeHeight < m.chromeHeight)
     }
 
-    @Test func rowsFitTheirTouchTargetsAndTextCaps() {
+    @Test func rowFitsItsTouchTargetsAndTextCaps() {
         for (width, compact) in [(393.0, false), (393.0, true), (820.0, false), (1180.0, true)] {
             let m = KeyboardMetrics.make(width: width, compactHeight: compact)
-            #expect(m.stripHeight >= 44 && m.suggestionHeight >= 36 && KeyboardMetrics.minimumPrimaryWidth >= 44)
+            #expect(m.suggestionHeight >= 36 && KeyboardMetrics.minimumPrimaryWidth >= 44 && KeyboardMetrics.controlWidth >= 44)
+            #expect(KeyboardMetrics.maxRowTextPoints <= m.suggestionHeight / 2, "the largest text still fits the row")
         }
-        #expect(KeyboardMetrics.maxStripTextPoints <= KeyboardMetrics.stripHeight / 2)
     }
 
-    @Test func suggestionsGiveWayToChirpActionsOnly() {
-        #expect(screen(.armed).showsSuggestions && screen(.armed).showsStyle, "Style alone keeps the suggestions")
-        #expect(!screen(.listening).showsSuggestions && screen(.listening).actionChips == [.cancel])
-        let cleaned = screen(.finished) {
-            $0.isFinal = true; $0.ownsUtterance = true; $0.undoAvailable = true; $0.rawUntil = now.addingTimeInterval(4)
+    /// The top row, as Android's strip does it: suggestions only when idle; every other state replaces them.
+    @Test func theRowFollowsTheStateLikeAndroid() {
+        #expect(screen(.armed).topRow == .suggestions && screen(.armed).showsStyle)
+        #expect(screen(.finished).topRow == .suggestions, "a finished session without a result to act on is idle again")
+        #expect(screen(.listening).topRow == .dictating && screen(.connecting).topRow == .dictating)
+        #expect(screen(.listening).actionChips == [.cancel])
+        #expect(screen(.armed) { $0.startPending = true; $0.ownsUtterance = true }.topRow == .dictating)
+        #expect(screen(.armed) { $0.startPending = true; $0.ownsUtterance = true }.phaseText == "Starting…")
+        #expect(screen(.correcting).topRow == .polishing)
+        let cleaned = finishedScreen()
+        #expect(cleaned.topRow == .finished && cleaned.actionChips == [.undo, .raw] && !cleaned.showsSuggestions)
+        #expect(screen(.armed) { $0.notice = "Dictation removed" }.topRow == .notice)
+        #expect(screen(.listening) { $0.notice = "Dictation removed" }.topRow == .dictating, "dictating wins over a stale notice")
+    }
+
+    @Test func notReadyStatesAreOneMessageAndOneAction() {
+        for s in [screen(nil), screen(.idle), screen(.failed) { $0.errorCode = .unreachable },
+                  screen(.armed) { $0.errorCode = .unreachable }, screen(.armed, access: false),
+                  screen(.armed) { $0.fallback = "Open Chirp manually." }, screen(.armed) { $0.requiresRecovery = true }] {
+            #expect(s.topRow == .notReady && !s.showsSuggestions)
+            #expect(!s.phaseText.isEmpty && s.phaseText.count <= 28, "one short message")
+            #expect(s.detail != nil, "the long guidance is behind ⋯")
         }
-        #expect(cleaned.actionChips == [.undo, .raw] && !cleaned.showsSuggestions)
-        #expect(screen(nil).showsSuggestions)
+        let none = screen(nil)
+        #expect(none.primary.kind == .openChirp && none.primary.rowTitle == "Open Chirp")
+        #expect(screen(.armed, access: false).primary.kind == .fullAccess)
+        let offline = screen(.armed) { $0.errorCode = .unreachable }
+        #expect(offline.primary.kind == .start && offline.primary.rowTitle == nil, "the mic retries")
+    }
+
+    @Test func undoAndRawCountDownInTheSameRow() {
+        let s = finishedScreen()
+        #expect(s.topRow == .finished && s.chips == [.undo, .raw, .style])
+        #expect(s.undoTitle == "Undo (4s)" && s.undoSecondsLeft == 4 && s.rawTitle == "Use raw (4s)")
+        let later = finishedScreen { $0.undoUntil = now.addingTimeInterval(0.2); $0.rawUntil = now.addingTimeInterval(0.2) }
+        #expect(later.undoTitle == "Undo (1s)" && later.rawTitle == "Use raw (1s)", "seconds round up to 1 before the window closes")
+        #expect(finishedScreen { $0.undoUntil = nil }.undoTitle == "Undo")
+    }
+
+    @Test func typingKeepsTheSuggestionsInAPassiveNotReadyState() {
+        for s in [screen(nil) { $0.typing = true }, screen(.idle) { $0.typing = true }, screen(.armed, access: false) { $0.typing = true }] {
+            #expect(s.topRow == .suggestions && s.showsSuggestions, "typing needs the word suggestions")
+            #expect(s.detail != nil, "⋯ stays for the long guidance")
+        }
+        #expect(screen(nil) { $0.typing = true }.primary.kind == .openChirp, "the small icon is still Open Chirp")
+        // Something that needs attention keeps its message even while typing.
+        #expect(screen(.failed) { $0.errorCode = .unreachable; $0.typing = true }.topRow == .notReady)
+        #expect(screen(.armed) { $0.fallback = "Open Chirp manually."; $0.typing = true }.topRow == .notReady)
+        #expect(screen(.armed) { $0.requiresRecovery = true; $0.typing = true }.topRow == .notReady)
+        #expect(screen(nil).topRow == .notReady, "and without typing the message is back")
+    }
+
+    @Test func remainingTimeIsADetailNotARowLabel() {
+        let s = screen(.armed) { $0.sessionExpiresAt = now.addingTimeInterval(252) }
+        #expect(s.remaining == "4:12 left" && s.topRow == .suggestions)
+        #expect(s.phaseText == "Ready" && !s.phaseText.contains("left"))
     }
 }

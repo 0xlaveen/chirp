@@ -195,11 +195,11 @@ final class ChirpLiveServerUITests: XCTestCase {
         let typed = field.value as? String ?? ""
         XCTAssertTrue(typed.hasSuffix("We met and "), typed)
         try selectChirpKeyboard(in: messages)
-        let status = messages.staticTexts["chirp.keyboard.status"]
-        guard status.waitForExistence(timeout: 10) else { dump("Messages keyboard", messages); XCTFail("Chirp Keyboard did not appear in Messages"); return }
-        XCTAssertTrue(waitFor(status, "label == 'Ready'", timeout: 10), status.label)
-        screenshot("Keyboard armed in Messages", messages)
         let primary = messages.buttons["chirp.keyboard.primary"]
+        guard chirpKeyboard(in: messages).waitForExistence(timeout: 10) else { dump("Messages keyboard", messages); XCTFail("Chirp Keyboard did not appear in Messages"); return }
+        // Idle is the suggestion row with the small mic: no status text, the mic says what it does.
+        XCTAssertTrue(waitFor(primary, "label == 'Start dictation'", timeout: 10), primary.label)
+        screenshot("Keyboard armed in Messages", messages)
         primary.tap()
         XCTAssertTrue(waitFor(field, "value CONTAINS[c] 'design group'"), "Partial never reached Messages: \(String(describing: field.value))")
         screenshot("Keyboard partial in Messages", messages)
@@ -208,8 +208,14 @@ final class ChirpLiveServerUITests: XCTestCase {
         let expectedStart = typed + "so, um, schedule"
         XCTAssertTrue((field.value as? String ?? "").hasPrefix(expectedStart), "Mid-sentence casing: \(String(describing: field.value))")
         screenshot("Keyboard final in Messages", messages)
-        messages.buttons["chirp.keyboard.info"].tap()
+        // The final's row (Use raw, Undo) gives way to the idle row after a few seconds; ⋯ is there again then.
+        let options = messages.buttons["chirp.keyboard.options"]
+        XCTAssertTrue(options.waitForExistence(timeout: 15))
+        options.tap()
         messages.buttons["chirp.keyboard.end"].tap()
+        // No session any more: one compact message and "Open Chirp".
+        let status = messages.staticTexts["chirp.keyboard.status"]
+        XCTAssertTrue(status.waitForExistence(timeout: 10))
         XCTAssertTrue(waitFor(status, "label != 'Ready'", timeout: 10), status.label)
     }
 
@@ -337,7 +343,8 @@ final class ChirpLiveServerUITests: XCTestCase {
                       "The second segment never reached Messages: \(String(describing: field.value))")
         screenshot("Long dictation, second segment live", messages)
         primary.tap()
-        XCTAssertTrue(waitFor(messages.staticTexts["chirp.keyboard.status"], "label BEGINSWITH 'Finished'", timeout: 30))
+        // The final's row (Finished · Use raw · Undo) lasts a few seconds, then the mic is back.
+        XCTAssertTrue(waitFor(primary, "label == 'Start dictation'", timeout: 30))
         let value = field.value as? String ?? ""
         XCTAssertTrue(value.hasPrefix("Here is the plan"), value)
         XCTAssertTrue(value.contains("progress. Finally"), "Segments must join with exactly one space: \(value)")

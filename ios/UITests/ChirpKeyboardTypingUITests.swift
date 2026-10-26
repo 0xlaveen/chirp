@@ -16,7 +16,7 @@ final class ChirpKeyboardTypingUITests: XCTestCase {
         let field = app.textViews["chirp.host.text"]
         field.tap()
         try selectChirpKeyboard(in: app)
-        XCTAssertTrue(app.staticTexts["chirp.keyboard.status"].waitForExistence(timeout: 10))
+        XCTAssertTrue(chirpKeyboard(in: app).waitForExistence(timeout: 10))
         keep(app, "typing-empty")
 
         // Sentence start: the first letter is a capital, the next ones are not.

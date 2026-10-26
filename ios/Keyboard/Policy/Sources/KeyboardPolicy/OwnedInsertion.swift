@@ -224,6 +224,8 @@ public struct OwnedInsertion: Sendable {
     }
 
     /// Undo is offered for 5 seconds after a final lands (Android's window).
+    /// When Undo stops being offered (read-only: the row counts it down).
+    public var undoUntil: Date? { undoDeadline }
     public func canUndo(now: Date) -> Bool { isFinal && generation != nil && now < (undoDeadline ?? .distantPast) }
 
     /// Removes exactly the landed dictation, only while the editor still shows it as we left it. After
