@@ -252,11 +252,9 @@ final class NotesWindowController: NSObject, NSWindowDelegate {
         let alert = NSAlert()
         alert.messageText = VoiceText.consentTitle
         alert.informativeText = VoiceText.consentDetail(name)
-        alert.addButton(withTitle: "Remember")
-        alert.addButton(withTitle: "Cancel")
-        let tick = ConsentBox(title: VoiceText.consentTick, remember: alert.buttons[0])
-        alert.accessoryView = tick
-        let handle: (NSApplication.ModalResponse) -> Void = { done($0 == .alertFirstButtonReturn && tick.state == .on) }
+        alert.addButton(withTitle: "OK")
+        alert.addButton(withTitle: "Don’t remember voices")
+        let handle: (NSApplication.ModalResponse) -> Void = { done($0 == .alertFirstButtonReturn) }
         if let window, window.isVisible { alert.beginSheetModal(for: window, completionHandler: handle) } else { handle(alert.runModal()) }
     }
 

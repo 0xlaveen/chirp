@@ -81,8 +81,10 @@ public protocol SpeakerDiarizing: AnyObject, Sendable {
     var snapshot: SpeakerTimeline { get }
     /// New: forget every speaker.
     func reset()
-    /// Voice profiles on (M3): the embedder that turns each voice's settled turns into a session voiceprint; nil
-    /// stops it and drops the voiceprints.
+    /// Retains at most 30 s of PCM16 per slot, from settled turns of at least 2 s. Off drops the clips immediately.
+    func collectVoiceClips(_ enabled: Bool)
+    var voiceClips: [Int: Data] { get }
+    /// Legacy agreement bench only; the app uses server embedding from clips.
     func attachEmbedder(_ embedder: (any VoiceEmbedder)?)
     /// Each slot's voiceprint so far (memory only; empty without an embedder).
     var voiceprints: [Int: Voiceprint] { get }
@@ -90,6 +92,8 @@ public protocol SpeakerDiarizing: AnyObject, Sendable {
 
 extension SpeakerDiarizing {
     public func feed(_ frame: CallFrame, at documentTime: TimeInterval) { feed(frame.mix, at: documentTime) }
+    public func collectVoiceClips(_ enabled: Bool) {}
+    public var voiceClips: [Int: Data] { [:] }
     public func attachEmbedder(_ embedder: (any VoiceEmbedder)?) {}
     public var voiceprints: [Int: Voiceprint] { [:] }
 }
@@ -310,13 +314,17 @@ public final class FakeDiarizer: SpeakerDiarizing, @unchecked Sendable {
         }
     }
 
-    public func reset() { lock.withLock { resets += 1; fedThrough = 0; flushed = 0; prints = [:] } }
+    public func reset() { lock.withLock { resets += 1; fedThrough = 0; flushed = 0; prints = [:]; clips = [:] } }
 
     private var prints: [Int: Voiceprint] = [:]
     public private(set) var embedder: (any VoiceEmbedder)?
     public func attachEmbedder(_ embedder: (any VoiceEmbedder)?) { lock.withLock { self.embedder = embedder; if embedder == nil { prints = [:] } } }
     public var voiceprints: [Int: Voiceprint] { lock.withLock { embedder == nil ? [:] : prints } }
     /// What it "heard" of each voice (tests of the voice profiles).
+    private var clips: [Int: Data] = [:]
+    public func collectVoiceClips(_ enabled: Bool) { if !enabled { lock.withLock { clips = [:] } } }
+    public var voiceClips: [Int: Data] { lock.withLock { clips } }
+    public func setVoiceClips(_ value: [Int: Data]) { lock.withLock { clips = value } }
     public func setVoiceprints(_ v: [Int: Voiceprint]) { lock.withLock { prints = v } }
 
     /// Replace what it will "hear" (tests that script a second recording).

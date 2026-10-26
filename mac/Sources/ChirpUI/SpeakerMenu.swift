@@ -173,6 +173,13 @@ extension NotesSession {
             recorder.editSpeakers($0)
         }
         model.speakerBanner = banner.map { SpeakerBanner(document: recorder.document.id, kind: $0) }
+        switch edit {
+        case .rename(let person, let name): voices.name(person, name)
+        case .nameSpeakers(let names, _):
+            for name in names where name.mergeInto == nil { voices.name(name.person, name.name, remember: name.remember) }
+        default: break
+        }
+        sync()
     }
 }
 

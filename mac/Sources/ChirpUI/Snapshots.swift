@@ -582,6 +582,7 @@ public enum Snapshots {
         "notes-speaker-model-downloading", "notes-speaker-model-failed",
         "notes-name-speakers-line", "notes-name-speakers-sheet", "notes-name-speakers-suggest", "notes-name-speakers-remember",
         "history-cleaned", "history-empty", "menu-recent-dictations-submenu",
+        "settings-saved-voices-ready", "settings-saved-voices-empty", "notes-voice-recognised",
     ]
 
     public static var committedScenarios: [Scenario] {
@@ -1090,6 +1091,18 @@ public enum Snapshots {
                 model.speakerBanner = SpeakerBanner(document: d.id, kind: .offerReplace(old: "Person 2", new: "Maya", count: 2))
                 library.showsInspector = true
             },
+            Scenario(name: "notes-voice-recognised") {
+                let model = NotesModel()
+                var document = demoSpeakers()
+                document.livePartial = ""
+                document.renameSpeaker(2, to: "Maya")
+                model.document = document; model.state = .stopped; model.elapsed = 192
+                model.speakerLabels = true; model.speakerModel = .ready
+                model.voices = SpeakerVoiceState(enabled: true)
+                model.voices.linked = [2: "Maya"]; model.voices.recognised = [2]
+                model.voices.canRemember = [2]; model.voices.seconds = [2: 26]
+                return NSHostingView(rootView: NotesInspector(model: model, library: NotesLibraryModel()).frame(width: 390, height: 550))
+            },
             // After Stop, nobody named yet: the quiet "Who was speaking?" line over the note.
             notes("name-speakers-line") { model, library in
                 var d = demoSpeakers()
@@ -1171,9 +1184,34 @@ public enum Snapshots {
         ]
     }
 
+    public static var savedVoicesScenarios: [Scenario] {
+        ["ready", "empty", "off", "unsupported", "failed"].map { state in
+            Scenario(name: "settings-saved-voices-" + state) {
+                var value = VoiceProfilesState()
+                value.supported = state != "unsupported"
+                value.enabled = state != "off"
+                if ["ready", "off", "failed"].contains(state) {
+                    let date = Date(timeIntervalSince1970: 1_791_849_600)
+                    value.profiles = [
+                        SavedVoice(id: "0123456789abcdef", name: "Maya", seconds: 46, created: date, updated: date.addingTimeInterval(8 * 86400)),
+                        SavedVoice(id: "fedcba9876543210", name: "Theo", seconds: 31, created: date, updated: date),
+                        SavedVoice(id: "0011223344556677", name: "Alex", seconds: 24, created: date, updated: date, compatible: false)
+                    ]
+                }
+                if state == "failed" { value.error = "Couldn’t load saved voices. Try again." }
+                let view = VoiceProfilesView()
+                view.apply(value, locale: Locale(identifier: "en_US"), timeZone: TimeZone(secondsFromGMT: 0)!)
+                let wrapper = NSStackView(views: [view])
+                wrapper.orientation = .vertical; wrapper.alignment = .leading
+                wrapper.edgeInsets = NSEdgeInsets(top: 24, left: 24, bottom: 24, right: 24)
+                return wrapper
+            }
+        }
+    }
+
     public static var allScenarios: [Scenario] {
         hudScenarios + rippleScenarios + wordWaveScenarios + settingsScenarios + onboardingScenarios + menuScenarios
-            + localModelsScenarios + notesScenarios + pairingScenarios + historyScenarios
+            + localModelsScenarios + notesScenarios + pairingScenarios + historyScenarios + savedVoicesScenarios
     }
 
     // MARK: rendering

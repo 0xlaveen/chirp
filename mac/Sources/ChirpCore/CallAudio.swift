@@ -378,4 +378,6 @@ public final class CallSpeakers: SpeakerDiarizing, @unchecked Sendable {
 
     public func attachEmbedder(_ embedder: (any VoiceEmbedder)?) { remote.attachEmbedder(embedder) }
     public var voiceprints: [Int: Voiceprint] { remote.voiceprints }
+    public func collectVoiceClips(_ enabled: Bool) { remote.collectVoiceClips(enabled) }
+    public var voiceClips: [Int: Data] { remote.voiceClips }
 }

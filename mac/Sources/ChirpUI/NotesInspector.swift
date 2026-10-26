@@ -175,18 +175,23 @@ private struct TranscriptRowView: View {
                     .help(NotesDocument.timestamp(row.offset))
                 if let chip = row.chip, let person = p.person, p.failure == nil {
                     Menu { SpeakerMenuItems(model: model, row: p.id, person: person, turns: NotesDocument.turnRefs(p)) } label: {
-                        SpeakerChip(name: chip.name, color: chip.color, approximate: chip.approximate)
+                        SpeakerChip(name: chip.name, color: chip.color, approximate: chip.approximate, recognised: model.voices.recognised.contains(person))
                     }
                     .menuStyle(.button)
                     .buttonStyle(.plain)
                     .menuIndicator(.hidden)
                     .fixedSize()
                     .help(SpeakerMenuItems.help)
-                    .accessibilityLabel("Speaker: \(chip.name)")
+                    .accessibilityLabel("Speaker: \(chip.name)" + (model.voices.recognised.contains(person) ? ", recognised" : ""))
                     .accessibilityHint(SpeakerMenuItems.help)
-                    if let name = model.voices.suggestions[person] {
-                        VoiceSuggestionChip(model: model, person: person, name: name)
+                    if model.voices.recognised.contains(person), let name = model.voices.linked[person] {
+                        Button("Not \(name)") { model.onSpeakerEdit(.declineVoice(person)) }
+                            .buttonStyle(.plain)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .help("Remove this recognised name for this note")
                     }
+
                 }
                 if playing {
                     Text("Playing").font(.system(size: 10.5, weight: .semibold)).foregroundStyle(Color.chirp.koi)
@@ -266,10 +271,11 @@ struct SpeakerChip: View {
     let name: String
     let color: Int
     var approximate = false
+    var recognised = false
 
     var body: some View {
         let tint = SpeakerPalette.color(color)
-        Text(name)
+        Text(name + (recognised ? " ✓" : ""))
             .font(.caption.weight(.semibold))
             .foregroundStyle(tint)
             .lineLimit(1)
@@ -278,6 +284,6 @@ struct SpeakerChip: View {
             .background(Capsule().fill(tint.opacity(0.14)))
             .overlay(Capsule().strokeBorder(tint.opacity(0.55), style: StrokeStyle(lineWidth: 1, dash: approximate ? [2, 2] : [])))
             .fixedSize()
-            .accessibilityLabel("Speaker: \(name)" + (approximate ? ", approximate" : ""))
+            .accessibilityLabel("Speaker: \(name)" + (approximate ? ", approximate" : "") + (recognised ? ", recognised" : ""))
     }
 }

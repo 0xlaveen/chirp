@@ -349,8 +349,17 @@ public final class Preferences: @unchecked Sendable {
         get { defaults.bool(forKey: "notesCallAudioExplained") }
         set { defaults.set(newValue, forKey: "notesCallAudioExplained") }
     }
-    /// Settings › Notes › "Recognize saved voices" (off by default). A preference only: voiceprints live in the
-    /// Keychain, never here.
+    /// The one-time saved-voice notice; the server owns the Remember voices switch.
+    public var notesVoiceNoticeShown: Bool {
+        get { defaults.bool(forKey: "notesVoiceNoticeShown") }
+        set { defaults.set(newValue, forKey: "notesVoiceNoticeShown") }
+    }
+
+    public var notesImportedVoices: [String] {
+        get { defaults.stringArray(forKey: "notesImportedVoices") ?? [] }
+        set { defaults.set(newValue, forKey: "notesImportedVoices") }
+    }
+
     public var notesVoiceProfiles: Bool {
         get { defaults.bool(forKey: "notesVoiceProfiles") }
         set { defaults.set(newValue, forKey: "notesVoiceProfiles") }

@@ -14,8 +14,8 @@ public struct NotesSessionDependencies {
     /// `POST /v1/notes/edit` (#97); set after init (the default: no server support).
     public var edit: NotesRecorder.Edit = { _ in throw NotesStructureError.unsupported(404) }
     public var speakerStore: SpeakerModelStore
-    /// Voice profiles (opt-in): the embedding model and where remembered voices are kept (the app: the Keychain).
-    public var voiceModelStore: VoiceModelStore = UnavailableVoiceModelStore()
+    /// Shared server library, plus the legacy Keychain source to migrate once.
+    public var voiceClient: VoiceLibraryClient = .unavailable
     public var voiceProfileStore: VoiceProfileStore = MemoryVoiceProfileStore()
     /// Where the crash-recovery journal lives (tests pass a temporary directory).
     public var journalStore: NotesJournalStore
@@ -111,8 +111,9 @@ public final class NotesSession {
 
     /// Speaker labels: the switch, the model's background download, offline loads, Remove and this document's diarizer.
     public let speakers: SpeakerLabels
-    /// Voice profiles: the Settings switch, the saved voices, and this document's suggestions (`SpeakerMenu`).
+    /// The shared server library and this note’s recognised identities.
     public let voices: SpeakerVoices
+    var voiceProcessingTask: Task<Void, Never>?
     /// The crash-recovery journal and the opt-in "keep this file up to date" writes.
     public let journal: NotesJournal
     public var library: NotesLibrary? { deps.library }
@@ -168,8 +169,9 @@ public final class NotesSession {
             autoReorganize: settings.notesAutoReorganize, keptAudio: deps.keptAudio)
         speakers = SpeakerLabels(store: deps.speakerStore, enabled: settings.notesSpeakerLabels,
                                  onPreference: { settings.notesSpeakerLabels = $0 })
-        voices = SpeakerVoices(modelStore: deps.voiceModelStore, profileStore: deps.voiceProfileStore,
-                               enabled: settings.notesVoiceProfiles, onPreference: { settings.notesVoiceProfiles = $0 })
+        voices = SpeakerVoices(client: deps.voiceClient, legacy: deps.voiceProfileStore,
+            imported: { settings.notesImportedVoices.contains($0.uuidString) },
+            acknowledgeImport: { settings.notesImportedVoices += [$0.uuidString] })
         journal = NotesJournal(store: deps.journalStore, enabled: settings.notesRecoveryCopy, library: deps.library, sleep: deps.sleep)
         voiceEdit = NotesVoiceEdit(recorder: recorder, makeSession: deps.makeSession, now: deps.now, sleep: deps.sleep)
         recorder.shouldKeepAudio = { settings.notesKeepAudio }
@@ -236,6 +238,16 @@ public final class NotesSession {
             chirpLog.info("\(SpeakerLog.labels(speakers: self.recorder.document.speakerCount, lag: lag, tentative: tentative), privacy: .public)")
         }
         voices.onChange = { [weak self] in self?.voicesChanged() }
+        voices.beforeRemember = { [weak self] name in
+            guard let self else { return false }
+            if self.settings.notesVoiceNoticeShown { return true }
+            self.settings.notesVoiceNoticeShown = true
+            let yes = await withCheckedContinuation { done in
+                (self.confirmRememberVoice ?? { _, finish in finish(true) })(name) { done.resume(returning: $0) }
+            }
+            if !yes { _ = await self.voices.perform(.disable(forget: false)) }
+            return yes
+        }
         speakers.onChange = { [weak self] in
             self?.sync()
             self?.onSpeakerModelChange?()
@@ -291,13 +303,12 @@ public final class NotesSession {
         onShowWindow?(focus)
         // Labels are on and the model is missing: fetch it in the background. Recording never waits for it.
         speakers.ensureModel()
-        if speakers.needsLoad || (speakers.enabled && speakers.model == .ready && voices.needsLoad) {
+        if speakers.needsLoad {
             // The models load offline (~0.1 s warm); recording starts as soon as they are ready, or without labels
             // (or voices) if one is gone or damaged (the status line offers Retry).
-            guard !speakers.isLoading, !voices.isLoading else { return }
+            guard !speakers.isLoading else { return }
             Task {
                 _ = await speakers.prepare()
-                if speakers.enabled { _ = await voices.prepare() }
                 self.start(focus: focus)
             }
             return
@@ -306,7 +317,8 @@ public final class NotesSession {
         startError = nil
         let diarizer = speakers.readyDiarizer()
         let labels = diarizer != nil
-        diarizer?.attachEmbedder(voices.readyEmbedder)
+        diarizer?.collectVoiceClips(voices.enabled)
+        Task { await voices.refresh() }
         // With call audio the microphone is "You" and only the call is diarized.
         recorder.speakers = usesCallAudio ? diarizer.map { CallSpeakers(remote: $0) } : diarizer
         recorder.options = settings.notesStartOptions(health: health)
@@ -680,7 +692,7 @@ public final class NotesSession {
     /// the next Record picks it up.
     private func speakersReady() {
         guard speakers.enabled, recorder.state.isLive, let diarizer = speakers.readyDiarizer() else { return }
-        diarizer.attachEmbedder(voices.readyEmbedder)
+        diarizer.collectVoiceClips(voices.enabled)
         recorder.speakers = usesCallAudio ? CallSpeakers(remote: diarizer) : diarizer
         recorder.joinSpeakers()
         sync()
@@ -780,6 +792,9 @@ public final class NotesSession {
     public func healthChanged() {
         if health() != nil { recorder.serverAvailable() }
         let h = resolvedHealth()
+        let config = settings.serverConfig()
+        voices.configure(supported: h?.supportsSpeakerVoices == true, server: config.baseURL.absoluteString + (config.token ?? ""))
+        Task { await voices.refresh() }
         guard h != lastHealth else { return }
         lastHealth = h
         if !isActive { recorder.options = settings.notesStartOptions(health: h) }
@@ -828,6 +843,7 @@ public final class NotesSession {
         model.callNotice = callNotice
         model.speakerModel = speakers.model
         model.voices = voiceState()
+        processVoices()
         let reorganize = recorder.reorganizeStatus
         model.reorganizeStatus = reorganize
         if voiceEdit.status != model.voiceEdit, case .done(let outcome, _) = voiceEdit.status {

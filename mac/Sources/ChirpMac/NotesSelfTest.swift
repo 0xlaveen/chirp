@@ -67,8 +67,13 @@ enum NotesSelfTest {
         // `--library`: the app's notes library in the throwaway directory, as the window uses it (journal writes, the
         // hotkey's new note, reopening a stored note).
         let useLibrary = args.contains("--library")
-        // `--voices`: saved-voice suggestions on too (the embedder rides on the diarizer), with profiles in memory only.
-        prefs.notesVoiceProfiles = args.contains("--voices")
+        // Saved voices use only the explicitly supplied throwaway server; the app's library/Keychain is never read.
+        let testVoices = args.contains("--voices")
+        if testVoices, (!config.isLoopback || config.baseURL.port == 7821 || value("--url") == nil || value("--token-file") == nil) {
+            print("notes-selftest: FAILED — --voices needs an explicit throwaway loopback server and token, never port 7821")
+            return 64
+        }
+        if testVoices { prefs.notesVoiceNoticeShown = true }
         if useLibrary { prefs.notesRecoveryCopy = true }
 
         let clock = AudioClock()
@@ -85,11 +90,13 @@ enum NotesSelfTest {
             reorganize: { passes.add(); return try await server.reorganizeNotes($0, timeout: NotesController.reorganizeTimeout) },
             speakerStore: SortformerModelStore(), journalStore: NotesJournalStore(directory: journal))
         deps.startTicker = { _ in {} }
-        if args.contains("--voices") { deps.voiceModelStore = WeSpeakerModelStore() }
+        deps.voiceClient = VoiceLibraryClient(list: { try await server.savedVoices() },
+            action: { try await server.savedVoices($0) }, identify: { try await server.identifyVoices($0) })
         if useLibrary { deps.library = NotesLibrary(store: NotesLibraryStore(directory: journal.appendingPathComponent("library"))) }
         let session = NotesSession(deps)
         session.health = { health }
         session.healthChanged()
+        if testVoices { await session.voices.refresh() }
 
         let t0 = ContinuousClock.now
         func stamp() -> String {
@@ -135,6 +142,8 @@ enum NotesSelfTest {
         let heard = (transcript + " " + document.text).lowercased()
         let missing = expects.filter { !heard.contains($0.lowercased()) }
         if !missing.isEmpty { print("notes-selftest: FAILED — missing expected words: \(missing.joined(separator: ", "))"); return 3 }
+        if testVoices, let code = await checkVoices(session, dependencies: deps, frames: frames, health: health,
+                                                   fast: args.contains("--fast")) { return code }
         if let expectSpeakers, let code = checkSpeakers(session, expect: expectSpeakers) { return code }
         if let dir = value("--snapshot") {
             // The real window over the session's own models, drawn offscreen (never shown), light and dark.
@@ -144,6 +153,61 @@ enum NotesSelfTest {
         if useLibrary, let code = await checkLibrary(session, expectSpeakers: expectSpeakers) { return code }
         print("notes-selftest: OK")
         return 0
+    }
+
+    /// Two independent notes through the real Mac clip path and the real server library. Counts and codes only.
+    private static func checkVoices(_ first: NotesSession, dependencies: NotesSessionDependencies, frames: [Data],
+                                    health: Health, fast: Bool) async -> Int32? {
+        guard health.supportsSpeakerVoices, first.voices.enabled, first.voices.profiles.isEmpty,
+              let person = first.recorder.document.namableSpeakers.first else {
+            print("notes-selftest: FAILED — --voices needs an enabled, empty throwaway server voice library and labelled speech")
+            return 12
+        }
+        let firstID = first.recorder.document.id
+        first.editSpeakers(.rename(person, to: "Samantha"))
+        await first.waitForSavedVoices()
+        guard let saved = first.voices.link(person), first.voices.profiles.count == 1 else {
+            print("notes-selftest: FAILED — the first note did not remember its named voice")
+            return 13
+        }
+        let engine = FileCaptureEngine(frames: frames, fast: fast, clock: AudioClock())
+        var deps = dependencies
+        deps.engine = engine
+        // Each note gets its own diarizer, transcript, links and pending names. Only the server library is shared.
+        let second = NotesSession(deps)
+        second.health = { health }
+        second.healthChanged()
+        await second.voices.refresh()
+        second.toggle(fromHotkey: true)
+        await engine.finished()
+        await second.stop()
+        await second.waitForSavedVoices()
+        let recognised = second.voices.recognised.filter { second.recorder.document.roster.person(id: $0)?.name == saved.name }
+        guard firstID != second.recorder.document.id, let matched = recognised.first,
+              second.model.voices.linked[matched] == saved.name,
+              second.recorder.document.segments.contains(where: { second.recorder.document.labelledText($0).contains(saved.name + ":") }) else {
+            print("notes-selftest: FAILED — the second note did not automatically name the saved voice")
+            return 14
+        }
+        second.editSpeakers(.declineVoice(matched))
+        await second.waitForSavedVoices()
+        guard second.recorder.document.roster.person(id: matched)?.name == nil, second.voices.profiles.count == 1 else {
+            print("notes-selftest: FAILED — rejecting a match changed the shared library or reapplied the name")
+            return 15
+        }
+        guard await second.voices.perform(.rename(voice: saved.id, name: "Synthetic renamed")),
+              first.recorder.document.roster.person(id: person)?.name == saved.name,
+              await second.voices.perform(.disable(forget: false)), !second.voices.enabled,
+              second.voices.profiles.count == 1, await second.voices.perform(.enable),
+              await second.voices.perform(.forget(voice: saved.id)), second.voices.profiles.isEmpty,
+              await second.voices.perform(.forgetAll) else {
+            print("notes-selftest: FAILED — saved-voice management did not round-trip")
+            return 16
+        }
+        // Keep the later speaker/library checks about labels alone; saving another voice is not part of them.
+        _ = await first.voices.perform(.disable(forget: false))
+        FileHandle.standardError.write(Data("notes-selftest: voices saved=1 recognised=1 rejected=1 management=ok\n".utf8))
+        return nil
     }
 
     /// `--speakers N`: exactly N people, then a rename of Person 2 that reaches every one of their turns. Counts only.

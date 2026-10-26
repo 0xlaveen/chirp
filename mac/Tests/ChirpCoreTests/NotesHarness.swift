@@ -471,7 +471,7 @@ final class NotesHarness {
     let workspace = NotificationCenter()
     let store: SpeakerModelStore
     let prefs: Preferences
-    private let suite: String
+    let suite: String
     /// The recovery journal's directory: private to this harness unless it was handed one (a relaunch).
     let journalDirectory: URL
     private let ownsJournal: Bool
@@ -517,7 +517,7 @@ final class NotesHarness {
     static let defaultHealth = Health(correction: "available", notesStructure: true, notesCorrection: true)
 
     init(health: Health? = NotesHarness.defaultHealth, silence: TimeInterval = 1.5, speakers: SpeakerModelStore? = nil,
-         voiceModel: VoiceModelStore? = nil, profiles: VoiceProfileStore? = nil,
+         voiceClient: VoiceLibraryClient = .unavailable, profiles: VoiceProfileStore? = nil,
          library: NotesLibrary? = nil, journalDirectory: URL? = nil, keptAudio: TimeInterval = NotesRecorder.maxKeptAudio,
          silencePause: TimeInterval = NotesCaptureSink.pauseAfter, callTap: SystemAudioTap? = nil,
          finalText: @escaping @Sendable (Int) -> String = { "Segment \($0)." }) {
@@ -542,7 +542,7 @@ final class NotesHarness {
             journalStore: NotesJournalStore(directory: self.journalDirectory))
         deps.library = library
         deps.edit = http.edit(config)
-        if let voiceModel { deps.voiceModelStore = voiceModel; prefs.notesVoiceProfiles = true }
+        deps.voiceClient = voiceClient
         if let profiles { deps.voiceProfileStore = profiles }
         deps.silenceGuard = { SilenceGuard(window: silence) }
         deps.workspaceNotifications = workspace

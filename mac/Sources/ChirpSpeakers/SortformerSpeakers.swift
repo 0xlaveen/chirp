@@ -215,6 +215,12 @@ public final class SortformerSpeakerDiarizer: SpeakerDiarizing, @unchecked Senda
     /// Voice profiles (M3): the embedder, and each slot's voiceprint so far. Memory only.
     private var embedder: (any VoiceEmbedder)?
     private var prints: [Int: Voiceprint] = [:]
+    private var collectingClips = false
+    private var clips: [Int: Data] = [:]
+    public var voiceClips: [Int: Data] { lock.withLock { clips } }
+    public func collectVoiceClips(_ enabled: Bool) {
+        lock.withLock { collectingClips = enabled; if !enabled { clips = [:] } }
+    }
 
     /// Recent audio (inference queue only, and only while an embedder is attached): what a settled span is embedded
     /// from. Nothing older than `voiceRetain` is kept.
@@ -291,6 +297,7 @@ public final class SortformerSpeakerDiarizer: SpeakerDiarizing, @unchecked Senda
             pendingSamples = 0
             timeline = SpeakerTimeline()
             prints = [:]
+            clips = [:]
         }
     }
 
@@ -325,7 +332,8 @@ public final class SortformerSpeakerDiarizer: SpeakerDiarizing, @unchecked Senda
             modelGeneration = gen
         }
         let embedder = lock.withLock { self.embedder }
-        if embedder != nil { remember(batch) } else { recent.removeAll() }
+        let collecting = lock.withLock { collectingClips }
+        if embedder != nil || collecting { remember(batch) } else { recent.removeAll() }
         var samples: [Float] = []
         samples.reserveCapacity(batch.reduce(0) { $0 + $1.pcm.count / 2 } + Int(padding * Self.rate))
         for (pcm, at) in batch {
@@ -353,6 +361,17 @@ public final class SortformerSpeakerDiarizer: SpeakerDiarizing, @unchecked Senda
             if failed { _stats.errors += 1 }
             guard gen == generation, let update else { return [] }
             return apply(update)
+        }
+        if collecting {
+            for span in settled where span.duration >= Self.minVoiceSpan {
+                let pcm = VoiceClip.pcm(audio(from: max(span.start, span.end - Self.voiceRetain), to: span.end))
+                guard Double(pcm.count) / 32_000 >= Self.minVoiceSpan else { continue }
+                lock.withLock {
+                    guard gen == generation, collectingClips else { return }
+                    clips[span.slot, default: Data()].append(pcm)
+                    clips[span.slot] = Data(clips[span.slot]!.suffix(VoiceClip.maxBytes))
+                }
+            }
         }
         if let embedder { embed(settled, with: embedder, generation: gen) }
     }
