@@ -134,7 +134,7 @@
     ]
   },
   "android/keyboard-final-dark.png": {
-    "sha256": "cab439e1bbceeffe9b52cecd8ca5bf566d0673d7b281a6c9492d064fbeef5b00",
+    "sha256": "2c04b8f0ec78333be3a9133c78eb27669e33051c8dce37ab24017d0b25eea60d",
     "width": 411,
     "height": 293,
     "variants": [
@@ -151,7 +151,7 @@
     ]
   },
   "android/keyboard-final-light.png": {
-    "sha256": "b0b12a0297f1969131fa0c91c69fc9dad187948064a347ef6947d934cc1e5e5a",
+    "sha256": "ca30584d86ccf77ac3ef801f39661f7310c53a206863434213e7dc6dcd57b0ec",
     "width": 411,
     "height": 293,
     "variants": [
@@ -236,7 +236,7 @@
     ]
   },
   "android/notes-library-cover-detail-dark.png": {
-    "sha256": "bc9bf8742450241c3099c5374cda470a2238f02be924c634c06c276c716408d4",
+    "sha256": "e1f9e193673a7ca5df01246d63bd4bb1671b792ca6e02fd109c396bcc1927c19",
     "width": 411,
     "height": 891,
     "variants": [
@@ -253,7 +253,7 @@
     ]
   },
   "android/notes-library-cover-detail-light.png": {
-    "sha256": "31644a3ef87767a3776c783d9adb36b202ca8ec1f05030e7d279e1115c62c023",
+    "sha256": "995dbc504ad06f1aa02a67ad998dd824c39bb9af5c4b018daf609f51ef8cfdc5",
     "width": 411,
     "height": 891,
     "variants": [
@@ -270,7 +270,7 @@
     ]
   },
   "android/notes-library-cover-recording-dark.png": {
-    "sha256": "465d373bf53dad84f129b0def4b3e60fcf7abc47b3e4595f81f9f96f6993aebe",
+    "sha256": "06b8def15987ffcdbc0a9981fa7a3783c0ec78c593dc6c7eb9a5c69424ec6fca",
     "width": 411,
     "height": 891,
     "variants": [
@@ -287,7 +287,7 @@
     ]
   },
   "android/notes-library-cover-recording-light.png": {
-    "sha256": "badbb1a62ca245805bb760b4d4d887f0086e88e9efccf878646c4251064db89f",
+    "sha256": "7c5bb88b7da56a7fd6b8db218e42f721f130af08976c105e327b50bb29047cd7",
     "width": 411,
     "height": 891,
     "variants": [

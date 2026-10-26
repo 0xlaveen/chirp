@@ -212,7 +212,7 @@ class SavedVoicesRenderTest {
             val refresh = compose.onNodeWithText("Refresh saved voices").fetchSemanticsNode().boundsInRoot
             val destructive = compose.onNodeWithText("Forget all voices…").fetchSemanticsNode().boundsInRoot
             assertTrue("destructive action comes last", destructive.top > refresh.bottom)
-            val bitmap = notesScreenshot(compose.onNode(isRoot() and hasAnyDescendant(hasText("Saved voices"))), false)
+            val bitmap = notesScreenshot(compose.onNode(isRoot() and hasAnyDescendant(hasText("Saved voices"))))
             val output = File(System.getProperty("chirp.screenshots")).apply { mkdirs() }
             val size = if (fontScale == 2f) "font-200-" else ""
             File(output, "notes-saved-voices-$size${if (night) "dark" else "light"}.png").outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
@@ -313,7 +313,7 @@ class SavedVoicesRenderTest {
         for (night in listOf(false, true)) {
             compose.runOnIdle { dark.value = night }
             compose.mainClock.advanceTimeBy(2000); compose.waitForIdle()
-            val bitmap = notesScreenshot(compose.onRoot(), false)
+            val bitmap = notesScreenshot(compose.onRoot())
             File(File(System.getProperty("chirp.screenshots")), "notes-auto-name-chip-${if (night) "dark" else "light"}.png")
                 .outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
         }

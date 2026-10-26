@@ -243,7 +243,7 @@ class NotesRenderTest {
             // Let the last tap's ripple fade before the capture.
             compose.mainClock.advanceTimeBy(2000); compose.waitForIdle()
             val target = if (name == "transcript") compose.onNode(isRoot() and hasAnyDescendant(hasText("Show raw"))) else compose.onRoot()
-            val bitmap = notesScreenshot(target, name == "transcript")
+            val bitmap = notesScreenshot(target)
             File(output, "notes-$width-$name-${if (dark.value) "dark" else "light"}.png").outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
         }
         val notes = NotesStructureResponse("## Launch plan\n- Beta goes to **ten** design partners first\n  - Then open the waitlist\n" +

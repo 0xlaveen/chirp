@@ -79,6 +79,22 @@ class SettingsRenderTest {
         for (shown in SettingsPage.entries) for (night in listOf(false, true)) shot(shown.name.lowercase(), shown, night)
     }
 
+    @Test fun `forget pairing confirmation in light and dark`() {
+        start()
+        for (night in listOf(false, true)) {
+            shot("connection", SettingsPage.Connection, night)
+            compose.onNodeWithText("Forget pairing").performClick()
+            compose.onNodeWithText("Forget this computer?").assertIsDisplayed()
+            compose.mainClock.advanceTimeBy(2000); compose.waitForIdle()
+            val target = compose.onNode(isRoot() and hasAnyDescendant(hasText("Forget this computer?")))
+            val bitmap = notesScreenshot(target)
+            File(output, "settings-connection-forget-${if (night) "dark" else "light"}.png").outputStream().use {
+                bitmap.compress(Bitmap.CompressFormat.PNG, 100, it)
+            }
+            compose.onNodeWithText("Cancel").performClick()
+        }
+    }
+
     @Config(qualifiers = "w840dp-h900dp-mdpi") @Test fun `Fold inner screen shows the list and the detail side by side`() {
         start()
         for (night in listOf(false, true)) shot("two-pane", null, night)

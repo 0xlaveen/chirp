@@ -105,6 +105,24 @@ new emulator captures are claimed for this change.
   the Samsung-like look (Rounded + borders, Chirp's One UI-style user colours). The
   Chirp strip takes its ink, accent and highlight from the active keyboard colours.
   Regenerate with `./gradlew testDebugUnitTest --tests '*KeyboardRenderTest*'`.
+## Android glossary and note toolbar (#271 W10/W14, 2026-10-27)
+
+The affected Notes, library, Saved voices, Dictation settings, History and final keyboard renders follow
+[the copy glossary](../../copy.md). `notes-{cover,inner}-organize-toolbar-{light,dark}.png` shows the one-tap
+Organize action in `moon`; `notes-saved-voices-font-200-{light,dark}.png` shows the same Saved voices page
+at Android font scale 200%. Its named overflow control has a 48 dp target, and Forget all is last.
+`settings-connection-forget-*` and `notes-library-{cover,inner}-empty-trash-*` capture the canonical
+confirmations. Notes captures draw the actual Compose window and reject blank exports, including the
+previously blank light idle and speaker-preparation frames. All affected light and dark renders were
+visually reviewed.
+
+Validation: `./gradlew lint testDebugUnitTest assembleDebug assembleRelease` passed (1,215 cases,
+zero failures/errors, two existing opt-in skips). The host-locked `e2e-all.sh --only device` passed fresh
+onboarding, actual TalkBack, font 200%, the inner-screen rail and fold/unfold. Builds use the disposable
+debug keystore; the real server and emulator evidence are isolated from production. Responsive site
+images were regenerated for the affected gallery sources, and the site build passed its image, link
+and privacy checks.
+
 ## Release captures (round 4)
 
 `release-*.png` are direct, unmodified PNG captures from the minified release APK on

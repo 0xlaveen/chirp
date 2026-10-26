@@ -13,8 +13,7 @@ import org.junit.Assert.assertTrue
  * Draw the actual Compose root over PixelCopy's buffer: Robolectric can return the activity under a sheet/dialog,
  * or a blank buffer for the first frame. Check visible content before exporting these review artifacts.
  */
-@Suppress("UNUSED_PARAMETER")
-internal fun notesScreenshot(target: SemanticsNodeInteraction, sheet: Boolean): Bitmap {
+internal fun notesScreenshot(target: SemanticsNodeInteraction): Bitmap {
     val background = target.captureToImage().asAndroidBitmap()
     val view = (target.fetchSemanticsNode().root as ViewRootForTest).view
     val bitmap = Bitmap.createBitmap(view.width, view.height, Bitmap.Config.ARGB_8888)

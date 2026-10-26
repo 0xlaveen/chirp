@@ -254,8 +254,12 @@ class NotesLibraryScreenTest {
                 compose.runOnIdle { dark.value = night }
                 compose.mainClock.advanceTimeBy(2000); compose.waitForIdle()
                 // A modal sheet has its own window/root. Capture that window when present.
-                val target = if (state == "transcript-sheet") compose.onNode(isRoot() and hasAnyDescendant(hasText("Show raw"))) else compose.onRoot()
-                val bitmap = notesScreenshot(target, state == "transcript-sheet")
+                val target = when (state) {
+                    "transcript-sheet" -> compose.onNode(isRoot() and hasAnyDescendant(hasText("Show raw")))
+                    "empty-trash" -> compose.onNode(isRoot() and hasAnyDescendant(hasText("Empty Recently Deleted?")))
+                    else -> compose.onRoot()
+                }
+                val bitmap = notesScreenshot(target)
                 File(output, "notes-library-$width-$state-${if (night) "dark" else "light"}.png").outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
             }
         }
@@ -285,7 +289,12 @@ class NotesLibraryScreenTest {
         open("A walk by the water")
         shot("multi-select")
         back()
-        trash(); compose.onNodeWithText("Search Recently Deleted").assertIsDisplayed(); shot("recently-deleted"); back()
+        trash(); compose.onNodeWithText("Search Recently Deleted").assertIsDisplayed(); shot("recently-deleted")
+        compose.onNodeWithContentDescription("Library options").performClick()
+        compose.onNodeWithText("Empty Recently Deleted").performClick()
+        compose.onNodeWithText("Delete permanently").assertIsDisplayed()
+        shot("empty-trash")
+        compose.onNodeWithText("Cancel").performClick(); back()
         open("Launch sync"); loaded("Launch sync")
         shot("detail")
         compose.onNodeWithText("Transcript").performClick()
