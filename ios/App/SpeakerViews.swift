@@ -10,12 +10,14 @@ import SwiftUI
 struct SpeakerChip: View {
     let name: String
     let colorIndex: Int
+    var recognised = false
     @Environment(\.colorScheme) private var scheme
 
     var body: some View {
         let hue = SpeakerPalette.color(colorIndex)
         HStack(spacing: 6) {
             Circle().fill(hue).frame(width: 8, height: 8)
+            if recognised { Image(systemName: "checkmark").font(.caption).accessibilityLabel("Recognised") }
             Text(name).font(.subheadline.weight(.medium)).foregroundStyle(Color.chirp.ink).lineLimit(1)
         }
         .padding(.horizontal, 10).padding(.vertical, 5)
@@ -42,6 +44,14 @@ struct SpeakerTurnsView: View {
                 VStack(alignment: .leading, spacing: 6) {
                     HStack(spacing: 8) {
                         Menu {
+                            if let match = notes.recognisedVoice(turn.person) {
+                                Button("Not \(match.name)") { notes.rejectVoice(turn.person) }
+                                    .accessibilityIdentifier("chirp.notes.speaker.not")
+                            }
+                            if notes.canUpdateVoice(turn.person) {
+                                Button("Update \(menu.name)’s saved voice") { notes.updateVoice(turn.person) }
+                                    .accessibilityIdentifier("chirp.notes.speaker.updateVoice")
+                            }
                             Button("Rename “\(menu.name)”…", systemImage: "pencil") { rename(turn.person) }
                                 .accessibilityIdentifier("chirp.notes.speaker.rename")
                             Button("Name speakers…", systemImage: "person.2", action: nameAll)
@@ -59,9 +69,9 @@ struct SpeakerTurnsView: View {
                                 }.accessibilityIdentifier("chirp.notes.speaker.separate")
                             }
                         } label: {
-                            SpeakerChip(name: menu.name, colorIndex: roster.colorIndex(turn.person))
+                            SpeakerChip(name: menu.name, colorIndex: roster.colorIndex(turn.person), recognised: notes.recognisedVoice(turn.person) != nil)
                         }
-                        .accessibilityLabel(menu.name).accessibilityHint("Rename, merge or separate this speaker")
+                        .accessibilityValue(notes.recognisedVoice(turn.person) == nil ? "" : "Recognised").accessibilityLabel(menu.name).accessibilityHint("Rename, merge or separate this speaker")
                         .accessibilityIdentifier("chirp.notes.speaker.chip.\(segmentIndex).\(turnIndex)")
                         if turnIndex > 0 {
                             Text(clock(turn.start)).font(ChirpType.timer(.caption)).foregroundStyle(Color.chirp.inkMuted)
@@ -82,6 +92,7 @@ struct RenameSpeakerSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var name = ""
     @State private var replace = true
+    @State private var remember = true
     @FocusState private var focused: Bool
 
     var body: some View {
@@ -97,6 +108,9 @@ struct RenameSpeakerSheet: View {
                         .onChange(of: name) { _, value in if value.count > SpeakerFixups.maxNameLength { name = String(value.prefix(SpeakerFixups.maxNameLength)) } }
                 } header: { Text("Name") } footer: {
                     Text("Used everywhere in this note: the transcript, the notes Chirp writes and exports.")
+                }
+                if notes.rememberVoices {
+                    Toggle("Remember voice", isOn: $remember).accessibilityIdentifier("chirp.notes.speaker.remember")
                 }
                 if let offer {
                     Section {
@@ -118,7 +132,7 @@ struct RenameSpeakerSheet: View {
 
     private func commit() {
         let offer = SpeakerFixups.replaceOffer(person, renamingTo: name, in: notes.document)
-        notes.renameSpeaker(person, to: name, replaceInNotes: replace && offer != nil)
+        notes.renameSpeaker(person, to: name, replaceInNotes: replace && offer != nil, remember: remember)
         dismiss()
     }
 }
@@ -182,7 +196,7 @@ struct NameSpeakersSheet: View {
                             }
                             if focused == id {
                                 let taking = draft.names.filter { $0.key != id }.map(\.value)
-                                let suggestions = SpeakerNameSuggestions.names(saved: [], recent: notes.recentSpeakerNames,
+                                let suggestions = SpeakerNameSuggestions.names(saved: notes.savedVoices?.voices.map(\.name) ?? [], recent: notes.recentSpeakerNames,
                                                                               taking: taking, matching: draft.names[id] ?? "")
                                 if !suggestions.isEmpty {
                                     ScrollView(.horizontal) {
@@ -207,6 +221,10 @@ struct NameSpeakersSheet: View {
                                             .accessibilityIdentifier("chirp.notes.speakers.sample.\(id)")
                                     }
                                 }
+                            }
+                            if notes.rememberVoices {
+                                Toggle("Remember voice", isOn: Binding(get: { self.draft?.remember[id] != false }, set: { self.draft?.remember[id] = $0 }))
+                                    .accessibilityIdentifier("chirp.notes.speakers.remember.\(id)")
                             }
                             if preview.namableSpeakers.count > 1 {
                                 Button("Same as ▸") { focused = nil; mergingPerson = id }

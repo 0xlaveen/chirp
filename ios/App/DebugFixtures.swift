@@ -30,7 +30,9 @@ final class SyntheticTransport: StreamTransport, @unchecked Sendable {
     let automatic: Bool
     /// The start message asked for speaker labels (`speakers.session`): the final then carries two people's turns.
     private var labelling = false
-    init(automatic: Bool = false) {
+    private let voiceMatches: @Sendable () -> [ServerVoiceMatch]
+    init(automatic: Bool = false, voiceMatches: @escaping @Sendable () -> [ServerVoiceMatch] = { [] }) {
+        self.voiceMatches = voiceMatches
         self.automatic = automatic
         let (input, output) = AsyncStream.makeStream(of: URLSessionWebSocketTask.Message.self)
         incoming = input; continuation = output; iterator = input.makeAsyncIterator()
@@ -47,7 +49,13 @@ final class SyntheticTransport: StreamTransport, @unchecked Sendable {
         } else if text.contains(#""type":"stop""#) {
             push(#"{"type":"correcting","seq":2,"raw":"synthetic words","profile":"default"}"#)
             if lock.withLock({ labelling }) {
-                push(#"{"type":"final","text":"Synthetic words. Second voice.","raw":"synthetic words second voice","corrected":true,"speakers":{"generation":"synthetic-generation","turns":[{"speaker":0,"start":0,"text":"Synthetic words.","raw":"synthetic words"},{"speaker":1,"start":1,"text":"Second voice.","raw":"second voice"}]}}"#)
+                let value = #"{"type":"final","text":"Synthetic words. Second voice.","raw":"synthetic words second voice","corrected":true,"speakers":{"generation":"synthetic-generation","turns":[{"speaker":0,"start":0,"text":"Synthetic words.","raw":"synthetic words"},{"speaker":1,"start":1,"text":"Second voice.","raw":"second voice"}]}}"#
+                var body = (try? JSONSerialization.jsonObject(with: Data(value.utf8))) as? [String: Any] ?? [:]
+                var speakers = body["speakers"] as? [String: Any] ?? [:]
+                let matches = voiceMatches()
+                if !matches.isEmpty { speakers["matches"] = matches.map { ["speaker": $0.speaker, "voice": $0.voice, "name": $0.name] as [String: Any] } }
+                body["speakers"] = speakers
+                if let data = try? JSONSerialization.data(withJSONObject: body), let json = String(data: data, encoding: .utf8) { push(json) }
             } else {
                 push(#"{"type":"final","text":"Synthetic words.","raw":"synthetic words","corrected":true}"#)
             }

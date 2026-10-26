@@ -104,15 +104,19 @@ extension LiveNotesController {
         let secrets: any SecretStore = suite == nil ? MemorySecretStore() : KeychainSecretStore()
         let store = try? NotesStore(root: root, secrets: secrets)
         let config = URLSessionConfiguration.ephemeral; config.protocolClasses = [SyntheticHTTP.self]
+        let voices = SyntheticVoiceLibrary()
+        let withVoices = args.contains("--chirp-voices-gallery")
         let deps = Dependencies(
             server: { ServerConfig(baseURL: URL(string: "https://synthetic.test.ts.net/chirp")!, token: "synthetic-only") },
             correctionAllowed: { _ in true },
             otherCaptureActive: { [weak coordinator] in coordinator?.armed ?? false },
             http: URLSession(configuration: config),
-            fetchHealth: { _, _ in syntheticHealth },
-            makeStream: { _, options, _ in StreamSession(transport: SyntheticTransport(automatic: true), options: options) },
+            fetchHealth: { _, _ in var health = syntheticHealth; if withVoices { health.speakerVoices = true }; return health },
+            makeStream: { _, options, _ in StreamSession(transport: SyntheticTransport(automatic: true, voiceMatches: { withVoices ? voices.matches : [] }), options: options) },
             structure: { _, _, request in syntheticStructure(request) },
             reorganize: { _, _, request in syntheticReorganize(request) },
+            fetchVoices: { _, _ in voices.value },
+            voiceAction: { _, _, action in voices.perform(action) },
             audio: SyntheticNotesAudio(), requestPermission: { true }, activity: .none,
             store: store)
         return LiveNotesController(deps)
@@ -174,5 +178,32 @@ extension LiveNotesController {
         }
     }
 
+}
+
+/// In-memory stand-in, enabled only by the explicit saved-voice UI fixture flag.
+private final class SyntheticVoiceLibrary: @unchecked Sendable {
+    private let lock = NSLock()
+    private var library = SavedVoices(enabled: true, model: "synthetic", voices: [SavedVoice(id: "0123456789abcdef", name: "Maya", seconds: 46,
+                              created: Date(timeIntervalSince1970: 1_760_000_000), updated: Date(timeIntervalSince1970: 1_760_500_000))])
+    var value: SavedVoices { lock.withLock { library } }
+    var matches: [ServerVoiceMatch] { lock.withLock {
+        library.enabled ? library.voices.prefix(1).map { ServerVoiceMatch(speaker: 0, voice: $0.id, name: $0.name) } : []
+    } }
+    func perform(_ action: VoiceLibraryAction) -> SavedVoices { lock.withLock {
+        library.voice = nil
+        switch action {
+        case .remember(let name, _, let id):
+            let voice = SavedVoice(id: id ?? "fedcba9876543210", name: name, seconds: 30, created: Date(), updated: Date())
+            library.voices.removeAll { $0.id == voice.id }; library.voices.append(voice); library.voice = voice
+        case .rename(let id, let name):
+            if let i = library.voices.firstIndex(where: { $0.id == id }) { library.voices[i].name = name }
+        case .forget(let id): library.voices.removeAll { $0.id == id }
+        case .forgetAll: library.voices = []
+        case .enable: library.enabled = true
+        case .disable(let forget): library.enabled = false; if forget { library.voices = [] }
+        case .importVoice: break
+        }
+        return library
+    } }
 }
 #endif

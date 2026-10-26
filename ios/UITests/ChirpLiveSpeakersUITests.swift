@@ -27,6 +27,20 @@ final class ChirpLiveSpeakersUITests: XCTestCase {
         app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'chirp.notes.speaker.chip.'")).allElementsBoundByIndex.map(\.label)
     }
 
+    /// Each live method starts with an empty server library so test order never changes the expected chips.
+    @MainActor private func resetSavedVoicesInSettings(_ app: XCUIApplication) {
+        let open = ChirpNotesUITests.element("chirp.notes.voices.open", in: app)
+        for _ in 0..<6 where !open.isHittable { app.swipeUp() }
+        XCTAssertTrue(open.isHittable); open.tap()
+        let enabled = ChirpNotesUITests.element("chirp.notes.voices.enabled", in: app)
+        XCTAssertTrue(enabled.waitForExistence(timeout: 15))
+        if enabled.value as? String != "1" { ChirpNotesUITests.flip(enabled) }
+        let forget = app.buttons["chirp.notes.voices.forgetAll"]
+        if forget.exists { forget.tap(); app.buttons["Forget"].firstMatch.tap() }
+        XCTAssertTrue(ChirpNotesUITests.element("chirp.notes.voices.empty", in: app).waitForExistence(timeout: 15))
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+    }
+
     @MainActor func testTwoVoicesAreTwoPeopleRenamedEverywhereWithReplay() {
         let env = ProcessInfo.processInfo.environment
         let app = XCUIApplication()
@@ -34,11 +48,10 @@ final class ChirpLiveSpeakersUITests: XCTestCase {
         app.launch()
         app.openConnection()
         app.endChirpSession()
-        if app.buttons["Forget pairing"].exists { app.buttons["Forget pairing"].tap() }
         let field = app.pairingLinkField()
         field.tap(); field.typeText(env["CHIRP_LIVE_LINK"]!)
         app.buttons["chirp.pair.submit"].tap()
-        XCTAssertTrue(app.staticTexts["Mac pairing saved"].waitForExistence(timeout: 15))
+        XCTAssertTrue(ChirpNotesUITests.element("chirp.connection.banner", in: app).waitForExistence(timeout: 15))
 
         ChirpNotesUITests.openNotes(app)
         app.buttons["chirp.notes.menu"].tap()
@@ -57,6 +70,7 @@ final class ChirpLiveSpeakersUITests: XCTestCase {
         XCTAssertTrue(ChirpNotesUITests.waitFor(model, "label == 'Speaker model on your Mac: ready'", timeout: 240),
                       "The automatic download never made the model ready: \(model.exists ? model.label : "no status")")
         screenshot("Speakers model ready on the live server", app)
+        resetSavedVoicesInSettings(app)
         app.buttons["Done"].tap()
 
         let record = app.buttons["chirp.notes.record"]
@@ -90,6 +104,7 @@ final class ChirpLiveSpeakersUITests: XCTestCase {
         app.buttons["chirp.notes.speaker.confirm"].tap()
         XCTAssertTrue(ChirpNotesUITests.waitFor(first, "label == 'Person 1' OR label == 'Maya'", timeout: 10))
         XCTAssertEqual(Set(chips(app)), ["Person 1", "Maya"], "The rename must reach every segment")
+        if app.alerts["Remembering voices"].waitForExistence(timeout: 2) { app.alerts.buttons["OK"].tap() }
         screenshot("Speakers renamed on the live server", app)
 
         // Kept audio still replays per segment in a labelled transcript.
@@ -98,4 +113,65 @@ final class ChirpLiveSpeakersUITests: XCTestCase {
         play.tap()
         XCTAssertTrue(ChirpNotesUITests.waitFor(play, "label == 'Stop replay'", timeout: 10))
     }
+    /// A fresh note session proves that the voice lives on the throwaway server, rather than in the first note's roster.
+    @MainActor func testNamingRemembersAndRecognisesInANewNote() throws {
+        let env = ProcessInfo.processInfo.environment
+        guard let audio = env["CHIRP_LIVE_VOICES_AUDIO"], let duration = env["CHIRP_LIVE_VOICES_DURATION"].flatMap(Double.init) else {
+            throw XCTSkip("Two-note live run needs the longer saved-voices fixture")
+        }
+        let app = XCUIApplication()
+        app.launchArguments = ["--chirp-sim-audio", audio, "--chirp-skip-onboarding"]
+        app.launch(); app.openConnection(); app.endChirpSession()
+        let field = app.pairingLinkField(); field.tap(); field.typeText(env["CHIRP_LIVE_LINK"]!)
+        app.buttons["chirp.pair.submit"].tap()
+        XCTAssertTrue(ChirpNotesUITests.element("chirp.connection.banner", in: app).waitForExistence(timeout: 15))
+        ChirpNotesUITests.openNotes(app)
+        app.buttons["chirp.notes.menu"].tap(); app.buttons["chirp.notes.settings"].tap()
+        let model = ChirpNotesUITests.element("chirp.notes.speakers.model", in: app)
+        XCTAssertTrue(ChirpNotesUITests.waitFor(model, "label == 'Speaker model on your Mac: ready'", timeout: 240))
+        resetSavedVoicesInSettings(app)
+        app.buttons["Done"].firstMatch.tap()
+
+        // Note one: at least 20 s per synthetic person, then name Person 1 through the new sheet.
+        let record = app.buttons["chirp.notes.record"].firstMatch
+        XCTAssertTrue(ChirpNotesUITests.waitFor(record, "isEnabled == true", timeout: 15)); record.tap()
+        let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
+        for label in ["Allow", "OK"] where springboard.alerts.buttons[label].waitForExistence(timeout: 1) { springboard.alerts.buttons[label].tap() }
+        let status = ChirpNotesUITests.element("chirp.notes.status", in: app)
+        XCTAssertTrue(ChirpNotesUITests.waitFor(status, "label == 'Recording'", timeout: 20))
+        sleep(UInt32(duration.rounded(.up) + 4))
+        app.buttons["chirp.notes.stop"].tap()
+        XCTAssertTrue(ChirpNotesUITests.waitFor(status, "label == 'Stopped'", timeout: 90))
+        app.buttons["chirp.notes.speakers.name.open"].tap()
+        let name = app.textFields["chirp.notes.speakers.name.1"]
+        XCTAssertTrue(name.waitForExistence(timeout: 10)); name.tap(); name.typeText("Samantha")
+        app.buttons["chirp.notes.speakers.name.done"].tap()
+        if app.alerts["Remembering voices"].waitForExistence(timeout: 10) { app.alerts.buttons["OK"].tap() }
+
+        // The server's saved list must contain the enrolled synthetic voice before the next session starts.
+        app.buttons["chirp.notes.export"].tap(); app.buttons["chirp.notes.settings"].tap()
+        let saved = ChirpNotesUITests.element("chirp.notes.voices.open", in: app)
+        for _ in 0..<6 where !saved.isHittable { app.swipeUp() }
+        XCTAssertTrue(saved.isHittable); saved.tap()
+        XCTAssertTrue(app.staticTexts["Samantha"].waitForExistence(timeout: 20))
+        screenshot("Saved voice on the throwaway server", app)
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+        app.buttons["Done"].firstMatch.tap()
+        if UIDevice.current.userInterfaceIdiom != .pad { app.navigationBars.buttons.element(boundBy: 0).tap() }
+
+        // Note two: a new server speaker session, with no manual naming.
+        let newRecord = app.buttons["chirp.notes.record"].firstMatch
+        XCTAssertTrue(newRecord.waitForExistence(timeout: 10)); newRecord.tap()
+        XCTAssertTrue(ChirpNotesUITests.waitFor(status, "label == 'Recording'", timeout: 20))
+        sleep(UInt32(duration.rounded(.up) + 4))
+        app.buttons["chirp.notes.stop"].tap()
+        XCTAssertTrue(ChirpNotesUITests.waitFor(status, "label == 'Stopped'", timeout: 90))
+        app.buttons["chirp.notes.transcript.open"].tap()
+        let recognised = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'chirp.notes.speaker.chip.' AND label == 'Samantha' AND value == 'Recognised'")).firstMatch
+        XCTAssertTrue(recognised.waitForExistence(timeout: 30), "The saved voice must be automatically named and marked recognised in note two")
+        screenshot("Saved voice recognised in a new note", app)
+        recognised.tap(); app.buttons["chirp.notes.speaker.not"].tap()
+        XCTAssertFalse(recognised.exists)
+    }
+
 }

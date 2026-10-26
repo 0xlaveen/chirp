@@ -341,7 +341,7 @@ final class ChirpNotesUITests: XCTestCase {
         app.buttons["chirp.notes.speakers.same.2"].tap()
         let merge = app.buttons["chirp.notes.speakers.merge.into.1"].firstMatch
         XCTAssertTrue(merge.waitForExistence(timeout: 5)); merge.tap()
-        XCTAssertFalse(app.textFields["chirp.notes.speakers.name.2"].exists)
+        XCTAssertTrue(Self.waitFor(app.textFields["chirp.notes.speakers.name.2"], "exists == false", timeout: 5))
         app.buttons["chirp.notes.speakers.name.done"].tap()
         XCTAssertTrue(Self.waitFor(app.buttons["chirp.notes.speaker.chip.0.1"], "label == 'Theo'", timeout: 5))
     }
@@ -359,6 +359,71 @@ final class ChirpNotesUITests: XCTestCase {
         XCTAssertTrue(name.waitForExistence(timeout: 10))
         name.tap(); name.typeText("Theo\n")
         screenshot("notes-speakers-name-sheet", app)
+    }
+
+    @MainActor func testSavedVoicesRecognitionAndManagement() {
+        let app = launch(["--chirp-voices-gallery"])
+        XCTAssertTrue(Self.waitFor(app.buttons["chirp.notes.record"].firstMatch, "isEnabled == true", timeout: 20))
+        app.buttons["chirp.notes.record"].firstMatch.tap()
+        XCTAssertTrue(app.buttons["chirp.notes.stop"].waitForExistence(timeout: 10))
+        app.buttons["chirp.notes.stop"].tap()
+        XCTAssertTrue(Self.waitFor(Self.element("chirp.notes.status", in: app), "label == 'Stopped'", timeout: 20))
+        app.buttons["chirp.notes.transcript.open"].tap()
+        let first = app.buttons["chirp.notes.speaker.chip.0.0"]
+        XCTAssertTrue(Self.waitFor(first, "label == 'Maya'", timeout: 10))
+        XCTAssertEqual(first.value as? String, "Recognised")
+        screenshot("notes-voices-recognised", app)
+        first.tap(); app.buttons["chirp.notes.speaker.not"].tap()
+        XCTAssertTrue(Self.waitFor(first, "label == 'Person 1'", timeout: 10))
+        if UIDevice.current.userInterfaceIdiom == .pad { app.buttons["chirp.notes.transcript.open"].tap() }
+        else { app.buttons["Done"].firstMatch.tap() }
+        app.selectChirpTab("Settings")
+        let category = Self.element("chirp.settings.notes", in: app)
+        XCTAssertTrue(category.waitForExistence(timeout: 10)); category.tap()
+        let open = Self.element("chirp.notes.voices.open", in: app)
+        for _ in 0..<5 where !open.isHittable { app.swipeUp() }
+        XCTAssertTrue(open.isHittable); open.tap()
+        let toggle = Self.element("chirp.notes.voices.enabled", in: app)
+        XCTAssertTrue(toggle.waitForExistence(timeout: 10)); XCTAssertEqual(toggle.value as? String, "1")
+        screenshot("notes-saved-voices", app)
+        let menu = app.buttons["chirp.notes.voices.menu.0123456789abcdef"]
+        XCTAssertTrue(menu.waitForExistence(timeout: 5)); menu.tap()
+        app.buttons["Rename…"].firstMatch.tap()
+        let name = app.alerts.textFields.firstMatch
+        XCTAssertTrue(name.waitForExistence(timeout: 5))
+        name.tap(); name.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: 4) + "Theo")
+        app.alerts.buttons["Rename"].tap()
+        XCTAssertTrue(app.staticTexts["Theo"].waitForExistence(timeout: 5))
+        Self.flip(toggle)
+        app.buttons["Keep voices"].firstMatch.tap()
+        XCTAssertTrue(Self.waitFor(toggle, "value == '0'", timeout: 5))
+        XCTAssertTrue(app.staticTexts["Theo"].exists)
+        Self.flip(toggle)
+        XCTAssertTrue(Self.waitFor(toggle, "value == '1'", timeout: 5))
+        menu.tap(); app.buttons["Forget…"].firstMatch.tap()
+        app.buttons["Forget"].firstMatch.tap()
+        XCTAssertTrue(Self.element("chirp.notes.voices.empty", in: app).waitForExistence(timeout: 5))
+    }
+
+    @MainActor func testSavedVoicesEvidence() {
+        if UIDevice.current.userInterfaceIdiom == .pad { XCUIDevice.shared.orientation = .landscapeLeft }
+        let app = launch(["--chirp-notes-gallery", "--chirp-speakers-gallery", "--chirp-voices-gallery"])
+        let row = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'chirp.notes.row.' AND label CONTAINS 'Lantern kickoff'")).firstMatch
+        XCTAssertTrue(row.waitForExistence(timeout: 10)); row.tap()
+        let open = app.buttons["chirp.notes.speakers.name.open"]
+        XCTAssertTrue(open.waitForExistence(timeout: 10)); open.tap()
+        XCTAssertTrue(app.textFields["chirp.notes.speakers.name.1"].waitForExistence(timeout: 10))
+        XCTAssertTrue(Self.element("chirp.notes.speakers.remember.1", in: app).exists)
+        screenshot("notes-speakers-remember-sheet", app)
+        app.buttons["Cancel"].tap()
+        app.selectChirpTab("Settings")
+        let category = Self.element("chirp.settings.notes", in: app)
+        XCTAssertTrue(category.waitForExistence(timeout: 10)); category.tap()
+        let saved = Self.element("chirp.notes.voices.open", in: app)
+        for _ in 0..<5 where !saved.isHittable { app.swipeUp() }
+        XCTAssertTrue(saved.isHittable); saved.tap()
+        XCTAssertTrue(Self.element("chirp.notes.voices.enabled", in: app).waitForExistence(timeout: 10))
+        screenshot("notes-saved-voices", app)
     }
 
 }

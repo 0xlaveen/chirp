@@ -19,6 +19,7 @@
     "App/PondComponents.swift",
     "App/PrivacyController.swift",
     "App/RollingDictation.swift",
+    "App/SavedVoicesView.swift",
     "App/SessionCoordinator.swift",
     "App/Settings/HistoryView.swift",
     "App/Settings/SettingsHome.swift",
@@ -56,6 +57,7 @@
     "Tests/LiveNotesControllerTests.swift",
     "Tests/LongDictationTests.swift",
     "Tests/PondShellTests.swift",
+    "Tests/SavedVoicesTests.swift",
     "Tests/SessionCoordinatorTests.swift",
     "Tests/SessionTimingTests.swift"
   ],

@@ -41,13 +41,19 @@ ffmpeg -loglevel error -i "$WORK/long.aiff" -ar 16000 -ac 1 -c:a pcm_s16le "$WOR
   ffmpeg -loglevel error -f lavfi -i "anullsrc=r=16000:cl=mono" -t 1.6 -c:a pcm_s16le "$WORK/gap.wav"
   printf "file '%s'\n" a.wav gap.wav b.wav gap.wav a.wav gap.wav b.wav gap.wav a.wav gap.wav b.wav > "$WORK/two.txt"
   ffmpeg -loglevel error -f concat -safe 0 -i "$WORK/two.txt" -c:a pcm_s16le "$WORK/two.wav"
+  # Six turns per voice leave headroom above the 20 seconds of voiced speech needed for enrolment.
+  : > "$WORK/voices.txt"
+  for turn in 1 2 3 4 5 6; do
+    printf "file '%s'\n" a.wav gap.wav b.wav gap.wav >> "$WORK/voices.txt"
+  done
+  ffmpeg -loglevel error -f concat -safe 0 -i "$WORK/voices.txt" -c:a pcm_s16le "$WORK/voices.wav"
 }
 mkdir -p "$WORK/.config/chirp"
 printf '[correction]\nmode = "endpoint"\nbase_url = "http://127.0.0.1:%s/v1"\nmodel = "stand-in"\n' "$CLEANUP_PORT" > "$WORK/.config/chirp/server.toml"
 python3 -I "$ROOT/ios/scripts/fake-cleanup.py" "$CLEANUP_PORT" & CLEANUP=$!
 cd "$ROOT/server"
 uv sync --locked -q
-# The speaker model is downloaded by the server itself, on the test's consent (a real Hugging Face download into this
+# The speaker model is downloaded by the server itself, when the app sees it is missing (a real Hugging Face download into this
 # throwaway HOME). HF_HOME keeps the hub's cache between runs so only the first one fetches it.
 HOME="$WORK" UV_CACHE_DIR="${UV_CACHE_DIR:-$HOME/.cache/uv}" HF_HOME="${HF_HOME:-$HOME/.cache/huggingface}" \
   uv run chirp-server --port "$PORT" --model-dir "$MODEL_DIR" > "$WORK/server.log" 2>&1 & SERVER=$!
@@ -61,6 +67,8 @@ xcrun simctl bootstatus "$device" -b >/dev/null
 xcrun simctl ui "$device" appearance "${CHIRP_E2E_APPEARANCE:-light}" # light or dark, for screenshots
 xcrun simctl privacy "$device" grant microphone "${CHIRP_BUNDLE_ID:-dev.chirp.ios}" 2>/dev/null || true
 status=0
+VOICES_DURATION=$(ffprobe -v error -show_entries format=duration -of csv=p=0 "$WORK/voices.wav")
+TEST_RUNNER_CHIRP_LIVE_VOICES_AUDIO="$WORK/voices.wav" TEST_RUNNER_CHIRP_LIVE_VOICES_DURATION="$VOICES_DURATION" \
 TEST_RUNNER_CHIRP_LIVE_LINK="$LINK" TEST_RUNNER_CHIRP_LIVE_AUDIO="$WORK/s.wav" TEST_RUNNER_CHIRP_LIVE_LONG_AUDIO="$WORK/long.wav" \
   TEST_RUNNER_CHIRP_LIVE_SPEAKERS_AUDIO="$WORK/two.wav" \
   ./scripts/simulator.sh ui "$device" "$@" || status=$?

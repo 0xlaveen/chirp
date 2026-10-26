@@ -126,7 +126,7 @@ def walk(n, trail):
     for c in n.get("children", []):
         yield from walk(c, trail + ([n["name"]] if t in ("Test Suite", "Unit test bundle", "UI test bundle") else []))
 for n in data.get("testNodes", []):
-    for suite, name, res in walk(n, []): print(f"{label}\t{suite}.{name}\t{res}")
+    for suite, name, res in walk(n, []): print(label, f"{suite}.{name}", res, sep=chr(9))
 PY
 }
 
@@ -137,16 +137,16 @@ run_device() {
   stage "$label-build" ./scripts/simulator.sh build "$uuid"
   local unit_only="" ui_only=""
   if [ "$only" = speakers ]; then
-    unit_only="-only-testing:ChirpIOSTests/LiveNotesControllerTests"
-    ui_only="-only-testing:ChirpIOSUITests/ChirpLiveSpeakersUITests -only-testing:ChirpIOSUITests/ChirpNotesUITests/testSpeakerChipsRenameMergeAndSeparate -only-testing:ChirpIOSUITests/ChirpNotesUITests/testLabelSpeakersAreOnByDefaultAndSettingsTurnsThemOff"
+    unit_only="-only-testing:ChirpIOSTests/LiveNotesControllerTests -only-testing:ChirpIOSTests/SavedVoicesTests"
+    ui_only="-only-testing:ChirpIOSUITests/ChirpNotesUITests/testSavedVoicesEvidence -only-testing:ChirpIOSUITests/ChirpNotesUITests/testSavedVoicesRecognitionAndManagement -only-testing:ChirpIOSUITests/ChirpNotesUITests/testNameSpeakersSheetCancelNameMergeAndReopen -only-testing:ChirpIOSUITests/ChirpLiveSpeakersUITests -only-testing:ChirpIOSUITests/ChirpNotesUITests/testSpeakerChipsRenameMergeAndSeparate -only-testing:ChirpIOSUITests/ChirpNotesUITests/testLabelSpeakersAreOnByDefaultAndSettingsTurnsThemOff"
   fi
   # shellcheck disable=SC2086
-  stage "$label-unit" ./scripts/simulator.sh test "$uuid" -resultBundlePath "$OUT/$label-unit.xcresult" $unit_only
+  stage "$label-unit" ./scripts/simulator.sh test "$uuid" -test-timeouts-enabled YES -default-test-execution-time-allowance 600 -maximum-test-execution-time-allowance 900 -resultBundlePath "$OUT/$label-unit.xcresult" $unit_only
   summarize_bundle "$label-unit" "$OUT/$label-unit.xcresult"
   pick_port; echo "server port: $CHIRP_E2E_PORT" >> "$OUT/devices.txt"
   # shellcheck disable=SC2086
   CHIRP_E2E_APPEARANCE=$([ "$dark" = 1 ] && echo dark || echo light) \
-    stage "$label-ui-live" ./scripts/simulator-e2e.sh "$uuid" -resultBundlePath "$OUT/$label-ui.xcresult" $ui_only
+    stage "$label-ui-live" ./scripts/simulator-e2e.sh "$uuid" -test-timeouts-enabled YES -default-test-execution-time-allowance 600 -maximum-test-execution-time-allowance 900 -resultBundlePath "$OUT/$label-ui.xcresult" $ui_only
   summarize_bundle "$label-ui" "$OUT/$label-ui.xcresult"
   if [ -d "$OUT/$label-ui.xcresult" ]; then
     xcrun xcresulttool export attachments --path "$OUT/$label-ui.xcresult" --output-path "$OUT/$label-attachments" >/dev/null 2>&1 || true
@@ -176,5 +176,17 @@ column -t -s "$(printf '\t')" "$RESULTS"
 echo; echo "---- per test (PASS / SKIP with reason in the xcresult / FAIL) ----"
 column -t -s "$(printf '\t')" "$OUT/tests.tsv"
 echo; echo "evidence: $OUT  (*.log, *.xcresult, *-attachments/ screenshots, *-tests.json)"
-if grep -q "FAIL" "$RESULTS" || grep -q "Failed" "$OUT/tests.tsv"; then echo "iOS E2E SWEEP: FAIL"; exit 1; fi
-echo "iOS E2E SWEEP: PASS"
+# Read the result column, not a test's name (e.g. aFailedFetch... may have passed).
+if python3 - "$RESULTS" "$OUT/tests.tsv" <<'PY_RESULTS'
+from pathlib import Path
+import sys
+rows = [line.replace("\\t", "\t").split("\t") for path in sys.argv[1:] for line in Path(path).read_text().splitlines()]
+failed = any(row[-1] == "Failed" or row[-1].startswith("FAIL") for row in rows)
+sys.exit(1 if failed else 0)
+PY_RESULTS
+then
+  echo "iOS E2E SWEEP: PASS"
+else
+  echo "iOS E2E SWEEP: FAIL"
+  exit 1
+fi

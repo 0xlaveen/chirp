@@ -82,7 +82,7 @@ public enum SpeakerNotice {
         return on ? "On · who said what" : "Off · who said what"
     }
 
-    public static let info = "Shows who said what in the transcript (Person 1, Person 2…; tap a name to rename it) and lets the notes say who owns a to-do. Your Mac tells the voices apart in its memory only: nothing about a voice is saved, on the Mac or on this phone. The first time, your Mac fetches its speaker model from Hugging Face (once; nothing about you is sent). Turn it off here at any time."
+    public static let info = "Shows who said what in the transcript (Person 1, Person 2…; tap a name to rename it) and lets the notes say who owns a to-do. Saved voices stay on your paired Mac and are shared by your devices. Settings → Notes → Saved voices lets you stop remembering or forget voices. No voiceprint is stored on this phone. The first time, your Mac fetches its speaker model from Hugging Face (once; nothing about you is sent). Turn it off here at any time."
 }
 
 /// What the user can do about a person in the transcript: rename (everywhere in the note, optionally in the notes text
@@ -140,6 +140,7 @@ public enum SpeakerFixups {
 public struct SpeakerNamesDraft: Equatable, Sendable {
     public var names: [Int: String]
     public var merges: [Int: Int] = [:]
+    public var remember: [Int: Bool] = [:]
     public var replace = true
 
     public init(_ document: NotesDocument) {
