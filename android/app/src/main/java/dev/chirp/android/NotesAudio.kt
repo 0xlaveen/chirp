@@ -139,7 +139,7 @@ internal class NotesAudioPlayer(
     val playing: StateFlow<NotesClipRef?> get() = state
     val failed: StateFlow<Boolean> get() = failure
 
-    fun play(noteId: String, segment: Int) {
+    fun play(noteId: String, segment: Int, offsetMillis: Int = 0) {
         stop()
         failure.value = false
         val ref = NotesClipRef(noteId, segment)
@@ -155,7 +155,7 @@ internal class NotesAudioPlayer(
                     next.setDataSource(data)
                     next.setOnCompletionListener { if (mine == request) stop() }
                     next.setOnErrorListener { _, _, _ -> if (mine == request) { stop(); failure.value = true }; true }
-                    next.setOnPreparedListener { if (mine == request) { it.start(); state.value = ref } }
+                    next.setOnPreparedListener { if (mine == request) { if (offsetMillis > 0) it.seekTo(offsetMillis); it.start(); state.value = ref } }
                     next.prepareAsync()
                 } catch (_: Exception) { stop(); failure.value = true }
             }

@@ -121,4 +121,10 @@ For integration with a cancellation-capable server checkout, set
 `CHIRP_E2E_SPEAKER_CANCEL=1`. Sync that checkout's virtual environment first.
 The extra check turns labels off during preparation, requires `cancel` to return
 `not_downloaded`, explicitly turns labels on, and then completes the same
-speaker/rename/replay flow. This uses the same host-wide emulator lease.
+speaker/naming/replay flow. This uses the same host-wide emulator lease.
+
+The speaker check opens the post-Stop **Who was speaking? → Name speakers**
+sheet, names a synthetic speaker there, plays their kept-audio sample, and then
+checks the transcript rename menu and segment replay. Recent-name autocomplete,
+batch replacement, Cancel (including drafted merges), and the Fold dialog have
+Compose coverage and light/dark screenshots in `NotesSpeakersTest.kt`.

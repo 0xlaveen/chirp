@@ -318,6 +318,45 @@ internal class NotesModel(
         sync(); keep(now = true)
     }
 
+    /** The note just recorded has people nobody has named: "Who was speaking?" shows until they are named or the next recording starts. */
+    private var namePromptFor by mutableStateOf<String?>(null)
+    val askToNameSpeakers: Boolean get() = revision.let {
+        namePromptFor == recorder.document.uid && !recorder.state.active && recorder.document.roster.unnamed.isNotEmpty()
+    }
+
+    /** The "Name speakers" sheet is open. */
+    var nameSpeakersOpen by mutableStateOf(false)
+
+    /** Names from recent notes, for the sheet's autocomplete; loaded when the sheet opens. */
+    var recentNames by mutableStateOf<List<String>>(emptyList())
+        private set
+    fun loadRecentNames() {
+        val kept = sessions ?: return
+        val uid = recorder.document.uid
+        scope.launch { var names = emptyList<String>(); io { names = kept.speakerNames(excluding = uid) }; recentNames = names }
+    }
+
+    /**
+     * Name several people at once (blank goes back to "Person N"); [replaceInNotes] also swaps each old name in the notes'
+     * text, in one pass. Naming anyone settles the "Who was speaking?" line.
+     */
+    fun renameSpeakers(names: Map<Int, String>, replaceInNotes: Boolean = false, merges: Map<Int, Int> = emptyMap()) {
+        val document = recorder.document
+        val oldNames = document.roster.active.associateWith(document.roster::displayName)
+        for ((person, into) in merges) document.mergeSpeaker(person, into)
+        for ((person, name) in names) {
+            val target = document.roster.resolve(person)
+            if (name.trim().take(SpeakerRoster.MAX_NAME).ifEmpty { "Person $target" } != document.roster.displayName(target))
+                document.renameSpeaker(target, name)
+        }
+        val renames = oldNames.mapNotNull { (id, old) ->
+            document.roster.displayName(id).let { if (it != old) old to it else null }
+        }.toMap()
+        namePromptFor = null
+        if (replaceInNotes && renames.isNotEmpty()) edit(TextFieldValue(document.replacingNames(renames)))
+        sync(); keep(now = true)
+    }
+
     fun mergeSpeaker(person: Int, into: Int) { recorder.document.mergeSpeaker(person, into); sync(); keep(now = true) }
     fun separateSpeaker(person: Int) { recorder.document.separateSpeaker(person); sync(); keep(now = true) }
     fun setAuto(on: Boolean) = recorder.setAuto(on)
@@ -571,7 +610,10 @@ internal class NotesModel(
             retick()
             if (!active) client?.let(ChirpNetwork::release)
         }
-        if (stateChanged && state == NotesRecorder.State.STOPPED) keepSession()
+        if (stateChanged && state == NotesRecorder.State.STOPPED) {
+            keepSession()
+            if (recorder.document.roster.unnamed.isNotEmpty()) namePromptFor = recorder.document.uid
+        }
         if (stateChanged && !state.active) continueAfterStop?.let { id -> continueAfterStop = null; scope.launch { if (load(id)) start() } }
         if (!quiet) revision++
     }
