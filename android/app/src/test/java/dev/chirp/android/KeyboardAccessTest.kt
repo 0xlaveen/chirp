@@ -43,7 +43,7 @@ class KeyboardAccessTest {
         controller.create(); host = controller.get()
         shadowOf(RuntimeEnvironment.getApplication()).grantPermissions(Manifest.permission.RECORD_AUDIO, LOCAL_NETWORK_PERMISSION)
         cues = FakeCues(host)
-        voice = KeyboardDictation(host,
+        voice = KeyboardDictation(host, learning = EditLearning(host, io = { it() }),
             captureFactory = { frame, _, done -> ChirpImeServiceTest.FakeCapture(frame, done, mutableListOf()).also { capture = it } },
             transportFactory = { _, _, event, failure -> ChirpImeServiceTest.FakeTransport(event, failure, mutableListOf()).also { stream = it } },
             prepare = {}, resync = { _, _ -> }, pairing = { Pairing.from("https://mac.example.test", "synthetic") },

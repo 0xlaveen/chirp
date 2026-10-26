@@ -47,6 +47,12 @@ open class ChirpAccessibilityService : AccessibilityService(), FloatingMicOverla
     private val handler = Handler(Looper.getMainLooper())
     private val store by lazy { SettingsStore(this) }
     private val manager by lazy { getSystemService(WindowManager::class.java) }
+    private val learning by lazy { createLearning().apply { eligible = { !locked() && !privateUtterance && learningPermitted(focused) } } }
+    private var learningEditor: android.view.inputmethod.EditorInfo? = null
+    private var learnedPayload = LearnedPayload()
+    private var privateUtterance = false
+    private var historyId: String? = null
+    private val history by lazy { DictationHistory(this) }
     private val gesture = MicGesture()
     private var overlay: FloatingMicOverlay? = null
     private var focused: AccessibilityNodeInfo? = null
@@ -107,6 +113,7 @@ open class ChirpAccessibilityService : AccessibilityService(), FloatingMicOverla
                 // The same field still focused (a keyboard popup, a dialog over nothing editable): only re-place.
                 if (now != null && now == focused) { refresh(); return }
                 // A window transition never carries a final into a different app: finish what was said into Ready to copy.
+                learning.watcher.finish(sample = false)
                 if (dictating) leaveField()
                 if (state == FloatingState.POLISHED || state == FloatingState.INSERTED) { forgetUndo(); state = FloatingState.IDLE; surface = Surface.BUBBLE; overlay?.closePanel() }
                 focused = now?.takeIf { it.isEditable }
@@ -117,6 +124,7 @@ open class ChirpAccessibilityService : AccessibilityService(), FloatingMicOverla
                 if (source == focused) return
                 // Only the system's input focus counts: a WebView can report focus for a textarea it doesn't hold.
                 if (source != null && source != findFocus(AccessibilityNodeInfo.FOCUS_INPUT)) return
+                learning.watcher.finish(sample = false)
                 if (dictating) leaveField()
                 if (state == FloatingState.POLISHED) { forgetUndo(); collapseQuietly() }
                 focused = source?.takeIf { it.isEditable }
@@ -138,13 +146,40 @@ open class ChirpAccessibilityService : AccessibilityService(), FloatingMicOverla
     }
     /** Any edit ends the Use raw window; the edit itself is the user's. */
     private fun edited() {
+        learning.watcher.sample()
         if (raw != null && target?.matchesFinal() != true) { forgetUndo(); collapse() }
         if (surface == Surface.BUBBLE) refresh()
     }
     override fun onServiceConnected() {
         super.onServiceConnected()
+        if (Build.VERSION.SDK_INT >= 33) serviceInfo = serviceInfo.apply {
+            flags = flags or android.accessibilityservice.AccessibilityServiceInfo.FLAG_INPUT_METHOD_EDITOR
+        }
         focused = findFocus(AccessibilityNodeInfo.FOCUS_INPUT)
         refresh()
+    }
+
+    /** Android 13+ exposes the real IME privacy flags without replacing the user's keyboard.
+     * On older versions the floating mic cannot prove a field is not incognito, so it does not learn. */
+    @androidx.annotation.RequiresApi(33)
+    override fun onCreateInputMethod(): android.accessibilityservice.InputMethod =
+        object : android.accessibilityservice.InputMethod(this) {
+            override fun onStartInput(attribute: android.view.inputmethod.EditorInfo, restarting: Boolean) {
+                learning.watcher.finish(sample = false)
+                learningEditor = android.view.inputmethod.EditorInfo().apply {
+                    inputType = attribute.inputType; imeOptions = attribute.imeOptions; packageName = attribute.packageName
+                }
+                super.onStartInput(attribute, restarting)
+            }
+            override fun onFinishInput() {
+                learning.watcher.finish(sample = false); learningEditor = null
+                super.onFinishInput()
+            }
+        }
+    internal open fun learningEditorInfo(): android.view.inputmethod.EditorInfo? = learningEditor
+    private fun learningPermitted(node: AccessibilityNodeInfo?): Boolean {
+        val info = learningEditorInfo() ?: return false
+        return node?.packageName?.toString() == info.packageName && DictationHistory.allowed(info) && FocusedInsertion.learningPrivateAllowed(node)
     }
 
     private fun isKeyboard(pkg: String) = Settings.Secure.getString(contentResolver, Settings.Secure.DEFAULT_INPUT_METHOD)
@@ -247,6 +282,7 @@ open class ChirpAccessibilityService : AccessibilityService(), FloatingMicOverla
     private fun begin() {
         if (dictating) return
         if (locked()) { onInterrupt(); return }
+        learning.watcher.finish()
         forgetUndo(); clearKept()
         val eligibility = FocusedInsertion.eligibility(focused)
         if (eligibility == FocusedInsertion.Eligibility.NONE) { collapse(); return }
@@ -255,6 +291,8 @@ open class ChirpAccessibilityService : AccessibilityService(), FloatingMicOverla
         }
         val paired = loadPairing() ?: run { fail(BubbleFix.NOT_PAIRED); return }
         tailscaleProblem(paired)?.let { fail(it); return }
+        privateUtterance = PrivateSession.enabled
+        historyId = null
         target = FocusedInsertion.from(focused)
         copyMode = target == null
         partial = ""; stable = ""; polishing = false; level = 0.0; status = ""
@@ -313,7 +351,15 @@ open class ChirpAccessibilityService : AccessibilityService(), FloatingMicOverla
                 },
             )
             stream = session; pendingStart = false
-            session.start(store.correction)
+            val pkg = focused?.packageName?.toString()
+            learning.prepare(pkg, !privateUtterance && learningPermitted(focused)) { payload ->
+                if (stream === session) {
+                    learnedPayload = payload
+                    val style = store.style(pkg)
+                    session.start(store.correction, style.id, prompt = store.promptEdits[style.id], learned = payload)
+                    if (pendingStop) session.stop()
+                }
+            }
             haptic()
             if (pendingStop) session.stop()
         } catch (_: RuntimeException) {
@@ -337,11 +383,21 @@ open class ChirpAccessibilityService : AccessibilityService(), FloatingMicOverla
         }
         render()
     }
-    private fun finalReady(result: ServerEvent.Final) {
+    private fun finalReady(received: ServerEvent.Final) {
+        val result = received.copy(text = if (!privateUtterance && LearnedStore(this).allowed && learningPermitted(focused)) learnedPayload.apply(received.text) else received.text)
         committing = true
         val inserted = try { !locked() && target?.insert(result.text) == true } catch (_: RuntimeException) { false } finally { committing = false }
         partial = ""; stable = ""
         if (!inserted) { target?.forget(); target = null; keep(result.text, FloatingState.READY_TO_COPY); return }
+        val insertion = target
+        val node = focused
+        if (!privateUtterance && !PrivateSession.enabled && node != null && insertion != null && learningPermitted(node)) {
+            val pkg = node.packageName?.toString()
+            val info = android.view.inputmethod.EditorInfo().apply { inputType = node.inputType; packageName = pkg }
+            val id = java.util.UUID.randomUUID().toString(); historyId = id
+            HistoryIo.run { history.record(result.text, result.raw.takeIf { result.corrected }, pkg, info, id) }
+            insertion.learningText?.let { learning.watch(it, insertion.learningStart, result.raw, pkg, insertion::readForLearning) }
+        }
         if (result.corrected && result.text != result.raw) {
             raw = result.raw; state = FloatingState.POLISHED
             actionUntil = SystemClock.elapsedRealtime() + UNDO_MS
@@ -402,11 +458,12 @@ open class ChirpAccessibilityService : AccessibilityService(), FloatingMicOverla
     }
     private fun useRaw() {
         val text = raw ?: return
+        learning.watcher.cancel()
         committing = true
         val inserted = try { !locked() && target?.useRaw(text) == true } catch (_: RuntimeException) { false } finally { committing = false }
         forgetUndo()
         // The field moved on: the raw words still aren't lost.
-        if (inserted) collapse() else keep(text, FloatingState.READY_TO_COPY)
+        if (inserted) { historyId?.let { id -> HistoryIo.run { history.usedRaw(id) } }; collapse() } else keep(text, FloatingState.READY_TO_COPY)
     }
     /** Copy is always a tap, never automatic, and marked sensitive. */
     private fun copyKept() {
@@ -439,6 +496,7 @@ open class ChirpAccessibilityService : AccessibilityService(), FloatingMicOverla
             null -> { clearKept(); collapse() }
         }
     }
+    internal open fun createLearning() = EditLearning(this)
     protected open fun loadPairing(): Pairing? = store.pairing()
     internal open fun tailscale(): TailscaleControl = AndroidTailscale(this)
     protected open fun createCapture(frame: (ByteArray) -> Boolean, level: (Double) -> Unit, done: (String?) -> Unit): Capture =
@@ -482,6 +540,7 @@ open class ChirpAccessibilityService : AccessibilityService(), FloatingMicOverla
         if (surface == Surface.PANEL) overlay?.placePanel(area(focused)) else if (surface == Surface.BUBBLE) refresh()
     }
     override fun onInterrupt() {
+        learning.watcher.cancel(); learningEditor = null
         cancel(); clearKept(); forgetUndo()
         focused = null; surface = Surface.BUBBLE; state = FloatingState.IDLE
         handler.removeCallbacks(insertedDone)

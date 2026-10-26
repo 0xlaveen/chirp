@@ -34,6 +34,12 @@ import org.robolectric.util.ReflectionHelpers
 @Config(sdk = [31, 37])
 class ChirpAccessibilityServiceTest {
     class TestService : ChirpAccessibilityService() {
+        var editorOptions = 0
+        internal val learnedStore by lazy { LearnedStore(this, SoftwareHistoryKeys()) }
+        override fun learningEditorInfo() = android.view.inputmethod.EditorInfo().apply {
+            inputType = android.text.InputType.TYPE_CLASS_TEXT; packageName = "com.example.chat"; imeOptions = editorOptions
+        }
+        override fun createLearning() = EditLearning(this, learnedStore, io = { it() })
         var paired = true
         var pairingUrl = "https://mac.example.test"
         var vpn = TailscalePromptTest.FakeTailscale(connected = true)
@@ -104,6 +110,42 @@ class ChirpAccessibilityServiceTest {
         focus()
     }
     @After fun cleanup() { service.onDestroy() }
+
+    @Test fun `floating corrections activate after two windows and respect real editor privacy flags`() {
+        val original = "Try Acme Cloud today."
+        val corrected = "Try AcmeCloud today."
+        repeat(2) {
+            start(); button("Stop").performClick(); advance()
+            service.streams.last().event(ServerEvent.Final(original, original, false))
+            advance(1300)
+            node.text = node.text.toString().replace(original, corrected)
+            node.setTextSelection(node.text.length, node.text.length)
+            advance(500)
+        }
+        start()
+        val payload = service.streams.last().learnedPayload!!
+        assertEquals("AcmeCloud", payload.terms.single().term)
+        assertEquals(2, service.learnedStore.all().single().count)
+        service.onInterrupt(); focus()
+        service.editorOptions = android.view.inputmethod.EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING
+        start()
+        assertTrue(service.streams.last().learnedPayload!!.isEmpty)
+    }
+
+    @Config(sdk = [37])
+    @Test fun `accessibility editor callback preserves actual incognito flags and clears them at finish`() {
+        val controller = Robolectric.buildService(ChirpAccessibilityService::class.java).create()
+        val plain = controller.get()
+        val method = plain.onCreateInputMethod()
+        method.onStartInput(android.view.inputmethod.EditorInfo().apply {
+            inputType = android.text.InputType.TYPE_CLASS_TEXT
+            packageName = "com.example.chat"
+            imeOptions = android.view.inputmethod.EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING
+        }, false)
+        assertFalse(DictationHistory.allowed(plain.learningEditorInfo()))
+        method.onFinishInput(); assertNull(plain.learningEditorInfo())
+        controller.destroy()
+    }
 
     @Test fun `idle bubble has no microphone socket or foreground notification`() {
         assertTrue(bubbleShown); assertNull(panel); advance(30000)

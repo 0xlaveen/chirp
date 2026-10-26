@@ -99,6 +99,14 @@ public final class UiHierarchy {
                     throw new IllegalStateException("Accessible target missing");
                 }
             }
+            if (args.length == 2 && args[0].equals("scroll-forward")) {
+                for (AccessibilityWindowInfo window : automation.getWindows()) {
+                    if (window.getType() != AccessibilityWindowInfo.TYPE_APPLICATION) continue;
+                    AccessibilityNodeInfo target = scrollable(window.getRoot());
+                    if (target != null && target.performAction(AccessibilityNodeInfo.ACTION_SCROLL_FORWARD)) return;
+                }
+                throw new IllegalStateException("Scrollable popup missing");
+            }
             if (args.length == 3 && args[0].equals("custom-action")) {
                 // Invokes a labelled custom accessibility action, as TalkBack's actions menu does.
                 for (AccessibilityWindowInfo window : automation.getWindows()) {
@@ -356,6 +364,15 @@ public final class UiHierarchy {
         try (FileOutputStream output = new FileOutputStream(path)) {
             capture.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, output);
         } finally { capture.recycle(); }
+    }
+    private static AccessibilityNodeInfo scrollable(AccessibilityNodeInfo node) {
+        if (node == null) return null;
+        if (node.isScrollable()) return node;
+        for (int i = 0; i < node.getChildCount(); i++) {
+            AccessibilityNodeInfo found = scrollable(node.getChild(i));
+            if (found != null) return found;
+        }
+        return null;
     }
     private static void dictationCycle(UiAutomation automation, String mode, float x, float y, String path) throws Exception {
         String before = editorText(automation);

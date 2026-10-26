@@ -33,11 +33,16 @@ internal class KeyboardDictation(
     private val cues: Cues = Cues(host),
     private val policy: PrewarmPolicy = PrewarmPolicy(),
     private val fallback: PhoneFallback = PhoneFallback.android(host),
+    private val learning: EditLearning = EditLearning(host),
 ) {
     private val handler = Handler(Looper.getMainLooper())
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val store = SettingsStore(host)
     private val client = ChirpNetwork.client(host)
+    init { learning.eligible = { visible && !privateUtterance && DictationHistory.allowed(host.currentInputEditorInfo) } }
+    private var learnedPayload = LearnedPayload()
+    private var waitingForLearn = false
+    private var stopBeforeLearn = false
     private val gesture = MicGesture()
     private var strip: KeyboardStrip? = null
     private var session: Utterance? = null
@@ -151,6 +156,7 @@ internal class KeyboardDictation(
         view.raw.setOnClickListener {
             val target = composing ?: return@setOnClickListener
             applying = true
+            learning.watcher.cancel()
             val changed = try { target.useRaw(selectionStart, selectionEnd) } finally { applying = false }
             if (changed) {
                 selectionStart = target.selectionStart; selectionEnd = target.selectionEnd
@@ -162,6 +168,7 @@ internal class KeyboardDictation(
         view.revert.setOnClickListener {
             val target = composing ?: return@setOnClickListener
             applying = true
+            learning.watcher.cancel()
             val changed = try { target.undo(selectionStart, selectionEnd) } finally { applying = false }
             if (changed) { selectionStart = target.selectionStart; selectionEnd = target.selectionEnd; resync(selectionStart, selectionEnd) }
             forgetUndo(); showNotice(if (changed) "Dictation removed" else "Text changed — nothing to undo")
@@ -282,6 +289,7 @@ internal class KeyboardDictation(
         HardwareShortcut.Action.NONE -> false
     }
     fun input(info: EditorInfo?, restarting: Boolean) {
+        learning.watcher.finish(sample = false)
         // HeliBoard owns view recreation; a real editor restart invalidates this utterance.
         if (active || undo) cancel()
         targetPackage = info?.packageName; styleOverride = null
@@ -339,9 +347,10 @@ internal class KeyboardDictation(
         if (!onPhone && retry(paired)) return
         checking = false
         val connection = host.currentInputConnection ?: return
+        learning.watcher.finish()
         forgetUndo(); notice = false; words = 0; started(); prepare(); policy.dictated(targetPackage)
         privateUtterance = PrivateSession.enabled
-        historyInfo = info; historyId = null
+        historyInfo = info; historyId = null; learnedPayload = LearnedPayload()
         currentStyle = CleanupStyles.profiles(store.health).firstOrNull { it.id == styleOverride } ?: store.style(targetPackage)
         insertionStart = minOf(selectionStart, selectionEnd).takeIf { it >= 0 } ?: minOf(info.initialSelStart, info.initialSelEnd)
         moved = false; handoff = null
@@ -395,8 +404,15 @@ internal class KeyboardDictation(
             },
         )
         session = stream
-        stream.start(store.correction && store.health.cleanupAvailable(), currentStyle.id,
-            instructions = "", prompt = store.promptEdits[currentStyle.id])
+        waitingForLearn = true; stopBeforeLearn = false
+        learning.prepare(targetPackage, !privateUtterance && DictationHistory.allowed(info)) { payload ->
+            if (session === stream && visible && !destroyed) {
+                waitingForLearn = false; learnedPayload = payload
+                stream.start(store.correction && store.health.cleanupAvailable(), currentStyle.id,
+                    instructions = "", prompt = store.promptEdits[currentStyle.id], learned = payload)
+                if (stopBeforeLearn) stream.stop()
+            }
+        }
         haptic(); cue(Cue.START)
     }
     /** One utterance on the phone's own recogniser while the Mac can't be reached: raw text, never cleaned, history as usual. */
@@ -434,7 +450,8 @@ internal class KeyboardDictation(
         composing = compose(host.currentInputConnection ?: connection)
     }
     /** Commits a final, or what was heard before a failure ([reason]), and offers Undo for five seconds. */
-    private fun land(result: ServerEvent.Final, reason: String? = null) {
+    private fun land(received: ServerEvent.Final, reason: String? = null) {
+        val result = received.copy(text = if (!privateUtterance && LearnedStore(host).allowed && DictationHistory.allowed(host.currentInputEditorInfo)) learnedPayload.apply(received.text) else received.text)
         partialFrames.clear()
         val target = composing
         applying = true
@@ -451,6 +468,15 @@ internal class KeyboardDictation(
             else if (result.correctionError != null) "kept original"
             else if (result.corrected) "cleaned"
             else "Inserted · tap mic to dictate again"
+        if (inserted && !sent && reason == null && !privateUtterance && target != null) {
+            val value = target.committedText
+            val connection = host.currentInputConnection
+            if (value != null && connection != null && target.spanEnd >= value.length) {
+                learning.watch(value, target.spanEnd - value.length, result.raw, targetPackage) {
+                    if (host.currentInputConnection === connection) connection.learningText() else null
+                }
+            }
+        }
         if (sent) message += " · ${AutoEnter.SENT}"
         text = ""; finalLatency = stopAt?.let { SystemClock.elapsedRealtime() - it }
         undo = inserted && !sent && (target?.spanEnd ?: -1) >= 0
@@ -467,6 +493,7 @@ internal class KeyboardDictation(
     }
     /** Reinserts a history entry through the same boundary/selection path as a dictated final. */
     fun insertText(value: String): Boolean {
+        learning.watcher.cancel()
         if (destroyed || value.isBlank()) return false
         if (active || undo) cancel()
         val connection = host.currentInputConnection ?: return false
@@ -488,7 +515,7 @@ internal class KeyboardDictation(
         if (left in SPOKEN_MARKS) spokenLeft = left
         render()
     }
-    private fun stop() { stopAt = SystemClock.elapsedRealtime(); session?.stop(); haptic(); cue(Cue.STOP); render() }
+    private fun stop() { stopAt = SystemClock.elapsedRealtime(); if (waitingForLearn) stopBeforeLearn = true else session?.stop(); haptic(); cue(Cue.STOP); render() }
     fun beforeEdit() {
         if (active || undo) cancel()
         else if (message == ConnectionFailure.OFFLINE) { offlineDismissed = true; message = IDLE; render() }
@@ -500,6 +527,7 @@ internal class KeyboardDictation(
     }
     fun selection(oldStart: Int, oldEnd: Int, start: Int, end: Int, composingStart: Int, composingEnd: Int) {
         selectionStart = start; selectionEnd = end
+        if (!applying && !active) learning.watcher.sample()
         if (applying) return
         if (active) {
             if (composingStart >= 0 && start == composingEnd && end == composingEnd) { insertionStart = composingStart; handoff = null }
@@ -525,6 +553,7 @@ internal class KeyboardDictation(
     }
     private fun forgetUndo() { actionUntil = null; handler.removeCallbacks(expiry); undo = false; composing?.forgetUndo(); if (!active) composing = null }
     fun hidden() {
+        learning.watcher.finish(sample = false)
         visible = false; ++version; checking = false; ChirpNetwork.cancel(healthCall); healthCall = null
         tailscaleWatch?.close(); tailscaleWatch = null; handler.removeCallbacks(tailscaleTimeout)
         closeWarm(); cancel(); ChirpNetwork.release(client, cancel = true)

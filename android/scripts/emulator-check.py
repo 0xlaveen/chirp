@@ -278,6 +278,7 @@ def main():
     args.add_argument("--frames-only", action="store_true")
     args.add_argument("--stop-check", action="store_true")
     args.add_argument("--history-check", action="store_true")
+    args.add_argument("--learn-check", action="store_true")
     args.add_argument("--notes-check", action="store_true")
     # Speaker labels alone (the notes check runs them too, at its end).
     args.add_argument("--speakers-check", action="store_true")
@@ -434,6 +435,9 @@ def main():
             if opt.notes_check:
                 module = runpy.run_path(str(Path(__file__).with_name("emulator-notes-check.py")))
                 module["check"](dict(_probe, adb=adb, speakers_model=speakers_model), work, output)
+                return
+            if opt.learn_check:
+                runpy.run_path(str(Path(__file__).with_name("emulator-learn-check.py")))["check"](dict(_probe, adb=adb), work, output)
                 return
             if opt.history_check:
                 module = runpy.run_path(str(Path(__file__).with_name("emulator-history-check.py")))

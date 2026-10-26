@@ -11,7 +11,9 @@ import java.io.DataInputStream
 internal fun allowedServer(base: HttpUrl) = base.isHttps || (base.scheme == "http" && base.host == "10.0.2.2" && base.port in 1024..65535)
 internal fun captureForBuild(context: Context, frame: (ByteArray) -> Boolean, level: (Double) -> Unit, done: (String?) -> Unit): Capture =
     if (context.getSharedPreferences("debug_capture", 0).getBoolean("synthetic", false))
-        PcmCapture(frame, level, done, SyntheticPcmInput(context))
+        PcmCapture(frame, level, done, SyntheticPcmInput(context, repetitions =
+            context.getSharedPreferences("debug_capture", 0).getInt("dictation_repeats", 1).coerceIn(1, 3), asset =
+            if (context.getSharedPreferences("debug_capture", 0).getString("dictation_asset", null) == "synthetic-learn.wav") "synthetic-learn.wav" else "synthetic.wav"))
     else PcmCapture(frame, level, done)
 /** Notes and its voice commands: the synthetic asset repeats with [NOTES_GAP_MS] of silence between, like a meeting. */
 internal fun notesInputForBuild(context: Context): PcmInput = context.getSharedPreferences("debug_capture", 0).let { prefs ->
@@ -22,13 +24,14 @@ internal fun notesInputForBuild(context: Context): PcmInput = context.getSharedP
 private const val NOTES_GAP_MS = 4000L
 
 /** Debug only: generated speech asset, paced in real time through PcmCapture's real framing loop. */
-private class SyntheticPcmInput(private val context: Context, private val loop: Boolean = false, private val asset: String = "synthetic.wav") : PcmInput {
+private class SyntheticPcmInput(private val context: Context, private val loop: Boolean = false, private val asset: String = "synthetic.wav", repetitions: Int = 1) : PcmInput {
+    private var repeatsLeft = repetitions - 1
     private var stream: DataInputStream? = null
     private var left = 0
     @Volatile private var stopped = false
     private var firstRead = true
     private var silence = 0
-    override val finished get() = !loop && left < 2
+    override val finished get() = !loop && repeatsLeft == 0 && left < 2
     override fun start() { open() }
     private fun open() {
         stream?.close()
@@ -46,6 +49,7 @@ private class SyntheticPcmInput(private val context: Context, private val loop: 
             Thread.sleep(context.getSharedPreferences("debug_capture", 0).getLong("initial_frame_delay_ms", 0).coerceIn(0, 4000))
         }
         if (stopped) return -1
+        if (left < 2 && repeatsLeft > 0) { repeatsLeft--; open() }
         if (left < 2) {
             if (!loop) return -1
             if (silence == 0) silence = (NOTES_GAP_MS * 16).toInt()

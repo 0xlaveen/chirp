@@ -36,11 +36,21 @@ class DictationHistoryTest {
 
     @Before fun reset() { PrivateSession.set(false); history.disable() }
 
-    @Test fun `history is off by default and stores nothing`() {
+    @Test fun `explicit history opt out stores nothing`() {
         assertFalse(history.enabled)
         assertNull(history.record("Meet at noon", null, "Slack", text))
         assertFalse(file.exists()); assertNull(keys.key)
         assertTrue(history.entries().isEmpty())
+    }
+
+    @Test fun `new installs and upgrades without a choice default on while explicit choices survive`() {
+        val prefs = context.getSharedPreferences("chirp_history", 0)
+        prefs.edit().remove("enabled").commit()
+        assertTrue(DictationHistory(context, keys).enabled)
+        history.disable()
+        assertFalse(DictationHistory(context, keys).enabled)
+        history.enable()
+        assertTrue(DictationHistory(context, keys).enabled)
     }
 
     @Test fun `private session skips every final and preserves existing history`() {

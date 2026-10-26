@@ -144,12 +144,10 @@ def check(probe, work, output):
         fresh_editor()
         erase()
 
-        # One-tap opt-in from the keyboard; nothing is stored before it.
+        # No prior choice: history is on from first use, before any dictation.
         open_history()
-        wait_for('Keep history on this phone')
-        shot('optin-inner-light')
-        click('Keep history on this phone')
-        poll(lambda: any(n.get('text', '').startswith('No dictations yet') for n in nodes()), 'Empty history missing after opt-in')
+        poll(lambda: any(n.get('text', '').startswith('No dictations yet') for n in nodes()), 'Default-on empty history missing')
+        shot('default-inner-light')
         click('Back to keyboard')
         assert not stored(), 'History file written before any dictation'
 

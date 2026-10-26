@@ -52,7 +52,7 @@ internal class Rig(context: Context, paired: Boolean = true, mic: Boolean = true
     val order = mutableListOf<String>()
     val wires = mutableListOf<Wire>()
     val captures = mutableListOf<ChirpImeServiceTest.FakeCapture>()
-    val history = DictationHistory(context, SoftwareHistoryKeys()).also { if (historyOn) it.enable() }
+    val history = DictationHistory(context, SoftwareHistoryKeys()).also { if (historyOn) it.enable() else it.disable() }
     val recorded = mutableListOf<Pair<String, String?>>()
     val model: ScratchpadModel
     init {
@@ -280,7 +280,7 @@ class ScratchpadTest {
         assertEquals(rig.model.field.text.length, rig.model.field.selection.start)
     }
 
-    @Test fun `nothing is persisted by default no file or preference holds the text`() {
+    @Test fun `with history explicitly off no file or preference holds the text`() {
         val rig = Rig(context); screen(rig)
         rig.speak("synthetic scratch words"); rig.wire.final("Synthetic scratch words.", "synthetic scratch words", true)
         compose.waitForIdle()

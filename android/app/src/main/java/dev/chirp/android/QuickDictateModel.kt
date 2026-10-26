@@ -54,6 +54,11 @@ internal class QuickDictateModel(
         private set
     var completed: ((String) -> Unit)? = null
     var appLabel: String = "Quick dictate"
+    var targetPackage: String? = null
+    private val learning = EditLearning(context, io = io)
+    private var learnedPayload = LearnedPayload()
+    private var waitingForLearn = false
+    private var stopBeforeLearn = false
     var closeAt by mutableStateOf<Long?>(null)
     val copied get() = text.isNotBlank()
 
@@ -80,12 +85,12 @@ internal class QuickDictateModel(
             },
             level = { level = it }, retention = { retained = it },
             final = { result ->
-                text = result.text; raw = result.raw.takeIf { result.corrected && it != result.text }
+                text = if (!privateUtterance && LearnedStore(app).allowed) learnedPayload.apply(result.text) else result.text; raw = result.raw.takeIf { result.corrected && it != result.text }
                 status = "Copied — paste anywhere"
                 closeAt = android.os.SystemClock.elapsedRealtime() + 4_000
                 val label = appLabel
                 val original = raw
-                if (!privateUtterance && !PrivateSession.enabled) io { history.record(result.text, original, label, EditorInfo().apply { inputType = InputType.TYPE_CLASS_TEXT }) }
+                if (!privateUtterance && !PrivateSession.enabled) io { history.record(text, original, label, EditorInfo().apply { inputType = InputType.TYPE_CLASS_TEXT; packageName = targetPackage }) }
                 completed?.invoke(text)
             },
             ended = {
@@ -96,12 +101,22 @@ internal class QuickDictateModel(
             pauseSeconds = store.autoStopSeconds,
         )
         stream = session; sync()
-        session.start(store.correction && store.health.cleanupAvailable(), store.defaultStyle, prompt = store.promptEdits[store.defaultStyle])
+        waitingForLearn = true; stopBeforeLearn = false
+        learning.prepare(targetPackage, !privateUtterance) { payload ->
+            if (stream === session) {
+                waitingForLearn = false; learnedPayload = payload
+                val style = store.style(targetPackage)
+                session.start(store.correction && store.health.cleanupAvailable(), style.id, prompt = store.promptEdits[style.id], learned = payload)
+                if (stopBeforeLearn) session.stop()
+                sync()
+            }
+        }
     }
     private fun fail(message: String, code: Int) { status = message; errorCode = code }
-    fun stop() { stream?.stop(); sync() }
+    fun stop() { if (waitingForLearn) { stopBeforeLearn = true; stopping = true } else { stream?.stop(); sync() } }
     /** Every departure cancels, including a final still being polished. */
     fun cancel() {
+        waitingForLearn = false; stopBeforeLearn = false
         val old = stream; stream = null; old?.cancel()
         partial = ""; stable = ""; level = 0.0; sync()
     }

@@ -70,6 +70,8 @@ private fun DictationPage(state: SetupState, actions: SettingsActions) {
             infoTitle = "Spoken commands", infoBody = "Ending a dictation with \"new line\" or \"new paragraph\" types a line break instead of the words.")
     }
     SettingsGroup("Press Send") { SettingsItem { AutoEnterSettings() } }
+    LearningSettings()
+    HistorySettings()
 
 }
 
@@ -118,7 +120,7 @@ private fun HistoryPage(history: DictationHistory?) {
     SettingsGroup("What Chirp keeps") {
         SettingsItem {
             Text("Dictations, notes and kept audio never leave this phone.", style = MaterialTheme.typography.bodyMedium)
-            LearnMore("Local only", "Dictation history is opt-in and encrypted on this phone. Notes are sealed with the phone's keystore and never " +
+            LearnMore("Local only", "Dictation history is on by default and encrypted on this phone. Turn it off in Privacy & history. Notes are sealed with the phone's keystore and never " +
                 "backed up or synced. Kept audio stays next to its note. Diagnostics carry numbers only — no text, audio, hosts or tokens.")
         }
     }

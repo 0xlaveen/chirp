@@ -82,6 +82,8 @@ class ChirpImeServiceTest {
     }
     class FakeTransport(val event: (ServerEvent) -> Unit, val failure: () -> Unit,
                         val order: MutableList<String>) : ImeTransport {
+        var learnedPayload: LearnedPayload? = null
+        override fun learned(payload: LearnedPayload?) { learnedPayload = payload }
         var connected = false
         var starts = 0
         var correctionRequested = false

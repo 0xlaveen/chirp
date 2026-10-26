@@ -83,6 +83,9 @@ def check(p, work, output):
         if p['find']('Cancel dictation') is not None: native('click', 'Cancel dictation')
         wait('Microphone: tap to dictate')
         native('click', 'Dictation options')
+        for _ in range(4):
+            if p['find']('Chirp settings') is not None: break
+            native('scroll-forward', 'Dictation options')
         wait('Chirp settings')
         adb('shell', 'input', 'keyevent', 'KEYCODE_BACK')
 
@@ -125,14 +128,17 @@ def check(p, work, output):
             assert all(a[3] <= b[1] for a, b in zip(ordered, ordered[1:])), 'Rail items overlap'
             shot('font200-rail-' + ('dark' if night else 'light'))
             # Each destination is usable on its own at this size.
-            click('History'); wait('Dictation history'); click('Settings'); wait('How you dictate'); click('Notes'); wait('Record new note')
+            # At 200% the Settings page also has a Notes category: select the rail's own node.
+            for destination, expected in (('History', 'Dictation history'), ('Settings', 'How you dictate'), ('Notes', 'Record new note')):
+                node = next(n for n in nodes() if n.get('text') == destination and p['center'](n)[0] < w * .2)
+                p['tap'](node); wait(expected, seconds=90)
         adb('shell', 'cmd', 'uimode', 'night', 'yes' if 'yes' in original_night else 'auto' if 'auto' in original_night else 'no')
 
     def fold():
         adb('shell', 'settings', 'put', 'system', 'font_scale', '1.0')
         adb('shell', 'am', 'force-stop', p['PACKAGE'])
         adb('shell', 'am', 'start', '-n', p['PACKAGE'] + '/.SetupActivity', '--es', 'section', 'try')
-        click('Record new note'); wait('Pause recording notes')
+        click('Record new note'); wait('Pause recording notes', seconds=90)
         states = adb('shell', 'cmd', 'device_state', 'print-states').decode()
         (output / 'device-states.txt').write_text(states)
         # State names vary by image; discover identifiers rather than assume a device model.
@@ -142,7 +148,7 @@ def check(p, work, output):
         assert folded is not None and opened is not None, 'AVD does not expose folded/open states'
         for name, identifier in (('folded', folded), ('unfolded', opened)):
             adb('shell', 'cmd', 'device_state', 'state', identifier)
-            wait('Pause recording notes'); shot(name)
+            wait('Pause recording notes', seconds=90); shot(name)
         click('Stop recording notes'); wait('Stopped')
 
     try:

@@ -43,7 +43,7 @@ class OfflineStateTest {
         fail("timed out")
     }
     private fun keyboard(url: String = "https://mac.example.test/chirp", checkHealth: Boolean = false) {
-        voice = KeyboardDictation(host,
+        voice = KeyboardDictation(host, learning = EditLearning(host, io = { it() }),
             captureFactory = { frame, _, done -> ChirpImeServiceTest.FakeCapture(frame, done, mutableListOf()) },
             transportFactory = { _, _, event, failure -> transports++; ChirpImeServiceTest.FakeTransport(event, failure, mutableListOf()).also { stream = it } },
             prepare = {}, resync = { _, _ -> }, pairing = { Pairing.from(url, "synthetic") }, checkHealth = checkHealth,
