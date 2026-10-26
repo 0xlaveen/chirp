@@ -78,7 +78,7 @@ expose the server beyond 127.0.0.1 or my tailnet.</code></pre>
     <article class="path-card">
       <span class="reason-number">02 / By hand</span>
       <h3>Follow the guides yourself</h3>
-      <p>No agent needed. Start with the Mac — it runs the speech model every other device uses. Each guide says what you need, what to type, and what to click.</p>
+      <p>No agent needed. Start with the computer that will run the Chirp server (a Mac, Windows PC or Linux box): it runs the speech model every other device uses. Each guide says what you need, what to type, and what to click.</p>
       <ol class="mini-steps">
         <li><a href="guides/mac.html">Set up the Mac app</a><span>About 15 minutes, mostly downloads.</span></li>
         <li><a href="guides/windows.html">Add a Windows PC</a><span>Server, service and desktop app. Early.</span></li>
@@ -93,7 +93,7 @@ expose the server beyond 127.0.0.1 or my tailnet.</code></pre>
   <h2 id="need">What you need</h2>
   <ul class="ticks need-list">
     <li><strong>A machine to run the server</strong>, on and reachable whenever you dictate: a Mac on macOS 14 or later (Apple Silicon uses MLX, fastest; Intel uses ONNX Parakeet), a PC on Windows 10 or 11, or a Linux desktop (X11 or Wayland). The desktop apps are the native Mac app (most polished) and the shared Windows/Linux app (early).</li>
-    <li><strong>About 15 minutes</strong> for the Mac. Add other devices when you’re ready; each takes a little longer.</li>
+    <li><strong>About 15 minutes</strong> for the first computer. Add other devices when you’re ready; each takes a little longer.</li>
     <li><strong>Tailscale</strong> on the server machine and phone, if you want to dictate from a phone.</li>
     <li><strong>Full Xcode</strong> for iPhone or iPad; the Command Line Tools are enough for the Mac. Windows and Linux need Rust and Node 22+ for the desktop app.</li>
     <li><strong>Comfort with Terminal — or an agent.</strong> You don’t need to write code. You do need to run a few commands.</li>
@@ -108,7 +108,7 @@ expose the server beyond 127.0.0.1 or my tailnet.</code></pre>
     <details><summary>Do I need to know how to code?</summary><p>No. You need to run commands in Terminal, or let a coding agent run them with you. The guides spell out every command, and the agent prompts tell the agent to ask before it changes anything.</p></details>
     <details><summary>What does “point an agent at the repo” mean?</summary><p>Open the coding agent you already use — Claude Code, Codex, Cursor, or another agent that can run shell commands on your Mac — and paste the prompt from <a href="guides/coding-agent.html">the agent guide</a>. The agent reads the READMEs, runs the build, and stops for the decisions that need you.</p></details>
     <details><summary>Can I use Chirp on Windows or Linux today?</summary><p>Yes — early, and from source. The speech server and a desktop app run on Windows 10/11 and Linux (X11, or Wayland through your desktop’s Global Shortcuts portal). Windows is verified in CI, with a manual acceptance pass on real PCs still pending. See the <a href="guides/windows.html">Windows guide</a> and the <a href="guides/linux.html">Linux guide</a>. Packaged downloads are coming later.</p></details>
-    <details><summary>Is Chirp really free?</summary><p>Yes. There’s no subscription, usage fee or Chirp account. You supply the Mac, electricity, and any network or developer services you choose. The source is public; the Android keyboard incorporates GPL-3.0 HeliBoard.</p></details>
+    <details><summary>Is Chirp really free?</summary><p>Yes. There’s no subscription, usage fee or Chirp account. You supply the computer, electricity, and any network or developer services you choose. The source is public; the Android keyboard incorporates GPL-3.0 HeliBoard.</p></details>
   </div>
 
   <div class="next"><a href="guides/index.html">← All guides</a><a href="guides/coding-agent.html">Next: build with an agent →</a></div>

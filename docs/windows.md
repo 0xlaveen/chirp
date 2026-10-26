@@ -89,7 +89,7 @@ choose **More info › Run anyway**. Open Chirp from the tray, pair it to
 
 - **Hold to talk.** The default key is **Right Alt**. On keyboard layouts where Right Alt is
   **AltGr** (German, French, Polish and many others), the default is **Right Ctrl** instead, so
-  AltGr keeps typing `@`, `€` and friends. Setup says which key it chose; change it in Settings.
+  AltGr keeps typing `@`, `€` and friends. Chirp picks the key from the layout the first time it creates its settings (there is no setup step that announces it); **Connection & shortcuts → Dictation key** shows it and changes it.
   Pressing any other key while holding it cancels; key combinations never start dictation.
 - **Text** is typed with `SendInput`. Long dictations are pasted instead, and your clipboard
   text is restored; Chirp's clipboard writes are excluded from clipboard history and cloud
@@ -117,7 +117,9 @@ Run these on a real Windows 11 PC (and Windows 10 if you have one) and record th
    long enough (over 2000 characters) to be pasted; check your clipboard text afterwards is what
    it was before.
 5. **Desktop, keys.** On a US layout the default key is Right Alt and releasing it never opens
-   Notepad's or Word's menu bar. Switch to German (or French) layout, reset Settings, and check
+   Notepad's or Word's menu bar. Switch to German (or French) layout, quit Chirp, delete
+   `%APPDATA%\chirp-desktop\settings.json` (the app has no reset control; the default key is
+   chosen again when the file is missing) and start Chirp, then check
    the default becomes Right Ctrl and AltGr+Q still types `@`. Holding Shift+key or Ctrl+C never
    starts dictation; pressing a letter while holding the key cancels.
 6. **Elevated app.** Run Notepad as administrator, dictate into it, and check Chirp says the
