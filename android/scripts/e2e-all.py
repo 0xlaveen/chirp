@@ -27,8 +27,9 @@ def main():
     subprocess.run(['adb', '-s', SERIAL, 'uninstall', 'dev.chirp.android'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     abi = subprocess.check_output(['adb', '-s', SERIAL, 'shell', 'getprop', 'ro.product.cpu.abi']).decode().strip()
     port = os.environ.get('CHIRP_E2E_PORT', '7899')  # the throwaway server's port; another run may hold 7899
+    server_root = Path(os.environ.get('CHIRP_E2E_SERVER_ROOT', ROOT / 'server'))
     command = ['python3', str(ROOT / 'android/scripts/emulator-check.py'), '--tls', '--server-port', port,
-               '--python', str(ROOT / 'server/.venv/bin/python'),
+               '--server-root', str(server_root), '--python', str(server_root / '.venv/bin/python'),
                '--model-dir', os.environ.get('CHIRP_MODEL_DIR', str(Path.home() / '.koi/voice-models/parakeet-mlx')),
                '--apk', str(ROOT / f'android/app/build/outputs/apk/debug/app-{abi}-debug.apk')]
     results = {}

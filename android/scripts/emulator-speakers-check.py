@@ -5,6 +5,7 @@ to the throwaway server's WeSpeaker model. Labels default on and the phone reque
 without consent; the offline fixture copies and verifies the pinned file. Requires exactly two
 people, rename persistence, and kept-audio replay. Prints states and counts, never text."""
 import json
+import os
 import shlex
 import time
 from pathlib import Path
@@ -61,6 +62,19 @@ def check(probe, work, output, standalone=False):
     tap('Record new note')
     probe['wait_for']('Turn off', 30)
     screenshot('emulator-speakers-status.png')
+    if os.environ.get('CHIRP_E2E_SPEAKER_CANCEL') == '1':
+        # Against the cancellation-capable server branch: turn off stops its active fetch,
+        # leaves the preference off, then a deliberate on starts a fresh download.
+        tap('Turn off')
+        wait(lambda: server().get('model_actions', [])[-1:] == ['cancel'] and
+             server().get('model_state') == 'not_downloaded', 'Turn off did not cancel the active fetch', 30)
+        assert probe['find']('Turn off') is None, 'Model status remained after turning labels off'
+        probe['click']('More options')
+        tap('Label speakers')
+        probe['wait_for']('Turn off', 30)
+        wait(lambda: server().get('model_actions', [])[-1:] == ['download'] and
+             server().get('model_state') == 'downloading', 'Explicit on did not restart the download', 30)
+        log('PASS: Turn off cancelled the active download; explicit on restarted it')
     probe['speakers_model']()  # Release only after the inline preparation status was captured.
     wait(lambda: server().get('finals', 0) >= before + 1, 'The two-voice recording did not reach the transcript')
     # No switch or consent: the first note requests the model by itself.

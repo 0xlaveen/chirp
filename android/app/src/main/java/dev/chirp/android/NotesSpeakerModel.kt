@@ -27,6 +27,8 @@ internal class NotesSpeakerModel(
         private set
     var cancelFailed by mutableStateOf(false)
         private set
+    private var downloadFailed = false
+    private var damaged = false
     private var wanted = false
     private var attempted = false
     private var pending = 0
@@ -65,7 +67,7 @@ internal class NotesSpeakerModel(
             io { latest = fetch() }
             if (id != refreshing || pending > 0) return@launch
             latest?.let {
-                health = it; store.health = it; state = it.speakersModel
+                health = it; store.health = it; state = if (damaged || downloadFailed && it.speakersModel !in setOf("ready", "downloading")) "failed" else it.speakersModel
                 changed(it)
                 ensureDownload()
             }
@@ -83,6 +85,12 @@ internal class NotesSpeakerModel(
         else if (on) { attempted = false; ensureDownload(); refresh() }
     }
 
+    /** An installed file can still fail to load. Retry replaces it rather than trusting size-only health. */
+    fun unavailable() {
+        if (!enabled || state != "ready") return
+        damaged = true; state = "failed"
+    }
+
     fun retry() {
         if (cancelFailed) command("cancel")
         else if (enabled && available) { attempted = false; command("download") }
@@ -96,14 +104,21 @@ internal class NotesSpeakerModel(
 
     private fun command(action: String) {
         ++refreshing; poll?.cancel()
-        if (action == "download") { attempted = true; state = "downloading" }
+        if (action == "download") { attempted = true; downloadFailed = false; state = "downloading" }
         pending++
         scope.launch {
             commands.withLock {
                 // An off tap while a download POST is in flight queues cancellation behind it.
                 var result: String? = null
-                io { result = request(action) }
+                io {
+                    if (action == "download" && damaged) {
+                        if (request("remove") != "not_downloaded") return@io
+                        damaged = false
+                    }
+                    result = request(action)
+                }
                 pending--
+                if (action == "download") downloadFailed = result == null
                 if (action == "cancel") cancelFailed = result == null || result == "downloading"
                 state = result ?: "failed"
                 changed(health)

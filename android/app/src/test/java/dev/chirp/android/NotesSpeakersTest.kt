@@ -240,6 +240,9 @@ class NotesSpeakersTest {
         rig.answer = null
         rig.model.activate(); rig.idle()
         assertTrue(rig.model.retryable); assertEquals("Couldn’t download the speaker model.", rig.model.status)
+        rig.latest = speakersMac; rig.model.refresh(); rig.idle()
+        assertTrue(rig.model.retryable) // A health refresh never hides a failed POST.
+        rig.latest = null
         rig.answer = "downloading"; rig.model.retry(); rig.idle()
         assertEquals(listOf("download", "download"), rig.requests)
         rig.model.setLabels(false); rig.idle()
@@ -265,6 +268,21 @@ class NotesSpeakersTest {
         assertEquals(listOf("download", "cancel"), requests)
         assertFalse(model.enabled); assertFalse(model.ready); assertNull(model.status)
         assertTrue(store.notesSpeakersOptedOut)
+    }
+
+    @Test fun `an installed model that cannot load is replaced on Retry`() {
+        val app = RuntimeEnvironment.getApplication()
+        val store = SettingsStore(app).apply { health = speakersMac.copy(speakersModel = "ready") }
+        val scope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.Main.immediate)
+        val requests = mutableListOf<String>()
+        val model = NotesSpeakerModel(store, scope, { it() }, { null },
+            { requests += it; if (it == "remove") "not_downloaded" else "downloading" })
+        model.unavailable()
+        assertFalse(model.ready); assertTrue(model.retryable)
+        model.refresh(); org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle()
+        model.retry(); org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle()
+        assertEquals(listOf("remove", "download"), requests)
+        assertTrue(store.notesLabelSpeakers)
     }
 
     @Test fun `damaged model waits for retry and settings refresh sees the latest health`() {

@@ -71,6 +71,7 @@ internal class NotesModel(
     private var editing = false
     private var published: NotesRecorder.State? = null
     private var publishedCommand = false
+    private var lastSpeakerError: String? = null
     private var committedCount = 0
     private var pendingSeen = 0
     private var visible = true
@@ -301,6 +302,10 @@ internal class NotesModel(
     fun setStructure(on: Boolean) { structureEnabled = on; recorder.configure(on, health) }
     val speakersAvailable get() = speakerModelControl.available
     val speakerModelState get() = speakerModelControl.state
+    val speakerNote: String? get() = revision.let {
+        if (labelSpeakers && speakersAvailable && recorder.speakerError != null && recorder.speakerError != "unavailable")
+            "Couldn’t label the last segment’s speakers." else null
+    }
     fun setSpeakerLabels(on: Boolean) = speakerModelControl.setLabels(on)
 
     /** Rename a person everywhere in the note; [replaceInNotes] also swaps their old name in the notes' text. */
@@ -527,6 +532,13 @@ internal class NotesModel(
      * and the clock catch up when the screen is back.
      */
     private fun sync() {
+        if (recorder.speakerError != lastSpeakerError) {
+            lastSpeakerError = recorder.speakerError
+            if (lastSpeakerError == "unavailable") {
+                speakerModelControl.unavailable()
+                recorder.labelSpeakers = speakerModelControl.ready
+            }
+        }
         val quiet = quiet
         val changes = if (quiet) emptyList() else recorder.takePendingChanges()
         counter?.let { if (quiet) it.skipped++ else it.updates++ }

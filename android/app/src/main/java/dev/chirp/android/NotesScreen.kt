@@ -483,6 +483,7 @@ internal fun TranscriptPane(model: NotesModel, modifier: Modifier, titled: Boole
         }
         // A copy: the document's list is the same object as it grows, which the lazy list would not see change.
         val rows = document.segments.toList()
+        model.speakerNote?.let { Text(it, Modifier.padding(vertical = 4.dp), color = scheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall) }
         // A chip where the speaker changes (after merges), so one person's run of turns reads as one.
         val chips = HashSet<Pair<Int, Int>>().apply {
             var last: Int? = null
