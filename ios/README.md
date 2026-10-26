@@ -818,3 +818,5 @@ ios/
   free accounts is not guaranteed — verify the actual profile.
 - Editor-context quirks (short/truncated/asynchronous context windows) can stop
   automatic replacement and leave a partial; recovery is manual in the app.
+
+The **Name speakers** sheet opens from the post-Stop “Who was speaking?” line, the transcript header, or a speaker chip. Name everyone together, complete names from recent notes, preview their first words, replay kept audio, or merge with **Same as ▸**. Done applies the changes; Cancel discards them. “Also replace names in the notes” is on by default.

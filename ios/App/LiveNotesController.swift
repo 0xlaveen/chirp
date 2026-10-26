@@ -597,6 +597,26 @@ final class LiveNotesController: ObservableObject {
     }
 
     /// Rename a person everywhere in the note; `replaceInNotes` also swaps their old name in the notes' text.
+    @Published private(set) var recentSpeakerNames: [String] = []
+    @Published private(set) var dismissedSpeakerLines: Set<UUID> = []
+    var showsNameSpeakersLine: Bool {
+        !state.isActive && !dismissedSpeakerLines.contains(document.id) && !document.unnamedSpeakers.isEmpty
+    }
+    func dismissSpeakerLine() { dismissedSpeakerLines.insert(document.id) }
+    func nameSpeakers(_ draft: SpeakerNamesDraft) {
+        fixSpeakers { draft.apply(to: &$0) }
+        dismissSpeakerLine()
+    }
+    func loadRecentSpeakerNames() async {
+        let id = document.id
+        var names: [String] = []
+        for entry in entries.prefix(30) where entry.id != id {
+            if let note = try? await library?.record(entry.id) { names += note.document.namedSpeakers }
+        }
+        guard document.id == id else { return }
+        recentSpeakerNames = SpeakerNameSuggestions.names(saved: [], recent: names, matching: "", limit: 120)
+    }
+
     func renameSpeaker(_ person: Int, to name: String, replaceInNotes: Bool) {
         fixSpeakers { SpeakerFixups.rename(person, to: name, replaceInNotes: replaceInNotes, in: &$0) }
     }

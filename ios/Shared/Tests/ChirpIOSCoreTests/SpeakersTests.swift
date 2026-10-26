@@ -173,4 +173,28 @@ import Testing
         d.separateSpeaker(2)
         #expect(SpeakerFixups.menu(for: 2, in: d.roster) == .init(name: "Person 2", mergeTargets: [1], separable: []))
     }
+    @Test func theNameSheetStagesMergesAndNamesUntilDone() {
+        var d = note()
+        var draft = SpeakerNamesDraft(d)
+        draft.names[1] = "  Theo:  "
+        draft.names[2] = "Maya"
+        #expect(d.roster.displayName(1) == "Person 1")
+        #expect(draft.replacementCount(in: d) == 3)
+        let changes = draft.apply(to: &d)
+        #expect(changes.count == 3)
+        #expect(d.roster.displayName(1) == "Theo" && d.roster.displayName(2) == "Maya")
+        #expect(d.text.contains("Theo agreed with Maya"))
+        var merge = SpeakerNamesDraft(d)
+        merge.merges[2] = 1
+        merge.replace = false
+        #expect(merge.preview(d).namableSpeakers == [1])
+        #expect(merge.apply(to: &d).isEmpty)
+        #expect(d.roster.resolve(2) == 1 && d.text.contains("Maya"))
+    }
+
+    @Test func suggestionsPreferSavedThenRecentAndExcludeOtherRows() {
+        #expect(SpeakerNameSuggestions.names(saved: ["Maya"], recent: ["Maya", "Theo", "Mara"],
+                                            taking: ["Theo"], matching: "Ma") == ["Maya", "Mara"])
+    }
+
 }

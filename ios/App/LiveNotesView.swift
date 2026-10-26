@@ -30,6 +30,8 @@ struct NoteDetailView: View {
     @State private var showRaw = false
     @State private var confirmUndo = false
     @State private var confirmSwitch = false
+    @State private var namingSpeakers = false
+    @State private var transcriptNamingSpeakers = false
     @State private var renamingSpeaker: SpeakerSheetItem?
     @StateObject private var player = NotesSegmentPlayer()
 
@@ -38,6 +40,15 @@ struct NoteDetailView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
                     titleBlock
+                    if notes.showsNameSpeakersLine {
+                        HStack {
+                            Text("Who was speaking?").font(.subheadline)
+                            Button("Name speakers") { namingSpeakers = true }
+                                .accessibilityIdentifier("chirp.notes.speakers.name.open")
+                            Spacer(minLength: 0)
+                            Button("Dismiss", systemImage: "xmark") { notes.dismissSpeakerLine() }.labelStyle(.iconOnly)
+                        }.padding(12).background(Color.chirp.koiContainer, in: RoundedRectangle(cornerRadius: 12))
+                    }
                     if let banner = banner {
                         PondBanner(kind: notes.debugRetention ? .error : .info, title: banner)
                             .accessibilityElement(children: .combine).accessibilityLabel(banner)
@@ -95,6 +106,7 @@ struct NoteDetailView: View {
                     .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { transcript = false } } }
             }.presentationDetents([.medium, .large]).presentationDragIndicator(.visible)
         }
+        .sheet(isPresented: $namingSpeakers) { NameSpeakersSheet(notes: notes) }
         .sheet(isPresented: $settings) { NotesSettingsSheet(notes: notes) }
         .fileExporter(isPresented: $exporting, document: NotesMarkdownFile(text: notes.markdown), contentType: NotesMarkdownFile.markdown,
                       defaultFilename: notes.exportName) { if case .success = $0 { notes.didExport() } }
@@ -208,6 +220,10 @@ struct NoteDetailView: View {
 
     private var transcriptContent: some View {
         VStack(spacing: 0) {
+            if !notes.document.namableSpeakers.isEmpty {
+                Button("Name speakers", systemImage: "person.2") { if sizeClass == .regular { namingSpeakers = true } else { transcriptNamingSpeakers = true } }
+                    .padding().accessibilityIdentifier("chirp.notes.speakers.name.header")
+            }
             Toggle("Show raw", isOn: $showRaw).padding().accessibilityIdentifier("chirp.notes.raw")
             Divider()
             ScrollView {
@@ -247,7 +263,7 @@ struct NoteDetailView: View {
                             } else if let turns = segment.turns, !turns.isEmpty {
                                 SpeakerTurnsView(notes: notes, segment: segment, segmentIndex: index, showRaw: showRaw, clock: clock) {
                                     renamingSpeaker = SpeakerSheetItem(id: $0)
-                                }
+                                } nameAll: { if sizeClass == .regular { namingSpeakers = true } else { transcriptNamingSpeakers = true } }
                             } else {
                                 Text(showRaw ? segment.raw : segment.text).textSelection(.enabled)
                             }
@@ -258,6 +274,7 @@ struct NoteDetailView: View {
                 }.padding(16)
             }.accessibilityIdentifier("chirp.notes.transcript")
         }.background(Color.chirp.background).tint(Color.chirp.koi)
+            .sheet(isPresented: $transcriptNamingSpeakers) { NameSpeakersSheet(notes: notes) }
             .sheet(item: $renamingSpeaker) { RenameSpeakerSheet(notes: notes, person: $0.id) }
     }
 
@@ -282,7 +299,7 @@ private struct NotesDockGlass: ViewModifier {
 
 /// Replay decrypts into memory and never writes a plaintext playback file.
 @MainActor
-private final class NotesSegmentPlayer: NSObject, ObservableObject, AVAudioPlayerDelegate {
+final class NotesSegmentPlayer: NSObject, ObservableObject, AVAudioPlayerDelegate {
     @Published private(set) var segment: Int?
     @Published private(set) var error: String?
     private var player: AVAudioPlayer?
@@ -290,13 +307,13 @@ private final class NotesSegmentPlayer: NSObject, ObservableObject, AVAudioPlaye
     func beginLoading() -> Int { stop(); error = nil; return request }
     func accepts(_ value: Int) -> Bool { request == value }
     func failed() { stop(); error = "This audio could not be played. Try another segment." }
-    func play(_ data: Data, segment: Int) {
+    func play(_ data: Data, segment: Int, offset: TimeInterval = 0) {
         stop()
         do {
             try AVAudioSession.sharedInstance().setCategory(.playback, options: .mixWithOthers)
             try AVAudioSession.sharedInstance().setActive(true)
             let player = try AVAudioPlayer(data: data)
-            self.player = player; player.delegate = self
+            self.player = player; player.delegate = self; player.currentTime = offset
             guard player.play() else { throw SessionFailure.audio }
             self.segment = segment
         } catch { failed() }
