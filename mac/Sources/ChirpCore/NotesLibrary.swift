@@ -90,9 +90,33 @@ extension NotesDocument {
         return "Note, " + formatter.string(from: createdAt)
     }
 
+    /// Reading text for a library row, preserving the boundary between each line or block.
     public func snippet() -> String {
-        let body = text.isEmpty ? segments.filter { !$0.isGap }.map(\.text).joined(separator: " ") : text
-        return String(body.split(whereSeparator: \.isWhitespace).joined(separator: " ").prefix(240))
+        func plain(_ line: String) -> String {
+            line.replacingOccurrences(of: #"^(#{1,6}\s+|>\s*|[-*+]\s+(\[[ xX]\]\s+)?|\d+[.)]\s+)+"#,
+                                      with: "", options: .regularExpression)
+                .replacingOccurrences(of: #"\*\*|__|`"#, with: "", options: .regularExpression)
+                .replacingOccurrences(of: #"(^|\s)[*_](\S)"#, with: "$1$2", options: .regularExpression)
+                .replacingOccurrences(of: #"(\S)[*_](\s|$|[.,;:!?])"#, with: "$1$2", options: .regularExpression)
+                .split(whereSeparator: \.isWhitespace).joined(separator: " ")
+        }
+        func heading(_ line: String) -> Bool {
+            line.range(of: #"^#{1,6}\s+\S"#, options: .regularExpression) != nil
+        }
+        let lines = text.components(separatedBy: .newlines).map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty && !$0.allSatisfy { "-*_ ".contains($0) } }
+        let titleLine = userTitle == nil ? lines.firstIndex(where: heading) ?? lines.indices.first : nil
+        let displayTitle = plain(title)
+        var body = ""
+        for (index, line) in lines.enumerated() {
+            let value = plain(line)
+            guard index != titleLine, !(heading(line) && value.caseInsensitiveCompare(displayTitle) == .orderedSame),
+                  !value.isEmpty else { continue }
+            body += (body.isEmpty ? "" : " · ") + value
+            if body.count >= 240 { break }
+        }
+        let preview = body.isEmpty ? segments.filter { !$0.isGap }.map(\.text).joined(separator: " ") : body
+        return String(preview.split(whereSeparator: \.isWhitespace).joined(separator: " ").prefix(240))
     }
 
     public func openTodoCount() -> Int {
@@ -119,6 +143,8 @@ public struct NotesLibraryEntry: Codable, Equatable, Sendable, Identifiable {
     public var id: UUID
     public var title: String
     public var snippet: String
+    // A missing format marker invalidates the old index so snippets rebuild from the original line boundaries.
+    private var snippetFormat: Int = 1
     public var openTodos: Int
     public var createdAt: Date
     public var updatedAt: Date

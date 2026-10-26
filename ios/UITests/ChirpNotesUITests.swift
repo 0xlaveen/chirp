@@ -58,6 +58,49 @@ final class ChirpNotesUITests: XCTestCase {
         accessibilityLibraryAndDock()
     }
 
+    /// Refresh only the captures where a library snippet is visible, in one bounded run per device.
+    @MainActor func testLibrarySnippetScreenshots() {
+        let original = XCUIDevice.shared.appearance
+        defer { XCUIDevice.shared.appearance = original }
+        let pad = UIDevice.current.userInterfaceIdiom == .pad
+        if pad { XCUIDevice.shared.orientation = .landscapeLeft }
+        for appearance in [XCUIDevice.Appearance.light, .dark] {
+            XCUIDevice.shared.appearance = appearance
+            let app = launch(["--chirp-notes-gallery"])
+            func capture(_ name: String) {
+                let shot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+                shot.name = name + (appearance == .dark ? "-dark" : "-light")
+                shot.lifetime = .keepAlways
+                add(shot)
+            }
+            let row = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'chirp.notes.row.' AND label CONTAINS 'Lantern kickoff'")).firstMatch
+            XCTAssertTrue(row.waitForExistence(timeout: 10))
+            XCTAssertTrue(row.label.contains("Agenda · Review the launch plan · Share the design brief"))
+            XCTAssertFalse(row.label.contains("Lantern kickoff Agenda"))
+            capture("notes-library-groups")
+            row.tap()
+            XCTAssertTrue(app.buttons["chirp.notes.title"].waitForExistence(timeout: 5))
+            if pad {
+                capture("notes-reading")
+                app.buttons["chirp.notes.transcript.open"].tap()
+                let play = app.buttons["chirp.notes.play.0"]
+                XCTAssertTrue(play.waitForExistence(timeout: 5))
+                play.tap()
+                XCTAssertTrue(Self.waitFor(play, "label == 'Stop replay'", timeout: 5))
+                XCTAssertTrue(Self.waitFor(play, "label == 'Play segment'"), "Replay completion returns to the main actor")
+                if appearance == .light { capture("notes-transcript-audio") }
+                Self.flip(Self.element("chirp.notes.raw", in: app))
+                capture("notes-transcript")
+            } else {
+                menu(app, action: "Delete")
+                app.buttons["chirp.notes.menu"].tap(); app.buttons["chirp.notes.deleted.menu"].tap()
+                XCTAssertTrue(app.buttons["Restore"].waitForExistence(timeout: 5))
+                capture("notes-recently-deleted")
+            }
+            app.terminate()
+        }
+    }
+
     @MainActor private func recordPauseResumeStopTranscriptAndExport() {
         let app = launch()
         screenshot("notes-empty", app)

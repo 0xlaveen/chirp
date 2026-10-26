@@ -17,6 +17,48 @@ private func libraryDirectory() -> URL {
 }
 
 @Suite(.serialized) struct NotesLibraryTests {
+    @Test func snippetsSeparateBlocksWithoutRepeatingTheTitle() {
+        let text = "## Launch sync\nThe first release goes to ten partners.\n- [ ] Draft the invite\n- [x] **Book** a review!"
+        var document = NotesDocument(text: text)
+        #expect(document.snippet() == "The first release goes to ten partners. · Draft the invite · Book a review!")
+        document.rename("Launch sync")
+        #expect(document.snippet() == "The first release goes to ten partners. · Draft the invite · Book a review!")
+        document.rename("A different title")
+        #expect(document.snippet() == "Launch sync · The first release goes to ten partners. · Draft the invite · Book a review!")
+
+        var named = NotesDocument(text: "### **LAUNCH SYNC**\n- A long table by the window\n\n1. Find a reading lamp\n> Keep snake_case and a mid-line - dash.")
+        named.rename("Launch sync")
+        #expect(named.snippet() == "A long table by the window · Find a reading lamp · Keep snake_case and a mid-line - dash.")
+        #expect(NotesDocument(text: "A title\nA sentence.\nAnother sentence?").snippet() == "A sentence. · Another sentence?")
+        #expect(NotesDocument(text: "## Only a title").snippet().isEmpty)
+
+        var spoken = NotesDocument()
+        spoken.append(NotesSegment(id: 0, offset: 0, raw: "only the transcript so far"))
+        #expect(spoken.snippet() == "only the transcript so far")
+        let long = NotesDocument(text: "## Title\n" + String(repeating: "🪷", count: 300)).snippet()
+        #expect(long.count == 240 && long.allSatisfy { $0 == "🪷" })
+    }
+
+    @Test func legacyIndexRebuildsSnippetsFromTheKeptDocument() async throws {
+        let dir = libraryDirectory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let store = NotesLibraryStore(directory: dir)
+        let document = NotesDocument(text: "## Launch sync\nThe first release goes to ten partners.\n- [ ] Draft the invite")
+        try await store.write(NotesJournalRecord(document: document, elapsed: 12))
+        let updatedAt = try await store.record(document.id).document.updatedAt
+        let index = dir.appendingPathComponent("index.json")
+        var old = try #require(JSONSerialization.jsonObject(with: Data(contentsOf: index)) as? [[String: Any]])
+        old[0].removeValue(forKey: "snippetFormat")
+        old[0]["snippet"] = "## Launch sync The first release goes to ten partners. - [ ] Draft the invite"
+        try JSONSerialization.data(withJSONObject: old).write(to: index)
+
+        let reopened = NotesLibraryStore(directory: dir)
+        let entry = try #require(try await reopened.list().first)
+        #expect(entry.snippet == "The first release goes to ten partners. · Draft the invite")
+        #expect(try await reopened.record(document.id).document.text == document.text)
+        #expect(entry.updatedAt == updatedAt)
+    }
+
     @Test func optionalCodecSealsIndexRecordsRecoveryAndAudio() async throws {
         let dir = libraryDirectory()
         defer { try? FileManager.default.removeItem(at: dir) }

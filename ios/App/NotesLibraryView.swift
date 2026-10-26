@@ -130,7 +130,7 @@ struct NotesLibraryView: View {
                     }
                     ForEach(groups, id: \.title) { group in
                         Section {
-                            ForEach(group.entries) { entry in libraryRow(entry, snippet: notesSnippet(entry.snippet)) }
+                            ForEach(group.entries) { entry in libraryRow(entry, snippet: entry.snippet) }
                         } header: { sectionHeader(group.title) }
                     }
                     if notes.entries.isEmpty && notes.recordingID == nil {
@@ -345,7 +345,7 @@ private struct RecentlyDeletedView: View {
                     HStack(alignment: .top, spacing: 12) {
                         VStack(alignment: .leading, spacing: 8) {
                             Text(entry.title).font(.system(.headline, design: .serif))
-                            Text(notesSnippet(entry.snippet)).font(.subheadline).foregroundStyle(Color.chirp.inkMuted).lineLimit(2)
+                            Text(entry.snippet).font(.subheadline).foregroundStyle(Color.chirp.inkMuted).lineLimit(2)
                             if let date = entry.deletedAt { Text("\(max(0, 30 - Int(Date().timeIntervalSince(date) / 86400))) days left").font(.footnote).foregroundStyle(Color.chirp.inkMuted) }
                         }
                         Spacer()
@@ -376,9 +376,4 @@ private struct NotesShareSheet: UIViewControllerRepresentable {
     let text: String
     func makeUIViewController(context: Context) -> UIActivityViewController { UIActivityViewController(activityItems: [text], applicationActivities: nil) }
     func updateUIViewController(_ controller: UIActivityViewController, context: Context) {}
-}
-
-private func notesSnippet(_ value: String) -> String {
-    value.replacingOccurrences(of: #"(^|\s)(#{1,6}|[-*+](\s\[[ xX]\])?)\s"#, with: "$1", options: .regularExpression)
-        .replacingOccurrences(of: "**", with: "")
 }
