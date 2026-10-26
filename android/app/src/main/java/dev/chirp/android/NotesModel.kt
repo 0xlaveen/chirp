@@ -175,9 +175,15 @@ internal class NotesModel(
     override val shareTitle get() = displayTitle
     override fun appendShared(text: String): Boolean {
         if (state != NotesRecorder.State.RECORDING && state != NotesRecorder.State.PAUSED) return false
+        appendText(text)
+        return true
+    }
+
+    /** History and Share use the same user-edit path as typing, claiming any AI tail before appending. */
+    fun appendText(text: String) {
         val before = document.text
         edit(TextFieldValue(before + (if (before.isBlank()) "" else "\n\n") + text))
-        return true
+        keepSession()
     }
     val document get() = revision.let { recorder.document }
     val structuring get() = revision.let { recorder.structuring }

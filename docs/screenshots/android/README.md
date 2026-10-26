@@ -30,8 +30,12 @@ credential or personal text is included.
   Regenerate with `./gradlew -Pchirp.updateScreenshots testDebugUnitTest --tests '*SettingsRenderTest*'`.
 - `history-{list,empty,off}-{cover,inner}-{light,dark}.png`: the History tab, titled "Dictation history" with
   one line saying what it holds. Flat list rows lead with the target app's icon (PackageManager by label, with a
-  neutral glyph fallback), long-press offers "Add to note" through the notes library, and search, day groups,
+  neutral glyph fallback), long-press names the latest note and offers a new-note alternative, and search, day groups,
   the raw comparison, private Copy and swipe-delete Undo are unchanged. Rendered by `ShellRenderTest`.
+- `history-note-actions-{cover,inner,large}-{light,dark}.png`: the History long-press menu names the latest
+  destination and offers **Save as new note**. Popup renders cover phone and tablet widths, a wrapped title,
+  and Android font scale 200% (`large`). Rendered by `HistoryActionsRenderTest`; regenerate with
+  `./gradlew :app:testDebugUnitTest --tests '*HistoryActionsRenderTest' -Pchirp.updateScreenshots`.
 - `onboarding-{welcome,keyboard,microphone,pair}-{light,dark}.png` plus `-font-200-*`, `keyboard-done-*`,
   `pair-{failed,checking,connected}-*`: the four-page wizard. The welcome page carries the approved full-bleed
   pond art edge to edge and introduces Notes as well as dictation; every page keeps one koi primary button and
