@@ -285,13 +285,13 @@ struct OtherAppsGuide: View {
         VStack(alignment: .leading, spacing: 14) {
             Label("On screen: tap a text field in any app, touch and hold the globe key and choose Chirp. Tap Start dictation, then Stop dictation. The text appears where you were typing. Tap the globe key to go back to your usual keyboard.",
                   systemImage: "hand.tap")
-            Label("With a hardware keyboard: iPadOS hides on-screen keyboards. Press the globe key (or Control-Space) until Chirp is chosen, then use the small keyboard bar at the bottom of the screen to show it.",
+            Label("With a hardware keyboard: iPadOS hides on-screen keyboards. Press the globe key (or Control-Space) until Chirp is chosen, then use the small keyboard bar at the bottom of the screen to show it. Chirp Keyboard doesn't receive hardware keys, so it has no hold-to-talk key.",
                   systemImage: "keyboard")
             Label("From any app with a hardware keyboard: start a session here, then press ⌘Space, type Toggle dictation and press Return. Do it again to stop. The text is copied, so press ⌘V to paste.",
                   systemImage: "magnifyingglass")
             Label("One key for it: in the Shortcuts app, make a shortcut with Chirp's Toggle Chirp dictation action. Then go to Settings → Accessibility → Keyboards & Typing → Full Keyboard Access, turn it on, open Commands and give that shortcut a key combination.",
                   systemImage: "command")
-            Label("Inside Chirp: ⌘Return starts or stops dictation, ⌘. cancels, ⌘⇧K starts a keyboard session and ⌘⇧E ends it. Hold ⌘ to see every shortcut.",
+            Label("Inside Chirp: hold Right ⌥ Option to dictate into the field you are typing in (change it in Settings → Dictation → Keyboard shortcut). ⌘Return starts or stops dictation, ⌘. cancels, ⌘⇧K starts a keyboard session and ⌘⇧E ends it. Hold ⌘ to see every shortcut.",
                   systemImage: "keyboard.badge.ellipsis")
         }.font(.subheadline).symbolRenderingMode(.hierarchical).padding(.top, 8)
     }

@@ -315,6 +315,28 @@ from every tab and show in the iPad's hold-⌘ overlay and menu bar:
 | ⌘⇧E | End session |
 | ⌘1 – ⌘4 | Notes, Dictate, History, Settings (the **Go** menu) |
 
+**Hold-to-talk key.** In Chirp, hold **Right ⌥ Option** to dictate and let go to
+insert. The text lands at the caret of the Chirp field you were typing in (a
+listening bar shows the live words), or on Dictate when no field has focus.
+**Esc** cancels. Settings → Dictation → **Keyboard shortcut** records another key (a
+modifier on its own, such as Right ⌘, or a key with ⌃, ⌥ or ⌘), switches to
+**Press to start and stop**, or turns it off. The rules are the Mac's: a
+modifier on its own only counts when no other key is pressed with it (⌥← and
+⌥E keep working), and holding it starts after 0.2 s. A key shortcut such as
+⌥Space never types into the field. The Dictation menu lists it, so it also shows
+in the hold-⌘ overlay. Chirp watches key presses at `UIApplication.sendEvent`.
+A SwiftUI app ignores `NSPrincipalClass`, so the override is added to the app's
+own class at launch with the Objective-C runtime (no private API).
+
+**Other apps.** iPadOS has no system-wide keys for apps, and on-screen keyboards,
+Chirp Keyboard included, never receive hardware key presses (#259 has the
+findings). Outside Chirp a key can only **start and stop**, not hold: make a
+Shortcuts shortcut with **Toggle Chirp dictation**, then give it a key in
+Settings → Accessibility → Keyboards & Typing → Full Keyboard Access →
+Commands. Press it to start, again to stop; the text is copied, so press ⌘V.
+A keyboard session must be running. Settings → Dictation → Keyboard shortcut
+has the same steps.
+
 The app never writes the clipboard by
 itself. **Long dictation** runs past the server's
 120-second limit. After 45 seconds, at the first pause (0.6 s of quiet, 0.3 s

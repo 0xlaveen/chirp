@@ -3,6 +3,7 @@
     "App/ChirpApp.swift",
     "App/DebugFixtures.swift",
     "App/DictateView.swift",
+    "App/HardwareShortcut.swift",
     "App/LiveNotesActivity.swift",
     "App/LiveNotesAudio.swift",
     "App/LiveNotesController.swift",
@@ -60,6 +61,7 @@
   ],
   "ChirpIOSUITests": [
     "UITests/ChirpHardwareKeyboardUITests.swift",
+    "UITests/ChirpHardwareShortcutUITests.swift",
     "UITests/ChirpKeyboardTypingUITests.swift",
     "UITests/ChirpKeyboardUITests.swift",
     "UITests/ChirpLiveNotesUITests.swift",
