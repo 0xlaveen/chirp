@@ -132,6 +132,8 @@ def clip_field(value) -> bytes:
         pcm = base64.b64decode(value, validate=True)
     except ValueError:
         raise VoiceError("bad_speakers") from None
+    if len(pcm) > MAX_CLIP_BYTES:
+        raise VoiceError("clip_too_long")
     if len(pcm) % 2:
         raise VoiceError("bad_speakers")
     return pcm
@@ -899,7 +901,7 @@ def create_app(settings=None, engine=None, token=None, corrector=None, speakers=
     async def voice_action(action) -> dict:
         library = speakers.library
         kind = action.get("action") if isinstance(action, dict) else None
-        if kind not in VOICE_ACTIONS:
+        if not isinstance(kind, str) or kind not in VOICE_ACTIONS:
             raise VoiceError("bad_speakers")
         keys = set(action)
         if kind == "remember":
@@ -935,6 +937,7 @@ def create_app(settings=None, engine=None, token=None, corrector=None, speakers=
             # A voice the Mac saved before the shared library (#18), from a model that agrees.
             if (
                 keys != {"action", "name", "embedding", "seconds", "model"}
+                or not isinstance(action["model"], str)
                 or action["model"] not in IMPORTABLE
                 or not isinstance(action["embedding"], str)
                 or isinstance(action["seconds"], bool)
@@ -1028,7 +1031,11 @@ def create_app(settings=None, engine=None, token=None, corrector=None, speakers=
                     action = json.loads(body)
                 except ValueError:
                     action = None
-                if isinstance(action, dict) and action.get("action") in VOICE_ACTIONS:
+                if (
+                    isinstance(action, dict)
+                    and isinstance(action.get("action"), str)
+                    and action["action"] in VOICE_ACTIONS
+                ):
                     kind = action["action"]
                 else:
                     kind = "unknown"

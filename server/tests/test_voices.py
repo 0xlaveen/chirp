@@ -253,6 +253,8 @@ def test_auth_and_bad_requests(app):
         [],
         {},
         {"action": "nope"},
+        {"action": []},
+        {"action": {}},
         {"action": "forget_all", "x": 1},
         {"action": "forget", "voice": "MAYA"},
         {"action": "rename", "voice": voice},
@@ -275,6 +277,26 @@ def test_auth_and_bad_requests(app):
     ):
         assert post(app, body, 400)["code"] == "bad_speakers", body
     assert app.post(URL, headers=HEADERS, content=b"{nope").status_code == 400
+
+
+def test_import_rejects_non_string_models(app):
+    for model in ([], {}, None, 1):
+        body = {
+            "action": "import",
+            "name": "Maya",
+            "embedding": vs.encode(np.ones(vs.DIMENSIONS, dtype=np.float32)),
+            "seconds": 30,
+            "model": model,
+        }
+        assert post(app, body, 400)["code"] == "bad_speakers"
+
+
+def test_clip_limit_checks_decoded_size(app):
+    # Enforce the limit on decoded PCM as well as the encoded request.
+    audio = base64.b64encode(bytes(30 * sp.RATE * 2 + 2)).decode()
+    assert post(app, {"action": "remember", "name": "Maya", "audio": audio}, 413)[
+        "code"
+    ] == "clip_too_long"
 
 
 def test_remember_from_a_note_then_recognise_in_the_next(app):
