@@ -17,6 +17,8 @@ Open the local preview under `/chirp/`. The normal build uses only Python's stan
 
 Page fragments in `pages/` begin with a metadata comment (`title`, `description`, optional `section`, `class`, `base`). `layout.html` supplies navigation, social metadata and footer. `{{root}}` is the relative site root and `{{repo}}` is the public repository URL.
 
+`pages/architecture.html` explains the current models, stream protocol, Notes, speakers, input and privacy model. Keep its platform matrix aligned with the client READMEs and code; label benchmark hardware and conditions. Its diagram uses semantic HTML and shared theme colors. Claim verification and browser evidence live in `docs/review/site-architecture/`.
+
 `pages/get.html` is the canonical availability page and the **Get Chirp** navigation target. It must stay explicit that packaged apps for macOS, Linux, Windows, Android and iOS are coming soon, that every install today is a self-serve source build, and that pointing a coding agent at the repository is the recommended path. Keep that status aligned across the homepage hero and FAQ, the guides index, each platform guide and the footer whenever packaging changes.
 
 Use a committed capture from `docs/screenshots/`:
