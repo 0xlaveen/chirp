@@ -54,9 +54,14 @@ internal object NotesSessionHolder : ViewModelStoreOwner {
         val live = requireNotNull(current)
         return ViewModelProvider(this, viewModelFactory { initializer {
             NotesModel(host.applicationContext, journal = null, sessions = live.library)
-        } })["notes-reader", NotesModel::class.java]
+        } })["notes-reader", NotesModel::class.java].also { browsing = it }
     }
-    private fun clear() { current = null; viewModelStore.clear() }
+    private var browsing: NotesModel? = null
+
+    /** Main thread only: a loaded note must be edited in its model, even when its screen is hidden. */
+    fun owner(id: String): NotesModel? = listOfNotNull(current, browsing).firstOrNull { it.document.uid == id }
+
+    private fun clear() { current = null; browsing = null; viewModelStore.clear() }
 
     /** The notes are on screen somewhere; the battery saver may quiet them only when no host shows them. */
     fun visible(model: NotesModel, host: Any, on: Boolean) {

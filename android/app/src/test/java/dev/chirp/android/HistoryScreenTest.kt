@@ -153,12 +153,12 @@ class HistoryScreenTest {
         compose.setContent { dev.chirp.android.ui.ChirpTheme(colour = AppColour.POND) { HistoryScreen(store, { now }, ZoneOffset.UTC, notes = notes) } }
         reveal("Pick up oat milk, lemons and coffee beans")
         compose.onNodeWithText("Meet at the pier at noon").performTouchInput { longClick() }
-        compose.onNodeWithText("Add to note").performClick()
+        compose.onNodeWithText("Save as new note").performClick()
         compose.waitUntil(5000) { notes.entries().size == 1 }
         assertEquals("Meet at the pier at noon", notes.entries().single().title)
         compose.onNodeWithText("Saved as a new note").assertExists()
         compose.onNodeWithText("Pick up oat milk, lemons and coffee beans").performTouchInput { longClick() }
-        compose.onNodeWithText("Add to note").performClick()
+        compose.onNodeWithText("Add to latest note (“Meet at the pier at noon”)").assertIsDisplayed().performClick()
         compose.waitUntil(5000) { notes.entries().single().snippet.contains("oat milk") }
         assertEquals("Pick up oat milk, lemons and coffee beans", notes.entries().single().snippet)
         assertEquals("One note, appended", 1, notes.entries().size)
@@ -167,14 +167,30 @@ class HistoryScreenTest {
         compose.onNodeWithText("Added to your latest note").assertExists()
     }
 
-    @Test fun `add to note through the accessibility action when the library is off says so`() {
+    @Test fun `save as new is available alongside the named latest note`() {
+        store.enable()
+        val notes = NotesSessions(context, SoftwareHistoryKeys())
+        val original = NotesDocument().apply { userEdit(0, 0, "Meeting body"); name = "Team meeting" }
+        assertTrue(notes.put(original.uid, original.toJson()))
+        record("A separate thought")
+        compose.setContent { dev.chirp.android.ui.ChirpTheme(colour = AppColour.POND) { HistoryScreen(store, { now }, ZoneOffset.UTC, notes = notes) } }
+        reveal("A separate thought")
+        compose.onNodeWithText("A separate thought").performTouchInput { longClick() }
+        compose.onNodeWithText("Add to latest note (“Team meeting”)").assertIsDisplayed()
+        compose.onNodeWithText("Save as new note").assertIsDisplayed().performClick()
+        compose.waitUntil(5000) { notes.entries().size == 2 }
+        assertEquals("Meeting body", NotesDocument.fromJson(notes.open(original.uid)!!.document).text)
+        assertEquals("A separate thought", notes.entries().first { it.id != original.uid }.title)
+    }
+
+    @Test fun `save as new through the accessibility action when the library is off says so`() {
         store.enable()
         val notes = NotesSessions(context, SoftwareHistoryKeys()).also { it.disable() }
         record("Meet at the pier at noon")
         compose.setContent { dev.chirp.android.ui.ChirpTheme(colour = AppColour.POND) { HistoryScreen(store, { now }, ZoneOffset.UTC, notes = notes) } }
         reveal("Meet at the pier at noon")
         val row = compose.onNode(hasText("Meet at the pier at noon") and hasClickAction()).fetchSemanticsNode()
-        compose.runOnIdle { row.config[androidx.compose.ui.semantics.SemanticsActions.CustomActions].first { it.label == "Add to note" }.action() }
+        compose.runOnIdle { row.config[androidx.compose.ui.semantics.SemanticsActions.CustomActions].first { it.label == "Save as new note" }.action() }
         compose.waitUntil(5000) { compose.onAllNodes(hasText("Notes are off", substring = true)).fetchSemanticsNodes().isNotEmpty() }
         compose.onNodeWithText("Notes are off", substring = true).assertExists()
         assertTrue(notes.entries().isEmpty())

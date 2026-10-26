@@ -41,6 +41,8 @@ import dev.chirp.android.DictationHistory
 import dev.chirp.android.HistoryEntry
 import dev.chirp.android.HistorySettings
 import dev.chirp.android.NotesDocument
+import dev.chirp.android.NotesIndexEntry
+import dev.chirp.android.NotesSessionHolder
 import dev.chirp.android.NotesSessions
 import dev.chirp.android.R
 import dev.chirp.android.historyAge
@@ -48,6 +50,7 @@ import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.time.format.FormatStyle
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -77,7 +80,7 @@ internal fun copyPrivately(context: Context, label: String, text: String) {
     context.getSystemService(ClipboardManager::class.java)?.setPrimaryClip(clip)
 }
 
-/** What "Add to note" did, for the snackbar. */
+/** What a History note action did, for the snackbar. */
 internal sealed interface AddToNoteResult {
     data class Added(val createdNote: Boolean, val unreadableNote: Boolean = false) : AddToNoteResult
     data object Off : AddToNoteResult
@@ -85,39 +88,54 @@ internal sealed interface AddToNoteResult {
 }
 
 /**
- * Long-press "Add to note" (spec §D): appends to the most recent note, or creates one when the library is empty.
- * Runs on the caller's IO thread; never throws and never logs. The text becomes plain note body.
+ * Runs from the UI coroutine: loaded documents are edited on Main; otherwise a revision-checked write on IO retries
+ * against the latest record. [destination] pins the note named in the menu, even if the library order changes.
  */
-internal fun addDictationToNote(kept: NotesSessions, text: String): AddToNoteResult = try {
+internal suspend fun addDictationToNote(kept: NotesSessions, text: String, destination: NotesIndexEntry? = null,
+                                      saveAsNew: Boolean = false): AddToNoteResult = try {
     if (!kept.enabled) return AddToNoteResult.Off
     val trimmed = text.trim()
     if (trimmed.isEmpty()) return AddToNoteResult.Failed
-    fun createNote(unreadableNote: Boolean = false): AddToNoteResult {
-        val id = java.util.UUID.randomUUID().toString()
+    suspend fun createNote(unreadableNote: Boolean = false): AddToNoteResult = withContext(Dispatchers.IO) {
         val note = NotesDocument().apply { userEdit(0, 0, trimmed) }
-        return if (kept.put(id, note.toJson())) AddToNoteResult.Added(createdNote = true, unreadableNote = unreadableNote)
-            else AddToNoteResult.Failed
+        if (kept.put(note.uid, note.toJson())) AddToNoteResult.Added(createdNote = true, unreadableNote = unreadableNote)
+        else AddToNoteResult.Failed
     }
-    val recent = kept.entries().firstOrNull { !it.deleted }
+    val recent = if (saveAsNew) null else destination ?: withContext(Dispatchers.IO) { kept.entries().firstOrNull() }
     if (recent == null) {
         createNote()
     } else {
-        val record = kept.open(recent.id) ?: return createNote(unreadableNote = true)
-        val note = runCatching { NotesDocument.fromJson(record.document) }.getOrNull()
-            ?: return createNote(unreadableNote = true)
-        val separator = if (note.text.isBlank()) "" else "\n\n"
-        note.userEdit(note.text.length, note.text.length, separator + trimmed)
-        val document = note.toJson().put("elapsed", record.document.optDouble("elapsed", recent.duration))
-        if (kept.put(recent.id, document)) AddToNoteResult.Added(createdNote = false) else AddToNoteResult.Failed
+        var result: AddToNoteResult = AddToNoteResult.Failed
+        // Conflicts are uncommon, but never fall back to an unconditional whole-document write.
+        for (attempt in 0 until 3) {
+            val appended = withContext(Dispatchers.Main.immediate) {
+                NotesSessionHolder.owner(recent.id)?.let { it.appendText(trimmed); true } ?: false
+            }
+            if (appended) return AddToNoteResult.Added(createdNote = false)
+            val record = withContext(Dispatchers.IO) { kept.open(recent.id) }
+                ?: return createNote(unreadableNote = true)
+            if (record.entry.deleted) return AddToNoteResult.Failed
+            val note = runCatching { NotesDocument.fromJson(record.document) }.getOrNull()
+                ?: return createNote(unreadableNote = true)
+            val separator = if (note.text.isBlank()) "" else "\n\n"
+            note.userEdit(note.text.length, note.text.length, separator + trimmed)
+            val document = note.toJson().put("elapsed", record.document.optDouble("elapsed", recent.duration))
+            if (withContext(Dispatchers.IO) { kept.put(recent.id, document, expectedRevision = record.revision) }) {
+                result = AddToNoteResult.Added(createdNote = false)
+                break
+            }
+        }
+        result
     }
-} catch (_: Exception) { AddToNoteResult.Failed }
+} catch (cancelled: CancellationException) { throw cancelled }
+catch (_: Exception) { AddToNoteResult.Failed }
 
 private val LIST_DETAIL = 600.dp
 
 /**
  * The History tab: search, entries grouped by day, a detail sheet (a side pane from 600 dp) with Copy, Copy raw, Share and Delete,
- * and swipe-to-delete with Undo. Opt-in, retention and clear sit behind ⋮. Long-press offers "Add to note" through the notes
- * library. [selected]/[select] hoist the open entry (null: kept here).
+ * and swipe-to-delete with Undo. Opt-in, retention and clear sit behind ⋮. Long-press names the latest note to append to
+ * and offers "Save as new note". [selected]/[select] hoist the open entry (null: kept here).
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -126,7 +144,10 @@ internal fun HistoryScreen(store: DictationHistory? = null, now: () -> Long = Sy
     val context = LocalContext.current
     val searchFocus = remember { androidx.compose.ui.focus.FocusRequester() }
     val history = store ?: remember { DictationHistory(context) }
-    val library = notes ?: remember { NotesSessions(context) }
+    val fallbackLibrary = remember { NotesSessions(context) }
+    val library = notes ?: NotesSessionHolder.current?.library ?: fallbackLibrary
+    val noteRows by library.index.collectAsState()
+    val latest = noteRows.firstOrNull { !it.deleted }
     val scope = rememberCoroutineScope()
     val snackbar = remember { SnackbarHostState() }
     var enabled by remember { mutableStateOf(history.enabled) }
@@ -146,7 +167,11 @@ internal fun HistoryScreen(store: DictationHistory? = null, now: () -> Long = Sy
     })
     LaunchedEffect(reload, enabled) { entries = withContext(Dispatchers.IO) { history.entries() } }
     // New dictations arrive from the keyboard while this screen is in the background.
-    LifecycleResumeEffect(history) { enabled = history.enabled; reload++; onPauseOrDispose { } }
+    LifecycleResumeEffect(history, library) {
+        enabled = history.enabled; reload++
+        scope.launch { withContext(Dispatchers.IO) { library.refresh() } }
+        onPauseOrDispose { }
+    }
     val shown = entries.orEmpty().filter { historyMatches(it, query) }
     val current = open?.let { id -> entries?.firstOrNull { it.id == id } }
     fun delete(entry: HistoryEntry) {
@@ -160,9 +185,9 @@ internal fun HistoryScreen(store: DictationHistory? = null, now: () -> Long = Sy
             }
         }
     }
-    fun addToNote(entry: HistoryEntry) {
+    fun addToNote(entry: HistoryEntry, destination: NotesIndexEntry? = null, newNote: Boolean = false) {
         scope.launch {
-            val result = withContext(Dispatchers.IO) { addDictationToNote(library, entry.text) }
+            val result = addDictationToNote(library, entry.text, destination, saveAsNew = newNote)
             snackbar.currentSnackbarData?.dismiss()
             val message = when (result) {
                 is AddToNoteResult.Added -> when {
@@ -220,7 +245,8 @@ internal fun HistoryScreen(store: DictationHistory? = null, now: () -> Long = Sy
                                 }
                                 items(group, key = { "${it.id}/$restores" }) { entry ->
                                     HistoryRow(entry, historyMeta(entry, now()), icons[entry.app], twoPane && entry.id == open,
-                                        { choose(entry.id) }, { addToNote(entry) }, { delete(entry) })
+                                        { choose(entry.id) }, latest, { target -> addToNote(entry, target) },
+                                        { addToNote(entry, newNote = true) }, { scope.launch { withContext(Dispatchers.IO) { library.refresh() } } }, { delete(entry) })
                                 }
                             }
                         }
@@ -275,7 +301,8 @@ private class DetailActions(val copy: (String, String) -> Unit, val share: (Stri
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun HistoryRow(entry: HistoryEntry, meta: String, icon: Drawable?, selected: Boolean, open: () -> Unit,
-                       addToNote: () -> Unit, delete: () -> Unit) {
+                       latest: NotesIndexEntry?, addToNote: (NotesIndexEntry) -> Unit, saveAsNew: () -> Unit,
+                       refreshNotes: () -> Unit, delete: () -> Unit) {
     val dismiss = rememberSwipeToDismissBoxState()
     SwipeToDismissBox(dismiss, backgroundContent = {
         Box(Modifier.fillMaxSize().clip(MaterialTheme.shapes.extraSmall).background(MaterialTheme.colorScheme.errorContainer).padding(horizontal = 24.dp),
@@ -284,16 +311,21 @@ private fun HistoryRow(entry: HistoryEntry, meta: String, icon: Drawable?, selec
         }
     }, onDismiss = { delete() }) {
         var menu by remember { mutableStateOf(false) }
+        val addLabel = latest?.let { "Add to latest note (“${it.title}”)" }
         Box {
             ListItem(headlineContent = { Text(entry.text, maxLines = 2, overflow = TextOverflow.Ellipsis) }, supportingContent = { Text(meta) },
                 leadingContent = { AppIcon(entry.app, icon) },
                 modifier = Modifier.clip(MaterialTheme.shapes.extraSmall).combinedClickable(onClickLabel = "Open", onClick = open, onLongClickLabel = "More options",
-                    onLongClick = { menu = true })
-                    .semantics { customActions = listOf(CustomAccessibilityAction("Add to note") { addToNote(); true }, CustomAccessibilityAction("Delete") { delete(); true }) },
+                    onLongClick = { refreshNotes(); menu = true })
+                    .semantics { customActions = listOfNotNull(
+                        latest?.let { target -> CustomAccessibilityAction(requireNotNull(addLabel)) { addToNote(target); true } },
+                        CustomAccessibilityAction("Save as new note") { saveAsNew(); true }, CustomAccessibilityAction("Delete") { delete(); true }) },
                 colors = ListItemDefaults.colors(containerColor = if (selected) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceContainer))
             DropdownMenu(menu, { menu = false }) {
-                DropdownMenuItem(leadingIcon = { Icon(painterResource(R.drawable.ic_notes), null) }, text = { Text("Add to note") },
-                    onClick = { menu = false; addToNote() })
+                if (latest != null) DropdownMenuItem(leadingIcon = { Icon(painterResource(R.drawable.ic_notes_tab), null) },
+                    text = { Text(requireNotNull(addLabel)) }, onClick = { menu = false; addToNote(latest) })
+                DropdownMenuItem(leadingIcon = { Icon(painterResource(R.drawable.ic_add), null) }, text = { Text("Save as new note") },
+                    onClick = { menu = false; saveAsNew() })
             }
         }
     }

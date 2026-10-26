@@ -6,6 +6,7 @@ import os
 import hashlib
 from pathlib import Path
 import re
+import shlex
 import subprocess
 import time
 import xml.etree.ElementTree as ET
@@ -74,15 +75,13 @@ def size():
 def click(label):
     started = time.monotonic()
     for _ in range(12):
-        hierarchy = nodes()
-        matches = [n for n in hierarchy if visible(n) and (label in n.get('text', '').split('\n') or label in n.get('content-desc', ''))]
-        exact = [n for n in matches if n.get('text') == label or n.get('content-desc') == label]
-        if exact: matches = exact
-        actionable = [n for n in matches if n.get('clickable') == 'true' or any(
-            p.get('clickable') == 'true' and n in list(p.iter('node'))[1:] for p in hierarchy)]
-        if actionable:
-            tap(actionable[-1])
-            return
+        # Find and activate in one connection; hierarchy coordinates can be stale after Compose transitions.
+        try:
+            result = adb('shell', 'CLASSPATH=/data/local/tmp/chirp-ui-probe.jar', 'app_process', '/',
+                         'dev.chirp.smoke.UiHierarchy', 'await-click', shlex.quote(label), '2500')
+            if b'CLICKED' in result: return
+        except RuntimeError:
+            pass
         if time.monotonic() - started < 12:
             continue  # Let a popup finish opening; a scroll would dismiss it.
         w, h = size()
@@ -104,9 +103,22 @@ def wait_for_hierarchy(label, seconds=45):
     raise AssertionError('Missing UI state: ' + label)
 
 
-def screenshot(name):
+def mic_notice(action, capture=None):
+    # One native connection triggers the mic, observes its five-second notice, and clicks the fix or Cancel.
+    expected = 'Pair your computer in Chirp settings. Pair computer'
+    remote = '/sdcard/chirp-smoke-notice.png'
+    result = adb('shell', 'CLASSPATH=/data/local/tmp/chirp-ui-probe.jar', 'app_process', '/',
+                 'dev.chirp.smoke.UiHierarchy', 'click-and-await-action',
+                 shlex.quote('Microphone: tap to dictate'), shlex.quote(expected), shlex.quote(action), '10000', remote if capture else '-')
+    assert b'PRESENT' in result and b'CLICKED' in result, 'Mic notice action missing'
+    if capture:
+        screenshot(capture, adb('exec-out', 'cat', remote))
+        adb('shell', 'rm', '-f', remote)
+
+
+def screenshot(name, data=None):
     target = OUT / ('release-' + name + '.png')
-    data = adb('exec-out', 'screencap', '-p')
+    if data is None: data = adb('exec-out', 'screencap', '-p')
     target.write_bytes(data[data.index(b'\x89PNG'):])
     assert target.stat().st_size < 2_000_000, 'Screenshot exceeds 2 MB'
 
@@ -271,11 +283,8 @@ def main():
         click('Dictate')
         wait_for('Dictate, then edit here')
         focus_editor()
-        mic = wait_for('Microphone: tap to dictate, hold to talk')
-        tap(mic)
-        action = wait_for('Pair your Mac in Chirp settings. Pair Mac')
-        assert action.get('text') == 'Pair Mac', 'Mic strip did not respond'
-        tap(action)
+        wait_for('Microphone: tap to dictate, hold to talk')
+        mic_notice('Pair your computer in Chirp settings. Pair computer')
         wait_for('Scan code')
         adb('shell', 'am', 'start', '--activity-clear-top', '--activity-single-top', '-n', PACKAGE + '/.SetupActivity', '--es', 'section', 'try')
         wait_for('Dictate')
@@ -307,13 +316,7 @@ def main():
                         x1, y1, x2, y2 = bounds(node)
                         assert 0 <= x1 < x2 <= w and 0 <= y1 < y2 <= h, 'Clipped accessible control'
                 screenshot('keyboard-' + form + '-' + theme)
-                tap(mic)
-                # The pairing notice expires after 5 s and a dump can take 2 s; reuse the same dump for Cancel.
-                _, hierarchy = wait_for_hierarchy('Pair your Mac in Chirp settings. Pair Mac')
-                cancel = find('Cancel dictation', hierarchy)
-                assert cancel is not None and cancel.get('clickable') == 'true', 'Cancel missing beside pair action'
-                screenshot('pair-action-' + form + '-' + theme)
-                tap(cancel)
+                mic_notice('Cancel dictation', capture='pair-action-' + form + '-' + theme)
                 wait_for('Microphone: tap to dictate, hold to talk')
                 crash_check()
         adb('shell', 'wm', 'size', '2560x1600')
@@ -344,7 +347,7 @@ def main():
             override = re.search(r'Override (?:size|density): (\S+)', original)
             adb('shell', 'wm', command, override.group(1) if override else 'reset')
         adb('shell', 'cmd', 'uimode', 'night', 'yes' if 'yes' in original_night else ('auto' if 'auto' in original_night else 'no'))
-        adb('shell', 'rm', '-f', '/sdcard/chirp-release.xml', '/sdcard/chirp-windows.xml', '/data/local/tmp/chirp-ui-probe.jar')
+        adb('shell', 'rm', '-f', '/sdcard/chirp-release.xml', '/sdcard/chirp-windows.xml', '/sdcard/chirp-smoke-notice.png', '/data/local/tmp/chirp-ui-probe.jar')
 
 
 if __name__ == '__main__':
