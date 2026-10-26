@@ -14,10 +14,17 @@ The note's speakers (centroid sums and seconds of speech) live in this process's
 keyed by the client's random session id, evicted when idle and lost on restart: a new
 `generation` tells the client to start its slot map again. Nothing here is logged except
 counts and timings: never a label, an embedding, a name or text.
+
+Saved voices (issue #247, `voices.py`): when the library is on and holds voices of this model,
+`final.speakers` also carries `matches`, the note's people recognised as saved voices. A client
+remembers a person from the note's speaker in memory here (`from`), or from a clip of their
+speech (`audio`, the Mac), and identifies people from clips.
 """
 
 import asyncio
+import contextlib
 import logging
+import sys
 import time
 import uuid
 from collections import OrderedDict
@@ -26,7 +33,7 @@ from dataclasses import dataclass, field, replace
 
 import numpy as np
 
-from . import speakers_model
+from . import speakers_model, voices
 
 log = logging.getLogger("chirp")
 
@@ -551,15 +558,17 @@ class SpeakerLabels:
     """Labels for notes: the model (loaded on first use, on its own thread), the notes'
     speakers, and the model's download state for health."""
 
-    def __init__(self, embedder_factory=None, fetch=None, downloaded=None):
+    def __init__(self, embedder_factory=None, fetch=None, downloaded=None, library=None):
         self.executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="chirp-speakers")
         self.factory = embedder_factory or OnnxEmbedder
-        self.fetch = fetch or speakers_model.fetch
+        self.fetch = fetch
         self.downloaded = downloaded or speakers_model.is_downloaded
         self.embedder = None
         self.sessions = Sessions()
         self.download: asyncio.Task | None = None
+        self.model_lock = asyncio.Lock()
         self.failed = False
+        self.library = library if library is not None else voices.VoiceLibrary()
 
     @property
     def state(self) -> str:
@@ -575,30 +584,78 @@ class SpeakerLabels:
     async def call(self, method, *args):
         return await asyncio.get_running_loop().run_in_executor(self.executor, method, *args)
 
-    def start_download(self):
-        """The client's consented Download: fetch in the background; health reports it."""
-        if self.state in {"downloading", "ready"}:
+    async def _fetch_model(self):
+        if self.fetch is not None:
+            # Injectable in-process fetcher for deterministic tests.
+            await asyncio.to_thread(self.fetch)
             return
+        # A thread cannot interrupt Hugging Face's blocking HTTP download. An owned process
+        # lets Turn off stop the transfer before removing its partial files.
+        spawning = asyncio.create_task(
+            asyncio.create_subprocess_exec(
+                sys.executable,
+                "-c",
+                "from chirp_server.speakers_model import fetch; fetch()",
+                stdin=asyncio.subprocess.DEVNULL,
+                stdout=asyncio.subprocess.DEVNULL,
+                stderr=asyncio.subprocess.DEVNULL,
+            )
+        )
+        process = None
+        try:
+            # Shield creation so cancellation cannot lose a child whose spawn is in flight.
+            process = await asyncio.shield(spawning)
+            if await process.wait() != 0:
+                raise RuntimeError("speaker_download")
+        finally:
+            if process is None:
+                process = await spawning
+            if process.returncode is None:
+                process.terminate()
+                try:
+                    await asyncio.wait_for(process.wait(), timeout=5)
+                except TimeoutError:
+                    process.kill()
+                    await process.wait()
 
-        async def run():
-            try:
-                await asyncio.get_running_loop().run_in_executor(None, self.fetch)
-                self.failed = False
-            except Exception:
-                self.failed = True
-                log.warning("speakers model download failed")
+    async def start_download(self):
+        """Fetch in the background; health reports it. Repeated requests are idempotent."""
+        async with self.model_lock:
+            if self.state in {"downloading", "ready"}:
+                return
 
-        self.failed = False
-        self.download = asyncio.create_task(run())
+            async def run():
+                try:
+                    await self._fetch_model()
+                    self.failed = False
+                except Exception:
+                    self.failed = True
+                    log.warning("speakers model download failed")
+
+            self.failed = False
+            self.download = asyncio.create_task(run())
+
+    async def cancel_download(self):
+        """Stop an active fetch and remove its partial files. Keep an installed model. The
+        operation is idempotent and deliberate cancellation never reports `failed`."""
+        async with self.model_lock:
+            if self.download is not None and not self.download.done():
+                self.download.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await self.download
+                await self.call(speakers_model.remove)
+            self.download = None
+            self.failed = False
 
     async def remove(self) -> bool:
-        if self.state == "downloading":
-            return False
-        self.embedder = None
-        await self.call(speakers_model.remove)
-        self.failed = False
-        self.sessions.clear()
-        return True
+        async with self.model_lock:
+            if self.state == "downloading":
+                return False
+            self.embedder = None
+            await self.call(speakers_model.remove)
+            self.failed = False
+            self.sessions.clear()
+            return True
 
     def _embed(self, clips):
         if self.embedder is None:
@@ -644,6 +701,9 @@ class SpeakerLabels:
             if turns:
                 note.last = turns[-1].slot
         payload = {"generation": note.generation, "turns": [t.payload() for t in turns or []]}
+        matches = self.matches(note)
+        if matches is not None:
+            payload["matches"] = matches
         log.info(
             "speakers turns=%d people=%d ms=%.1f",
             len(payload["turns"]),
@@ -652,10 +712,59 @@ class SpeakerLabels:
         )
         return payload
 
+    def matches(self, note: NoteSpeakers) -> list[dict] | None:
+        """The note's people recognised as saved voices; None (no field at all) while the library
+        is off, holds no voice of this model, or is unreadable."""
+        try:
+            candidates = self.library.candidates()
+        except (OSError, ValueError):
+            log.warning("speakers voices code=unreadable")
+            return None
+        if not candidates:
+            return None
+        people = {slot: (s.total, s.seconds) for slot, s in enumerate(note.speakers)}
+        found = voices.match(people, candidates)
+        log.info("speakers voices count=%d matched=%d", len(candidates), len(found))
+        return [
+            {"speaker": slot, "voice": voice.id, "name": voice.name}
+            for slot, voice in sorted(found.items())
+        ]
+
+    def person(self, session: str, generation: str, slot: int) -> tuple[np.ndarray, float]:
+        """A note's speaker as (voiceprint, seconds of speech), without touching the note's place
+        in the LRU; `gone` when the server no longer holds that note (or that generation)."""
+        note = self.sessions.notes.get(session)
+        if note is None or note.generation != generation or not 0 <= slot < len(note.speakers):
+            raise voices.VoiceError("gone")
+        speaker = note.speakers[slot]
+        return speaker.centroid, speaker.seconds
+
+    async def clip(self, pcm: bytes) -> tuple[np.ndarray, float]:
+        """One person's clip as (voiceprint, seconds of speech covered by embedded windows). The
+        clip is held only for this call."""
+        if not self.downloaded():
+            raise voices.VoiceError("unavailable")
+        audio = np.frombuffer(pcm, dtype="<i2").astype(np.float32) / 32768.0
+        ranges = windows(audio)
+        if not ranges:
+            return np.zeros(1, dtype=np.float32), 0.0
+        clips = [speech(audio, a, b) for a, b in ranges]
+        try:
+            embeddings = await self.call(self._embed, clips)
+        except Exception:
+            log.warning("speakers voices code=failed")
+            raise voices.VoiceError("failed") from None
+        covered, end = 0, 0
+        for a, b in ranges:
+            covered += b - max(a, end)
+            end = b
+        return _unit(embeddings.sum(axis=0)), covered / RATE
+
     async def label(self, session, pcm, words, raw, text) -> dict:
         started = time.perf_counter()
         measured = await self.measure(session, pcm)
         return self.payload(measured, words, raw, text, len(pcm) / 2 / RATE, started)
 
-    def close(self):
+    async def close(self):
+        await self.cancel_download()
         self.executor.shutdown(wait=False, cancel_futures=True)

@@ -224,7 +224,7 @@ Full protocol details, including every message field, are in [the architecture d
 | `POST /v1/notes/structure` | bearer | Live Notes: structure a transcript window into Markdown (see [Notes structuring](#notes-structuring)) |
 | `POST /v1/notes/reorganize` | bearer | Live Notes: reorganize an edited notes document (see [Notes structuring](#notes-structuring)) |
 | `POST /v1/notes/edit` | bearer | Live Notes: apply a spoken edit instruction to the notes (see [Notes structuring](#notes-structuring)) |
-| `POST /v1/speakers/model` | bearer | Live Notes speaker labels: download (after the client's consent) or remove the speaker model (see [Speaker labels](#speaker-labels)) |
+| `POST /v1/speakers/model` | bearer | Live Notes speaker labels: download, cancel a download, or remove the speaker model (see [Speaker labels](#speaker-labels)) |
 | `GET /v1/devices/activity` | owner token, direct loopback | Which devices used the server (metadata only; see [Per-device tokens](#per-device-tokens)) |
 | `PUT /v1/devices/activity/settings` | owner token, direct loopback | `{"keep":false}` stops recording and deletes the stored activity |
 | `POST /v1/transcribe` | bearer | 16 kHz mono PCM16 WAV body (same limits as streaming); returns the final object |
@@ -599,15 +599,71 @@ a real voice can still be split in two (the client's "Same person as" merges the
 
 **The model** (`Wespeaker/wespeaker-voxceleb-resnet34-LM` at `f0c48c29`, one 26.5 MB ONNX file,
 CC-BY-4.0) is fetched only by `chirp-server model fetch --speakers` or by a paired client's
-`POST /v1/speakers/model {"action":"download"}` after its user agreed (202 while it runs; health's
+`POST /v1/speakers/model {"action":"download"}` (202 while it runs; health's
 `speakers_model.state` is `downloading`, then `ready` or `failed`). It lands in
 `~/Library/Application Support/Chirp/models/speakers/` and is checked against its pinned SHA-256
-(a mismatch is deleted). `{"action":"remove"}` deletes it (409 while downloading). Authenticated
+(a mismatch is deleted). `{"action":"remove"}` deletes it (409 while downloading).
+`{"action":"cancel"}` stops the owned downloader and removes partial files, returning HTTP 200
+with `{"state":"not_downloaded","size_bytes":26530309}`. It is idempotent when idle or already
+cancelled, clears a failed state, and leaves an installed model intact (200 `ready`). A new
+`download` can start immediately after cancellation. Saved voices are preserved. Authenticated
 health carries `"notes_speakers": true` and `"speakers_model": {"state": …, "size_bytes": …}`.
 
 **Privacy.** The per-note state is per-speaker sums of voice embeddings in this process's memory
 only: never on disk, never logged, never sent to a client. Logs say `speakers turns=N people=M
 ms=…`, never a label, name or text.
+
+### Saved voices
+
+One library of named voices per server, shared by every paired client (#247): name a person in a
+note on any device and every device that uses this server recognises them in later notes.
+
+```sh
+T="Authorization: Bearer $(cat ~/.config/chirp/token)"
+curl -s -H "$T" http://127.0.0.1:7821/v1/speakers/voices
+# {"enabled": true, "model": "wespeaker-voxceleb-resnet34-LM@f0c48c29", "voices": [
+#   {"id": "3f9a0c2e7b1d4a56", "name": "Maya", "seconds": 46.0, "created": "2026-10-12T09:00:00Z",
+#    "updated": "2026-10-20T10:30:00Z", "compatible": true}]}
+curl -s -H "$T" -H 'Content-Type: application/json' http://127.0.0.1:7821/v1/speakers/voices \
+  -d '{"action":"remember","name":"Maya","from":{"session":"<note session>","generation":"<generation>","speaker":1}}'
+```
+
+- **Remember.** From a note's speaker the server holds (`from`: the note's session, the final's
+  `generation` and the slot; the phones), or from a ≤ 30 s clip of the person's settled turns
+  (`audio`: base64 PCM16 16 kHz mono; the Mac). It needs at least 20 s of the person's embedded speech
+  (`409 too_short` below that). `"voice": "<id>"` updates that voice instead,
+  a seconds-weighted mean of the two voiceprints.
+- **Recognise.** A `start.speakers` note's `final.speakers` gains `"matches": [{"speaker": 1,
+  "voice": "<id>", "name": "Maya"}]` once a person has at least 10 s of embedded speech that is at least 0.7
+  alike to a saved voice and 0.10 ahead of the next one (one person per voice). The Mac sends clips
+  instead: `{"action":"identify","people":[{"person":3,"audio":"…"}]}` → `{"matches":[{"person":3,
+  "voice":"…","name":"Maya"}]}`. Without saved voices nothing changes on the wire.
+- **Import.** `{"action":"import","name","embedding","seconds","model":"wespeaker_v2@df2625a"}` moves
+  a voice the Mac saved in its Keychain before this library (#18): the Mac's model is the same
+  network, so its voiceprints compare (docs/bench.md).
+- **Manage.** `rename` (the saved voice only), `forget`, `forget_all` (deletes the file), `enable`,
+  and `disable` with `"forget": true|false`. Errors and every field:
+  [architecture.md](../docs/architecture.md#saved-voices-v1-compatible-addition-issue-247).
+- **At the Mac:**
+
+  ```sh
+  chirp-server voices list            # names, seconds, dates; --json for the API's listing
+  chirp-server voices forget Maya     # by name or id
+  chirp-server voices forget-all
+  chirp-server voices off [--forget]  # stop saving and recognising; --forget also deletes them
+  chirp-server voices on
+  ```
+
+**Storage and privacy.** `voices.json` in the server's data folder (`~/Library/Application
+Support/Chirp/speakers/` on a Mac, `$XDG_DATA_HOME/chirp/speakers/` on Linux, `%LOCALAPPDATA%\Chirp\speakers\`
+on Windows), folder 0700 and file 0600 (owner-only ACL on Windows), written atomically under a lock:
+the name, model id, voiceprint (256 float32, base64), seconds and dates of at most 50 voices. It is
+the only thing written; nothing is created until a voice is saved. Names and voiceprints are never
+logged (`speakers voices action=remember code=ok`, `speakers voices count=N matched=N`) and never
+returned: the API lists names, seconds and dates. Clips are held only for their request. Removing
+the speaker model keeps the voices; a voice saved with another model is listed as incompatible and
+never compared. Turning "Remember voices" off (a client's Saved voices screen, the `disable` action, or
+`chirp-server voices off`) stops saving and recognising server-wide.
 
 ## Notes structuring
 

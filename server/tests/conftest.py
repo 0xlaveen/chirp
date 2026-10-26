@@ -7,6 +7,7 @@ import numpy as np
 import pytest
 from starlette.testclient import TestClient
 
+from chirp_server import voices
 from chirp_server.app import create_app
 from chirp_server.audio import wav_bytes
 from chirp_server.config import Settings
@@ -35,6 +36,12 @@ def _home_relative_dirs(monkeypatch):
     """Every platform location (paths.py) follows the home directory in tests."""
     for name in ("APPDATA", "LOCALAPPDATA", "XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_CACHE_HOME"):
         monkeypatch.delenv(name, raising=False)
+
+
+@pytest.fixture(autouse=True)
+def _voices_dir(monkeypatch, tmp_path):
+    """Saved voices (#247) are never the host's: every library a test makes lives in tmp_path."""
+    monkeypatch.setattr(voices, "directory", lambda: tmp_path / "saved-voices")
 
 
 @pytest.fixture

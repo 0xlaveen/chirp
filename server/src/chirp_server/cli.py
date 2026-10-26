@@ -116,6 +116,69 @@ def devices(store, args):
         )
 
 
+def voices(library, args):
+    """Saved voices for a user at this machine: names print here, never into a log."""
+    from .voices import VoiceError
+
+    if args.action in {"list", "forget-all", "off", "on"} and args.voice is not None:
+        raise SystemExit(f"voices {args.action} takes no name")
+    if args.action == "forget":
+        if args.voice is None:
+            raise SystemExit("voices forget needs a name or id")
+        listed = library.listing()["voices"]
+        key = args.voice.strip()
+        found = [v for v in listed if v["id"] == key] or [
+            v for v in listed if v["name"].casefold() == key.casefold()
+        ]
+        if not found:
+            raise SystemExit("No saved voice has that name or id")
+        if len(found) > 1:
+            raise SystemExit("Several saved voices have that name; forget one by its id")
+        try:
+            library.forget(found[0]["id"])
+        except VoiceError:
+            raise SystemExit("No saved voice has that name or id") from None
+        print(f"Forgot {found[0]['name']} ({found[0]['id']})")
+        return
+    if args.action == "forget-all":
+        library.forget_all()
+        print("Forgot all saved voices")
+        return
+    if args.action == "off":
+        library.disable(args.forget)
+        print("Remember voices is off" + ("; saved voices forgotten" if args.forget else ""))
+        return
+    if args.action == "on":
+        library.enable()
+        print("Remember voices is on")
+        return
+    listing = library.listing()
+    if args.json:
+        print(json.dumps(listing, ensure_ascii=False))
+        return
+    print(f"Remember voices: {'on' if listing['enabled'] else 'off'} ({library.store.path})")
+    if not listing["voices"]:
+        print("No saved voices")
+        return
+    rows = [["ID", "NAME", "SECONDS", "CREATED", "UPDATED", ""]]
+    rows += [
+        [
+            v["id"],
+            v["name"],
+            f"{v['seconds']:.0f}",
+            v["created"],
+            v["updated"],
+            "" if v["compatible"] else "other model: name them again",
+        ]
+        for v in listing["voices"]
+    ]
+    widths = [max(len(row[i]) for row in rows) for i in range(len(rows[0]))]
+    for row in rows:
+        print(
+            "  ".join(cell.ljust(width) for cell, width in zip(row, widths, strict=True)).rstrip()
+        )
+
+
 def parser():
     result = argparse.ArgumentParser(description="Private local streaming dictation")
     result.add_argument("--config", type=Path)
@@ -146,6 +209,11 @@ def parser():
     paired.add_argument("device", nargs="?", help="name or id to revoke")
     paired.add_argument("--all", action="store_true", help="include revoked devices")
     paired.add_argument("--json", action="store_true")
+    saved = commands.add_parser("voices", help="list or forget saved voices, or turn them off")
+    saved.add_argument("action", choices=["list", "forget", "forget-all", "off", "on"])
+    saved.add_argument("voice", nargs="?", help="name or id to forget")
+    saved.add_argument("--forget", action="store_true", help="with off: also forget every voice")
+    saved.add_argument("--json", action="store_true")
     model = commands.add_parser("model")
     model.add_argument("action", choices=["fetch"])
     model.add_argument("--engine", choices=["mlx", "onnx", "sensevoice"], default=argparse.SUPPRESS)
@@ -212,6 +280,13 @@ def main():
             devices(DeviceStore(settings.config_dir), args)
         except ValueError as exc:
             raise SystemExit(str(exc)) from None
+    elif args.command == "voices":
+        from .voices import VoiceLibrary
+
+        try:
+            voices(VoiceLibrary(), args)
+        except ValueError as exc:
+            raise SystemExit(f"{exc}; `chirp-server voices forget-all` deletes it") from None
     elif args.command == "model":
         if args.speakers:
             from .speakers_model import fetch

@@ -17,6 +17,11 @@ let package = Package(
             .product(name: "ChirpCore", package: "mac"),
             .product(name: "ChirpSpeakers", package: "mac"),
         ]),
+        // Saved voices on the server (issue #247): the Mac's `wespeaker_v2` embeddings of clips, for the agreement spike.
+        .executableTarget(name: "VoiceAgreement", dependencies: [
+            .product(name: "ChirpCore", package: "mac"),
+            .product(name: "ChirpSpeakers", package: "mac"),
+        ]),
     ],
     swiftLanguageModes: [.v6]
 )

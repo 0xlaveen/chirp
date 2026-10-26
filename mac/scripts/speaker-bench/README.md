@@ -41,3 +41,19 @@ B=~/Library/Caches/Chirp/speaker-bench
 uv run --no-project --with numpy python make_voice_clips.py $B/voices
 swift run -c release VoiceBench --clips $B/voices --out $B/out/voices/rates.json
 ```
+
+## Saved voices on the server (`VoiceAgreement`)
+
+`server/scripts/bench_voices.py` benches recognition with the server's shared voice library (#247): thresholds for
+the server's WeSpeaker ResNet34-LM over the same `say` conversations plus four AMI meetings, and the agreement
+spike between that model and the Mac's `wespeaker_v2`. `VoiceAgreement` is the Mac side of the spike: it embeds
+every WAV in a folder with the app's `WeSpeakerEmbedder` (offline; the 8 MB model must already be downloaded).
+Results: [docs/bench.md](../../../docs/bench.md#saved-voices-server-247).
+
+```sh
+B=~/Library/Caches/Chirp/speaker-bench   # voices/ from make_voice_clips.py, ami/ from fetch_ami.sh
+S="uv run python scripts/bench_voices.py --model <the pinned ONNX> --clips $B/voices --ami $B/ami --spike $B/spike"
+(cd ../../../server && $S --spike-only)   # writes the spike's clips
+swift run -c release VoiceAgreement --clips $B/spike/clips --out $B/spike/mac.json
+(cd ../../../server && $S --mac-embeddings $B/spike/mac.json --out $B/voices-bench.json)
+```

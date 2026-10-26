@@ -6,6 +6,7 @@ import logging
 import os
 import shutil
 import subprocess
+import sys
 import time
 import wave
 from pathlib import Path
@@ -479,6 +480,77 @@ def test_failed_download_reports_failed(settings):
                 break
             time.sleep(0.02)
         assert state == "failed"
+
+
+def test_cancel_stops_process_cleans_partials_and_allows_redownload(
+    settings, tmp_path, monkeypatch
+):
+    folder = tmp_path / "speakers"
+    marker = folder / "partial"
+    installed = folder / speakers_model.FILE
+    monkeypatch.setattr(speakers_model, "directory", lambda: folder)
+    original_spawn = asyncio.create_subprocess_exec
+    processes = []
+
+    async def downloader(*command, **kwargs):
+        assert list(command) == [
+            sys.executable,
+            "-c",
+            "from chirp_server.speakers_model import fetch; fetch()",
+        ]
+        # The first fetch blocks after writing a partial. The retry completes normally.
+        script = (
+            "from pathlib import Path; import threading; "
+            f"Path({str(folder)!r}).mkdir(parents=True, exist_ok=True); "
+            + (
+                f"Path({str(marker)!r}).write_bytes(b'partial'); threading.Event().wait(60)"
+                if not processes
+                else f"Path({str(installed)!r}).write_bytes(b'model')"
+            )
+        )
+        process = await original_spawn(sys.executable, "-c", script, **kwargs)
+        processes.append(process)
+        return process
+
+    monkeypatch.setattr(sp.asyncio, "create_subprocess_exec", downloader)
+    service = sp.SpeakerLabels(downloaded=installed.exists)
+    with TestClient(create_app(settings, FakeEngine(), TOKEN, speakers=service)) as client:
+        url = "/v1/speakers/model"
+
+        def action(kind):
+            response = client.post(url, headers=HEADERS, json={"action": kind})
+            assert response.status_code == (202 if kind == "download" else 200)
+            return response.json()["state"]
+
+        assert client.post(url, json={"action": "cancel"}).status_code == 401
+        assert action("cancel") == "not_downloaded"
+        assert not folder.exists()
+        assert action("download") == "downloading"
+        deadline = time.monotonic() + 10
+        while not marker.exists() and time.monotonic() < deadline:
+            time.sleep(0.02)
+        assert marker.exists()
+        assert action("cancel") == "not_downloaded"
+        assert processes[0].returncode is not None
+        assert not folder.exists()
+        assert action("cancel") == "not_downloaded"
+        assert action("download") == "downloading"
+        deadline = time.monotonic() + 10
+        while service.state == "downloading" and time.monotonic() < deadline:
+            time.sleep(0.02)
+        assert service.state == "ready"
+        assert action("cancel") == "ready"
+        assert installed.read_bytes() == b"model"
+        assert len(processes) == 2
+
+
+def test_cancel_clears_failed_state(settings):
+    service = sp.SpeakerLabels(downloaded=lambda: False)
+    service.failed = True
+    with TestClient(create_app(settings, FakeEngine(), TOKEN, speakers=service)) as client:
+        response = client.post("/v1/speakers/model", headers=HEADERS, json={"action": "cancel"})
+        assert response.status_code == 200
+        assert response.json() == {"state": "not_downloaded", "size_bytes": speakers_model.SIZE}
 
 
 def test_model_files_are_verified(tmp_path, monkeypatch):

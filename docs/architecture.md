@@ -127,12 +127,82 @@ even when correction is off; it never exposes prompts or client instructions.
 `{"error": "unavailable|failed"}`. Turn texts cover the final's `text` in order; `speaker` is the
 note's slot, numbered by first appearance; a new `generation` means the server lost the note (its
 slots are new voices). Any other `speakers` value is `bad_audio`; without the field nothing changes.
-`POST /v1/speakers/model` (authenticated, `{"action":"download"|"remove"}`) fetches the pinned
-speaker model after the client's consent or deletes it (200/202 with `{"state":…,"size_bytes":…}`,
-409 for remove while downloading, 400 `bad_speakers` otherwise). Authenticated health adds
+`POST /v1/speakers/model` (authenticated, `{"action":"download"|"cancel"|"remove"}`) fetches the pinned
+speaker model or deletes it (200/202 with `{"state":…,"size_bytes":…}`,
+409 for remove while downloading, 400 `bad_speakers` otherwise). `cancel` is idempotent: it stops
+the owned download process and removes partial files, returning 200 `not_downloaded`; an already
+installed model is preserved (200 `ready`). A deliberate cancel clears `failed`. It does not change
+saved voices or other clients' preferences. Authenticated health adds
 `"notes_speakers": true` (also in `capabilities`) and `"speakers_model": {"state":
 "ready|downloading|not_downloaded|failed", "size_bytes": n}`. Details in
 [server/README.md](../server/README.md#speaker-labels).
+
+### Saved voices (v1-compatible addition, issue #247)
+
+One library of saved voices per Chirp server, shared by every client paired to it: a name and a
+voiceprint (the unit mean of the pinned WeSpeaker ResNet34-LM's 256-number embeddings of the
+person's speech) per person, at most 50, in `data_dir()/speakers/voices.json` (folder 0700, file
+0600, owner-only ACL on Windows; `~/Library/Application Support/Chirp/speakers/` on a Mac). A voice
+named on one device is recognised on every other device that uses the same server; a client on
+another server has that server's library. No `api` bump: a client that does not see the
+capability hides "remember voice" and the Saved voices screen ("Update Chirp on your Mac to save
+voices").
+
+- **Capability.** Authenticated health adds `"speaker_voices": true` (also in `capabilities`) and
+  `"speakers_voices": {"enabled": bool, "count": n, "model": "wespeaker-voxceleb-resnet34-LM@f0c48c29"}`
+  (`"error": "unreadable"` when the file is damaged; Forget all starts again).
+- **`final.speakers.matches`.** With a `start.speakers.session`, the library on and at least one
+  voice of the server's model saved, `final.speakers` gains `"matches": [{"speaker": slot, "voice":
+  "<16 hex>", "name": "Maya"}]` (possibly `[]`). Each match is the note's slot (as in `turns`) the
+  server recognises now, over the whole note so far, not only this segment's turns: a slot with
+  ≥ 10 s of embedded speech, whose voiceprint is at least 0.7 alike to a
+  saved voice and 0.10 ahead of the next saved voice; one slot per voice and one voice per slot,
+  the closest first (the Mac's `VoiceMatch`). The name is included so a device that never saw the
+  voice can show it. A slot absent from a present list is not recognised (yet); clients keep a name
+  they already applied. Without saved voices, with the library off or unreadable, the message is
+  byte-identical to before.
+- **`GET /v1/speakers/voices`** → `{"enabled": bool, "model": "…", "voices": [{"id": "<16 hex>",
+  "name": "Maya", "seconds": 46.0, "created": "2026-10-12T09:00:00Z", "updated": "…", "compatible":
+  bool}]}`. Never a voiceprint. `compatible: false` is a voice from another model: listed ("name them
+  again"), never compared.
+- **`POST /v1/speakers/voices`** takes one action (JSON, at most 8 × 30 s of clips) and answers the
+  same listing, except `identify`:
+  - `{"action": "remember", "name": "Maya", "from": {"session": "<the note's session>",
+    "generation": "<final.speakers.generation>", "speaker": slot}}`: the phone path, from the note's
+    speaker the server holds in memory. Its listing adds `"voice": {…}`, the saved voice.
+  - `{"action": "remember", "name": "Maya", "audio": "<base64 PCM16 LE 16 kHz mono, ≤ 30 s>"}`: the
+    Mac path, a clip of the person's settled turns (≥ 2 s each, the last 30 s). Voiced 1.5 s windows
+    are embedded and averaged; the clip is held only for the request.
+  - Either with `"voice": "<id>"` updates that voice (renaming it to `name`): a seconds-weighted mean
+    of the two voiceprints; a voice of another model is replaced. Without `voice` it is always a new
+    voice, even under a name already saved (the client decides; it has the list).
+  - `{"action": "import", "name": "Maya", "embedding": "<base64 256 float32 LE>", "seconds": 31.0,
+    "model": "wespeaker_v2@df2625a"}`: once, for a voice the Mac saved in its Keychain before the
+    shared library (#18). Only that model id is accepted (it agrees with the server's; see below), and
+    the voice is stored as this server's model. Its listing adds `"voice": {…}`.
+  - `{"action": "identify", "people": [{"person": n, "audio": "<clip>"}, …]}` (1–8 people, `person`
+    0–999, unique) → `{"matches": [{"person": n, "voice": "<id>", "name": "Maya"}]}`, one-to-one with
+    the same rule as `matches`. The Mac sends it once per person at 10 s of speech, and again if not
+    matched by 30 s. With no voice saved it answers `[]` without the model.
+  - `{"action": "rename", "voice", "name"}` renames the saved voice only (notes keep their names);
+    `{"action": "forget", "voice"}`; `{"action": "forget_all"}` deletes the file (while off, it
+    keeps an empty, off library); `{"action": "enable"}`; `{"action": "disable", "forget": bool}`.
+  - Names follow the notes' speaker-label rule (#212): one line, no colon, a letter, ≤ 60
+    characters; runs of spaces collapse.
+  - Errors are `{"type": "error", "code", "message"}`: `400 bad_speakers` (malformed, or a name the
+    rule refuses), `404 gone` (the server no longer holds that note or generation: "Record a little
+    more with them, then try again"), `404 no_voice`, `409 too_short` (under 20 s of embedded speech), `409 disabled`, `409 full` (50 voices), `409 unavailable`
+    (a clip needs the speaker model), `413 clip_too_long`, `500 voices_file` (the file could not be
+    read or written), `500 failed`, `401 auth`. An older server answers 404/405 without a code.
+- **Thresholds** are this model's own (0.7 / 0.10; the Mac's `wespeaker_v2` profiles use 0.75), from
+  [bench.md](bench.md#saved-voices-server-247). The Mac's `wespeaker_v2` is the same
+  network as the server's model, quantised: their embeddings of the same clip agree (cosine
+  0.98–0.99), so the Mac's Keychain voices (#18) can move to the server once with `import` (same
+  bench).
+- **Switch.** `enabled` is the server-wide "Remember voices": off, nothing is saved or recognised and
+  `remember`/`identify` answer `409 disabled`; listing, rename and forget still work. Removing the
+  speaker model keeps the voices. `chirp-server voices list | forget <name or id> | forget-all | off
+  [--forget] | on` does the same at the Mac; the server picks the change up on the next request.
 
 ### Live Notes structuring (v1-compatible addition)
 
@@ -424,13 +494,14 @@ Version additions preserve existing fields. A breaking change becomes `/v2`.
 - **Speaker labels (Mac Live Notes) never leave the Mac, and are on by default.** Diarization runs in the ChirpMac process with CoreML (FluidAudio's streaming Sortformer). The preference is `stored ?? true`: only the user's own Turn off (or Remove) stores a value, and a one-time migration (`speakerLabelsDefault = 2`) clears an older stored `false`, which the app used to write itself when the model was missing. A missing or failed model is a model state (`SpeakerModelState`), never a preference change. The model downloads once from `https://huggingface.co` (the host is fixed in the app; FluidAudio's `REGISTRY_URL` environment override is ignored) at a pinned revision, into `~/Library/Application Support/FluidAudio/Models/sortformer`, and every file is checked against pinned SHA-256 hashes (a mismatch is deleted). With labels on and the model missing, the first labelled recording starts that download in the background with no prompt; Record never waits (text starts at once, the diarizer joins the running recording when the model is ready, and earlier audio stays unlabelled). The Notes window shows one status line (progress, or "couldn't download" with Retry) with Turn off, which cancels the download. Every other load runs FluidAudio in offline mode: a damaged model fails, shows Retry, and is re-downloaded only by that Retry, never fetched or purged silently. Settings › Notes removes the model, partial downloads included, and turns labels off. Third-party notices (FluidAudio's Apache-2.0 licence, the model's CC BY 4.0 attribution) ship in the app bundle and open from Settings › About.
   - The diarizer state, the speaker timeline and the voiceprints are memory-only and go with New, a discarded close or quit. The roster (Person N, the names you give, merges, turns reassigned by hand) and every label are saved with the note in the library (`note.json`, the same 0600 file as its text) and come back when the note is reopened. Audio is held only in Sortformer's rolling context (and a bounded 30 s queue). No embedding is written to disk, UserDefaults or logs, or sent anywhere.
   - Labels reach the server only as text: `Person 2: …` lines in the existing structuring request, and the labels the notes already hold in a reorganize request (only such requests get the speaker rule; every other prompt is unchanged), under the same rules as the transcript (off while health is unknown, per-host opt-in off the machine). `/v1/stream` is unchanged; the only addition there is the existing opt-in `word_timings`, asked for only while labels are on.
-  - **Voice profiles (opt-in, off by default)** extend this to biometric data, under stricter rules.
+  - **Voice profiles (opt-in, off by default)** extend this to biometric data, under stricter rules. This is the Mac's own Keychain library from #18; the server's shared library above replaces it as the source of truth when the Mac moves onto it (#247 item 3b), and the Mac imports its Keychain voices into it once, because the two models agree ([bench](bench.md#saved-voices-server-247)).
     - Session voiceprints, one 256-number WeSpeaker embedding per diarizer slot averaged over its settled turns of 2 s or more, live in the ChirpMac process only and go with New, a discarded close or quit. Computing them keeps at most the last 30 s of audio in memory.
     - A voiceprint is saved only on "Remember this voice", after the user ticks that the person agreed. It goes in one Keychain generic-password item per person (service `Chirp Voice Profile`, `kSecAttrSynchronizable` false, `WhenUnlockedThisDeviceOnly` in the data-protection keychain when the build is entitled to it, else the login keychain). It is deleted by Forget / Forget all.
     - The embedding model (`wespeaker_v2`, 8 MB, CC BY 4.0) downloads like the speaker model: once, after a prompt, pinned revision and SHA-256.
     - Voiceprints never enter the document, the recovery journal, Save…, Copy, UserDefaults, logs (`notes voices saved=N suggestions=N` only) or any request. Tests check the document, the journal, the export and the structuring request for a voiceprint's digits, and that no file is written.
     - Suggestions only: a name changes only when the user confirms it.
   - Logs carry `notes labels speakers=N lag_ms=… tentative=…` only. Tests assert the log line's shape, that a full labelled session writes nothing under Application Support or Chirp's caches, and (against a local stand-in for the Hub) that only the consented download makes a request.
+- **Saved voices on the server (#247) stay on the user's server.** Names and voiceprints are kept in one file, `voices.json` (0600, folder 0700) in the server's data folder, and never logged (`speakers voices action=remember code=ok`, `speakers voices count=N matched=N` only). Voiceprints are never returned to a client; the API lists names, seconds and dates. Nothing is sent outside the user's machines. A clip sent to remember or identify a voice is held only for the request; per-note centroids stay in the bounded in-memory session cache. The server-wide "Remember voices" switch stops saving and recognising; Forget and Forget all delete. Tests check the logs for names, ids, sessions and voiceprint digits, and that the only file written is `voices.json` (and its lock).
 - **Correction is off by default.** When it is enabled with a non-loopback `base_url`, health reports `correction_leaves_machine: true`, and clients label the toggle "sends text to <host>". Audio never leaves the Mac. Only the final text does, and only when correction is on.
 - **Secrets:**
   - Owner token: `~/.config/chirp/owner-token`, 0600, generated on first run; read by the Mac app on the server machine for device activity, never put in a pairing link and accepted by no other endpoint.
