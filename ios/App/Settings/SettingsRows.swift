@@ -78,7 +78,7 @@ struct RowTile<Content: View>: View {
     @ViewBuilder var content: Content
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: ChirpSpacing.s8) { content }
-            .padding(.horizontal, ChirpSpacing.s16)
+            .padding(.horizontal, ChirpSpacing.s16).padding(.vertical, ChirpSpacing.s8)
             .frame(minHeight: hasSummary ? 56 : 44, alignment: .leading)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(fill, in: RoundedRectangle(cornerRadius: ChirpRadius.row, style: .continuous))
@@ -199,10 +199,28 @@ struct ChoiceChips<Option: Hashable>: View {
 struct FlowLayout<Content: View>: View {
     var spacing: CGFloat
     @ViewBuilder var content: Content
-    var body: some View {
-        ViewThatFits(in: .horizontal) {
-            HStack(spacing: spacing) { content }
-            VStack(alignment: .leading, spacing: spacing) { content }
+    var body: some View { WrapLayout(spacing: spacing) { content } }
+}
+
+private struct WrapLayout: Layout {
+    var spacing: CGFloat
+    private func rows(_ subviews: Subviews, width: CGFloat) -> (frames: [CGRect], size: CGSize) {
+        var frames: [CGRect] = [], x: CGFloat = 0, y: CGFloat = 0, rowHeight: CGFloat = 0, widest: CGFloat = 0
+        for view in subviews {
+            let size = view.sizeThatFits(.unspecified)
+            if x > 0, x + size.width > width { x = 0; y += rowHeight + spacing; rowHeight = 0 }
+            frames.append(CGRect(origin: CGPoint(x: x, y: y), size: size))
+            x += size.width + spacing; rowHeight = max(rowHeight, size.height); widest = max(widest, x - spacing)
+        }
+        return (frames, CGSize(width: widest, height: y + rowHeight))
+    }
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        rows(subviews, width: proposal.width ?? .infinity).size
+    }
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        let laidOut = rows(subviews, width: bounds.width).frames
+        for (view, frame) in zip(subviews, laidOut) {
+            view.place(at: CGPoint(x: bounds.minX + frame.minX, y: bounds.minY + frame.minY), proposal: .unspecified)
         }
     }
 }

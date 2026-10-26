@@ -39,11 +39,13 @@ private struct StyleRow: View {
     var body: some View {
         RowTile(hasSummary: true) {
             Button { model.selectStyle(profile.id) } label: {
-                RowText(title: profile.name,
-                        summary: profile.rewrites ? profile.description + " · May restructure" : profile.description,
-                        symbol: nil)
-                if edited { editedCapsule }
-                Spacer(minLength: ChirpSpacing.s4)
+                HStack(spacing: ChirpSpacing.s8) {
+                    RowText(title: profile.name,
+                            summary: profile.rewrites ? profile.description + " · May restructure" : profile.description,
+                            symbol: nil)
+                    if edited { editedCapsule }
+                    Spacer(minLength: ChirpSpacing.s4)
+                }.frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
             }.buttonStyle(.rowPress)
             .accessibilityIdentifier("chirp.styles.pick." + profile.id)
             Image(systemName: selected ? "checkmark.circle.fill" : "circle")
