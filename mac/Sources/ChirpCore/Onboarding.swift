@@ -37,7 +37,7 @@ public enum OnboardingStep: Int, CaseIterable, Sendable {
         case .welcome: "Welcome to Chirp"
         case .microphone: "Microphone"
         case .accessibility: "Accessibility"
-        case .server: "Speech server"
+        case .server: "Chirp server"
         case .tryIt: "Try it"
         }
     }

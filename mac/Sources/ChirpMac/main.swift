@@ -16,8 +16,13 @@ case .learnSelftest:
 case .renderSnapshots(let directory, let curated):
     // Draws offscreen only: no delegate, no run loop, no onboarding, no permission or pasteboard access.
     do {
-        let files = try await MainActor.run { try Snapshots.render(to: URL(fileURLWithPath: directory, isDirectory: true),
-                                                                      scenarios: curated ? Snapshots.committedScenarios : nil) }
+        let files = try await MainActor.run {
+            // Load the bundle accent before constructing any scenario: native cells cache it on first use.
+            _ = NSApplication.shared
+            _ = NSColor(named: "AccentColor", bundle: .main)?.usingColorSpace(.sRGB)
+            return try Snapshots.render(to: URL(fileURLWithPath: directory, isDirectory: true),
+                                        scenarios: curated ? Snapshots.committedScenarios : nil)
+        }
         print("Wrote \(files.count) PNGs to \(directory)")
         exit(0)
     } catch {

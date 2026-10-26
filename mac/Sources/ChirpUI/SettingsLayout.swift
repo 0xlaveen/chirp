@@ -30,10 +30,9 @@ enum SettingsLayout {
         return NSColor(srgbRed: c.r, green: c.g, blue: c.b, alpha: 1)
     }
     static let onTonal = ChirpColor.dynamic(ChirpColor.Pond.onKoiContainer.light, ChirpColor.Pond.onKoiContainer.dark)
-    /// The selected sidebar row and the active onboarding step: the pale koi container with dark koi ink in light, and in dark a
-    /// crisp solid koi pill with pond ink on it (the same pairing as a primary button).
-    static let selection = ChirpColor.dynamic(ChirpColor.Pond.koiContainer.light, ChirpColor.Pond.koi.dark)
-    static let onSelection = ChirpColor.dynamic(ChirpColor.Pond.onKoiContainer.light, ChirpColor.Pond.onKoi.dark)
+    /// Selected sidebar rows and active onboarding steps use the koi container in both themes.
+    static let selection = koiContainer
+    static let onSelection = onKoiContainer
     /// The icon tile or step number inside the selected row: a koi tile in light, a pond-ink tile in dark.
     static let selectionTile = ChirpColor.dynamic(ChirpColor.Pond.koi.light, ChirpColor.Pond.onKoi.dark)
     static let onSelectionTile = ChirpColor.dynamic(ChirpColor.Pond.onKoi.light, ChirpColor.Pond.koi.dark)

@@ -197,7 +197,7 @@ struct SpeakerMenuItems: View {
         let others = roster.active.filter { $0 != roster.resolve(person) }
         Button("Rename “\(roster.displayName(person))”…") { model.beginRename(row: row, person: person) }
         Button("Name Speakers…") { model.beginNamingSpeakers() }
-        Menu("Merge into") {
+        Menu("Same person as") {
             ForEach(others, id: \.self) { id in
                 Button(roster.displayName(id)) { model.onSpeakerEdit(.merge(person, into: id)) }
             }

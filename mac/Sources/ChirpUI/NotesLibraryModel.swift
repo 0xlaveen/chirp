@@ -26,7 +26,7 @@ public enum NotesLibraryText {
     public static let emptyBody = "Record a meeting or a thought, or start typing. Chirp turns what you say into notes."
     public static let emptyPrivacy = "Notes stay on this Mac."
     public static let newNote = "New Note"
-    public static let untitled = "New Note"
+    public static let untitled = "Untitled note"
     public static let deleted = "Note deleted"
     public static let recovered = "Recovered"
     public static let stopAndContinue = "Stop Current and Continue Here"
@@ -35,6 +35,11 @@ public enum NotesLibraryText {
     public static let trashEmpty = "Nothing in Recently Deleted"
     public static let trashHelp = "Deleted notes stay here for \(NotesLibraryStore.recentlyDeletedDays) days, then they’re gone for good."
     public static let emptyTrash = "Empty Recently Deleted…"
+    public static let emptyTrashTitle = "Empty Recently Deleted?"
+    public static let deletePermanently = "Delete Permanently"
+    public static func emptyTrashMessage(_ count: Int) -> String {
+        "\(results(count)) and their audio will be deleted for good. This can’t be undone."
+    }
 
     public static func noResults(_ query: String) -> String { "No results for “\(query)”" }
     public static func results(_ count: Int) -> String { count == 1 ? "1 note" : "\(count) notes" }

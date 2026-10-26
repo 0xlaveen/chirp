@@ -27,7 +27,7 @@ struct NotesInspector: View {
                 Toggle("Raw", isOn: $model.showRaw)
                     .toggleStyle(.checkbox)
                     .controlSize(.small)
-                    .help("Show each segment as the speech server first heard it")
+                    .help("Show each segment as Chirp first heard it")
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 10)
@@ -259,31 +259,39 @@ private struct TranscriptRowView: View {
     }
 }
 
-/// A person's colour, the same in the transcript and wherever a chip shows. System colours, so both themes keep
-/// their contrast.
+/// The Pond 8 speaker hues, shared with iOS and Android. Index zero is koi.
 enum SpeakerPalette {
-    static let colors: [Color] = [.blue, .orange, .green, .purple, .pink, .teal, .brown, .indigo]
-    static func color(_ index: Int) -> Color { colors[((index % colors.count) + colors.count) % colors.count] }
+    static let light: [ChirpColor.RGB] = [0xC2410C, 0x2F7A4F, 0x4F46E5, 0xA21CAF, 0x0F766E, 0x8A5A00, 0x0369A1, 0xBE123C].map(ChirpColor.hex)
+    static let dark: [ChirpColor.RGB] = [0xFF8A4C, 0x7CCB9B, 0xA5B4FC, 0xF0ABFC, 0x5EEAD4, 0xF5C566, 0x7DD3FC, 0xFDA4AF].map(ChirpColor.hex)
+    static let tint = (light: 0.12, dark: 0.18)
+
+    static func color(_ index: Int) -> Color {
+        let i = ((index % light.count) + light.count) % light.count
+        return ChirpColor.color(light[i], dark[i])
+    }
 }
 
-/// "Person 2" (or a name) on a capsule of the person's colour; dotted when the label is approximate (no word timings).
+/// The canonical speaker chip: a dot, tinted capsule, name in hue and trailing recognition checkmark.
 struct SpeakerChip: View {
     let name: String
     let color: Int
     var approximate = false
     var recognised = false
+    @Environment(\.colorScheme) private var scheme
 
     var body: some View {
-        let tint = SpeakerPalette.color(color)
-        Text(name + (recognised ? " ✓" : ""))
-            .font(.caption.weight(.semibold))
-            .foregroundStyle(tint)
-            .lineLimit(1)
-            .padding(.horizontal, 7)
-            .padding(.vertical, 1)
-            .background(Capsule().fill(tint.opacity(0.14)))
-            .overlay(Capsule().strokeBorder(tint.opacity(0.55), style: StrokeStyle(lineWidth: 1, dash: approximate ? [2, 2] : [])))
-            .fixedSize()
-            .accessibilityLabel("Speaker: \(name)" + (approximate ? ", approximate" : "") + (recognised ? ", recognised" : ""))
+        let hue = SpeakerPalette.color(color)
+        HStack(spacing: 5) {
+            Circle().fill(hue).frame(width: 8, height: 8).accessibilityHidden(true)
+            Text(name).lineLimit(1)
+            if recognised { Text("✓").accessibilityHidden(true) }
+        }
+        .font(.caption.weight(.semibold))
+        .foregroundStyle(hue)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 3)
+        .background(Capsule().fill(hue.opacity(scheme == .dark ? SpeakerPalette.tint.dark : SpeakerPalette.tint.light)))
+        .fixedSize()
+        .accessibilityLabel("Speaker: \(name)" + (approximate ? ", approximate" : "") + (recognised ? ", recognised" : ""))
     }
 }

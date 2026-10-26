@@ -57,7 +57,7 @@ final class NotesTextView: NSTextView {
     var hidesMarkup = true { didSet { if hidesMarkup != oldValue { needsDisplay = true } } }
     var raw: NSRange? { didSet { if raw != oldValue { needsDisplay = true } } }
     /// The title page above the text (`NotesTitleHeader`): it scrolls with the notes.
-    var header: NSView? {
+    var header: NSHostingView<NotesTitleHeader>? {
         didSet {
             oldValue?.removeFromSuperview()
             if let header { addSubview(header) }
@@ -83,6 +83,8 @@ final class NotesTextView: NSTextView {
         if let header {
             // Sized by hand, and only set when it changed: the header is not part of any constraint layout.
             let width = max(0, frame.width - 2 * inset)
+            // SwiftUI's unconstrained fitting size misses wrapped titles and facts in the inspector split.
+            if header.rootView.width != width { header.rootView.width = width }
             let height = ceil(header.fittingSize.height)
             let target = NSRect(x: inset, y: 0, width: width, height: height)
             if header.frame != target { header.frame = target }

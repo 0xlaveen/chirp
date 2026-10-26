@@ -37,7 +37,7 @@ cp Assets/ChirpGlyph.png "$APP/Contents/Resources/"
 # skips this and the app falls back to the system accent.
 if ACTOOL=$(xcrun --find actool 2>/dev/null); then
     "$ACTOOL" --compile "$APP/Contents/Resources" --platform macosx --minimum-deployment-target 14.0 \
-        --output-partial-info-plist "$(mktemp)" "$PWD/Assets.xcassets" >/dev/null
+        --accent-color AccentColor --output-partial-info-plist "$(mktemp)" "$PWD/Assets.xcassets" >/dev/null
 fi
 # Third-party notices: FluidAudio's Apache-2.0 licence (and those it vendors) and the speaker model's CC BY 4.0
 # attribution. About › Third-Party Notices… opens them.
@@ -63,10 +63,11 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
     <key>LSMinimumSystemVersion</key><string>14.0</string>
     <key>LSUIElement</key><true/>
     <key>NSHighResolutionCapable</key><true/>
+    <key>NSAccentColorName</key><string>AccentColor</string>
     <key>NSMicrophoneUsageDescription</key>
-    <string>Chirp streams your voice to your own speech server to type what you say. Audio is not stored.</string>
+    <string>Chirp streams your voice to your configured Chirp server to type what you say. Audio is kept only when you choose to keep it with a note.</string>
     <key>NSAudioCaptureUsageDescription</key>
-    <string>With “Include call audio” on, Live Notes records what your Mac plays (the other people on a call) so both sides are transcribed by your own speech server. Audio stays on this Mac and your server.</string>
+    <string>With “Include call audio” on, Live Notes records what your Mac plays (the other people on a call) so both sides are transcribed by your configured Chirp server. Kept audio stays on this Mac.</string>
 </dict>
 </plist>
 PLIST

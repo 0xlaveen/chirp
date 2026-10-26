@@ -120,10 +120,10 @@ private let home = ServerConfig(baseURL: URL(string: "http://127.0.0.1:7821/chir
         #expect(KeepLoaded.memoryText(mb: -5, estimated: false) == "0.0 GB")
     }
 
-    @Test func hostPhraseIsThisMacOnLoopbackElseTheHost() {
+    @Test func hostPhraseFollowsTheGlossaryForLocalAndRemoteServers() {
         #expect(KeepLoaded.hostPhrase(ServerConfig()) == "this Mac")
         #expect(KeepLoaded.hostPhrase(ServerConfig(baseURL: URL(string: "http://localhost:7821")!)) == "this Mac")
-        #expect(KeepLoaded.hostPhrase(ServerConfig(baseURL: URL(string: "https://mainframe.example.ts.net/chirp")!)) == "mainframe.example.ts.net")
+        #expect(KeepLoaded.hostPhrase(ServerConfig(baseURL: URL(string: "https://mainframe.example.ts.net/chirp")!)) == "your Chirp server")
     }
 }
 

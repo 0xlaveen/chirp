@@ -50,11 +50,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return false
     }
 
-    /// Dock menu: Open Notes, New Notes, Start/Stop Recording, Pause while recording (the window list is AppKit's).
+    /// Dock menu: Open Notes, New Note, Start/Stop Recording, Pause while recording (the window list is AppKit's).
     func applicationDockMenu(_ sender: NSApplication) -> NSMenu? {
         let menu = NSMenu()
         menu.addItem(NSMenuItem(title: "Open Notes", action: #selector(dockOpenNotes), keyEquivalent: ""))
-        let new = NSMenuItem(title: "New Notes", action: #selector(dockNewNotes), keyEquivalent: "")
+        let new = NSMenuItem(title: "New Note", action: #selector(dockNewNotes), keyEquivalent: "")
         new.isEnabled = !notes.isActive
         menu.addItem(new)
         let record = NSMenuItem(title: notes.isRecording ? "Stop Recording" : notes.isPaused ? "Resume Recording" : "Start Recording",
@@ -196,7 +196,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             if self.dock.presence.recording != active { self.dock.update { $0.recordingChanged(active) } }
         }
         notes.onShowWindow = { [weak self] focus in self?.notesWindow.show(focus: focus) }
-        settingsWindow.onNotesRecoveryCopyChange = { [notes] in notes.recoveryCopyChanged() }
         settingsWindow.onCallAudioDefaultChange = { [notes] in notes.defaultSourcesChanged() }
         notesWindow.dock = dock
         NotesWindowController.onAbout = { [settingsWindow] in settingsWindow.show(tab: .about) }

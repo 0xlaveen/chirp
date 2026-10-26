@@ -20,8 +20,6 @@ public struct SettingsState: Sendable {
     public var launch: LaunchState = .off
     /// Dictation: the HUD's word waveform (each word's audio above it). Off by default.
     public var wordWaveform = false
-    /// Notes: Live Notes keeps a recovery copy of unsaved notes (on by default).
-    public var notesRecoveryCopy = true
     public var soundsEnabled = false
     public var soundPack: SoundPack = .default
     /// 0…1.
@@ -178,7 +176,7 @@ public final class SettingsContentView: NSView {
 @MainActor
 public final class SettingsForm {
     /// Notes › Sources: what "Include call audio" records, said before macOS asks for the permission.
-    public static let callAudioHelp = "Records what your Mac plays (the other people on a call) beside your microphone, so both sides are transcribed. Your microphone is labelled “You”. macOS asks once for Screen & System Audio Recording. Audio stays on this Mac and your Chirp server."
+    public static let callAudioHelp = "Records what your Mac plays (the other people on a call) beside your microphone, so both sides are transcribed. Your microphone is labelled “You”. macOS asks once for Screen & System Audio Recording. Kept audio stays on this Mac; transcription uses your configured Chirp server."
     static let margin: CGFloat = ChirpSpacing.gutter
     /// The width a control that fills its row may take.
     static let controlWidth: CGFloat = SettingsLayout.rowWidth
@@ -239,8 +237,6 @@ public final class SettingsForm {
     public let launch = NSButton(checkboxWithTitle: "Launch Chirp at login", target: nil, action: nil)
     /// Dictation: the HUD's word waveform.
     public let wordWaveform = NSButton(checkboxWithTitle: "Word waveform overlay", target: nil, action: nil)
-    /// Notes: Live Notes' recovery copy of unsaved notes.
-    public let notesRecoveryCopy = NSButton(checkboxWithTitle: NotesStatus.recoverySwitch, target: nil, action: nil)
     /// Notes: how long the library keeps a note, what Recently Deleted holds, kept audio, the export folder and the
     /// smart-notes defaults. Presentational: each maps to a preference that already exists (or one folder path).
     public let notesRetention = NSPopUpButton(frame: .zero, pullsDown: false)
@@ -254,7 +250,7 @@ public final class SettingsForm {
     public let resetExport = NSButton(title: "Reset", target: nil, action: nil)
     private let exportFolder = NSTextField(labelWithString: "")
     public let structureNotes = NSButton(checkboxWithTitle: "Structure notes", target: nil, action: nil)
-    public let autoReorganize = NSButton(checkboxWithTitle: "Auto-reorganize", target: nil, action: nil)
+    public let autoReorganize = NSButton(checkboxWithTitle: "Organize automatically", target: nil, action: nil)
     /// Dictation › History: keep dictations (on by default), for how long, the apps never kept, and the window/Clear.
     public let historyEnabled = NSButton(checkboxWithTitle: HistorySettingsText.keep, target: nil, action: nil)
     public let historyRetention = NSPopUpButton(frame: .zero, pullsDown: false)
@@ -276,7 +272,7 @@ public final class SettingsForm {
     public let pairButton = NSButton(title: "Pair a Phone…", target: nil, action: nil)
     /// Devices: the phones paired with their own token, each with Revoke; and the advanced shared-token rotation.
     public let devicesView = DevicesView()
-    public let rotateButton = NSButton(title: "Rotate Shared Token…", target: nil, action: nil)
+    public let rotateButton = NSButton(title: "Reset Shared Code…", target: nil, action: nil)
     /// Notes: "Label speakers", on by default; the one-time model download starts by itself, with a status line here.
     public let labelSpeakers = NSButton(checkboxWithTitle: "Label speakers", target: nil, action: nil)
     /// Notes: deletes Live Notes' on-device speaker model (shown beside its status while it is on this Mac).
@@ -287,7 +283,7 @@ public final class SettingsForm {
     private let speakerHelp = SettingsForm.help("")
     /// Notes: "Recognize saved voices" and the saved voices, each with Forget.
     public let voicesView = VoiceProfilesView()
-    public let savedVoicesButton = NSButton(title: "Saved Voices…", target: nil, action: nil)
+    public let savedVoicesButton = NSButton(title: "Saved voices…", target: nil, action: nil)
     /// Notes: brings the Notes window forward.
     public let notesButton = NSButton(title: "Open Notes Library", target: nil, action: nil)
     /// About: the icon, the version and Third-Party Notices….
@@ -392,7 +388,7 @@ public final class SettingsForm {
         }
         labelSpeakers.setAccessibilityLabel("Label speakers in Live Notes")
         structureNotes.setAccessibilityLabel("Structure notes by default")
-        autoReorganize.setAccessibilityLabel("Auto-reorganize by default")
+        autoReorganize.setAccessibilityLabel("Organize automatically by default")
         keepAudio.setAccessibilityLabel("Keep audio with notes")
         callAudio.setAccessibilityLabel("Include call audio in new notes")
 
@@ -495,7 +491,7 @@ public final class SettingsForm {
             SettingsSection("Speakers", [
                 row(nil, labelSpeakers, help: Self.help("On by default. Shows who said what as Person 1, Person 2… in the transcript, the notes and exports. Voices are told apart on this Mac only.")),
                 row(nil, stack([speakerStatus, speakerHelp])),
-                row("Saved voices", savedVoicesButton, help: Self.help("Names recognised on your devices by this Chirp server.")),
+                row("Saved voices", savedVoicesButton, help: Self.help("Names recognised on all your devices.")),
             ]),
         ])
 
@@ -505,16 +501,16 @@ public final class SettingsForm {
         keepLoadedStatus.setAccessibilityLabel("Clean-up model status")
         build(.devices, [
             SettingsSection("Phones", [
-                row("Pair a phone", pairButton, help: Self.help("Shows a QR code for Chirp on Android or iPhone. The phone reaches this Mac’s server over your tailnet only. Each phone gets its own token.")),
+                row("Pair a phone", pairButton, help: Self.help("Shows a code for Chirp on Android or iPhone to connect over your tailnet. Each phone gets its own pairing.")),
                 row(nil, devicesView, help: Self.help(DevicesText.sharedNote), stacked: true),
             ]),
-            SettingsSection("Advanced", [row("Shared token", rotateButton, help: Self.help(DevicesText.rotateHelp))]),
+            SettingsSection("Advanced", [row("Shared code", rotateButton, help: Self.help(DevicesText.rotateHelp))]),
         ])
 
         build(.advanced, [
             SettingsSection("Server", [
                 row("Server URL", serverURL),
-                row("Token", tokenStatus, help: tokenHelp),
+                row("Pairing code", tokenStatus, help: tokenHelp),
                 row("Status", serverStatus, help: serverDetail),
             ]),
             SettingsSection("Clean-up model", [row(nil, keepLoadedStack)]),
@@ -661,7 +657,6 @@ public final class SettingsForm {
             launch.state = s.launch == .on ? .on : .off
             launch.isEnabled = s.launch != .unavailable
             wordWaveform.state = s.wordWaveform ? .on : .off
-            notesRecoveryCopy.state = s.notesRecoveryCopy ? .on : .off
             if let i = NotesRetention.allCases.firstIndex(of: s.notesRetention) { notesRetention.selectItem(at: i) }
             historyEnabled.state = s.historyEnabled ? .on : .off
             if let i = DictationRetention.allCases.firstIndex(of: s.historyRetention) { historyRetention.selectItem(at: i) }
@@ -705,9 +700,9 @@ public final class SettingsForm {
         cleanupHelp.stringValue = s.cleanupDetail
         cleanupEnabled.isEnabled = s.cleanupAvailable
         tokenStatus.set(symbol: s.tokenPresent ? "checkmark.circle.fill" : "exclamationmark.triangle.fill",
-                        tone: s.tokenPresent ? .ok : .warning, text: "~/.config/chirp/token")
-        tokenHelp.stringValue = s.tokenPresent ? "Chirp sends this token with every request."
-                                               : "No token yet — start chirp-server once to create it."
+                        tone: s.tokenPresent ? .ok : .warning, text: s.tokenPresent ? "Ready" : "Not set up")
+        tokenHelp.stringValue = s.tokenPresent ? "Chirp uses this code to connect to \(MacServerCopy.place(local: ServerConfig.load(urlString: s.serverURL).isLoopback))."
+                                               : "No pairing code yet — start Chirp on this Mac once to create it."
         serverStatus.set(symbol: "circle.fill", tone: s.serverNotice == nil ? s.serverStatusTone : .warning,
                          text: s.serverNotice == nil ? s.serverStatus : ServerNotice.statusText)
         serverFixButton.title = s.serverNotice?.fix?.buttonTitle ?? ServerFix.restart.buttonTitle
@@ -718,8 +713,8 @@ public final class SettingsForm {
         serverDetail.stringValue = detail
         serverDetail.isHidden = detail.isEmpty
         modelsButton.isEnabled = ServerConfig.load(urlString: s.serverURL).isLoopback
-        modelsHelp.stringValue = modelsButton.isEnabled ? "Download speech and local Qwen models, see progress, and start this Mac's server."
-                                                        : "Only for a server on this Mac: the URL above points to another host."
+        modelsHelp.stringValue = modelsButton.isEnabled ? "Download speech and local Qwen models, see progress, and start Chirp on this Mac."
+                                                        : "Only for a server on this Mac: the URL above points to your Chirp server elsewhere."
         fillMicrophoneMenu(s.inputs, defaultInput: s.defaultInput, chosen: s.chosenInputUID)
         let (speakerSymbol, speakerTone, speakerText) = Self.speakerModelLine(s)
         speakerStatus.set(symbol: speakerSymbol, tone: speakerTone, text: speakerText)
@@ -938,8 +933,8 @@ public final class SettingsForm {
         let config = ServerConfig.load(urlString: serverURL)
         let address = config.baseURL.port.map { "\(config.host):\($0)" } ?? config.host
         return config.isLoopback
-            ? "Nothing answers at \(address). Start this Mac's server in Manage Local Models…, or run Copy Doctor Command in Terminal to see why."
-            : "Nothing answers at \(address). Check that the Mac running chirp-server is awake and on your tailnet, or run the Doctor command there."
+            ? "Nothing answers at \(address). Start Chirp on this Mac in Manage Local Models…, or run Copy Doctor Command in Terminal to see why."
+            : "Nothing answers at \(address). Check that your Chirp server is running and on your tailnet, or run the Doctor command there."
     }
 
     /// Shows why toggling launch at login failed under the checkbox; nil restores the usual help text.
@@ -966,11 +961,11 @@ public final class SettingsForm {
     }
 
     /// What the server says about clean-up: where it runs, or that it is off.
-    public static func cleanupDetail(health: Health?) -> (text: String, available: Bool) {
+    public static func cleanupDetail(health: Health?, local: Bool = true) -> (text: String, available: Bool) {
         guard let h = health else { return ("Needs the server. Tidies punctuation and wording before the text is inserted.", true) }
         if !h.correctionAvailable { return ("The server has clean-up turned off; see the README to enable it.", false) }
         if h.correctionLeavesMachine == true { return ("Sends the text to \(h.correctionHost ?? "a remote LLM") to tidy it.", true) }
-        return ("Runs on this Mac: tidies punctuation and wording before the text is inserted.", true)
+        return ("Runs on \(MacServerCopy.place(local: local)): tidies punctuation and wording before the text is inserted.", true)
     }
 
     /// Secondary-colour help text under a control, wrapped to the control column's width.

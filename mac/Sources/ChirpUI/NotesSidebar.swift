@@ -135,21 +135,18 @@ private struct SidebarHeader: View {
     }
 }
 
-/// The selected row: the pale koi container in light, and in dark a crisp solid koi pill with pond-ink row text —
-/// the pairing the Settings sidebar's selection uses (a koi wash read muddy on a surface this large).
+/// Selected library rows use the Pond koi container in both appearances.
 struct SelectionBackground: View {
     let selected: Bool
-    @Environment(\.colorScheme) private var scheme
 
     var body: some View {
         RoundedRectangle(cornerRadius: ChirpRadius.row)
-            .fill(selected ? (scheme == .dark ? Color.chirp.koi : Color.chirp.koiContainer.opacity(0.85)) : .clear)
+            .fill(selected ? Color.chirp.koiContainer : .clear)
             .padding(.horizontal, 10)
     }
 }
 
-/// A sidebar row's text colours: the label colours, except on the selected row in dark, whose solid koi pill
-/// takes pond ink (as a primary button does).
+/// Selected dark rows use the container's warm ink, with quieter snippet and metadata text.
 struct RowInk {
     /// How much pond ink the snippet and meta keep on the pill (the theme tests check their contrast).
     static let snippetOnPill: Double = 0.78
@@ -164,11 +161,11 @@ struct RowInk {
     }
 
     var onPill: Bool { selected && scheme == .dark }
-    var title: Color { onPill ? Color.chirp.onKoi : NotesInk.primary }
-    var snippet: Color { onPill ? Color.chirp.onKoi.opacity(Self.snippetOnPill) : NotesInk.secondary }
-    var meta: Color { onPill ? Color.chirp.onKoi.opacity(Self.metaOnPill) : NotesInk.tertiary }
+    var title: Color { onPill ? Color.chirp.onKoiContainer : NotesInk.primary }
+    var snippet: Color { onPill ? Color.chirp.onKoiContainer.opacity(Self.snippetOnPill) : NotesInk.secondary }
+    var meta: Color { onPill ? Color.chirp.onKoiContainer.opacity(Self.metaOnPill) : NotesInk.tertiary }
     /// The record-coloured marks (the timer, the dot): pond ink while they sit on the pill.
-    var mark: Color { onPill ? Color.chirp.onKoi : Color.chirp.record }
+    var mark: Color { onPill ? Color.chirp.onKoiContainer : Color.chirp.record }
 }
 
 /// A note in the list: serif title and time, a two-line snippet, and the meta line (duration, open to-dos).
@@ -293,8 +290,8 @@ private struct RecordingRow: View {
                     Image(systemName: "pause.fill").font(.system(size: 11, weight: .bold)).foregroundStyle(ink.mark)
                 } else {
                     Ripple(level: Double(model.level), reduceMotion: model.reduceMotion, phase: model.ripplePhase,
-                           color: ink.onPill ? .chirp.onKoi : .chirp.koiDecor,
-                           staticColor: ink.onPill ? .chirp.onKoi : .chirp.koi, side: 30)
+                           color: ink.onPill ? .chirp.onKoiContainer : .chirp.koiDecor,
+                           staticColor: ink.onPill ? .chirp.onKoiContainer : .chirp.koi, side: 30)
                     Circle().fill(ink.mark).frame(width: 9, height: 9)
                 }
             }
@@ -335,7 +332,7 @@ private struct RecentlyDeletedButton: View {
             library.select(.recentlyDeleted)
         } label: {
             HStack(spacing: 8) {
-                Image(systemName: "trash").foregroundStyle(ink.onPill ? Color.chirp.onKoi : (selected ? Color.chirp.koi : NotesInk.secondary))
+                Image(systemName: "trash").foregroundStyle(ink.onPill ? Color.chirp.onKoiContainer : (selected ? Color.chirp.koi : NotesInk.secondary))
                 Text(NotesLibraryText.recentlyDeleted).foregroundStyle(ink.title)
                 Spacer()
                 if !library.deleted.isEmpty {

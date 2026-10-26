@@ -805,10 +805,9 @@ public final class NotesSession {
         let enabled = settings.notesStructureEnabled(health: health)
         model.structureEnabled = enabled
         recorder.configureStructuring(enabled: enabled, health: health)
-        model.privacyHelp = settings.notesRecoveryCopy ? NotesStatus.privacyRecoveryHelp : ""
+        model.privacyHelp = NotesModel.libraryPrivacyHelp
         model.structuringHost = enabled && health?.correctionLeavesMachine == true ? health?.correctionHost ?? settings.serverConfig().host : nil
-        model.privacyLine = library != nil ? NotesModel.libraryPrivacy : settings.notesRecoveryCopy ? NotesStatus.privacyRecovery : NotesStatus.privacy
-        if library != nil { model.privacyHelp = NotesModel.libraryPrivacyHelp }
+        model.privacyLine = NotesModel.libraryPrivacy
         model.canManageModels = settings.serverConfig().isLoopback
         sync()
     }

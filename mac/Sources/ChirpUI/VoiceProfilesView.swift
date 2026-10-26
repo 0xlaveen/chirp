@@ -2,6 +2,7 @@ import AppKit
 import ChirpCore
 
 public struct VoiceProfilesState: Equatable, Sendable {
+    public var localServer = true
     public var supported = false
     public var enabled = false
     public var busy = false
@@ -12,15 +13,21 @@ public struct VoiceProfilesState: Equatable, Sendable {
 
 public enum VoiceProfilesText {
     public static let toggle = "Remember voices of people I name"
-    public static let explainer = "Chirp recognises these people in new notes on all your devices. Saved voices stay on your Chirp server, never uploaded. Each server has its own library."
+    public static func explainer(local: Bool) -> String {
+        "Chirp recognises these people in new notes on all your devices. Saved voices stay on \(MacServerCopy.place(local: local)), never uploaded. Each Chirp server has its own library."
+    }
     public static let empty = "Name a speaker in a note and Chirp will recognise them next time."
-    public static let unsupported = "Update Chirp on your Mac to save voices"
+    public static func unsupported(local: Bool) -> String { MacServerCopy.update(local: local, to: "save voices") }
     public static let forgetAll = "Forget All Voices…"
     public static func turnOffTitle(_ n: Int) -> String { "Also forget \(n) saved \(n == 1 ? "voice" : "voices")?" }
-    public static let turnOffDetail = "Kept voices stay on your Chirp server, unused, until you turn this on again or forget them."
-    public static func forgetTitle(_ p: SavedVoice) -> String { "Forget “\(p.name)”’s voice?" }
-    public static let forgetAllTitle = "Forget all saved voices?"
-    public static let forgetDetail = "Deletes the saved voice from your Chirp server. Existing notes keep their names."
+    public static func turnOffDetail(local: Bool) -> String {
+        "Kept voices stay on \(MacServerCopy.place(local: local)), unused, until you turn this on again or forget them."
+    }
+    public static func forgetTitle(_ p: SavedVoice) -> String { "Forget \(p.name)?" }
+    public static let forgetAllTitle = "Forget all voices?"
+    public static func forgetDetail(_ name: String?, local: Bool) -> String {
+        "Removes \(name.map { $0 + "’s voice" } ?? "all saved voices") from \(MacServerCopy.place(local: local)) for every device. Names in existing notes stay. This can’t be undone."
+    }
     public static func detail(_ p: SavedVoice, locale: Locale = .current, timeZone: TimeZone = .current) -> String {
         let style = Date.FormatStyle(date: .abbreviated, time: .omitted, locale: locale, calendar: .current, timeZone: timeZone)
         let dates = "Saved \(p.created.formatted(style))" + (p.updated > p.created ? " · updated \(p.updated.formatted(style))" : "")
@@ -40,6 +47,7 @@ public final class VoiceProfilesView: NSStackView {
     public var onResize: (() -> Void)?
     private let list = NSStackView()
     private let status = SettingsForm.help("")
+    private let explanation = SettingsForm.help("")
     private let forgetAll = NSButton(title: VoiceProfilesText.forgetAll, target: nil, action: nil)
     public private(set) var shown: [SavedVoice] = []
 
@@ -54,18 +62,19 @@ public final class VoiceProfilesView: NSStackView {
         forgetAll.target = self; forgetAll.action = #selector(forgetAllPressed)
         let refresh = NSButton(title: "Refresh", target: self, action: #selector(refreshed))
         refresh.bezelStyle = .rounded; refresh.controlSize = .small
-        let actions = NSStackView(views: [forgetAll, refresh])
+        let actions = NSStackView(views: [refresh, forgetAll])
         list.orientation = .vertical; list.alignment = .leading; list.spacing = 14
-        for view in [title, toggle, SettingsForm.help(VoiceProfilesText.explainer), status, list, actions] { addArrangedSubview(view) }
+        for view in [title, toggle, explanation, status, list, actions] { addArrangedSubview(view) }
         list.widthAnchor.constraint(equalTo: widthAnchor).isActive = true
         apply(VoiceProfilesState())
     }
     @available(*, unavailable) required init?(coder: NSCoder) { fatalError("not used") }
 
     public func apply(_ state: VoiceProfilesState, locale: Locale = .current, timeZone: TimeZone = .current) {
+        explanation.stringValue = VoiceProfilesText.explainer(local: state.localServer)
         toggle.state = state.enabled ? .on : .off
         toggle.isEnabled = state.supported && !state.busy
-        status.stringValue = !state.supported ? VoiceProfilesText.unsupported : state.error ?? (state.busy ? "Updating saved voices…" : "")
+        status.stringValue = !state.supported ? VoiceProfilesText.unsupported(local: state.localServer) : state.error ?? (state.busy ? "Updating saved voices…" : "")
         status.isHidden = status.stringValue.isEmpty
         status.textColor = state.error == nil ? .secondaryLabelColor : .systemOrange
         let changed = shown != state.profiles

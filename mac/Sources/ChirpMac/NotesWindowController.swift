@@ -218,41 +218,18 @@ final class NotesWindowController: NSObject, NSWindowDelegate {
         return false
     }
 
-    /// Save… / Discard / Cancel for a dirty document. `done(true)` means it is safe to drop the document (saved or
-    /// discarded). As a sheet on `window` when it is visible, else app-modal (quit with the window closed).
+    /// Notes are kept automatically; flush the journal before closing or quitting.
     func confirmDiscard(in window: NSWindow? = nil, done: @escaping (Bool) -> Void) {
-        if notes.library != nil { notes.journal.flush(); done(true); return }
-        guard notes.model.document.isDirty else { done(true); return }
-        let alert = NSAlert()
-        alert.messageText = "Save your notes?"
-        alert.informativeText = "These notes are not saved yet. If you discard them, they’re gone."
-        alert.addButton(withTitle: "Save…")
-        alert.addButton(withTitle: "Discard")
-        alert.addButton(withTitle: "Cancel")
-        alert.buttons[1].hasDestructiveAction = true
-        let handle: (NSApplication.ModalResponse) -> Void = { [weak self] response in
-            switch response {
-            case .alertFirstButtonReturn: done(self?.save() ?? false)
-            case .alertSecondButtonReturn:
-                self?.notes.discardJournal()
-                done(true)
-            default: done(false)
-            }
-        }
-        NSApp.activate()
-        if let window, window.isVisible {
-            alert.beginSheetModal(for: window, completionHandler: handle)
-        } else {
-            handle(alert.runModal())
-        }
+        notes.journal.flush()
+        done(true)
     }
 
-    /// "Remember this voice as Maya…": Remember is enabled only once the consent box is ticked.
+    /// The one-time explanation shown before saving the first named voice.
     private func confirmRememberVoice(_ name: String, done: @escaping (Bool) -> Void) {
         let alert = NSAlert()
         alert.messageText = VoiceText.consentTitle
-        alert.informativeText = VoiceText.consentDetail(name)
-        alert.addButton(withTitle: "OK")
+        alert.informativeText = VoiceText.consentDetail(name, local: notes.model.canManageModels)
+        alert.addButton(withTitle: "Remember Voice")
         alert.addButton(withTitle: "Don’t remember voices")
         let handle: (NSApplication.ModalResponse) -> Void = { done($0 == .alertFirstButtonReturn) }
         if let window, window.isVisible { alert.beginSheetModal(for: window, completionHandler: handle) } else { handle(alert.runModal()) }

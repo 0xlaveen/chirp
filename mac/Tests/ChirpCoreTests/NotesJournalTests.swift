@@ -353,14 +353,12 @@ private func richDocument() -> NotesDocument {
 
     // MARK: the switch
 
-    @Test func theRecoveryCopyIsOnByDefaultAndTheFooterSaysWhereItLives() throws {
+    @Test func theLegacyRecoveryPreferenceIsKeptForJournalMigration() throws {
         let defaults = try #require(UserDefaults(suiteName: "chirp-journal-\(UUID().uuidString)"))
         let prefs = Preferences(defaults: defaults)
         #expect(prefs.notesRecoveryCopy)
         prefs.notesRecoveryCopy = false
         #expect(!prefs.notesRecoveryCopy)
-        #expect(NotesStatus.privacyRecovery.contains("Application Support/Chirp/Recovery"))
-        #expect(NotesStatus.privacyRecoveryHelp.contains("never audio") && NotesStatus.recoveryHelp.contains("never audio"))
         #expect(NotesJournalStore.defaultDirectory.path.hasSuffix("Library/Application Support/Chirp/Recovery"))
     }
 

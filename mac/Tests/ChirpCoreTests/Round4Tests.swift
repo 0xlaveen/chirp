@@ -291,7 +291,7 @@ import Testing
 
     @Test func statusWordingIsConcise() {
         #expect([HUDStatus.connecting, HUDStatus.listening, HUDStatus.finishing, HUDStatus.inserting]
-                == ["Connecting…", "Listening", "Finishing…", "Inserting…"])
+                == ["Connecting…", "Listening…", "Finishing…", "Inserting…"])
         let plain = FinalResult(text: "hi")
         #expect(OutcomePresentation.of(.copied, final: plain).status == "Copied — ⌘V")
         #expect(OutcomePresentation.of(.copied, final: plain).indicator == .clipboard)

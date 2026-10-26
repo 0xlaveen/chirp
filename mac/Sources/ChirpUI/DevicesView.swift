@@ -18,10 +18,10 @@ public enum DevicesText {
         return "seen \(f.localizedString(for: date, relativeTo: now))"
     }
 
-    public static let empty = "No phones paired with their own token yet."
+    public static let empty = "No phones paired yet."
     public static let loading = "Loading…"
-    public static let sharedNote = "Phones paired with the shared token don’t show here and keep working until you rotate it."
-    public static let rotateHelp = "Replaces the shared token. Every phone paired with it must pair again; phones in the list are not affected."
+    public static let sharedNote = "Phones paired with the shared code don’t show here and keep working until you reset it."
+    public static let rotateHelp = "Replaces the shared code. Every phone paired with it must pair again; phones in the list are not affected."
 
     public static func revokeTitle(_ d: PairedDevice) -> String { "Revoke “\(d.name)”?" }
     public static let revokeDetail = "It stops working right away and has to be paired again to reconnect. Other phones are not affected."
@@ -60,7 +60,7 @@ public final class DevicesView: NSStackView {
         shown = []
         switch phase {
         case .loading: addNote(DevicesText.loading)
-        case .remote(let host): addNote("Chirp uses the server on \(host). Manage its devices on that machine with chirp-server devices.")
+        case .remote: addNote("Manage the devices paired with your Chirp server by running chirp-server devices there.")
         case .unavailable(let why): addNote(why, tone: .warning)
         case .loaded(let devices):
             shown = devices

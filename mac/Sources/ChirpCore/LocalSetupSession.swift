@@ -64,7 +64,7 @@ public final class LocalSetupSession {
     public func checkUpdates() { run("refresh") }
     public func add(_ repository: String, model: LocalModel) { run("add", model: model, repository: repository) }
     public func start() {
-        state.starting = true; state.message = "Starting the local speech server…"; refresh()
+        state.starting = true; state.message = "Starting Chirp on this Mac…"; refresh()
         run("start")
     }
 

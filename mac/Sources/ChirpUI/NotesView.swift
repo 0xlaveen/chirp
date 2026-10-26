@@ -69,11 +69,11 @@ public struct NotesView: View {
         } message: {
             Text("Only one note records at a time. The recording note keeps everything it has so far.")
         }
-        .alert("Empty Recently Deleted?", isPresented: $library.confirmingEmpty) {
-            Button("Empty", role: .destructive) { library.onEmptyTrash() }
+        .alert(NotesLibraryText.emptyTrashTitle, isPresented: $library.confirmingEmpty) {
+            Button(NotesLibraryText.deletePermanently, role: .destructive) { library.onEmptyTrash() }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("\(NotesLibraryText.results(library.deleted.count)) will be deleted for good, with their audio. This can’t be undone.")
+            Text(NotesLibraryText.emptyTrashMessage(library.deleted.count))
         }
         // The app accent (koi): system controls in Notes follow it, bundled or not.
         .tint(Color.chirp.koi)
@@ -155,6 +155,7 @@ struct NotesDetail: View {
 struct NotesTitleHeader: View {
     @Bindable var model: NotesModel
     let library: NotesLibraryModel
+    var width: CGFloat?
 
     private var created: DateFormatter {
         let f = DateFormatter()
@@ -168,9 +169,10 @@ struct NotesTitleHeader: View {
         VStack(alignment: .leading, spacing: 8) {
             TextField(NotesLibraryText.untitled, text: Binding(
                 get: { model.titleDraft ?? (model.isBlank && model.document.userTitle == nil ? "" : model.document.title) },
-                set: { model.titleDraft = $0; model.onTitleEdit($0) }))
+                set: { model.titleDraft = $0; model.onTitleEdit($0) }), axis: .vertical)
                 .textFieldStyle(.plain)
                 .font(ChirpType.noteTitle(26))
+                .fixedSize(horizontal: false, vertical: true)
                 .foregroundStyle(NotesInk.primary)
                 .onSubmit { model.focusRequest += 1 }
                 .accessibilityLabel("Title")
@@ -179,6 +181,7 @@ struct NotesTitleHeader: View {
         .padding(.top, 30)
         .padding(.bottom, 18)
         .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(width: width)
     }
 
     private var meta: some View {
@@ -200,23 +203,23 @@ struct NotesTitleHeader: View {
             Text(facts.joined(separator: "  ·  "))
                 .font(ChirpType.meta)
                 .foregroundStyle(NotesInk.secondary)
-                .lineLimit(1)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 }
 
 /// "Recovered": a capture that never received Stop, found at launch. No modal, just this mark.
 struct RecoveredBadge: View {
-    /// The selected sidebar row in dark draws a solid koi pill the badge sits on.
+    /// The selected dark sidebar row uses the koi container.
     var onPill = false
 
     var body: some View {
         Text(NotesLibraryText.recovered)
             .font(.system(size: 10.5, weight: .semibold))
-            .foregroundStyle(onPill ? Color.chirp.onKoi : Color.chirp.moon)
+            .foregroundStyle(onPill ? Color.chirp.onKoiContainer : Color.chirp.moon)
             .padding(.horizontal, 6)
             .padding(.vertical, 1)
-            .background(Capsule().fill(onPill ? Color.chirp.onKoi.opacity(0.14) : Color.chirp.moonFill.opacity(0.22)))
+            .background(Capsule().fill(onPill ? Color.chirp.onKoiContainer.opacity(0.14) : Color.chirp.moonFill.opacity(0.22)))
             .fixedSize()
             .help("Chirp found this note after it quit unexpectedly. Everything it had is here.")
     }
@@ -309,7 +312,7 @@ struct RecordControl: View {
                 if shown === model { model.onRecordToggle() } else { library.onContinue(shown.document.id) }
             } label: {
                 Label {
-                    Text(continues ? "Continue" : "Record")
+                    Text(continues ? "Continue recording" : "Record")
                         .onGeometryChange(for: CGSize.self, of: \.size) { model.probe.recordLabel = $0 }
                 } icon: {
                     Image(systemName: "record.circle").foregroundStyle(Color.chirp.record)
@@ -357,7 +360,7 @@ struct SmartNotesMenu: View {
             Toggle("Structure notes", isOn: Binding(get: { recorder.structureEnabled },
                                                     set: { recorder.structureEnabled = $0; recorder.onStructureToggle($0) }))
                 .disabled(!recorder.structuringAvailable && recorder.structuring != .off(.disabled))
-            Toggle("Auto-reorganize", isOn: Binding(get: { recorder.autoReorganize && recorder.autoReorganizeAvailable },
+            Toggle("Organize automatically", isOn: Binding(get: { recorder.autoReorganize && recorder.autoReorganizeAvailable },
                                                     set: { recorder.autoReorganize = $0; recorder.onAutoReorganizeToggle($0) }))
                 .disabled(!recorder.autoReorganizeAvailable)
             if let status = recorder.speakerStatus {
@@ -365,7 +368,7 @@ struct SmartNotesMenu: View {
                 Text(status)
             }
         } label: {
-            Label("Smart notes", systemImage: model.isReorganizing ? "sparkles" : "sparkles")
+            Label("Smart notes", systemImage: "sparkles")
                 .foregroundStyle(Color.chirp.moon)
         }
         .help("Smart notes: Organize, speaker labels, structuring")

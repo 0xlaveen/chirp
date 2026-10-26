@@ -37,7 +37,7 @@ import Testing
         #expect(OnboardingRail.label(.microphone, .done) == "Microphone, done")
         #expect(OnboardingRail.label(.accessibility, .warning) == "Accessibility, needs attention")
         #expect(OnboardingRail.label(.tryIt, .current) == "Try it, current step")
-        #expect(OnboardingRail.label(.server, .upcoming) == "Speech server")
+        #expect(OnboardingRail.label(.server, .upcoming) == "Chirp server")
     }
 
     @Test func keycapsSplitAShortcutIntoItsKeys() {

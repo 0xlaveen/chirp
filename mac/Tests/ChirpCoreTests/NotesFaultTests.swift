@@ -28,7 +28,7 @@ import Testing
         await h.settle()
     }
 
-    private var offline: (String) -> Bool { { $0.hasPrefix("Server offline — keeping audio (") && $0.hasSuffix(") · retrying") } }
+    private var offline: (String) -> Bool { { $0.hasPrefix("Chirp server offline — keeping audio (") && $0.hasSuffix(") · retrying") } }
 
     // MARK: sockets
 

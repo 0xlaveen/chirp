@@ -40,7 +40,6 @@ final class SettingsWindowController: NSObject, NSTextFieldDelegate {
     private var voicesPanel: NSPanel?
     /// The Notes library: Recently Deleted's count and the kept-audio total, and the two bulk actions on them.
     var library: NotesLibrary?
-    var onNotesRecoveryCopyChange: (() -> Void)?
     /// Notes › Sources: the call-audio default changed.
     var onCallAudioDefaultChange: (() -> Void)?
     /// Dictation history: the kept dictations (count, Clear), and the History window.
@@ -90,7 +89,6 @@ final class SettingsWindowController: NSObject, NSTextFieldDelegate {
         s.tokenPresent = ServerConfig.readToken() != nil
         s.launch = LaunchAtLogin.state
         s.wordWaveform = settings.wordWaveform
-        s.notesRecoveryCopy = settings.notesRecoveryCopy
         s.notesRetention = settings.notesRetention
         s.notesKeepAudio = settings.notesKeepAudio
         s.notesCallAudio = settings.notesCallAudio
@@ -122,7 +120,7 @@ final class SettingsWindowController: NSObject, NSTextFieldDelegate {
         s.appStyles = settings.appStyles
         let health = health()
         s.structureNotes = settings.notesStructureEnabled(health: health)
-        (s.cleanupDetail, s.cleanupAvailable) = SettingsForm.cleanupDetail(health: health)
+        (s.cleanupDetail, s.cleanupAvailable) = SettingsForm.cleanupDetail(health: health, local: settings.serverConfig().isLoopback)
         let catalog = catalog()
         s.catalog = catalog
         s.profiles = catalog.source == .unavailable ? CorrectionProfile.offered(by: health) : catalog.profiles
@@ -258,7 +256,7 @@ final class SettingsWindowController: NSObject, NSTextFieldDelegate {
     @objc private func rotateSharedToken() {
         let alert = NSAlert()
         alert.alertStyle = .warning
-        alert.messageText = "Rotate the shared token?"
+        alert.messageText = "Reset the shared code?"
         alert.informativeText = SharedTokenRotation.warning + "\n\nChirp copies the commands to run in Terminal; nothing changes until you run them."
         alert.addButton(withTitle: "Copy Commands")
         alert.addButton(withTitle: "Cancel")
@@ -441,8 +439,6 @@ final class SettingsWindowController: NSObject, NSTextFieldDelegate {
         form.launch.action = #selector(toggleLaunch(_:))
         form.wordWaveform.target = self
         form.wordWaveform.action = #selector(toggleWordWaveform(_:))
-        form.notesRecoveryCopy.target = self
-        form.notesRecoveryCopy.action = #selector(toggleNotesRecoveryCopy(_:))
         form.micButton.target = self
         form.micButton.action = #selector(grantMic)
         form.accessibilityButton.target = self
@@ -569,6 +565,7 @@ final class SettingsWindowController: NSObject, NSTextFieldDelegate {
 
     private var voicesState: VoiceProfilesState {
         var v = VoiceProfilesState()
+        v.localServer = settings.serverConfig().isLoopback
         guard let voices else { return v }
         v.enabled = voices.enabled
         v.supported = voices.supported
@@ -591,7 +588,7 @@ final class SettingsWindowController: NSObject, NSTextFieldDelegate {
                   let self, let window = self.voicesPanel ?? self.window else { return }
             let alert = NSAlert()
             alert.messageText = VoiceProfilesText.turnOffTitle(count)
-            alert.informativeText = VoiceProfilesText.turnOffDetail
+            alert.informativeText = VoiceProfilesText.turnOffDetail(local: settings.serverConfig().isLoopback)
             alert.addButton(withTitle: "Forget")
             alert.addButton(withTitle: "Keep")
             alert.buttons[0].hasDestructiveAction = true
@@ -607,7 +604,7 @@ final class SettingsWindowController: NSObject, NSTextFieldDelegate {
         let alert = NSAlert()
         alert.alertStyle = .warning
         alert.messageText = profile.map(VoiceProfilesText.forgetTitle) ?? VoiceProfilesText.forgetAllTitle
-        alert.informativeText = VoiceProfilesText.forgetDetail
+        alert.informativeText = VoiceProfilesText.forgetDetail(profile?.name, local: settings.serverConfig().isLoopback)
         alert.addButton(withTitle: "Forget")
         alert.addButton(withTitle: "Cancel")
         alert.buttons[0].hasDestructiveAction = true
@@ -674,9 +671,9 @@ final class SettingsWindowController: NSObject, NSTextFieldDelegate {
         let count = library.recentlyDeleted.count
         let alert = NSAlert()
         alert.alertStyle = .warning
-        alert.messageText = "Permanently delete \(count == 1 ? "1 note" : "\(count) notes")?"
-        alert.informativeText = "Recently Deleted notes, with their kept audio, are removed from this Mac. This can’t be undone."
-        alert.addButton(withTitle: "Delete Forever")
+        alert.messageText = NotesLibraryText.emptyTrashTitle
+        alert.informativeText = NotesLibraryText.emptyTrashMessage(count)
+        alert.addButton(withTitle: NotesLibraryText.deletePermanently)
         alert.addButton(withTitle: "Cancel")
         alert.buttons[0].hasDestructiveAction = true
         alert.beginSheetModal(for: window) { [weak self] response in
@@ -723,10 +720,6 @@ final class SettingsWindowController: NSObject, NSTextFieldDelegate {
         settings.notesAutoReorganize = sender.state == .on
     }
 
-    @objc private func toggleNotesRecoveryCopy(_ sender: NSButton) {
-        settings.notesRecoveryCopy = sender.state == .on
-        onNotesRecoveryCopyChange?()
-    }
     private func setShortcut(_ shortcut: ChirpShortcut, _ combo: KeyCombo) {
         settings[shortcut: shortcut] = combo
         form?.showShortcuts(state)

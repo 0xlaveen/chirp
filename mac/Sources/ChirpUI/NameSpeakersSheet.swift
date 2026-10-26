@@ -3,7 +3,7 @@ import SwiftUI
 
 /// The Name speakers sheet (issue #247 item 3a): everyone in the note in one place, each with a name field that
 /// completes from saved voices and the names used in recent notes, a ▶ of their first turn where the note kept audio,
-/// and "Same as ▸" for two voices that are one person. Done applies all of it as one edit. After Stop, a quiet
+/// and "Same person as ▸" for two voices that are one person. Done applies all of it as one edit. After Stop, a quiet
 /// "Who was speaking?" line opens it. The names are the note's own and are saved with it.
 
 /// What the sheet holds while it is open; `namings(in:)` is what Done asks for.
@@ -154,7 +154,7 @@ struct NameSpeakersSheet: View {
             }
         }
         .padding(20)
-        .frame(width: 620)
+        .frame(width: 740)
         .background(Color.chirp.background)
         .tint(Color.chirp.koi)
         .onDisappear { if library.player.playing?.note == model.document.id { library.player.stop() } }
@@ -187,7 +187,7 @@ struct NameSpeakersSheet: View {
         return VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 10) {
                 SpeakerChip(name: draft.shown(row, in: roster), color: roster.colorIndex(row.id))
-                    .frame(minWidth: 84, alignment: .leading)
+                    .frame(width: 104, alignment: .leading)
                 TextField(draft.shown(NameSpeakersDraft.Row(id: row.id, name: ""), in: roster), text: $state.draft.rows[i].name)
                     .textFieldStyle(.roundedBorder)
                     .disabled(merged)
@@ -202,20 +202,26 @@ struct NameSpeakersSheet: View {
                         Button("Not the same person") { state.draft.rows[i].mergeInto = nil }
                     }
                 } label: {
-                    Text(row.mergeInto.map { target in "Same as " + (draft.rows.first { $0.id == target }.map { draft.shown($0, in: roster) } ?? "") } ?? "Same as")
+                    Text("Same person as")
                 }
                 .menuStyle(.borderlessButton)
-                .fixedSize()
+                .frame(width: 126, alignment: .leading)
                 .disabled(others.isEmpty && !merged)
                 .help("Two voices that are one person")
-                if voices.enabled, !merged {
+                if voices.enabled {
                     Toggle("Remember voice", isOn: $state.draft.rows[i].remember)
                         .toggleStyle(.checkbox)
                         .controlSize(.small)
-                        .disabled(typed.isEmpty)
+                        .disabled(typed.isEmpty || merged)
                         .help(voices.canRemember.contains(row.id) ? "Chirp recognises this voice in later notes"
                               : VoiceText.needs(voices.seconds[row.id] ?? 0))
                 }
+            }
+            if let target = row.mergeInto, let person = draft.rows.first(where: { $0.id == target }) {
+                Text("Same person as \(draft.shown(person, in: roster))")
+                    .font(.caption)
+                    .foregroundStyle(NotesInk.secondary)
+                    .padding(.leading, 114)
             }
             if !offered.isEmpty {
                 HStack(spacing: 6) {
@@ -227,7 +233,7 @@ struct NameSpeakersSheet: View {
                         .accessibilityLabel("Use the name \(name)")
                     }
                 }
-                .padding(.leading, 94)
+                .padding(.leading, 114)
             }
             if let sample { sampleLine(sample, note: document.id) }
         }
@@ -259,7 +265,7 @@ struct NameSpeakersSheet: View {
                 .lineLimit(1)
             Spacer(minLength: 0)
         }
-        .padding(.leading, 94)
+        .padding(.leading, 114)
     }
 
     private func done() {

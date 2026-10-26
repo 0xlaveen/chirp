@@ -535,7 +535,7 @@ import Testing
         #expect(Snapshots.committedScenarios.map(\.name) == names)
     }
 
-    @Test func theCommittedFilesAreExactlyTheCuratedSetUnderSixteenMegabytes() throws {
+    @Test func theCommittedFilesAreExactlyTheCuratedSetUnderTwentyMegabytes() throws {
         let dir = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
             .deletingLastPathComponent().appendingPathComponent("docs/screenshots/mac")
         guard FileManager.default.fileExists(atPath: dir.path) else { return }   // not a full checkout
@@ -543,7 +543,8 @@ import Testing
         let expected = Snapshots.committedNames.flatMap { ["\($0)-dark.png", "\($0)-light.png"] }.sorted()
         #expect(files == expected, "docs/screenshots/mac is out of date: run mac/scripts/snapshots.sh")
         let total = try files.reduce(0) { $0 + (try FileManager.default.attributesOfItem(atPath: dir.appendingPathComponent($1).path)[.size] as? Int ?? 0) }
-        #expect(total < 16_000_000, "\(total) bytes")
+        // Full-height Settings captures include Speakers and Saved voices.
+        #expect(total < 20_000_000, "\(total) bytes")
     }
 
     @Test func curatedRenderingWritesOnlyTheCommittedNames() throws {
@@ -598,16 +599,24 @@ import Testing
         return count
     }
 
+    @Test func theBundledSettingsCheckboxesUseTheKoiAccentInLightMode() throws {
+        guard let general = try committed("settings-general-ready-light.png"),
+              let voices = try committed("settings-saved-voices-ready-light.png") else { return }
+        // These bands contain the checked boxes and exclude the sidebar icons. Native cells shade the asset hue.
+        #expect(samples(general, x0: 460, x1: 500, near: (194, 90, 25)) > 1)
+        #expect(samples(voices, x0: 40, x1: 80, near: (194, 90, 25)) > 1)
+    }
+
     @Test func theNotesSidebarSitsOnPondWithAKoiSelectedRow() throws {
         guard let dark = try committed("notes-recording-dark.png"), let light = try committed("notes-recording-light.png") else { return }
         // The sidebar column is Pond `surfaceRaised` (not the grey system material) beside the `surface` editor.
         #expect(samples(dark, x0: 40, x1: 500, near: (26, 38, 64)) > 400)
         #expect(samples(dark, x0: 1100, x1: 2000, near: (18, 28, 48)) > 4000)
-        // The selected row is a crisp solid koi pill, not a muddy wash.
-        #expect(samples(dark, x0: 40, x1: 500, near: (255, 138, 76)) > 60)
+        // Selection uses the canonical koi container in both appearances.
+        #expect(samples(dark, x0: 40, x1: 500, near: (92, 34, 7)) > 60)
         #expect(samples(light, x0: 40, x1: 500, near: (236, 239, 245)) > 400)
-        // The pale koi container at 85% over `surfaceRaised`.
-        #expect(samples(light, x0: 40, x1: 500, near: (252, 228, 213)) > 60)
+        // The pale koi container.
+        #expect(samples(light, x0: 40, x1: 500, near: (255, 228, 212)) > 60)
     }
 
     @Test func theEmptyStateDiscIsARaisedPondSurfaceNotTheMuddyContainer() throws {
