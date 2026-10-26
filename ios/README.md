@@ -388,6 +388,13 @@ protection may defer disk writes until unlock; the in-memory document is
 flushed on return. iOS may suspend a paused background app; reopen Chirp to
 resume. Real microphone and background survival still need device acceptance.
 
+Notes library screenshots (synthetic text only):
+
+![iPhone note detail, light](../docs/screenshots/ios/iphone-notes-reading-light.png)
+![iPhone note detail, dark](../docs/screenshots/ios/iphone-notes-reading-dark.png)
+![iPad split view, dark](../docs/screenshots/ios/ipad-notes-reading-dark.png)
+![iPad transcript inspector, light](../docs/screenshots/ios/ipad-notes-transcript-audio-light.png)
+
 Hardware keyboard: ⌘N new recording, ⌘F search, ⌥⌘T transcript, ⌘⇧R
 record/stop, ⌘⇧P pause/resume. Shortcuts retain Start, Pause/resume and Stop
 Chirp Live Notes.

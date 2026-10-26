@@ -21,9 +21,11 @@ final class ChirpNotesUITests: XCTestCase {
     @MainActor func screenshot(_ name: String, _ app: XCUIApplication) {
         let original = XCUIDevice.shared.appearance
         defer { XCUIDevice.shared.appearance = original }
-        for appearance in [XCUIDevice.Appearance.light, .dark] {
+        let fixed = ProcessInfo.processInfo.environment["CHIRP_NOTES_APPEARANCE"]
+        let appearances: [XCUIDevice.Appearance] = fixed == "dark" ? [.dark] : fixed == "light" ? [.light] : [.light, .dark]
+        for appearance in appearances {
             XCUIDevice.shared.appearance = appearance
-            let shot = XCTAttachment(screenshot: app.screenshot())
+            let shot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
             shot.name = name + (appearance == .dark ? "-dark" : "-light")
             shot.lifetime = .keepAlways
             add(shot)
@@ -48,7 +50,15 @@ final class ChirpNotesUITests: XCTestCase {
         XCTAssertTrue(button.waitForExistence(timeout: 5)); button.tap()
     }
 
-    @MainActor func testSyntheticRecordPauseResumeStopTranscriptAndExport() {
+    /// One XCTest case keeps all scenarios in one runner session, avoiding repeated simulator teardown stalls.
+    @MainActor func testNotesLibraryBatch() {
+        recordPauseResumeStopTranscriptAndExport()
+        libraryReadingSearchTasksAndInspector()
+        notesSettingsAndRotation()
+        accessibilityLibraryAndDock()
+    }
+
+    @MainActor private func recordPauseResumeStopTranscriptAndExport() {
         let app = launch()
         screenshot("notes-empty", app)
         app.buttons["chirp.notes.record"].firstMatch.tap()
@@ -103,7 +113,7 @@ final class ChirpNotesUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Nothing in Recently Deleted"].waitForExistence(timeout: 5))
     }
 
-    @MainActor func testNotesSettingsAndRotation() {
+    @MainActor private func notesSettingsAndRotation() {
         let app = launch()
         app.buttons["chirp.notes.menu"].tap(); app.buttons["chirp.notes.settings"].tap()
         let saver = Self.element("chirp.notes.batterySaver", in: app)
@@ -120,7 +130,7 @@ final class ChirpNotesUITests: XCTestCase {
     }
 
     /// Reading, tasks, rename, local search and the inspector, with both appearances captured in this run.
-    @MainActor func testLibraryReadingSearchTasksAndInspector() {
+    @MainActor private func libraryReadingSearchTasksAndInspector() {
         if UIDevice.current.userInterfaceIdiom == .pad { XCUIDevice.shared.orientation = .landscapeLeft }
         let app = launch(["--chirp-notes-gallery"])
         XCTAssertTrue(app.staticTexts["Lantern kickoff"].waitForExistence(timeout: 10))
@@ -129,7 +139,7 @@ final class ChirpNotesUITests: XCTestCase {
         XCTAssertTrue(row.exists); row.tap()
         XCTAssertTrue(app.staticTexts["Decision:"].exists || app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'Keep the launch in March'")).firstMatch.waitForExistence(timeout: 5))
         screenshot("notes-reading", app)
-        let task = app.buttons.matching(NSPredicate(format: "label CONTAINS 'Send the updated proposal'")).firstMatch
+        let task = Self.element("chirp.notes.preview", in: app).buttons.matching(NSPredicate(format: "label CONTAINS 'Send the updated proposal'")).firstMatch
         if task.exists { task.tap(); XCTAssertEqual(task.value as? String, "Checked") }
         app.buttons["chirp.notes.transcript.open"].tap()
         XCTAssertTrue(app.buttons["chirp.notes.play.0"].waitForExistence(timeout: 5))
@@ -160,7 +170,7 @@ final class ChirpNotesUITests: XCTestCase {
         screenshot("notes-search", app)
     }
 
-    @MainActor func testAccessibilityLibraryAndDock() {
+    @MainActor private func accessibilityLibraryAndDock() {
         let app = launch(["--chirp-notes-gallery", "-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"])
         screenshot("notes-library-ax5", app)
         app.buttons["chirp.notes.record"].firstMatch.tap()

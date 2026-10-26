@@ -56,7 +56,7 @@ It creates its own `iPhone chirp-e2e-<pid>` / `iPad chirp-e2e-<pid>` (simulator.
 | Live Activity (lock screen) | `testLiveActivityOnLockScreen` | Content-free phase only |
 | Notes library: record, pause/resume, continue, structure, export, recovery migration | `ChirpLiveNotesUITests` (live), `ChirpNotesUITests` (synthetic: record/pause/resume/stop/transcript/export, settings, rotation), `LiveNotesControllerTests`, `NotesStoreTests` | Sealed relaunch, delete/Undo/Restore, search, reading/tasks, kept replay, iPad inspector and AX5 screenshots are in ChirpNotesUITests; migration and late-AI isolation are unit tested |
 | History (encrypted, opt-in) | live test above, `ChirpUITests.testHistoryOffAndAdaptiveOrientation` | |
-| iPad layouts, rotation | `ChirpUITests.testHistoryOffAndAdaptiveOrientation`, `ChirpNotesUITests.testNotesSettingsAndRotation`, `ChirpHardwareKeyboardUITests.testRotationDuringDictationKeepsUtterance`; everything runs on the iPad too | Split View/Stage Manager resizing is not automatable |
+| iPad layouts, rotation | `ChirpUITests.testHistoryOffAndAdaptiveOrientation`, `ChirpNotesUITests.testNotesLibraryBatch`, `ChirpHardwareKeyboardUITests.testRotationDuringDictationKeepsUtterance`; everything runs on the iPad too | Split View/Stage Manager resizing is not automatable |
 | Hardware-keyboard shortcuts | `ChirpHardwareKeyboardUITests` | Skips unless a hardware keyboard is connected |
 
 ## Faster shared-host runs
@@ -67,8 +67,10 @@ It creates its own `iPhone chirp-e2e-<pid>` / `iPad chirp-e2e-<pid>` (simulator.
 - Run one device per shared-host lock window (`e2e-all.sh --phone-only` or `--ipad-only`), release it, and let queued
   workers interleave. Keep the lock wait and the test command inside one `koi run`; never leave a detached lock holder.
 - Notes screenshot helpers use the public `XCUIDevice.shared.appearance` API (iOS 15+) to capture light and dark inside
-  the same test. Batch the whole `ChirpNotesUITests` class in one invocation per device instead of rebuilding for each
-  image. Simulator teardown can still take five minutes per method; do not turn a successful test into a timeout just
+  the same test. `ChirpNotesUITests/testNotesLibraryBatch` batches recording/relaunch/trash, reading/search/replay,
+  settings/rotation and AX5 in one method. For steady pixel evidence, set `simctl ui UUID appearance dark` before launch
+  and `TEST_RUNNER_CHIRP_NOTES_APPEARANCE=dark` (or `light`); this avoids capturing UIKit's appearance crossfade.
+  Use `XCUIScreen.main.screenshot()` so rotated iPad images have the screen's current bounds. Simulator teardown can still take five minutes per method; do not turn a successful test into a timeout just
   to shorten that overhead.
 
 ## Evidence
