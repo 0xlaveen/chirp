@@ -257,6 +257,8 @@ public final class NotesRecorder {
     public private(set) var speakerError: String?
     /// This document's speaker session on the server: random, memory only, new for every document.
     private var speakerSession = SpeakerSession.make()
+    /// Phone clients apply server matches before structuring reads the labelled transcript. Memory only.
+    public var onServerSpeakers: ((ServerSpeakers, String) -> Void)?
     /// `options`, plus this note's speaker session when labels are on.
     var startOptions: StartOptions {
         var o = options
@@ -1602,6 +1604,7 @@ public final class NotesRecorder {
         guard let turns = ServerTurns.restrict(labels.speakers.turns, text: labels.text, raw: labels.raw,
                                                original: labels.original) else { return }
         document.attachServerTurns(turns, generation: labels.speakers.generation, toSegment: id)
+        onServerSpeakers?(labels.speakers, speakerSession)
     }
 
     private func label(_ job: LabelJob, timeline: SpeakerTimeline, tentative: Bool) {

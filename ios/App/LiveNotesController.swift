@@ -40,6 +40,8 @@ final class LiveNotesController: ObservableObject {
         var speakersModel: @Sendable (ServerConfig, URLSession, SpeakersModelAction) async throws -> SpeakersModel = {
             try await $0.speakersModel($2, session: $1)
         }
+        var fetchVoices: @Sendable (ServerConfig, URLSession) async throws -> SavedVoices = { try await $0.savedVoices(session: $1) }
+        var voiceAction: @Sendable (ServerConfig, URLSession, VoiceLibraryAction) async throws -> SavedVoices = { try await $0.savedVoices($2, session: $1) }
         var audio: any NotesAudio
         var requestPermission: () async -> Bool
         var activity: NotesActivityControl
@@ -106,6 +108,7 @@ final class LiveNotesController: ObservableObject {
         var snaps = NotesSnapshots()
         var textBefore = ""
         var lastState: NotesRecorderState = .idle
+        var voices = NoteVoiceState()
         init(_ recorder: NotesRecorder) { self.recorder = recorder }
     }
     private var sessions: [UUID: NoteSession] = [:]
@@ -167,6 +170,17 @@ final class LiveNotesController: ObservableObject {
             guard let context else { return }
             self?.sync(context)
         }
+        recorder.onServerSpeakers = { [weak self, weak context] labels, session in
+            guard let self, let context else { return }
+            let names = context.voices.receive(labels, session: session, document: context.recorder.document, enabled: self.rememberVoices)
+            if !names.isEmpty {
+                context.recorder.editSpeakers { document in
+                    for (person, name) in names { document.renameSpeaker(person, to: name) }
+                    return []
+                }
+            }
+            self.rememberPending(in: context)
+        }
         recorder.shouldKeepAudio = { [weak self] in self?.preferences.keepNotes == true && self?.preferences.keepAudio == true }
         recorder.onSegmentAudio = { [weak self, weak context] id, segment, frames, offset in
             guard let context else { return }
@@ -191,7 +205,7 @@ final class LiveNotesController: ObservableObject {
     }
 
     func shutdown() {
-        for context in sessions.values { context.recorder.onChange = nil; context.recorder.cancel() }
+        for context in sessions.values { context.recorder.onChange = nil; context.recorder.onServerSpeakers = nil; context.recorder.cancel() }
         deps.audio.stop()
         speakerPoll?.cancel(); speakerPoll = nil
         speakerRequest?.cancel(); speakerRequest = nil
@@ -539,6 +553,118 @@ final class LiveNotesController: ObservableObject {
         }
     }
 
+    // MARK: Shared server voice library
+
+    @Published private(set) var savedVoices: SavedVoices?
+    @Published private(set) var voicesBusy = false
+    @Published private(set) var voicesError: String?
+    @Published var rememberedVoiceNotice: String?
+    private var voicesServer: ServerConfig?
+    private var voicesRevision = 0
+    var voicesAvailable: Bool { health?.supportsSpeakerVoices == true }
+    var rememberVoices: Bool { voicesAvailable && savedVoices?.enabled == true }
+
+    func refreshSavedVoices() async {
+        guard let config = deps.server(), voicesAvailable else { savedVoices = nil; return }
+        if voicesServer != config {
+            savedVoices = nil
+            for context in sessions.values { context.voices = NoteVoiceState() }
+            voicesServer = config
+        }
+        let revision = voicesRevision
+        do {
+            let library = try await deps.fetchVoices(config, deps.http)
+            guard deps.server() == config, voicesRevision == revision else { return }
+            savedVoices = library
+            voicesError = nil
+        } catch { if deps.server() == config { voicesError = SavedVoiceNotice.error(error) } }
+    }
+
+    func changeSavedVoices(_ action: VoiceLibraryAction) async {
+        guard !voicesBusy, voicesAvailable, let config = deps.server() else { return }
+        voicesRevision += 1
+        voicesBusy = true
+        defer { voicesBusy = false }
+        do {
+            let library = try await deps.voiceAction(config, deps.http, action)
+            guard deps.server() == config else { return }
+            savedVoices = library; voicesError = nil
+            let ids = Set(library.voices.map(\.id))
+            for context in sessions.values {
+                context.voices.linked = context.voices.linked.filter { ids.contains($0.value) }
+                context.voices.recognised = context.voices.recognised.filter { ids.contains($0.value.voice) }
+                if action == .forgetAll { context.voices.pending.removeAll() }
+            }
+            if !library.enabled {
+                for context in sessions.values { context.voices.pending.removeAll(); context.voices.recognised.removeAll() }
+            }
+        } catch { if deps.server() == config { voicesError = SavedVoiceNotice.error(error) } }
+    }
+
+    func recognisedVoice(_ person: Int) -> ServerVoiceMatch? {
+        guard rememberVoices else { return nil }
+        return selected.voices.recognised[document.roster.resolve(person)]
+    }
+
+    func rejectVoice(_ person: Int) {
+        let id = document.roster.resolve(person)
+        selected.voices.reject(id)
+        fixSpeakers { SpeakerFixups.rename(id, to: "", replaceInNotes: true, in: &$0) }
+    }
+
+    func canUpdateVoice(_ person: Int) -> Bool {
+        rememberVoices && selected.voices.linked[document.roster.resolve(person)] != nil
+    }
+
+    func updateVoice(_ person: Int) {
+        let id = document.roster.resolve(person)
+        selected.voices.pending[id] = document.roster.person(id: id)?.name
+        rememberPending(in: selected)
+    }
+
+    private func rememberPending(in context: NoteSession) {
+        guard rememberVoices, let config = deps.server() else { return }
+        for (person, name) in context.voices.pending {
+            guard SavedVoice.isValidName(name), !context.voices.inFlight.contains(person) else { continue }
+            guard let source = context.voices.sources[person] else {
+                if context === selected { voicesError = "Record a little more with them, then try again" }
+                continue
+            }
+            let voice = context.voices.linked[person] ?? savedVoices?.voices.first { $0.name.caseInsensitiveCompare(name) == .orderedSame }?.id
+            context.voices.inFlight.insert(person)
+            let revision = voicesRevision
+            Task { [weak self, weak context] in
+                guard let self, let context else { return }
+                var saveNewerName = false
+                defer {
+                    context.voices.inFlight.remove(person)
+                    if saveNewerName { self.rememberPending(in: context) }
+                }
+                do {
+                    let library = try await self.deps.voiceAction(config, self.deps.http, .remember(name: name, from: source, voice: voice))
+                    guard self.deps.server() == config else { return }
+                    guard self.voicesRevision == revision else { await self.refreshSavedVoices(); return }
+                    self.savedVoices = library; self.voicesError = nil
+                    context.voices.linked[person] = library.voice?.id
+                    if context.voices.pending[person] == name { context.voices.pending[person] = nil }
+                    else { saveNewerName = context.voices.pending[person] != nil }
+                    if !self.preferences.voiceNoticeShown {
+                        self.preferences.voiceNoticeShown = true; self.save()
+                        self.rememberedVoiceNotice = name
+                    }
+                } catch {
+                    guard self.deps.server() == config, self.voicesRevision == revision else { return }
+                    if context === self.selected { self.voicesError = SavedVoiceNotice.error(error) }
+                    // Too-short remains queued for the next labelled segment; gone needs fresh server state.
+                    if error as? VoiceLibraryError == .gone { context.voices.sources[person] = nil }
+                    if error as? VoiceLibraryError != .tooShort && error as? VoiceLibraryError != .gone {
+                        context.voices.pending[person] = nil
+                    }
+                }
+            }
+        }
+    }
+
     // MARK: speaker labels
 
     /// The Mac's server can label speakers (health); an older one cannot.
@@ -604,7 +730,11 @@ final class LiveNotesController: ObservableObject {
     }
     func dismissSpeakerLine() { dismissedSpeakerLines.insert(document.id) }
     func nameSpeakers(_ draft: SpeakerNamesDraft) {
+        for (id, raw) in draft.names where draft.merges[id] == nil {
+            selected.voices.name(id, name: SpeakerFixups.cleanName(raw), remember: rememberVoices && draft.remember[id] != false)
+        }
         fixSpeakers { draft.apply(to: &$0) }
+        rememberPending(in: selected)
         dismissSpeakerLine()
     }
     func loadRecentSpeakerNames() async {
@@ -617,8 +747,11 @@ final class LiveNotesController: ObservableObject {
         recentSpeakerNames = SpeakerNameSuggestions.names(saved: [], recent: names, matching: "", limit: 120)
     }
 
-    func renameSpeaker(_ person: Int, to name: String, replaceInNotes: Bool) {
+    func renameSpeaker(_ person: Int, to name: String, replaceInNotes: Bool, remember: Bool = true) {
+        let id = document.roster.resolve(person)
+        selected.voices.name(id, name: SpeakerFixups.cleanName(name), remember: rememberVoices && remember)
         fixSpeakers { SpeakerFixups.rename(person, to: name, replaceInNotes: replaceInNotes, in: &$0) }
+        rememberPending(in: selected)
     }
     func mergeSpeaker(_ person: Int, into target: Int) { fixSpeakers { $0.mergeSpeaker(person, into: target); return [] } }
     func separateSpeaker(_ person: Int) { fixSpeakers { $0.separateSpeaker(person); return [] } }
@@ -655,6 +788,7 @@ final class LiveNotesController: ObservableObject {
         serverBox.config = config
         guard let fresh = try? await deps.fetchHealth(config, deps.http), fresh.ok else { return }
         health = fresh
+        await refreshSavedVoices()
         for context in sessions.values { context.recorder.serverAvailable(); configure(context) }
         fetchSpeakerModelIfNeeded()
         pollSpeakerModel()
@@ -830,6 +964,8 @@ extension LiveNotesController {
         let config = SharedConfiguration(bundle: .main)
         var store: NotesStore?
         do { store = try NotesStore.production(secrets: KeychainSecretStore(accessGroup: config.keychainAccessGroup)) } catch {}
+        var fetchVoices: @Sendable (ServerConfig, URLSession) async throws -> SavedVoices = { try await $0.savedVoices(session: $1) }
+        var voiceAction: @Sendable (ServerConfig, URLSession, VoiceLibraryAction) async throws -> SavedVoices = { try await $0.savedVoices($2, session: $1) }
         var audio: any NotesAudio = NotesMicrophone()
         #if DEBUG
         if let file = SimulatorNotesAudio.fromArguments() { audio = file }

@@ -21,6 +21,7 @@ public struct NotesPreferences: Codable, Sendable, Equatable {
     /// "Label speakers": who said what, from the user's own server. Nil is "never chose", which is on (`speakerLabelsOn`);
     /// only the user's own Turn off stores `false`. The server fetches its speaker model itself when it is missing.
     /// Nothing about a voice is stored here or anywhere on the phone.
+    public var voiceNoticeShown = false
     public var labelSpeakers: Bool?
     /// Which default `labelSpeakers` was stored under. Before 2 the field was a plain `false` for everyone who had not
     /// switched labels on, so a stored `false` below 2 is "never chose" and is cleared once (`true` is kept).
@@ -39,6 +40,7 @@ public struct NotesPreferences: Codable, Sendable, Equatable {
         retention = try c.decodeIfPresent(NotesRetention.self, forKey: .retention) ?? .never
         libraryUpgradeNotice = try c.decodeIfPresent(Bool.self, forKey: .libraryUpgradeNotice) ?? !recoveryCopy
         batterySaver = try c.decodeIfPresent(Bool.self, forKey: .batterySaver) ?? true
+        voiceNoticeShown = try c.decodeIfPresent(Bool.self, forKey: .voiceNoticeShown) ?? false
         let stored = try c.decodeIfPresent(Bool.self, forKey: .labelSpeakers)
         let version = try c.decodeIfPresent(Int.self, forKey: .speakerLabelsDefault) ?? 1
         labelSpeakers = version < Self.speakerLabelsDefaultVersion && stored == false ? nil : stored

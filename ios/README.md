@@ -404,8 +404,8 @@ they first speak; the inspector on iPad, a sheet on iPhone). Tap a capsule for
 **Rename…** (everywhere in the note, with an optional *also replace* in the
 notes text), **Same person as** (merge) and **Separate**. The notes the Mac
 structures read `Name: …` lines, so decisions and tasks say who owns them, and
-exports show the names. Your own Mac's server tells the voices apart, in its
-memory only. If the Mac has no speaker model yet, the phone asks it to fetch the
+exports show the names. Your own Mac's server tells the voices apart; the note’s
+session averages stay in its memory, while voices you name can be saved in its library. If the Mac has no speaker model yet, the phone asks it to fetch the
 pinned one once from Hugging Face (about 27 MB, SHA-256 checked) without a prompt:
 recording starts at once, and a line in the note, "Getting the speaker model ready
 (27 MB, once)…", offers **Turn off** (and **Retry** if the download failed). Only
@@ -680,7 +680,7 @@ when it matters; surrounding editor text is never collected.
 
 - **Speaker labels are on by default and keep no voiceprints.** *Label speakers*
   (Settings → Notes or a note's ⋯ menu turns it off) adds a random per-note session id to each Notes segment sent to your
-  own Mac's server, which compares voices in its memory only and returns who
+  own Mac's server, which compares voices and returns who
   spoke which words; the phone stores those turns and your names inside the
   sealed note and never logs them. Details: [docs/privacy.md](../docs/privacy.md).
 - **Dictation is transient; Notes persist locally.** Notes save continuously
@@ -849,3 +849,24 @@ ios/
   automatic replacement and leave a partial; recovery is manual in the app.
 
 The **Name speakers** sheet opens from the post-Stop “Who was speaking?” line, the transcript header, or a speaker chip. Name everyone together, complete names from recent notes, preview their first words, replay kept audio, or merge with **Same as ▸**. Done applies the changes; Cancel discards them. “Also replace names in the notes” is on by default.
+
+**Saved voices** (Settings → Notes → Saved voices) is one library on your paired
+Chirp server, shared by your devices. Naming with **Remember voice** on saves a
+voice after 20 seconds of speech in that note; shorter speech keeps its name in
+the note and retries after more labelled speech. Only a temporary session,
+generation and speaker reference is sent. No voiceprint or local voice library
+is stored on iPhone or iPad. The first remembered voice shows a notice with a
+**Don’t remember voices** action. A recognised name has a ✓; **Not X** clears
+that match in this note without forgetting the saved voice. **Update X’s saved
+voice** adds the note’s speech to the saved voice.
+
+The server-wide **Remember voices of people I name** switch stops saving and
+recognising on every device paired to the server. Turning it off offers to keep
+or forget existing voices. Rename changes only the saved voice’s name; Forget
+and Forget all ask for confirmation and keep names in existing notes. An old
+server disables the Saved voices row with “Update Chirp on your Mac to save
+voices” and hides Remember voice. Different servers have separate libraries.
+
+`ios/scripts/e2e-all.sh --only speakers` includes the naming and saved-voice UI
+checks plus a live two-note name → recognise test against its throwaway server.
+The longer `say` fixture gives each synthetic person enough speech to enrol.

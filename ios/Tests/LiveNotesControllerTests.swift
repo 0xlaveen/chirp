@@ -45,7 +45,7 @@ struct LiveNotesControllerTests {
         }
     }
 
-    func fixture(root: URL? = nil, secrets: MemorySecretStore = MemorySecretStore(), health: Health = LiveNotesController.syntheticHealth,
+    func fixture(root: URL? = nil, voiceLibrary: TestVoiceLibrary? = nil, voiceMatches: [ServerVoiceMatch] = [], secrets: MemorySecretStore = MemorySecretStore(), health: Health = LiveNotesController.syntheticHealth,
                  reorganize: @escaping @Sendable (NotesReorganizeRequest) async throws -> NotesReorganizeResponse = { LiveNotesController.syntheticReorganize($0) },
                  structure: @escaping @Sendable (NotesStructureRequest) async throws -> NotesStructureResponse = { LiveNotesController.syntheticStructure($0) }) throws -> Fixture {
         let root = root ?? FileManager.default.temporaryDirectory.appendingPathComponent("chirp-notes-unit-" + UUID().uuidString)
@@ -58,7 +58,7 @@ struct LiveNotesControllerTests {
             http: URLSession(configuration: .ephemeral),
             fetchHealth: { _, _ in health },
             makeStream: { _, options, _ in
-                let transport = SyntheticTransport(automatic: true)
+                let transport = SyntheticTransport(automatic: true, voiceMatches: { voiceMatches })
                 values.transports.append(transport)
                 return StreamSession(transport: transport, options: options)
             },
@@ -69,6 +69,8 @@ struct LiveNotesControllerTests {
                 if calls.fail { throw URLError(.cannotConnectToHost) }
                 return SpeakersModel(state: .downloading)
             },
+            fetchVoices: { _, _ in guard let voiceLibrary else { throw VoiceLibraryError.unsupported }; return await voiceLibrary.read() },
+            voiceAction: { _, _, action in guard let voiceLibrary else { throw VoiceLibraryError.unsupported }; return try await voiceLibrary.perform(action) },
             audio: audio, requestPermission: { values.permission },
             activity: NotesActivityControl(begin: { state in
                 guard values.activityEnabled else { throw NotesLiveActivity.Unavailable.disabled }

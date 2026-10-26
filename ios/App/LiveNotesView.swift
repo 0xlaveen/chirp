@@ -49,6 +49,9 @@ struct NoteDetailView: View {
                             Button("Dismiss", systemImage: "xmark") { notes.dismissSpeakerLine() }.labelStyle(.iconOnly)
                         }.padding(12).background(Color.chirp.koiContainer, in: RoundedRectangle(cornerRadius: 12))
                     }
+                    if let error = notes.voicesError {
+                        Text(error).font(.footnote).foregroundStyle(Color.chirp.inkMuted).accessibilityIdentifier("chirp.notes.voices.note")
+                    }
                     if let banner = banner {
                         PondBanner(kind: notes.debugRetention ? .error : .info, title: banner)
                             .accessibilityElement(children: .combine).accessibilityLabel(banner)
@@ -107,6 +110,13 @@ struct NoteDetailView: View {
             }.presentationDetents([.medium, .large]).presentationDragIndicator(.visible)
         }
         .sheet(isPresented: $namingSpeakers) { NameSpeakersSheet(notes: notes) }
+        .alert("Remembering voices", isPresented: Binding(get: { notes.rememberedVoiceNotice != nil }, set: { if !$0 { notes.rememberedVoiceNotice = nil } })) {
+            Button("OK") { notes.rememberedVoiceNotice = nil }
+            Button("Don’t remember voices", role: .destructive) {
+                notes.rememberedVoiceNotice = nil
+                Task { await notes.changeSavedVoices(.disable(forget: false)) }
+            }
+        } message: { Text("Chirp will recognise \(notes.rememberedVoiceNotice ?? "this person")’s voice in later notes on your devices. Saved voices stay on your Mac. Settings → Notes → Saved voices.") }
         .sheet(isPresented: $settings) { NotesSettingsSheet(notes: notes) }
         .fileExporter(isPresented: $exporting, document: NotesMarkdownFile(text: notes.markdown), contentType: NotesMarkdownFile.markdown,
                       defaultFilename: notes.exportName) { if case .success = $0 { notes.didExport() } }
@@ -379,6 +389,11 @@ struct NotesSettingsView: View {
                         .accessibilityIdentifier("chirp.notes.speakers.model")
                 }
             } footer: { Text(SpeakerNotice.summary(on: notes.labelSpeakers, health: notes.health) + ". " + SpeakerNotice.info) }
+            Section {
+                NavigationLink("Saved voices") { SavedVoicesView(notes: notes) }
+                    .disabled(!notes.voicesAvailable).accessibilityIdentifier("chirp.notes.voices.open")
+            } footer: { if notes.health != nil && !notes.voicesAvailable { Text("Update Chirp on your Mac to save voices") } }
+
         }.scrollContentBackground(.hidden).background(Color.chirp.background).tint(Color.chirp.koi)
             .navigationTitle("Notes").task { await notes.refreshHealth() }
             .confirmationDialog("Delete all kept audio?", isPresented: $confirmDeleteAudio, titleVisibility: .visible) {
