@@ -127,7 +127,8 @@ final class ChirpNotesUITests: XCTestCase {
         app.buttons["chirp.notes.recordingRow"].tap()
         app.buttons["chirp.notes.pause"].tap()
         XCTAssertTrue(Self.waitFor(status, "label BEGINSWITH 'Paused'"))
-        XCTAssertTrue(app.staticTexts["Synthetic words."].waitForExistence(timeout: 15))
+        // Labels are on by default, so the synthetic note reads "Person 1: Synthetic words.".
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'Synthetic words.'")).firstMatch.waitForExistence(timeout: 15))
         app.buttons["chirp.notes.pause"].tap()
         XCTAssertTrue(Self.waitFor(status, "label == 'Recording'"))
         app.buttons["chirp.notes.stop"].tap()
@@ -300,6 +301,7 @@ final class ChirpNotesUITests: XCTestCase {
         else { app.buttons["chirp.notes.transcript.open"].tap() }
 
         // Turn off is the user's own choice: the switch reads off.
+        XCTAssertTrue(app.buttons["chirp.notes.menu"].waitForExistence(timeout: 10))
         app.buttons["chirp.notes.menu"].tap(); app.buttons["chirp.notes.settings"].tap()
         XCTAssertTrue(toggle.waitForExistence(timeout: 5))
         Self.flipInSheet(toggle, in: app)
