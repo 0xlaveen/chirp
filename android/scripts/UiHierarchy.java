@@ -99,6 +99,14 @@ public final class UiHierarchy {
                     throw new IllegalStateException("Accessible target missing");
                 }
             }
+            if (args.length == 2 && args[0].equals("scroll-forward")) {
+                for (AccessibilityWindowInfo window : automation.getWindows()) {
+                    if (window.getType() != AccessibilityWindowInfo.TYPE_APPLICATION) continue;
+                    AccessibilityNodeInfo target = scrollable(window.getRoot());
+                    if (target != null && target.performAction(AccessibilityNodeInfo.ACTION_SCROLL_FORWARD)) return;
+                }
+                throw new IllegalStateException("Scrollable popup missing");
+            }
             if (args.length == 3 && args[0].equals("custom-action")) {
                 // Invokes a labelled custom accessibility action, as TalkBack's actions menu does.
                 for (AccessibilityWindowInfo window : automation.getWindows()) {
@@ -357,8 +365,32 @@ public final class UiHierarchy {
             capture.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, output);
         } finally { capture.recycle(); }
     }
+    private static AccessibilityNodeInfo liveStatus(AccessibilityNodeInfo node) {
+        if (node == null) return null;
+        if (node.getLiveRegion() != 0 && "android.widget.TextView".contentEquals(node.getClassName())) return node;
+        for (int i = 0; i < node.getChildCount(); i++) {
+            AccessibilityNodeInfo found = liveStatus(node.getChild(i));
+            if (found != null) return found;
+        }
+        return null;
+    }
+    private static AccessibilityNodeInfo scrollable(AccessibilityNodeInfo node) {
+        if (node == null) return null;
+        if (node.isScrollable()) return node;
+        for (int i = 0; i < node.getChildCount(); i++) {
+            AccessibilityNodeInfo found = scrollable(node.getChild(i));
+            if (found != null) return found;
+        }
+        return null;
+    }
     private static void dictationCycle(UiAutomation automation, String mode, float x, float y, String path) throws Exception {
-        String before = editorText(automation);
+        AccessibilityNodeInfo field = null;
+        for (AccessibilityWindowInfo window : automation.getWindows()) {
+            field = appEditor(window.getRoot());
+            if (field != null) break;
+        }
+        if (field == null) throw new IllegalStateException("Native editor missing");
+        String before = safe(field.getText());
         long down = android.os.SystemClock.uptimeMillis();
         boolean hold = mode.equals("hold");
         if (hold) {
@@ -366,19 +398,31 @@ public final class UiHierarchy {
             event.setSource(android.view.InputDevice.SOURCE_TOUCHSCREEN);
             automation.injectInputEvent(event, true); event.recycle();
         } else tap(automation, x, y);
+        AccessibilityNodeInfo status = null;
         try {
-            await(automation, "Listening…");
-            // This connection watches the actual transient state, rather than
-            // starting another shell JVM after a short utterance has finished.
+            long deadline = android.os.SystemClock.uptimeMillis() + 35000;
+            boolean listening = false;
+            while (android.os.SystemClock.uptimeMillis() < deadline) {
+                if (status == null) for (AccessibilityWindowInfo window : automation.getWindows()) {
+                    if (window.getType() == AccessibilityWindowInfo.TYPE_INPUT_METHOD) status = liveStatus(window.getRoot());
+                    if (status != null) break;
+                }
+                if (status != null && status.refresh() && safe(status.getText()).startsWith("Listening")) { listening = true; break; }
+                android.os.SystemClock.sleep(100);
+            }
+            if (!listening) throw new IllegalStateException("Listening state missing");
+            System.out.println("State trace: listening");
             screenshot(automation, path);
-            long deadline = android.os.SystemClock.uptimeMillis() + 12000;
+            deadline = android.os.SystemClock.uptimeMillis() + 12000;
             boolean partial = false;
-            while (android.os.SystemClock.uptimeMillis() < deadline && has(automation, "Listening…")) {
-                if (!editorText(automation).equals(before)) { partial = true; break; }
+            // Refresh only the two retained nodes. Re-materializing all virtual keyboard nodes at 10 Hz
+            // can exhaust the shell JVM on API 37 and SIGKILL the probe before its assertions finish.
+            while (android.os.SystemClock.uptimeMillis() < deadline) {
+                if (field.refresh() && !safe(field.getText()).equals(before)) { partial = true; break; }
                 android.os.SystemClock.sleep(100);
             }
             if (!partial) throw new IllegalStateException("No composing partial while listening");
-            if (has(automation, "Listening…")) screenshot(automation, path);
+            System.out.println("State trace: composing partial");
             if (!hold) tap(automation, x, y);
         } finally {
             if (hold) {
@@ -387,8 +431,14 @@ public final class UiHierarchy {
                 automation.injectInputEvent(event, true); event.recycle();
             }
         }
-        await(automation, "Use raw");
-        if (editorText(automation).equals(before)) throw new IllegalStateException("No final committed");
+        long deadline = android.os.SystemClock.uptimeMillis() + 60000;
+        boolean cleaned = false;
+        while (android.os.SystemClock.uptimeMillis() < deadline) {
+            if (status != null && status.refresh() && safe(status.getText()).startsWith("cleaned")) { cleaned = true; break; }
+            android.os.SystemClock.sleep(100);
+        }
+        if (!cleaned || !has(automation, "Use raw")) throw new IllegalStateException("Cleaned final with Use raw missing");
+        if (!field.refresh() || safe(field.getText()).equals(before)) throw new IllegalStateException("No final committed");
         System.out.println("PASS: " + mode + " composing partial, stop, cleaned final");
     }
     private static void stopCase(UiAutomation automation, String mode, float x, float y) {
