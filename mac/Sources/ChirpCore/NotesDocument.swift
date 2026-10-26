@@ -216,6 +216,31 @@ public struct NotesDocument: Equatable, Sendable, Codable {
         relabelled(id)
     }
 
+    /// Labels a committed segment with the server's turns (server-side labels): each turn's slot, in the server's
+    /// `generation`, becomes a person numbered by first appearance in transcript order. Turns of one person in a row
+    /// are one turn.
+    public mutating func attachServerTurns(_ turns: [ServerTurn], generation: String?, toSegment id: Int) {
+        guard segments.indices.contains(id), !segments[id].isGap else { return }
+        var labelled: [SpeakerTurn] = []
+        for t in turns {
+            let text = t.text.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !text.isEmpty else { continue }
+            let raw = t.raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            let person = roster.id(forSlot: t.speaker, generation: generation)
+            if let last = labelled.last, last.person == person {
+                labelled[labelled.count - 1].text += " " + text
+                labelled[labelled.count - 1].raw = (last.raw + " " + raw).trimmingCharacters(in: .whitespaces)
+            } else {
+                labelled.append(SpeakerTurn(person: person, start: segments[id].offset + t.start, text: text, raw: raw,
+                                            approximate: t.approximate, keptOriginal: t.keptOriginal))
+            }
+        }
+        guard !labelled.isEmpty else { return }
+        segments[id].turns = labelled
+        segments[id].labelsTentative = false
+        relabelled(id)
+    }
+
     /// Segment `id`'s turns changed: the window rebuilds its transcript from there.
     mutating func relabelled(_ id: Int) {
         isDirty = true

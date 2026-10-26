@@ -189,6 +189,7 @@ The simulator gates (`ios/scripts/simulator.sh test` and `ios/scripts/simulator-
 5. Organize, then Undo Organize; Export → Save to Files… and open the `.md` in Files.
 6. Record, then force-quit Chirp from the app switcher. Reopen → "Unsaved notes from an earlier session" with Keep/Discard. Keep restores the notes.
 7. Settings → Battery: compare an hour locked with Battery saver on and off.
+8. Label speakers (Settings → Notes, or a note's ⋯ menu): with a Mac server that has no speaker model, turning it on shows the consent alert (27 MB, Hugging Face); **Not now** changes nothing, **Download** shows "Downloading the speaker model on your Mac…" and then "Speaker model ready on your Mac." Record two people talking: the transcript shows **Person 1** and **Person 2** capsules; tap one → **Rename…** (Maya) renames it on every turn and offers to replace the old name in the notes; **Same person as** merges, **Separate** undoes it; the notes read `Maya: …` and the export shows the names. Against an older server the switch is disabled with "Update Chirp on your Mac". Simulator: `ios/scripts/e2e-all.sh --only speakers` runs this with two `say` voices against the real server and model.
 
 ### Fold 8
 

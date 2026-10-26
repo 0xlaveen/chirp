@@ -17,6 +17,16 @@ final class ChirpNotesUITests: XCTestCase {
     @MainActor static func flip(_ toggle: XCUIElement) {
         toggle.coordinate(withNormalizedOffset: CGVector(dx: 0.93, dy: 0.5)).tap()
     }
+    /// Flips a switch in the Notes settings sheet. On iPad that sheet is shorter and narrower than the form: a row near
+    /// the end exists but sits below the sheet until it is scrolled into view, and a tap outside the sheet dismisses it.
+    /// So scroll until the row is hittable, then aim from the sheet's own Done button.
+    @MainActor static func flipInSheet(_ toggle: XCUIElement, in app: XCUIApplication) {
+        var scrolls = 0
+        while !toggle.isHittable, scrolls < 6 { app.swipeUp(velocity: .slow); scrolls += 1 }
+        let done = app.buttons["Done"].firstMatch
+        guard done.exists, toggle.frame.height > 0 else { return flip(toggle) }
+        app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: done.frame.maxX - 36, dy: toggle.frame.midY)).tap()
+    }
     /// Both appearances in one test invocation; no separate simulator configuration or app relaunch is needed.
     @MainActor func screenshot(_ name: String, _ app: XCUIApplication) {
         let original = XCUIDevice.shared.appearance
@@ -223,5 +233,68 @@ final class ChirpNotesUITests: XCTestCase {
         XCTAssertTrue(app.buttons["chirp.notes.pause"].isHittable)
         screenshot("notes-dock-ax5", app)
         app.buttons["chirp.notes.stop"].tap()
+    }
+
+    /// Label speakers (#201) with the synthetic server: the switch in Settings → Notes, two chips in the transcript,
+    /// then rename (with the notes replaced), merge and separate from a chip's menu.
+    @MainActor func testSpeakerChipsRenameMergeAndSeparate() {
+        if UIDevice.current.userInterfaceIdiom == .pad { XCUIDevice.shared.orientation = .landscapeLeft }
+        let app = launch(["--chirp-notes-gallery", "--chirp-speakers-gallery"])
+        let row = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'chirp.notes.row.' AND label CONTAINS 'Lantern kickoff'")).firstMatch
+        XCTAssertTrue(row.waitForExistence(timeout: 10)); row.tap()
+        app.buttons["chirp.notes.transcript.open"].tap()
+        let one = app.buttons["chirp.notes.speaker.chip.0.0"], two = app.buttons["chirp.notes.speaker.chip.0.1"]
+        XCTAssertTrue(one.waitForExistence(timeout: 5))
+        XCTAssertEqual(one.label, "Person 1"); XCTAssertEqual(two.label, "Maya")
+        screenshot("notes-speakers-transcript", app)
+
+        // Rename Person 1 → Theo, replacing the notes' "Person 1" too.
+        one.tap()
+        app.buttons["chirp.notes.speaker.rename"].tap()
+        let name = app.textFields["chirp.notes.speaker.name"]
+        XCTAssertTrue(name.waitForExistence(timeout: 5))
+        name.tap(); name.typeText("Theo")
+        XCTAssertTrue(Self.element("chirp.notes.speaker.replace", in: app).waitForExistence(timeout: 5))
+        screenshot("notes-speakers-rename", app)
+        app.buttons["chirp.notes.speaker.confirm"].tap()
+        XCTAssertTrue(Self.waitFor(one, "label == 'Theo'", timeout: 5))
+
+        // Merge Maya into Theo, then separate her again.
+        two.tap()
+        app.buttons["chirp.notes.speaker.merge"].tap()
+        app.buttons["Theo"].firstMatch.tap()
+        XCTAssertTrue(Self.waitFor(two, "label == 'Theo'", timeout: 5))
+        screenshot("notes-speakers-merged", app)
+        two.tap()
+        app.buttons["chirp.notes.speaker.separate"].tap()
+        XCTAssertTrue(Self.waitFor(two, "label == 'Maya'", timeout: 5))
+
+        if UIDevice.current.userInterfaceIdiom != .pad { app.buttons["Done"].tap() }
+        else { app.buttons["chirp.notes.transcript.open"].tap() }
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'Theo'")).firstMatch.waitForExistence(timeout: 5),
+                      "the rename replaced the name in the notes")
+    }
+
+    /// The switch itself: off by default, on without a consent (the synthetic Mac has the model), and the chips follow.
+    @MainActor func testLabelSpeakersSwitchAndRecording() {
+        let app = launch()
+        // Paired (the synthetic Mac answers health) before the switch is asked for: otherwise the Mac's model is unknown.
+        XCTAssertTrue(Self.waitFor(app.buttons["chirp.notes.record"].firstMatch, "isEnabled == true", timeout: 20))
+        app.buttons["chirp.notes.menu"].tap(); app.buttons["chirp.notes.settings"].tap()
+        let toggle = Self.element("chirp.notes.speakers.setting", in: app)
+        XCTAssertTrue(toggle.waitForExistence(timeout: 5)); XCTAssertEqual(toggle.value as? String, "0")
+        screenshot("notes-settings-speakers-sheet", app)
+        Self.flipInSheet(toggle, in: app)
+        screenshot("notes-settings-speakers-tapped", app)
+        XCTAssertTrue(Self.waitFor(toggle, "value == '1'", timeout: 10))
+        screenshot("notes-settings-speakers", app)
+        app.buttons["Done"].tap()
+        app.buttons["chirp.notes.record"].firstMatch.tap()
+        XCTAssertTrue(Self.waitFor(Self.element("chirp.notes.status", in: app), "label == 'Recording'"))
+        app.buttons["chirp.notes.stop"].tap()
+        XCTAssertTrue(Self.waitFor(Self.element("chirp.notes.status", in: app), "label == 'Stopped'"))
+        app.buttons["chirp.notes.transcript.open"].tap()
+        XCTAssertTrue(app.buttons["chirp.notes.speaker.chip.0.0"].waitForExistence(timeout: 15))
+        XCTAssertEqual(app.buttons["chirp.notes.speaker.chip.0.1"].label, "Person 2")
     }
 }

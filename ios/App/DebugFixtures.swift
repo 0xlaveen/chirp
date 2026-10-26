@@ -28,6 +28,8 @@ final class SyntheticTransport: StreamTransport, @unchecked Sendable {
     private var iterator: AsyncStream<URLSessionWebSocketTask.Message>.Iterator
     private var sentValues: [URLSessionWebSocketTask.Message] = []
     let automatic: Bool
+    /// The start message asked for speaker labels (`speakers.session`): the final then carries two people's turns.
+    private var labelling = false
     init(automatic: Bool = false) {
         self.automatic = automatic
         let (input, output) = AsyncStream.makeStream(of: URLSessionWebSocketTask.Message.self)
@@ -39,11 +41,16 @@ final class SyntheticTransport: StreamTransport, @unchecked Sendable {
         lock.withLock { sentValues.append(message) }
         guard automatic, case .string(let text) = message else { return }
         if text.contains(#""type":"start""#) {
+            lock.withLock { labelling = text.contains(#""speakers":{"session":""#) }
             push(#"{"type":"ready","session":"synthetic","debug_retention":false}"#)
             push(#"{"type":"partial","seq":1,"text":"synthetic words","stable":"","words":[{"text":"synthetic","start":0,"end":0.2,"stable":false}]}"#)
         } else if text.contains(#""type":"stop""#) {
             push(#"{"type":"correcting","seq":2,"raw":"synthetic words","profile":"default"}"#)
-            push(#"{"type":"final","text":"Synthetic words.","raw":"synthetic words","corrected":true}"#)
+            if lock.withLock({ labelling }) {
+                push(#"{"type":"final","text":"Synthetic words. Second voice.","raw":"synthetic words second voice","corrected":true,"speakers":{"generation":"synthetic-generation","turns":[{"speaker":0,"start":0,"text":"Synthetic words.","raw":"synthetic words"},{"speaker":1,"start":1,"text":"Second voice.","raw":"second voice"}]}}"#)
+            } else {
+                push(#"{"type":"final","text":"Synthetic words.","raw":"synthetic words","corrected":true}"#)
+            }
         }
     }
     func receive() async throws -> URLSessionWebSocketTask.Message {

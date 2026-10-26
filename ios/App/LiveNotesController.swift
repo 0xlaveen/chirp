@@ -35,6 +35,10 @@ final class LiveNotesController: ObservableObject {
         var reorganize: @Sendable (ServerConfig, URLSession, NotesReorganizeRequest) async throws -> NotesReorganizeResponse = {
             try await $0.reorganizeNotes($2, session: $1, timeout: 50)
         }
+        /// `POST /v1/speakers/model`: the Mac fetches (or drops) its speaker model, only after the user's say-so.
+        var speakersModel: @Sendable (ServerConfig, URLSession, SpeakersModelAction) async throws -> SpeakersModel = {
+            try await $0.speakersModel($2, session: $1)
+        }
         var audio: any NotesAudio
         var requestPermission: () async -> Bool
         var activity: NotesActivityControl
@@ -87,6 +91,11 @@ final class LiveNotesController: ObservableObject {
     @Published private(set) var notice = ""
     @Published private(set) var preferences = NotesPreferences()
     @Published private(set) var starting = false
+    /// Where the consent dialog is open (nil: closed). Turning "Label speakers" on needs the Mac's speaker model, so the
+    /// switch asks first; only the screen the user flipped it on shows the dialog.
+    enum SpeakerConsentSource { case note, settings }
+    @Published var speakerConsent: SpeakerConsentSource?
+    private var speakerPoll: Task<Void, Never>?
     /// Screen updates skipped while locked in battery saver (for the tests and the status line).
     private(set) var skippedUpdates = 0
 
@@ -184,6 +193,7 @@ final class LiveNotesController: ObservableObject {
     func shutdown() {
         for context in sessions.values { context.recorder.onChange = nil; context.recorder.cancel() }
         deps.audio.stop()
+        speakerPoll?.cancel(); speakerPoll = nil
         stopTick?(); stopTick = nil
         observers.forEach(NotificationCenter.default.removeObserver); observers = []
     }
@@ -527,6 +537,63 @@ final class LiveNotesController: ObservableObject {
             catch { notice = "Retention could not be applied." }
         }
     }
+
+    // MARK: speaker labels
+
+    /// The Mac's server can label speakers (health); an older one cannot.
+    var speakersAvailable: Bool { SpeakerNotice.available(health) }
+    var labelSpeakers: Bool { preferences.labelSpeakers }
+    /// Why speakers are not being labelled although the switch is on, for the transcript.
+    var speakerNote: String? {
+        SpeakerNotice.transcriptNote(on: preferences.labelSpeakers, health: health, recorderError: recorder.speakerError)
+    }
+
+    /// The switch: off at once; on asks first unless the Mac already has its model. Applies from the next segment.
+    func setLabelSpeakers(_ on: Bool, from source: SpeakerConsentSource = .settings) {
+        // What the Mac has is unknown until its health arrived: look first rather than ask about a download it may not need.
+        if on, health == nil, deps.server() != nil {
+            Task { await refreshHealth(); applyLabelSpeakers(on, from: source) }
+            return
+        }
+        applyLabelSpeakers(on, from: source)
+    }
+
+    private func applyLabelSpeakers(_ on: Bool, from source: SpeakerConsentSource) {
+        if on, SpeakerNotice.needsConsent(health: health) { speakerConsent = source; return }
+        preferences.labelSpeakers = on
+        save()
+    }
+
+    /// The consent dialog's Download: the Mac fetches its model (once), and labels start with the next segment.
+    func confirmSpeakerDownload() {
+        speakerConsent = nil
+        preferences.labelSpeakers = true
+        save()
+        guard let config = deps.server() else { return }
+        let http = deps.http, request = deps.speakersModel
+        Task {
+            do { _ = try await request(config, http, .download) }
+            catch { notice = "Couldn’t reach your Mac to download the speaker model." }
+            await refreshHealth()
+        }
+    }
+
+    func dismissSpeakerConsent() { speakerConsent = nil }
+
+    /// Rename a person everywhere in the note; `replaceInNotes` also swaps their old name in the notes' text.
+    func renameSpeaker(_ person: Int, to name: String, replaceInNotes: Bool) {
+        fixSpeakers { SpeakerFixups.rename(person, to: name, replaceInNotes: replaceInNotes, in: &$0) }
+    }
+    func mergeSpeaker(_ person: Int, into target: Int) { fixSpeakers { $0.mergeSpeaker(person, into: target); return [] } }
+    func separateSpeaker(_ person: Int) { fixSpeakers { $0.separateSpeaker(person); return [] } }
+
+    private func fixSpeakers(_ body: (inout NotesDocument) -> [NotesTextChange]) {
+        let context = selected!
+        context.recorder.editSpeakers(body)
+        sync(context)
+        context.journal?.flush()
+    }
+
     func dismissUpgradeNotice() { preferences.libraryUpgradeNotice = false; save() }
     private func save() {
         do { try deps.store?.save(preferences) } catch { notice = SessionFailure.storage.localizedDescription }
@@ -553,6 +620,19 @@ final class LiveNotesController: ObservableObject {
         guard let fresh = try? await deps.fetchHealth(config, deps.http), fresh.ok else { return }
         health = fresh
         for context in sessions.values { context.recorder.serverAvailable(); configure(context) }
+        pollSpeakerModel()
+    }
+
+    /// The Mac fetching its speaker model: look again shortly, until it is ready or failed.
+    private func pollSpeakerModel() {
+        guard health?.speakersModel?.state == .downloading, speakerPoll == nil else { return }
+        speakerPoll = Task { [weak self] in
+            guard let self else { return }
+            await self.deps.sleep(.seconds(3))
+            self.speakerPoll = nil
+            guard !Task.isCancelled else { return }
+            await self.refreshHealth()
+        }
     }
 
     /// The `start` options and the structuring switch for this server (the Mac's hidden `live_notes` style when it has one).
@@ -564,6 +644,7 @@ final class LiveNotesController: ObservableObject {
             ? StartOptions(client: "ios", correction: correction, correctionProfile: CorrectionProfile.liveNotesID, wordTimings: true)
             : StartOptions(client: "ios", correction: correction, correctionProfile: CorrectionProfile.defaultID, wordTimings: true)
         recorder.serverHost = deps.server()?.host ?? ""
+        recorder.labelSpeakers = preferences.labelSpeakers && SpeakerNotice.available(h)
         recorder.configureStructuring(enabled: preferences.structureEnabled(health: h), health: h)
     }
 

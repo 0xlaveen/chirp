@@ -2,7 +2,9 @@
 # The whole iOS/iPadOS sweep with one command, ending in a pass/fail table:
 #   portable checks -> for an iPhone and an iPad simulator: build, unit tests, then the full UI scheme against a
 #   throwaway real chirp-server (simulator-e2e.sh) -> a per-test table, screenshots and logs under one evidence dir.
-# Usage: ios/scripts/e2e-all.sh [--skip-portable] [--dark] [--phone-only|--ipad-only] [--keep-devices]
+# Usage: ios/scripts/e2e-all.sh [--skip-portable] [--dark] [--phone-only|--ipad-only] [--keep-devices] [--only speakers]
+#   --only speakers   a short batched run for Live Notes speaker labels: portable checks, the controller unit tests and the
+#                     speaker UI tests (synthetic, and live against the real server with its WeSpeaker model, two `say` voices)
 # Env:   CHIRP_E2E_IPHONE / CHIRP_E2E_IPAD   use these simulator UUIDs instead of creating (and deleting) our own
 #        CHIRP_E2E_OUT                       evidence dir (default: a new /tmp/chirp-ios-e2e-all.XXXX)
 #        CHIRP_TEST_DIAGNOSTICS              never (default) or on-failure; simulator.sh passes it to xcodebuild
@@ -11,15 +13,17 @@
 set -u
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
 cd "$ROOT/ios"
-portable=1; dark=0; phone=1; ipad=1; keep=0
-for a in "$@"; do
+portable=1; dark=0; phone=1; ipad=1; keep=0; only=""
+while [ $# -gt 0 ]; do
+  a=$1; shift
   case "$a" in
+    --only) only=${1:-}; shift || true; [ "$only" = speakers ] || { echo "--only takes: speakers" >&2; exit 2; } ;;
     --skip-portable) portable=0 ;;
     --dark) dark=1 ;;
     --phone-only) ipad=0 ;;
     --ipad-only) phone=0 ;;
     --keep-devices) keep=1 ;;
-    *) echo "unknown option $a" >&2; sed -n 2,9p "$0" >&2; exit 2 ;;
+    *) echo "unknown option $a" >&2; sed -n 2,11p "$0" >&2; exit 2 ;;
   esac
 done
 OUT=${CHIRP_E2E_OUT:-$(mktemp -d /tmp/chirp-ios-e2e-all.XXXX)}
@@ -130,11 +134,18 @@ run_device() {
   xcrun simctl boot "$uuid" 2>/dev/null || true
   xcrun simctl bootstatus "$uuid" -b > "$OUT/$label-boot.log" 2>&1   # a fresh simulator's first boot is slow; do not race it
   stage "$label-build" ./scripts/simulator.sh build "$uuid"
-  stage "$label-unit" ./scripts/simulator.sh test "$uuid" -resultBundlePath "$OUT/$label-unit.xcresult"
+  local unit_only="" ui_only=""
+  if [ "$only" = speakers ]; then
+    unit_only="-only-testing:ChirpIOSTests/LiveNotesControllerTests"
+    ui_only="-only-testing:ChirpIOSUITests/ChirpLiveSpeakersUITests -only-testing:ChirpIOSUITests/ChirpNotesUITests/testSpeakerChipsRenameMergeAndSeparate -only-testing:ChirpIOSUITests/ChirpNotesUITests/testLabelSpeakersSwitchAndRecording"
+  fi
+  # shellcheck disable=SC2086
+  stage "$label-unit" ./scripts/simulator.sh test "$uuid" -resultBundlePath "$OUT/$label-unit.xcresult" $unit_only
   summarize_bundle "$label-unit" "$OUT/$label-unit.xcresult"
   pick_port; echo "server port: $CHIRP_E2E_PORT" >> "$OUT/devices.txt"
+  # shellcheck disable=SC2086
   CHIRP_E2E_APPEARANCE=$([ "$dark" = 1 ] && echo dark || echo light) \
-    stage "$label-ui-live" ./scripts/simulator-e2e.sh "$uuid" -resultBundlePath "$OUT/$label-ui.xcresult"
+    stage "$label-ui-live" ./scripts/simulator-e2e.sh "$uuid" -resultBundlePath "$OUT/$label-ui.xcresult" $ui_only
   summarize_bundle "$label-ui" "$OUT/$label-ui.xcresult"
   if [ -d "$OUT/$label-ui.xcresult" ]; then
     xcrun xcresulttool export attachments --path "$OUT/$label-ui.xcresult" --output-path "$OUT/$label-attachments" >/dev/null 2>&1 || true

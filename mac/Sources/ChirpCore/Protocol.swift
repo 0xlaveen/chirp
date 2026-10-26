@@ -35,6 +35,79 @@ public struct WordTiming: Codable, Sendable, Equatable {
     }
 }
 
+/// One turn of `final.speakers`: the speaker's slot in this note (arbitrary, never shown), seconds from the segment's
+/// first sample, and the text it covers (the corrected text, or the raw text when `keptOriginal`).
+public struct ServerTurn: Decodable, Sendable, Equatable {
+    public var speaker: Int
+    public var start: Double
+    public var text: String
+    public var raw: String
+    public var approximate: Bool
+    public var keptOriginal: Bool
+
+    public init(speaker: Int, start: Double, text: String, raw: String? = nil, approximate: Bool = false, keptOriginal: Bool = false) {
+        self.speaker = speaker
+        self.start = start
+        self.text = text
+        self.raw = raw ?? text
+        self.approximate = approximate
+        self.keptOriginal = keptOriginal
+    }
+
+    private enum CodingKeys: String, CodingKey { case speaker, start, text, raw, approximate, keptOriginal }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        speaker = try c.decode(Int.self, forKey: .speaker)
+        guard (0...ServerSpeakers.maxSlot).contains(speaker) else {
+            throw DecodingError.dataCorruptedError(forKey: .speaker, in: c, debugDescription: "slot")
+        }
+        start = max(try c.decode(Double.self, forKey: .start), 0)
+        text = try c.decode(String.self, forKey: .text)
+        raw = try c.decodeIfPresent(String.self, forKey: .raw) ?? text
+        approximate = try c.decodeIfPresent(Bool.self, forKey: .approximate) ?? false
+        keptOriginal = try c.decodeIfPresent(Bool.self, forKey: .keptOriginal) ?? false
+    }
+}
+
+/// `final.speakers`: the segment's turns, or why there are none (`unavailable`: no speaker model on the server;
+/// `failed`). Lenient: anything malformed is no labels, never a failed segment.
+public struct ServerSpeakers: Decodable, Sendable, Equatable {
+    public static let maxTurns = 400
+    public static let maxSlot = 63
+
+    /// Changes when the server lost the note's state (a restart): its slots then mean other voices.
+    public var generation: String?
+    public var turns: [ServerTurn]
+    public var error: String?
+
+    public init(generation: String?, turns: [ServerTurn], error: String? = nil) {
+        self.generation = generation
+        self.turns = turns
+        self.error = error
+    }
+
+    private enum CodingKeys: String, CodingKey { case generation, turns, error }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        if let error = try? c.decodeIfPresent(String.self, forKey: .error), error.count <= 32,
+           !error.isEmpty, error.allSatisfy({ $0.isASCII && ($0.isLowercase || $0 == "_") }) {
+            self.init(generation: nil, turns: [], error: error)
+            return
+        }
+        let generation = try c.decode(String.self, forKey: .generation)
+        guard (1...64).contains(generation.count) else {
+            throw DecodingError.dataCorruptedError(forKey: .generation, in: c, debugDescription: "generation")
+        }
+        let turns = try c.decode([ServerTurn].self, forKey: .turns)
+        guard turns.count <= Self.maxTurns else {
+            throw DecodingError.dataCorruptedError(forKey: .turns, in: c, debugDescription: "turns")
+        }
+        self.init(generation: generation, turns: turns)
+    }
+}
+
 public struct FinalResult: Sendable, Equatable {
     public var text: String
     public var raw: String
@@ -43,15 +116,19 @@ public struct FinalResult: Sendable, Equatable {
     public var timings: Timings?
     /// The raw transcript's word timings, when asked for and the engine has them.
     public var words: [WordTiming]?
+    /// Who spoke which part, when `start.speakers` asked for it (Live Notes speaker labels). Never logged.
+    public var speakers: ServerSpeakers?
 
     public init(text: String, raw: String? = nil, corrected: Bool = false,
-                correctionError: String? = nil, timings: Timings? = nil, words: [WordTiming]? = nil) {
+                correctionError: String? = nil, timings: Timings? = nil, words: [WordTiming]? = nil,
+                speakers: ServerSpeakers? = nil) {
         self.text = text
         self.raw = raw ?? text
         self.corrected = corrected
         self.correctionError = correctionError
         self.timings = timings
         self.words = words
+        self.speakers = speakers
     }
 
     /// True when the server rewrote the transcript and the raw text differs (offers "Use raw").
@@ -84,6 +161,13 @@ public enum ServerMessage: Sendable, Equatable {
         var words: [WordTiming]?
         var code: String?
         var message: String?
+        /// Lenient on its own: a malformed speakers object is no labels, never a failed message.
+        var speakers: Lenient<ServerSpeakers>?
+    }
+
+    private struct Lenient<Value: Decodable & Sendable & Equatable>: Decodable {
+        var value: Value?
+        init(from decoder: Decoder) throws { value = try? Value(from: decoder) }
     }
 
     public static func decode(_ data: Data) throws -> ServerMessage {
@@ -101,7 +185,8 @@ public enum ServerMessage: Sendable, Equatable {
         case "final":
             let text = d.text ?? ""
             return .final(FinalResult(text: text, raw: d.raw, corrected: d.corrected ?? false,
-                                      correctionError: d.correctionError, timings: d.timingsMs, words: d.words))
+                                      correctionError: d.correctionError, timings: d.timingsMs, words: d.words,
+                                      speakers: d.speakers?.value))
         case "error":
             return .error(code: d.code ?? "engine", message: d.message ?? "Server error")
         default:
@@ -124,9 +209,12 @@ public struct StartOptions: Sendable, Equatable {
     public var wordTimings: Bool
     /// What Learn from my edits learned for this app (`start.learned`, version 1); nil or empty sends nothing. Never logged.
     public var learned: LearnedPayload?
+    /// Live Notes speaker labels: the note's random session id (`SpeakerSession.make()`), nil when labels are off. Off
+    /// leaves the start message as it was. The server keeps voices per session in memory only.
+    public var speakersSession: String?
     public init(client: String = "mac", correction: Bool = false, correctionProfile: String = CorrectionProfile.defaultID,
                 correctionInstructions: String? = nil, correctionPrompt: String? = nil, wordTimings: Bool = false,
-                learned: LearnedPayload? = nil) {
+                learned: LearnedPayload? = nil, speakersSession: String? = nil) {
         self.learned = learned
         self.client = client
         self.correction = correction
@@ -134,6 +222,21 @@ public struct StartOptions: Sendable, Equatable {
         self.correctionInstructions = correctionInstructions
         self.correctionPrompt = correctionPrompt
         self.wordTimings = wordTimings
+        self.speakersSession = speakersSession
+    }
+}
+
+/// The id of a note's speaker session: 32 random hex characters (the server takes 16–64 of `[A-Za-z0-9_-]`).
+public enum SpeakerSession {
+    public static func make() -> String {
+        var generator = SystemRandomNumberGenerator()
+        return (0..<2).map { _ in String(format: "%016llx", generator.next() as UInt64) }.joined()
+    }
+
+    public static func isValid(_ id: String) -> Bool {
+        (16...64).contains(id.utf8.count) && id.utf8.allSatisfy {
+            ($0 >= 48 && $0 <= 57) || ($0 >= 65 && $0 <= 90) || ($0 >= 97 && $0 <= 122) || $0 == 95 || $0 == 45
+        }
     }
 }
 
@@ -152,6 +255,7 @@ public enum ClientMessage {
         }
         if o.wordTimings { message["word_timings"] = true }
         if let learned = o.learned, !learned.isEmpty { message["learned"] = learned.wire }
+        if let session = o.speakersSession, SpeakerSession.isValid(session) { message["speakers"] = ["session": session] }
         return json(message)
     }
     public static let stop = json(["type": "stop"])
@@ -166,6 +270,26 @@ public enum ClientMessage {
     private static func json(_ object: [String: Any]) -> String {
         let data = try! JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
         return String(decoding: data, as: UTF8.self)
+    }
+}
+
+/// `health.speakers_model`: where the server's speaker model stands (it is downloaded only on the user's request).
+public struct SpeakersModel: Decodable, Sendable, Equatable {
+    public enum State: String, Sendable, Equatable { case ready, notDownloaded = "not_downloaded", downloading, failed }
+    public var state: State?
+    public var sizeBytes: Int?
+
+    public init(state: State?, sizeBytes: Int? = nil) {
+        self.state = state
+        self.sizeBytes = sizeBytes
+    }
+
+    private enum CodingKeys: String, CodingKey { case state, sizeBytes }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        state = (try? c.decodeIfPresent(String.self, forKey: .state)).flatMap(State.init(rawValue:))
+        sizeBytes = try? c.decodeIfPresent(Int.self, forKey: .sizeBytes)
     }
 }
 
@@ -193,6 +317,10 @@ public struct Health: Decodable, Sendable, Equatable {
     public var notesContext: Bool?
     /// `POST /v1/notes/edit` exists (a spoken edit instruction); nil from a server that predates it.
     public var notesEdit: Bool?
+    /// `start.speakers` labels Live Notes speakers (authenticated health only); nil from a server that predates it.
+    public var notesSpeakers: Bool?
+    /// The speaker model's state on the server (authenticated health only).
+    public var speakersModel: SpeakersModel?
     /// Build, API level and capabilities (authenticated health only); nil from a server that predates them.
     public var version: String?
     public var commit: String?
@@ -206,7 +334,7 @@ public struct Health: Decodable, Sendable, Equatable {
                 correction: String? = nil, correctionLeavesMachine: Bool? = nil, correctionHost: String? = nil,
                 correctionProfiles: [CorrectionProfile]? = nil, correctionKeepLoaded: Bool? = nil, correctionLoaded: Bool? = nil,
                 notesStructure: Bool? = nil, notesCorrection: Bool? = nil, notesReorganize: Bool? = nil, notesContext: Bool? = nil,
-                notesEdit: Bool? = nil, version: String? = nil, commit: String? = nil, api: Int? = nil, capabilities: [String]? = nil,
+                notesEdit: Bool? = nil, notesSpeakers: Bool? = nil, speakersModel: SpeakersModel? = nil, version: String? = nil, commit: String? = nil, api: Int? = nil, capabilities: [String]? = nil,
                 startedAt: Double? = nil, source: String? = nil) {
         self.ok = ok
         self.engine = engine
@@ -223,6 +351,8 @@ public struct Health: Decodable, Sendable, Equatable {
         self.notesReorganize = notesReorganize
         self.notesContext = notesContext
         self.notesEdit = notesEdit
+        self.notesSpeakers = notesSpeakers
+        self.speakersModel = speakersModel
         self.version = version
         self.commit = commit
         self.api = api

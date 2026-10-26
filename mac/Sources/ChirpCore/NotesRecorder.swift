@@ -242,6 +242,20 @@ public final class NotesRecorder {
     /// Speaker labels for this document: the controller attaches its diarizer before Record (nil: labels off, and
     /// everything behaves as without the feature). Changing it applies from the next Record.
     public var speakers: SpeakerDiarizing?
+    /// Server-side speaker labels (Android and iOS; the Mac's own diarizer is `speakers`): each segment asks the
+    /// server who spoke, read at the segment's start. Off by default; off leaves every `start` message as it was.
+    public var labelSpeakers = false
+    /// Why the last labelled segment came without labels (`unavailable`: no speaker model on the server; `failed`);
+    /// nil when it had them. Never carries labels or text.
+    public private(set) var speakerError: String?
+    /// This document's speaker session on the server: random, memory only, new for every document.
+    private var speakerSession = SpeakerSession.make()
+    /// `options`, plus this note's speaker session when labels are on.
+    var startOptions: StartOptions {
+        var o = options
+        if labelSpeakers { o.speakersSession = speakerSession }
+        return o
+    }
     /// After each labelled segment (for the log and the bench): how long the labels took after the final, and
     /// whether they were attached before the diarizer settled. Never carries labels or text.
     public var onLabels: ((_ lag: TimeInterval, _ tentative: Bool) -> Void)?
@@ -367,6 +381,15 @@ public final class NotesRecorder {
     private var tentativeJobs: [LabelJob] = []
     /// The diarizer the current recording feeds.
     private var activeSpeakers: SpeakerDiarizing?
+    /// The server's labels for finals waiting to commit, by sequence number: people are numbered in transcript order.
+    private var serverLabels: [Int: ServerLabels] = [:]
+    private struct ServerLabels {
+        var speakers: ServerSpeakers
+        /// The final as the segment keeps it (trimmed at overlapped cuts): the turns are cut down to it.
+        var text: String
+        var raw: String
+        var original: (text: String, raw: String)
+    }
 
     public init(makeSession: @escaping (StartOptions) -> StreamSession, structure: @escaping Structure,
                 reorganize: @escaping Reorganize = { _ in throw NotesStructureError.unsupported(404) },
@@ -468,7 +491,7 @@ public final class NotesRecorder {
         router.setSpeakers(speakers)
         let seq = nextSeq
         nextSeq += 1
-        let session = makeSession(options)
+        let session = makeSession(startOptions)
         let audio = NotesSegmentAudio(pool: audioPool)
         let swap = router.swap(to: session, audio: audio)
         current = seq
@@ -527,7 +550,7 @@ public final class NotesRecorder {
     private func openCurrent() -> StreamSession? {
         let seq = nextSeq
         nextSeq += 1
-        let session = offline ? nil : makeSession(options)
+        let session = offline ? nil : makeSession(startOptions)
         let audio = NotesSegmentAudio(pool: audioPool)
         let swap = router.swap(to: session, audio: audio)
         current = seq
@@ -595,6 +618,9 @@ public final class NotesRecorder {
         editRuns += 1
         failEdit(.conflict)
         document = NotesDocument()
+        speakerSession = SpeakerSession.make()
+        speakerError = nil
+        serverLabels.removeAll()
         router.resetTime()
         dropLabels()
         speakers?.reset()
@@ -619,6 +645,7 @@ public final class NotesRecorder {
         reset()
         document = recovered
         document.forgetSpeakerSlots()
+        speakerSession = SpeakerSession.make()
         router.seed(seconds: elapsed)
         state = .stopped
         suppressChanges = false
@@ -647,7 +674,7 @@ public final class NotesRecorder {
         defer { cutting = false }
         let myEpoch = epoch, myDocumentID = document.id
         // Offline, the next segment keeps its audio for a replay instead of opening a socket that would fail.
-        let next = offline ? nil : makeSession(options)
+        let next = offline ? nil : makeSession(startOptions)
         await next?.open()
         guard epoch == myEpoch && document.id == myDocumentID, state == .recording else {
             await next?.cancel()
@@ -734,6 +761,9 @@ public final class NotesRecorder {
             segment?.end = end
             segment?.pauseBefore = segments[seq]?.pause
             if !text.isEmpty { lastFinal = (seq, text) }
+            if segment != nil, labelSpeakers, let speakers = f.speakers {
+                serverLabels[seq] = ServerLabels(speakers: speakers, text: text, raw: raw, original: (f.text, f.raw))
+            }
             if let segment, activeSpeakers != nil {
                 labelJobs[seq] = LabelJob(offset: offset, end: end, words: joined.words,
                                           raw: segment.raw, text: segment.text, received: now())
@@ -813,6 +843,9 @@ public final class NotesRecorder {
                 if let frames = finishedAudio.removeValue(forKey: nextCommit), shouldKeepAudio() {
                     onSegmentAudio?(document.id, document.segments.count - 1, frames, s.offset)
                 }
+                if let labels = serverLabels.removeValue(forKey: nextCommit) {
+                    attach(labels, toSegment: document.segments.count - 1)
+                }
                 if var job = labelJobs.removeValue(forKey: nextCommit) {
                     job.segment = document.segments.count - 1
                     labelQueue.append(job)
@@ -820,6 +853,7 @@ public final class NotesRecorder {
             }
             finishedAudio[nextCommit] = nil
             labelJobs[nextCommit] = nil
+            serverLabels[nextCommit] = nil
             nextCommit += 1
             lastCommit = now()
         }
@@ -912,7 +946,7 @@ public final class NotesRecorder {
         let myEpoch = epoch, myDocumentID = document.id
         cutting = true
         defer { cutting = false }
-        let next = offline ? nil : makeSession(options)
+        let next = offline ? nil : makeSession(startOptions)
         await next?.open()
         guard epoch == myEpoch && document.id == myDocumentID, state == .recording, diverted else {
             await next?.cancel()
@@ -1554,6 +1588,15 @@ public final class NotesRecorder {
         }
     }
 
+    /// The server's turns for a committed segment: cut down to the text the segment kept, then numbered as people.
+    private func attach(_ labels: ServerLabels, toSegment id: Int) {
+        speakerError = labels.speakers.error
+        guard labels.speakers.error == nil else { return }
+        guard let turns = ServerTurns.restrict(labels.speakers.turns, text: labels.text, raw: labels.raw,
+                                               original: labels.original) else { return }
+        document.attachServerTurns(turns, generation: labels.speakers.generation, toSegment: id)
+    }
+
     private func label(_ job: LabelJob, timeline: SpeakerTimeline, tentative: Bool) {
         if tentative { tentativeJobs.append(job) }
         guard let turns = SpeakerAttribution.turns(words: job.words, raw: job.raw, text: job.text, offset: job.offset,
@@ -1588,6 +1631,7 @@ public final class NotesRecorder {
         labelTask = nil
         labelJobs.removeAll()
         labelQueue.removeAll()
+        serverLabels.removeAll()
     }
 
     // MARK: stopping

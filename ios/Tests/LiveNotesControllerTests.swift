@@ -14,6 +14,20 @@ struct LiveNotesControllerTests {
         var permission = true
         var activityEnabled = true
         var backgroundTasks = 0
+        /// Every socket the recorder opened, oldest first (their `sent` messages are the `start`s).
+        var transports: [SyntheticTransport] = []
+        let speakerCalls = SpeakerCalls()
+        var speakerRequests: [SpeakersModelAction] { speakerCalls.actions }
+        var starts: [String] {
+            transports.flatMap { $0.sent }.compactMap { if case .string(let text) = $0, text.contains(#""type":"start""#) { text } else { nil } }
+        }
+    }
+    /// The model requests the controller made (its closure is `@Sendable`, so the record needs a lock).
+    final class SpeakerCalls: @unchecked Sendable {
+        private let lock = NSLock()
+        private var list: [SpeakersModelAction] = []
+        var actions: [SpeakersModelAction] { lock.withLock { list } }
+        func add(_ action: SpeakersModelAction) { lock.withLock { list.append(action) } }
     }
     @MainActor struct Fixture {
         let notes: LiveNotesController
@@ -40,9 +54,17 @@ struct LiveNotesControllerTests {
             otherCaptureActive: { values.otherCapture },
             http: URLSession(configuration: .ephemeral),
             fetchHealth: { _, _ in health },
-            makeStream: { _, options, _ in StreamSession(transport: SyntheticTransport(automatic: true), options: options) },
+            makeStream: { _, options, _ in
+                let transport = SyntheticTransport(automatic: true)
+                values.transports.append(transport)
+                return StreamSession(transport: transport, options: options)
+            },
             structure: { _, _, request in try await structure(request) },
             reorganize: { _, _, request in try await reorganize(request) },
+            speakersModel: { [calls = values.speakerCalls] _, _, action in
+                calls.add(action)
+                return SpeakersModel(state: .downloading)
+            },
             audio: audio, requestPermission: { values.permission },
             activity: NotesActivityControl(begin: { state in
                 guard values.activityEnabled else { throw NotesLiveActivity.Unavailable.disabled }
@@ -357,5 +379,90 @@ struct LiveNotesControllerTests {
         #expect(await f.notes.perform(.togglePause) == "Live Notes paused. Microphone off.")
         #expect(await f.notes.perform(.togglePause) == "Live Notes recording.")
         #expect(await f.notes.perform(.stop) == "Live Notes stopped. Your notes are in Chirp.")
+    }
+
+    // MARK: speaker labels (#201)
+
+    private func speakerHealth(_ state: SpeakersModel.State?, speakers: Bool = true) -> Health {
+        var h = LiveNotesController.syntheticHealth
+        h.notesSpeakers = speakers ? true : nil
+        h.speakersModel = state.map { SpeakersModel(state: $0) }
+        return h
+    }
+
+    @Test func speakerLabelsAreOffByDefaultAndStartAsksForNone() async throws {
+        let f = try fixture(health: speakerHealth(.ready)); defer { f.clean() }
+        await f.notes.record()
+        try await eventually("recording") { f.notes.state == .recording }
+        await f.notes.stop()
+        #expect(!f.notes.labelSpeakers && f.notes.speakersAvailable)
+        #expect(!f.values.starts.isEmpty && f.values.starts.allSatisfy { !$0.contains("speakers") })
+        #expect(f.notes.document.segments.allSatisfy { $0.turns == nil })
+    }
+
+    @Test func turningLabelsOnAsksBeforeTheDownloadAndDecliningFetchesNothing() async throws {
+        let f = try fixture(health: speakerHealth(.notDownloaded)); defer { f.clean() }
+        await f.notes.refreshHealth()
+        f.notes.setLabelSpeakers(true, from: .note)
+        #expect(f.notes.speakerConsent == .note && !f.notes.labelSpeakers && f.values.speakerRequests.isEmpty)
+        f.notes.dismissSpeakerConsent()
+        #expect(f.notes.speakerConsent == nil && !f.notes.labelSpeakers && f.values.speakerRequests.isEmpty)
+        f.notes.setLabelSpeakers(true)
+        #expect(f.notes.speakerConsent == .settings)
+        f.notes.confirmSpeakerDownload()
+        try await eventually("download requested") { f.values.speakerRequests == [.download] }
+        #expect(f.notes.speakerConsent == nil && f.notes.labelSpeakers && f.notes.recorder.labelSpeakers)
+        #expect(try f.store.loadPreferences().labelSpeakers)
+    }
+
+    @Test func aMacThatHasTheModelTurnsLabelsOnWithoutAsking() async throws {
+        let f = try fixture(health: speakerHealth(.ready)); defer { f.clean() }
+        await f.notes.refreshHealth()
+        f.notes.setLabelSpeakers(true)
+        #expect(f.notes.speakerConsent == nil && f.notes.labelSpeakers && f.values.speakerRequests.isEmpty)
+        f.notes.setLabelSpeakers(false)
+        #expect(!f.notes.labelSpeakers && !f.notes.recorder.labelSpeakers)
+    }
+
+    @Test func anOlderServerNeverGetsAskedForLabels() async throws {
+        let f = try fixture(health: speakerHealth(nil, speakers: false)); defer { f.clean() }
+        var p = try f.store.loadPreferences(); p.labelSpeakers = true; try f.store.save(p)
+        await f.notes.refreshHealth()
+        #expect(!f.notes.speakersAvailable && !f.notes.recorder.labelSpeakers)
+        #expect(f.notes.speakerNote == nil)   // the preference was loaded at launch, the note is for the transcript
+        await f.notes.record()
+        try await eventually("recording") { f.notes.state == .recording }
+        await f.notes.stop()
+        #expect(f.values.starts.allSatisfy { !$0.contains("speakers") })
+    }
+
+    @Test func labelledNotesKeepTwoPeopleThroughRenameMergeSeparateAndTheSealedLibrary() async throws {
+        let f = try fixture(health: speakerHealth(.ready)); defer { f.clean() }
+        await f.notes.refreshHealth()
+        f.notes.setLabelSpeakers(true)
+        await f.notes.record()
+        try await eventually("recording") { f.notes.state == .recording }
+        await f.notes.stop()
+        try await eventually("labelled segment") { f.notes.document.segments.contains { $0.turns?.count == 2 } }
+        #expect(f.values.starts.allSatisfy { $0.contains(#""speakers":{"session":""#) })
+        let document = f.notes.document, segment = try #require(document.segments.first { $0.turns != nil })
+        #expect(segment.turns?.map(\.person) == [1, 2] && document.speakerCount == 2)
+        try await eventually("structured with names") { f.notes.document.text.contains("Person 2: Second voice.") }
+
+        f.notes.renameSpeaker(2, to: "Maya", replaceInNotes: true)
+        #expect(f.notes.document.roster.displayName(2) == "Maya")
+        #expect(f.notes.document.text.contains("Maya: Second voice.") && !f.notes.document.text.contains("Person 2"))
+        #expect(f.notes.markdown.contains("Maya:"))
+
+        f.notes.mergeSpeaker(2, into: 1)
+        #expect(f.notes.document.roster.displayName(2) == "Person 1" && f.notes.document.speakerCount == 1)
+        f.notes.separateSpeaker(2)
+        #expect(f.notes.document.roster.displayName(2) == "Maya" && f.notes.document.speakerCount == 2)
+
+        // Labels and names are inside the sealed note, and nothing but text is there.
+        await f.notes.settleJournal()
+        let stored = try await f.store.libraryStore.record(f.notes.document.id).document
+        #expect(stored.segments.compactMap(\.turns) == f.notes.document.segments.compactMap(\.turns))
+        #expect(stored.roster.displayName(2) == "Maya" && stored.roster.displayName(1) == "Person 1")
     }
 }
