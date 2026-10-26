@@ -21,8 +21,8 @@ android {
         applicationId = "dev.chirp.android"
         minSdk = 31
         targetSdk = 37
-        versionCode = 21
-        versionName = "0.8.5"
+        versionCode = 22
+        versionName = "0.8.6"
     }
     signingConfigs {
         create("local") {
