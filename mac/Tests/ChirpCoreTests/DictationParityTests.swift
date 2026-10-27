@@ -234,7 +234,8 @@ private final class RollingSockets: @unchecked Sendable {
 
     @Test func oversizedSlicedInputPreservesBytesAcrossRollingBoundaries() async throws {
         // Vary every sample, staying above the silence threshold so the cuts are at 90 s.
-        let samples = (0..<(181 * 16_000 + 321)).map { Int16(10_000 + $0 % 20_000).littleEndian }
+        // Typed closure: the untyped form took ~2 s to type-check on Swift 6.4.
+        let samples = (0..<181 * 16_000 + 321).map { (i: Int) -> Int16 in Int16(10_000 + i % 20_000).littleEndian }
         let expected = samples.withUnsafeBytes { Data($0) }
         var storage = Data(repeating: 0xEE, count: 3_200)
         storage.append(expected)
