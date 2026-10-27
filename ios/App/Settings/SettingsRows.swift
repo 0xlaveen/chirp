@@ -48,29 +48,49 @@ private struct RowInfo: View {
 }
 
 /// Title plus an optional one-line summary (wrapping at accessibility sizes), and an optional leading SF Symbol.
+/// At accessibility sizes the symbol sits above the text, so the title has the row's whole width and a word such as
+/// "Connection" is never hyphenated to fit a narrow column (#271 L1).
 struct RowText: View {
     let title: String
     var summary: String?
     var symbol: String?
     var color: Color = Color.chirp.ink
+    /// At accessibility sizes, the most lines the summary may take (the Settings home keeps every tile short).
+    var summaryLimit: Int?
     /// The symbol column grows with the text, so a large symbol never spills into the title or the tile edge.
     @ScaledMetric(relativeTo: .body) private var symbolWidth: CGFloat = 28
+    @Environment(\.dynamicTypeSize) private var typeSize
     var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: ChirpSpacing.s12) {
-            if let symbol {
-                Image(systemName: symbol).symbolRenderingMode(.hierarchical)
-                    .font(.body).foregroundStyle(color)
-                    .frame(width: symbolWidth, alignment: .center).accessibilityHidden(true)
-                    .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 6 }
+        if typeSize.isAccessibilitySize {
+            VStack(alignment: .leading, spacing: ChirpSpacing.s8) {
+                if let symbol { icon(symbol) }
+                text
             }
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title).font(.body).foregroundStyle(color)
-                if let summary {
-                    Text(summary).font(.footnote).foregroundStyle(Color.chirp.inkMuted)
+        } else {
+            HStack(alignment: .firstTextBaseline, spacing: ChirpSpacing.s12) {
+                if let symbol {
+                    icon(symbol).frame(width: symbolWidth, alignment: .center)
+                        .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 6 }
                 }
-            }.fixedSize(horizontal: false, vertical: true)
-            .frame(maxWidth: .infinity, alignment: .leading)
+                text
+            }
         }
+    }
+
+    private func icon(_ symbol: String) -> some View {
+        Image(systemName: symbol).symbolRenderingMode(.hierarchical)
+            .font(.body).foregroundStyle(color).accessibilityHidden(true)
+    }
+
+    private var text: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(title).font(.body).foregroundStyle(color)
+            if let summary {
+                Text(summary).font(.footnote).foregroundStyle(Color.chirp.inkMuted)
+                    .lineLimit(typeSize.isAccessibilitySize ? summaryLimit : nil)
+            }
+        }.fixedSize(horizontal: false, vertical: true)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 

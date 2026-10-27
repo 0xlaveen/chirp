@@ -337,7 +337,7 @@ final class KeyboardInfoOverlay: UIView {
     let close = UIButton(type: .system)
     /// Ends the keyboard session (the app's microphone turns off); shown while a session is live.
     let end = UIButton(type: .system)
-    /// The clean-up style (and Private session) menu; shown while a session is live.
+    /// The clean-up style (and Pause dictation history) menu; shown while a session is live.
     let style = UIButton(type: .system)
     /// "4:12 left": the session's remaining time, a detail here rather than a label in the row.
     let remaining = UILabel()

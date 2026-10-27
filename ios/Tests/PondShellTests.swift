@@ -67,5 +67,29 @@ struct PondShellTests {
         #expect(SettingsSummary.history(on: false).hasPrefix("Off by default"))
         #expect(SettingsSummary.history(on: true).hasPrefix("On ·"))
         #expect(!SettingsSummary.history(on: true).contains("Off"))
+        #expect(SettingsSummary.pause(on: false) == "Off")
+        #expect(SettingsSummary.pause(on: true).hasPrefix("Paused"))
+    }
+
+    /// Note rows and the detail meta line say the same as Android and the Mac (#271 2.4, 2.8).
+    @Test func noteMetaMatchesTheOtherPlatforms() {
+        let now = Date(timeIntervalSince1970: 1_000_000_000)
+        func age(_ seconds: Double) -> String { NoteMeta.age(since: now.addingTimeInterval(-seconds), now: now) }
+        #expect(age(20) == "Just now")
+        #expect(age(5 * 60) == "5 min ago")
+        #expect(age(3 * 3600) == "3 h ago")
+        #expect(age(30 * 3600) == "Yesterday")
+        #expect(age(4 * 86400) == "4 days ago")
+        #expect(age(-60) == "Just now", "a clock that moved back never shows a negative age")
+        #expect(NoteMeta.duration(0.4) == nil)
+        #expect(NoteMeta.duration(45) == "45 sec")
+        #expect(NoteMeta.duration(192) == "3 min")
+        let facts = NoteMeta.facts(created: now, duration: 192, openTodos: 2, audioBytes: 640_000)
+        let parts = facts.components(separatedBy: " · ")
+        #expect(parts.count == 4)
+        #expect(parts[0] == now.formatted(date: .abbreviated, time: .shortened))
+        #expect(Array(parts[1...2]) == ["3 min", "☐ 2 open"])
+        #expect(NoteMeta.facts(created: now, duration: nil, openTodos: 0, audioBytes: 0) == now.formatted(date: .abbreviated, time: .shortened))
+        #expect(NoteMeta.untitled == "Untitled note")
     }
 }

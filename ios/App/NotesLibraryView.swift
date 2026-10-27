@@ -157,6 +157,11 @@ struct NotesLibraryView: View {
             .listStyle(.insetGrouped).scrollContentBackground(.hidden).background(Color.chirp.background)
             .navigationTitle("").navigationBarTitleDisplayMode(.inline)
             .searchable(text: $query, prompt: "Search notes").searchFocused($searchFocused)
+            // ⌘F still focuses the docked field; the toolbar magnifier that duplicated it is gone (#271 2.6).
+            .background {
+                Button("Search notes") { searchFocused = true }.keyboardShortcut("f", modifiers: .command)
+                    .opacity(0).accessibilityHidden(true)
+            }
             .onSubmit(of: .search) { searchFocused = false }
             .toolbar { libraryToolbar }
             .safeAreaInset(edge: .bottom) { libraryDock }
@@ -186,11 +191,13 @@ struct NotesLibraryView: View {
             HStack(alignment: .top, spacing: 12) {
                 if selecting { Image(systemName: selection.contains(entry.id) ? "checkmark.circle.fill" : "circle").foregroundStyle(Color.chirp.koi) }
                 VStack(alignment: .leading, spacing: 8) {
-                    Text(highlight(entry.title)).font(.system(.headline, design: .serif)).foregroundStyle(Color.chirp.ink)
-                    Text(entry.updatedAt, style: .relative).font(.caption).foregroundStyle(Color.chirp.inkMuted)
+                    ViewThatFits(in: .horizontal) {
+                        HStack(alignment: .firstTextBaseline, spacing: 8) { rowTitle(entry); Spacer(minLength: 0); rowAge(entry) }
+                        VStack(alignment: .leading, spacing: 4) { rowTitle(entry); rowAge(entry) }
+                    }
                     Text(highlight(snippet)).font(.subheadline).foregroundStyle(Color.chirp.inkMuted).lineLimit(2)
                     ViewThatFits(in: .horizontal) {
-                        HStack(spacing: 12) { metadata(entry) }
+                        HStack(spacing: 8) { metadata(entry) }
                         VStack(alignment: .leading, spacing: 4) { metadata(entry) }
                     }.font(ChirpType.meta).foregroundStyle(Color.chirp.inkMuted)
                 }
@@ -218,11 +225,24 @@ struct NotesLibraryView: View {
             }
     }
 
+    private func rowTitle(_ entry: NotesLibraryEntry) -> some View {
+        Text(highlight(entry.title)).font(.system(.headline, design: .serif)).foregroundStyle(Color.chirp.ink)
+    }
+
+    /// "Just now", "5 min ago", "Yesterday": refreshed each minute.
+    private func rowAge(_ entry: NotesLibraryEntry) -> some View {
+        TimelineView(.everyMinute) { context in
+            Text(NoteMeta.age(since: entry.updatedAt, now: context.date)).font(.subheadline).foregroundStyle(Color.chirp.inkMuted)
+        }.fixedSize()
+    }
+
+    /// "3 min · ☐ 2 open", then Recovered and the kept-audio mark (#271 2.4).
     @ViewBuilder private func metadata(_ entry: NotesLibraryEntry) -> some View {
-        if entry.duration > 0 { Label(clock(entry.duration), systemImage: "waveform").monospacedDigit() }
-        if entry.openTodos > 0 { Label("\(entry.openTodos) open", systemImage: "square") }
+        if let length = NoteMeta.duration(entry.duration) { Text(length).monospacedDigit() }
+        if entry.duration >= 1, entry.openTodos > 0 { Text("·").accessibilityHidden(true) }
+        if entry.openTodos > 0 { Text("☐ " + NoteMeta.open(entry.openTodos)) }
         if entry.recovered { Text("Recovered").foregroundStyle(Color.chirp.moon) }
-        if entry.hasAudio { Image(systemName: "play.circle").accessibilityLabel("Audio kept") }
+        if entry.hasAudio { Image(systemName: "waveform").accessibilityLabel("Audio kept") }
     }
 
     private var libraryDock: some View {
@@ -235,7 +255,7 @@ struct NotesLibraryView: View {
                 }.font(.subheadline).padding().background(Color.chirp.surface, in: RoundedRectangle(cornerRadius: 16))
                     .accessibilityElement(children: .contain)
             }
-            HStack {
+            HStack(spacing: 12) {
                 if selecting {
                     Button("Delete selected", systemImage: "trash") {
                         Task { await notes.delete(Array(selection)); selection = []; selecting = false }
@@ -244,13 +264,19 @@ struct NotesLibraryView: View {
                 Spacer()
                 Button(action: dictate) { Image(systemName: "mic").frame(minWidth: 44, minHeight: 44) }
                     .buttonStyle(.bordered).buttonBorderShape(.circle).accessibilityLabel("Dictate")
+                    .accessibilityShowsLargeContentViewer()
                 Button { if notes.isActive { confirmRecording = true } else { Task { await startRecording() } } } label: {
-                    Label("Record", systemImage: "record.circle").font(.headline).padding(.vertical, 8)
+                    Label("Record", systemImage: "record.circle").font(.headline).padding(.vertical, 8).lineLimit(1)
                 }.buttonStyle(.borderedProminent).buttonBorderShape(.capsule).tint(Color.chirp.koi)
                     .foregroundStyle(Color.chirp.onKoi).keyboardShortcut("n", modifiers: .command)
+                    .accessibilityShowsLargeContentViewer()
                     .accessibilityIdentifier("chirp.notes.record")
             }
-        }.padding(.horizontal, 16).padding(.vertical, 12).background(.ultraThinMaterial)
+        }
+        // Like the tab bar, the dock stops growing at accessibility sizes and shows the Large Content Viewer on a long
+        // press instead; at AX5 the mic and Record otherwise overlap and the dock hides the list (#271 L2).
+        .dynamicTypeSize(...DynamicTypeSize.accessibility1)
+        .padding(.horizontal, 16).padding(.vertical, 12).background(.ultraThinMaterial)
     }
 
     @ToolbarContentBuilder private var libraryToolbar: some ToolbarContent {
@@ -258,7 +284,6 @@ struct NotesLibraryView: View {
             ConnectionChip(model: session, open: pair)
         }
         ToolbarItemGroup(placement: .primaryAction) {
-            Button("Search notes", systemImage: "magnifyingglass") { searchFocused = true }.keyboardShortcut("f", modifiers: .command)
             Menu {
                 Button("Recently Deleted", systemImage: "trash") { deleted = true }.accessibilityIdentifier("chirp.notes.deleted.menu")
                 Button(selecting ? "Done selecting" : "Select", systemImage: "checkmark.circle") { selecting.toggle(); selection = [] }
@@ -329,8 +354,47 @@ struct NotesEmptyView: View {
             }.frame(height: 150).accessibilityHidden(true)
             Text(title).font(ChirpType.noteTitle).multilineTextAlignment(.center)
             Text(message).font(.body).foregroundStyle(Color.chirp.inkMuted).multilineTextAlignment(.center)
-            if privacy { Label("Notes stay on this \(UIDevice.current.userInterfaceIdiom == .pad ? "iPad" : "iPhone")", systemImage: "lock").font(.footnote).foregroundStyle(Color.chirp.inkMuted).padding(.top, 12) }
+            if privacy { Label("Notes stay on this \(UIDevice.current.userInterfaceIdiom == .pad ? "iPad" : "iPhone").", systemImage: "lock").font(.footnote).foregroundStyle(Color.chirp.inkMuted).padding(.top, 12) }
         }.padding(24).frame(maxWidth: .infinity, maxHeight: .infinity).background(Color.chirp.background)
+    }
+}
+
+/// The words around a note, the same as the Mac's and Android's: a row's "3 min" and "5 min ago", and the detail's
+/// one meta line, "Oct 20, 2026 at 2:03 PM · 3 min · ☐ 1 open · 640 KB" (#271 2.4, 2.8).
+enum NoteMeta {
+    static let untitled = "Untitled note"
+
+    /// Nothing typed, recorded or named yet: the Mac's blank note.
+    static func isBlank(_ document: NotesDocument) -> Bool { document.isEmpty && document.segments.isEmpty && document.userTitle == nil }
+    static func displayTitle(_ document: NotesDocument) -> String { isBlank(document) ? untitled : document.title }
+
+    /// "45 sec", "3 min"; nil under a second.
+    static func duration(_ seconds: TimeInterval) -> String? {
+        guard seconds >= 1 else { return nil }
+        return seconds < 60 ? "\(Int(seconds)) sec" : "\(Int(seconds / 60)) min"
+    }
+
+    static func open(_ count: Int) -> String { "\(count) open" }
+
+    /// "Just now", "5 min ago", "3 h ago", "Yesterday", "4 days ago": Android's `historyAge`.
+    static func age(since date: Date, now: Date = Date()) -> String {
+        let minutes = Int(max(0, now.timeIntervalSince(date)) / 60), hours = minutes / 60, days = hours / 24
+        switch true {
+        case minutes < 1: return "Just now"
+        case minutes < 60: return "\(minutes) min ago"
+        case hours < 24: return "\(hours) h ago"
+        case days == 1: return "Yesterday"
+        default: return "\(days) days ago"
+        }
+    }
+
+    /// Date · duration · open to-dos · audio; a fact with nothing to say is left out.
+    static func facts(created: Date, duration: TimeInterval?, openTodos: Int, audioBytes: Int) -> String {
+        var parts = [created.formatted(date: .abbreviated, time: .shortened)]
+        if let duration, let length = self.duration(duration) { parts.append(length) }
+        if openTodos > 0 { parts.append("☐ " + open(openTodos)) }
+        if audioBytes > 0 { parts.append(ByteCountFormatter.string(fromByteCount: Int64(audioBytes), countStyle: .file)) }
+        return parts.joined(separator: " · ")
     }
 }
 
@@ -371,9 +435,9 @@ private struct RecentlyDeletedView: View {
             .overlay { if notes.recentlyDeleted.isEmpty { NotesEmptyView(title: "Nothing in Recently Deleted", message: "Deleted notes stay here for 30 days.") } }
             .navigationTitle("Recently Deleted").navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
-            .confirmationDialog("Permanently delete these notes?", isPresented: $confirmEmpty, titleVisibility: .visible) {
-                Button("Empty Recently Deleted", role: .destructive) { Task { await notes.emptyRecentlyDeleted() } }
-            } message: { Text("This also deletes their kept audio. This cannot be undone.") }
+            .confirmationDialog("Empty Recently Deleted?", isPresented: $confirmEmpty, titleVisibility: .visible) {
+                Button("Delete Permanently", role: .destructive) { Task { await notes.emptyRecentlyDeleted() } }
+            } message: { Text("These notes and their audio will be deleted for good. This can’t be undone.") }
     }
 }
 

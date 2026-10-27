@@ -44,7 +44,7 @@ final class ChirpSettingsUITests: XCTestCase {
     /// What each category page shows when it is open (its most stable identifier).
     private static let pages: [(row: String, marker: String, title: String)] = [
         ("chirp.settings.connection", "chirp.pair.change", "Connection"),
-        ("chirp.settings.session", "chirp.settings.private", "Microphone session"),
+        ("chirp.settings.session", "chirp.settings.permissions", "Microphone session"),
         ("chirp.settings.dictation", "chirp.cleanup.enabled", "Dictation"),
         ("chirp.settings.keyboard", "chirp.keyboard.status", "Keyboard"),
         ("chirp.settings.notes", "chirp.notes.structure", "Notes settings"),
@@ -392,7 +392,7 @@ final class ChirpSettingsUITests: XCTestCase {
         _ = app.buttons["chirp.pair.scan"].waitForExistence(timeout: 5)
         shot("settings-change-pairing", app)
         openCategory("chirp.settings.session", app)
-        _ = element("chirp.settings.private", in: app).waitForExistence(timeout: 5)
+        _ = element("chirp.settings.permissions", in: app).waitForExistence(timeout: 5)
         shot("settings-session", app)
         openCategory("chirp.settings.dictation", app)
         _ = element("chirp.cleanup.enabled", in: app).waitForExistence(timeout: 5)

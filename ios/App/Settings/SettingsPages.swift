@@ -107,11 +107,12 @@ struct ChangePairingPage: View {
 enum SettingsSummary {
     static func spokenCommands(on: Bool) -> String { on ? "On" : "Off by default" }
     static func history(on: Bool) -> String { (on ? "On" : "Off by default") + " · encrypted on this device only" }
+    static func pause(on: Bool) -> String { on ? "Paused · new dictations aren’t saved" : "Off" }
 }
 
 // MARK: - Microphone session
 
-/// Session length, Private session, End session (while armed) and the microphone permission link.
+/// Session length, End session (while armed) and the microphone permission link.
 struct SessionPage: View {
     @ObservedObject var model: SessionCoordinator
     var body: some View {
@@ -128,21 +129,11 @@ struct SessionPage: View {
                     }
                 }
             }
-            SettingsGroup(title: "Privacy") {
-                SwitchRow(title: "Private session",
-                          isOn: model.preferences.privacyMode,
-                          summary: "Excludes this session’s dictations from history",
-                          symbol: "person.fill.lock",
-                          infoTitle: "Private session",
-                          infoBody: "Chirp cannot detect every editor’s private mode. Use this control before private dictation. No surrounding editor text is collected.",
-                          set: { on in model.preferences.privacyMode = on; model.savePreferences() })
-                .accessibilityIdentifier("chirp.settings.private")
-            }
             SettingsGroup {
                 if model.armed {
                     ActionRow(title: "End session", symbol: "stop.circle", destructive: true) { model.endSession() }
                 }
-                ActionRow(title: "Open Chirp permissions", symbol: "hand.raised") {
+                ActionRow(title: "Open Chirp permissions", symbol: "hand.raised", identifier: "chirp.settings.permissions") {
                     if let url = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(url) }
                 }
             }
@@ -367,6 +358,15 @@ struct PrivacyPage: View {
                           identifier: "chirp.history.enabled",
                           set: { on in if on { change { try $0.setEnabled(true) } } else { confirmOff = true } })
                 if history.enabled {
+                    // Persists until turned off, so it is not a "Private session" (docs/copy.md, #271 A2-12).
+                    SwitchRow(title: "Pause dictation history",
+                              isOn: model.preferences.privacyMode,
+                              summary: SettingsSummary.pause(on: model.preferences.privacyMode),
+                              symbol: "pause.circle",
+                              infoTitle: "Pause dictation history",
+                              infoBody: "Stays on until you turn it off, here or in Chirp Keyboard’s Style menu. Dictation history is kept; new dictations aren’t added. Chirp cannot detect every editor’s private mode, so pause before private dictation. No surrounding editor text is collected.",
+                              identifier: "chirp.settings.private",
+                              set: { on in model.preferences.privacyMode = on; model.savePreferences() })
                     SettingsItem {
                         Text("Keep for").font(.subheadline).foregroundStyle(Color.chirp.inkMuted)
                         ChoiceChips(options: HistoryRetention.allCases,
@@ -397,7 +397,7 @@ struct PrivacyPage: View {
         } message: {
             Text("This deletes every saved dictation from this device. New dictations won’t be saved.")
         }
-        .confirmationDialog("Clear all saved dictations?", isPresented: $confirmClear, titleVisibility: .visible) {
+        .confirmationDialog("Clear dictation history?", isPresented: $confirmClear, titleVisibility: .visible) {
             Button("Clear all", role: .destructive) { change { try $0.clear() } }
         } message: {
             Text("History stays on for new dictations.")

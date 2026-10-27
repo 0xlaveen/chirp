@@ -249,11 +249,15 @@ struct SetupCard: View {
     let progress: SetupProgress
     var fix: (SetupProgress.Step) -> Void
     var dismiss: () -> Void
+    @Environment(\.dynamicTypeSize) private var typeSize
     var body: some View {
         if let step = progress.firstMissing {
             HStack(alignment: .top, spacing: ChirpSpacing.s12) {
-                ChirpBrand.glyph.resizable().scaledToFit().frame(width: 28, height: 28)
-                    .foregroundStyle(Color.chirp.koi).accessibilityHidden(true)
+                // At accessibility sizes the glyph gives its column to the text (#271 L2).
+                if !typeSize.isAccessibilitySize {
+                    ChirpBrand.glyph.resizable().scaledToFit().frame(width: 28, height: 28)
+                        .foregroundStyle(Color.chirp.koi).accessibilityHidden(true)
+                }
                 VStack(alignment: .leading, spacing: ChirpSpacing.s4) {
                     Text("Finish setting up").font(.headline).foregroundStyle(Color.chirp.ink)
                     Text("Next: \(SetupProgress.title(step).lowercasedFirst)").font(.subheadline).foregroundStyle(Color.chirp.inkMuted)

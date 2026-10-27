@@ -8,15 +8,24 @@ import SwiftUI
 /// Help (other apps, the keyboard session) sits behind ⓘ.
 struct DictateView: View {
     @ObservedObject var model: SessionCoordinator
+    /// The Notes library, for Save as note (Android's Scratchpad completion, #271 A2-8).
+    @ObservedObject var notes: LiveNotesController
     @ObservedObject private var shortcuts = HardwareShortcutController.shared
     /// Opens Settings → Connection (refused pairing, not paired).
     var openConnection: () -> Void
+    /// Shows the Notes tab, where Save as note has opened the new note.
+    var openNotes: () -> Void = {}
     @Environment(\.horizontalSizeClass) private var sizeClass
     @Environment(\.verticalSizeClass) private var verticalSizeClass
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.dynamicTypeSize) private var typeSize
     @State private var listeningSince: Date?
     @State private var hardwareKeyboard = DictateView.keyboardAttached
+    /// The finished text as the user edited it; nil until they do. A new dictation or Use raw starts over.
+    @State private var edited: String?
+    @State private var editing = false
+    @State private var saveNotice = ""
+    @FocusState private var editorFocused: Bool
 
     var active: Bool { [.connecting, .listening, .correcting].contains(model.phase) }
 
@@ -48,7 +57,9 @@ struct DictateView: View {
         .onChange(of: model.phase, initial: true) { _, phase in
             if phase == .listening { if listeningSince == nil { listeningSince = .now } }
             else if phase != .connecting { listeningSince = nil }
+            if phase != .finished { edited = nil; editing = false; saveNotice = "" }
         }
+        .onChange(of: model.text) { _, _ in if model.phase == .finished, !editing { edited = nil } }
         .onReceive(NotificationCenter.default.publisher(for: .GCKeyboardDidConnect)) { _ in hardwareKeyboard = true }
         .onReceive(NotificationCenter.default.publisher(for: .GCKeyboardDidDisconnect)) { _ in hardwareKeyboard = Self.keyboardAttached }
     }
@@ -62,7 +73,10 @@ struct DictateView: View {
                 // At accessibility text sizes the controls scroll with the page instead of covering it.
                 if typeSize.isAccessibilitySize { controls }
                 if model.phase == .finished { results }
-                if !model.notice.isEmpty {
+                if !saveNotice.isEmpty {
+                    Text(saveNotice).font(.footnote).foregroundStyle(Color.chirp.inkMuted)
+                        .accessibilityIdentifier("chirp.dictation.saveNotice")
+                } else if !model.notice.isEmpty {
                     Text(model.notice).font(.footnote).foregroundStyle(Color.chirp.inkMuted)
                         .accessibilityIdentifier("sessionNotice").accessibilityAddTraits(.updatesFrequently)
                 }
@@ -128,9 +142,18 @@ struct DictateView: View {
 
     /// Long dictation shows the segments that already landed before the live one.
     var shownText: String { LongText.join([model.earlierText, model.text].filter { !$0.isEmpty }) }
+    /// What Copy, Share and Save as note use: the user's edit once there is one.
+    private var resultText: String { edited ?? shownText }
 
     @ViewBuilder private var page: some View {
-        if shownText.isEmpty {
+        if editing {
+            TextField("Text", text: Binding(get: { resultText }, set: { edited = $0 }), axis: .vertical)
+                .font(.title3).foregroundStyle(Color.chirp.ink).lineSpacing(4).focused($editorFocused)
+                .padding(ChirpSpacing.s16)
+                .background(Color.chirp.surface, in: RoundedRectangle(cornerRadius: ChirpRadius.panel, style: .continuous))
+                .overlay { RoundedRectangle(cornerRadius: ChirpRadius.panel, style: .continuous).strokeBorder(Color.chirp.koi, lineWidth: 2) }
+                .accessibilityIdentifier("chirp.dictation.editor")
+        } else if shownText.isEmpty {
             VStack(spacing: ChirpSpacing.s12) {
                 ChirpBrand.glyph.resizable().scaledToFit().frame(width: 56, height: 56)
                     .foregroundStyle(Color.chirp.koi.opacity(0.35)).accessibilityHidden(true)
@@ -138,7 +161,7 @@ struct DictateView: View {
             }
             .frame(maxWidth: .infinity).padding(.vertical, typeSize.isAccessibilitySize ? ChirpSpacing.s8 : ChirpSpacing.s48)
         } else {
-            Text(shownText).font(.title3).foregroundStyle(Color.chirp.ink).lineSpacing(4)
+            Text(resultText).font(.title3).foregroundStyle(Color.chirp.ink).lineSpacing(4)
                 .textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
                 .padding(ChirpSpacing.s16)
                 .background(Color.chirp.surface, in: RoundedRectangle(cornerRadius: ChirpRadius.panel, style: .continuous))
@@ -149,16 +172,21 @@ struct DictateView: View {
 
     private var results: some View {
         VStack(alignment: .leading, spacing: ChirpSpacing.s12) {
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: ChirpSpacing.s8) {
-                    Button("Copy", systemImage: "doc.on.doc") { model.copy() }.buttonStyle(.capsuleChip)
+            // Wraps rather than scrolls, so Save as note is never off screen.
+            FlowLayout(spacing: ChirpSpacing.s8) {
+                Group {
+                    Button("Copy", systemImage: "doc.on.doc") { model.copy(edited) }.buttonStyle(.capsuleChip)
                         .accessibilityIdentifier("chirp.dictation.copy")
-                    ShareLink(item: shownText) { Label("Share", systemImage: "square.and.arrow.up") }.buttonStyle(.capsuleChip)
-                    if model.canUseRaw { useRaw }
-                    // "Save as note" joins these once the Notes library (#193) can take a note from here.
+                    ShareLink(item: resultText) { Label("Share", systemImage: "square.and.arrow.up") }.buttonStyle(.capsuleChip)
+                    Button(editing ? "Done" : "Edit", systemImage: editing ? "checkmark" : "pencil") {
+                        editing.toggle(); editorFocused = editing
+                    }.buttonStyle(.capsuleChip).accessibilityIdentifier("chirp.dictation.edit")
+                    Button("Save as note", systemImage: "note.text.badge.plus", action: saveAsNote).buttonStyle(.capsuleChip)
+                        .disabled(resultText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                        .accessibilityIdentifier("chirp.dictation.saveNote")
+                    if model.canUseRaw, edited == nil { useRaw }
                 }
             }
-            .scrollClipDisabled()
             if !model.raw.isEmpty, model.raw != model.text {
                 DisclosureGroup {
                     Text(model.raw).font(.body).foregroundStyle(Color.chirp.inkMuted).textSelection(.enabled)
@@ -171,6 +199,19 @@ struct DictateView: View {
                 .overlay(alignment: .leading) { Capsule().fill(Color.chirp.moonFill).frame(width: 3) }
                 .accessibilityIdentifier("chirp.dictation.beforeCleanup")
             }
+        }
+    }
+
+    /// A new note with this text, through the Notes controller, then the Notes tab shows it.
+    private func saveAsNote() {
+        guard notes.preferences.keepNotes else {
+            saveNotice = "Turn on Keep notes on this device in Settings → Notes to save notes."
+            return
+        }
+        let text = resultText
+        editing = false
+        Task {
+            if await notes.addToNote(text) != nil { openNotes() } else { saveNotice = "Couldn’t save the note." }
         }
     }
 

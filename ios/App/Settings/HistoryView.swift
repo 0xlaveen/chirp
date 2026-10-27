@@ -297,7 +297,7 @@ struct HistoryView: View {
     }
 }
 
-/// One dictation: two lines of text, then the time (and "cleaned" when clean-up changed it).
+/// One dictation: two lines of text, then the time (and "Polished" when clean-up changed it, docs/copy.md).
 private struct HistoryRowView: View {
     let entry: HistoryEntry
     var body: some View {
@@ -315,7 +315,7 @@ private struct HistoryRowView: View {
 
     private var meta: String {
         var parts = [entry.createdAt.formatted(date: .omitted, time: .shortened)]
-        if let raw = entry.raw, raw != entry.text { parts.append("cleaned") }
+        if let raw = entry.raw, raw != entry.text { parts.append("Polished") }
         return parts.joined(separator: " · ")
     }
 }
