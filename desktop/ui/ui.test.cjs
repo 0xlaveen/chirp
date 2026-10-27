@@ -7,7 +7,10 @@ function ui({hud = true, history = []} = {}) {
   let entries = history;
   const nodes = new Map(); const callbacks = new Map(); const calls = [];
   const element = id => {
-    if (!nodes.has(id)) nodes.set(id, { value:'', textContent:'', checked:false, hidden:false, disabled:false, children:[], append(...items){this.children.push(...items);}, replaceChildren(){this.children = [];}, showModal(){this.open = true;}, classList:{add(){},toggle(){}} });
+    if (!nodes.has(id)) nodes.set(id, { value:'', textContent:'', checked:false, hidden:false, disabled:false, children:[],
+      append(...items){this.children.push(...items);}, replaceChildren(){this.children = [];}, showModal(){this.open = true;}, focus(){this.focused = true;},
+      setAttribute(name, value){this[name] = value;}, getAttribute(name){return this[name];},
+      classList:{add(){}, toggle(name, on){this[name] = on !== false;}} });
     return nodes.get(id);
   };
   const context = vm.createContext({
@@ -16,7 +19,9 @@ function ui({hud = true, history = []} = {}) {
       if (command === 'history_list') return entries;
       if (command === 'history_delete') { entries = entries.filter(e => e.id !== args.id); return; }
       if (command === 'history_clear') { entries = []; return; }
-      if (command === 'preferences') return { settings:{url:'http://localhost:7899',hotkey:'RightCtrl',mode:'Hold',correction:false},capabilities:{detail:'X11'},paired:true };
+      if (command === 'preferences') return { settings:{url:'http://localhost:7899',hotkey:'RightCtrl',mode:'Hold',correction:true,correction_style:'email',auto_enter:'action',spoken_commands:false,history_enabled:true,history_days:7,portal_enabled:false,portal_shortcut:'CTRL+ALT+space'},capabilities:{detail:'X11',session:'x11'},paired:true,shortcut:{available:true,requested:false,detail:'Shortcut ready'} };
+      if (command === 'cleanup_styles') return { source:'server', styles:[{id:'default',name:'Default',description:'Conservative transcript cleanup.',rewrites:false},{id:'email',name:'Email',description:'Polished sentences.',rewrites:false},{id:'notes',name:'Notes',description:'Short lines.',rewrites:true}] };
+      if (command === 'connection_status') return { state:'connected', label:'Connected' };
     } }, event:{listen: (name, cb) => { callbacks.set(name, cb); }} } },
     document:{createElement:tag=>element(Symbol(tag)),getElementById:element,body:element('body'),addEventListener(){}},
     location:{search:hud ? '?hud' : ''}, URLSearchParams,
@@ -76,6 +81,27 @@ test('Use raw is offered only for a final with an original, and invokes the nati
   app.update({state:'listening', text:'partial', detail:'Listening…'});
   assert.equal(app.element('use-raw').hidden, true);
   assert.equal(app.element('result-copy').hidden, true);
+});
+
+test('clean-up style, auto-Enter and the connection chip follow the server and the saved choice', async () => {
+  const app = ui({hud:false});
+  await new Promise(setImmediate);
+  await new Promise(setImmediate);
+  assert.equal(app.element('connection-label').textContent, 'Connected');
+  assert.equal(app.element('connection-chip')['aria-label'], 'Connection: Connected. Open connection settings');
+  assert.equal(app.element('style').value, 'email');
+  assert.equal(app.element('style').children.map(option => option.textContent).join(','), 'Default,Email,Notes');
+  assert.match(app.element('style-help').textContent, /Loaded from your computer/);
+  app.element('style').value = 'notes';
+  app.element('style').onchange();
+  assert.match(app.element('style-help').textContent, /May restructure your text/);
+  app.element('auto-enter').value = 'always';
+  await app.element('settings').onsubmit({preventDefault(){}});
+  const settings = app.calls.find(([name]) => name === 'save_preferences')[1].settings;
+  assert.equal(settings.correction_style, 'notes');
+  assert.equal(settings.auto_enter, 'always');
+  app.element('connection-chip').onclick();
+  assert.equal(app.element('url').focused, true);
 });
 
 test('new privacy and commands preferences are saved with explicit choices', async () => {

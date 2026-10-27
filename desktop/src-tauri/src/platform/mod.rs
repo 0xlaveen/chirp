@@ -11,7 +11,7 @@ pub mod windows;
 #[cfg(any(target_os = "windows", test))]
 pub mod windows_logic;
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum InsertionOutcome {
     Typed,
@@ -63,6 +63,12 @@ pub trait Platform: Send + Sync {
     }
     fn copy_text(&self, text: &str) -> Result<(), String>;
     fn insert_text(&self, text: &str) -> Result<InsertionOutcome, String>;
+    /// Press Enter in the focused app. `Ok(false)` when Enter was not sent:
+    /// a terminal, where it would run a command, or no typing tool. This does
+    /// not fail a dictation that already landed.
+    fn press_enter(&self) -> Result<bool, String> {
+        Ok(false)
+    }
     fn capabilities(&self) -> Capabilities;
 }
 

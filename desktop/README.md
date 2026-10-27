@@ -228,8 +228,27 @@ or `. , ! ? …`, become one or two line breaks. Phrases in the middle of a sent
 stay as words. This matches the phones and Mac. Partials and Use raw stay verbatim;
 Notes never applies these commands.
 
-This W22 increment covers history, Use raw and spoken commands. The clean-up
-style picker, auto-Enter and computer connection chip remain follow-up work.
+**Clean-up style** is the style list from your computer’s `GET /v1/correction/profiles`
+(Default, Chat, Email, Code, Notes, Custom, plus any style that computer adds).
+The hidden Live Notes style is not offered. Refresh styles loads the list again.
+Until your computer answers, the picker shows those built-in styles. The choice
+is sent as `start.correction_profile`. Prompt text stays on your computer; this
+picker does not edit it.
+
+**Press Enter after dictating** is Off, On Send, Go or Done, or Always. Off is
+the default. Desktop cannot see whether the focused field’s key is Send, Go or
+Done, or whether it is a password field. On Send, Go or Done presses Enter only
+after a single-line insertion that was typed into the app. Always also presses
+Enter when the inserted text contains line breaks. Enter is not pressed when
+the result was only copied for you to paste, after a failed or cancelled
+dictation, or in a terminal, where Enter would run a command. On Wayland, Chirp
+cannot see the focused app, so Enter can still reach a terminal. A sent Enter
+shows as “Inserted · ↵ sent”.
+
+The header **connection chip** shows Connected, Connecting…, or Computer offline.
+It opens Connection & shortcuts. Connected means your computer accepted the
+pairing. Computer offline covers a missing pairing and a computer that does not
+answer.
 
 
 ## Notes library

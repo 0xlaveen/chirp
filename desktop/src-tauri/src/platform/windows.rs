@@ -34,10 +34,10 @@ use windows_sys::Win32::{
             MAPVK_VK_TO_VSC, VK_CONTROL, VK_LWIN, VK_MENU, VK_RWIN, VK_SHIFT,
         },
         WindowsAndMessaging::{
-            CallNextHookEx, GetForegroundWindow, GetMessageW, GetWindowThreadProcessId,
-            PeekMessageW, PostThreadMessageW, SetWindowsHookExW, UnhookWindowsHookEx, HC_ACTION,
-            KBDLLHOOKSTRUCT, LLKHF_INJECTED, MSG, PM_NOREMOVE, WH_KEYBOARD_LL, WM_KEYDOWN, WM_QUIT,
-            WM_SYSKEYDOWN, WM_USER,
+            CallNextHookEx, GetClassNameW, GetForegroundWindow, GetMessageW,
+            GetWindowThreadProcessId, PeekMessageW, PostThreadMessageW, SetWindowsHookExW,
+            UnhookWindowsHookEx, HC_ACTION, KBDLLHOOKSTRUCT, LLKHF_INJECTED, MSG, PM_NOREMOVE,
+            WH_KEYBOARD_LL, WM_KEYDOWN, WM_QUIT, WM_SYSKEYDOWN, WM_USER,
         },
     },
 };
@@ -451,6 +451,22 @@ impl Platform for Windows {
                 }
             }
         }
+    }
+
+    fn press_enter(&self) -> Result<bool, String> {
+        let mut class = [0u16; 256];
+        let (window, _) = foreground();
+        let length = unsafe { GetClassNameW(window, class.as_mut_ptr(), class.len() as i32) };
+        let name = String::from_utf16_lossy(&class[..length.max(0) as usize]);
+        if crate::auto_enter::submits_on_enter(&name) {
+            return Ok(false);
+        }
+        wait_for_modifiers();
+        let inputs = [
+            key_input(logic::VK_RETURN, false),
+            key_input(logic::VK_RETURN, true),
+        ];
+        Ok(send_keys(&inputs) == inputs.len())
     }
 
     fn capabilities(&self) -> Capabilities {

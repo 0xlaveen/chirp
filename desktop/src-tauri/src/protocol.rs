@@ -129,7 +129,8 @@ pub async fn dictate_final(
         socket
             .send(Message::Text(
                 json!({"type":"start", "sample_rate":16000,
-            "encoding":"pcm_s16le", "client":"desktop", "correction": settings.correction})
+            "encoding":"pcm_s16le", "client":"desktop", "correction": settings.correction,
+            "correction_profile": crate::styles::wire_id(&settings.correction_style)})
                 .to_string()
                 .into(),
             ))
@@ -235,6 +236,8 @@ mod tests {
             let start = receive(&mut ws).await.unwrap();
             assert_eq!(start["client"], "desktop");
             assert_eq!(start["sample_rate"], 16000);
+            assert_eq!(start["correction"], false);
+            assert_eq!(start["correction_profile"], "default");
             ws.send(Message::Text(json!({"type":"ready"}).to_string().into()))
                 .await
                 .unwrap();

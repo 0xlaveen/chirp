@@ -17,6 +17,7 @@ window.reviewCalls = []; window.reviewErrors = [];
 window.addEventListener('error', e => window.reviewErrors.push(e.message));
 window.addEventListener('unhandledrejection', e => window.reviewErrors.push(String(e.reason)));
 const settings = {url:'http://127.0.0.1:7899',hotkey:'RightCtrl',mode:'Hold',correction:true,
+  correction_style:'email',auto_enter:'action',
   spoken_commands:true,history_enabled:true,history_days:7,portal_enabled:false,portal_shortcut:'CTRL+ALT+space'};
 let entries = [
   {id:'synthetic-one',time:1793097600000,text:'The garden opens at nine. Bring a notebook.',raw:'the garden opens at nine bring a notebook'},
@@ -31,6 +32,15 @@ window.__TAURI__ = {
     window.reviewCalls.push({command,args});
     switch(command) {
       case 'preferences': return {settings,paired:true,capabilities:{session:'x11',detail:'Hold the selected right modifier alone to dictate. Chords cancel dictation.'},shortcut:{available:true,requested:false,detail:'Shortcut ready'}};
+      case 'connection_status': return {state:'connected',label:'Connected'};
+      case 'cleanup_styles': return {source:'server',styles:[
+        {id:'default',name:'Default',description:'Conservative transcript cleanup.',rewrites:false},
+        {id:'chat',name:'Chat',description:'Casual messages; no period on short messages.',rewrites:false},
+        {id:'email',name:'Email',description:'Polished sentences with light formality, without added content.',rewrites:false},
+        {id:'code',name:'Code',description:'Literal technical dictation; preserve identifiers, symbols and casing.',rewrites:false},
+        {id:'notes',name:'Notes',description:'Short sentences or bullets for spoken lists.',rewrites:true},
+        {id:'custom',name:'Custom',description:'Cleanup shaped by your instructions, within transcript safety rules.',rewrites:true},
+      ]};
       case 'save_preferences': Object.assign(settings,args.settings); return;
       case 'history_list': return structuredClone(entries);
       case 'history_copy': case 'dictation_copy': return;
