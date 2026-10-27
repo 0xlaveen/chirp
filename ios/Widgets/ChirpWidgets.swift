@@ -10,6 +10,48 @@ struct ChirpWidgetsBundle: WidgetBundle {
         ChirpNotesActivity()
         ChirpStartControl()
         ChirpEndControl()
+        ChirpRecordNoteControl()
+        ChirpPauseNoteControl()
+        ChirpStopNoteControl()
+    }
+}
+
+struct ChirpRecordNoteControl: ControlWidget {
+    var body: some ControlWidgetConfiguration {
+        StaticControlConfiguration(kind: "dev.chirp.ios.notes.record") {
+            ControlWidgetButton(action: StartChirpNotesIntent()) {
+                Label("Record", systemImage: "record.circle")
+            }
+            .tint(Color.chirp.koi)
+        }
+        .displayName("Record note with Chirp")
+        .description("Open Chirp to record a note. Pairing and microphone permission are required.")
+    }
+}
+
+struct ChirpPauseNoteControl: ControlWidget {
+    var body: some ControlWidgetConfiguration {
+        StaticControlConfiguration(kind: "dev.chirp.ios.notes.pause") {
+            ControlWidgetButton(action: PauseChirpNotesIntent()) {
+                Label("Pause / Resume", systemImage: "pause.circle")
+            }
+            .tint(Color.chirp.koi)
+        }
+        .displayName("Pause or resume note with Chirp")
+        .description("Pause a recording note and turn off its microphone, or resume a paused note.")
+    }
+}
+
+struct ChirpStopNoteControl: ControlWidget {
+    var body: some ControlWidgetConfiguration {
+        StaticControlConfiguration(kind: "dev.chirp.ios.notes.stop") {
+            ControlWidgetButton(action: StopChirpNotesIntent()) {
+                Label("Stop", systemImage: "stop.fill")
+            }
+            .tint(Color.chirp.record)
+        }
+        .displayName("Stop note with Chirp")
+        .description("Stop recording the note. Your notes stay in Chirp.")
     }
 }
 

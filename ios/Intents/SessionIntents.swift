@@ -113,5 +113,11 @@ struct ChirpShortcuts: AppShortcutsProvider {
                     shortTitle: "Cancel dictation", systemImageName: "xmark")
         AppShortcut(intent: EndChirpSessionIntent(), phrases: ["End session with \(.applicationName)"],
                     shortTitle: "End session", systemImageName: "mic.slash")
+        AppShortcut(intent: StartChirpNotesIntent(), phrases: ["Start a note with \(.applicationName)", "Record a note with \(.applicationName)"],
+                    shortTitle: "Record note", systemImageName: "record.circle")
+        AppShortcut(intent: PauseChirpNotesIntent(), phrases: ["Pause or resume the note with \(.applicationName)"],
+                    shortTitle: "Pause or resume note", systemImageName: "pause.circle")
+        AppShortcut(intent: StopChirpNotesIntent(), phrases: ["Stop the note with \(.applicationName)"],
+                    shortTitle: "Stop note", systemImageName: "stop.fill")
     }
 }
