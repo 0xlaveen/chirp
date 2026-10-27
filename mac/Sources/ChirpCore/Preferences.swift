@@ -79,6 +79,11 @@ public final class Preferences: @unchecked Sendable {
         get { defaults.string(forKey: "autoEnter").flatMap(AutoEnter.init(rawValue:)) ?? .off }
         set { defaults.set(newValue.rawValue, forKey: "autoEnter") }
     }
+    /// Same opt-in name and default as the phones.
+    public var spokenCommands: Bool {
+        get { defaults.bool(forKey: "spokenCommands") }
+        set { defaults.set(newValue, forKey: "spokenCommands") }
+    }
     /// Clean-up (the server's `correction` flag). Off by default.
     public var correction: Bool {
         get { defaults.bool(forKey: "correction") }

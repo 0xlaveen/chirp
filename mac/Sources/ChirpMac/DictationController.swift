@@ -38,9 +38,33 @@ final class DictationController {
     /// Learn from my edits (on while history is on): watches the field after an insertion, and shapes the next `start`.
     var learning: EditLearning?
 
-    private var session: StreamSession?
+    let privateSession = PrivateSession()
+    /// Once private at any point, this utterance stays private through insertion and expiry.
+    private var privateDictation = false
+    private var privacyTimer: Timer?
+    private var lockObserver: NSObjectProtocol?
+
+    init() {
+        privateSession.onChange = { [weak self] in
+            guard let self else { return }
+            if self.privateSession.isActive {
+                self.learning?.watcher.cancel()
+                if self.machine.state.isActive { self.privateDictation = true }
+            }
+            self.hud.model.privateSession = self.privateSession.isActive || (self.machine.state.isActive && self.privateDictation)
+            self.onChange?()
+        }
+        privacyTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.privateSession.expireIfNeeded() }
+        }
+        lockObserver = DistributedNotificationCenter.default().addObserver(
+            forName: Notification.Name("com.apple.screenIsLocked"), object: nil, queue: .main) { [weak self] _ in
+                Task { @MainActor in self?.privateSession.screenLocked() }
+            }
+    }
+
+    private var session: RollingDictationSession?
     private var eventTask: Task<Void, Never>?
-    private var timeoutTask: Task<Void, Never>?
     private var epoch = 0
     private var pendingFinal: FinalResult?
     /// The raw transcript from `correcting`: what is inserted if clean-up fails. Never logged; cleared on every exit.
@@ -254,12 +278,15 @@ final class DictationController {
         target = (frontmost?.bundleIdentifier, frontmost?.localizedName)
         captureStartedAt = nil
         capturedSeconds = 0
+        privateDictation = privateSession.isActive
+        hud.model.privateSession = privateDictation
+        hud.model.duration = "0:00 / 10:00"
         lastHistoryID = nil
         // A new dictation ends the last one's edit window (what the user changed so far is learned).
-        learning?.watcher.finish()
+        if privateDictation { learning?.watcher.cancel() } else { learning?.watcher.finish() }
         startOptions = settings.startOptions(frontmostBundleID: frontmost?.bundleIdentifier,
                                              available: health?.correctionProfiles)
-        if settings.learningEnabled, let learning, !Self.excludedFromHistory(target.bundleID) {
+        if !privateDictation, settings.learningEnabled, let learning, !Self.excludedFromHistory(target.bundleID) {
             startOptions.learned = learning.payload(for: target.bundleID)
         }
         hud.model.styleName = startOptions.correction ? CorrectionProfile.name(for: startOptions.correctionProfile, in: health) : nil
@@ -286,13 +313,18 @@ final class DictationController {
     }
 
     private func startStreaming(epoch myEpoch: Int) {
-        let session = StreamSession(config: settings.serverConfig(), options: startOptions)
+        let config = settings.serverConfig(), options = startOptions
+        let session = RollingDictationSession(
+            correctionTimeout: health?.operationTimeout(.dictation, fallback: Self.correctionTimeout) ?? Self.correctionTimeout,
+            commands: settings.spokenCommands,
+            makeStream: { StreamSession(config: config, options: options) })
         self.session = session
         let autoStop = machine.mode == .autoStop ? AutoStopDetector(silence: settings.autoStopSilence) : nil
-        let sink = CaptureSink(session: session, autoStop: autoStop) { [weak self] level in
+        let sink = CaptureSink(session: session, autoStop: autoStop) { [weak self] level, elapsed in
             Task { @MainActor in
                 guard let self, self.epoch == myEpoch else { return }
                 self.hud.model.pushLevel(level.rms)
+                self.hud.model.duration = Self.durationLabel(elapsed)
             }
         } onSilence: { [weak self] in
             Task { @MainActor in
@@ -305,7 +337,7 @@ final class DictationController {
                 self.send(.silence)
             }
         } onLimit: { [weak self] in
-            // Finish just under the server's 120 s cap, as the phones do, so the words are inserted, not lost.
+            // The whole dictation, across ordered rolling sockets, is limited to ten minutes.
             Task { @MainActor in
                 guard let self, self.epoch == myEpoch, self.machine.state == .listening else { return }
                 chirpLog.info("dictation limit reached seconds=\(Int(CaptureSink.limitSeconds), privacy: .public)")
@@ -348,6 +380,7 @@ final class DictationController {
             guard machine.state == .finalizing else { return }
             beginPolishing(raw: raw, profile: profile, words: words)
         case .message(.final(let f)):
+            if machine.state == .listening || machine.state == .connecting { send(.toggle) }
             pendingFinal = f
             send(.finalReceived)
         case .message(.error(let code, let message)):
@@ -365,17 +398,10 @@ final class DictationController {
     /// `correcting` arrived: show the raw transcript at once, solid, with the polishing state and the style chip.
     private func beginPolishing(raw: String, profile: String, words: [WordTiming]?) {
         polishingRaw = raw
-        hud.model.beginPolishing(raw: raw, style: CorrectionProfile.name(for: profile, in: health), words: words)
+        hud.model.beginPolishing(raw: raw, style: profile.isEmpty ? hud.model.styleName ?? "" : CorrectionProfile.name(for: profile, in: health), words: words)
         send(.correctingReceived)
         hud.announce(HUDStatus.polishing)
         let myEpoch = epoch
-        timeoutTask?.cancel()
-        let timeout = health?.operationTimeout(.dictation, fallback: Self.correctionTimeout) ?? Self.correctionTimeout
-        timeoutTask = Task { [weak self] in
-            try? await Task.sleep(for: .seconds(timeout))
-            guard !Task.isCancelled, let self, self.epoch == myEpoch, self.machine.state == .correcting else { return }
-            self.failCorrection()
-        }
         // "Insert raw immediately": only where the AX write can be replaced in place later; elsewhere the cleaned
         // text is inserted once, as usual.
         if settings.insertRawFirst, inserter.canReplaceInPlace() {
@@ -393,8 +419,13 @@ final class DictationController {
         send(.correctionFailed)
     }
 
-    /// The server's `too_long`, or the local 120 s cap tripping first.
-    static let tooLong = "Dictations are limited to 2 minutes"
+    /// A server that rejected one rolling segment.
+    static let tooLong = "This dictation segment was too long — try again"
+
+    private static func durationLabel(_ seconds: TimeInterval) -> String {
+        let total = min(Int(seconds), Int(RollingDictationSegmenter.maxTotal))
+        return String(format: "%d:%02d / 10:00", total / 60, total % 60)
+    }
 
     private static func friendly(code: String, message: String) -> String {
         switch code {
@@ -412,14 +443,12 @@ final class DictationController {
         autoEnterSkipped = NSEvent.modifierFlags.contains(.shift) && Int(settings.hotkey.modifiers) & shiftKey == 0
         stopCapture()
         hud.model.silence()
-        let session = self.session, myEpoch = epoch
-        Task { await session?.stop() }
-        timeoutTask?.cancel()
-        timeoutTask = Task { [weak self] in
-            try? await Task.sleep(for: .seconds(25))
-            guard !Task.isCancelled, let self, self.epoch == myEpoch, self.machine.state == .finalizing else { return }
-            self.send(.failed("Timed out waiting for the transcript"))
+        guard let session else {
+            pendingFinal = FinalResult(text: "")
+            send(.finalReceived)
+            return
         }
+        Task { await session.stop() }
     }
 
     private func stopCapture() {
@@ -436,7 +465,6 @@ final class DictationController {
         pendingFinal = nil
         polishingRaw = nil
         rawInsertTask = nil
-        timeoutTask?.cancel()
         stopCapture()
         eventTask?.cancel()
         eventTask = nil
@@ -449,7 +477,6 @@ final class DictationController {
     // MARK: insertion
 
     private func insert() {
-        timeoutTask?.cancel()
         // Consume the final: nothing but the inserter's short-lived undo state may outlive this insertion.
         guard let final = pendingFinal else { send(.insertionFinished); return }
         pendingFinal = nil
@@ -457,8 +484,7 @@ final class DictationController {
         let rawFirst = rawInsertTask
         rawInsertTask = nil
         // What was learned applies to the text itself too, so it works with clean-up off or an older server.
-        let trimmed = final.text.trimmingCharacters(in: .whitespacesAndNewlines)
-        let text = startOptions.learned?.apply(to: trimmed) ?? trimmed
+        let text = startOptions.learned?.apply(to: final.text) ?? final.text
         let s = session
         session = nil
         eventTask?.cancel(); eventTask = nil
@@ -476,7 +502,9 @@ final class DictationController {
             send(.insertionFinished)
             return
         }
+        let myEpoch = epoch
         Task {
+            guard self.epoch == myEpoch else { return }
             if let rawFirst, let early = await rawFirst.value {
                 await replaceRaw(early, with: final, text: text)
             } else {
@@ -501,7 +529,7 @@ final class DictationController {
     /// verified and the range still holds it, otherwise leave the raw text where it is.
     private func replaceRaw(_ early: InsertionOutcome, with final: FinalResult, text: String) async {
         var shown = final
-        if early == .inserted(.ax), final.canUseRaw {
+        if early == .inserted(.ax), final.canUseRaw || final.text != final.raw {
             if settings.showChangesAfterCleanup { await hud.model.playChangeHighlight(raw: final.raw, cleaned: text) }
             else { hud.model.settle(on: text) }
             if await inserter.replaceInserted(with: text) {
@@ -586,7 +614,7 @@ extension DictationController {
     /// excluded app, a refused insertion or an empty text). Nothing about it is logged.
     fileprivate func keep(_ outcome: InsertionOutcome, final: FinalResult, text: String, secureField: Bool) {
         lastHistoryID = nil
-        guard let history, HistoryPolicy.shouldRecord(enabled: settings.historyEnabled, outcome: outcome, secureField: secureField,
+        guard !privateDictation, !privateSession.isActive, let history, HistoryPolicy.shouldRecord(enabled: settings.historyEnabled, outcome: outcome, secureField: secureField,
                                                       bundleID: target.bundleID, excluded: settings.historyExcludedApps, text: text)
         else { return }
         let raw = final.corrected ? final.raw.trimmingCharacters(in: .whitespacesAndNewlines) : nil
@@ -604,7 +632,7 @@ extension DictationController {
     /// Learn from my edits: after a verified AX insertion whose span is known, watch that field for the user's fixes.
     /// Never a secure field, an excluded app, or while learning (or history) is off.
     fileprivate func watchEdits(_ outcome: InsertionOutcome, text: String, raw: String, secureField: Bool) {
-        guard let learning, settings.learningEnabled, outcome == .inserted(.ax), !secureField,
+        guard !privateDictation, !privateSession.isActive, let learning, settings.learningEnabled, outcome == .inserted(.ax), !secureField,
               !Self.excludedFromHistory(target.bundleID), let range = inserter.lastAXRange,
               let field = AXWatchedField.focused() else { return }
         learning.watcher.watch(field, inserted: text, range: range, raw: raw, bundleID: target.bundleID, appName: target.name)
@@ -641,8 +669,8 @@ extension DictationController {
 
 /// Runs on the audio thread: forwards frames to the socket in order and measures levels.
 final class CaptureSink: @unchecked Sendable {
-    private let session: StreamSession
-    private let onLevel: @Sendable (Level) -> Void
+    private let session: RollingDictationSession
+    private let onLevel: @Sendable (Level, TimeInterval) -> Void
     private let onSilence: @Sendable () -> Void
     private let lock = NSLock()
     private let onAutoStop: @Sendable () -> Void
@@ -652,7 +680,7 @@ final class CaptureSink: @unchecked Sendable {
     private var autoStop: AutoStopDetector?
     private var clock: TimeInterval = 0
 
-    init(session: StreamSession, autoStop: AutoStopDetector? = nil, onLevel: @escaping @Sendable (Level) -> Void,
+    init(session: RollingDictationSession, autoStop: AutoStopDetector? = nil, onLevel: @escaping @Sendable (Level, TimeInterval) -> Void,
          onSilence: @escaping @Sendable () -> Void, onAutoStop: @escaping @Sendable () -> Void = {},
          onLimit: @escaping @Sendable () -> Void = {}) {
         self.session = session
@@ -663,19 +691,19 @@ final class CaptureSink: @unchecked Sendable {
         self.onLimit = onLimit
     }
 
-    /// Seconds of audio after which the dictation finishes by itself (the server refuses more than 120).
-    static let limitSeconds: TimeInterval = 119
+    /// Total capture ceiling; the socket wrapper rolls individual segments below the protocol limit.
+    static let limitSeconds = RollingDictationSegmenter.maxTotal
 
     func handle(_ frame: Data) {
         session.sendAudio(frame)
         let level = Level(pcm16: frame)
-        let (silent, paused, limit) = lock.withLock { () -> (Bool, Bool, Bool) in
+        let (silent, paused, limit, elapsed) = lock.withLock { () -> (Bool, Bool, Bool, TimeInterval) in
             clock += Double(frame.count / 2) / PCMConverter.sampleRate
             let limit = !limitSent && clock >= Self.limitSeconds
             if limit { limitSent = true }
-            return (guardState.feed(level, at: clock), autoStop?.feed(level, at: clock) ?? false, limit)
+            return (guardState.feed(level, at: clock), autoStop?.feed(level, at: clock) ?? false, limit, clock)
         }
-        onLevel(level)
+        onLevel(level, elapsed)
         if silent { onSilence() }
         if paused { onAutoStop() }
         if limit { onLimit() }

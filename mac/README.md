@@ -225,6 +225,14 @@ Live Notes keeps the microphone open for a long session — a meeting, a lecture
 | <a href="../docs/screenshots/mac/notes-sources-call-light.png"><img src="../docs/screenshots/mac/notes-sources-call-light.png" width="300" alt="The Sources popover: Microphone, or Microphone + call audio from zoom.us, with the privacy line"></a> | <a href="../docs/screenshots/mac/notes-recording-call-light.png"><img src="../docs/screenshots/mac/notes-recording-call-light.png" width="400" alt="A call recording: the transcript labels You, Person 1 and Person 2, and the footer says Mic + zoom.us"></a> |
 - **Dictation and Notes.** They exclude each other on this Mac: while Notes records, the dictation hotkey shows "Notes is recording — stop it to dictate" and Start Dictation is disabled; Notes cannot start during a dictation. Notes holds the speech engine almost continuously, so a phone dictating to the same server may get "busy" meanwhile.
 
+## Long dictation, spoken commands and privacy
+
+Dictation rolls onto a new socket at a pause after 45 seconds (shorter pauses after 70 seconds), or at 90 seconds even without a pause. The microphone stays open, up to **10 minutes** total; the HUD shows elapsed time and that limit. Stop inserts the completed segments in recording order as one transaction, even if their clean-up replies arrive out of order. Escape cancels all sockets before insertion. **Insert raw immediately** and **Use raw** apply to the whole dictation; a failed segment keeps its last raw transcript or partial.
+
+**Spoken commands** in Settings → Dictation is off by default, as on the phones. With it on, a trailing “new line” or “new paragraph” becomes one or two line breaks. Mentions within a sentence stay unchanged. **Use raw** keeps the original spoken words.
+
+**Private session** is available in the menu-bar menu and Settings → Dictation. It skips dictation history and learning from edits, cancels any existing edit watcher, and ends on screen lock, after one hour, or when Chirp quits. A lock indicator stays in the menu bar and HUD while it is on. A dictation that was private stays private through insertion, even if the session expires while clean-up finishes. Existing history is kept.
+
 ## Dictation history
 
 Every dictation you insert is kept on this Mac, so you can find it, copy it or put it in again. History is **on by default**, local only and encrypted: turn it off, change how long it is kept, or list apps it must never keep in **Settings → Dictation → History**.

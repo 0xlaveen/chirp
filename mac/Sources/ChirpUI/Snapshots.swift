@@ -43,6 +43,7 @@ public enum Snapshots {
             let model = HUDModel()
             // No window to blur through offscreen, so the HUD draws its flat stand-in for the material.
             model.flatSurface = true
+            model.duration = "0:24 / 10:00"
             configure(model)
             return NSHostingView(rootView: SnapshotBackdrop { HUDView(model: model) })
         }
@@ -146,6 +147,9 @@ public enum Snapshots {
         let (stable, tail) = splitPartial(text: sentence + " about the release", stable: sentence)
         let long = Array(repeating: "and then we should also check the rollout plan with the whole team", count: 5).joined(separator: ", ")
         return [
+            hud("rolling") { $0.status = HUDStatus.listening; $0.duration = "2:01 / 10:00"; $0.stable = sentence; $0.levels = .demo(peak: 0.8) },
+            hud("private") { $0.status = HUDStatus.listening; $0.privateSession = true; $0.duration = "0:24 / 10:00"; $0.stable = sentence; $0.levels = .demo(peak: 0.6) },
+            hud("duration-limit") { $0.status = HUDStatus.finishing; $0.duration = "10:00 / 10:00"; $0.stable = sentence },
             hud("connecting") { $0.status = HUDStatus.connecting },
             hud("listening") { $0.status = HUDStatus.listening; $0.levels = .demo(peak: 0.8); $0.pulsePhase = 0.4; $0.stable = stable; $0.unstable = tail },
             hud("listening-no-text") { $0.status = HUDStatus.listening; $0.levels = .demo(peak: 0.45); $0.pulsePhase = 0.4 },
@@ -300,6 +304,7 @@ public enum Snapshots {
                 }
             },
             form("ready", .dictation) { _ in },
+            form("private", .dictation) { $0.privateSession = true; $0.spokenCommands = true },
             form("option-hold", .dictation) { $0.hotkey = .option; $0.activationMode = .holdToTalk },
             form("picked-microphone", .dictation) { $0.chosenInputUID = "studio" },
             form("sounds", .dictation) { $0.soundsEnabled = true; $0.soundPack = .chirp; $0.soundVolume = 0.6 },
@@ -527,6 +532,7 @@ public enum Snapshots {
                             correctionLeavesMachine: true, correctionHost: "llm.example.com",
                             correctionProfiles: CorrectionProfile.builtIn)
         return [
+            menu("private") { $0.health = local; $0.privateSession = true },
             menu("ready") { $0.health = local },
             menu("hover", highlighting: "Clean-up") { $0.health = local; $0.cleanupOn = true; $0.styleID = "email" },
             menu("paused") { $0.health = local; $0.paused = true; $0.hotkeyRegistered = false },
@@ -569,6 +575,7 @@ public enum Snapshots {
     /// The scenarios whose PNGs are committed under `docs/screenshots/mac`: the key HUD states, the menu in light and
     /// dark, one per Settings tab, and the setup window. The rest only render to a temporary directory for review.
     public static let committedNames: [String] = [
+        "hud-rolling", "hud-private", "hud-duration-limit", "menu-private", "settings-dictation-private",
         "hud-listening", "ripple-speech", "ripple-static",
         "hud-flow-2-polishing", "hud-flow-3-diff", "hud-correction-use-raw",
         "hud-wordwave-listening", "hud-wordwave-long", "hud-wordwave-polishing",

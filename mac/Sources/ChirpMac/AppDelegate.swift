@@ -140,6 +140,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                                NSPasteboard.general.clearContents()
                                NSPasteboard.general.setString(entry.text, forType: .string)
                            }))
+        settingsWindow.privateSession = controller.privateSession
         setUpHistory()
         settingsWindow.library = notes.library
         settingsWindow.onOpenSetup = { [onboardingWindow] in onboardingWindow.show() }

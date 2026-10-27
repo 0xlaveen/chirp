@@ -8,7 +8,7 @@
 #   reference Mac (`scripts/test.sh`).
 set -eu
 cd "$(dirname "$0")/.."
-ISOLATED="NotesBudgetTests NotesLongRecorderTests NotesLayoutTests NotesLongSessionTests NotesOrganizeRecorderTests NotesOverlapRouterTests NotesPauseSessionTests NotesPauseTests NotesRecorderTests NotesReorganizeRecorderTests NotesSoakTests ServerSpeakersRecorderTests SpeakerRecorderTests StreamBoundsTests StreamSessionTests"
+ISOLATED="NotesBudgetTests NotesLongRecorderTests NotesLayoutTests NotesLongSessionTests NotesOrganizeRecorderTests NotesOverlapRouterTests NotesPauseSessionTests NotesPauseTests NotesRecorderTests NotesReorganizeRecorderTests NotesSoakTests ServerSpeakersRecorderTests SpeakerRecorderTests StreamBoundsTests StreamSessionTests RollingDictationTests"
 SKIPPED="GeneratedSoundTests SnapshotTests"
 re() { echo "$*" | tr ' ' '\n' | paste -sd'|' -; }
 swift build --build-tests >/dev/null

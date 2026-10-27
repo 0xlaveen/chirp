@@ -85,9 +85,11 @@ final class MenuBarController: NSObject, NSMenuDelegate {
             ?? Self.symbol("waveform")
         case .error: button.image = Self.symbol("exclamationmark.triangle")
         }
+        button.title = controller.privateSession.isActive ? " 🔒" : ""
         button.alphaValue = icon.dimmed ? 0.45 : 1
-        button.setAccessibilityLabel(icon.accessibilityLabel)
-        button.toolTip = icon.accessibilityLabel
+        let label = icon.accessibilityLabel + (controller.privateSession.isActive ? ", Private session" : "")
+        button.setAccessibilityLabel(label)
+        button.toolTip = label
         badge.isHidden = !icon.debugBadge
         cleanedBadge.isHidden = !icon.cleanedBadge
         setPulsing(icon.animatesWaves)
@@ -157,6 +159,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
 
     private func build(_ menu: NSMenu) {
         var inputs = MenuInputs()
+        inputs.privateSession = controller.privateSession.isActive
         inputs.state = controller.state
         inputs.health = controller.health
         inputs.healthError = controller.healthError
@@ -256,6 +259,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     private func selector(for action: MenuAction?) -> Selector? {
         switch action {
         case nil: nil
+        case .togglePrivateSession: #selector(togglePrivateSession)
         case .toggleDictation: #selector(toggleDictation)
         case .toggleNotes: #selector(toggleNotes)
         case .newNote: #selector(newNote)
@@ -277,6 +281,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         }
     }
 
+    @objc private func togglePrivateSession() { controller.privateSession.setEnabled(!controller.privateSession.isActive) }
     @objc private func toggleDictation() { controller.toggleDictation() }
     @objc private func toggleNotes() { actions.toggleNotes() }
     @objc private func newNote() { actions.newNote() }
