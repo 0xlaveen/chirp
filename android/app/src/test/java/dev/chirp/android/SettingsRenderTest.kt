@@ -96,6 +96,31 @@ class SettingsRenderTest {
         }
     }
 
+    @Test fun `history stop and delete confirmations in light and dark`() {
+        start()
+        fun dialog(title: String, name: String) {
+            compose.onNodeWithText(title).assertIsDisplayed()
+            compose.mainClock.advanceTimeBy(2000); compose.waitForIdle()
+            val target = compose.onNode(isRoot() and hasAnyDescendant(hasText(title)))
+            val bitmap = notesScreenshot(target)
+            File(output, "settings-$name.png").outputStream().use {
+                bitmap.compress(Bitmap.CompressFormat.PNG, 100, it)
+            }
+        }
+        for (night in listOf(false, true)) {
+            shot("history", SettingsPage.History, night)
+            compose.onNodeWithText("Keep dictation history on this phone").performClick()
+            compose.onNodeWithText("Keep dictation history on this phone").performClick()
+            val theme = if (night) "dark" else "light"
+            dialog("Turn off dictation history?", "history-turn-off-$theme")
+            compose.onNodeWithText("Turn off, keep history").performClick()
+            compose.onNodeWithText("Keep dictation history on this phone").assertIsOff()
+            compose.onNodeWithText("Delete history").performScrollTo().performClick()
+            dialog("Delete dictation history?", "history-delete-$theme")
+            compose.onNodeWithText("Cancel").performClick()
+        }
+    }
+
     @Config(qualifiers = "w840dp-h900dp-mdpi") @Test fun `Fold inner screen shows the list and the detail side by side`() {
         start()
         for (night in listOf(false, true)) shot("two-pane", null, night)

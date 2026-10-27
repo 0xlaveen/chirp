@@ -156,7 +156,8 @@ class HistoryScreenTest {
         compose.onNodeWithText("Keep dictation history on this phone").assertIsOff()
         compose.onNodeWithText("Delete history").performScrollTo().performClick()
         compose.onNodeWithText("Delete dictation history?").assertExists()
-        compose.onNode(hasText("Delete history") and hasAnyAncestor(isDialog())).performClick()
+        val deleteButtons = compose.onAllNodesWithText("Delete history")
+        deleteButtons[deleteButtons.fetchSemanticsNodes().lastIndex].performClick()
         compose.waitUntil(5000) { store.entries().isEmpty() }
         assertFalse(store.enabled)
     }

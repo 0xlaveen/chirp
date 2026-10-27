@@ -345,7 +345,7 @@ final class ChirpSettingsUITests: XCTestCase {
         app.buttons["chirp.dictation.stop"].tap()
         XCTAssertTrue(app.staticTexts["Finished"].waitForExistence(timeout: 5))
         app.openSettingsPage("chirp.settings.privacy")
-        for (appearance, name) in [(XCUIUserInterfaceStyle.light, "light"), (.dark, "dark")] {
+        for (appearance, name) in [(XCUIDevice.Appearance.light, "light"), (.dark, "dark")] {
             XCUIDevice.shared.appearance = appearance
             screenshot("history-settings-" + name, app)
         }
@@ -354,7 +354,7 @@ final class ChirpSettingsUITests: XCTestCase {
         dismissDialog(app)
         XCTAssertTrue(waitFor(toggle, "value == '1'"), "Cancelling keeps history on")
         toggle.switches.firstMatch.exists ? toggle.switches.firstMatch.tap() : toggle.tap()
-        for (appearance, name) in [(XCUIUserInterfaceStyle.light, "light"), (.dark, "dark")] {
+        for (appearance, name) in [(XCUIDevice.Appearance.light, "light"), (.dark, "dark")] {
             XCUIDevice.shared.appearance = appearance
             screenshot("history-turn-off-" + name, app)
         }
