@@ -192,6 +192,7 @@ final class ChirpSettingsUITests: XCTestCase {
         app.selectChirpTab("Dictate")
         app.buttons["chirp.dictation.start"].tap()
         XCTAssertTrue(app.buttons["chirp.dictation.stop"].waitForExistence(timeout: 5))
+        XCTAssertTrue(waitFor(app.staticTexts["transcript"], "label == 'synthetic words'"))
         app.buttons["chirp.dictation.stop"].tap()
         XCTAssertTrue(app.staticTexts["Finished"].waitForExistence(timeout: 5))
 

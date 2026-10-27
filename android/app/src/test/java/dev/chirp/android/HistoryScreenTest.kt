@@ -156,7 +156,7 @@ class HistoryScreenTest {
         compose.onNodeWithText("Keep dictation history on this phone").assertIsOff()
         compose.onNodeWithText("Delete history").performScrollTo().performClick()
         compose.onNodeWithText("Delete dictation history?").assertExists()
-        compose.onAllNodesWithText("Delete history").last().performClick()
+        compose.onNode(hasText("Delete history") and hasAnyAncestor(isDialog())).performClick()
         compose.waitUntil(5000) { store.entries().isEmpty() }
         assertFalse(store.enabled)
     }
@@ -221,7 +221,7 @@ class HistoryScreenTest {
         compose.onNodeWithText("No dictations yet").assertExists()
         compose.onNodeWithContentDescription("More options").performClick()
         compose.onNodeWithText("History settings").performClick()
-        compose.onNodeWithText("24 hours").performScrollTo().performClick()
+        compose.onNodeWithText("1 day").performScrollTo().performClick()
         compose.waitUntil(5000) { store.retention == HistoryRetention.DAY }
     }
 }
