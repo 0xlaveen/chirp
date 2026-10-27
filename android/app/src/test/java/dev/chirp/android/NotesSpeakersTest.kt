@@ -378,7 +378,8 @@ class NotesSpeakersTest {
     }
 
     @Test fun `autocomplete offers names from recent notes, newest first, without this note's own or used names`() {
-        val sessions = NotesSessions(RuntimeEnvironment.getApplication(), SoftwareHistoryKeys())
+        var clock = 1_800_000_000_000L
+        val sessions = NotesSessions(RuntimeEnvironment.getApplication(), SoftwareHistoryKeys(), clock = { ++clock })
         fun note(id: String, vararg names: String?) = sessions.put(id, labelledDocument().apply {
             names.forEachIndexed { i, n -> if (n != null) renameSpeaker(i + 1, n) }
             roster.addPerson(); roster.merge(3, 1)

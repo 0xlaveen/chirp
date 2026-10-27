@@ -62,7 +62,146 @@ internal class NotesModel(
     private val background: (() -> Unit) -> Unit = NotesIo::run,
     /** Audio encoding, off the main thread and apart from [background] so a long encode never delays a text save. */
     private val audioWork: (() -> Unit) -> Unit = NotesAudioIo::run,
+    private val audioDecoder: AudioDecoder = MediaCodecAacDecoder(),
 ) : ViewModel(), NotesControls.Session {
+    @Volatile private var persistenceEpoch = 0
+    private var consentPairing: Pairing? = null
+    val canApplyRetranscribed get() = !retranscriber?.staged.isNullOrEmpty()
+    private var retranscribeJob: Job? = null
+    private var retranscriber: NotesRetranscriber? = null
+    private var retranscribeTarget: String? = null
+    private var retranscribeSegments: List<NotesSegment> = emptyList()
+    var retranscribeSheet by mutableStateOf(false)
+    var retranscribeSegment by mutableStateOf<Int?>(null)
+    var retranscribeFailure by mutableStateOf<String?>(null)
+    var rebuildReview: String?
+        get() = RetranscribeGate.rebuilds[document.uid]
+        set(value) { if (value == null) RetranscribeGate.rebuilds.remove(document.uid) else RetranscribeGate.rebuilds[document.uid] = value }
+    var rebuildChoice by mutableStateOf(store.notesRebuild)
+    var retranscribeNotice by mutableStateOf<String?>(null)
+    val retranscribing get() = RetranscribeGate.progress?.noteId == document.uid || RetranscribeGate.owner?.retranscribeTarget == document.uid
+    val retranscribeProgress get() = RetranscribeGate.progress?.takeIf { it.noteId == document.uid }
+    val allowRetranscribe get() = revision.let { store.notesAllowRetranscribe }
+    val canRetranscribe get() = allowRetranscribe && !state.active && document.audio.isNotEmpty() && RetranscribeGate.owner == null
+    val retranscribeCleanup get() = options().correction
+    val retranscribeHealth get() = health
+    val retranscribeDestination get() = (consentPairing ?: pairing())?.base?.host ?: "your computer"
+    val retranscribeClips get() = document.audio.filter { retranscribeSegment == null || it.segment == retranscribeSegment }
+
+    fun askRetranscribe(segment: Int? = null) {
+        if (!canRetranscribe) return
+        consentPairing = pairing()
+        retranscribeSegment = segment; retranscribeSheet = true
+        scope.launch { var next: Health? = null; io { consentPairing?.let { next = fetchHealth(http(), it) } }; next?.let { health = it; store.health = it } }
+    }
+
+    private var retranscribeGeneration = 0
+    private var transcriptApplied = false
+    fun cancelRetranscribeFor(id: String) { if (RetranscribeGate.owner === this && retranscribeTarget == id) cancelRetranscribe() }
+
+    fun cancelRetranscribe() {
+        retranscribeGeneration++
+        retranscribeJob?.cancel(); retranscriber?.cancel(); retranscriber = null
+        retranscribeFailure = null; retranscribeNotice = if (transcriptApplied) "Transcript updated" else "Cancelled. Nothing changed."
+        if (RetranscribeGate.owner === this) { RetranscribeGate.owner = null; RetranscribeGate.progress = null; store.notesRetranscribeInterrupted = false }
+    }
+
+    fun startRetranscribe() {
+        val health = health ?: return
+        val pairedAtConsent = consentPairing ?: pairing() ?: return
+        val currentPairing = pairing()
+        if (pairedAtConsent.base != currentPairing?.base || pairedAtConsent.token != currentPairing.token) { retranscribeSheet = false; message = "Pairing changed. Open Re-transcribe again."; return }
+        if (!canRetranscribe || !health.notesRetranscribe || pairing() == null) return
+        retranscribeSheet = false; transcriptApplied = false; retranscribeNotice = null; retranscribeFailure = null
+        store.notesRebuild = rebuildChoice
+        val clips = retranscribeClips.toList()
+        val rebuild = rebuildChoice
+        val target = document.uid
+        retranscribeTarget = target; retranscribeSegments = document.segments.toList()
+        val bodyVersion = document.version
+        keepSession()
+        RetranscribeGate.owner = this
+        RetranscribeGate.progress = RetranscribeProgress(target, 0, clips.size, 0.0, clips.sumOf { it.duration })
+        store.notesRetranscribeInterrupted = true
+        val runner = NotesRetranscriber({ event, failure -> transportFactory(http(), pairedAtConsent, event, failure) }, audioDecoder, decode = { work ->
+            var decoded: ByteArray? = null; io { decoded = work() }; requireNotNull(decoded)
+        }).also { retranscriber = it }
+        val generation = ++retranscribeGeneration
+        retranscribeJob = scope.launch {
+            try {
+                // Finish already queued encodes before decoding; no encoder scratch file belongs to this run.
+                kotlinx.coroutines.suspendCancellableCoroutine<Unit> { continuation -> audioWork { mainHandler.post { if (continuation.isActive) continuation.resume(Unit) {} } } }
+                val results = runner.run(target, clips, health, options().correction, { sessions?.clipBytes(target, it) }) { RetranscribeGate.progress = it }
+                // Drain queued autosaves before preparing the single transcript replacement.
+                kotlinx.coroutines.suspendCancellableCoroutine<Unit> { continuation -> background { mainHandler.post { if (continuation.isActive) continuation.resume(Unit) {} } } }
+                if (!store.notesAllowRetranscribe) throw kotlinx.coroutines.CancellationException()
+                val applied = applyRetranscribed(results)
+                if (applied && rebuild && health.correctionAvailable && health.notesStructure) rebuildTranscript(bodyVersion)
+            } catch (e: kotlinx.coroutines.CancellationException) { runner.cancel(); throw e }
+            catch (e: Exception) {
+                if (transcriptApplied) { retranscribeNotice = "Couldn’t rebuild the notes. Transcript updated."; return@launch }
+                val code = (e as? RetranscribeError)?.code
+                if (code == "auth" || code == "revoked") {
+                    runner.cancel(); paired = false; message = "Pair your computer again"; retranscriber = null
+                } else retranscribeFailure = "Couldn’t finish re-transcribing. Nothing changed."
+            } finally {
+                if (generation == retranscribeGeneration) {
+                    RetranscribeGate.progress = null
+                    if (RetranscribeGate.owner === this@NotesModel && retranscribeFailure == null) RetranscribeGate.owner = null
+                    store.notesRetranscribeInterrupted = false
+                }
+            }
+        }
+    }
+
+    fun applyRetranscribed(results: Map<Int, RetranscribedSegment> = retranscriber?.staged.orEmpty()): Boolean {
+        if (results.isEmpty()) { retranscribeNotice = "No segments updated. Nothing changed."; retranscribeFailure = null; return false }
+        val kept = sessions ?: return false
+        val target = retranscribeTarget ?: return false
+        val live = NotesSessionHolder.owner(target) ?: this.takeIf { document.uid == target }
+        live?.let { it.persistenceEpoch++ }
+        val record = kept.open(target) ?: return false
+        val current = live?.document ?: NotesDocument.fromJson(record.document)
+        if (current.segments != retranscribeSegments || current.audio.none { clip -> results.containsKey(clip.segment) }) {
+            retranscribeFailure = "This transcript changed. Re-transcribe again."; return false
+        }
+        val copy = NotesDocument.fromJson(current.toJson())
+        if (!copy.applyRetranscription(results)) { retranscribeNotice = "No segments updated. Nothing changed."; return false }
+        val json = copy.toJson().put("elapsed", record.document.optDouble("elapsed", 0.0))
+        if (!kept.put(target, json, expectedRevision = record.revision)) { retranscribeFailure = "This note changed. Re-transcribe again."; return false }
+        live?.let {
+            it.document.applyRetranscription(results, at = requireNotNull(copy.previousTranscript).at)
+            // The revision-checked write already saved this exact state. Don’t queue a second, unguarded autosave.
+            it.keptKey = it.key(); it.savedKey = it.keptKey
+            it.sync()
+        }
+        val total = retranscribeSegments.size
+        retranscribeNotice = if (results.size == total) "Transcript updated" else "${results.size} of $total updated. ${total - results.size} kept their old text."
+        transcriptApplied = true
+        retranscribeFailure = null; retranscriber = null
+        if (retranscribeJob?.isActive != true && RetranscribeGate.owner === this) { RetranscribeGate.owner = null; RetranscribeGate.progress = null }
+        return true
+    }
+
+    fun restoreTranscript() {
+        if (retranscribing || state.active) return
+        persistenceEpoch++
+        if (document.restorePreviousTranscript()) { sync(); keepSession(); retranscribeNotice = "Previous transcript restored" }
+    }
+
+    private suspend fun rebuildTranscript(bodyVersion: Int) {
+        val target = retranscribeTarget ?: return
+        val owner = NotesSessionHolder.owner(target) ?: this.takeIf { document.uid == target }
+        val sourceDocument = owner?.document ?: sessions?.open(target)?.document?.let(NotesDocument::fromJson) ?: return
+        val rebuilt = (owner?.recorder ?: recorder).rebuildNotes(sourceDocument)
+        if (rebuilt == null) { retranscribeNotice = "Couldn’t rebuild the notes. Transcript updated."; return }
+        if (owner == null || owner.document !== sourceDocument) { RetranscribeGate.rebuilds[target] = rebuilt; return }
+        if (owner.document.version != bodyVersion) owner.rebuildReview = rebuilt
+        else { owner.recorder.applyRebuild(rebuilt); owner.retranscribeNotice = "Notes rebuilt" }
+    }
+
+    fun acceptRebuild() { rebuildReview?.let { recorder.applyRebuild(it) }; rebuildReview = null; retranscribeNotice = "Notes rebuilt" }
+
     private val app = context.applicationContext as android.app.Application
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var client: OkHttpClient? = null
@@ -203,6 +342,7 @@ internal class NotesModel(
     val recoveryOn get() = journal?.enabled == true
     /** "Keep notes on this phone": stopped notes are kept in Recent notes, so leaving or New need not ask. */
     val keeps get() = sessions?.enabled == true
+    val canUndoRebuild get() = canUndo && recorder.undoKind == NotesChange.Kind.REBUILD
     val canUndo get() = revision.let { recorder.canUndo }
     val canOrganize get() = reorganizing !is Reorganizing.Unavailable && !reorganizing.running && !busy && document.text.isNotBlank()
     /** The switch is offered once the Mac's health says structuring exists and clean-up is on. */
@@ -392,6 +532,7 @@ internal class NotesModel(
     }
     fun updateVoice(person: Int) = rememberSpeaker(person, update = true)
     fun rejectVoice(person: Int) {
+        if (retranscribing) return
         val doc = recorder.document
         val old = doc.roster.displayName(person)
         enrollments.remove(doc.roster.resolve(person))
@@ -403,6 +544,7 @@ internal class NotesModel(
 
     /** Rename a person everywhere in the note; [replaceInNotes] also swaps their old name in the notes' text. */
     fun renameSpeaker(person: Int, name: String, replaceInNotes: Boolean = false, remember: Boolean = true) {
+        if (retranscribing) return
         val document = recorder.document
         val old = document.roster.displayName(person)
         val previousVoice = document.roster.person(document.roster.resolve(person))?.recognized?.voice
@@ -437,6 +579,7 @@ internal class NotesModel(
      * text, in one pass. Naming anyone settles the "Who was speaking?" line.
      */
     fun renameSpeakers(names: Map<Int, String>, replaceInNotes: Boolean = false, merges: Map<Int, Int> = emptyMap(), remember: Set<Int> = names.keys) {
+        if (retranscribing) return
         val document = recorder.document
         val oldVoices = document.roster.active.associateWith { document.roster.person(it)?.recognized?.voice }
         val oldNames = document.roster.active.associateWith(document.roster::displayName)
@@ -461,9 +604,10 @@ internal class NotesModel(
         }
     }
 
-    fun mergeSpeaker(person: Int, into: Int) { recorder.document.mergeSpeaker(person, into); sync(); keep(now = true) }
-    fun separateSpeaker(person: Int) { recorder.document.separateSpeaker(person); sync(); keep(now = true) }
+    fun mergeSpeaker(person: Int, into: Int) { if (retranscribing) return; recorder.document.mergeSpeaker(person, into); sync(); keep(now = true) }
+    fun separateSpeaker(person: Int) { if (retranscribing) return; recorder.document.separateSpeaker(person); sync(); keep(now = true) }
     fun reassignTurn(segment: Int, turn: Int, person: Int?) {
+        if (retranscribing) return
         if (document.reassignTurn(segment, turn, person)) { sync(); keep(now = true) }
     }
     fun setAuto(on: Boolean) = recorder.setAuto(on)
@@ -472,6 +616,7 @@ internal class NotesModel(
     fun toggle() { if (state.active) stop() else start() }
 
     fun start() {
+        if (retranscribing) { message = "Finish re-transcribing first"; return }
         if (state.active) return
         if (voiceEdit.holdsMicrophone) { message = "Finish the spoken edit first"; return }
         message = null; recovered = null
@@ -542,7 +687,8 @@ internal class NotesModel(
         val what = key()
         if (document.untouched || keptKey == what) return
         val json = document.toJson().put("elapsed", recorder.elapsed)
-        background { kept.put(document.uid, json) }
+        val epoch = persistenceEpoch
+        background { if (persistenceEpoch == epoch) kept.put(document.uid, json) }
         keptKey = what; savedKey = what; recovered = null
         journal?.delete()
     }
@@ -591,6 +737,7 @@ internal class NotesModel(
     /** Delete: into Recently Deleted. A note that is recording cannot be deleted until it is stopped. */
     fun trash(id: String): Boolean {
         val kept = sessions ?: return false
+        RetranscribeGate.owner?.takeIf { it.retranscribeTarget == id }?.cancelRetranscribe()
         if (state.active && recorder.document.uid == id) return false
         recent = recent.filter { it.id != id }
         if (id == recorder.document.uid) { openRequest++; keptKey = null; if (!state.active) clear() }
@@ -602,6 +749,7 @@ internal class NotesModel(
 
     /** Delete only this note's kept audio. The text and transcript stay. */
     fun deleteAudio() {
+        if (retranscribing) return
         val id = document.uid
         background {
             if (sessions?.deleteAudio(id) == true) mainHandler.post {
@@ -747,6 +895,7 @@ internal class NotesModel(
     fun export() = document.exportMarkdown()
 
     override fun onCleared() {
+        cancelRetranscribe()
         // Swiped away from Recents is not a discard: the recovery copy (or the kept session) stays for next time.
         keepSession()
         journal?.flush()
@@ -762,6 +911,11 @@ internal class NotesModel(
     }
 
     init {
+        if (store.notesRetranscribeInterrupted && RetranscribeGate.owner == null) {
+            retranscribeNotice = "Re-transcribe was interrupted. Nothing changed."
+            store.notesRetranscribeInterrupted = false
+        }
+        scope.launch { RetranscribeGate.allowed.collect { if (!store.notesAllowRetranscribe) { retranscribeSheet = false; if (RetranscribeGate.owner === this@NotesModel) cancelRetranscribe(); revision++ } else revision++ } }
         recorder.audioSink = ::keepClip
         journal?.let(::recover)
     }

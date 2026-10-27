@@ -16,7 +16,7 @@ def log(*args):
     print('%7.1f' % (time.monotonic() % 100000), *args, flush=True)
 
 
-CHIP = '. Rename or merge this speaker'
+CHIP = '. Rename, merge or reassign this speaker'
 
 
 def check(probe, work, output, standalone=False):
@@ -138,14 +138,14 @@ def check(probe, work, output, standalone=False):
     # short, continuing it must automatically remember the drafted name without another rename.
     deadline = time.monotonic() + 45
     continued = False
-    while probe['find']('Remembered voice') is None:
+    while probe['find']('Remembering voices') is None:
         if 'too_short' in server().get('voice_errors', []):
-            tap('Continue recording notes')
+            tap('Continue recording')
             continued = True
             break
         assert time.monotonic() < deadline, 'Naming produced neither enrollment nor a short-voice result'
         time.sleep(.5)
-    probe['wait_for']('Remembered voice', 180)
+    probe['wait_for']('Remembering voices', 180)
     screenshot('emulator-speakers-notice.png')
     tap('OK')
     wait(lambda: server().get('voice_count', 0) >= 1, 'Naming did not remember a voice on the server', 30)
@@ -203,7 +203,7 @@ def check(probe, work, output, standalone=False):
     screenshot('emulator-speakers-recognised.png')
     remembered = sum(a == {'action': 'remember', 'status': 200} for a in server().get('voice_actions', []))
     tap('Sam, recognised' + CHIP)
-    tap('Update Sam’s saved voice')
+    tap('Update Sam’s voice')
     wait(lambda: sum(a == {'action': 'remember', 'status': 200} for a in server().get('voice_actions', [])) > remembered,
          'Update saved voice did not reach the server', 45)
     tap('Sam, recognised' + CHIP)
@@ -217,6 +217,10 @@ def check(probe, work, output, standalone=False):
     tap('Close transcript')
     probe['click']('Stop recording notes')
     probe['wait_for']('Stopped', 90)
+
+    # Re-transcribe the labelled real AAC clips, preserving names and a per-turn override.
+    import runpy
+    runpy.run_path(str(Path(__file__).with_name("emulator-retranscribe-check.py")))["check"](probe, work, output, speakers=True)
 
     # Back to the one-voice asset for whatever runs next.
     adb('shell', 'am', 'force-stop', package)

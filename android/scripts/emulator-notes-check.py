@@ -156,6 +156,7 @@ def check(probe, work, output):
     log('PASS: real MediaCodec AAC kept-audio record → MediaPlayer prepare/start → natural completion')
 
     import runpy
+    runpy.run_path(str(Path(__file__).with_name("emulator-retranscribe-check.py")))["check"](probe, work, output)
     runpy.run_path(str(Path(__file__).with_name('emulator-library-check.py')))['check'](probe, work, output)
 
     # Short synthetic notes may legitimately be below the Organize minimum.

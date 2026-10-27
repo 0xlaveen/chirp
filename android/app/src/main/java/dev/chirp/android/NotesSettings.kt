@@ -24,6 +24,7 @@ internal fun NotesSettings(sessions: NotesSessions? = null, title: String? = nul
     var saver by remember { mutableStateOf(store.notesBatterySaver) }
     var keep by remember { mutableStateOf(kept.enabled) }
     var retention by remember { mutableStateOf(kept.retention) }
+    var allowRetranscribe by remember { mutableStateOf(store.notesAllowRetranscribe) }
     var keepAudio by remember { mutableStateOf(kept.keepAudio) }
     var audioBytes by remember { mutableStateOf(0L) }
     var confirmDeleteAudio by remember { mutableStateOf(false) }
@@ -80,7 +81,10 @@ internal fun NotesSettings(sessions: NotesSessions? = null, title: String? = nul
         SwitchRow("Keep audio with notes", keepAudio, { on -> keepAudio = on; kept.keepAudio = on },
             summary = "Off by default", infoTitle = "Keep audio with notes",
             infoBody = "Keeps each spoken segment next to its transcript, compressed and encrypted on this phone only, so you can replay it. " +
-                "Audio goes nowhere else.")
+                "Re-transcribe can send kept audio to your paired Chirp server when you choose it and confirm.")
+        SwitchRow("Allow re-transcribing", allowRetranscribe, { allowRetranscribe = it; store.notesAllowRetranscribe = it },
+            enabled = keepAudio || audioBytes > 0, summary = if (allowRetranscribe) "On · asks before sending audio" else "Off",
+            infoTitle = "Allow re-transcribing", infoBody = "Send kept audio to your paired Chirp server only when you choose Re-transcribe and confirm. Turning this off cancels a running re-transcription.")
         SwitchRow("Label speakers", speakers.enabled, speakers::setLabels,
             summary = if (speakers.health != null && !speakers.available) "Update Chirp on your computer to label speakers"
                 else "${if (speakers.enabled) "On" else "Off"} · who said what",
@@ -102,7 +106,7 @@ internal fun NotesSettings(sessions: NotesSessions? = null, title: String? = nul
         }
         if (speakers.health?.speakerVoices == true) ActionRow("Saved voices", { savedVoicesOpen = true })
         else SettingsItem { Text("Update Chirp on your computer to save voices", style = MaterialTheme.typography.bodySmall) }
-        if (audioBytes > 0) ActionRow("Delete kept audio (${megabytes(audioBytes)})", { confirmDeleteAudio = true }, destructive = true)
+        if (audioBytes > 0) ActionRow("Delete kept audio (${megabytes(audioBytes)})", { confirmDeleteAudio = true }, destructive = true, enabled = RetranscribeGate.owner == null)
         ActionRow("Delete all notes", { confirmDeleteAll = true }, destructive = true)
     }
     if (title != null) SettingsGroup(title, content = rows) else SettingsGroup(content = rows)
@@ -119,6 +123,7 @@ internal fun NotesSettings(sessions: NotesSessions? = null, title: String? = nul
         text = { Text("This deletes every note on this phone, including Recently Deleted and kept audio. Notes you saved as files stay where you saved them.") },
         confirmButton = { TextButton({
             confirmDeleteAll = false; audioBytes = 0
+            RetranscribeGate.owner?.cancelRetranscribe(); RetranscribeGate.rebuilds.clear()
             scope.launch { withContext(Dispatchers.IO) { kept.deleteAll() } }
         }) { Text("Delete everything") } },
         dismissButton = { TextButton({ confirmDeleteAll = false }) { Text("Cancel") } })

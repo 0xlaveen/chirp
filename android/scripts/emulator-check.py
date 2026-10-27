@@ -336,8 +336,8 @@ def main():
             if speakers_model: command += ["--speaker-model", str(speaker_model), "--speaker-model-gate", str(speaker_gate)]
             if opt.tls: command += ["--cert", str(cert), "--key", str(opt.tls_dir / "emulator-tls/key.pem")]
             command += ["--ready-delay", "2" if opt.stop_check else "0"]
-        server = subprocess.Popen(command,
-                                  env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        server_log = (work / "server.log").open("wb")
+        server = subprocess.Popen(command, env=env, stdout=server_log, stderr=subprocess.STDOUT)
         safe_capture = False
         try:
             token_path = home / ".config/chirp/token"
@@ -433,11 +433,11 @@ def main():
                 return
             if opt.speakers_check:
                 module = runpy.run_path(str(Path(__file__).with_name("emulator-speakers-check.py")))
-                module["check"](dict(_probe, adb=adb, speakers_model=speakers_model), work, output, standalone=True)
+                module["check"](dict(_probe, adb=adb, speakers_model=speakers_model, server_home=home, server_log=work / "server.log"), work, output, standalone=True)
                 return
             if opt.notes_check:
                 module = runpy.run_path(str(Path(__file__).with_name("emulator-notes-check.py")))
-                module["check"](dict(_probe, adb=adb, speakers_model=speakers_model), work, output)
+                module["check"](dict(_probe, adb=adb, speakers_model=speakers_model, server_home=home, server_log=work / "server.log"), work, output)
                 return
             if opt.learn_check:
                 runpy.run_path(str(Path(__file__).with_name("emulator-learn-check.py")))["check"](dict(_probe, adb=adb), work, output)
@@ -546,6 +546,7 @@ def main():
                 server.wait(timeout=10)
             except subprocess.TimeoutExpired:
                 server.kill(); server.wait()
+            server_log.close()
             # Cleanup must not replace the original error when the AVD itself has died.
             try:
                 adb("shell", "am", "force-stop", PACKAGE)

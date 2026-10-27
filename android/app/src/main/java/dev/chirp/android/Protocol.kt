@@ -3,12 +3,12 @@ package dev.chirp.android
 import org.json.JSONObject
 
 sealed interface ServerEvent {
-    data class Ready(val debugRetention: Boolean) : ServerEvent
+    data class Ready(val debugRetention: Boolean, val engine: String? = null) : ServerEvent
     data class Partial(val seq: Long, val text: String, val stable: String) : ServerEvent
     data class Correcting(val seq: Long, val raw: String, val profile: String) : ServerEvent
     data class Final(val text: String, val raw: String, val corrected: Boolean, val correctionError: String? = null,
                      /** Live Notes speaker labels, when `start` asked for them (`speakers.session`). */
-                     val speakers: SpeakersResult? = null) : ServerEvent
+                     val speakers: SpeakersResult? = null, val words: List<TranscriptWord>? = null, val engine: String? = null) : ServerEvent
     data class Failure(val code: String) : ServerEvent
     data object Unknown : ServerEvent
 }
@@ -21,7 +21,8 @@ data class Health(val ready: Boolean, val debugRetention: Boolean, val correctio
                   /** The server labels speakers (`start.speakers`), and its speaker model's state (`ready`, `not_downloaded`…). */
                   val notesSpeakers: Boolean = false, val speakersModel: String? = null, val speakersModelBytes: Long? = null,
                   val speakerVoices: Boolean = false, val speakersVoices: SpeakersVoicesHealth? = null,
-                  val operationDeadlines: OperationDeadlines = OperationDeadlines())
+                  val operationDeadlines: OperationDeadlines = OperationDeadlines(),
+                  val notesRetranscribe: Boolean = false, val notesContext: Boolean = false, val speechModel: String? = null)
 
 /** Effective server budgets in seconds; each absent or invalid value uses the caller's legacy timeout. */
 data class OperationDeadlines(private val seconds: Map<String, Double> = emptyMap()) {
@@ -48,9 +49,11 @@ data class OperationDeadlines(private val seconds: Map<String, Double> = emptyMa
 
 data class SpeakersVoicesHealth(val enabled: Boolean, val count: Int, val model: String)
 
+data class TranscriptWord(val text: String, val start: Double, val end: Double)
+
 object Protocol {
     fun start(correction: Boolean, profile: String = "default", instructions: String = "", prompt: String? = null,
-              speakers: String? = null, learned: LearnedPayload? = null): String {
+              speakers: String? = null, learned: LearnedPayload? = null, retranscribe: Boolean = false): String {
         require(CleanupStyles.validId(profile))
         require(speakers == null || SPEAKER_SESSION.matches(speakers))
         require(CleanupStyles.characterCount(instructions) <= CleanupStyles.MAX_INSTRUCTIONS)
@@ -59,6 +62,7 @@ object Protocol {
         .put("sample_rate", 16000).put("encoding", "pcm_s16le")
         .put("client", "android").put("correction", correction)
         .put("correction_profile", profile).put("correction_instructions", if (profile == "custom") instructions else "")
+        .apply { if (retranscribe) { put("retranscribe", true); put("word_timings", true) } }
         .apply { if (prompt != null) put("correction_prompt", prompt) }
         .apply { if (learned != null && !learned.isEmpty) put("learned", learned.wire()) }
         .apply { if (speakers != null) put("speakers", JSONObject().put("session", speakers)) }.toString()
@@ -67,16 +71,21 @@ object Protocol {
     val SPEAKER_SESSION = Regex("[A-Za-z0-9_-]{16,64}")
     const val STOP = "{\"type\":\"stop\"}"
     const val CANCEL = "{\"type\":\"cancel\"}"
+    fun stop(context: String?) = if (context == null) STOP else JSONObject().put("type", "stop").put("context", context.takeLast(500)).toString()
     fun decode(message: String): ServerEvent {
         require(message.length <= 1_000_000) { "Protocol frame too large" }
         val json = JSONObject(message)
         return when (json.getString("type")) {
-            "ready" -> ServerEvent.Ready(json.getBoolean("debug_retention"))
+            "ready" -> ServerEvent.Ready(json.getBoolean("debug_retention"), json.text("engine"))
             "partial" -> ServerEvent.Partial(json.getLong("seq"), json.getString("text"), json.optString("stable"))
             "correcting" -> ServerEvent.Correcting(json.getLong("seq"), json.getString("raw"), json.getString("profile"))
             "final" -> ServerEvent.Final(json.getString("text"), json.getString("raw"), json.getBoolean("corrected"),
                 json.optString("correction_error").takeIf { it.isNotBlank() && it != "null" },
-                json.optJSONObject("speakers")?.let(SpeakersResult::decode))
+                json.optJSONObject("speakers")?.let(SpeakersResult::decode),
+                json.optJSONArray("words")?.let { a -> (0 until a.length()).map { i -> a.getJSONObject(i).let {
+                    TranscriptWord(it.getString("text"), it.getDouble("start"), it.getDouble("end"))
+                } }.takeIf { words -> words.all { it.start.isFinite() && it.end.isFinite() && it.start >= 0 && it.end >= it.start } } },
+                json.text("engine"))
             "error" -> ServerEvent.Failure(json.getString("code")) // Never display untrusted server text.
             else -> ServerEvent.Unknown
         }
@@ -122,6 +131,8 @@ object Protocol {
             json.optJSONObject("speakers_voices")?.let { v ->
                 if (v.opt("enabled") is Boolean && v.optInt("count", -1) in 0..50)
                     SpeakersVoicesHealth(v.getBoolean("enabled"), v.getInt("count"), v.optString("model").take(128)) else null
-            }, OperationDeadlines.decode(json.optJSONObject("operation_deadlines")))
+            }, OperationDeadlines.decode(json.optJSONObject("operation_deadlines")),
+            json.optBoolean("notes_retranscribe") || json.optJSONArray("capabilities")?.let { a -> (0 until a.length()).any { a.optString(it) == "notes_retranscribe" } } == true,
+            json.optBoolean("notes_context"), json.text("speech_model"))
     }
 }
