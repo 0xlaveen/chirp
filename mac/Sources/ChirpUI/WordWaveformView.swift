@@ -19,6 +19,7 @@ struct WordWaveformView: View {
     var pulsePhase: Double?
     var shimmerPhase: Double?
     let maxWidth: CGFloat
+    @Environment(\.chirpTextScale) private var textScale
 
     static let font = NSFont.systemFont(ofSize: 15)
     static let barWidth: CGFloat = 2.5, barSpacing: CGFloat = 1.5, ribbonHeight: CGFloat = 15, ribbonGap: CGFloat = 3
@@ -29,7 +30,7 @@ struct WordWaveformView: View {
     private static let pulsePeriod = 1.1
 
     var body: some View {
-        let widths = cells.map { Self.width(of: $0.text) }
+        let widths = cells.map { Self.width(of: $0.text, scale: textScale) }
         // The shimmer masks a second copy of the ribbon, so both get the same fixed width and wrap alike.
         let sized = ribbon(widths: widths).frame(width: naturalWidth(widths: widths), alignment: .leading)
         sized
@@ -47,8 +48,8 @@ struct WordWaveformView: View {
         let layout = WordFlowLayout(spacing: Self.wordSpacing, lineSpacing: Self.lineSpacing)
         layout {
             if truncated {
-                Text("…").font(Font(Self.font)).foregroundStyle(Color.primary)
-                    .frame(height: Self.textHeight)
+                Text("…").font(.system(size: 15 * textScale)).foregroundStyle(Color.primary)
+                    .frame(height: Self.textHeight * textScale)
                     .padding(.top, Self.ribbonHeight + Self.ribbonGap)
                     .transition(.opacity)
             }
@@ -60,15 +61,15 @@ struct WordWaveformView: View {
                 }
                 WordCellView(cell: cell, width: widths[i], bars: bars(for: cell, width: widths[i]),
                              current: !polishing && i == cells.indices.last, revised: revised.contains(cell.id),
-                             animated: animated, contrast: contrast, pulsePhase: pulsePhase)
+                             animated: animated, contrast: contrast, pulsePhase: pulsePhase, textScale: textScale)
                     .transition(.asymmetric(insertion: .scale(scale: 0.6, anchor: .bottom).combined(with: .opacity),
                                             removal: .opacity))
             }
         }
     }
 
-    static func width(of word: String) -> CGFloat {
-        ceil(NSAttributedString(string: word, attributes: [.font: font]).size().width) + 1
+    static func width(of word: String, scale: CGFloat = 1) -> CGFloat {
+        ceil(NSAttributedString(string: word, attributes: [.font: NSFont.systemFont(ofSize: 15 * scale)]).size().width) + 1
     }
 
     static func gapWidth(seconds: Double) -> CGFloat { min(maxSilence, CGFloat(seconds) * silenceScale) }
@@ -82,7 +83,7 @@ struct WordWaveformView: View {
 
     /// One line's worth when it fits, else the maximum so the layout wraps.
     private func naturalWidth(widths: [CGFloat]) -> CGFloat {
-        var total: CGFloat = truncated ? Self.width(of: "…") + Self.wordSpacing : 0
+        var total: CGFloat = truncated ? Self.width(of: "…", scale: textScale) + Self.wordSpacing : 0
         for (i, cell) in cells.enumerated() {
             if i > 0 { total += Self.wordSpacing }
             if cell.gapBefore >= WordWaveform.silenceThreshold { total += Self.gapWidth(seconds: cell.gapBefore) + Self.wordSpacing }
@@ -102,6 +103,7 @@ private struct WordCellView: View {
     let animated: Bool
     let contrast: Bool
     var pulsePhase: Double?
+    var textScale: CGFloat = 1
 
     var body: some View {
         VStack(alignment: .leading, spacing: WordWaveformView.ribbonGap) {
@@ -113,10 +115,10 @@ private struct WordCellView: View {
                 ribbon(pulse: current && animated ? Self.pulse(phase: pulsePhase ?? 0.25) : 1)
             }
             Text(cell.text)
-                .font(Font(WordWaveformView.font))
+                .font(.system(size: 15 * textScale))
                 .lineLimit(1)
                 .foregroundStyle(revised ? HUDColors.change : cell.stable ? Color.primary : Color.primary.opacity(contrast ? 0.72 : 0.55))
-                .frame(width: width, height: WordWaveformView.textHeight, alignment: .leading)
+                .frame(width: width, height: WordWaveformView.textHeight * textScale, alignment: .leading)
                 .id(cell.text)
                 .transition(.opacity)
         }
@@ -149,6 +151,7 @@ private struct WordCellView: View {
 
 /// A pause between words: a faint dotted rest in the ribbon row, as wide as the silence (capped).
 private struct SilenceGapView: View {
+    @Environment(\.chirpTextScale) private var textScale
     let seconds: Double
     let contrast: Bool
 
@@ -162,7 +165,7 @@ private struct SilenceGapView: View {
             }
             .frame(width: width, height: WordWaveformView.ribbonHeight, alignment: .bottom)
             .padding(.bottom, 0.5)
-            Color.clear.frame(width: width, height: WordWaveformView.textHeight)
+            Color.clear.frame(width: width, height: WordWaveformView.textHeight * textScale)
         }
     }
 }

@@ -171,6 +171,10 @@ public final class NotesLibraryModel {
     public var toast: NotesToast?
     private var toastSerial = 0
     /// The transcript inspector (⌥⌘T) and View ▸ Show Markdown.
+    public let textSize = ChirpTextSize()
+    public var readingNote = false
+    public var confirmingPurge: NotesLibraryEntry?
+    public var sidebarFocused = false
     public var showsInspector = false
     public var showMarkdown = false
     /// Empty Recently Deleted asks once.
@@ -248,6 +252,15 @@ public final class NotesLibraryModel {
     /// Restore Previous Transcript shows: a re-transcribe kept a version, and no run holds the note.
     public func canRestoreTranscript(_ model: NotesModel) -> Bool {
         model.document.previousTranscript != nil && !model.state.isActive && !isRetranscribing(model.document.id)
+    }
+
+    /// Only confirmation can cross the irreversible purge boundary. Stale requests are harmless.
+    public func requestPurge(_ id: UUID) { confirmingPurge = deleted.first { $0.id == id } }
+    public func resolvePurge(confirm: Bool) {
+        let request = confirmingPurge
+        confirmingPurge = nil
+        guard confirm, let id = request?.id, deleted.contains(where: { $0.id == id }) else { return }
+        onPurge(id)
     }
 
     public func setInspector(_ on: Bool) {

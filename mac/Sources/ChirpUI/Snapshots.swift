@@ -1568,3 +1568,62 @@ private final class SubmenuRowView: NSView {
         }
     }
 }
+
+// Dedicated #303 review matrix. Kept separate from the canonical captures owned by other workers.
+@MainActor extension Snapshots {
+    static var modernUXScenarios: [Scenario] {
+        var scenes: [Scenario] = []
+        for large in [false, true] {
+            let type = large ? "200" : "100"
+            for narrow in [false, true] {
+                let geometry = narrow ? "760" : "1120"
+                for state in ["recording", "paused", "empty", "no-results", "error", "transcript", "deleted"] {
+                    let base = notes("modern-\(state)-\(geometry)-\(type)") { model, library in
+                        if large { for _ in 0..<5 { library.textSize.increase() } }
+                        if state == "paused" { model.state = .paused }
+                        if state == "empty" {
+                            model.state = .idle; model.document = NotesDocument(); library.notes = []; library.recordingID = nil
+                            library.selection = .note(model.document.id)
+                        }
+                        if state == "no-results" { library.query = "invoice"; library.results = [] }
+                        if state == "error" { model.state = .error("Chirp server offline — check the server connection.") }
+                        if state == "transcript" { library.showsInspector = true }
+                        if state == "deleted" {
+                            model.state = .stopped; library.recordingID = nil; library.selection = .recentlyDeleted
+                            library.deleted = [NotesLibraryEntry(id: UUID(), title: "Standup scratch", snippet: "Blocked on the staging deploy; pairing with Sam after lunch.", createdAt: notesNow, updatedAt: notesNow, deletedAt: notesNow.addingTimeInterval(-2 * 86400), audioBytes: 640_000)]
+                        }
+                    }
+                    scenes.append(Scenario(name: base.name, window: {
+                        let window = base.window!()
+                        window.setContentSize(narrow ? NotesViewMetrics.minimumSize : NotesViewMetrics.defaultSize)
+                        return window
+                    }))
+                }
+            }
+            for wave in [false, true] {
+                scenes.append(hud("modern-\(wave ? "waveform" : "listening")-\(type)") { model in
+                    if large { for _ in 0..<5 { model.textSize.increase() } }
+                    model.status = HUDStatus.listening; model.stable = sentence
+                    if wave {
+                        model.wordWaveform = true
+                        let words = demoWords(sentence, pauseAfter: [4], stableBefore: 6)
+                        model.utterance = demoLevels(for: words); model.showWords(text: sentence, words: words); model.pulsePhase = 0.25
+                    }
+                })
+            }
+            scenes.append(Scenario(name: "history-modern-\(type)", window: {
+                let model = HistoryModel()
+                model.now = { historyNow }; model.calendar = utcCalendar; model.icon = { demoIcon($0) }
+                model.show(demoHistory()); model.selection = demoHistory()[1].id
+                let size = ChirpTextSize(factor: large ? 2 : 1)
+                let window = NSWindow(contentRect: NSRect(origin: .zero, size: HistoryViewMetrics.defaultSize),
+                                      styleMask: [.titled, .closable, .resizable, .fullSizeContentView], backing: .buffered, defer: false)
+                window.isReleasedWhenClosed = false; window.toolbarStyle = .unified
+                window.contentViewController = NSHostingController(rootView: HistoryView(model: model, textSize: size))
+                window.setContentSize(HistoryViewMetrics.defaultSize)
+                return window
+            }))
+        }
+        return scenes
+    }
+}

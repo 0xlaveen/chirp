@@ -150,6 +150,8 @@ public struct HearingPart: Equatable, Sendable {
 /// controller stores just the preferences (the tab, "Structure notes", "Organize automatically" and Edit/Preview).
 @MainActor @Observable
 public final class NotesModel {
+    public let textSize = ChirpTextSize()
+    @ObservationIgnored var toggleAccessibleTask: (Int) -> Bool = { _ in false }
     public var state: NotesRecorderState = .idle
     public var document = NotesDocument()
     public var structuring: StructuringStatus = .idle
