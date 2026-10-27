@@ -36,12 +36,12 @@ internal fun HistorySettings(showOpen: Boolean = true, store: DictationHistory? 
                 "Never sent to your computer, backed up or logged. Password and incognito fields are never saved. " +
                 "Turning off stops new entries; existing dictations stay until they expire or you delete history.")
         SettingsItem {
-                Text("Keep for", style = MaterialTheme.typography.bodyMedium)
-                ChoiceChips(HistoryRetention.entries, retention, { it.label }) { option ->
-                    retention = option
-                    scope.launch { withContext(Dispatchers.IO) { history.retention = option }; changed() }
-                }
+            Text("Keep for", style = MaterialTheme.typography.bodyMedium)
+            ChoiceChips(HistoryRetention.entries, retention, { it.label }) { option ->
+                retention = option
+                scope.launch { withContext(Dispatchers.IO) { history.retention = option }; changed() }
             }
+        }
         if (showOpen) NavRow("Open history", { context.startActivity(Intent(context, HistoryActivity::class.java)) })
         ActionRow("Delete history", { confirmClear = true }, destructive = true)
     }

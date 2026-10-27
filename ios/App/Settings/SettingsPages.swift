@@ -369,15 +369,15 @@ struct PrivacyPage: View {
                               set: { on in model.preferences.privacyMode = on; model.savePreferences() })
                 }
                 SettingsItem {
-                        Text("Keep for").font(.subheadline).foregroundStyle(Color.chirp.inkMuted)
-                        ChoiceChips(options: HistoryRetention.allCases,
-                                    selection: Binding(get: { history.retention },
-                                                       set: { option in
-                                           history.retention = option
-                                           change { try $0.setRetention(option) }
-                                       }),
-                                    label: { $0.label })
-                    }
+                    Text("Keep for").font(.subheadline).foregroundStyle(Color.chirp.inkMuted)
+                    ChoiceChips(options: HistoryRetention.allCases,
+                                selection: Binding(get: { history.retention },
+                                                   set: { option in
+                                        history.retention = option
+                                        change { try $0.setRetention(option) }
+                                    }),
+                                label: { $0.label })
+                }
                 ActionRow(title: "Delete history", symbol: "trash", destructive: true) { confirmClear = true }
                     .accessibilityIdentifier("chirp.history.clear")
             }
