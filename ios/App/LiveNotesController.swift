@@ -641,10 +641,11 @@ final class LiveNotesController: ObservableObject {
 
     /// Hold-to-edit begins: paired, the server edits, no keyboard session and the microphone is permitted — then the
     /// command's own socket listens (a recording diverts its capture; otherwise the microphone opens just for it).
+    /// Pairing comes first: an unpaired phone has no server health, so ⇧⌘E would otherwise do nothing silently.
     func startVoiceEdit() async {
         await ready()
-        guard selected.voiceEdit.canStart else { return }
         guard let config = deps.server() else { notice = "Pair your computer first."; return }
+        guard selected.voiceEdit.canStart else { return }
         guard !deps.otherCaptureActive() else { notice = "End the keyboard session to edit by voice."; return }
         guard await deps.requestPermission() else { notice = SessionFailure.permission.localizedDescription; return }
         serverBox.config = config

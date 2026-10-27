@@ -442,7 +442,7 @@ struct LiveNotesControllerTests {
 
     @Test func notesShortcutTableMatchesCurrentBindings() {
         #expect(ShortcutsPage.notesShortcuts.map(\.title) == [
-"New note", "Record / Stop note", "Pause / Resume note", "Edit by voice", "Search notes", "Show or hide transcript",
+            "New note", "Record / Stop note", "Pause / Resume note", "Edit by voice", "Search notes", "Show or hide transcript",
         ])
         #expect(ShortcutsPage.notesShortcuts.map(\.keys) == ["⌘N", "⇧⌘R", "⇧⌘P", "⇧⌘E", "⌘F", "⌥⌘T"])
     }
@@ -631,7 +631,8 @@ extension LiveNotesControllerTests {
 
         await f.notes.startVoiceEdit()
         try await eventually("listening") { f.notes.voiceEditListening }
-        #expect(f.audio.isRunning && f.audio.starts == 1, "the command opens the microphone itself")
+        // The microphone opens once the command's own socket is open, a moment after "listening" shows.
+        try await eventually("the command opens the microphone itself") { f.audio.isRunning && f.audio.starts == 1 }
         try await eventually("heard") { f.notes.voiceEditStatusText == "“synthetic words”" }
 
         f.notes.finishVoiceEdit()
@@ -678,28 +679,28 @@ extension LiveNotesControllerTests {
     @Test func editByVoiceDivertsARecordingInsteadOfEnteringIt() async throws {
         let f = try fixture(); defer { f.clean() }
         await f.notes.refreshHealth()
+        // Something to edit, as in the Mac's routing test: the notes start empty, and the first segment's final only
+        // arrives when the command cuts it.
+        f.notes.edit("Plan\n\n- keep the vendor")
         await f.notes.record()
         try await eventually("recording") { f.notes.state == .recording }
         let sockets = f.values.transports.count
 
         await f.notes.startVoiceEdit()
         try await eventually("listening") { f.notes.voiceEditListening }
-        #expect(f.audio.starts == 1, "no second microphone: the recorder's capture is diverted")
         #expect(f.values.transports.count == sockets + 1, "the command has its own socket")
+        // "Listening" shows at once; the recorder hands its capture over once the command's socket is open. Sending
+        // before that would leave the recording on its own socket (a real hold is far longer than this hop).
+        let command = f.values.transports[sockets]
+        try await eventually("the recording's capture reaches the command's socket") {
+            command.sent.contains { if case .data = $0 { true } else { false } }
+        }
+        #expect(f.audio.starts == 1, "no second microphone: the recorder's capture is diverted")
 
         f.notes.finishVoiceEdit()
-        try await eventually("the command ended") {
-            if case .done = f.notes.voiceEdit { return true }
-            return f.notes.voiceEditListening == false && f.notes.voiceEditStatusText != NotesVoiceEditText.listening
-        }
-        for (i, t) in f.values.transports.enumerated() {
-            let sent = t.sent.map { if case .string(let s) = $0 { String(s.prefix(50)) } else { "data" } }
-            print("TRANSPORT \(i): sent=\(sent)")
-        }
-        print("STATE diag: text='\(f.notes.document.text)' segments=\(f.notes.document.segments.count) state=\(f.notes.state) status=\(f.notes.voiceEdit)")
-        #expect(f.notes.voiceEditNote == nil, "diagnostic: \(f.notes.voiceEditNote ?? "applied")")
         try await eventually("applied") { f.notes.showsEditedChip }
         #expect(f.notes.state == .recording, "the note records on through the command")
+        #expect(f.notes.document.text.contains("- keep the vendor") && f.notes.document.text.contains("Edited by voice: “Synthetic words.”"))
         try await eventually("a fresh notes socket") { f.values.transports.count == sockets + 2 }
 
         await f.notes.stop()
@@ -708,8 +709,8 @@ extension LiveNotesControllerTests {
         #expect(f.values.editCalls.requests.map(\.instruction) == ["Synthetic words."])
     }
 
-    /// What the note shows when the edit does not apply: the server refused to add content, nothing was heard, and
-    /// the call failed — and Cancel drops a listening command without editing anything.
+    /// What the note shows when the edit does not apply (the server refused to add content, the call failed), and
+    /// Cancel drops a listening command without editing anything.
     @Test func editByVoiceOutcomesAndCancel() async throws {
         let f = try fixture(edit: { _ in NotesEditResponse(markdown: nil, edited: false, changed: false, error: "refused", reason: "adds_content") }); defer { f.clean() }
         await f.notes.refreshHealth()
@@ -724,15 +725,28 @@ extension LiveNotesControllerTests {
         f.notes.dismissVoiceEdit()
         #expect(f.notes.voiceEditNote == nil)
 
-        // Nothing heard (the socket's final is empty): the command is dropped with a note, nothing is sent.
-        let g = try fixture(edit: { _ in NotesEditResponse(markdown: "", edited: true, changed: false) }); defer { g.clean() }
+        // The call fails: the notes stay and the note says so.
+        let e = try fixture(edit: { _ in throw URLError(.timedOut) }); defer { e.clean() }
+        await e.notes.refreshHealth()
+        e.notes.edit("One")
+        await e.notes.settleJournal()
+        await e.notes.startVoiceEdit()
+        try await eventually("listening") { e.notes.voiceEditListening }
+        e.notes.finishVoiceEdit()
+        try await eventually("failed") { e.notes.voiceEditNote?.hasPrefix("Couldn’t edit notes") == true }
+        #expect(e.notes.document.text == "One" && !e.notes.showsEditedChip && !e.audio.isRunning)
+
+        // Cancel: the command is dropped, its words go nowhere and nothing is sent.
+        let g = try fixture(); defer { g.clean() }
         await g.notes.refreshHealth()
         g.notes.edit("Two")
         await g.notes.settleJournal()
         await g.notes.startVoiceEdit()
         try await eventually("listening") { g.notes.voiceEditListening }
+        try await eventually("the microphone opened") { g.audio.isRunning }
         g.notes.cancelVoiceEdit()
-        #expect(!g.notes.voiceEditListening && !g.audio.isRunning)
+        try await eventually("dropped") { !g.notes.voiceEditListening && !g.audio.isRunning }
+        #expect(g.notes.voiceEditNote == nil, "a cancelled command leaves no note")
         #expect(g.values.editCalls.requests.isEmpty && g.notes.document.text == "Two")
     }
 

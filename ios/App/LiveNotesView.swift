@@ -253,23 +253,34 @@ struct NoteDetailView: View {
 
     /// Hold it and say what to change, let go to send (A2-4, as on Android). A quick tap latches it — tap again to
     /// send — and ⇧⌘E toggles it, as on the Mac. What is said goes to the edit and never into the transcript.
+    /// Not a `Button`: its tap action would toggle the command a second time after the press gesture already did, so
+    /// the press drives it and VoiceOver's double tap (the accessibility action) toggles it, like TalkBack on Android.
     private var commandButton: some View {
         let listening = notes.voiceEditListening
+        let enabled = listening || notes.canStartVoiceEdit
         let title = listening ? (commandPressed != nil ? "Release to send" : "Tap to send") : "Hold to edit"
-        return Button(action: notes.toggleVoiceEdit) {
-            Label(title, systemImage: listening ? "mic.fill" : "sparkles").font(.headline).lineLimit(1)
-        }
-        .buttonStyle(.bordered).buttonBorderShape(.capsule).tint(listening ? Color.chirp.record : Color.chirp.moon)
-        .disabled(!listening && !notes.canStartVoiceEdit)
-        .keyboardShortcut("e", modifiers: [.command, .shift])
-        .simultaneousGesture(DragGesture(minimumDistance: 0)
-            .onChanged { _ in if commandPressed == nil { commandPressed = Date(); notes.commandPress() } }
-            .onEnded { _ in
-                if let since = commandPressed { notes.commandRelease(held: Date().timeIntervalSince(since)) }
-                commandPressed = nil
-            })
-        .accessibilityLabel(listening ? "Send the spoken edit" : "Edit notes by voice. Hold, say the change, let go.")
-        .accessibilityIdentifier("chirp.notes.voiceEdit.button")
+        let tint = listening ? Color.chirp.record : Color.chirp.moon
+        return Label(title, systemImage: listening ? "mic.fill" : "sparkles").font(.headline).lineLimit(1)
+            .padding(.horizontal, 16).frame(minHeight: 44)
+            .foregroundStyle(tint).background(tint.opacity(0.15), in: Capsule())
+            .contentShape(Capsule()).opacity(enabled ? 1 : 0.4)
+            .gesture(DragGesture(minimumDistance: 0)
+                .onChanged { _ in if commandPressed == nil { commandPressed = Date(); notes.commandPress() } }
+                .onEnded { _ in
+                    if let since = commandPressed { notes.commandRelease(held: Date().timeIntervalSince(since)) }
+                    commandPressed = nil
+                })
+            .background {
+                // ⇧⌘E with a hardware keyboard; shortcuts need a Button, so it sits behind the control, out of sight.
+                Button("Edit by voice", action: notes.toggleVoiceEdit).keyboardShortcut("e", modifiers: [.command, .shift])
+                    .opacity(0).accessibilityHidden(true)
+            }
+            .disabled(!enabled)
+            .accessibilityElement(children: .ignore).accessibilityAddTraits(.isButton)
+            .accessibilityLabel(listening ? "Send the spoken edit" : "Edit notes by voice. Hold, say the change, let go.")
+            .accessibilityAction { notes.toggleVoiceEdit() }
+            .accessibilityShowsLargeContentViewer()
+            .accessibilityIdentifier("chirp.notes.voiceEdit.button")
     }
 
     /// Edit by voice's line above the dock: what it heard with Cancel while it listens, "Editing notes…" while it
