@@ -140,6 +140,15 @@ class SettingsStore(context: Context) {
         get() = prefs.getBoolean("phone_fallback", false)
         set(value) { prefs.edit { putBoolean("phone_fallback", value) } }
     /** Notes: a sealed recovery copy of unsaved notes, on by default. */
+    var notesAllowRetranscribe: Boolean
+        get() = prefs.getBoolean("notes_allow_retranscribe", true)
+        set(value) { prefs.edit { putBoolean("notes_allow_retranscribe", value) }; RetranscribeGate.allowed.value = value }
+    var notesRebuild: Boolean
+        get() = prefs.getBoolean("notes_rebuild", false)
+        set(value) { prefs.edit { putBoolean("notes_rebuild", value) } }
+    var notesRetranscribeInterrupted: Boolean
+        get() = prefs.getBoolean("notes_retranscribe_interrupted", false)
+        set(value) { prefs.edit(commit = true) { putBoolean("notes_retranscribe_interrupted", value) } }
     var notesRecovery: Boolean
         get() = prefs.getBoolean("notes_recovery", true)
         set(value) { prefs.edit { putBoolean("notes_recovery", value) } }
@@ -164,6 +173,7 @@ class SettingsStore(context: Context) {
             if (value == null) prefs.edit { remove("health") }
             else prefs.edit { putString("health", JSONObject().put("ok", true).put("ready", value.ready)
                 .put("debug_retention", value.debugRetention).put("engine", value.engine.orEmpty())
+                .put("notes_retranscribe", value.notesRetranscribe).put("notes_context", value.notesContext).put("speech_model", value.speechModel)
                 .put("operation_deadlines", value.operationDeadlines.json())
                 .put("correction", if (value.correctionAvailable) "available" else "off")
                 .put("correction_leaves_machine", value.correctionLeavesMachine)

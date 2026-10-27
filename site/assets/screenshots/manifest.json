@@ -281,6 +281,40 @@
       }
     ]
   },
+  "android/notes-retranscribe-consent-dark.png": {
+    "sha256": "e7f6ee1839069db82c7a9185ff371896b780ef740e73f38e9c525862f918c000",
+    "width": 411,
+    "height": 891,
+    "variants": [
+      {
+        "file": "android/notes-retranscribe-consent-dark-320.webp",
+        "width": 320,
+        "height": 694
+      },
+      {
+        "file": "android/notes-retranscribe-consent-dark-411.webp",
+        "width": 411,
+        "height": 891
+      }
+    ]
+  },
+  "android/notes-retranscribe-consent-light.png": {
+    "sha256": "3e7a1131b7b5108333ee132bbc83de7fde9f4cddb7e1ee24b18d26226e040bce",
+    "width": 411,
+    "height": 891,
+    "variants": [
+      {
+        "file": "android/notes-retranscribe-consent-light-320.webp",
+        "width": 320,
+        "height": 694
+      },
+      {
+        "file": "android/notes-retranscribe-consent-light-411.webp",
+        "width": 411,
+        "height": 891
+      }
+    ]
+  },
   "android/onboarding-pair-dark.png": {
     "sha256": "64adef7dcbcd2259b3844388d49f5fc350f99d72a630c0ee7a42f098ade2659e",
     "width": 411,

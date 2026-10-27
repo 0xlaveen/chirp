@@ -155,6 +155,7 @@ internal fun NotesLibraryScreen(
     fun delete(ids: List<String>) {
         val deletable = ids.filterNot { recording && it == liveId }
         if (deletable.isEmpty()) return
+        deletable.forEach { RetranscribeGate.owner?.cancelRetranscribeFor(it); RetranscribeGate.rebuilds.remove(it) }
         if (selected in deletable) close()
         reader.keepSession(); live.keepSession()
         selection = emptyList()
@@ -427,7 +428,8 @@ private fun NoteLibraryRow(entry: NotesIndexEntry, query: String, snippet: Strin
                             Text("☐ ${entry.openTodos} open", style = MaterialTheme.typography.bodyMedium, color = scheme.onSurfaceVariant)
                         }
                         if (entry.recovered) Text("Recovered", style = MaterialTheme.typography.bodyMedium, color = LocalChirpRoles.current.moon)
-                        if (entry.audioBytes > 0) Icon(painterResource(R.drawable.ic_mic), "Kept audio", Modifier.size(14.dp), tint = scheme.onSurfaceVariant)
+                        if (RetranscribeGate.progress?.noteId == entry.id) CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
+                        else if (entry.audioBytes > 0) Icon(painterResource(R.drawable.ic_mic), "Kept audio", Modifier.size(14.dp), tint = scheme.onSurfaceVariant)
                     }
                 }
                 if (trash && !selecting) TextButton(restore) { Text("Restore") }

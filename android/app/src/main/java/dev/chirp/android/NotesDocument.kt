@@ -23,6 +23,7 @@ internal data class NotesSegment(
     val failure: String? = null,
     /** Who said what ("Label speakers"), in order; null when the segment is not labelled. */
     val turns: List<SpeakerTurn>? = null,
+    val engine: String? = null,
 ) {
     val isGap get() = failure != null
     companion object { fun gap(id: Int, offset: Double, reason: String) = NotesSegment(id, offset, "", failure = reason) }
@@ -39,7 +40,7 @@ internal sealed interface NotesPiece {
 
 /** One change to the notes text: `[start, end)` in the text before it becomes [replacement]. */
 internal data class NotesChange(val start: Int, val end: Int, val replacement: String, val kind: Kind) {
-    enum class Kind { USER, APPEND, REORGANIZE, ORGANIZE }
+    enum class Kind { USER, APPEND, REORGANIZE, ORGANIZE, REBUILD }
     fun applied(text: String) = text.substring(0, start) + replacement + text.substring(end)
     /** Where an offset in the old text lands in the new one (inside the replaced range: after the replacement). */
     fun map(offset: Int) = when {
@@ -148,11 +149,74 @@ internal class NotesDocument(var startedAt: Long = System.currentTimeMillis(), t
 
     fun append(segment: NotesSegment) { committed += segment.copy(id = committed.size) }
 
+    var previousTranscript: PreviousTranscript? = null
+        private set
+    val transcriptEngine get() = committed.map { it.engine ?: "unknown" }.distinct().let { if (it.size == 1) it.first() else if (it.isEmpty()) "unknown" else "mixed" }
+
+    /** Replace words only; all indices, clip boundaries, roster and manual speaker overrides stay in place. */
+    fun applyRetranscription(results: Map<Int, RetranscribedSegment>, at: Long = System.currentTimeMillis()): Boolean {
+        if (results.isEmpty()) return false
+        val next = committed.map { old -> results[old.id]?.let { result ->
+            val final = result.final
+            old.copy(raw = final.raw, text = final.text, corrected = final.corrected,
+                keptOriginal = final.correctionError != null && !final.corrected, failure = null,
+                engine = result.engine, turns = reattribute(old.turns, result))
+        } ?: old }
+        previousTranscript = PreviousTranscript(at, transcriptEngine, committed.toList())
+        committed.clear(); committed.addAll(next); speakerVersion++
+        return true
+    }
+
+    fun restorePreviousTranscript(): Boolean {
+        val previous = previousTranscript ?: return false
+        previousTranscript = PreviousTranscript(System.currentTimeMillis(), transcriptEngine, committed.toList())
+        committed.clear(); committed.addAll(previous.segments); speakerVersion++
+        return true
+    }
+
+    private fun reattribute(turns: List<SpeakerTurn>?, result: RetranscribedSegment): List<SpeakerTurn>? {
+        if (turns.isNullOrEmpty()) return turns
+        val end = result.clip.offset + result.clip.duration
+        val words = result.final.words?.takeIf { it.isNotEmpty() }
+        val rawParts = Array(turns.size) { mutableListOf<String>() }
+        val durations = turns.mapIndexed { i, turn -> ((turns.getOrNull(i + 1)?.start ?: end) - turn.start).coerceAtLeast(0.0) }
+        fun proportional(text: String): List<String> {
+            val tokens = text.trim().split(Regex("\\s+")).filter { it.isNotEmpty() }
+            val total = durations.sum().takeIf { it > 0 } ?: turns.size.toDouble()
+            var cursor = 0; var elapsed = 0.0
+            return turns.indices.map { i ->
+                elapsed += if (durations.sum() > 0) durations[i] else 1.0
+                val until = if (i == turns.lastIndex) tokens.size else kotlin.math.round(tokens.size * elapsed / total).toInt().coerceIn(cursor, tokens.size)
+                tokens.subList(cursor, until).joinToString(" ").also { cursor = until }
+            }
+        }
+        if (words != null) for (word in words) {
+            val midpoint = result.clip.offset + (word.start + word.end) / 2
+            val index = turns.indices.firstOrNull { i -> midpoint >= turns[i].start && midpoint < (turns.getOrNull(i + 1)?.start ?: end) }
+                ?: turns.indices.minBy { i -> kotlin.math.abs(midpoint - turns[i].start.coerceAtMost(end)) }
+            rawParts[index] += word.text
+        }
+        val singlePerson = turns.map { it.effectivePerson }.distinct().size == 1
+        val raw = if (words == null && singlePerson) turns.indices.map { if (it == 0) result.final.raw else "" } else if (words != null) rawParts.map { it.joinToString(" ") } else proportional(result.final.raw)
+        // Timings describe raw speech; polished words are apportioned using the raw-word ownership boundaries.
+        val text = if (result.final.text == result.final.raw) raw else if (words == null && singlePerson) turns.indices.map { if (it == 0) result.final.text else "" }
+            else if (words != null) {
+                val tokens = result.final.text.trim().split(Regex("\\s+")).filter { it.isNotEmpty() }
+                var cursor = 0; var count = 0
+                turns.indices.map { i ->
+                    count += rawParts[i].size
+                    val until = if (i == turns.lastIndex) tokens.size else kotlin.math.round(tokens.size.toDouble() * count / words.size).toInt().coerceIn(cursor, tokens.size)
+                    tokens.subList(cursor, until).joinToString(" ").also { cursor = until }
+                }
+            } else proportional(result.final.text)
+        return turns.mapIndexed { i, turn -> turn.copy(text = text[i], raw = raw[i], approximate = turn.approximate || (words == null && !singlePerson)) }
+    }
+
     // Speakers
 
     /** What a segment said for structuring and fallbacks: a `Name: text` line per turn when labelled, else its text. */
     fun spoken(segment: NotesSegment) = segment.turns?.takeIf { it.isNotEmpty() }
-        ?.joinToString("\n") { roster.displayName(it.effectivePerson) + ": " + it.text } ?: segment.text
+        ?.filter { it.text.isNotBlank() }?.joinToString("\n") { roster.displayName(it.effectivePerson) + ": " + it.text } ?: segment.text
 
     /** Some segment is labelled: the transcript shows who said what. */
     val labelled get() = committed.any { !it.turns.isNullOrEmpty() }
@@ -468,7 +532,7 @@ internal class NotesDocument(var startedAt: Long = System.currentTimeMillis(), t
             lines += if (s.failure != null) stamp + "⚠︎ audio not transcribed (${s.failure})"
             else if (!turns.isNullOrEmpty()) {
                 // A line per turn: `**[00:01:05] Maya:** text`.
-                turns.joinToString("\n\n") { t ->
+                turns.filter { (if (raw) it.raw else it.text).isNotBlank() }.joinToString("\n\n") { t ->
                     "**[${timestamp(t.start)}] ${roster.displayName(t.effectivePerson)}:** " + (if (raw) t.raw else t.text) +
                         if ((t.keptOriginal || s.keptOriginal) && !raw) " _(kept original)_" else ""
                 }
@@ -500,13 +564,14 @@ internal class NotesDocument(var startedAt: Long = System.currentTimeMillis(), t
         .put("segments", JSONArray().apply {
             committed.forEach { s ->
                 put(JSONObject().put("offset", s.offset).put("raw", s.raw).put("text", s.text).put("corrected", s.corrected)
-                    .put("kept", s.keptOriginal).apply { s.failure?.let { put("failure", it) } }
+                    .put("kept", s.keptOriginal).put("engine", s.engine).apply { s.failure?.let { put("failure", it) } }
                     .apply { s.turns?.let { turns -> put("turns", JSONArray().apply { turns.forEach { put(it.toJson()) } }) } })
             }
-        }).apply { name?.let { put("name", it) }; if (roster.people.isNotEmpty()) put("people", roster.toJson()) }
+        }).apply { previousTranscript?.let { p -> put("previousTranscript", JSONObject().put("at", p.at).put("engine", p.engine)
+            .put("segments", NotesDocument().apply { p.segments.forEach(::append) }.toJson().getJSONArray("segments"))) }; name?.let { put("name", it) }; if (roster.people.isNotEmpty()) put("people", roster.toJson()) }
 
     companion object {
-        fun fromJson(json: JSONObject) = NotesDocument(json.getLong("startedAt"), json.getString("text")).apply {
+        fun fromJson(json: JSONObject): NotesDocument = NotesDocument(json.getLong("startedAt"), json.getString("text")).apply {
             typedNote = json.optBoolean("typedNote")
             name = json.optString("name").takeIf { json.has("name") }
             json.optString("uid").takeIf { it.isNotEmpty() }?.let { uid = it }
@@ -514,7 +579,11 @@ internal class NotesDocument(var startedAt: Long = System.currentTimeMillis(), t
             for (i in 0 until list.length()) list.getJSONObject(i).let { s ->
                 committed += NotesSegment(i, s.getDouble("offset"), s.getString("raw"), s.getString("text"), s.optBoolean("corrected"),
                     s.optBoolean("kept"), s.optString("failure").takeIf { s.has("failure") },
-                    s.optJSONArray("turns")?.let { a -> (0 until a.length()).map { SpeakerTurn.fromJson(a.getJSONObject(it)) } })
+                    s.optJSONArray("turns")?.let { a -> (0 until a.length()).map { SpeakerTurn.fromJson(a.getJSONObject(it)) } }, s.text("engine"))
+            }
+            json.optJSONObject("previousTranscript")?.let { previous ->
+                val copy = JSONObject(json.toString()).apply { remove("previousTranscript"); put("segments", previous.getJSONArray("segments")) }
+                previousTranscript = PreviousTranscript(previous.getLong("at"), previous.optString("engine", "unknown"), fromJson(copy).segments.toList())
             }
             roster = SpeakerRoster.fromJson(json.optJSONArray("people"))
             tailStart = json.getInt("tailStart").coerceIn(0, text.length)
@@ -586,3 +655,6 @@ internal class NotesDocument(var startedAt: Long = System.currentTimeMillis(), t
         }
     }
 }
+
+internal data class PreviousTranscript(val at: Long, val engine: String, val segments: List<NotesSegment>)
+internal data class RetranscribedSegment(val clip: NotesAudioClip, val final: ServerEvent.Final, val engine: String?)

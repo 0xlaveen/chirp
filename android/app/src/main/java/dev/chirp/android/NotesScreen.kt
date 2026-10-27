@@ -12,6 +12,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
@@ -115,6 +116,7 @@ internal fun NotesScreen(model: NotesModel, record: () -> Unit, copy: () -> Unit
     if (transcript && !externalTranscript) ModalBottomSheet({ transcript = false }, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         TranscriptPane(model, Modifier.fillMaxWidth().fillMaxHeight(.85f).padding(horizontal = 24.dp), close = { transcript = false })
     }
+    RetranscribeSheet(model)
     if (model.nameSpeakersOpen) NameSpeakersSheet(model) { model.nameSpeakersOpen = false }
     model.voiceNotice?.let { name ->
         AlertDialog(onDismissRequest = model::acknowledgeVoiceNotice, title = { Text("Remembering voices") },
@@ -144,6 +146,7 @@ internal fun NotesScreen(model: NotesModel, record: () -> Unit, copy: () -> Unit
             Column(Modifier.fillMaxSize()) {
                 NotesTopBar(model, editing, gutter, edit = { if (editing) read() else startEditing(null) }, menu,
                     renaming = renaming, rename = { renaming = it }, back = back)
+                RetranscribeBanner(model)
                 if (recordingElsewhere != null) AssistChip(jumpToRecording, modifier = Modifier.padding(horizontal = gutter),
                     label = { Text("Recording · ${recordingElsewhere.displayTitle} · ${recordingElsewhere.elapsedText}", maxLines = 1, overflow = TextOverflow.Ellipsis) },
                     leadingIcon = { Ripple(recordingElsewhere.level.toFloat(), Modifier.size(20.dp)) })
@@ -248,7 +251,7 @@ private fun NotesMenu(model: NotesModel, actions: NotesMenuActions) {
                     trailingIcon = { Switch(on, null, Modifier.clearAndSetSemantics { }) })
             if (model.reorganizing !is Reorganizing.Unavailable) {
                 item("Organize", R.drawable.ic_sparkle, model.canOrganize) { model.organize() }
-                if (model.canUndo) item("Undo organize", R.drawable.ic_undo) { model.undo() }
+                if (model.canUndo && !model.canUndoRebuild) item("Undo organize", R.drawable.ic_undo) { model.undo() }
             }
             if (model.structureAvailable) toggle("Structure notes", model.structureEnabled, model.structureHost?.let { "Sends text to $it" }) { model.setStructure(it) }
             if (model.reorganizing !is Reorganizing.Unavailable) toggle("Organize automatically", model.auto) { model.setAuto(it) }
@@ -259,8 +262,11 @@ private fun NotesMenu(model: NotesModel, actions: NotesMenuActions) {
             item("Export Markdown", R.drawable.ic_download, model.hasContent, run = actions.save)
             HorizontalDivider()
             item("Rename", R.drawable.ic_edit, run = actions.rename)
+            if (model.canRetranscribe) item("Re-transcribe…", R.drawable.ic_mic) { model.askRetranscribe() }
+            if (model.document.previousTranscript != null && !model.retranscribing && !model.state.active) item("Restore previous transcript", R.drawable.ic_undo) { model.restoreTranscript() }
+            if (model.canUndoRebuild) item("Undo rebuild", R.drawable.ic_undo) { model.undo() }
             if (bytes > 0) {
-                item("Delete audio", R.drawable.ic_delete, summary = "${megabytes(bytes)} on this phone", destructive = true) { confirmAudio = true }
+                item("Delete audio", R.drawable.ic_delete, enabled = !model.retranscribing, summary = "${megabytes(bytes)} on this phone", destructive = true) { confirmAudio = true }
             }
             item("Notes settings", R.drawable.ic_settings, run = actions.settings)
             // Into Recently Deleted. The library shows Undo. A recording stays until it is stopped.
@@ -402,7 +408,7 @@ private fun Notice(text: String) {
 @Composable
 private fun RecordButton(model: NotesModel, onClick: () -> Unit) {
     val scheme = MaterialTheme.colorScheme
-    Surface(onClick, Modifier.heightIn(min = 64.dp).semantics { contentDescription = if (model.hasContent || model.elapsed > 0) "Continue recording" else "Record notes" }, enabled = !model.busy, shape = CircleShape,
+    Surface(onClick, Modifier.heightIn(min = 64.dp).semantics { contentDescription = if (model.hasContent || model.elapsed > 0) "Continue recording" else "Record notes" }, enabled = !model.busy && !model.retranscribing, shape = CircleShape,
         color = scheme.primary, contentColor = scheme.onPrimary, shadowElevation = 6.dp) {
         Row(Modifier.padding(start = 22.dp, end = 26.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             Icon(painterResource(R.drawable.ic_record), null, Modifier.size(22.dp), tint = scheme.onPrimary)
@@ -491,13 +497,16 @@ internal fun TranscriptPane(model: NotesModel, modifier: Modifier, titled: Boole
     val playbackFailed by (player?.failed ?: remember { kotlinx.coroutines.flow.MutableStateFlow(false) }).collectAsState()
     LifecycleStartEffect(player) { onStopOrDispose { player?.stop() } }
     Column(modifier) {
-        Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+        androidx.compose.foundation.layout.FlowRow(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
             if (titled) Text("Transcript", Modifier.semantics { heading() }, style = MaterialTheme.typography.titleSmall, color = scheme.onSurfaceVariant)
             Spacer(Modifier.weight(1f))
-            if (model.document.labelled) TextButton({ model.nameSpeakersOpen = true }) { Text("Name speakers") }
+            if (model.canRetranscribe) TextButton({ model.askRetranscribe() }) { Text("Re-transcribe…") }
+            if (model.document.previousTranscript != null && !model.retranscribing && !model.state.active) TextButton(model::restoreTranscript) { Text("Restore previous transcript") }
+            if (model.document.labelled && !model.retranscribing) TextButton({ model.nameSpeakersOpen = true }) { Text("Name speakers") }
             FilterChip(model.raw, { model.raw = !model.raw }, label = { Text("Show raw") })
             if (close != null) IconButton(close) { Icon(painterResource(R.drawable.ic_close), "Close transcript") }
         }
+        Text("Transcribed with ${model.document.transcriptEngine}", style = MaterialTheme.typography.bodySmall, color = scheme.onSurfaceVariant)
         if (playbackFailed) Text("Couldn’t play kept audio. Try another segment.", Modifier.padding(vertical = 8.dp), color = scheme.error, style = MaterialTheme.typography.bodyMedium)
         val document = model.document
         val roster = document.roster
@@ -519,7 +528,12 @@ internal fun TranscriptPane(model: NotesModel, modifier: Modifier, titled: Boole
                 val boundary = document.boundaries.firstOrNull { it.offset == segment.offset }
                 if (boundary != null) Text("Continued · " + java.text.SimpleDateFormat("MMM d, h:mm a", locale).format(java.util.Date(boundary.time)),
                     Modifier.padding(vertical = 8.dp), style = MaterialTheme.typography.labelMedium, color = scheme.onSurfaceVariant)
-                Row(Modifier.animateItem(fadeInSpec = tween(300), placementSpec = null).clip(MaterialTheme.shapes.medium)
+                Column {
+                if (clip != null && model.canRetranscribe && segment.isGap) TextButton({ model.askRetranscribe(segment.id) }) { Text("Try again") }
+                var segmentMenu by remember { mutableStateOf(false) }
+                Box {
+                DropdownMenu(segmentMenu && model.canRetranscribe, { segmentMenu = false }) { DropdownMenuItem({ Text("Re-transcribe…") }, { segmentMenu = false; model.askRetranscribe(segment.id) }) }
+                Row(Modifier.combinedClickable(onClick = {}, onLongClick = { if (clip != null && model.canRetranscribe) segmentMenu = true }).animateItem(fadeInSpec = tween(300), placementSpec = null).clip(MaterialTheme.shapes.medium)
                     .background(if (active) scheme.secondaryContainer else androidx.compose.ui.graphics.Color.Transparent).padding(8.dp)
                     .semantics { if (active) stateDescription = "Playing" }, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     if (clip != null) IconButton({ if (active) player?.stop() else player?.play(document.uid, segment.id) }, Modifier.size(48.dp)) {
@@ -532,9 +546,10 @@ internal fun TranscriptPane(model: NotesModel, modifier: Modifier, titled: Boole
                     if (failure != null) Text("⚠︎ audio not transcribed ($failure)", color = scheme.error, style = MaterialTheme.typography.bodyMedium)
                     else if (!turns.isNullOrEmpty()) Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         turns.forEachIndexed { i, turn ->
+                            if ((if (model.raw) turn.raw else turn.text).isBlank()) return@forEachIndexed
                             var menu by remember { mutableStateOf(false) }
                             Box {
-                                SpeakerChip(roster.displayName(turn.effectivePerson), roster.colorIndex(turn.effectivePerson), { menu = true },
+                                SpeakerChip(roster.displayName(turn.effectivePerson), roster.colorIndex(turn.effectivePerson), { if (!model.retranscribing) menu = true },
                                     recognized = roster.person(roster.resolve(turn.effectivePerson))?.recognized != null)
                                 SpeakerMenu(menu, { menu = false }, roster, turn.effectivePerson, rename = { renaming = roster.resolve(turn.effectivePerson) },
                                     merge = { into -> model.mergeSpeaker(turn.effectivePerson, into) }, separate = model::separateSpeaker,
@@ -548,6 +563,8 @@ internal fun TranscriptPane(model: NotesModel, modifier: Modifier, titled: Boole
                     }
                     else Text((if (model.raw) segment.raw else segment.text) + if (segment.keptOriginal && !model.raw) " (kept original)" else "",
                         modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+                }
+                }
                 }
             }
             if (document.livePartial.isNotBlank()) item(key = "partial") {

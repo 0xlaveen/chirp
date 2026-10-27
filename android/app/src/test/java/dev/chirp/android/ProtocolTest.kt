@@ -16,7 +16,7 @@ class ProtocolTest {
         assertFalse(start.has("token"))
     }
     @Test fun `decode all events and tolerate additive fields`() {
-        assertEquals(ServerEvent.Ready(true), Protocol.decode("""{"type":"ready","debug_retention":true,"engine":"fake"}"""))
+        assertEquals(ServerEvent.Ready(true, "fake"), Protocol.decode("""{"type":"ready","debug_retention":true,"engine":"fake"}"""))
         assertEquals(ServerEvent.Partial(9, "synthetic text", "synthetic"), Protocol.decode("""{"type":"partial","seq":9,"text":"synthetic text","stable":"synthetic"}"""))
         assertEquals(ServerEvent.Final("Synthetic.", "synthetic", true), Protocol.decode("""{"type":"final","text":"Synthetic.","raw":"synthetic","corrected":true,"timings_ms":{}}"""))
         assertEquals(ServerEvent.Failure("auth"), Protocol.decode("""{"type":"error","code":"auth","message":"never shown"}"""))

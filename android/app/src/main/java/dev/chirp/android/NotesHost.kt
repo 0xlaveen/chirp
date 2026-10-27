@@ -40,7 +40,7 @@ internal object NotesSessionHolder : ViewModelStoreOwner {
 
     fun model(host: ComponentActivity, create: () -> NotesModel): NotesModel {
         // A new process image (each Robolectric test) never inherits a session from the last.
-        if (app !== host.application) { clear(); hosts.clear(); shown.clear(); app = host.application }
+        if (app !== host.application) { clear(force = true); hosts.clear(); shown.clear(); app = host.application }
         if (hosts.add(host)) host.lifecycle.addObserver(object : DefaultLifecycleObserver {
             override fun onDestroy(owner: LifecycleOwner) {
                 hosts.remove(host); shown.remove(host)
@@ -61,7 +61,7 @@ internal object NotesSessionHolder : ViewModelStoreOwner {
     /** Main thread only: a loaded note must be edited in its model, even when its screen is hidden. */
     fun owner(id: String): NotesModel? = listOfNotNull(current, browsing).firstOrNull { it.document.uid == id }
 
-    private fun clear() { current = null; browsing = null; viewModelStore.clear() }
+    private fun clear(force: Boolean = false) { if (!force && RetranscribeGate.owner != null) return; current = null; browsing = null; viewModelStore.clear() }
 
     /** The notes are on screen somewhere; the battery saver may quiet them only when no host shows them. */
     fun visible(model: NotesModel, host: Any, on: Boolean) {

@@ -178,3 +178,61 @@ internal object NotesAudioIo {
     private val executor = Executors.newSingleThreadExecutor { Thread(it, "chirp-notes-audio").apply { isDaemon = true } }
     fun run(work: () -> Unit) { executor.execute { try { work() } catch (_: Exception) { /* Best effort, never logged. */ } } }
 }
+
+/** Decrypted AAC in, 16 kHz mono little-endian PCM16 out. No plaintext file is needed. */
+internal fun interface AudioDecoder {
+    fun decode(encoded: ByteArray): ByteArray
+}
+
+internal class MediaCodecAacDecoder : AudioDecoder {
+    override fun decode(encoded: ByteArray): ByteArray {
+        val source = BytesDataSource(encoded)
+        val extractor = android.media.MediaExtractor()
+        var codec: MediaCodec? = null
+        try {
+            extractor.setDataSource(source)
+            val track = (0 until extractor.trackCount).first { extractor.getTrackFormat(it).getString(MediaFormat.KEY_MIME)?.startsWith("audio/") == true }
+            extractor.selectTrack(track)
+            val format = extractor.getTrackFormat(track)
+            val decoder = MediaCodec.createDecoderByType(requireNotNull(format.getString(MediaFormat.KEY_MIME))).also { codec = it }
+            decoder.configure(format, null, null, 0)
+            decoder.start()
+            var outputFormat = format
+            var ended = false
+            val output = java.io.ByteArrayOutputStream()
+            val info = MediaCodec.BufferInfo()
+            val deadline = System.nanoTime() + 120_000_000_000L
+            while (true) {
+                check(!Thread.currentThread().isInterrupted && System.nanoTime() < deadline) { "decode timeout" }
+                if (!ended) {
+                    val index = decoder.dequeueInputBuffer(10_000)
+                    if (index >= 0) {
+                        val buffer = requireNotNull(decoder.getInputBuffer(index)).apply { clear() }
+                        val count = extractor.readSampleData(buffer, 0)
+                        if (count < 0) { decoder.queueInputBuffer(index, 0, 0, 0, MediaCodec.BUFFER_FLAG_END_OF_STREAM); ended = true }
+                        else { decoder.queueInputBuffer(index, 0, count, extractor.sampleTime, 0); extractor.advance() }
+                    }
+                }
+                when (val index = decoder.dequeueOutputBuffer(info, 10_000)) {
+                    MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> outputFormat = decoder.outputFormat
+                    else -> if (index >= 0) {
+                        decoder.getOutputBuffer(index)?.let { buffer ->
+                            buffer.position(info.offset); buffer.limit(info.offset + info.size)
+                            val bytes = ByteArray(info.size); buffer.get(bytes); output.write(bytes); bytes.fill(0)
+                        }
+                        decoder.releaseOutputBuffer(index, false)
+                        check(output.size() <= 32_000 * 125) { "clip too long" }
+                        if (info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0) break
+                    }
+                }
+            }
+            // Kept clips are encoded at 16 kHz mono; reject malformed/unexpected formats rather than send corrupt audio.
+            check(outputFormat.getInteger(MediaFormat.KEY_SAMPLE_RATE) == 16000 && outputFormat.getInteger(MediaFormat.KEY_CHANNEL_COUNT) == 1)
+            check(!outputFormat.containsKey(MediaFormat.KEY_PCM_ENCODING) || outputFormat.getInteger(MediaFormat.KEY_PCM_ENCODING) == android.media.AudioFormat.ENCODING_PCM_16BIT)
+            return output.toByteArray().also { check(it.isNotEmpty() && it.size % 2 == 0) }
+        } finally {
+            try { codec?.stop() } catch (_: Exception) { }
+            codec?.release(); extractor.release(); source.close()
+        }
+    }
+}

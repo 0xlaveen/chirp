@@ -135,6 +135,7 @@ internal class NetworkHousekeeping(
 interface ImeTransport {
     /** Optional versioned preferences for this utterance, set before start. */
     fun learned(payload: LearnedPayload?) {}
+    fun retranscription(context: String?) {}
     fun connect()
     fun start(correction: Boolean, profile: String, instructions: String, prompt: String? = null): Boolean = start(correction)
     /** Live Notes: [speakers] is the note's speaker session (labels on), else null. */
@@ -218,7 +219,9 @@ class StreamTransport(
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
                 // An HTTP response means the Mac answered; only a missing one says anything about reachability.
                 failureKind = if (response == null) ConnectionFailure.classify(t) else ConnectionFailure.Kind.OTHER
-                dispatch { if (!closed && attempt == id) failed() }
+                dispatch { if (!closed && attempt == id) {
+                    if (retranscribe && response?.code == 401) { event(ServerEvent.Failure("auth")); close() } else failed()
+                } }
             }
             override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
                 webSocket.close(code, null)
@@ -226,6 +229,9 @@ class StreamTransport(
             }
         })
     }
+    private var retranscribe = false
+    private var retranscribeContext: String? = null
+    override fun retranscription(context: String?) { retranscribe = true; retranscribeContext = context }
     private var learnedPayload: LearnedPayload? = null
     override fun learned(payload: LearnedPayload?) { learnedPayload = payload }
     override fun start(correction: Boolean, profile: String, instructions: String, prompt: String?): Boolean =
@@ -242,7 +248,7 @@ class StreamTransport(
         return !closed
     }
     private fun sendStart() {
-        startSent = socket?.send(Protocol.start(correction, profile, instructions, prompt, speakers, learnedPayload)) == true
+        startSent = socket?.send(Protocol.start(correction, profile, instructions, prompt, speakers, learnedPayload, retranscribe)) == true
         if (!startSent) failed()
     }
     private fun failed() {
@@ -259,7 +265,7 @@ class StreamTransport(
         if (ws.queueSize() + bytes.size > maxQueued) return false // Bound network backpressure as well.
         return ws.send(bytes.toByteString())
     }
-    override fun stop(): Boolean = active && ready && socket?.send(Protocol.STOP) == true
+    override fun stop(): Boolean = active && ready && socket?.send(Protocol.stop(retranscribeContext)) == true
 
     /** Cancel retires the socket: v1 has no cancel acknowledgement or session IDs on finals. */
     override fun close(cancel: Boolean, immediate: Boolean) {

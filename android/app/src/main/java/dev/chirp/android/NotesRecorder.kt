@@ -130,6 +130,7 @@ internal class NotesRecorder(
         var offset = 0.0
         var end: Double? = null
         var partial = ""
+        var engine: String? = null
         var correcting = false
         var ready = false
         /** Finalize came before Ready (a pause or cut right after the swap): `stop` goes out with Ready. */
@@ -184,6 +185,8 @@ internal class NotesRecorder(
     private var stoppingSince: Long? = null
     /** The text before the last applied reorganize or Organize, while nothing else changed it since. */
     private var undo: Pair<String, Int>? = null
+    var undoKind = NotesChange.Kind.ORGANIZE
+        private set
     private var organizeBase: String? = null
     private val waiters = mutableListOf<Pair<() -> Boolean, CompletableDeferred<Unit>>>()
     /** Voice edit: the spoken command's socket while capture is diverted to it, the edit waiting for the pass slot, and the undo. */
@@ -430,7 +433,7 @@ internal class NotesRecorder(
         if (segment.seq >= 0 && segments[segment.seq] !== segment) return
         when (event) {
             is ServerEvent.Ready -> {
-                debugRetention = event.debugRetention; sawReady = true; segment.ready = true
+                segment.engine = event.engine; debugRetention = event.debugRetention; sawReady = true; segment.ready = true
                 if (!segment.buffer.ready()) { lost(segment); return }
                 if (segment.stopOnReady && !segment.transport.stop()) { segmentFailed(segment, "connection closed"); return }
                 if (state == State.STARTING && segment.seq == current) { resuming = false; state = State.RECORDING }
@@ -455,7 +458,7 @@ internal class NotesRecorder(
                 val kept = options.correction && !event.corrected && event.correctionError != null
                 failureStreak = 0
                 event.speakers?.let { labels[segment.seq] = it }
-                finish(segment.seq, if (text.isEmpty()) null else NotesSegment(segment.seq, segment.offset, raw.ifEmpty { text }, text, event.corrected, kept))
+                finish(segment.seq, if (text.isEmpty()) null else NotesSegment(segment.seq, segment.offset, raw.ifEmpty { text }, text, event.corrected, kept, engine = event.engine ?: segment.engine))
             }
             is ServerEvent.Failure -> segmentFailed(segment, friendly(event.code))
             ServerEvent.Unknown -> Unit
@@ -566,6 +569,32 @@ internal class NotesRecorder(
     }
 
     /** Restores the text from before the last applied reorganize or Organize, as the user's own edit. */
+    /** A detached rebuild uses live recording’s bounded windows, reject splitting, outlines and fallback blocks. */
+    suspend fun rebuildNotes(source: NotesDocument): String? {
+        val windows = mutableListOf<String>()
+        var window = ""
+        for (segment in source.segments.filter { !it.isGap && it.text.isNotBlank() }) {
+            val line = source.spoken(segment)
+            if (window.isNotEmpty() && (window + "\n" + line).scalars > NotesDocument.MAX_WINDOW_CHARS) {
+                windows += window; window = ""
+            }
+            window += (if (window.isEmpty()) "" else "\n") + line
+        }
+        if (window.isNotEmpty()) windows += window
+        val pieces = mutableListOf<NotesPiece>()
+        for ((index, transcript) in windows.withIndex()) {
+            pieces += structurePieces(transcript, NotesDocument.capOutline(headings(pieces)), index == windows.lastIndex, 0, PieceOutcome())
+        }
+        return if (pieces.none { it is NotesPiece.Markdown }) null else NotesDocument.render(pieces)
+    }
+
+    fun applyRebuild(text: String) {
+        val before = document.text
+        val change = NotesDocument.diff(before, text, NotesChange.Kind.REBUILD) ?: return
+        document.userEdit(change.start, change.end, change.replacement)
+        pending += change; undo = before to document.version; undoKind = NotesChange.Kind.REBUILD; changed()
+    }
+
     fun undoOrganize() {
         val (text, version) = undo ?: return
         if (version != document.version) return
@@ -937,7 +966,7 @@ internal class NotesRecorder(
             }
             endPass()
             val base = organizeBase
-            if (base != null && base != document.text) undo = base to document.version
+            if (base != null && base != document.text) { undo = base to document.version; undoKind = NotesChange.Kind.ORGANIZE }
             reorganizeState = when {
                 conflict -> Reorganizing.Conflict
                 reorganizeState is Reorganizing.Applied && failures.isEmpty() -> reorganizeState
@@ -964,7 +993,7 @@ internal class NotesRecorder(
                 val change = document.applyReorganize(response, request)
                 if (change != null) {
                     dropHeld(); publish(change)
-                    undo = (organizeBase ?: base) to document.version
+                    undo = (organizeBase ?: base) to document.version; undoKind = NotesChange.Kind.ORGANIZE
                     reorganizeState = Reorganizing.Applied(now())
                 } else reorganizeState = Reorganizing.Idle
             }
