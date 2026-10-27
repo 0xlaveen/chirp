@@ -760,61 +760,61 @@
     ]
   },
   "mac/hud-flow-3-diff-dark.png": {
-    "sha256": "d0ad0fda73d594bbb75e949877c78f64acd67356f4670fcbeb10a76d02dce048",
+    "sha256": "646d5f3d71cd535cd79ed1549400e1c41ee10a7239af1a9987eba8ce540d184b",
     "width": 1000,
-    "height": 198,
+    "height": 200,
     "variants": [
       {
         "file": "mac/hud-flow-3-diff-dark-320.webp",
         "width": 320,
-        "height": 63
+        "height": 64
       },
       {
         "file": "mac/hud-flow-3-diff-dark-640.webp",
         "width": 640,
-        "height": 127
+        "height": 128
       },
       {
         "file": "mac/hud-flow-3-diff-dark-960.webp",
         "width": 960,
-        "height": 190
+        "height": 192
       },
       {
         "file": "mac/hud-flow-3-diff-dark-1000.webp",
         "width": 1000,
-        "height": 198
+        "height": 200
       }
     ]
   },
   "mac/hud-flow-3-diff-light.png": {
-    "sha256": "eb0fae36889cb79e172334f20b7089aefce5c1c4f4e4f5d58df2303333149816",
+    "sha256": "818ba9075290239362e9cecaa24f23c36163a74215bc18f5bd5145a6cd0e310b",
     "width": 1000,
-    "height": 198,
+    "height": 200,
     "variants": [
       {
         "file": "mac/hud-flow-3-diff-light-320.webp",
         "width": 320,
-        "height": 63
+        "height": 64
       },
       {
         "file": "mac/hud-flow-3-diff-light-640.webp",
         "width": 640,
-        "height": 127
+        "height": 128
       },
       {
         "file": "mac/hud-flow-3-diff-light-960.webp",
         "width": 960,
-        "height": 190
+        "height": 192
       },
       {
         "file": "mac/hud-flow-3-diff-light-1000.webp",
         "width": 1000,
-        "height": 198
+        "height": 200
       }
     ]
   },
   "mac/hud-listening-dark.png": {
-    "sha256": "e1dceed9624c8442d62559ed2227dedaf016c14305c7dbf959ef0331e290c65e",
+    "sha256": "50dc6498f28c8b257c109860fe7b59ce41d776284195bd87040b7aa226977977",
     "width": 1000,
     "height": 236,
     "variants": [
@@ -841,7 +841,7 @@
     ]
   },
   "mac/hud-listening-light.png": {
-    "sha256": "2e6fa1b4b04b97ec69053d131739965715a89e51faf9b03b1f96225921a0ac4c",
+    "sha256": "bf5d189e3721bf4dde33d6ea4257d6ce0aa098b4d77e070cafe5f1f2a948553c",
     "width": 1000,
     "height": 236,
     "variants": [
