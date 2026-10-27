@@ -229,6 +229,30 @@ public protocol WatchedField: AnyObject {
     var isSecure: Bool { get }
 }
 
+/// Whether a committed dictation's field is watched, every gate in order. An AX write and a paste go through the same
+/// gates; only what passes them may be looked for in the field (and only then is a Chromium or Electron app asked to
+/// expose it). The gate names go to the log.
+public enum LearnWatchPlan: Sendable, Equatable {
+    case skip(gate: String)
+    /// A verified AX write that said where it went.
+    case watch(NSRange)
+    /// A paste, or an AX write that was not confirmed or gave no range: look for it in the field.
+    case find
+
+    public static func plan(learningEnabled: Bool, historyEnabled: Bool, isPrivate: Bool, excluded: Bool, secureField: Bool,
+                            outcome: InsertionOutcome, axRange: NSRange?) -> LearnWatchPlan {
+        guard learningEnabled else { return .skip(gate: historyEnabled ? "learningOff" : "historyOff") }
+        guard !isPrivate else { return .skip(gate: "private") }
+        guard !excluded else { return .skip(gate: "excludedApp") }
+        guard !secureField else { return .skip(gate: "secure") }
+        switch outcome {
+        case .inserted(.ax): return axRange.map(LearnWatchPlan.watch) ?? .find
+        case .inserted(.paste), .insertedUnverified: return .find
+        case .inserted(.copy), .copied, .refusedSecure: return .skip(gate: "notInserted")
+        }
+    }
+}
+
 /// A plain in-memory text field: the test-mode stand-in for an app's field (unit tests and `--learn-selftest`).
 @MainActor
 public final class TestTextField: WatchedField {
@@ -450,7 +474,8 @@ public final class EditWatcher {
             activated = try await store.observe(corrections, bundleID: edit.bundleID, appName: edit.appName,
                                                 inserted: edit.inserted, edited: edit.edited, said: edit.raw, explicit: explicit)
         } catch {
-            chirpLog.error("learn store failed: \(String(describing: error), privacy: .public)")
+            let e = error as NSError   // the domain and code only: an error's description may quote a value
+            chirpLog.error("learn store failed domain=\(e.domain, privacy: .public) code=\(e.code, privacy: .public)")
         }
         await reload()
         let counts = corrections.map { c in items.first { LearnedStore.same($0, c, edit.bundleID) }.map { "\($0.state.rawValue):\($0.count)" } ?? "lost" }

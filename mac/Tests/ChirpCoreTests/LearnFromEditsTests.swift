@@ -503,3 +503,65 @@ struct EditRegionPasteTests {
         #expect(!EditRegion.holds(before: "ship it", after: "", range: NSRange(location: 0, length: 7)))
     }
 }
+
+/// Every gate holds for a paste exactly as for an AX write; only a dictation that passes them all may be looked for in
+/// its field (the one case where a Chromium or Electron app is asked to expose it).
+struct LearnWatchPlanTests {
+    private func plan(learning: Bool = true, history: Bool = true, isPrivate: Bool = false, excluded: Bool = false,
+                      secure: Bool = false, _ outcome: InsertionOutcome, range: NSRange? = nil) -> LearnWatchPlan {
+        LearnWatchPlan.plan(learningEnabled: learning, historyEnabled: history, isPrivate: isPrivate, excluded: excluded,
+                            secureField: secure, outcome: outcome, axRange: range)
+    }
+
+    @Test func everyGateAppliesToEveryInsertion() {
+        let r = NSRange(location: 0, length: 3)
+        for (outcome, range) in [(InsertionOutcome.inserted(.ax), r), (.inserted(.ax), nil), (.inserted(.paste), nil),
+                                 (.insertedUnverified, nil)] as [(InsertionOutcome, NSRange?)] {
+            #expect(plan(learning: false, history: false, outcome, range: range) == .skip(gate: "historyOff"))
+            #expect(plan(learning: false, outcome, range: range) == .skip(gate: "learningOff"))
+            #expect(plan(isPrivate: true, outcome, range: range) == .skip(gate: "private"))
+            #expect(plan(excluded: true, outcome, range: range) == .skip(gate: "excludedApp"))
+            #expect(plan(secure: true, outcome, range: range) == .skip(gate: "secure"))
+        }
+    }
+
+    @Test func onlyAnInsertionThatPassedIsWatchedOrLookedFor() {
+        let r = NSRange(location: 4, length: 2)
+        #expect(plan(.inserted(.ax), range: r) == .watch(r))
+        #expect(plan(.inserted(.ax)) == .find)
+        #expect(plan(.inserted(.paste)) == .find)
+        #expect(plan(.insertedUnverified) == .find)
+        #expect(plan(.copied) == .skip(gate: "notInserted"))
+        #expect(plan(.inserted(.copy)) == .skip(gate: "notInserted"))
+        #expect(plan(.refusedSecure) == .skip(gate: "notInserted"))
+    }
+}
+
+@MainActor struct EditWatcherPasteGateTests {
+    @Test func useRawOrAPrivateSessionStopsThePasteSearch() async {
+        let clock = EditClock()
+        let w = EditWatcher(window: .seconds(60), interval: .milliseconds(400), sleep: { _ in await clock.sleep() })
+        let field = TestTextField()
+        let search = Task { @MainActor in await w.watchPasted({ field }, inserted: "hello", raw: "", bundleID: nil, appName: nil) }
+        await clock.tick()
+        w.cancel()   // Use raw, or a private session turned on: both cancel the watcher
+        field.insert("hello")
+        await clock.tick()
+        #expect(await search.value == false)
+        #expect(!w.isWatching)
+    }
+
+    @Test func aSecureFieldIsNeverReadOnThePastePath() async {
+        let w = EditWatcher(sleep: { _ in await Task.yield() })
+        final class Probe: WatchedField {
+            var reads = 0
+            func value() -> String? { reads += 1; return "hunter two" }
+            func selection() -> NSRange? { NSRange(location: 10, length: 0) }
+            var isFocused: Bool { true }
+            var isSecure: Bool { true }
+        }
+        let probe = Probe()
+        #expect(await w.watchPasted({ probe }, inserted: "hunter two", raw: "", bundleID: nil, appName: nil) == false)
+        #expect(probe.reads == 0 && !w.isWatching)
+    }
+}

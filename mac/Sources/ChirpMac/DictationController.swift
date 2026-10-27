@@ -637,15 +637,12 @@ extension DictationController {
         guard let learning else { return }
         let target = self.target, app = target.bundleID ?? "-"
         func skip(_ gate: String) { chirpLog.info("learn skip gate=\(gate, privacy: .public) app=\(app, privacy: .public)") }
-        guard settings.learningEnabled else { return skip(settings.historyEnabled ? "learningOff" : "historyOff") }
-        guard !privateDictation, !privateSession.isActive else { return skip("private") }
-        guard !Self.excludedFromHistory(target.bundleID) else { return skip("excludedApp") }
-        guard !secureField else { return skip("secure") }
-        switch outcome {
-        case .inserted(.ax), .inserted(.paste), .insertedUnverified: break
-        default: return skip("notInserted")
-        }
-        if outcome == .inserted(.ax), let range = inserter.lastAXRange, let field = AXWatchedField.focused() {
+        let plan = LearnWatchPlan.plan(learningEnabled: settings.learningEnabled, historyEnabled: settings.historyEnabled,
+                                       isPrivate: privateDictation || privateSession.isActive,
+                                       excluded: Self.excludedFromHistory(target.bundleID), secureField: secureField,
+                                       outcome: outcome, axRange: inserter.lastAXRange)
+        if case .skip(let gate) = plan { return skip(gate) }
+        if case .watch(let range) = plan, let field = AXWatchedField.focused() {
             learning.watcher.watch(field, inserted: text, range: range, raw: raw, bundleID: target.bundleID, appName: target.name)
             return
         }
