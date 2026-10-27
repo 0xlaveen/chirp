@@ -62,6 +62,7 @@ class SettingsRenderTest {
 
     private fun shot(prefix: String, shown: SettingsPage?, night: Boolean, font: Float = 1f, cropAt: String? = null) {
         compose.runOnIdle { page.value = shown; dark.value = night; fontScale.floatValue = font }
+        compose.mainClock.advanceTimeBy(2000); compose.waitForIdle()
         save("$prefix-${if (night) "dark" else "light"}", cropAt)
     }
 
@@ -108,7 +109,7 @@ class SettingsRenderTest {
             }
         }
         for (night in listOf(false, true)) {
-            shot("history", SettingsPage.History, night)
+            shot("history-dialog-context", SettingsPage.History, night)
             compose.onNodeWithText("Keep dictation history on this phone").performClick()
             compose.onNodeWithText("Keep dictation history on this phone").performClick()
             val theme = if (night) "dark" else "light"
