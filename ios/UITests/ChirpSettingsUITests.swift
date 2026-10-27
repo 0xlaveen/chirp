@@ -301,8 +301,15 @@ final class ChirpSettingsUITests: XCTestCase {
 
         app.selectChirpTab("History")
         XCTAssertTrue(app.staticTexts["Synthetic words."].waitForExistence(timeout: 5))
+        // iPad portrait collapses the search field into a Search button in the navigation bar (iPhone shows the field).
         let search = app.searchFields.firstMatch
-        XCTAssertTrue(search.waitForExistence(timeout: 5))
+        let collapsed = app.navigationBars["Dictation history"].buttons["Search"]
+        if !search.waitForExistence(timeout: 3) {
+            app.dismissSidebarOverlay(covering: collapsed)
+            XCTAssertTrue(collapsed.waitForExistence(timeout: 5), "No History search field or Search button")
+            collapsed.tap()
+        }
+        XCTAssertTrue(search.waitForExistence(timeout: 5), "Search did not open")
         search.tap()
         search.typeText("synthetic")
         XCTAssertTrue(app.staticTexts["Synthetic words."].exists, "Saved text matches")
