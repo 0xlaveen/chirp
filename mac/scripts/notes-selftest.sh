@@ -2,6 +2,7 @@
 # Live Notes smoke test: a `say` recording through `ChirpMac --notes-selftest` against a throwaway chirp-server
 # (temporary HOME and token, port 7899), once clean and once with a dropped socket. Never the running app, its
 # preferences or port 7821. Usage: mac/scripts/notes-selftest.sh [--real-time] [--fault PLAN] [--speakers] [--voices]
+#   [--retranscribe]
 #
 # --speakers adds a third run: a ~60 s two-voice meeting (macOS `say` voices Samantha and Daniel taking turns) with
 # Label speakers left at its default (on, which proves the default), through the notes library, which must come back
@@ -9,14 +10,19 @@
 # It needs the on-device speaker model already on this Mac (record once with Label speakers on); it never downloads it.
 # --voices adds a second note: name Samantha in note 1, recognise her automatically in note 2, reject the match,
 # then round-trip rename, disable/enable and forget on the throwaway server. Needs its cached ONNX speaker model.
+# --retranscribe (#287) records the two-voice meeting with Keep audio on (labelled too with --speakers), names Person 1
+# "Maya" and reassigns a turn, overwrites the transcript with "WRONG TEXT", re-transcribes it from the kept audio, and
+# checks the words, the name and the reassignment came back, Undo restores "WRONG TEXT", the server log holds no fixture
+# words, the server wrote nothing but device activity, and that activity has notes_retranscribe events with audio_ms.
 # CHIRP_MAC_SCRATCH builds outside the checkout (a checkout under ~/Documents can hang on TCC).
 set -euo pipefail
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
 PORT=${CHIRP_NOTES_SELFTEST_PORT:-7899}
 MODEL_DIR=${CHIRP_MODEL_DIR:-$HOME/.koi/voice-models/parakeet-mlx}
-PACE=--fast; FAULT=drop@14; SPEAKERS=; VOICES=
+PACE=--fast; FAULT=drop@14; SPEAKERS=; VOICES=; RETRANSCRIBE=
 while [ $# -gt 0 ]; do
-  case $1 in --real-time) PACE= ;; --fault) FAULT=$2; shift ;; --speakers) SPEAKERS=1 ;; --voices) SPEAKERS=1; VOICES=--voices ;; *) echo "unknown arg $1" >&2; exit 64 ;; esac
+  case $1 in --real-time) PACE= ;; --fault) FAULT=$2; shift ;; --speakers) SPEAKERS=1 ;; --voices) SPEAKERS=1; VOICES=--voices ;;
+    --retranscribe) RETRANSCRIBE=1 ;; *) echo "unknown arg $1" >&2; exit 64 ;; esac
   shift
 done
 [ "$PORT" = 7821 ] && { echo "refusing port 7821 (the app's server)" >&2; exit 64; }
@@ -32,7 +38,7 @@ say -o "$WORK/a.aiff" "We reviewed the budget for the next quarter and agreed it
   We will not move the launch date unless the load test fails again. [[slnc 1500]] \
   The question of hiring for support stays open until the next meeting, and the design notes go into the shared folder today."
 ffmpeg -loglevel error -i "$WORK/a.aiff" -ar 16000 -ac 1 -c:a pcm_s16le "$WORK/a.wav"
-if [ -n "$SPEAKERS" ]; then
+if [ -n "$SPEAKERS$RETRANSCRIBE" ]; then
   # Twelve alternating turns, 0.7 s apart: some segments hold one voice, some both.
   i=0
   while IFS='|' read -r voice line; do
@@ -96,7 +102,28 @@ if [ -n "$SPEAKERS" ]; then
     --speakers 2 --library $VOICES --snapshot "$WORK/snapshots" --expect spreadsheet || fail=1
 fi
 
+if [ -n "$RETRANSCRIBE" ]; then
+  echo "== notes-selftest --retranscribe (kept audio, WRONG TEXT, re-transcribe, Undo)"
+  touch "$WORK/.before-retranscribe"
+  "$MAC" --notes-selftest "$WORK/two.wav" --url "http://127.0.0.1:$PORT" --token-file "$TOKEN" $PACE --library \
+    --retranscribe ${SPEAKERS:+--speakers 2} --expect spreadsheet --expect legal || fail=1
+  echo "== privacy: files the server wrote during the re-transcribe (expect only device activity)"
+  written=$(find "$WORK" -type f -newer "$WORK/.before-retranscribe" ! -name server.log ! -name 'device-activity.json*' | sed "s|$WORK/||")
+  echo "${written:-none}"; [ -z "$written" ] || fail=1
+  echo "== device activity: notes_retranscribe events with audio_ms (expect ≥ 1, no text)"
+  # The server saves activity shortly after it changes.
+  events=0
+  for _ in $(seq 1 30); do
+    activity=$(find "$WORK" -name device-activity.json | head -1)
+    [ -n "$activity" ] && events=$(python3 -c 'import json,sys; e=json.load(open(sys.argv[1]))["events"]; print(sum(1 for r in e if "notes_retranscribe" in r and any(isinstance(x, int) and x > 0 for x in r)))' "$activity" 2>/dev/null || echo 0)
+    [ "${events:-0}" -ge 1 ] && break
+    sleep 1
+  done
+  echo "$events"; [ "${events:-0}" -ge 1 ] || fail=1
+  grep -q -i -E "spreadsheet|legal|WRONG TEXT" "$activity" && { echo "device activity holds text"; fail=1; }
+fi
+
 echo "== privacy: transcript words in server log (expect 0)"
-hits=$(grep -c -i -E "budget|vendor|thursday|spreadsheet" "$WORK/server.log" || true)
+hits=$(grep -c -i -E "budget|vendor|thursday|spreadsheet|legal|WRONG TEXT" "$WORK/server.log" || true)
 echo "$hits"; [ "$hits" = 0 ] || fail=1
 [ $fail = 0 ] && echo "NOTES SELFTEST: PASS" || { echo "NOTES SELFTEST: FAIL"; exit 1; }

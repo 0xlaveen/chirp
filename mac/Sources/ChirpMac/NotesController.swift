@@ -27,6 +27,12 @@ extension NotesSession {
             reorganize: { request in try await Self.reorganize(request, timeout: await health()?.operationTimeout(.notesReorganize, fallback: Self.reorganizeTimeout) ?? Self.reorganizeTimeout) },
             speakerStore: SortformerModelStore(), journalStore: NotesJournalStore())
         deps.library = NotesLibrary()
+        // A re-transcribe start may wait behind live audio for up to a minute before `ready`.
+        deps.retranscribeSession = { options in
+            var limits = StreamLimits()
+            limits.readyDeadline = NotesRetranscriber.readyDeadline
+            return StreamSession(config: settings.serverConfig(), options: options, limits: limits)
+        }
         deps.edit = { request in try await Self.edit(request, timeout: await health()?.operationTimeout(.notesEdit, fallback: Self.editTimeout) ?? Self.editTimeout) }
         deps.voiceClient = VoiceLibraryClient(list: { try await settings.serverConfig().savedVoices() },
             action: { try await settings.serverConfig().savedVoices($0) },

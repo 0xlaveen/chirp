@@ -947,6 +947,35 @@ public enum Snapshots {
         return NSHostingView(rootView: NameSpeakersSheet(model: model, state: state, library: library))
     }
 
+    /// The demo meeting with a gap, re-transcribed with Parakeet v3 (#287): two segments reworded, the gap filled, the
+    /// replaced words kept as the previous transcript.
+    static func demoRetranscribed() -> NotesDocument {
+        var d = demoNotes(gap: true, captured: true)
+        d.rename("Lantern kickoff", at: Date(timeIntervalSince1970: 1_792_504_980))
+        d.livePartial = ""
+        let v3 = "parakeet-mlx:parakeet-v3"
+        d.applyRetranscription([
+            NotesRetranscribedSegment(segment: 0, raw: "okay so we're kicking off the lantern project today the launch target moved to march third",
+                                      text: "Okay, so we're kicking off the Lantern project today. The launch target moved to March 3.",
+                                      corrected: true, clipOffset: 12, engine: v3),
+            NotesRetranscribedSegment(segment: 3, raw: "theo asked whether support joins the beta",
+                                      text: "Theo asked whether support joins the beta.", corrected: true, clipOffset: 140, engine: v3),
+            NotesRetranscribedSegment(segment: 4, raw: "open question who owns qa for the beta",
+                                      text: "Open question: who owns QA for the beta?", corrected: true, clipOffset: 151, engine: v3),
+        ], at: notesNow)
+        return d
+    }
+
+    /// The re-transcribe consent sheet over the demo meeting (#287 §2.2).
+    static func retranscribeSheet(_ configure: (inout NotesRetranscribeOffer) -> Void = { _ in }) -> NSView {
+        var offer = NotesRetranscribeOffer(note: UUID(), title: "Weekly sync", clips: 40, audio: 490, segments: 43, withoutAudio: 3,
+                                           local: true, model: "parakeet-mlx:parakeet-v3", before: "parakeet-mlx:tdt-0.6b-v2")
+        configure(&offer)
+        let library = NotesLibraryModel()
+        library.retranscribeOffer = offer
+        return NSHostingView(rootView: RetranscribeSheet(library: library, offer: offer))
+    }
+
     /// The demo meeting, finished and saved: the library's ordinary state.
     static func finished(_ model: NotesModel, _ library: NotesLibraryModel, continued: Bool = false) {
         model.state = .stopped
@@ -1184,6 +1213,77 @@ public enum Snapshots {
                 model.review()
                 model.confirmingRestore = model.reviewing
                 return NSHostingView(rootView: OrganizeReviewSheet(model: model))
+            },
+            notes("retranscribe-progress") { model, library in
+                finished(model, library)
+                var d = demoNotes(gap: true, captured: true)
+                d.rename("Lantern kickoff", at: Date(timeIntervalSince1970: 1_792_504_980))
+                d.livePartial = ""
+                model.document = d
+                library.notes = demoLibrary(current: d)
+                library.selection = .note(d.id)
+                library.showsInspector = true
+                library.retranscribeAllowed = true
+                model.keptAudio = Dictionary(uniqueKeysWithValues: (0..<7).map { ($0, URL(fileURLWithPath: "/dev/null/\($0).m4a")) })
+                library.retranscribeRun = NotesRetranscribeRun(
+                    note: d.id, progress: NotesRetranscribeProgress(done: 3, total: 7, audioDone: 104, audioTotal: 213), local: true)
+            },
+            notes("retranscribe-waiting") { model, library in
+                finished(model, library)
+                library.showsInspector = true
+                library.retranscribeRun = NotesRetranscribeRun(
+                    note: model.document.id, progress: NotesRetranscribeProgress(done: 3, total: 7, audioDone: 104, audioTotal: 213, waiting: true),
+                    local: false)
+            },
+            notes("retranscribe-stopped") { model, library in
+                finished(model, library)
+                library.showsInspector = true
+                library.retranscribeRun = NotesRetranscribeRun(
+                    note: model.document.id, progress: NotesRetranscribeProgress(done: 3, total: 7, audioDone: 104, audioTotal: 213),
+                    local: true, failure: NotesRetranscribeText.stopped(code: "busy", local: true), canApplyPartial: true)
+            },
+            notes("retranscribe-toast") { model, library in
+                finished(model, library)
+                let d = demoRetranscribed()
+                model.document = d
+                library.notes = demoLibrary(current: d)
+                library.selection = .note(d.id)
+                library.showsInspector = true
+                library.retranscribeAllowed = true
+                model.keptAudio = Dictionary(uniqueKeysWithValues: (0..<7).map { ($0, URL(fileURLWithPath: "/dev/null/\($0).m4a")) })
+                library.showToast(NotesRetranscribeText.finished(updated: 3, of: 4), action: .transcript(d.id))
+            },
+            notes("retranscribe-gap") { model, library in
+                finished(model, library)
+                var d = demoNotes(gap: true, captured: true)
+                d.rename("Lantern kickoff", at: Date(timeIntervalSince1970: 1_792_504_980))
+                d.livePartial = ""
+                model.document = d
+                library.notes = demoLibrary(current: d)
+                library.selection = .note(d.id)
+                library.showsInspector = true
+                library.retranscribeAllowed = true
+                model.keptAudio = Dictionary(uniqueKeysWithValues: (0..<7).map { ($0, URL(fileURLWithPath: "/dev/null/\($0).m4a")) })
+            },
+            Scenario(name: "notes-retranscribe-sheet") { retranscribeSheet() },
+            Scenario(name: "notes-retranscribe-sheet-debug") {
+                retranscribeSheet {
+                    $0.local = false; $0.debugRetention = true; $0.cleanupHost = "llm.example.com"
+                    $0.rebuildAvailable = false; $0.canChangeModel = false; $0.withoutAudio = 0
+                }
+            },
+            Scenario(name: "notes-retranscribe-sheet-same") {
+                retranscribeSheet { $0.before = $0.model; $0.rebuild = true; $0.withoutAudio = 0 }
+            },
+            Scenario(name: "notes-retranscribe-sheet-gap") {
+                retranscribeSheet { $0.segment = 3; $0.clips = 1; $0.audio = 32 }
+            },
+            Scenario(name: "notes-retranscribe-sheet-update") { retranscribeSheet { $0.supported = false } },
+            Scenario(name: "notes-retranscribe-changes") {
+                let library = NotesLibraryModel()
+                let changes = NotesTranscriptChanges(demoRetranscribed())
+                library.transcriptChanges = changes
+                return NSHostingView(rootView: TranscriptChangesSheet(library: library, changes: changes))
             },
             Scenario(name: "notes-tip") {
                 NSHostingView(rootView: NotesTipView().background(Color(nsColor: .windowBackgroundColor)))

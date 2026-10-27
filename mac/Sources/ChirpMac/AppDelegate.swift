@@ -198,6 +198,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         notes.onShowWindow = { [weak self] focus in self?.notesWindow.show(focus: focus) }
         settingsWindow.onCallAudioDefaultChange = { [notes] in notes.defaultSourcesChanged() }
+        settingsWindow.onAllowRetranscribe = { [notes] in notes.retranscribeSettingChanged() }
         notesWindow.dock = dock
         NotesWindowController.onAbout = { [settingsWindow] in settingsWindow.show(tab: .about) }
         NotesWindowController.onSettings = { [settingsWindow] in settingsWindow.show(tab: .general) }

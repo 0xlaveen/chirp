@@ -671,6 +671,26 @@ public final class NotesRecorder {
         changed()
     }
 
+    /// A re-transcribe applies to the note while it is not recording: `body` changes the document (its transcript), and
+    /// the window and the journal follow. False (nothing changed) while recording.
+    @discardableResult
+    public func updateDocument(_ body: (inout NotesDocument) -> Void) -> Bool {
+        guard !state.isActive else { return false }
+        body(&document)
+        changed()
+        return true
+    }
+
+    /// Re-transcribe's "Also rebuild the notes": the body becomes `text` as one `.rebuild` change the editor replays
+    /// (one undo step) and the snapshots keep. Only on a stopped note.
+    @discardableResult
+    public func rebuildNotes(_ text: String, fallbackBlocks: [String]) -> Bool {
+        guard !state.isActive else { return false }
+        publish(document.replaceBody(with: text, fallbackBlocks: fallbackBlocks))
+        changed()
+        return true
+    }
+
     /// Save… wrote the document.
     public func markSaved() {
         document.markSaved()

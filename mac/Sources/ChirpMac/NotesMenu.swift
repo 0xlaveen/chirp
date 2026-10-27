@@ -17,7 +17,9 @@ final class NotesMenuTarget: NSObject, NSMenuItemValidation {
     private var commands: [NotesCommand] { NotesCommand.allCases }
 
     /// The "Notes" menu item.
-    func menuItem() -> NSMenuItem { submenu("Notes", .notes, separatorsBefore: [.record, .renameNote, .findNotes, .copyMarkdown]) }
+    func menuItem() -> NSMenuItem {
+        submenu("Notes", .notes, separatorsBefore: [.record, .renameNote, .findNotes, .copyMarkdown, .retranscribe])
+    }
 
     /// The "View" menu item.
     func viewItem() -> NSMenuItem { submenu("View", .view, separatorsBefore: []) }
@@ -54,6 +56,7 @@ final class NotesMenuTarget: NSObject, NSMenuItemValidation {
         let row = NotesCommand.items(for: model, library: library, windowIsKey: windowIsKey())[menuItem.tag]
         menuItem.title = row.title
         menuItem.state = row.checked ? .on : .off
+        menuItem.isHidden = row.hidden
         return row.enabled && !(row.command == .deleteNote && textHasFocus())
     }
 }

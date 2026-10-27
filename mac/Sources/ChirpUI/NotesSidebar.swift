@@ -102,6 +102,13 @@ struct NotesSidebar: View {
         Button("Rename") { library.beginRename(entry.id) }
         if entry.id != library.recordingID {
             Button(NotesLibraryText.continueRecording) { library.onContinue(entry.id) }
+                .disabled(library.isRetranscribing(entry.id))
+        }
+        if library.retranscribeAllowed, entry.hasAudio, entry.id != library.recordingID, library.retranscribeRun == nil {
+            Button(NotesRetranscribeText.action) { library.onRetranscribe(entry.id, nil) }
+        }
+        if library.displayed(model).document.id == entry.id, library.canRestoreTranscript(library.displayed(model)) {
+            Button(NotesRetranscribeText.restore) { library.onRestoreTranscript(entry.id) }
         }
         Divider()
         Button("Delete", role: .destructive) { trash(entry.id) }
@@ -206,7 +213,8 @@ private struct NoteRow: View {
                 .foregroundStyle(ink.snippet)
                 .lineLimit(2)
                 .fixedSize(horizontal: false, vertical: true)
-            MetaLine(entry: entry, ink: ink)
+            MetaLine(entry: entry, ink: ink,
+                     progress: library.retranscribeRun.flatMap { $0.note == entry.id && $0.failure == nil ? $0.progress.fraction : nil })
         }
         .padding(.vertical, 6)
         .padding(.horizontal, 4)
@@ -244,12 +252,21 @@ private struct NoteRow: View {
 private struct MetaLine: View {
     let entry: NotesLibraryEntry
     let ink: RowInk
+    /// A re-transcribe runs on this note: a small ring in place of the audio glyph.
+    var progress: Double?
 
     var body: some View {
         let length = NotesLibraryText.duration(entry.duration)
         if length != nil || entry.openTodos > 0 || entry.recovered || entry.hasAudio {
             HStack(spacing: 10) {
-                if let length {
+                if let length, let progress {
+                    Label {
+                        Text(length)
+                    } icon: {
+                        ProgressRing(value: progress, color: ink.meta).frame(width: 10, height: 10)
+                    }
+                    .accessibilityLabel("\(length), re-transcribing")
+                } else if let length {
                     Label(length, systemImage: entry.hasAudio ? "waveform" : "mic")
                 }
                 if entry.openTodos > 0 {
@@ -438,5 +455,20 @@ private struct DeletedRow: View {
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
         .background(RoundedRectangle(cornerRadius: ChirpRadius.row).fill(Color.chirp.surfaceRaised.opacity(0.7)))
+    }
+}
+
+/// A small determinate ring (a library row's re-transcribe progress).
+private struct ProgressRing: View {
+    let value: Double
+    let color: Color
+
+    var body: some View {
+        ZStack {
+            Circle().stroke(color.opacity(0.3), lineWidth: 1.6)
+            Circle().trim(from: 0, to: max(0.04, min(1, value)))
+                .stroke(Color.chirp.koi, style: StrokeStyle(lineWidth: 1.6, lineCap: .round))
+                .rotationEffect(.degrees(-90))
+        }
     }
 }

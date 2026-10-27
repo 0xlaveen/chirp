@@ -158,6 +158,17 @@ extension NotesDocument {
         return true
     }
 
+    /// Debug hook for the re-transcribe tests (#287 §6): every spoken segment and turn reads `text` (raw too), so what a
+    /// re-transcribe brings back is obviously from the audio. Timing, people and gaps stay. Never called by the app.
+    public mutating func overwriteTranscript(_ text: String) {
+        for i in segments.indices where !segments[i].isGap {
+            segments[i].text = text
+            segments[i].raw = text
+            segments[i].turns = segments[i].turns?.map { var t = $0; t.text = text; t.raw = text; return t }
+            relabelled(i)
+        }
+    }
+
     /// Rebuild the notes: the body becomes `text` (structured again from the new transcript) as one `.rebuild` change,
     /// settled, with the window past every segment so live structuring never sends them again. The user title is
     /// untouched. Nil when nothing changed.
@@ -268,5 +279,43 @@ public enum NotesRetranscription {
             out[i].keptOriginal = false
         }
         return out
+    }
+}
+
+/// Re-transcribe's "Also rebuild the notes" (#287 §2.6): the existing structuring passes over the whole new
+/// transcript, window by window as live recording runs them (the same `maxWindowChars`, outline chaining, speaker
+/// lines and fallback blocks), with `final` on the last. The caller replaces the body with the result in one
+/// `.rebuild` change.
+public enum NotesRebuild {
+    public struct Result: Equatable, Sendable {
+        public var text: String
+        public var fallbackBlocks: [String]
+        /// Passes tried, and how many structured their window (the rest became fallback blocks).
+        public var windows: Int
+        public var structured: Int
+    }
+
+    /// Nil when every window failed (the body is left alone: "Couldn’t rebuild the notes") or the task was cancelled.
+    public static func run(_ source: NotesDocument, structure: @escaping NotesRecorder.Structure) async -> Result? {
+        var d = NotesDocument(startedAt: source.startedAt)
+        d.roster = source.roster
+        var windows = 0, structured = 0
+        func pass(final: Bool) async {
+            guard let request = d.nextStructureRequest(final: final) else { d.freezeOverflow(); return }
+            windows += 1
+            let response = (try? await structure(request)) ?? NotesStructureResponse(markdown: nil, structured: false, error: "http")
+            if response.structured, response.markdown?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false { structured += 1 }
+            d.apply(response, for: request)
+        }
+        for segment in source.segments {
+            if Task.isCancelled { return nil }
+            d.append(segment)
+            if d.windowChars() >= NotesDocument.freezeChars { await pass(final: false) }
+        }
+        if Task.isCancelled { return nil }
+        await pass(final: true)
+        d.freezeAll(structuring: true)
+        guard structured > 0, !Task.isCancelled else { return nil }
+        return Result(text: d.text, fallbackBlocks: d.fallbackBlocks, windows: windows, structured: structured)
     }
 }

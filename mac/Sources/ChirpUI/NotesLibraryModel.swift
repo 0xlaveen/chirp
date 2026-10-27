@@ -135,6 +135,13 @@ public enum NotesLibraryText {
     }
 }
 
+/// What a toast's buttons act on besides a deleted note: a re-transcribed note ("Transcript updated · Show Changes ·
+/// Undo") or its rebuilt notes ("Notes rebuilt · Show Changes · Undo").
+public enum NotesToastAction: Equatable, Sendable {
+    case transcript(UUID)
+    case rebuild(UUID)
+}
+
 /// The toast at the bottom of the window ("Note deleted · Undo").
 public struct NotesToast: Equatable, Sendable {
     public var text: String
@@ -142,6 +149,7 @@ public struct NotesToast: Equatable, Sendable {
     public var undo: UUID?
     /// Bumped per toast, so a newer one restarts the timer.
     public var serial: Int
+    public var action: NotesToastAction?
 }
 
 /// The Live Notes window around the note: the library list, search, selection, the inspector and Show Markdown, the
@@ -171,6 +179,14 @@ public final class NotesLibraryModel {
     public var confirmingSwitch: UUID?
     /// A note opened while another records: the recorder keeps its own document, this one is edited on its own.
     public var browsed: NotesModel?
+    /// Re-transcribe (#287): the consent sheet on offer, the run (one at a time), Show changes, and "Replace your
+    /// edits?" for a rebuild that would overwrite typing. `retranscribeAllowed` is Settings → Notes → Allow
+    /// re-transcribing: off hides every entry point.
+    public var retranscribeOffer: NotesRetranscribeOffer?
+    public var retranscribeRun: NotesRetranscribeRun?
+    public var transcriptChanges: NotesTranscriptChanges?
+    public var confirmingRebuild: UUID?
+    public var retranscribeAllowed = false
     /// Segment playback in the transcript.
     public let player = NotesPlayer()
     /// The clock and calendar for the groups and relative times (fixed in snapshots and tests).
@@ -188,6 +204,21 @@ public final class NotesLibraryModel {
     public var onContinue: (UUID) -> Void = { _ in }
     public var onStopAndContinue: (UUID) -> Void = { _ in }
     public var onQuery: (String) -> Void = { _ in }
+    /// Re-transcribe… for a note, or one segment of it (Transcribe Again…): opens the consent sheet.
+    public var onRetranscribe: (UUID, Int?) -> Void = { _, _ in }
+    public var onRetranscribeStart: (NotesRetranscribeOffer) -> Void = { _ in }
+    public var onRetranscribeCancel: () -> Void = {}
+    public var onRetranscribeApplyPartial: () -> Void = {}
+    public var onRetranscribeDismiss: () -> Void = {}
+    /// Undo and Restore Previous Transcript.
+    public var onRestoreTranscript: (UUID) -> Void = { _ in }
+    public var onShowTranscriptChanges: (UUID) -> Void = { _ in }
+    /// The rebuild toast's Show Changes and Undo, and "Replace your edits?".
+    public var onShowRebuild: (UUID) -> Void = { _ in }
+    public var onUndoRebuild: (UUID) -> Void = { _ in }
+    public var onConfirmRebuild: (Bool) -> Void = { _ in }
+    /// The sheet's Change model… (Manage Local Models).
+    public var onManageModels: () -> Void = {}
     /// The window focuses its search field (⌥⌘F).
     @ObservationIgnored public var onFocusSearch: () -> Void = {}
     /// Show Markdown and the inspector are remembered.
@@ -199,9 +230,22 @@ public final class NotesLibraryModel {
     /// The note in the detail: the one opened beside a recording, or the recorder's.
     public func displayed(_ active: NotesModel) -> NotesModel { browsed ?? active }
 
-    public func showToast(_ text: String, undo: UUID? = nil) {
+    public func showToast(_ text: String, undo: UUID? = nil, action: NotesToastAction? = nil) {
         toastSerial += 1
-        toast = NotesToast(text: text, undo: undo, serial: toastSerial)
+        toast = NotesToast(text: text, undo: undo, serial: toastSerial, action: action)
+    }
+
+    /// A re-transcribe holds this note: its transcript is read-only, and Continue recording waits.
+    public func isRetranscribing(_ id: UUID) -> Bool { retranscribeRun?.note == id }
+
+    /// Re-transcribe… shows for this note: allowed, it kept audio, and it is not recording.
+    public func canRetranscribe(_ model: NotesModel) -> Bool {
+        retranscribeAllowed && !model.keptAudio.isEmpty && !model.state.isActive && retranscribeRun == nil
+    }
+
+    /// Restore Previous Transcript shows: a re-transcribe kept a version, and no run holds the note.
+    public func canRestoreTranscript(_ model: NotesModel) -> Bool {
+        model.document.previousTranscript != nil && !model.state.isActive && !isRetranscribing(model.document.id)
     }
 
     public func setInspector(_ on: Bool) {

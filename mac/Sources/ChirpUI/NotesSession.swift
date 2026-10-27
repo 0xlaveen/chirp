@@ -17,6 +17,9 @@ public struct NotesSessionDependencies {
     /// Shared server library, plus the legacy Keychain source to migrate once.
     public var voiceClient: VoiceLibraryClient = .unavailable
     public var voiceProfileStore: VoiceProfileStore = MemoryVoiceProfileStore()
+    /// Re-transcribe's sockets (#287): a `start.retranscribe` may wait up to a minute for the engine, so the app
+    /// gives them a longer ready deadline. Nil uses `makeSession`.
+    public var retranscribeSession: ((StartOptions) -> StreamSession)?
     /// Where the crash-recovery journal lives (tests pass a temporary directory).
     public var journalStore: NotesJournalStore
     /// Mac library; nil retains the legacy recovery contract for other clients and isolated harnesses.
@@ -86,7 +89,9 @@ public final class NotesSession {
     /// The window around the note: the library list, search, selection, the inspector (Mac library only).
     public let window = NotesLibraryModel()
     /// A note opened while another one records (`window.browsed` is its model).
-    private var browsing: NotesBrowsedNote?
+    private(set) var browsing: NotesBrowsedNote?
+    /// Re-transcribe from kept audio (Mac library only).
+    private(set) var retranscribe: NotesRetranscribeController?
     private var renameTask: Task<Void, Never>?
     private var searchTask: Task<Void, Never>?
     private var lastDocumentID: UUID?
@@ -94,7 +99,7 @@ public final class NotesSession {
     public let recorder: NotesRecorder
     /// Edit by Voice (#97).
     public let voiceEdit: NotesVoiceEdit
-    private let deps: NotesSessionDependencies
+    let deps: NotesSessionDependencies
     private var settings: Preferences { deps.settings }
 
     public var health: () -> Health? = { nil }
@@ -297,6 +302,8 @@ public final class NotesSession {
 
     public func start(focus: Bool) {
         guard !gate.isPaused, !isActive else { return }
+        // A re-transcribe holds this note: Continue recording waits for it.
+        guard !window.isRetranscribing(recorder.document.id) else { deps.beep(); return }
         // A spoken edit outside a recording has the microphone: it ends (or Esc drops it) before Record.
         guard !voiceEdit.status.isListening else { deps.beep(); return }
         guard !isDictating() else { deps.beep(); return }
@@ -941,6 +948,7 @@ extension NotesSession {
             self.titleEdited(self.recorder.document.id, title)
         }
         w.selection = .note(recorder.document.id)
+        wireRetranscribe()
         observeLibrary()
         if let library { Task { try? await library.reload() } }
     }
@@ -1020,6 +1028,11 @@ extension NotesSession {
 
     private func show(_ note: NotesBrowsedNote) {
         browsing = note
+        note.model.onSpeakerEdit = { [weak self, weak note] edit in
+            guard let self, let note else { return }
+            guard edit == .dismiss || !self.window.isRetranscribing(note.model.document.id) else { self.deps.beep(); return }
+            note.editSpeakers(edit)
+        }
         note.model.onRecordToggle = { [weak self, weak note] in if let id = note?.model.document.id { self?.continueHere(id) } }
         note.model.onTitleEdit = { [weak self, weak note] title in if let id = note?.model.document.id { self?.titleEdited(id, title) } }
         note.model.onShowTranscript = { [weak self] in self?.window.setInspector(true) }
@@ -1072,6 +1085,7 @@ extension NotesSession {
     /// ⌫ / Delete: to Recently Deleted, with Undo in a toast (and ⌘Z). A note that records can't be deleted.
     public func trash(_ id: UUID) {
         guard let library, window.canTrash(id), !(isActive && id == recorder.document.id) else { deps.beep(); return }
+        retranscribe?.cancel(note: id)
         let next = neighbor(of: id)
         Task {
             if let note = browsing, note.model.document.id == id {
@@ -1110,6 +1124,7 @@ extension NotesSession {
     /// Continue recording (⌘⇧R) on a finished note: a new capture appends to it after a quiet divider. While another
     /// note records, it asks first ("Stop current and continue here").
     public func continueHere(_ id: UUID) {
+        guard !window.isRetranscribing(id) else { deps.beep(); return }
         if id == recorder.document.id {
             if !isActive { start(focus: true) }
             return
@@ -1175,6 +1190,43 @@ final class NotesBrowsedNote {
         model.onUserEdit = { [weak self] range, text, kind in self?.edit(range, text, kind) }
         // Its speakers can be renamed, merged and reassigned as the recorder's note's are (saved like typing).
         model.onSpeakerEdit = { [weak self] edit in self?.editSpeakers(edit) }
+        model.onRestoreSnapshot = { [weak self] id, confirmed in self?.restoreSnapshot(id, confirmed: confirmed) }
+    }
+
+    /// A re-transcribe changed the note (its transcript, or a rebuilt body): saved now.
+    func update(_ body: (inout NotesDocument) -> Void) async {
+        body(&model.document)
+        dirty = true
+        await flush()
+    }
+
+    /// The rebuilt body as one `.rebuild` change the editor replays and the review can show and take back.
+    func rebuild(_ result: NotesRebuild.Result) async {
+        let before = model.document.text
+        guard let change = model.document.replaceBody(with: result.text, fallbackBlocks: result.fallbackBlocks) else { return }
+        model.snapshots.record([change], from: before, result: model.document.text, at: Date())
+        model.enqueue([change])
+        dirty = true
+        await flush()
+    }
+
+    /// Restore previous from the review sheet: as the recorder's note does it (later edits kept, or a confirmation).
+    private func restoreSnapshot(_ id: Int, confirmed: Bool) {
+        guard let snapshot = model.snapshots.snapshot(id) else { return }
+        let current = model.document.text
+        let target: String
+        switch NotesSnapshots.restore(snapshot, now: current) {
+        case .text(let text): target = text
+        case .replace(let text):
+            guard confirmed else { model.confirmingRestore = id; return }
+            target = text
+        }
+        model.closeReview()
+        model.snapshots.remove(id)
+        guard let change = NotesDocument.diff(current, target, kind: .restore) else { return }
+        _ = model.document.userEdit(change.range, change.replacement, kind: .restore)
+        model.enqueue([change])
+        changed()
     }
 
     private func edit(_ range: NSRange, _ text: String, _ kind: NotesTextChange.Kind) {
@@ -1280,5 +1332,103 @@ public final class NotesCaptureSink: @unchecked Sendable {
         recorder.handleFrame(frame, level: level, call: call)
         onLevel?(call?.micLevel ?? level)
         if let event { onSilence(event) }
+    }
+}
+
+// MARK: re-transcribe
+
+extension NotesSession {
+    /// Re-transcribe (#287): the controller, routed to whichever copy of a note is open, and the window's actions.
+    func wireRetranscribe() {
+        guard let library else { return }
+        let settings = deps.settings
+        retranscribe = NotesRetranscribeController(.init(
+            settings: settings, library: library, window: window,
+            makeSession: deps.retranscribeSession ?? deps.makeSession, structure: deps.structure,
+            health: { [weak self] in self?.health() },
+            local: { settings.serverConfig().isLoopback },
+            document: { [weak self] id in await self?.retranscribeDocument(id) },
+            update: { [weak self] id, body in await self?.retranscribeUpdate(id, body) ?? false },
+            rebuild: { [weak self] id, result, version, force in
+                await self?.retranscribeRebuild(id, result, version: version, force: force) ?? false
+            },
+            announce: deps.announce,
+            openServerSettings: { [weak self] in self?.model.onServerSettings() }))
+        let w = window
+        w.retranscribeAllowed = settings.notesAllowRetranscribe
+        w.onRetranscribe = { [weak self] id, segment in
+            guard let self else { return }
+            Task { await self.retranscribe?.offer(id, segment: segment) }
+        }
+        w.onRetranscribeStart = { [weak self] offer in self?.retranscribe?.start(offer) }
+        w.onRetranscribeCancel = { [weak self] in self?.retranscribe?.cancel() }
+        w.onRetranscribeApplyPartial = { [weak self] in self?.retranscribe?.applyPartial() }
+        w.onRetranscribeDismiss = { [weak self] in self?.retranscribe?.dismiss() }
+        w.onRestoreTranscript = { [weak self] id in self?.retranscribe?.restore(id) }
+        w.onShowTranscriptChanges = { [weak self] id in self?.retranscribe?.showChanges(id) }
+        w.onConfirmRebuild = { [weak self] replace in self?.retranscribe?.confirmRebuild(replace) }
+        w.onManageModels = { [weak self] in self?.model.onManageModels() }
+        w.onShowRebuild = { [weak self] id in
+            guard let model = self?.openModel(id), let snapshot = model.snapshots.items.last(where: \.rebuild) else { return }
+            model.review(snapshot.id)
+        }
+        w.onUndoRebuild = { [weak self] id in
+            guard let model = self?.openModel(id), let snapshot = model.snapshots.items.last(where: \.rebuild) else { return }
+            model.onRestoreSnapshot(snapshot.id, false)
+            // Edits since sit among the rebuilt lines: the review asks before replacing them.
+            if model.confirmingRestore == snapshot.id { model.review(snapshot.id) }
+        }
+    }
+
+    /// Settings → Notes → Allow re-transcribing changed: off hides every entry point and stops a run.
+    public func retranscribeSettingChanged() {
+        window.retranscribeAllowed = deps.settings.notesAllowRetranscribe
+        if !window.retranscribeAllowed {
+            window.retranscribeOffer = nil
+            retranscribe?.cancel(note: nil)
+        }
+    }
+
+    /// The model showing note `id` (the recorder's, or the one opened beside a recording).
+    private func openModel(_ id: UUID) -> NotesModel? {
+        if recorder.document.id == id { return model }
+        if let note = browsing, note.model.document.id == id { return note.model }
+        return nil
+    }
+
+    private func retranscribeDocument(_ id: UUID) async -> NotesDocument? {
+        if recorder.document.id == id { return recorder.document }
+        if let note = browsing, note.model.document.id == id { return note.model.document }
+        guard let record = try? await library?.record(id), record.document.deletedAt == nil else { return nil }
+        return record.document
+    }
+
+    /// One write: the open copy of the note when there is one (so the next journal write keeps the change), else its
+    /// library record.
+    private func retranscribeUpdate(_ id: UUID, _ body: (inout NotesDocument) -> Void) async -> Bool {
+        if recorder.document.id == id { return recorder.updateDocument(body) }
+        if let note = browsing, note.model.document.id == id {
+            await note.update(body)
+            return true
+        }
+        guard let library, var record = try? await library.record(id), record.document.deletedAt == nil else { return false }
+        body(&record.document)
+        return (try? await library.write(record)) != nil
+    }
+
+    private func retranscribeRebuild(_ id: UUID, _ result: NotesRebuild.Result, version: Int?, force: Bool) async -> Bool {
+        if recorder.document.id == id {
+            guard force || version == recorder.document.version else { return false }
+            return recorder.rebuildNotes(result.text, fallbackBlocks: result.fallbackBlocks)
+        }
+        if let note = browsing, note.model.document.id == id {
+            guard force || version == note.model.document.version else { return false }
+            await note.rebuild(result)
+            return true
+        }
+        guard let library, var record = try? await library.record(id), record.document.deletedAt == nil else { return false }
+        guard force || version == record.document.version else { return false }
+        record.document.replaceBody(with: result.text, fallbackBlocks: result.fallbackBlocks)
+        return (try? await library.write(record)) != nil
     }
 }

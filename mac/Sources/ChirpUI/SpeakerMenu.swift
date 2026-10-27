@@ -163,6 +163,8 @@ public enum SpeakerEditing {
 extension NotesSession {
     /// Applies a fix-up to the document and sets the banner that follows it.
     public func editSpeakers(_ edit: SpeakerEdit) {
+        // A re-transcribe holds the transcript read-only until it applies (#287 §2.3).
+        guard edit == .dismiss || !window.isRetranscribing(recorder.document.id) else { deps.beep(); return }
         switch edit {
         case .acceptVoice, .declineVoice, .rememberVoice, .updateVoice:
             editVoices(edit)
@@ -227,11 +229,34 @@ struct SpeakerMenuItems: View {
 struct SpeakerRowMenu: ViewModifier {
     let model: NotesModel
     let paragraph: TranscriptParagraph
+    /// The window, for Transcribe Again… on rows with kept audio (#287) and the read-only transcript during a run.
+    var library: NotesLibraryModel?
+
+    /// The paragraph's segments that kept audio, when re-transcribing is allowed here.
+    private var again: [TranscriptParagraph.Part] {
+        guard let library, paragraph.failure == nil, library.canRetranscribe(model) else { return [] }
+        var seen = Set<Int>()
+        return paragraph.parts.filter { model.keptAudio[$0.segment] != nil && seen.insert($0.segment).inserted }
+    }
 
     func body(content: Content) -> some View {
-        if let person = paragraph.person, paragraph.failure == nil {
+        let again = again
+        let labelled = paragraph.person != nil && paragraph.failure == nil
+        if labelled || !again.isEmpty {
             content.contextMenu {
-                SpeakerMenuItems(model: model, row: paragraph.id, person: person, turns: NotesDocument.turnRefs(paragraph))
+                if let person = paragraph.person, paragraph.failure == nil {
+                    SpeakerMenuItems(model: model, row: paragraph.id, person: person, turns: NotesDocument.turnRefs(paragraph))
+                        .disabled(library?.isRetranscribing(model.document.id) == true)
+                }
+                if !again.isEmpty {
+                    if labelled { Divider() }
+                    ForEach(again) { part in
+                        Button(again.count == 1 ? NotesRetranscribeText.again
+                               : "Transcribe Again from \(NotesStatus.clock(part.offset))…") {
+                            library?.onRetranscribe(model.document.id, part.segment)
+                        }
+                    }
+                }
             }
         } else {
             content

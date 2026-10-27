@@ -59,6 +59,15 @@ public struct NotesView: View {
         .sheet(isPresented: Binding(get: { shown.reviewing != nil }, set: { if !$0 { shown.closeReview() } })) {
             OrganizeReviewSheet(model: shown)
         }
+        .sheet(item: $library.retranscribeOffer) { RetranscribeSheet(library: library, offer: $0) }
+        .sheet(item: $library.transcriptChanges) { TranscriptChangesSheet(library: library, changes: $0) }
+        .alert(NotesRetranscribeText.replaceEditsTitle,
+               isPresented: Binding(get: { library.confirmingRebuild != nil }, set: { if !$0 { library.onConfirmRebuild(false) } })) {
+            Button(NotesRetranscribeText.replaceEdits, role: .destructive) { library.onConfirmRebuild(true) }
+            Button(NotesRetranscribeText.keepEdits, role: .cancel) { library.onConfirmRebuild(false) }
+        } message: {
+            Text(NotesRetranscribeText.replaceEditsMessage)
+        }
         .alert(NotesLibraryText.switchPrompt(model.displayTitle),
                isPresented: Binding(get: { library.confirmingSwitch != nil }, set: { if !$0 { library.confirmingSwitch = nil } })) {
             Button(NotesLibraryText.stopAndContinue) {
@@ -526,6 +535,27 @@ struct NotesToastView: View {
                 .foregroundStyle(Color.chirp.koi)
                 .keyboardShortcut("z", modifiers: .command)
             }
+            if let action = toast.action {
+                Button(NotesRetranscribeText.showChanges) {
+                    switch action {
+                    case .transcript(let id): library.onShowTranscriptChanges(id)
+                    case .rebuild(let id): library.onShowRebuild(id)
+                    }
+                }
+                .buttonStyle(.plain)
+                .font(.callout.weight(.semibold))
+                .foregroundStyle(Color.chirp.koi)
+                Button("Undo") {
+                    library.toast = nil
+                    switch action {
+                    case .transcript(let id): library.onRestoreTranscript(id)
+                    case .rebuild(let id): library.onUndoRebuild(id)
+                    }
+                }
+                .buttonStyle(.plain)
+                .font(.callout.weight(.semibold))
+                .foregroundStyle(Color.chirp.koi)
+            }
         }
         .padding(.horizontal, 18)
         .padding(.vertical, 10)
@@ -535,7 +565,8 @@ struct NotesToastView: View {
         .padding(.bottom, 22)
         .transition(.move(edge: .bottom).combined(with: .opacity))
         .task(id: toast.serial) {
-            try? await Task.sleep(for: .seconds(6))
+            // Undo and Show Changes stay a little longer; afterwards the transcript inspector's ⋯ menu has them.
+            try? await Task.sleep(for: .seconds(toast.action == nil ? 6 : 10))
             if !Task.isCancelled, library.toast?.serial == toast.serial { library.toast = nil }
         }
         .accessibilityElement(children: .contain)
