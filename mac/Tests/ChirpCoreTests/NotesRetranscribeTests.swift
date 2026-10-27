@@ -134,6 +134,13 @@ private final class RetranscribeServer: @unchecked Sendable {
     }
 }
 
+/// How many times the re-transcribe deadline has been armed. The stalled-final test times out the first clip only.
+private final class ArmCount: @unchecked Sendable {
+    private let lock = NSLock()
+    private var n = 0
+    func next() -> Int { lock.withLock { n += 1; return n } }
+}
+
 /// Records the waits asked for; returns at once.
 private final class Waits: @unchecked Sendable {
     private let lock = NSLock()
@@ -439,8 +446,15 @@ private func labelledNote() -> NotesDocument {
 
     @Test func aStalledFinalTimesOutAndTheClipKeepsItsText() async {
         let server = RetranscribeServer([.stall, .final(text: "Next.")])
+        // The stalled clip never answers stop, so that deadline runs out at once. The next clip's final is already
+        // on the socket when its deadline is armed; cancelling there too drops the final before it is emitted.
+        // Waiting (the attempt cancels this sleep once the final lands) keeps the two apart.
+        let arms = ArmCount()
         let runner = NotesRetranscriber(makeSession: server.makeSession, options: notesOptions, health: notesHealth,
-                                        audio: silentClip, deadline: { _ in })
+                                        audio: silentClip, deadline: { _ in
+            if arms.next() == 1 { return }
+            try? await Task.sleep(for: .seconds(30))
+        })
         let result = await runner.run([clip(0), clip(1)])
         #expect(result.failed == 1 && result.code == "timeout" && result.segments.map(\.segment) == [1])
     }

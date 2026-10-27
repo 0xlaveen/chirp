@@ -81,7 +81,7 @@ public struct LearnedGroup: Identifiable, Equatable, Sendable {
     }
 }
 
-/// The Learned list (Settings → Dictation → Learn from my edits → Show Learned…): what was learned, from which edit,
+/// The Learned list (Settings → History & privacy → Learn from my edits → Show Learned…): what was learned, from which edit,
 /// and whether it is in use, by app, with Approve / Undo / Delete each and Reset per app.
 public struct LearnedView: View {
     @Bindable var model: LearnedModel

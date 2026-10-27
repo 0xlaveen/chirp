@@ -380,7 +380,7 @@ public final class Preferences: @unchecked Sendable {
         get { defaults.bool(forKey: "notesVoiceProfiles") }
         set { defaults.set(newValue, forKey: "notesVoiceProfiles") }
     }
-    /// Dictation history (Settings → Dictation → History): on by default, kept on this Mac only, sealed.
+    /// Dictation history (Settings → History & privacy): on by default, kept on this Mac only, sealed.
     public var historyEnabled: Bool {
         get { defaults.object(forKey: "historyEnabled") as? Bool ?? true }
         set { defaults.set(newValue, forKey: "historyEnabled") }
@@ -399,7 +399,7 @@ public final class Preferences: @unchecked Sendable {
             defaults.set(newValue.filter { !$0.isEmpty && seen.insert($0).inserted }, forKey: "historyExcludedApps")
         }
     }
-    /// Learn from my edits (Settings → Dictation): on by default; it only runs while history is on.
+    /// Learn from my edits (Settings → History & privacy): on by default; it only runs while history is on.
     public var learnFromEdits: Bool {
         get { defaults.object(forKey: "learnFromEdits") as? Bool ?? true }
         set { defaults.set(newValue, forKey: "learnFromEdits") }

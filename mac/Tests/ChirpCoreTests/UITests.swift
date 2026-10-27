@@ -173,8 +173,8 @@ import Testing
 
     // MARK: tabs
 
-    @Test func hasSixPagesAndAboutInTheFooter() {
-        #expect(SettingsTab.sidebar.map(\.title) == ["General", "Dictation", "Clean-up", "Notes", "Devices", "Advanced"])
+    @Test func hasTheSidebarPagesWithAboutInTheFooter() {
+        #expect(SettingsTab.sidebar.map(\.title) == ["General", "Dictation", "History & privacy", "Clean-up", "Notes", "Devices", "Advanced"])
         #expect(SettingsTab.allCases.last == .about && !SettingsTab.sidebar.contains(.about))
         #expect(SettingsTab.allCases.allSatisfy { NSImage(systemSymbolName: $0.symbol, accessibilityDescription: nil) != nil })
     }
@@ -190,16 +190,21 @@ import Testing
         #expect(has(form.sounds, .dictation) && has(form.soundPack, .dictation) && has(form.volume, .dictation) && has(form.chooseStart, .dictation))
         #expect(has(form.cleanupEnabled, .cleanup) && has(form.style, .cleanup) && has(form.prompts.view, .cleanup))
         #expect(has(form.appStyles.view, .cleanup) && has(form.showChanges, .cleanup) && has(form.insertRawFirst, .cleanup))
-        #expect(has(form.removeSpeakerModel, .notes) && has(form.notesButton, .notes))
+        #expect(has(form.removeSpeakerModel, .notes) && has(form.notesButton, .notes) && has(form.savedVoicesButton, .notes))
         // Notes: retention, Recently Deleted, kept audio, the export folder and the smart-notes defaults.
         #expect(has(form.notesRetention, .notes) && has(form.emptyDeleted, .notes) && has(form.keepAudio, .notes) && has(form.deleteAudio, .notes))
         #expect(has(form.chooseExport, .notes) && has(form.structureNotes, .notes) && has(form.autoReorganize, .notes))
+        // History & privacy: the phones' Privacy & history group, gathered on one Mac page.
+        #expect(has(form.privateSession, .privacy) && has(form.historyEnabled, .privacy) && has(form.historyRetention, .privacy))
+        #expect(has(form.historyApps.view, .privacy) && has(form.learnFromEdits, .privacy) && has(form.showLearned, .privacy))
+        #expect(!has(form.historyEnabled, .dictation) && !has(form.privateSession, .dictation) && !has(form.learnFromEdits, .dictation))
         // Advanced: the server URL, token, models and Doctor.
         #expect(has(form.serverURL, .advanced) && has(form.doctorButton, .advanced) && has(form.modelsButton, .advanced) && has(form.keepLoaded, .advanced))
         #expect(has(form.pairButton, .devices) && has(form.devicesView, .devices) && has(form.rotateButton, .devices) && has(form.about, .about))
         // and on no other
         for control in [form.launch, form.hotkey, form.sounds, form.cleanupEnabled, form.removeSpeakerModel, form.serverURL, form.keepLoaded,
-                        form.pairButton, form.devicesView, form.rotateButton, form.micButton, form.about, form.keepAudio, form.notesRetention] {
+                        form.pairButton, form.devicesView, form.rotateButton, form.micButton, form.about, form.keepAudio, form.notesRetention,
+                        form.historyEnabled, form.privateSession, form.learnFromEdits, form.savedVoicesButton] {
             #expect(SettingsTab.allCases.filter { has(control, $0) }.count == 1)
         }
     }
@@ -253,7 +258,11 @@ import Testing
         let page = try #require(form.view(for: .dictation).subviews[0] as? NSStackView)
         #expect(page.arrangedSubviews.first is SettingsPageTitle)
         let sections = page.arrangedSubviews.dropFirst()
-        #expect(sections.count == 5)   // Shortcuts, Dictating, Sounds, History, Learn from my edits
+        #expect(sections.count == 3)   // Shortcuts, Dictating, Sounds
+        let privacy = try #require(form.view(for: .privacy).subviews[0] as? NSStackView)
+        let privacySections = privacy.arrangedSubviews.dropFirst()
+        #expect(privacySections.count == 4)   // Privacy, Dictation history, Learn from my edits, What Chirp keeps
+        #expect(privacy.allDescendants(of: NSTextField.self).contains { $0.stringValue == SettingsForm.privacyKeeps })
         #expect(sections.allSatisfy { ($0 as? NSStackView)?.arrangedSubviews.contains { $0 is SettingsCard } == true })
     }
 
@@ -286,7 +295,9 @@ import Testing
     @Test func sidebarSearchMatchesTitlesAndKeywords() {
         #expect(SettingsShell.pages(matching: "") == SettingsTab.allCases)
         #expect(SettingsShell.pages(matching: "token").contains(.advanced) && SettingsShell.pages(matching: "token").contains(.devices))
-        #expect(SettingsShell.pages(matching: "Retention") == [.notes])
+        #expect(SettingsShell.pages(matching: "Retention") == [.privacy, .notes])
+        #expect(SettingsShell.pages(matching: "private session") == [.privacy])
+        #expect(SettingsShell.pages(matching: "history") == [.privacy])
         #expect(SettingsShell.pages(matching: "login") == [.general])
         #expect(SettingsShell.pages(matching: "zzz").isEmpty)
     }
@@ -309,6 +320,17 @@ import Testing
         #expect(shell.selected == .advanced)
         shell.setSearch("")
         #expect(shell.selected == .advanced)
+        shell.show(.notes)
+        shell.showDetail(content: shell.form.voicesView, title: "Saved voices", back: "Notes")
+        #expect(shell.isShowingDetail && shell.selected == .notes)
+        #expect(shell.form.voicesView.isDescendant(of: shell))
+        #expect(shell.openPageHeight > 120)
+        #expect(shell.form.savedVoicesButton.accessibilityLabel() == "Saved voices")
+        shell.popDetail()
+        #expect(!shell.isShowingDetail && shell.selected == .notes)
+        shell.showDetail(content: shell.form.voicesView, title: "Saved voices", back: "Notes")
+        shell.show(.dictation)
+        #expect(!shell.isShowingDetail && shell.selected == .dictation)
     }
 
     @Test func microphonePickerFollowsTheMenuRules() {
@@ -339,7 +361,7 @@ import Testing
         #expect(!form.removeSpeakerModel.isHidden && form.removeSpeakerModel.accessibilityLabel() == "Remove the speaker model")
     }
 
-    @Test(arguments: [(SettingsTab.general, "Set up Chirp"), (.dictation, "Dictation"), (.cleanup, "Style"), (.notes, "Delete notes older than"),
+    @Test(arguments: [(SettingsTab.general, "Set up Chirp"), (.dictation, "Dictation"), (.privacy, "Keep for"), (.cleanup, "Style"), (.notes, "Delete notes older than"),
                       (.advanced, "Server URL"), (.devices, "Pair a phone")])
     func rowTitlesShareALeftEdgeAndTheirControlsATrailingEdge(tab: SettingsTab, title: String) throws {
         let form = SettingsForm(SettingsState())
@@ -604,7 +626,8 @@ import Testing
               let voices = try committed("settings-saved-voices-ready-light.png") else { return }
         // These bands contain the checked boxes and exclude the sidebar icons. Native cells shade the asset hue.
         #expect(samples(general, x0: 460, x1: 500, near: (194, 90, 25)) > 1)
-        #expect(samples(voices, x0: 40, x1: 80, near: (194, 90, 25)) > 1)
+        // Saved voices is a detail page: the checkbox sits in the detail column, past the sidebar.
+        #expect(samples(voices, x0: 420, x1: 520, near: (194, 90, 25)) > 1)
     }
 
     @Test func theNotesSidebarSitsOnPondWithAKoiSelectedRow() throws {

@@ -12,6 +12,9 @@ public final class SettingsShell: NSView, NSSearchFieldDelegate {
     public private(set) var selected: SettingsTab
     /// The user (or `select`) moved to a page.
     public var onSelect: ((SettingsTab) -> Void)?
+    /// A detail page opened (`title`) or closed (nil). The sidebar stays on `selected`.
+    public var onDetail: ((String?) -> Void)?
+    public private(set) var isShowingDetail = false
 
     private let sidebar: NSView
     private let search = NSSearchField()
@@ -20,6 +23,9 @@ public final class SettingsShell: NSView, NSSearchFieldDelegate {
     private var rows: [SettingsTab: SettingsSidebarRow] = [:]
     private let detail = NSView()
     private let scroll = NSScrollView()
+    private var detailHost: SettingsDetailHost?
+    /// Pages already pinned to the scroll clip, so showing one again does not add a second set of constraints.
+    private var pinned: Set<ObjectIdentifier> = []
 
     /// - Parameter flat: draws the sidebar as a plain Pond surface instead of the live `.sidebar` material (the offscreen snapshots
     ///   have no window to blur through).
@@ -140,25 +146,66 @@ public final class SettingsShell: NSView, NSSearchFieldDelegate {
 
     // MARK: selection
 
-    /// Shows `tab`'s page and marks its row.
+    /// Shows `tab`'s page and marks its row. A detail page closes, because the sidebar chose a section.
     public func show(_ tab: SettingsTab, notify: Bool = true) {
+        let wasDetail = isShowingDetail
         selected = tab
         for (t, row) in rows { row.isSelected = t == tab }
+        if wasDetail {
+            detailHost = nil
+            isShowingDetail = false
+            onDetail?(nil)
+        }
         let page = form.view(for: tab)
-        if scroll.documentView !== page {
-            page.translatesAutoresizingMaskIntoConstraints = false
-            scroll.documentView = page
+        if wasDetail || scroll.documentView !== page { install(page) }
+        setAccessibilityLabel("Settings, \(tab.title)")
+        if notify { onSelect?(tab) }
+    }
+
+    /// Replaces the open page with a detail page (Saved voices under Notes). The sidebar selection stays.
+    public func showDetail(content: NSView, title: String, back: String) {
+        content.translatesAutoresizingMaskIntoConstraints = false
+        let host = SettingsDetailHost(title: title, back: back, content: content)
+        host.onBack = { [weak self] in self?.popDetail() }
+        detailHost = host
+        isShowingDetail = true
+        install(host)
+        setAccessibilityLabel("Settings, \(title)")
+        onDetail?(title)
+    }
+
+    /// Returns from a detail page to the sidebar's selected page.
+    public func popDetail() {
+        guard isShowingDetail else { return }
+        detailHost = nil
+        isShowingDetail = false
+        install(form.view(for: selected))
+        setAccessibilityLabel("Settings, \(selected.title)")
+        onDetail?(nil)
+    }
+
+    /// The open page's height, for a snapshot that shows the whole page under the title bar.
+    public var openPageHeight: CGFloat {
+        guard let page = scroll.documentView else { return 0 }
+        page.layoutSubtreeIfNeeded()
+        return page.fittingSize.height
+    }
+
+    private func install(_ page: NSView) {
+        let first = pinned.insert(ObjectIdentifier(page)).inserted
+        page.translatesAutoresizingMaskIntoConstraints = false
+        scroll.documentView = page
+        if first {
             let clip = scroll.contentView
             NSLayoutConstraint.activate([
                 page.topAnchor.constraint(equalTo: clip.topAnchor),
                 page.leadingAnchor.constraint(equalTo: clip.leadingAnchor),
                 page.trailingAnchor.constraint(equalTo: clip.trailingAnchor),
             ])
-            clip.scroll(to: .zero)
-            scroll.reflectScrolledClipView(clip)
         }
-        setAccessibilityLabel("Settings, \(tab.title)")
-        if notify { onSelect?(tab) }
+        let clip = scroll.contentView
+        clip.scroll(to: .zero)
+        scroll.reflectScrolledClipView(clip)
     }
 
     /// How many of the two permissions are missing: the number General's badge shows.
@@ -233,6 +280,7 @@ final class SettingsSidebarRow: NSView {
     private let icon = NSImageView()
     private let label = NSTextField(labelWithString: "")
     private let badgeView = NSTextField(labelWithString: "")
+    private var badgeWidth: NSLayoutConstraint!
 
     init(tab: SettingsTab) {
         self.tab = tab
@@ -283,10 +331,11 @@ final class SettingsSidebarRow: NSView {
             label.centerYAnchor.constraint(equalTo: centerYAnchor),
             badgeView.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -8),
             badgeView.centerYAnchor.constraint(equalTo: centerYAnchor),
-            badgeView.widthAnchor.constraint(equalToConstant: 16),
             badgeView.heightAnchor.constraint(equalToConstant: 16),
             label.trailingAnchor.constraint(lessThanOrEqualTo: badgeView.leadingAnchor, constant: -4),
         ])
+        badgeWidth = badgeView.widthAnchor.constraint(equalToConstant: 0)
+        badgeWidth.isActive = true
         setAccessibilityElement(true)
         setAccessibilityRole(.radioButton)
         restyle()
@@ -303,6 +352,7 @@ final class SettingsSidebarRow: NSView {
     private func restyle() {
         badgeView.isHidden = badge == 0
         badgeView.stringValue = "\(badge)"
+        badgeWidth.constant = badge == 0 ? 0 : 16
         effectiveAppearance.performAsCurrentDrawingAppearance {
             layer?.backgroundColor = (isSelected ? SettingsLayout.selection : .clear).cgColor
             tile.layer?.backgroundColor = (isSelected ? SettingsLayout.selectionTile : NSColor.labelColor.withAlphaComponent(0.1)).cgColor
@@ -314,4 +364,48 @@ final class SettingsSidebarRow: NSView {
         setAccessibilityValue(isSelected ? 1 : 0)
         setAccessibilityLabel(badge > 0 ? "\(tab.title), \(badge) \(badge == 1 ? "permission needs" : "permissions need") attention" : tab.title)
     }
+}
+
+/// A page pushed over the selected section: a back button, the page title, then its content.
+@MainActor
+final class SettingsDetailHost: NSView {
+    var onBack: (() -> Void)?
+    private let backButton: NSButton
+    override var isFlipped: Bool { true }
+
+    init(title: String, back: String, content: NSView) {
+        let image = NSImage(systemSymbolName: "chevron.left", accessibilityDescription: nil) ?? NSImage()
+        image.isTemplate = true
+        backButton = NSButton(title: back, image: image, target: nil, action: nil)
+        super.init(frame: .zero)
+        backButton.imagePosition = .imageLeading
+        backButton.imageHugsTitle = true
+        backButton.isBordered = false
+        backButton.font = .systemFont(ofSize: 13, weight: .medium)
+        backButton.contentTintColor = .controlAccentColor
+        backButton.target = self
+        backButton.action = #selector(goBack)
+        backButton.setAccessibilityLabel("Back to \(back)")
+        let stack = NSStackView()
+        stack.orientation = .vertical
+        stack.alignment = .leading
+        stack.spacing = ChirpSpacing.s16
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        stack.addArrangedSubview(backButton)
+        stack.addArrangedSubview(SettingsPageTitle(title))
+        stack.setCustomSpacing(ChirpSpacing.s4, after: backButton)
+        content.translatesAutoresizingMaskIntoConstraints = false
+        stack.addArrangedSubview(content)
+        addSubview(stack)
+        NSLayoutConstraint.activate([
+            stack.topAnchor.constraint(equalTo: topAnchor, constant: SettingsForm.margin),
+            bottomAnchor.constraint(equalTo: stack.bottomAnchor, constant: SettingsForm.margin),
+            stack.leadingAnchor.constraint(equalTo: leadingAnchor, constant: SettingsForm.margin),
+            widthAnchor.constraint(equalToConstant: SettingsForm.pageWidth),
+        ])
+    }
+
+    @available(*, unavailable) required init?(coder: NSCoder) { fatalError("not used") }
+
+    @objc private func goBack() { onBack?() }
 }

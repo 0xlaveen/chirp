@@ -48,14 +48,28 @@ public final class VoiceProfilesView: NSStackView {
     private let list = NSStackView()
     private let status = SettingsForm.help("")
     private let explanation = SettingsForm.help("")
+    private let title = NSTextField(labelWithString: "Saved voices")
+    private var widthConstraint: NSLayoutConstraint!
+    private var contentWidth = SettingsForm.controlWidth
     private let forgetAll = NSButton(title: VoiceProfilesText.forgetAll, target: nil, action: nil)
     public private(set) var shown: [SavedVoice] = []
+    /// The settings detail page draws its own title. The standalone sheet keeps this one.
+    public var showsTitle: Bool {
+        get { !title.isHidden }
+        set { title.isHidden = !newValue }
+    }
+
+    /// Fills the Settings detail column. The sheet keeps the narrower control width.
+    public func fitSettingsPage() {
+        contentWidth = SettingsLayout.pageWidth
+        widthConstraint.constant = contentWidth
+    }
 
     public init() {
         super.init(frame: .zero)
+        widthConstraint = widthAnchor.constraint(equalToConstant: SettingsForm.controlWidth)
+        widthConstraint.isActive = true
         orientation = .vertical; alignment = .leading; spacing = 12
-        widthAnchor.constraint(equalToConstant: SettingsForm.controlWidth).isActive = true
-        let title = NSTextField(labelWithString: "Saved voices")
         title.font = .systemFont(ofSize: 20, weight: .semibold)
         toggle.target = self; toggle.action = #selector(toggled)
         forgetAll.bezelStyle = .rounded; forgetAll.controlSize = .small
@@ -86,7 +100,7 @@ public final class VoiceProfilesView: NSStackView {
             name.font = MenuStyle.semiboldFont
             let detail = NSTextField(wrappingLabelWithString: VoiceProfilesText.detail(profile, locale: locale, timeZone: timeZone))
             detail.font = MenuStyle.secondaryFont
-            detail.preferredMaxLayoutWidth = SettingsForm.controlWidth - 48
+            detail.preferredMaxLayoutWidth = contentWidth - 48
             detail.maximumNumberOfLines = 2
             detail.textColor = profile.compatible ? .secondaryLabelColor : .systemOrange
             let text = NSStackView(views: [name, detail])

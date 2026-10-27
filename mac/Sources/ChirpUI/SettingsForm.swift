@@ -114,15 +114,16 @@ public struct SettingsState: Sendable {
 }
 
 /// The preferences window's pages, in the sidebar's order: start Chirp and fix permissions; dictation (every shortcut,
-/// how a dictation stops, sounds and where it listens); clean-up; the Notes library; phones; and Advanced (the server, its
-/// token, models and the Doctor). About is the sidebar's footer row.
+/// how a dictation stops, sounds and where it listens); history and privacy; clean-up; the Notes library; phones; and
+/// Advanced (the server, its token, models and the Doctor). About is the sidebar's footer row.
 public enum SettingsTab: String, CaseIterable, Sendable {
-    case general, dictation, cleanup, notes, devices, advanced, about
+    case general, dictation, privacy, cleanup, notes, devices, advanced, about
 
     public var title: String {
         switch self {
         case .general: "General"
         case .dictation: "Dictation"
+        case .privacy: "History & privacy"
         case .cleanup: "Clean-up"
         case .notes: "Notes"
         case .devices: "Devices"
@@ -136,6 +137,7 @@ public enum SettingsTab: String, CaseIterable, Sendable {
         switch self {
         case .general: "gearshape"
         case .dictation: "mic"
+        case .privacy: "lock.shield"
         case .cleanup: "sparkles"
         case .notes: "note.text"
         case .devices: "iphone"
@@ -149,11 +151,12 @@ public enum SettingsTab: String, CaseIterable, Sendable {
         switch self {
         case .general: ["startup", "launch at login", "dock", "permissions", "microphone", "accessibility", "setup"]
         case .dictation: ["shortcuts", "hotkey", "hold to talk", "auto-stop", "stop", "silence", "return", "word waveform",
-                          "sounds", "volume", "input device", "use raw", "new note", "history", "recent dictations", "privacy",
-                          "learn", "learned", "edits", "vocabulary", "terms", "private session", "spoken commands", "new line", "new paragraph"]
+                          "sounds", "volume", "input device", "use raw", "new note", "spoken commands", "new line", "new paragraph"]
+        case .privacy: ["history", "dictation history", "recent dictations", "retention", "clear", "privacy", "learn",
+                        "learned", "edits", "vocabulary", "terms", "private session", "never keep", "excluded"]
         case .cleanup: ["style", "prompts", "per-app", "insert raw", "review changes", "undo", "polish"]
         case .notes: ["library", "retention", "recently deleted", "audio", "storage", "export", "folder", "smart notes",
-                      "structure", "reorganize", "speakers", "voices", "call audio", "sources", "zoom", "meeting"]
+                      "structure", "reorganize", "speakers", "voices", "saved voices", "call audio", "sources", "zoom", "meeting"]
         case .devices: ["phone", "pair", "paired", "android", "iphone", "token", "revoke"]
         case .advanced: ["server", "url", "token", "models", "doctor", "keep loaded", "status"]
         case .about: ["version", "notices", "licenses"]
@@ -181,6 +184,8 @@ public final class SettingsContentView: NSView {
 public final class SettingsForm {
     /// Notes › Sources: what "Include call audio" records, said before macOS asks for the permission.
     public static let callAudioHelp = "Records what your Mac plays (the other people on a call) beside your microphone, so both sides are transcribed. Your microphone is labelled “You”. macOS asks once for Screen & System Audio Recording. Kept audio stays on this Mac; transcription uses your configured Chirp server."
+    /// History & privacy › What Chirp keeps. The privacy-page footer (docs/copy.md).
+    public static let privacyKeeps = "Notes stay on this Mac."
     static let margin: CGFloat = ChirpSpacing.gutter
     /// The width a control that fills its row may take.
     static let controlWidth: CGFloat = SettingsLayout.rowWidth
@@ -288,9 +293,11 @@ public final class SettingsForm {
     public let retrySpeakerModel = NSButton(title: "Retry", target: nil, action: nil)
     private let speakerStatus = StatusLine()
     private let speakerHelp = SettingsForm.help("")
-    /// Notes: "Recognize saved voices" and the saved voices, each with Forget.
+    /// Notes: the Saved voices library, shown as a detail page rather than a sheet.
     public let voicesView = VoiceProfilesView()
-    public let savedVoicesButton = NSButton(title: "Saved voices…", target: nil, action: nil)
+    private let savedVoicesLink = SettingsDisclosure("Saved voices")
+    /// The Notes row that opens Saved voices. The whole row is the button.
+    public var savedVoicesButton: NSButton { savedVoicesLink.button }
     /// Notes: brings the Notes window forward.
     public let notesButton = NSButton(title: "Open Notes Library", target: nil, action: nil)
     /// About: the icon, the version and Third-Party Notices….
@@ -451,8 +458,13 @@ public final class SettingsForm {
                 row(nil, sounds, help: Self.help("Quiet sounds when dictation starts and stops. Off keeps Chirp silent.")),
                 row("Pack", packRow, help: packHelp), row("Volume", volumeRow), startRow, stopRow,
             ]),
-            SettingsSection("History", [
+        ])
+
+        build(.privacy, [
+            SettingsSection("Privacy", [
                 row(nil, privateSession, help: Self.help(PrivateSession.help)),
+            ]),
+            SettingsSection("Dictation history", [
                 row(nil, historyEnabled, help: Self.help(HistorySettingsText.keepHelp)),
                 row("Keep for", historyRetention, help: Self.help(HistorySettingsText.retentionHelp)),
                 row("Never keep", historyApps.view, help: Self.help(HistorySettingsText.appsHelp)),
@@ -461,6 +473,9 @@ public final class SettingsForm {
             SettingsSection(LearnedText.toggle, [
                 row(nil, learnFromEdits, help: learnHelp),
                 row("Learned", line([learnedStatus, showLearned])),
+            ]),
+            SettingsSection("What Chirp keeps", [
+                row(nil, Self.help(Self.privacyKeeps), stacked: true),
             ]),
         ])
 
@@ -502,7 +517,7 @@ public final class SettingsForm {
             SettingsSection("Speakers", [
                 row(nil, labelSpeakers, help: Self.help("On by default. Shows who said what as Person 1, Person 2… in the transcript, the notes and exports. Voices are told apart on this Mac only.")),
                 row(nil, stack([speakerStatus, speakerHelp])),
-                row("Saved voices", savedVoicesButton, help: Self.help("Names recognised on all your devices.")),
+                row(nil, savedVoicesLink, help: Self.help("Names recognised on all your devices.")),
             ]),
         ])
 

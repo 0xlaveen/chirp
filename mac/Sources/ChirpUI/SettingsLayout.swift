@@ -236,3 +236,52 @@ struct SettingsSection {
         return stack
     }
 }
+
+/// A settings row that opens a detail page: the title on the left, a chevron on the right, and one button over both.
+@MainActor
+final class SettingsDisclosure: NSView {
+    let button = NSButton()
+
+    init(_ title: String) {
+        super.init(frame: .zero)
+        translatesAutoresizingMaskIntoConstraints = false
+        let label = NSTextField(labelWithString: title)
+        label.font = MenuStyle.font
+        label.textColor = .labelColor
+        label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        let chevron = NSImageView()
+        chevron.image = NSImage(systemSymbolName: "chevron.right", accessibilityDescription: nil)
+        chevron.contentTintColor = .tertiaryLabelColor
+        chevron.symbolConfiguration = NSImage.SymbolConfiguration(pointSize: 11, weight: .semibold)
+        chevron.setAccessibilityElement(false)
+        let spacer = NSView()
+        spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        let row = NSStackView(views: [label, spacer, chevron])
+        row.orientation = .horizontal
+        row.alignment = .centerY
+        row.spacing = 8
+        row.translatesAutoresizingMaskIntoConstraints = false
+        button.isBordered = false
+        button.title = ""
+        button.setAccessibilityLabel(title)
+        button.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(row)
+        addSubview(button)
+        NSLayoutConstraint.activate([
+            widthAnchor.constraint(equalToConstant: SettingsLayout.rowWidth),
+            heightAnchor.constraint(greaterThanOrEqualToConstant: 22),
+            row.leadingAnchor.constraint(equalTo: leadingAnchor),
+            row.trailingAnchor.constraint(equalTo: trailingAnchor),
+            row.topAnchor.constraint(equalTo: topAnchor),
+            row.bottomAnchor.constraint(equalTo: bottomAnchor),
+            chevron.widthAnchor.constraint(equalToConstant: 10),
+            chevron.heightAnchor.constraint(equalToConstant: 14),
+            button.leadingAnchor.constraint(equalTo: leadingAnchor),
+            button.trailingAnchor.constraint(equalTo: trailingAnchor),
+            button.topAnchor.constraint(equalTo: topAnchor),
+            button.bottomAnchor.constraint(equalTo: bottomAnchor),
+        ])
+    }
+
+    @available(*, unavailable) required init?(coder: NSCoder) { fatalError("not used") }
+}

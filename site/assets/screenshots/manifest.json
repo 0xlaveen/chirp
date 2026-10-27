@@ -1064,7 +1064,7 @@
     ]
   },
   "mac/onboarding-welcome-dark.png": {
-    "sha256": "6afd2c9bea5f68dc2ca7bf207a64e145423aad9c7395b90a0dd77ace9ea156fb",
+    "sha256": "8c345a004e741793c57bc9894fe1897d63c407f0d9fe4e999207883e663c0ed1",
     "width": 1440,
     "height": 920,
     "variants": [
@@ -1091,7 +1091,7 @@
     ]
   },
   "mac/onboarding-welcome-light.png": {
-    "sha256": "b9f7f935a4f9ccf80f505a453f395839bde3ad04c21e97c1effbf0753ed26e6c",
+    "sha256": "1871cb93966bbc0601a84a44a09af98f15cc95d8c04e949ee0058ababf8cd37d",
     "width": 1440,
     "height": 920,
     "variants": [
@@ -1118,7 +1118,7 @@
     ]
   },
   "mac/settings-advanced-ready-dark.png": {
-    "sha256": "555e7d7e29a22a36ab3facd8539ff40ccad796d372cafb4ec8375abb3af4e9d9",
+    "sha256": "78469e81c4b2e0f7dfd649c56648f7d7cefcaf0f6505410c9ee4d56855e1a823",
     "width": 1440,
     "height": 1124,
     "variants": [
@@ -1145,7 +1145,7 @@
     ]
   },
   "mac/settings-advanced-ready-light.png": {
-    "sha256": "2790cb73669b53c7bcc12cf5c41ca7cc696f18569005211677d28bf8ab786c56",
+    "sha256": "7c0ba8bbd79c4bbc5ee457c0302b7aa69f528239085beabf8943007a5dc95e1e",
     "width": 1440,
     "height": 1124,
     "variants": [
@@ -1172,7 +1172,7 @@
     ]
   },
   "mac/settings-devices-ready-dark.png": {
-    "sha256": "09d2779180dfc96df5ad2504ec56d6c63acfb77f03c445ddb8155a2980a790c3",
+    "sha256": "7bdf9095d2eadc8e10e8b76cb9e8434c653ff7badeb4f47292280e91f9f9bc82",
     "width": 1440,
     "height": 1040,
     "variants": [
@@ -1199,7 +1199,7 @@
     ]
   },
   "mac/settings-devices-ready-light.png": {
-    "sha256": "224b12d485bbca77c720754ce260799e49d73cbb701bcc35b31a971d171ece57",
+    "sha256": "515f1b7adfd24bdee3cf74ac0bb0f1b0b61c1cbcce7d8351429b1f33cc5b0260",
     "width": 1440,
     "height": 1040,
     "variants": [

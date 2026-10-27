@@ -41,7 +41,7 @@ public struct DictationEntry: Codable, Sendable, Equatable, Identifiable, Custom
     public var debugDescription: String { description }
 }
 
-/// How long dictation history is kept (Settings → Dictation → History). 30 days by default.
+/// How long dictation history is kept (Settings → History & privacy). 30 days by default.
 public enum DictationRetention: String, CaseIterable, Codable, Sendable {
     case oneDay, sevenDays, thirtyDays, ninetyDays, forever
 
