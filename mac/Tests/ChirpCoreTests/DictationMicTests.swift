@@ -216,6 +216,8 @@ private final class ConnectingSocket: StreamTransport, @unchecked Sendable {
     func cancel(with code: URLSessionWebSocketTask.CloseCode) { input.finish() }
 }
 
+/// Real StreamSessions: on the hosted runners' Swift 6.2/6.3 these abort a shared test process, so `ci-test.sh` runs
+/// them one test per process (with the other stream suites).
 @Suite(.timeLimit(.minutes(1))) struct DictationStartTests {
     @Test func audioCapturedWhileTheSocketConnectsIsSentInOrderOnceItIsUp() async throws {
         let engine = FakeEngine()
