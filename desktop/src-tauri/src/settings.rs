@@ -14,6 +14,9 @@ pub struct Settings {
     pub hotkey: HotKey,
     pub mode: HotkeyMode,
     pub correction: bool,
+    pub spoken_commands: bool,
+    pub history_enabled: bool,
+    pub history_days: u32,
     pub portal_enabled: bool,
     pub portal_shortcut: String,
 }
@@ -24,6 +27,9 @@ impl Default for Settings {
             hotkey: platform::native().default_hotkey(),
             mode: HotkeyMode::Hold,
             correction: false,
+            spoken_commands: false,
+            history_enabled: true,
+            history_days: 7,
             portal_enabled: false,
             portal_shortcut: "CTRL+ALT+space".into(),
         }
@@ -104,6 +110,9 @@ impl Settings {
     }
     pub fn save(&self) -> Result<(), String> {
         stream_url(&self.url)?;
+        if ![1, 7, 30].contains(&self.history_days) {
+            return Err("Choose 24 hours, 7 days or 30 days for history".into());
+        }
         validate_portal_trigger(&self.portal_shortcut)?;
         let path = path()?;
         std::fs::create_dir_all(path.parent().ok_or("Invalid settings directory")?)
@@ -169,6 +178,9 @@ mod portal_tests {
     fn old_preferences_keep_native_defaults_and_do_not_open_a_portal_dialog() {
         let settings: Settings = serde_json::from_str(r#"{"url":"http://localhost:7899","hotkey":"RightAlt","mode":"Hold","correction":false}"#).unwrap();
         assert!(!settings.portal_enabled);
+        assert!(settings.history_enabled);
+        assert_eq!(settings.history_days, 7);
+        assert!(!settings.spoken_commands);
         assert_eq!(settings.portal_shortcut, "CTRL+ALT+space");
         assert_eq!(settings.hotkey, HotKey::RightAlt);
     }

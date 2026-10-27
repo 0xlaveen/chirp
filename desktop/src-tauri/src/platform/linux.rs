@@ -165,6 +165,14 @@ impl Platform for Linux {
         result
     }
 
+    fn copy_text(&self, text: &str) -> Result<(), String> {
+        if wayland() {
+            pipe("wl-copy", &["--type", "text/plain;charset=utf-8"], text)
+        } else {
+            pipe("xclip", &["-selection", "clipboard", "-in"], text)
+        }
+    }
+
     fn insert_text(&self, text: &str) -> Result<InsertionOutcome, String> {
         if text.is_empty() {
             return Ok(InsertionOutcome::Typed);
