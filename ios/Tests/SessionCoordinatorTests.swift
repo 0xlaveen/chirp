@@ -317,10 +317,10 @@ struct SessionCoordinatorTests {
         #expect(try f.stores.history.entries().isEmpty)
     }
 
-    @Test func cleanupRequiresExplicitKnownDestinationConsent() {
+    @Test func localCleanupDefaultsOnAndExternalRequiresKnownDestinationConsent() {
         var preferences = IOSPreferences()
         let local = Health(correction: "available", correctionLeavesMachine: false)
-        #expect(!preferences.permitsCorrection(health: local))
+        #expect(preferences.permitsCorrection(health: local))
         preferences.correction = true
         #expect(preferences.permitsCorrection(health: local))
         let external = Health(correction: "available", correctionLeavesMachine: true, correctionHost: "synthetic.example")
