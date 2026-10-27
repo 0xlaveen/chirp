@@ -663,7 +663,7 @@ final class SessionCoordinator: ObservableObject {
             catch { notice = SessionFailure.storage.localizedDescription; record(.storage) }
         }
         if companion == id { copyText(whole); companion = nil; notice = "Copied final text." }
-        else { notice = result.corrected ? "Cleaned. Copy or share when ready." : "Finished. Copy or share when ready." }
+        else { notice = result.corrected ? "Polished. Copy or share when ready." : "Finished. Copy or share when ready." }
         for waiter in waiters.removeValue(forKey: id) ?? [] { waiter.resume() }
         rawExpiresAt = now().addingTimeInterval(5)
         rawExpiry = Task { [weak self] in
@@ -706,8 +706,9 @@ final class SessionCoordinator: ObservableObject {
             catch { notice = SessionFailure.storage.localizedDescription; record(.storage) }
         }
     }
-    func copy() {
-        let whole = LongText.join(landed.map(\.text) + (text.isEmpty ? [] : [text]))
+    /// Copies the finished text, or the user's edit of it from Dictate.
+    func copy(_ edited: String? = nil) {
+        let whole = edited ?? LongText.join(landed.map(\.text) + (text.isEmpty ? [] : [text]))
         guard !whole.isEmpty, phase == .finished else { return }; copyText(whole); notice = "Copied."
     }
 

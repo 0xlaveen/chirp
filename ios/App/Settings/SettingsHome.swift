@@ -116,7 +116,7 @@ struct SettingsHome: View {
     @ViewBuilder private func rowTile(_ category: SettingsCategory, summary: String) -> some View {
         let chosen = sizeClass == .regular && selection == category
         let tile = RowTile(hasSummary: true, fill: chosen ? Color.chirp.koiContainer : Color.chirp.surface) {
-            RowText(title: category.title, summary: summary, symbol: category.symbol)
+            RowText(title: category.title, summary: summary, symbol: category.symbol, summaryLimit: 2)
             Spacer(minLength: 0)
             Image(systemName: "chevron.right").font(.footnote.weight(.semibold))
                 .foregroundStyle(Color.chirp.inkMuted).accessibilityHidden(true)
@@ -154,7 +154,9 @@ struct SettingsHome: View {
         case .dictation: return model.dictationSummary
         case .keyboard: return model.keyboardReady ? "Chirp Keyboard on · Full Access" : "Not set up"
         case .notes: return notesSummary
-        case .privacy: return history.enabled ? "History on · keeps \(history.retention.label)" : "History off"
+        case .privacy:
+            guard history.enabled else { return "History off" }
+            return model.preferences.privacyMode ? "History paused" : "History on · keeps \(history.retention.label)"
         case .about: return Self.versionSummary
         }
     }
@@ -168,10 +170,10 @@ struct SettingsHome: View {
         return parts.joined(separator: " · ")
     }
 
-    /// "Session running · 4:12 left" while armed, else the length and private state.
+    /// "Session running · 4:12 left" while armed, else the length.
     private func sessionSummaryText(at date: Date) -> String {
         guard model.armed else {
-            return model.preferences.sessionDuration.label + " · private " + (model.preferences.privacyMode ? "on" : "off")
+            return model.preferences.sessionDuration.label
         }
         guard let end = model.expiresAt else { return "Session running" }
         return "Session running · \(DictateView.clock(end.timeIntervalSince(date))) left"

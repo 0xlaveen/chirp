@@ -129,6 +129,29 @@ final class ChirpUITests: XCTestCase {
         XCTAssertFalse(app.staticTexts["transcript"].exists)
     }
 
+    /// The finished text can be edited, then Save as note makes a new note with it and shows it (#271 A2-8).
+    @MainActor func testDictateEditAndSaveAsNote() {
+        let app = pairedApp()
+        app.selectChirpTab("Dictate")
+        app.buttons["chirp.dictation.start"].tap()
+        XCTAssertTrue(waitFor(app.staticTexts["transcript"], "label == 'synthetic words'"))
+        app.buttons["chirp.dictation.stop"].tap()
+        XCTAssertTrue(waitFor(app.staticTexts["transcript"], "label == 'Synthetic words.'"))
+        app.buttons["chirp.dictation.edit"].tap()
+        let editor = app.textViews["chirp.dictation.editor"].exists ? app.textViews["chirp.dictation.editor"] : app.textFields["chirp.dictation.editor"]
+        XCTAssertTrue(editor.waitForExistence(timeout: 5))
+        editor.typeText(" Edited here.")
+        screenshot("Dictate editing", app)
+        app.buttons["chirp.dictation.edit"].tap()
+        XCTAssertTrue(waitFor(app.staticTexts["transcript"], "label == 'Synthetic words. Edited here.'"))
+        app.buttons["chirp.dictation.saveNote"].tap()
+        let preview = app.descendants(matching: .any).matching(identifier: "chirp.notes.preview").firstMatch
+        XCTAssertTrue(preview.waitForExistence(timeout: 10), "Save as note opens the new note")
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'Edited here.'")).firstMatch.waitForExistence(timeout: 5))
+        screenshot("Dictate saved as note", app)
+        app.endChirpSession()
+    }
+
     @MainActor func testHistoryOffAndAdaptiveOrientation() {
         let app = pairedApp()
         app.selectChirpTab("History")

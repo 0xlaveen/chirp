@@ -6,7 +6,8 @@ import SwiftUI
 /// as, separate), the rename sheet and the status line while the Mac fetches its model. Names are note content and are
 /// never logged.
 
-/// A person's colour dot and name on a tinted capsule. The name stays in Pond ink so it reads on every hue.
+/// The canonical speaker chip (#271 2.3), the same as the Mac's and Android's: a colour dot and the name in the person's
+/// hue on a 12/18% tint of it, with a trailing ✓ for a recognised voice. Each hue is 4.5:1 on its own tint.
 struct SpeakerChip: View {
     let name: String
     let colorIndex: Int
@@ -16,9 +17,8 @@ struct SpeakerChip: View {
     var body: some View {
         let hue = SpeakerPalette.color(colorIndex)
         HStack(spacing: 6) {
-            Circle().fill(hue).frame(width: 8, height: 8)
-            if recognised { Image(systemName: "checkmark").font(.caption).accessibilityLabel("Recognised") }
-            Text(name).font(.subheadline.weight(.medium)).foregroundStyle(Color.chirp.ink).lineLimit(1)
+            Circle().fill(hue).frame(width: 8, height: 8).accessibilityHidden(true)
+            Text(name + (recognised ? " ✓" : "")).font(.subheadline.weight(.semibold)).foregroundStyle(hue).lineLimit(1)
         }
         .padding(.horizontal, 10).padding(.vertical, 5)
         .background(hue.opacity(scheme == .dark ? SpeakerPalette.tint.dark : SpeakerPalette.tint.light), in: Capsule())
@@ -49,7 +49,7 @@ struct SpeakerTurnsView: View {
                                     .accessibilityIdentifier("chirp.notes.speaker.not")
                             }
                             if notes.canUpdateVoice(turn.person) {
-                                Button("Update \(menu.name)’s saved voice") { notes.updateVoice(turn.person) }
+                                Button("Update \(menu.name)’s voice") { notes.updateVoice(turn.person) }
                                     .accessibilityIdentifier("chirp.notes.speaker.updateVoice")
                             }
                             Button("Rename “\(menu.name)”…", systemImage: "pencil") { rename(turn.person) }
@@ -227,7 +227,7 @@ struct NameSpeakersSheet: View {
                                     .accessibilityIdentifier("chirp.notes.speakers.remember.\(id)")
                             }
                             if preview.namableSpeakers.count > 1 {
-                                Button("Same as ▸") { focused = nil; mergingPerson = id }
+                                Button("Same person as…") { focused = nil; mergingPerson = id }
                                     .accessibilityIdentifier("chirp.notes.speakers.same.\(id)")
                             }
                         } header: { Text("Person \(id)") }

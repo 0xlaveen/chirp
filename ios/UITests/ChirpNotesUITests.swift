@@ -179,7 +179,7 @@ final class ChirpNotesUITests: XCTestCase {
         XCTAssertTrue(saver.waitForExistence(timeout: 5)); XCTAssertEqual(saver.value as? String, "1")
         XCTAssertEqual(Self.element("chirp.notes.keepNotes", in: app).value as? String, "1")
         XCTAssertEqual(Self.element("chirp.notes.keepAudio", in: app).value as? String, "0")
-        XCTAssertTrue(app.staticTexts["Never"].exists)
+        XCTAssertTrue(app.buttons["Never"].exists)
         screenshot("notes-settings", app)
         app.buttons["Done"].tap()
         defer { XCUIDevice.shared.orientation = .portrait }
@@ -216,7 +216,7 @@ final class ChirpNotesUITests: XCTestCase {
         app.buttons["Done"].firstMatch.tap()
         XCTAssertTrue(app.buttons["chirp.notes.title"].waitForExistence(timeout: 5))
         backToLibrary(app)
-        app.buttons["Search notes"].tap()
+        // The docked field is the library's only search (no toolbar magnifier, #271 2.6).
         let search = app.searchFields.firstMatch
         XCTAssertTrue(search.waitForExistence(timeout: 5)); search.tap()
         var prefix = ""

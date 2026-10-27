@@ -461,7 +461,7 @@ changes** between states. Side-by-side screenshots with Android's strip are in
   the middle, a small **⋯ options** button at the leading edge and a small
   **mic** at the trailing edge. There is no status text; the mic's VoiceOver
   label says *Start dictation*. ⋯ opens a panel over the keys with the **Style ▾**
-  picker (the style's name, *Email*, with the Private session item), the session's
+  picker (the style's name, *Email*, with the Pause dictation history item), the session's
   **time left** (`4:12 left`, a detail here, not a label in the row), the long,
   content-free guidance (the session text, the fix for the error code, the Full
   Access steps) and **End session**; the keys don't move. Android's history icon
@@ -648,8 +648,8 @@ profiles) as a selectable list (a checkmark on the selected style, a moon
 "Edited" capsule when its prompt was changed); each has an editable prompt
 with a **Reset to server default** button. The keyboard's
 **Style** menu mirrors the same server profiles (one Chirp has no name for
-shows its id, in the menu and on the button) and also holds **Private session ·
-exclude history**, the same switch as in Settings. On clean-up failure or
+shows its id, in the menu and on the button) and also holds **Pause dictation
+history**, the same switch as in Settings → Privacy & history. On clean-up failure or
 timeout, the raw transcript is kept and offered instead.
 
 Settings and History screenshots (synthetic content; iPhone light and dark, the largest accessibility text size, iPad two-pane):
@@ -670,7 +670,7 @@ When on: at most 200 nonempty finals, 4 MiB total, retention 24 hours / 7 days
 a Clear all action. Entries are AES-GCM encrypted with a device-only Keychain
 key, excluded from backups and never synced. Turning history off deletes the
 ciphertext and the key. Cancelled and empty utterances are never recorded, and
-the **Private session** toggle (Settings, or Chirp Keyboard's Style menu) keeps an utterance out of history —
+the **Pause dictation history** switch (Settings → Privacy & history, or Chirp Keyboard's Style menu; it stays on until you turn it off) keeps an utterance out of history —
 but Chirp cannot detect every editor's private mode, so switch it on yourself
 when it matters; surrounding editor text is never collected.
 

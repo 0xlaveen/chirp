@@ -11,7 +11,7 @@ public struct KeyboardInputs: Equatable, Sendable {
     public var sessionExpiresAt: Date?
     public var styleID: String?
     public var availableStyleIDs: [String] = []
-    /// The app's Private session switch (history excluded), mirrored so the Style menu can show and flip it.
+    /// The app's Pause dictation history switch, mirrored so the Style menu can show and flip it.
     public var privacyMode = false
     public var debugRetention = false
     public var errorCode: KeyboardError?
@@ -133,7 +133,7 @@ public struct KeyboardScreen: Equatable, Sendable {
     /// The Style picker's title: the style's name ("Email"), never "Style:…".
     public var styleTitle: String
     public var styleItems: [StyleItem]
-    /// The Style menu's "Private session" item, checked while it is on.
+    /// The Style menu's "Pause dictation history" item, checked while it is on.
     public var privacyOn: Bool
     public var endEnabled: Bool
     /// Every row, reserved in every state.
@@ -152,8 +152,9 @@ public enum KeyboardPresenter {
     public static let styleTitles = ["default": "Default", "chat": "Chat", "email": "Email",
                                      "code": "Code", "notes": "Notes", "custom": "Custom"]
     public static let warningText = "DEBUG recordings kept on the server"
-    /// Private session, as in the Style menu.
-    public static let privateTitle = "Private session · exclude history"
+    /// Pause dictation history, as in the Style menu and Settings → Privacy & history. It persists until turned
+    /// off, so it is not called a private session (docs/copy.md, #271 A2-12).
+    public static let privateTitle = "Pause dictation history"
     /// The ⋯ button at the row's leading edge (Android's "Dictation options"): Style, help, End session.
     public static let optionsLabel = "Dictation options"
     /// The row's message while DEBUG retention is on and nothing else needs saying.

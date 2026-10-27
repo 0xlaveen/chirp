@@ -12,50 +12,55 @@ struct SavedVoicesView: View {
     @State private var name = ""
 
     var body: some View {
-        Form {
-            Section {
-                Toggle("Remember voices of people I name", isOn: Binding(get: { notes.savedVoices?.enabled == true }, set: { on in
-                    if on { action(.enable) } else { disabling = true }
-                })).disabled(notes.savedVoices == nil || notes.voicesBusy)
-                    .accessibilityIdentifier("chirp.notes.voices.enabled")
-            } footer: {
-                Text("Chirp recognises these people in new notes on all your devices. They’re kept on your paired computer, never uploaded. This switch applies to every device paired to this computer.")
+        SettingsPageScroll {
+            SettingsGroup {
+                SwitchRow(title: "Remember voices of people I name", isOn: notes.savedVoices?.enabled == true,
+                          summary: "Every device paired to this computer", symbol: "person.wave.2",
+                          infoTitle: "Saved voices",
+                          infoBody: "Chirp recognises these people in new notes on all your devices. They’re kept on your paired computer, never uploaded. This switch applies to every device paired to this computer.",
+                          identifier: "chirp.notes.voices.enabled", disabled: notes.savedVoices == nil || notes.voicesBusy,
+                          set: { on in if on { action(.enable) } else { disabling = true } })
             }
             if let error = notes.voicesError {
-                Section { Text(error).foregroundStyle(Color.chirp.record).accessibilityIdentifier("chirp.notes.voices.error") }
+                Text(error).font(.footnote).foregroundStyle(Color.chirp.record).accessibilityIdentifier("chirp.notes.voices.error")
             }
             if let library = notes.savedVoices {
-                Section {
+                SettingsGroup(title: "Voices") {
                     if library.voices.isEmpty {
-                        Text("Name a speaker in a note and Chirp will recognise them next time.")
-                            .foregroundStyle(Color.chirp.inkMuted).accessibilityIdentifier("chirp.notes.voices.empty")
+                        SettingsItem {
+                            Text("Name a speaker in a note and Chirp will recognise them next time.")
+                                .font(.subheadline).foregroundStyle(Color.chirp.inkMuted).accessibilityIdentifier("chirp.notes.voices.empty")
+                        }
                     }
                     ForEach(library.voices) { voice in
-                        HStack {
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(voice.name).font(.headline)
-                                Text(detail(voice)).font(.caption).foregroundStyle(Color.chirp.inkMuted)
-                                if !voice.compatible { Text("Name them again to keep recognising this voice").font(.caption) }
-                            }
-                            Spacer()
+                        RowTile(hasSummary: true) {
+                            RowText(title: voice.name, summary: detail(voice) + (voice.compatible ? "" : " · Name them again to keep recognising this voice"))
+                            Spacer(minLength: 0)
                             Menu {
                                 Button("Rename…", systemImage: "pencil") { name = voice.name; renaming = voice }
                                 Button("Forget…", systemImage: "trash", role: .destructive) { forgetting = voice }
-                            } label: { Label("Voice actions", systemImage: "ellipsis.circle") }.labelStyle(.iconOnly)
-                                .accessibilityIdentifier("chirp.notes.voices.menu.\(voice.id)")
+                            } label: {
+                                Image(systemName: "ellipsis.circle").font(.title3).frame(minWidth: 44, minHeight: 44)
+                            }.accessibilityLabel("Voice actions").accessibilityIdentifier("chirp.notes.voices.menu.\(voice.id)")
+                                .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 6 }
                         }
                     }
                 }.disabled(notes.voicesBusy)
-                if !library.voices.isEmpty {
-                    Section { Button("Forget all voices…", role: .destructive) { forgettingAll = true }
-                        .accessibilityIdentifier("chirp.notes.voices.forgetAll") }.disabled(notes.voicesBusy)
-                }
             } else if !notes.voicesAvailable {
-                Text("Update Chirp on your computer to save voices")
-            } else if notes.voicesError == nil { ProgressView("Loading saved voices…") }
-            Button("Refresh saved voices") { Task { await notes.refreshHealth() } }.disabled(notes.voicesBusy)
-        }.scrollContentBackground(.hidden).background(Color.chirp.background).tint(Color.chirp.koi)
-            .navigationTitle("Saved voices").navigationBarTitleDisplayMode(.inline)
+                Text("Update Chirp on your computer to save voices").font(.subheadline).foregroundStyle(Color.chirp.inkMuted)
+            } else if notes.voicesError == nil { ProgressView("Loading saved voices…").frame(maxWidth: .infinity) }
+            // The destructive action comes last (#271 2.6).
+            SettingsGroup {
+                ActionRow(title: "Refresh saved voices", symbol: "arrow.clockwise", disabled: notes.voicesBusy) {
+                    Task { await notes.refreshHealth() }
+                }
+                if notes.savedVoices?.voices.isEmpty == false {
+                    ActionRow(title: "Forget all voices…", symbol: "trash", destructive: true, disabled: notes.voicesBusy,
+                              identifier: "chirp.notes.voices.forgetAll") { forgettingAll = true }
+                }
+            }
+        }.tint(Color.chirp.koi)
+            .navigationTitle("Saved voices")
             .task { await notes.refreshHealth() }
             .refreshable { await notes.refreshSavedVoices() }
             .confirmationDialog("Stop remembering voices?", isPresented: $disabling, titleVisibility: .visible) {

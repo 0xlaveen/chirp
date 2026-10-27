@@ -176,7 +176,7 @@ struct ChirpRootView: View {
             }
             Tab(ChirpTab.dictate.title, systemImage: ChirpTab.dictate.symbol, value: .dictate) {
                 NavigationStack {
-                    DictateView(model: model, openConnection: { open(.connection) })
+                    DictateView(model: model, notes: notes, openConnection: { open(.connection) }, openNotes: { tab = .notes })
                         .toolbar { ToolbarItem(placement: .topBarTrailing) { ConnectionChip(model: model) { open(.connection) } } }
                         .modifier(SessionCapsule(model: model))
                 }

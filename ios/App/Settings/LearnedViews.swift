@@ -19,7 +19,7 @@ enum LearningText {
         + "Nothing is learned while dictation history is off or in a private session."
     static let teachDetail = "Edit this to what you wanted. Chirp learns the names and technical words you fix and uses them from the next dictation."
     static let nothingToLearn = "No new correction found. Fix a name or technical word; an item turned off stays off until you approve it in Learned."
-    static let notAllowed = "Turn on dictation history and Learn from my edits, and end Private session, to teach Chirp."
+    static let notAllowed = "Turn on dictation history and Learn from my edits, and turn off Pause dictation history, to teach Chirp."
     static func learned(_ titles: [String]) -> String { "Learned: " + titles.joined(separator: ", ") }
 
     static func summary(_ items: [LearnedItem]) -> String {

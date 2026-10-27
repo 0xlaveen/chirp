@@ -63,9 +63,6 @@ struct NoteDetailView: View {
                             .buttonStyle(.bordered).buttonBorderShape(.capsule)
                             .keyboardShortcut("t", modifiers: [.command, .option])
                             .accessibilityIdentifier("chirp.notes.transcript.open")
-                        if notes.selectedAudioBytes > 0 {
-                            Label(size(notes.selectedAudioBytes), systemImage: "waveform").font(.footnote).foregroundStyle(Color.chirp.inkMuted)
-                        }
                     }
                     if editing {
                         TextEditor(text: Binding(get: { notes.document.text }, set: { notes.edit($0) }))
@@ -136,24 +133,44 @@ struct NoteDetailView: View {
     private var titleBlock: some View {
         VStack(alignment: .leading, spacing: 8) {
             if renaming {
-                TextField("Note title", text: $title).font(ChirpType.noteTitle).submitLabel(.done)
+                TextField(NoteMeta.untitled, text: $title).font(ChirpType.noteTitle).submitLabel(.done)
                     .onSubmit { renaming = false; Task { await notes.rename(title) } }
                     .accessibilityIdentifier("chirp.notes.title.editor")
                 Button("Done") { renaming = false; Task { await notes.rename(title) } }
             } else {
-                Button { title = notes.document.title; renaming = true } label: {
-                    Text(notes.document.title).font(ChirpType.noteTitle).foregroundStyle(Color.chirp.ink)
+                let shown = NoteMeta.displayTitle(notes.document)
+                Button { title = NoteMeta.isBlank(notes.document) ? "" : notes.document.title; renaming = true } label: {
+                    Text(shown).font(ChirpType.noteTitle).foregroundStyle(Color.chirp.ink)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                }.buttonStyle(.plain).accessibilityLabel("Rename \(notes.document.title)").accessibilityIdentifier("chirp.notes.title")
+                }.buttonStyle(.plain).accessibilityLabel("Rename \(shown)").accessibilityIdentifier("chirp.notes.title")
             }
-            HStack(spacing: 8) {
+            metaLine
+        }
+    }
+
+    /// One line, as on the Mac (#271 2.8): the state while it isn't idle, then date · duration · open to-dos · audio.
+    private var metaLine: some View {
+        let facts = NoteMeta.facts(created: notes.document.createdAt, duration: notes.state.isActive ? nil : notes.elapsed,
+                                   openTodos: notes.document.openTodoCount(), audioBytes: notes.selectedAudioBytes)
+        let showsState = notes.state != .idle
+        return ViewThatFits(in: .horizontal) {
+            HStack(spacing: 6) { metaParts(facts, showsState: showsState, stacked: false) }
+            VStack(alignment: .leading, spacing: 2) { metaParts(facts, showsState: showsState, stacked: true) }
+        }.font(.subheadline).foregroundStyle(Color.chirp.inkMuted)
+    }
+
+    @ViewBuilder private func metaParts(_ facts: String, showsState: Bool, stacked: Bool) -> some View {
+        if showsState {
+            HStack(spacing: 6) {
                 Text(notes.statusLine).accessibilityIdentifier("chirp.notes.status").accessibilityAddTraits(.updatesFrequently)
-                if notes.elapsed > 0 || notes.state.isActive {
+                if notes.state.isActive {
                     Text("·")
                     Text(clock(notes.elapsed)).monospacedDigit().accessibilityIdentifier("chirp.notes.elapsed")
                 }
-            }.font(.subheadline).foregroundStyle(notes.state.isCapturing ? Color.chirp.record : .chirp.inkMuted)
+            }.foregroundStyle(notes.state.isCapturing ? Color.chirp.record : .chirp.inkMuted).fixedSize()
         }
+        if showsState, !stacked { Text("·").accessibilityHidden(true) }
+        Text(facts).accessibilityIdentifier("chirp.notes.meta")
     }
 
     private var banner: String? {
@@ -214,7 +231,7 @@ struct NoteDetailView: View {
                 Button("Copy", systemImage: "doc.on.doc") { notes.copy() }.accessibilityIdentifier("chirp.notes.copy")
                 ShareLink(item: notes.markdown, subject: Text(notes.document.title)) { Label("Share…", systemImage: "square.and.arrow.up") }
                 Button("Export Markdown…", systemImage: "square.and.arrow.up") { exporting = true }.accessibilityIdentifier("chirp.notes.save")
-                Button("Rename", systemImage: "pencil") { title = notes.document.title; renaming = true }
+                Button("Rename", systemImage: "pencil") { title = NoteMeta.isBlank(notes.document) ? "" : notes.document.title; renaming = true }
                 if notes.speakersAvailable {
                     Divider()
                     Toggle("Label speakers", systemImage: "person.2", isOn: Binding(get: { notes.labelSpeakers }, set: { notes.setLabelSpeakers($0) }))
@@ -347,58 +364,75 @@ struct NotesMarkdownFile: FileDocument {
     func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper { FileWrapper(regularFileWithContents: Data(text.utf8)) }
 }
 
-/// Embeddable Settings → Notes form; its caller owns navigation and dismissal.
+/// Settings → Notes on Pond rows, like every other Settings page (#271 2.2); its caller owns navigation and dismissal.
 struct NotesSettingsView: View {
     @ObservedObject var notes: LiveNotesController
     @State private var confirmDeleteAudio = false
     var body: some View {
-        Form {
-            Section {
-                Toggle("Structure notes", isOn: Binding(get: { notes.preferences.structureEnabled(health: notes.health) }, set: { notes.setStructure($0) }))
-                    .disabled(!notes.structureCanEnable).accessibilityIdentifier("chirp.notes.structure")
-                Toggle("Organize automatically", isOn: Binding(get: { notes.preferences.autoReorganize }, set: { notes.setAutoReorganize($0) }))
-            } footer: { Text(notes.structureDisclosure) }
-            Section {
-                Toggle("Battery saver while locked", isOn: Binding(get: { notes.preferences.batterySaver }, set: { notes.setBatterySaver($0) }))
-                    .accessibilityIdentifier("chirp.notes.batterySaver")
-            } footer: { Text("Recording and structuring continue while screen updates pause.") }
-            Section {
-                Toggle("Keep notes on this device", isOn: Binding(get: { notes.preferences.keepNotes }, set: { notes.setKeepNotes($0) }))
-                    .accessibilityIdentifier("chirp.notes.keepNotes")
-                Picker("Delete notes older than", selection: Binding(get: { notes.preferences.retention }, set: { notes.setRetention($0) })) {
-                    Text("Never").tag(NotesRetention.never)
-                    Text("1 year").tag(NotesRetention.oneYear)
-                    Text("90 days").tag(NotesRetention.ninetyDays)
-                    Text("30 days").tag(NotesRetention.thirtyDays)
+        SettingsPageScroll {
+            SettingsGroup(title: "Structure") {
+                SwitchRow(title: "Structure notes", isOn: notes.preferences.structureEnabled(health: notes.health),
+                          summary: notes.structureDisclosure, symbol: "list.bullet.rectangle",
+                          identifier: "chirp.notes.structure", disabled: !notes.structureCanEnable,
+                          set: { notes.setStructure($0) })
+                SwitchRow(title: "Organize automatically", isOn: notes.preferences.autoReorganize, symbol: "sparkles",
+                          identifier: "chirp.notes.autoOrganize", set: { notes.setAutoReorganize($0) })
+            }
+            SettingsGroup(title: "Recording") {
+                SwitchRow(title: "Battery saver while locked", isOn: notes.preferences.batterySaver,
+                          summary: "Screen updates pause; recording continues", symbol: "battery.50percent",
+                          infoTitle: "Battery saver while locked",
+                          infoBody: "Recording and structuring continue while screen updates pause.",
+                          identifier: "chirp.notes.batterySaver", set: { notes.setBatterySaver($0) })
+            }
+            SettingsGroup(title: "Library") {
+                SwitchRow(title: "Keep notes on this device", isOn: notes.preferences.keepNotes,
+                          summary: "Sealed on this device · not backed up", symbol: "lock.doc",
+                          infoTitle: "Keep notes on this device",
+                          infoBody: "Notes save as you go, sealed on this device and excluded from backups. Turning this off stops keeping new changes; existing notes stay in your library. Deleted notes stay in Recently Deleted for 30 days.",
+                          identifier: "chirp.notes.keepNotes", set: { notes.setKeepNotes($0) })
+                SettingsItem {
+                    Text("Delete notes older than").font(.subheadline).foregroundStyle(Color.chirp.inkMuted)
+                    ChoiceChips(options: [NotesRetention.never, .oneYear, .ninetyDays, .thirtyDays],
+                                selection: Binding(get: { notes.preferences.retention }, set: { notes.setRetention($0) }),
+                                label: { $0 == .never ? "Never" : $0.label })
                 }
-            } footer: { Text("Notes save as you go, sealed on this device and excluded from backups. Turning this off stops keeping new changes; existing notes stay in your library. Deleted notes stay in Recently Deleted for 30 days.") }
-            Section {
-                Toggle("Keep audio with notes", isOn: Binding(get: { notes.preferences.keepAudio }, set: { notes.setKeepAudio($0) }))
-                    .disabled(!notes.preferences.keepNotes).accessibilityIdentifier("chirp.notes.keepAudio")
+            }
+            SettingsGroup(title: "Audio") {
+                SwitchRow(title: "Keep audio with notes", isOn: notes.preferences.keepAudio,
+                          summary: notes.preferences.keepAudio ? "On · replay speech segments" : "Off by default", symbol: "waveform",
+                          infoTitle: "Keep audio with notes",
+                          infoBody: "Keeps speech segments sealed on this device so you can replay them. Deleting audio keeps the text.",
+                          identifier: "chirp.notes.keepAudio", disabled: !notes.preferences.keepNotes,
+                          set: { notes.setKeepAudio($0) })
                 if notes.totalAudioBytes > 0 {
-                    LabeledContent("Kept audio", value: ByteCountFormatter.string(fromByteCount: Int64(notes.totalAudioBytes), countStyle: .file))
-                    Button("Delete kept audio", role: .destructive) { confirmDeleteAudio = true }
+                    ActionRow(title: "Delete kept audio",
+                              summary: ByteCountFormatter.string(fromByteCount: Int64(notes.totalAudioBytes), countStyle: .file) + " kept",
+                              symbol: "waveform.slash", destructive: true, identifier: "chirp.notes.deleteAudio") { confirmDeleteAudio = true }
                 }
-            } footer: { Text("Off by default. Keep speech segments sealed on this device so you can replay them. Deleting audio keeps the text.") }
-            Section {
-                Toggle("Label speakers", isOn: Binding(get: { notes.labelSpeakers }, set: { notes.setLabelSpeakers($0) }))
-                    .disabled(notes.health != nil && !notes.speakersAvailable)
-                    .accessibilityIdentifier("chirp.notes.speakers.setting")
+            }
+            SettingsGroup(title: "Speakers") {
+                SwitchRow(title: "Label speakers", isOn: notes.labelSpeakers,
+                          summary: SpeakerNotice.summary(on: notes.labelSpeakers, health: notes.health), symbol: "person.2",
+                          infoTitle: "Label speakers", infoBody: SpeakerNotice.info,
+                          identifier: "chirp.notes.speakers.setting", disabled: notes.health != nil && !notes.speakersAvailable,
+                          set: { notes.setLabelSpeakers($0) })
                 if let status = notes.speakerModelStatus {
-                    Label(status, systemImage: "person.2").font(.footnote).foregroundStyle(Color.chirp.inkMuted)
-                        .accessibilityIdentifier("chirp.notes.speakers.model")
+                    SettingsItem {
+                        Label(status, systemImage: "person.crop.circle.badge.checkmark").font(.footnote).foregroundStyle(Color.chirp.inkMuted)
+                            .accessibilityIdentifier("chirp.notes.speakers.model")
+                    }
                 }
-            } footer: { Text(SpeakerNotice.summary(on: notes.labelSpeakers, health: notes.health) + ". " + SpeakerNotice.info) }
-            Section {
-                NavigationLink("Saved voices") { SavedVoicesView(notes: notes) }
-                    .disabled(!notes.voicesAvailable).accessibilityIdentifier("chirp.notes.voices.open")
-            } footer: { if notes.health != nil && !notes.voicesAvailable { Text("Update Chirp on your computer to save voices") } }
-
-        }.scrollContentBackground(.hidden).background(Color.chirp.background).tint(Color.chirp.koi)
-            .navigationTitle("Notes").task { await notes.refreshHealth() }
-            .confirmationDialog("Delete all kept audio?", isPresented: $confirmDeleteAudio, titleVisibility: .visible) {
-                Button("Delete kept audio", role: .destructive) { Task { await notes.deleteAudio(all: true) } }
-            } message: { Text("Notes and transcripts are kept. This cannot be undone.") }
+                NavRow(title: "Saved voices",
+                       summary: notes.health != nil && !notes.voicesAvailable ? "Update Chirp on your computer to save voices" : nil,
+                       symbol: "person.wave.2", identifier: "chirp.notes.voices.open") { SavedVoicesView(notes: notes) }
+                    .disabled(!notes.voicesAvailable).opacity(notes.voicesAvailable ? 1 : 0.55)
+            }
+        }
+        .tint(Color.chirp.koi).navigationTitle("Notes").task { await notes.refreshHealth() }
+        .confirmationDialog("Delete all kept audio?", isPresented: $confirmDeleteAudio, titleVisibility: .visible) {
+            Button("Delete kept audio", role: .destructive) { Task { await notes.deleteAudio(all: true) } }
+        } message: { Text("Notes and transcripts are kept. This cannot be undone.") }
     }
 }
 
