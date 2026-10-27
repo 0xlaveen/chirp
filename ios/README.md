@@ -442,6 +442,10 @@ the old words back; **Also rebuild the notes** replaces the body as one change
 with **Undo rebuild**. **Settings → Notes → Allow re-transcribing** (on by
 default) hides every entry point.
 
+![iPhone re-transcribe sheet, light](../docs/screenshots/ios/iphone-notes-retranscribe-sheet-light.png)
+![iPhone re-transcribe progress, dark](../docs/screenshots/ios/iphone-notes-retranscribe-progress-dark.png)
+![iPad re-transcribe progress in the transcript inspector, light](../docs/screenshots/ios/ipad-notes-retranscribe-progress-inspector-light.png)
+
 **Locked screen and background.** A Live Activity shows the note title (up to
 60 characters), state, elapsed time and Pause/Resume/Stop. Battery saver skips
 screen updates while recording and structuring continue. Complete file

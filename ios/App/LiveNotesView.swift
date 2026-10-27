@@ -101,15 +101,19 @@ struct NoteDetailView: View {
         }
         .navigationTitle("").navigationBarTitleDisplayMode(.inline).tint(Color.chirp.koi)
         .safeAreaInset(edge: .bottom) {
-            VStack(spacing: 8) {
-                // While the transcript is open the toast sits at its top (the iPad inspector can cover this corner).
-                if let toast = notes.visibleRetranscribeToast, !transcript {
-                    RetranscribeToastView(notes: notes, toast: toast) { if !notes.undoOrganize() { confirmUndo = true } }
-                        .transition(.move(edge: .bottom).combined(with: .opacity))
-                }
-                dock
-            }.padding(.horizontal, 16).padding(.vertical, 12).background(Color.chirp.background)
-                .animation(.default, value: notes.visibleRetranscribeToast)
+            // While the transcript is open the toast sits at its top (the iPad inspector can cover this corner). A
+            // re-transcribe holds the note: recording can't continue, and the banner has Cancel, so the dock goes.
+            let toast = transcript ? nil : notes.visibleRetranscribeToast
+            if toast != nil || !notes.isRetranscribing {
+                VStack(spacing: 8) {
+                    if let toast {
+                        RetranscribeToastView(notes: notes, toast: toast) { if !notes.undoOrganize() { confirmUndo = true } }
+                            .transition(.move(edge: .bottom).combined(with: .opacity))
+                    }
+                    if !notes.isRetranscribing { dock }
+                }.padding(.horizontal, 16).padding(.vertical, 12).background(Color.chirp.background)
+                    .animation(.default, value: notes.visibleRetranscribeToast)
+            }
         }
         .toolbar { toolbar }
         .inspector(isPresented: Binding(get: { transcript && sizeClass == .regular }, set: { transcript = $0 })) {

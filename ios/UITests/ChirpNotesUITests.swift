@@ -185,11 +185,10 @@ final class ChirpNotesUITests: XCTestCase {
         XCTAssertTrue(transcript.staticTexts.matching(NSPredicate(format: "label CONTAINS 'Synthetic words again.'")).firstMatch.waitForExistence(timeout: 5))
         XCTAssertTrue(Self.waitFor(Self.element("chirp.notes.transcribedWith", in: app), "label == 'Transcribed with Parakeet v3 (MLX)'"))
         if !pad { app.buttons["Done"].firstMatch.tap() }
-        if app.buttons["chirp.notes.retranscribe.undo"].waitForExistence(timeout: 3) {
-            app.buttons["chirp.notes.retranscribe.undo"].tap()
-        } else {
-            menu(app, action: "Restore previous transcript")
-        }
+        // Undo while the toast is up (it moves into the iPad inspector, so wait until it settles), else the menu.
+        let undo = app.buttons["chirp.notes.retranscribe.undo"]
+        if undo.waitForExistence(timeout: 3), Self.waitFor(undo, "isHittable == true", timeout: 3) { undo.tap() }
+        if !Self.waitFor(toast, "label == 'Previous transcript restored'", timeout: 3) { menu(app, action: "Restore previous transcript") }
         XCTAssertTrue(Self.waitFor(toast, "label == 'Previous transcript restored'"))
         app.terminate()
 
@@ -200,7 +199,7 @@ final class ChirpNotesUITests: XCTestCase {
         let status = Self.element("chirp.notes.retranscribe.status", in: app)
         XCTAssertTrue(Self.waitFor(status, "label BEGINSWITH 'Re-transcribing · 1 of 2'"), status.label)
         let continueRecording = app.buttons.matching(identifier: "chirp.notes.record").matching(NSPredicate(format: "label == 'Continue recording'")).firstMatch
-        XCTAssertFalse(continueRecording.isEnabled, "Continue recording waits for the run")
+        XCTAssertFalse(continueRecording.exists, "Continue recording waits for the run")
         screenshot("notes-retranscribe-progress", app)
         if pad {
             app.buttons["chirp.notes.transcript.open"].tap()
