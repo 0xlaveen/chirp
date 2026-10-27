@@ -294,7 +294,7 @@ struct RecoveredBadge: View {
 /// the transcript inspector. New Note sits over the sidebar.
 struct NotesToolbar: ToolbarContent {
     let model: NotesModel
-    @Bindable var library: NotesLibraryModel
+    let library: NotesLibraryModel
 
     private var shown: NotesModel { library.displayed(model) }
 

@@ -262,33 +262,36 @@ private struct MetaLine: View {
     /// A re-transcribe runs on this note: a small ring in place of the audio glyph.
     var progress: Double?
 
-    @Environment(\.chirpTextScale) private var textScale
-
     var body: some View {
-        let length = NotesLibraryText.duration(entry.duration)
-        if length != nil || entry.openTodos > 0 || entry.recovered || entry.hasAudio {
-            let layout = textScale > 1.3 ? AnyLayout(VStackLayout(alignment: .leading, spacing: 4)) : AnyLayout(HStackLayout(spacing: 10))
-            layout {
-                if let length, let progress {
-                    Label {
-                        Text(length)
-                    } icon: {
-                        ProgressRing(value: progress, color: ink.meta).frame(width: 10, height: 10)
-                    }
-                    .accessibilityLabel("\(length), re-transcribing")
-                } else if let length {
-                    Label(length, systemImage: entry.hasAudio ? "waveform" : "mic")
-                }
-                if entry.openTodos > 0 {
-                    Label(NotesLibraryText.open(entry.openTodos), systemImage: "square")
-                }
-                if entry.recovered { RecoveredBadge(onPill: ink.onPill) }
+        if NotesLibraryText.duration(entry.duration) != nil || entry.openTodos > 0 || entry.recovered || entry.hasAudio {
+            // One line while it fits; enlarged text wraps the facts instead of clipping them.
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 10) { facts }
+                VStack(alignment: .leading, spacing: 4) { facts }
             }
             .labelStyle(MetaLabelStyle())
             .pondFont(12)
             .foregroundStyle(ink.meta)
             .padding(.top, 1)
         }
+    }
+
+    @ViewBuilder private var facts: some View {
+        let length = NotesLibraryText.duration(entry.duration)
+        if let length, let progress {
+            Label {
+                Text(length)
+            } icon: {
+                ProgressRing(value: progress, color: ink.meta).frame(width: 10, height: 10)
+            }
+            .accessibilityLabel("\(length), re-transcribing")
+        } else if let length {
+            Label(length, systemImage: entry.hasAudio ? "waveform" : "mic")
+        }
+        if entry.openTodos > 0 {
+            Label(NotesLibraryText.open(entry.openTodos), systemImage: "square")
+        }
+        if entry.recovered { RecoveredBadge(onPill: ink.onPill) }
     }
 }
 
@@ -326,8 +329,9 @@ private struct RecordingRow: View {
             }
             .frame(width: 30, height: 30)
             VStack(alignment: .leading, spacing: 3) {
-            let headingLayout = textScale > 1.3 ? AnyLayout(VStackLayout(alignment: .leading, spacing: 3)) : AnyLayout(HStackLayout(alignment: .firstTextBaseline, spacing: 6))
-            headingLayout {
+                // Over 130% the timer drops under the title, which keeps the row's width for the title.
+                let headingLayout = textScale > 1.3 ? AnyLayout(VStackLayout(alignment: .leading, spacing: 3)) : AnyLayout(HStackLayout(alignment: .firstTextBaseline, spacing: 6))
+                headingLayout {
                     Text(entry.title)
                         .pondFont(14, weight: .semibold, design: .serif)
                         .foregroundStyle(ink.title)

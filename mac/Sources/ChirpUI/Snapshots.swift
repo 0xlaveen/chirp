@@ -1334,9 +1334,11 @@ public enum Snapshots {
     }
 
     public static var allScenarios: [Scenario] {
-        hudScenarios + rippleScenarios + wordWaveScenarios + settingsScenarios + onboardingScenarios + menuScenarios
+        // `CHIRP_SNAPSHOT_REVIEW=303 ChirpMac --render-snapshots <dir>` renders only the #303 text-size/geometry review
+        // matrix (never part of the committed set).
+        if ProcessInfo.processInfo.environment["CHIRP_SNAPSHOT_REVIEW"] == "303" { return modernUXScenarios }
+        return hudScenarios + rippleScenarios + wordWaveScenarios + settingsScenarios + onboardingScenarios + menuScenarios
             + localModelsScenarios + notesScenarios + pairingScenarios + historyScenarios + savedVoicesScenarios
-            + (ProcessInfo.processInfo.environment["CHIRP_SNAPSHOT_REVIEW"] == "303" ? modernUXScenarios : [])
     }
 
     // MARK: rendering

@@ -99,7 +99,8 @@ private struct HistorySidebar: View {
             Image(systemName: "lock.fill").pondFont(12)
             Text(model.enabled ? HistoryText.keptFor(model.retention) : HistoryText.off)
                 .pondFont(12)
-                .lineLimit(1)
+                .lineLimit(3)
+                .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 0)
         }
         .foregroundStyle(NotesInk.tertiary)
@@ -258,6 +259,8 @@ private struct HistoryDetail: View {
             HStack(spacing: 8) { actionButtons(entry) }
             VStack(alignment: .leading, spacing: 8) { actionButtons(entry) }
         }
+        // Buttons are native chrome: they keep the system size while the content around them grows.
+        .font(.body)
         .controlSize(.regular)
     }
 

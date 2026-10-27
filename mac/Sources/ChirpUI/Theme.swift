@@ -225,27 +225,16 @@ extension View {
     }
 }
 
-struct TextSizeOptions: View {
+/// The History window's text size (Notes has View ▸ Bigger/Smaller Text): a toolbar menu with the same steps.
+struct TextSizeControl: View {
     let size: ChirpTextSize
-    var shortcuts = true
     var body: some View {
-        Text("Text size: " + size.percent)
-        if shortcuts {
+        Menu {
+            Text("Text size: " + size.percent)
             Button("Bigger Text", action: size.increase).keyboardShortcut("+", modifiers: .command).disabled(!size.canIncrease)
             Button("Smaller Text", action: size.decrease).keyboardShortcut("-", modifiers: .command).disabled(!size.canDecrease)
             Button("Actual Size", action: size.reset).keyboardShortcut("0", modifiers: .command).disabled(size.factor == 1)
-        } else {
-            Button("Bigger Text", action: size.increase).disabled(!size.canIncrease)
-            Button("Smaller Text", action: size.decrease).disabled(!size.canDecrease)
-            Button("Actual Size", action: size.reset).disabled(size.factor == 1)
-        }
-    }
-}
-struct TextSizeControl: View {
-    let size: ChirpTextSize
-    var shortcuts = true
-    var body: some View {
-        Menu { TextSizeOptions(size: size, shortcuts: shortcuts) } label: {
+        } label: {
             Label("Text Size", systemImage: "textformat.size")
         }
         .help("Text size: " + size.percent + " (up to 200%)")
