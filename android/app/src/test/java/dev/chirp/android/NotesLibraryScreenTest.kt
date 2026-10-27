@@ -410,14 +410,17 @@ class NotesLibraryScreenTest {
         search("design")
         // At 200% font the sticky recording card and the first rows share one viewport: the row is past the fold
         // until the list is scrolled (lazy lists compose only what intersects the viewport).
-        compose.onNodeWithTag("notes-library-list").performScrollToNode(hasText("Launch sync"))
-        compose.waitUntil(5000) { compose.onAllNodesWithText("Launch sync").fetchSemanticsNodes().isNotEmpty() }
+        // A new search first returns to the top; scroll once the results have settled there.
+        compose.waitUntil(5000) {
+            runCatching { compose.onNodeWithTag("notes-library-list").performScrollToNode(hasText("Launch sync")) }.isSuccess &&
+                compose.onAllNodesWithText("Launch sync").fetchSemanticsNodes().isNotEmpty()
+        }
         shot("search")
         search("summer holiday")
         compose.waitUntil(5000) { compose.onAllNodesWithText("No results for “summer holiday”").fetchSemanticsNodes().isNotEmpty() }
         compose.onNodeWithText("No results for “summer holiday”").assertExists()
-        // A new search starts at the top, where the way back to the recording is.
-        compose.onNode(hasStateDescription("Recording")).assertIsDisplayed()
+        // A new search starts at the top, where the way back to the recording is (Connecting again after Resume).
+        compose.onNode(hasText("Product conversation") and hasClickAction()).assertIsDisplayed()
         shot("no-results")
         if (fontScale != 1f) return
         search("")
