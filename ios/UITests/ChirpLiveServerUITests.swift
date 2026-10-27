@@ -57,7 +57,9 @@ final class ChirpLiveServerUITests: XCTestCase {
         app.buttons["chirp.pair.submit"].tap()
         let banner = app.descendants(matching: .any).matching(identifier: "chirp.connection.banner").firstMatch
         XCTAssertTrue(banner.waitForExistence(timeout: 15), "Live server pairing failed")
-        XCTAssertTrue(waitFor(banner, "label CONTAINS '127.0.0.1'", timeout: 5), banner.label)
+        // The banner is a container (its title and detail are separate texts, each read by VoiceOver), so look inside it.
+        let host = banner.staticTexts.matching(NSPredicate(format: "label CONTAINS '127.0.0.1'")).firstMatch
+        XCTAssertTrue(host.waitForExistence(timeout: 5), "The banner must name the paired host")
         XCTAssertTrue(app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS 'Chirp simulator'")).firstMatch.exists,
                       "The per-device pairing name must show")
     }
@@ -112,7 +114,8 @@ final class ChirpLiveServerUITests: XCTestCase {
         app.buttons["History settings"].tap()
         let history = element("chirp.history.enabled", in: app)
         XCTAssertTrue(history.waitForExistence(timeout: 5))
-        if history.value as? String != "1" { history.switches.firstMatch.exists ? history.switches.firstMatch.tap() : history.tap() }
+        // The row is one element: its centre is the label, so aim at the switch at its trailing edge.
+        if history.value as? String != "1" { ChirpNotesUITests.flip(history) }
         XCTAssertTrue(waitFor(history, "value == '1'", timeout: 5))
 
         app.selectChirpTab("Dictate")
@@ -128,7 +131,8 @@ final class ChirpLiveServerUITests: XCTestCase {
         XCTAssertTrue(raw.waitForExistence(timeout: 20), "Clean-up did not change the text: \(transcript.label)")
         XCTAssertTrue(transcript.label.localizedCaseInsensitiveContains("Tuesday"))
         XCTAssertFalse(transcript.label.localizedCaseInsensitiveContains("um,"), transcript.label)
-        XCTAssertTrue(app.staticTexts["Cleaned. Copy or share when ready."].exists)
+        // "Cleaned." became "Polished." in the copy pass (#271 W9); accept both so the order the two land in doesn't matter.
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label IN {'Cleaned. Copy or share when ready.', 'Polished. Copy or share when ready.'}")).firstMatch.exists)
         screenshot("Cleaned final", app)
         raw.tap()
         XCTAssertTrue(waitFor(transcript, "label CONTAINS[c] 'um,'", timeout: 3), transcript.label)

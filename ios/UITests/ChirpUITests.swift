@@ -38,6 +38,7 @@ final class ChirpUITests: XCTestCase {
             for gone in ["More", "Pair computer", "Styles"] { XCTAssertFalse(app.tabBars.buttons[gone].exists, gone) }
         }
         screenshot("Notes with the setup card", app)
+        app.dismissSidebarOverlay(covering: app.buttons["chirp.connection.chip"])
         app.buttons["chirp.connection.chip"].tap()
         // The chip deep-links to Settings → Connection; pairing itself sits behind Pair Mac (#194).
         XCTAssertTrue(app.buttons["chirp.pair.change"].waitForExistence(timeout: 5), "The chip opens Settings → Connection")
