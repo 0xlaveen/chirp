@@ -214,7 +214,7 @@ final class HardwareShortcutController: ObservableObject {
         intoField = field != nil
         if !intoField { showDictate?() }
         Task {
-            do { try await model.begin(source: .app, id: id) }
+            do { try await model.begin(source: .app, id: id, autoStop: shortcut.mode != .hold) }
             catch {
                 guard utterance == id else { return }
                 finish(); model.show(error)

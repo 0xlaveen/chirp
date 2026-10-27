@@ -12,6 +12,7 @@ struct AppServices {
     let pairing: PairingStore
     let preferences: PreferenceStore
     let history: HistoryStore
+    let learned: IOSLearnedStore
     let bridge: SharedBridge
     let keyboardSetup: KeyboardSetupStore
     let timings: TimingLog
@@ -19,6 +20,7 @@ struct AppServices {
         pairing = try PairingStore(root: root, secrets: secrets)
         preferences = try PreferenceStore(root: root)
         history = try HistoryStore(root: root, secrets: secrets)
+        learned = try IOSLearnedStore(root: root, secrets: secrets)
         bridge = try SharedBridge(root: root, secrets: secrets, role: .app)
         keyboardSetup = try KeyboardSetupStore(root: root)
         timings = try TimingLog(root: root)
@@ -340,7 +342,8 @@ final class SessionCoordinator: ObservableObject {
         }
     }
 
-    func begin(source: DictationSource = .app, id: UUID = UUID()) async throws {
+    /// `autoStop` false: a hold-to-talk key ends this dictation, so a pause never does.
+    func begin(source: DictationSource = .app, id: UUID = UUID(), autoStop: Bool = true) async throws {
         guard !startingUtterance, stream == nil else { throw SessionFailure.setup }
         startingUtterance = true
         defer { startingUtterance = false }
@@ -366,6 +369,8 @@ final class SessionCoordinator: ObservableObject {
             let limit = profiles.first { $0.id == preferences.styleID }?.maxPromptChars ?? 4000
             options.correctionPrompt = CorrectionProfile.clampPrompt(prompt, limit: min(4000, limit))
         }
+        // Learn from my edits: the user's terms go to their own computer with the dictation (`start.learned`).
+        if !privateUtterance, let learned = try? services?.learned.payload(), !learned.isEmpty { options.learned = learned }
         utteranceOptions = options
         let session = makeStream(config, options, http)
         stream = session
@@ -379,6 +384,10 @@ final class SessionCoordinator: ObservableObject {
             } }, onCut: { [weak self] in Task { @MainActor in
                 guard let self, self.armed, self.lifecycle == ticket, self.utterance == id else { return }
                 self.rollOver()
+            } }, autoStop: autoStop ? preferences.autoStopSilence : nil, onAutoStop: { [weak self] in Task { @MainActor in
+                // Stop dictation "When I pause": the same path as tapping Stop.
+                guard let self, self.armed, self.lifecycle == ticket, self.utterance == id else { return }
+                self.stopDictation()
             } })
         } catch { endSession(code: .interrupted); throw SessionFailure.audio }
         setPhase(.connecting)
@@ -444,7 +453,7 @@ final class SessionCoordinator: ObservableObject {
                         segment.fail(); self.record(.timeout); self.drain(id: id)
                     }
                 }
-            case .final(let result): if segment.outcome == nil { segment.outcome = .final(result) }
+            case .final(let result): if segment.outcome == nil { segment.outcome = .final(learnedFinal(result)) }
             case .error(let code, _): record(DiagnosticCode.server(code)); segment.fail()
             default: break
             }
@@ -570,7 +579,7 @@ final class SessionCoordinator: ObservableObject {
                 setPhase(.correcting); publishLive(.correcting, text: value, raw: value); startDeadline(seconds: health?.operationTimeout(.dictation, fallback: 12) ?? 12)
             case .final(let result):
                 guard ready, stopRequested else { return }
-                finishLive(result, id: id)
+                finishLive(learnedFinal(result), id: id)
             case .error(let code, _): keepHeard(id: id, code: DiagnosticCode.server(code), reason: Self.serverMessage(code))
             case .unknown: break
             }
@@ -611,6 +620,15 @@ final class SessionCoordinator: ObservableObject {
         case "bad_request": "The clean-up prompt is too long. Shorten it in Settings → Dictation → Styles."
         default: "Chirp server couldn't finish that dictation. Try again."
         }
+    }
+
+    /// What was learned applies to the final text itself too, so it works with clean-up off or an older server (as
+    /// on the Mac and Android). The raw transcript stays as heard.
+    private func learnedFinal(_ result: FinalResult) -> FinalResult {
+        guard let learned = utteranceOptions?.learned else { return result }
+        var result = result
+        result.text = learned.apply(to: result.text)
+        return result
     }
 
     /// The live (last) segment finished; it completes once every earlier segment has landed.

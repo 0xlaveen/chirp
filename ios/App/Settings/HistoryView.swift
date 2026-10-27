@@ -30,6 +30,9 @@ struct HistoryView: View {
     @State private var deletion: PendingDeletion?
     @State private var share: ShareItem?
     @State private var notice: String?
+    @State private var teaching: HistoryEntry?
+    /// Learn from my edits may learn now (history on, learning on, no private session): Teach Chirp is offered.
+    @State private var canTeach = false
 
     struct PendingDeletion {
         let entry: HistoryEntry
@@ -83,7 +86,11 @@ struct HistoryView: View {
         }
         .sheet(item: $detail) { entry in
             HistoryDetailSheet(entry: entry, canAddToNote: notes != nil,
-                               addToNote: { addToNote(entry) }) { delete(entry) }
+                               addToNote: { addToNote(entry) },
+                               teachStore: canTeach ? model.services?.learned : nil, taught: { notice = $0 }) { delete(entry) }
+        }
+        .sheet(item: $teaching) { entry in
+            TeachChirpSheet(entry: entry, store: model.services?.learned) { notice = $0 }
         }
         .sheet(item: $share) { item in
             ShareSheet(text: item.text)
@@ -151,6 +158,9 @@ struct HistoryView: View {
                                 Button { share = ShareItem(text: entry.text) } label: { Label("Share", systemImage: "square.and.arrow.up") }
                                 if notes != nil {
                                     Button { addToNote(entry) } label: { Label("Add to note", systemImage: "note.text") }
+                                }
+                                if canTeach {
+                                    Button { teaching = entry } label: { Label(LearningText.teach, systemImage: "graduationcap") }
                                 }
                                 Button(role: .destructive) { delete(entry) } label: { Label("Delete", systemImage: "trash") }
                             }
@@ -234,6 +244,7 @@ struct HistoryView: View {
             let settings = try store.settings()
             enabled = settings.enabled; retention = settings.retention
             entries = try store.entries(); failure = ""
+            canTeach = model.services?.learned.allowed == true
         } catch {
             entries = []; failure = SessionFailure.storage.localizedDescription
         }
@@ -310,14 +321,18 @@ private struct HistoryRowView: View {
 }
 
 /// Tap a row: the full text (selectable), the original when clean-up changed it, and the actions
-/// Copy · Copy original · Share · Delete.
+/// Copy · Copy original · Share · Add to note · Teach Chirp · Delete.
 private struct HistoryDetailSheet: View {
     let entry: HistoryEntry
     var canAddToNote = false
     var addToNote: () -> Void = {}
+    /// Teach Chirp, offered while learning is allowed.
+    var teachStore: IOSLearnedStore?
+    var taught: (String) -> Void = { _ in }
     var delete: () -> Void
     @Environment(\.dismiss) private var dismiss
     @State private var share = false
+    @State private var teaching = false
     var body: some View {
         NavigationStack {
             ScrollView {
@@ -345,6 +360,10 @@ private struct HistoryDetailSheet: View {
                             Button("Add to note", systemImage: "note.text") { addToNote(); dismiss() }.buttonStyle(.capsuleChip)
                                 .accessibilityIdentifier("chirp.history.addNote")
                         }
+                        if teachStore != nil {
+                            Button(LearningText.teach, systemImage: "graduationcap") { teaching = true }.buttonStyle(.capsuleChip)
+                                .accessibilityIdentifier("chirp.history.teach")
+                        }
                         Button("Delete", systemImage: "trash", action: delete)
                             .buttonStyle(CapsuleChipStyle())
                             .foregroundStyle(Color.chirp.record)
@@ -363,6 +382,9 @@ private struct HistoryDetailSheet: View {
         .presentationCornerRadius(ChirpRadius.sheet)
         .modifier(PrivacyShield())
         .sheet(isPresented: $share) { ShareSheet(text: entry.text) }
+        .sheet(isPresented: $teaching) {
+            TeachChirpSheet(entry: entry, store: teachStore) { taught($0); dismiss() }
+        }
     }
 }
 

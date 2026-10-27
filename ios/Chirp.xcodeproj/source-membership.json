@@ -22,6 +22,7 @@
     "App/SavedVoicesView.swift",
     "App/SessionCoordinator.swift",
     "App/Settings/HistoryView.swift",
+    "App/Settings/LearnedViews.swift",
     "App/Settings/SettingsHome.swift",
     "App/Settings/SettingsPages.swift",
     "App/Settings/SettingsRows.swift",
@@ -53,6 +54,7 @@
   ],
   "ChirpIOSTests": [
     "Tests/CaptureSinkTests.swift",
+    "Tests/DictationParityTests.swift",
     "Tests/KeyboardTypingTests.swift",
     "Tests/LiveNotesControllerTests.swift",
     "Tests/LongDictationTests.swift",

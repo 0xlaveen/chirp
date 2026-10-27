@@ -23,7 +23,22 @@ public struct IOSPreferences: Codable, Sendable, Equatable {
     public var autoEnter: String?
     /// The hardware-keyboard dictation shortcut in the app; nil is Right ⌥ held to talk (`HardwareShortcut.resolve`).
     public var hardwareShortcut: HardwareShortcut?
+    /// Learn from my edits (#271 A2-5): nil is on, as on the Mac and Android. It only acts while dictation history
+    /// is on and no private session is (`IOSLearnedStore`). Optional so older preference files still decode.
+    public var learnFromEdits: Bool?
+    /// Stop dictation "When I pause" (#271 A2-14); nil/false is "When I tap". Optional so older files still decode.
+    public var stopOnPause: Bool?
+    /// The pause that stops it, one of `AutoStopDetector.silenceChoices`; nil is the default (2 s).
+    public var pauseSeconds: Double?
     public init() {}
+    public var learning: Bool { learnFromEdits != false }
+    /// The pause length offered nearest to the stored one.
+    public var pauseLength: TimeInterval {
+        guard let pauseSeconds, pauseSeconds.isFinite else { return AutoStopDetector.defaultSilence }
+        return AutoStopDetector.silenceChoices.min { abs($0 - pauseSeconds) < abs($1 - pauseSeconds) } ?? AutoStopDetector.defaultSilence
+    }
+    /// The silence that ends a dictation, nil when only Stop does.
+    public var autoStopSilence: TimeInterval? { stopOnPause == true ? pauseLength : nil }
     public func permitsCorrection(health: Health) -> Bool {
         guard correction, health.correctionAvailable else { return false }
         if health.correctionLeavesMachine == false { return true }

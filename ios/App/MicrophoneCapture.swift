@@ -7,8 +7,9 @@ import Foundation
 @MainActor
 protocol SessionAudio: AnyObject {
     func arm(onInterruption: @escaping @Sendable () -> Void) throws
+    /// `autoStop`: Stop dictation "When I pause", the silence that ends it (nil: only Stop does), calling `onAutoStop` once.
     func begin(stream: StreamSession, onFailure: @escaping @Sendable () -> Void, onLimit: @escaping @Sendable () -> Void,
-               onCut: @escaping @Sendable () -> Void) throws
+               onCut: @escaping @Sendable () -> Void, autoStop: TimeInterval?, onAutoStop: @escaping @Sendable () -> Void) throws
     /// Long dictation: moves capture to the next segment's stream, buffering until it is ready.
     func cut(to stream: StreamSession)
     func ready()
@@ -74,8 +75,8 @@ final class MicrophoneCapture: SessionAudio {
     }
 
     func begin(stream: StreamSession, onFailure: @escaping @Sendable () -> Void, onLimit: @escaping @Sendable () -> Void,
-               onCut: @escaping @Sendable () -> Void) throws {
-        try sink.begin(stream, onFailure: onFailure, onLimit: onLimit, onCut: onCut)
+               onCut: @escaping @Sendable () -> Void, autoStop: TimeInterval?, onAutoStop: @escaping @Sendable () -> Void) throws {
+        try sink.begin(stream, onFailure: onFailure, onLimit: onLimit, onCut: onCut, autoStop: autoStop, onAutoStop: onAutoStop)
     }
     func cut(to stream: StreamSession) { sink.cut(to: stream) }
     func ready() { sink.ready() }
@@ -105,6 +106,10 @@ final class CaptureSink: @unchecked Sendable {
     private var cutHandler: (@Sendable () -> Void)?
     private var segmenter = DictationSegmenter()
     private var cutRequested = false
+    /// Stop on pause: judged on the whole dictation's audio (it carries over segment cuts), in audio time.
+    private var autoStop: AutoStopDetector?
+    private var autoStopHandler: (@Sendable () -> Void)?
+    private var heard: TimeInterval = 0
     private var reachedLimit = false
     private var queuedBytes = 0
     // Five seconds: room for a long dictation's next socket to become ready (Android's buffer).
@@ -116,7 +121,8 @@ final class CaptureSink: @unchecked Sendable {
         lock.withLock { self.format = format }
     }
     func begin(_ stream: StreamSession, onFailure: @escaping @Sendable () -> Void, onLimit: @escaping @Sendable () -> Void,
-               onCut: (@Sendable () -> Void)? = nil) throws {
+               onCut: (@Sendable () -> Void)? = nil, autoStop silence: TimeInterval? = nil,
+               onAutoStop: (@Sendable () -> Void)? = nil) throws {
         try lock.withLock {
             guard let format, let converter = PCMConverter(from: format) else { throw SessionFailure.audio }
             self.converter = converter
@@ -124,23 +130,30 @@ final class CaptureSink: @unchecked Sendable {
             failure = onFailure; limit = onLimit; cutHandler = onCut
             pending.removeAll(); pendingBytes = 0; isReady = false; ending = false; failed = false
             reachedLimit = false; queuedBytes = 0; segmenter.reset(); cutRequested = false
+            autoStop = silence.map { AutoStopDetector(silence: $0) }; autoStopHandler = onAutoStop; heard = 0
         }
     }
     func receive(_ buffer: AVAudioPCMBuffer) {
-        let notify = lock.withLock { () -> (@Sendable () -> Void)? in
+        let (notify, pause) = lock.withLock { () -> ((@Sendable () -> Void)?, (@Sendable () -> Void)?) in
             // Armed idle capture is immediately discarded: no conversion, buffering, file or network writes.
-            guard stream != nil, !ending, !failed, !reachedLimit, let converter else { return nil }
-            var cut = false
+            guard stream != nil, !ending, !failed, !reachedLimit, let converter else { return (nil, nil) }
+            var cut = false, paused = false
             for frame in converter.frames(from: buffer) {
                 enqueue(frame)
-                if cutHandler != nil, !cutRequested,
-                   segmenter.feed(rms: DictationSegmenter.rms(pcm16: frame), duration: Double(frame.count) / 32_000) {
+                guard cutHandler != nil || autoStop != nil else { continue }
+                let rms = DictationSegmenter.rms(pcm16: frame), duration = Double(frame.count) / 32_000
+                if cutHandler != nil, !cutRequested, segmenter.feed(rms: rms, duration: duration) {
                     cutRequested = true; cut = true
                 }
+                heard += duration
+                if autoStop?.feed(Level(peak: rms, rms: rms), at: heard) == true { paused = true }
             }
-            return failed ? failure : reachedLimit ? limit : cut ? cutHandler : nil
+            var pause: (@Sendable () -> Void)?
+            if paused { pause = autoStopHandler; autoStopHandler = nil }
+            return (failed ? failure : reachedLimit ? limit : cut ? cutHandler : nil, pause)
         }
         notify?()
+        pause?()
     }
     /// Every frame goes to exactly one segment, in order; the new stream's frames wait until it is ready.
     func cut(to next: StreamSession) {
@@ -191,6 +204,7 @@ final class CaptureSink: @unchecked Sendable {
             stream = nil; converter = nil; pending.removeAll(); pendingBytes = 0
             isReady = false; ending = true; reachedLimit = false; queuedBytes = 0
             failure = nil; limit = nil; cutHandler = nil; cutRequested = false
+            autoStop = nil; autoStopHandler = nil; heard = 0
         }
     }
 }

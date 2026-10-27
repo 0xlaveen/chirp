@@ -83,9 +83,12 @@ final class SyntheticAudio: SessionAudio {
     private var stream: StreamSession?
     func arm(onInterruption: @escaping @Sendable () -> Void) throws { armed = true }
     private(set) var cuts: [@Sendable () -> Void] = []
+    /// Each dictation's stop-on-pause silence (nil: only Stop) and its callback, as the sink would fire it.
+    private(set) var autoStops: [(silence: TimeInterval?, fire: @Sendable () -> Void)] = []
     func begin(stream: StreamSession, onFailure: @escaping @Sendable () -> Void, onLimit: @escaping @Sendable () -> Void,
-               onCut: @escaping @Sendable () -> Void) throws {
+               onCut: @escaping @Sendable () -> Void, autoStop: TimeInterval?, onAutoStop: @escaping @Sendable () -> Void) throws {
         self.stream = stream; limits.append(onLimit); failures.append(onFailure); cuts.append(onCut)
+        autoStops.append((autoStop, onAutoStop))
     }
     func cut(to stream: StreamSession) { self.stream = stream }
     func ready() { stream?.sendAudio(Data(count: 1600)) }
@@ -165,8 +168,8 @@ final class SimulatorFileAudio: SessionAudio {
         } catch { disarm(); throw SessionFailure.audio }
     }
     func begin(stream: StreamSession, onFailure: @escaping @Sendable () -> Void, onLimit: @escaping @Sendable () -> Void,
-               onCut: @escaping @Sendable () -> Void) throws {
-        try sink.begin(stream, onFailure: onFailure, onLimit: onLimit, onCut: onCut)
+               onCut: @escaping @Sendable () -> Void, autoStop: TimeInterval?, onAutoStop: @escaping @Sendable () -> Void) throws {
+        try sink.begin(stream, onFailure: onFailure, onLimit: onLimit, onCut: onCut, autoStop: autoStop, onAutoStop: onAutoStop)
         feeder?.cancel()
         feeder = Task.detached { [url, sink] in
             guard let file = try? AVAudioFile(forReading: url) else { return }
