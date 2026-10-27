@@ -184,9 +184,52 @@ CPAL capture mixes input channels to mono, resamples continuously to 16 kHz,
 and sends PCM16LE in 50 ms frames through a bounded queue. Cancellation closes
 the session and suppresses insertion, including while waiting for a final.
 Preferences contain no token; keyring uses native Windows Credential Manager,
-Apple Keychain (development only), and Linux Secret Service. Spoken text is
-memory-only and is never logged. The only committed image assets are copies of
+Apple Keychain (development only), and Linux Secret Service. Dictation history is
+encrypted locally as described below. Live partials stay in memory; spoken text
+is never logged. The only committed image assets are copies of
 the approved Pond artwork and glyph, plus the existing generated app icon.
+
+
+## Dictation history and originals
+
+**Dictation & settings** includes searchable history, on by default for **7 days**.
+Choose 24 hours, 7 days or 30 days, with up to 200 completed dictations of at most
+20,000 characters each. The list includes final text and, when clean-up changed
+it, the original. Search matches either version. Copy, Copy original and Delete
+work on individual dictations. Delete history asks for confirmation, then removes
+all history and its encryption key. Turning **Keep dictation history** off stops
+new entries and keeps existing entries until they expire or you delete them.
+Retention is enforced when history is opened, refreshed or written; reducing it
+and saving settings refreshes the list immediately. Cancelled dictations and
+Notes segments never enter this history.
+
+History is stored beside the Notes directory in `history/history.bin`, sealed
+with AES-256-GCM, a fresh random nonce per write and a separate random 256-bit key
+in the system credential store. It is never saved as plaintext, sent to your
+computer's Chirp server, or written to browser storage. Protected files, atomic
+replacement and an exclusive process lock cover history too. If the credential
+store is locked or history is unreadable, Chirp reports that it could not save
+history and keeps the final available; it never overwrites unreadable history.
+Deleting history does not change pairing or Notes. Unlike the phones' keyboards,
+the desktop client cannot identify password or incognito fields: turn history
+off before dictating sensitive text.
+
+After a polished final, **Use raw** copies the unchanged original and switches
+the displayed result to it. Select the previous result in your app and paste to
+replace it. Desktop cannot verify another app's selection, so this action does
+not automatically replace an insertion. The history entry retains the delivered
+final and its original, since copying cannot verify that you pasted a replacement.
+Copy remains available even when insertion failed. Opening Chirp from the tray
+keeps the latest final available until Cancel or the next dictation.
+
+**Spoken commands** is off by default. When enabled, “new line” and “new paragraph”
+at the end of a final (or as the entire utterance), followed only by whitespace
+or `. , ! ? …`, become one or two line breaks. Phrases in the middle of a sentence
+stay as words. This matches the phones and Mac. Partials and Use raw stay verbatim;
+Notes never applies these commands.
+
+This W22 increment covers history, Use raw and spoken commands. The clean-up
+style picker, auto-Enter and computer connection chip remain follow-up work.
 
 
 ## Notes library
@@ -259,3 +302,16 @@ The frontend tests cover tab selection, keyboard navigation and tray-open events
 | Inserted | ![Inserted HUD, light](../docs/screenshots/desktop/hud-inserted-light.png) | ![Inserted HUD, dark](../docs/screenshots/desktop/hud-inserted-dark.png) |
 | Error | ![Error HUD, light](../docs/screenshots/desktop/hud-error-light.png) | ![Error HUD, dark](../docs/screenshots/desktop/hud-error-dark.png) |
 | Settings | ![Settings, light](../docs/screenshots/desktop/settings-light.png) | ![Settings, dark](../docs/screenshots/desktop/settings-dark.png) |
+
+
+W22 captures add history search and the polished result with Use raw, in light
+and dark. Run `python3 desktop/scripts/review-ui.py` from the repository root,
+open its printed loopback URL in a browser, and choose Dictation & settings.
+The fixture uses synthetic content and in-memory native command mocks only.
+Record → Stop shows the finished-result controls. Refresh resets all fixtures.
+See [capture details](../docs/screenshots/desktop/README.md).
+
+| W22 state | Light | Dark |
+| --- | --- | --- |
+| History search | ![History search, light](../docs/screenshots/desktop/history-search-light.png) | ![History search, dark](../docs/screenshots/desktop/history-search-dark.png) |
+| Polished result | ![Polished result, light](../docs/screenshots/desktop/dictation-final-light.png) | ![Polished result, dark](../docs/screenshots/desktop/dictation-final-dark.png) |

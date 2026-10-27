@@ -26,6 +26,7 @@ pub struct Update {
     pub text: String,
     pub detail: String,
     pub debug_retention: bool,
+    pub raw_available: bool,
 }
 impl Update {
     pub fn new(state: &str, text: &str, detail: &str) -> Self {
@@ -34,6 +35,7 @@ impl Update {
             text: text.into(),
             detail: detail.into(),
             debug_retention: false,
+            raw_available: false,
         }
     }
 }
@@ -49,7 +51,7 @@ where
                     serde_json::from_str(&text).map_err(|_| "Server sent an invalid response")?;
                 if value["type"] == "error" {
                     return Err(match value["code"].as_str() {
-                        Some("auth") => "Pairing was refused. Pair with your server again.",
+                        Some("auth") => "Pairing was refused. Pair with your computer again.",
                         Some("busy") => "The server is busy. Try again.",
                         Some("too_long") => "This dictation reached the server duration limit.",
                         _ => "The server could not transcribe this dictation.",
@@ -64,13 +66,46 @@ where
     }
 }
 
+// No Debug implementation: finals must never enter diagnostics.
+#[derive(Clone)]
+pub struct Final {
+    pub text: String,
+    pub raw: Option<String>,
+}
+impl Final {
+    fn parse(value: &Value) -> Result<Self, String> {
+        let text = value["text"]
+            .as_str()
+            .ok_or("Chirp server final has no text")?
+            .to_owned();
+        let raw = value["raw"]
+            .as_str()
+            .filter(|raw| value["corrected"] == true && *raw != text)
+            .map(str::to_owned);
+        Ok(Self { text, raw })
+    }
+}
+
+// Notes consumes plain transcript text without dictation commands or history.
 pub async fn dictate(
+    settings: Settings,
+    token: String,
+    control: watch::Receiver<Control>,
+    fixture: Option<mpsc::Receiver<Result<Vec<u8>, String>>>,
+    emit: impl Fn(Update),
+) -> Result<String, String> {
+    dictate_final(settings, token, control, fixture, emit)
+        .await
+        .map(|result| result.text)
+}
+
+pub async fn dictate_final(
     settings: Settings,
     token: String,
     mut control: watch::Receiver<Control>,
     fixture: Option<mpsc::Receiver<Result<Vec<u8>, String>>>,
     emit: impl Fn(Update),
-) -> Result<String, String> {
+) -> Result<Final, String> {
     let url = stream_url(&settings.url)?;
     let mut request = url
         .as_str()
@@ -82,11 +117,15 @@ pub async fn dictate(
             .parse()
             .map_err(|_| "Invalid server token")?,
     );
-    emit(Update::new("connecting", "", "Connecting to your server…"));
+    emit(Update::new(
+        "connecting",
+        "",
+        "Connecting to your computer…",
+    ));
     let connecting = async {
         let (mut socket, _) = connect_async(request)
             .await
-            .map_err(|_| "Could not connect to your server")?;
+            .map_err(|_| "Could not connect to your computer")?;
         socket
             .send(Message::Text(
                 json!({"type":"start", "sample_rate":16000,
@@ -154,10 +193,10 @@ pub async fn dictate(
                 let value = message?;
                 match value["type"].as_str() {
                     Some("partial") | Some("correcting") => {
-                        let mut update = Update::new(if stopped {"processing"} else {"listening"}, value["text"].as_str().unwrap_or(""), if stopped {"Finishing…"} else {"Listening…"});
+                        let mut update = Update::new(if stopped {"processing"} else {"listening"}, value["text"].as_str().unwrap_or(""), if value["type"] == "correcting" {"Polishing…"} else if stopped {"Finishing…"} else {"Listening…"});
                         update.debug_retention = debug; emit(update);
                     }
-                    Some("final") if stopped => return value["text"].as_str().map(str::to_owned).ok_or("Server final has no text".into()),
+                    Some("final") if stopped => return Final::parse(&value),
                     _ => return Err("Unexpected server response".into()),
                 }
             }
@@ -171,6 +210,21 @@ mod tests {
     use super::*;
     use tokio::net::TcpListener;
     use tokio_tungstenite::accept_async;
+    #[test]
+    fn final_keeps_only_a_distinct_corrected_original() {
+        let result =
+            Final::parse(&json!({"text":"Polished.", "raw":"original", "corrected":true})).unwrap();
+        assert_eq!(result.text, "Polished.");
+        assert_eq!(result.raw.as_deref(), Some("original"));
+        for value in [
+            json!({"text":"Same", "raw":"Same", "corrected":true}),
+            json!({"text":"Raw", "raw":"Other", "corrected":false}),
+            json!({"text":"Older server"}),
+        ] {
+            assert!(Final::parse(&value).unwrap().raw.is_none());
+        }
+        assert!(Final::parse(&json!({"raw":"missing final"})).is_err());
+    }
     #[tokio::test]
     async fn actual_socket_streams_pcm_then_waits_for_final() {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -192,7 +246,7 @@ mod tests {
             .await
             .unwrap();
             ws.send(Message::Text(
-                json!({"type":"final","text":"Test sentence."})
+                json!({"type":"final","text":"Test sentence.","raw":"test sentence", "corrected":true})
                     .to_string()
                     .into(),
             ))
@@ -207,18 +261,17 @@ mod tests {
         tx.send(Ok(vec![0; 1600])).await.unwrap();
         drop(tx);
         let (_control, receiver) = watch::channel(Control::Running);
-        assert_eq!(
-            dictate(
-                settings,
-                "synthetic-test-token".into(),
-                receiver,
-                Some(rx),
-                |_| {}
-            )
-            .await
-            .unwrap(),
-            "Test sentence."
-        );
+        let result = dictate_final(
+            settings,
+            "synthetic-test-token".into(),
+            receiver,
+            Some(rx),
+            |_| {},
+        )
+        .await
+        .unwrap();
+        assert_eq!(result.text, "Test sentence.");
+        assert_eq!(result.raw.as_deref(), Some("test sentence"));
         server.await.unwrap();
     }
     #[tokio::test]

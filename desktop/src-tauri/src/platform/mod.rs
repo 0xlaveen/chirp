@@ -61,6 +61,7 @@ pub trait Platform: Send + Sync {
         );
         result
     }
+    fn copy_text(&self, text: &str) -> Result<(), String>;
     fn insert_text(&self, text: &str) -> Result<InsertionOutcome, String>;
     fn capabilities(&self) -> Capabilities;
 }
@@ -89,6 +90,9 @@ impl Platform for Unsupported {
     }
     fn start_hotkey(&self, _: HotKey, _: Sender<KeyEvent>) -> Result<HotkeyHandle, String> {
         Err("Use the native Chirp Mac app for global dictation on macOS".into())
+    }
+    fn copy_text(&self, _: &str) -> Result<(), String> {
+        Err("Use the native Chirp Mac app for clipboard access on macOS".into())
     }
     fn insert_text(&self, _: &str) -> Result<InsertionOutcome, String> {
         Err("Use the native Chirp Mac app for text insertion on macOS".into())

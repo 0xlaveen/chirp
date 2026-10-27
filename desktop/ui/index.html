@@ -33,6 +33,8 @@
   <section aria-labelledby="dictate-title"><h2 id="dictate-title">Dictate anywhere</h2><p id="shortcut-help"></p><p id="capabilities" class="muted"></p>
     <div class="actions"><button id="record">Record</button><button id="stop" class="tonal">Stop</button><button id="cancel" class="quiet">Cancel</button></div>
     <p id="status" role="status" aria-live="polite">Pair with your computer to begin.</p><p id="transcript"></p>
+    <div class="actions"><button id="result-copy" class="quiet" hidden>Copy</button><button id="use-raw" class="tonal" hidden>Use raw</button></div>
+    <p id="raw-help" class="muted" hidden>Copies the original. Select the previous result in your app and paste to replace it.</p>
   </section>
   <form id="settings"><h2>Connection &amp; shortcuts</h2>
     <label>Chirp server URL<input id="url" type="url" required placeholder="http://127.0.0.1:7821" autocomplete="off"></label>
@@ -47,9 +49,21 @@
     </fieldset>
     <p id="shortcut-status" role="status" class="muted"></p>
     <p id="native-shortcut-hint" class="muted">The default key follows your keyboard layout. AltGr layouts use Right Ctrl. Press the key alone; chords cancel dictation.</p>
-    <label class="check"><input id="correction" type="checkbox"> Polish dictation with your computer’s clean-up model</label>
+    <label class="check"><input id="correction" type="checkbox"> Clean-up</label><p class="muted">Polish dictation with your computer’s clean-up model.</p>
+    <label class="check"><input id="spoken-commands" type="checkbox"> Spoken commands</label>
+    <p class="muted">End a dictation with “new line” or “new paragraph” to insert one or two line breaks. The original stays unchanged.</p>
+    <h2>History &amp; privacy</h2>
+    <label class="check"><input id="history-enabled" type="checkbox"> Keep dictation history</label>
+    <label>Keep history for<select id="history-days"><option value="1">24 hours</option><option value="7">7 days</option><option value="30">30 days</option></select></label>
+    <p class="muted">On by default for 7 days, up to 200 dictations. Encrypted on this computer with a key in your system credential store. Turning this off stops new history; existing dictations expire or can be deleted below.</p>
     <button type="submit">Save settings</button><span id="saved" role="status"></span>
   </form>
+  <section aria-labelledby="history-title"><div class="history-heading"><h2 id="history-title">Dictation history</h2><button id="history-delete-all" class="quiet">Delete history…</button></div>
+    <label>Search history<input id="history-search" type="search" placeholder="Dictation or original words"></label>
+    <p id="history-warning" role="status" aria-live="polite"></p>
+    <p id="history-status" role="status" aria-live="polite"></p><div id="history-list"></div>
+  </section>
+  <dialog id="history-confirm"><form method="dialog"><h2>Delete dictation history?</h2><p>All saved dictations and their encryption key will be deleted from this computer. This cannot be undone.</p><button value="cancel" class="quiet">Cancel</button><button id="history-confirm-delete" value="delete" class="stop">Delete history</button></form></dialog>
   </div>
 </main>
 <aside id="hud" hidden aria-label="Chirp dictation"><div class="hud-head"><div class="ripple" aria-hidden="true"><i></i><i></i><i></i><img src="assets/glyph.png" alt=""></div><strong id="hud-status">Listening…</strong><span id="debug" hidden>DEBUG</span></div><p id="hud-text"></p><div class="hud-actions"><button id="hud-stop" class="quiet">Stop</button><button id="hud-cancel" class="quiet">Cancel</button></div></aside>

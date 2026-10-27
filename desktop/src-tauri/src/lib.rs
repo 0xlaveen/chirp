@@ -1,5 +1,6 @@
 pub mod audio;
 pub mod files;
+pub mod history;
 pub mod hotkey;
 mod hud;
 pub mod library;
@@ -7,6 +8,7 @@ pub mod notes;
 pub mod platform;
 pub mod protocol;
 pub mod settings;
+pub mod spoken_commands;
 
 use hotkey::{Action, HotkeyState};
 use protocol::{Control, Update};
@@ -20,6 +22,7 @@ use tokio::sync::watch;
 
 struct Runtime {
     settings: Mutex<settings::Settings>,
+    last_final: Mutex<Option<protocol::Final>>,
     active: Mutex<Option<(u64, watch::Sender<Control>)>>,
     hotkey: Mutex<Option<platform::HotkeyHandle>>,
     hud: Mutex<hud::Hud>,
@@ -146,13 +149,14 @@ fn start(app: &tauri::AppHandle) -> Result<(), String> {
         .map_err(|_| "Settings unavailable")?
         .clone();
     let token = settings::token()?;
+    *state.last_final.lock().map_err(|_| "Result unavailable")? = None;
     let id = state.sequence.fetch_add(1, Ordering::SeqCst) + 1;
     let (control, rx) = watch::channel(Control::Running);
     *active = Some((id, control.clone()));
     emit(app, Update::new("connecting", "", "Connecting…"));
     let app = app.clone();
     tauri::async_runtime::spawn(async move {
-        let result = protocol::dictate(settings, token, rx, None, |update| {
+        let result = protocol::dictate_final(settings.clone(), token, rx, None, |update| {
             if let Ok(active) = app.state::<Runtime>().active.lock() {
                 if matches!(active.as_ref(), Some((current, _)) if *current == id)
                     && *control.borrow() != Control::Cancel
@@ -174,29 +178,52 @@ fn start(app: &tauri::AppHandle) -> Result<(), String> {
             return;
         }
         let outcome = match result {
-            Ok(text) => {
-                // Insertion happens off the runtime thread. No transcript enters an argv or log.
+            Ok(mut final_result) => {
+                final_result.text =
+                    spoken_commands::apply(&final_result.text, settings.spoken_commands);
+                let text = final_result.text.clone();
                 let inserted = tauri::async_runtime::spawn_blocking(move || {
-                    let outcome = if *control.borrow() == Control::Cancel {
-                        Err("cancelled".into())
-                    } else {
-                        platform::native().insert_text(&text)
-                    };
-                    (text, outcome)
+                    if *control.borrow() == Control::Cancel {
+                        return Err("cancelled".into());
+                    }
+                    platform::native().insert_text(&text)
                 })
                 .await;
-                match inserted {
-                    Ok((text, Ok(outcome))) => Update::new(
+                let mut update = match inserted {
+                    Ok(Ok(outcome)) => Update::new(
                         "done",
-                        &text,
+                        &final_result.text,
                         match outcome {
                             platform::InsertionOutcome::Typed => "Inserted",
                             platform::InsertionOutcome::Clipboard => "Copied — paste into your app",
                         },
                     ),
-                    Ok((text, Err(detail))) => Update::new("error", &text, &detail),
-                    Err(_) => Update::new("error", "", "Could not insert the result"),
+                    Ok(Err(detail)) => Update::new("error", &final_result.text, &detail),
+                    Err(_) => {
+                        Update::new("error", &final_result.text, "Could not insert the result")
+                    }
+                };
+                // Hold the same start/cancel lock through publishing and history recording.
+                // A late cancelled result must never become a saved dictation.
+                if let Ok(mut active) = state.active.lock() {
+                    if matches!(active.as_ref(), Some((current, tx)) if *current == id && *tx.borrow() != Control::Cancel)
+                    {
+                        update.raw_available = final_result.raw.is_some();
+                        if let Ok(mut last) = state.last_final.lock() {
+                            *last = Some(final_result.clone());
+                        }
+                        if let Err(detail) =
+                            history::record(final_result.text, final_result.raw, &settings)
+                        {
+                            let _ = app.emit("history-error", detail);
+                        }
+                        active.take();
+                        emit(&app, update);
+                        let _ = app.emit("history-changed", ());
+                        return;
+                    }
                 }
+                update
             }
             Err(detail) => Update::new("error", "", &detail),
         };
@@ -220,12 +247,53 @@ fn start(app: &tauri::AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+#[tauri::command]
+fn dictation_copy(app: tauri::AppHandle) -> Result<(), String> {
+    let state = app.state::<Runtime>();
+    let last = state.last_final.lock().map_err(|_| "Result unavailable")?;
+    let result = last
+        .as_ref()
+        .ok_or("There is no completed dictation to copy")?;
+    platform::native().copy_text(&result.text)
+}
+
+#[tauri::command]
+fn dictation_use_raw(app: tauri::AppHandle) -> Result<(), String> {
+    let state = app.state::<Runtime>();
+    let active = state.active.lock().map_err(|_| "Session unavailable")?;
+    if active.is_some() {
+        return Err("Stop dictation before using the original".into());
+    }
+    let mut last = state.last_final.lock().map_err(|_| "Result unavailable")?;
+    let result = last.as_mut().ok_or("There is no completed dictation")?;
+    let raw = result
+        .raw
+        .as_ref()
+        .ok_or("The original is already in use")?;
+    // Another app's selection cannot be verified on every desktop. Copy instead of deleting text.
+    platform::native().copy_text(raw)?;
+    result.text = raw.clone();
+    result.raw = None;
+    emit(
+        &app,
+        Update::new(
+            "done",
+            &result.text,
+            "Original copied — select the previous result in your app and paste",
+        ),
+    );
+    Ok(())
+}
+
 fn signal(app: &tauri::AppHandle, value: Control) {
     if let Ok(active) = app.state::<Runtime>().active.lock() {
         if let Some((_, tx)) = active.as_ref() {
             let _ = tx.send(value);
         }
         if value == Control::Cancel {
+            if let Ok(mut last) = app.state::<Runtime>().last_final.lock() {
+                *last = None;
+            }
             emit(app, Update::new("idle", "", "Cancelled"));
         }
     };
@@ -383,6 +451,7 @@ pub fn run() {
         .manage(notes::NotesRuntime::default())
         .manage(Runtime {
             settings: Mutex::new(settings::Settings::read()),
+            last_final: Mutex::new(None),
             active: Mutex::new(None),
             hotkey: Mutex::new(None),
             hud: Mutex::new(hud::Hud::default()),
@@ -400,6 +469,12 @@ pub fn run() {
             dictate_start,
             dictate_stop,
             dictate_cancel,
+            dictation_copy,
+            dictation_use_raw,
+            history::history_list,
+            history::history_copy,
+            history::history_delete,
+            history::history_clear,
             notes::notes_list,
             notes::notes_create,
             notes::notes_get,

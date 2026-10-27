@@ -414,6 +414,10 @@ impl Platform for Windows {
         }))
     }
 
+    fn copy_text(&self, text: &str) -> Result<(), String> {
+        copy(text)
+    }
+
     fn insert_text(&self, text: &str) -> Result<InsertionOutcome, String> {
         if text.is_empty() {
             return Ok(InsertionOutcome::Typed);
