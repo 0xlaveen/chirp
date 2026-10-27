@@ -58,6 +58,10 @@ struct NoteDetailView: View {
                             .accessibilityIdentifier("chirp.notes.notice")
                     }
                     if let status = notes.speakerStatus { SpeakerStatusLine(notes: notes, status: status) }
+                    // The iPad shows it at the top of the transcript inspector when that is open.
+                    if let run = notes.retranscribeRun, run.note == notes.document.id, !(transcript && sizeClass == .regular) {
+                        RetranscribeBanner(notes: notes, run: run, pair: pair)
+                    }
                     HStack(spacing: 12) {
                         Button("Transcript", systemImage: "text.alignleft") { transcript.toggle() }
                             .buttonStyle(.bordered).buttonBorderShape(.capsule)
@@ -84,10 +88,11 @@ struct NoteDetailView: View {
                             .accessibilityIdentifier("chirp.notes.partial")
                     }
                     if notes.canUndoOrganize {
+                        let rebuilt = notes.snapshots.latest?.rebuild == true
                         HStack {
-                            Label("Notes organized", systemImage: "sparkles").font(.footnote).foregroundStyle(Color.chirp.moon)
+                            Label(rebuilt ? NotesRetranscribeCopy.rebuilt : "Notes organized", systemImage: "sparkles").font(.footnote).foregroundStyle(Color.chirp.moon)
                             Spacer()
-                            Button("Undo Organize") { if !notes.undoOrganize() { confirmUndo = true } }
+                            Button(rebuilt ? "Undo rebuild" : "Undo Organize") { if !notes.undoOrganize() { confirmUndo = true } }
                                 .font(.footnote).accessibilityIdentifier("chirp.notes.undo")
                         }.padding(12).background(Color.chirp.surfaceRaised, in: RoundedRectangle(cornerRadius: 10))
                     }
@@ -95,7 +100,17 @@ struct NoteDetailView: View {
             }.background(Color.chirp.surface)
         }
         .navigationTitle("").navigationBarTitleDisplayMode(.inline).tint(Color.chirp.koi)
-        .safeAreaInset(edge: .bottom) { dock.padding(.horizontal, 16).padding(.vertical, 12).background(Color.chirp.background) }
+        .safeAreaInset(edge: .bottom) {
+            VStack(spacing: 8) {
+                // While the transcript is open the toast sits at its top (the iPad inspector can cover this corner).
+                if let toast = notes.visibleRetranscribeToast, !transcript {
+                    RetranscribeToastView(notes: notes, toast: toast) { if !notes.undoOrganize() { confirmUndo = true } }
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                }
+                dock
+            }.padding(.horizontal, 16).padding(.vertical, 12).background(Color.chirp.background)
+                .animation(.default, value: notes.visibleRetranscribeToast)
+        }
         .toolbar { toolbar }
         .inspector(isPresented: Binding(get: { transcript && sizeClass == .regular }, set: { transcript = $0 })) {
             transcriptContent.inspectorColumnWidth(min: 280, ideal: 330, max: 420)
@@ -115,6 +130,11 @@ struct NoteDetailView: View {
             }
         } message: { Text("Chirp will recognise \(notes.rememberedVoiceNotice ?? "this person")’s voice in later notes on your devices. Saved voices stay on your computer. Settings → Notes → Saved voices.") }
         .sheet(isPresented: $settings) { NotesSettingsSheet(notes: notes) }
+        .sheet(item: retranscribeOffer(inTranscript: false)) { RetranscribeSheet(notes: notes, offer: $0) }
+        .confirmationDialog(NotesRetranscribeCopy.replaceEditsTitle, isPresented: Binding(get: { notes.confirmingRebuild != nil }, set: { if !$0 { notes.confirmRebuild(false) } }), titleVisibility: .visible) {
+            Button(NotesRetranscribeCopy.replaceEdits, role: .destructive) { notes.confirmRebuild(true) }
+            Button(NotesRetranscribeCopy.keepEdits, role: .cancel) { notes.confirmRebuild(false) }
+        } message: { Text(NotesRetranscribeCopy.replaceEditsMessage) }
         .fileExporter(isPresented: $exporting, document: NotesMarkdownFile(text: notes.markdown), contentType: NotesMarkdownFile.markdown,
                       defaultFilename: notes.exportName) { if case .success = $0 { notes.didExport() } }
         .confirmationDialog("Undo Organize?", isPresented: $confirmUndo, titleVisibility: .visible) {
@@ -210,7 +230,7 @@ struct NoteDetailView: View {
                 player.stop()
                 if notes.isActive { confirmSwitch = true } else { Task { await notes.record() } }
             }.buttonStyle(.borderedProminent).buttonBorderShape(.capsule).tint(Color.chirp.koi).foregroundStyle(Color.chirp.onKoi)
-                .disabled(!notes.paired || notes.starting || session.armed)
+                .disabled(!notes.paired || notes.starting || session.armed || notes.isRetranscribing)
                 .keyboardShortcut("r", modifiers: [.command, .shift]).accessibilityIdentifier("chirp.notes.record")
         }
     }
@@ -239,7 +259,15 @@ struct NoteDetailView: View {
                 }
                 Divider()
                 Button("Notes settings", systemImage: "gearshape") { settings = true }.accessibilityIdentifier("chirp.notes.note.settings")
-                if notes.selectedAudioBytes > 0 { Button("Delete audio (\(size(notes.selectedAudioBytes)))", systemImage: "waveform.slash", role: .destructive) { player.stop(); Task { await notes.deleteAudio(); await notes.refreshAudio() } } }
+                if notes.canRetranscribe {
+                    Button(NotesRetranscribeCopy.action, systemImage: "waveform.badge.magnifyingglass") { player.stop(); Task { await notes.offerRetranscribe() } }
+                        .accessibilityIdentifier("chirp.notes.retranscribe")
+                }
+                if notes.canRestoreTranscript {
+                    Button(NotesRetranscribeCopy.restore, systemImage: "arrow.uturn.backward") { notes.restorePreviousTranscript() }
+                        .accessibilityIdentifier("chirp.notes.retranscribe.restore")
+                }
+                if notes.selectedAudioBytes > 0 { Button("Delete audio (\(size(notes.selectedAudioBytes)))", systemImage: "waveform.slash", role: .destructive) { player.stop(); Task { await notes.deleteAudio(); await notes.refreshAudio() } }.disabled(notes.isRetranscribing) }
                 Button("Delete", systemImage: "trash", role: .destructive) { Task { await notes.delete([notes.document.id]); deleted() } }.disabled(notes.document.id == notes.recordingID)
             } label: { Label("More", systemImage: "ellipsis.circle") }.accessibilityIdentifier("chirp.notes.more")
         }
@@ -247,9 +275,17 @@ struct NoteDetailView: View {
 
     private var transcriptContent: some View {
         VStack(spacing: 0) {
+            if let run = notes.retranscribeRun, run.note == notes.document.id {
+                RetranscribeBanner(notes: notes, run: run, pair: pair).padding([.horizontal, .top], 16)
+            }
+            if let toast = notes.visibleRetranscribeToast {
+                RetranscribeToastView(notes: notes, toast: toast) { if !notes.undoOrganize() { confirmUndo = true } }
+                    .padding([.horizontal, .top], 16)
+            }
+            transcriptHeader
             if !notes.document.namableSpeakers.isEmpty {
                 Button("Name speakers", systemImage: "person.2") { if sizeClass == .regular { namingSpeakers = true } else { transcriptNamingSpeakers = true } }
-                    .padding().accessibilityIdentifier("chirp.notes.speakers.name.header")
+                    .padding().disabled(notes.isRetranscribing).accessibilityIdentifier("chirp.notes.speakers.name.header")
             }
             Toggle("Show raw", isOn: $showRaw).padding().accessibilityIdentifier("chirp.notes.raw")
             Divider()
@@ -287,22 +323,63 @@ struct NoteDetailView: View {
                             }
                             if let failure = segment.failure {
                                 Label("Not transcribed (\(failure))", systemImage: "exclamationmark.triangle").foregroundStyle(Color.chirp.record)
+                                if notes.canRetranscribe, notes.hasAudio(index) {
+                                    Button(NotesRetranscribeCopy.tryAgain, systemImage: "arrow.clockwise") { player.stop(); Task { await notes.offerRetranscribe(segment: index) } }
+                                        .font(.caption).buttonStyle(.bordered).buttonBorderShape(.capsule)
+                                        .accessibilityIdentifier("chirp.notes.retranscribe.try.\(index)")
+                                }
                             } else if let turns = segment.turns, !turns.isEmpty {
                                 SpeakerTurnsView(notes: notes, segment: segment, segmentIndex: index, showRaw: showRaw, clock: clock) {
                                     renamingSpeaker = SpeakerSheetItem(id: $0)
                                 } nameAll: { if sizeClass == .regular { namingSpeakers = true } else { transcriptNamingSpeakers = true } }
+                                .disabled(notes.isRetranscribing)
                             } else {
                                 Text(showRaw ? segment.raw : segment.text).textSelection(.enabled)
                             }
                         }.padding(12).frame(maxWidth: .infinity, alignment: .leading)
                             .background(player.segment == index ? Color.chirp.koiContainer : .chirp.surface, in: RoundedRectangle(cornerRadius: 10))
+                            .contextMenu {
+                                if segment.failure == nil, notes.canRetranscribe, notes.hasAudio(index) {
+                                    Button(NotesRetranscribeCopy.again, systemImage: "waveform") { player.stop(); Task { await notes.offerRetranscribe(segment: index) } }
+                                }
+                            }
                     }
                     if let error = player.error { Text(error).font(.footnote).foregroundStyle(Color.chirp.record) }
                 }.padding(16)
             }.accessibilityIdentifier("chirp.notes.transcript")
         }.background(Color.chirp.background).tint(Color.chirp.koi)
             .sheet(isPresented: $transcriptNamingSpeakers) { NameSpeakersSheet(notes: notes) }
+            .sheet(item: retranscribeOffer(inTranscript: true)) { RetranscribeSheet(notes: notes, offer: $0) }
             .sheet(item: $renamingSpeaker) { RenameSpeakerSheet(notes: notes, person: $0.id) }
+    }
+
+    /// The consent sheet presents from the iPhone's transcript sheet while that is up, else from the note.
+    private func retranscribeOffer(inTranscript: Bool) -> Binding<NotesRetranscribeOffer?> {
+        let fromTranscript = transcript && sizeClass != .regular
+        return Binding(get: { fromTranscript == inTranscript ? notes.retranscribeOffer : nil }, set: { notes.retranscribeOffer = $0 })
+    }
+
+    /// "Transcribed with …" and the transcript's own Re-transcribe… / Restore previous transcript.
+    @ViewBuilder private var transcriptHeader: some View {
+        // Older notes never recorded their model: the line shows once one is known (live recording or a re-transcribe).
+        let engine = notes.document.transcribedWith
+        if !notes.document.segments.isEmpty, engine != nil || notes.canRetranscribe || notes.canRestoreTranscript {
+            HStack(spacing: 8) {
+                Text(engine == nil ? "" : NotesRetranscribeCopy.transcribedWith(engine)).font(.footnote).foregroundStyle(Color.chirp.inkMuted)
+                    .frame(maxWidth: .infinity, alignment: .leading).accessibilityIdentifier("chirp.notes.transcribedWith")
+                if notes.canRetranscribe || notes.canRestoreTranscript {
+                    Menu {
+                        if notes.canRetranscribe {
+                            Button(NotesRetranscribeCopy.action, systemImage: "waveform.badge.magnifyingglass") { player.stop(); Task { await notes.offerRetranscribe() } }
+                        }
+                        if notes.canRestoreTranscript {
+                            Button(NotesRetranscribeCopy.restore, systemImage: "arrow.uturn.backward") { notes.restorePreviousTranscript() }
+                        }
+                    } label: { Label("Transcript actions", systemImage: "ellipsis.circle").labelStyle(.iconOnly) }
+                        .accessibilityIdentifier("chirp.notes.transcript.more")
+                }
+            }.padding(.horizontal).padding(.top, 12)
+        }
     }
 
     private func toggleTask(_ index: Int) {
@@ -408,8 +485,14 @@ struct NotesSettingsView: View {
                 if notes.totalAudioBytes > 0 {
                     ActionRow(title: "Delete kept audio",
                               summary: ByteCountFormatter.string(fromByteCount: Int64(notes.totalAudioBytes), countStyle: .file) + " kept",
-                              symbol: "waveform.slash", destructive: true, identifier: "chirp.notes.deleteAudio") { confirmDeleteAudio = true }
+                              symbol: "waveform.slash", destructive: true, disabled: notes.retranscribeRun != nil,
+                              identifier: "chirp.notes.deleteAudio") { confirmDeleteAudio = true }
                 }
+                SwitchRow(title: NotesRetranscribeCopy.setting, isOn: notes.preferences.allowRetranscribe,
+                          summary: notes.preferences.allowRetranscribe ? "On · asks before sending audio" : "Off", symbol: "arrow.clockwise",
+                          infoTitle: NotesRetranscribeCopy.setting, infoBody: NotesRetranscribeCopy.settingFooter,
+                          identifier: "chirp.notes.allowRetranscribe", disabled: !notes.preferences.keepAudio && notes.totalAudioBytes == 0,
+                          set: { notes.setAllowRetranscribe($0) })
             }
             SettingsGroup(title: "Speakers") {
                 SwitchRow(title: "Label speakers", isOn: notes.labelSpeakers,

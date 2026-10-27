@@ -13,6 +13,11 @@ public struct NotesPreferences: Codable, Sendable, Equatable {
     public var recoveryCopy = true
     public var keepNotes = true
     public var keepAudio = false
+    /// "Allow re-transcribing": a note's kept audio may be sent to the paired server again, on request and after a
+    /// confirmation each time (#287). On by default (kept audio is opt-in already); off hides every entry point.
+    public var allowRetranscribe = true
+    /// The re-transcribe sheet's "Also rebuild the notes" box, as last left (off by default: it replaces body edits).
+    public var retranscribeRebuild = false
     public var retention: NotesRetention = .never
     public var libraryUpgradeNotice = false
     /// "Battery saver while locked": no screen updates while the app is in the background (recording and structuring
@@ -37,6 +42,8 @@ public struct NotesPreferences: Codable, Sendable, Equatable {
         recoveryCopy = try c.decodeIfPresent(Bool.self, forKey: .recoveryCopy) ?? true
         keepNotes = try c.decodeIfPresent(Bool.self, forKey: .keepNotes) ?? recoveryCopy
         keepAudio = try c.decodeIfPresent(Bool.self, forKey: .keepAudio) ?? false
+        allowRetranscribe = try c.decodeIfPresent(Bool.self, forKey: .allowRetranscribe) ?? true
+        retranscribeRebuild = try c.decodeIfPresent(Bool.self, forKey: .retranscribeRebuild) ?? false
         retention = try c.decodeIfPresent(NotesRetention.self, forKey: .retention) ?? .never
         libraryUpgradeNotice = try c.decodeIfPresent(Bool.self, forKey: .libraryUpgradeNotice) ?? !recoveryCopy
         batterySaver = try c.decodeIfPresent(Bool.self, forKey: .batterySaver) ?? true

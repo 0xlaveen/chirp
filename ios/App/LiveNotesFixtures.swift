@@ -91,9 +91,10 @@ final class SimulatorNotesAudio: NotesAudio {
 
 extension LiveNotesController {
     /// The health of a current Mac server with clean-up on this Mac and every notes endpoint.
-    static let syntheticHealth = Health(engine: "synthetic", ready: true, correction: "available", correctionLeavesMachine: false,
+    static let syntheticHealth = Health(engine: "parakeet-mlx:tdt-0.6b-v3", ready: true, correction: "available", correctionLeavesMachine: false,
                                         notesStructure: true, notesCorrection: true, notesReorganize: true, notesContext: true,
-                                        notesSpeakers: true, speakersModel: SpeakersModel(state: .ready, sizeBytes: 26_530_309))
+                                        notesSpeakers: true, speakersModel: SpeakersModel(state: .ready, sizeBytes: 26_530_309),
+                                        speechModel: "parakeet-v3", notesRetranscribe: true)
 
     /// UI-test controller: synthetic sockets (ready and a partial on start, a final on stop), a structuring stand-in that
     /// bullets the transcript, quiet synthetic capture and a throwaway encrypted store.
@@ -111,7 +112,14 @@ extension LiveNotesController {
             correctionAllowed: { _ in true },
             otherCaptureActive: { [weak coordinator] in coordinator?.armed ?? false },
             http: URLSession(configuration: config),
-            fetchHealth: { _, _ in var health = syntheticHealth; if withVoices { health.speakerVoices = true }; return health },
+            fetchHealth: { _, _ in
+                var health = syntheticHealth
+                if withVoices { health.speakerVoices = true }
+                // Re-transcribe sheet states: an older server, and one that keeps debug recordings.
+                if args.contains("--chirp-retranscribe-old-server") { health.notesRetranscribe = nil }
+                if args.contains("--chirp-retranscribe-debug") { health.debugRetention = true }
+                return health
+            },
             makeStream: { _, options, _ in StreamSession(transport: SyntheticTransport(automatic: true, voiceMatches: { withVoices ? voices.matches : [] }), options: options) },
             structure: { _, _, request, _ in syntheticStructure(request) },
             reorganize: { _, _, request, _ in syntheticReorganize(request) },
@@ -147,6 +155,64 @@ extension LiveNotesController {
         document.userEdit(NSRange(location: document.text.utf16.count, length: 0), "\n\n- [ ] **Person 1** to send the notes")
     }
 
+    /// `--chirp-retranscribe-seed <meeting.wav> <sentence.wav>` (the live re-transcribe e2e, #287 §6): two notes whose
+    /// kept audio is real speech, sealed and AAC-encoded like a recording's, and whose transcript reads "WRONG TEXT", so
+    /// whatever comes back is obviously from the audio. "Retranscribe meeting" has two people over two contiguous clips,
+    /// Person 2 named Maya and one turn reassigned to her by hand; "Retranscribe gap" is one gap that kept its audio.
+    /// Earlier copies are deleted first, so runs do not pile up.
+    func seedRetranscribe(_ paths: [String]) async throws {
+        // Once per launch: the library also reloads when the app comes back to the front.
+        guard let library, paths.count == 2, !Self.retranscribeSeeded else { return }
+        Self.retranscribeSeeded = true
+        let titles = ["Retranscribe meeting", "Retranscribe gap"]
+        for entry in try await library.store.list() + library.store.list(deleted: true) where titles.contains(entry.title) {
+            try? await library.store.purge(entry.id)
+        }
+        let meeting = try Self.pcm(paths[0]), sentence = try Self.pcm(paths[1])
+        let bytesPerSecond = Int(PCMConverter.sampleRate) * 2
+        let cut = min(meeting.count / 2, 20 * bytesPerSecond) / 2 * 2
+        let clips = [meeting.prefix(cut), meeting.dropFirst(cut)].map { Data($0) }
+        let split = Double(cut) / Double(bytesPerSecond)
+        func turns(_ pairs: [(Int, Double)]) -> [ServerTurn] { pairs.map { ServerTurn(speaker: $0.0, start: $0.1, text: "WRONG TEXT") } }
+
+        var first = NotesDocument(startedAt: Date().addingTimeInterval(-600))
+        var a = NotesSegment(id: 0, offset: 0, raw: "wrong text", text: "WRONG TEXT")
+        a.end = split
+        first.append(a)
+        var b = NotesSegment(id: 1, offset: split, raw: "wrong text", text: "WRONG TEXT")
+        b.pauseBefore = 0
+        b.end = Double(meeting.count) / Double(bytesPerSecond)
+        first.append(b)
+        first.attachServerTurns(turns([(0, 0), (1, 7)]), generation: "seed", toSegment: 0)
+        first.attachServerTurns(turns([(0, 0), (1, 6)]), generation: "seed", toSegment: 1)
+        first.renameSpeaker(2, to: "Maya")
+        first.reassignTurns([SpeakerTurnRef(segment: 1, index: 0)], to: 2)
+        try await library.write(NotesJournalRecord(document: first, elapsed: b.end ?? 0, writtenAt: Date()))
+        try await library.rename(first.id, title: titles[0])
+        for (i, clip) in clips.enumerated() {
+            try await library.keepAudio(first.id, segment: i, frames: [clip], offset: i == 0 ? 0 : split, sampleRate: PCMConverter.sampleRate)
+        }
+
+        var second = NotesDocument(startedAt: Date().addingTimeInterval(-300))
+        second.append(NotesSegment(id: 0, offset: 0, raw: "", text: "", failure: "engine"))
+        try await library.write(NotesJournalRecord(document: second, elapsed: Double(sentence.count) / Double(bytesPerSecond), writtenAt: Date()))
+        try await library.rename(second.id, title: titles[1])
+        try await library.keepAudio(second.id, segment: 0, frames: [sentence], offset: 0, sampleRate: PCMConverter.sampleRate)
+    }
+
+    private static var retranscribeSeeded = false
+
+    /// A speech file as 16 kHz mono PCM16.
+    nonisolated static func pcm(_ path: String) throws -> Data {
+        let file = try AVAudioFile(forReading: URL(fileURLWithPath: path))
+        guard let converter = PCMConverter(from: file.processingFormat),
+              let buffer = AVAudioPCMBuffer(pcmFormat: file.processingFormat, frameCapacity: AVAudioFrameCount(file.length)) else {
+            throw SessionFailure.audio
+        }
+        try file.read(into: buffer)
+        return converter.frames(from: buffer).reduce(into: Data()) { $0.append($1) }
+    }
+
     /// Synthetic documents for reproducible screenshots; the real sealed store and library are still exercised.
     func seedLibrary() async throws {
         guard let library, try await library.store.list().isEmpty else { return }
@@ -165,6 +231,9 @@ extension LiveNotesController {
             var document = NotesDocument(startedAt: date, text: text)
             document.append(NotesSegment(id: 0, offset: 12, raw: "We will keep the launch in March and send the proposal by Friday.", text: "Keep the launch in March. Send the proposal by Friday."))
             if days == 0, ProcessInfo.processInfo.arguments.contains("--chirp-speakers-gallery") { Self.labelGallerySegments(&document) }
+            // `--chirp-retranscribe-gallery`: a gap ("audio not transcribed") that kept its audio, for Try again.
+            let gap = days == 0 && ProcessInfo.processInfo.arguments.contains("--chirp-retranscribe-gallery") ? document.segments.count : nil
+            if let gap { document.append(NotesSegment(id: gap, offset: 40 + Double(gap) * 30, raw: "", text: "", failure: "engine")) }
             var record = NotesJournalRecord(document: document, elapsed: elapsed, writtenAt: date)
             record.recovered = days == 1
             try seed.journalStore.write(record)
@@ -174,6 +243,9 @@ extension LiveNotesController {
             try await library.store.write(migrated)
             if days == 0 {
                 try await library.store.keepAudio(document.id, segment: 0, frames: [Data(count: 64_000)], offset: 12, sampleRate: 16_000)
+                if let gap {
+                    try await library.store.keepAudio(document.id, segment: gap, frames: [Data(count: 32_000)], offset: 40 + Double(gap) * 30, sampleRate: 16_000)
+                }
             }
         }
     }

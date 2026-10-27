@@ -39,7 +39,8 @@ struct SpeakerTurnsView: View {
     var body: some View {
         let roster = notes.document.roster
         VStack(alignment: .leading, spacing: 12) {
-            ForEach(Array((segment.turns ?? []).enumerated()), id: \.offset) { turnIndex, turn in
+            // A turn a re-transcribe left without words keeps its place (and index) but is not shown.
+            ForEach(Array((segment.turns ?? []).enumerated()).filter { !(showRaw ? $0.element.raw : $0.element.text).isEmpty }, id: \.offset) { turnIndex, turn in
                 let menu = SpeakerFixups.menu(for: turn.person, in: roster)
                 VStack(alignment: .leading, spacing: 6) {
                     HStack(spacing: 8) {

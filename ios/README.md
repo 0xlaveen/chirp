@@ -425,7 +425,22 @@ keeping new changes. Deleting a note moves it to **Recently Deleted** for
 Opt-in kept audio is mono AAC, about 32 kbps, one sealed clip per speech
 segment. Replay decrypts in memory. Per-note and total audio sizes are shown;
 **Delete audio** and **Delete kept audio** preserve the text. Turning the audio
-switch off stops future audio storage. Re-transcription is not implemented.
+switch off stops future audio storage.
+
+**Re-transcribe…** (a stopped note’s More menu or the transcript header) sends
+the note’s kept clips to the paired Chirp server again to rebuild the
+transcript, for example after switching the computer to a better speech model.
+A sheet asks every time, naming the length, the clip count, the destination,
+the speech model and clean-up, with the red warning when the computer keeps
+debug recordings. Gap rows (“Not transcribed”) have **Try again**, and other
+rows with audio offer **Transcribe again** in their context menu. Clips are
+opened and decoded in memory only. A banner shows progress with Cancel; the
+transcript is read-only meanwhile, and in the background the run pauses after
+the clip in flight until Chirp is in front again. Names and turn reassignments
+stay. **Transcript updated · Undo** and **Restore previous transcript** swap
+the old words back; **Also rebuild the notes** replaces the body as one change
+with **Undo rebuild**. **Settings → Notes → Allow re-transcribing** (on by
+default) hides every entry point.
 
 **Locked screen and background.** A Live Activity shows the note title (up to
 60 characters), state, elapsed time and Pause/Resume/Stop. Battery saver skips

@@ -29,6 +29,9 @@ final class LiveNotesController: ObservableObject {
         var http: URLSession
         var fetchHealth: (ServerConfig, URLSession) async throws -> Health = { try await $0.fetchHealth(session: $1) }
         var makeStream: (ServerConfig, StartOptions, URLSession) -> StreamSession = { StreamSession(config: $0, options: $1, urlSession: $2) }
+        /// Re-transcribe's sockets (#287): a `start.retranscribe` may wait up to a minute for the engine, so the app gives
+        /// them a longer ready deadline. Nil uses `makeStream`.
+        var retranscribeStream: ((ServerConfig, StartOptions, URLSession) -> StreamSession)?
         var structure: @Sendable (ServerConfig, URLSession, NotesStructureRequest, TimeInterval) async throws -> NotesStructureResponse = {
             try await $0.structureNotes($2, session: $1, timeout: $3)
         }
@@ -96,6 +99,13 @@ final class LiveNotesController: ObservableObject {
     @Published private(set) var starting = false
     /// The request for the Mac's speaker model could not reach it (the status line offers Retry).
     @Published private(set) var speakerRequestFailed = false
+    /// Re-transcribe from kept audio (#287, LiveNotesRetranscribe.swift): the consent sheet on offer, the run (one at a
+    /// time), the finish toast and "Replace your edits?" for a rebuild that would overwrite typing.
+    @Published var retranscribeOffer: NotesRetranscribeOffer?
+    @Published var retranscribeRun: NotesRetranscribeRun?
+    @Published var retranscribeToast: NotesRetranscribeToast?
+    @Published var confirmingRebuild: UUID?
+    let retranscribeWork = NotesRetranscribeWork()
     private var speakerPoll: Task<Void, Never>?
     private var speakerRequest: Task<Void, Never>?
     /// Screen updates skipped while locked in battery saver (for the tests and the status line).
@@ -120,7 +130,7 @@ final class LiveNotesController: ObservableObject {
         get { selected.snaps }
         set { selected.snaps = newValue }
     }
-    private var deps: Dependencies
+    private(set) var deps: Dependencies
     private let serverBox: NotesServerBox
     private var loading: Task<Void, Never>?
     private var openGeneration = 0
@@ -149,13 +159,10 @@ final class LiveNotesController: ObservableObject {
 
     private func makeSession(record: NotesJournalRecord? = nil) -> NoteSession {
         let box = serverBox
-        let http = deps.http, structure = deps.structure, reorganize = deps.reorganize, makeStream = deps.makeStream
+        let http = deps.http, reorganize = deps.reorganize, makeStream = deps.makeStream
         let recorder = NotesRecorder(
             makeSession: { options in makeStream(box.config ?? ServerConfig(baseURL: URL(string: "https://unpaired.invalid")!), options, http) },
-            structure: { [weak self] request in
-                guard let config = box.config else { throw NotesStructureError.unsupported(404) }
-                return try await structure(config, http, request, await self?.health?.operationTimeout(.notesStructure, fallback: 35) ?? 35)
-            },
+            structure: structureCall(),
             reorganize: { [weak self] request in
                 guard let config = box.config else { throw NotesStructureError.unsupported(404) }
                 return try await reorganize(config, http, request, await self?.health?.operationTimeout(.notesReorganize, fallback: 50) ?? 50)
@@ -192,6 +199,36 @@ final class LiveNotesController: ObservableObject {
         return context
     }
 
+    /// `/v1/notes/structure` on the paired server, with the advertised deadline (live structuring and a rebuild).
+    func structureCall() -> NotesRecorder.Structure {
+        let box = serverBox, http = deps.http, structure = deps.structure
+        return { [weak self] request in
+            guard let config = box.config else { throw NotesStructureError.unsupported(404) }
+            return try await structure(config, http, request, await self?.health?.operationTimeout(.notesStructure, fallback: 35) ?? 35)
+        }
+    }
+
+    /// Note `id` as its editor holds it (nil when it is not open).
+    func noteDocument(_ id: UUID) -> NotesDocument? { sessions[id]?.recorder.document }
+
+    /// A re-transcribe changes note `id` while it is not recording (its transcript): one change, journalled at once.
+    func updateNote(_ id: UUID, _ body: (inout NotesDocument) -> Void) -> Bool {
+        guard let context = sessions[id], context.recorder.updateDocument(body) else { return false }
+        sync(context)
+        context.journal?.flush()
+        return true
+    }
+
+    /// Re-transcribe's rebuilt notes as one `.rebuild` change (Undo rebuild takes it back), when the body still reads
+    /// `body` (nil: replace whatever it holds).
+    func rebuildNote(_ id: UUID, _ result: NotesRebuild.Result, ifBody body: String?) -> Bool {
+        guard let context = sessions[id], body == nil || context.recorder.document.text == body,
+              context.recorder.rebuildNotes(result.text, fallbackBlocks: result.fallbackBlocks) else { return false }
+        sync(context)
+        context.journal?.flush()
+        return true
+    }
+
     private func makeJournal() -> NotesJournal? {
         guard let store = deps.store else { return nil }
         let journal = NotesJournal(store: store.journalStore, enabled: false,
@@ -220,6 +257,8 @@ final class LiveNotesController: ObservableObject {
             try await store.migrateRecovery()
             #if DEBUG
             if ProcessInfo.processInfo.arguments.contains("--chirp-notes-gallery") { try await seedLibrary() }
+            let args = ProcessInfo.processInfo.arguments
+            if let i = args.firstIndex(of: "--chirp-retranscribe-seed"), i + 2 < args.count { try await seedRetranscribe([args[i + 1], args[i + 2]]) }
             #endif
             try await library.maintain(retention: preferences.retention)
             refreshRows()
@@ -300,6 +339,7 @@ final class LiveNotesController: ObservableObject {
         guard let library else { return }
         var deleted: [UUID] = []
         for id in ids where id != recordingID {
+            cancelRetranscribe(note: id)
             do {
                 // Flush and retire this editor before moving its durable record to Recently Deleted.
                 sessions[id]?.journal?.flush()
@@ -545,6 +585,12 @@ final class LiveNotesController: ObservableObject {
         sync()
     }
     func setKeepAudio(_ on: Bool) { preferences.keepAudio = on; save() }
+    /// Settings → Notes → Allow re-transcribing: off hides every entry point and stops a run.
+    func setAllowRetranscribe(_ on: Bool) {
+        preferences.allowRetranscribe = on; save()
+        if !on { retranscribeOffer = nil; cancelRetranscribe(note: nil) }
+    }
+    func rememberRebuildChoice(_ on: Bool) { preferences.retranscribeRebuild = on; save() }
     func setRetention(_ retention: NotesRetention) {
         preferences.retention = retention; save()
         Task {
@@ -810,13 +856,19 @@ final class LiveNotesController: ObservableObject {
     private func configure(_ context: NoteSession? = nil) {
         let recorder = (context ?? selected!).recorder
         let h = health
-        let correction = h.map(deps.correctionAllowed) ?? false
-        recorder.options = h?.notesCorrection == true
-            ? StartOptions(client: "ios", correction: correction, correctionProfile: CorrectionProfile.liveNotesID, wordTimings: true)
-            : StartOptions(client: "ios", correction: correction, correctionProfile: CorrectionProfile.defaultID, wordTimings: true)
+        recorder.options = notesStartOptions(health: h)
         recorder.serverHost = deps.server()?.host ?? ""
         recorder.labelSpeakers = preferences.speakerLabelsOn && SpeakerNotice.available(h)
         recorder.configureStructuring(enabled: preferences.structureEnabled(health: h), health: h)
+    }
+
+    /// The `start` options for Notes audio on this server: its clean-up setting, in the hidden `live_notes` style when
+    /// the server has one.
+    func notesStartOptions(health h: Health?) -> StartOptions {
+        let correction = h.map(deps.correctionAllowed) ?? false
+        return h?.notesCorrection == true
+            ? StartOptions(client: "ios", correction: correction, correctionProfile: CorrectionProfile.liveNotesID, wordTimings: true)
+            : StartOptions(client: "ios", correction: correction, correctionProfile: CorrectionProfile.defaultID, wordTimings: true)
     }
 
     // MARK: app lifecycle
@@ -836,6 +888,7 @@ final class LiveNotesController: ObservableObject {
     func setBackground(_ value: Bool) {
         guard value != background else { return }
         background = value
+        retranscribeBackground(value)
         if !value {
             captureRecorder?.serverAvailable()
             Task { await loadLibrary(); await refreshHealth(); await settleJournal() }
@@ -970,13 +1023,18 @@ extension LiveNotesController {
         #if DEBUG
         if let file = SimulatorNotesAudio.fromArguments() { audio = file }
         #endif
-        let deps = Dependencies(
+        var deps = Dependencies(
             server: { [weak coordinator] in coordinator?.services.flatMap { try? $0.pairing.load() } },
             correctionAllowed: { [weak coordinator] in coordinator?.preferences.permitsCorrection(health: $0) ?? false },
             otherCaptureActive: { [weak coordinator] in coordinator?.armed ?? false },
             http: SafeHTTPSession.make(), audio: audio,
             requestPermission: { await AVAudioApplication.requestRecordPermission() },
             activity: .system, store: store)
+        deps.retranscribeStream = { config, options, http in
+            var limits = StreamLimits()
+            limits.readyDeadline = NotesRetranscriber.readyDeadline
+            return StreamSession(config: config, options: options, urlSession: http, limits: limits)
+        }
         let made = LiveNotesController(deps)
         if store == nil { made.notice = "Protected storage unavailable, so notes cannot be kept on this device." }
         return made

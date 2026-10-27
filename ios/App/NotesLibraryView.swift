@@ -242,7 +242,10 @@ struct NotesLibraryView: View {
         if entry.duration >= 1, entry.openTodos > 0 { Text("·").accessibilityHidden(true) }
         if entry.openTodos > 0 { Text("☐ " + NoteMeta.open(entry.openTodos)) }
         if entry.recovered { Text("Recovered").foregroundStyle(Color.chirp.moon) }
-        if entry.hasAudio { Image(systemName: "waveform").accessibilityLabel("Audio kept") }
+        if let run = notes.retranscribeRun, run.note == entry.id, run.failure == nil {
+            ProgressView(value: run.progress.fraction).progressViewStyle(.circular).controlSize(.mini)
+                .accessibilityLabel("Re-transcribing, \(run.progress.done) of \(run.progress.total)")
+        } else if entry.hasAudio { Image(systemName: "waveform").accessibilityLabel("Audio kept") }
     }
 
     private var libraryDock: some View {

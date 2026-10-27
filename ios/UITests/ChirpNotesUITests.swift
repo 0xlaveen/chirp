@@ -34,7 +34,11 @@ final class ChirpNotesUITests: XCTestCase {
         let fixed = ProcessInfo.processInfo.environment["CHIRP_NOTES_APPEARANCE"]
         let appearances: [XCUIDevice.Appearance] = fixed == "dark" ? [.dark] : fixed == "light" ? [.light] : [.light, .dark]
         for appearance in appearances {
-            if fixed == nil { XCUIDevice.shared.appearance = appearance }
+            if fixed == nil, XCUIDevice.shared.appearance != appearance {
+                XCUIDevice.shared.appearance = appearance
+                // Give every window (sheets, the iPad inspector) a moment to redraw in the new appearance.
+                _ = XCTWaiter.wait(for: [XCTestExpectation(description: "appearance")], timeout: 1)
+            }
             let shot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
             shot.name = name + (appearance == .dark ? "-dark" : "-light")
             shot.lifetime = .keepAlways
@@ -114,6 +118,150 @@ final class ChirpNotesUITests: XCTestCase {
             }
             app.terminate()
         }
+    }
+
+    /// Re-transcribe from kept audio (#287 I) on the synthetic server: the consent sheet, progress, the finish toast with
+    /// Undo, Restore previous transcript, gap rows' Try again, the debug-recordings warning, an older server, and AX5.
+    @MainActor func testRetranscribeSheetBannerAndToast() {
+        let pad = UIDevice.current.userInterfaceIdiom == .pad
+        func open(_ extra: [String]) -> XCUIApplication {
+            let app = launch(["--chirp-notes-gallery", "--chirp-retranscribe-gallery"] + extra)
+            let row = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'chirp.notes.row.' AND label CONTAINS 'Lantern kickoff'")).firstMatch
+            XCTAssertTrue(Self.element("chirp.notes.library", in: app).waitForExistence(timeout: 10))
+            var scrolls = 0
+            // At AX5 the newest note can sit below the fold, under the floating Record dock: nudge it above the dock.
+            func clear() -> Bool {
+                guard row.waitForExistence(timeout: 2), row.isHittable else { return false }
+                let record = app.buttons["chirp.notes.record"].firstMatch
+                let top = record.exists ? record.frame.minY - 8 : app.windows.firstMatch.frame.maxY
+                return row.frame.minY + row.frame.height * 0.2 < top
+            }
+            let list = Self.element("chirp.notes.library", in: app)
+            while !clear(), scrolls < 8 {
+                list.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.6)).press(forDuration: 0.05, thenDragTo: list.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.4)))
+                scrolls += 1
+            }
+            row.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.2)).tap()
+            XCTAssertTrue(app.buttons["chirp.notes.title"].waitForExistence(timeout: 5))
+            return app
+        }
+        func sheet(_ app: XCUIApplication) {
+            app.buttons["chirp.notes.more"].tap()
+            // At AX5 the menu is taller than the screen and scrolls.
+            let item = app.buttons["Re-transcribe…"]
+            var scrolls = 0
+            while !(item.waitForExistence(timeout: 2) && item.isHittable), scrolls < 4 {
+                // Swipe on the menu itself (an iPad popover closes on a swipe outside it).
+                let inMenu = ["chirp.notes.note.settings", "chirp.notes.speakers.toggle", "chirp.notes.save", "chirp.notes.copy"]
+                    .map { app.buttons[$0] }.first { $0.exists && $0.isHittable }
+                inMenu?.swipeUp(velocity: .slow)
+                scrolls += 1
+            }
+            item.tap()
+            XCTAssertTrue(Self.element("chirp.notes.retranscribe.title", in: app).waitForExistence(timeout: 10))
+        }
+        /// Nothing in the sheet runs past the screen's edge (A2-2).
+        func fits(_ app: XCUIApplication) {
+            let width = app.windows.firstMatch.frame.maxX
+            for text in app.staticTexts.allElementsBoundByIndex where text.exists && text.frame.width > 0 {
+                XCTAssertLessThanOrEqual(text.frame.maxX, width + 1, "“\(text.label)” runs off the screen")
+            }
+        }
+
+        // The sheet, then a run that applies at once: "Transcript updated · Undo", and Undo puts the old text back.
+        var app = open([])
+        sheet(app)
+        let body = Self.element("chirp.notes.retranscribe.body", in: app)
+        XCTAssertTrue(body.label.contains("(3 s, 2 clips) to Chirp on your computer"), body.label)
+        XCTAssertTrue(app.staticTexts["Speech model: Parakeet v3 (MLX)."].exists)
+        XCTAssertTrue(app.staticTexts["This note was transcribed with: unknown."].exists)
+        screenshot("notes-retranscribe-sheet", app)
+        app.buttons["chirp.notes.retranscribe.send"].tap()
+        let toast = Self.element("chirp.notes.retranscribe.toast", in: app)
+        XCTAssertTrue(Self.waitFor(toast, "label == 'Transcript updated'"))
+        screenshot("notes-retranscribe-updated", app)
+        app.buttons["chirp.notes.transcript.open"].tap()
+        let transcript = Self.element("chirp.notes.transcript", in: app)
+        XCTAssertTrue(transcript.staticTexts.matching(NSPredicate(format: "label CONTAINS 'Synthetic words again.'")).firstMatch.waitForExistence(timeout: 5))
+        XCTAssertTrue(Self.waitFor(Self.element("chirp.notes.transcribedWith", in: app), "label == 'Transcribed with Parakeet v3 (MLX)'"))
+        if !pad { app.buttons["Done"].firstMatch.tap() }
+        if app.buttons["chirp.notes.retranscribe.undo"].waitForExistence(timeout: 3) {
+            app.buttons["chirp.notes.retranscribe.undo"].tap()
+        } else {
+            menu(app, action: "Restore previous transcript")
+        }
+        XCTAssertTrue(Self.waitFor(toast, "label == 'Previous transcript restored'"))
+        app.terminate()
+
+        // Progress: the second clip's final is held back, so the banner stays; Cancel changes nothing.
+        app = open(["--chirp-retranscribe-hold"])
+        sheet(app)
+        app.buttons["chirp.notes.retranscribe.send"].tap()
+        let status = Self.element("chirp.notes.retranscribe.status", in: app)
+        XCTAssertTrue(Self.waitFor(status, "label BEGINSWITH 'Re-transcribing · 1 of 2'"), status.label)
+        let continueRecording = app.buttons.matching(identifier: "chirp.notes.record").matching(NSPredicate(format: "label == 'Continue recording'")).firstMatch
+        XCTAssertFalse(continueRecording.isEnabled, "Continue recording waits for the run")
+        screenshot("notes-retranscribe-progress", app)
+        if pad {
+            app.buttons["chirp.notes.transcript.open"].tap()
+            XCTAssertTrue(Self.element("chirp.notes.retranscribe.banner", in: app).waitForExistence(timeout: 5))
+            screenshot("notes-retranscribe-progress-inspector", app)
+        }
+        app.buttons["chirp.notes.retranscribe.stop"].firstMatch.tap()
+        XCTAssertTrue(Self.waitFor(toast, "label == 'Cancelled. Nothing changed.'"))
+        app.terminate()
+
+        // A gap that kept its audio offers Try again: one clip, same consent.
+        app = open([])
+        app.buttons["chirp.notes.transcript.open"].tap()
+        let tryAgain = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'chirp.notes.retranscribe.try.'")).firstMatch
+        XCTAssertTrue(tryAgain.waitForExistence(timeout: 5))
+        tryAgain.tap()
+        XCTAssertTrue(Self.waitFor(Self.element("chirp.notes.retranscribe.body", in: app), "label BEGINSWITH 'Send this 0:01 clip to your computer'"))
+        app.buttons["chirp.notes.retranscribe.cancel"].tap()
+        app.terminate()
+
+        // The server keeps debug recordings: the red warning and "Re-transcribe anyway".
+        app = open(["--chirp-retranscribe-debug"])
+        sheet(app)
+        XCTAssertTrue(Self.element("chirp.notes.retranscribe.debug", in: app).exists)
+        XCTAssertEqual(app.buttons["chirp.notes.retranscribe.send"].label, "Re-transcribe anyway")
+        screenshot("notes-retranscribe-warning", app)
+        app.terminate()
+
+        // An older server: the update line and no send button.
+        app = open(["--chirp-retranscribe-old-server"])
+        sheet(app)
+        XCTAssertTrue(Self.element("chirp.notes.retranscribe.update", in: app).exists)
+        XCTAssertFalse(app.buttons["chirp.notes.retranscribe.send"].exists)
+        app.terminate()
+
+        // AX5: the sheet and the banner wrap instead of running off the screen.
+        app = open(["--chirp-retranscribe-hold", "-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"])
+        sheet(app)
+        fits(app)
+        screenshot("notes-retranscribe-sheet-ax5", app)
+        let send = app.buttons["chirp.notes.retranscribe.send"]
+        var scrolls = 0
+        while !send.isHittable, scrolls < 8 { app.swipeUp(velocity: .slow); scrolls += 1 }
+        send.tap()
+        XCTAssertTrue(Self.waitFor(status, "label BEGINSWITH 'Re-transcribing · 1 of 2'"), status.label)
+        fits(app)
+        screenshot("notes-retranscribe-progress-ax5", app)
+        app.terminate()
+
+        // Settings: the switch sits under Keep audio with notes and hides every entry point.
+        app = open([])
+        menu(app, action: "Notes settings")
+        let allow = Self.element("chirp.notes.allowRetranscribe", in: app)
+        var settingScrolls = 0
+        while !allow.isHittable, settingScrolls < 6 { app.swipeUp(velocity: .slow); settingScrolls += 1 }
+        XCTAssertEqual(allow.value as? String, "1")
+        Self.flipInSheet(allow, in: app)
+        XCTAssertTrue(Self.waitFor(allow, "value == '0'", timeout: 5))
+        app.buttons["Done"].firstMatch.tap()
+        app.buttons["chirp.notes.more"].tap()
+        XCTAssertFalse(app.buttons["Re-transcribe…"].waitForExistence(timeout: 2))
     }
 
     @MainActor private func recordPauseResumeStopTranscriptAndExport() {
