@@ -39,6 +39,9 @@ final class ChirpKeyboardViewController: KeyboardInputViewController {
     private var styleItems: [StyleItem] = []
     private var privacyOn = false
     private var documentID: UUID?
+    /// Learn from my edits: the last final this keyboard inserted, watched for the user's fix (`LearningWatch`).
+    private var watch: LearningWatch?
+    private var learnedStore: IOSLearnedStore?
     private lazy var haptic = UIImpactFeedbackGenerator(style: .light)
     private var stack: UIStackView!
     private var rowHeight: NSLayoutConstraint!
@@ -134,6 +137,7 @@ final class ChirpKeyboardViewController: KeyboardInputViewController {
 
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
+        finishWatch()
         cancelOwnedActiveUtterance()
         setInfo(open: false)
         visible = false
@@ -158,7 +162,7 @@ final class ChirpKeyboardViewController: KeyboardInputViewController {
     override func textDidChange(_ textInput: (any UITextInput)?) {
         super.textDidChange(textInput)
         // Another field took focus: open its layout (number pad, e-mail keys…) as Apple's keyboard does.
-        if textDocumentProxy.documentIdentifier != documentID { applyFieldLayout() }
+        if textDocumentProxy.documentIdentifier != documentID { finishWatch(); applyFieldLayout() }
         if !applying { invalidateOwnership(); render() }
     }
     override func selectionDidChange(_ textInput: (any UITextInput)?) {
@@ -228,6 +232,7 @@ final class ChirpKeyboardViewController: KeyboardInputViewController {
 
     private func reconcile() {
         guard visible else { return }
+        observeWatch()
         guard hasFullAccess else {
             invalidateOwnership(); bridge = nil; bridgeState = nil; render(); return
         }
@@ -278,11 +283,12 @@ final class ChirpKeyboardViewController: KeyboardInputViewController {
         guard execute(plan), policy.didApply(plan, observed: context(), now: Date()) else {
             invalidateOwnership(); return
         }
-        if kind == .final { kept = result.kept == true; pressReturnIfAsked(after: plan, result: result) }
+        if kind == .final { kept = result.kept == true; startWatch(result); pressReturnIfAsked(after: plan, result: result) }
         if kind == .final, let original = result.raw, original != result.text {
             rawUntil = Date().addingTimeInterval(5)
         }
-        if kind == .raw { rawUntil = nil; rawRequested = false }
+        // Chirp itself changed the text: nothing the user did since is learned.
+        if kind == .raw { rawUntil = nil; rawRequested = false; watch = nil }
     }
 
     /// UIKit edits are synchronous requests, but hosts may apply them differently.
@@ -294,6 +300,52 @@ final class ChirpKeyboardViewController: KeyboardInputViewController {
         return VerifiedEditor.apply(plan, context: { self.context() },
                                     deleteBackward: { self.textDocumentProxy.deleteBackward() },
                                     insertText: { self.textDocumentProxy.insertText($0) })
+    }
+
+    // MARK: Learn from my edits
+
+    /// Watches the final just inserted, for up to a minute in the same field: never a secure field, a private session,
+    /// or while learning is off. Only Chirp's own store, in the app group, ever sees the fix.
+    private func startWatch(_ result: BridgeResult) {
+        finishWatch()
+        guard hasFullAccess, textDocumentProxy.isSecureTextEntry != true, bridgeState?.privacyMode == false else { return }
+        let landed = context()
+        guard landed.isUsable, let before = landed.before, let after = landed.after else { return }
+        if learnedStore == nil {
+            let configuration = SharedConfiguration(bundle: .main)
+            learnedStore = try? IOSLearnedStore(root: configuration.containerURL(),
+                                                secrets: KeychainSecretStore(accessGroup: configuration.keychainAccessGroup))
+        }
+        guard learnedStore?.allowed == true else { return }
+        watch = LearningWatch(documentID: landed.documentID, before: before, after: after, inserted: policy.ownedText,
+                              said: result.raw ?? result.text, now: Date())
+    }
+
+    /// Each reconcile: one look at the field, or the end of the window.
+    private func observeWatch() {
+        guard let watch else { return }
+        if Date() >= watch.until { finishWatch(); return }
+        sampleWatch()
+    }
+
+    private func sampleWatch() {
+        if textDocumentProxy.isSecureTextEntry == true || bridgeState?.privacyMode == true { watch = nil; return }
+        let now = context()
+        guard now.isUsable else { return }
+        watch?.observe(documentID: now.documentID, before: now.before, after: now.after)
+    }
+
+    /// Ends the window and learns the fix, if the user made one inside the dictated span. Past the window, the field
+    /// is not read again.
+    private func finishWatch() {
+        if Date() < watch?.until ?? .distantPast { sampleWatch() }
+        guard let ended = watch else { return }
+        watch = nil
+        guard let edited = ended.edited, bridgeState?.privacyMode != true,
+              let learned = try? learnedStore?.learn(inserted: ended.inserted, edited: edited, said: ended.said),
+              let first = learned.first else { return }
+        show("Learned: " + first.correction.title)
+        render()
     }
 
     private func send(_ action: BridgeAction, utteranceID: UUID? = nil) {
@@ -327,6 +379,8 @@ final class ChirpKeyboardViewController: KeyboardInputViewController {
             break
         case .armed, .finished:
             guard !startPending else { return }
+            // A new dictation ends the last one's window: what the user fixed so far is learned.
+            finishWatch()
             let utterance = UUID()
             guard policy.begin(generation: bridgeState.generation, utteranceID: utterance,
                                context: context(), now: Date()) else { render(); return }
@@ -372,6 +426,7 @@ final class ChirpKeyboardViewController: KeyboardInputViewController {
 
     /// Removes the dictation that just landed, only if the editor still shows exactly what we inserted.
     private func undo() {
+        watch = nil
         if let plan = policy.undo(context: context(), now: Date()), execute(plan) { show("Dictation removed") }
         else { show("Text changed — nothing to undo") }
         policy.release(); rawUntil = nil; rawRequested = false; kept = false

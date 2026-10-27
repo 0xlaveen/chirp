@@ -157,8 +157,8 @@ struct SessionPage: View {
 
 // MARK: - Dictation
 
-/// Clean-up (with its consent dialog), the Styles list, Spoken commands and Press Return: everything
-/// the Dictation category row summarises.
+/// Clean-up (with its consent dialog), the Styles list, Stop dictation, Spoken commands, Press Return and
+/// Learning: everything the Dictation category row summarises.
 struct DictationPage: View {
     @ObservedObject var model: SessionCoordinator
     @ObservedObject private var shortcuts = HardwareShortcutController.shared
@@ -176,6 +176,7 @@ struct DictationPage: View {
                           set: { on in if on { consent = true } else { model.setCleanup(false) } })
             }
             StylesList(model: model)
+            StopDictationGroup(model: model)
             SettingsGroup(title: "Spoken commands") {
                 SwitchRow(title: "Spoken commands",
                           isOn: model.preferences.spokenCommands == true,
@@ -207,6 +208,7 @@ struct DictationPage: View {
                     }
                 }
             }
+            LearningGroup(model: model)
         }
         .confirmationDialog("Enable clean-up?", isPresented: $consent, titleVisibility: .visible) {
             Button("Enable for this destination") { model.setCleanup(true) }

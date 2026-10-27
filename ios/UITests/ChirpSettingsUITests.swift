@@ -225,6 +225,66 @@ final class ChirpSettingsUITests: XCTestCase {
         screenshot("history-empty", app)
     }
 
+    /// Stop dictation "When I pause" with its lengths (#271 A2-14), and Learning (A2-5): the footer says what iOS
+    /// learns, Learned starts empty, and Teach Chirp in History puts a term there at once.
+    @MainActor func testStopOnPauseLearningAndTeachChirp() {
+        let app = pairedApp()
+        app.openDictation()
+        let pause = app.buttons["When I pause"]
+        XCTAssertTrue(pause.waitForExistence(timeout: 5), "No Stop dictation choice")
+        for _ in 0..<4 where !pause.isHittable { app.swipeUp() }
+        pause.tap()
+        let three = app.buttons["3 s"]
+        XCTAssertTrue(three.waitForExistence(timeout: 3), "No pause lengths")
+        three.tap()
+        XCTAssertTrue(waitFor(three, "selected == 1"))
+        screenshot("settings-dictation-stop", app)
+        let footer = element("chirp.settings.learnFooter", in: app)
+        XCTAssertTrue(footer.waitForExistence(timeout: 5), "No Learning footer")
+        for _ in 0..<6 where !footer.isHittable { app.swipeUp() }
+        XCTAssertTrue((footer.label as NSString).contains("no per-app style"))
+        screenshot("settings-dictation-learning", app)
+        element("chirp.settings.learned", in: app).tap()
+        XCTAssertTrue(element("chirp.learned.empty", in: app).waitForExistence(timeout: 5), "Learned is not empty at first")
+        screenshot("settings-learned-empty", app)
+
+        openCategory("chirp.settings.privacy", app)
+        let history = element("chirp.history.enabled", in: app)
+        XCTAssertTrue(history.waitForExistence(timeout: 5))
+        if history.value as? String != "1" { history.switches.firstMatch.exists ? history.switches.firstMatch.tap() : history.tap() }
+        XCTAssertTrue(waitFor(history, "value == '1'"))
+        app.selectChirpTab("Dictate")
+        app.buttons["chirp.dictation.start"].tap()
+        XCTAssertTrue(app.buttons["chirp.dictation.stop"].waitForExistence(timeout: 5))
+        app.buttons["chirp.dictation.stop"].tap()
+        XCTAssertTrue(app.staticTexts["Finished"].waitForExistence(timeout: 5))
+        app.selectChirpTab("History")
+        let entry = app.staticTexts["Synthetic words."]
+        XCTAssertTrue(entry.waitForExistence(timeout: 5))
+        entry.tap()
+        let teach = app.buttons["chirp.history.teach"]
+        XCTAssertTrue(teach.waitForExistence(timeout: 5), "No Teach Chirp in the detail sheet")
+        teach.tap()
+        let text = element("chirp.teach.text", in: app)
+        XCTAssertTrue(text.waitForExistence(timeout: 5))
+        // Below the last line puts the caret at the end: "Synthetic words." becomes "Synthetic GitHub."
+        text.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.9)).tap()
+        text.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: 6) + "GitHub.")
+        screenshot("history-teach", app)
+        app.buttons["chirp.teach.commit"].tap()
+        XCTAssertTrue(app.staticTexts["Learned: GitHub"].waitForExistence(timeout: 5), "Teach Chirp learned nothing")
+
+        app.selectChirpTab("Settings")
+        openCategory("chirp.settings.dictation", app)
+        let learned = element("chirp.settings.learned", in: app)
+        XCTAssertTrue(learned.waitForExistence(timeout: 5))
+        for _ in 0..<6 where !learned.isHittable { app.swipeUp() }
+        learned.tap()
+        XCTAssertTrue(app.staticTexts["GitHub"].waitForExistence(timeout: 5), "The taught term is not in Learned")
+        XCTAssertTrue(app.staticTexts["In use"].exists)
+        screenshot("settings-learned", app)
+    }
+
     /// Search matches the saved text and the original transcript.
     @MainActor func testHistorySearch() {
         let app = pairedApp()
