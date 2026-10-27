@@ -155,6 +155,11 @@ final class ChirpUITests: XCTestCase {
     @MainActor func testDictationStyleShowsRawAndCurrentStyle() {
         let app = pairedApp()
         defer { app.terminate(); XCUIDevice.shared.appearance = .light }
+        app.openSettingsPage("chirp.settings.dictation")
+        for (appearance, name) in [(XCUIUserInterfaceStyle.light, "light"), (.dark, "dark")] {
+            XCUIDevice.shared.appearance = appearance
+            screenshot("cleanup-settings-" + name, app)
+        }
         app.selectChirpTab("Dictate")
         let style = app.buttons["chirp.dictation.style"]
         XCTAssertTrue(style.waitForExistence(timeout: 5))

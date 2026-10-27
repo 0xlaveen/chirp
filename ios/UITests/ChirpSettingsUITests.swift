@@ -344,6 +344,10 @@ final class ChirpSettingsUITests: XCTestCase {
         app.buttons["chirp.dictation.stop"].tap()
         XCTAssertTrue(app.staticTexts["Finished"].waitForExistence(timeout: 5))
         app.openSettingsPage("chirp.settings.privacy")
+        for (appearance, name) in [(XCUIUserInterfaceStyle.light, "light"), (.dark, "dark")] {
+            XCUIDevice.shared.appearance = appearance
+            screenshot("history-settings-" + name, app)
+        }
         toggle.switches.firstMatch.exists ? toggle.switches.firstMatch.tap() : toggle.tap()
         XCTAssertTrue(app.buttons["Turn Off and Delete"].waitForExistence(timeout: 5))
         dismissDialog(app)
