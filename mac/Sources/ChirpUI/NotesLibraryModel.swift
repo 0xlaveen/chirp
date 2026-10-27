@@ -170,11 +170,17 @@ public final class NotesLibraryModel {
     public var renameText = ""
     public var toast: NotesToast?
     private var toastSerial = 0
-    /// The transcript inspector (⌥⌘T) and View ▸ Show Markdown.
+    /// View ▸ Bigger/Smaller Text: this window's content size (the editor, transcript, library and banners).
     public let textSize = ChirpTextSize()
+    /// View ▸ Read Formatted Note: the note without Markdown syntax, its tasks as checkboxes.
     public var readingNote = false
+    /// Delete Now in Recently Deleted waits for this confirmation.
     public var confirmingPurge: NotesLibraryEntry?
+    /// The library list has keyboard focus (AppKit's first responder), drawn apart from the selection.
     public var sidebarFocused = false
+    /// The transcript's last size while it sat under the note in a narrow window; for tests.
+    @ObservationIgnored var compactTranscriptSize = CGSize.zero
+    /// The transcript inspector (⌥⌘T) and View ▸ Show Markdown.
     public var showsInspector = false
     public var showMarkdown = false
     /// Empty Recently Deleted asks once.

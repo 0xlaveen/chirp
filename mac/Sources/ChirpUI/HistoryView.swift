@@ -204,6 +204,7 @@ private struct HistoryMessage: View {
 private struct HistoryDetail: View {
     @Bindable var model: HistoryModel
     @Environment(\.colorSchemeContrast) private var colorSchemeContrast
+    @Environment(\.chirpTextScale) private var textScale
 
     private var contrast: Bool { colorSchemeContrast == .increased }
 
@@ -219,7 +220,7 @@ private struct HistoryDetail: View {
                             if let segments = WordDiff.segments(raw: raw, cleaned: entry.text) {
                                 // The HUD's colour-blind-safe diff: removed words struck through in inkMuted, added
                                 // or changed words underlined in moon.
-                                DiffText(segments: segments, fade: 0, contrast: contrast, lineLimit: nil)
+                                DiffText(segments: segments, fade: 0, contrast: contrast, font: .system(size: ChirpTextRole.body.points * textScale), lineLimit: nil)
                             } else {
                                 Text(raw)
                             }

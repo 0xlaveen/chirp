@@ -88,7 +88,7 @@ public enum NotesCommand: CaseIterable, Sendable {
                 return Item(command: c, title: title, key: c == .biggerText ? "+" : c == .smallerText ? "-" : "0", modifiers: .command,
                             enabled: on && (c == .biggerText ? size.canIncrease : c == .smallerText ? size.canDecrease : size.factor != 1), checked: false)
             case .readFormattedNote:
-                return Item(command: c, title: "Read Formatted Note", key: "", modifiers: [], enabled: on && library != nil, checked: false)
+                return Item(command: c, title: "Read Formatted Note", key: "", modifiers: [], enabled: on && library != nil && library?.selection != .recentlyDeleted, checked: false)
             case .restoreOrganize:
                 return Item(command: c, title: "Restore Notes Before Organize…", key: "", modifiers: [], enabled: on && shown.canRestore, checked: false)
             case .retranscribe:

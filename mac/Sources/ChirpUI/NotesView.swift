@@ -10,14 +10,38 @@ public enum NotesViewMetrics {
     /// The library sidebar's width range, and the transcript inspector's.
     static let sidebar = (min: CGFloat(260), ideal: CGFloat(280), max: CGFloat(320))
     static let inspector = (min: CGFloat(260), ideal: CGFloat(300), max: CGFloat(420))
+    /// Below this width the transcript moves under the note: sidebar + note + inspector would crush the note's measure.
+    static let transcriptColumnMinWindow: CGFloat = 1000
+    static func compactTranscript(windowWidth: CGFloat) -> Bool { windowWidth < transcriptColumnMinWindow }
+    static func compactTranscriptHeight(windowHeight: CGFloat) -> CGFloat { min(300, max(160, windowHeight * 0.38)) }
 }
 
-/// Label colours as AppKit's semantic colours: they follow Increase Contrast like `.primary`/`.secondary`, and keep
-/// their value inside vibrant sidebars, selected rows and the inspector, where a hierarchical style can turn dark.
+/// Text inks that keep their value inside vibrant sidebars, selected rows and the inspector, where a hierarchical
+/// style can turn dark. Secondary text is Pond's muted ink (at least 4.5:1 on the editor, sidebar and selected rows;
+/// AppKit's secondary/tertiary label colours measured 1.9–4:1 there); Increase Contrast turns it into full ink.
 enum NotesInk {
     static let primary = Color(nsColor: .labelColor)
-    static let secondary = Color.chirp.inkMuted
-    static let tertiary = Color.chirp.inkMuted
+    static let secondary = Color(nsColor: muted)
+    static let tertiary = secondary
+
+    /// AppKit reports Increase Contrast through the high-contrast appearances (and the workspace flag); either one
+    /// turns muted text into full ink.
+    static let muted = NSColor(name: "ChirpNotesMuted") { appearance in
+        let match = appearance.bestMatch(from: [.aqua, .darkAqua, .accessibilityHighContrastAqua, .accessibilityHighContrastDarkAqua])
+        let c = mutedInk(dark: match == .darkAqua || match == .accessibilityHighContrastDarkAqua,
+                         increaseContrast: match == .accessibilityHighContrastAqua || match == .accessibilityHighContrastDarkAqua
+                             || NSWorkspace.shared.accessibilityDisplayShouldIncreaseContrast)
+        return NSColor(srgbRed: c.r, green: c.g, blue: c.b, alpha: 1)
+    }
+
+    static func mutedInk(dark: Bool, increaseContrast: Bool) -> ChirpColor.RGB {
+        switch (dark, increaseContrast) {
+        case (false, false): ChirpColor.Pond.inkMuted.light
+        case (true, false): ChirpColor.Pond.inkMuted.dark
+        case (false, true): ChirpColor.Pond.ink.light
+        case (true, true): ChirpColor.Pond.ink.dark
+        }
+    }
 }
 
 /// The Live Notes window: the notes library as the sidebar, the note as the detail, and its transcript as a trailing
@@ -36,6 +60,7 @@ public struct NotesView: View {
 
     public var body: some View {
         GeometryReader { geometry in
+        let compact = NotesViewMetrics.compactTranscript(windowWidth: geometry.size.width)
         NavigationSplitView {
             NotesSidebar(model: model, library: library)
                 // The sidebar sits on `surfaceRaised` (under the toolbar too), so it belongs to the Pond beside the
@@ -44,24 +69,25 @@ public struct NotesView: View {
                 .navigationSplitViewColumnWidth(min: NotesViewMetrics.sidebar.min, ideal: NotesViewMetrics.sidebar.ideal,
                                                 max: NotesViewMetrics.sidebar.max)
         } detail: {
-            detail
-                // A third column would leave only 159 pt of text at the 760 pt minimum (measured baseline).
-                .inspector(isPresented: Binding(get: { library.showsInspector && geometry.size.width >= 1000 },
-                                               set: { if geometry.size.width >= 1000 { library.setInspector($0) } })) {
+            VStack(spacing: 0) {
+                detail
+                // Narrow windows: a third column would leave the note about 160 pt of text, so the same transcript sits
+                // under the note instead. It is not modal: typing, recording and replay all keep working.
+                if compact, library.showsInspector {
+                    Divider()
                     NotesInspector(model: shown, library: library)
-                        .inspectorColumnWidth(min: NotesViewMetrics.inspector.min, ideal: NotesViewMetrics.inspector.ideal,
-                                              max: NotesViewMetrics.inspector.max)
+                        .frame(height: NotesViewMetrics.compactTranscriptHeight(windowHeight: geometry.size.height))
+                        .background(Color.chirp.surfaceRaised)
+                        .onGeometryChange(for: CGSize.self, of: \.size) { library.compactTranscriptSize = $0 }
                 }
-                .sheet(isPresented: Binding(get: { library.showsInspector && geometry.size.width < 1000 },
-                                            set: { if !$0 && geometry.size.width < 1000 { library.setInspector(false) } })) {
-                    VStack(spacing: 0) {
-                        NotesInspector(model: shown, library: library)
-                        Divider()
-                        HStack { Spacer(); Button("Done") { library.setInspector(false) }.keyboardShortcut(.cancelAction) }.padding(12)
-                    }
-                    .frame(width: min(680, geometry.size.width - 64), height: 360)
-                    .environment(\.chirpTextScale, library.textSize.factor)
-                }
+            }
+            // The user's choice survives resizing: only the presentation changes with the width.
+            .inspector(isPresented: Binding(get: { library.showsInspector && !compact },
+                                            set: { if !compact { library.setInspector($0) } })) {
+                NotesInspector(model: shown, library: library)
+                    .inspectorColumnWidth(min: NotesViewMetrics.inspector.min, ideal: NotesViewMetrics.inspector.ideal,
+                                          max: NotesViewMetrics.inspector.max)
+            }
         }
         }
         .searchable(text: $library.query, placement: .sidebar, prompt: "Search notes")
@@ -72,6 +98,10 @@ public struct NotesView: View {
         .overlay(alignment: .bottom) { if let toast = library.toast { NotesToastView(library: library, toast: toast) } }
         .sheet(isPresented: Binding(get: { shown.reviewing != nil }, set: { if !$0 { shown.closeReview() } })) {
             OrganizeReviewSheet(model: shown)
+        }
+        .sheet(isPresented: $library.readingNote) {
+            NotesFormattedReader(model: shown) { library.readingNote = false }
+                .environment(\.chirpTextScale, library.textSize.factor)
         }
         .sheet(item: $library.retranscribeOffer) { RetranscribeSheet(library: library, offer: $0) }
         .sheet(item: $library.transcriptChanges) { TranscriptChangesSheet(library: library, changes: $0) }
@@ -271,20 +301,12 @@ struct NotesToolbar: ToolbarContent {
     var body: some ToolbarContent {
         ToolbarItemGroup(placement: .primaryAction) {
             let note = library.selection != .recentlyDeleted
-            if note || model.state.isActive { RecordControl(model: model, library: library) }
+            // Toolbar chrome stays native size; View ▸ Bigger Text enlarges the content.
+            if note || model.state.isActive { RecordControl(model: model, library: library).environment(\.chirpTextScale, 1) }
             if model.state.isLive { PauseButton(model: model) }
             if model.callAudioAvailable, note || model.state.isActive { SourcesButton(model: model) }
             if note, shown.voiceEditAvailable { VoiceEditButton(model: shown) }
-            TextSizeControl(size: library.textSize, shortcuts: false)
             if note {
-                Button { library.readingNote.toggle() } label: {
-                    Label("Read Formatted Note", systemImage: "text.book.closed")
-                }
-                .help("Read formatted notes without Markdown syntax")
-                .popover(isPresented: $library.readingNote) {
-                    NotesFormattedReader(model: shown)
-                        .environment(\.chirpTextScale, library.textSize.factor)
-                }
                 SmartNotesMenu(model: shown, recorder: model)
                 ShareMenu(model: shown)
             }
@@ -1035,40 +1057,77 @@ struct NotesTipView: View {
 }
 
 
-/// An explicit reading companion: formatted text and native task toggles, with the editor kept alive underneath.
-/// It has its own AX text offsets; the editable NSTextView's offsets are never remapped.
+/// View ▸ Read Formatted Note: the note without Markdown syntax (headings, bullets, emphasis), its tasks as standard
+/// checkboxes that toggle through the editor's own edit and Undo path. The editable NSTextView keeps its native text,
+/// offsets and selection; this sheet is a second, read-mostly presentation with its own accessibility tree.
 struct NotesFormattedReader: View {
     let model: NotesModel
-    private var lines: [(offset: Int, text: String)] {
+    let done: () -> Void
+
+    enum Line: Equatable {
+        case heading(String)
+        case bullet(String, indent: Int)
+        /// `toggle` is a UTF-16 offset inside the `[ ]` box, as the editor's task toggle expects.
+        case task(String, checked: Bool, indent: Int, toggle: Int)
+        case text(String)
+    }
+
+    static func lines(_ markdown: String) -> [Line] {
         var offset = 0
-        return model.document.text.components(separatedBy: "\n").map { line in
+        return markdown.components(separatedBy: "\n").compactMap { line in
             defer { offset += line.utf16.count + 1 }
-            return (offset, line)
+            if let prefix = NotesMarkdown.listPrefix(Substring(line)) {
+                let rest = String(line.dropFirst(prefix.length))
+                if let checked = prefix.box {
+                    return .task(rest, checked: checked, indent: prefix.indent, toggle: offset + prefix.spaces + 3)
+                }
+                return .bullet(rest, indent: prefix.indent)
+            }
+            if let range = line.range(of: #"^#{1,6}\s+"#, options: .regularExpression) {
+                return .heading(String(line[range.upperBound...]))
+            }
+            return line.trimmingCharacters(in: .whitespaces).isEmpty ? nil : .text(line)
         }
     }
+
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 12) {
-                Text("Formatted note").pondFont(.section, weight: .semibold).accessibilityAddTraits(.isHeader)
-                ForEach(lines, id: \.offset) { line in
-                    if let prefix = NotesMarkdown.listPrefix(Substring(line.text)), let checked = prefix.box {
-                        Toggle(isOn: Binding(get: { checked }, set: { _ in _ = model.toggleAccessibleTask(line.offset + prefix.spaces + 3) })) {
-                            Text(.init(String(line.text.dropFirst(prefix.length))))
+        VStack(spacing: 0) {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 10) {
+                    Text(model.displayTitle).pondFont(.title, weight: .semibold, design: .serif).accessibilityAddTraits(.isHeader)
+                    ForEach(Array(Self.lines(model.document.text).enumerated()), id: \.offset) { _, line in
+                        switch line {
+                        case .heading(let text):
+                            Text(.init(text)).pondFont(.section, weight: .semibold).padding(.top, 6).accessibilityAddTraits(.isHeader)
+                        case .bullet(let text, let indent):
+                            Label { Text(.init(text)) } icon: { Text("•").foregroundStyle(NotesInk.secondary) }
+                                .pondFont(.body).padding(.leading, CGFloat(indent) * 20)
+                        case .task(let text, let checked, let indent, let toggle):
+                            Toggle(isOn: Binding(get: { checked }, set: { _ in _ = model.toggleAccessibleTask(toggle) })) {
+                                Text(.init(text))
+                            }
+                            .toggleStyle(.checkbox)
+                            .pondFont(.body)
+                            .padding(.leading, CGFloat(indent) * 20)
+                        case .text(let text):
+                            Text(.init(text)).pondFont(.body)
                         }
-                        .toggleStyle(.checkbox)
-                        .pondFont(.body)
-                    } else if !line.text.isEmpty {
-                        Text(.init(line.text.replacingOccurrences(of: #"^#{1,6}\s+"#, with: "", options: .regularExpression)))
-                            .pondFont(line.text.hasPrefix("#") ? .section : .body, weight: line.text.hasPrefix("#") ? .semibold : .regular)
-                            .accessibilityAddTraits(line.text.hasPrefix("#") ? .isHeader : [])
                     }
                 }
+                .textSelection(.enabled)
+                .foregroundStyle(NotesInk.primary)
+                .padding(28)
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .padding(24)
-            .frame(maxWidth: .infinity, alignment: .leading)
+            Divider()
+            HStack {
+                Text("Tasks you tick here change the note; ⌘Z in the note undoes them.").pondFont(.meta).foregroundStyle(NotesInk.secondary)
+                Spacer()
+                Button("Done", action: done).keyboardShortcut(.defaultAction)
+            }
+            .padding(12)
         }
-        .frame(width: 520, height: 360)
+        .frame(minWidth: 520, idealWidth: 640, minHeight: 360, idealHeight: 520)
         .background(Color.chirp.surface)
-        .accessibilityLabel("Formatted note")
     }
 }

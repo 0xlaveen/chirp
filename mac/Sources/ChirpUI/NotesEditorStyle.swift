@@ -164,7 +164,7 @@ enum NotesEditorStyle {
                 storage.addAttribute(.font, value: font(f, adding: trait), range: sub)
             }
         case .bulletMarker(let indent):
-            storage.addAttribute(.foregroundColor, value: ChirpColor.dynamic(ChirpColor.Pond.inkMuted.light, ChirpColor.Pond.inkMuted.dark), range: r)
+            storage.addAttribute(.foregroundColor, value: NotesInk.muted, range: r)
             let line = ns.substring(with: ns.lineRange(for: r))
             let spaces = line.prefix { $0 == " " }.count
             // The leading spaces are kerned to exactly `indent` steps, so nesting reads the same however it was typed.
@@ -180,9 +180,9 @@ enum NotesEditorStyle {
                 + (task ? width("[ ] ", box) : 0)
             storage.addAttribute(.paragraphStyle, value: p, range: ns.paragraphRange(for: r))
         case .taskBox:
-            storage.addAttributes([.font: box, .foregroundColor: ChirpColor.dynamic(ChirpColor.Pond.inkMuted.light, ChirpColor.Pond.inkMuted.dark)], range: r)
+            storage.addAttributes([.font: box, .foregroundColor: NotesInk.muted], range: r)
         case .checkedTaskText:
-            storage.addAttributes([.foregroundColor: ChirpColor.dynamic(ChirpColor.Pond.inkMuted.light, ChirpColor.Pond.inkMuted.dark),
+            storage.addAttributes([.foregroundColor: NotesInk.muted,
                                    .strikethroughStyle: NSUnderlineStyle.single.rawValue,
                                    .strikethroughColor: NSColor.tertiaryLabelColor], range: r)
         case .decisionLabel:
@@ -192,7 +192,7 @@ enum NotesEditorStyle {
             storage.addAttributes([.foregroundColor: NotesEditorDecorations.moon,
                                    .font: NSFont.systemFont(ofSize: bodySize, weight: .semibold)], range: r)
         case .fallbackHeader:
-            storage.addAttributes([.foregroundColor: ChirpColor.dynamic(ChirpColor.Pond.inkMuted.light, ChirpColor.Pond.inkMuted.dark), .font: font(body, adding: .italicFontMask)], range: r)
+            storage.addAttributes([.foregroundColor: NotesInk.muted, .font: font(body, adding: .italicFontMask)], range: r)
         }
     }
 }

@@ -34,7 +34,6 @@ public enum HUDStatus {
 
 @MainActor @Observable
 public final class HUDModel {
-    public let textSize = ChirpTextSize()
     public var status = ""
     public var privateSession = false
     public var duration: String?
@@ -251,18 +250,16 @@ public struct HUDView: View {
         self.onSize = onSize
     }
 
-    private var panelWidth: CGFloat { HUDViewMetrics.width(wordWaveform: model.wordWaveform) * min(1.5, model.textSize.factor) }
-    private var contentWidth: CGFloat { panelWidth - 2 * HUDViewMetrics.horizontalPadding }
+    private var contentWidth: CGFloat { HUDViewMetrics.contentWidth(wordWaveform: model.wordWaveform) }
 
     public var body: some View {
         content
             .padding(.horizontal, HUDViewMetrics.horizontalPadding)
             .padding(.vertical, HUDViewMetrics.verticalPadding)
-            .frame(width: panelWidth, alignment: .leading)
+            .frame(width: HUDViewMetrics.width(wordWaveform: model.wordWaveform), alignment: .leading)
             .tint(Color.chirp.koi)
             .modifier(HUDSurface(flat: model.flatSurface || model.increaseContrast, glass: model.usesGlass, contrast: model.increaseContrast))
             .fixedSize()
-            .environment(\.chirpTextScale, model.textSize.factor)
             .onGeometryChange(for: CGSize.self, of: { $0.size }, action: onSize)
             // The live panel is sized by `onSize`; in a larger frame the HUD stays centred.
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -276,11 +273,10 @@ public struct HUDView: View {
                     Spacer(minLength: 8)
                     if let duration = model.duration { Text(duration).monospacedDigit().accessibilityLabel("Dictation duration: " + duration) }
                 }
-                .pondFont(12)
-                .foregroundStyle(Color.chirp.inkMuted)
+                .pondFont(.meta)
+                .foregroundStyle(Color.secondary)
             }
-            VStack(alignment: .leading, spacing: 6) {
-                HStack(spacing: 10) {
+            HStack(spacing: 10) {
                 indicator
                     .accessibilityHidden(true)
                 Text(model.status)
@@ -289,20 +285,6 @@ public struct HUDView: View {
                     .lineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 0)
-                TextSizeControl(size: model.textSize, shortcuts: false).labelStyle(.iconOnly)
-                }
-                ViewThatFits(in: .horizontal) {
-                    HStack(spacing: 6) { badges }
-                    VStack(alignment: .leading, spacing: 6) { badges }
-                }
-            }
-            let shown = HUDText.tail(stable: model.stable, unstable: model.unstable, limit: HUDText.lineBudget)
-            transcript(shown)
-        }
-        .accessibilityElement(children: .contain)
-    }
-
-    @ViewBuilder private var badges: some View {
                 if let name = model.styleName {
                     HUDChip(name).accessibilityLabel("Style: \(name)")
                 }
@@ -317,9 +299,8 @@ public struct HUDView: View {
                     HUDChip(MenuContent.debugRetention, tone: .alert)
                         .help(MenuContent.debugRetentionHelp)
                 }
-    }
-
-    @ViewBuilder private func transcript(_ shown: (stable: String, unstable: String)) -> some View {
+            }
+            let shown = HUDText.tail(stable: model.stable, unstable: model.unstable, limit: HUDText.lineBudget)
             if model.showsWordWaveform {
                 WordWaveformView(cells: model.wordCells, levels: model.utterance, revised: model.revisedWords,
                                  truncated: model.wordsTruncated, polishing: model.polishing, animated: !model.reduceMotion,
@@ -344,6 +325,8 @@ public struct HUDView: View {
                     .fixedSize(horizontal: false, vertical: true)
                     .accessibilityAddTraits(.updatesFrequently)
             }
+        }
+        .accessibilityElement(children: .contain)
     }
 
     @ViewBuilder private var indicator: some View {
@@ -400,7 +383,7 @@ struct HUDChip: View {
             if let symbol { Image(systemName: symbol).pondFont(9, weight: .semibold) }
             Text(text).lineLimit(1)
         }
-        .pondFont(12, weight: .semibold)
+        .pondFont(.caption, weight: .semibold)
         .foregroundStyle(foreground)
         .padding(.horizontal, 8).padding(.vertical, 3)
         .background(background, in: Capsule())
@@ -497,8 +480,7 @@ struct DiffText: View {
     let fade: Double
     let contrast: Bool
     /// The HUD's 15 pt and line cap; the History window passes its body font and no cap.
-    var font: Font? = nil
-    @Environment(\.chirpTextScale) private var textScale
+    var font: Font = .system(size: 15)
     var lineLimit: Int? = HUDViewMetrics.transcriptLines
 
     /// The text without the removed words (the width the HUD settles at); removed words add width while visible.
@@ -520,7 +502,7 @@ struct DiffText: View {
                     .foregroundStyle(Color.chirp.inkMuted.opacity((contrast ? 1 : 0.9) * (1 - fade)))
             }
         }
-        .font(font ?? .system(size: 15 * textScale))
+        .font(font)
         .lineLimit(lineLimit)
     }
 }

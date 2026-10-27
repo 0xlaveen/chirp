@@ -1336,6 +1336,7 @@ public enum Snapshots {
     public static var allScenarios: [Scenario] {
         hudScenarios + rippleScenarios + wordWaveScenarios + settingsScenarios + onboardingScenarios + menuScenarios
             + localModelsScenarios + notesScenarios + pairingScenarios + historyScenarios + savedVoicesScenarios
+            + (ProcessInfo.processInfo.environment["CHIRP_SNAPSHOT_REVIEW"] == "303" ? modernUXScenarios : [])
     }
 
     // MARK: rendering
@@ -1577,7 +1578,7 @@ private final class SubmenuRowView: NSView {
             let type = large ? "200" : "100"
             for narrow in [false, true] {
                 let geometry = narrow ? "760" : "1120"
-                for state in ["recording", "paused", "empty", "no-results", "error", "transcript", "deleted"] {
+                for state in ["recording", "paused", "empty", "no-results", "error", "transcript", "deleted", "focus"] {
                     let base = notes("modern-\(state)-\(geometry)-\(type)") { model, library in
                         if large { for _ in 0..<5 { library.textSize.increase() } }
                         if state == "paused" { model.state = .paused }
@@ -1588,6 +1589,8 @@ private final class SubmenuRowView: NSView {
                         if state == "no-results" { library.query = "invoice"; library.results = [] }
                         if state == "error" { model.state = .error("Chirp server offline — check the server connection.") }
                         if state == "transcript" { library.showsInspector = true }
+                        // Offscreen windows are never key; the flag stands in for the list holding keyboard focus.
+                        if state == "focus" { model.state = .stopped; library.recordingID = nil; library.sidebarFocused = true }
                         if state == "deleted" {
                             model.state = .stopped; library.recordingID = nil; library.selection = .recentlyDeleted
                             library.deleted = [NotesLibraryEntry(id: UUID(), title: "Standup scratch", snippet: "Blocked on the staging deploy; pairing with Sam after lunch.", createdAt: notesNow, updatedAt: notesNow, deletedAt: notesNow.addingTimeInterval(-2 * 86400), audioBytes: 640_000)]
@@ -1599,17 +1602,6 @@ private final class SubmenuRowView: NSView {
                         return window
                     }))
                 }
-            }
-            for wave in [false, true] {
-                scenes.append(hud("modern-\(wave ? "waveform" : "listening")-\(type)") { model in
-                    if large { for _ in 0..<5 { model.textSize.increase() } }
-                    model.status = HUDStatus.listening; model.stable = sentence
-                    if wave {
-                        model.wordWaveform = true
-                        let words = demoWords(sentence, pauseAfter: [4], stableBefore: 6)
-                        model.utterance = demoLevels(for: words); model.showWords(text: sentence, words: words); model.pulsePhase = 0.25
-                    }
-                })
             }
             scenes.append(Scenario(name: "history-modern-\(type)", window: {
                 let model = HistoryModel()
@@ -1623,6 +1615,14 @@ private final class SubmenuRowView: NSView {
                 window.setContentSize(HistoryViewMetrics.defaultSize)
                 return window
             }))
+            scenes.append(Scenario(name: "notes-modern-reader-\(type)") {
+                let model = NotesModel()
+                model.document = demoNotes()
+                let view = NSHostingView(rootView: NotesFormattedReader(model: model) {}
+                    .environment(\.chirpTextScale, large ? 2 : 1))
+                view.frame = NSRect(x: 0, y: 0, width: 640, height: 520)
+                return view
+            })
         }
         return scenes
     }
