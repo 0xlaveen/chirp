@@ -267,3 +267,139 @@ private final class ConnectingSocket: StreamTransport, @unchecked Sendable {
         #expect(!socket.sentTexts.contains { $0.contains("\"type\":\"stop\"") })
     }
 }
+
+/// `DictationController`'s Right ⌥ rule, on the real gesture, machine and microphone: the press opens the microphone,
+/// and its audio is kept only when the gesture starts a dictation; otherwise the microphone closes and nothing is sent.
+private final class RightOptionPress {
+    var gesture: HotkeyGesture
+    var machine: DictationMachine
+    let engine = FakeEngine()
+    let clock = TestClock(100)
+    let mic: DictationMic
+    let sent = SentAudio()
+    private var preRollPress: TimeInterval?
+
+    init(mode: ActivationMode) {
+        gesture = HotkeyGesture(mode: mode, modifierOnly: true, singleKey: true)
+        machine = DictationMachine(mode: mode)
+        let clock = self.clock
+        engine.onStart = { clock.advance(DictationMicTests.engineStart) }
+        mic = DictationMic(capture: AudioCapture(engine: engine), now: { clock.now() })
+    }
+
+    func down(at t: TimeInterval) throws {
+        if gesture.opensMicOnPress, !machine.state.isActive, !mic.isOpen { try mic.open(); preRollPress = t }
+        deliver(gesture.down(at: t))
+    }
+    func armDue(pressedAt p: TimeInterval, at t: TimeInterval) { deliver(gesture.armDue(pressedAt: p, at: t)); drop(of: p) }
+    func up(at t: TimeInterval) { deliver(gesture.up(at: t)); drop() }
+    func chord() { deliver(gesture.chord()); drop() }
+
+    private func deliver(_ events: [DictationEvent]) {
+        for event in events {
+            for effect in machine.handle(event) {
+                switch effect {
+                case .start:
+                    preRollPress = nil
+                    try? mic.open()
+                    mic.attach { [sent] in sent.add($0, $1) }
+                case .finalize, .cancel, .abort: mic.close()
+                case .insert: break
+                }
+            }
+        }
+    }
+    private func drop(of press: TimeInterval? = nil) {
+        guard let opened = preRollPress, press == nil || press == opened else { return }
+        preRollPress = nil
+        if !machine.state.isActive { mic.close() }
+    }
+}
+
+@Suite struct RightOptionPreRollTests {
+    @Test func aHeldPressKeepsWhatWasSaidBeforeItArmed() throws {
+        let press = RightOptionPress(mode: .autoStop)
+        try press.down(at: 0)
+        #expect(press.mic.isOpen)                      // on the press, before the gesture knows
+        press.engine.deliver(seconds: 0.2)            // the first words, before armDelay
+        press.armDue(pressedAt: 0, at: HotkeyGesture.armDelay)
+        #expect(press.machine.state == .connecting)
+        press.engine.deliver(seconds: 0.3)
+        #expect(press.sent.data == (try heard([0.2, 0.3])))   // nothing lost, nothing reordered
+        press.up(at: 2)                              // a hold past tapLimit finishes
+        #expect(press.machine.state == .finalizing && !press.mic.isOpen)
+    }
+
+    @Test func aTapKeepsItsPreRollAndStaysOn() throws {
+        let press = RightOptionPress(mode: .autoStop)
+        try press.down(at: 0)
+        press.engine.deliver(seconds: 0.1)
+        press.up(at: 0.1)
+        press.armDue(pressedAt: 0, at: HotkeyGesture.armDelay)   // the old timer must not close the dictation's mic
+        #expect(press.machine.state == .connecting && press.mic.isOpen)
+        press.engine.deliver(seconds: 0.1)
+        #expect(press.sent.data == (try heard([0.1, 0.1])))
+    }
+
+    @Test func aChordDropsThePreRollUnsentAndClosesTheMicrophone() throws {
+        let press = RightOptionPress(mode: .autoStop)
+        try press.down(at: 0)
+        press.engine.deliver(seconds: 0.1)
+        press.chord()                                // Right ⌥ + ←
+        #expect(press.machine.state == .idle)
+        #expect(!press.mic.isOpen && press.engine.taps == 0)
+        press.armDue(pressedAt: 0, at: HotkeyGesture.armDelay)
+        #expect(press.sent.data.isEmpty)
+    }
+
+    @Test func anEarlyReleaseInHoldToTalkDropsThePreRoll() throws {
+        let press = RightOptionPress(mode: .holdToTalk)
+        try press.down(at: 0)
+        press.engine.deliver(seconds: 0.1)
+        press.up(at: 0.1)                            // before armDelay: never a dictation
+        #expect(press.machine.state == .idle && !press.mic.isOpen)
+        #expect(press.sent.data.isEmpty)
+    }
+
+    @Test func anAccidentalTapAfterArmingStillCancelsCleanly() throws {
+        // Hold to talk: armed at 200 ms, let go at 250 ms, under tapThreshold from the arm.
+        let press = RightOptionPress(mode: .holdToTalk)
+        try press.down(at: 0)
+        press.armDue(pressedAt: 0, at: HotkeyGesture.armDelay)
+        #expect(press.machine.state == .connecting)
+        press.up(at: HotkeyGesture.armDelay + 0.05)
+        #expect(press.machine.state == .error(DictationMachine.holdHint))
+        #expect(!press.mic.isOpen && press.engine.taps == 0)
+    }
+
+    @Test func aStaleArmTimerDoesNotCloseTheNextPressesMicrophone() throws {
+        let press = RightOptionPress(mode: .autoStop)
+        try press.down(at: 0)
+        press.chord()
+        try press.down(at: 0.1)                      // a new press before the first one's timer
+        press.armDue(pressedAt: 0, at: HotkeyGesture.armDelay)
+        #expect(press.mic.isOpen)
+        press.armDue(pressedAt: 0.1, at: 0.1 + HotkeyGesture.armDelay)
+        #expect(press.machine.state == .connecting && press.mic.isOpen)
+    }
+
+    @Test func soundsOnOrOffThePressIsTheFirstSample() throws {
+        // With the pre-roll, hotkey-down → first sample is the input's start-up, whatever the cue; the cue (played
+        // at the arm) is zeroed inside the recording instead.
+        var latency: [Bool: TimeInterval] = [:]
+        for soundsOn in [false, true] {
+            let press = RightOptionPress(mode: .autoStop)
+            let pressed = press.clock.now()
+            try press.down(at: 0)
+            press.engine.deliver(seconds: 0.2)
+            press.clock.advance(HotkeyGesture.armDelay)
+            press.armDue(pressedAt: 0, at: HotkeyGesture.armDelay)
+            if soundsOn { press.mic.excludeCue(at: press.clock.now(), length: SoundTiming.muteWindow(cueDuration: DictationMicTests.chirpCue)) }
+            press.engine.deliver(seconds: 0.4)
+            latency[soundsOn] = try #require(press.mic.openedAt) - pressed
+            #expect(press.sent.muted.contains(true) == soundsOn)
+        }
+        #expect(latency[false] == latency[true])
+        #expect(abs(try #require(latency[true]) - DictationMicTests.engineStart) < 1e-9)
+    }
+}

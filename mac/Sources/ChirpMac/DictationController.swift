@@ -34,6 +34,8 @@ final class DictationController {
     private var captureStartedAt: ContinuousClock.Instant?
     /// When this dictation started (uptime), for the microphone latency in the log.
     private var startedAt: TimeInterval = 0
+    /// The press (uptime) that opened the microphone before any dictation started (`HotkeyGesture.opensMicOnPress`).
+    private var preRollPress: TimeInterval?
     private var capturedSeconds: TimeInterval = 0
     /// The last dictation's history entry, so "Use raw" can record what is really in the field.
     private var lastHistoryID: UUID?
@@ -151,16 +153,46 @@ final class DictationController {
 
     func hotkeyDown() {
         let now = ProcessInfo.processInfo.systemUptime
+        if gesture.opensMicOnPress { openOnPress(at: now) }
         deliver(gesture.down(at: now))
-        guard gesture.needsArmTimer else { return }
+        guard gesture.needsArmTimer else { dropPreRoll(); return }
         Task { [weak self] in
             try? await Task.sleep(for: .seconds(HotkeyGesture.armDelay))
             guard let self else { return }
             self.deliver(self.gesture.armDue(pressedAt: now, at: ProcessInfo.processInfo.systemUptime))
+            // Armed, a tap, or nothing (a chord, an early release, a key-up that never came): decided by now.
+            self.dropPreRoll(of: now)
         }
     }
-    func hotkeyUp() { deliver(gesture.up(at: ProcessInfo.processInfo.systemUptime)) }
-    func hotkeyChord() { deliver(gesture.chord()) }
+    func hotkeyUp() {
+        deliver(gesture.up(at: ProcessInfo.processInfo.systemUptime))
+        dropPreRoll()
+    }
+    func hotkeyChord() {
+        deliver(gesture.chord())
+        dropPreRoll()
+    }
+
+    /// Right ⌥ (one modifier key): open the microphone on the press, before the gesture knows whether it is a
+    /// dictation, so its first words are not lost to `HotkeyGesture.armDelay`. The audio stays in `mic`, in memory and
+    /// at most a second, and is sent only if this press starts a dictation (`begin`); otherwise `dropPreRoll` closes
+    /// the microphone and drops it unsent.
+    private func openOnPress(at t: TimeInterval) {
+        guard !machine.state.isActive, !isBlocked(), Permissions.microphoneGranted, !mic.isOpen else { return }
+        do {
+            try mic.open()
+            preRollPress = t
+        } catch {
+            mic.close()   // `begin` tries again and reports the failure
+        }
+    }
+
+    /// Closes a microphone opened on a press (all of them, or only `press`'s) that has not become a dictation.
+    private func dropPreRoll(of press: TimeInterval? = nil) {
+        guard let opened = preRollPress, press == nil || press == opened else { return }
+        preRollPress = nil
+        if !machine.state.isActive { mic.close() }
+    }
     func escape() { send(.escape) }
 
     private func deliver(_ events: [DictationEvent]) {
@@ -299,6 +331,7 @@ final class DictationController {
         hud.model.wordWaveform = startOptions.wordTimings
         hud.show()
         startedAt = ProcessInfo.processInfo.systemUptime
+        preRollPress = nil   // a microphone opened on the press is this dictation's now
         chirpLog.info("microphone authorization=\(Permissions.microphone.rawValue, privacy: .public) accessibility=\(Permissions.accessibilityGranted, privacy: .public)")
         // With access granted the microphone opens now, before the start cue plays (see `send`): no task hop, no wait.
         // Audio from before the socket is ready queues in the stream session.
