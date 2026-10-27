@@ -24,6 +24,10 @@ import org.robolectric.annotation.GraphicsMode
 class NotesCaptureUxTest {
     @get:Rule val compose = createComposeRule()
 
+    @org.junit.Before fun noMotion() {
+        android.provider.Settings.Global.putFloat(RuntimeEnvironment.getApplication().contentResolver, android.provider.Settings.Global.ANIMATOR_DURATION_SCALE, 0f)
+    }
+
     @Test fun `speaker capsules retain separate 48dp touch targets and named actions`() {
         var selected = ""
         compose.setContent { ChirpTheme {
@@ -79,8 +83,8 @@ class NotesCaptureUxTest {
         compose.runOnIdle { rig.record().final("Synthetic conversation"); rig.model.rename("Garden plans"); rig.idle() }
         val info = compose.onNode(hasStateDescription("Recording"))
         val node = info.fetchSemanticsNode()
-        assertTrue(node.config[SemanticsProperties.Text].any { "Garden plans" in it.text })
-        assertTrue(node.config[SemanticsProperties.Text].any { rig.model.elapsedText in it.text })
+        val spoken = node.config[SemanticsProperties.ContentDescription].joinToString()
+        assertTrue(spoken, "Garden plans" in spoken && rig.model.elapsedText in spoken)
         assertFalse(SemanticsProperties.LiveRegion in node.config)
         assertTrue(node.children.isEmpty())
         compose.onNodeWithContentDescription("Pause recording notes").performClick()

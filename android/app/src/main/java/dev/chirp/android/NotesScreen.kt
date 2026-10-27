@@ -143,7 +143,9 @@ internal fun NotesScreen(model: NotesModel, record: () -> Unit, copy: () -> Unit
         BoxWithConstraints(Modifier.fillMaxSize().safeDrawingPadding()) {
             val wide = !externalTranscript && maxWidth >= SIDE_BY_SIDE && maxWidth > maxHeight
             val density = LocalDensity.current
-            val stackedDock = maxWidth / density.fontScale < 600.dp
+            // Hold to edit beside the recording pill needs roughly 380dp at normal text size; below that they stack, decided by
+            // the window and font size rather than the labels so the button never jumps lines while held.
+            val stackedDock = maxWidth / density.fontScale < 400.dp
             var dockHeight by remember { mutableIntStateOf(0) }
             val gutter = if (wide) 28.dp else 20.dp
             val statusMaxHeight = maxHeight * .35f
@@ -403,7 +405,7 @@ private fun NotesDock(model: NotesModel, record: () -> Unit, modifier: Modifier,
             if (model.state.active) RecordingPill(model, record) else RecordButton(model, record)
         } else Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
             if (command) CommandButton(model, Modifier.weight(1f, fill = false))
-            if (model.state.active) RecordingPill(model, record, Modifier.weight(1f, fill = false)) else RecordButton(model, record)
+            if (model.state.active) RecordingPill(model, record) else RecordButton(model, record)
         }
     }
 }
@@ -447,31 +449,28 @@ private fun RecordButton(model: NotesModel, onClick: () -> Unit) {
 @Composable
 private fun RecordingPill(model: NotesModel, stop: () -> Unit, modifier: Modifier = Modifier) {
     val scheme = MaterialTheme.colorScheme
-    Surface(modifier.widthIn(max = 480.dp).testTag("notes-recording-dock"), shape = MaterialTheme.shapes.extraLarge,
-        color = scheme.surfaceContainerHighest, shadowElevation = 6.dp) {
-        Column(Modifier.padding(12.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Column(Modifier.semantics(mergeDescendants = true) { stateDescription = captureState(model) }, horizontalAlignment = Alignment.CenterHorizontally) {
-                Text(model.displayTitle, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    if (model.busy) CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
-                    else if (model.recording) Ripple(model.level.toFloat(), Modifier.size(20.dp).clearAndSetSemantics { })
-                    Text("${captureState(model)} · ${model.elapsedText}", style = ChirpTokens.timerSmall, color = scheme.onSurfaceVariant)
+    val state = captureState(model)
+    Surface(modifier.testTag("notes-recording-dock"), shape = CircleShape, color = scheme.surfaceContainerHighest, shadowElevation = 6.dp) {
+        Row(Modifier.heightIn(min = 64.dp).padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            val canPause = model.state == NotesRecorder.State.RECORDING || model.paused
+            FilledTonalIconButton(model::togglePause, Modifier.size(48.dp).semantics { contentDescription = if (model.paused) "Resume recording notes" else "Pause recording notes" },
+                enabled = canPause) {
+                Icon(painterResource(if (model.paused) R.drawable.ic_play else R.drawable.ic_pause), null)
+            }
+            // One quiet node: the note, its truthful state and the running time are read on focus, never announced as the clock ticks.
+            Row(Modifier.padding(horizontal = 12.dp).clearAndSetSemantics { contentDescription = "${model.displayTitle}, ${model.elapsedText}"; stateDescription = state },
+                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                // The ripple is the listening sign; paused shows no ripple, only its word.
+                if (model.busy) CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
+                else if (model.recording) Ripple(model.level.toFloat(), Modifier.size(24.dp))
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(state, style = MaterialTheme.typography.labelSmall, color = scheme.onSurfaceVariant)
+                    Text(model.elapsedText, style = dev.chirp.android.ui.ChirpTokens.timer)
                 }
             }
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            val canPause = model.state == NotesRecorder.State.RECORDING || model.paused
-            FilledTonalButton(model::togglePause, Modifier.heightIn(min = 48.dp).semantics { contentDescription = if (model.paused) "Resume recording notes" else "Pause recording notes" },
-                enabled = canPause) {
-                Icon(painterResource(if (model.paused) R.drawable.ic_play else R.drawable.ic_pause), null, Modifier.size(18.dp))
-                Spacer(Modifier.width(8.dp))
-                Text(if (model.paused) "Resume" else "Pause")
-            }
-            Button(stop, Modifier.heightIn(min = 48.dp).semantics { contentDescription = "Stop recording notes" }, enabled = !model.busy,
-                colors = ButtonDefaults.buttonColors(containerColor = dev.chirp.android.ui.LocalChirpRoles.current.record, contentColor = scheme.onError)) {
-                Icon(painterResource(R.drawable.ic_stop), null, Modifier.size(18.dp))
-                Spacer(Modifier.width(8.dp))
-                Text("Stop")
-            }
+            FilledIconButton(stop, Modifier.size(48.dp).semantics { contentDescription = "Stop recording notes" }, enabled = !model.busy,
+                colors = IconButtonDefaults.filledIconButtonColors(containerColor = dev.chirp.android.ui.LocalChirpRoles.current.record, contentColor = scheme.onError)) {
+                Icon(painterResource(R.drawable.ic_stop), null)
             }
         }
     }

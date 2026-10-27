@@ -314,11 +314,10 @@ class NotesRenderTest {
                 assertTrue("$label inside dock", bounds.left >= dock.left && bounds.right <= dock.right && bounds.bottom <= dock.bottom)
                 assertTrue("$label has 48dp target", bounds.height >= 48 && bounds.width >= 48)
             }
-            for (label in listOf("Resume", "Stop")) {
-                val layouts = mutableListOf<androidx.compose.ui.text.TextLayoutResult>()
-                compose.onNodeWithText(label, useUnmergedTree = true).performSemanticsAction(androidx.compose.ui.semantics.SemanticsActions.GetTextLayoutResult) { it(layouts) }
-                assertTrue("$label text fits", layouts.isNotEmpty() && layouts.none { it.hasVisualOverflow })
-            }
+            // Hold to edit keeps its own full-size target beside or above the pill, never under it.
+            val command = compose.onNodeWithContentDescription("Edit notes by voice. Hold, say the change, let go.").fetchSemanticsNode().boundsInRoot
+            assertFalse("Hold to edit clear of the pill", command.overlaps(dock))
+            assertTrue("Hold to edit has 48dp height", command.height >= 48)
             compose.onNodeWithContentDescription("Resume recording notes").performClick()
             assertTrue(rig.model.recording)
             compose.onNodeWithText("Transcript").performClick()

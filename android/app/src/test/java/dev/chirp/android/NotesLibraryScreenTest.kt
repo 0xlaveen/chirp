@@ -387,15 +387,18 @@ class NotesLibraryScreenTest {
         note("Ideas for the studio", "- A long table by the window\n- [ ] Find a reading lamp", 25)
         val deleted = note("An earlier draft", "A few thoughts worth returning to.", 50)
         library.trash(deleted); time = now
-        compose.onNodeWithText("☐ 0 open").assertDoesNotExist()
+        compose.onNodeWithText("0 open tasks").assertDoesNotExist()
         compose.onNodeWithText("0 sec").assertDoesNotExist()
         val listBottom = compose.onNodeWithTag("notes-library-list").fetchSemanticsNode().boundsInRoot.bottom
         val fabTop = compose.onNodeWithContentDescription("Record new note").fetchSemanticsNode().boundsInRoot.top
         assertTrue("list viewport stays above the capture controls", listBottom <= fabTop)
         shot("populated")
         compose.runOnIdle { live.model.rename("Product conversation"); live.record().final("We can keep the first release small."); live.idle() }
+        // The card that leads back to the live note is on screen, not inserted above the list's scroll anchor.
+        compose.onNode(hasStateDescription("Recording")).assertIsDisplayed()
         shot("recording")
         compose.runOnIdle { live.model.pause(); live.idle() }
+        compose.onNode(hasStateDescription("Paused")).assertIsDisplayed()
         shot("recording-paused")
         val primary = compose.onNodeWithContentDescription("Open the paused recording").fetchSemanticsNode().boundsInRoot
         val dictate = compose.onNodeWithContentDescription("Dictate").fetchSemanticsNode().boundsInRoot

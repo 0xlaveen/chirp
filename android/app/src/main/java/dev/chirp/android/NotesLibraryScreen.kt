@@ -150,6 +150,8 @@ internal fun NotesLibraryScreen(
     LaunchedEffect(selected) {
         selected?.takeIf { it != liveId && it != reader.document.uid }?.let { reader.open(it) }
     }
+    // The recording card joins the top of the list; keep it in view rather than leaving the list anchored on the row below.
+    LaunchedEffect(recording, trash) { if (recording && !trash && list.firstVisibleItemIndex <= 1) list.scrollToItem(0) }
     fun open(id: String) { focus.clearFocus(); reader.keepSession(); selected = id }
     fun close() { shownModel.keepSession(); selected = null }
     BackHandler(selected != null) { close() }
@@ -237,7 +239,7 @@ internal fun NotesLibraryScreen(
                     Scaffold(containerColor = MaterialTheme.colorScheme.background, modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
                         topBar = { Column {
                             LargeTopAppBar(title = { Text(if (selection.isNotEmpty()) "${selection.size} selected" else if (trash) "Recently Deleted" else "Notes",
-                                fontFamily = if (selection.isEmpty()) FontFamily.Serif else FontFamily.Default) },
+                                fontFamily = if (selection.isEmpty()) FontFamily.Serif else FontFamily.Default, maxLines = 1, overflow = TextOverflow.Ellipsis) },
                                 navigationIcon = { if (trash || selection.isNotEmpty()) IconButton({ if (selection.isNotEmpty()) selection = emptyList() else trash = false }) {
                                     Icon(painterResource(if (selection.isNotEmpty()) R.drawable.ic_close else R.drawable.ic_arrow_back), if (selection.isNotEmpty()) "Clear selection" else "Back to notes") } },
                                 actions = {
