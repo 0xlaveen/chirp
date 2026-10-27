@@ -41,6 +41,12 @@ final class ChirpLiveSpeakersUITests: XCTestCase {
         app.navigationBars.buttons.element(boundBy: 0).tap()
     }
 
+    /// The Notes settings form builds only the rows on screen, and kept audio from earlier notes adds rows above the
+    /// speaker section: scroll the sheet until the element is in the tree.
+    @MainActor private func scrollSheet(to element: XCUIElement, in app: XCUIApplication) {
+        for _ in 0..<6 where !element.exists { app.swipeUp(velocity: .slow) }
+    }
+
     @MainActor func testTwoVoicesAreTwoPeopleRenamedEverywhereWithReplay() {
         let env = ProcessInfo.processInfo.environment
         let app = XCUIApplication()
@@ -63,10 +69,12 @@ final class ChirpLiveSpeakersUITests: XCTestCase {
         // Labels are on by default and the Mac has no speaker model yet: no switch to flip and no consent. The phone
         // asks the Mac for its one pinned download itself; Settings follows it until the model is ready.
         let toggle = ChirpNotesUITests.element("chirp.notes.speakers.setting", in: app)
+        scrollSheet(to: toggle, in: app)
         XCTAssertTrue(toggle.waitForExistence(timeout: 10)); XCTAssertEqual(toggle.value as? String, "1", "Labels must be on by default")
         XCTAssertFalse(app.alerts.firstMatch.exists, "The download starts without a prompt")
         screenshot("Speakers on by default on the live server", app)
         let model = ChirpNotesUITests.element("chirp.notes.speakers.model", in: app)
+        scrollSheet(to: model, in: app)
         XCTAssertTrue(ChirpNotesUITests.waitFor(model, "label == 'Speaker model on your computer: ready'", timeout: 240),
                       "The automatic download never made the model ready: \(model.exists ? model.label : "no status")")
         screenshot("Speakers model ready on the live server", app)
@@ -128,6 +136,7 @@ final class ChirpLiveSpeakersUITests: XCTestCase {
         ChirpNotesUITests.openNotes(app)
         app.buttons["chirp.notes.menu"].tap(); app.buttons["chirp.notes.settings"].tap()
         let model = ChirpNotesUITests.element("chirp.notes.speakers.model", in: app)
+        scrollSheet(to: model, in: app)
         XCTAssertTrue(ChirpNotesUITests.waitFor(model, "label == 'Speaker model on your computer: ready'", timeout: 240))
         resetSavedVoicesInSettings(app)
         app.buttons["Done"].firstMatch.tap()
