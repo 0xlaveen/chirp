@@ -442,20 +442,22 @@ final class ChirpNotesUITests: XCTestCase {
         let first = app.buttons["chirp.notes.speaker.chip.1.0"], last = app.buttons["chirp.notes.speaker.chip.1.2"]
         XCTAssertTrue(last.waitForExistence(timeout: 5))
         XCTAssertEqual(last.label, "Person 1")
-        func reassign(_ id: String, screenshot name: String? = nil) {
+        // A submenu's items lose their accessibility identifiers, and the chips behind the menu share their labels: find
+        // the choice by label inside the menu's collection view.
+        func reassign(_ person: String, screenshot name: String? = nil) {
             if !last.isHittable { Self.element("chirp.notes.transcript", in: app).swipeUp(velocity: .slow) }
             last.tap()
             let submenu = app.buttons["chirp.notes.speaker.reassign"]
             XCTAssertTrue(submenu.waitForExistence(timeout: 5)); submenu.tap()
-            let choice = app.buttons[id]
-            XCTAssertTrue(choice.waitForExistence(timeout: 5))
+            let choice = app.collectionViews.buttons[person].firstMatch
+            XCTAssertTrue(choice.waitForExistence(timeout: 5), "This turn is → \(person)")
             if let name { screenshot(name, app) }
             choice.tap()
         }
-        reassign("chirp.notes.speaker.turn.2", screenshot: "notes-speakers-this-turn")
+        reassign("Maya", screenshot: "notes-speakers-this-turn")
         XCTAssertTrue(Self.waitFor(last, "label == 'Maya'", timeout: 5))
         XCTAssertEqual(first.label, "Person 1", "Person 1's other turns stay theirs")
-        reassign("chirp.notes.speaker.turn.new")
+        reassign("New person")
         XCTAssertTrue(Self.waitFor(last, "label == 'Person 3'", timeout: 5))
         XCTAssertEqual(first.label, "Person 1")
         screenshot("notes-speakers-new-person", app)
