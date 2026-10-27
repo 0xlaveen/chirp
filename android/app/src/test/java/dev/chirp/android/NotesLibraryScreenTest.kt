@@ -417,10 +417,13 @@ class NotesLibraryScreenTest {
         }
         shot("search")
         search("summer holiday")
-        compose.waitUntil(5000) { compose.onAllNodesWithText("No results for “summer holiday”").fetchSemanticsNodes().isNotEmpty() }
-        compose.onNodeWithText("No results for “summer holiday”").assertExists()
         // A new search starts at the top, where the way back to the recording is (Connecting again after Resume).
         compose.onNode(hasText("Product conversation") and hasClickAction()).assertIsDisplayed()
+        // At 200% on the cover the explanation sits below the card, past the fold.
+        compose.waitUntil(5000) {
+            runCatching { compose.onNodeWithTag("notes-library-list").performScrollToNode(hasText("No results for “summer holiday”")) }.isSuccess
+        }
+        compose.onNodeWithText("No results for “summer holiday”").assertIsDisplayed()
         shot("no-results")
         if (fontScale != 1f) return
         search("")
