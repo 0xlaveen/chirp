@@ -1,20 +1,21 @@
 # Desktop browser captures
 
 W22 captures were rendered on 2026-10-27 from this change's actual `desktop/ui/`
-HTML/CSS/JavaScript, based on `fec63891`. The browser was Chromium through
+HTML/CSS/JavaScript. The browser was Chromium through
 ego-browser, with default text size and synthetic content from
 `desktop/scripts/review-ui.py`. Settings and history use a 900 × 1000 CSS-pixel
 viewport; settings captures include the full page. Finished-result captures use
 900 × 650. Each state has light and dark appearances.
 
-- `settings-{light,dark}.png`: full settings, history retention and saved entries.
+- `settings-{light,dark}.png`: full settings, clean-up style, Press Enter, history retention and saved entries. The header chip shows Connected.
 - `history-search-{light,dark}.png`: search matching the original, with Copy original.
 - `dictation-final-{light,dark}.png`: completed result, Copy and Use raw with its paste instructions.
 
 These are frontend fixtures with mocked native commands. They do not demonstrate
 native Windows/Linux window chrome, OS tray appearance, credential-store access,
-or clipboard/insertion behavior. Browser review also exercised search, copying
-an original, deleting an entry, cancelling the delete-all dialog, and Use raw.
+or clipboard/insertion behavior. Browser review also exercised the style list,
+Refresh styles, the connection chip opening the server URL, search, copying an
+original, deleting an entry, cancelling the delete-all dialog, and Use raw.
 The older HUD and Notes captures remain documented in `desktop/README.md`.
 
 To reproduce, run `python3 desktop/scripts/review-ui.py` from the repository root

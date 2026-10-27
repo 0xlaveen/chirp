@@ -17,6 +17,16 @@ pub struct Linux;
 fn wayland() -> bool {
     std::env::var_os("WAYLAND_DISPLAY").is_some()
 }
+fn window_class() -> String {
+    Command::new("xdotool")
+        .args(["getwindowfocus", "getwindowclassname"])
+        .stderr(Stdio::null())
+        .output()
+        .ok()
+        .map(|result| String::from_utf8_lossy(&result.stdout).to_lowercase())
+        .unwrap_or_default()
+}
+
 fn available(program: &str) -> bool {
     std::env::split_paths(&std::env::var_os("PATH").unwrap_or_default())
         .any(|p| p.join(program).is_file())
@@ -201,27 +211,11 @@ impl Platform for Linux {
             // XTest typing drops LF in some toolkits. Paste multiline text as a unit;
             // synthesizing Return would submit commands in a terminal.
             if available("xdotool") {
-                let class = Command::new("xdotool")
-                    .args(["getwindowfocus", "getwindowclassname"])
-                    .stderr(Stdio::null())
-                    .output()
-                    .ok()
-                    .map(|result| String::from_utf8_lossy(&result.stdout).to_lowercase())
-                    .unwrap_or_default();
-                let terminal = [
-                    "terminal",
-                    "konsole",
-                    "alacritty",
-                    "xterm",
-                    "kitty",
-                    "wezterm",
-                    "tilix",
-                    "terminator",
-                    "kgx",
-                ]
-                .iter()
-                .any(|name| class.contains(name));
-                let shortcut = if terminal { "ctrl+shift+v" } else { "ctrl+v" };
+                let shortcut = if crate::auto_enter::submits_on_enter(&window_class()) {
+                    "ctrl+shift+v"
+                } else {
+                    "ctrl+v"
+                };
                 if Command::new("xdotool")
                     .args(["key", "--clearmodifiers", shortcut])
                     .stdout(Stdio::null())
@@ -234,6 +228,30 @@ impl Platform for Linux {
             }
         }
         Ok(InsertionOutcome::Clipboard)
+    }
+
+    fn press_enter(&self) -> Result<bool, String> {
+        if wayland() {
+            if !available("wtype") {
+                return Ok(false);
+            }
+            // Wayland does not expose the focused app, so a terminal cannot be excluded here.
+            return Ok(Command::new("wtype")
+                .args(["-k", "Return"])
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .status()
+                .is_ok_and(|status| status.success()));
+        }
+        if crate::auto_enter::submits_on_enter(&window_class()) || !available("xdotool") {
+            return Ok(false);
+        }
+        Ok(Command::new("xdotool")
+            .args(["key", "--clearmodifiers", "Return"])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+            .is_ok_and(|status| status.success()))
     }
 
     fn capabilities(&self) -> Capabilities {

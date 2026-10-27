@@ -3,7 +3,7 @@
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Chirp</title><link rel="stylesheet" href="style.css"><script src="app.js" defer></script><script src="notes.js" defer></script></head>
 <body>
 <main id="main">
-  <header><img src="assets/pond.png" width="64" height="64" alt="Chirp bird on a moonlit pond"><div><h1>Chirp</h1><p>Your voice, in your words.</p></div></header>
+  <header><img src="assets/pond.png" width="64" height="64" alt="Chirp bird on a moonlit pond"><div><h1>Chirp</h1><p>Your voice, in your words.</p></div><button type="button" id="connection-chip" class="connection-chip" aria-label="Connection: Connecting…. Open connection settings"><span class="dot" aria-hidden="true"></span><span id="connection-label">Connecting…</span></button></header>
   <nav role="tablist" aria-label="Chirp views"><button id="show-notes" role="tab" aria-controls="notes-view" aria-selected="true">Notes</button><button id="show-dictation" role="tab" aria-controls="dictation-view" aria-selected="false" tabindex="-1" class="quiet">Dictation &amp; settings</button></nav>
   <div id="notes-view" role="tabpanel" aria-labelledby="show-notes">
     <div class="notes-toolbar"><h2>Your notes</h2><button id="new-note">New note</button><button id="jump-recording" class="tonal" hidden></button></div>
@@ -50,6 +50,11 @@
     <p id="shortcut-status" role="status" class="muted"></p>
     <p id="native-shortcut-hint" class="muted">The default key follows your keyboard layout. AltGr layouts use Right Ctrl. Press the key alone; chords cancel dictation.</p>
     <label class="check"><input id="correction" type="checkbox"> Clean-up</label><p class="muted">Polish dictation with your computer’s clean-up model.</p>
+    <label>Clean-up style<select id="style"></select></label>
+    <p id="style-help" class="muted">Styles load from your computer.</p>
+    <button type="button" id="refresh-styles" class="quiet">Refresh styles</button>
+    <label>Press Enter after dictating<select id="auto-enter"><option value="off">Off</option><option value="action">On Send, Go or Done</option><option value="always">Always</option></select></label>
+    <p class="muted">After the words land, Chirp can press Enter. This computer cannot see whether the focused field’s key is Send, Go, or Done, or whether the field is a password. On Send, Go or Done presses Enter only after a single-line insertion that was typed into the app. Always also presses Enter when the text has line breaks, which can send a message or add a blank line. Enter is not pressed when the result is only copied for you to paste, after a failed or cancelled dictation, or in a terminal, where Enter would run a command. On Wayland, Chirp cannot see the focused app, so Enter can still reach a terminal.</p>
     <label class="check"><input id="spoken-commands" type="checkbox"> Spoken commands</label>
     <p class="muted">End a dictation with “new line” or “new paragraph” to insert one or two line breaks. The original stays unchanged.</p>
     <h2>History &amp; privacy</h2>

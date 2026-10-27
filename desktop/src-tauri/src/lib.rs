@@ -1,4 +1,5 @@
 pub mod audio;
+pub mod auto_enter;
 pub mod files;
 pub mod history;
 pub mod hotkey;
@@ -7,8 +8,10 @@ pub mod library;
 pub mod notes;
 pub mod platform;
 pub mod protocol;
+pub mod remote;
 pub mod settings;
 pub mod spoken_commands;
+pub mod styles;
 
 use hotkey::{Action, HotkeyState};
 use protocol::{Control, Update};
@@ -45,6 +48,79 @@ struct Preferences {
     paired: bool,
     shortcut: ShortcutStatus,
 }
+#[derive(Serialize)]
+struct ConnectionChip {
+    state: &'static str,
+    label: &'static str,
+}
+
+#[derive(Serialize)]
+struct StyleList {
+    source: &'static str,
+    styles: Vec<styles::Style>,
+}
+
+fn chip(connected: bool) -> ConnectionChip {
+    if connected {
+        ConnectionChip {
+            state: "connected",
+            label: "Connected",
+        }
+    } else {
+        ConnectionChip {
+            state: "offline",
+            label: "Computer offline",
+        }
+    }
+}
+
+#[tauri::command]
+async fn connection_status(state: tauri::State<'_, Runtime>) -> Result<ConnectionChip, String> {
+    let settings = state
+        .settings
+        .lock()
+        .map_err(|_| "Settings unavailable")?
+        .clone();
+    let Ok(token) = settings::token() else {
+        return Ok(chip(false));
+    };
+    match remote::authenticated_health(&settings, &token).await {
+        Ok(Some(_)) => Ok(chip(true)),
+        _ => Ok(chip(false)),
+    }
+}
+
+#[tauri::command]
+async fn cleanup_styles(state: tauri::State<'_, Runtime>) -> Result<StyleList, String> {
+    let settings = state
+        .settings
+        .lock()
+        .map_err(|_| "Settings unavailable")?
+        .clone();
+    let Ok(token) = settings::token() else {
+        return Ok(StyleList {
+            source: "builtin",
+            styles: styles::builtins(),
+        });
+    };
+    match remote::correction_profiles(&settings, &token).await {
+        Ok(value) => match styles::parse_profiles(&value) {
+            Ok(styles) => Ok(StyleList {
+                source: "server",
+                styles,
+            }),
+            Err(_) => Ok(StyleList {
+                source: "builtin",
+                styles: styles::builtins(),
+            }),
+        },
+        Err(_) => Ok(StyleList {
+            source: "builtin",
+            styles: styles::builtins(),
+        }),
+    }
+}
+
 #[tauri::command]
 fn preferences(state: tauri::State<Runtime>) -> Result<Preferences, String> {
     let settings = state
@@ -182,20 +258,35 @@ fn start(app: &tauri::AppHandle) -> Result<(), String> {
                 final_result.text =
                     spoken_commands::apply(&final_result.text, settings.spoken_commands);
                 let text = final_result.text.clone();
-                let inserted = tauri::async_runtime::spawn_blocking(move || {
-                    if *control.borrow() == Control::Cancel {
-                        return Err("cancelled".into());
-                    }
-                    platform::native().insert_text(&text)
-                })
+                let mode = settings.auto_enter_mode();
+                let inserted = tauri::async_runtime::spawn_blocking(
+                    move || -> Result<(platform::InsertionOutcome, bool), String> {
+                        if *control.borrow() == Control::Cancel {
+                            return Err("cancelled".into());
+                        }
+                        let outcome = platform::native().insert_text(&text)?;
+                        if *control.borrow() == Control::Cancel {
+                            return Err("cancelled".into());
+                        }
+                        let pressed = auto_enter::should_press(
+                            mode,
+                            outcome == platform::InsertionOutcome::Typed,
+                            &text,
+                        ) && platform::native().press_enter().unwrap_or(false);
+                        Ok((outcome, pressed))
+                    },
+                )
                 .await;
                 let mut update = match inserted {
-                    Ok(Ok(outcome)) => Update::new(
+                    Ok(Ok((outcome, pressed))) => Update::new(
                         "done",
                         &final_result.text,
-                        match outcome {
-                            platform::InsertionOutcome::Typed => "Inserted",
-                            platform::InsertionOutcome::Clipboard => "Copied — paste into your app",
+                        match (outcome, pressed) {
+                            (platform::InsertionOutcome::Typed, true) => "Inserted · ↵ sent",
+                            (platform::InsertionOutcome::Typed, false) => "Inserted",
+                            (platform::InsertionOutcome::Clipboard, _) => {
+                                "Copied — paste into your app"
+                            }
                         },
                     ),
                     Ok(Err(detail)) => Update::new("error", &final_result.text, &detail),
@@ -466,6 +557,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             preferences,
             save_preferences,
+            connection_status,
+            cleanup_styles,
             dictate_start,
             dictate_stop,
             dictate_cancel,

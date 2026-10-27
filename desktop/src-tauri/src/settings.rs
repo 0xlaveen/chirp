@@ -1,6 +1,7 @@
 use crate::{
+    auto_enter::AutoEnter,
     hotkey::{HotKey, HotkeyMode},
-    platform,
+    platform, styles,
 };
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -14,6 +15,10 @@ pub struct Settings {
     pub hotkey: HotKey,
     pub mode: HotkeyMode,
     pub correction: bool,
+    /// A `correction_profiles` id. `default` until the user picks another style.
+    pub correction_style: String,
+    /// `off`, `action` (On Send, Go or Done) or `always`.
+    pub auto_enter: String,
     pub spoken_commands: bool,
     pub history_enabled: bool,
     pub history_days: u32,
@@ -27,6 +32,8 @@ impl Default for Settings {
             hotkey: platform::native().default_hotkey(),
             mode: HotkeyMode::Hold,
             correction: false,
+            correction_style: "default".into(),
+            auto_enter: AutoEnter::Off.as_str().into(),
             spoken_commands: false,
             history_enabled: true,
             history_days: 7,
@@ -101,6 +108,10 @@ fn path() -> Result<PathBuf, String> {
     Ok(root.join("chirp-desktop").join("settings.json"))
 }
 impl Settings {
+    pub fn auto_enter_mode(&self) -> AutoEnter {
+        AutoEnter::parse(&self.auto_enter).unwrap_or(AutoEnter::Off)
+    }
+
     pub fn read() -> Self {
         path()
             .ok()
@@ -112,6 +123,12 @@ impl Settings {
         stream_url(&self.url)?;
         if ![1, 7, 30].contains(&self.history_days) {
             return Err("Choose 24 hours, 7 days or 30 days for history".into());
+        }
+        if AutoEnter::parse(&self.auto_enter).is_none() {
+            return Err("Choose Off, On Send, Go or Done, or Always".into());
+        }
+        if !styles::is_valid_id(&self.correction_style) {
+            return Err("Choose a clean-up style".into());
         }
         validate_portal_trigger(&self.portal_shortcut)?;
         let path = path()?;
@@ -181,6 +198,8 @@ mod portal_tests {
         assert!(settings.history_enabled);
         assert_eq!(settings.history_days, 7);
         assert!(!settings.spoken_commands);
+        assert_eq!(settings.correction_style, "default");
+        assert_eq!(settings.auto_enter, "off");
         assert_eq!(settings.portal_shortcut, "CTRL+ALT+space");
         assert_eq!(settings.hotkey, HotKey::RightAlt);
     }

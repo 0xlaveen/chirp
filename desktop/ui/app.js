@@ -7,6 +7,7 @@ const isHud = new URLSearchParams(location.search).has('hud');
 if (isHud) { $('main').hidden = true; $('hud').hidden = false; document.body.classList.add('overlay'); }
 let session = '';
 let portalTrigger = 'CTRL+ALT+space';
+let styleSource = 'builtin';
 const keyLabel = key => ({ RightAlt: 'Right Alt', RightCtrl: 'Right Ctrl', RightOption: 'Right Option' }[key] || key);
 function render(update) {
   $('status').textContent = update.detail;
@@ -45,6 +46,7 @@ $('settings').onsubmit = async event => {
   try {
     await invoke('save_preferences', {
       settings: { url: $('url').value, hotkey: $('hotkey').value, mode: $('mode').value, correction: $('correction').checked,
+        correction_style: $('style').value || 'default', auto_enter: $('auto-enter').value || 'off',
         spoken_commands: $('spoken-commands').checked, history_enabled: $('history-enabled').checked, history_days: Number($('history-days').value),
         portal_enabled: $('portal-enabled').checked, portal_shortcut: portalTrigger },
       token: $('token').value || null, pairingLink: $('pairing').value || null,
@@ -68,12 +70,72 @@ async function load() {
   $('history-enabled').checked = settings.history_enabled !== false;
   $('history-days').value = String(settings.history_days || 7);
   $('mode').value = settings.mode; $('correction').checked = settings.correction;
+  $('auto-enter').value = settings.auto_enter || 'off';
+  await loadStyles(settings.correction_style || 'default');
+  await refreshConnection();
   $('shortcut-help').textContent = wayland ? 'Use Record or the shortcut approved by your desktop. Your selected hold or toggle mode applies.' : settings.mode === 'Hold' ? `Hold ${keyLabel(settings.hotkey)} to talk. Release to insert.` : `Tap ${keyLabel(settings.hotkey)} to start and stop.`;
   $('capabilities').textContent = capabilities.detail;
   $('status').textContent = paired ? 'Ready to dictate' : 'Pair with your computer to begin.';
   $('stop').disabled = true;
   if (shortcut) renderShortcut(shortcut);
 }
+function styleOptions(select) {
+  return select.children ? [...select.children] : [...select.options];
+}
+function describeStyle() {
+  const select = $('style');
+  const chosen = styleOptions(select).find(option => option.value === select.value);
+  const description = chosen ? chosen.getAttribute('data-description') : '';
+  const rewrites = chosen && chosen.getAttribute('data-rewrites') === 'true' ? ' May restructure your text.' : '';
+  const from = styleSource === 'server' ? ' Loaded from your computer.' : ' Built-in styles until your computer answers.';
+  $('style-help').textContent = `${description || 'Clean-up uses the selected style.'}${rewrites}${from}`;
+}
+async function loadStyles(selected) {
+  const payload = await invoke('cleanup_styles');
+  styleSource = payload.source === 'server' ? 'server' : 'builtin';
+  const select = $('style');
+  const current = selected || select.value || 'default';
+  select.replaceChildren();
+  for (const style of payload.styles) {
+    const option = document.createElement('option');
+    option.value = style.id;
+    option.textContent = style.name;
+    option.setAttribute('data-description', style.description || '');
+    option.setAttribute('data-rewrites', style.rewrites ? 'true' : 'false');
+    select.append(option);
+  }
+  if (!styleOptions(select).some(option => option.value === current)) {
+    const option = document.createElement('option');
+    option.value = current;
+    option.textContent = current;
+    option.setAttribute('data-description', '');
+    option.setAttribute('data-rewrites', 'false');
+    select.append(option);
+  }
+  select.value = current;
+  describeStyle();
+}
+function renderConnection(status) {
+  const label = status && status.label ? status.label : 'Computer offline';
+  $('connection-label').textContent = label;
+  $('connection-chip').classList.toggle('connected', !!(status && status.state === 'connected'));
+  $('connection-chip').setAttribute('aria-label', `Connection: ${label}. Open connection settings`);
+}
+async function refreshConnection() {
+  renderConnection({ state: 'connecting', label: 'Connecting…' });
+  try { renderConnection(await invoke('connection_status')); }
+  catch { renderConnection({ state: 'offline', label: 'Computer offline' }); }
+}
+$('style').onchange = () => describeStyle();
+$('refresh-styles').onclick = async () => {
+  try { await loadStyles($('style').value); }
+  catch (error) { $('style-help').textContent = String(error); }
+};
+$('connection-chip').onclick = () => {
+  const open = $('show-dictation').onclick;
+  if (open) open();
+  $('url').focus();
+};
 function renderShortcut(status) {
   $('shortcut-status').textContent = status.detail;
   if (session === 'wayland') $('portal-enabled').checked = status.requested;
