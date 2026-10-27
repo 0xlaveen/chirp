@@ -436,10 +436,11 @@ private fun RecordingNoteCard(model: NotesModel, click: () -> Unit) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 if (paused) Icon(painterResource(R.drawable.ic_pause), null, Modifier.size(28.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                else Ripple(model.level.toFloat(), Modifier.size(28.dp).clearAndSetSemantics { })
+                else if (model.recording) Ripple(model.level.toFloat(), Modifier.size(28.dp).clearAndSetSemantics { })
+                else Ripple(0f, Modifier.size(28.dp).clearAndSetSemantics { }, animate = false)
                 Text(model.displayTitle, Modifier.weight(1f), fontFamily = FontFamily.Serif, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
-            Text("${if (paused) "Paused" else captureState(model)} · ${model.elapsedText}", style = ChirpTokens.timer,
+            Text("${captureState(model)} · ${model.elapsedText}", style = ChirpTokens.timer,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
             Text(preview.ifBlank { if (paused) "Resume when you’re ready." else "Your notes are taking shape." }, maxLines = 2, overflow = TextOverflow.Ellipsis,
                 style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)

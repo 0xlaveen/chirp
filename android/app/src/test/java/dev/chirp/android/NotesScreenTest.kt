@@ -317,7 +317,7 @@ class NotesRenderTest {
             for (label in listOf("Resume", "Stop")) {
                 val layouts = mutableListOf<androidx.compose.ui.text.TextLayoutResult>()
                 compose.onNodeWithText(label, useUnmergedTree = true).performSemanticsAction(androidx.compose.ui.semantics.SemanticsActions.GetTextLayoutResult) { it(layouts) }
-                assertTrue("$label text fits: " + layouts.map { "size=${it.size} overflowW=${it.didOverflowWidth} overflowH=${it.didOverflowHeight} lines=${it.lineCount} text=${it.layoutInput.text}" }, layouts.isNotEmpty() && layouts.none { it.hasVisualOverflow })
+                assertTrue("$label text fits", layouts.isNotEmpty() && layouts.none { it.hasVisualOverflow })
             }
             compose.onNodeWithContentDescription("Resume recording notes").performClick()
             assertTrue(rig.model.recording)
