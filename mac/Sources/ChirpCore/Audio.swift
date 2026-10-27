@@ -22,6 +22,7 @@ public final class PCMConverter {
     }
 
     /// Converts one buffer and returns every complete frame; the remainder waits for the next call.
+    /// Frames are Data slices and may retain a nonzero startIndex.
     public func frames(from buffer: AVAudioPCMBuffer) -> [Data] {
         append(convert(buffer))
     }
