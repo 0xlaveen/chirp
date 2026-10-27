@@ -1,3 +1,4 @@
+import AppIntents
 import ChirpCore
 import ChirpIOSCore
 import Foundation
@@ -377,14 +378,38 @@ struct LiveNotesControllerTests {
         #expect(f.notes.structuring == .idle)
     }
 
-    @Test func aLiveActivityButtonActsOnlyOnALiveSession() async throws {
+    @Test func notesShortcutsArePublishedAlongsideDictation() {
+        #expect(ChirpShortcuts.appShortcuts.count == 8)
+        #expect(String(localized: StartChirpNotesIntent.title) == "Record note with Chirp")
+        #expect(String(localized: PauseChirpNotesIntent.title) == "Pause or resume note with Chirp")
+        #expect(String(localized: StopChirpNotesIntent.title) == "Stop note with Chirp")
+        #expect(StartChirpNotesIntent.openAppWhenRun)
+    }
+
+    @Test func notesShortcutTableMatchesCurrentBindings() {
+        #expect(ShortcutsPage.notesShortcuts.map(\.title) == [
+            "Record", "Record / Stop note", "Pause / Resume note", "Search notes", "Show or hide transcript",
+        ])
+        #expect(ShortcutsPage.notesShortcuts.map(\.keys) == ["⌘N", "⇧⌘R", "⇧⌘P", "⌘F", "⌥⌘T"])
+    }
+
+    @Test func notesIntentActionsActOnlyOnALiveSession() async throws {
         let f = try fixture(); defer { f.clean() }
-        #expect(await f.notes.perform(.stop) == "Live Notes is not recording.")
-        #expect(await f.notes.perform(.start) == "Recording notes.")
+        #expect(await f.notes.perform(StopChirpNotesIntent.action) == "Live Notes is not recording.")
+        #expect(await f.notes.perform(PauseChirpNotesIntent.action) == "Live Notes is not recording.")
+        #expect(!f.audio.isRunning)
+        #expect(await f.notes.perform(StartChirpNotesIntent.action) == "Recording notes.")
         try await eventually("recording") { f.notes.state == .recording }
-        #expect(await f.notes.perform(.togglePause) == "Live Notes paused. Microphone off.")
-        #expect(await f.notes.perform(.togglePause) == "Live Notes recording.")
-        #expect(await f.notes.perform(.stop) == "Live Notes stopped. Your notes are in Chirp.")
+        let starts = f.audio.starts
+        #expect(await f.notes.perform(StartChirpNotesIntent.action) == "Recording notes.")
+        #expect(f.audio.starts == starts)
+        #expect(await f.notes.perform(PauseChirpNotesIntent.action) == "Live Notes paused. Microphone off.")
+        #expect(!f.audio.isRunning)
+        #expect(await f.notes.perform(PauseChirpNotesIntent.action) == "Live Notes recording.")
+        #expect(f.audio.isRunning)
+        #expect(await f.notes.perform(StopChirpNotesIntent.action) == "Live Notes stopped. Your notes are in Chirp.")
+        #expect(!f.audio.isRunning)
+        #expect(await f.notes.perform(StopChirpNotesIntent.action) == "Live Notes is not recording.")
     }
 
     // MARK: speaker labels (#201)

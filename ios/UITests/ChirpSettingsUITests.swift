@@ -52,6 +52,35 @@ final class ChirpSettingsUITests: XCTestCase {
         ("chirp.settings.about", "chirp.diagnostics.timings", "About"),
     ]
 
+    /// Current Notes bindings and the configured hardware dictation key are discoverable together.
+    @MainActor func testNotesAndHardwareKeyboardShortcuts() {
+        let appearance = ProcessInfo.processInfo.environment["CHIRP_SHORTCUTS_APPEARANCE"] ?? "light"
+        let app = launch()
+        app.openSettingsPage("chirp.settings.keyboard")
+        let link = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Keyboard shortcuts'")).firstMatch
+        XCTAssertTrue(link.waitForExistence(timeout: 5))
+        if !link.isHittable { app.swipeUp() }
+        link.tap()
+        XCTAssertTrue(app.navigationBars["Keyboard shortcuts"].waitForExistence(timeout: 5))
+
+        func row(_ title: String, _ keys: String) -> XCUIElement {
+            app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@ AND label CONTAINS %@", title, keys)).firstMatch
+        }
+        for (title, keys) in [("Record", "⌘N"), ("Record / Stop note", "⇧⌘R"),
+                              ("Pause / Resume note", "⇧⌘P"), ("Search notes", "⌘F"),
+                              ("Show or hide transcript", "⌥⌘T")] {
+            XCTAssertTrue(row(title, keys).waitForExistence(timeout: 5), "Missing shortcut: \(title) \(keys)")
+        }
+        screenshot("notes-keyboard-shortcuts-\(appearance)", app)
+
+        let hardware = row("Hold to dictate", "Right ⌥ Option")
+        for _ in 0..<3 where !hardware.isHittable { app.swipeUp() }
+        XCTAssertTrue(hardware.waitForExistence(timeout: 5))
+        XCTAssertTrue(hardware.isHittable)
+        XCTAssertTrue(row("Start or stop dictation", "⌘↩").exists)
+        screenshot("dictation-keyboard-shortcuts-\(appearance)", app)
+    }
+
     /// All seven categories are there with a live summary, each opens its page, and iPhone pushes back.
     @MainActor func testSevenCategoriesOpenTheirPages() {
         let app = pairedApp()
