@@ -548,8 +548,9 @@ final class DictationController {
             if final.canUseRaw { shown = FinalResult(text: final.raw, corrected: false, correctionError: "replace") }
             else { shown.text = final.raw }
         }
-        keep(early, final: shown, text: shown.text.trimmingCharacters(in: .whitespacesAndNewlines),
-             secureField: SystemInsertion.focusedFieldIsSecure())
+        let secure = SystemInsertion.focusedFieldIsSecure()
+        keep(early, final: shown, text: shown.text.trimmingCharacters(in: .whitespacesAndNewlines), secureField: secure)
+        watchEdits(early, text: shown.text, raw: final.raw, secureField: secure)
         show(early, final: shown)
         await pressReturn(after: early)
     }
@@ -629,13 +630,30 @@ extension DictationController {
         bundleID.map(settings.historyExcludedApps.contains) ?? false
     }
 
-    /// Learn from my edits: after a verified AX insertion whose span is known, watch that field for the user's fixes.
-    /// Never a secure field, an excluded app, or while learning (or history) is off.
+    /// Learn from my edits: after an insertion, watch that field for the user's fixes. A verified AX write says where it
+    /// went; a paste (Chromium, Electron) or an unconfirmed write is looked for in the field once the app applies it.
+    /// Never a secure field, an excluded app, or while learning (or history) is off. The log names the gate, never the text.
     fileprivate func watchEdits(_ outcome: InsertionOutcome, text: String, raw: String, secureField: Bool) {
-        guard !privateDictation, !privateSession.isActive, let learning, settings.learningEnabled, outcome == .inserted(.ax), !secureField,
-              !Self.excludedFromHistory(target.bundleID), let range = inserter.lastAXRange,
-              let field = AXWatchedField.focused() else { return }
-        learning.watcher.watch(field, inserted: text, range: range, raw: raw, bundleID: target.bundleID, appName: target.name)
+        guard let learning else { return }
+        let target = self.target, app = target.bundleID ?? "-"
+        func skip(_ gate: String) { chirpLog.info("learn skip gate=\(gate, privacy: .public) app=\(app, privacy: .public)") }
+        guard settings.learningEnabled else { return skip(settings.historyEnabled ? "learningOff" : "historyOff") }
+        guard !privateDictation, !privateSession.isActive else { return skip("private") }
+        guard !Self.excludedFromHistory(target.bundleID) else { return skip("excludedApp") }
+        guard !secureField else { return skip("secure") }
+        switch outcome {
+        case .inserted(.ax), .inserted(.paste), .insertedUnverified: break
+        default: return skip("notInserted")
+        }
+        if outcome == .inserted(.ax), let range = inserter.lastAXRange, let field = AXWatchedField.focused() {
+            learning.watcher.watch(field, inserted: text, range: range, raw: raw, bundleID: target.bundleID, appName: target.name)
+            return
+        }
+        if let pid = NSWorkspace.shared.frontmostApplication?.processIdentifier { AXWatchedField.requestAccessibility(pid: pid) }
+        Task {
+            await learning.watcher.watchPasted({ AXWatchedField.focused() }, inserted: text, raw: raw, bundleID: target.bundleID,
+                                               appName: target.name)
+        }
     }
 
     /// The HUD's small "Learned: Kubernetes" the first time a correction becomes active (never over a dictation).
