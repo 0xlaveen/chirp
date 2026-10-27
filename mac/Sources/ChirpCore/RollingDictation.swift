@@ -93,7 +93,9 @@ public final class RollingDictationSession: @unchecked Sendable {
             var offset = 0
             while offset + 1 < data.count, totalBytes < ceiling {
                 let count = min(1_600, data.count - offset, ceiling - totalBytes) / 2 * 2
-                let frame = data.subdata(in: offset..<(offset + count))
+                // PCMConverter prefixes can retain nonzero Data indices after pending.removeFirst().
+                let start = data.index(data.startIndex, offsetBy: offset)
+                let frame = data.subdata(in: start..<data.index(start, offsetBy: count))
                 segments.last!.stream.sendAudio(frame)
                 totalBytes += count
                 offset += count
