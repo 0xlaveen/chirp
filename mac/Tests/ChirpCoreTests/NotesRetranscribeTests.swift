@@ -351,6 +351,7 @@ private func labelledNote() -> NotesDocument {
         #expect(NotesSpeechModel.displayName("parakeet-onnx:tdt-0.6b-v2-int8") == "Parakeet v2 (ONNX)")
         #expect(NotesSpeechModel.displayName("sensevoice-small:fp32-cpu:auto") == "SenseVoice Small")
         #expect(NotesSpeechModel.displayName(nil) == "unknown")
+        #expect(NotesSpeechModel.displayName(NotesSpeechModel.mixed) == "mixed models")
     }
 
     @Test func aRebuildIsOneUndoableChangeTheSnapshotsKeep() {

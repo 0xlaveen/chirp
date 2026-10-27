@@ -658,6 +658,7 @@ final class SettingsWindowController: NSObject, NSTextFieldDelegate {
 
     @objc private func toggleKeepAudio(_ sender: NSButton) {
         settings.notesKeepAudio = sender.state == .on
+        form?.allowRetranscribe.isEnabled = sender.state == .on || (library?.totalAudioBytes ?? 0) > 0
         if sender.state == .off, (library?.totalAudioBytes ?? 0) > 0 { confirmDeleteAudio() }
     }
 

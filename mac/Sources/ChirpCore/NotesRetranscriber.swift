@@ -69,6 +69,16 @@ public struct NotesRetranscribeResult: Equatable, Sendable {
     /// The last error code (`engine`, `bad_audio`, `busy`…), for the log line.
     public var code: String?
 
+    public init(end: End, segments: [NotesRetranscribedSegment] = [], failed: Int = 0, total: Int = 0, audio: TimeInterval = 0,
+                code: String? = nil) {
+        self.end = end
+        self.segments = segments
+        self.failed = failed
+        self.total = total
+        self.audio = audio
+        self.code = code
+    }
+
     /// `notes retranscribe segments=40 audio_ms=490000 updated=38 failed=2 code=engine`: counts only, no text, host or title.
     public var logLine: String {
         "notes retranscribe segments=\(total) audio_ms=\(Int((audio * 1000).rounded())) updated=\(segments.count) failed=\(failed) code=\(code ?? "none")"

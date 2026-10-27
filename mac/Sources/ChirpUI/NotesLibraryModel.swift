@@ -219,6 +219,8 @@ public final class NotesLibraryModel {
     public var onConfirmRebuild: (Bool) -> Void = { _ in }
     /// The sheet's Change model… (Manage Local Models).
     public var onManageModels: () -> Void = {}
+    /// A refused re-transcribe's Server Settings….
+    public var onServerSettings: () -> Void = {}
     /// The window focuses its search field (⌥⌘F).
     @ObservationIgnored public var onFocusSearch: () -> Void = {}
     /// Show Markdown and the inspector are remembered.

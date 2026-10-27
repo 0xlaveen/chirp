@@ -1352,8 +1352,7 @@ extension NotesSession {
             rebuild: { [weak self] id, result, version, force in
                 await self?.retranscribeRebuild(id, result, version: version, force: force) ?? false
             },
-            announce: deps.announce,
-            openServerSettings: { [weak self] in self?.model.onServerSettings() }))
+            announce: deps.announce))
         let w = window
         w.retranscribeAllowed = settings.notesAllowRetranscribe
         w.onRetranscribe = { [weak self] id, segment in
@@ -1368,6 +1367,7 @@ extension NotesSession {
         w.onShowTranscriptChanges = { [weak self] id in self?.retranscribe?.showChanges(id) }
         w.onConfirmRebuild = { [weak self] replace in self?.retranscribe?.confirmRebuild(replace) }
         w.onManageModels = { [weak self] in self?.model.onManageModels() }
+        w.onServerSettings = { [weak self] in self?.model.onServerSettings() }
         w.onShowRebuild = { [weak self] id in
             guard let model = self?.openModel(id), let snapshot = model.snapshots.items.last(where: \.rebuild) else { return }
             model.review(snapshot.id)

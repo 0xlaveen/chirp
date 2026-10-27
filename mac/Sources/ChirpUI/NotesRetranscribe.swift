@@ -156,6 +156,8 @@ public struct NotesRetranscribeRun: Equatable, Sendable {
     /// Done when some clips finished.
     public var failure: String?
     public var canApplyPartial = false
+    /// The server refused the pairing: the banner offers Server Settings….
+    public var fixServer = false
 
     public init(note: UUID, progress: NotesRetranscribeProgress, local: Bool, failure: String? = nil, canApplyPartial: Bool = false) {
         self.note = note; self.progress = progress; self.local = local; self.failure = failure; self.canApplyPartial = canApplyPartial
@@ -304,6 +306,9 @@ struct RetranscribeBanner: View {
             } else {
                 HStack(spacing: 8) {
                     Spacer()
+                    if run.fixServer {
+                        Button("Server Settings…") { library.onServerSettings() }.controlSize(.small)
+                    }
                     if run.canApplyPartial {
                         Button(NotesRetranscribeText.applyDone) { library.onRetranscribeApplyPartial() }.controlSize(.small)
                     }
@@ -372,11 +377,13 @@ struct TranscriptChangesSheet: View {
     static func text(_ diff: [WordDiff.Segment]) -> Text {
         diff.enumerated().reduce(Text("")) { text, item in
             let (i, s) = item
-            let word = Text((i == 0 ? "" : " ") + s.text)
+            // The space between words stays unstyled, so marks cover the words alone.
+            let lead = text + Text(i == 0 ? "" : " ")
+            let word = Text(s.text)
             switch s.kind {
-            case .same: return text + word.foregroundColor(NotesInk.primary)
-            case .removed: return text + word.foregroundColor(NotesInk.tertiary).strikethrough(true, color: NotesInk.tertiary)
-            case .added, .changed: return text + word.foregroundColor(NotesInk.primary).underline(true, color: Color.chirp.moon)
+            case .same: return lead + word.foregroundColor(NotesInk.primary)
+            case .removed: return lead + word.foregroundColor(NotesInk.tertiary).strikethrough(true, color: NotesInk.tertiary)
+            case .added, .changed: return lead + word.foregroundColor(NotesInk.primary).underline(true, color: Color.chirp.moon)
             }
         }
     }
@@ -405,7 +412,6 @@ final class NotesRetranscribeController {
         /// The rebuilt body as one `.rebuild` change, when the body is still at `version`; `force` replaces edits.
         var rebuild: @MainActor (UUID, NotesRebuild.Result, _ version: Int?, _ force: Bool) async -> Bool
         var announce: (String) -> Void = { _ in }
-        var openServerSettings: () -> Void = {}
     }
 
     private let deps: Dependencies
@@ -428,7 +434,7 @@ final class NotesRetranscribeController {
         let spoken = document.segments.filter { !$0.isGap && !$0.text.isEmpty }
         let leaves = health?.correctionLeavesMachine == true && deps.settings.correction
         deps.window.retranscribeOffer = NotesRetranscribeOffer(
-            note: id, title: document.userTitle ?? (document.isEmpty ? NotesLibraryText.untitled : document.title),
+            note: id, title: document.isEmpty && document.userTitle == nil ? NotesLibraryText.untitled : document.title,
             segment: segment, clips: clips.count, audio: clips.reduce(0) { $0 + $1.duration },
             segments: document.segments.count, withoutAudio: spoken.filter { !withAudio.contains($0.id) }.count,
             local: deps.local(), model: health?.engine, before: document.transcribedWith,
@@ -459,8 +465,12 @@ final class NotesRetranscribeController {
         deps.window.retranscribeRun = NotesRetranscribeRun(
             note: id, progress: NotesRetranscribeProgress(done: 0, total: offer.clips, audioDone: 0, audioTotal: offer.audio), local: local)
         task = Task { [weak self] in
-            guard let document = await self?.deps.document(id) else { return }
-            let result = await runner.run(NotesRetranscriber.clips(for: document, only: offer.segment))
+            let document = await self?.deps.document(id)
+            let clips = document.map { NotesRetranscriber.clips(for: $0, only: offer.segment) } ?? []
+            // The note went away before the first clip: nothing to send, nothing changes.
+            let result = clips.isEmpty
+                ? NotesRetranscribeResult(end: .cancelled)
+                : await runner.run(clips)
             await self?.finish(id, result: result, rebuild: offer.segment == nil && offer.rebuild && offer.rebuildAvailable)
         }
     }
@@ -475,7 +485,7 @@ final class NotesRetranscribeController {
             deps.window.showToast(NotesRetranscribeText.cancelled)
         case .auth:
             deps.window.retranscribeRun?.failure = NotesRetranscribeText.refused(local: local)
-            deps.openServerSettings()
+            deps.window.retranscribeRun?.fixServer = true
         case .stopped(let code):
             staged = (id, result)
             deps.window.retranscribeRun?.failure = NotesRetranscribeText.stopped(code: code, local: local)

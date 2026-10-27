@@ -487,7 +487,7 @@ public final class SettingsForm {
                 row(nil, callAudio, help: Self.help(SettingsForm.callAudioHelp)),
             ], footnote: Self.help("Each note can change it from Sources in the Notes toolbar. Mac only: iPhone and Android can’t record other apps’ audio.")),
             SettingsSection("Audio", [
-                row(nil, keepAudio, help: Self.help("Keeps each spoken segment with its note so you can replay it. Off by default; the audio never leaves this Mac.")),
+                row(nil, keepAudio, help: Self.help("Keeps each spoken segment with its note so you can replay it. Off by default; the audio leaves this Mac only when you re-transcribe a note.")),
                 row(nil, allowRetranscribe, help: Self.help(NotesRetranscribeText.settingHelp)),
                 row("Kept audio", line([audioStatus, deleteAudio])),
             ]),

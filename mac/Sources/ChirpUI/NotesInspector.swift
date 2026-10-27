@@ -231,7 +231,7 @@ private struct TranscriptRowView: View {
                 Spacer(minLength: 0)
             }
             if let failure = p.failure {
-                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                VStack(alignment: .leading, spacing: 4) {
                     Text("⚠︎ audio not transcribed (\(failure))")
                         .font(.system(size: 13))
                         .foregroundStyle(Color.chirp.moon)

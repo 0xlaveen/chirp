@@ -62,7 +62,7 @@ public enum NotesSpeechModel {
 
     public static func displayName(_ engine: String?) -> String {
         guard let engine, !engine.isEmpty else { return "unknown" }
-        if engine == mixed { return "mixed" }
+        if engine == mixed { return "mixed models" }
         let lower = engine.lowercased()
         if lower.hasPrefix("sensevoice") { return "SenseVoice Small" }
         if lower.hasPrefix("parakeet") {

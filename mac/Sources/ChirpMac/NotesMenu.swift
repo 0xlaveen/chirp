@@ -18,7 +18,7 @@ final class NotesMenuTarget: NSObject, NSMenuItemValidation {
 
     /// The "Notes" menu item.
     func menuItem() -> NSMenuItem {
-        submenu("Notes", .notes, separatorsBefore: [.record, .renameNote, .findNotes, .copyMarkdown, .retranscribe])
+        submenu("Notes", .notes, separatorsBefore: [.record, .renameNote, .findNotes, .copyMarkdown])
     }
 
     /// The "View" menu item.

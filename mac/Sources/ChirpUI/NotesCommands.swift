@@ -4,11 +4,12 @@ import ChirpCore
 /// The Notes window's own shortcuts. They live in the main menu (so Help search finds them) and work only while the
 /// Notes window is key; this is the list the menu is built from and the tests check.
 public enum NotesCommand: CaseIterable, Sendable {
-    case newNote, record, pause, renameNote, deleteNote, findNotes, copyMarkdown, export
-    case toggleInspector, showMarkdown
-    case restoreOrganize
+    case newNote, record, pause, renameNote, deleteNote
     /// Re-transcribe Note… and Restore Previous Transcript (#287): hidden, not greyed, when they don't apply.
     case retranscribe, restoreTranscript
+    case findNotes, copyMarkdown, export
+    case toggleInspector, showMarkdown
+    case restoreOrganize
 
     /// Which main-menu menu the command sits in.
     public enum Menu: Sendable { case notes, view, edit }
