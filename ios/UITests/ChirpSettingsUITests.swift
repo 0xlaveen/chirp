@@ -142,9 +142,11 @@ final class ChirpSettingsUITests: XCTestCase {
         XCTAssertTrue(waitFor(commands, "value == '0'"))
     }
 
-    /// Clean-up enabling takes the consent dialog; a cancelled dialog leaves it off.
+    /// Clean-up that leaves the computer takes the consent dialog; a cancelled dialog leaves it off.
+    /// (Local clean-up is on by default and needs no dialog: see testDictationStyleShowsRawAndCurrentStyle.)
     @MainActor func testCleanupConsent() {
-        let app = pairedApp()
+        let app = launch(["--chirp-external-cleanup"])
+        app.pair(link: XCUIApplication.syntheticPairingLink)
         app.openDictation()
         let cleanup = element("chirp.cleanup.enabled", in: app)
         XCTAssertTrue(cleanup.waitForExistence(timeout: 5))
