@@ -34,6 +34,29 @@ import Testing
         #expect(conv.frames(from: tiny).count == 1)                  // 1920 bytes → one 1600-byte frame
     }
 
+    @Test(arguments: [16_000.0, 48_000.0])
+    func repeatedFramesAndPartialTailMatchUnframedConversion(rate: Double) throws {
+        let framed = try #require(PCMConverter(from: sine(rate: rate, channels: 2, seconds: 0.064).format))
+        let unframed = try #require(PCMConverter(from: sine(rate: rate, channels: 2, seconds: 0.064).format))
+        var expected = Data(), actual = Data()
+        var sawSlicedFrame = false
+        for i in 0..<7 {
+            let buffer = sine(rate: rate, channels: 2, seconds: 0.064, amplitude: Float(i + 1) / 10)
+            expected.append(unframed.convert(buffer))
+            for frame in framed.frames(from: buffer) {
+                #expect(frame.count == PCMConverter.frameBytes)
+                sawSlicedFrame = sawSlicedFrame || frame.startIndex > 0
+                actual.append(frame)
+            }
+        }
+        let tail = try #require(framed.flush())
+        #expect(tail.count > 0 && tail.count < PCMConverter.frameBytes)
+        actual.append(tail)
+        if let delay = unframed.flush() { expected.append(delay) }
+        #expect(sawSlicedFrame)
+        #expect(actual == expected)
+    }
+
     @Test func rejectsInvalidInputFormat() {
         let bad = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 0, channels: 1, interleaved: false)
         #expect(bad == nil || PCMConverter(from: bad!) == nil)

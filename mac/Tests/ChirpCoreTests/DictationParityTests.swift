@@ -1,4 +1,5 @@
 import AppKit
+import AVFoundation
 import Foundation
 import Testing
 @testable import ChirpCore
@@ -100,8 +101,11 @@ private final class RollingSocket: StreamTransport, @unchecked Sendable {
     let stops: AsyncStream<Void>
     private let stopped: AsyncStream<Void>.Continuation
     private var bytes = 0
+    private var frames: [Data] = []
     private var cancelled = false
     var audioBytes: Int { lock.withLock { bytes } }
+    var audioFrames: [Data] { lock.withLock { frames } }
+    var audio: Data { lock.withLock { frames.reduce(into: Data()) { $0.append($1) } } }
     var didClose: Bool { lock.withLock { cancelled } }
     init() {
         (messages, input) = AsyncStream.makeStream()
@@ -111,7 +115,7 @@ private final class RollingSocket: StreamTransport, @unchecked Sendable {
     func resume() {}
     func send(_ message: URLSessionWebSocketTask.Message) async throws {
         switch message {
-        case .data(let data): lock.withLock { bytes += data.count }
+        case .data(let data): lock.withLock { bytes += data.count; frames.append(data) }
         case .string(let text):
             if text.contains("\"type\":\"start\"") {
                 input.yield(.string(#"{"type":"ready","session":"test","debug_retention":false}"#))
@@ -163,6 +167,93 @@ private final class RollingSockets: @unchecked Sendable {
             if case .message(.final(let final)) = event { return final }
         }
         return nil
+    }
+
+    @Test(arguments: [1, 1_600, 3_200])
+    func slicedFramesPreserveBytesAndCompleteSampleTails(prefix: Int) async throws {
+        let sockets = RollingSockets()
+        let session = RollingDictationSession(correctionTimeout: 5, makeStream: { sockets.make() })
+        await session.open()
+        var expected = Data()
+        // Include empty/one-byte slices, partial frames and an odd trailing byte (not a complete PCM16 sample).
+        for count in [0, 1, 42, 642, 1_600, 3_243] {
+            let payload = Data((0..<count).map { UInt8($0 % 251) })
+            var storage = Data(repeating: 0xEE, count: prefix)
+            storage.append(payload)
+            let sliced = storage.dropFirst(prefix)
+            #expect(sliced.startIndex == prefix)
+            session.sendAudio(sliced)
+            expected.append(payload.prefix(count / 2 * 2))
+        }
+        await session.stop()
+        let socket = try #require(sockets.all.first)
+        await socket.waitForStop()
+        #expect(sockets.all.count == 1)
+        #expect(socket.audio == expected)
+        #expect(socket.audioFrames.map(\.count) == [42, 642, 1_600, 1_600, 1_600, 42])
+        await session.close()
+    }
+
+    @Test(arguments: [16_000.0, 48_000.0])
+    func repeatedConverterFramesAndFlushPreserveBytes(rate: Double) async throws {
+        let format = try #require(AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: rate,
+                                               channels: 2, interleaved: false))
+        let converter = try #require(PCMConverter(from: format))
+        let buffer = try #require(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(rate * 0.064)))
+        buffer.frameLength = buffer.frameCapacity
+        let sockets = RollingSockets()
+        let session = RollingDictationSession(correctionTimeout: 5, makeStream: { sockets.make() })
+        await session.open()
+        var expected = Data()
+        var sawSlicedFrame = false
+        for callback in 0..<7 {
+            for channel in 0..<2 {
+                for i in 0..<Int(buffer.frameLength) {
+                    buffer.floatChannelData![channel][i] = Float((callback * 13 + i) % 101) / 200
+                }
+            }
+            for frame in converter.frames(from: buffer) {
+                sawSlicedFrame = sawSlicedFrame || frame.startIndex > 0
+                expected.append(frame)
+                session.sendAudio(frame)
+            }
+        }
+        #expect(sawSlicedFrame)
+        let tail = try #require(converter.flush())
+        #expect(tail.count > 0 && tail.count < PCMConverter.frameBytes)
+        expected.append(tail)
+        session.sendAudio(tail)
+        await session.stop()
+        let socket = try #require(sockets.all.first)
+        await socket.waitForStop()
+        #expect(sockets.all.count == 1)
+        #expect(socket.audio == expected)
+        #expect(socket.audioFrames.last?.count == tail.count)
+        await session.close()
+    }
+
+    @Test func oversizedSlicedInputPreservesBytesAcrossRollingBoundaries() async throws {
+        // Vary every sample, staying above the silence threshold so the cuts are at 90 s.
+        let samples = (0..<(181 * 16_000 + 321)).map { Int16(10_000 + $0 % 20_000).littleEndian }
+        let expected = samples.withUnsafeBytes { Data($0) }
+        var storage = Data(repeating: 0xEE, count: 3_200)
+        storage.append(expected)
+        storage.append(0xFF) // Incomplete final PCM16 sample is ignored, as for ordinary frames.
+        let sliced = storage.dropFirst(3_200)
+        #expect(sliced.startIndex == 3_200)
+        let sockets = RollingSockets()
+        let session = RollingDictationSession(correctionTimeout: 5, makeStream: { sockets.make() })
+        await session.open()
+        session.sendAudio(sliced)
+        await session.stop()
+        #expect(sockets.all.count == 3)
+        for socket in sockets.all { await socket.waitForStop() }
+        #expect(sockets.all.map(\.audioBytes) == [90 * 32_000, 90 * 32_000, 32_642])
+        let received = sockets.all.reduce(into: Data()) { $0.append($1.audio) }
+        #expect(received == expected)
+        #expect(sockets.all.flatMap(\.audioFrames).allSatisfy { $0.count <= 1_600 && $0.count.isMultiple(of: 2) })
+        #expect(sockets.all.last?.audioFrames.last?.count == 642)
+        await session.close()
     }
 
     @Test @MainActor func past119SecondsFinalsCommitInCaptureOrderWithWholeRawReplacement() async throws {
