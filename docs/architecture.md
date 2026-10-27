@@ -72,13 +72,43 @@ The token is either the shared one or a per-device token minted by `chirp-server
 
 Authenticated health also includes the selected `speech_model` and `correction_model` IDs. These optional metadata fields contain no token, prompt, audio, or transcript. Unauthenticated health remains minimal.
 
+### Notes re-transcription (v1-compatible addition, issue #287 S)
+
+`WS /v1/stream` accepts optional `start.retranscribe: true`. A non-boolean returns `bad_audio`;
+omitted or false preserves the live protocol. The client sends one kept clip per utterance,
+decoded in memory to 16 kHz mono PCM16 in frames of at most 100 ms, then `stop` with the
+optional previous segment's new text as `context` (at most 500 characters). The normal auth,
+120-second utterance limit, frame limit, cancel and debug-retention behavior apply.
+
+The server buffers audio without preview inference and emits no `partial`. Its full decode,
+optional `correcting`, clean-up, word timings and optional speakers use the live final pipeline.
+Only flagged finals add `engine`, equal to `ready.engine`, so clients can record provenance per
+segment; live clients use `ready.engine`. There is one loaded speech model and no per-request
+model selection. The default profile and `speakers` remain allowed. Re-transcription clients
+preserve existing speaker turns rather than requesting new labels.
+
+The engine lease has two FIFO priorities. Live streams and `/v1/transcribe` go before waiting
+re-transcriptions after the current utterance releases the lease; an active decode is never
+interrupted. Live queue timeout stays 10 s; re-transcriptions wait up to the positive, finite
+`retranscribe_queue_timeout` (60 s by default, top-level `server.toml`) before `busy` and socket
+close. Clients retry the same clip with 2/4/8/…/30 s backoff, at most 10 tries. The final deadline
+is 25 s after `stop`, extended on `correcting` to `operation_deadlines.notes_correction` + 5 s.
+Per-segment errors keep the old text; authentication failure stops the run for re-pairing.
+
+Authenticated health adds `notes_retranscribe: true` and the same capability; API level stays 2.
+Unauthenticated health stays `{"ok":true}`. Clients require this capability before sending.
+Activity uses the audio kind `notes_retranscribe` with `audio_ms`. Audio and text stay in memory,
+except explicit debug retention; session logs and activity contain metadata only. Each client
+owns per-action consent, progress, retries, staged replacement and Undo. This server change
+provides the transport; client workflows ship separately.
+
 ### Device activity (v1-compatible addition)
 
 Metadata about who used the server, for Settings → Devices on the Mac. Phones never call it, so the protocol stays v1; clients must ignore unknown fields, kinds and outcomes.
 
 - **Auth.** `Authorization: Bearer <owner token>` (`~/.config/chirp/owner-token`, `0600`, created on first start, never printed by `pair`, never in a link, never shown in health) **and** a direct loopback connection: the peer is `127.0.0.1`/`::1` and none of `X-Forwarded-For`, `X-Forwarded-Host`, `Forwarded`, `X-Real-IP`, `Tailscale-User-Login`, `Tailscale-User-Name` is present (a `tailscale serve` request carries them). No or a wrong token → 401 `auth`. A valid shared or device token, or the owner token through a proxy → 403 `forbidden`. The owner token is refused (401) by every other endpoint.
 - **Source** of a request, from the credential that passed auth: `{"kind":"device","id","name","revoked"}` (names and `revoked` are joined at read time), `{"kind":"local"}` (the shared token used directly on this machine, "This Mac") or `{"kind":"shared"}` (the shared token through the proxy). A label, not a security boundary.
-- **Events** are one per `/v1/stream` utterance (`start` to final, cancel or error, not per socket), per `/v1/transcribe`, `/v1/notes/{structure,reorganize,edit}` and `/v1/speakers/model` request. Health, `/v1/correction/profiles` and `/v1/correction/settings` are not recorded. `kind` is `dictation`, `notes_segment` (a stream utterance with the `live_notes` style), `transcribe`, `notes_structure`, `notes_reorganize`, `notes_edit` or `speaker_model`. `outcome` is `ok`, `cancelled`, `rejected`, `timeout`, `busy`, `preempted`, `disconnected`, `notes_off` or an error code. `audio_ms` is set for audio kinds only.
+- **Events** are one per `/v1/stream` utterance (`start` to final, cancel or error, not per socket), per `/v1/transcribe`, `/v1/notes/{structure,reorganize,edit}` and `/v1/speakers/model` request. Health, `/v1/correction/profiles` and `/v1/correction/settings` are not recorded. `kind` is `dictation`, `notes_segment` (a live stream utterance with the `live_notes` style), `notes_retranscribe` (a flagged re-transcription, regardless of style), `transcribe`, `notes_structure`, `notes_reorganize`, `notes_edit` or `speaker_model`. `outcome` is `ok`, `cancelled`, `rejected`, `timeout`, `busy`, `preempted`, `disconnected`, `notes_off` or an error code. `audio_ms` is set for audio kinds only.
 - **Refusals** (bad or missing token on a protected endpoint, WS auth failures including the pending-auth cap, a revoked device's token anywhere) are counters with the last time only; an unauthenticated health probe is not counted.
 - **Retention.** Written to `device-activity.json` (`0600`, atomically replaced, at most every 5 s and on shutdown) so a restart keeps it; at most `[activity] max_events` (5000) events and `max_days` (30) days, pruned at read time. `[activity] keep = false` or `PUT /v1/devices/activity/settings {"keep":false}` stops recording and deletes the file's contents; that choice is saved with it and wins over `server.toml`. Nothing is logged.
 

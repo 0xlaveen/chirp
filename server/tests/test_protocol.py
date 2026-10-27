@@ -50,6 +50,7 @@ def test_health_redaction(client, settings):
         "notes_correction": True,
         "notes_reorganize": True,
         "notes_context": True,
+        "notes_retranscribe": True,
         "notes_edit": True,
         "notes_speakers": True,
         "learned": 1,
@@ -396,3 +397,171 @@ def test_stop_before_any_audio_returns_empty_final_and_socket_stays_usable(clien
         assert final["text"] == "" and final["raw"] == ""
         ws.send_json(START)
         assert ws.receive_json()["type"] == "ready"
+
+
+@pytest.mark.parametrize("value", [None, 0, 1, "true", [], {}])
+def test_retranscribe_requires_bool(client, value):
+    with client.websocket_connect("/v1/stream", headers=HEADERS) as ws:
+        ws.send_json({**START, "retranscribe": value})
+        assert ws.receive_json()["code"] == "bad_audio"
+
+
+@pytest.mark.parametrize("profile", ["default", "live_notes"])
+@pytest.mark.parametrize("timed", [True, False])
+@pytest.mark.parametrize("correction", [True, False])
+def test_retranscribe_final_parity_without_preview(settings, speakers, profile, timed, correction):
+    from chirp_server.config import CorrectionConfig
+    from chirp_server.correction import CorrectionResult
+    from chirp_server.engine.fake import FakeStream
+
+    feeds, buffered, contexts = [], [], []
+
+    class Stream(FakeStream):
+        def feed(self, pcm):
+            feeds.append(len(pcm))
+            return super().feed(pcm)
+
+        def buffer(self, pcm):
+            buffered.append(len(pcm))
+            super().buffer(pcm)
+
+    class Engine(FakeEngine):
+        def open_stream(self):
+            return Stream(self)
+
+    class Corrector:
+        async def process(self, raw, *args, **kwargs):
+            contexts.append(kwargs.get("context"))
+            return CorrectionResult(raw + " Polished.", corrected=True)
+
+    settings.correction = CorrectionConfig(mode="endpoint")
+    engine = Engine(timed=timed)
+    results = []
+    with TestClient(create_app(settings, engine, TOKEN, Corrector(), speakers)) as client:
+        with client.websocket_connect("/v1/stream", headers=HEADERS) as ws:
+            for retranscribe in (False, True):
+                ws.send_json(
+                    {
+                        **START,
+                        "retranscribe": retranscribe,
+                        "correction": correction,
+                        "correction_profile": profile,
+                        "word_timings": True,
+                        "speakers": {"session": "synthetic-note-session"},
+                    }
+                )
+                ready = ws.receive_json()
+                assert ready["type"] == "ready"
+                ws.send_bytes(PCM)
+                if not retranscribe:
+                    assert ws.receive_json()["type"] == "partial"
+                # Ensure audio has been received before stop; previews must remain disabled.
+                assert client.get("/v1/health", headers=HEADERS).json()["ready"]
+                ws.send_json({"type": "stop", "context": "Synthetic preceding segment."})
+                if correction:
+                    correcting = ws.receive_json()
+                    assert correcting["type"] == "correcting"
+                    assert ("words" in correcting) is timed
+                result = ws.receive_json()
+                assert result["type"] == "final"
+                if retranscribe:
+                    assert result.pop("engine") == ready["engine"]
+                    assert result["timings_ms"]["first_partial"] is None
+                else:
+                    assert "engine" not in result
+                results.append({k: v for k, v in result.items() if k != "timings_ms"})
+    assert results[0] == results[1]
+    assert ("words" in results[1]) is timed
+    assert feeds == [len(PCM) // 2]
+    assert buffered == [len(PCM) // 2]
+    assert contexts == (
+        ["Synthetic preceding segment." if profile == "live_notes" else None] * 2
+        if correction
+        else []
+    )
+
+
+def test_live_stream_preempts_queued_retranscribe(settings):
+    import threading
+
+    settings.idle_seconds = 10
+    settings.queue_timeout = settings.retranscribe_queue_timeout = 5
+    app = create_app(settings, FakeEngine(), TOKEN)
+    lease = app.state.worker.lease
+    acquire = lease.acquire
+    queued_retranscribe, queued_live = threading.Event(), threading.Event()
+
+    async def observed_acquire(*, retranscribe=False):
+        if lease.locked():
+            (queued_retranscribe if retranscribe else queued_live).set()
+        return await acquire(retranscribe=retranscribe)
+
+    lease.acquire = observed_acquire
+    with TestClient(app) as client:
+        with (
+            client.websocket_connect("/v1/stream", headers=HEADERS) as first,
+            client.websocket_connect("/v1/stream", headers=HEADERS) as replay,
+            client.websocket_connect("/v1/stream", headers=HEADERS) as live,
+        ):
+            first.send_json({**START, "retranscribe": True})
+            assert first.receive_json()["type"] == "ready"
+            first.send_bytes(PCM)
+            replay.send_json({**START, "retranscribe": True})
+            assert queued_retranscribe.wait(5)
+            live.send_json(START)
+            assert queued_live.wait(5)
+            first.send_json({"type": "stop"})
+            assert first.receive_json()["type"] == "final"
+            # Live arrived second but receives the next lease, ahead of the older replay.
+            assert live.receive_json()["type"] == "ready"
+            live.send_bytes(PCM)
+            assert live.receive_json()["type"] == "partial"
+            live.send_json({"type": "stop"})
+            assert final(live)["type"] == "final"
+            assert replay.receive_json()["type"] == "ready"
+            replay.send_bytes(PCM)
+            replay.send_json({"type": "stop"})
+            assert replay.receive_json()["type"] == "final"
+
+
+def test_retranscribe_busy_uses_its_own_deadline(settings):
+    import time
+
+    settings.idle_seconds = 10
+    settings.queue_timeout = 0.02
+    settings.retranscribe_queue_timeout = 0.12
+    with TestClient(create_app(settings, FakeEngine(), TOKEN)) as client:
+        with client.websocket_connect("/v1/stream", headers=HEADERS) as held:
+            held.send_json(START)
+            assert held.receive_json()["type"] == "ready"
+            for retranscribe in (False, True):
+                with client.websocket_connect("/v1/stream", headers=HEADERS) as queued:
+                    started = time.monotonic()
+                    queued.send_json({**START, "retranscribe": retranscribe})
+                    assert queued.receive_json()["code"] == "busy"
+                    elapsed = time.monotonic() - started
+                    assert elapsed >= (
+                        settings.retranscribe_queue_timeout
+                        if retranscribe
+                        else settings.queue_timeout
+                    )
+        with client.websocket_connect("/v1/stream", headers=HEADERS) as retry:
+            retry.send_json({**START, "retranscribe": True})
+            assert retry.receive_json()["type"] == "ready"
+
+
+@pytest.mark.parametrize("retranscribe", [False, True])
+def test_retranscribe_empty_final_and_cancel_reuse(client, retranscribe):
+    with client.websocket_connect("/v1/stream", headers=HEADERS) as ws:
+        ws.send_json({**START, "retranscribe": retranscribe})
+        ready = ws.receive_json()
+        ws.send_bytes(PCM[:1600])
+        ws.send_json({"type": "cancel"})
+        ws.send_json({**START, "retranscribe": retranscribe})
+        assert ws.receive_json()["type"] == "ready"
+        ws.send_json({"type": "stop"})
+        result = ws.receive_json()
+        assert result["type"] == "final" and result["raw"] == ""
+        assert ("engine" in result) is retranscribe
+        if retranscribe:
+            assert result["engine"] == ready["engine"]

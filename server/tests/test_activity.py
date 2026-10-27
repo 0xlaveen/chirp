@@ -522,3 +522,13 @@ def test_session_files_are_only_the_activity_file(settings, tmp_path, monkeypatc
     assert "device-activity.json" in names
     assert not [n for n in names if n.endswith(".tmp")]
     assert not [p for p in written if "debug" in p.parts]
+
+
+@pytest.mark.parametrize("profile", ["default", "live_notes"])
+def test_retranscribe_activity_overrides_profile_kind(app, settings, profile):
+    dictate(app, retranscribe=True, correction_profile=profile)
+    (event,) = settled(app, settings, 1)["events"]
+    assert event["kind"] == "notes_retranscribe"
+    assert event["audio_ms"] == len(PCM) // 32
+    assert event["profile"] == profile
+    assert event["outcome"] == "ok"

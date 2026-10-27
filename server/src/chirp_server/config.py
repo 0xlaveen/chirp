@@ -230,6 +230,17 @@ class Settings:
     auth_seconds: float = 5.0
     max_pending_auth: int = 8
     queue_timeout: float = 10.0
+    retranscribe_queue_timeout: float = 60.0
+
+    def __post_init__(self):
+        value = self.retranscribe_queue_timeout
+        if (
+            isinstance(value, bool)
+            or not isinstance(value, int | float)
+            or not math.isfinite(value)
+            or value <= 0
+        ):
+            raise ValueError("Invalid retranscribe_queue_timeout")
 
     @property
     def activity_path(self) -> Path:
@@ -243,6 +254,7 @@ class Settings:
         if path.exists():
             data = tomllib.loads(path.read_text())
             result.engine = data.get("engine", result.engine)
+            result.retranscribe_queue_timeout = data.get("retranscribe_queue_timeout", 60.0)
             result.sensevoice_num_threads = data.get("sensevoice", {}).get("num_threads", 4)
             debug = data.get("debug", {})
             result.debug_retain = debug.get("retain", False)
@@ -266,6 +278,7 @@ class Settings:
             # A Mac model-picker selection is an MLX choice, not a SenseVoice path.
             result.model_dir = None
             result.speech_model = "sensevoice-small"
+        result.__post_init__()
         return result
 
 

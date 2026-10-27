@@ -27,6 +27,7 @@ async def run(args):
                     "encoding": "pcm_s16le",
                     "client": "mac",
                     "correction": args.correction,
+                    **({"retranscribe": True} if args.retranscribe else {}),
                 }
             )
         )
@@ -86,6 +87,9 @@ if __name__ == "__main__":
     parser.add_argument("--token-file", type=Path, default=config_dir() / "token")
     parser.add_argument("--correction", action="store_true")
     parser.add_argument("--fast", action="store_true")
+    parser.add_argument(
+        "--retranscribe", action="store_true", help="Buffer kept audio; no previews"
+    )
     parser.add_argument(
         "--show-text",
         action="store_true",

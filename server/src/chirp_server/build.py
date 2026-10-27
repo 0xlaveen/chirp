@@ -19,6 +19,7 @@ CAPABILITIES = (
     "notes_correction",
     "notes_reorganize",
     "notes_context",
+    "notes_retranscribe",
     "notes_edit",
     "notes_speakers",
     # `GET/POST /v1/speakers/voices` and `final.speakers.matches` (saved voices, #247).

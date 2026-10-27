@@ -246,11 +246,49 @@ A socket carries sequential utterances: `start` → binary PCM frames → `stop`
 | Audio format | Mono, little-endian signed 16-bit PCM at 16 kHz |
 | Frame size | Frames of 1 MB or more are rejected |
 | Utterance length | 120 s maximum |
-| Concurrent utterances | One model, one utterance at a time; requests wait up to 10 s then get `busy` |
+| Concurrent utterances | One model, one utterance at a time; live requests wait up to 10 s, re-transcription up to 60 s, then get `busy` |
 | First-frame auth deadline | 5 s; at most 8 sockets may await credentials concurrently |
 | Idle socket | Closed after 60 s without client traffic |
 
 Cancel or disconnect during finalization discards the utterance: no correction request is sent (an in-flight one is cancelled) and nothing is retained. A cancelled utterance delivers no final and no error acknowledgement; the socket stays usable for the next start. `POST /v1/transcribe` uses raw decoding — no client correction request.
+
+### Re-transcribe kept Notes audio
+
+Authenticated health advertises `notes_retranscribe: true`, also in `capabilities` (API level
+stays 2). Clients decode one kept clip in memory to 16 kHz mono PCM16, then reuse `/v1/stream`:
+
+```json
+{"type":"start","sample_rate":16000,"encoding":"pcm_s16le","client":"mac","correction":true,"correction_profile":"live_notes","word_timings":true,"retranscribe":true}
+```
+
+Wait for `ready`, send buffered PCM frames (at most 100 ms each), then `stop`. A `stop.context`
+of at most 500 characters can supply the previous segment's new text. `retranscribe` must be a
+boolean; other types return `bad_audio`. Omitting it or sending `false` preserves live behavior.
+The flag also works with the `default` profile and optional `speakers`.
+
+Re-transcription buffers all audio and performs no preview inference or `partial` messages.
+The full final decode, optional `correcting`, clean-up, context, words and speaker response use
+the existing pipeline. A re-transcription final adds `engine`, matching `ready.engine`, for
+per-segment provenance; live clients continue to record `ready.engine`. No model is chosen per
+request: the currently loaded speech model handles every clip. Engines without word timings
+omit `words` as before. `timings_ms.first_partial` is null.
+
+Live dictation, Live Notes and `/v1/transcribe` get the engine ahead of queued re-transcriptions;
+FIFO order is preserved within each priority. A running clip finishes before giving way. The
+separate `retranscribe_queue_timeout` defaults to 60 seconds and can be set as a top-level,
+positive finite number in `server.toml`; live requests retain their 10-second queue budget.
+Queue expiry sends `busy` and closes the socket. Clients retry the same clip on a new socket
+with 2, 4, 8, … seconds of backoff capped at 30 seconds, at most 10 tries. After `stop`, use the
+existing 25-second final deadline; on `correcting`, extend it to authenticated health's
+`operation_deadlines.notes_correction` plus 5 seconds. Per-clip `engine`, `bad_audio` and
+`too_long` errors keep that segment's old text; `auth` stops the run and requires re-pairing.
+
+The client requests consent for each run and sends audio only to its paired Chirp server.
+The server keeps audio and text in memory, with the same opt-in `--debug-retain` exception
+and `ready.debug_retention` warning as live speech. Clean-up sends only text to its configured
+destination. Device activity records `notes_retranscribe` with `audio_ms`, style and outcome;
+logs contain only the existing session, byte counts, levels and timings. There is no server
+re-transcription switch. Clients require the capability rather than falling back to live mode.
 
 ### Error codes
 
@@ -831,7 +869,7 @@ The managed-cleanup prewarm/keep_loaded benchmark is `HF_HUB_OFFLINE=1 uv run py
 
 Notes on the tools:
 
-- The simulator streams 50 ms frames at real-time pace and prints partial arrival counts and final timings. `--show-text` is for synthetic/public fixtures in an unrecorded local terminal only.
+- The simulator streams 50 ms frames at real-time pace and prints partial arrival counts and final timings. `--fast --retranscribe` exercises buffered kept audio with no previews. `--show-text` is for synthetic/public fixtures in an unrecorded local terminal only.
 - Model tests generate Samantha `say` fixtures outside the repository, never capture a microphone, and check keywords without including recognized text in assertion output.
 - The benchmark reports load plus warmup, median of three warm decodes, WER, peak process RSS, first partial, changed-partial cadence and stop-to-final latency for nominal 5/15/60 second clips. Fixtures contain complete synthetic sentences, so actual durations differ slightly. Results and hardware/load caveats are in [bench.md](../docs/bench.md).
 

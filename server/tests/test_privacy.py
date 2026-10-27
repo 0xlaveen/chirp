@@ -3,6 +3,7 @@ import os
 import time
 from pathlib import Path
 
+import pytest
 from conftest import HEADERS, PCM, START, TOKEN, has_mode, use_home
 from starlette.testclient import TestClient
 from test_protocol import final
@@ -63,12 +64,13 @@ def test_no_retention(settings, monkeypatch, tmp_path, caplog):
     assert TOKEN not in caplog.text
 
 
-def test_debug_visibility_permissions_purge(settings):
+@pytest.mark.parametrize("retranscribe", [False, True])
+def test_debug_visibility_permissions_purge(settings, retranscribe):
     settings.debug_retain = True
     with TestClient(create_app(settings, FakeEngine(), TOKEN)) as client:
         assert client.get("/v1/health", headers=HEADERS).json()["debug_retention"]
         with client.websocket_connect("/v1/stream", headers=HEADERS) as ws:
-            ws.send_json(START)
+            ws.send_json({**START, "retranscribe": retranscribe})
             assert ws.receive_json()["debug_retention"]
             ws.send_bytes(PCM)
             ws.send_json({"type": "stop"})
@@ -124,3 +126,29 @@ def test_loopback_hosts():
 def test_no_sensitive_fixture_files_in_repo():
     root = Path(__file__).resolve().parents[1]
     assert not list((root / "fixtures").glob("*.wav"))
+
+
+def test_retranscribe_writes_only_activity(settings, tmp_path, monkeypatch, caplog):
+    from chirp_server.activity import Activity
+
+    home = tmp_path / "home"
+    home.mkdir()
+    use_home(monkeypatch, home)
+    caplog.set_level(logging.INFO, logger="chirp")
+    engine = FakeEngine("Private synthetic retranscription sentinel.")
+    with TestClient(create_app(settings, engine, TOKEN)) as client:
+        before = {p for p in tmp_path.rglob("*") if p.is_file()}
+        with client.websocket_connect("/v1/stream", headers=HEADERS) as ws:
+            ws.send_json({**START, "retranscribe": True, "correction_profile": "live_notes"})
+            assert ws.receive_json()["debug_retention"] is False
+            ws.send_bytes(PCM)
+            ws.send_json({"type": "stop", "context": "Private synthetic context sentinel."})
+            assert ws.receive_json()["type"] == "final"
+    after = {p for p in tmp_path.rglob("*") if p.is_file()}
+    assert after - before == {settings.activity_path}
+    data = settings.activity_path.read_text()
+    (event,) = Activity(settings.activity_path).events
+    assert event["kind"] == "notes_retranscribe" and event["audio_ms"] == len(PCM) // 32
+    for private in (engine.text, TOKEN, "Private synthetic context sentinel."):
+        assert private not in caplog.text and private not in data
+    assert not settings.debug_dir.exists()
