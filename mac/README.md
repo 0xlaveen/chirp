@@ -128,7 +128,7 @@ option off nothing changes. Design notes and the rejected variants are in [docs/
 
 ### Sounds
 
-Settings → Dictation, off by default: a quiet cue when dictation starts and another when capture ends. Packs: **Chirp** (default; a soft songbird), **Soft** (marimba, a fifth up/down), **Glass**, **Click**, **System** (stock Tink/Pop) and **Custom…** (your own aiff/wav/caf/m4a/mp3 for start and stop, copied into `~/Library/Application Support/Chirp/Sounds/`). The Sounds rows have the on/off switch, the pack picker with ▶ previews and a volume slider (default 60 %). The start cue finishes before the microphone opens (it waits min(cue + 20 ms, 300 ms); a longer start sound is trimmed to 0.3 s), so it is never recorded. The packs are synthesised by `scripts/make-sounds.swift`; see [docs/sounds.md](docs/sounds.md).
+Settings → Dictation, off by default: a quiet cue when dictation starts and another when capture ends. Packs: **Chirp** (default; a soft songbird), **Soft** (marimba, a fifth up/down), **Glass**, **Click**, **System** (stock Tink/Pop) and **Custom…** (your own aiff/wav/caf/m4a/mp3 for start and stop, copied into `~/Library/Application Support/Chirp/Sounds/`). The Sounds rows have the on/off switch, the pack picker with ▶ previews and a volume slider (default 60 %). Dictation never waits for the start cue: the microphone opens at once, and the cue's own window (its length + 40 ms; a longer start sound is trimmed to 0.3 s) is zeroed in what is sent, so the cue is never transcribed. The packs are synthesised by `scripts/make-sounds.swift`; see [docs/sounds.md](docs/sounds.md).
 
 ### Silence guard
 
