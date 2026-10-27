@@ -254,20 +254,26 @@ struct NotesTitleHeader: View {
         let open = d.openTodoCount()
         if open > 0 { facts.append("☐ " + NotesLibraryText.open(open)) }
         if let bytes = entry?.audioBytes, bytes > 0 { facts.append("Audio " + NotesLibraryText.size(bytes)) }
-        return HStack(spacing: 8) {
-            if model.state.isLive {
-                Image(systemName: model.isPaused ? "pause.circle" : "record.circle.fill")
-                    .foregroundStyle(model.isPaused ? NotesInk.secondary : Color.chirp.record).accessibilityHidden(true)
-                Text(model.isPaused ? NotesStatus.paused : NotesLibraryText.recording)
-                    .pondFont(.meta, weight: .semibold)
-                    .foregroundStyle(model.isPaused ? NotesInk.secondary : Color.chirp.record)
+        let line = Text(facts.joined(separator: "  ·  ")).pondFont(.meta).foregroundStyle(NotesInk.secondary)
+        // One line while it fits; otherwise the state sits above the facts, so neither wraps into a narrow column.
+        return ViewThatFits(in: .horizontal) {
+            HStack(spacing: 8) { state(entry); line.fixedSize() }
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 8) { state(entry) }
+                line.fixedSize(horizontal: false, vertical: true)
             }
-            if entry?.recovered == true { RecoveredBadge() }
-            Text(facts.joined(separator: "  ·  "))
-                .pondFont(.meta)
-                .foregroundStyle(NotesInk.secondary)
-                .fixedSize(horizontal: false, vertical: true)
         }
+    }
+
+    @ViewBuilder private func state(_ entry: NotesLibraryEntry?) -> some View {
+        if model.state.isLive {
+            Image(systemName: model.isPaused ? "pause.circle" : "record.circle.fill")
+                .foregroundStyle(model.isPaused ? NotesInk.secondary : Color.chirp.record).accessibilityHidden(true)
+            Text(model.isPaused ? NotesStatus.paused : NotesLibraryText.recording)
+                .pondFont(.meta, weight: .semibold)
+                .foregroundStyle(model.isPaused ? NotesInk.secondary : Color.chirp.record)
+        }
+        if entry?.recovered == true { RecoveredBadge() }
     }
 }
 
