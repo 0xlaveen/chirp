@@ -47,6 +47,7 @@ import java.time.format.DateTimeFormatter
 import java.time.temporal.ChronoUnit
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 
@@ -150,6 +151,8 @@ internal fun NotesLibraryScreen(
     LaunchedEffect(selected) {
         selected?.takeIf { it != liveId && it != reader.document.uid }?.let { reader.open(it) }
     }
+    // New search terms show their results from the top; the first value is the restored query, whose position is kept.
+    LaunchedEffect(trash) { snapshotFlow { query }.drop(1).collect { (if (trash) trashList else list).scrollToItem(0) } }
     // The recording card joins the top of the list; keep it in view rather than leaving the list anchored on the row below.
     LaunchedEffect(recording, trash) { if (recording && !trash && list.firstVisibleItemIndex <= 1) list.scrollToItem(0) }
     fun open(id: String) { focus.clearFocus(); reader.keepSession(); selected = id }

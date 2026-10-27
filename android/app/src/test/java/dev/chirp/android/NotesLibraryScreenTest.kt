@@ -416,6 +416,8 @@ class NotesLibraryScreenTest {
         search("summer holiday")
         compose.waitUntil(5000) { compose.onAllNodesWithText("No results for “summer holiday”").fetchSemanticsNodes().isNotEmpty() }
         compose.onNodeWithText("No results for “summer holiday”").assertExists()
+        // A new search starts at the top, where the way back to the recording is.
+        compose.onNode(hasStateDescription("Recording")).assertIsDisplayed()
         shot("no-results")
         if (fontScale != 1f) return
         search("")
