@@ -479,7 +479,8 @@ final class ChirpNotesUITests: XCTestCase {
         XCTAssertTrue(editor.waitForExistence(timeout: 5), "New note opens the editor")
         XCTAssertEqual(app.buttons["chirp.notes.title"].label, "Rename Untitled note")
         XCTAssertFalse(app.buttons["chirp.notes.stop"].exists, "nothing records")
-        if !editor.hasKeyboardFocus { editor.tap() }
+        // New note opens ready to type; `hasKeyboardFocus` is readable only through a predicate.
+        if !Self.waitFor(editor, "hasKeyboardFocus == true", timeout: 3) { editor.tap() }
         editor.typeText("Groceries\nBread and figs")
         screenshot("notes-new-note", app)
         app.buttons["chirp.notes.edit"].tap()
