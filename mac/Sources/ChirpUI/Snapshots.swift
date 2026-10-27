@@ -888,6 +888,7 @@ public enum Snapshots {
                               backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
         window.toolbarStyle = .unified
+        library.windowResized(size)
         window.contentViewController = NSHostingController(rootView: NotesView(model: model, library: library))
         window.setContentSize(size)
         return window
@@ -902,7 +903,8 @@ public enum Snapshots {
     }
 
     /// A Notes window scenario: the demo meeting open in a populated library, recording, 3:12 in.
-    static func notes(_ name: String, _ configure: @escaping (NotesModel, NotesLibraryModel) -> Void) -> Scenario {
+    static func notes(_ name: String, size: CGSize = CGSize(width: 1000, height: 620),
+                      _ configure: @escaping (NotesModel, NotesLibraryModel) -> Void) -> Scenario {
         Scenario(name: "notes-\(name)", window: {
             let model = NotesModel()
             model.dictationKey = "⌥"
@@ -926,7 +928,7 @@ public enum Snapshots {
             library.selection = .note(d.id)
             configure(model, library)
             if !model.state.isActive, library.recordingID == model.document.id { library.recordingID = nil }
-            return notesWindow(model, library)
+            return notesWindow(model, library, size: size)
         })
     }
 
@@ -1588,7 +1590,8 @@ private final class SubmenuRowView: NSView {
             for narrow in [false, true] {
                 let geometry = narrow ? "760" : "1120"
                 for state in ["recording", "paused", "empty", "no-results", "error", "transcript", "deleted", "focus"] {
-                    let base = notes("modern-\(state)-\(geometry)-\(type)") { model, library in
+                    let base = notes("modern-\(state)-\(geometry)-\(type)",
+                                     size: narrow ? NotesViewMetrics.minimumSize : NotesViewMetrics.defaultSize) { model, library in
                         if large { for _ in 0..<5 { library.textSize.increase() } }
                         if state == "paused" { model.state = .paused }
                         if state == "empty" {
@@ -1605,11 +1608,7 @@ private final class SubmenuRowView: NSView {
                             library.deleted = [NotesLibraryEntry(id: UUID(), title: "Standup scratch", snippet: "Blocked on the staging deploy; pairing with Sam after lunch.", createdAt: notesNow, updatedAt: notesNow, deletedAt: notesNow.addingTimeInterval(-2 * 86400), audioBytes: 640_000)]
                         }
                     }
-                    scenes.append(Scenario(name: base.name, window: {
-                        let window = base.window!()
-                        window.setContentSize(narrow ? NotesViewMetrics.minimumSize : NotesViewMetrics.defaultSize)
-                        return window
-                    }))
+                    scenes.append(base)
                 }
             }
             scenes.append(Scenario(name: "history-modern-\(type)", window: {

@@ -212,31 +212,55 @@ import Testing
     }
 
     /// The minimum window cannot fit sidebar + note + transcript column (the baseline measured a 159 pt line of text),
-    /// so narrow windows put the same transcript under the note. Resizing never forgets that the user asked for it.
+    /// so narrow windows put the same transcript under the note. Each window opens at its size, as the app's does.
     @Test func transcriptKeepsUsefulNoteMeasureAcrossWindowSizes() throws {
+        for (width, large) in [(760.0, false), (900, false), (1120, false), (760, true), (1120, true)] {
+            let model = NotesModel()
+            model.document = Snapshots.demoNotes()
+            let library = NotesLibraryModel()
+            library.selection = .note(model.document.id)
+            library.showsInspector = true
+            if large { (0..<5).forEach { _ in library.textSize.increase() } }
+            let window = Snapshots.notesWindow(model, library, size: CGSize(width: width, height: 460))
+            defer { close(window) }
+            settle(window)
+            let editor = try #require(window.contentView.flatMap { editors($0).first })
+            let measure = editor.frame.width - 2 * editor.textContainerInset.width
+            let compact = NotesViewMetrics.compactTranscript(windowWidth: width)
+            #expect(library.transcriptBelow == compact)
+            #expect(measure >= 320, "Window \(width): text measure \(measure)")
+            #expect(editor.visibleRect.height >= 120, "Window \(width): the note keeps room to write")
+            if compact {
+                #expect(library.compactTranscriptSize.width >= measure && library.compactTranscriptSize.height >= 160,
+                        "Window \(width): the transcript is shown under the note")
+            } else {
+                // The transcript column takes at least its minimum width beside the sidebar and the note.
+                #expect(editor.frame.width <= width - NotesViewMetrics.sidebar.min - NotesViewMetrics.inspector.min,
+                        "Window \(width): the transcript column is shown (editor \(editor.frame.width))")
+            }
+            print("UX geometry window=\(width) text=\(Int(library.textSize.factor * 100))% editor=\(editor.frame.width) measure=\(measure) visible=\(editor.visibleRect.height) transcript=\(compact ? "below \(library.compactTranscriptSize)" : "column")")
+        }
+    }
+
+    /// Resizing moves the transcript between the column and the panel under the note and never forgets the user's
+    /// choice. (An offscreen window never finishes the inspector column's own show/hide transition, on the base commit
+    /// too, so this checks the presentation state and the panel; the column geometry is checked above.)
+    @Test func resizingMovesTheTranscriptAndKeepsThePreference() throws {
         let model = NotesModel()
         model.document = Snapshots.demoNotes()
         let library = NotesLibraryModel()
         library.selection = .note(model.document.id)
         library.showsInspector = true
-        let window = Snapshots.notesWindow(model, library, size: CGSize(width: 760, height: 460))
+        let window = Snapshots.notesWindow(model, library, size: NotesViewMetrics.defaultSize)
         defer { close(window) }
-        for (width, large) in [(760.0, false), (900, false), (1120, false), (760, true), (1120, true), (760, false)] {
-            large ? (0..<5).forEach { _ in library.textSize.increase() } : library.textSize.reset()
+        for width in [1120.0, 760, 1120, 900] {
             library.compactTranscriptSize = .zero
             window.setContentSize(CGSize(width: width, height: 460))
             settle(window)
-            let editor = try #require(window.contentView.flatMap { editors($0).first })
-            let measure = editor.frame.width - 2 * editor.textContainerInset.width
             let compact = NotesViewMetrics.compactTranscript(windowWidth: width)
-            #expect(measure >= 320, "Window \(width): text measure \(measure)")
-            #expect(editor.visibleRect.height >= 120, "Window \(width): the note keeps room to write")
-            #expect(library.showsInspector, "Automatic presentation changes must preserve the user's preference")
-            if compact {
-                #expect(library.compactTranscriptSize.width >= measure && library.compactTranscriptSize.height >= 160,
-                        "Window \(width): the transcript is shown under the note")
-            }
-            print("UX geometry window=\(width) text=\(Int(library.textSize.factor * 100))% editor=\(editor.frame.width) measure=\(measure) visible=\(editor.visibleRect.height) transcript=\(compact ? "below \(library.compactTranscriptSize)" : "column")")
+            #expect(library.transcriptBelow == compact, "Window \(width)")
+            #expect(library.showsInspector, "Window \(width): resizing keeps the user's choice")
+            #expect((library.compactTranscriptSize.height > 0) == compact, "Window \(width): panel \(library.compactTranscriptSize)")
         }
         library.setInspector(false)
         settle(window)

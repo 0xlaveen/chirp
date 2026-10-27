@@ -178,8 +178,20 @@ public final class NotesLibraryModel {
     public var confirmingPurge: NotesLibraryEntry?
     /// The library list has keyboard focus (AppKit's first responder), drawn apart from the selection.
     public var sidebarFocused = false
+    /// The window is too narrow for a transcript column, so the transcript sits under the note. The window's creator
+    /// seeds it from the window size, so a window that opens narrow (or wide) never flips its inspector on the first
+    /// layout; `windowResized` keeps it current.
+    public var transcriptBelow = false
+    var transcriptBelowHeight = NotesViewMetrics.compactTranscriptHeight(windowHeight: NotesViewMetrics.minimumSize.height)
     /// The transcript's last size while it sat under the note in a narrow window; for tests.
     @ObservationIgnored var compactTranscriptSize = CGSize.zero
+
+    public func windowResized(_ size: CGSize) {
+        let below = NotesViewMetrics.compactTranscript(windowWidth: size.width)
+        if below != transcriptBelow { transcriptBelow = below }
+        let height = NotesViewMetrics.compactTranscriptHeight(windowHeight: size.height)
+        if height != transcriptBelowHeight { transcriptBelowHeight = height }
+    }
     /// The transcript inspector (⌥⌘T) and View ▸ Show Markdown.
     public var showsInspector = false
     public var showMarkdown = false

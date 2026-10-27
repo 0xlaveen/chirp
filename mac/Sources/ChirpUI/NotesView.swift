@@ -12,8 +12,8 @@ public enum NotesViewMetrics {
     static let inspector = (min: CGFloat(260), ideal: CGFloat(300), max: CGFloat(420))
     /// Below this width the transcript moves under the note: sidebar + note + inspector would crush the note's measure.
     static let transcriptColumnMinWindow: CGFloat = 1000
-    static func compactTranscript(windowWidth: CGFloat) -> Bool { windowWidth < transcriptColumnMinWindow }
-    static func compactTranscriptHeight(windowHeight: CGFloat) -> CGFloat { min(300, max(160, windowHeight * 0.38)) }
+    public static func compactTranscript(windowWidth: CGFloat) -> Bool { windowWidth < transcriptColumnMinWindow }
+    public static func compactTranscriptHeight(windowHeight: CGFloat) -> CGFloat { min(300, max(160, windowHeight * 0.38)) }
 }
 
 /// Text inks that keep their value inside vibrant sidebars, selected rows and the inspector, where a hierarchical
@@ -59,8 +59,6 @@ public struct NotesView: View {
     private var shown: NotesModel { library.displayed(model) }
 
     public var body: some View {
-        GeometryReader { geometry in
-        let compact = NotesViewMetrics.compactTranscript(windowWidth: geometry.size.width)
         NavigationSplitView {
             NotesSidebar(model: model, library: library)
                 // The sidebar sits on `surfaceRaised` (under the toolbar too), so it belongs to the Pond beside the
@@ -73,23 +71,23 @@ public struct NotesView: View {
                 detail
                 // Narrow windows: a third column would leave the note about 160 pt of text, so the same transcript sits
                 // under the note instead. It is not modal: typing, recording and replay all keep working.
-                if compact, library.showsInspector {
+                if library.transcriptBelow, library.showsInspector {
                     Divider()
                     NotesInspector(model: shown, library: library)
-                        .frame(height: NotesViewMetrics.compactTranscriptHeight(windowHeight: geometry.size.height))
+                        .frame(height: library.transcriptBelowHeight)
                         .background(Color.chirp.surfaceRaised)
                         .onGeometryChange(for: CGSize.self, of: \.size) { library.compactTranscriptSize = $0 }
                 }
             }
             // The user's choice survives resizing: only the presentation changes with the width.
-            .inspector(isPresented: Binding(get: { library.showsInspector && !compact },
-                                            set: { if !compact { library.setInspector($0) } })) {
+            .inspector(isPresented: Binding(get: { library.showsInspector && !library.transcriptBelow },
+                                            set: { if !library.transcriptBelow { library.setInspector($0) } })) {
                 NotesInspector(model: shown, library: library)
                     .inspectorColumnWidth(min: NotesViewMetrics.inspector.min, ideal: NotesViewMetrics.inspector.ideal,
                                           max: NotesViewMetrics.inspector.max)
             }
         }
-        }
+        .onGeometryChange(for: CGSize.self, of: \.size) { library.windowResized($0) }
         .searchable(text: $library.query, placement: .sidebar, prompt: "Search notes")
         .toolbar { NotesToolbar(model: model, library: library) }
         .navigationTitle(library.selection == .recentlyDeleted ? NotesLibraryText.recentlyDeleted : shown.displayTitle)
