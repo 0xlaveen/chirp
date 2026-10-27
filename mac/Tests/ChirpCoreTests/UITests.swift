@@ -484,9 +484,10 @@ import Testing
 
 @MainActor
 @Suite struct SnapshotTests {
-    private func render() throws -> (URL, [URL]) {
+    private func render(_ names: [String]? = nil) throws -> (URL, [URL]) {
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("chirp-snap-\(UUID().uuidString)")
-        return (dir, try Snapshots.render(to: dir))
+        let scenarios = names.map { names in Snapshots.allScenarios.filter { names.contains($0.name) } }
+        return (dir, try Snapshots.render(to: dir, scenarios: scenarios))
     }
 
     @Test func rendersEveryStateInLightAndDarkAsNonBlankPNGs() throws {
@@ -524,9 +525,10 @@ import Testing
     }
 
     @Test func lightAndDarkAreDifferentImages() throws {
-        let (dir, _) = try render()
+        let names = ["hud-listening", "settings-general-ready", "menu-ready"]
+        let (dir, _) = try render(names)
         defer { try? FileManager.default.removeItem(at: dir) }
-        for name in ["hud-listening", "settings-general-ready", "menu-ready"] {
+        for name in names {
             let light = try Data(contentsOf: dir.appendingPathComponent("\(name)-light.png"))
             let dark = try Data(contentsOf: dir.appendingPathComponent("\(name)-dark.png"))
             #expect(light != dark)
@@ -534,7 +536,7 @@ import Testing
     }
 
     @Test func multilineHUDIsTallerThanASingleLineOne() throws {
-        let (dir, _) = try render()
+        let (dir, _) = try render(["hud-listening-multiline", "hud-listening-no-text"])
         defer { try? FileManager.default.removeItem(at: dir) }
         func height(_ n: String) throws -> Int {
             try #require(NSBitmapImageRep(data: Data(contentsOf: dir.appendingPathComponent(n)))).pixelsHigh
