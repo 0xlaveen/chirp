@@ -133,3 +133,10 @@ def test_jobs_parses_launchctl_list(monkeypatch):
     monkeypatch.setattr(restart, "_run", lambda *a, **k: SimpleNamespace(stdout=listing))
     assert restart.jobs() == {"dev.chirp.server": 4242, "org.example.chirp": 17}
     assert restart.owner(17) == "org.example.chirp" and restart.owner(5) is None
+
+
+def test_retranscribe_is_an_additive_api_level_two_capability(client):
+    health = client.get("/v1/health", headers=HEADERS).json()
+    assert health["api"] == 2
+    assert health["notes_retranscribe"] is True
+    assert "notes_retranscribe" in health["capabilities"]

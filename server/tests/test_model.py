@@ -139,3 +139,96 @@ def test_real_model_word_timings_align_with_text(settings):
     stable_seen = any(w["stable"] for w in partials[-1]["words"])
     assert stable_seen
     assert not any(w["stable"] for w in partials[0]["words"])
+
+
+def test_real_model_retranscribe_parity_priority_and_privacy(
+    settings, tmp_path, monkeypatch, caplog
+):
+    """Kept synthetic speech decodes identically, with live audio ahead of the next clip."""
+    import logging
+    import threading
+
+    from conftest import use_home
+
+    from chirp_server.activity import Activity
+    from chirp_server.engine.models import discover as speech_model
+
+    pcm = decode_wav((fixture_directory() / "synthetic-5s.wav").read_bytes())
+    model_dir = speech_model()
+    home = tmp_path / "home"
+    home.mkdir()
+    use_home(monkeypatch, home)
+    settings.idle_seconds = 60
+    settings.queue_timeout = settings.retranscribe_queue_timeout = 60
+    caplog.set_level(logging.INFO, logger="chirp")
+    engine = ParakeetMLX(model_dir)
+    app = create_app(settings, engine, TOKEN)
+    lease = app.state.worker.lease
+    acquire = lease.acquire
+    queued_replay, queued_live = threading.Event(), threading.Event()
+
+    async def observed_acquire(*, retranscribe=False):
+        if lease.locked():
+            (queued_replay if retranscribe else queued_live).set()
+        return await acquire(retranscribe=retranscribe)
+
+    lease.acquire = observed_acquire
+    results = []
+
+    def send_audio(ws):
+        for offset in range(0, len(pcm), 3200):  # Buffered clips, at most 100 ms per frame.
+            ws.send_bytes(pcm[offset : offset + 3200])
+
+    options = {**START, "word_timings": True, "correction_profile": "live_notes"}
+    with TestClient(app) as client:
+        before = {p for p in tmp_path.rglob("*") if p.is_file()}
+        with (
+            client.websocket_connect("/v1/stream", headers=HEADERS) as first,
+            client.websocket_connect("/v1/stream", headers=HEADERS) as replay,
+            client.websocket_connect("/v1/stream", headers=HEADERS) as live,
+        ):
+            first.send_json({**options, "retranscribe": True})
+            ready = first.receive_json()
+            assert ready["type"] == "ready" and not ready["debug_retention"]
+            send_audio(first)
+            replay.send_json({**options, "retranscribe": True})
+            assert queued_replay.wait(10)
+            live.send_json(options)
+            assert queued_live.wait(10)
+            first.send_json({"type": "stop"})
+            result = first.receive_json()  # No partial may precede the final.
+            assert result["type"] == "final" and result["engine"] == ready["engine"]
+            assert result["timings_ms"]["first_partial"] is None
+            results.append(result)
+            assert live.receive_json()["type"] == "ready"
+            live.send_bytes(pcm[:6400])
+            assert live.receive_json()["type"] == "partial"
+            for offset in range(6400, len(pcm), 3200):
+                live.send_bytes(pcm[offset : offset + 3200])
+            live.send_json({"type": "stop"})
+            results.append(final(live))
+            assert replay.receive_json()["type"] == "ready"
+            send_audio(replay)
+            replay.send_json({"type": "stop"})
+            result = replay.receive_json()
+            assert result["type"] == "final" and result["timings_ms"]["first_partial"] is None
+            results.append(result)
+    # Booleans keep synthetic transcript text out of pytest assertion output.
+    same_text = all(r["raw"] == results[0]["raw"] == r["text"] for r in results)
+    assert same_text
+    same_words = all(r["words"] == results[0]["words"] for r in results)
+    assert same_words
+    keywords_match = {"quick", "brown", "fox"} <= set(results[0]["raw"].lower().split())
+    assert keywords_match
+    assert {p for p in tmp_path.rglob("*") if p.is_file()} - before == {settings.activity_path}
+    activity = settings.activity_path.read_text()
+    events = Activity(settings.activity_path).events
+    replay_events = [e for e in events if e["kind"] == "notes_retranscribe"]
+    assert len(replay_events) == 2
+    assert all(e["audio_ms"] == len(pcm) // 32 and e["outcome"] == "ok" for e in replay_events)
+    no_content = all(
+        word not in caplog.text.lower() and word not in activity.lower()
+        for word in ("quick", "brown", "fox")
+    )
+    assert no_content
+    assert TOKEN not in caplog.text and TOKEN not in activity

@@ -179,6 +179,7 @@ class Utterance:
         self.peak = self.rms = 0.0
         # Opt-in `start.word_timings`: partials, correcting and the final carry `words`.
         self.word_timings = False
+        self.retranscribe = False
         # Opt-in `start.speakers.session`: the final carries `speakers` (Live Notes labels).
         self.speaker_session = None
         self.labelling = None
@@ -213,9 +214,11 @@ class Utterance:
             or control.get("client") not in CLIENTS
             or not isinstance(control.get("correction", False), bool)
             or not isinstance(control.get("word_timings", False), bool)
+            or not isinstance(control.get("retranscribe", False), bool)
         ):
             raise AudioError()
         self.word_timings = control.get("word_timings", False)
+        self.retranscribe = control.get("retranscribe", False)
         if "speakers" in control:
             labels = control["speakers"]
             if (
@@ -234,7 +237,12 @@ class Utterance:
             # This never delays the ack, partials or ASR, and never counts against
             # an utterance's correction timeout; only a final may wait for the load.
             managed.prewarm()
-        await asyncio.wait_for(self.worker.lease.acquire(), self.settings.queue_timeout)
+        await asyncio.wait_for(
+            self.worker.lease.acquire(retranscribe=self.retranscribe),
+            self.settings.retranscribe_queue_timeout
+            if self.retranscribe
+            else self.settings.queue_timeout,
+        )
         self.leased = True
         self.correction = control.get("correction", False)
         self.profile = profile
@@ -270,6 +278,9 @@ class Utterance:
             self.changed.set()
 
     async def partials(self):
+        if self.retranscribe:
+            # Keep all PCM for the authoritative stop-time decode; no preview inference.
+            return
         previous = previous_stable = ""
         try:
             while True:
@@ -371,9 +382,13 @@ class Utterance:
                 final["speakers"] = await self.speakers.label(
                     self.speaker_session, b"", None, "", ""
                 )
+            if self.retranscribe:
+                final["engine"] = self.worker.engine.name
             return final
         if self.offset < len(self.pcm):
             pending = samples(bytes(self.pcm[self.offset :]))
+            if self.retranscribe:
+                self.peak, self.rms = levels(pending)
             buffer = getattr(self.stream, "buffer", self.stream.feed)
             await self.worker.call(buffer, pending)
             if self.cancelled:
@@ -431,6 +446,8 @@ class Utterance:
             final["speakers"] = self.speakers.payload(
                 measured, transcript.words, raw, final["text"], len(self.pcm) / 32000, labelled
             )
+        if self.retranscribe:
+            final["engine"] = self.worker.engine.name
         self.retention.save(self.session, bytes(self.pcm), final)
         log.info(
             "session=%s bytes=%d peak=%.5f rms=%.5f finalize_ms=%.1f identity_present=%s",
@@ -664,6 +681,7 @@ def create_app(settings=None, engine=None, token=None, corrector=None, speakers=
                 "notes_reorganize": True,
                 # `start`/`stop` may carry `context`, the previous segment's tail, for notes.
                 "notes_context": True,
+                "notes_retranscribe": True,
                 "notes_edit": True,
                 # `start.speakers` labels a note's speakers; the model downloads on request.
                 "notes_speakers": True,
@@ -1273,7 +1291,9 @@ def create_app(settings=None, engine=None, token=None, corrector=None, speakers=
                     utterance.token = activity.begin(
                         source,
                         client if isinstance(client, str) and client in CLIENTS else None,
-                        "notes_segment"
+                        "notes_retranscribe"
+                        if message.get("retranscribe") is True
+                        else "notes_segment"
                         if message.get("correction_profile") == LIVE_NOTES_ID
                         else "dictation",
                     )

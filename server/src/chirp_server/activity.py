@@ -31,7 +31,7 @@ WORD = re.compile(r"[a-z_]{1,32}")
 IDENT = re.compile(r"[0-9a-f]{8}")
 PROFILE = re.compile(r"[A-Za-z0-9_-]{1,64}")
 
-AUDIO_KINDS = {"dictation", "notes_segment", "transcribe"}
+AUDIO_KINDS = {"dictation", "notes_segment", "notes_retranscribe", "transcribe"}
 
 
 def wall() -> datetime:
