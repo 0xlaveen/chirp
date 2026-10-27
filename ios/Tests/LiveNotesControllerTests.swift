@@ -15,6 +15,7 @@ struct LiveNotesControllerTests {
         var permission = true
         var activityEnabled = true
         var backgroundTasks = 0
+        var backgroundEnded = 0
         /// Every socket the recorder opened, oldest first (their `sent` messages are the `start`s).
         var transports: [SyntheticTransport] = []
         let speakerCalls = SpeakerCalls()
@@ -48,11 +49,12 @@ struct LiveNotesControllerTests {
 
     func fixture(root: URL? = nil, voiceLibrary: TestVoiceLibrary? = nil, voiceMatches: [ServerVoiceMatch] = [], secrets: MemorySecretStore = MemorySecretStore(), health: Health = LiveNotesController.syntheticHealth,
                  reorganize: @escaping @Sendable (NotesReorganizeRequest) async throws -> NotesReorganizeResponse = { LiveNotesController.syntheticReorganize($0) },
-                 structure: @escaping @Sendable (NotesStructureRequest) async throws -> NotesStructureResponse = { LiveNotesController.syntheticStructure($0) }) throws -> Fixture {
+                 structure: @escaping @Sendable (NotesStructureRequest) async throws -> NotesStructureResponse = { LiveNotesController.syntheticStructure($0) },
+                 retranscribe: (() -> SyntheticTransport)? = nil) throws -> Fixture {
         let root = root ?? FileManager.default.temporaryDirectory.appendingPathComponent("chirp-notes-unit-" + UUID().uuidString)
         let store = try NotesStore(root: root, secrets: secrets)
         let values = Values(), audio = SyntheticNotesAudio()
-        let deps = LiveNotesController.Dependencies(
+        var deps = LiveNotesController.Dependencies(
             server: { ServerConfig(baseURL: URL(string: "https://synthetic.test.ts.net/chirp")!, token: "synthetic-only") },
             correctionAllowed: { _ in true },
             otherCaptureActive: { values.otherCapture },
@@ -78,7 +80,14 @@ struct LiveNotesControllerTests {
                 values.activity.append("begin:" + state.status.rawValue)
             }, update: { values.activity.append("update:" + $0.status.rawValue) }, end: { values.activity.append("end") }),
             store: store, copyText: { values.copied.append($0) }, startTicker: { _ in {} },
-            backgroundTask: { _ in values.backgroundTasks += 1; return {} }, observeLifecycle: false)
+            backgroundTask: { _ in values.backgroundTasks += 1; return { values.backgroundEnded += 1 } }, observeLifecycle: false)
+        if let retranscribe {
+            deps.retranscribeStream = { _, options, _ in
+                let transport = retranscribe()
+                values.transports.append(transport)
+                return StreamSession(transport: transport, options: options)
+            }
+        }
         return Fixture(notes: LiveNotesController(deps), audio: audio, values: values, store: store, root: root)
     }
 

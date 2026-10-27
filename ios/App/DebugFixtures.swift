@@ -30,6 +30,13 @@ final class SyntheticTransport: StreamTransport, @unchecked Sendable {
     let automatic: Bool
     /// The start message asked for speaker labels (`speakers.session`): the final then carries two people's turns.
     private var labelling = false
+    /// The start message was a re-transcribe (`start.retranscribe`): `ready` names an engine, there are no partials, and
+    /// the final carries word timings. `--chirp-retranscribe-hold` keeps every re-transcribe final after the first one
+    /// back, so the progress banner can be captured.
+    private var retranscribing = false
+    static let holdRetranscribe = ProcessInfo.processInfo.arguments.contains("--chirp-retranscribe-hold")
+    private static let finals = NSLock()
+    nonisolated(unsafe) private static var retranscribeFinals = 0
     private let voiceMatches: @Sendable () -> [ServerVoiceMatch]
     init(automatic: Bool = false, voiceMatches: @escaping @Sendable () -> [ServerVoiceMatch] = { [] }) {
         self.voiceMatches = voiceMatches
@@ -43,9 +50,18 @@ final class SyntheticTransport: StreamTransport, @unchecked Sendable {
         lock.withLock { sentValues.append(message) }
         guard automatic, case .string(let text) = message else { return }
         if text.contains(#""type":"start""#) {
-            lock.withLock { labelling = text.contains(#""speakers":{"session":""#) }
+            lock.withLock { labelling = text.contains(#""speakers":{"session":""#); retranscribing = text.contains(#""retranscribe":true"#) }
+            if lock.withLock({ retranscribing }) {
+                push(#"{"type":"ready","session":"synthetic","engine":"parakeet-mlx:tdt-0.6b-v3","debug_retention":false}"#)
+                return
+            }
             push(#"{"type":"ready","session":"synthetic","debug_retention":false}"#)
             push(#"{"type":"partial","seq":1,"text":"synthetic words","stable":"","words":[{"text":"synthetic","start":0,"end":0.2,"stable":false}]}"#)
+        } else if text.contains(#""type":"stop""#), lock.withLock({ retranscribing }) {
+            let n = Self.finals.withLock { Self.retranscribeFinals += 1; return Self.retranscribeFinals }
+            if Self.holdRetranscribe, n > 1 { return }
+            if lock.withLock({ () -> Bool in held = holding; return held }) { return }
+            pushRetranscribeFinal()
         } else if text.contains(#""type":"stop""#) {
             push(#"{"type":"correcting","seq":2,"raw":"synthetic words","profile":"default"}"#)
             if lock.withLock({ labelling }) {
@@ -70,6 +86,19 @@ final class SyntheticTransport: StreamTransport, @unchecked Sendable {
     }
     func cancel(with code: URLSessionWebSocketTask.CloseCode) { continuation.finish() }
     func push(_ value: String) { continuation.yield(.string(value)) }
+    /// Tests: a re-transcribe final waits until `releaseFinal()` (or never comes).
+    var holdsFinal: Bool {
+        get { lock.withLock { holding } }
+        set { lock.withLock { holding = newValue } }
+    }
+    private var holding = false
+    private var held = false
+    func releaseFinal() {
+        if lock.withLock({ () -> Bool in defer { held = false }; return held }) { pushRetranscribeFinal() }
+    }
+    private func pushRetranscribeFinal() {
+        push(#"{"type":"final","text":"Synthetic words again.","raw":"synthetic words again","corrected":true,"words":[{"text":"synthetic","start":0,"end":0.4},{"text":"words","start":0.4,"end":0.8},{"text":"again","start":0.8,"end":1.2}]}"#)
+    }
     /// The socket fails: the next receive throws, as when the connection drops mid-utterance.
     func drop() { continuation.finish() }
 }

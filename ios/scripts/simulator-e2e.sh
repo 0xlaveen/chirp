@@ -72,7 +72,15 @@ TEST_RUNNER_CHIRP_LIVE_VOICES_AUDIO="$WORK/voices.wav" TEST_RUNNER_CHIRP_LIVE_VO
 TEST_RUNNER_CHIRP_LIVE_LINK="$LINK" TEST_RUNNER_CHIRP_LIVE_AUDIO="$WORK/s.wav" TEST_RUNNER_CHIRP_LIVE_LONG_AUDIO="$WORK/long.wav" \
   TEST_RUNNER_CHIRP_LIVE_SPEAKERS_AUDIO="$WORK/two.wav" \
   ./scripts/simulator.sh ui "$device" "$@" || status=$?
+# Re-transcribe (#287): device activity records the runs as notes_retranscribe with audio_ms and no text.
+activity=$(find "$WORK" -name device-activity.json 2>/dev/null | head -1)
+if [ -n "$activity" ]; then
+  echo "== device activity: notes_retranscribe events"; grep -o '"notes_retranscribe"' "$activity" | wc -l
+  echo "== privacy: transcript words in device activity (expect 0)"
+  ahits=$(grep -c -i -E "tuesday|onboarding|release notes|wrong text" "$activity" || true)
+  echo "$ahits"; [ "$ahits" = 0 ] || status=1
+fi
 echo "== privacy: transcript words in server log (expect 0)"
-hits=$(grep -c -i -E "tuesday|schedule|design group|onboarding|friday afternoon|release notes|announcement|support team" "$WORK/server.log" || true)
+hits=$(grep -c -i -E "tuesday|schedule|design group|onboarding|friday afternoon|release notes|announcement|support team|wrong text" "$WORK/server.log" || true)
 echo "$hits"; [ "$hits" = 0 ] || status=1
 [ $status = 0 ] && echo "iOS E2E: PASS" || { echo "iOS E2E: FAIL"; exit 1; }
