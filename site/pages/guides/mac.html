@@ -29,7 +29,7 @@ section: guides
 cd chirp</code></pre></li>
     <li><strong>Run the installer</strong>
 <pre data-copy="Copy command"><code>./scripts/install-mac.sh</code></pre>
-      <p>It installs the speech server in your Application Support folder, builds and signs <strong>Chirp.app</strong>, copies it to your Applications folder in your home folder, and opens the model picker. macOS may ask you to approve the local signing identity — allow it, so the permissions you grant survive future updates.</p></li>
+      <p>It installs the Chirp server in your Application Support folder, builds and signs <strong>Chirp.app</strong>, copies it to your Applications folder in your home folder, and opens the model picker. macOS may ask you to approve the local signing identity — allow it, so the permissions you grant survive future updates.</p></li>
   </ol>
   <div class="callout warn"><b>This is a source install for now.</b><p>There’s no notarized download yet — a packaged Mac app is coming soon. This installer builds Chirp on your Mac from the code you just cloned. Prefer an agent to do it with you? Use the <a href="coding-agent.html">coding agent prompts</a>. For every platform, see <a href="../get.html">Get Chirp</a>.</p></div>
 
@@ -43,7 +43,7 @@ cd chirp</code></pre></li>
   <figure class="shot"><div class="frame"><!--shot:mac/settings-advanced-ready|Settings, Advanced: the server URL on 127.0.0.1, the token, the server status, the clean-up model and the Local models and Doctor tools--></div><figcaption>Settings → Advanced once everything is running. The server only listens on this Mac.</figcaption></figure>
 
   <h2 id="permissions">Grant two permissions</h2>
-  <p>The <strong>Set Up Chirp</strong> window walks you through it, with its steps listed on the left: Welcome, Microphone, Accessibility, Speech server and Try it. Each step turns green the moment you grant access in System Settings → Privacy &amp; Security. The last step tries a dictation, and <strong>Open Notes</strong> takes you to the notes library.</p>
+  <p>The <strong>Set Up Chirp</strong> window walks you through it, with its steps listed on the left: Welcome, Microphone, Accessibility, Chirp server and Try it. Each step turns green the moment you grant access in System Settings → Privacy &amp; Security. The last step tries a dictation, and <strong>Open Notes</strong> takes you to the notes library.</p>
   <figure class="shot"><div class="frame"><!--shot:mac/onboarding-welcome|The Welcome to Chirp window: a step rail on the left and the pond art above “Dictate into any app” and “Keep conversations in Notes”--></div></figure>
   <ul>
     <li><strong>Microphone</strong> — so Chirp can hear you. The mic is only open while you dictate.</li>
@@ -59,6 +59,7 @@ cd chirp</code></pre></li>
   </ol>
   <figure class="shot"><div class="frame"><!--shot:mac/hud-listening|The HUD while listening, with a dimmed tail on the words still being recognised--></div><figcaption>The dimmed words at the end may still change; the rest is settled.</figcaption></figure>
   <p><strong>Prefer another key?</strong> In <strong>Settings → Dictation</strong> pick a shortcut such as <kbd>⌃⌥Space</kbd>, or record your own. Right ⌥ needs Accessibility, which Set Up Chirp asks for; <kbd>⌃⌥Space</kbd> does not. Switch the mode to <strong>Hold to talk</strong> if you only want to hold.</p>
+  <p><strong>Longer dictation:</strong> rolling segments keep one dictation going for about 10 minutes. The next segment captures while the previous one finishes; the results land in order. <strong>Auto-stop</strong> ends hands-free dictation when you pause, with a configurable <strong>Stop after</strong> interval. Holding the key keeps listening until you release it. Turn on <strong>Spoken commands</strong> in Settings → Dictation to turn a trailing “new line” or “new paragraph” into a line break.</p>
 
   <h2 id="cleanup">Turn on clean-up (optional)</h2>
   <p>If you downloaded a clean-up model, open <strong>Clean-up</strong> in the menu-bar menu and tick <strong>Clean up Text</strong>. Chirp then removes fillers and stutters and fixes punctuation before inserting, using the model on your Mac.</p>
@@ -68,6 +69,9 @@ cd chirp</code></pre></li>
     <li><strong>Styles</strong> change the tone: chat, email, code and notes. Chirp picks one by app — Mail gets email, Terminal gets code — and you can edit the list in <strong>Settings → Clean-up</strong>.</li>
     <li><strong>Use raw</strong>: changed your mind? For five seconds after a cleaned dictation, <kbd>⌃⌥Z</kbd> puts back exactly what you said.</li>
   </ul>
+  <h2 id="learning">Teach Chirp your words</h2>
+  <p><strong>Settings → Dictation → Learn from my edits</strong> learns names and technical words from small corrections to a verified insertion. Make the same fix twice, or choose <strong>Teach Chirp…</strong> in Dictation history to teach it once. <strong>Learned</strong> lets you review, approve, undo or delete items. Learning needs dictation history; paste insertions and password fields are excluded. Learned items stay encrypted on this Mac and active terms go with dictation to your own Chirp server and any configured clean-up endpoint.</p>
+  <p><strong>Private session</strong>, in the menu bar or Dictation settings, skips new history, learning and learned context. It ends when the screen locks, after one hour or when Chirp quits. Existing history stays. <a href="live-notes.html#start">New Note</a> (<kbd>⌘N</kbd> in Notes) creates a blank typed note; <kbd>⌃⌥N</kbd> starts a new recording.</p>
   <p><strong>Next:</strong> press <kbd>⌃⌥N</kbd> to start a note. See <a href="live-notes.html">Take notes</a>.</p>
 
   <h2 id="trouble">If something's off</h2>

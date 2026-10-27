@@ -1,0 +1,50 @@
+{
+  "home": {
+    "before": {
+      "lighthouse": "13.5.0",
+      "categories": {
+        "performance": 95,
+        "accessibility": 100,
+        "best-practices": 100,
+        "seo": 100
+      },
+      "lcp_ms": 2852,
+      "cls": 0
+    },
+    "after": {
+      "lighthouse": "13.5.0",
+      "categories": {
+        "performance": 95,
+        "accessibility": 100,
+        "best-practices": 100,
+        "seo": 100
+      },
+      "lcp_ms": 2852,
+      "cls": 0
+    }
+  },
+  "architecture": {
+    "before": {
+      "lighthouse": "13.5.0",
+      "categories": {
+        "performance": 99,
+        "accessibility": 100,
+        "best-practices": 100,
+        "seo": 100
+      },
+      "lcp_ms": 2252,
+      "cls": 0
+    },
+    "after": {
+      "lighthouse": "13.5.0",
+      "categories": {
+        "performance": 98,
+        "accessibility": 100,
+        "best-practices": 100,
+        "seo": 100
+      },
+      "lcp_ms": 2251,
+      "cls": 0
+    }
+  }
+}

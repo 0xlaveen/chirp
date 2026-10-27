@@ -64,7 +64,7 @@ cd android
     <li><strong>Scan it on the phone</strong><p>On the last onboarding page tap <strong>Scan code</strong>. Chirp tests the connection and saves the pairing by itself; nothing is saved until the connection works. Then tap <strong>Finish</strong> and Chirp opens on Notes, with a chip at the top showing it’s connected to your computer.</p></li>
   </ol>
   <figure class="shot"><div class="frame"><!--shot:mac/settings-devices-ready|Settings, Devices: Pair a Phone button, noting the phone reaches this Mac over your tailnet only--></div></figure>
-  <div class="callout"><b>The QR code is a secret.</b><p>It contains the key to your computer's speech server. Chirp for Mac hides the window from screenshots and screen sharing and closes it after two minutes. Don't post it anywhere.</p></div>
+  <div class="callout"><b>The pairing code is a secret.</b><p>It grants access to your Chirp server. Chirp for Mac hides the pairing window from screenshots and screen sharing and closes it after two minutes. Don’t post the code anywhere.</p></div>
 
   <h2 id="dictate">Dictate with Chirp Keyboard</h2>
   <ol class="steps">
@@ -78,11 +78,16 @@ cd android
   </div>
   <ul>
     <li><strong>Long-press the mic</strong> to turn clean-up on or off and choose a style.</li>
-    <li><strong>Stop when I pause:</strong> Settings → Dictation → Stopping → <strong>When I pause</strong>.</li>
+    <li><strong>Stop on pause:</strong> Settings → Dictation → <strong>Stop dictation → When I pause</strong>, then choose <strong>Pause length</strong>. The default is <strong>When I tap</strong>.</li>
+    <li><strong>Spoken commands:</strong> turn on the setting to convert a trailing “new line” or “new paragraph” into line breaks.</li>
     <li><strong>Long dictations</strong> work up to 10 minutes; Chirp splits them quietly so nothing is dropped.</li>
     <li><strong>Lost connection?</strong> What was heard so far is kept, never thrown away.</li>
     <li><strong>History</strong> is on by default: your recent dictations are kept, encrypted, on the phone only, for 7 days (24 hours or 30 days are also available). Turn it off in Settings → Privacy &amp; history, which deletes what is kept.</li>
   </ul>
+
+  <h2 id="learning">Teach Chirp your words</h2>
+  <p><strong>Learn from my edits</strong> in Settings → Dictation learns small corrections to a verified dictation insertion. Fix the same name or technical word twice, or choose <strong>Teach Chirp</strong> in History to teach it once. Review, approve, undo or delete items in <strong>Learned</strong>. Chirp Keyboard learning works on every supported Android version; floating-mic learning needs Android 13+. Passwords, incognito fields and large rewrites are excluded.</p>
+  <p>History and learned items are encrypted on this phone. Active learned items accompany dictation to your computer and any configured clean-up provider. <strong>Private session</strong> in Privacy &amp; history or dictation options skips new history, learning and learned context; it ends on screen lock, after one hour or when the app process exits. Existing history stays.</p>
 
   <h2 id="keep">Keep your keyboard</h2>
   <p>Chose <strong>Keep Gboard</strong>? Chirp sets up its floating mic: a small bubble that appears at the edge of the screen when a text field you can dictate into has focus.</p>
@@ -103,7 +108,7 @@ cd android
 
 <h2 id="keep-keyboard">More ways into Chirp</h2><p>The <strong>Dictate</strong> Quick Settings tile and the home-screen widget open Quick Dictate, which copies the finished text for you to paste. Share selected text from another app into Notes. Apps that launch Android’s speech-input activity can offer Chirp as a handler. This does not replace the mic inside Gboard or Samsung Keyboard.</p><div class="shot-row"><figure><div class="frame"><!--shot:android/quick-dictate-widget-2x1-cover|Android home screen with Chirp’s Dictate and Record widget--></div><figcaption>Home screen widget: Dictate or Record.</figcaption></figure><figure><div class="frame"><!--shot:android/quick-dictate-listening-cover|Android Quick Dictate listening with stop and cancel controls--></div><figcaption>Quick Dictate: copy, then paste.</figcaption></figure><figure><div class="frame"><!--shot:android/share-to-notes-dialog-cover|Share into Notes dialog with selected sample text--></div><figcaption>Share selected text into Notes.</figcaption></figure></div><p><a href="{{repo}}/blob/main/docs/android-input-options.md">All Android input options</a> · <a href="{{repo}}/blob/main/android/README.md#keep-your-keyboard">Permissions and setup details</a></p>
   <h2 id="scratchpad">Scratchpad and Notes</h2>
-  <p>Chirp opens on <strong>Notes</strong>. Tap <strong>Record</strong> for a meeting or a long think-aloud: <a href="live-notes.html#android">Notes on Android</a>.</p>
+  <p>Chirp opens on <strong>Notes</strong>. Choose <strong>New note</strong> to type a blank note locally, without a microphone or a paired computer. Tap <strong>Record</strong> for a meeting or a long think-aloud. Labels are on by default; <strong>Name speakers</strong> names everyone and <strong>This turn is…</strong> fixes one misattributed sentence. Saved voices are recognised across devices using the same Chirp server. With kept audio, <strong>Re-transcribe…</strong> asks every time and offers Undo and Restore. <a href="live-notes.html#android">Notes on Android</a> · <a href="live-notes.html#retranscribe">Re-transcribe and privacy</a>.</p>
   <p>The small mic button beside Record opens the <strong>Scratchpad</strong>, a blank page for dictating longer text outside any app. (You can also long-press the Chirp icon, or add the Scratchpad tile to Quick Settings.) Dictate, edit, then <strong>Copy</strong> or <strong>Share</strong>, or keep it with <strong>Save as note</strong>. Otherwise the text is gone when you leave.</p>
   <div class="shot-row">
     <figure><div class="frame"><!--shot:android/scratchpad-idle|The empty Scratchpad with style choices and a large mic--></div></figure>
