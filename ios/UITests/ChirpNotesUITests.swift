@@ -426,8 +426,6 @@ final class ChirpNotesUITests: XCTestCase {
                       "the rename replaced the name in the notes")
     }
 
-    /// Labels are on by default: no switch to flip and no consent (the synthetic Mac has the model), the chips follow, and
-    /// Turn off in Settings is the one explicit choice.
     /// "This turn is" (A2-10): one of Person 1's turns goes to Maya, then to a new person; their other turns stay, and the
     /// choice is sealed in the note (it survives a relaunch).
     @MainActor func testThisTurnIsReassignsOneTurn() {
@@ -506,6 +504,8 @@ final class ChirpNotesUITests: XCTestCase {
         XCTAssertTrue(Self.waitFor(Self.element("chirp.notes.status", in: app), "label == 'Stopped'", timeout: 20))
     }
 
+    /// Labels are on by default: no switch to flip and no consent (the synthetic Mac has the model), the chips follow, and
+    /// Turn off in Settings is the one explicit choice.
     @MainActor func testLabelSpeakersAreOnByDefaultAndSettingsTurnsThemOff() {
         let app = launch()
         // Paired (the synthetic Mac answers health) before Settings is read: otherwise the Mac's model is unknown.
