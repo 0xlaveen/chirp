@@ -305,6 +305,8 @@ public final class NotesRecorder {
         /// Its audio waits to be sent again; `replaying` while a replay socket has it.
         var replay = false
         var replaying = false
+        /// `ready.engine` of its socket, kept with the segment ("Transcribed with").
+        var engine: String?
     }
 
     var segments: [Int: Segment] = [:]
@@ -748,7 +750,8 @@ public final class NotesRecorder {
     private func handle(_ event: StreamEvent, seq: Int) -> Bool {
         guard segments[seq] != nil else { return true }
         switch event {
-        case .message(.ready(_, _, let debug)):
+        case .message(.ready(_, let engine, let debug)):
+            segments[seq]?.engine = engine
             debugRetention = debug
             sawReady = true
             offline = false
@@ -782,6 +785,7 @@ public final class NotesRecorder {
                                                             corrected: f.corrected, keptOriginal: kept)
             segment?.end = end
             segment?.pauseBefore = segments[seq]?.pause
+            segment?.engine = segments[seq]?.engine
             if !text.isEmpty { lastFinal = (seq, text) }
             if segment != nil, labelSpeakers, let speakers = f.speakers {
                 serverLabels[seq] = ServerLabels(speakers: speakers, text: text, raw: raw, original: (f.text, f.raw))

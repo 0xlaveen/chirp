@@ -1,7 +1,8 @@
 import Foundation
 
-/// The notes as they were before an applied reorganize or Organize, so the user can read what it changed and take it
-/// back. In memory only (never logged, never journalled); the last `NotesSnapshots.limit` are kept and New drops them.
+/// The notes as they were before an applied reorganize, Organize or re-transcribe rebuild, so the user can read what
+/// it changed and take it back. In memory only (never logged, never journalled); the last `NotesSnapshots.limit` are
+/// kept and New drops them.
 public struct NotesSnapshot: Equatable, Sendable, Identifiable {
     public let id: Int
     public let at: Date
@@ -10,6 +11,8 @@ public struct NotesSnapshot: Equatable, Sendable, Identifiable {
     public var after: String
     /// The whole-document Organize run it belongs to (one snapshot per run).
     let run: Int?
+    /// A re-transcribe rebuilt the notes (the review says "Notes rebuilt").
+    public var rebuild = false
 }
 
 public struct NotesSnapshots: Equatable, Sendable {
@@ -32,16 +35,16 @@ public struct NotesSnapshots: Equatable, Sendable {
     /// between and nothing is kept.
     public mutating func record(_ changes: [NotesTextChange], from text: String, result: String, at: Date) {
         var current = text
-        var staged: [(before: String, after: String, run: Int?, grouped: Bool)] = []
+        var staged: [(before: String, after: String, run: Int?, grouped: Bool, rebuild: Bool)] = []
         for change in changes {
             let before = current
             guard NSMaxRange(change.range) <= (current as NSString).length else { return }
             current = change.applied(to: current)
-            guard change.kind == .reorganize || change.kind == .organize else { continue }
+            guard change.kind == .reorganize || change.kind == .organize || change.kind == .rebuild else { continue }
             if let last = staged.last, last.grouped, change.kind == .organize || (change.run != nil && change.run == last.run) {
                 staged[staged.count - 1].after = current
             } else {
-                staged.append((before, current, change.run, change.kind == .organize || change.run != nil))
+                staged.append((before, current, change.run, change.kind == .organize || change.run != nil, change.kind == .rebuild))
             }
         }
         guard current == result else { return }
@@ -50,7 +53,7 @@ public struct NotesSnapshots: Equatable, Sendable {
                 items[i].after = step.after
                 continue
             }
-            items.append(NotesSnapshot(id: nextID, at: at, before: step.before, after: step.after, run: step.run))
+            items.append(NotesSnapshot(id: nextID, at: at, before: step.before, after: step.after, run: step.run, rebuild: step.rebuild))
             nextID += 1
         }
         if items.count > Self.limit { items.removeFirst(items.count - Self.limit) }

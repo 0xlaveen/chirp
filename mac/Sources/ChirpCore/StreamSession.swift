@@ -126,11 +126,11 @@ public actor StreamSession {
         (audioStream, audioIn) = AsyncStream.makeStream(of: Data.self)
     }
 
-    public init(config: ServerConfig, options: StartOptions, urlSession: URLSession = .shared) {
+    public init(config: ServerConfig, options: StartOptions, urlSession: URLSession = .shared, limits: StreamLimits = StreamLimits()) {
         let request = config.authorized(URLRequest(url: config.streamURL))
         let task = urlSession.webSocketTask(with: request)
         task.maximumMessageSize = 1 << 20
-        self.init(transport: URLSessionTransport(task: task), options: options)
+        self.init(transport: URLSessionTransport(task: task), options: options, limits: limits)
     }
 
     /// Connects, sends `start`, and begins relaying server messages and queued audio.

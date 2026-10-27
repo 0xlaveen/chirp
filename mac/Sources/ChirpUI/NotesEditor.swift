@@ -292,6 +292,7 @@ final class NotesEditorCoordinator: NSObject, NSTextViewDelegate {
     static let toggleAction = "Toggle Task"
     static let renameAction = "Rename Speaker"
     static let restoreAction = "Restore Notes"
+    static let rebuildAction = "Rebuild Notes"
 
     let model: NotesModel
     let library: NotesLibraryModel?
@@ -664,7 +665,8 @@ final class NotesEditorCoordinator: NSObject, NSTextViewDelegate {
             textView.didChangeText()
         }
         if !grouped {
-            undo.setActionName(change.kind == .edit ? Self.editAction : change.kind == .restore ? Self.restoreAction : reorganize ? Self.reorganizeAction : Self.updateAction)
+            undo.setActionName(change.kind == .edit ? Self.editAction : change.kind == .restore ? Self.restoreAction
+                : change.kind == .rebuild ? Self.rebuildAction : reorganize ? Self.reorganizeAction : Self.updateAction)
             undo.endUndoGrouping()
         }
         // Only the paragraphs it replaced: a reorganize late in a long document leaves the rest alone.

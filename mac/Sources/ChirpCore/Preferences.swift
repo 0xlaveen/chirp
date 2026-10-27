@@ -259,6 +259,17 @@ public final class Preferences: @unchecked Sendable {
         get { defaults.bool(forKey: "notesKeepAudio") }
         set { defaults.set(newValue, forKey: "notesKeepAudio") }
     }
+    /// Settings → Notes → Allow re-transcribing: a note's kept audio may be sent to the Chirp server again, on request
+    /// and after a confirmation each time. On by default (kept audio is opt-in already); off hides every entry point.
+    public var notesAllowRetranscribe: Bool {
+        get { defaults.object(forKey: "notesAllowRetranscribe") as? Bool ?? true }
+        set { defaults.set(newValue, forKey: "notesAllowRetranscribe") }
+    }
+    /// The re-transcribe sheet's "Also rebuild the notes" box, as last left (off by default: it replaces body edits).
+    public var notesRetranscribeRebuild: Bool {
+        get { defaults.bool(forKey: "notesRetranscribeRebuild") }
+        set { defaults.set(newValue, forKey: "notesRetranscribeRebuild") }
+    }
 
     /// The folder Export Markdown… opens in (a path); nil opens wherever it was last used.
     public var notesExportFolder: String? {

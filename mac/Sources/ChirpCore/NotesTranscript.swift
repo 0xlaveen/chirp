@@ -48,7 +48,7 @@ extension NotesDocument {
                 units = turns.enumerated().map { i, t in
                     (Self.part(s, id: "\(s.id).\(i)", offset: t.start, text: t.text, raw: t.raw, kept: t.keptOriginal),
                      roster.resolve(t.person), t.approximate)
-                }
+                }.filter { !$0.part.text.isEmpty || !$0.part.raw.isEmpty } // a re-transcribe can leave a turn empty
             } else {
                 units = [(Self.part(s, id: "\(s.id)", offset: s.offset, text: s.text, raw: s.raw), nil, false)]
             }

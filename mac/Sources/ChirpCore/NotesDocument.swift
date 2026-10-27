@@ -22,6 +22,8 @@ public struct NotesSegment: Equatable, Sendable, Identifiable, Codable {
     /// The quiet between the previous segment's last speech and this one's first, when it follows that segment
     /// without a break (a cut, not Stop and Record); nil starts a new paragraph.
     public var pauseBefore: TimeInterval?
+    /// The speech engine that produced the text (`ready.engine`); nil in notes recorded before it was kept.
+    public var engine: String?
 
     public init(id: Int, offset: TimeInterval, raw: String, text: String? = nil, corrected: Bool = false,
                 keptOriginal: Bool = false, failure: String? = nil) {
@@ -60,6 +62,8 @@ public struct NotesTextChange: Equatable, Sendable {
         case edit
         /// Restore Notes Before Organize put an earlier text back (one undo step).
         case restore
+        /// Re-transcribe's "Also rebuild the notes": the body structured again from the new transcript (one undo step).
+        case rebuild
     }
 
     public var range: NSRange
@@ -143,6 +147,9 @@ public struct NotesDocument: Equatable, Sendable, Codable {
         get { stamps ?? [:] }
         set { stamps = newValue }
     }
+    /// The transcript the last re-transcribe replaced (Undo, Restore previous transcript); nil when there is none.
+    /// Optional storage, so older notes decode.
+    public internal(set) var previousTranscript: NotesPreviousTranscript?
     /// Optional storage, so a journal written before section times decodes.
     private var stamps: [String: TimeInterval]?
     /// Optional storage too.
@@ -157,7 +164,7 @@ public struct NotesDocument: Equatable, Sendable, Codable {
     private enum CodingKeys: String, CodingKey {
         case id, segments, text, tailStart, version, windowGeneration, windowStart, structuredEnd, consecutiveFailures
         case lastReorganizeVersion, charsSinceReorganize, fallbackBlocks, isDirty, startedAt, roster
-        case stamps = "sectionOffsets", labelLog, libraryMetadata
+        case stamps = "sectionOffsets", labelLog, libraryMetadata, previousTranscript
     }
 
     public init(startedAt: Date = Date(), text: String = "") {
@@ -274,7 +281,7 @@ public struct NotesDocument: Equatable, Sendable, Codable {
 
     /// A segment's text as passes see it: one `Person 2: …` line per turn when labelled, else the text.
     public func labelledText(_ s: NotesSegment, separator: String = "\n") -> String {
-        guard let turns = s.turns, !turns.isEmpty else { return s.text }
+        guard let turns = s.turns?.filter({ !$0.text.isEmpty }), !turns.isEmpty else { return s.text }
         return turns.map { roster.displayName($0.person) + ": " + $0.text }.joined(separator: separator)
     }
 
@@ -327,6 +334,14 @@ public struct NotesDocument: Equatable, Sendable, Codable {
         version += 1
         charsSinceReorganize += inserted
         isDirty = true
+    }
+
+    /// Everything is settled and the open window starts at segment `start` (a rebuilt body covers what is before it).
+    mutating func resetWindow(to start: Int) {
+        windowStart = start
+        structuredEnd = start - 1
+        consecutiveFailures = 0
+        windowGeneration += 1
     }
 
     /// The tail becomes settled text: the window moves past what it covered, so those segments are never re-sent,
