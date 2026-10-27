@@ -82,6 +82,8 @@ public struct SettingsState: Sendable {
     public var notesRetention: NotesRetention = .never
     public var recentlyDeletedCount = 0
     public var notesKeepAudio = false
+    /// Notes › Audio: "Allow re-transcribing" (#287), on by default.
+    public var notesAllowRetranscribe = true
     /// Notes › Sources: new notes include call audio (#211).
     public var notesCallAudio = false
     public var notesAudioBytes = 0
@@ -245,6 +247,7 @@ public final class SettingsForm {
     public let emptyDeleted = NSButton(title: "Empty…", target: nil, action: nil)
     private let deletedStatus = NSTextField(labelWithString: "")
     public let keepAudio = NSButton(checkboxWithTitle: "Keep audio with notes", target: nil, action: nil)
+    public let allowRetranscribe = NSButton(checkboxWithTitle: NotesRetranscribeText.setting, target: nil, action: nil)
     public let callAudio = NSButton(checkboxWithTitle: "Include call audio in new notes", target: nil, action: nil)
     public let deleteAudio = NSButton(title: "Delete…", target: nil, action: nil)
     private let audioStatus = NSTextField(labelWithString: "")
@@ -394,6 +397,7 @@ public final class SettingsForm {
         structureNotes.setAccessibilityLabel("Structure notes by default")
         autoReorganize.setAccessibilityLabel("Organize automatically by default")
         keepAudio.setAccessibilityLabel("Keep audio with notes")
+        allowRetranscribe.setAccessibilityLabel(NotesRetranscribeText.setting)
         callAudio.setAccessibilityLabel("Include call audio in new notes")
 
         build(.general, [
@@ -483,7 +487,8 @@ public final class SettingsForm {
                 row(nil, callAudio, help: Self.help(SettingsForm.callAudioHelp)),
             ], footnote: Self.help("Each note can change it from Sources in the Notes toolbar. Mac only: iPhone and Android can’t record other apps’ audio.")),
             SettingsSection("Audio", [
-                row(nil, keepAudio, help: Self.help("Keeps each spoken segment with its note so you can replay it. Off by default; the audio never leaves this Mac.")),
+                row(nil, keepAudio, help: Self.help("Keeps each spoken segment with its note so you can replay it. Off by default; the audio leaves this Mac only when you re-transcribe a note.")),
+                row(nil, allowRetranscribe, help: Self.help(NotesRetranscribeText.settingHelp)),
                 row("Kept audio", line([audioStatus, deleteAudio])),
             ]),
             SettingsSection("Export", [
@@ -671,6 +676,8 @@ public final class SettingsForm {
             historyApps.setApps(s.historyExcludedApps)
             learnFromEdits.state = s.learnFromEdits ? .on : .off
             keepAudio.state = s.notesKeepAudio ? .on : .off
+            allowRetranscribe.state = s.notesAllowRetranscribe ? .on : .off
+            allowRetranscribe.isEnabled = s.notesKeepAudio || s.notesAudioBytes > 0
             callAudio.state = s.notesCallAudio ? .on : .off
             structureNotes.state = s.structureNotes ? .on : .off
             autoReorganize.state = s.autoReorganize ? .on : .off
@@ -766,6 +773,8 @@ public final class SettingsForm {
         emptyDeleted.isEnabled = deleted > 0
         audioStatus.stringValue = audioBytes == 0 ? "None" : Self.sizeText(audioBytes)
         deleteAudio.isEnabled = audioBytes > 0
+        // Nothing to re-transcribe without kept audio (or a way to keep some).
+        allowRetranscribe.isEnabled = keepAudio.state == .on || audioBytes > 0
     }
 
     /// History's on/off state follows the menu or an alert; the count changes as dictations come and go.

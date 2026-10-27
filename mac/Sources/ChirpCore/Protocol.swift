@@ -255,9 +255,13 @@ public struct StartOptions: Sendable, Equatable {
     /// Live Notes speaker labels: the note's random session id (`SpeakerSession.make()`), nil when labels are off. Off
     /// leaves the start message as it was. The server keeps voices per session in memory only.
     public var speakersSession: String?
+    /// Re-transcribe kept Notes audio (`start.retranscribe`, health `notes_retranscribe`): no partials, and the engine
+    /// only when no live utterance waits. Off leaves the start message as it was.
+    public var retranscribe: Bool
     public init(client: String = "mac", correction: Bool = false, correctionProfile: String = CorrectionProfile.defaultID,
                 correctionInstructions: String? = nil, correctionPrompt: String? = nil, wordTimings: Bool = false,
-                learned: LearnedPayload? = nil, speakersSession: String? = nil) {
+                learned: LearnedPayload? = nil, speakersSession: String? = nil, retranscribe: Bool = false) {
+        self.retranscribe = retranscribe
         self.learned = learned
         self.client = client
         self.correction = correction
@@ -299,6 +303,7 @@ public enum ClientMessage {
         if o.wordTimings { message["word_timings"] = true }
         if let learned = o.learned, !learned.isEmpty { message["learned"] = learned.wire }
         if let session = o.speakersSession, SpeakerSession.isValid(session) { message["speakers"] = ["session": session] }
+        if o.retranscribe { message["retranscribe"] = true }
         return json(message)
     }
     public static let stop = json(["type": "stop"])
@@ -387,6 +392,8 @@ public struct OperationDeadlines: Decodable, Sendable, Equatable {
 public struct Health: Decodable, Sendable, Equatable {
     public var ok: Bool
     public var engine: String?
+    /// The speech model the server runs (`parakeet-v2`, `parakeet-v3`, `sensevoice-small`…); nil from older servers.
+    public var speechModel: String?
     public var ready: Bool?
     public var debugRetention: Bool?
     public var correction: String?
@@ -405,6 +412,8 @@ public struct Health: Decodable, Sendable, Equatable {
     public var notesCorrection: Bool?
     /// `stop.context` is taken: the end of the previous Live Notes segment, for casing and punctuation at the join.
     public var notesContext: Bool?
+    /// `start.retranscribe` is taken (kept Notes audio sent again); nil from a server that predates it.
+    public var notesRetranscribe: Bool?
     /// `POST /v1/notes/edit` exists (a spoken edit instruction); nil from a server that predates it.
     public var notesEdit: Bool?
     /// `start.speakers` labels Live Notes speakers (authenticated health only); nil from a server that predates it.
@@ -431,9 +440,12 @@ public struct Health: Decodable, Sendable, Equatable {
                 notesStructure: Bool? = nil, notesCorrection: Bool? = nil, notesReorganize: Bool? = nil, notesContext: Bool? = nil,
                 notesEdit: Bool? = nil, notesSpeakers: Bool? = nil, speakersModel: SpeakersModel? = nil,
                 speakerVoices: Bool? = nil, speakersVoices: SpeakersVoices? = nil, version: String? = nil, commit: String? = nil, api: Int? = nil, capabilities: [String]? = nil,
-                startedAt: Double? = nil, source: String? = nil, operationDeadlines: OperationDeadlines? = nil) {
+                startedAt: Double? = nil, source: String? = nil, operationDeadlines: OperationDeadlines? = nil,
+                speechModel: String? = nil, notesRetranscribe: Bool? = nil) {
         self.ok = ok
         self.engine = engine
+        self.speechModel = speechModel
+        self.notesRetranscribe = notesRetranscribe
         self.ready = ready
         self.debugRetention = debugRetention
         self.correction = correction
@@ -468,6 +480,9 @@ public struct Health: Decodable, Sendable, Equatable {
     /// The server keeps saved voices: naming can remember a voice and the Saved voices screen applies. Without it a
     /// client says "Update Chirp on your Mac to save voices".
     public var supportsSpeakerVoices: Bool { speakerVoices == true || capabilities?.contains("speaker_voices") == true }
+    /// The server takes `start.retranscribe`: a note's kept audio can be transcribed again. Without it a client says
+    /// "Update Chirp on your computer to re-transcribe" (never a plain stream: previews and no lease priority).
+    public var supportsRetranscribe: Bool { notesRetranscribe == true || capabilities?.contains("notes_retranscribe") == true }
 }
 
 /// `POST /v1/notes/structure`: the open window's transcript plus the settled headings for continuity. Only

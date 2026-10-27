@@ -4,7 +4,10 @@ import ChirpCore
 /// The Notes window's own shortcuts. They live in the main menu (so Help search finds them) and work only while the
 /// Notes window is key; this is the list the menu is built from and the tests check.
 public enum NotesCommand: CaseIterable, Sendable {
-    case newNote, record, pause, renameNote, deleteNote, findNotes, copyMarkdown, export
+    case newNote, record, pause, renameNote, deleteNote
+    /// Re-transcribe Note… and Restore Previous Transcript (#287): hidden, not greyed, when they don't apply.
+    case retranscribe, restoreTranscript
+    case findNotes, copyMarkdown, export
     case toggleInspector, showMarkdown
     case restoreOrganize
 
@@ -19,6 +22,8 @@ public enum NotesCommand: CaseIterable, Sendable {
         public var enabled: Bool
         /// A check mark: Show Markdown is on.
         public var checked: Bool
+        /// Left out of the menu (re-transcribe without kept audio, or turned off).
+        public var hidden = false
     }
 
     public var menu: Menu {
@@ -79,6 +84,14 @@ public enum NotesCommand: CaseIterable, Sendable {
                             enabled: on && library != nil, checked: library?.showMarkdown == true)
             case .restoreOrganize:
                 return Item(command: c, title: "Restore Notes Before Organize…", key: "", modifiers: [], enabled: on && shown.canRestore, checked: false)
+            case .retranscribe:
+                let can = library?.canRetranscribe(shown) == true
+                return Item(command: c, title: NotesRetranscribeText.menuTitle, key: "", modifiers: [], enabled: on && can,
+                            checked: false, hidden: !can)
+            case .restoreTranscript:
+                let can = library?.canRestoreTranscript(shown) == true
+                return Item(command: c, title: NotesRetranscribeText.restore, key: "", modifiers: [], enabled: on && can,
+                            checked: false, hidden: !can)
             }
         }
     }
@@ -101,6 +114,8 @@ extension NotesModel {
         case .toggleInspector: library.map { $0.setInspector(!$0.showsInspector) }
         case .showMarkdown: library.map { $0.setShowMarkdown(!$0.showMarkdown) }
         case .restoreOrganize: shown.review()
+        case .retranscribe: library?.onRetranscribe(shown.document.id, nil)
+        case .restoreTranscript: library?.onRestoreTranscript(shown.document.id)
         }
     }
 }

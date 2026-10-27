@@ -5,13 +5,16 @@ import ChirpUI
 import Foundation
 
 /// `ChirpMac --notes-selftest <audio> [--url URL] [--token-file PATH] [--correction] [--expect WORD]… [--fault PLAN] [--fast]
-/// [--speakers N] [--library] [--voices] [--snapshot DIR]`
+/// [--speakers N] [--library] [--voices] [--retranscribe] [--snapshot DIR]`
 /// Plays an audio file through the real `NotesSession` (segments over rolling sockets, structuring, Organize) against a
 /// server, with no microphone, window or TCC. Preferences live in a throwaway suite and the recovery journal is off,
 /// so the app's own state is never touched. Segments, status changes and the final Markdown go to stdout (the
 /// operator asked for them); counts go to stderr. `--fault` loses sockets on the client by audio time. `--speakers N`
 /// turns on speaker labels with the on-device model already on this Mac (it never downloads), expects exactly N
 /// people, then renames Person 2 and checks the name reaches every turn, the export and the structuring transcript.
+/// `--retranscribe` (with `--library`) keeps the audio, names Person 1 "Maya" and reassigns a turn (with labels),
+/// overwrites every segment's text with "WRONG TEXT", re-transcribes the note from its kept audio, checks the
+/// `--expect` words came back with the names and the reassignment intact, then that Undo restores "WRONG TEXT".
 @MainActor
 enum NotesSelfTest {
     static func run(_ args: [String]) async -> Int32 {
@@ -75,6 +78,9 @@ enum NotesSelfTest {
         }
         if testVoices { prefs.notesVoiceNoticeShown = true }
         if useLibrary { prefs.notesRecoveryCopy = true }
+        let testRetranscribe = args.contains("--retranscribe")
+        if testRetranscribe, !useLibrary { return usage() }
+        if testRetranscribe { prefs.notesKeepAudio = true }
 
         let clock = AudioClock()
         let engine = FileCaptureEngine(frames: frames, fast: args.contains("--fast"), clock: clock)
@@ -93,6 +99,11 @@ enum NotesSelfTest {
         deps.voiceClient = VoiceLibraryClient(list: { try await server.savedVoices() },
             action: { try await server.savedVoices($0) }, identify: { try await server.identifyVoices($0) })
         if useLibrary { deps.library = NotesLibrary(store: NotesLibraryStore(directory: journal.appendingPathComponent("library"))) }
+        deps.retranscribeSession = { options in
+            var limits = StreamLimits()
+            limits.readyDeadline = NotesRetranscriber.readyDeadline
+            return StreamSession(config: config, options: options, limits: limits)
+        }
         let session = NotesSession(deps)
         session.health = { health }
         session.healthChanged()
@@ -151,6 +162,7 @@ enum NotesSelfTest {
             FileHandle.standardError.write(Data("notes-selftest: snapshots=\(files.count)\n".utf8))
         }
         if useLibrary, let code = await checkLibrary(session, expectSpeakers: expectSpeakers) { return code }
+        if testRetranscribe, let code = await checkRetranscribe(session, expects: expects) { return code }
         print("notes-selftest: OK")
         return 0
     }
@@ -277,8 +289,73 @@ enum NotesSelfTest {
         return nil
     }
 
+    /// `--retranscribe`: the note's kept audio rebuilds a transcript overwritten with "WRONG TEXT"; names, merges and
+    /// reassignments survive; Undo puts "WRONG TEXT" back. Counts only on stderr.
+    private static func checkRetranscribe(_ session: NotesSession, expects: [String]) async -> Int32? {
+        guard let library = session.library else { return nil }
+        let id = session.recorder.document.id
+        func wait(_ what: String, _ done: () -> Bool) async -> Bool {
+            for _ in 0..<2400 where !done() { try? await Task.sleep(for: .milliseconds(100)) }
+            if !done() { print("notes-selftest: FAILED — retranscribe timed out waiting for \(what)") }
+            return done()
+        }
+        // The kept audio lands through the journal's disk queue.
+        session.journal.flush()
+        await session.journal.settle()
+        guard await wait("kept audio", { !session.model.keptAudio.isEmpty }) else { return 11 }
+        let labelled = session.recorder.document.segments.firstIndex { ($0.turns?.count ?? 0) > 0 }
+        session.recorder.updateDocument { d in
+            if let s = labelled, let turns = d.segments[s].turns {
+                d.renameSpeaker(turns[0].person, to: "Maya")
+                d.reassignTurns([SpeakerTurnRef(segment: s, index: turns.count - 1)], to: nil)
+            }
+            d.overwriteTranscript("WRONG TEXT")
+        }
+        let before = session.recorder.document
+        session.window.onRetranscribe(id, nil)
+        guard await wait("the consent sheet", { session.window.retranscribeOffer != nil }),
+              let offer = session.window.retranscribeOffer else { return 12 }
+        guard offer.supported else { print("notes-selftest: FAILED — the server lacks notes_retranscribe"); return 12 }
+        session.window.onRetranscribeStart(offer)
+        guard await wait("the run", { session.window.retranscribeRun == nil && session.recorder.document.previousTranscript != nil })
+        else { return 13 }
+        let after = session.recorder.document
+        let kept = Set(after.audio.map(\.id))
+        let wrong = after.segments.filter { kept.contains($0.id) && $0.text == "WRONG TEXT" }.count
+        let heard = after.segments.map(\.text).joined(separator: " ").lowercased()
+        let missing = expects.filter { !heard.contains($0.lowercased()) }
+        let people = { (d: NotesDocument) in d.segments.map { $0.turns?.map { [$0.person, $0.manual ? 1 : 0] } } }
+        FileHandle.standardError.write(Data("notes-selftest: retranscribe clips=\(offer.clips) still_wrong=\(wrong) engine=\(after.transcribedWith ?? "unknown") toast=\(session.window.toast?.text.count ?? 0)\n".utf8))
+        guard wrong == 0, missing.isEmpty else {
+            print("notes-selftest: FAILED — re-transcribe left \(wrong) wrong segments; missing: \(missing.joined(separator: ", "))")
+            return 14
+        }
+        guard people(after) == people(before), after.roster == before.roster, after.text == before.text,
+              after.segments.map(\.offset) == before.segments.map(\.offset) else {
+            print("notes-selftest: FAILED — re-transcribe changed the speakers, the timeline or the notes")
+            return 15
+        }
+        if labelled != nil, !after.transcriptMarkdown().contains("Maya") {
+            print("notes-selftest: FAILED — the name Maya is gone from the transcript")
+            return 15
+        }
+        // Undo, then the stored note (as after a relaunch) has the previous version.
+        session.window.onRestoreTranscript(id)
+        guard await wait("undo", { session.recorder.document.segments.filter { kept.contains($0.id) }.allSatisfy { $0.text == "WRONG TEXT" } })
+        else { return 16 }
+        session.journal.flush()
+        await session.journal.settle()
+        let stored = try? await library.record(id).document
+        guard stored?.segments == session.recorder.document.segments, stored?.previousTranscript != nil else {
+            print("notes-selftest: FAILED — the library did not keep the restored transcript and its previous version")
+            return 17
+        }
+        print("notes-selftest: retranscribe OK (\(offer.clips) clips, undo restored)")
+        return nil
+    }
+
     private static func usage() -> Int32 {
-        print("usage: ChirpMac --notes-selftest <file.wav> [--url URL] [--token-file PATH] [--correction] [--expect WORD]… [--fault \(NotesFaultPlan.syntax)] [--fast] [--speakers N] [--library] [--voices] [--snapshot DIR]")
+        print("usage: ChirpMac --notes-selftest <file.wav> [--url URL] [--token-file PATH] [--correction] [--expect WORD]… [--fault \(NotesFaultPlan.syntax)] [--fast] [--speakers N] [--library] [--voices] [--retranscribe] [--snapshot DIR]")
         return 64
     }
 }

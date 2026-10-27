@@ -28,12 +28,41 @@ struct NotesInspector: View {
                     .toggleStyle(.checkbox)
                     .controlSize(.small)
                     .help("Show each segment as Chirp first heard it")
+                if library.canRetranscribe(model) || library.canRestoreTranscript(model) {
+                    Menu {
+                        if library.canRetranscribe(model) {
+                            Button(NotesRetranscribeText.menuTitle) { library.onRetranscribe(model.document.id, nil) }
+                        }
+                        if library.canRestoreTranscript(model) {
+                            Button(NotesRetranscribeText.showChanges) { library.onShowTranscriptChanges(model.document.id) }
+                            Button(NotesRetranscribeText.restore) { library.onRestoreTranscript(model.document.id) }
+                        }
+                    } label: { Image(systemName: "ellipsis.circle") }
+                        .menuStyle(.borderlessButton)
+                        .menuIndicator(.hidden)
+                        .fixedSize()
+                        .help("More transcript actions")
+                        .accessibilityLabel("More transcript actions")
+                }
             }
             .padding(.horizontal, 16)
-            .padding(.vertical, 10)
+            .padding(.top, 10)
+            .padding(.bottom, model.document.transcribedWith == nil ? 10 : 2)
+            if let engine = model.document.transcribedWith {
+                Text(NotesRetranscribeText.transcribedWith(engine))
+                    .font(.caption)
+                    .foregroundStyle(NotesInk.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 8)
+            }
             Divider()
+            if let run = library.retranscribeRun, run.note == model.document.id {
+                RetranscribeBanner(library: library, run: run)
+                Divider()
+            }
             if let banner = model.visibleSpeakerBanner { SpeakerBannerView(model: model, banner: banner) }
-            TranscriptList(model: model, player: library.player)
+            TranscriptList(model: model, library: library)
         }
         .background(Color.chirp.background.ignoresSafeArea())
     }
@@ -48,7 +77,8 @@ private struct TranscriptItem: Identifiable {
 
 private struct TranscriptList: View {
     @Bindable var model: NotesModel
-    let player: NotesPlayer
+    let library: NotesLibraryModel
+    private var player: NotesPlayer { library.player }
 
     /// Rows with the Continue boundaries placed before the first row of each later capture.
     private var items: [TranscriptItem] {
@@ -76,7 +106,7 @@ private struct TranscriptList: View {
                         }
                         ForEach(items) { item in
                             if let date = item.continued { ContinuedDivider(date: date) }
-                            TranscriptRowView(model: model, player: player, row: item.row)
+                            TranscriptRowView(model: model, library: library, row: item.row)
                         }
                         if !model.document.livePartial.isEmpty {
                             HStack(alignment: .firstTextBaseline, spacing: 10) {
@@ -136,7 +166,8 @@ private struct ContinuedDivider: View {
 
 private struct TranscriptRowView: View {
     @Bindable var model: NotesModel
-    let player: NotesPlayer
+    let library: NotesLibraryModel
+    private var player: NotesPlayer { library.player }
     let row: TranscriptRow
     @Environment(\.colorScheme) private var scheme
 
@@ -181,6 +212,7 @@ private struct TranscriptRowView: View {
                     .buttonStyle(.plain)
                     .menuIndicator(.hidden)
                     .fixedSize()
+                    .disabled(library.isRetranscribing(model.document.id))
                     .help(SpeakerMenuItems.help)
                     .accessibilityLabel("Speaker: \(chip.name)" + (model.voices.recognised.contains(person) ? ", recognised" : ""))
                     .accessibilityHint(SpeakerMenuItems.help)
@@ -199,9 +231,16 @@ private struct TranscriptRowView: View {
                 Spacer(minLength: 0)
             }
             if let failure = p.failure {
-                Text("⚠︎ audio not transcribed (\(failure))")
-                    .font(.system(size: 13))
-                    .foregroundStyle(Color.chirp.moon)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("⚠︎ audio not transcribed (\(failure))")
+                        .font(.system(size: 13))
+                        .foregroundStyle(Color.chirp.moon)
+                    if library.canRetranscribe(model), model.keptAudio[p.parts[0].segment] != nil {
+                        Button(NotesRetranscribeText.gapAgain) { library.onRetranscribe(model.document.id, p.parts[0].segment) }
+                            .buttonStyle(.link)
+                            .font(.system(size: 12, weight: .medium))
+                    }
+                }
             } else {
                 paragraphText(p, hovered: model.hoveredParagraph == p.id)
                     .font(.system(size: 13))
@@ -215,7 +254,7 @@ private struct TranscriptRowView: View {
         .padding(.vertical, 8)
         .padding(.horizontal, 10)
         .background(background(playing: playing, highlighted: model.highlightedParagraph == p.id))
-        .modifier(SpeakerRowMenu(model: model, paragraph: p))
+        .modifier(SpeakerRowMenu(model: model, paragraph: p, library: library))
         .popover(isPresented: Binding(get: { model.renaming?.row == p.id }, set: { if !$0 { model.renaming = nil } }),
                  arrowEdge: .bottom) {
             if let r = model.renaming { SpeakerRenameField(model: model, person: r.person) }

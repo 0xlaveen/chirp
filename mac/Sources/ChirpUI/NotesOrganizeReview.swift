@@ -111,7 +111,7 @@ struct OrganizeReviewSheet: View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(alignment: .firstTextBaseline) {
                 Image(systemName: "sparkles").foregroundStyle(Color.chirp.moon)
-                Text("What Organize changed").font(ChirpType.noteTitle(20))
+                Text(snapshot?.rebuild == true ? "What rebuilding changed" : "What Organize changed").font(ChirpType.noteTitle(20))
                 Spacer()
                 Text(NotesBlockDiff.summary(rows)).font(ChirpType.meta).foregroundStyle(NotesInk.secondary)
             }

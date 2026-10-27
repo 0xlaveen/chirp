@@ -30,6 +30,8 @@ final class SettingsWindowController: NSObject, NSTextFieldDelegate {
     var onRemoveSpeakerModel: (() -> Void)?
     /// Notes › Speakers › Label speakers flipped (the Notes session downloads the model by itself when it is missing).
     var onSpeakerLabels: ((Bool) -> Void)?
+    /// Settings → Notes → Allow re-transcribing changed (off stops a run and hides the actions).
+    var onAllowRetranscribe: (() -> Void)?
     /// Retry after a failed speaker model download, and the model's state and size as the Notes window has them.
     var onRetrySpeakerModel: (() -> Void)?
     var speakerModel: () -> (state: SpeakerModelState, size: String) = { (.notDownloaded, "") }
@@ -95,6 +97,7 @@ final class SettingsWindowController: NSObject, NSTextFieldDelegate {
         s.wordWaveform = settings.wordWaveform
         s.notesRetention = settings.notesRetention
         s.notesKeepAudio = settings.notesKeepAudio
+        s.notesAllowRetranscribe = settings.notesAllowRetranscribe
         s.notesCallAudio = settings.notesCallAudio
         s.recentlyDeletedCount = library?.recentlyDeleted.count ?? 0
         s.notesAudioBytes = library?.totalAudioBytes ?? 0
@@ -455,6 +458,8 @@ final class SettingsWindowController: NSObject, NSTextFieldDelegate {
         form.notesRetention.action = #selector(retentionChanged(_:))
         form.keepAudio.target = self
         form.keepAudio.action = #selector(toggleKeepAudio(_:))
+        form.allowRetranscribe.target = self
+        form.allowRetranscribe.action = #selector(toggleAllowRetranscribe(_:))
         form.callAudio.target = self
         form.callAudio.action = #selector(toggleCallAudio(_:))
         form.deleteAudio.target = self
@@ -653,7 +658,13 @@ final class SettingsWindowController: NSObject, NSTextFieldDelegate {
 
     @objc private func toggleKeepAudio(_ sender: NSButton) {
         settings.notesKeepAudio = sender.state == .on
+        form?.allowRetranscribe.isEnabled = sender.state == .on || (library?.totalAudioBytes ?? 0) > 0
         if sender.state == .off, (library?.totalAudioBytes ?? 0) > 0 { confirmDeleteAudio() }
+    }
+
+    @objc private func toggleAllowRetranscribe(_ sender: NSButton) {
+        settings.notesAllowRetranscribe = sender.state == .on
+        onAllowRetranscribe?()
     }
 
     @objc private func confirmDeleteAudio() {

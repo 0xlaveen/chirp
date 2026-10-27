@@ -305,6 +305,8 @@ public final class NotesRecorder {
         /// Its audio waits to be sent again; `replaying` while a replay socket has it.
         var replay = false
         var replaying = false
+        /// `ready.engine` of its socket, kept with the segment ("Transcribed with").
+        var engine: String?
     }
 
     var segments: [Int: Segment] = [:]
@@ -669,6 +671,26 @@ public final class NotesRecorder {
         changed()
     }
 
+    /// A re-transcribe applies to the note while it is not recording: `body` changes the document (its transcript), and
+    /// the window and the journal follow. False (nothing changed) while recording.
+    @discardableResult
+    public func updateDocument(_ body: (inout NotesDocument) -> Void) -> Bool {
+        guard !state.isActive else { return false }
+        body(&document)
+        changed()
+        return true
+    }
+
+    /// Re-transcribe's "Also rebuild the notes": the body becomes `text` as one `.rebuild` change the editor replays
+    /// (one undo step) and the snapshots keep. Only on a stopped note.
+    @discardableResult
+    public func rebuildNotes(_ text: String, fallbackBlocks: [String]) -> Bool {
+        guard !state.isActive else { return false }
+        publish(document.replaceBody(with: text, fallbackBlocks: fallbackBlocks))
+        changed()
+        return true
+    }
+
     /// Save… wrote the document.
     public func markSaved() {
         document.markSaved()
@@ -748,7 +770,8 @@ public final class NotesRecorder {
     private func handle(_ event: StreamEvent, seq: Int) -> Bool {
         guard segments[seq] != nil else { return true }
         switch event {
-        case .message(.ready(_, _, let debug)):
+        case .message(.ready(_, let engine, let debug)):
+            segments[seq]?.engine = engine
             debugRetention = debug
             sawReady = true
             offline = false
@@ -782,6 +805,7 @@ public final class NotesRecorder {
                                                             corrected: f.corrected, keptOriginal: kept)
             segment?.end = end
             segment?.pauseBefore = segments[seq]?.pause
+            segment?.engine = segments[seq]?.engine
             if !text.isEmpty { lastFinal = (seq, text) }
             if segment != nil, labelSpeakers, let speakers = f.speakers {
                 serverLabels[seq] = ServerLabels(speakers: speakers, text: text, raw: raw, original: (f.text, f.raw))
