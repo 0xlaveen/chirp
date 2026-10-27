@@ -460,8 +460,8 @@ Notes library screenshots (synthetic text only):
 ![iPad split view, dark](../docs/screenshots/ios/ipad-notes-reading-dark.png)
 ![iPad transcript inspector, light](../docs/screenshots/ios/ipad-notes-transcript-audio-light.png)
 
-Hardware keyboard: ⌘N new recording, ⌘F search, ⌥⌘T transcript, ⌘⇧R
-record/stop, ⌘⇧P pause/resume. Shortcuts retain Start, Pause/resume and Stop
+Hardware keyboard: ⌘N new note (typed, no recording), ⌘F search, ⌥⌘T
+transcript, ⌘⇧R record/stop, ⌘⇧P pause/resume. Shortcuts retain Start, Pause/resume and Stop
 Chirp Live Notes.
 
 ## Dictate from any app (keyboard)
