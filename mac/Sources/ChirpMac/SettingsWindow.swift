@@ -37,9 +37,8 @@ final class SettingsWindowController: NSObject, NSTextFieldDelegate {
     var speakerModel: () -> (state: SpeakerModelState, size: String) = { (.notDownloaded, "") }
     /// A Live Notes recording is running: Label speakers waits for the next one.
     var notesRecording: () -> Bool = { false }
-    /// Live Notes voice profiles (Settings › Notes › Voices).
+    /// Live Notes voice profiles (Settings → Notes → Saved voices).
     var voices: SpeakerVoices?
-    private var voicesPanel: NSPanel?
     /// The Notes library: Recently Deleted's count and the kept-audio total, and the two bulk actions on them.
     var library: NotesLibrary?
     /// Notes › Sources: the call-audio default changed.
@@ -479,6 +478,10 @@ final class SettingsWindowController: NSObject, NSTextFieldDelegate {
         self.form = form
 
         let tabs = SettingsTabs.makeController(form: form) { [weak self] tab in self?.pageShown(tab) }
+        tabs.shell.onDetail = { [weak self] title in
+            let name = title ?? self?.tabs?.shell.selected.title ?? "Settings"
+            self?.window?.title = "Chirp Settings — \(name)"
+        }
         self.tabs = tabs
         let w = NSWindow(contentViewController: tabs)
         // A System Settings-style window: fixed size, the sidebar running up under a transparent title bar.
@@ -523,46 +526,15 @@ final class SettingsWindowController: NSObject, NSTextFieldDelegate {
     // MARK: voice profiles
 
     @objc private func showSavedVoices() {
-        guard let window, let view = form?.voicesView else { return }
-        let panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 520, height: 520), styleMask: [.titled], backing: .buffered, defer: false)
-        panel.title = "Saved voices"
-        let controller = NSViewController()
-        let content = NSView()
-        controller.view = content
-        let scroll = NSScrollView()
-        scroll.hasVerticalScroller = true; scroll.drawsBackground = false
-        let wrapper = NSView()
-        wrapper.translatesAutoresizingMaskIntoConstraints = false
-        view.translatesAutoresizingMaskIntoConstraints = false
-        wrapper.addSubview(view)
-        scroll.documentView = wrapper
-        let done = NSButton(title: "Done", target: self, action: #selector(closeSavedVoices))
-        done.bezelStyle = .rounded; done.keyEquivalent = "\r"
-        for child in [scroll, done] { child.translatesAutoresizingMaskIntoConstraints = false; content.addSubview(child) }
-        NSLayoutConstraint.activate([
-            scroll.topAnchor.constraint(equalTo: content.topAnchor, constant: 20),
-            scroll.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: 24),
-            scroll.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -24),
-            scroll.bottomAnchor.constraint(equalTo: done.topAnchor, constant: -16),
-            done.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -24),
-            done.bottomAnchor.constraint(equalTo: content.bottomAnchor, constant: -16),
-            wrapper.widthAnchor.constraint(equalTo: scroll.contentView.widthAnchor),
-            view.leadingAnchor.constraint(equalTo: wrapper.leadingAnchor), view.topAnchor.constraint(equalTo: wrapper.topAnchor),
-            wrapper.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: 16)
-        ])
-        panel.contentViewController = controller
-        voicesPanel = panel
-        window.beginSheet(panel)
+        guard let view = form?.voicesView, let shell = tabs?.shell else { return }
+        view.showsTitle = false
+        view.fitSettingsPage()
+        shell.showDetail(content: view, title: "Saved voices", back: SettingsTab.notes.title)
         Task { await voices?.refresh() }
     }
 
-    @objc private func closeSavedVoices() {
-        if let panel = voicesPanel { window?.endSheet(panel) }
-        voicesPanel = nil
-    }
-
     private func renameSavedVoice(_ profile: SavedVoice) {
-        guard let voices, let window = voicesPanel ?? window else { return }
+        guard let voices, let window else { return }
         let alert = NSAlert()
         alert.messageText = "Rename saved voice"
         alert.informativeText = "Existing notes keep their names."
@@ -598,7 +570,7 @@ final class SettingsWindowController: NSObject, NSTextFieldDelegate {
         let count = voices.profiles.count
         Task { [weak self] in
             guard await voices.perform(.disable(forget: false)), count > 0,
-                  let self, let window = self.voicesPanel ?? self.window else { return }
+                  let self, let window = self.window else { return }
             let alert = NSAlert()
             alert.messageText = VoiceProfilesText.turnOffTitle(count)
             alert.informativeText = VoiceProfilesText.turnOffDetail(local: settings.serverConfig().isLoopback)
@@ -613,7 +585,7 @@ final class SettingsWindowController: NSObject, NSTextFieldDelegate {
 
     /// Forget one saved voice (or all, for nil), after asking.
     private func confirmForgetVoice(_ profile: SavedVoice?) {
-        guard let voices, let window = voicesPanel ?? window else { return }
+        guard let voices, let window else { return }
         let alert = NSAlert()
         alert.alertStyle = .warning
         alert.messageText = profile.map(VoiceProfilesText.forgetTitle) ?? VoiceProfilesText.forgetAllTitle

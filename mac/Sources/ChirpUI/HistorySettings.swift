@@ -1,7 +1,7 @@
 import AppKit
 import ChirpCore
 
-/// Settings → Dictation → History: the apps whose dictations are never kept, one row each with a remove button, and
+/// Settings → History & privacy: the apps whose dictations are never kept, one row each with a remove button, and
 /// "+" (the owner shows its app chooser) and Restore Defaults below.
 @MainActor
 public final class HistoryAppsList: NSObject {

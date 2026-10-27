@@ -16,7 +16,7 @@ public enum HistoryText {
     public static let empty = "No dictations yet"
     public static let emptyDetail = "Everything you dictate is kept here on this Mac, so you can find it, copy it or insert it again."
     public static let off = "History is off"
-    public static let offDetail = "Turn it on in Settings → Dictation to keep what you dictate on this Mac."
+    public static let offDetail = "Turn it on in Settings → History & privacy to keep what you dictate on this Mac."
     public static let unavailable = "History is locked"
     public static let unavailableDetail = "Chirp could not read its key from the Keychain. Unlock the Mac's login keychain and reopen this window."
     public static let cleaned = "Polished"
@@ -36,10 +36,10 @@ public enum HistoryText {
     public static let deleted = "Dictation deleted"
     public static let noSelection = "Select a dictation"
     /// The one-line privacy disclosure (the window's footer, Settings and onboarding).
-    public static let disclosure = "History is kept on this Mac only, encrypted, and never synced. Turn it off in Settings → Dictation."
+    public static let disclosure = "History is kept on this Mac only, encrypted, and never synced. Turn it off in Settings → History & privacy."
 
     /// Onboarding's line under "Dictate into any app".
-    public static let onboarding = "History keeps them on this Mac only, encrypted; turn it off in Settings → Dictation."
+    public static let onboarding = "History keeps them on this Mac only, encrypted; turn it off in Settings → History & privacy."
 
     public static func noResults(_ query: String) -> String { "No dictations match “\(query)”" }
 

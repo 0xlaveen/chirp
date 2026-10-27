@@ -112,7 +112,7 @@ extension Snapshots {
             window("empty") { $0.show([]) },
             window("off") { $0.enabled = false; $0.show([]) },
             window("deleted") { $0.selection = demoHistory()[0].id; $0.delete(demoHistory()[0].id) },
-            Scenario(name: "settings-dictation-history") { settingsWindow(state, .dictation, full: true) },
+            Scenario(name: "settings-privacy-history") { settingsWindow(state, .privacy, full: true) },
             Scenario(name: "learned-list") {
                 let model = LearnedModel()
                 model.icon = { demoIcon($0) }
@@ -129,7 +129,7 @@ extension Snapshots {
                 m.teachText = "Ship the Kubernetes upgrade on Monday once the canary is green."
                 return NSHostingView(rootView: TeachSheet(model: m).background(Color.chirp.background))
             },
-            Scenario(name: "settings-dictation-history-off") { settingsWindow(stateOff, .dictation, full: true) },
+            Scenario(name: "settings-privacy-history-off") { settingsWindow(stateOff, .privacy, full: true) },
             Scenario(name: "menu-recent-dictations-submenu") {
                 var inputs = MenuInputs()
                 inputs.now = historyNow

@@ -304,7 +304,11 @@ public enum Snapshots {
                 }
             },
             form("ready", .dictation) { _ in },
-            form("private", .dictation) { $0.privateSession = true; $0.spokenCommands = true },
+            form("private", .privacy) {
+                $0.privateSession = true
+                $0.historyCount = 12
+                $0.learnedSummary = "2 in use"
+            },
             form("option-hold", .dictation) { $0.hotkey = .option; $0.activationMode = .holdToTalk },
             form("picked-microphone", .dictation) { $0.chosenInputUID = "studio" },
             form("sounds", .dictation) { $0.soundsEnabled = true; $0.soundPack = .chirp; $0.soundVolume = 0.6 },
@@ -575,7 +579,7 @@ public enum Snapshots {
     /// The scenarios whose PNGs are committed under `docs/screenshots/mac`: the key HUD states, the menu in light and
     /// dark, one per Settings tab, and the setup window. The rest only render to a temporary directory for review.
     public static let committedNames: [String] = [
-        "hud-rolling", "hud-private", "hud-duration-limit", "menu-private", "settings-dictation-private",
+        "hud-rolling", "hud-private", "hud-duration-limit", "menu-private", "settings-privacy-private",
         "hud-listening", "ripple-speech", "ripple-static",
         "hud-flow-2-polishing", "hud-flow-3-diff", "hud-correction-use-raw",
         "hud-wordwave-listening", "hud-wordwave-long", "hud-wordwave-polishing",
@@ -1291,6 +1295,24 @@ public enum Snapshots {
         ]
     }
 
+    /// Settings → Notes → Saved voices, the detail page (not the old sheet).
+    static func savedVoicesWindow(_ value: VoiceProfilesState) -> NSView {
+        var settings = SettingsState()
+        settings.launch = .on
+        settings.serverStatus = "parakeet-mlx:tdt-0.6b-v2"
+        settings.about = AboutInfo(version: "0.1.0", build: "1")
+        settings.voices = value
+        let form = SettingsForm(settings, icon: appIcon, onNotices: {})
+        form.voicesView.showsTitle = false
+        form.voicesView.fitSettingsPage()
+        form.voicesView.apply(value, locale: Locale(identifier: "en_US"), timeZone: TimeZone(secondsFromGMT: 0)!)
+        let shell = SettingsShell(form: form, selected: .notes, flat: true)
+        shell.showDetail(content: form.voicesView, title: "Saved voices", back: SettingsTab.notes.title)
+        shell.layoutSubtreeIfNeeded()
+        shell.contentHeight = max(SettingsShell.size.height, shell.openPageHeight + 28)
+        return shell
+    }
+
     public static var savedVoicesScenarios: [Scenario] {
         ["ready", "empty", "off", "unsupported", "failed"].map { state in
             Scenario(name: "settings-saved-voices-" + state) {
@@ -1306,12 +1328,7 @@ public enum Snapshots {
                     ]
                 }
                 if state == "failed" { value.error = "Couldn’t load saved voices. Try again." }
-                let view = VoiceProfilesView()
-                view.apply(value, locale: Locale(identifier: "en_US"), timeZone: TimeZone(secondsFromGMT: 0)!)
-                let wrapper = NSStackView(views: [view])
-                wrapper.orientation = .vertical; wrapper.alignment = .leading
-                wrapper.edgeInsets = NSEdgeInsets(top: 24, left: 24, bottom: 24, right: 24)
-                return wrapper
+                return savedVoicesWindow(value)
             }
         }
     }
