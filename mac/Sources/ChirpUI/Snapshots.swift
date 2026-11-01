@@ -1446,12 +1446,18 @@ public enum Snapshots {
         (view as? NSTextView).map { [$0] } ?? view.subviews.flatMap(textViews)
     }
 
-    /// Writes `<scenario>-<appearance>.png` for every scenario and appearance; returns the files written.
+    /// Writes `<scenario>-<appearance>.png` for every scenario and appearance; returns the files written. `design`
+    /// draws that design and restores the current one afterwards (nil draws the current design).
     @discardableResult
-    public static func render(to directory: URL, scenarios: [Scenario]? = nil) throws -> [URL] {
+    public static func render(to directory: URL, scenarios: [Scenario]? = nil, design: ChirpDesign? = nil) throws -> [URL] {
+        guard let design else { return try renderEach(scenarios ?? allScenarios, to: directory) }
+        return try ChirpDesign.with(design) { try renderEach(scenarios ?? allScenarios, to: directory) }
+    }
+
+    private static func renderEach(_ scenarios: [Scenario], to directory: URL) throws -> [URL] {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         var written: [URL] = []
-        for scenario in scenarios ?? allScenarios {
+        for scenario in scenarios {
             for (label, appearance) in appearances {
                 guard let data = png(scenario, appearance: appearance) else {
                     throw CocoaError(.fileWriteUnknown, userInfo: [NSLocalizedDescriptionKey: "could not render \(scenario.name)"])
