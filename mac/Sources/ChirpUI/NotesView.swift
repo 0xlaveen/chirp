@@ -534,6 +534,7 @@ struct NotesToastView: View {
                 .font(.callout.weight(.semibold))
                 .foregroundStyle(Color.chirp.koi)
                 .keyboardShortcut("z", modifiers: .command)
+                .toastFocus(library.toastTimer)
             }
             if let action = toast.action {
                 Button(NotesRetranscribeText.showChanges) {
@@ -545,6 +546,7 @@ struct NotesToastView: View {
                 .buttonStyle(.plain)
                 .font(.callout.weight(.semibold))
                 .foregroundStyle(Color.chirp.koi)
+                .toastFocus(library.toastTimer)
                 Button("Undo") {
                     library.toast = nil
                     switch action {
@@ -555,6 +557,7 @@ struct NotesToastView: View {
                 .buttonStyle(.plain)
                 .font(.callout.weight(.semibold))
                 .foregroundStyle(Color.chirp.koi)
+                .toastFocus(library.toastTimer)
             }
         }
         .padding(.horizontal, 18)
@@ -564,10 +567,13 @@ struct NotesToastView: View {
         .shadow(color: .black.opacity(0.18), radius: 12, y: 4)
         .padding(.bottom, 22)
         .transition(.move(edge: .bottom).combined(with: .opacity))
+        .toastHover(library.toastTimer)
         .task(id: toast.serial) {
             // Undo and Show Changes stay a little longer; afterwards the transcript inspector's ⋯ menu has them.
-            try? await Task.sleep(for: .seconds(toast.action == nil ? 6 : 10))
-            if !Task.isCancelled, library.toast?.serial == toast.serial { library.toast = nil }
+            // The countdown waits while the pointer is over the toast or one of its buttons has focus.
+            if await library.toastTimer.run(.seconds(toast.action == nil ? 6 : 10)), library.toast?.serial == toast.serial {
+                library.toast = nil
+            }
         }
         .accessibilityElement(children: .contain)
     }
