@@ -20,7 +20,7 @@ final class DictationController {
     var routeToNotes: (_ dictationActive: Bool) -> Bool = { _ in false }
     static let blockedMessage = "Notes is recording — stop it to dictate"
 
-    let hud = HUDController()
+    let hud: DictationOverlay = OverlayRouter()
     private let mic = DictationMic(capture: AudioCapture(engine: SystemCaptureEngine(pickedDevice: { InputDevice.pickedID(uid: settings.inputDeviceUID) })))
     private let inserter = TextInserter(env: SystemInsertion.environment(), pasteboard: SystemPasteboard())
     private let autoEnter = AutoEnterSender(env: SystemInsertion.autoEnterEnvironment())
@@ -631,7 +631,7 @@ final class DictationController {
         hud.show()
         if p.linger > 0 { hud.hide(after: p.linger) } else { hud.hide() }
         hud.announce(p.status)
-        if p.offersRawOutsideHUD, inserter.canUseRaw, !isPaused { rawOffer.open(avoiding: settings.hotkey) }
+        if p.offersRawOutsideHUD || (p.showUseRaw && !hud.acceptsClicks), inserter.canUseRaw, !isPaused { rawOffer.open(avoiding: settings.hotkey) }
     }
 
     /// Replace the inserted correction with the raw transcript, in place for a verified AX insertion and otherwise
