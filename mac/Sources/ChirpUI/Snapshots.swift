@@ -1335,7 +1335,7 @@ public enum Snapshots {
 
     public static var allScenarios: [Scenario] {
         hudScenarios + rippleScenarios + wordWaveScenarios + settingsScenarios + onboardingScenarios + menuScenarios
-            + localModelsScenarios + notesScenarios + pairingScenarios + historyScenarios + savedVoicesScenarios
+            + localModelsScenarios + notesScenarios + pairingScenarios + historyScenarios + savedVoicesScenarios + v2Scenarios
     }
 
     // MARK: rendering

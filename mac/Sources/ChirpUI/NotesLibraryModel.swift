@@ -169,6 +169,8 @@ public final class NotesLibraryModel {
     public var renaming: UUID?
     public var renameText = ""
     public var toast: NotesToast?
+    /// Counts the toast down; hovering it or focusing one of its buttons pauses the countdown.
+    public let toastTimer = ToastTimer()
     private var toastSerial = 0
     /// The transcript inspector (⌥⌘T) and View ▸ Show Markdown.
     public var showsInspector = false
